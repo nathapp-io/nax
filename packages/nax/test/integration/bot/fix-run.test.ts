@@ -283,14 +283,16 @@ describe("runBotFix", () => {
     expect(events.indexOf("pre-run")).toBeLessThan(events.indexOf("fix"));
     expect(fix).toHaveBeenCalledTimes(1);
   });
-  test("AC-15/16 pre-run failure propagates unchanged without fix", async () => {
-    const failure = new NaxError("[execution] setup failed", "PRE_RUN_FAILED", { stage: "execution" });
+  test("AC-15/16 pre-run failure resolves as setup-failed without fix", async () => {
+    const failure = new NaxError("[execution] setup failed", "PRE_RUN_FAILED", {
+      stage: "execution",
+      command: "bun install",
+    });
     preRun.mockImplementation(async () => {
       throw failure;
     });
-    await expect(runBotFix(input)).rejects.toBe(failure);
+    expect(await runBotFix(input)).toMatchObject({ outcome: "setup-failed", setupFailed: "bun install" });
     expect(fix).not.toHaveBeenCalled();
-    expect(write).not.toHaveBeenCalled();
     expect(events.slice(-3)).toEqual(["context-close", "runtime-close", "checkout-close"]);
   });
   test("AC-18/19 fix failure cleans up in order", async () => {

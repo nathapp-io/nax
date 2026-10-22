@@ -10,6 +10,7 @@ import { gitWithTimeout } from "@/utils/git";
 import { type GateCommand, type GateRunRecord, gateOutputTail, runQualityGates } from "../finish/gates/quality";
 import { type CiWaitResult, readChecksOnce } from "../workflow/ci-wait";
 import { readHead } from "../workflow/git";
+import { BOT_GIT_NETWORK_TIMEOUT_MS } from "./checkout";
 
 export const _gateBaselineDeps = {
   runGit: gitWithTimeout,
@@ -58,14 +59,14 @@ export async function failingOnHead(
   const fixSha = await deps.readHead(worktree);
   const status = await deps.runGit(["status", "--porcelain", "--untracked-files=no"], worktree);
   if (status.exitCode !== 0 || status.stdout.trim() !== "") return undefined;
-  const toHead = await deps.runGit(["checkout", "--detach", headSha], worktree);
+  const toHead = await deps.runGit(["checkout", "--detach", headSha], worktree, BOT_GIT_NETWORK_TIMEOUT_MS);
   if (toHead.exitCode !== 0) return undefined;
   try {
     return (await deps.runQualityGates(worktree, gates, { onGate: logGateFailure("baseline") })).failing;
   } finally {
     // A failed restore leaves the head checked out. Safe while a red gate run ends the graph (report,
     // then dispose); a step that reuses or retains this checkout must check HEAD first.
-    const back = await deps.runGit(["checkout", "--detach", fixSha], worktree);
+    const back = await deps.runGit(["checkout", "--detach", fixSha], worktree, BOT_GIT_NETWORK_TIMEOUT_MS);
     if (back.exitCode !== 0) {
       deps.getLogger()?.warn("bot-fix", "Could not restore the fix commit after the baseline run", {
         worktree,

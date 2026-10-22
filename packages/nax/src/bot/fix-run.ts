@@ -183,12 +183,24 @@ async function executeFix(
   env: BotFixEnv,
   runtime: ReturnType<typeof _botFixDeps.createRuntime>,
 ): Promise<BotFixResult> {
-  await _botFixDeps.runPreRunSteps({ steps: env.checks.preRun, workdir: env.checkout.worktree });
+  let initial: BotFixState = { step: "fix", timings: {} };
+  try {
+    await _botFixDeps.runPreRunSteps({ steps: env.checks.preRun, workdir: env.checkout.worktree });
+  } catch (error) {
+    if (!(error instanceof NaxError) || error.code !== "PRE_RUN_FAILED") throw error;
+    const setupFailed = typeof error.context?.command === "string" ? error.context.command : "unknown";
+    getLogger()?.warn("bot-fix", "Fix setup failed", {
+      pr: env.ref.number,
+      command: setupFailed,
+      error: errorMessage(error),
+    });
+    initial = { step: "report", timings: {}, outcome: "setup-failed", setupFailed };
+  }
   const stateDir = botRunDir(runtime.outputDir, env.ref.number, runtime.runId);
   const state = await runStepGraph(
     BOT_FIX_GRAPH,
     env,
-    { step: "fix", timings: {} },
+    initial,
     { persist: (value) => _botFixDeps.writeJson(join(stateDir, "bot-state.json"), value) },
     { aborted: () => runtime.signal.aborted, now: () => Date.now() },
   );

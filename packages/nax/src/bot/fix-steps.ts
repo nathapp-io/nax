@@ -31,7 +31,9 @@ export interface BotFixState extends GraphState<BotFixStep> {
     | "baseline-red"
     | "push-rejected"
     | "push-unknown"
-    | "dirty";
+    | "dirty"
+    | "setup-failed";
+  readonly setupFailed?: string;
   readonly changed?: readonly string[];
   readonly protectedFiles?: readonly string[];
   readonly failingGates?: readonly string[];

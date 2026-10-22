@@ -241,6 +241,8 @@ function baselineText(ci: BotFixState["ciOutcome"]): string {
 
 function outcomeText(state: BotFixState): string {
   switch (state.outcome) {
+    case "setup-failed":
+      return `Setup failed at \`${safeCode(state.setupFailed ?? "unknown")}\`; nothing ran.`;
     case "pushed":
       return `Pushed ${state.pushedSha?.slice(0, SHORT_SHA_LENGTH)}: ${state.agreedCount ?? 0} agreed items fixed in one round; gates passed.`;
     case "nothing":
