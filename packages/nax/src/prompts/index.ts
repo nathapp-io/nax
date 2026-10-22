@@ -24,6 +24,7 @@ export { type AdvisorBatchPromptInput, buildAdvisorBatchPrompt } from "./builder
 export { type AdvisorPromptInput, buildAdvisorPrompt } from "./builders/advisor-builder";
 export { type CheckoutStateInput, renderCheckoutState } from "./builders/bot-checkout-state-builder";
 export { type BotChecksExtractPromptInput, buildBotChecksExtractPrompt } from "./builders/bot-checks-extract-builder";
+export { type BotPrFixPromptInput, buildBotPrFixPrompt } from "./builders/bot-pr-fix-builder";
 export {
   type BotPrReviewPromptInput,
   buildBotPrReviewPrompt,
