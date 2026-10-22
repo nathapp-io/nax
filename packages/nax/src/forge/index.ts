@@ -5,7 +5,7 @@
  * barrel, so consumers import from `@/forge` and never `@/forge/detect`.
  */
 
-export { hasWriteAccess } from "./access";
+export { hasWriteAccess, type WriterCheck, writerCheck } from "./access";
 export type { ForgeCheck, ForgeCheckStatus } from "./checks-read";
 export { listHeadChecks } from "./checks-read";
 export type { FailedCheck } from "./ci-failures";

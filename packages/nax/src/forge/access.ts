@@ -1,3 +1,4 @@
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { api, parseReply, readError } from "./api-reply";
 import { encodeProjectPath } from "./pr-read";
@@ -32,4 +33,28 @@ export async function hasWriteAccess(
     throw readError("author permissions", result);
   }
   return reply.access_level >= GITLAB_WRITE_ACCESS_LEVEL;
+}
+
+export type WriterCheck = (who: { readonly login: string; readonly id?: number }) => Promise<boolean>;
+
+/** Cache in-flight and settled permission checks per login for this reader only. */
+export function writerCheck(
+  input: { readonly ref: PrRef; readonly deps: ForgeDeps; readonly cwd: string },
+  check: typeof hasWriteAccess,
+  warn: (login: string, error: string) => void,
+): WriterCheck {
+  const permissions = new Map<string, Promise<boolean>>();
+  return (who) => {
+    let pending = permissions.get(who.login);
+    if (!pending) {
+      pending = Promise.resolve()
+        .then(() => check(input.ref, who, input.deps, input.cwd))
+        .catch((error: unknown) => {
+          warn(who.login, errorMessage(error));
+          return false;
+        });
+      permissions.set(who.login, pending);
+    }
+    return pending;
+  };
 }
