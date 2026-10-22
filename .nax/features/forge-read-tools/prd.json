@@ -3,7 +3,7 @@
   "feature": "forge-read-tools",
   "branchName": "feat/forge-read-tools",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T15:52:51.189Z",
+  "updatedAt": "2026-10-22T16:03:26.619Z",
   "userStories": [
     {
       "id": "US-001",
@@ -204,14 +204,17 @@
         "api"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Two known forge listing formats and a deterministic normalization table reuse existing subprocess and error contracts."
+        "reasoning": "Two known forge listing formats and a deterministic normalization table reuse existing subprocess and error contracts.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/ci-failures.ts",
@@ -228,7 +231,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a2f1d7fd73e3ca0ef0d0afc42796713fba72affd"
     },
     {
       "id": "US-005",
