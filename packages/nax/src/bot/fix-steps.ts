@@ -1,13 +1,13 @@
 /** Repo-scoped fix nodes: one session, then an independent committed-tree safety check. */
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import type { ConfiguredModel, NaxConfig } from "@/config";
+import { type ConfiguredModel, DEFAULT_CONFIG, type NaxConfig } from "@/config";
 import type { CurrentUser, ForgeDeps, OwnComment, PrInfo, PrRef, PrThread } from "@/forge";
 import { getLogger } from "@/logger";
 import { buildBotPrFixPrompt, renderCheckoutState } from "@/prompts";
 import type { GraphState, StepResult } from "@/step-graph";
 import { gitWithTimeout } from "@/utils/git";
 import type { PrStepContext } from "@/workflow/branch-step-context";
-import { type GateCommand, runQualityGates } from "../finish/gates/quality";
+import { type GateCommand, gateOutputTail, runQualityGates } from "../finish/gates/quality";
 import { runBranchFix } from "../workflow/branch-fix";
 import type { CiWaitOutcome } from "../workflow/ci-wait";
 import { readHead } from "../workflow/git";
@@ -21,7 +21,7 @@ import { botModel } from "./models";
 import { fixProtectedPaths } from "./path-policy";
 import type { BotReviewArtifact } from "./post";
 
-export type BotFixStep = "fix" | "check" | "gates" | "push" | "reply" | "ready" | "report" | "done";
+export type BotFixStep = "fix" | "repair" | "check" | "gates" | "push" | "reply" | "ready" | "report" | "done";
 
 export interface BotFixState extends GraphState<BotFixStep> {
   readonly outcome?:
@@ -36,6 +36,10 @@ export interface BotFixState extends GraphState<BotFixStep> {
     | "push-unknown"
     | "dirty"
     | "setup-failed";
+  readonly gateTails?: readonly { name: string; tail: string }[];
+  readonly gateRepairRounds?: number;
+  readonly repairMode?: "repair" | "prepare";
+  readonly repairSkippedForCost?: boolean;
   readonly setupFailed?: string;
   readonly changed?: readonly string[];
   readonly protectedFiles?: readonly string[];
@@ -58,6 +62,7 @@ export interface BotFixState extends GraphState<BotFixStep> {
 }
 
 export interface BotFixEnv {
+  readonly cost: { readonly limitUsd: number; spentUsd(): number };
   readonly ctx: PrStepContext;
   readonly config: NaxConfig;
   readonly checks: BotChecks;
@@ -170,11 +175,33 @@ export async function gatesStep(env: BotFixEnv, _state: BotFixState): Promise<St
   if (commands.length === 0) return { patch: { outcome: "no-gates" }, exit: "no-gates" };
   // Use the reviewed checks, but verify the fixed tree, never the snapshot.
   const worktreeCommands = commands.map((gate) => ({ ...gate, cwd: env.checkout.worktree }));
+  const tails = new Map<string, string>();
+  const log = logGateFailure("fix");
   const result = await _fixStepsDeps.runQualityGates(env.checkout.worktree, worktreeCommands, {
-    onGate: logGateFailure("fix"),
+    onGate: (record) => {
+      log(record);
+      tails.set(record.name, gateOutputTail(record.output));
+    },
   });
-  if (!result.passed) return { patch: await classifyRedGates(env, worktreeCommands, result.failing), exit: "failed" };
+  if (!result.passed) {
+    const patch = await classifyRedGates(env, worktreeCommands, result.failing);
+    const gateTails = result.failing.map((name) => ({ name, tail: tails.get(name) ?? "(no output captured)" }));
+    return repairDecision(env, _state, { ...patch, gateTails });
+  }
   return { patch: {}, exit: "passed" };
+}
+
+/** Classification, rounds and cost all constrain both repair-eligible outcomes. */
+function repairDecision(env: BotFixEnv, state: BotFixState, patch: Partial<BotFixState>): StepResult<BotFixState> {
+  const rounds = env.config.bot?.gateRepairRounds ?? DEFAULT_CONFIG.bot?.gateRepairRounds;
+  const eligible =
+    (state.gateRepairRounds ?? 0) < (rounds ?? 0) &&
+    (patch.outcome === "gates-failed" || (patch.outcome === "baseline-red" && patch.ciOutcome === "green"));
+  const belowLimit = env.cost.spentUsd() < env.cost.limitUsd;
+  return {
+    patch: { ...patch, ...(eligible && !belowLimit ? { repairSkippedForCost: true } : {}) },
+    exit: eligible && belowLimit ? "repair" : "failed",
+  };
 }
 
 /** A red gate is the fix's only when the unmodified head passes it (nax#2631). */

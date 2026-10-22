@@ -2,7 +2,7 @@
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { resolveDefaultAgent } from "@/agents";
-import type { ConfiguredModel } from "@/config";
+import { type ConfiguredModel, DEFAULT_CONFIG } from "@/config";
 import { NaxError } from "@/errors";
 import { hasNaxWorkflowMarker, ownComments } from "@/forge";
 import { getLogger } from "@/logger";
@@ -25,6 +25,7 @@ import {
   pushStep,
 } from "./fix-steps";
 import { type BotLog, openBotLog } from "./log";
+import { repairStep } from "./repair-step";
 import { _botReviewDeps } from "./review-run";
 import { rulingModelReader } from "./ruling-reader";
 import { recordPrRulings } from "./rulings";
@@ -56,6 +57,7 @@ export const _botFixDeps = {
   runPreRunSteps,
   recordPrRulings,
   fixStep,
+  repairStep,
   checkStep,
   gatesStep,
   pushStep,
@@ -93,6 +95,17 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
       ],
       run: (env, state) => _botFixDeps.fixStep(env, state),
     },
+    repair: {
+      kind: "agent",
+      commits: true,
+      produces: ["gateRepairRounds", "repairMode", "outcome", "fixFailure", "fixDirty"],
+      exits: ["ran", "out-of-scope"],
+      transitions: [
+        { on: "ran", to: "check" },
+        { on: "out-of-scope", to: "report" },
+      ],
+      run: (env, state) => _botFixDeps.repairStep(env, state),
+    },
     check: {
       kind: "git",
       produces: ["changed", "protectedFiles", "outcome", "recoveryPath"],
@@ -102,9 +115,17 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
     },
     gates: {
       kind: "gate",
-      produces: ["outcome", "failingGates", "baselineFailing", "ciOutcome", "recoveryPath"],
-      exits: ["no-gates", "failed", "passed", "dirty"],
-      transitions: [{ on: "passed", to: "push" }, { to: "report" }],
+      produces: [
+        "outcome",
+        "failingGates",
+        "baselineFailing",
+        "ciOutcome",
+        "recoveryPath",
+        "gateTails",
+        "repairSkippedForCost",
+      ],
+      exits: ["no-gates", "failed", "passed", "dirty", "repair"],
+      transitions: [{ on: "passed", to: "push" }, { on: "repair", to: "repair" }, { to: "report" }],
       run: (env, state) => _botFixDeps.gatesStep(env, state),
     },
     push: {
@@ -306,6 +327,11 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
       review,
       model: input.model,
       forge: deps.forge,
+      // US-009 replaces this seam with runtime spend accounting and the graph costStop.
+      cost: {
+        limitUsd: config.bot?.costLimit ?? DEFAULT_CONFIG.bot?.costLimit ?? Number.POSITIVE_INFINITY,
+        spentUsd: () => 0,
+      },
     };
     await recordFixRulings(env, items.comments);
     try {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeBotFixEnv } from "@test/helpers";
+import { makeBotFixEnv, makeNaxConfig } from "@test/helpers";
 import * as bot from "@/bot";
 import type { GateCommand } from "@/finish/gates/quality";
 import type { CiWaitOutcome } from "@/workflow/ci-wait";
@@ -22,7 +22,11 @@ function fakeGates(passed = true) {
 }
 function gateEnv() {
   const env = makeBotFixEnv();
-  return { ...env, checks: { ...env.checks, gates: commands() } };
+  return {
+    ...env,
+    config: makeNaxConfig({ bot: { gateRepairRounds: 0 } }),
+    checks: { ...env.checks, gates: commands() },
+  };
 }
 
 describe("gatesStep", () => {
@@ -58,7 +62,12 @@ describe("gatesStep", () => {
     fakeBaseline(undefined);
     expect(await bot.gatesStep(gateEnv(), state())).toEqual({
       exit: "failed",
-      patch: { failingGates: ["test"], ciOutcome: "green", outcome: "gates-failed" },
+      patch: {
+        gateTails: [{ name: "test", tail: "(no output captured)" }],
+        failingGates: ["test"],
+        ciOutcome: "green",
+        outcome: "gates-failed",
+      },
     });
   });
 });
@@ -85,7 +94,13 @@ describe("gatesStep baseline (nax#2631)", () => {
     fakeBaseline(["test"], "green");
     expect(await bot.gatesStep(gateEnv(), state())).toEqual({
       exit: "failed",
-      patch: { failingGates: ["test"], baselineFailing: ["test"], ciOutcome: "green", outcome: "baseline-red" },
+      patch: {
+        gateTails: [{ name: "test", tail: "(no output captured)" }],
+        failingGates: ["test"],
+        baselineFailing: ["test"],
+        ciOutcome: "green",
+        outcome: "baseline-red",
+      },
     });
   });
   test("a gate green on the unmodified head stays the fix's failure", async () => {
@@ -93,7 +108,13 @@ describe("gatesStep baseline (nax#2631)", () => {
     fakeBaseline([], "failed");
     expect(await bot.gatesStep(gateEnv(), state())).toEqual({
       exit: "failed",
-      patch: { failingGates: ["test"], baselineFailing: [], ciOutcome: "failed", outcome: "gates-failed" },
+      patch: {
+        gateTails: [{ name: "test", tail: "(no output captured)" }],
+        failingGates: ["test"],
+        baselineFailing: [],
+        ciOutcome: "failed",
+        outcome: "gates-failed",
+      },
     });
   });
   test("a baseline run that throws leaves the plain gate failure", async () => {
@@ -104,7 +125,12 @@ describe("gatesStep baseline (nax#2631)", () => {
     };
     expect(await bot.gatesStep(gateEnv(), state())).toEqual({
       exit: "failed",
-      patch: { failingGates: ["test"], ciOutcome: "green", outcome: "gates-failed" },
+      patch: {
+        gateTails: [{ name: "test", tail: "(no output captured)" }],
+        failingGates: ["test"],
+        ciOutcome: "green",
+        outcome: "gates-failed",
+      },
     });
   });
   test("passing gates read neither CI nor the head", async () => {

@@ -8,6 +8,7 @@ export function makeBotFixEnv(agreed: readonly AgreedItem[] = []): BotFixEnv {
   const ref = { forge: "github" as const, host: "github.com", repo: "o/r", number: 42 };
   return {
     config,
+    cost: { limitUsd: 5, spentUsd: () => 0 },
     checks: { source: "config", gates: [], preRun: [] },
     ref,
     repoRoot: "/repo",

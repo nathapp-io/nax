@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { type BotFixState, renderFixSummary } from "@/bot";
+import { BOT_FIX_GRAPH } from "@/bot/fix-run";
 import { parseNaxBotMarker } from "@/forge";
+import { validateStepGraph } from "@/step-graph";
 import { safeCode } from "@/workflow/pr-body-safe";
 
 const state: BotFixState = { step: "report", timings: {} };
@@ -85,5 +87,28 @@ describe("renderFixSummary", () => {
   test("AC-18: says the PR was marked ready", () => {
     const body = renderFixSummary({ ...state, outcome: "pushed", markedReady: true });
     expect(body.split("\n")).toContain("Marked ready.");
+  });
+});
+
+describe("repair declarations and summary", () => {
+  test("AC-17 repair node validates", () => {
+    expect(BOT_FIX_GRAPH.nodes.repair).toMatchObject({ kind: "agent", commits: true });
+    expect(validateStepGraph(BOT_FIX_GRAPH).errors).toEqual([]);
+  });
+  test("AC-18 summary records repair mode and round", () => {
+    expect(
+      renderFixSummary({
+        step: "report",
+        timings: {},
+        outcome: "gates-failed",
+        repairMode: "repair",
+        gateRepairRounds: 1,
+      }),
+    ).toContain("Repair turn: repair, round 1.");
+  });
+  test("AC-21 summary explains cost skip", () => {
+    expect(
+      renderFixSummary({ step: "report", timings: {}, outcome: "gates-failed", repairSkippedForCost: true }),
+    ).toContain("Repair turn skipped: cost limit reached.");
   });
 });
