@@ -38,6 +38,13 @@ function setup(reply: ImplementerReply | Error, dirty: string) {
 }
 
 describe("runBranchFix", () => {
+  test.each([false, true])("forwards seventh runner argument; injected=%s", async (injected) => {
+    const { fc, commits } = setup(done, " M source.txt\n");
+    const runGit = injected ? async () => ({ stdout: "", stderr: "", exitCode: 0 }) : undefined;
+    await runBranchFix({ ...fc, runGit }, { findings });
+    expect(commits[0]).toHaveLength(7);
+    expect(commits).toEqual([[fc.projectDir, "workflow", "wf-branch-fix", "_run", undefined, fc.dryRun, runGit]]);
+  });
   test.each(["PR-specific prompt", ""])("AC-1/3 forwards override %j and commits leftovers", async (prompt) => {
     const { fc, inputs, commits } = setup(done, " M src/a.ts\n");
     const out = await runBranchFix(fc, { findings, prompt });

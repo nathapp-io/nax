@@ -1,6 +1,7 @@
 import type { NaxConfig, WorkflowConfig } from "@/config";
 import type { ForgeKind } from "@/forge";
 import type { CallContext } from "@/operations";
+import type { gitWithTimeout } from "@/utils/git";
 
 /** What the branch steps read: inside a run FeatureContext provides it, outside a run buildPrStepContext. */
 export interface BranchStepContext {
@@ -20,6 +21,8 @@ export interface BranchStepContext {
   readonly packageDirs: readonly string[];
   readonly runSignal?: AbortSignal;
   readonly dryRun: boolean;
+  /** Optional runner for leftover commits; bot commands supply their hook-free runner. */
+  readonly runGit?: typeof gitWithTimeout;
 }
 
 export interface PrStepRef {

@@ -14,6 +14,7 @@ import type { ItemIndex, PrRuling } from "../workflow/item-threads";
 import { askKey, isOpenItemKind, parseItemOpener, renderRulingAsk, renderRulingEcho } from "../workflow/item-threads";
 import { editBodyArgv, hasChecklistItem, tickChecklist } from "../workflow/promote";
 import { parseRulingKeyword } from "../workflow/ruling-keyword";
+import { writerCheck } from "./writers";
 
 export const MAX_RULING_ITEMS = 20;
 type OpenRulingItem = SettledItems["open"][number];
@@ -55,27 +56,12 @@ function warn(message: string, data: Record<string, unknown>): void {
 
 /** Cache the promise, not just the result: settlement checks replies concurrently. */
 function permissionReader(input: RecordRulingsInput): (comment: PrComment) => Promise<boolean> {
-  const permissions = new Map<string, Promise<boolean>>();
-  return (comment) => {
-    let pending = permissions.get(comment.author);
-    if (!pending) {
-      pending = (async () => {
-        try {
-          return await _rulingsDeps.hasWriteAccess(
-            input.ref,
-            { login: comment.author, id: comment.authorId },
-            input.deps,
-            input.cwd,
-          );
-        } catch (error) {
-          warn("Could not check ruling permission", { login: comment.author, error: errorMessage(error) });
-          return false;
-        }
-      })();
-      permissions.set(comment.author, pending);
-    }
-    return pending;
-  };
+  const check = writerCheck(
+    input,
+    (...args) => _rulingsDeps.hasWriteAccess(...args),
+    (login, error) => warn("Could not check ruling permission", { login, error }),
+  );
+  return (comment) => check({ login: comment.author, id: comment.authorId });
 }
 
 async function resolve(input: RecordRulingsInput, item: ItemThread): Promise<void> {

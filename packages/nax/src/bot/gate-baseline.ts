@@ -6,14 +6,14 @@
  */
 import type { ForgeKind } from "@/forge";
 import { getSafeLogger } from "@/logger";
-import { gitWithTimeout } from "@/utils/git";
 import { type GateCommand, type GateRunRecord, gateOutputTail, runQualityGates } from "../finish/gates/quality";
 import { type CiWaitResult, readChecksOnce } from "../workflow/ci-wait";
 import { readHead } from "../workflow/git";
 import { BOT_GIT_NETWORK_TIMEOUT_MS } from "./checkout";
+import { botGit } from "./git";
 
 export const _gateBaselineDeps = {
-  runGit: gitWithTimeout,
+  runGit: botGit,
   readHead,
   runQualityGates,
   readChecksOnce,

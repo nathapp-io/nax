@@ -118,16 +118,17 @@ describe("recordPrRulings", () => {
     expect(out.open).toHaveLength(0);
     expect(out.settled).toHaveLength(1);
   });
-  test("AC-4 access failure denies the reply and logs a warning", async () => {
+  test("US-004 AC-9/AC-10 access failure denies the reply and preserves the warning route", async () => {
     access.mockImplementation(async () => {
       throw new Error("permission unavailable");
     });
     const out = await recordPrRulings(input());
     expect(post).not.toHaveBeenCalled();
+    expect(out.open).toHaveLength(1);
     expect(out.open[0]?.kept).toEqual([]);
     expect(logger.warn).toHaveBeenCalledWith(
       "bot-rulings",
-      expect.any(String),
+      "[bot-rulings] Could not check ruling permission",
       expect.objectContaining({ login: "alice", error: "permission unavailable" }),
     );
   });

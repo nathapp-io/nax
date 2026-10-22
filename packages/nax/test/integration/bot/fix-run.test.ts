@@ -2,8 +2,12 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { join } from "node:path";
 import { makeBotFixDeps, makeBotFixEnv, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import type { resolveBotChecks } from "@/bot/checks";
+import { _fixInputDeps, loadLatestReview } from "@/bot/fix-input";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
+import { _fixStepsDeps, checkStep, fixStep, gatesStep } from "@/bot/fix-steps";
+import { botGit } from "@/bot/git";
 import { openBotLog } from "@/bot/log";
+import { repairStep } from "@/bot/repair-step";
 import { NaxError } from "@/errors";
 import { NAX_WORKFLOW_PR_MARKER, type PrComment, withNaxBotMarker } from "@/forge";
 import { getLogger, initLogger, resetLogger } from "@/logger";
@@ -116,6 +120,80 @@ afterEach(async () => {
 });
 
 describe("runBotFix", () => {
+  test.each([2, 3] as const)("AC-15 reuses version %s saved checks", async (version) => {
+    env = { ...env, review: { ...env.review, version, checks: env.checks } };
+    await runBotFix(input);
+    expect(resolve).not.toHaveBeenCalled();
+    expect(preRun).toHaveBeenCalledWith({ steps: env.checks.preRun, workdir: env.checkout.worktree });
+  });
+  test("AC-16/17 real legacy reader returns nothing without starting a fix session", async () => {
+    const storage = { ..._fixInputDeps };
+    const session = spyOn(_fixStepsDeps, "runBranchFix").mockResolvedValue({ autoCommitted: false, dirty: false });
+    Object.assign(_fixInputDeps, {
+      glob: async () => ["legacy-review"],
+      readText: async () =>
+        JSON.stringify({
+          ...env.review,
+          version: 2,
+          headSha: env.info.headSha,
+          agreed: [{ kind: "comment", key: "c1", issue: "Untrusted request", reason: "Valid" }],
+        }),
+      mtimeMs: async () => 1,
+    });
+    _botFixDeps.loadLatestReview = loadLatestReview;
+    _botFixDeps.fixStep = fixStep;
+    try {
+      expect(await runBotFix(input)).toMatchObject({ outcome: "nothing" });
+      expect(session).not.toHaveBeenCalled();
+    } finally {
+      Object.assign(_fixInputDeps, storage);
+      session.mockRestore();
+    }
+  });
+  test("injects botGit into both the fix and red-gate repair sessions", async () => {
+    const steps = { ..._fixStepsDeps };
+    const sessions: unknown[] = [];
+    let gateRuns = 0;
+    env = {
+      ...env,
+      review: { ...env.review, agreed: [{ kind: "finding", key: "f1", issue: "fix me", severity: "minor" }] },
+      config: makeNaxConfig({ bot: { gateRepairRounds: 1 } }),
+    };
+    expect(env.ctx.runGit).toBeUndefined();
+    Object.assign(_botFixDeps, {
+      fixStep,
+      checkStep,
+      gatesStep,
+      repairStep,
+      pushStep: async () => ({ patch: { outcome: "pushed" }, exit: "pushed" }),
+      replyStep: async () => ({ patch: {}, exit: "ready" }),
+    });
+    Object.assign(_fixStepsDeps, {
+      runBranchFix: async (ctx: Parameters<typeof steps.runBranchFix>[0]) => {
+        sessions.push(ctx.runGit);
+        return { autoCommitted: true, dirty: false };
+      },
+      readHead: async () => "fixed-head",
+      runGit: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+      changedPaths: async () => ["source.txt"],
+      failingOnHead: async () => [],
+      readHeadCi: async () => "green",
+      runQualityGates: async () => {
+        gateRuns++;
+        return { passed: gateRuns > 1, failing: gateRuns === 1 ? ["test"] : [], ran: ["test"], output: "red" };
+      },
+    });
+    try {
+      await runBotFix(input);
+      expect(gateRuns).toBe(2);
+      expect(sessions).toHaveLength(2);
+      expect(sessions[0]).toBe(botGit);
+      expect(sessions[1]).toBe(botGit);
+      expect(env.ctx.runGit).toBeUndefined();
+    } finally {
+      Object.assign(_fixStepsDeps, steps);
+    }
+  });
   test.each([false, true])("AC-17/18 records marked PR before fix; failure=%s", async (fails) => {
     topComments = [{ id: "note", kind: "comment", author: "writer", body: "triaged note", createdAt: "" }];
     env = {

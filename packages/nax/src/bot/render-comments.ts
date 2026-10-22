@@ -30,7 +30,11 @@ export interface ReviewSummaryInput {
   readonly inlineFindings: number;
   readonly threadsAnswered: number;
   readonly offLine: readonly WorkflowFindingDraft[];
-  readonly commentVerdicts: readonly { readonly author: string; readonly verdict: PrTriageVerdict }[];
+  readonly commentVerdicts: readonly {
+    readonly author: string;
+    readonly verdict: PrTriageVerdict;
+    readonly notQueued?: boolean;
+  }[];
   readonly cannotVerify: readonly string[];
   readonly sensitive: readonly string[];
   readonly staticMode: boolean;
@@ -49,11 +53,11 @@ export function renderFindingComment(finding: WorkflowFindingDraft): string {
 }
 
 /** A stable marked triage reply to a review thread. */
-export function renderThreadReply(verdict: PrTriageVerdict): string {
-  return withNaxBotMarker(
-    `${DECISION_LABELS[verdict.decision]}: ${safeText(verdict.reason, TEXT_LIMIT)}`,
-    threadKey(verdict.id),
-  );
+export function renderThreadReply(verdict: PrTriageVerdict, opts?: { notQueued?: boolean }): string {
+  let body = `${DECISION_LABELS[verdict.decision]}: ${safeText(verdict.reason, TEXT_LIMIT)}`;
+  if (opts?.notQueued)
+    body += "\n\nNot queued for `nax bot fix`: this thread was not opened by someone with write access.";
+  return withNaxBotMarker(body, threadKey(verdict.id));
 }
 
 /** A stable marked reply for a fixed or withdrawn earlier finding. */
@@ -82,8 +86,8 @@ function summarySections(input: ReviewSummaryInput): ListSection[] {
     {
       heading: "### Top-level comments",
       items: input.commentVerdicts.map(
-        ({ author, verdict }) =>
-          `- ${safeText(author, AUTHOR_LIMIT)}: ${DECISION_LABELS[verdict.decision]} — ${safeText(verdict.reason, TEXT_LIMIT)}`,
+        ({ author, verdict, notQueued }) =>
+          `- ${safeText(author, AUTHOR_LIMIT)}: ${DECISION_LABELS[verdict.decision]} — ${safeText(verdict.reason, TEXT_LIMIT)}${notQueued ? " (not queued for fix: author has no write access)" : ""}`,
       ),
     },
     { heading: "### Could not verify", items: input.cannotVerify.map((text) => `- ${safeText(text, TEXT_LIMIT)}`) },

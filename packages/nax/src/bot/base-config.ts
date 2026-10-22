@@ -5,7 +5,7 @@ import { errorMessage, gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { loadConfig, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
-import { gitWithTimeout } from "@/utils/git";
+import { botGit } from "./git";
 
 async function runCommand(argv: string[], cwd: string): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(argv, { cwd, env: gitSpawnEnv(), stdout: "pipe", stderr: "pipe" });
@@ -27,7 +27,7 @@ async function removeTar(tar: string): Promise<void> {
 
 export const _baseConfigDeps = {
   // Route git through the shared timeout so a wedged archive cannot stall the bot run.
-  runGit: gitWithTimeout,
+  runGit: botGit,
   async extractTar(tar: string, dest: string): Promise<void> {
     try {
       const result = await runCommand(["tar", "-xf", tar, "-C", dest], dest);

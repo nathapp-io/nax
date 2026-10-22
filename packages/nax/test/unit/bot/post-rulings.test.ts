@@ -131,7 +131,7 @@ describe("postPrReview item rulings", () => {
   });
   test("AC-14 carries ruling counts without changing artifact version", async () => {
     await post("open", { rulings: { recorded: 2, open: 3, asked: 1 } });
-    expect(artifact).toMatchObject({ version: 2, rulings: { recorded: 2, open: 3, asked: 1 } });
+    expect(artifact).toMatchObject({ version: 3, rulings: { recorded: 2, open: 3, asked: 1 } });
   });
   test("AC-16 preserves all f- withdrawal event fields alongside a withdrawn w- thread", async () => {
     const finding = {

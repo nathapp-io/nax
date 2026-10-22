@@ -50,6 +50,7 @@ async function commitLeftovers(fc: BranchStepContext): Promise<{ autoCommitted: 
       FEATURE_SCOPE,
       undefined,
       fc.dryRun,
+      fc.runGit,
     );
     return { autoCommitted: true, dirty: false };
   } catch (err) {

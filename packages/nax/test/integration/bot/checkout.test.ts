@@ -118,6 +118,29 @@ describe("preparePrCheckout parent cleanup and reservation", () => {
   });
 });
 describe("preparePrCheckout", () => {
+  test("US-003 AC-22/23: overlapping fetch cannot redirect base and disposal deletes checkout refs", async () => {
+    const base = await git(["rev-parse", "main"]);
+    await Bun.write(join(repo, "src/a.ts"), "unrelated PR 99");
+    const other = await commit();
+    await git(["update-ref", "refs/pull/99/head", other]);
+    await Bun.write(join(repo, "src/a.ts"), "PR 42");
+    await commit();
+    const run = _checkoutDeps.runGit;
+    spyOn(_checkoutDeps, "runGit").mockImplementation(async (argv, cwd, timeoutMs) => {
+      const result = await run(argv, cwd, timeoutMs);
+      if (argv[0] === "fetch") await git(["fetch", "origin", "refs/pull/99/head"]);
+      return result;
+    });
+    const prepared = await prepare();
+    expect(await git(["rev-parse", "FETCH_HEAD"])).toBe(other);
+    expect(prepared.baseSha).toBe(base);
+    expect(prepared.baseSha).not.toBe(other);
+    const list = () => git(["for-each-ref", "--format=%(refname)", "refs/nax-bot/pr-42/"]);
+    expect((await list()).split("\n").filter((name) => name.includes("checkout-"))).toHaveLength(2);
+    await prepared.dispose();
+    checkout = undefined;
+    expect(await list()).not.toContain("checkout-");
+  });
   test("B4: a suffix collision never deletes a retained checkout or recovery work", async () => {
     const retained = await prepare();
     retained.retain?.();

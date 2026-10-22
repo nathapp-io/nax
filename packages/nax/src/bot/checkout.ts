@@ -5,9 +5,9 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { PrInfo, PrRef } from "@/forge";
 import { getSafeLogger } from "@/logger";
-import { gitWithTimeout } from "../utils/git";
 import { WorktreeManager } from "../worktree/manager";
 import { snapshotBaseNax } from "./base-config";
+import { botGit } from "./git";
 
 export const BOT_GIT_NETWORK_TIMEOUT_MS = 120_000;
 
@@ -21,7 +21,7 @@ export const BASE_PINNED_PATHS = [
 export const BASE_PINNED_NAMES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "codex.md", ".cursorrules"] as const;
 
 export const _checkoutDeps = {
-  runGit: gitWithTimeout,
+  runGit: botGit,
   reserveWorktree: async (path: string): Promise<void> => {
     await mkdir(dirname(path), { recursive: true });
     await mkdir(path); // Exclusive: an existing checkout (even an empty directory) is never ours.
@@ -33,6 +33,16 @@ export const _checkoutDeps = {
   mkdtemp: (): Promise<string> => mkdtemp(join(tmpdir(), "nax-bot-checkout-")),
   getLogger: getSafeLogger,
 };
+
+export interface CheckoutRefs {
+  readonly head: string;
+  readonly base: string;
+}
+
+export function checkoutRefs(n: number, suffix: string): CheckoutRefs {
+  const prefix = `refs/nax-bot/pr-${n}/checkout-${suffix}`;
+  return { head: `${prefix}/head`, base: `${prefix}/base` };
+}
 
 export interface PrCheckout {
   readonly worktree: string;
@@ -141,10 +151,16 @@ async function cleanup(input: {
   worktree?: string;
   snapshotDir?: string;
   failedAdd?: boolean;
+  skipWorktreeRemove?: boolean;
+  refs?: CheckoutRefs;
 }): Promise<void> {
   const { repoRoot, worktree, snapshotDir } = input;
   const actions = [
-    ...(worktree ? [() => git(["worktree", "remove", "--force", worktree], repoRoot)] : []),
+    // Release refs before another checkout can reuse the exclusive reservation path.
+    ...Object.values(input.refs ?? {}).map((ref) => () => git(["update-ref", "-d", ref], repoRoot)),
+    ...(worktree && !input.skipWorktreeRemove
+      ? [() => git(["worktree", "remove", "--force", worktree], repoRoot)]
+      : []),
     // Git may have failed before registering our exclusively reserved empty directory.
     ...(worktree && input.failedAdd ? [() => _checkoutDeps.rm(worktree)] : []),
     ...(worktree ? [() => removeWorktreeParent(repoRoot)] : []),
@@ -166,11 +182,16 @@ async function fetchRefs(input: {
   repoRoot: string;
   ref: PrRef;
   info: PrInfo;
+  refs: CheckoutRefs;
 }): Promise<{ baseSha: string; mergeBase: string }> {
-  const { repoRoot, ref, info } = input;
+  const { repoRoot, ref, info, refs } = input;
   const headSpec = ref.forge === "github" ? `pull/${ref.number}/head` : `merge-requests/${ref.number}/head`;
-  await git(["fetch", "origin", headSpec], repoRoot, BOT_GIT_NETWORK_TIMEOUT_MS);
-  const headSha = (await git(["rev-parse", "FETCH_HEAD"], repoRoot)).trim();
+  await git(
+    ["fetch", "--no-tags", "origin", `+${headSpec}:${refs.head}`, `+refs/heads/${info.baseRef}:${refs.base}`],
+    repoRoot,
+    BOT_GIT_NETWORK_TIMEOUT_MS,
+  );
+  const headSha = (await git(["rev-parse", refs.head], repoRoot)).trim();
   if (headSha !== info.headSha) {
     throw new NaxError(`[bot] PR ${ref.number} head moved`, "BOT_PR_HEAD_MOVED", {
       stage: "bot",
@@ -179,8 +200,7 @@ async function fetchRefs(input: {
       number: ref.number,
     });
   }
-  await git(["fetch", "origin", info.baseRef], repoRoot, BOT_GIT_NETWORK_TIMEOUT_MS);
-  const baseSha = (await git(["rev-parse", "FETCH_HEAD"], repoRoot)).trim();
+  const baseSha = (await git(["rev-parse", refs.base], repoRoot)).trim();
   const mergeBase = (await git(["merge-base", baseSha, info.headSha], repoRoot)).trim();
   return { baseSha, mergeBase };
 }
@@ -194,22 +214,25 @@ export async function preparePrCheckout(input: {
   pinBaseFiles: boolean;
 }): Promise<PrCheckout> {
   const { repoRoot, ref, info, suffix, pinBaseFiles } = input;
-  const { baseSha, mergeBase } = await fetchRefs(input);
   const worktree = botWorktreePath(repoRoot, ref.number, suffix);
+  const refs = checkoutRefs(ref.number, suffix);
   let created = false;
+  let addAttempted = false;
   let added = false;
   let snapshotDir: string | undefined;
   try {
     await _checkoutDeps.ensureGitExcludes(repoRoot);
     await reserveWorktree(worktree);
     created = true; // Only our exclusive reservation grants cleanup ownership on a failed add.
+    const { baseSha, mergeBase } = await fetchRefs({ repoRoot, ref, info, refs });
+    addAttempted = true;
     await git(["worktree", "add", "--detach", worktree, info.headSha], repoRoot, BOT_GIT_NETWORK_TIMEOUT_MS);
     added = true;
     snapshotDir = await _checkoutDeps.mkdtemp();
     const hasBaseNax = await _checkoutDeps.snapshotBaseNax(repoRoot, baseSha, snapshotDir);
     if (pinBaseFiles) await pinInstructions(worktree, baseSha);
     const changedFiles = await changedPaths(worktree, mergeBase);
-    const artifacts = { repoRoot, worktree, snapshotDir };
+    const artifacts = { repoRoot, worktree, snapshotDir, refs };
     let retained = false;
     return {
       worktree,
@@ -224,7 +247,14 @@ export async function preparePrCheckout(input: {
       dispose: () => cleanup({ ...artifacts, worktree: retained ? undefined : worktree }),
     };
   } catch (cause) {
-    await cleanup({ repoRoot, worktree: created ? worktree : undefined, snapshotDir, failedAdd: !added });
+    await cleanup({
+      repoRoot,
+      worktree: created ? worktree : undefined,
+      refs: created ? refs : undefined,
+      snapshotDir,
+      failedAdd: !added,
+      skipWorktreeRemove: !addAttempted,
+    });
     throw cause;
   }
 }

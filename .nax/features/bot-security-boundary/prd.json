@@ -1,0 +1,457 @@
+{
+  "project": "nax-monorepo",
+  "feature": "bot-security-boundary",
+  "branchName": "feat/bot-security-boundary",
+  "createdAt": "2026-10-22T00:00:00.000Z",
+  "updatedAt": "2026-10-22T12:31:10.100Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Bot git runs no hooks",
+      "description": "**Goal** — Disable hooks for nax-owned bot git operations while retaining shared git hardening and timeouts.\n\n**Motivation** — With a relative `core.hooksPath` (husky v9 writes `.husky/_` into `.git/config`), git resolves hooks inside the new worktree, which holds the PR head's content.\n\n**Approach** — No hooks on bot git (S1). A new leaf module `src/bot/git.ts` exports `botGit`: same signature as `gitWithTimeout`, but always runs `git -c core.hooksPath=/dev/null <args>` through `gitWithTimeout`'s `argvOverride` parameter, so the fsmonitor and submodule hardening and the timeout handling still apply. Every bot dependency object with a `runGit` member (`_checkoutDeps`, `_fixInputDeps`, `_fixStepsDeps`, `_gateBaselineDeps`, `_savedFixDeps`, `_botReviewDeps`, `_botChecksDeps`, `_baseConfigDeps`) defaults it to `botGit`. Both pushes (`pushStep`, and `checkPushAccess`'s dry run) also pass `--no-verify`. The change is bot-only: `nax run` keeps running hooks where its config asks for them (`tdd.testWriterCommitHooks: \"run\"`). The `[\"git\", \"-c\", ...]` argv literal in `git.ts` carries `// nax-git-env-allow: handed to gitWithTimeout, which hardens it` for `check-git-spawn-env.ts`.\n\n**Interface** — `src/bot/git.ts`:\n```ts\nimport { gitWithTimeout } from \"@/utils/git\";\n\n/** Bot git never runs hooks: a PR head can supply them through a relative core.hooksPath. */\nexport const BOT_GIT_HOOKS_OFF = [\"-c\", \"core.hooksPath=/dev/null\"] as const;\n\nexport function botGit(\n  args: string[],\n  workdir: string,\n  timeoutMs?: number,\n  maxBytes?: number,\n): ReturnType<typeof gitWithTimeout> {\n  // nax-git-env-allow: handed to gitWithTimeout, which hardens it\n  return gitWithTimeout(args, workdir, timeoutMs, maxBytes, [\"git\", ...BOT_GIT_HOOKS_OFF, ...args]);\n}\n```\n\nRead or called, unchanged: `gitWithTimeout(args, workdir, timeoutMs?, maxBytes?, argvOverride?)` from `@/utils/git` (re-exported from `@nathapp/nax-agent/internal`). It spawns `hardenedGitArgv(argvOverride ?? [\"git\", ...args])` with `hardenedGitEnv(process.env)`; `hardenedGitArgv` skips `-c <value>` pairs when it looks for the verb. `BOT_GIT_NETWORK_TIMEOUT_MS` (120 000) from `src/bot/checkout.ts`.\n\n`pushStep` (`src/bot/fix-steps.ts`). Target argv: `push --no-verify origin HEAD:refs/heads/<headRef>`. `checkPushAccess` (`src/bot/fix-input.ts`). Target argv: `push --dry-run --no-verify origin HEAD:refs/heads/<headRef>`.\n\nExport `botGit` and `BOT_GIT_HOOKS_OFF` from `src/bot/index.ts`. Update runner imports/defaults in checkout, fix-input, fix-steps, gate-baseline, saved-fix, review-deps, checks and base-config. Preserve cwd/refspec and 120 000ms network budgets. Update existing base-config runner identity and push argv assertions, retaining their original timeout invariants. Build real-git hook fixtures with a separate bare origin and committed executable relative .husky/_ hooks, using an external marker and an unwrapped positive control.\n\n**Scope** — In: the botGit leaf, all eight bot runGit defaults, both push flags, barrel exports and associated unit/real-git integration tests. Out: US-002's leftover auto-commit runner injection; US-003's run-unique fetch refs and cleanup; US-004–US-006's writer authorization and artifacts. Hooks are not disabled for `nax run`, the workflow, or any git outside a bot command; `hardenedGitEnv` is unchanged. A trusted review's setup command (for example `npm ci` running husky) can still write `core.hooksPath` into the shared repo config; trusted reviews may run head code by ruling S8. `readHead` in the bot fix runs `rev-parse` through the workflow's git dep, not `botGit`; `rev-parse` runs no hooks.",
+      "acceptanceCriteria": [
+        "[unit] When botGit is imported from @/bot and _gitDeps.spawn is stubbed, calling botGit(args, dir) spawns an argv starting [\"git\", \"-c\", \"core.hooksPath=/dev/null\"] followed by the given args, with existing shared verb hardening retained.",
+        "[unit] botGit([\"status\", \"--porcelain\"], dir) spawns [\"git\", \"-c\", \"core.hooksPath=/dev/null\", \"status\", \"--ignore-submodules=dirty\", \"--porcelain\"], so the submodule hardening still applies after the -c pair.",
+        "[unit] Given a spawn stub that never exits until killed, when botGit receives timeoutMs=50, then its result has timedOut=true.",
+        "[unit] _checkoutDeps.runGit equals botGit by identity.",
+        "[unit] _fixInputDeps.runGit equals botGit by identity.",
+        "[unit] _fixStepsDeps.runGit equals botGit by identity.",
+        "[unit] _gateBaselineDeps.runGit equals botGit by identity.",
+        "[unit] _savedFixDeps.runGit equals botGit by identity.",
+        "[unit] _botReviewDeps.runGit equals botGit by identity.",
+        "[unit] _botChecksDeps.runGit equals botGit by identity.",
+        "[unit] _baseConfigDeps.runGit equals botGit by identity.",
+        "[integration] Given a real repo with a separate bare origin holding main and refs/pull/42/head, .git/config setting relative core.hooksPath=.husky/_, and committed executable .husky/_/post-checkout, reference-transaction and pre-push hooks appending to a marker outside the repo, when preparePrCheckout completes for that PR head, then the marker file does not exist.",
+        "[integration] Given the same hostile-hook fixture and prepared checkout, when pushStep pushes to origin, then its outcome is pushed.",
+        "[integration] Given the same hostile-hook fixture and prepared checkout, when pushStep successfully pushes to origin, then the marker file does not exist.",
+        "[integration] Given the same hostile-hook fixture, when saveFix writes the saved-fix ref, then the marker file remains absent.",
+        "[integration] Given the same hostile-hook fixture, when failingOnHead checks out the head and back to the fix commit, then the marker file remains absent.",
+        "[integration] Given the same hostile-hook fixture, when gitWithTimeout([\"worktree\", \"add\", \"--detach\", dir, \"HEAD\"], repo) runs without botGit, then the marker file is created, proving the fixture's hooks are live.",
+        "[unit] When pushStep receives head ref feat/x, then _fixStepsDeps.runGit receives [\"push\", \"--no-verify\", \"origin\", \"HEAD:refs/heads/feat/x\"].",
+        "[unit] When checkPushAccess(worktree, \"feat/x\") runs, then _fixInputDeps.runGit receives [\"push\", \"--dry-run\", \"--no-verify\", \"origin\", \"HEAD:refs/heads/feat/x\"] in worktree with timeout BOT_GIT_NETWORK_TIMEOUT_MS."
+      ],
+      "tags": [
+        "security",
+        "bot",
+        "git",
+        "hooks"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Security-critical execution boundary spanning eight injected git defaults, shared subprocess hardening and real hook-triggering operations; strict isolated TDD is required.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/internal/git-exec.ts",
+        "packages/nax/src/bot/fix-steps.ts",
+        "packages/nax/src/bot/fix-input.ts",
+        "packages/nax/src/bot/gate-baseline.ts",
+        "packages/nax/src/bot/saved-fix.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/bot/git.ts",
+        "packages/nax/test/unit/bot/git.test.ts",
+        "packages/nax/test/integration/bot/git-hooks.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/bot/base-config.test.ts",
+          "reason": "\"F1: default git runner\" expects `_baseConfigDeps.runGit` to be `gitWithTimeout`; it becomes `botGit`, imported from the bot barrel. The invariant that the archive read goes through the shared timeout runner is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/bot/git-timeouts.test.ts",
+          "reason": "the assertion on the argv `checkPushAccess` passes to `runGit` (push, dry-run, origin, HEAD:refs/heads/topic) gains the `--no-verify` flag right after the dry-run flag; the 120 000 ms timeout invariant is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/bot/fix-input.test.ts",
+          "reason": "the assertion on the argv `checkPushAccess` passes to `runGit` (push, dry-run, origin, HEAD:refs/heads/feat/x) gains the `--no-verify` flag right after the dry-run flag."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/gates-push-steps.test.ts",
+          "reason": "the assertion on the argv `pushStep` passes to `runGit` (push, origin, HEAD:refs/heads/feat/x) gains the `--no-verify` flag right after the push verb; worktree and 120 000 ms timeout unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "aaa66f536b23f2e9a55ab306cd2e0f9d990c1c38"
+    },
+    {
+      "id": "US-002",
+      "title": "Bot fix leftover commit runs no hooks",
+      "description": "**Goal** — Carry botGit through the shared branch-fix leftover auto-commit path for both fix and repair, without changing workflow behavior.\n\n**Motivation** — The fix also runs `pre-push` on `git push`, `post-checkout` in the gate baseline, `reference-transaction` on the saved-fix `update-ref`, and `pre-commit` / `commit-msg` / `post-commit` when `runBranchFix` commits the agent's leftover edits through `autoCommitIfDirty` (`src/utils/git.ts`), which calls `gitWithTimeout([\"commit\", ...])` in the PR worktree.\n\n**Approach** — Hook-free leftover commit (S1). `autoCommitIfDirty` gains an optional seventh parameter `runGit: typeof gitWithTimeout` (default `gitWithTimeout`) used for every git call it makes: `rev-parse`, `status`, the `restoreDeletedNaxPaths` runner (its `git checkout -- <path>` fires `post-checkout`), the `gitlinkSafeAdd` and `hasStagedChanges` runners, and `commit`. `BranchStepContext` gains `readonly runGit?: typeof gitWithTimeout`; `commitLeftovers` (`src/workflow/branch-fix.ts`) passes `fc.runGit` as that seventh argument. `fixCheckout` (`src/bot/fix-run.ts`) puts `ctx: { ...context.ctx, runGit: botGit }` into the fix env, so both the fix step and the repair step (which share `env.ctx`) commit hook-free; the shared `buildPrStepContext` is unchanged. Workflow runs leave `runGit` unset, so they behave as today.\n\n**Interface** — `autoCommitIfDirty(workdir, stage, role, storyId, blockedWorktrees?, dryRun?, runGit?)` (`src/utils/git.ts`): new optional seventh parameter, default `gitWithTimeout`.\n```ts\nreadonly runGit?: typeof gitWithTimeout\n```\n`BranchStepContext` (`src/workflow/branch-step-context.ts`) gains `readonly runGit?: typeof gitWithTimeout`. `commitLeftovers` (`src/workflow/branch-fix.ts`, file-local) passes `fc.runGit` as the seventh argument. `fixCheckout` (`src/bot/fix-run.ts`, file-local) stores `{ ...context.ctx, runGit: botGit }` as the env's `ctx`; `buildPrStepContext` (`src/workflow/pr-step-context.ts`) is unchanged.\n\nThe new parameter applies to all git performed directly or through helpers during autoCommitIfDirty, including restoreDeletedNaxPaths's cat-file and restoring checkout. Preserve existing dry-run refusal, blocked-worktree protection, pre-auto-commit callbacks, best-effort behavior, gitlink-safe staging and timeout budgets. Add unit assertions in existing utils/git and workflow/branch-fix suites and entrypoint seam assertions at runBotFix, including a red-gate repair round. Add a real relative-hook integration fixture proving commits exist and deleted tracked .nax files are restored without markers when botGit is passed; a call without the seventh argument must still trigger live hooks.\n\n**Scope** — In: autoCommitIfDirty's optional runner, BranchStepContext.runGit, commitLeftovers forwarding, bot fix env injection and tests. Out: US-001 owns the botGit implementation, default bot runners and push flags; US-003 owns fetch binding; US-004–US-006 own writer gating. Hooks are not disabled for `nax run`, the workflow, or any git outside a bot command; `hardenedGitEnv` is unchanged. Hooks inside agent sessions are unchanged: a fix or repair agent's own `git commit` in a trusted PR's worktree still runs the repo's hooks inside the agent sandbox. S5, pinning the base agent config for the fix session (ruled \"pin base\"), is a separate spec.",
+      "acceptanceCriteria": [
+        "[unit] Given a dirty tree and a seventh-argument run stub, when autoCommitIfDirty runs, then its status, add and commit git calls go to run.",
+        "[unit] Given a dirty tree and a seventh-argument run stub, when autoCommitIfDirty runs, then _gitDeps.spawn is never called.",
+        "[unit] Given a dirty tree and no seventh argument, when autoCommitIfDirty runs, then its git calls spawn through _gitDeps.spawn as before (regression pin).",
+        "[unit] Given a dirty tree after the fix session and a step context whose runGit is a stub, when runBranchFix runs, then _workflowDeps.autoCommitIfDirty receives that stub as its seventh argument.",
+        "[unit] Given a step context without runGit and leftover edits, when runBranchFix runs, then _workflowDeps.autoCommitIfDirty receives undefined as its seventh argument.",
+        "[integration] Given _botFixDeps.buildPrStepContext returns a context without runGit, when runBotFix enters its fix session, then _fixStepsDeps.runBranchFix receives a context whose runGit is botGit by identity.",
+        "[integration] When runBotFix enters a red-gate repair round, then the repair's _fixStepsDeps.runBranchFix receives a context whose runGit is botGit by identity.",
+        "[unit] Given a seventh-argument run stub and status listing ` D .nax/features/x/prd.json`, when autoCommitIfDirty runs, then the restoring checkout call goes to run.",
+        "[unit] Given a seventh-argument run stub and status listing ` D .nax/features/x/prd.json`, when autoCommitIfDirty restores the deleted path, then _gitDeps.spawn is never called.",
+        "[integration] Given a real repo whose .git/config sets relative core.hooksPath=.husky/_ and executable pre-commit, commit-msg and post-commit hooks write an external marker, when autoCommitIfDirty(worktree, \"workflow\", \"wf-branch-fix\", \"_run\", undefined, false, botGit) processes a leftover edit, then a new commit exists.",
+        "[integration] Given that real commit-hook fixture and leftover edit, when autoCommitIfDirty is called with botGit as its seventh argument, then the marker file does not exist.",
+        "[integration] Given that fixture also has an executable post-checkout hook, when a tracked .nax/ file is deleted and autoCommitIfDirty is called with botGit, then the file is restored.",
+        "[integration] Given that fixture also has an executable post-checkout hook, when a tracked .nax/ file is deleted and autoCommitIfDirty is called with botGit, then the marker file remains absent.",
+        "[integration] Given the same live-hook fixture, when autoCommitIfDirty processes leftover edits without a seventh argument, then the marker file is created.",
+        "[unit] Given a dirty tree, successful root/status/staging reads, staged changes and an injected seventh-argument runGit returning { stdout: \"\", stderr: \"commit denied\", exitCode: 1 } for commit, when autoCommitIfDirty(workdir, \"workflow\", \"wf-branch-fix\", \"_run\", undefined, false, runGit) runs, then the logger returned by _gitDeps.getSafeLogger has error called with stage workflow, message auto-commit: git commit failed or timed out, and data containing { storyId: \"_run\", role: \"wf-branch-fix\", exitCode: 1, stderr: \"commit denied\" }, preserving existing best-effort error reporting with the injected runner.",
+        "[unit] Given that injected commit returns exitCode=1 after successful staging, when autoCommitIfDirty runs, then its promise resolves without throwing, preserving existing best-effort behavior."
+      ],
+      "tags": [
+        "security",
+        "bot",
+        "workflow",
+        "git",
+        "hooks"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Four production modules forward an optional runner through existing dependency seams without a new abstraction; the security-sensitive hook boundary still requires strict isolated three-session TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/utils/git.ts",
+        "packages/nax/src/workflow/branch-fix.ts",
+        "packages/nax/src/workflow/branch-step-context.ts",
+        "packages/nax/src/bot/fix-run.ts",
+        "packages/nax/src/utils/nax-path-restore.ts",
+        "packages/nax/src/bot/git.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/bot/fix-commit-hooks.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "625016dd747cff5db58de81cf1b59dc21935bd61"
+    },
+    {
+      "id": "US-003",
+      "title": "Checkout fetches into run-unique refs",
+      "description": "**Goal** — Bind each checkout's head and base to refs owned by its exclusive run reservation, and clean those refs on every owned exit path.\n\n**Motivation** — `FETCH_HEAD` is shared by every git process in the repo; an overlapping fetch (a second bot run, `nax run`, an editor) can make the \"base\" sha a fork head, and the base sha decides the base `.nax` snapshot, the pinned instruction files, gates and setup commands.\n\n**Approach** — Run-unique refs (S2). `preparePrCheckout` reserves its worktree directory **before** fetching, so the suffix is owned by this run, then runs one fetch with two forced refspecs into `refs/nax-bot/pr-<n>/checkout-<suffix>/head` and `.../base` and reads both with `rev-parse`. The head check (`BOT_PR_HEAD_MOVED`) still compares with `info.headSha`. `dispose()` and the failure cleanup delete both refs with `update-ref -d`, also when the checkout is retained (a retained worktree is detached at a sha; the saved-fix ref keeps unpushed work). The refs are deleted only on paths where this run created the reservation.\n\n**Interface** — `checkoutRefs(n: number, suffix: string): CheckoutRefs` (new export of `src/bot/checkout.ts` and `@/bot`): `{ head: \"refs/nax-bot/pr-<n>/checkout-<suffix>/head\", base: \"refs/nax-bot/pr-<n>/checkout-<suffix>/base\" }`.\n\n`fetchRefs` (`src/bot/checkout.ts`, file-local). Baseline: `fetchRefs({ repoRoot, ref, info })`, two fetches, two `rev-parse FETCH_HEAD`. Target: `fetchRefs({ repoRoot, ref, info, refs: CheckoutRefs }): Promise<{ baseSha; mergeBase }>` with one `fetch --no-tags origin +<headSpec>:<refs.head> +refs/heads/<baseRef>:<refs.base>` (network timeout), then `rev-parse <refs.head>` and `rev-parse <refs.base>`.\n\n`preparePrCheckout` (`src/bot/checkout.ts`), signature unchanged. Baseline order: fetch, path, excludes, reserve, `worktree add`. Target order: path (validates the suffix), `ensureGitExcludes`, reserve, fetch into `checkoutRefs`, `worktree add`, snapshot, pin. `cleanup` takes a separate `refs` field: `dispose()` always passes it (also when retained), the failure path passes it only when `created` is true. The failure path runs `worktree remove` only when `worktree add` was attempted, so a fetch failure or a moved head logs no spurious removal warning. `update-ref -d` of a ref that was never created exits 0.\n\nFailure behavior: The combined fetch fails (network, unknown base branch): `BOT_CHECKOUT_FAILED` thrown; reserved directory removed; both refs deleted. Fetched head ref differs from `info.headSha`: `BOT_PR_HEAD_MOVED` thrown before `worktree add`; reserved directory removed; both refs deleted. A step after `worktree add` throws (snapshot, pin): error rethrown; worktree, snapshot and both refs removed. Reservation fails (`EEXIST`): rejected; no fetch, no ref deleted (the refs may belong to the live checkout that owns the path). Deleting a checkout ref fails on dispose: warning `Failed to dispose PR checkout artifact`; dispose resolves.\n\nUse US-001's default botGit for both fetch and update-ref cleanup; retain BOT_GIT_NETWORK_TIMEOUT_MS=120 000 for fetch and worktree add. Update old checkout fakes to answer rev-parse by named ref rather than last fetch, and change fetch assertions to a single forced two-refspec fetch after reservation. The all-throw cleanup fixture now expects four warnings instead of two. Keep existing no-worktree-call-on-moved-head, parent cleanup, suffix collision, symlink/pinning and retained-worktree behavior. Inject an overlapping fetch in a real repo to prove FETCH_HEAD cannot redirect baseSha.\n\n**Scope** — In: checkoutRefs and barrel export, reservation/fetch ordering, owned cleanup and checkout tests. Out: US-001's git wrapper and push flags; US-002's leftover commits; US-004–US-006's writer policy. The fetched base tip is not compared with a forge-reported base sha; the base branch moves legitimately and the GitLab MR API does not report its tip. Checkout refs left behind by a killed process are not swept; they point at fetched commits and are harmless. S12, extending the base-pinned path list for other agents' project config, is a separate spec.",
+      "acceptanceCriteria": [
+        "[unit] checkoutRefs(42, \"ab12cd34\") returns { head: \"refs/nax-bot/pr-42/checkout-ab12cd34/head\", base: \"refs/nax-bot/pr-42/checkout-ab12cd34/base\" }.",
+        "[unit] Given a GitHub PR 42 with base main and suffix ab12cd34, when preparePrCheckout runs, then it makes exactly one fetch call with argv [\"fetch\", \"--no-tags\", \"origin\", \"+pull/42/head:refs/nax-bot/pr-42/checkout-ab12cd34/head\", \"+refs/heads/main:refs/nax-bot/pr-42/checkout-ab12cd34/base\"] in repoRoot and timeout BOT_GIT_NETWORK_TIMEOUT_MS.",
+        "[unit] Given GitLab MR 42 with suffix ab12cd34, when preparePrCheckout runs its single fetch, then its head refspec is +merge-requests/42/head:refs/nax-bot/pr-42/checkout-ab12cd34/head.",
+        "[unit] When preparePrCheckout runs, then it never runs rev-parse FETCH_HEAD.",
+        "[unit] Given suffix ab12cd34 for PR 42, when preparePrCheckout resolves baseSha, then baseSha equals the output of rev-parse refs/nax-bot/pr-42/checkout-ab12cd34/base.",
+        "[unit] When preparePrCheckout runs, then _checkoutDeps.reserveWorktree receives the checkout path before the fetch call.",
+        "[unit] Given suffix a/b, when preparePrCheckout runs, then it rejects with BOT_CHECKOUT_SUFFIX_INVALID, and no fetch is executed.",
+        "[unit] Given reservation fails with EEXIST, when preparePrCheckout runs, then it rejects with that reservation error, and no fetch is executed, and no update-ref -d is executed, preserving refs that may belong to the live checkout owning the path.",
+        "[unit] Given rev-parse of the checkout head ref differs from info.headSha, when preparePrCheckout runs, then it rejects with BOT_PR_HEAD_MOVED, and no worktree add is executed.",
+        "[unit] Given the fetched head moved after this run reserved the path, when preparePrCheckout unwinds, then update-ref -d is executed for both checkout refs.",
+        "[unit] Given the fetched head moved after this run reserved the path, when preparePrCheckout unwinds, then the reserved directory is removed through _checkoutDeps.rm.",
+        "[unit] Given fetch exits non-zero, when preparePrCheckout runs, then it rejects with BOT_CHECKOUT_FAILED, and _checkoutDeps.rm removes the reserved directory, and update-ref -d is executed for both checkout refs.",
+        "[unit] Given snapshotBaseNax throws after worktree add, when preparePrCheckout unwinds, then the original error is rethrown.",
+        "[unit] Given snapshotBaseNax throws after worktree add, when preparePrCheckout unwinds, then update-ref -d is executed for both checkout refs.",
+        "[unit] Given snapshotBaseNax or instruction pinning throws after worktree add, when preparePrCheckout unwinds, then the owned worktree is removed.",
+        "[unit] Given snapshotBaseNax or instruction pinning throws after a snapshot directory was allocated, when preparePrCheckout unwinds, then the snapshot directory is removed.",
+        "[unit] When dispose() runs on a successful checkout for PR 42 and suffix ab12cd34, then it executes update-ref -d refs/nax-bot/pr-42/checkout-ab12cd34/head and update-ref -d refs/nax-bot/pr-42/checkout-ab12cd34/base in repoRoot.",
+        "[unit] Given retain() was called on a successful checkout, when dispose() runs, then both checkout refs are still deleted.",
+        "[unit] Given retain() was called on a successful checkout, when dispose() runs, then the worktree is not removed.",
+        "[unit] Given update-ref -d exits non-zero during dispose(), when disposal finishes, then dispose() resolves.",
+        "[unit] Given update-ref -d exits non-zero during dispose(), when disposal finishes, then logger.warn is called with Failed to dispose PR checkout artifact.",
+        "[integration] Given a real repo and a runGit wrapper that runs git fetch origin refs/pull/99/head immediately after every checkout fetch, overwriting FETCH_HEAD, when preparePrCheckout returns, then baseSha equals origin's main tip and not PR 99's head.",
+        "[integration] Given a real checkout for PR 42, when dispose() completes, then git for-each-ref refs/nax-bot/pr-42/ lists no ref whose name contains checkout-."
+      ],
+      "tags": [
+        "security",
+        "bot",
+        "git",
+        "concurrency",
+        "checkout"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Security-sensitive base binding requires concurrent-process isolation, exclusive ownership and failure-safe worktree/ref lifecycle changes; strict isolated TDD is warranted.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/checkout.ts",
+        "packages/nax/src/bot/saved-fix.ts",
+        "packages/nax/test/integration/bot/checkout.test.ts",
+        "packages/nax/test/unit/bot/checkout.test.ts",
+        "packages/nax/test/unit/bot/git-timeouts.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/bot/checkout.test.ts",
+          "reason": "the `runGit` stub answers `rev-parse` from whichever fetch ran last (FETCH_HEAD); it becomes keyed on the ref name (the checkout head ref answers head, the checkout base ref answers base). AC-2/3 expects the first call to be a two-argument fetch of the PR spec; it becomes the single forced two-refspec fetch into the checkout refs, and it is no longer the first call (excludes and reserve run first). The AC-4/5 invariant (no worktree call when the head moved) is unchanged. Also: \"thrown removal and snapshot cleanup errors are both nonfatal\" expects `logger.warn` twice; the two ref deletions add two more cleanup actions, so the expected count becomes 4 when the stubbed `runGit` throws for every call. Cleanup stays nonfatal."
+        },
+        {
+          "path": "packages/nax/test/unit/bot/git-timeouts.test.ts",
+          "reason": "the fetch stub distinguishes head from base by the fetched argument; it becomes keyed on the `rev-parse` ref name. The list of slow calls (fetch, fetch, worktree add) expected to carry the network timeout becomes two entries (the single fetch and worktree add); the timeout invariant is unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b876bb2854635116663dcac64033c23f958a9129"
+    },
+    {
+      "id": "US-004",
+      "title": "Centralize fail-closed writer checks",
+      "description": "**Goal** — Add reusable cached writer authorization and make ruling permission reads delegate to it without changing ruling semantics.\n\n**Motivation** — Write access is checked only for rulings (`permissionReader` in `src/bot/rulings.ts`).\n\n**Approach** — A new module `src/bot/writers.ts` exports `writerCheck`, a per-login cached wrapper of `hasWriteAccess` where a failed check counts as \"not a writer\" (fail closed) and is reported through an injected `warn` sink, and `readWriters`, which returns the logins with write access among the authors of the comments it is given, forwarding each comment's `authorId`. `permissionReader` in `rulings.ts` delegates to `writerCheck` with its existing warning, so write access is decided in one place.\n\n**Interface** — `src/bot/writers.ts`:\n```ts\nexport type WriterCheck = (who: { readonly login: string; readonly id?: number }) => Promise<boolean>;\n\nexport function writerCheck(\n  input: { readonly ref: PrRef; readonly deps: ForgeDeps; readonly cwd: string },\n  check: typeof hasWriteAccess,\n  warn: (login: string, error: string) => void,\n): WriterCheck; // caches the promise per login; a rejected check calls warn(login, message) once and resolves false\n\nexport async function readWriters(\n  comments: readonly PrComment[],\n  check: WriterCheck,\n): Promise<ReadonlySet<string>>; // distinct logins whose check resolves true; passes { login: author, id: authorId }\n```\n\nRead or called, unchanged: `hasWriteAccess(ref, { login, id? }, deps, cwd): Promise<boolean>` from `@/forge`; on GitLab it throws `FORGE_RESPONSE_UNPARSEABLE` when `id` is missing. `PrComment` (`author`, `authorId?`), `PrThread` (`comments`) from `@/forge`.\n\n`permissionReader` (`src/bot/rulings.ts`, file-local) returns `(comment) => check({ login: comment.author, id: comment.authorId })` where `check = writerCheck(...)` is built on a closure that reads `_rulingsDeps.hasWriteAccess` at call time (tests swap it), whose `warn` calls the existing `warn(\"Could not check ruling permission\", { login, error })` helper (stage `bot-rulings`, `_rulingsDeps.getLogger`).\n\nExport `writerCheck`, `readWriters` and `type WriterCheck` from `src/bot/index.ts`. Cache the in-flight promise per login, not only a settled boolean, so concurrent callers share one request and one warning. Convert rejected permission lookups using the existing errorMessage helper and resolve false. `hasWriteAccess` throws for a login: that login is not a writer; the `warn` sink is called once for the login. GitLab comment has no `authorId`: `hasWriteAccess` throws; the author is not a writer. Add module unit tests and preserve the existing recordPrRulings failure-warning stage/data through its injectable logger.\n\n**Scope** — In: writerCheck/readWriters/WriterCheck, bot barrel exports and permissionReader delegation. Out: US-005 owns agreed-item policy, rendering and artifact version 3; US-006 owns triage caller selection and legacy artifact migration; US-001–US-003 own git execution and base binding. S4, a non-writer steering a `fixed` ruling on a `w-` item through prompt text, is a separate spec.",
+      "acceptanceCriteria": [
+        "[unit] When writerCheck is imported from @/bot and its check stub resolves true for alice, then writerCheck(input, stub, warn)({ login: \"alice\" }) resolves true.",
+        "[unit] When the returned WriterCheck is called twice for alice, then the check stub is called once.",
+        "[unit] Given the check stub rejects with Error(\"permission unavailable\") for mallory, when WriterCheck is called, then it resolves false.",
+        "[unit] Given the check stub rejects with Error(\"permission unavailable\") for mallory, when WriterCheck is called repeatedly, then warn is called once with (\"mallory\", \"permission unavailable\").",
+        "[unit] Given writerCheck receives a subject with author id 7, when it invokes the permission check, then the subject reaches the stub as { login, id: 7 }.",
+        "[unit] Given comments by alice, mallory and bob and a check returning true only for alice and bob, when readWriters runs, then it returns a set equal to { \"alice\", \"bob\" }.",
+        "[unit] Given a GitLab comment by carol with authorId=9, when readWriters invokes its check, then it passes { login: \"carol\", id: 9 }.",
+        "[unit] Given a GitLab PrRef, a comment without authorId and writerCheck wrapping the real hasWriteAccess, when readWriters runs, then its returned set excludes that author.",
+        "[integration] Given an indexed open ruling thread whose sole human reply is from alice and _rulingsDeps.hasWriteAccess rejects for alice, when recordPrRulings processes the thread, then the returned open item's kept replies array is empty, treating that reply as a non-writer's reply (regression pin).",
+        "[integration] Given _rulingsDeps.hasWriteAccess rejects with Error(\"permission unavailable\") for alice, when recordPrRulings processes that reply, then the logger returned by _rulingsDeps.getLogger has warn called with stage bot-rulings, message [bot-rulings] Could not check ruling permission, and data containing { login: \"alice\", error: \"permission unavailable\" }, preserving the existing warning route (regression pin)."
+      ],
+      "tags": [
+        "security",
+        "bot",
+        "access-control",
+        "forge"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A small reusable permission abstraction and ruling integration use standard dependency seams, but role/access checks require strict three-session TDD regardless of size.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/rulings.ts",
+        "packages/nax/src/forge/access.ts",
+        "packages/nax/src/bot/index.ts",
+        "packages/nax/test/unit/bot/rulings.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/bot/writers.ts",
+        "packages/nax/test/unit/bot/writers.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "eaa976402004285d9325e5829474304f51beb4a5"
+    },
+    {
+      "id": "US-005",
+      "title": "Queue only writer-authored agreed items",
+      "description": "**Goal** — Require writer authorship for agreed human fix items, explain unqueued agreements and persist writer-checked reviews as version 3.\n\n**Motivation** — On a public repo an outsider can write a plausible request the review agrees with and steer the fix agent.\n\n**Approach** — `PostReviewInput` gains `writers`. In `agreedItems` an agreed thread is a fix item only when its opener (`thread.comments[0]`) is a writer — the item text is the opener's — and an agreed top-level comment only when its author is a writer. An agreed thread or comment that fails the check is still answered, with a \"not queued\" note; disagree and handled verdicts are rendered as today. The bot review artifact becomes version 3.\n\n**Interface** — `PostReviewInput` (`src/bot/post.ts`) gains `readonly writers?: ReadonlySet<string>`; absent means empty, so no thread or comment qualifies. `BotReviewArtifact.version`: baseline `1 | 2`, target `1 | 2 | 3`; `persistArtifact` writes `3`.\n\n`renderThreadReply(verdict, opts?: { notQueued?: boolean })` (`src/bot/render-comments.ts`). With `notQueued` the body gets a second paragraph ``Not queued for `nax bot fix`: this thread was not opened by someone with write access.`` before the marker; the marker key stays `threadKey(verdict.id)`.\n\n`ReviewSummaryInput.commentVerdicts` entries gain `readonly notQueued?: boolean`; a flagged entry's line ends with ` (not queued for fix: author has no write access)`.\n\nKeep generated `finding` items and earlier-finding merge behavior intact. Reject an agreeing thread with no opener, but do not attach a notQueued note to an empty thread. Reject an agreeing stale comment id absent from input.comments without annotating its summary line as not queued. A writer reply cannot authorize a non-writer opener, and the issue text always comes from the opener, not from replies or model verdict reasons. Only agreeing existing non-writer targets receive annotations; disagree and handled remain unchanged. Preserve marker identity, escaping, summary size handling, forge edit-versus-reply behavior and persistence before forge writes. Existing integration post fixtures expecting agreed human items or plain agreeing thread replies must supply writers containing the opener/comment author. Change existing artifact version assertions in post.test.ts, post-threads.test.ts and post-rulings.test.ts to 3 without changing their other invariants.\n\n**Scope** — In: post input and authorization, exact thread/summary annotations, artifact version type/write changes and tests. Out: US-004 owns permission lookup/cache; US-006 owns computing writers during review, accepting version 3 on read and filtering unchecked older reviews; US-001–US-003 own git hardening and base refs. The fix prompt still carries non-writer PR text as fenced context; only the fix work items are writer-gated. A writer's later reply does not make a non-writer's thread a fix item; the writer re-raises it in their own thread or comment. S6, limiting fix edits to the agreed items' files and extending the protected path list, is a separate spec.",
+      "acceptanceCriteria": [
+        "[integration] Given an agreeing thread whose opener is not in writers, when postPrReview persists its artifact, then agreed contains no thread item for that thread.",
+        "[integration] Given an agreeing thread opened by a non-writer and replied to by a login in writers, when postPrReview persists its artifact, then agreed contains no thread item for that thread.",
+        "[integration] Given an agreeing thread whose opener is in writers, when postPrReview persists its artifact, then agreed contains that thread item with issue equal to the opener's comment body.",
+        "[integration] Given an agreeing top-level comment whose author is not in writers, when postPrReview persists its artifact, then agreed contains no comment item for it.",
+        "[integration] Given an agreeing top-level comment whose author is in writers, when postPrReview persists its artifact, then agreed contains that comment item with key commentKey(id).",
+        "[integration] Given writers is absent, when postPrReview persists its artifact, then agreed contains no thread or comment items.",
+        "[integration] Given writers is absent and the verdict includes findings, when postPrReview persists its artifact, then its finding items are still recorded.",
+        "[integration] Given an agreeing thread whose opener is not a writer, when postPrReview answers the thread, then its reply body contains the literal substring Not queued for `nax bot fix`:.",
+        "[integration] Given an agreeing thread whose opener is a writer, when postPrReview answers the thread, then its reply body equals renderThreadReply(verdict) without the notQueued option.",
+        "[integration] Given an agreeing top-level comment whose author is a writer, when postPrReview posts the summary, then that comment's ### Top-level comments line has no not queued suffix.",
+        "[integration] Given an agreeing verdict for a thread with zero comments, when postPrReview persists its artifact, then agreed contains no thread item for it.",
+        "[integration] Given an agreeing verdict for a thread with zero comments, when postPrReview replies, then its reply carries no notQueued note.",
+        "[integration] Given an agreeing verdict whose comment id is absent from input.comments, when postPrReview persists its artifact, then agreed contains no comment item for it.",
+        "[integration] Given an agreeing verdict whose comment id is absent from input.comments, when postPrReview posts the summary, then its summary line carries no notQueued suffix.",
+        "[integration] Given a disagreeing thread whose opener is not a writer, when postPrReview answers the thread, then its reply body equals renderThreadReply(verdict) without the notQueued option.",
+        "[integration] Given an agreeing top-level comment whose author is not a writer, when postPrReview posts the summary, then its ### Top-level comments line ends with (not queued for fix: author has no write access).",
+        "[integration] When postPrReview writes its artifact, then the artifact has version=3.",
+        "[unit] renderThreadReply({ id: \"T1\", decision: \"agree\", reason: \"Valid\" }, { notQueued: true }) retains the nax-bot marker key threadKey(\"T1\")."
+      ],
+      "tags": [
+        "security",
+        "bot",
+        "access-control",
+        "review",
+        "artifacts"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Two production modules add set-membership gates, optional rendering flags and an artifact version using existing posting paths; access-control decisions require strict isolated three-session TDD despite this bounded scope.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/post.ts",
+        "packages/nax/src/bot/render-comments.ts",
+        "packages/nax/test/integration/bot/post.test.ts",
+        "packages/nax/test/integration/bot/post-threads.test.ts",
+        "packages/nax/test/unit/bot/post-rulings.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/integration/bot/post.test.ts",
+          "reason": "AC-1 expects artifact version 2; it becomes version 3. AC-3/4 (agreeing thread `T1`) and AC-5 (agreeing comment `12`) record those items with no writer information; each input gains `writers` holding that thread's opener or comment's author, and the expected items are unchanged."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/post-threads.test.ts",
+          "reason": "the `run` mock asserts the artifact is version 2 on every forge write; it becomes version 3. The tests that expect the plain `renderThreadReply(verdicts[0])` body for the agreeing thread `T1` gain `writers` holding `T1`'s opener, so the body stays the plain reply."
+        },
+        {
+          "path": "packages/nax/test/unit/bot/post-rulings.test.ts",
+          "reason": "\"without changing artifact version\" expects version 2; it becomes version 3. The invariant that recording rulings does not otherwise change the artifact shape is unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7da1f48cc03b2458c7f1024017d6fee82a1f4f6f"
+    },
+    {
+      "id": "US-006",
+      "title": "Compute review writers and reject unchecked legacy work",
+      "description": "**Goal** — Wire writer checks into both review modes and make fix safely consume version 3 and older review artifacts.\n\n**Motivation** — `agreedItems` (`src/bot/post.ts`) turns every thread and top-level comment the review agrees with into an `AgreedItem`, whose text `nax bot fix` hands to an agent with Bash.\n\n**Approach** — `triage` gives `readWriters` only the kept threads' openers and the kept top-level comments; both already exclude the bot's own (`isOwn`: marker plus login), so the bot's replies never count and repliers cost no permission call. `loadLatestReview` keeps accepting versions 1 and 2 but drops their `thread` and `comment` items (never writer-checked); `fixChecks` reuses saved checks for version 2 and above.\n\n**Interface** — `triage` (`src/bot/review-run.ts`, file-local) also returns `writers` = `readWriters` over the kept threads' openers (`thread.comments[0]`) and the kept top-level comments (only those authors decide anything), with `writerCheck` built on `_botReviewDeps.hasWriteAccess` and a `warn` writing `getSafeLogger()?.warn(\"bot\", \"Could not check commenter permission\", { login, error })`. `_botReviewDeps` gains `hasWriteAccess` (from `@/forge`).\n\n`readReview` (`src/bot/fix-input.ts`, file-local) accepts versions 1, 2 and 3. For versions 1 and 2 with an array `agreed`, it returns the artifact with `agreed` filtered to `kind === \"finding\"` and, when it removed any, calls `getLogger()?.warn(\"bot-fix\", \"Dropped unchecked thread and comment items from an older review; re-run nax bot review\", { path, dropped })`. A missing or non-array `agreed` is returned unchanged.\n\n`fixChecks` (`src/bot/fix-run.ts`, file-local). Baseline `review.version === 2`; target `review.version >= 2`.\n\nUse US-004's interfaces unchanged:\n```ts\nexport type WriterCheck = (who: { readonly login: string; readonly id?: number }) => Promise<boolean>;\n\nexport function writerCheck(\n  input: { readonly ref: PrRef; readonly deps: ForgeDeps; readonly cwd: string },\n  check: typeof hasWriteAccess,\n  warn: (login: string, error: string) => void,\n): WriterCheck; // caches the promise per login; a rejected check calls warn(login, message) once and resolves false\n\nexport async function readWriters(\n  comments: readonly PrComment[],\n  check: WriterCheck,\n): Promise<ReadonlySet<string>>; // distinct logins whose check resolves true; passes { login: author, id: authorId }\n```\n\n`PostReviewInput` (`src/bot/post.ts`) gains `readonly writers?: ReadonlySet<string>`; absent means empty, so no thread or comment qualifies. This input is supplied by reviewEnvironment in this story and implemented by US-005. `ownComments` from `@/forge`, as `triage` already uses it for `isOwn`.\n\nCompute writers from kept collections after current own/resolved/empty filtering, forwarding authorId and excluding absent openers; do not query every replier or promote threads because of later writer/bot replies. Spread the returned writers set into post input in reviewEnvironment for both trusted and untrusted/static PRs. Permission failures must not prevent posting: the helper resolves false and reports the exact bot warning. Legacy filtering applies on read, not by rewriting historical artifacts; versions 1/2 findings, checks validation and exact-head/latest selection remain intact. When filtering removed anything, warn with the exact specified message, path and dropped count; a version 1 artifact without agreed remains unchanged. Version 3 preserves writer-checked human items; version 4 is unsupported. Saved non-null checks for both versions 2 and 3 bypass resolveBotChecks; preserve the fallback for absent/null checks.\n\nAdd integration/bot/review-run-writers.test.ts exercising the runBotReview entrypoint with real posting/artifact persistence and injected external IO, including reruns, static mode and permission outages. In helpers/bot-review.ts and the handwritten integration/bot/review-run.test.ts dependency stub add hasWriteAccess: async () => true so existing tests keep their human items without spawning gh. Update fix-input's unsupported artifact example from 3 to 4 and add a runBotFix integration using the real loadLatestReview, stubbing only _fixInputDeps.glob/readText/mtimeMs for its storage reads, to prove a legacy comment-only review starts no session.\n\n**Scope** — In: review triage/deps/post-input wiring, legacy artifact read filtering, version 3 acceptance and saved-check reuse, helper updates and entrypoint integration tests. Out: US-004's writer helper implementation, US-005's post authorization/rendering/version write implementation, and US-001–US-003's git boundary. The fix prompt still carries non-writer PR text as fenced context; only the fix work items are writer-gated. S4, a non-writer steering a `fixed` ruling on a `w-` item through prompt text, is a separate spec. S5, pinning the base agent config for the fix session (ruled \"pin base\"), is a separate spec. User documentation of the writer rule is a manual follow-up after merge.",
+      "acceptanceCriteria": [
+        "[integration] Given a trusted PR with a top-level comment by mallory, _botReviewDeps.hasWriteAccess resolving false for mallory and an agreeing review verdict, when runBotReview posts, then bot-review.json agreed contains no comment item for mallory's comment.",
+        "[integration] Given _botReviewDeps.hasWriteAccess resolves true for alice, a thread opened by alice and an agreeing verdict, when runBotReview posts, then bot-review.json agreed contains the thread item for that thread.",
+        "[integration] When runBotReview computes writers, then _botReviewDeps.hasWriteAccess is called once per distinct login among kept thread openers and top-level comment authors.",
+        "[integration] Given a thread replier opened no kept thread and authored no kept top-level comment, when runBotReview computes writers, then _botReviewDeps.hasWriteAccess is never called for that replier.",
+        "[integration] Given the bot's own marked comments/replies are present, when runBotReview computes writers, then _botReviewDeps.hasWriteAccess is never called for the bot's own login.",
+        "[integration] Given a rerun where a non-writer's thread already contains the bot's own marked Not queued reply and hasWriteAccess resolves true for the bot login, when runBotReview posts, then agreed still contains no thread item for it.",
+        "[integration] Given an untrusted/static PR and a non-writer's agreed comment, when runBotReview posts, then agreed excludes that comment.",
+        "[integration] Given _botReviewDeps.hasWriteAccess rejects for every login, when runBotReview runs, then it still posts the review.",
+        "[integration] Given _botReviewDeps.hasWriteAccess rejects for every login, when runBotReview persists its artifact, then agreed has only finding items.",
+        "[unit] Given a version 2 artifact at the current head with one finding, one thread and one comment in agreed, when loadLatestReview reads it, then agreed contains only the finding.",
+        "[unit] Given that version 2 artifact loses its thread and comment items, when loadLatestReview reads it, then logger.warn receives stage bot-fix, message Dropped unchecked thread and comment items from an older review; re-run nax bot review, and data containing its path and dropped: 2.",
+        "[unit] Given a version 1 artifact without an agreed field, when loadLatestReview reads it, then the artifact is returned unchanged.",
+        "[unit] Given a version 3 artifact, when loadLatestReview reads it, then its thread and comment items are returned unchanged.",
+        "[unit] Given an artifact with version=4, when loadLatestReview searches reviews, then that artifact is ignored.",
+        "[integration] Given a version 3 review at the current head with saved checks, when runBotFix runs, then _botFixDeps.resolveBotChecks is never called.",
+        "[integration] Given the real loadLatestReview reads a version 2 review at the current head whose only agreed item is a comment, with only _fixInputDeps.glob, readText and mtimeMs stubbed for artifact IO, when runBotFix runs, then its outcome is nothing.",
+        "[integration] Given the real loadLatestReview reads that version 2 comment-only review at the current head, when runBotFix runs, then no fix session is started.",
+        "[unit] Given a version 1 artifact with agreed containing finding, thread and comment items, when loadLatestReview reads it, then agreed retains only the finding.",
+        "[unit] Given a version 1 artifact loses thread or comment items, when loadLatestReview reads it, then logger.warn receives the legacy-drop bot-fix warning with the artifact path and the number dropped."
+      ],
+      "tags": [
+        "security",
+        "bot",
+        "access-control",
+        "review",
+        "artifacts",
+        "compatibility"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Four production modules wire an upstream writer helper, carry its set through an existing spread and filter legacy artifacts without a new orchestration abstraction; security-sensitive authorization and migration still require strict isolated three-session TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/review-run.ts",
+        "packages/nax/src/bot/review-deps.ts",
+        "packages/nax/src/bot/fix-input.ts",
+        "packages/nax/src/bot/fix-run.ts",
+        "packages/nax/src/bot/writers.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/bot/review-run-writers.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/integration/bot/fix-input.test.ts",
+          "reason": "\"US-007 AC-10 unsupported version\" uses version 3 as the unsupported example; it becomes version 4."
+        },
+        {
+          "path": "packages/nax/test/unit/bot/fix-input.test.ts",
+          "reason": "the version 1 artifact fixture without `agreed` stays accepted unchanged; tests that read version 1 or 2 artifacts with thread or comment items now see only their findings."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/review-run.test.ts",
+          "reason": "its hand-built `_botReviewDeps` stub gains `hasWriteAccess: async () => true`, so the review never spawns `gh` for permissions and its existing agreed items are kept."
+        },
+        {
+          "path": "packages/nax/test/helpers/bot-review.ts",
+          "reason": "`makeBotReviewDeps` gains `hasWriteAccess: async () => true`, so existing review tests keep their agreed thread and comment items."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2234bfd777a292f41de9fda5b28bfc8ca3d4b8e7"
+    }
+  ],
+  "analysis": "Exploration and baseline: This is a security enhancement to existing code, not greenfield. The codebase-memory MCP tools were unavailable, so discovery used direct reads and text searches. The workspace package is @nathapp/nax v0.91.3 (packages/nax/package.json:2). All six implementation stories are confined to packages/nax; packages/nax-agent is read-only context. Do not modify shared hardenedGitEnv, publish manifests, package versions, agent permissions, or the other transport packages. Follow the architecture index at docs/architecture/ARCHITECTURE.md:15, the leaf-module and injected dependency conventions, Bun tests, and structured logger conventions. All stories enforce a security boundary and use three-session-tdd with strict test/implementation isolation. Demonstrate regression tests failing against the old behavior; keep real hook fixture control cases so hook suppression is not a false positive caused by non-executable hooks or an inactive configuration.\n\nS1, runner architecture and impact: gitWithTimeout is implemented at packages/nax-agent/src/internal/git-exec.ts:74 and re-exported, with the same _gitDeps instance, by packages/nax/src/utils/git.ts:15. It accepts an optional fifth argvOverride, applies hardenedGitArgv and hardenedGitEnv at packages/nax-agent/src/internal/git-exec.ts:83, concurrently drains subprocess pipes, and marks timeout results timedOut=true at :121. hardenedGitEnv currently adds only fsmonitor/submodule safeguards (packages/nax-agent/src/internal/git-env.ts:38); hardenedGitArgv already skips global -c pairs (same file:102). Therefore a bot-only wrapper using argvOverride can disable hooks without replacing timeout, bounded-output, runtime spawn, or dirty-submodule protections. Add a leaf src/bot/git.ts importing only the utility runner, and export it from src/bot/index.ts. Bot internals should import the leaf directly to avoid introducing orchestration-barrel cycles; tests/public consumers can use @/bot. Every current runGit default is gitWithTimeout: checkout.ts:24, fix-input.ts:12, fix-steps.ts:97, gate-baseline.ts:16, saved-fix.ts:34, review-deps.ts:29, checks.ts:26, base-config.ts:30, all under packages/nax/src/bot. Change all eight by identity to botGit. review-deps owns the dependency object even though review-run.ts:30 re-exports it. checkPushAccess currently builds an unprotected dry-run push at fix-input.ts:106; pushStep currently builds an unprotected push at fix-steps.ts:253. Preserve their cwd, refspec, outcomes and 120000ms network budgets while adding --no-verify. saveFix updates refs/nax-bot/pr-<n>/fix at saved-fix.ts:69; clearSavedFix deletes only that saved-fix ref at :83. failingOnHead checks out the PR head and restores the fix commit in finally at gate-baseline.ts:63 and :70. These are independent hook-triggering paths requiring real-git integration coverage. Workflow readHead remains unchanged because it uses rev-parse, not a hook-triggering command.\n\nS1 leftover-commit seam: autoCommitIfDirty currently calls the shared git runner directly for rev-parse at packages/nax/src/utils/git.ts:263, status at :318, restoration via run at :334, gitlinkSafeAdd at :354, hasStagedChanges at :366 and commit at :372. An optional seventh runGit parameter must reach every one of these paths, including restoration's cat-file and checkout calls. restoreDeletedNaxPaths already accepts a runner (packages/nax/src/utils/nax-path-restore.ts:18) and uses it for existence checks and restoration (:37, :78); no new global runner or restoration policy is needed. Preserve dryRun refusal, blocked-worktree checks, registered before-auto-commit callbacks, best-effort logging and the 30000ms staging/commit budget. commitLeftovers invokes _workflowDeps.autoCommitIfDirty with six arguments at packages/nax/src/workflow/branch-fix.ts:46. BranchStepContext currently has no runner override (packages/nax/src/workflow/branch-step-context.ts:6); adding an optional type-only field preserves existing FeatureContext/PrStepContext consumers. The workflow deps bind autoCommitIfDirty at packages/nax/src/workflow/step-context.ts:63 and workflow implementer calls it without a runner at implement.ts:118, so default behavior must stay hook-enabled. fixCheckout currently puts context.ctx directly into the env at packages/nax/src/bot/fix-run.ts:360; replace only this bot-owned env ctx with a shallow copy containing botGit. fixStep passes env.ctx to runBranchFix at fix-steps.ts:119, and repair-step.ts:38 does the same. Exercise both paths through runBotFix, not only isolated step tests; leave buildPrStepContext unchanged.\n\nS2 checkout lifecycle and race: packages/nax/src/bot/checkout.ts:160 fetchRefs currently fetches the PR head, resolves shared FETCH_HEAD, fetches the base and resolves FETCH_HEAD again. baseSha feeds snapshotBaseNax and pinInstructions, while mergeBase feeds changedPaths and review ranges; a poisoned base therefore affects config, instructions and executable gates. preparePrCheckout currently fetches before validating the suffix or reserving a path (checkout.ts:197). botWorktreePath validates the suffix at :48; reserveWorktree exclusively creates the owned path and retries only a missing parent (:125), with cleanup ownership tracked by created (:200). Reorder validation, ensureGitExcludes, exclusive reservation, one two-refspec fetch, head/base ref resolution, moved-head check, merge-base, worktree add, snapshot and optional pinning. Forced refspecs must target a run-owned refs/nax-bot/pr-<n>/checkout-<suffix> namespace, separate from saved-fix's durable fix ref. Reserve before fetching so EEXIST never touches another run's refs. Track whether worktree add was attempted independently of whether it succeeded: a fetch/moved-head failure removes the reserved directory and refs without trying worktree remove, whereas an attempted add must be unwound even if it only partially registered the worktree. cleanup currently has worktree/snapshot/failedAdd inputs and individually catches failures (checkout.ts:135); add refs independently so retained detached worktrees still lose temporary head/base refs. Preserve empty-parent rmdir behavior and other active/retained checkouts, and continue cleanup after each failed action. No FETCH_HEAD reads remain; no forge base-tip equality check is added.\n\nS3 writer authority and rendering: packages/nax/src/forge/access.ts:9 already implements host-aware hasWriteAccess(ref, who, deps, cwd), recognizing GitHub admin/write and GitLab access_level >=30; missing GitLab authorId throws FORGE_RESPONSE_UNPARSEABLE at :17. Reuse this authority unchanged. permissionReader currently duplicates promise caching and fail-closed handling inside packages/nax/src/bot/rulings.ts:57. Extract writerCheck as a per-invocation, per-login promise cache, report one failure per login via an injected warning sink, pass authorId through without synthesis, and retain a call-time closure over _rulingsDeps.hasWriteAccess so tests replacing the seam still affect it. readWriters selects distinct authorized logins from the comments supplied, not all replies. This is forge collaborator authorization, not an agent permissionProfile decision; do not change resolvePermissions.\n\npackages/nax/src/bot/post.ts:102 agreedItems currently trusts every agreeing thread/comment, takes thread issue text from comments[0] (:122), and does not authorize its author. Thread findings must require a present writer opener; a later writer reply is not authority for someone else's opener. PostReviewInput (:65) gains an optional ReadonlySet; absent is deny-by-default. Findings and existing earlier-finding merge behavior (:138) stay unchanged. persistArtifact writes version 2 at :157 and the type allows 1|2 at :53; move the type to 1|2|3 and all newly written artifacts to 3. Persist still occurs before forge writes (postPrReview at :283), including when subsequent replies fail. postThreads (:232) and postSummary (:259) must use the same writer decision as agreedItems without incorrectly marking stale verdicts, missing comments or empty threads. renderThreadReply currently produces a stable thread marker (packages/nax/src/bot/render-comments.ts:52); preserve marker keys and safeText escaping, add the exact not-queued paragraph only to agreeing existing non-writer openers, and extend bounded summary rendering (same file:78) with the exact not-queued suffix for agreeing existing non-writer top-level comments. Disagree/handled presentation remains unchanged.\n\nReview orchestration and legacy migration: triage at packages/nax/src/bot/review-run.ts:130 already obtains the authenticated bot login, computes own comments via marker plus login (:146), separates earlier bot findings, and filters kept unresolved threads and top-level comments (:163). Refactor to name kept collections, run readWriters only on their existing openers and kept top-level comments, never on repliers or the bot's own marked replies, and return writers alongside the existing fields. reviewEnvironment already spreads triaged fields into post at :281, so carry the set through that seam without granting writers based on verdict text or mixing it into model inputs. Both trusted and static runs share this path. _botReviewDeps in review-deps.ts:28 gains hasWriteAccess; triage's warning uses getSafeLogger()?.warn with stage bot, message Could not check commenter permission, and login/error data. Keep ruling warnings routed through _rulingsDeps.getLogger and stage bot-rulings.\n\nreadReview at packages/nax/src/bot/fix-input.ts:34 currently accepts only versions 1 and 2, validates optional saved checks, then returns the artifact unchanged. loadLatestReview (:57) selects newest exact-head artifacts, treating persisted trust as diagnostic. Add version 3 acceptance; for versions 1/2 only, sanitize array agreed values to finding items, warn with exact specified bot-fix message, path and dropped count only when items were removed. Missing/non-array agreed is unchanged by this migration; do not add unrelated shape validation. Version 3 thread/comment items remain intact and version 4 is ignored. fixChecks currently reuses checks only for version ===2 (packages/nax/src/bot/fix-run.ts:283); use version >=2 when checks are non-null, preserving version 1 extraction and null-check fallback. A real legacy-loader-to-runBotFix integration must prove that a version 2 comment-only review yields nothing without starting a fix session. Migration is runtime read filtering, not rewriting historical files or authorizing legacy prose retroactively; users re-run review to queue writer-checked comments. Saved-fix reuse already compares agreed keys (saved-fix.ts:134), so changed filtered keys cannot silently reuse mismatched saved work.\n\nExisting coverage and concrete updates: packages/nax/test/unit/bot/base-config.test.ts:32 asserts the shared runner identity; update it to botGit without losing the timeout-runner invariant. unit/bot/git-timeouts.test.ts:57 and unit/bot/fix-input.test.ts:45 assert dry-run argv; integration/bot/gates-push-steps.test.ts:166 asserts push argv. Update only the flags and retain cwd/ref/network timeout assertions. unit/bot/checkout.test.ts:90 asserts the old fetch shape/order and its fake infers head/base from fetch order; key rev-parse responses by actual ref instead. Its cleanup failure case at :146 expects two warnings; two new failing ref deletions increase that to four. git-timeouts' slow calls become a single fetch plus worktree add, still both 120000ms. integration/bot/checkout.test.ts:20 has real git helpers and :46 builds a self-origin repo; preserve those reservation, cleanup and base-pinning tests but use a separate bare origin in the new hostile-hook fixture so a receive-side hook cannot create false positives. Existing reservation/retention regression coverage is at integration/bot/checkout.test.ts:68 and :124. Existing utils/git.test.ts, git-auto-commit-block.test.ts and workflow/branch-fix.test.ts cover shared auto-commit behavior and can host new unit assertions without creating extra files. New integration/bot/fix-commit-hooks.test.ts proves the real leftover commit and deleted-.nax restoration paths.\n\nintegration/bot/post.test.ts:212, integration/bot/post-threads.test.ts:27 and unit/bot/post-rulings.test.ts:134 pin artifact version 2; change to 3 while preserving the existing persisted-before-write and ruling-shape assertions. Existing agreeing writer fixtures need explicit writers sets to keep their intended plain reply and unchanged item expectations; new omitted-writers fixtures prove denial. integration/bot/fix-input.test.ts:62 currently uses 3 as unsupported; use 4. unit/bot/fix-input.test.ts:63 has a v1 fixture without agreed, which must remain unchanged. integration/bot/fix-run.test.ts:164 covers saved v2 checks; extend it for v3. packages/nax/test/helpers/bot-review.ts:18 creates review deps without permission IO; add hasWriteAccess: async () => true there and in the handwritten integration/bot/review-run.test.ts stub so existing tests never unexpectedly invoke gh/glab. Add integration/bot/review-run-writers.test.ts to test the real runBotReview -> triage -> post artifact seam, including static mode, reruns with bot replies and authorization failures. Use existing shared test helpers and restore injected seams after tests; do not monkey-patch globals or use module mocks. Run targeted bun test paths from packages/nax with explicit timeouts, then the package's normal gates; tests/coverage are implementation validation, not extra stories.\n\nRisks and execution: The highest risks are missing an indirect auto-commit git call, disabling hooks globally by mistake, deleting another reservation's refs, confusing attempted worktree add with successful add during cleanup, letting writer repliers promote an outsider's thread, treating marked bot replies as openers on a rerun, and accepting older artifacts as already authorized. Keep runner identity and entrypoint seam tests as well as real executable-hook controls. Maintain exact errors/warnings and stable forge marker keys so recovery, idempotent replies and log diagnostics do not regress. US-001 precedes US-002 and US-003; US-004 precedes US-005, which precedes US-006. These chains touch shared files/barrel exports, so integrate patches carefully even where formal dependencies permit parallel execution. Do not add story dependencies beyond the binding list. No new runtime dependencies or public nax-agent API changes are needed. Security disclosure and writer-rule user documentation remain manual follow-ups after merge, not implementation stories.\n\nRefine-pass audit: Re-read the current checkout lifecycle, autoCommitIfDirty, gitWithTimeout, triage, post artifact builder, legacy reader, ruling permission reader and ruling regression tests. The original spec has 72 numbered-by-position story AC bullets: US-001=11, US-002=10, US-003=15, US-004=8, US-005=15, US-006=13. All are preserved in their original story, with multi-observation bullets split into independently assertable criteria. Preservation ledger below uses original spec bullet number -> revised acceptanceCriteria positions (1-based). US-001: 1->1; 2->2; 3->3; 4->4-11; 5->12; 6->13-14; 7->15; 8->16; 9->17; 10->18; 11->19. US-002: 1->1-2; 2->3; 3->4; 4->5; 5->6; 6->7; 7->8-9; 8->10-11; 9->12-13; 10->14. US-003: 1->1; 2->2; 3->3; 4->4-5; 5->6; 6->7-8; 7->9-11; 8->12-14; 9->16-18; 10->19-20; 11->23; 12->24-25; 13->26-27; 14->28; 15->29. US-004: 1->1; 2->2; 3->3-4; 4->5; 5->6; 6->7; 7->8; 8->9-10. US-005: 1->1; 2->2; 3->3; 4->4; 5->5; 6->6-7; 7->8; 8->9; 9->10; 10->11-12; 11->13-14; 12->15; 13->16; 14->17; 15->18. US-006: 1->1; 2->2; 3->3-5; 4->6; 5->7; 6->8-9; 7->10; 8->11; 9->12; 10->13; 11->14; 12->15; 13->16-17. Qualifiers retained include shared submodule hardening after the -c pair, the live-hook control, auto-commit as before/regression pin, ruling warning regression pin, writer plain replies without notQueued, rerun still-not-queued behavior, and unchanged legacy/v3 fields. No deprecated file-content AC tags occur.\n\nFailure-table ledger: combined-fetch failure is US-003 criteria 16-18; moved head is US-003 criteria 12-15; post-add snapshot/pin failure is US-003 criteria 19-22; EEXIST is US-003 criteria 9-11; ref deletion failure is US-003 criteria 26-27; rejected write-access check is US-004 criteria 3-4; missing GitLab authorId is US-004 criterion 8; older unchecked artifacts are US-006 criteria 10-11 and 18-19. Every story has a negative path; US-002 previously lacked an explicit failing git operation, so this refine pass adds criteria 15-16 preserving the existing non-throwing commit-failure error log with the injected runner (packages/nax/src/utils/git.ts:372). Corrected US-004's unobservable treated-as-non-writer wording to the existing empty kept replies output demonstrated at packages/nax/test/unit/bot/rulings.test.ts:121, and corrected warning routing to logger.warn on the object returned by _rulingsDeps.getLogger, not a call to getLogger with warning arguments. Tightened the thread-not-queued assertion to its literal body substring.\n\nRouting audit: US-001 stays complex because it introduces a security runner across eight defaults and multiple hook-triggering integration paths; US-003 stays complex because owned reservations, concurrent fetches and attempted-add cleanup form a lifecycle correctness boundary. US-002, US-005 and US-006 are medium rather than complex: they extend existing runner/context seams or posting/triage/reader paths in two to four production modules without a new orchestration abstraction. US-004 remains medium. All retain three-session-tdd under the security override, not because of AC count. All 17 feature-level exclusions remain verbatim. All six IDs, workdirs and binding dependencies are unchanged. Each contextFiles list includes the critical spec-recommended existing/upstream sources within the five-file cap; expectedFiles contains only this story's new outputs. No unrelated helper, package change, migration rewrite, new dependency or story was added.",
+  "outOfScope": [
+    "S4, a non-writer steering a `fixed` ruling on a `w-` item through prompt text, is a separate spec.",
+    "S5, pinning the base agent config for the fix session (ruled \"pin base\"), is a separate spec.",
+    "S6, limiting fix edits to the agreed items' files and extending the protected path list, is a separate spec.",
+    "S7, validating and fencing the PRD path in the review prompt, is a separate spec.",
+    "S9, scrubbing forge credentials from bot agent sessions, is a separate spec.",
+    "S10, skipping confidential GitLab issues and fencing CI log text, is a separate spec.",
+    "S12, extending the base-pinned path list for other agents' project config, is a separate spec.",
+    "H13, requiring `--trust` for a fix on a repo with no nax config, is a separate spec.",
+    "Hooks are not disabled for `nax run`, the workflow, or any git outside a bot command; `hardenedGitEnv` is unchanged.",
+    "Hooks inside agent sessions are unchanged: a fix or repair agent's own `git commit` in a trusted PR's worktree still runs the repo's hooks inside the agent sandbox.",
+    "A trusted review's setup command (for example `npm ci` running husky) can still write `core.hooksPath` into the shared repo config; trusted reviews may run head code by ruling S8.",
+    "`readHead` in the bot fix runs `rev-parse` through the workflow's git dep, not `botGit`; `rev-parse` runs no hooks.",
+    "The fetched base tip is not compared with a forge-reported base sha; the base branch moves legitimately and the GitLab MR API does not report its tip.",
+    "Checkout refs left behind by a killed process are not swept; they point at fetched commits and are harmless.",
+    "The fix prompt still carries non-writer PR text as fenced context; only the fix work items are writer-gated.",
+    "A writer's later reply does not make a non-writer's thread a fix item; the writer re-raises it in their own thread or comment.",
+    "User documentation of the writer rule is a manual follow-up after merge."
+  ],
+  "routingProfile": "native-codex"
+}

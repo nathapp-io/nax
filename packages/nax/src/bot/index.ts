@@ -4,7 +4,9 @@ export {
   BASE_PINNED_NAMES,
   BASE_PINNED_PATHS,
   botWorktreePath,
+  type CheckoutRefs,
   changedPaths,
+  checkoutRefs,
   type PrCheckout,
   preparePrCheckout,
 } from "./checkout";
@@ -41,6 +43,7 @@ export {
   pushStep,
 } from "./fix-steps";
 export { _gateBaselineDeps, failingOnHead, logGateFailure, readHeadCi } from "./gate-baseline";
+export { BOT_GIT_HOOKS_OFF, botGit } from "./git";
 export { featureIntentPaths } from "./intent";
 export { _botLogDeps, type BotLog, openBotLog } from "./log";
 export { botModel, parseModelOption } from "./models";
@@ -72,3 +75,4 @@ export {
 } from "./review-run";
 export { _reviewStepDeps, type PrReviewInput, runPrReview } from "./review-step";
 export { setupBotRuntime } from "./run-setup";
+export { readWriters, type WriterCheck, writerCheck } from "./writers";
