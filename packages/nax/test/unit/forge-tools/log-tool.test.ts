@@ -99,6 +99,29 @@ describe("log tool", () => {
     expect(result.content).toContain("100: entry-100");
     expect(result.content).not.toContain("1: entry-1\n");
   });
+  test.each(["界", "😀"])("F1 budgets oversized %s check names while retaining metadata and log", async (point) => {
+    _forgeToolsDeps.listHeadChecks = mock(async () => [{ ...check, name: point.repeat(255) }]);
+    const result = await (await tool()).run({ check: "7" }, { ...ctx, maxBytes: 600 });
+    expect(Buffer.byteLength(result.content)).toBeLessThanOrEqual(600);
+    expect(result.content).toContain("check: 7");
+    expect(result.content).toContain("status: completed");
+    expect(result.content).toContain("name: ");
+    expect(result.content).toContain(point);
+    expect(result.content).toContain("3: three");
+    expect(result.content).not.toContain("�");
+  });
+  test("F2 retains the number of an oversized final line under a tight byte budget", async () => {
+    _forgeToolsDeps.readJobLog = mock(
+      async (): Promise<JobLogRead> => ({ ok: true, text: `first\n${"界".repeat(2_000)}` }),
+    );
+    const result = await (await tool()).run({ check: "7" }, { ...ctx, maxBytes: 250 });
+    expect(Buffer.byteLength(result.content)).toBeLessThanOrEqual(250);
+    const numbered = result.content.split("\n").filter((line) => /^\d+: /.test(line));
+    expect(numbered).toHaveLength(1);
+    expect(numbered[0]).toMatch(/^2: 界+$/);
+    expect(result.content).not.toContain("1: first");
+    expect(result.content).not.toContain("�");
+  });
   test.each<[string, Record<string, unknown>]>([
     ["lines", { check: "7", lines: 501 }],
     ["check", {}],

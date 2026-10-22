@@ -62,9 +62,11 @@ function tailResult(text: string, check: ForgeCheck, options: { count: number; m
   return fitToolResult(
     {
       header: ["Job log", `showing lines ${entries.length ? start + 1 : 0}-${lines.length} of ${lines.length}`],
-      fencedHeader: [
-        `check: ${check.id} | name: ${check.name} | status: ${check.status}${check.conclusion ? ` | conclusion: ${check.conclusion}` : ""}`,
-      ],
+      fencedHeader: {
+        identity: `check: ${check.id} | status: ${check.status}`,
+        detail: ` | name: ${check.name}${check.conclusion ? ` | conclusion: ${check.conclusion}` : ""}`,
+      },
+      entryPrefix: (entry) => entry.slice(0, entry.indexOf(": ") + 2),
       entries,
       footer: check.status === "completed" ? [] : [partial],
     },
