@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeFeatureContext, makeScriptedCallOp, makeTempDir } from "@test/helpers";
 import { workflowBranchFixOp } from "@/operations";
+import { buildWorkflowBranchFixPrompt } from "@/prompts";
 import { runBranchFix } from "@/workflow/branch-fix";
 import { _workflowDeps } from "@/workflow/step-context";
 import type { ImplementerReply, WorkflowFinding } from "@/workflow/types";
@@ -37,6 +38,26 @@ function setup(reply: ImplementerReply | Error, dirty: string) {
 }
 
 describe("runBranchFix", () => {
+  test.each(["PR-specific prompt", ""])("AC-1/3 forwards override %j and commits leftovers", async (prompt) => {
+    const { fc, inputs, commits } = setup(done, " M src/a.ts\n");
+    const out = await runBranchFix(fc, { findings, prompt });
+    expect(inputs[0]).toMatchObject({ prompt, reportPath: fc.reportPath, timeoutMs: fc.workflow.timeouts.fixMs });
+    expect(out.autoCommitted).toBe(true);
+    expect(commits).toHaveLength(1);
+  });
+
+  test("AC-2 preserves the workflow builder without an override", async () => {
+    const { fc, inputs } = setup(done, "");
+    await runBranchFix(fc, { findings, specPath: "spec.md" });
+    expect(inputs[0]).toMatchObject({
+      prompt: buildWorkflowBranchFixPrompt({
+        findings,
+        specPath: "spec.md",
+        reportPath: fc.reportPath,
+        ...(fc.prdPath !== undefined ? { prdPath: fc.prdPath } : {}),
+      }),
+    });
+  });
   test("creates feature-report.md, runs the fix op under fixMs, auto-commits leftover edits", async () => {
     const { fc, inputs, commits } = setup(done, " M src/a.ts\n");
     const out = await runBranchFix(fc, { specPath: "spec.md", findings });

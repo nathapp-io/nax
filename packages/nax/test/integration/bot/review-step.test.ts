@@ -82,6 +82,14 @@ afterEach(() => {
 const packagePath = "/review/artifacts/package-pr.diff";
 
 describe("runPrReview", () => {
+  test.each([
+    ["AC-10", { checkoutState: "trusted state" }, "## Checkout state\ntrusted state"],
+    ["AC-11", { specPath: "/feature/spec.md" }, "Intent: the spec at /feature/spec.md."],
+  ])("US-003 %s forwards prompt context", async (_ac, fields, expected) => {
+    await runPrReview(ctx, { ...input, ...fields });
+    expect(calls[0]?.op).toBe(botPrReviewOp);
+    expect(calls[0]?.input).toMatchObject({ prompt: expect.stringContaining(expected) });
+  });
   test("US-006 AC-12/13 forwards earlier ids and renders earlier threads", async () => {
     await runPrReview(ctx, {
       ...input,

@@ -65,6 +65,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
 
   // Bot
   bot: "Pull request bot review and fix settings",
+  "bot.gateRepairRounds": "Maximum bot gate repair rounds (defaults to 1); zero disables repair",
+  "bot.costLimit": "Bot run cost limit in USD (defaults to 5)",
   "bot.models": "Per-role model overrides for bot commands; --model takes precedence",
   "bot.models.rulings": "Model for interpreting collaborator replies as candidate rulings; defaults to fast",
   "bot.models.checks":

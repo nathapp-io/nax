@@ -46,6 +46,7 @@ async function run(args: string[], command = "fix"): Promise<void> {
     },
     isInteractive: () => interactive,
     runBotFix: fix,
+    runBotFixCycle: async (input) => ({ fix: await fix(input) }),
     runBotReview: review,
   });
   await program.parseAsync(["bot", command, ...args], { from: "user" });
@@ -60,6 +61,8 @@ describe("registerBotCommand fix", () => {
       profiles: [],
       model: undefined,
       interactive: false,
+      rereview: true,
+      fresh: false,
     });
     expect(review).not.toHaveBeenCalled();
   });

@@ -1,11 +1,43 @@
 import { describe, expect, test } from "bun:test";
 import { type BotFixState, renderFixSummary } from "@/bot";
+import { BOT_FIX_GRAPH } from "@/bot/fix-run";
 import { parseNaxBotMarker } from "@/forge";
+import { validateStepGraph } from "@/step-graph";
 import { safeCode } from "@/workflow/pr-body-safe";
 
 const state: BotFixState = { step: "report", timings: {} };
 
 describe("renderFixSummary", () => {
+  test.each([{ costSpentUsd: 1 }, { costLimitUsd: 5 }, {}])("rejects incomplete cost-stop state %j", (cost) => {
+    expect(() => renderFixSummary({ ...state, outcome: "cost-limit", ...cost })).toThrow(
+      expect.objectContaining({ code: "BOT_FIX_OUTCOME_MISSING" }),
+    );
+  });
+  test("reports an unreadable prepare tree without claiming changes", () => {
+    const summary = renderFixSummary({ ...state, outcome: "prepare-touched-tracked", prepareTreeUnreadable: true });
+    expect(summary).toContain("could not be read");
+    expect(summary).not.toContain("changed tracked files");
+  });
+  test("US-011 AC-11 identifies the reused fix with a seven-character sha", () => {
+    expect(renderFixSummary({ ...state, outcome: "protected", reusedFix: "abcdef1234567890" })).toContain(
+      "Reused the saved fix abcdef1; no new fix session.",
+    );
+  });
+  test("AC-14 renders the cost boundary with two decimal places", () => {
+    expect(renderFixSummary({ ...state, outcome: "cost-limit", costSpentUsd: 1.5, costLimitUsd: 1 })).toContain(
+      "Cost limit reached: 1.50 of 1.00 USD; nothing pushed.",
+    );
+  });
+  test("US-008 AC-9 reports tracked prepare changes", () => {
+    expect(renderFixSummary({ ...state, outcome: "prepare-touched-tracked" })).toContain(
+      "The prepare turn changed tracked files; nothing pushed.",
+    );
+  });
+  test("US-008 AC-10 records the prepare turn", () => {
+    expect(
+      renderFixSummary({ ...state, outcome: "baseline-red", repairMode: "prepare", gateRepairRounds: 1 }),
+    ).toContain("Repair turn: prepare, round 1.");
+  });
   test.each([
     ["pushed", "Pushed abcdef1: 3 agreed items fixed in one round; gates passed."],
     ["nothing", "Nothing to fix: the latest review agreed with no item."],
@@ -85,5 +117,28 @@ describe("renderFixSummary", () => {
   test("AC-18: says the PR was marked ready", () => {
     const body = renderFixSummary({ ...state, outcome: "pushed", markedReady: true });
     expect(body.split("\n")).toContain("Marked ready.");
+  });
+});
+
+describe("repair declarations and summary", () => {
+  test("AC-17 repair node validates", () => {
+    expect(BOT_FIX_GRAPH.nodes.repair).toMatchObject({ kind: "agent", commits: true });
+    expect(validateStepGraph(BOT_FIX_GRAPH).errors).toEqual([]);
+  });
+  test("AC-18 summary records repair mode and round", () => {
+    expect(
+      renderFixSummary({
+        step: "report",
+        timings: {},
+        outcome: "gates-failed",
+        repairMode: "repair",
+        gateRepairRounds: 1,
+      }),
+    ).toContain("Repair turn: repair, round 1.");
+  });
+  test("AC-21 summary explains cost skip", () => {
+    expect(
+      renderFixSummary({ step: "report", timings: {}, outcome: "gates-failed", repairSkippedForCost: true }),
+    ).toContain("Repair turn skipped: cost limit reached.");
   });
 });

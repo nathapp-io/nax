@@ -8,6 +8,7 @@ export function makeBotFixEnv(agreed: readonly AgreedItem[] = []): BotFixEnv {
   const ref = { forge: "github" as const, host: "github.com", repo: "o/r", number: 42 };
   return {
     config,
+    cost: { limitUsd: 5, spentUsd: () => 0 },
     checks: { source: "config", gates: [], preRun: [] },
     ref,
     repoRoot: "/repo",
@@ -78,9 +79,11 @@ export function makeBotFixDeps(env: BotFixEnv, runtime: ReturnType<typeof import
     preparePrCheckout: async () => env.checkout,
     loadBotConfig: async () => env.config,
     createRuntime: () => runtime,
+    setupBotRuntime: async () => {},
     openBotLog: () => ({ close: async () => {} }),
     buildPrStepContext: async () => ({ ctx: env.ctx, dispose: async () => {} }),
     loadLatestReview: async () => env.review,
+    savedFix: { read: async () => null, save: async () => {}, clear: async () => {} },
     resolveBotChecks: async () => env.checks,
     checkPushAccess: async (): Promise<{ ok: true }> => ({ ok: true }),
     runPreRunSteps: async () => {},
@@ -89,5 +92,7 @@ export function makeBotFixDeps(env: BotFixEnv, runtime: ReturnType<typeof import
     listPrComments: async () => [],
     randomSuffix: () => "graph-test",
     writeJson: async (_path: string, _value: unknown) => {},
+    fileExists: async (_path: string) => false,
+    copyFile: async (_from: string, _to: string) => {},
   };
 }

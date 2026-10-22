@@ -22,7 +22,9 @@ export { AdversarialReviewPromptBuilder } from "./builders/adversarial-review-bu
 export { type AdvisorBatchPromptInput, buildAdvisorBatchPrompt } from "./builders/advisor-batch-builder";
 // Fix-review prompt builder — verdict-only review of a fix's own delta (ADR-033).
 export { type AdvisorPromptInput, buildAdvisorPrompt } from "./builders/advisor-builder";
+export { type CheckoutStateInput, renderCheckoutState } from "./builders/bot-checkout-state-builder";
 export { type BotChecksExtractPromptInput, buildBotChecksExtractPrompt } from "./builders/bot-checks-extract-builder";
+export { type BotPrFixPromptInput, buildBotPrFixPrompt } from "./builders/bot-pr-fix-builder";
 export {
   type BotPrReviewPromptInput,
   buildBotPrReviewPrompt,

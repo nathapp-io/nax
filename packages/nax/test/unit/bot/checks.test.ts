@@ -1,9 +1,46 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
-import { _botChecksDeps, checkCommands, DERIVED_INSTALL_TIMEOUT_SECONDS, resolveBotChecks } from "@/bot";
+import { _botChecksDeps, barCommands, checkCommands, DERIVED_INSTALL_TIMEOUT_SECONDS, resolveBotChecks } from "@/bot";
 import { DEFAULT_CONFIG } from "@/config";
 import { initLogger, resetLogger } from "@/logger";
 import type { BotChecksExtractOutput } from "@/operations/bot-checks-extract";
+
+describe("barCommands", () => {
+  test("AC-16: flattens string and list gate commands in order", () => {
+    expect(
+      barCommands({
+        source: "config",
+        preRun: [],
+        gates: [
+          { name: "typecheck", command: "check types" },
+          { name: "test", command: ["a", "b"] },
+        ],
+      }),
+    ).toEqual(["check types", "a", "b"]);
+  });
+  test("AC-17: setup is flattened and annotated before its own gate", () => {
+    expect(
+      barCommands({
+        source: "config",
+        preRun: [{ command: "not a gate", timeoutSeconds: 60 }],
+        gates: [
+          { name: "typecheck", setup: "s", command: "check types" },
+          { name: "test", setup: ["generate", "build"], command: ["a", "b"] },
+        ],
+      }),
+    ).toEqual([
+      "s  (setup for typecheck)",
+      "check types",
+      "generate  (setup for test)",
+      "build  (setup for test)",
+      "a",
+      "b",
+    ]);
+  });
+  test("empty gates yield no commands", () => {
+    expect(barCommands({ source: "none", gates: [], preRun: [] })).toEqual([]);
+  });
+});
 
 const original = { ..._botChecksDeps };
 const defaultPreRun = structuredClone(DEFAULT_CONFIG.execution.preRun);

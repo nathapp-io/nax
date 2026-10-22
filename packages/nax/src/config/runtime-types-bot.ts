@@ -12,5 +12,7 @@ export interface BotModelsConfig {
 }
 
 export interface BotConfig {
+  gateRepairRounds?: number;
+  costLimit?: number;
   models: BotModelsConfig;
 }

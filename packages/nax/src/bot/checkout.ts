@@ -9,6 +9,8 @@ import { gitWithTimeout } from "../utils/git";
 import { WorktreeManager } from "../worktree/manager";
 import { snapshotBaseNax } from "./base-config";
 
+export const BOT_GIT_NETWORK_TIMEOUT_MS = 120_000;
+
 export const BASE_PINNED_PATHS = [
   ".nax/rules",
   ".claude",
@@ -50,8 +52,8 @@ export function botWorktreePath(repoRoot: string, n: number, suffix: string): st
   return join(repoRoot, ".nax-wt", `bot-pr-${n}-${suffix}`); // nax-worktree-id-allow: Canonical bot PR path, not a story worktree.
 }
 
-async function git(argv: string[], cwd: string): Promise<string> {
-  const result = await _checkoutDeps.runGit(argv, cwd);
+async function git(argv: string[], cwd: string, timeoutMs?: number): Promise<string> {
+  const result = await _checkoutDeps.runGit(argv, cwd, timeoutMs);
   if (result.exitCode !== 0) {
     throw new NaxError(`[bot] git ${argv[0]} failed: ${result.stderr}`, "BOT_CHECKOUT_FAILED", {
       stage: "bot",
@@ -167,7 +169,7 @@ async function fetchRefs(input: {
 }): Promise<{ baseSha: string; mergeBase: string }> {
   const { repoRoot, ref, info } = input;
   const headSpec = ref.forge === "github" ? `pull/${ref.number}/head` : `merge-requests/${ref.number}/head`;
-  await git(["fetch", "origin", headSpec], repoRoot);
+  await git(["fetch", "origin", headSpec], repoRoot, BOT_GIT_NETWORK_TIMEOUT_MS);
   const headSha = (await git(["rev-parse", "FETCH_HEAD"], repoRoot)).trim();
   if (headSha !== info.headSha) {
     throw new NaxError(`[bot] PR ${ref.number} head moved`, "BOT_PR_HEAD_MOVED", {
@@ -177,7 +179,7 @@ async function fetchRefs(input: {
       number: ref.number,
     });
   }
-  await git(["fetch", "origin", info.baseRef], repoRoot);
+  await git(["fetch", "origin", info.baseRef], repoRoot, BOT_GIT_NETWORK_TIMEOUT_MS);
   const baseSha = (await git(["rev-parse", "FETCH_HEAD"], repoRoot)).trim();
   const mergeBase = (await git(["merge-base", baseSha, info.headSha], repoRoot)).trim();
   return { baseSha, mergeBase };
@@ -201,7 +203,7 @@ export async function preparePrCheckout(input: {
     await _checkoutDeps.ensureGitExcludes(repoRoot);
     await reserveWorktree(worktree);
     created = true; // Only our exclusive reservation grants cleanup ownership on a failed add.
-    await git(["worktree", "add", "--detach", worktree, info.headSha], repoRoot);
+    await git(["worktree", "add", "--detach", worktree, info.headSha], repoRoot, BOT_GIT_NETWORK_TIMEOUT_MS);
     added = true;
     snapshotDir = await _checkoutDeps.mkdtemp();
     const hasBaseNax = await _checkoutDeps.snapshotBaseNax(repoRoot, baseSha, snapshotDir);

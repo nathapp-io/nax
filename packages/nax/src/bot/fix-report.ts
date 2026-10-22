@@ -241,6 +241,14 @@ function baselineText(ci: BotFixState["ciOutcome"]): string {
 
 function outcomeText(state: BotFixState): string {
   switch (state.outcome) {
+    case "cost-limit":
+      if (state.costSpentUsd === undefined || state.costLimitUsd === undefined)
+        throw new NaxError("[bot-fix] Cannot report cost limit without spend and limit", "BOT_FIX_OUTCOME_MISSING", {
+          stage: "bot-fix",
+        });
+      return `Cost limit reached: ${state.costSpentUsd.toFixed(2)} of ${state.costLimitUsd.toFixed(2)} USD; nothing pushed.`;
+    case "setup-failed":
+      return `Setup failed at \`${safeCode(state.setupFailed ?? "unknown")}\`; nothing ran.`;
     case "pushed":
       return `Pushed ${state.pushedSha?.slice(0, SHORT_SHA_LENGTH)}: ${state.agreedCount ?? 0} agreed items fixed in one round; gates passed.`;
     case "nothing":
@@ -261,6 +269,10 @@ function outcomeText(state: BotFixState): string {
           ? [`Already red on the unmodified PR head: ${state.baselineFailing.join(", ")}.`]
           : []),
       ].join(" ");
+    case "prepare-touched-tracked":
+      return state.prepareTreeUnreadable
+        ? "The prepare tree could not be read; nothing pushed."
+        : "The prepare turn changed tracked files; nothing pushed.";
     case "baseline-red":
       return `Gates failed: ${(state.failingGates ?? []).join(", ")}. ${baselineText(state.ciOutcome)} Nothing pushed.`;
     case "dirty":
@@ -278,6 +290,13 @@ function outcomeText(state: BotFixState): string {
 
 export function renderFixSummary(state: BotFixState): string {
   const lines = [outcomeText(state)];
+  if (state.reusedFix)
+    lines.push(
+      `Reused the saved fix ${safeText(state.reusedFix.slice(0, SHORT_SHA_LENGTH), SHORT_SHA_LENGTH)}; no new fix session.`,
+    );
+  if (state.repairMode !== undefined)
+    lines.push(`Repair turn: ${state.repairMode}, round ${state.gateRepairRounds ?? 0}.`);
+  if (state.repairSkippedForCost) lines.push("Repair turn skipped: cost limit reached.");
   if (state.fixFailure !== undefined) lines.push(`Fix session: ${safeText(state.fixFailure, MAX_FAILURE_LENGTH)}`);
   // Why the PR is still a draft — a workflow PR, or a CI that is not green — or that it is ready.
   // The reason carries the CI wait's own detail, which is forge output: it is neutralised and

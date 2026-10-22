@@ -5,6 +5,7 @@ import { getLogger } from "@/logger";
 import type { WorkflowFinding } from "@/operations/workflow-types";
 import { buildUntrustedRequestIssue } from "@/prompts";
 import { gitWithTimeout } from "@/utils/git";
+import { BOT_GIT_NETWORK_TIMEOUT_MS } from "./checkout";
 import { type AgreedItem, BOT_REVIEW_FILENAME, type BotReviewArtifact } from "./post";
 
 export const _fixInputDeps = {
@@ -101,7 +102,11 @@ export async function checkPushAccess(
   worktree: string,
   headRef: string,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const result = await _fixInputDeps.runGit(["push", "--dry-run", "origin", `HEAD:refs/heads/${headRef}`], worktree);
+  const result = await _fixInputDeps.runGit(
+    ["push", "--dry-run", "origin", `HEAD:refs/heads/${headRef}`],
+    worktree,
+    BOT_GIT_NETWORK_TIMEOUT_MS,
+  );
   return result.exitCode === 0
     ? { ok: true }
     : {

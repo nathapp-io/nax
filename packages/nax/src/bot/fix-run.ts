@@ -1,4 +1,4 @@
-/** Repo-scoped trusted, exact-head fix orchestration. Every invocation is fresh. */
+/** Repo-scoped trusted, exact-head fix orchestration with optional saved-commit reuse. */
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { resolveDefaultAgent } from "@/agents";
@@ -13,6 +13,7 @@ import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import { botRunDir } from "../workflow/paths";
 import { _workflowDeps } from "../workflow/step-context";
 import { type BotChecks, resolveBotChecks } from "./checks";
+import { botCostEnv } from "./cost";
 import { checkPushAccess, loadLatestReview } from "./fix-input";
 import { readyStep, replyStep, reportStep } from "./fix-report";
 import {
@@ -25,9 +26,11 @@ import {
   pushStep,
 } from "./fix-steps";
 import { type BotLog, openBotLog } from "./log";
+import { repairStep } from "./repair-step";
 import { _botReviewDeps } from "./review-run";
 import { rulingModelReader } from "./ruling-reader";
 import { recordPrRulings } from "./rulings";
+import { clearSavedFix, persistSavedFix, readSavedFix, reuseSavedFix, saveFix } from "./saved-fix";
 
 export const _botFixDeps = {
   gitToplevel: _botReviewDeps.gitToplevel,
@@ -39,6 +42,7 @@ export const _botFixDeps = {
   preparePrCheckout: _botReviewDeps.preparePrCheckout,
   loadBotConfig: _botReviewDeps.loadBotConfig,
   createRuntime: _botReviewDeps.createRuntime,
+  setupBotRuntime: _botReviewDeps.setupBotRuntime,
   openBotLog,
   buildPrStepContext: _botReviewDeps.buildPrStepContext,
   readCurrentUser: _botReviewDeps.readCurrentUser,
@@ -46,12 +50,18 @@ export const _botFixDeps = {
   listPrComments: _botReviewDeps.listPrComments,
   randomSuffix: _botReviewDeps.randomSuffix,
   writeJson: _botReviewDeps.writeJson,
+  fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
+  copyFile: async (from: string, to: string): Promise<void> => {
+    await Bun.write(to, Bun.file(from));
+  },
   loadLatestReview,
+  savedFix: { read: readSavedFix, save: saveFix, clear: clearSavedFix },
   resolveBotChecks,
   checkPushAccess,
   runPreRunSteps,
   recordPrRulings,
   fixStep,
+  repairStep,
   checkStep,
   gatesStep,
   pushStep,
@@ -60,7 +70,10 @@ export const _botFixDeps = {
   reportStep,
 };
 
-interface BotFixInput {
+export interface BotFixInput {
+  readonly readyOnly?: boolean;
+  readonly fresh?: boolean;
+  readonly costLimitUsd?: number;
   readonly dir: string;
   readonly pr: number;
   readonly profiles: readonly string[];
@@ -69,25 +82,54 @@ interface BotFixInput {
 }
 export type BotFixResult = { readonly logPath?: string } & (
   | { readonly outcome: "refused"; readonly reason: string }
-  | (BotFixState & { readonly outcome: NonNullable<BotFixState["outcome"]> })
+  | (BotFixState & {
+      readonly outcome: NonNullable<BotFixState["outcome"]>;
+      readonly spentUsd?: number;
+      readonly limitUsd?: number;
+    })
 );
 
 export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defineStepGraph({
   start: "fix",
   end: ["done"],
-  costStopProduces: [],
-  costStop: async () => undefined,
+  costStopProduces: ["outcome", "costSpentUsd", "costLimitUsd"],
+  costStop: async (node, _state, env) =>
+    node === "fix" || node === "repair"
+      ? {
+          patch: { outcome: "cost-limit", costSpentUsd: env.cost.spentUsd(), costLimitUsd: env.cost.limitUsd },
+          to: "report",
+        }
+      : undefined,
   nodes: {
     fix: {
       kind: "agent",
       commits: true,
-      produces: ["agreedCount", "outcome", "fixFailure", "fixDirty"],
+      produces: ["agreedCount", "outcome", "fixFailure", "fixDirty", "fixSha"],
       exits: ["nothing", "ran"],
       transitions: [
         { on: "nothing", to: "ready" },
         { on: "ran", to: "check" },
       ],
       run: (env, state) => _botFixDeps.fixStep(env, state),
+    },
+    repair: {
+      kind: "agent",
+      commits: true,
+      produces: [
+        "gateRepairRounds",
+        "repairMode",
+        "outcome",
+        "fixFailure",
+        "fixDirty",
+        "fixSha",
+        "prepareTreeUnreadable",
+      ],
+      exits: ["ran", "out-of-scope"],
+      transitions: [
+        { on: "ran", to: "check" },
+        { on: "out-of-scope", to: "report" },
+      ],
+      run: (env, state) => _botFixDeps.repairStep(env, state),
     },
     check: {
       kind: "git",
@@ -98,9 +140,18 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
     },
     gates: {
       kind: "gate",
-      produces: ["outcome", "failingGates", "baselineFailing", "ciOutcome", "recoveryPath"],
-      exits: ["no-gates", "failed", "passed", "dirty"],
-      transitions: [{ on: "passed", to: "push" }, { to: "report" }],
+      produces: [
+        "outcome",
+        "failingGates",
+        "baselineFailing",
+        "ciOutcome",
+        "recoveryPath",
+        "fixSha",
+        "gateTails",
+        "repairSkippedForCost",
+      ],
+      exits: ["no-gates", "failed", "passed", "dirty", "repair"],
+      transitions: [{ on: "passed", to: "push" }, { on: "repair", to: "repair" }, { to: "report" }],
       run: (env, state) => _botFixDeps.gatesStep(env, state),
     },
     push: {
@@ -122,7 +173,7 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
       kind: "forge",
       produces: ["markedReady", "readyHeld"],
       exits: ["report"],
-      transitions: [{ to: "report" }],
+      transitions: [{ to: "done", when: (state) => state.readyOnly === true }, { to: "report" }],
       run: (env, state) => _botFixDeps.readyStep(env, state),
     },
     report: {
@@ -178,22 +229,45 @@ async function recordFixRulings(
   }
 }
 
+async function initialFixState(env: BotFixEnv, outputDir: string, input: BotFixInput): Promise<BotFixState> {
+  if (input.readyOnly) return { step: "ready", timings: {}, readyOnly: true, outcome: "ready-pass" };
+  let initial = await reuseSavedFix({ env, outputDir, fresh: input.fresh, savedFix: _botFixDeps.savedFix });
+  try {
+    await _botFixDeps.runPreRunSteps({ steps: env.checks.preRun, workdir: env.checkout.worktree });
+  } catch (error) {
+    if (!(error instanceof NaxError) || error.code !== "PRE_RUN_FAILED") throw error;
+    const setupFailed = typeof error.context?.command === "string" ? error.context.command : "unknown";
+    getLogger()?.warn("bot-fix", "Fix setup failed", {
+      pr: env.ref.number,
+      command: setupFailed,
+      error: errorMessage(error),
+    });
+    initial = { step: "report", timings: {}, outcome: "setup-failed", setupFailed };
+  }
+  return initial;
+}
+
 async function executeFix(
   env: BotFixEnv,
   runtime: ReturnType<typeof _botFixDeps.createRuntime>,
+  input: BotFixInput,
 ): Promise<BotFixResult> {
-  await _botFixDeps.runPreRunSteps({ steps: env.checks.preRun, workdir: env.checkout.worktree });
+  const initial = await initialFixState(env, runtime.outputDir, input);
   const stateDir = botRunDir(runtime.outputDir, env.ref.number, runtime.runId);
   const state = await runStepGraph(
     BOT_FIX_GRAPH,
     env,
-    { step: "fix", timings: {} },
+    initial,
     { persist: (value) => _botFixDeps.writeJson(join(stateDir, "bot-state.json"), value) },
-    { aborted: () => runtime.signal.aborted, now: () => Date.now() },
+    {
+      aborted: () => runtime.signal.aborted,
+      now: () => Date.now(),
+      costExceeded: () => env.cost.spentUsd() >= env.cost.limitUsd,
+    },
   );
   if (!state.outcome)
     throw new NaxError("[bot-fix] Missing graph outcome", "BOT_FIX_OUTCOME_MISSING", { stage: "bot-fix" });
-  return { ...state, outcome: state.outcome };
+  return { ...state, outcome: state.outcome, spentUsd: env.cost.spentUsd(), limitUsd: env.cost.limitUsd };
 }
 
 const SHORT_SHA_LENGTH = 7;
@@ -226,6 +300,19 @@ function finishFix(result: BotFixResult, log: BotLog): BotFixResult {
   return log.path === undefined ? result : { ...result, logPath: log.path };
 }
 
+async function preserveFixReport(reportPath: string, stateDir: string): Promise<void> {
+  try {
+    if (!(await _botFixDeps.fileExists(reportPath))) return;
+    await _botFixDeps.copyFile(reportPath, join(stateDir, "fix-report.md"));
+  } catch (error) {
+    getLogger()?.warn("bot-fix", "Could not preserve fix session report", {
+      reportPath,
+      stateDir,
+      error: errorMessage(error),
+    });
+  }
+}
+
 async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<BotFixResult> {
   const deps = _botFixDeps;
   const { repoRoot, ref, info, checkout } = prepared;
@@ -236,6 +323,7 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
   let context: Awaited<ReturnType<typeof deps.buildPrStepContext>> | undefined;
   try {
     log = deps.openBotLog(join(stateDir, "bot.jsonl"));
+    await deps.setupBotRuntime(runtime, config, checkout.worktree);
     getLogger().info("bot", "Bot fix started", { pr: ref.number, headSha: info.headSha });
     context = await deps.buildPrStepContext({
       runtime,
@@ -253,9 +341,11 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
         },
         log,
       );
-    const access = await deps.checkPushAccess(checkout.worktree, info.headRef);
-    if (!access.ok)
-      return finishFix({ outcome: "refused", reason: `cannot push to ${info.headRef}: ${access.reason}` }, log);
+    if (!input.readyOnly) {
+      const access = await deps.checkPushAccess(checkout.worktree, info.headRef);
+      if (!access.ok)
+        return finishFix({ outcome: "refused", reason: `cannot push to ${info.headRef}: ${access.reason}` }, log);
+    }
     const checks = await fixChecks({ ...prepared, ctx: context.ctx, config, review });
     if (checks.source === "none")
       return finishFix(
@@ -276,9 +366,17 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
       review,
       model: input.model,
       forge: deps.forge,
+      cost: botCostEnv(config, runtime, input.costLimitUsd),
     };
     await recordFixRulings(env, items.comments);
-    return finishFix(await executeFix(env, runtime), log);
+    try {
+      const result = await executeFix(env, runtime, input);
+      if (!input.readyOnly && result.outcome !== "refused")
+        await persistSavedFix({ env, state: result, outputDir: runtime.outputDir, savedFix: deps.savedFix });
+      return finishFix(result, log);
+    } finally {
+      await preserveFixReport(env.ctx.reportPath, stateDir);
+    }
   } finally {
     try {
       await context?.dispose();

@@ -5,6 +5,7 @@ import type { ConfiguredModel } from "@/config";
 
 const original = { ...bot._fixStepsDeps };
 beforeEach(() => {
+  bot._fixStepsDeps.readHead = async () => "fix-head";
   bot._fixStepsDeps.runGit = async () => ({ exitCode: 0, stdout: "", stderr: "" });
 });
 afterEach(() => Object.assign(bot._fixStepsDeps, original));
@@ -39,6 +40,7 @@ describe("fixStep", () => {
     expect(run).toHaveBeenCalledWith(env.ctx, {
       findings: bot.toFixFindings(items),
       model: bot.botModel(env.config, "fix"),
+      prompt: expect.stringContaining("PR #42"),
     });
   });
   test.each([undefined, "fast"] satisfies (ConfiguredModel | undefined)[])(
@@ -51,6 +53,7 @@ describe("fixStep", () => {
       expect(run).toHaveBeenCalledWith(env.ctx, {
         findings: bot.toFixFindings(items),
         model: bot.botModel(env.config, "fix", model),
+        prompt: expect.stringContaining("PR #42"),
       });
     },
   );
@@ -62,13 +65,16 @@ describe("fixStep", () => {
   });
   test("AC-6/8 returns ran and agreedCount without engine fields", async () => {
     fakeFix();
-    expect(await bot.fixStep(environment(items), state())).toEqual({ exit: "ran", patch: { agreedCount: 2 } });
+    expect(await bot.fixStep(environment(items), state())).toEqual({
+      exit: "ran",
+      patch: { agreedCount: 2, fixSha: "fix-head" },
+    });
   });
   test("AC-7 records session failure but leaves grading to check and gates", async () => {
     fakeFix("interrupted");
     expect(await bot.fixStep(environment(items), state())).toEqual({
       exit: "ran",
-      patch: { agreedCount: 2, fixFailure: "interrupted" },
+      patch: { agreedCount: 2, fixFailure: "interrupted", fixSha: "fix-head" },
     });
   });
 });

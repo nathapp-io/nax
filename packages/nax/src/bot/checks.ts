@@ -205,6 +205,17 @@ export async function resolveBotChecks(input: ResolveBotChecksInput): Promise<Bo
   }
 }
 
+/** The post-session bar includes each gate's setup immediately before its commands. */
+export function barCommands(checks: BotChecks): string[] {
+  return checks.gates.flatMap(({ name, command, setup }) => {
+    const preparation = setup === undefined ? [] : typeof setup === "string" ? [setup] : setup;
+    return [
+      ...preparation.map((step) => `${step}  (setup for ${name})`),
+      ...(typeof command === "string" ? [command] : command),
+    ];
+  });
+}
+
 /** Lists represent multiple shell commands, not argv; setup and preRun are not gates. */
 export function checkCommands(checks: BotChecks): string[] {
   return checks.gates.flatMap(({ command }) => (typeof command === "string" ? [command] : command));

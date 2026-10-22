@@ -1,27 +1,32 @@
 /** Repo-scoped fix nodes: one session, then an independent committed-tree safety check. */
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import type { ConfiguredModel, NaxConfig } from "@/config";
+import { type ConfiguredModel, DEFAULT_CONFIG, type NaxConfig } from "@/config";
 import type { CurrentUser, ForgeDeps, OwnComment, PrInfo, PrRef, PrThread } from "@/forge";
 import { getLogger } from "@/logger";
+import { buildBotPrFixPrompt, renderCheckoutState } from "@/prompts";
 import type { GraphState, StepResult } from "@/step-graph";
 import { gitWithTimeout } from "@/utils/git";
 import type { PrStepContext } from "@/workflow/branch-step-context";
-import { type GateCommand, runQualityGates } from "../finish/gates/quality";
+import { type GateCommand, gateOutputTail, runQualityGates } from "../finish/gates/quality";
 import { runBranchFix } from "../workflow/branch-fix";
 import type { CiWaitOutcome } from "../workflow/ci-wait";
 import { readHead } from "../workflow/git";
 import { changedPaths, type PrCheckout } from "./checkout";
-import type { BotChecks } from "./checks";
+import { listCiConfigFiles } from "./checkout-state";
+import { type BotChecks, barCommands } from "./checks";
 import { toFixFindings } from "./fix-input";
 import { failingOnHead, logGateFailure, readHeadCi } from "./gate-baseline";
+import { featureIntentPaths } from "./intent";
 import { botModel } from "./models";
 import { fixProtectedPaths } from "./path-policy";
 import type { BotReviewArtifact } from "./post";
 
-export type BotFixStep = "fix" | "check" | "gates" | "push" | "reply" | "ready" | "report" | "done";
+export type BotFixStep = "fix" | "repair" | "check" | "gates" | "push" | "reply" | "ready" | "report" | "done";
 
 export interface BotFixState extends GraphState<BotFixStep> {
+  readonly readyOnly?: boolean;
   readonly outcome?:
+    | "ready-pass"
     | "pushed"
     | "nothing"
     | "no-change"
@@ -29,9 +34,20 @@ export interface BotFixState extends GraphState<BotFixStep> {
     | "no-gates"
     | "gates-failed"
     | "baseline-red"
+    | "prepare-touched-tracked"
     | "push-rejected"
     | "push-unknown"
-    | "dirty";
+    | "dirty"
+    | "setup-failed"
+    | "cost-limit";
+  readonly costSpentUsd?: number;
+  readonly costLimitUsd?: number;
+  readonly gateTails?: readonly { name: string; tail: string }[];
+  readonly prepareTreeUnreadable?: boolean;
+  readonly gateRepairRounds?: number;
+  readonly repairMode?: "repair" | "prepare";
+  readonly repairSkippedForCost?: boolean;
+  readonly setupFailed?: string;
   readonly changed?: readonly string[];
   readonly protectedFiles?: readonly string[];
   readonly failingGates?: readonly string[];
@@ -45,6 +61,8 @@ export interface BotFixState extends GraphState<BotFixStep> {
   readonly markedReady?: boolean;
   /** Why the PR stayed a draft (US-005): a workflow PR, or a CI that is not green. */
   readonly readyHeld?: string;
+  readonly reusedFix?: string;
+  readonly fixSha?: string;
   readonly fixFailure?: string;
   readonly agreedCount?: number;
   readonly fixDirty?: boolean;
@@ -52,6 +70,7 @@ export interface BotFixState extends GraphState<BotFixStep> {
 }
 
 export interface BotFixEnv {
+  readonly cost: { readonly limitUsd: number; spentUsd(): number };
   readonly ctx: PrStepContext;
   readonly config: NaxConfig;
   readonly checks: BotChecks;
@@ -82,18 +101,49 @@ export const _fixStepsDeps = {
 export async function fixStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {
   const agreedCount = env.review.agreed.length;
   if (agreedCount === 0) return { patch: { agreedCount, outcome: "nothing" }, exit: "nothing" };
-  const result = await _fixStepsDeps.runBranchFix(env.ctx, {
-    findings: toFixFindings(env.review.agreed),
-    model: botModel(env.config, "fix", env.model),
+  const findings = toFixFindings(env.review.agreed);
+  const prompt = buildBotPrFixPrompt({
+    mode: "fix",
+    pr: env.info,
+    ...featureIntentPaths(env.checkout),
+    findings,
+    bar: barCommands(env.checks),
+    checkoutState: renderCheckoutState({
+      phase: "fresh",
+      headSha: env.info.headSha,
+      setup: env.checks.preRun.map((step) => step.command),
+      ciFiles: await listCiConfigFiles(env.checkout.worktree),
+    }),
+    reportPath: env.ctx.reportPath,
   });
+  const result = await _fixStepsDeps.runBranchFix(env.ctx, {
+    findings,
+    model: botModel(env.config, "fix", env.model),
+    prompt,
+  });
+  const fixSha = await readFixHead(env);
   return {
     patch: {
       agreedCount,
+      ...(fixSha !== undefined ? { fixSha } : {}),
       ...(result.dirty ? { fixDirty: true } : {}),
       ...(result.failure !== undefined ? { fixFailure: result.failure } : {}),
     },
     exit: "ran",
   };
+}
+
+async function readFixHead(env: BotFixEnv): Promise<string | undefined> {
+  try {
+    return await _fixStepsDeps.readHead(env.checkout.worktree);
+  } catch (error) {
+    getLogger()?.warn("bot-fix", "Could not read HEAD after fix session", {
+      pr: env.info.number,
+      worktree: env.checkout.worktree,
+      error: errorMessage(error),
+    });
+    return undefined;
+  }
 }
 
 /** Never verify or push a different tree from HEAD. Retain the registered checkout for recovery. */
@@ -133,11 +183,41 @@ export async function gatesStep(env: BotFixEnv, _state: BotFixState): Promise<St
   if (commands.length === 0) return { patch: { outcome: "no-gates" }, exit: "no-gates" };
   // Use the reviewed checks, but verify the fixed tree, never the snapshot.
   const worktreeCommands = commands.map((gate) => ({ ...gate, cwd: env.checkout.worktree }));
+  const tails = new Map<string, string>();
+  const log = logGateFailure("fix");
   const result = await _fixStepsDeps.runQualityGates(env.checkout.worktree, worktreeCommands, {
-    onGate: logGateFailure("fix"),
+    onGate: (record) => {
+      log(record);
+      tails.set(record.name, gateOutputTail(record.output));
+    },
   });
-  if (!result.passed) return { patch: await classifyRedGates(env, worktreeCommands, result.failing), exit: "failed" };
+  if (!result.passed) {
+    // Snapshot the recoverable commit before baseline checkout can move HEAD.
+    const fixSha = await _fixStepsDeps.readHead(env.checkout.worktree).catch((error) => {
+      getLogger()?.warn("bot-fix", "Could not snapshot HEAD before baseline", { error: errorMessage(error) });
+      return _state.fixSha;
+    });
+    const patch = {
+      ...(await classifyRedGates(env, worktreeCommands, result.failing)),
+      ...(fixSha !== undefined ? { fixSha } : {}),
+    };
+    const gateTails = result.failing.map((name) => ({ name, tail: tails.get(name) ?? "(no output captured)" }));
+    return repairDecision(env, _state, { ...patch, gateTails });
+  }
   return { patch: {}, exit: "passed" };
+}
+
+/** Classification, rounds and cost all constrain both repair-eligible outcomes. */
+function repairDecision(env: BotFixEnv, state: BotFixState, patch: Partial<BotFixState>): StepResult<BotFixState> {
+  const rounds = env.config.bot?.gateRepairRounds ?? DEFAULT_CONFIG.bot?.gateRepairRounds;
+  const eligible =
+    (state.gateRepairRounds ?? 0) < (rounds ?? 0) &&
+    (patch.outcome === "gates-failed" || (patch.outcome === "baseline-red" && patch.ciOutcome === "green"));
+  const belowLimit = env.cost.spentUsd() < env.cost.limitUsd;
+  return {
+    patch: { ...patch, ...(eligible && !belowLimit ? { repairSkippedForCost: true } : {}) },
+    exit: eligible && belowLimit ? "repair" : "failed",
+  };
 }
 
 /** A red gate is the fix's only when the unmodified head passes it (nax#2631). */

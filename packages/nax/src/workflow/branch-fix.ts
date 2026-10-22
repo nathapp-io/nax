@@ -79,15 +79,17 @@ async function runFixSession(fc: BranchStepContext, prompt: string, model?: Conf
 
 export async function runBranchFix(
   fc: BranchStepContext,
-  input: { specPath?: string; findings: readonly WorkflowFinding[]; model?: ConfiguredModel },
+  input: { specPath?: string; findings: readonly WorkflowFinding[]; model?: ConfiguredModel; prompt?: string },
 ): Promise<BranchFixOutcome> {
   await ensureReport(fc);
-  const prompt = buildWorkflowBranchFixPrompt({
-    ...(input.specPath ? { specPath: input.specPath } : {}),
-    ...(fc.prdPath !== undefined ? { prdPath: fc.prdPath } : {}),
-    reportPath: fc.reportPath,
-    findings: input.findings,
-  });
+  const prompt =
+    input.prompt ??
+    buildWorkflowBranchFixPrompt({
+      ...(input.specPath ? { specPath: input.specPath } : {}),
+      ...(fc.prdPath !== undefined ? { prdPath: fc.prdPath } : {}),
+      reportPath: fc.reportPath,
+      findings: input.findings,
+    });
   const session = await runFixSession(fc, prompt, input.model);
   return { ...session, ...(await commitLeftovers(fc)) };
 }
