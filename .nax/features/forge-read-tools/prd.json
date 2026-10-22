@@ -3,7 +3,7 @@
   "feature": "forge-read-tools",
   "branchName": "feat/forge-read-tools",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T16:29:53.082Z",
+  "updatedAt": "2026-10-22T16:45:03.809Z",
   "userStories": [
     {
       "id": "US-001",
@@ -394,14 +394,17 @@
         "US-001",
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "One log handler and provider registration reuse the existing forge readers and result fitter; strict three-session TDD remains required for current-head authorization and validation before I/O."
+        "reasoning": "One log handler and provider registration reuse the existing forge readers and result fitter; strict three-session TDD remains required for current-head authorization and validation before I/O.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/job-log.ts",
@@ -423,7 +426,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d05e2a5696ce8a897a7a64b942a69947dfb8c56a"
     },
     {
       "id": "US-008",
