@@ -87,7 +87,7 @@ describe("log tool", () => {
   ])("US-008 AC-$ac selects numbered view", async ({ text, input, expected, summary }) => {
     _forgeToolsDeps.readJobLog = mock(async (): Promise<JobLogRead> => ({ ok: true, text }));
     const result = await (await tool()).run({ check: "7", ...input }, ctx);
-    expect(result.content.split("\n").filter((line) => /^\d+: /.test(line))).toEqual(expected);
+    expect(result.content.split("\n").filter((line) => /^\d+: /.test(line))).toEqual([...expected]);
     expect(result.content).toContain(summary);
   });
   test("US-008 AC-11 fits pages by dropping end lines", async () => {
