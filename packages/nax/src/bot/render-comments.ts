@@ -18,6 +18,7 @@ const DECISION_LABELS: Record<PrTriageDecision, string> = {
 };
 
 export interface ReviewSummaryInput {
+  readonly unreadFiles?: readonly string[];
   readonly minor?: readonly WorkflowFindingDraft[];
   readonly earlier?: { readonly open: number; readonly fixed: number; readonly withdrawn: number };
   readonly checks?: BotChecks | null;
@@ -86,11 +87,15 @@ function summarySections(input: ReviewSummaryInput): ListSection[] {
       ),
     },
     { heading: "### Could not verify", items: input.cannotVerify.map((text) => `- ${safeText(text, TEXT_LIMIT)}`) },
+    {
+      heading: "### Review coverage",
+      items: (input.unreadFiles ?? []).map((path) => `Not read by the review: \`${safeCode(path)}\``),
+    },
   ].filter((section) => section.items.length > 0);
 }
 
-function omissionLine(count: number): string {
-  return `… and ${count} more not shown.`;
+function omissionLine(count: number, kinds: ReadonlySet<string>): string {
+  return `… and ${count} more not shown. Omitted from: ${[...kinds].join(", ")}.`;
 }
 
 /** Account for each joined newline and the marker wrapper without repeatedly joining huge lists. */
@@ -101,13 +106,18 @@ function boundedSummary(prefix: string[], sections: ListSection[], suffix: strin
     for (const item of section.items) length += item.length + 1;
   }
   let omitted = 0;
-  while (length + (omitted ? omissionLine(omitted).length + 1 : 0) > MAX_FORGE_COMMENT_CHARS - SUMMARY_RESERVE) {
+  const omittedKinds = new Set<string>();
+  while (
+    length + (omitted ? omissionLine(omitted, omittedKinds).length + 1 : 0) >
+    MAX_FORGE_COMMENT_CHARS - SUMMARY_RESERVE
+  ) {
     const section = sections.at(-1);
     if (!section) break;
     const item = section.items.pop();
     if (item !== undefined) {
       length -= item.length + 1;
       omitted++;
+      omittedKinds.add(section.heading.replace(/^### /, ""));
     }
     if (section.items.length === 0) {
       length -= section.heading.length + 1;
@@ -115,7 +125,7 @@ function boundedSummary(prefix: string[], sections: ListSection[], suffix: strin
     }
   }
   const lists = sections.flatMap(({ heading, items }) => [heading, ...items]);
-  const notice = omitted ? [omissionLine(omitted)] : [];
+  const notice = omitted ? [omissionLine(omitted, omittedKinds)] : [];
   return withNaxBotMarker([...prefix, ...lists, ...notice, ...suffix].join("\n"), "summary");
 }
 

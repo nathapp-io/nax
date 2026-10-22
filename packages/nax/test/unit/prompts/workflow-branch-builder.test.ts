@@ -5,6 +5,7 @@ import {
   buildWorkflowBranchFixPrompt,
   buildWorkflowBranchReReviewPrompt,
   buildWorkflowBranchReviewPrompt,
+  WORKFLOW_DESIGN_DECISIONS_ITEM,
   WORKFLOW_ENUMERATION_INSTRUCTION,
   WORKFLOW_QUALITY_CHECKLIST,
   WORKFLOW_REPLY_CONTRACT,
@@ -28,6 +29,12 @@ describe("buildWorkflowBranchReviewPrompt", () => {
     parked: [{ storyId: "US-002", text: "hold F3: flaky timer" }],
     cannotVerify: [{ storyId: "US-001", text: "Redis TTL behaviour" }],
     gateFindings: [{ id: "B1", kind: "gate", severity: "important", issue: "repo gate lint failed" }],
+  });
+
+  test("US-014 AC-7 lists shared design decisions as a remit bullet", () => {
+    const remit = prompt.slice(prompt.indexOf("## Your remit"), prompt.indexOf(WORKFLOW_QUALITY_CHECKLIST));
+    expect(remit).toContain(`\n- ${WORKFLOW_DESIGN_DECISIONS_ITEM}\n`);
+    expect(remit).not.toContain("If project decisions are listed below");
   });
 
   test("names every input file", () => {

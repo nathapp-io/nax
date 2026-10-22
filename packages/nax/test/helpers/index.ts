@@ -16,6 +16,7 @@ export { makeAgentResult } from "./agent-result";
 export { assertDefined, firstCall } from "./assert-defined";
 export { assertCaughtInstanceOf, assertNaxError } from "./assert-nax-error";
 export { makeBotFixDeps, makeBotFixDraftEnv, makeBotFixEnv } from "./bot-fix";
+export { makeBotReviewDeps } from "./bot-review";
 export { makeMockCallContext } from "./call-context";
 export { type CallOpStubOptions, DEFAULT_AGENT_ENVELOPE, makeCallOp, makeScriptedCallOp } from "./call-op";
 export { type CodexAcpEnvDeps, stubCodexAcpEnvDeps } from "./codex-acp-deps";
@@ -57,6 +58,7 @@ export type { FakeAgentManagerOptions } from "./fake-agent-manager";
 export { fakeAgentManager } from "./fake-agent-manager";
 export type { FakeClock } from "./fake-clock";
 export { makeFakeClock } from "./fake-clock";
+export { makeFinalizeAdvisor, wireFinalize } from "./finalize";
 export { makeFinding } from "./finding";
 export type { FinishGitModel, MachineHarness, MachineHarnessOpts } from "./finish-machine";
 export {

@@ -13,7 +13,7 @@ import type {
 const BLOCKING_KINDS: ReadonlySet<OpenItem["kind"]> = new Set(["finding", "ruling", "gate"]);
 
 const APPROVAL_ITEM_ID = "_run:approval";
-const CI_ITEM_ID = "_run:ci";
+export const CI_ITEM_ID = "_run:ci";
 
 /** `<n> ruling(s) flagged for a human` — the readiness reason for flagged rulings (`flaggedCount`). */
 const FLAGGED_REASON = /^(\d+) ruling\(s\) flagged for a human$/;

@@ -86,7 +86,10 @@ interface GithubThread {
   path: string;
   line: number | null;
   originalLine: number | null;
-  comments: { nodes: { databaseId: number; author: { login: string } | null; body: string; createdAt: string }[] };
+  comments: {
+    pageInfo?: { hasNextPage: boolean };
+    nodes: { databaseId: number; author: { login: string } | null; body: string; createdAt: string }[];
+  };
 }
 interface GithubReply {
   data: {
@@ -107,7 +110,7 @@ export interface GitlabDiscussion {
     id: number;
     system: boolean;
     resolved?: boolean;
-    author: { username: string };
+    author: { username: string; id: number };
     body: string;
     created_at: string;
     position?: {
@@ -125,7 +128,7 @@ const REVIEW_THREADS_QUERY = `query($owner: String!, $name: String!, $number: In
       reviewThreads(first: 100, after: $endCursor) {
         pageInfo { hasNextPage endCursor }
         nodes { id isResolved isOutdated path line originalLine
-          comments(first: 100) { nodes { databaseId author { login } body createdAt } }
+          comments(first: 100) { pageInfo { hasNextPage } nodes { databaseId author { login } body createdAt } }
         }
       }
     }
@@ -133,6 +136,17 @@ const REVIEW_THREADS_QUERY = `query($owner: String!, $name: String!, $number: In
 }`;
 
 function githubThread(node: GithubThread): PrThread {
+  // Authoritative ruling consumers must never authorize from an incomplete conversation.
+  // Fail closed at the nested page boundary until a complete comment reader is available.
+  if (
+    node.comments.pageInfo?.hasNextPage ||
+    (!node.comments.pageInfo && node.comments.nodes.length >= FORGE_PAGE_SIZE)
+  ) {
+    throw new NaxError("[forge] Incomplete review thread conversation", "FORGE_PAGINATION_LIMIT", {
+      stage: "forge",
+      threadId: node.id,
+    });
+  }
   const first = node.comments.nodes[0];
   if (!first)
     throw new NaxError("[forge] Review thread has no reply target", "FORGE_RESPONSE_UNPARSEABLE", { stage: "forge" });
@@ -199,6 +213,7 @@ function gitlabThread(discussion: GitlabDiscussion): PrThread {
         id: String(note.id),
         kind: "thread",
         author: note.author.username,
+        authorId: note.author.id,
         body: note.body,
         createdAt: note.created_at,
       })),
@@ -264,6 +279,7 @@ export async function listPrComments(ref: PrRef, deps: ForgeDeps, cwd: string): 
               id: String(note.id),
               kind: "comment",
               author: note.author.username,
+              authorId: note.author.id,
               body: note.body,
               createdAt: note.created_at,
             }),

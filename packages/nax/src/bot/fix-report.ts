@@ -5,8 +5,13 @@ import { NaxError } from "@/errors";
 import {
   editComment,
   hasNaxWorkflowMarker,
+  listPrComments,
+  listReviewThreads,
+  ownComments,
   parseNaxBotMarker,
   postPrComment,
+  readCurrentUser,
+  readPrInfo,
   replyToThread,
   resolveThread,
   withNaxBotMarker,
@@ -15,18 +20,31 @@ import { getLogger } from "@/logger";
 import type { StepResult } from "@/step-graph";
 // Workflow leaves avoid pulling orchestration dependencies into the bot nodes.
 import { type CiWaitResult, ciAllowsReady, waitForChecks } from "../workflow/ci-wait";
+import { type DecisionEntry, sidecarKindFor } from "../workflow/decisions-sidecar";
+import { isOpenItemKind } from "../workflow/item-threads";
 import { safeCode } from "../workflow/pr-body-safe";
-import { markReadyArgv } from "../workflow/promote";
+import { evidenceComment, markReadyArgv } from "../workflow/promote";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
 import { safeText } from "./render";
+import { rulingModelReader } from "./ruling-reader";
+import { type RecordRulingsOutcome, recordPrRulings } from "./rulings";
+import { workflowPrReadiness } from "./workflow-ready";
 
 const SHORT_SHA_LENGTH = 7;
 const MAX_FAILURE_LENGTH = 500;
 const MAX_ISSUE_LENGTH = 200;
-/** A draft the workflow published is promoted by `nax workflow promote`, never by the bot (US-005). */
-const WORKFLOW_PR_HOLD = "nax workflow PR: promote it with nax workflow promote";
-
-export const _fixReportDeps = { replyToThread, resolveThread, editComment, postPrComment, waitForChecks };
+export const _fixReportDeps = {
+  replyToThread,
+  resolveThread,
+  editComment,
+  postPrComment,
+  waitForChecks,
+  readPrInfo,
+  readCurrentUser,
+  listReviewThreads,
+  listPrComments,
+  recordPrRulings,
+};
 
 async function replyAgreedThreads(env: BotFixEnv, state: BotFixState): Promise<number> {
   let replied = 0;
@@ -55,7 +73,7 @@ async function resolveOwnFindings(env: BotFixEnv, state: BotFixState): Promise<{
     if (!first || first.author !== env.user.login || thread.resolved) continue;
     const marker = parseNaxBotMarker(first.body);
     const item = marker && agreed.get(marker.key);
-    if (!item) continue;
+    if (!item || item.key.startsWith("w-")) continue;
     try {
       const summary = safeText(item.issue.split(/\r?\n/, 1)[0] ?? "", MAX_ISSUE_LENGTH);
       const body = withNaxBotMarker(
@@ -94,7 +112,7 @@ export async function replyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
  * The CI wait for this PR: the head the fix pushed, or the reviewed head when nothing was pushed.
  * The wait is the workflow's own, so bot fix and `nax workflow promote` read the same CI.
  */
-async function waitForCi(env: BotFixEnv, state: BotFixState): Promise<CiWaitResult> {
+async function waitForCi(env: BotFixEnv, state: Pick<BotFixState, "pushedSha">): Promise<CiWaitResult> {
   const timeouts = resolveWorkflowConfig(env.config).timeouts;
   return _fixReportDeps.waitForChecks(env.ref.forge, env.info.url, {
     cwd: env.repoRoot,
@@ -105,20 +123,102 @@ async function waitForCi(env: BotFixEnv, state: BotFixState): Promise<CiWaitResu
   });
 }
 
-/**
- * Ready the PR only when its CI is green (US-005). A PR the workflow published is left alone — it is
- * promoted by `nax workflow promote` — and a CI that is not green keeps the draft and says why.
- */
+function settledEntries(outcome: RecordRulingsOutcome): DecisionEntry[] {
+  return outcome.settled.map((item) => {
+    const kind = item.kind;
+    if (!isOpenItemKind(kind))
+      throw new NaxError("[bot-fix] Unknown evidence item kind", "BOT_FIX_EVIDENCE_INVALID", {
+        stage: "bot-fix",
+        kind: item.kind,
+      });
+    const { disposition, reason, sha } = item.ruling;
+    return {
+      id: item.itemId,
+      kind: sidecarKindFor({ id: item.itemId, kind, issue: "" }),
+      disposition,
+      reason,
+      ...(disposition === "fixed" && sha ? { sha } : {}),
+    };
+  });
+}
+
+async function readReadyRulings(env: BotFixEnv) {
+  const deps = _fixReportDeps;
+  const [info, user, threads, comments] = await Promise.all([
+    deps.readPrInfo(env.ref, env.forge, env.repoRoot),
+    deps.readCurrentUser(env.ref, env.forge, env.repoRoot),
+    deps.listReviewThreads(env.ref, env.forge, env.repoRoot),
+    deps.listPrComments(env.ref, env.forge, env.repoRoot),
+  ]);
+  const outcome = await deps.recordPrRulings({
+    ref: env.ref,
+    info,
+    login: user.login,
+    threads,
+    comments,
+    deps: env.forge,
+    cwd: env.repoRoot,
+    readModel: rulingModelReader(env.ctx, env.config),
+  });
+  return { info, user, comments, outcome };
+}
+
+async function workflowReadyHold(env: BotFixEnv, state: BotFixState): Promise<string | undefined> {
+  try {
+    const expectedSha = state.pushedSha ?? env.info.headSha;
+    const initial = await readReadyRulings(env);
+    if (initial.info.headSha !== expectedSha) return "PR head changed since this execution";
+    // Green here only bypasses the CI check for the initial item-only decision.
+    const items = workflowPrReadiness({ outcome: initial.outcome, ci: { outcome: "green", detail: "item preflight" } });
+    if (!items.ready) return items.reason;
+    const ci = await waitForCi(env, { pushedSha: expectedSha });
+    env.ctx.callCtx.runtime.signal.throwIfAborted();
+    // Rulings and index membership can change without a push while CI runs.
+    const { info, user, comments, outcome } = await readReadyRulings(env);
+    if (info.headSha !== expectedSha) return "PR head changed since this execution";
+    const ready = workflowPrReadiness({ outcome, ci });
+    if (!ready.ready) return ready.reason;
+    const evidence = await writeEvidence(env, outcome, ownComments(comments, user.login));
+    if (evidence) return evidence;
+    const fresh = await _fixReportDeps.readPrInfo(env.ref, env.forge, env.repoRoot);
+    if (fresh.headSha !== expectedSha) return "PR head changed since this execution";
+  } catch (error) {
+    env.ctx.callCtx.runtime.signal.throwIfAborted();
+    getLogger()?.warn("bot-fix", "Could not read PR rulings", { pr: env.ref.number, error: errorMessage(error) });
+    return "rulings could not be read";
+  }
+}
+
+async function writeEvidence(
+  env: BotFixEnv,
+  outcome: RecordRulingsOutcome,
+  own: BotFixEnv["own"],
+): Promise<string | undefined> {
+  if (!outcome.settled.length) return;
+  try {
+    const body = withNaxBotMarker(evidenceComment(settledEntries(outcome)), "w-evidence");
+    const existing = own.find(({ key }) => key === "w-evidence");
+    if (existing) await _fixReportDeps.editComment(env.ref, existing.comment, body, env.forge, env.repoRoot);
+    else await _fixReportDeps.postPrComment(env.ref, body, env.forge, env.repoRoot);
+  } catch (error) {
+    return `evidence comment failed: ${errorMessage(error)}`;
+  }
+}
+
+/** Only durable workflow rulings and exact-head green CI can release a workflow draft. */
 export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
   if (!env.info.draft) return { patch: { markedReady: false }, exit: "report" };
   if (hasNaxWorkflowMarker(env.info.body)) {
-    return { patch: { markedReady: false, readyHeld: WORKFLOW_PR_HOLD }, exit: "report" };
+    const readyHeld = await workflowReadyHold(env, state);
+    if (readyHeld) return { patch: { markedReady: false, readyHeld }, exit: "report" };
+  } else {
+    const ci = await waitForCi(env, state);
+    env.ctx.callCtx.runtime.signal.throwIfAborted();
+    if (!ciAllowsReady(ci.outcome)) {
+      return { patch: { markedReady: false, readyHeld: `CI ${ci.outcome}: ${ci.detail}` }, exit: "report" };
+    }
   }
-  const ci = await waitForCi(env, state);
   env.ctx.callCtx.runtime.signal.throwIfAborted();
-  if (!ciAllowsReady(ci.outcome)) {
-    return { patch: { markedReady: false, readyHeld: `CI ${ci.outcome}: ${ci.detail}` }, exit: "report" };
-  }
   const result = await env.forge.run(markReadyArgv(env.ref.forge, String(env.ref.number)), { cwd: env.repoRoot });
   if (result.exitCode !== 0) {
     throw new NaxError(`[bot-fix] Could not mark ${env.ref.repo}#${env.ref.number} ready`, "BOT_FIX_READY_FAILED", {

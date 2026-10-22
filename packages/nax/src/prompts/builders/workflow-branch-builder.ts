@@ -5,7 +5,11 @@ import {
   WORKFLOW_REPLY_CONTRACT,
   type WorkflowPromptFinding,
 } from "./workflow-implementer-builder";
-import { WORKFLOW_ENUMERATION_INSTRUCTION, WORKFLOW_QUALITY_CHECKLIST } from "./workflow-quality-checklist";
+import {
+  WORKFLOW_DESIGN_DECISIONS_ITEM,
+  WORKFLOW_ENUMERATION_INSTRUCTION,
+  WORKFLOW_QUALITY_CHECKLIST,
+} from "./workflow-quality-checklist";
 
 export interface BranchReviewPromptInput {
   readonly specPath?: string;
@@ -99,6 +103,7 @@ ${naxCheckedBlock(input.repoGates)}
 - Cross-story integration and contracts: do the stories fit together, do callers and callees agree, is shared state consistent?
 - Reachability: is every new piece wired in and reachable from where the spec says it is used?
 - Consistency and duplication across stories.
+- ${WORKFLOW_DESIGN_DECISIONS_ITEM}
 - Storage against contracts: for every field one story persists and another story reads, writes or validates, the column type and width (as the migration declares it, not only the schema) must hold every value the DTOs, acceptance criteria and API contracts accept.
 - Triage each deferred minor as "fix-now" (cheap and worth doing before the PR) or "leave". Its "minorTriage" entry is its whole verdict: do not repeat a deferred minor as a finding.
 Judge every changed file you read against the checklist below, as well as against the cross-story contracts.
@@ -122,8 +127,15 @@ ${REVIEW_JSON}`;
  * the first reply's `inspectedFiles` named only the files it opened after the retry prompt, so the
  * whole list has to be sent again, not just the additions.
  */
-export function buildWorkflowBranchCoverageRetry(range: string, missing: readonly string[]): string {
-  return `Your reply parsed, but its inspectedFiles does not cover every changed file. Read each of these with \`git diff ${range} -- <path>\` (or Read it, if the branch added it), and review it:
+export function buildWorkflowBranchCoverageRetry(
+  range: string,
+  missing: readonly string[],
+  staticMode = false,
+): string {
+  const read = staticMode
+    ? "Read each of these with Read (commands are unavailable)"
+    : `Read each of these with \`git diff ${range} -- <path>\` (or Read it, if the branch added it)`;
+  return `Your reply parsed, but its inspectedFiles does not cover every changed file. ${read}, and review it:
 ${missing.map((path) => `- ${path}`).join("\n")}
 
 List in inspectedFiles every file you have read or diffed in this session, not only the new ones.

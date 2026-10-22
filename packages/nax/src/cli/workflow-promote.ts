@@ -38,6 +38,7 @@ import {
 } from "../workflow/decisions-sidecar";
 import { readPrState } from "../workflow/pr-state";
 import { commentArgv, editBodyArgv, evidenceComment, markReadyArgv, tickChecklist } from "../workflow/promote";
+import { type PrRulingsReport, readPromoteRulings } from "../workflow/promote-rulings";
 import { type LoadedRun, loadRunVerdict } from "../workflow/run-verdict";
 import type { WorkflowCliDeps } from "./workflow";
 import type { WorkflowForgeDeps } from "./workflow-forge";
@@ -72,6 +73,7 @@ export interface WorkflowPromoteReport {
   /** No forge write happened, so this call reported rather than promoted. */
   readonly dryRun: boolean;
   readonly promoted: boolean;
+  readonly prRulings: PrRulingsReport;
   readonly checks: readonly PromoteCheck[];
   readonly actions: readonly PromoteAction[];
 }
@@ -128,14 +130,14 @@ interface FoundSidecar {
   readonly sidecar: DecisionsSidecar;
 }
 
-/** `items-ruled`: every open item id carries a ruling in the run's newest sidecar. */
-function itemsRuled(loaded: LoadedRun, found: FoundSidecar | null): PromoteCheck {
+/** `items-ruled`: every open item id has a local entry or a current indexed settled PR ruling. */
+function itemsRuled(loaded: LoadedRun, found: FoundSidecar | null, entries: readonly DecisionEntry[]): PromoteCheck {
   const ids = loaded.openItems.map((item) => item.id);
   if (ids.length === 0) return { name: "items-ruled", passed: true, detail: "" };
-  if (found === null) {
+  if (found === null && entries.length === 0) {
     return { name: "items-ruled", passed: false, detail: "no decisions recorded; run nax workflow record" };
   }
-  const ruled = new Set(found.sidecar.decisions.map((entry) => entry.id));
+  const ruled = new Set(entries.map((entry) => entry.id));
   const unruled = ids.filter((id) => !ruled.has(id));
   return unruled.length === 0
     ? { name: "items-ruled", passed: true, detail: "" }
@@ -176,6 +178,8 @@ interface PromoteTarget {
   readonly forgeDeps: WorkflowForgeDeps;
   /** One read serves the `items-ruled` check and all three actions that need the entries. */
   readonly found: FoundSidecar | null;
+  readonly entries: readonly DecisionEntry[];
+  readonly prRulings: PrRulingsReport;
 }
 
 /** The three actions that are a forge command; `record` writes to disk instead. */
@@ -218,31 +222,31 @@ async function readyAction(target: PromoteTarget): Promise<PromoteAction> {
   return { name: "ready", status: "done" };
 }
 
-/** The sidecar a run with none gets: no rulings to carry, and the outcome this run just produced. */
+/** A run with no local sidecar gets the merged entries and the outcome this promotion produced. */
 function promotedSidecar(target: PromoteTarget, now: Date): DecisionsSidecar {
   return {
     artifact: `${target.loaded.runId}/result.json`,
     feature: target.opts.feature,
     resumedAt: isoStamp(now),
     reasons: target.loaded.reasons,
-    decisions: [],
+    decisions: target.entries,
     outcome: "promoted",
     url: target.url,
   };
 }
 
 /**
- * `record`: the run's newest sidecar — or a new empty one — rewritten to say `promoted`. A sidecar
- * the run already has keeps every other field (its entries, its reasons, its file name), so the
- * ruling a human recorded survives; its `outcome` is overwritten whatever it was, `abandoned`
- * included.
+ * `record`: the run's newest sidecar — or a new one — rewritten to say `promoted`. A sidecar
+ * the run already has keeps its reasons and file name, merging current PR entries beneath its
+ * local entries so a human's local ruling survives. Its `outcome` is overwritten whatever it was,
+ * `abandoned` included.
  */
 async function recordAction(target: PromoteTarget): Promise<PromoteAction> {
   const now = target.forgeDeps.now();
   const found = target.found;
   const path = found?.path ?? join(target.loaded.runDir, sidecarFileName(now));
   const sidecar: DecisionsSidecar = found
-    ? { ...found.sidecar, outcome: "promoted", url: target.url }
+    ? { ...found.sidecar, decisions: target.entries, outcome: "promoted", url: target.url }
     : promotedSidecar(target, now);
   await writeSidecar(path, sidecar);
   return { name: "record", status: "done" };
@@ -253,7 +257,7 @@ async function recordAction(target: PromoteTarget): Promise<PromoteAction> {
  * here, so the actions after it never run — `ready` is never issued for a body that was not ticked.
  */
 async function promoteActions(target: PromoteTarget): Promise<PromoteAction[]> {
-  const entries = target.found?.sidecar.decisions ?? [];
+  const entries = target.entries;
   const actions: PromoteAction[] = [];
   actions.push(await tickAction(target, entries));
   actions.push(await commentAction(target, entries));
@@ -275,6 +279,7 @@ function reportOf(input: {
     url: input.target.url,
     dryRun: !input.promoted,
     promoted: input.promoted,
+    prRulings: input.target.prRulings,
     checks: input.checks,
     actions: input.actions,
   };
@@ -291,8 +296,18 @@ async function promote(opts: WorkflowPromoteOptions, forgeDeps: WorkflowForgeDep
   // B2: a sidecar the run's own items do not own is refused before a check runs and before any write:
   // its entries are what the tick, the evidence comment and the `promoted` record are built from.
   if (found) checkEntriesAgainstItems(found.sidecar.decisions, loaded.openItems, loaded.supplementaryItems);
-  const checks = [itemsRuled(loaded, found), await ciGreen({ forgeDeps, forge, url, dir: opts.dir, expectedSha })];
-  const target: PromoteTarget = { opts, loaded, url, forge, forgeDeps, found };
+  const rulings = await readPromoteRulings({
+    url,
+    cwd: opts.dir,
+    deps: forgeDeps.forge,
+    items: loaded.openItems,
+    local: found?.sidecar.decisions ?? [],
+  });
+  const checks = [
+    itemsRuled(loaded, found, rulings.entries),
+    await ciGreen({ forgeDeps, forge, url, dir: opts.dir, expectedSha }),
+  ];
+  const target: PromoteTarget = { opts, loaded, url, forge, forgeDeps, found, ...rulings };
   if (!opts.yes || !allPassed(checks)) return reportOf({ target, checks, promoted: false, actions: [] });
   return reportOf({ target, checks, promoted: true, actions: await promoteActions(target) });
 }

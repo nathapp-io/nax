@@ -2,6 +2,7 @@
 import type { AdviceDecision } from "@/advisor";
 import { buildAdvisorSection } from "@/finish";
 import { NAX_WORKFLOW_PR_MARKER } from "@/forge";
+import { markdownFence as fenced } from "@/utils/markdown-fence";
 import { redactedExcerpt, safeBlock, safeCell, safeCode, safeInline } from "./pr-body-safe";
 import type { PreflightFile } from "./preflight";
 import type {
@@ -96,11 +97,6 @@ function gateLines(input: WorkflowPrBodyInput): string[] {
 }
 
 /** A fence one backtick longer than any run in the text, so the excerpt cannot close it early. */
-function fenced(text: string): string {
-  const runs = text.match(/`+/g) ?? [];
-  const fence = "`".repeat(Math.max(3, Math.max(0, ...runs.map((r) => r.length)) + 1));
-  return `${fence}\n${text}\n${fence}`;
-}
 
 function gateExcerpts(input: WorkflowPrBodyInput): string {
   if ((input.finalGates?.failing.length ?? 0) === 0) return "";

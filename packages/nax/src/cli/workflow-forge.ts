@@ -20,6 +20,7 @@ import { waitForChecks } from "../workflow/ci-wait";
 export interface WorkflowForgeDeps {
   /** Runs `git`, `gh` and `glab` for the command. */
   readonly forge: ForgeDeps;
+  /** Canonical URL reader; injectable for fixtures with synthetic PR URLs. */
   /** The clock behind the sidecar's `resumedAt` and its file name. */
   readonly now: () => Date;
   /**

@@ -93,6 +93,15 @@ function withdrawalInput(authors: readonly string[] = ["alice"]): PostReviewInpu
 }
 
 describe("postPrReview", () => {
+  test("US-015 AC-10 summary names unread review paths", async () => {
+    await bot.postPrReview({ ...input, unreadFiles: ["src/unread.ts", "settings.json"] });
+    const bodyArgs = run.mock.calls.flatMap(([argv]) => argv).filter((arg) => arg.startsWith("body="));
+    expect(
+      bodyArgs.some((body) =>
+        body.includes("\nNot read by the review: `src/unread.ts`\nNot read by the review: `settings.json`"),
+      ),
+    ).toBe(true);
+  });
   test.each([
     ["AC-1", { type: "finding-withdrawn" }],
     ["AC-2", { key: "f-original", threadId: "T1" }],

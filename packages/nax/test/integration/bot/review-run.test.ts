@@ -153,6 +153,7 @@ beforeEach(() => {
     runPreRunSteps: preRun,
     readCurrentUser: async () => ({ login: "bot" }),
     listReviewThreads: async () => threads,
+    recordPrRulings: async () => ({ recorded: [], settled: [], open: [], asked: 0, failed: 0 }),
     listPrComments: async () => comments,
     readLinkedIssues: async () => issues,
     readHeadCi: headCi,
@@ -173,6 +174,12 @@ async function untrusted(): Promise<void> {
 }
 
 describe("runBotReview", () => {
+  test("US-015 AC-10 forwards unread files from review to posting", async () => {
+    review.mockImplementation(async () => ({ ran: true, verdict, unreadFiles: ["src/unread.ts"] }));
+    await runBotReview(input);
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0]?.[0]).toMatchObject({ unreadFiles: ["src/unread.ts"] });
+  });
   test("AC-1 refuses merged PR", async () => {
     info = { ...info, state: "merged" };
     expect(await runBotReview(input)).toEqual({ outcome: "refused", reason: "PR #42 is merged" });

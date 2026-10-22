@@ -7,6 +7,7 @@ import type { BranchReviewFacts } from "./branch-review";
 import { FEATURE_GRAPH } from "./feature-graph";
 import { readHeadSoft } from "./feature-steps";
 import type { PublishOutcome } from "./finalize";
+import type { ItemThreadsInput, ItemThreadsOutcome } from "./item-threads-post";
 import type { LedgerWriteOptions } from "./ledger";
 import type { LedgerItem } from "./ledger-items";
 import type { RepoGateRun } from "./repo-gates";
@@ -29,6 +30,8 @@ export interface FeatureSteps {
   branchReReview(findings: readonly WorkflowFinding[], fixBase: string): Promise<ReviewOutcome<ReReviewVerdict>>;
   adjudicate(items: readonly WorkflowFinding[]): Promise<readonly WorkflowRuling[]>;
   publish(record: WorkflowFeatureRecord): Promise<PublishOutcome>;
+  /** Optional durable PR items; absent preserves the original graph behavior. */
+  postItemThreads?: (input: ItemThreadsInput) => Promise<ItemThreadsOutcome>;
   head(): Promise<string>;
   /** Repo-rooted paths changed between `base` and HEAD. Throws on a git failure. */
   changedFiles(base: string): Promise<readonly string[]>;
@@ -62,6 +65,8 @@ export interface FeatureFacts {
 
 export interface FeatureEnv {
   readonly steps: FeatureSteps;
+  /** Captured from FeatureContext; optional for existing graph-only environments. */
+  readonly itemThreadsIdentity?: Pick<ItemThreadsInput, "projectDir" | "feature">;
   readonly sink: FeatureSink;
   readonly facts: FeatureFacts;
   readonly record: WorkflowFeatureRecord;

@@ -1,9 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
 import { botModel, parseModelOption } from "@/bot";
+import { NaxConfigSchema } from "@/config";
 import { NaxError } from "@/errors";
 
 describe("botModel", () => {
+  test("US-008 AC-1: rulings defaults to fast without workflow fallback", () => {
+    expect(botModel(makeNaxConfig({ workflow: { models: { branchFix: "powerful" } } }), "rulings")).toBe("fast");
+  });
+  test("US-008 AC-2: schema preserves the rulings model", () => {
+    const config = NaxConfigSchema.parse({ bot: { models: { rulings: "balanced" } } });
+    expect(botModel(makeNaxConfig({ bot: config.bot }), "rulings")).toBe("balanced");
+  });
+  test("US-008 AC-3: explicit rulings override wins", () => {
+    const model = { agent: "native", model: "custom" };
+    expect(botModel(makeNaxConfig({ bot: { models: { rulings: "balanced" } } }), "rulings", model)).toBe(model);
+  });
   test("AC-6: review override wins over bot config", () => {
     const config = makeNaxConfig({ bot: { models: { review: "powerful" } } });
     expect(botModel(config, "review", "fast")).toBe("fast");

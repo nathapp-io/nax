@@ -36,3 +36,11 @@ export function fencedLineIndices(lines: readonly string[]): Set<number> {
   }
   return fenced;
 }
+
+/** Untrusted text cannot terminate a fence longer than its longest backtick run. */
+export function markdownFence(text: string): string {
+  let longest = 0;
+  for (const run of text.matchAll(/`+/g)) longest = Math.max(longest, run[0].length);
+  const delimiter = "`".repeat(Math.max(3, longest + 1));
+  return `${delimiter}\n${text}\n${delimiter}`;
+}

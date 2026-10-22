@@ -10,7 +10,7 @@ const review = (id = 81) => ({ id, user: { login: "bob" }, body: "review", submi
 const discussion = (id = 91) => ({
   id: String(id),
   individual_note: true,
-  notes: [{ id, system: false, author: { username: "carol" }, body: "note", created_at: "noted" }],
+  notes: [{ id, system: false, author: { username: "carol", id: 9 }, body: "note", created_at: "noted" }],
 });
 const full = (item: unknown) => Array.from({ length: 100 }, () => item);
 const ghThreads = (next: boolean) => ({
@@ -50,6 +50,18 @@ const endpoint = (ref: PrRef, kind: "issues" | "pulls" | "discussions", page: nu
     : `repos/${ref.repo}/${kind}/${ref.number}/${kind === "issues" ? "comments" : "reviews"}?per_page=100&page=${page}`;
 
 describe("listPrComments", () => {
+  test("US-001 AC-11 maps each GitLab note author id in order", async () => {
+    const d = discussion();
+    const notes = [
+      ...d.notes,
+      { id: 92, system: false, author: { username: "alice", id: 10 }, body: "reply", created_at: "later" },
+    ];
+    const result = await forge.listPrComments(gitlab, harness([[{ ...d, notes }]]).deps, "/repo");
+    expect(result.map((c) => [c.id, c.authorId])).toEqual([
+      ["91", 9],
+      ["92", 10],
+    ]);
+  });
   test("AC-1 issue comments precede review bodies", async () => {
     expect(await comments([[issue()], [review()]])).toEqual([
       { id: "71", kind: "comment", author: "alice", body: "issue", createdAt: "created" },
@@ -97,7 +109,7 @@ describe("listPrComments", () => {
   });
   test("AC-8 individual GitLab note mapping", async () => {
     expect(await forge.listPrComments(gitlab, harness([[discussion()]]).deps, "/repo")).toEqual([
-      { id: "91", kind: "comment", author: "carol", body: "note", createdAt: "noted" },
+      { id: "91", kind: "comment", author: "carol", authorId: 9, body: "note", createdAt: "noted" },
     ]);
   });
   test("AC-9 excludes system notes", async () => {

@@ -39,7 +39,7 @@ describe("renderFindingComment", () => {
     expect(bot.renderFindingComment({ ...finding, issue: "[x](http://e.com)" })).not.toContain("](");
   });
   test("sanitizes and caps both issue and suggestion", () => {
-    const text = "@alice #12 [x](http://e.com) " + "z".repeat(3_000);
+    const text = `@alice #12 [x](http://e.com) ${"z".repeat(3_000)}`;
     const body = `**Important** (quality): ${bot.safeText(text, 2_000)}\n\nSuggestion: ${bot.safeText(text, 2_000)}`;
     expect(bot.renderFindingComment({ ...finding, issue: text, suggestion: text })).toBe(
       withNaxBotMarker(body, bot.findingKey({ issue: text })),
@@ -58,7 +58,7 @@ describe("renderThreadReply", () => {
     expect(bot.renderThreadReply({ ...reply, decision: "handled" })).toContain("Already handled: ");
   });
   test.each(["agree", "disagree", "handled"] as const)("sanitizes %s reasons", (decision) => {
-    const reason = "@alice #12 [x](http://e.com) " + "z".repeat(3_000);
+    const reason = `@alice #12 [x](http://e.com) ${"z".repeat(3_000)}`;
     const label = { agree: "Agree", disagree: "Disagree", handled: "Already handled" }[decision];
     expect(bot.renderThreadReply({ ...reply, decision, reason })).toBe(
       withNaxBotMarker(`${label}: ${bot.safeText(reason, 2_000)}`, bot.threadKey(reply.id)),
@@ -87,6 +87,30 @@ describe("renderEarlierReply", () => {
 });
 
 describe("renderReviewSummary", () => {
+  test("US-015 AC-10 lists unread paths safely and omits empty coverage", () => {
+    const path = "src/`odd`\nname.ts";
+    const body = bot.renderReviewSummary(summary({ unreadFiles: [path, "settings.json"] }));
+    expect(body).toContain(`Not read by the review: \`${safeCode(path)}\``);
+    expect(body).toContain("Not read by the review: `settings.json`");
+    expect(bot.renderReviewSummary(summary({ unreadFiles: [] }))).not.toContain("Not read by the review:");
+    expect(bot.renderReviewSummary(summary())).not.toContain("### Review coverage");
+  });
+  test("US-015 bounds huge unread file lists within the forge comment budget", () => {
+    const body = bot.renderReviewSummary(
+      summary({
+        unreadFiles: Array.from({ length: 2_000 }, (_, i) => `${i}/${"x".repeat(100)}`),
+        offLine: [finding],
+        cannotVerify: ["manual smoke"],
+        sensitive: ["credentials.ts"],
+      }),
+    );
+    expect(body.length).toBeLessThanOrEqual(MAX_FORGE_COMMENT_CHARS);
+    expect(body).toContain("more not shown.");
+    expect(body).toContain("Not read by the review: `0/");
+    expect(body).toContain("Leaks fd");
+    expect(body).toContain("manual smoke");
+    expect(body).toContain("credentials.ts");
+  });
   test("US-010 AC-6/7: minor items follow off-line findings", () => {
     const body = bot.renderReviewSummary(
       summary({ offLine: [finding], minor: [{ ...finding, severity: "minor", file: "a.ts", line: 8 }] }),
@@ -220,10 +244,12 @@ describe("renderReviewSummary", () => {
     const body = bot.renderReviewSummary(largeInput());
     const shown = body.match(/^- \*\*Important\*\*/gm)?.length ?? 0;
     expect(shown).toBeGreaterThan(0);
-    expect(body).toEndWith(`… and ${5_000 - shown} more not shown.\n\n<!-- nax-bot:v1 key=summary -->`);
+    expect(body).toEndWith(
+      `… and ${5_000 - shown} more not shown. Omitted from: Findings not on a changed line.\n\n<!-- nax-bot:v1 key=summary -->`,
+    );
   });
   test("sanitizes all author text and paths in section order", () => {
-    const text = "@alice #12 [x](http://e.com) " + "z".repeat(3_000);
+    const text = `@alice #12 [x](http://e.com) ${"z".repeat(3_000)}`;
     const path = "some`path\nfile.ts";
     const body = bot.renderReviewSummary(
       summary({

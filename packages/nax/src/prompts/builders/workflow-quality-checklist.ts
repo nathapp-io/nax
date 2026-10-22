@@ -27,3 +27,7 @@ A state loss a caller can reach is a critical or important finding, never minor;
  */
 export const WORKFLOW_ENUMERATION_INSTRUCTION =
   "Before you give the quality verdict, walk every function or method the diff adds or changes and judge it against the checklist.";
+
+/** Shared design remit for branch and bot reviews; edited designs are not settled authority. */
+export const WORKFLOW_DESIGN_DECISIONS_ITEM =
+  "Design decisions: if the repository has ADRs or architecture docs (for example docs/adr/ or docs/architecture/), check the change against the decisions that touch it. If the PR edits an ADR or design doc, review that edit as a design change and do not judge the rest of the PR against the edited text. If there are no decisions to apply, skip this item.";

@@ -34,7 +34,7 @@ import { openItemLine } from "@/workflow/pr-body";
 
 export const PROMOTE_FEATURE = "auth";
 export const PROMOTE_RUN_ID = "r1";
-export const PROMOTE_URL = "https://gh/pr/7";
+export const PROMOTE_URL = "https://github.com/o/r/pull/7";
 export const PROMOTE_REMOTE = "git@github.com:o/r.git\n";
 export const PROMOTE_NOW = new Date("2026-10-13T09:12:00.417Z");
 export const PROMOTE_SIDECAR_NAME = sidecarFileName(PROMOTE_NOW);
@@ -237,6 +237,29 @@ async function writeRulings(
 
 const draftPrView = (body: string): string => JSON.stringify({ isDraft: true, body, url: PROMOTE_URL });
 
+/** New read-only API answers; existing detection/view/write answers remain untouched. */
+function emptyPrReads(cmd: readonly string[]): Partial<ForgeRunResult> {
+  if (cmd[1] !== "api") return {};
+  if (cmd.at(-1) === "user") return { stdout: '{"login":"nax"}' };
+  if (cmd.includes("graphql"))
+    return {
+      stdout: JSON.stringify({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                nodes: [],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          },
+        },
+      }),
+    };
+  if (/\/(comments|reviews)\?/.test(cmd.at(-1) ?? "")) return { stdout: "[]" };
+  return {};
+}
+
 /** The forge stub: detection, HEAD and `pr view` answer from `opts`, everything else is inert. */
 function forgeDepsFor(recorded: Recorded, body: string, opts: PromoteFixtureOptions): WorkflowForgeDeps {
   const views =
@@ -260,7 +283,7 @@ function forgeDepsFor(recorded: Recorded, body: string, opts: PromoteFixtureOpti
         taken += 1;
         return answer(view);
       }
-      return answer({});
+      return answer(emptyPrReads(cmd));
     },
     readText: async () => null,
   };
@@ -275,7 +298,12 @@ function forgeDepsFor(recorded: Recorded, body: string, opts: PromoteFixtureOpti
     });
     return opts.ci ?? PROMOTE_GREEN;
   };
-  return { ..._workflowForgeDeps, forge, now: () => PROMOTE_NOW, waitForChecks };
+  return {
+    ..._workflowForgeDeps,
+    forge,
+    now: () => PROMOTE_NOW,
+    waitForChecks,
+  };
 }
 
 function harness(

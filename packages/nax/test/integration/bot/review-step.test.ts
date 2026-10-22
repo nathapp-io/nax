@@ -174,7 +174,11 @@ describe("runPrReview", () => {
         await git("commit", "-m", "head");
         _reviewStepDeps.writeBranchReviewPackage = originalReview.writeBranchReviewPackage;
         ctx = { ...ctx, projectDir: root, runDir: join(root, "artifacts") };
-        expect(await runPrReview(ctx, { ...input, mergeBase: base, staticMode: true })).toEqual({ ran: true, verdict });
+        expect(await runPrReview(ctx, { ...input, mergeBase: base, staticMode: true })).toEqual({
+          ran: true,
+          verdict,
+          unreadFiles: [".gitattributes", "modified.ts"],
+        });
         const pkg = await Bun.file(join(ctx.runDir, "package-pr.diff")).text();
         expect(pkg).toContain("-before modification");
         expect(pkg).toContain("+after modification");
@@ -190,7 +194,7 @@ describe("runPrReview", () => {
     ["AC-1", true, botPrStaticReviewOp],
     ["AC-2", false, botPrReviewOp],
   ] as const)("%s dispatches the selected review operation", async (_ac, staticMode, op) => {
-    expect(await runPrReview(ctx, { ...input, staticMode })).toEqual({ ran: true, verdict });
+    expect(await runPrReview(ctx, { ...input, staticMode })).toEqual({ ran: true, verdict, unreadFiles: paths });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.op).toBe(op);
     expect(calls[0]?.signal).toBeInstanceOf(AbortSignal);
@@ -224,7 +228,11 @@ describe("runPrReview", () => {
     expect(value.prompt).toContain("Intent: the PRD at /review/intent.json.");
     expect(value.prompt).toContain("PR author:\n```\nalice\n```");
     expect(value.prompt).toContain(`range merge-base..HEAD, diff package ${packagePath}`);
-    expect(calls[0]?.input).not.toHaveProperty("requiredFiles");
+    expect(calls[0]?.input).toMatchObject({
+      requiredFiles: paths,
+      repoRoot: ctx.projectDir,
+      range: "merge-base..HEAD",
+    });
     expect(calls[0]?.input).not.toHaveProperty("model");
   });
 

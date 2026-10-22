@@ -217,12 +217,23 @@ describe("readyStep", () => {
   });
   test("AC-4/5/6: keeps a marked nax-workflow PR a draft", async () => {
     const env = makeBotFixDraftEnv({ body: `${NAX_WORKFLOW_PR_MARKER}\n\n## Summary` });
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue(env.info);
+    spyOn(_fixReportDeps, "readCurrentUser").mockResolvedValue(env.user);
+    spyOn(_fixReportDeps, "listReviewThreads").mockResolvedValue([]);
+    spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([]);
+    spyOn(_fixReportDeps, "recordPrRulings").mockResolvedValue({
+      recorded: [],
+      settled: [],
+      open: [],
+      asked: 0,
+      failed: 0,
+    });
     const run = spyOn(env.forge, "run");
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockImplementation(() => {
       throw new Error("waitForChecks must not run on a nax-workflow PR");
     });
-    expect(await readyStep(env, state)).toEqual({
-      patch: { markedReady: false, readyHeld: "nax workflow PR: promote it with nax workflow promote" },
+    expect(await readyStep(env, { ...state, pushedSha: env.info.headSha })).toEqual({
+      patch: { markedReady: false, readyHeld: "no nax item index on this PR" },
       exit: "report",
     });
     expect(wait).not.toHaveBeenCalled();

@@ -1,9 +1,10 @@
 /** Repo-scoped trusted, exact-head fix orchestration. Every invocation is fresh. */
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { resolveDefaultAgent } from "@/agents";
 import type { ConfiguredModel } from "@/config";
 import { NaxError } from "@/errors";
-import { ownComments } from "@/forge";
+import { hasNaxWorkflowMarker, ownComments } from "@/forge";
 import { getLogger } from "@/logger";
 import { botChecksExtractOp } from "@/operations";
 import { defineStepGraph, runStepGraph, type StepGraph } from "@/step-graph";
@@ -25,6 +26,8 @@ import {
 } from "./fix-steps";
 import { type BotLog, openBotLog } from "./log";
 import { _botReviewDeps } from "./review-run";
+import { rulingModelReader } from "./ruling-reader";
+import { recordPrRulings } from "./rulings";
 
 export const _botFixDeps = {
   gitToplevel: _botReviewDeps.gitToplevel,
@@ -47,6 +50,7 @@ export const _botFixDeps = {
   resolveBotChecks,
   checkPushAccess,
   runPreRunSteps,
+  recordPrRulings,
   fixStep,
   checkStep,
   gatesStep,
@@ -134,7 +138,11 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
 
 type PreparedFix = Pick<BotFixEnv, "repoRoot" | "ref" | "info" | "checkout">;
 
-async function triage(prepared: PreparedFix): Promise<Pick<BotFixEnv, "user" | "threads" | "own">> {
+async function triage(
+  prepared: PreparedFix,
+): Promise<
+  Pick<BotFixEnv, "user" | "threads" | "own"> & { comments: Awaited<ReturnType<typeof _botFixDeps.listPrComments>> }
+> {
   const deps = _botFixDeps;
   const { ref, repoRoot } = prepared;
   const [user, threads, comments] = await Promise.all([
@@ -146,7 +154,28 @@ async function triage(prepared: PreparedFix): Promise<Pick<BotFixEnv, "user" | "
     ...threads.flatMap((thread) => ownComments(thread.comments, user.login, thread.id)),
     ...ownComments(comments, user.login),
   ];
-  return { user, threads, own };
+  return { user, threads, own, comments };
+}
+
+async function recordFixRulings(
+  env: BotFixEnv,
+  comments: Awaited<ReturnType<typeof _botFixDeps.listPrComments>>,
+): Promise<void> {
+  if (!hasNaxWorkflowMarker(env.info.body)) return;
+  try {
+    await _botFixDeps.recordPrRulings({
+      ref: env.ref,
+      info: env.info,
+      login: env.user.login,
+      threads: env.threads,
+      comments,
+      deps: env.forge,
+      cwd: env.repoRoot,
+      readModel: rulingModelReader(env.ctx, env.config),
+    });
+  } catch (error) {
+    getLogger()?.warn("bot-fix", "Could not record PR rulings", { pr: env.ref.number, error: errorMessage(error) });
+  }
 }
 
 async function executeFix(
@@ -238,13 +267,18 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
         log,
       );
     const items = await triage(prepared);
-    return finishFix(
-      await executeFix(
-        { ...prepared, ...items, checks, ctx: context.ctx, config, review, model: input.model, forge: deps.forge },
-        runtime,
-      ),
-      log,
-    );
+    const env: BotFixEnv = {
+      ...prepared,
+      ...items,
+      checks,
+      ctx: context.ctx,
+      config,
+      review,
+      model: input.model,
+      forge: deps.forge,
+    };
+    await recordFixRulings(env, items.comments);
+    return finishFix(await executeFix(env, runtime), log);
   } finally {
     try {
       await context?.dispose();

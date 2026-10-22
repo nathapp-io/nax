@@ -69,9 +69,9 @@ describe("renderFixSummary", () => {
     const body = renderFixSummary({
       ...state,
       outcome: "nothing",
-      readyHeld: "nax workflow PR: promote it with nax workflow promote",
+      readyHeld: "no nax item index on this PR",
     });
-    expect(body.split("\n")).toContain("Kept as draft: nax workflow PR: promote it with nax workflow promote");
+    expect(body.split("\n")).toContain("Kept as draft: no nax item index on this PR");
   });
   test("neutralises and caps the untrusted reason the PR stayed a draft", () => {
     const body = renderFixSummary({
