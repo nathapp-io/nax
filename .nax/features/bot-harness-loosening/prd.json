@@ -3,7 +3,7 @@
   "feature": "bot-harness-loosening",
   "branchName": "feat/bot-harness-loosening",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T05:07:54.524Z",
+  "updatedAt": "2026-10-22T05:18:16.176Z",
   "userStories": [
     {
       "id": "US-001",
@@ -117,14 +117,17 @@
         "checkout"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Independent filesystem helper and pure renderer follow existing patterns without security-sensitive behavior changes."
+        "reasoning": "Independent filesystem helper and pure renderer follow existing patterns without security-sensitive behavior changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/index.ts",
@@ -140,7 +143,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e77175a819dbd9e82a60ee4a22b599432e47d174"
     },
     {
       "id": "US-003",
