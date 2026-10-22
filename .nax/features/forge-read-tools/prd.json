@@ -3,7 +3,7 @@
   "feature": "forge-read-tools",
   "branchName": "feat/forge-read-tools",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T15:13:24.630Z",
+  "updatedAt": "2026-10-22T15:35:01.358Z",
   "userStories": [
     {
       "id": "US-001",
@@ -34,14 +34,17 @@
         "security"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Small shared reader and two call-site migrations, but credential redaction before truncation makes this security-critical."
+        "reasoning": "Small shared reader and two call-site migrations, but credential redaction before truncation makes this security-critical.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/ci-failures.ts",
@@ -65,7 +68,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "cef78884650fd3c61fbe8d6ef9041a7245cc3a4a"
     },
     {
       "id": "US-002",
@@ -108,7 +115,10 @@
         "packages/nax/test/unit/forge/ci-failures-gitlab.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -154,7 +164,10 @@
         "packages/nax/test/unit/workflow/feature-steps-ci-repair-decision.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -204,7 +217,10 @@
         "packages/nax/test/unit/forge/checks-read.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -268,7 +284,10 @@
         "When two provider instances resolve different bindings, calls on one instance never reuse the other instance's PrRef."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -316,7 +335,10 @@
         "packages/nax/test/integration/forge-tools/pr-tools.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -378,7 +400,10 @@
         "When readJobLog fails for a completed check and succeeds on the next call, log returns the successful text on that next call."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -426,7 +451,10 @@
         "packages/nax/test/unit/forge-tools/log-view.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-009",
@@ -486,7 +514,10 @@
         "packages/nax/test/integration/forge-tools/thread-tools.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-010",
@@ -537,7 +568,10 @@
         "When threads and comments on the same provider read comments from the same login, hasWriteAccess is called once across both tools."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-011",
@@ -584,7 +618,10 @@
         "packages/nax/test/integration/agents/forge-read-delivery.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-012",
@@ -645,7 +682,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Adversarial refine audit: all 146 numbered acceptance criteria in the supplied spec were enumerated and checked against their original story; none were deleted or moved. The revised draft has 160 criteria because compound source assertions were split, failure-table obligations were made explicit, US-008 now directly protects the unchanged default tail, and US-002/012 explicitly exercise unreadable-log and malformed-bound-URL failure paths. Source ordinal -> acceptanceCriteria ordinal mapping (ranges map in order): US-001 1-11->1-11, 12->12/13, 13->14, 14->15/16; US-002 1-4->1-4, 5->5/6, 6-9->7-10; US-003 1-13->1-13; US-004 1-15->1-15; US-005 1-7->1-7, 8->8/9, 9-13->10-14; US-006 1-10->1-10; US-007 1-17->1-17; US-008 1-11->1-11; US-009 1->1, 2->2/3, 3-12->4-13, 13->14/15, 14-18->16-20; US-010 1-10->1-10; US-011 1-8->1-8; US-012 1-8->1-8. Qualifying clauses were retained, including literal case-insensitive matching with parentheses, invalid from even when search is supplied, the trailing-newline last-non-empty-line constraint, same-object call context identity, nested-backtick fencing, before-cap writer filtering/counts and chronological latest-comment selection. No deprecated content-check tags occur. Every criterion is observable as a returned ToolResult/check/result, thrown NaxError, recorded dependency call/absence, emitted log/ledger text, or rendered bytes.\n\nFailure-table audit, row by row: unknown-flag retry is US-001.5; log failures/timeouts/empty stderr are US-001.6-8 and unavailable excerpts/markers are US-001.12-16; every failed log unreadable is US-003.11-12; failed-plus-pending wait is US-003.1-9; failed/missing-number reference resolution is US-005.5-9/15; thrown forge reads are US-005.16, US-006.9-10 and US-010.10; foreign check id is US-007.2-3; no job log is US-007.4; invalid inputs are US-007.11-13/18, US-008.7-8 and US-009.20-21; thrown writer lookup is US-009.2-3/14-15 and US-010.9; providerScope none is US-011.8-9. Each story has a negative path: US-001 unreadable log, US-002 unreadable-log fallback, absent annotations/GitLab annotation exclusion and over-budget annotation rejection, US-003 error-poll exhaustion/no-evidence skip, US-004 failed listing, US-005 rejected resolution, US-006 thrown listing/token suppression, US-007 invalid or foreign check, US-008 invalid search/from and out-of-range page, US-009 writer denial/invalid includeResolved, US-010 writer denial/listing rejection, US-011 safe profile, and US-012 malformed bound URL and no-options/unbound session. Existing-behavior anchors remain in US-001 (own-job API read/no old gh run view and readable-field absence), US-002 (no-annotation/GitLab ciExcerpt), US-003 (one-shot reader and settled failures), US-008 (new explicit unchanged default-tail assertion), US-009 (same bot/forge writerCheck function), US-011 (same context object without providers), and US-012 (ordinary branchFixStep/no-options path).\n\nContext/dependency audit: every critical spec-recommended context file is retained within each story's five-file ceiling. Context entries are existing files or transitive upstream outputs, never files that story creates; proposed new test files mirror the new source modules rather than representing existing helpers. All twelve ids, workdirs and dependency lists match the Binding Story Structure exactly, and every referenced id exists. US-011 has only US-005 as its bound dependency: its dispatch-only integration uses a static nax-forge provider fixture exposing local pr through the real resolver, not an import of US-006's future pr-tools.ts. US-006 and US-012 exercise the production handlers. Complexity was reduced to medium for US-003/007/009/011/012 because they extend existing seams rather than introduce new transports; US-003 uses tdd-simple, while access-control/credential/session stories retain the required three-session security override. Only the new provider/fitting abstraction US-005 remains complex. Explicit parameter semantics were clarified for GitLab writer subjects and for ciRepairStep's existing C1-normalized findings array; no production signature or dependency was invented. All sixteen feature exclusions were checked individually and retained verbatim at top level: forge writes; incapable ACP agents; unchanged profiles; unrelated sessions; PR description; non-Actions output; regex search; foreign heads/PRs/repos; one-page checks; default timeout; unchanged GitLab wait; unchanged readChecksOnce; no collision detection; no language-specific markers; no retry of skipped repairs; manual documentation. Nearby story scopes echo their relevant exclusions, and US-008's scope now includes its tail-regression protection instead of excluding tail behavior altogether. Corrected source-line references below were verified against this worktree during refinement.\n\nGoal and completion: close #2657 by shipping the CI evidence fixes together with a PR-bound, read-only static nax-forge provider, delivered only to workflow CI repair and bot fix/repair sessions through the existing provider path. This is an enhancement of existing forge/workflow/bot code, not a greenfield agent or transport. Exactly twelve stories, their workdirs, dependencies and acceptance-criterion ownership follow the binding specification. All implementation is in packages/nax; packages/nax-agent is a read-only contract dependency. No package version, public nax-agent API, transport protocol, permission default or user documentation change is required. Navigation: codebase-memory MCP was unavailable, so findings were obtained through direct reads and targeted searches, not an index. No source implementation or tests were changed during PRD generation.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:15 identifies the dependency-injection, error and constant conventions; docs/architecture/ARCHITECTURE.md:151 sets a 600-line source hard cap, 400-line soft cap, 800-line test hard cap, small functions, explicit permissions and injectable I/O. Use Bun-native APIs in nax, existing bun:test helpers and mutable dependency seams rather than mock.module or global monkey patches. Import forge consumers through @/forge (packages/nax/src/forge/index.ts:1); only forge-internal readers use relative imports into ci-failures. Prompt prose belongs in src/prompts/builders with an export from src/prompts/index.ts. Agent package types must be imported through @nathapp/nax-agent, and errorMessage through @nathapp/nax-agent/internal, never by cross-package relative imports. New modules should remain separated by provider assembly, fitting, PR/check tools, log I/O/view logic, and writer-filtered thread/comment tools.\n\nUS-001/002 evidence baseline: packages/nax/src/forge/ci-failures.ts:19 defines FailedCheck without a logUnavailable marker; :28-31 bound excerpts to 200 lines and 8,000 characters. The local ANSI CSI stripper and ciExcerpt at :52-71 redact the entire log before truncation, deliberately protecting credentials whose closing delimiter crosses the excerpt boundary. Preserve this regression anchor when moving stripAnsi. Local logUnavailableExcerpt currently examines only stderr's first physical line (:86), so leading-empty stderr hides the timeout reason; the new reader must select the first non-empty stripped/redacted line and bound after redaction. readCiListing (:158) already converts CLI/JSON failures to NaxError FORGE_CI_READ_FAILED. readExcerpt (:197) currently runs gh run view --job <id> --log-failed; non-Actions checks instead use output title/summary/text. readGitlabExcerpt (:290) reads the job trace separately. Introduce job-log.ts and route both job-log branches through it, remove excerptOf/logUnavailableExcerpt, leave non-Actions output excerpts intact, and export the intended public reader/types/constants/stripAnsi from forge/index.ts without exporting listing internals. The API log must remove a leading BOM and ANSI CSI and redact the whole text before any annotation, line or byte bounds. Retry only the GitHub unknown --allow-escape-sequences flag failure, once, using the same argv without that flag. packages/nax/src/forge/deps.ts:18 and :39-88 already supply a 30,000ms wall-clock cap, concurrent stdout/stderr drain, process-group cleanup and a timeout stderr line; do not add another timeout or spawn path. Annotation extraction must search anywhere in timestamp-prefixed lines, keep first annotations in original order, include its header within 2,000 characters, reserve remaining 8,000-character budget for the end of ciExcerpt, and never apply annotation anchoring to GitLab.\n\nExisting regression fixtures: packages/nax/test/unit/forge/ci-failures.test.ts:104-118 has githubFixture that treats every gh api call as the check listing and extracts job ids from --job. At :148-152 it asserts the old log argv. Update endpoint discrimination so actions/jobs/<id>/logs reads the correct log map entry, with the Actions excerpt invariants unchanged. packages/nax/test/unit/forge/ci-failures-gitlab.test.ts:20-27 scripts joined argv, including ghJobLog; update only that GitHub key shape and retain trace/listing replies and excerpt assertions. Tests also exercise whole-log credential redaction, bounded errors, listing errors, non-Actions output and GitLab head-pipeline selection. New job-log tests must use injected ForgeDeps and synthetic credentials, not live forge access.\n\nUS-003 wait and repair baseline: packages/nax/src/workflow/ci-wait.ts:119 classifies any fail/cancel bucket as terminal failed before considering pending checks. githubWaiting (:184) reads mergeability only for waiting/green; retain that bypass for a failing poll. terminalPoll (:292), errorRun (:309), checkHistory (:341) and waitForChecks (:355) separately own terminal outcomes, consecutive unreadable polls, reported-check history, heartbeat scheduling, deadlines, abort and expected-head green binding. Add wait-specific failing state/history without changing readChecksOnce (:433): it shares pollOnce/classifyGh today, so a naive shared classifier change can accidentally make the bot's one-shot failed+pending result pending. Preserve readChecksOnce's head binding and detail, ordinary no-check/pending/unavailable outcomes, heartbeat cleanup and GitLab pipeline behavior. A later readable poll remains authoritative, including a rerun going green; the error-poll limit uses whether failure was ever observed, while deadline precedence uses the latest readable failing poll. Failing+pending must not invoke mergeability. Callers automatically inherit the wait fix: packages/nax/src/workflow/finalize.ts:390, packages/nax/src/cli/workflow-promote.ts:159 via workflow-forge, and packages/nax/src/bot/fix-report.ts:117. No per-caller divergent CI policy is needed. packages/nax/test/unit/workflow/ci-wait.test.ts:10-36 already scripts polls and virtual time; extend it with failing transitions and existing logging sink support.\n\npackages/nax/src/workflow/feature-steps.ts:405 begins ciRepairStep; :475 maps checks into findings; :489 reads CI failures and currently skips only reader errors or an empty list. ciRepairDecision (:519) already gates on draft+failed, published URL/head, repair rounds and cost, and publishStep (:534) preserves the publish outcome while scheduling repair. Add the every(logUnavailable) skip only after the empty-list case and before repairing ledger output; mixed evidence must still produce findings for every failed check. Ledger text must be exactly CI repair skipped: no failed check's log could be read (<names>). The file is currently 582 lines, confirmed by the read result; US-003 and US-012 together must stay within 600 lines by keeping edits minimal or moving supporting logic to a focused helper only if necessary. Preserve NO_MIRROR ledger options and the draft outcome. packages/nax/test/unit/workflow/feature-steps-ci-repair-decision.test.ts:60-116 provides an injected reader/ledger harness and :119 onward tests the publish decision; keep the existing positive controls for every no-repair case. A skipped repair is not deferred or retried later in the run.\n\nUS-004 head checks: existing check-runs listing and GitLab merge-request pipelines/head matching live in packages/nax/src/forge/ci-failures.ts:219-231 and :317-350. Add checks-read.ts using the same readCiListing/asRecord exported internally from that file; do not duplicate weaker parsing/error behavior for GitLab. GitHub uses one latest-filtered page of at most 100 check runs; GitLab selects the first pipeline for headSha from the existing MR-pipeline response pattern and reads at most 100 jobs without scope[]=failed. Do not reuse the failure-only/allow_failure filters for the all-checks listing. IDs without numeric source values are excluded. Normalize statuses exactly per the story table; only completed checks carry conclusion. Only github-actions runs and GitLab jobs have logs. New listing types/readers are public through @/forge, but readCiListing/asRecord are not barrel exports.\n\nUS-005/006 provider contract and result safety: packages/nax-agent/src/tools/provider-types.ts:20-49 exposes ProviderTool.run(input, ctx), ToolProvider.tools(workdir), stages and async instructions. packages/nax-agent/src/tools/registry.ts:21-23 defines ToolResult {content,isError?}; :64-73 gives ToolRunContext.root/resolvedPaths/maxBytes. No nax-agent edits are necessary. Every actual forge interaction in forge-tools, including URL resolution, goes through _forgeToolsDeps, with binding.deps and binding.cwd, not the agent's supplied root or a global default. packages/nax/src/forge/pr-read.ts:20 resolves a PR number against checkout origin (explicit forge/host/repo), and :134 reads current PR metadata. forgeReadProviderForUrl must extract the URL's number with prNumberFromUrl and use that resolver as specified, not silently invent a URL-host/repository routing API. Resolve once on success per provider (share an in-flight resolution); rejected resolutions must be evicted so the next invocation retries. Do not cache PrInfo/headSha forever: checks and log calls validate against readPrInfo's current head. pr deliberately omits description body even though PrInfo carries it (packages/nax/src/forge/pr-types.ts:14-29).\n\nUse fitToolResult for every tool's payload assembly: budget whole UTF-8 entries, not a finished string slice; reserve headers, dynamic markdownFence delimiters, footers and truncation accounting, and cut a lone oversized entry only at code-point boundaries. packages/nax/src/utils/markdown-fence.ts:40 chooses a fence longer than any backtick run, so slicing a completed block would break its safety guarantee. Forge-derived PR fields, check names, log content and comments all belong inside one fence; nax-owned counts/headers/footers remain outside. Error results must preserve the concrete first-non-empty redacted message contract (in particular checks returns content boom for a newline-prefixed boom error), never reject or leak a token. The specification does not define how to fit an impossibly small budget below the fixed header/footer/fence envelope; keep the tested envelope invariant, do not silently omit required footer/fence content, and treat any broader tiny-budget policy as a hardening question rather than inventing an AC. Provider instructions must describe bound, read-only capabilities and literal search and be generated by buildForgeReadInstructions, not inline prompt literals in forge-tools.\n\nUS-007/008 log safety and views: validate every supplied field before mode selection or ANY forge call, even a from/lines value ignored by search. check accepts digit strings or integers, never an agent-selected PR, repo, head or URL. Read current PrInfo then listHeadChecks to authorize membership before readJobLog; reject non-head ids and non-job checks without a log read. Cache successful completed-job text per provider; queued/in-progress jobs are reread each call. Do not let cached text bypass current-head membership. Split on newline and remove exactly one trailing empty split element; preserve interior blanks and line numbering. Tail defaults to 200, maximum 500; tail retains entries from the end, page/search from the start. Search is a case-insensitive literal substring, first 50 matches with total-match count, and ignores from/lines only after full validation. Per emitted log line, retain the original 1-based number and cap text at 1,000 characters. In-progress logs explicitly say job still running: this log is partial. Keep log I/O/cache in log-tool.ts and pure view selection/rendering in log-view.ts.\n\nUS-009/010 writer trust: packages/nax/src/bot/writers.ts:4-26 defines WriterCheck and a Map<string,Promise<boolean>> that caches in-flight and settled permission results per login and fails closed with one warning per failed login; :29-36 defines readWriters. Move the first two unchanged to forge/access.ts, keep readWriters in bot/writers.ts using and re-exporting the relocated symbols, and preserve the bot barrel at packages/nax/src/bot/index.ts:78. Existing bot consumers are packages/nax/src/bot/review-run.ts:152 and packages/nax/src/bot/rulings.ts:59. packages/nax/src/forge/access.ts:10-35 already enforces explicit-host GitHub write/admin or GitLab access_level >=30 and requires a GitLab author id. New tools must call writerCheck over _forgeToolsDeps.hasWriteAccess with {login: comment.author,id: comment.authorId}; missing IDs/lookup failures stay denied. Instantiate the writer cache once per provider so threads and comments share it.\n\npackages/nax/src/forge/threads.ts:30-61 already paginates with complete-page decoding and failure propagation; :145-155 rejects incomplete nested GitHub thread conversations rather than authorizing from partial text. listPrComments (:266) includes GitHub review bodies, listReviewThreads (:294) yields normalized threads. packages/nax/src/forge/pr-types.ts:40-64 preserves comment kinds/createdAt/authorId and thread location/resolved/outdated flags. Reuse these readers unchanged. Filter resolved threads first, then authorize every comment of every included thread before limiting display to 50 threads; withheld counts include thread 55 even when only 50 are displayed. Empty-after-filter threads retain location plus (no comments from writers). For comments, authorize all read entries before selecting the latest 50 writer comments by createdAt and showing those oldest first. Bodies are capped at 2,000 characters and remain fenced. Preserve not-shown then withheld footer ordering, with output-budget truncation notice after all footers. packages/nax/test/unit/bot/writers.test.ts:25-65 already pins in-flight cache identity, fail-closed repeated warnings and GitLab subject forwarding; extend it to assert the forge and bot exports have identical function identity.\n\nUS-011 dispatch path: packages/nax/src/operations/types.ts:21 defines CallContext without call-scoped providers. packages/nax/src/operations/call-run-options.ts:50-55 copies only runtime.toolProviders; :98 spreads these into AgentRunOptions. Merge runtime then context providers without mutating shared runtime state and omit providers when both empty. packages/nax/src/workflow/branch-fix.ts:65-78 calls _workflowDeps.callOp with fc.callCtx; :81-95 builds the prompt and commits leftovers. Add optional input.toolProviders, preserve fc.callCtx object identity for absent/empty lists, otherwise spread only the call context and add the passed providers. Keep prompt/model/timeout/report/auto-commit/error/abort behavior unchanged. Existing unit seams are packages/nax/test/unit/operations/call-run-options.test.ts and packages/nax/test/unit/workflow/branch-fix.test.ts:20-36, which use makeFeatureContext/makeScriptedCallOp.\n\nNo new delivery mechanism is needed. packages/nax/src/agents/coding-tool-support-resolve.ts:275-329 admits providers only when resolved providerScope is not none, evaluates scoped Mcp rules before adaptation, and :467 onward feeds extraTools plus grants into native support and attaches ACP delivery. Both operations/build-hop-callback.ts and runtime/session-run-hop.ts consume this shared resolver, as its module documentation states. packages/nax/src/agents/tool-surface.ts:75-105 filters ACP deny/ask rules before pre-approval, and :150 attaches the delivery set. packages/nax/src/agents/acp/provider-embedder.ts:30-56 adapts names to MCP embedder tools with resolvedPaths:[], and :72-96 drops delivery for agents without registry preApproval. Native names are nax-forge__<local>, Claude serves mcp__nax__nax-forge__<local>. Never bypass these permission gates to make integration tests pass: safe has no providers, scoped requires an existing stage allow rule, unrestricted allows all. Reuse existing coding-tool-support provider-gate/surface tests as models and add nax-forge integration tests without launching agents.\n\nUS-012 bindings and migration: packages/nax/src/workflow/feature-machine.ts:29 defines branchFix(findings); extend with optional {readonly prUrl?:string}. packages/nax/src/workflow/feature-env.ts:71 currently forwards findings only; bind opts.prUrl using forgeReadProviderForUrl with _featureDeps.forge and fc.projectDir. The same forge instance is already used for postItemThreads (:83-84) and defined in packages/nax/src/workflow/feature-deps.ts:7-17. ciRepairStep must pass the published rec.url; ordinary branchFixStep and gate repair remain unbound. BotFixEnv (packages/nax/src/bot/fix-steps.ts:72-88) owns ref/forge/repoRoot, and fixStep (:103-128) and repairStep (packages/nax/src/bot/repair-step.ts:12-43) call the shared runBranchFix seam. Bind those two using createForgeReadProvider with async resolveRef returning env.ref, env.forge and env.repoRoot (not the checkout path as forge context). Existing exact expectations in packages/nax/test/integration/bot/fix-check-steps.test.ts:34-60 and packages/nax/test/integration/bot/repair-step.test.ts:108-133 must gain toolProviders:[expect.objectContaining({id:'nax-forge'})] while findings/model/prompt remain unchanged. Test the real chain ciRepairStep -> feature branchFix options -> buildFeatureEnv -> runBranchFix -> callOp, plus invoke the attached provider to prove URL/ref and dependency binding, not just provider id presence.\n\nDependencies and rollout: implement job log foundation US-001 and head listing US-004 first; US-002 annotation and US-003 wait/skip use US-001; US-005 combines US-001/004 into the provider foundation; US-006/007/009 build tool handlers, US-008 adds log views, US-010 adds comments, US-011 threads per-call providers, and US-012 attaches only at the permitted call sites. Several stories touch forge/index.ts or provider.ts; keep edits additive and confined to each story's exports/registration to avoid independent-branch conflicts. Optional input fields and the bot re-export preserve existing callers; there is no persistent-data migration or config/schema migration. Existing FailedCheck fixtures without the optional true marker remain readable evidence. Runtime providers retain their order and identity; no provider is installed globally.\n\nVerification and risks: each story writes failing behavioral tests before implementation using _deps restoration and shared helpers, with strict three-session isolation for credential redaction, PR/head authorization, writer access checks, permission-gated session plumbing and bindings. Show regressions fail against old behavior. Primary risks are accidentally returning the listing as job text, redaction after truncation, byte/character confusion with Unicode and dynamic fences, early termination or masking observed failure with unavailable, altering readChecksOnce while sharing the classifier, caching failures/head metadata globally, authorizing GitLab comments without ids, filtering only displayed threads, and making providers visible in unrelated sessions. Use targeted bun test <path> --timeout=30000 from packages/nax (never bare bun test), then the package pipeline's normal gates; coverage is separately gated, so follow repository coverage guidance when adding tests. No real gh/glab network, hosted CI run, native agent session or ACP process is necessary to establish these contracts. Quality gates are not feature acceptance criteria. Failure-table obligations are explicitly represented in the matching stories, not deferred to suggested hardening.",
