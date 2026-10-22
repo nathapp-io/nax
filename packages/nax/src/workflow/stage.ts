@@ -1,9 +1,10 @@
 /**
  * workflowStage (spec §5.2): one story through the A5 loop. Sets ctx.agentResult only
  * (P2-R1). completionStage still marks the story passed. Always returns continue, except
- * when the run is aborted (W-R3).
+ * when the run is aborted or its setup failure cannot be recorded (W-R3).
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { resolveWorkflowConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import type { PipelineContext, PipelineStage, StageResult } from "@/pipeline/types";
@@ -11,6 +12,7 @@ import { writeBrief } from "./brief";
 import { buildWorkflowCallContext } from "./call-context";
 import { appendLedger } from "./ledger";
 import { workflowRunDir } from "./paths";
+import { newStoryRecord, readResult, upsertStoryRecord } from "./result";
 import { buildStoryEnv } from "./stage-env";
 import { runStoryLoop } from "./story-loop";
 import { startTokenMeter } from "./tokens";
@@ -64,6 +66,7 @@ export const workflowStage: PipelineStage = {
       });
       await appendLedgerSafe(ctx, `complete-gate-open (workflow error: ${errorMessage(err)})`);
       if (closeOnError) await closeOnError(errorMessage(err));
+      else await closeSetupError(ctx, errorMessage(err));
     } finally {
       meter.stop();
       if (storyEnv) await recordTokensSafe(storyEnv.env, meter.byRole(), ctx.story.id);
@@ -82,6 +85,25 @@ export const workflowStage: PipelineStage = {
     return { action: "continue" };
   },
 };
+
+/** Setup can fail before the environment supplies its error sink. Persist the failure before
+ * completion marks the PRD passed, keeping any record already written during setup. A failed
+ * write must propagate: without this evidence the feature summary would treat the story as clean.
+ */
+async function closeSetupError(ctx: PipelineContext, reason: string): Promise<void> {
+  const header = { runId: ctx.runtime.runId, feature: ctx.prd.feature };
+  const runDir = workflowRunDir(ctx.projectDir, header.feature, header.runId);
+  const now = new Date().toISOString();
+  const existing = (await readResult(runDir))?.stories[ctx.story.id];
+  await upsertStoryRecord(runDir, header, {
+    ...(existing ?? newStoryRecord(ctx.story.id, resolveWorkflowConfig(ctx.rootConfig).maxFixRounds, now)),
+    state: "complete-gate-open",
+    reason: `workflow error: ${reason}`,
+    phase: "closed",
+    endedAt: now,
+  });
+  ctx.reportPhase?.("closed");
+}
 
 function abortError(ctx: PipelineContext): NaxError {
   return new NaxError("Run aborted during the workflow story loop", "WORKFLOW_ABORTED", {

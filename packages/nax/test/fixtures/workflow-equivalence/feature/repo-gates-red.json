@@ -312,6 +312,13 @@
       "step": "branch-rereview"
     },
     {
+      "kind": "ledger",
+      "options": {
+        "mirror": false
+      },
+      "text": "review-skipped (branch re-review: no review targets for the branch fix)"
+    },
+    {
       "kind": "update",
       "record": {
         "cannotVerify": [],
@@ -330,6 +337,7 @@
         "minors": [],
         "newMinors": [],
         "nextFindingId": 2,
+        "reReviewSkipped": true,
         "reasons": [],
         "repoGates": {
           "failing": ["lint"],
@@ -373,6 +381,7 @@
         "minors": [],
         "newMinors": [],
         "nextFindingId": 2,
+        "reReviewSkipped": true,
         "reasons": [],
         "repoGates": {
           "failing": ["lint"],
@@ -447,6 +456,7 @@
         "minors": [],
         "newMinors": [],
         "nextFindingId": 2,
+        "reReviewSkipped": true,
         "reasons": [],
         "repoGates": {
           "failing": ["lint"],
@@ -496,6 +506,7 @@
           "minors": [],
           "newMinors": [],
           "nextFindingId": 2,
+          "reReviewSkipped": true,
           "reasons": [],
           "repoGates": {
             "failing": ["lint"],
@@ -596,6 +607,7 @@
         "nextFindingId": 2,
         "outcome": "ready",
         "passed": true,
+        "reReviewSkipped": true,
         "reasons": [],
         "repoGates": {
           "failing": ["lint"],
@@ -658,6 +670,7 @@
       "nextFindingId": 2,
       "outcome": "ready",
       "passed": true,
+      "reReviewSkipped": true,
       "reasons": [],
       "repoGates": {
         "failing": ["lint"],

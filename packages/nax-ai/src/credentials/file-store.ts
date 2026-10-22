@@ -14,8 +14,8 @@
  * staleness wrong turns a crash into a permanent lockout.
  */
 
-import { constants } from "node:fs";
-import { access, chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { chmod, link, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
 import type { CredentialStore, ProviderId, StoredCredential } from "../types.ts";
@@ -48,15 +48,6 @@ interface FileShape {
 }
 
 const EMPTY: FileShape = { version: 1, credentials: {} };
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path, constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Parsing deliberately does not fall back to an empty store. A file that
@@ -97,17 +88,26 @@ async function readShape(path: string): Promise<FileShape> {
  * and a crash mid-write leaves the previous credentials intact. That is what
  * lets read() skip the lock entirely.
  */
-async function writeShape(path: string, shape: FileShape): Promise<void> {
-  const temp = join(dirname(path), `.${process.pid}-${Date.now()}.tmp`);
+async function writeShape(path: string, shape: FileShape, createOnly = false): Promise<void> {
+  const temp = join(dirname(path), `.${process.pid}-${randomUUID()}.tmp`);
   try {
-    await writeFile(temp, `${JSON.stringify(shape, null, 2)}\n`, { encoding: "utf8", mode: FILE_MODE });
+    await writeFile(temp, `${JSON.stringify(shape, null, 2)}\n`, { encoding: "utf8", mode: FILE_MODE, flag: "wx" });
     // writeFile's mode applies only when it creates the file, and rename
     // preserves the source's mode, so set it explicitly.
     await chmod(temp, FILE_MODE);
-    await rename(temp, path);
-  } catch (error) {
+    if (createOnly) {
+      // Publish complete JSON without replacing a concurrent initializer or
+      // writer. Opening the destination with wx would expose partial JSON.
+      try {
+        await link(temp, path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+    } else {
+      await rename(temp, path);
+    }
+  } finally {
     await unlink(temp).catch(() => {});
-    throw error;
   }
 }
 
@@ -118,7 +118,7 @@ export function createFileCredentialStore(options: FileCredentialStoreOptions): 
   /** proper-lockfile locks an existing path, so the file must be there first. */
   async function ensureFile(): Promise<void> {
     await mkdir(dirname(path), { recursive: true, mode: DIR_MODE });
-    if (!(await exists(path))) await writeShape(path, EMPTY);
+    await writeShape(path, EMPTY, true);
   }
 
   async function withLock<T>(fn: () => Promise<T>): Promise<T> {

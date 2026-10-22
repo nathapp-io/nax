@@ -147,7 +147,9 @@ async function promptFailure(state: TurnState, error: unknown): Promise<NaxError
 
 /** session/cancel, then cancelGraceMs for the prompt to answer; past that the process is killed. */
 async function cancelTurn(state: TurnState, pending: Promise<PromptResponse>): Promise<PromptResponse | undefined> {
-  await state.link.cancel(state.agentSessionId).catch(() => undefined);
+  // A backpressured stdin can block the notification itself. Start the grace
+  // without waiting for that write so cancellation still reaches the kill path.
+  void state.link.cancel(state.agentSessionId).catch(() => undefined);
   const settled = await race(pending, { timeoutMs: state.cancelGraceMs });
   if (settled.kind === "ok") return settled.value;
   if (settled.kind === "timeout") {

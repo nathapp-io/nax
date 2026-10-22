@@ -16,6 +16,7 @@ import {
 } from "#src/native/session/session";
 import type { TranscriptDoc } from "#src/native/session/transcript-types";
 import { runNativeTurn } from "#src/native/session/turn-loop";
+import { readNativeTurnFailureUsage } from "#src/native/session/turn-types";
 import type { OpenSessionOpts, SendTurnOpts, SessionHandle } from "#src/session/session-types";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
@@ -171,6 +172,27 @@ describe("native sessions on an injected TranscriptStore", () => {
     const store = { ...createMemoryTranscriptStore(), save: () => Promise.reject(new Error("save boom")) };
     const handle = await openNativeSession(state, "s", base({ transcriptStore: store }));
     await expect(turn(handle, "one")).rejects.toThrow("save boom");
+  });
+
+  test.each(["reject", "throw"] as const)("a final save that %ss preserves billed spend (#2655)", async (kind) => {
+    const error = new Error("ENOSPC: disk full");
+    const store = {
+      ...createMemoryTranscriptStore(),
+      save: (): Promise<void> => {
+        if (kind === "throw") throw error;
+        return Promise.reject(error);
+      },
+    };
+    const handle = await openNativeSession(state, "s", base({ transcriptStore: store }));
+    const failure = await runNativeTurn(handle, "one", opts, {
+      sessionState: state,
+      complete: async () => ({ text: "done", usage: { inputTokens: 100, outputTokens: 50 }, costUsd: 0.75 }),
+    }).catch((err: unknown) => err);
+    expect(failure).toBe(error);
+    expect(readNativeTurnFailureUsage(failure)).toEqual({
+      tokenUsage: { inputTokens: 100, outputTokens: 50 },
+      costUsd: 0.75,
+    });
   });
 
   test("a store whose save throws synchronously does not mask the turn's own error", async () => {

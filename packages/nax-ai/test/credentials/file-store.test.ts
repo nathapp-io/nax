@@ -1,10 +1,15 @@
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFileCredentialStore } from "../../src/credentials/file-store.ts";
 import type { StoredCredential } from "../../src/types.ts";
+
+// A configurable module wrapper lets the race tests pause real filesystem
+// operations at a barrier; every operation still reaches the actual disk.
+vi.mock("node:fs/promises", async (original) => ({ ...(await original<typeof fs>()) }));
 
 const dirs: string[] = [];
 function tempPath(name = "credentials.json"): string {
@@ -13,7 +18,16 @@ function tempPath(name = "credentials.json"): string {
   return join(dir, name);
 }
 
+function barrier(): { promise: Promise<void>; resolve: () => void } {
+  let release = () => {};
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, resolve: release };
+}
+
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -38,6 +52,61 @@ describe("createFileCredentialStore", () => {
     await store.modify("anthropic", async () => OAUTH);
     expect(await store.read("openai")).toEqual(KEY);
     expect(await store.read("anthropic")).toEqual(OAUTH);
+  });
+
+  it("preserves a concurrent writer when an earlier first write resumes late", async () => {
+    const path = tempPath();
+    const store = createFileCredentialStore({ path });
+    const entered = barrier();
+    const resume = barrier();
+    const write = fs.writeFile;
+    // Hold the first initializer before its real disk write. The second caller
+    // finishes first, so overwriting the initial file would discard its key.
+    vi.spyOn(fs, "writeFile").mockImplementationOnce(async (...args) => {
+      entered.resolve();
+      await resume.promise;
+      return write(...args);
+    });
+    const first = store.modify("openai", async () => KEY);
+    try {
+      await entered.promise;
+      await store.modify("anthropic", async () => OAUTH);
+    } finally {
+      resume.resolve();
+      await first;
+    }
+    expect(await store.read("openai")).toEqual(KEY);
+    expect(await store.read("anthropic")).toEqual(OAUTH);
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it("keeps concurrent writes to separate stores in one directory independent", async () => {
+    const path = tempPath();
+    const otherPath = join(path, "..", "other.json");
+    const first = createFileCredentialStore({ path });
+    const second = createFileCredentialStore({ path: otherPath });
+    await first.modify("openai", async () => KEY);
+    await second.modify("anthropic", async () => OAUTH);
+    const ready = barrier();
+    const rename = fs.rename;
+    let writers = 0;
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    // Both real writes finish before either publishes. This makes same-name
+    // temporary-file collisions deterministic, independent of scheduler speed.
+    vi.spyOn(fs, "rename").mockImplementation(async (...args) => {
+      if (++writers === 2) ready.resolve();
+      await ready.promise;
+      return rename(...args);
+    });
+    const results = await Promise.allSettled([
+      first.modify("anthropic", async () => OAUTH),
+      second.modify("openai", async () => KEY),
+    ]);
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
+    for (const store of [first, second]) {
+      expect(await store.read("openai")).toEqual(KEY);
+      expect(await store.read("anthropic")).toEqual(OAUTH);
+    }
   });
 
   it("hands the current credential to the callback and returns what it stored", async () => {

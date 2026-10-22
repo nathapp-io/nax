@@ -10,18 +10,23 @@ import {
   makeTempDir,
   makeTestContext,
 } from "@test/helpers";
+import { _completionDeps, completionStage } from "@/pipeline/stages/completion";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import type { SessionTurnDispatchEvent } from "@/runtime/dispatch-events";
 import { defaultWorkflowAdvisor } from "@/workflow/advisor";
-import { workflowRunDir } from "@/workflow/paths";
-import { newStoryRecord, readResult } from "@/workflow/result";
+import { readinessReasons } from "@/workflow/approval";
+import { collectStoryRecords, summariseStories } from "@/workflow/feature-record";
+import { workflowFeatureDir, workflowRunDir } from "@/workflow/paths";
+import { newStoryRecord, readResult, upsertStoryRecord } from "@/workflow/result";
 import { _workflowStageDeps, workflowStage } from "@/workflow/stage";
 import type { StoryLoopEnv, StoryLoopOutcome } from "@/workflow/story-loop";
 
 const original = { ..._workflowStageDeps };
+const originalCompletion = { ..._completionDeps };
 const dirs: string[] = [];
 afterEach(async () => {
   Object.assign(_workflowStageDeps, original);
+  Object.assign(_completionDeps, originalCompletion);
   await Promise.all(dirs.map(cleanupTempDir));
   dirs.length = 0;
 });
@@ -173,12 +178,68 @@ describe("workflowStage", () => {
         off();
       };
     };
-    const ctx = makeTestContext({ runtime });
+    const dir = makeTempDir("wf-stage-setup-");
+    dirs.push(dir);
+    const ctx = makeTestContext({ runtime, projectDir: dir, workdir: dir });
     expect(await workflowStage.execute(ctx)).toEqual({ action: "continue" });
     expect(subscribed).toBe(1);
     expect(unsubscribed).toBe(1);
     expect(ctx.agentResult?.success).toBe(true);
   });
+
+  test.each(["call-context", "story-env", "partial-record"])(
+    "%s setup failure remains gate-open after completion and blocks readiness",
+    async (failureAt) => {
+      const dir = makeTempDir("wf-stage-setup-");
+      dirs.push(dir);
+      const ctx = makeTestContext({ projectDir: dir, workdir: dir, skipCompletionEvents: true });
+      const runDir = workflowRunDir(dir, ctx.prd.feature, ctx.runtime.runId);
+      let loopCalls = 0;
+      const disposed = wire(async () => {
+        loopCalls++;
+        return OUTCOME;
+      });
+      const fail = async () => {
+        if (failureAt === "partial-record") {
+          await upsertStoryRecord(
+            runDir,
+            { runId: ctx.runtime.runId, feature: ctx.prd.feature },
+            {
+              ...newStoryRecord(ctx.story.id, 5, "prior-start"),
+              round: 2,
+              reviewed: true,
+            },
+          );
+        }
+        throw new Error("setup failed");
+      };
+      if (failureAt === "call-context") _workflowStageDeps.buildWorkflowCallContext = fail;
+      else _workflowStageDeps.buildStoryEnv = fail;
+      _completionDeps.savePRD = async () => {};
+      _completionDeps.commitPrdProgress = async () => false;
+
+      expect(await workflowStage.execute(ctx)).toEqual({ action: "continue" });
+      await completionStage.execute(ctx);
+      const records = await collectStoryRecords(workflowFeatureDir(dir, ctx.prd.feature));
+      const stories = summariseStories(ctx.prd, records);
+      expect(loopCalls).toBe(0);
+      expect(disposed()).toBe(failureAt !== "call-context");
+      expect(stories[0]).toMatchObject({ state: "complete-gate-open", reason: "workflow error: setup failed" });
+      expect(records[ctx.story.id]?.record).toMatchObject({ phase: "closed", state: "complete-gate-open" });
+      if (failureAt === "partial-record") {
+        expect(records[ctx.story.id]?.record).toMatchObject({ round: 2, reviewed: true, startedAt: "prior-start" });
+      }
+      expect(
+        readinessReasons({
+          stories,
+          finalGates: { ran: ["test"], failing: [] },
+          ci: "green",
+          flagged: 0,
+          branchReviewRan: true,
+        }),
+      ).toContain(`stories gate-open: ${ctx.story.id}`);
+    },
+  );
 
   test("buildWorkflowCallContext throwing under abort rethrows", async () => {
     wire(async () => OUTCOME, {
@@ -189,6 +250,22 @@ describe("workflowStage", () => {
     const ac = new AbortController();
     ac.abort();
     await expect(workflowStage.execute(makeTestContext({ abortSignal: ac.signal }))).rejects.toThrow("aborted");
+  });
+
+  test("setup failure cannot continue when its gate-open record cannot be persisted", async () => {
+    const dir = makeTempDir("wf-stage-write-error-");
+    dirs.push(dir);
+    const ctx = makeTestContext({ projectDir: dir, workdir: dir });
+    const runDir = workflowRunDir(dir, ctx.prd.feature, ctx.runtime.runId);
+    await Bun.write(runDir, "blocks the run directory");
+    wire(async () => OUTCOME, {
+      buildCallCtx: async () => {
+        throw new Error("setup failed");
+      },
+    });
+    await expect(workflowStage.execute(ctx)).rejects.toThrow();
+    expect(ctx.agentResult).toBeUndefined();
+    expect(ctx.story.status).not.toBe("passed");
   });
 
   test("the brief is written on a fresh story and skipped on resume", async () => {

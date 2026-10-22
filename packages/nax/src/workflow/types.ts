@@ -227,7 +227,7 @@ export interface WorkflowFeatureRecord {
   /** nax#2550: an agent step was skipped because the run reached `execution.costLimit`. */
   readonly costLimited?: true;
   /**
-   * nax#2550: a branch re-review did not run (timeout, unparseable reply), so the fix commits it was
+   * A branch re-review did not run (timeout, unparseable reply, missing targets/base), so the fix commits it was
    * to check are unreviewed. Absent when every re-review ran, and on records written before this
    * field existed; `publish` turns its presence into the reason that keeps the PR a draft.
    */
