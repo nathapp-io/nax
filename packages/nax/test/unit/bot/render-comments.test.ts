@@ -48,6 +48,17 @@ describe("renderFindingComment", () => {
 });
 
 describe("renderThreadReply", () => {
+  test("US-005 AC-18: notQueued retains thread marker and adds exact paragraph", () => {
+    const verdict = { id: "T1", decision: "agree", reason: "Valid" } as const;
+    const body = bot.renderThreadReply(verdict, { notQueued: true });
+    expect(parseNaxBotMarker(body)).toEqual({ key: bot.threadKey("T1") });
+    expect(body).toBe(
+      withNaxBotMarker(
+        "Agree: Valid\n\nNot queued for `nax bot fix`: this thread was not opened by someone with write access.",
+        bot.threadKey("T1"),
+      ),
+    );
+  });
   test("AC-5 renders disagreement", () => {
     expect(bot.renderThreadReply(reply)).toContain("Disagree: Out of scope");
   });

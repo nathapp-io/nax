@@ -50,7 +50,7 @@ export interface BotReviewEvent {
 }
 
 export interface BotReviewArtifact {
-  readonly version: 1 | 2;
+  readonly version: 1 | 2 | 3;
   readonly rulings?: PostReviewInput["rulings"];
   readonly checks?: BotChecks | null;
   readonly events?: readonly BotReviewEvent[];
@@ -63,6 +63,7 @@ export interface BotReviewArtifact {
   readonly agreed: readonly AgreedItem[];
 }
 export interface PostReviewInput {
+  readonly writers?: ReadonlySet<string>;
   readonly unreadFiles?: readonly string[];
   readonly preRunFailed?: string;
   /** CI's verdict on the reviewed head (nax#2631). */
@@ -100,6 +101,11 @@ export const _postDeps = {
     Bun.write(path, `${JSON.stringify(artifact, null, 2)}\n`),
 };
 
+/** Only an agreeing, existing non-writer target warrants an explanation. */
+function notQueued(input: PostReviewInput, decision: string, comment: PrComment | undefined): boolean {
+  return decision === "agree" && comment !== undefined && !input.writers?.has(comment.author);
+}
+
 function agreedItems(input: PostReviewInput): AgreedItem[] {
   const items: AgreedItem[] = input.verdict.findings.map(({ severity, issue, file, line, suggestion, decision }) => ({
     key: findingKey({ file, issue }),
@@ -114,11 +120,12 @@ function agreedItems(input: PostReviewInput): AgreedItem[] {
   for (const verdict of input.verdict.threads) {
     if (verdict.decision !== "agree") continue;
     const thread = input.threads.find(({ id }) => id === verdict.id);
-    if (!thread) continue; // A partial or stale triage cannot supply a forge target.
+    const opener = thread?.comments[0];
+    if (!thread || !opener || !input.writers?.has(opener.author)) continue;
     items.push({
       key: threadKey(thread.id),
       kind: "thread",
-      issue: thread.comments[0]?.body ?? "",
+      issue: opener.body,
       reason: verdict.reason,
       threadId: thread.id,
       replyTo: thread.replyTo,
@@ -129,7 +136,7 @@ function agreedItems(input: PostReviewInput): AgreedItem[] {
   for (const verdict of input.verdict.comments) {
     if (verdict.decision !== "agree") continue;
     const comment = input.comments.find(({ id }) => id === verdict.id);
-    if (!comment) continue;
+    if (!comment || !input.writers?.has(comment.author)) continue;
     items.push({ key: commentKey(comment.id), kind: "comment", issue: comment.body, reason: verdict.reason });
   }
   return mergeEarlier(input, items);
@@ -154,7 +161,7 @@ function mergeEarlier(input: PostReviewInput, items: AgreedItem[]): AgreedItem[]
 
 async function persistArtifact(input: PostReviewInput): Promise<void> {
   const artifact: BotReviewArtifact = {
-    version: 2,
+    version: 3,
     ...(input.rulings === undefined ? {} : { rulings: input.rulings }),
     checks: input.staticMode ? null : (input.checks ?? null),
     events: withdrawalEvents(input),
@@ -232,7 +239,9 @@ async function postThreads(input: PostReviewInput): Promise<{ threadsAnswered: n
     const key = threadKey(thread.id);
     const own = input.own.find((comment) => comment.key === key && comment.threadId === thread.id);
     try {
-      const body = renderThreadReply(verdict);
+      const body = renderThreadReply(verdict, {
+        notQueued: notQueued(input, verdict.decision, thread.comments[0]),
+      });
       if (own) await editComment(input.ref, own.comment, body, input.deps, input.cwd);
       else await replyToThread(input.ref, thread, body, input.deps, input.cwd);
       threadsAnswered++;
@@ -262,10 +271,10 @@ async function postSummary(
     ...(input.ci === undefined ? {} : { ci: input.ci }),
     ...findings,
     ...threads,
-    commentVerdicts: input.verdict.comments.map((verdict) => ({
-      verdict,
-      author: input.comments.find(({ id }) => id === verdict.id)?.author ?? "unknown",
-    })),
+    commentVerdicts: input.verdict.comments.map((verdict) => {
+      const comment = input.comments.find(({ id }) => id === verdict.id);
+      return { verdict, author: comment?.author ?? "unknown", notQueued: notQueued(input, verdict.decision, comment) };
+    }),
     unreadFiles: input.unreadFiles,
     cannotVerify: input.verdict.cannotVerify,
     sensitive: input.sensitive,

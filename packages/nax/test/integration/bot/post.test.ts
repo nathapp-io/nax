@@ -92,6 +92,118 @@ function withdrawalInput(authors: readonly string[] = ["alice"]): PostReviewInpu
   };
 }
 
+describe("postPrReview writer authorization", () => {
+  function agreeing(extra: Partial<PostReviewInput> = {}): PostReviewInput {
+    return {
+      ...input,
+      verdict: {
+        ...input.verdict,
+        threads: [{ id: "T1", decision: "agree", reason: "Model reason, not issue" }],
+        comments: [{ id: "12", decision: "agree", reason: "Valid" }],
+      },
+      ...extra,
+    };
+  }
+  function bodies(): string[] {
+    return run.mock.calls.flatMap(([args]) => args.filter((arg) => arg.startsWith("body=")).map((arg) => arg.slice(5)));
+  }
+  test.each([
+    ["AC-1: non-writer opener", new Set(["bob"]), [comment]],
+    [
+      "AC-2: writer reply cannot authorize opener",
+      new Set(["bob"]),
+      [comment, { ...comment, author: "bob", body: "Reply" }],
+    ],
+    ["AC-6/7: absent writers keeps findings only", undefined, [comment]],
+  ])("US-005 %s", async (_name, writers, comments) => {
+    await bot.postPrReview(agreeing({ writers, threads: [{ ...thread, comments }] }));
+    expect((await artifact()).agreed).toEqual([
+      {
+        key: bot.findingKey(finding),
+        kind: "finding",
+        severity: finding.severity,
+        issue: finding.issue,
+        file: finding.file,
+        line: finding.line,
+        suggestion: finding.suggestion,
+      },
+    ]);
+  });
+  test("US-005 AC-3/5: writer items use opener text and stable keys", async () => {
+    await bot.postPrReview(
+      agreeing({
+        writers: new Set(["alice"]),
+        threads: [{ ...thread, comments: [comment, { ...comment, body: "Different reply" }] }],
+      }),
+    );
+    expect((await artifact()).agreed.slice(1)).toEqual([
+      {
+        key: bot.threadKey("T1"),
+        kind: "thread",
+        issue: comment.body,
+        reason: "Model reason, not issue",
+        threadId: "T1",
+        replyTo: "91",
+        file: "a.ts",
+        line: 3,
+      },
+      { key: bot.commentKey("12"), kind: "comment", issue: comment.body, reason: "Valid" },
+    ]);
+  });
+  test("US-005 AC-4: non-writer top-level comment is not queued", async () => {
+    await bot.postPrReview(agreeing({ writers: new Set(["bob"]) }));
+    expect((await artifact()).agreed.filter(({ kind }) => kind === "comment")).toEqual([]);
+  });
+  test("US-005 AC-8: non-writer thread is answered with exact second paragraph", async () => {
+    const review = agreeing({ writers: new Set() });
+    await bot.postPrReview(review);
+    expect(bodies()).toContain(
+      withNaxBotMarker(
+        "Agree: Model reason, not issue\n\nNot queued for `nax bot fix`: this thread was not opened by someone with write access.",
+        bot.threadKey("T1"),
+      ),
+    );
+  });
+  test("US-005 AC-9/10: writer replies and summary have no annotation", async () => {
+    const review = agreeing({ writers: new Set(["alice"]) });
+    await bot.postPrReview(review);
+    expect(bodies()).toContain(bot.renderThreadReply(review.verdict.threads[0]));
+    expect(bodies().at(-1)).toContain("### Top-level comments\n- alice: Agree — Valid\n");
+    expect(bodies().join("\n")).not.toContain("not queued");
+  });
+  test("US-005 AC-11/12: empty thread is rejected but reply is unannotated", async () => {
+    const review = agreeing({ writers: new Set(["alice"]), threads: [{ ...thread, comments: [] }] });
+    await bot.postPrReview(review);
+    expect((await artifact()).agreed.filter(({ kind }) => kind === "thread")).toEqual([]);
+    expect(bodies()).toContain(bot.renderThreadReply(review.verdict.threads[0]));
+  });
+  test("US-005 AC-13/14: stale comment is rejected without a summary annotation", async () => {
+    await bot.postPrReview(agreeing({ writers: new Set(["alice"]), comments: [] }));
+    expect((await artifact()).agreed.filter(({ kind }) => kind === "comment")).toEqual([]);
+    expect(bodies().at(-1)).toContain("### Top-level comments\n- unknown: Agree — Valid\n");
+  });
+  test.each(["disagree", "handled"] as const)("US-005 AC-15: non-writer %s remains unannotated", async (decision) => {
+    const verdict = { id: "T1", decision, reason: "No work" };
+    await bot.postPrReview({
+      ...input,
+      verdict: { ...input.verdict, threads: [verdict], comments: [{ ...verdict, id: "12" }] },
+    });
+    expect(bodies()).toContain(bot.renderThreadReply(verdict));
+    expect(bodies().join("\n")).not.toContain("not queued");
+  });
+  test("US-005 AC-16: non-writer summary line ends in exact suffix", async () => {
+    await bot.postPrReview(agreeing({ writers: new Set() }));
+    expect(bodies().at(-1)).toContain(
+      "### Top-level comments\n- alice: Agree — Valid (not queued for fix: author has no write access)\n",
+    );
+  });
+  test("US-005 AC-17: persists version 3 before forge writes", async () => {
+    await bot.postPrReview(agreeing());
+    expect((await artifact()).version).toBe(3);
+    expect(artifacts.every(({ version }) => version === 3)).toBe(true);
+  });
+});
+
 describe("postPrReview", () => {
   test("US-015 AC-10 summary names unread review paths", async () => {
     await bot.postPrReview({ ...input, unreadFiles: ["src/unread.ts", "settings.json"] });
@@ -209,7 +321,7 @@ describe("postPrReview", () => {
   test("AC-1: persists artifact before the first forge write", async () => {
     await bot.postPrReview(input);
     expect(artifacts[0]).toMatchObject({
-      version: 2,
+      version: 3,
       pr: input.ref,
       headSha: input.info.headSha,
       trusted: true,
@@ -236,6 +348,7 @@ describe("postPrReview", () => {
   test("AC-3/4: records agreeing threads with original body and targets, not disagreements", async () => {
     await bot.postPrReview({
       ...input,
+      writers: new Set([comment.author]),
       threads: [thread, { ...thread, id: "T2" }],
       verdict: {
         ...input.verdict,
@@ -262,6 +375,7 @@ describe("postPrReview", () => {
   test("AC-5: records only agreeing comments using commentKey", async () => {
     await bot.postPrReview({
       ...input,
+      writers: new Set([comment.author]),
       comments: [comment, { ...comment, id: "13" }],
       verdict: {
         ...input.verdict,
