@@ -3,7 +3,7 @@
   "feature": "forge-read-tools",
   "branchName": "feat/forge-read-tools",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T16:03:26.619Z",
+  "updatedAt": "2026-10-22T16:15:33.960Z",
   "userStories": [
     {
       "id": "US-001",
@@ -266,14 +266,17 @@
         "US-001",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "New provider abstraction with PR isolation, rejected-promise retry and untrusted UTF-8 output/error handling; security-critical redaction and binding boundary."
+        "reasoning": "New provider abstraction with PR isolation, rejected-promise retry and untrusted UTF-8 output/error handling; security-critical redaction and binding boundary.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/tools/provider-types.ts",
@@ -299,7 +302,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "15e6d0a1ccddd9e38de1975b666bf3364cb3d440"
     },
     {
       "id": "US-006",
