@@ -120,7 +120,7 @@ interface CiReadContext {
   readonly headSha: string;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
+export function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
 }
@@ -159,7 +159,12 @@ function outputText(run: GithubCheckRun): string {
 }
 
 /** Read one CI listing from the forge CLI; a failed or unparseable reply is an error. */
-async function readCiListing(cmd: string[], deps: ForgeDeps, cwd: string, context: CiReadContext): Promise<unknown> {
+export async function readCiListing(
+  cmd: string[],
+  deps: ForgeDeps,
+  cwd: string,
+  context: CiReadContext,
+): Promise<unknown> {
   const result = await deps.run(cmd, { cwd });
   if (result.exitCode !== 0) {
     throw new NaxError(`[forge] Cannot read the CI checks: ${result.stderr.trim()}`, "FORGE_CI_READ_FAILED", {

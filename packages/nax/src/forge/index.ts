@@ -6,6 +6,8 @@
  */
 
 export { hasWriteAccess } from "./access";
+export type { ForgeCheck, ForgeCheckStatus } from "./checks-read";
+export { listHeadChecks } from "./checks-read";
 export type { FailedCheck } from "./ci-failures";
 export {
   CI_EXCERPT_CHARS,
