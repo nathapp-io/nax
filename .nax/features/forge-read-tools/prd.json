@@ -3,7 +3,7 @@
   "feature": "forge-read-tools",
   "branchName": "feat/forge-read-tools",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T16:15:33.960Z",
+  "updatedAt": "2026-10-22T16:29:53.082Z",
   "userStories": [
     {
       "id": "US-001",
@@ -329,14 +329,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Straightforward handler composition, with credential-bearing error redaction and strict bound-PR data exposure requiring security isolation."
+        "reasoning": "Straightforward handler composition, with credential-bearing error redaction and strict bound-PR data exposure requiring security isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge-tools/provider.ts",
@@ -354,7 +357,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "cd50dbba8d0b6b41ff5656df0629b2fdc164a637"
     },
     {
       "id": "US-007",
