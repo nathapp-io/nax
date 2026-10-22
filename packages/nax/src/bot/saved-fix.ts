@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
 import { getLogger } from "@/logger";
-import { gitWithTimeout } from "@/utils/git";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
+import { botGit } from "./git";
 
 const SAVABLE_OUTCOMES = [
   "gates-failed",
@@ -31,7 +31,7 @@ export interface SavedFixLocation {
 }
 
 export const _savedFixDeps = {
-  runGit: gitWithTimeout,
+  runGit: botGit,
   readText: (path: string): Promise<string> => Bun.file(path).text(),
   write: async (path: string, value: string): Promise<void> => {
     await Bun.write(path, value);

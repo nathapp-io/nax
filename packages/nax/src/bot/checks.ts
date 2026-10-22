@@ -7,7 +7,7 @@ import { GATE_ORDER, resolveGateCommands } from "@/finish";
 import { getSafeLogger } from "@/logger";
 import type { BotChecksExtractOutput } from "@/operations/bot-checks-extract";
 import type { QualityCommandSpec } from "@/quality";
-import { gitWithTimeout } from "@/utils/git";
+import { botGit } from "./git";
 
 export type BotCheckSource = "config" | "agents-md" | "claude-md" | "detected" | "none";
 export interface BotCheck {
@@ -23,7 +23,7 @@ export interface BotChecks {
 
 export const DERIVED_INSTALL_TIMEOUT_SECONDS = 600;
 const MAX_INSTRUCTION_BYTES = 65_536;
-export const _botChecksDeps = { runGit: gitWithTimeout, resolveGateCommands };
+export const _botChecksDeps = { runGit: botGit, resolveGateCommands };
 
 type InstructionFile = "AGENTS.md" | "CLAUDE.md";
 interface ResolveBotChecksInput {

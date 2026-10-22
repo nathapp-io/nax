@@ -5,7 +5,6 @@ import type { CurrentUser, ForgeDeps, OwnComment, PrInfo, PrRef, PrThread } from
 import { getLogger } from "@/logger";
 import { buildBotPrFixPrompt, renderCheckoutState } from "@/prompts";
 import type { GraphState, StepResult } from "@/step-graph";
-import { gitWithTimeout } from "@/utils/git";
 import type { PrStepContext } from "@/workflow/branch-step-context";
 import { type GateCommand, gateOutputTail, runQualityGates } from "../finish/gates/quality";
 import { runBranchFix } from "../workflow/branch-fix";
@@ -16,6 +15,7 @@ import { listCiConfigFiles } from "./checkout-state";
 import { type BotChecks, barCommands } from "./checks";
 import { toFixFindings } from "./fix-input";
 import { failingOnHead, logGateFailure, readHeadCi } from "./gate-baseline";
+import { botGit } from "./git";
 import { featureIntentPaths } from "./intent";
 import { botModel } from "./models";
 import { fixProtectedPaths } from "./path-policy";
@@ -94,7 +94,7 @@ export const _fixStepsDeps = {
   runQualityGates,
   failingOnHead,
   readHeadCi,
-  runGit: gitWithTimeout,
+  runGit: botGit,
   readHead,
 };
 
@@ -250,7 +250,7 @@ export async function pushStep(env: BotFixEnv, _state: BotFixState): Promise<Ste
   const unsafe = await unsafeTree(env, _state);
   if (unsafe) return unsafe;
   const result = await _fixStepsDeps.runGit(
-    ["push", "origin", `HEAD:refs/heads/${env.info.headRef}`],
+    ["push", "--no-verify", "origin", `HEAD:refs/heads/${env.info.headRef}`],
     env.checkout.worktree,
     PUSH_TIMEOUT_MS,
   );

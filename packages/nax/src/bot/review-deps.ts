@@ -12,13 +12,13 @@ import {
 } from "@/forge";
 import { createRuntime } from "@/runtime";
 import { ensureProjectTrusted } from "@/trust";
-import { gitWithTimeout } from "@/utils/git";
 import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import { buildPrStepContext } from "../workflow/pr-step-context";
 import { loadBotConfig } from "./base-config";
 import { preparePrCheckout } from "./checkout";
 import { resolveBotChecks } from "./checks";
 import { readHeadCi } from "./gate-baseline";
+import { botGit } from "./git";
 import { openBotLog } from "./log";
 import { postPrReview } from "./post";
 import { runPrReview } from "./review-step";
@@ -26,7 +26,7 @@ import { recordPrRulings } from "./rulings";
 import { setupBotRuntime } from "./run-setup";
 
 export const _botReviewDeps = {
-  runGit: gitWithTimeout,
+  runGit: botGit,
   async isAncestor(dir: string, ancestor: string, head: string): Promise<boolean> {
     const result = await _botReviewDeps.runGit(["merge-base", "--is-ancestor", ancestor, head], dir);
     if (result.exitCode === 0) return true;

@@ -5,9 +5,9 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { PrInfo, PrRef } from "@/forge";
 import { getSafeLogger } from "@/logger";
-import { gitWithTimeout } from "../utils/git";
 import { WorktreeManager } from "../worktree/manager";
 import { snapshotBaseNax } from "./base-config";
+import { botGit } from "./git";
 
 export const BOT_GIT_NETWORK_TIMEOUT_MS = 120_000;
 
@@ -21,7 +21,7 @@ export const BASE_PINNED_PATHS = [
 export const BASE_PINNED_NAMES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "codex.md", ".cursorrules"] as const;
 
 export const _checkoutDeps = {
-  runGit: gitWithTimeout,
+  runGit: botGit,
   reserveWorktree: async (path: string): Promise<void> => {
     await mkdir(dirname(path), { recursive: true });
     await mkdir(path); // Exclusive: an existing checkout (even an empty directory) is never ours.

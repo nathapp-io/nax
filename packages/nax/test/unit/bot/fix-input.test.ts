@@ -37,12 +37,12 @@ describe("toFixFindings", () => {
 describe("checkPushAccess", () => {
   test("AC-10 probes the exact remote ref in the worktree", async () => {
     const calls: unknown[] = [];
-    bot._fixInputDeps.runGit = async (argv, cwd) => {
-      calls.push([argv, cwd]);
+    bot._fixInputDeps.runGit = async (argv, cwd, timeoutMs) => {
+      calls.push([argv, cwd, timeoutMs]);
       return { exitCode: 0, stdout: "", stderr: "" };
     };
     await bot.checkPushAccess("/w", "feat/x");
-    expect(calls).toEqual([[["push", "--dry-run", "origin", "HEAD:refs/heads/feat/x"], "/w"]]);
+    expect(calls).toEqual([[["push", "--dry-run", "--no-verify", "origin", "HEAD:refs/heads/feat/x"], "/w", 120_000]]);
   });
   test("AC-11 returns success for exit zero", async () => {
     bot._fixInputDeps.runGit = async () => ({ exitCode: 0, stdout: "", stderr: "" });

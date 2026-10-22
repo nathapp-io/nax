@@ -54,7 +54,11 @@ describe("bot slow git timeouts", () => {
     const run = mock<typeof _fixInputDeps.runGit>(async () => ok());
     _fixInputDeps.runGit = run;
     expect(await checkPushAccess("/worktree", "topic")).toEqual({ ok: true });
-    expect(run).toHaveBeenCalledWith(["push", "--dry-run", "origin", "HEAD:refs/heads/topic"], "/worktree", 120_000);
+    expect(run).toHaveBeenCalledWith(
+      ["push", "--dry-run", "--no-verify", "origin", "HEAD:refs/heads/topic"],
+      "/worktree",
+      120_000,
+    );
   });
   test.each([false, true])("AC-10 extends both head checkouts and restores after gate failure=%s", async (fails) => {
     const failure = new Error("gate execution failed");

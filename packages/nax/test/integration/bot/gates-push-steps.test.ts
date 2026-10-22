@@ -163,7 +163,11 @@ describe("pushStep", () => {
     const env = { ...baseEnv, info: { ...baseEnv.info, headRef: "feat/x" } };
     const result = await bot.pushStep(env, state());
     expect(runGit).toHaveBeenCalledTimes(2);
-    expect(runGit).toHaveBeenCalledWith(["push", "origin", "HEAD:refs/heads/feat/x"], env.checkout.worktree, 120_000);
+    expect(runGit).toHaveBeenCalledWith(
+      ["push", "--no-verify", "origin", "HEAD:refs/heads/feat/x"],
+      env.checkout.worktree,
+      120_000,
+    );
     expect(readHead).toHaveBeenCalledTimes(1);
     expect(readHead).toHaveBeenCalledWith(env.checkout.worktree);
     expect(result).toEqual({ exit: "pushed", patch: { pushedSha: "pushed-sha", outcome: "pushed" } });

@@ -4,12 +4,12 @@ import { z } from "zod";
 import { getLogger } from "@/logger";
 import type { WorkflowFinding } from "@/operations/workflow-types";
 import { buildUntrustedRequestIssue } from "@/prompts";
-import { gitWithTimeout } from "@/utils/git";
 import { BOT_GIT_NETWORK_TIMEOUT_MS } from "./checkout";
+import { botGit } from "./git";
 import { type AgreedItem, BOT_REVIEW_FILENAME, type BotReviewArtifact } from "./post";
 
 export const _fixInputDeps = {
-  runGit: gitWithTimeout,
+  runGit: botGit,
   glob: async (pattern: string, cwd: string): Promise<string[]> =>
     Array.fromAsync(new Bun.Glob(pattern).scan({ cwd, absolute: true, onlyFiles: true })),
   readText: (path: string): Promise<string> => Bun.file(path).text(),
@@ -103,7 +103,7 @@ export async function checkPushAccess(
   headRef: string,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const result = await _fixInputDeps.runGit(
-    ["push", "--dry-run", "origin", `HEAD:refs/heads/${headRef}`],
+    ["push", "--dry-run", "--no-verify", "origin", `HEAD:refs/heads/${headRef}`],
     worktree,
     BOT_GIT_NETWORK_TIMEOUT_MS,
   );
