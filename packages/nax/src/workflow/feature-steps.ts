@@ -503,6 +503,15 @@ async function readCiFailuresForRepair(
     await env.sink.ledger(ledgerText.note(`CI failed but no failed check was found for ${head}`), NO_MIRROR);
     return undefined;
   }
+  if (checks.every((check) => check.logUnavailable === true)) {
+    await env.sink.ledger(
+      ledgerText.note(
+        `CI repair skipped: no failed check's log could be read (${checks.map((check) => check.name).join(", ")})`,
+      ),
+      NO_MIRROR,
+    );
+    return undefined;
+  }
   await env.sink.ledger(
     ledgerText.note(`CI failed: ${checks.map((check) => check.name).join(", ")} (repairing)`),
     NO_MIRROR,
