@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { featureMachineFixtures, makeFeatureMachineHarness } from "@test/helpers";
 import { recordPrRulings } from "@/bot/rulings";
 import { workflowPrReadiness } from "@/bot/workflow-ready";
 import type { ForgeDeps, PrComment, PrThread } from "@/forge";
 import { withNaxBotMarker } from "@/forge";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
+import { readinessReasons } from "@/workflow/approval";
+import { runFeatureMachine } from "@/workflow/feature-machine";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { itemKey, parseItemIndex, renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
 import { type ItemThreadsInput, postItemThreads } from "@/workflow/item-threads-post";
@@ -193,6 +196,49 @@ describe("postItemThreads index and closing", () => {
     await postItemThreads(input({ reviewRan: true, gateRepairRounds: rounds, ciRepairRounds: rounds }), h.deps);
     expect(h.index()).toEqual({ keys: [], reviewedHead: HEAD, reviewedBase: BASE });
   });
+  test.each(["gate-only", "review-finding", "no-fix"] as const)(
+    "%s branch fixes publish review evidence only after re-review",
+    async (kind) => {
+      const machine = makeFeatureMachineHarness(
+        {
+          ...(kind === "gate-only"
+            ? {
+                gates: [
+                  {
+                    summary: { ran: ["test"], failing: ["test"] },
+                    findings: [{ kind: "gate", severity: "important", issue: "repo gate test failed" }],
+                  },
+                ],
+              }
+            : {}),
+          ...(kind === "review-finding" ? { review: { ...featureMachineFixtures.PASS, findings: [finding] } } : {}),
+        },
+        { record: newFeatureRecord({ now: "t", seed: BASE, minors: [] }) },
+      );
+      machine.env.steps.head = async () => (machine.calls.includes("branchFix") ? HEAD : OLD);
+      const record = await runFeatureMachine(machine.env);
+      const h = harness({ index: oldIndex });
+      await postItemThreads({ ...input(record), head: record.head }, h.deps);
+      expect(record.fixRan).toBe(kind !== "no-fix");
+      expect(machine.reReviewInputs).toHaveLength(kind === "review-finding" ? 1 : 0);
+      expect(record.reReviewSkipped).toBe(kind === "gate-only" ? true : undefined);
+      const reasons = readinessReasons({
+        stories: machine.env.facts.stories,
+        finalGates: record.finalGates,
+        ci: "green",
+        flagged: 0,
+        branchReviewRan: record.reviewRan,
+        reReviewSkipped: record.reReviewSkipped,
+      });
+      if (kind === "gate-only") {
+        expect(h.index()?.reviewedHead).toBeUndefined();
+        expect(reasons).toContain("branch re-review did not run: the fix commits are unreviewed");
+      } else {
+        expect(h.index()?.reviewedHead).toBe(record.head);
+        expect(reasons).toEqual([]);
+      }
+    },
+  );
   test.each([
     ["AC-5", { reReviewSkipped: true }],
     ["AC-6", { gateRepairRounds: 1 }],

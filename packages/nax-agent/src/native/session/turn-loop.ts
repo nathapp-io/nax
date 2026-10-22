@@ -35,7 +35,7 @@ import {
   transcriptDocFor,
   transcriptModelIdentity,
 } from "./transcript-identity.ts";
-import { createTurnAccumulator } from "./turn-accumulator.ts";
+import { createTurnAccumulator, type TurnAccumulator } from "./turn-accumulator.ts";
 import { dispatchTurnEndOnError } from "./turn-end-event.ts";
 import { createTurnEventEmitter } from "./turn-event-emitter.ts";
 import type { SpinFlags, TurnLoopState, TurnRoundParams } from "./turn-loop-round-trip.ts";
@@ -63,6 +63,13 @@ function beforeTurnSeed(
     { seedLength: patch.length },
   );
   return [{ role: "user", content: prompt }];
+}
+
+/** Keep billed spend on the original error for both loop and persistence failures. */
+function recordFailureSpend(err: unknown, usage: TurnAccumulator): void {
+  if (typeof err === "object" && err !== null) {
+    recordNativeTurnFailureUsage(err, { tokenUsage: usage.tokens(), costUsd: usage.costUsd() });
+  }
 }
 
 export async function runNativeTurn(
@@ -260,12 +267,7 @@ export async function runNativeTurn(
       });
     // nax#1840: attach what was already spent, keyed on the error's own
     // identity so the error itself is rethrown byte-for-byte unmodified.
-    if (typeof err === "object" && err !== null) {
-      recordNativeTurnFailureUsage(err, {
-        tokenUsage: usage.tokens(),
-        costUsd: usage.costUsd(),
-      });
-    }
+    recordFailureSpend(err, usage);
     throw err;
   }
 
@@ -282,7 +284,14 @@ export async function runNativeTurn(
   // Persisted before returning, and a write failure fails the turn: continuing
   // on a history that could not be stored is the silent degradation #1794
   // removed from the pipeline (ADR-028 s4).
-  await store.save(handle.id, transcriptDocFor(state.messages, transcriptIdentity));
+  try {
+    await store.save(handle.id, transcriptDocFor(state.messages, transcriptIdentity));
+  } catch (err) {
+    // Persistence can fail after the model finished: keep its billed spend on
+    // the original error, just as the loop's failure path does above.
+    recordFailureSpend(err, usage);
+    throw err;
+  }
 
   return buildTurnResult({
     output: state.output,

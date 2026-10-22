@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
+import type { AnyMessage } from "@agentclientprotocol/sdk";
 import {
   type AgentSession,
   type CreateAgentSessionOptions,
@@ -11,8 +12,11 @@ import {
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
 import { _acpBackendDeps, acpBackend } from "#src/client/backend";
+import { openConnection } from "#src/client/connection";
+import { createTurnCollector } from "#src/client/events";
 import * as publicClient from "#src/client/index";
 import type { AcpBackendOptions } from "#src/client/options";
+import { runPromptTurn } from "#src/client/turn";
 import { CLAUDE_CONFIG_OPTIONS, type FakeScript } from "#test/fixtures/fake-agent/script";
 import { type InMemoryAgent, inMemoryAgent } from "#test/helpers/in-memory-launch";
 
@@ -248,6 +252,67 @@ describe("acpBackend: turn outcomes (spec §5.7, §7)", () => {
 });
 
 describe("acpBackend: cancel (spec §6.3 step 3)", () => {
+  test("a blocked transport write cannot delay the cancellation grace (#2653)", async () => {
+    const written = Promise.withResolvers<void>();
+    const blocked = Promise.withResolvers<void>();
+    const fake = inMemoryAgent();
+    const launched = fake.launch({ command: "fake", args: [], cwd: workdir, env: {} });
+    const link = openConnection(
+      {
+        kind: "stream",
+        stream: {
+          readable: new ReadableStream<AnyMessage>(),
+          writable: new WritableStream<AnyMessage>({
+            write() {
+              written.resolve();
+              return blocked.promise;
+            },
+          }),
+        },
+      },
+      {
+        onUpdate: () => {},
+        onPermission: async () => ({ outcome: { outcome: "cancelled" } }),
+        onElicitation: async () => ({ action: "cancel" }),
+      },
+    );
+    const controller = new AbortController();
+    const reason = new Error("cancelled by the caller");
+    let disconnected = false;
+    jest.useFakeTimers();
+    const pending = runPromptTurn(
+      {
+        link,
+        launched,
+        agentSessionId: "s-1",
+        cancelGraceMs: 50,
+        secrets: [],
+        disconnect: () => {
+          disconnected = true;
+        },
+      },
+      { text: "go", signal: controller.signal, collector: createTurnCollector(undefined) },
+    ).catch((error: unknown) => error);
+    try {
+      await written.promise;
+      controller.abort(reason);
+      await Promise.resolve();
+      jest.advanceTimersByTime(49);
+      await Promise.resolve();
+      expect(fake.kills()).toBe(0);
+      jest.advanceTimersByTime(1);
+      await Promise.resolve();
+      expect(fake.kills()).toBe(1);
+      expect(disconnected).toBe(true);
+      expect(await pending).toBe(reason);
+    } finally {
+      blocked.resolve();
+      link.close();
+      jest.useRealTimers();
+      await pending;
+    }
+  });
+
   test("an agent that honours session/cancel: cancelled, and the session stays usable", async () => {
     const o = await open({
       turns: [{ steps: [{ kind: "waitForCancel" }] }, { steps: [{ kind: "text", text: "again" }] }],

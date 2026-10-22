@@ -257,7 +257,13 @@ export async function branchReReviewStep(
   const round = fixRoundsOf(rec);
   const followUp = isFollowUpRound(rec);
   const items = followUp ? roundTargets(rec) : [...rec.reviewOpen, ...fixNowMinors(rec)];
-  if (items.length === 0 || !rec.fixBase) return { patch: {}, exit: "nothing-to-check" };
+  if (items.length === 0 || !rec.fixBase) {
+    if (!rec.fixRan) return { patch: {}, exit: "nothing-to-check" };
+    // Gate-only fixes have no review finding to recheck, but their commits are still unreviewed.
+    const why = !rec.fixBase ? "missing fix base" : "no review targets for the branch fix";
+    await env.sink.ledger(ledgerText.reviewSkipped(`branch re-review: ${why}`), NO_MIRROR);
+    return { patch: { reReviewSkipped: true }, exit: "skipped" };
+  }
   const log = featureStep(roundLabel("branch-rereview", round), true, false, env.steps.modelFor?.("branch-rereview"));
   const out = await env.steps.branchReReview(items, rec.fixBase);
   if (!out.ran) {
