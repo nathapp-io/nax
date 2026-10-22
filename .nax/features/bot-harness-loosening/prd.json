@@ -3,7 +3,7 @@
   "feature": "bot-harness-loosening",
   "branchName": "feat/bot-harness-loosening",
   "createdAt": "2026-10-22T00:00:00.000Z",
-  "updatedAt": "2026-10-22T05:18:16.176Z",
+  "updatedAt": "2026-10-22T05:30:00.493Z",
   "userStories": [
     {
       "id": "US-001",
@@ -177,14 +177,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Extracts the existing path matcher and threads two optional fields through established review layers; trusted/static authorization remains unchanged."
+        "reasoning": "Extracts the existing path matcher and threads two optional fields through established review layers; trusted/static authorization remains unchanged.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/review-run.ts",
@@ -202,7 +205,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8397b39a60c8268a437e87fb3359293eda7f084b"
     },
     {
       "id": "US-004",
