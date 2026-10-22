@@ -287,7 +287,7 @@ version 3 and filters versions 1 and 2; `fixChecks` reuses saved checks for vers
 ### Modifies
 
 **US-001**
-- `packages/nax/test/unit/bot/base-config.test.ts` — "F1: default git runner" expects `_baseConfigDeps.runGit` to be `gitWithTimeout`; it becomes `botGit` (imported from `@/bot`). The invariant that the archive read goes through the shared timeout runner is unchanged.
+- `packages/nax/test/unit/bot/base-config.test.ts` — "F1: default git runner" expects `_baseConfigDeps.runGit` to be `gitWithTimeout`; it becomes `botGit`, imported from the bot barrel. The invariant that the archive read goes through the shared timeout runner is unchanged.
 - `packages/nax/test/unit/bot/git-timeouts.test.ts` — the assertion on the argv `checkPushAccess` passes to `runGit` (push, dry-run, origin, HEAD:refs/heads/topic) gains the `--no-verify` flag right after the dry-run flag; the 120 000 ms timeout invariant is unchanged.
 - `packages/nax/test/unit/bot/fix-input.test.ts` — the assertion on the argv `checkPushAccess` passes to `runGit` (push, dry-run, origin, HEAD:refs/heads/feat/x) gains the `--no-verify` flag right after the dry-run flag.
 - `packages/nax/test/integration/bot/gates-push-steps.test.ts` — the assertion on the argv `pushStep` passes to `runGit` (push, origin, HEAD:refs/heads/feat/x) gains the `--no-verify` flag right after the push verb; worktree and 120 000 ms timeout unchanged.
