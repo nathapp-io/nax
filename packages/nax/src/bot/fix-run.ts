@@ -30,6 +30,7 @@ import { repairStep } from "./repair-step";
 import { _botReviewDeps } from "./review-run";
 import { rulingModelReader } from "./ruling-reader";
 import { recordPrRulings } from "./rulings";
+import { clearSavedFix, persistSavedFix, readSavedFix, saveFix } from "./saved-fix";
 
 export const _botFixDeps = {
   gitToplevel: _botReviewDeps.gitToplevel,
@@ -53,6 +54,7 @@ export const _botFixDeps = {
     await Bun.write(to, Bun.file(from));
   },
   loadLatestReview,
+  savedFix: { read: readSavedFix, save: saveFix, clear: clearSavedFix },
   resolveBotChecks,
   checkPushAccess,
   runPreRunSteps,
@@ -347,7 +349,10 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
     };
     await recordFixRulings(env, items.comments);
     try {
-      return finishFix(await executeFix(env, runtime), log);
+      const result = await executeFix(env, runtime);
+      if (result.outcome !== "refused")
+        await persistSavedFix({ env, state: result, outputDir: runtime.outputDir, savedFix: deps.savedFix });
+      return finishFix(result, log);
     } finally {
       await preserveFixReport(env.ctx.reportPath, stateDir);
     }
