@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeLogger, makeSpawn, makeTempDir, withDepsRestore } from "@test/helpers";
-import { _gitDeps, autoCommitIfDirty, registerBeforeAutoCommit } from "@/utils/git";
+import { _gitDeps, autoCommitIfDirty, type gitWithTimeout, registerBeforeAutoCommit } from "@/utils/git";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -27,7 +27,7 @@ describe("autoCommitIfDirty", () => {
   test.each([false, true])("injected runner owns every git call; deleted nax path=%s", async (deleted) => {
     const spawn = mock(makeSpawn(() => "").spawn);
     _gitDeps.spawn = spawn;
-    const run = mock(async (args: string[]) => ({
+    const run = mock(async (...[args]: Parameters<typeof gitWithTimeout>) => ({
       stdout:
         args[0] === "rev-parse"
           ? "/repo\n"
@@ -40,7 +40,14 @@ describe("autoCommitIfDirty", () => {
     await autoCommitIfDirty("/repo", "workflow", "wf-branch-fix", "_run", undefined, false, run);
     expect(run.mock.calls.map(([args]) => args[0])).toContain("status");
     expect(run.mock.calls.map(([args]) => args[0])).toContain("add");
-    expect(run.mock.calls.map(([args]) => args[0])).toContain("commit");
+    expect(run).toHaveBeenCalledWith(["add", "-A", "--", ":/"], "/repo", 30_000);
+    expect(run).toHaveBeenCalledWith(
+      ["commit", "-m", "chore(_run): auto-commit after wf-branch-fix session"],
+      "/repo",
+      30_000,
+    );
+    const stagedRead = run.mock.calls.find(([args]) => args.includes("--cached"));
+    expect(stagedRead?.[2]).toBe(30_000);
     if (deleted) {
       expect(run).toHaveBeenCalledWith(["cat-file", "-e", "HEAD:.nax/features/x/prd.json"], "/repo");
       expect(run).toHaveBeenCalledWith(["checkout", "--", ".nax/features/x/prd.json"], "/repo");

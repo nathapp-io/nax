@@ -58,6 +58,18 @@ describe("autoCommitIfDirty bot hook boundary", () => {
     expect(await git(["rev-parse", "HEAD"])).not.toBe(initial);
     expect(await Bun.file(marker).exists()).toBe(false);
   });
+  test("default runner restores tracked nax state and fires the relative post-checkout hook", async () => {
+    await Bun.file(join(worktree, statePath)).delete();
+    await autoCommitIfDirty(worktree, "workflow", "wf-branch-fix", "_run");
+    expect(await Bun.file(join(worktree, statePath)).text()).toBe('{"tracked":true}\n');
+    expect(await git(["rev-parse", "HEAD"])).not.toBe(initial);
+    expect((await Bun.file(marker).text()).trim().split("\n")).toEqual([
+      "post-checkout",
+      "pre-commit",
+      "commit-msg",
+      "post-commit",
+    ]);
+  });
   test("default runner preserves live relative commit hooks", async () => {
     await autoCommitIfDirty(worktree, "workflow", "wf-branch-fix", "_run");
     expect(await git(["rev-parse", "HEAD"])).not.toBe(initial);

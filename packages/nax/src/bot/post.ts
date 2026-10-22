@@ -4,7 +4,7 @@ import { NaxError } from "@/errors";
 import type { ForgeDeps, OwnComment, PrComment, PrInfo, PrRef, PrThread } from "@/forge";
 import { editComment, postInlineComment, postPrComment, replyToThread } from "@/forge";
 import { getLogger } from "@/logger";
-import type { PrReviewVerdict } from "@/operations/bot-types";
+import type { PrReviewVerdict, PrTriageDecision } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import type { BotChecks } from "./checks";
@@ -102,7 +102,7 @@ export const _postDeps = {
 };
 
 /** Only an agreeing, existing non-writer target warrants an explanation. */
-function notQueued(input: PostReviewInput, decision: string, comment: PrComment | undefined): boolean {
+function notQueued(input: PostReviewInput, decision: PrTriageDecision, comment: PrComment | undefined): boolean {
   return decision === "agree" && comment !== undefined && !input.writers?.has(comment.author);
 }
 
