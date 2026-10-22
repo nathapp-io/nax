@@ -19,8 +19,9 @@ export async function repairStep(env: BotFixEnv, state: BotFixState): Promise<St
     });
     return { patch: {}, exit: "out-of-scope" };
   }
+  const repairMode = state.outcome === "baseline-red" && state.ciOutcome === "green" ? "prepare" : "repair";
   const prompt = buildBotPrFixPrompt({
-    mode: "repair",
+    mode: repairMode,
     findings: [],
     pr: env.info,
     ...featureIntentPaths(env.checkout),
@@ -39,13 +40,21 @@ export async function repairStep(env: BotFixEnv, state: BotFixState): Promise<St
     model: botModel(env.config, "fix", env.model),
     prompt,
   });
-  return {
-    patch: {
-      gateRepairRounds: (state.gateRepairRounds ?? 0) + 1,
-      repairMode: "repair",
-      ...(result.failure !== undefined ? { fixFailure: result.failure } : {}),
-      ...(result.dirty ? { fixDirty: true } : {}),
-    },
-    exit: "ran",
+  const patch: Partial<BotFixState> = {
+    gateRepairRounds: (state.gateRepairRounds ?? 0) + 1,
+    repairMode,
+    ...(result.failure !== undefined ? { fixFailure: result.failure } : {}),
+    ...(result.dirty ? { fixDirty: true } : {}),
   };
+  if (repairMode === "prepare" && (await prepareTouchedTracked(env, headBefore))) {
+    return { patch: { ...patch, outcome: "prepare-touched-tracked" }, exit: "out-of-scope" };
+  }
+  return { patch, exit: "ran" };
+}
+
+async function prepareTouchedTracked(env: BotFixEnv, headBefore: string): Promise<boolean> {
+  if ((await _fixStepsDeps.readHead(env.checkout.worktree)) !== headBefore) return true;
+  const status = await _fixStepsDeps.runGit(["status", "--porcelain", "--untracked-files=no"], env.checkout.worktree);
+  // An unreadable tree cannot establish that prepare respected the tracked-file boundary.
+  return status.exitCode !== 0 || status.stdout !== "";
 }

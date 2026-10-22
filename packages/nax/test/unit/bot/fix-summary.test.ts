@@ -8,6 +8,16 @@ import { safeCode } from "@/workflow/pr-body-safe";
 const state: BotFixState = { step: "report", timings: {} };
 
 describe("renderFixSummary", () => {
+  test("US-008 AC-9 reports tracked prepare changes", () => {
+    expect(renderFixSummary({ ...state, outcome: "prepare-touched-tracked" })).toContain(
+      "The prepare turn changed tracked files; nothing pushed.",
+    );
+  });
+  test("US-008 AC-10 records the prepare turn", () => {
+    expect(
+      renderFixSummary({ ...state, outcome: "baseline-red", repairMode: "prepare", gateRepairRounds: 1 }),
+    ).toContain("Repair turn: prepare, round 1.");
+  });
   test.each([
     ["pushed", "Pushed abcdef1: 3 agreed items fixed in one round; gates passed."],
     ["nothing", "Nothing to fix: the latest review agreed with no item."],

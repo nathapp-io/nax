@@ -263,6 +263,8 @@ function outcomeText(state: BotFixState): string {
           ? [`Already red on the unmodified PR head: ${state.baselineFailing.join(", ")}.`]
           : []),
       ].join(" ");
+    case "prepare-touched-tracked":
+      return "The prepare turn changed tracked files; nothing pushed.";
     case "baseline-red":
       return `Gates failed: ${(state.failingGates ?? []).join(", ")}. ${baselineText(state.ciOutcome)} Nothing pushed.`;
     case "dirty":

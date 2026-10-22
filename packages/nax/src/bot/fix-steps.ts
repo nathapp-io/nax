@@ -32,6 +32,7 @@ export interface BotFixState extends GraphState<BotFixStep> {
     | "no-gates"
     | "gates-failed"
     | "baseline-red"
+    | "prepare-touched-tracked"
     | "push-rejected"
     | "push-unknown"
     | "dirty"
