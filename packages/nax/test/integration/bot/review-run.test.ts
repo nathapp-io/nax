@@ -152,6 +152,7 @@ beforeEach(() => {
     buildPrStepContext: buildContext,
     resolveBotChecks: resolveChecks,
     runPreRunSteps: preRun,
+    hasWriteAccess: async () => true,
     readCurrentUser: async () => ({ login: "bot" }),
     listReviewThreads: async () => threads,
     recordPrRulings: async () => ({ recorded: [], settled: [], open: [], asked: 0, failed: 0 }),

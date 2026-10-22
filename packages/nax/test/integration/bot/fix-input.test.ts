@@ -59,7 +59,7 @@ describe("loadLatestReview", () => {
   test.each([
     ["AC-3 malformed JSON", "{bad"],
     ["AC-4 missing version", { headSha: "h1" }],
-    ["US-007 AC-10 unsupported version", { version: 3, headSha: "h1" }],
+    ["US-007 AC-10 unsupported version", { version: 4, headSha: "h1" }],
     ["null JSON", "null"],
   ])("ignores %s", async (_label, content) => {
     const dir = temp();

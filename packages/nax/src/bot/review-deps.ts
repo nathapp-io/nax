@@ -3,6 +3,7 @@ import { NaxError } from "@/errors";
 import {
   classifyPrTrust,
   defaultForgeDeps,
+  hasWriteAccess,
   listPrComments,
   listReviewThreads,
   readCurrentUser,
@@ -56,6 +57,7 @@ export const _botReviewDeps = {
   readPrInfo,
   classifyPrTrust,
   readCurrentUser,
+  hasWriteAccess,
   listReviewThreads,
   listPrComments,
   readLinkedIssues,

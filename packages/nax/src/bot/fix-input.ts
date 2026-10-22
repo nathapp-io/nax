@@ -38,14 +38,26 @@ async function readReview(path: string): Promise<BotReviewArtifact | null> {
       typeof value !== "object" ||
       value === null ||
       !("version" in value) ||
-      (value.version !== 1 && value.version !== 2)
+      (value.version !== 1 && value.version !== 2 && value.version !== 3)
     )
       return null;
     if ("checks" in value && value.checks !== null && !checksSchema.safeParse(value.checks).success) {
       getLogger()?.warn("bot-fix", "Ignoring review artifact with invalid checks; re-run nax bot review", { path });
       return null;
     }
-    return value as BotReviewArtifact;
+    const review = value as BotReviewArtifact;
+    if (review.version < 3 && Array.isArray(review.agreed)) {
+      const agreed = review.agreed.filter((item: AgreedItem) => item?.kind === "finding");
+      const dropped = review.agreed.length - agreed.length;
+      if (dropped > 0)
+        getLogger()?.warn(
+          "bot-fix",
+          "Dropped unchecked thread and comment items from an older review; re-run nax bot review",
+          { path, dropped },
+        );
+      return { ...review, agreed };
+    }
+    return review;
   } catch (cause) {
     // A corrupt or concurrently removed artifact must not hide the other reviews.
     getLogger()?.debug("bot-fix", "Ignoring unreadable review artifact", { path, error: errorMessage(cause) });

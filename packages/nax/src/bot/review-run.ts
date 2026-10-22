@@ -3,7 +3,7 @@ import { resolveDefaultAgent } from "@/agents";
 import { type ConfiguredModel, DEFAULT_SANDBOX_CONFIG, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { ownComments, type PrComment, parseNaxBotMarker } from "@/forge";
-import { getLogger } from "@/logger";
+import { getLogger, getSafeLogger } from "@/logger";
 import { botChecksExtractOp, type PrReviewVerdict } from "@/operations";
 import { renderCheckoutState } from "@/prompts";
 import type { createRuntime } from "@/runtime";
@@ -26,6 +26,7 @@ import { BOT_REVIEW_FILENAME, type PostReviewInput, type PostReviewOutcome } fro
 import { _botReviewDeps } from "./review-deps";
 import { readReviewRulings, reviewRange } from "./review-rulings";
 import type { PrReviewInput } from "./review-step";
+import { readWriters, writerCheck } from "./writers";
 
 export { _botReviewDeps } from "./review-deps";
 
@@ -126,7 +127,7 @@ async function triage(
   ref: PostReviewInput["ref"],
   cwd: string,
 ): Promise<
-  Required<Pick<PostReviewInput, "threads" | "comments" | "own" | "earlier" | "login">> & {
+  Required<Pick<PostReviewInput, "threads" | "comments" | "own" | "earlier" | "login" | "writers">> & {
     rawThreads: PostReviewInput["threads"];
     rawComments: PostReviewInput["comments"];
   }
@@ -143,7 +144,19 @@ async function triage(
   ];
   const isOwn = (comment: PrComment | undefined): boolean =>
     comment !== undefined && ownComments([comment], user.login).length > 0;
+  const keptThreads = threads.filter((thread) => !thread.resolved && !isOwn(thread.comments[0]));
+  const keptComments = comments.filter(
+    (comment) =>
+      (comment.kind === "comment" || comment.kind === "review") && comment.body.trim() !== "" && !isOwn(comment),
+  );
+  const writers = await readWriters(
+    [...keptThreads.flatMap((thread) => (thread.comments[0] ? [thread.comments[0]] : [])), ...keptComments],
+    writerCheck({ ref, deps: deps.forge, cwd }, deps.hasWriteAccess, (login, error) =>
+      getSafeLogger()?.warn("bot", "Could not check commenter permission", { login, error }),
+    ),
+  );
   return {
+    writers,
     rawThreads: threads,
     rawComments: comments,
     own,
@@ -152,11 +165,8 @@ async function triage(
       const first = thread.comments[0];
       return !thread.resolved && isOwn(first) && parseNaxBotMarker(first?.body ?? "")?.key.startsWith("f-");
     }),
-    threads: threads.filter((thread) => !thread.resolved && !isOwn(thread.comments[0])),
-    comments: comments.filter(
-      (comment) =>
-        (comment.kind === "comment" || comment.kind === "review") && comment.body.trim() !== "" && !isOwn(comment),
-    ),
+    threads: keptThreads,
+    comments: keptComments,
   };
 }
 

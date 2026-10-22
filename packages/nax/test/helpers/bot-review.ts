@@ -53,6 +53,7 @@ export function makeBotReviewDeps(input: {
     }),
     resolveBotChecks: async () => ({ source: "detected", gates: [], preRun: [] }),
     runPreRunSteps: async () => {},
+    hasWriteAccess: async () => true,
     readCurrentUser: async () => ({ login: "bot" }),
     listReviewThreads: async () => input.threads?.() ?? [],
     listPrComments: async () => [],

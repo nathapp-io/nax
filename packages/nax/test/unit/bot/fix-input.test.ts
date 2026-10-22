@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as bot from "@/bot";
+import { getLogger } from "@/logger";
 import { buildUntrustedRequestIssue } from "@/prompts";
 
 const original = bot._fixInputDeps ? { ...bot._fixInputDeps } : undefined;
@@ -79,4 +80,42 @@ test.each([
   bot._fixInputDeps.readText = async () => JSON.stringify({ version: 2, headSha: "h", checks });
   bot._fixInputDeps.mtimeMs = async () => 1;
   expect(await bot.loadLatestReview("/o", 42, "h")).toBeNull();
+});
+
+describe("loadLatestReview writer-checked artifact versions", () => {
+  const finding = { kind: "finding", key: "f-1", issue: "Leak", severity: "minor" };
+  const agreed = [finding, thread, { kind: "comment", key: "c-1", issue: "Request", reason: "Valid" }];
+  async function read(value: unknown): Promise<unknown> {
+    bot._fixInputDeps.glob = async () => ["review-path"];
+    bot._fixInputDeps.readText = async () => JSON.stringify(value);
+    bot._fixInputDeps.mtimeMs = async () => 1;
+    return bot.loadLatestReview("/output", 42, "h");
+  }
+  test.each([1, 2])("AC-10/11/18/19 version %s drops unchecked human items with exact warning", async (version) => {
+    const warn = spyOn(getLogger(), "warn");
+    try {
+      expect(await read({ version, headSha: "h", agreed })).toEqual({ version, headSha: "h", agreed: [finding] });
+      expect(warn).toHaveBeenCalledWith(
+        "bot-fix",
+        "Dropped unchecked thread and comment items from an older review; re-run nax bot review",
+        { path: "review-path", dropped: 2 },
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  test.each([undefined, null, "not-an-array"])(
+    "AC-12 leaves missing/non-array agreed unchanged: %j",
+    async (agreed) => {
+      const value = { version: 1, headSha: "h", ...(agreed === undefined ? {} : { agreed }) };
+      expect(await read(value)).toEqual(value);
+    },
+  );
+  test("AC-13 version 3 preserves human items", async () => {
+    const value = { version: 3, headSha: "h", agreed };
+    expect(await read(value)).toEqual(value);
+  });
+  test("AC-14 version 4 is ignored", async () => {
+    expect(await read({ version: 4, headSha: "h", agreed })).toBeNull();
+  });
 });

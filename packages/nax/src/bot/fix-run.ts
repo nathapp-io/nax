@@ -278,7 +278,7 @@ async function fixChecks(
 ): Promise<BotChecks> {
   const { repoRoot, checkout, config, ctx, review } = env;
   // Saved checks belong to this reviewed head, even if the base has since moved.
-  if (review.version === 2 && review.checks != null) return review.checks;
+  if (review.version >= 2 && review.checks != null) return review.checks;
   return _botFixDeps.resolveBotChecks({
     repoRoot,
     baseSha: checkout.baseSha,

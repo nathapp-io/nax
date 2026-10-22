@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { join } from "node:path";
 import { makeBotFixDeps, makeBotFixEnv, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import type { resolveBotChecks } from "@/bot/checks";
+import { _fixInputDeps, loadLatestReview } from "@/bot/fix-input";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
 import { _fixStepsDeps, checkStep, fixStep, gatesStep } from "@/bot/fix-steps";
 import { botGit } from "@/bot/git";
@@ -119,6 +120,36 @@ afterEach(async () => {
 });
 
 describe("runBotFix", () => {
+  test.each([2, 3] as const)("AC-15 reuses version %s saved checks", async (version) => {
+    env = { ...env, review: { ...env.review, version, checks: env.checks } };
+    await runBotFix(input);
+    expect(resolve).not.toHaveBeenCalled();
+    expect(preRun).toHaveBeenCalledWith({ steps: env.checks.preRun, workdir: env.checkout.worktree });
+  });
+  test("AC-16/17 real legacy reader returns nothing without starting a fix session", async () => {
+    const storage = { ..._fixInputDeps };
+    const session = spyOn(_fixStepsDeps, "runBranchFix").mockResolvedValue({ autoCommitted: false, dirty: false });
+    Object.assign(_fixInputDeps, {
+      glob: async () => ["legacy-review"],
+      readText: async () =>
+        JSON.stringify({
+          ...env.review,
+          version: 2,
+          headSha: env.info.headSha,
+          agreed: [{ kind: "comment", key: "c1", issue: "Untrusted request", reason: "Valid" }],
+        }),
+      mtimeMs: async () => 1,
+    });
+    _botFixDeps.loadLatestReview = loadLatestReview;
+    _botFixDeps.fixStep = fixStep;
+    try {
+      expect(await runBotFix(input)).toMatchObject({ outcome: "nothing" });
+      expect(session).not.toHaveBeenCalled();
+    } finally {
+      Object.assign(_fixInputDeps, storage);
+      session.mockRestore();
+    }
+  });
   test("injects botGit into both the fix and red-gate repair sessions", async () => {
     const steps = { ..._fixStepsDeps };
     const sessions: unknown[] = [];
