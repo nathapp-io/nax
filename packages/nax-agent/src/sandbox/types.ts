@@ -16,7 +16,8 @@ export interface SandboxNetworkPolicy {
    * US-002: srt may let a command bind to -- and reach -- loopback ports, so a
    * DB-backed test run sees a local server that is up (#2538).
    *
-   * `true` only. srt's own default is off, so absent and `false` are the same
+   * The config default is resolved by `effectiveAllowLocalBinding` before
+   * policy construction. `true` only. srt's own default is off, so absent and `false` are the same
    * thing to it, and a policy that cannot express "off" cannot contradict the
    * config it was built from.
    */
@@ -36,7 +37,12 @@ export interface SandboxPolicy {
  * unusable on this host; the backend must refuse rather than run unsandboxed.
  */
 export type SessionSandbox =
-  | { readonly kind: "policy"; readonly policy: SandboxPolicy }
+  | {
+      readonly kind: "policy";
+      readonly policy: SandboxPolicy;
+      /** Absolute path of the session's single writable output. */
+      readonly writeExemption?: string;
+    }
   | { readonly kind: "unavailable"; readonly reason: string };
 
 export type ProbeResult = { readonly available: true } | { readonly available: false; readonly reason: string };

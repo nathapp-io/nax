@@ -6,6 +6,7 @@
 
 import { getSafeLogger } from "#src/infra/index";
 import type { SandboxConfig } from "../config/schemas-sandbox.ts";
+import { effectiveAllowLocalBinding } from "./network.ts";
 import { probeSandbox } from "./probe.ts";
 import { createSrtBackend } from "./srt-backend.ts";
 import type { ProbeResult, SandboxBackend } from "./types.ts";
@@ -20,7 +21,10 @@ let probed: Promise<ProbeResult> | undefined;
 let warnedUnavailable = false;
 
 export function sandboxBackendFor(config: SandboxConfig): SandboxBackend {
-  backend ??= _sandboxRegistryDeps.createBackend(config.network);
+  backend ??= _sandboxRegistryDeps.createBackend({
+    ...config.network,
+    allowLocalBinding: effectiveAllowLocalBinding(config.network),
+  });
   return backend;
 }
 

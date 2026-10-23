@@ -44,7 +44,8 @@ export const SandboxConfigSchema = z.object({
       /**
        * US-002 (#2538): let a sandboxed command reach loopback ports.
        *
-       * Off when absent, and it only changes anything alongside an
+       * Absent: on when `allowedDomains` is set (see `effectiveAllowLocalBinding`),
+       * off otherwise. It only changes anything alongside an
        * `allowedDomains` list: with an open network srt's macOS profile already
        * allows all traffic. srt reads it once per process, from the config given
        * to `SandboxManager.initialize`.
