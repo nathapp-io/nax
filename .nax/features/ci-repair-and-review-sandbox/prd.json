@@ -1,0 +1,472 @@
+{
+  "project": "nax-monorepo",
+  "feature": "ci-repair-and-review-sandbox",
+  "branchName": "feat/ci-repair-and-review-sandbox",
+  "createdAt": "2026-10-23T00:00:00.000Z",
+  "updatedAt": "2026-10-23T15:57:17.963Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add the wf-repair role and workflowRepairOp",
+      "description": "**Goal** \u2014 Give repairs their own canonical session role, operation and leftover-commit identity while preserving default branch fixes.\n\n**Motivation** \u2014 Its tokens are booked with the branch fix, and after the last round the ledger says only `CI failed`, with no record of which check or step is still red.\n\n**Approach** \u2014 1. **Role and op.** `wf-repair` joins `CanonicalSessionRole`. `workflowRepairOp` (`src/operations/workflow-repair.ts`) is `workflowBranchFixOp` with `name: \"workflow-repair\"` and `session: { role: \"wf-repair\", lifetime: \"fresh\" }`. Its tools, model resolution, timeout, writable report, soft-interrupt hop body, parser and recover are the same. Because the token meter keys `byRole` by the dispatch's `sessionRole`, the new role books separately with no meter change. `runBranchFix` takes `kind?: \"fix\" | \"repair\"`. `\"repair\"` dispatches `workflowRepairOp` and commits leftover edits as `wf-repair`, so the commit reads `chore(_run): auto-commit after wf-repair session`. Rule delivery treats `wf-repair` exactly like `wf-branch-fix`.\n\n**Scope** \u2014 In: CanonicalSessionRole and KNOWN_SESSION_ROLES, both rule-delivery role lists, the new op and operations barrel export, and kind-based dispatch/auto-commit in runBranchFix. Out: workflow/bot caller routing and the verification rule (US-002), CI metadata (US-003), CI prompt selection (US-004), evidence (US-005/006), and review setup (US-007). The `costUsd: 0` booked for native-agent repair tokens in nax#2642 is a cost-estimation issue in the dispatch events, not a role issue; this feature only separates the role. The session-role table in `.nax/rules/adapter-wiring.md` gains `wf-repair` as a manual follow-up after the run (`.nax/` is read-only to the run).\n\n**Interface** \u2014 Verbatim target declarations:\n```typescript\n// src/operations/workflow-repair.ts (exported from @/operations)\nexport const workflowRepairOp: RunOperationWithHooks<WorkflowBranchFixInput, ImplementerReply, WorkflowOpConfig, \"hopBody\" | \"recover\">;\n```\n`BranchFixInput` gains `kind?: \"fix\" | \"repair\"`; omitted kind preserves the existing operation, prompt and commit role.\n\n**Implementation and test notes** \u2014 Mirror the existing typed op, preserve soft-interrupt and recovery behavior, and keep every current non-abort leftover-commit path. Extend the makeScriptedCallOp/commit-argument harness in test/unit/workflow/branch-fix.test.ts; old tests without kind keep wf-branch-fix. Add test/unit/operations/workflow-repair.test.ts to assert the public op and its inherited behaviors. Existing role membership tests need no expectation rewrite.",
+      "acceptanceCriteria": [
+        "[unit] isSessionRole(\"wf-repair\") returns true.",
+        "[unit] KNOWN_SESSION_ROLES contains \"wf-repair\".",
+        "[unit] workflowRepairOp, imported from @/operations, has name equal to \"workflow-repair\".",
+        "[unit] workflowRepairOp.session equals { role: \"wf-repair\", lifetime: \"fresh\" }.",
+        "[unit] workflowRepairOp.tools equals workflowBranchFixOp.tools.",
+        "[unit] workflowRepairOp.model with no input.model and a config whose workflow.models.branchFix is model M returns M.",
+        "[unit] workflowRepairOp.model with input.model set to model N returns N.",
+        "[unit] workflowRepairOp.timeoutMs for an input with timeoutMs: 1000 returns 1000 + STEP_TIMEOUT_MARGIN_MS.",
+        "[unit] workflowRepairOp.writableOutput for an input with reportPath: \"/r/feature-report.md\" returns \"/r/feature-report.md\".",
+        "[unit] workflowRepairOp.recover() returns the same reply parseImplementerReply(\"\") returns.",
+        "[unit] RULE_READ_ROLES contains \"wf-repair\".",
+        "[unit] RULE_WRITE_ROLES contains \"wf-repair\".",
+        "[unit] runBranchFix(fc, { findings, kind: \"repair\" }) calls _workflowDeps.callOp with workflowRepairOp.",
+        "[unit] runBranchFix(fc, { findings }) with no kind calls _workflowDeps.callOp with workflowBranchFixOp.",
+        "[unit] runBranchFix(fc, { findings, kind: \"repair\" }) with an uncommitted file left in fc.projectDir calls _workflowDeps.autoCommitIfDirty with the role argument \"wf-repair\".",
+        "[unit] runBranchFix(fc, { findings }) with an uncommitted file left calls _workflowDeps.autoCommitIfDirty with the role argument \"wf-branch-fix\".",
+        "[unit] When _workflowDeps.callOp throws Error(\"boom\") during runBranchFix(fc, { findings, kind: \"repair\" }) and fc.runSignal is not aborted, runBranchFix resolves with failure equal to \"boom\", preserving the existing non-abort session-failure contract."
+      ],
+      "tags": [
+        "workflow",
+        "repair",
+        "session-role",
+        "operations"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Five production files receive standard registry/list additions, a mirror of an existing typed op and a small dispatch/commit-role selector; mandatory session/role isolation still requires three-session-tdd."
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/workflow-branch-fix.ts",
+        "packages/nax/src/runtime/session-role.ts",
+        "packages/nax/src/context/rules/rule-delivery/index.ts",
+        "packages/nax/src/workflow/branch-fix.ts",
+        "packages/nax/test/unit/workflow/branch-fix.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/operations/workflow-repair.ts",
+        "packages/nax/test/unit/operations/workflow-repair.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Route workflow and bot repairs to wf-repair",
+      "description": "**Goal** \u2014 Route workflow CI/final-gate and bot repair/prepare sessions to wf-repair and require explicit concerns for checks unavailable locally.\n\n**Motivation** \u2014 `nax bot fix`'s repair step (`repairStep`, modes `repair` and `prepare`) has the same identity problem: it calls `runBranchFix`, so it books under `wf-branch-fix` too.\n\n**Approach** \u2014 2. **Routing.** `FeatureSteps.branchFix` takes `opts.repair?: true`. `buildFeatureEnv` maps it to `kind: \"repair\"`. `gateRepairStep` and `ciRepairStep` pass `repair: true`; `branchFixStep` is unchanged. Each call stays one line (`ciRepairStep` spreads `prUrl` into the options object instead of its current two-call ternary), because `feature-steps.ts` has 3 lines left before US-004 moves the CI repair out. Bot `repairStep` passes `kind: \"repair\"` in both modes; bot `fixStep` is unchanged. `REPAIR_VERIFICATION_RULE` is added to `src/prompts/builders/workflow-implementer-builder.ts` beside `WORKFLOW_REPLY_CONTRACT`, exported from `@/prompts`, and bot `buildBotPrFixPrompt`'s `repair` and `prepare` modes include it.\n\n**Scope** \u2014 In: repair option forwarding through FeatureSteps/buildFeatureEnv, one-line gate/CI calls, bot repair/prepare kind, and the shared rule in bot repair/prepare instructions. Out: new op internals (US-001), Actions steps (US-003), ciRound/CI prompt and module extraction (US-004), CI reply evidence (US-005/006), review builds (US-007). Workflow final-gate repair changes its session role to `wf-repair` but keeps the branch-fix prompt. Bot `fix` mode's prompt and role are unchanged. Recording the `concerns` of the bot repair and the workflow final-gate repair replies; only the workflow CI repair records its concerns.\n\n**Interface** \u2014 Target additions from the spec:\n```typescript\nexport const REPAIR_VERIFICATION_RULE: string;\n```\n`FeatureSteps.branchFix` takes `(findings, opts?: { readonly prUrl?: string; readonly repair?: true })` at this stage; ciRound is introduced by US-004. Bot repair inputs carry `kind: \"repair\"`. The exact rule is: If you cannot run a check here (for example the sandbox blocks its network, or its tool is missing), reply DONE_WITH_CONCERNS and name each such check in \"concerns\". Never reply DONE for a check you only reasoned about. The `repair` and `prepare` modes end with `- ${REPAIR_VERIFICATION_RULE}`; `fix` is unchanged.\n\n**Implementation and test notes** \u2014 The feature-env.test.ts makeScriptedCallOp harness drives the real buildFeatureEnv dispatch/provider seams; do not replace this with testing only a copied option mapper. Add feature-steps-repair-routing.test.ts. In feature-steps-ci-repair.test.ts, US-012 AC-1 changes from { prUrl } to { prUrl, repair: true }, and ci-without-url/gate-with-url gain { repair: true }; ordinary branch fix still has one argument and only CI forwards the PR URL. In integration/bot/repair-step.test.ts, the exact AC-8/9/10 input gains kind: repair while prompt and patch assertions stay intact. Regenerate final-gates-repair.json through feature-machine equivalence with NAX_UPDATE_WORKFLOW_GOLDEN=1 and verify the only golden change is the second argument on gate-repair calls.",
+      "acceptanceCriteria": [
+        "[integration] The branchFix step returned by buildFeatureEnv, called as branchFix(findings, { repair: true }) with _workflowDeps.callOp scripted, dispatches an op whose name is \"workflow-repair\".",
+        "[integration] The branchFix step returned by buildFeatureEnv, called as branchFix(findings), dispatches an op whose name is \"workflow-branch-fix\".",
+        "[integration] The branchFix step returned by buildFeatureEnv, called as branchFix(findings, { repair: true, prUrl: \"https://github.com/o/r/pull/7\" }) dispatches \"workflow-repair\" with a call context whose toolProviders holds one provider.",
+        "[unit] gateRepairStep with gateRepairFindings holding one finding calls env.steps.branchFix with that finding as G1 and a second argument equal to { repair: true }.",
+        "[unit] ciRepairStep with ciRepairFindings holding one finding and url \"https://github.com/o/r/pull/7\" calls env.steps.branchFix with a second argument whose repair is true and whose prUrl is that URL.",
+        "[unit] ciRepairStep with no url calls env.steps.branchFix with a second argument whose repair is true and which has no prUrl key.",
+        "[unit] branchFixStep with one open finding calls env.steps.branchFix with exactly one argument.",
+        "[integration] Bot repairStep with state outcome: \"gates-failed\" calls _fixStepsDeps.runBranchFix with an input whose kind is \"repair\".",
+        "[integration] Bot repairStep with state outcome: \"baseline-red\" and ciOutcome: \"green\" (prepare mode) calls _fixStepsDeps.runBranchFix with an input whose kind is \"repair\".",
+        "[integration] Bot fixStep with one agreed finding calls _fixStepsDeps.runBranchFix with an input that has no kind key.",
+        "[unit] REPAIR_VERIFICATION_RULE, imported from @/prompts, equals If you cannot run a check here (for example the sandbox blocks its network, or its tool is missing), reply DONE_WITH_CONCERNS and name each such check in \"concerns\". Never reply DONE for a check you only reasoned about.",
+        "[unit] buildBotPrFixPrompt in mode repair returns text containing the value of REPAIR_VERIFICATION_RULE.",
+        "[unit] buildBotPrFixPrompt in mode prepare returns text containing the value of REPAIR_VERIFICATION_RULE.",
+        "[unit] buildBotPrFixPrompt in mode fix returns text that does not contain the value of REPAIR_VERIFICATION_RULE."
+      ],
+      "tags": [
+        "workflow",
+        "bot",
+        "repair",
+        "session-routing",
+        "prompts"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Routes session roles through workflow and bot entry points while preserving provider and prepare boundaries; sessions and role routing trigger the security override."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/feature-machine.ts",
+        "packages/nax/src/workflow/feature-env.ts",
+        "packages/nax/src/workflow/feature-steps.ts",
+        "packages/nax/src/bot/repair-step.ts",
+        "packages/nax/src/prompts/builders/bot-pr-fix-builder.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/feature-steps-repair-routing.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/feature-steps-ci-repair.test.ts",
+          "reason": "\"US-012 AC-1 forwards the published PR URL and retains C1\" expects the `branchFix` calls to equal `[[[C1], { prUrl }]]`; the CI repair now also passes `repair: true`, so it expects `[[[C1], { prUrl, repair: true }]]`. The `\"%s stays unbound\"` cases expect a one-argument call for `ci-without-url` and `gate-with-url`; both repairs now pass `{ repair: true }`, so each expects `[[[finding], { repair: true }]]`. The invariant that only the CI repair forwards the PR URL is unchanged, and \"US-012 AC-2 ordinary branch fix uses one argument\" is unchanged."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/repair-step.test.ts",
+          "reason": "\"AC-8/9/10 builds repair prompt with every tail and increments round\" expects `runBranchFix` to have been called with exactly `{ findings, model, toolProviders, prompt }`; the repair now also passes `kind: \"repair\"`, so the expected object gains `kind: \"repair\"`. Its prompt and patch assertions are unchanged."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/feature/final-gates-repair.json",
+          "reason": "the golden trace records each `branchFix` call's arguments, and its final-gate repair calls hold one argument (`[[{ \"id\": \"G1\", ... }]]`); `gateRepairStep` now passes `{ repair: true }`, so those calls gain that second argument. Regenerate the golden by running the feature-machine equivalence test with `NAX_UPDATE_WORKFLOW_GOLDEN=1` and check that the only diff is that second argument on the gate-repair calls. The invariant that the machine's step sequence matches the golden is unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Read failed and subsequently skipped Actions steps",
+      "description": "**Goal** \u2014 Enrich failed GitHub Actions checks with the first failed step and the skipped steps after it without changing log excerpts or other forge paths.\n\n**Motivation** \u2014 A job stops at its first failing step.\n\n**Approach** \u2014 3. **Job steps.** `FailedCheck` gains `failedStep?: string` and `skippedSteps?: readonly string[]`. For a GitHub Actions check, after the job log is read, `readJobSteps` (`src/forge/job-steps.ts`) runs `gh api --hostname <host> repos/<repo>/actions/jobs/<id>`. The first step whose `conclusion` is `\"failure\"` is `failedStep`; the names of the steps after it whose `conclusion` is `\"skipped\"` are `skippedSteps`, in job order. Reading the steps is best effort: a failed command, an unparsable reply, a reply without a `steps` array, or a job with no failed step leaves both fields absent and changes nothing else. GitLab jobs and non-Actions check runs get neither field and make no extra call.\n\n**Scope** \u2014 In: internal job-steps reader, additive FailedCheck fields, and toFailedCheck integration after the existing log read, including when that read reports logUnavailable. Out: finding/prompt consumption (US-004), evidence persistence (US-005/006), roles/routing (US-001/002), review build (US-007). nax#2642 gap 1 (log unavailable while the Actions run is in progress) was fixed by nax#2659; this feature does not change how the job log is read. GitLab jobs expose no step list, so a GitLab failed check never carries `failedStep` or `skippedSteps`. Reading CI workflow files to list a job's steps; the steps come only from the Actions jobs API. A job whose step ended `cancelled` or `timed_out` gets no `failedStep`; only a step with conclusion `failure` is named.\n\n**Interface** \u2014 Verbatim new declarations:\n```typescript\n// src/forge/job-steps.ts (internal to src/forge)\nexport interface JobSteps { readonly failedStep?: string; readonly skippedSteps?: readonly string[] }\nexport async function readJobSteps(ref: PrRef, jobId: string, deps: ForgeDeps, cwd: string): Promise<JobSteps>;\n```\n`FailedCheck` target: `{ name; url?; excerpt; logUnavailable?; failedStep?: string; skippedSteps?: readonly string[] }`. Preserve readonly fields and the existing logUnavailable contract.\n\n**Failure handling** \u2014 Non-zero command, invalid JSON, missing steps array and no step with conclusion failure each leave both optional fields absent. Excerpts remain unchanged. An empty suffix of skipped steps leaves no skippedSteps key.\n\n**Implementation and test notes** \u2014 Inject all API commands through ForgeDeps. Extend the readFailedChecks seam as well as unit-testing readJobSteps. The existing githubFixture returns its check-runs JSON for the new endpoint, which has no steps array, so no existing fixtures need rewriting. With one Actions check the jobs request is third, after listing and log; calls[1] must remain the log. Keep GitLab and CircleCI call counts unchanged. Avoid importing ci-failures from job-steps if doing so creates a cycle.",
+      "acceptanceCriteria": [
+        "[unit] readFailedChecks for one failed GitHub Actions check (id 991), whose jobs reply has steps Install (success), bun audit (failure) and pip-audit (skipped), returns a check with failedStep equal to \"bun audit\".",
+        "[unit] readFailedChecks for one failed GitHub Actions check (id 991), whose jobs reply has steps Install (success), bun audit (failure) and pip-audit (skipped), returns a check with skippedSteps equal to [\"pip-audit\"].",
+        "[unit] For a jobs reply with steps Cache (skipped), test (failure) and report (skipped), the check's skippedSteps equals [\"report\"], leaving out the step skipped before the failure.",
+        "[unit] For a jobs reply with two steps whose conclusion is failure, a then b, the check's failedStep is \"a\".",
+        "[unit] For a jobs reply whose failed step is the last step, the check has no skippedSteps key.",
+        "[unit] For one failed Actions check (id 991), on a ref with host github.com and repo o/r, the third command readFailedChecks runs is [\"gh\", \"api\", \"--hostname\", \"github.com\", \"repos/o/r/actions/jobs/991\"], after the job-log command.",
+        "[unit] When the jobs command exits non-zero, the check has no failedStep key.",
+        "[unit] When the jobs command exits non-zero, the check has no skippedSteps key.",
+        "[unit] When the jobs command exits non-zero, the check's excerpt equals the excerpt the same log yields when the jobs reply carries no steps.",
+        "[unit] When the jobs reply is not JSON, the check has no failedStep key.",
+        "[unit] When the jobs reply is not JSON, the check has no skippedSteps key.",
+        "[unit] When the jobs reply is a JSON object with no steps array, the check has no failedStep key.",
+        "[unit] When the jobs reply is a JSON object with no steps array, the check has no skippedSteps key.",
+        "[unit] When no step's conclusion is failure, the check has no failedStep key.",
+        "[unit] When no step's conclusion is failure, the check has no skippedSteps key.",
+        "[unit] For a failed check run of app circleci, readFailedChecks runs only the check-runs listing command.",
+        "[unit] For an Actions check whose job log read fails (logUnavailable: true) and whose jobs reply names the failed step lint, the check has failedStep equal to \"lint\".",
+        "[unit] For a GitLab failed job, readFailedChecks returns a check with no failedStep."
+      ],
+      "tags": [
+        "forge",
+        "github-actions",
+        "ci",
+        "failure-evidence"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive best-effort API reader integrated into an existing injected forge path; no new authentication, permissions or session behavior."
+      },
+      "contextFiles": [
+        "packages/nax/src/forge/ci-failures.ts",
+        "packages/nax/src/forge/job-log.ts",
+        "packages/nax/test/unit/forge/ci-failures.test.ts",
+        "packages/nax/test/unit/forge/ci-failures-gitlab.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/forge/job-steps.ts",
+        "packages/nax/test/unit/forge/job-steps.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Give CI repair a step-aware prompt and extract its workflow module",
+      "description": "**Goal** \u2014 Reach a dedicated CI repair builder from real workflow dispatch and carry failed/skipped step facts into findings while extracting the full CI repair seam without cycles.\n\n**Motivation** \u2014 The repair runs the branch-fix prompt (\"You are fixing a feature branch after its whole-branch review\") under the `wf-branch-fix` role.\n\n**Approach** \u2014 4. **CI repair prompt.** `buildWorkflowCiRepairPrompt` (`src/prompts/builders/workflow-ci-repair-builder.ts`) is the CI repair's brief, and includes `REPAIR_VERIFICATION_RULE` (US-002). `FeatureSteps.branchFix` takes `opts.ciRound?: number`. When it is set, `buildFeatureEnv` passes `runBranchFix` `ciRepair: { round, prUrl? }`, and `runBranchFix` builds the CI repair prompt instead of the branch-fix prompt. Final-gate repair keeps the branch-fix prompt. `ciRepairFindingsOf` puts the step facts into each finding's `issue`: with a `failedStep`, the issue is `CI check <name> failed at step \"<step>\".`, then (only when `skippedSteps` is non-empty) a line `Steps CI skipped after it, which never ran: <a>, <b>`, then the excerpt, each separated by one newline. Without a `failedStep` the issue stays `CI check <name> failed:\n<excerpt>`.\n\n5. **Moving the CI repair out of `feature-steps.ts`.** That file is at 597 of its 600-line limit.\n- `ciRepairStep`, `ciRepairDecision`, `readCiFailuresForRepair` and `ciRepairFindingsOf` move to `src/workflow/ci-repair-steps.ts`.\n- `feature-steps.ts` re-exports `ciRepairStep` and `ciRepairDecision`, so `feature-graph.ts` and the existing tests import them unchanged.\n- The shared helpers the moved code needs (`DEFAULT_LIMITS`, `limitsOf`, `costExceeded`, `NO_MIRROR`, `featureStep`, `roundLabel`; `featureStep` also needs `FEATURE_SCOPE` from `./advisor-live`) are all defined in `feature-steps.ts` and used by code that stays there, so they move to a third module, `src/workflow/feature-step-helpers.ts`, which both files import. `feature-steps.ts` keeps re-exporting `featureStep` and `NO_MIRROR`. `ci-repair-steps.ts` must not import `feature-steps.ts`: the import-cycle baseline is 0 (`bun run check:import-cycles`).\n\n**Scope** \u2014 In: the dedicated builder and prompts barrel, ciRound forwarding, runBranchFix's ciRepair prompt selection, ciRepairStep round forwarding, step-aware finding issue text, and the two workflow module extractions. Out: creating the repair role/op (US-001), routing/basic shared rule (US-002), reading step metadata (US-003), concern/target persistence (US-005), terminal classification (US-006), review builds (US-007). Workflow final-gate repair changes its session role to `wf-repair` but keeps the branch-fix prompt.\n\n**Interface** \u2014 Verbatim target builder:\n```typescript\n// src/prompts/builders/workflow-ci-repair-builder.ts (exported from @/prompts), US-004\nexport function buildWorkflowCiRepairPrompt(input: {\n  readonly round: number;\n  readonly prUrl?: string;\n  readonly specPath?: string;\n  readonly prdPath?: string;\n  readonly reportPath: string;\n  readonly findings: readonly WorkflowPromptFinding[];\n}): string;\n```\n`BranchFixInput` gains `ciRepair?: { readonly round: number; readonly prUrl?: string }`. `FeatureSteps.branchFix` target is `(findings, opts?: { readonly prUrl?: string; readonly repair?: true; readonly ciRound?: number })`.\n\n**Prompt contract** \u2014 Include the exact fix-forward rule `Never skip, disable or ignore a failing check, and never edit the CI configuration to make it pass.` and reproduction rule `A CI job stops at its first failing step, so a step CI skipped never ran: reproduce the failing step and every skipped step locally.` Render all findings with renderWorkflowFindings, include spec/PRD paths when supplied, append a round-labelled CI repair section to the writable report, retain WORKFLOW_ARTIFACTS_RULE and WORKFLOW_REPLY_CONTRACT, and include REPAIR_VERIFICATION_RULE. CI brief must not describe a whole-branch review. Preserve explicit input.prompt overrides.\n\n**Implementation and test notes** \u2014 Drive buildFeatureEnv with repair: true, ciRound: 2 and a PR URL through makeScriptedCallOp to the actual builder. Drive the failed/skipped-step seam through publishStep with a stub readCiFailures rather than testing an isolated copy. US-002's CI URL expectation gains ciRound: 1; the no-URL CI expectation also gains ciRound: 1 while the gate-with-url case stays unchanged. The extraction's typecheck, import-cycle and file-size checks are structural verification, not behavioral acceptance criteria. The story-local outOfScope entry excludes only expressing those structural checks as ACs; both module extractions and their re-exports remain required implementation scope.",
+      "acceptanceCriteria": [
+        "[unit] buildWorkflowCiRepairPrompt({ round: 1, prUrl: \"https://github.com/o/r/pull/7\", reportPath: \"/r/report.md\", findings }), imported from @/prompts, returns text containing `You are repairing the CI of pull request https://github.com/o/r/pull/7.`.",
+        "[unit] buildWorkflowCiRepairPrompt({ round: 1, prUrl: \"https://github.com/o/r/pull/7\", reportPath: \"/r/report.md\", findings }) returns text containing each finding's id and issue, as renderWorkflowFindings(findings) renders them.",
+        "[unit] buildWorkflowCiRepairPrompt({ round: 1, prUrl: \"https://github.com/o/r/pull/7\", reportPath: \"/r/report.md\", findings }) returns text containing `Never skip, disable or ignore a failing check, and never edit the CI configuration to make it pass.`.",
+        "[unit] buildWorkflowCiRepairPrompt({ round: 1, prUrl: \"https://github.com/o/r/pull/7\", reportPath: \"/r/report.md\", findings }) returns text containing `A CI job stops at its first failing step, so a step CI skipped never ran: reproduce the failing step and every skipped step locally.`.",
+        "[unit] buildWorkflowCiRepairPrompt({ round: 1, prUrl: \"https://github.com/o/r/pull/7\", reportPath: \"/r/report.md\", findings }) returns text containing the value of REPAIR_VERIFICATION_RULE.",
+        "[unit] buildWorkflowCiRepairPrompt({ round: 2, prUrl: \"https://github.com/o/r/pull/7\", reportPath: \"/r/report.md\", findings }) returns text containing `append a \"CI repair r2\" section to /r/report.md`.",
+        "[unit] buildWorkflowCiRepairPrompt({ round: 1, prUrl: \"https://github.com/o/r/pull/7\", reportPath: \"/r/report.md\", findings }) returns text containing the value of WORKFLOW_REPLY_CONTRACT.",
+        "[unit] buildWorkflowCiRepairPrompt({ round: 1, prUrl: \"https://github.com/o/r/pull/7\", reportPath: \"/r/report.md\", findings }) returns text that does not contain `whole-branch review`.",
+        "[unit] buildWorkflowCiRepairPrompt({ round: 1, prUrl: \"https://github.com/o/r/pull/7\", specPath: \"/r/spec.md\", reportPath: \"/r/report.md\", findings }) returns text containing `/r/spec.md`.",
+        "[unit] ciRepairStep in round 1 with ciRepairFindings holding one finding calls env.steps.branchFix with a second argument whose ciRound is 1.",
+        "[integration] The branchFix step returned by buildFeatureEnv, called as branchFix(findings, { repair: true, ciRound: 2, prUrl: \"https://github.com/o/r/pull/7\" }), dispatches \"workflow-repair\" with an input whose prompt contains \"CI repair r2\".",
+        "[integration] The branchFix step returned by buildFeatureEnv, called as branchFix(findings, { repair: true }) without ciRound, dispatches an input whose prompt contains `You are fixing a feature branch after its whole-branch review`.",
+        "[unit] publishStep with a draft outcome, CI failed, a URL, a HEAD, one repair round allowed and none run, and readCiFailures returning [{ name: \"Security audit\", failedStep: \"bun audit\", skippedSteps: [\"pip-audit\"], excerpt: \"E\" }] patches ciRepairFindings with one finding whose issue starts `CI check Security audit failed at step \"bun audit\".`.",
+        "[unit] publishStep with a draft outcome, CI failed, a URL, a HEAD, one repair round allowed and none run, and readCiFailures returning [{ name: \"Security audit\", failedStep: \"bun audit\", skippedSteps: [\"pip-audit\"], excerpt: \"E\" }] patches ciRepairFindings with a finding whose issue contains the line `Steps CI skipped after it, which never ran: pip-audit`.",
+        "[unit] publishStep with a draft outcome, CI failed, a URL, a HEAD, one repair round allowed and none run, and readCiFailures returning [{ name: \"Security audit\", failedStep: \"bun audit\", skippedSteps: [\"pip-audit\"], excerpt: \"E\" }] patches ciRepairFindings with a finding whose issue equals `CI check Security audit failed at step \"bun audit\".\nSteps CI skipped after it, which never ran: pip-audit\nE`.",
+        "[unit] publishStep with a draft outcome, CI failed, a URL, a HEAD, one repair round allowed and none run, and readCiFailures returning [{ name: \"Security audit\", failedStep: \"bun audit\", excerpt: \"E\" }] with no skippedSteps patches ciRepairFindings with a finding whose issue equals `CI check Security audit failed at step \"bun audit\".\nE`.",
+        "[unit] publishStep with a draft outcome, CI failed, a URL, a HEAD, one repair round allowed and none run, and readCiFailures returning [{ name: \"Security audit\", excerpt: \"E\" }] with no failedStep patches ciRepairFindings with a finding whose issue equals `CI check Security audit failed:\nE`."
+      ],
+      "tags": [
+        "workflow",
+        "ci",
+        "repair",
+        "prompts",
+        "refactor"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module prompt dispatch, session input forwarding and cycle-free extraction under a hard file-size limit; session-dispatch changes trigger the security override."
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/workflow-branch-builder.ts",
+        "packages/nax/src/workflow/feature-graph.ts",
+        "packages/nax/src/workflow/feature-steps.ts",
+        "packages/nax/src/workflow/branch-fix.ts",
+        "packages/nax/src/workflow/feature-env.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/prompts/builders/workflow-ci-repair-builder.ts",
+        "packages/nax/src/workflow/ci-repair-steps.ts",
+        "packages/nax/src/workflow/feature-step-helpers.ts",
+        "packages/nax/test/unit/prompts/workflow-ci-repair-builder.test.ts"
+      ],
+      "outOfScope": [
+        "US-004 only: the moves to `src/workflow/feature-step-helpers.ts` and `src/workflow/ci-repair-steps.ts` are verified by `bun run typecheck`, `bun run check:import-cycles` and `bun run check:file-sizes` (run from `packages/nax`), not by an AC."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/feature-steps-ci-repair.test.ts",
+          "reason": "after US-002, \"US-012 AC-1\" expects `[[[C1], { prUrl, repair: true }]]` and the `ci-without-url` case expects `[[[C1], { repair: true }]]`; the CI repair now also passes `ciRound: 1`, so they expect `{ prUrl, repair: true, ciRound: 1 }` and `{ repair: true, ciRound: 1 }`. The `gate-with-url` case is unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Persist CI repair concerns and targeted checks",
+      "description": "**Goal** \u2014 Persist workflow CI repair targets and accumulated reply concerns in result.json, ledger notes and the end-of-run concerns summary.\n\n**Motivation** \u2014 The workflow never reads the branch-fix reply's `concerns`, so nothing recorded that half the job went unchecked.\n\n**Approach** \u2014 Relevant portions of Design 6, **Evidence**, verbatim:\n- `ciRepairTargets` is written by `publishStep` whenever it decides a repair: each failed check's `name`, plus `failedStep` when known.\n- `ciRepairConcerns` is appended by `ciRepairStep` as `r<N>: <concerns>` when the repair's reply carries non-empty `concerns`. The same text goes to the ledger as `CI repair r<N> concerns: <concerns>`.\n- How `publishStep` gets the checks: `ciRepairDecision` keeps its signature and still returns the findings array (its tests call it directly). A new `ciRepairPlan(env, rec, out, head)` in `ci-repair-steps.ts` returns `{ findings, targets } | undefined` from the same single read, and `ciRepairDecision` returns `(await ciRepairPlan(...))?.findings`. `publishStep` calls `ciRepairPlan`.\n\n`WorkflowSummaryView` gains `ciRemaining` (each `<name>` or `<name> at step \"<step>\"`) and `ciRepairConcerns`.\n`summaryLine` appends `CI still failing: <a>, <b>` and `CI repair concerns: <a>; <b>`.\n\nThis story implements the targets/concerns portion; the ciRemaining field and its summary clause in those shared design sentences belong to US-006.\n\n**Scope** \u2014 In: CiCheckRef, optional ciRepairTargets/ciRepairConcerns, ciRepairPlan and compatibility wrapper, target patches from publish, concern patches/ledger notes from CI repair, graph produces updates, conditional summary-view concerns and end-of-run text. Out: terminal-CI reading/classification/ciRemaining and its summary text (US-006), builders/extraction (US-004), and bot-review setup (US-007). Recording the `concerns` of the bot repair and the workflow final-gate repair replies; only the workflow CI repair records its concerns. Classifying a failure as new when a second repair round is decided; only the final remaining-CI read classifies. The PR's draft reason for a failed CI stays `CI failed`; the remaining checks and concerns go to the ledger, `result.json` and the end-of-run summary only.\n\n**Interface** \u2014 Verbatim target types/fields for this story:\n```typescript\nCiCheckRef = { readonly name: string; readonly failedStep?: string };\nciRepairTargets?: readonly CiCheckRef[];\nciRepairConcerns?: readonly string[];\n```\nThe summary-view target addition is `ciRepairConcerns?: readonly string[] | undefined`. `ci-repair` produces `[\"ciRepairRounds\", \"ciRepairFindings\", \"ciRepairConcerns\"]`; `publish` also produces `ciRepairTargets`. Keep ciRepairDecision's existing signature and findings-only result.\n\n**Failure handling** \u2014 Repair reply has no `concerns` (empty or absent), or the session failed with no reply: No ledger concerns line; `ciRepairConcerns` not patched. Add no empty optional keys. Concerns append to existing round-labelled history, rather than replacing it. Preserve repair-decision log readability and cost/round checks.\n\n**Implementation and test notes** \u2014 Extend the ci-repair-steps.ts created by US-004. Drive concern evidence at ciRepairStep and target selection at publishStep using the existing machine/publish harnesses. Build findings and targets from one CI read; do not call the compatibility wrapper and then read again for targets. The existing sink persists complete records to result.json, so no duplicate evidence writer or schema migration is needed. Update expectedProduces in feature-graph.test.ts for ciRepairConcerns and ciRepairTargets. Extend run-summary.test.ts and workflow-end-report.test.ts for conditional forwarding and exact summary text. Add ci-repair-steps-evidence.test.ts.",
+      "acceptanceCriteria": [
+        "[unit] ciRepairStep in round 1 with ciRepairFindings holding one finding and one round allowed, whose branchFix returns a reply with status: \"DONE_WITH_CONCERNS\" and concerns: \"pip-audit not run: PyPI blocked\", writes the ledger note `CI repair r1 concerns: pip-audit not run: PyPI blocked`.",
+        "[unit] ciRepairStep in round 1 with ciRepairFindings holding one finding and one round allowed, whose branchFix returns a reply with status: \"DONE_WITH_CONCERNS\" and concerns: \"pip-audit not run: PyPI blocked\", patches ciRepairConcerns equal to [\"r1: pip-audit not run: PyPI blocked\"].",
+        "[unit] ciRepairStep in round 2 with ciRepairFindings holding one finding and two rounds allowed, on a record with ciRepairConcerns: [\"r1: a\"], whose reply has concerns: \"b\", patches ciRepairConcerns to [\"r1: a\", \"r2: b\"].",
+        "[unit] ciRepairStep in round 1 with ciRepairFindings holding one finding and one round allowed, whose reply has concerns: \"\", patches no ciRepairConcerns key.",
+        "[unit] ciRepairStep in round 1 with ciRepairFindings holding one finding and one round allowed, whose reply has concerns: \"\", writes no ledger note starting `CI repair r1 concerns`.",
+        "[unit] ciRepairStep in round 1 with ciRepairFindings holding one finding and one round allowed, whose branchFix returns { failure: \"boom\", autoCommitted: false, dirty: false } with no reply, patches no ciRepairConcerns key.",
+        "[unit] ciRepairStep in round 1 with ciRepairFindings holding one finding and one round allowed, whose branchFix returns { failure: \"boom\", autoCommitted: false, dirty: false } with no reply, writes no ledger concerns line.",
+        "[unit] ciRepairStep in round 1 with ciRepairFindings holding one finding and one round allowed, whose reply has no concerns field, patches no ciRepairConcerns key.",
+        "[unit] ciRepairStep in round 1 with ciRepairFindings holding one finding and one round allowed, whose reply has no concerns field, writes no ledger concerns line.",
+        "[unit] publishStep that decides a repair for one check Security audit with failedStep: \"bun audit\" patches ciRepairTargets equal to [{ name: \"Security audit\", failedStep: \"bun audit\" }].",
+        "[unit] publishStep that decides a repair for one check e2e with no failedStep patches ciRepairTargets equal to [{ name: \"e2e\" }].",
+        "[unit] publishStep that decides no repair (CI green) patches no ciRepairTargets key.",
+        "[unit] buildWorkflowRunSummary for a feature record with ciRepairConcerns: [\"r1: a\"] returns a view whose ciRepairConcerns equals [\"r1: a\"].",
+        "[unit] buildWorkflowRunSummary for a feature record with no ciRepairConcerns returns a view with no ciRepairConcerns key.",
+        "[unit] reportWorkflowRun with a view whose ciRepairConcerns is [\"r1: a\", \"r2: b\"] logs a summary line containing `CI repair concerns: r1: a; r2: b`."
+      ],
+      "tags": [
+        "workflow",
+        "ci",
+        "repair",
+        "evidence",
+        "summary"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Coordinates single-read repair planning, graph patches, persistent optional evidence and summary consumers; no new security or session-control logic."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/ci-repair-steps.ts",
+        "packages/nax/src/workflow/feature-steps.ts",
+        "packages/nax/src/workflow/feature-graph.ts",
+        "packages/nax/src/workflow/run-summary.ts",
+        "packages/nax/src/execution/workflow-end-report.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/ci-repair-steps-evidence.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When publishStep decides a repair and patches ciRepairTargets, readCiFailures is called exactly once.",
+        "When the normal FeatureEnv sink persists a record containing ciRepairTargets and ciRepairConcerns, readResult returns featureWorkflow with those values unchanged."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/feature-graph.test.ts",
+          "reason": "`expectedProduces` pins each node's `produces`; `ci-repair` now also produces `ciRepairConcerns`, and `publish` also produces `ciRepairTargets`, so those two entries gain them. The invariant that every node's `produces` matches the graph is unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Record and summarize CI still failing after the last repair",
+      "description": "**Goal** \u2014 Read final red CI after spent repair rounds, classify checks against the last targets and surface the remaining checks without scheduling another agent.\n\n**Motivation** \u2014 Its tokens are booked with the branch fix, and after the last round the ledger says only `CI failed`, with no record of which check or step is still red.\n\n**Approach** \u2014 Relevant portions of Design 6, **Evidence**, verbatim:\n- `ciRemaining` is written by `publishStep` when all of these hold: `readCiFailures` exists, the outcome is `draft`, CI is `failed`, the publish has a URL and a HEAD, at least one repair round ran, and the rounds are spent (`ciRepairRounds >= workflow.ciRepairRounds`). In that case the failed checks are read, whatever the cost state, since the read runs no agent. This condition and `ciRepairDecision`'s (rounds left) never both hold, so a publish reads the failed checks at most once.\n- How `publishStep` gets the checks: `ciRepairDecision` keeps its signature and still returns the findings array (its tests call it directly). A new `ciRepairPlan(env, rec, out, head)` in `ci-repair-steps.ts` returns `{ findings, targets } | undefined` from the same single read, and `ciRepairDecision` returns `(await ciRepairPlan(...))?.findings`. `publishStep` calls `ciRepairPlan`. The remaining-CI read is a separate function, `ciRemainingAfterRepair(env, rec, out, head)`, which calls `env.steps.readCiFailures` directly, not `readCiFailuresForRepair`, so it never writes the `(repairing)` note. On a throw it writes only `CI logs unavailable: <message>`; on an empty list it writes no note. Each check is recorded with `newFailure: true` unless a target has the same `name` and the same `failedStep`. The ledger gets `CI still failing after <N> repair round(s): <check>[ at step \"<step>\"] (new failure|still failing)`, with checks joined by `; `.\n\n`WorkflowSummaryView` gains `ciRemaining` (each `<name>` or `<name> at step \"<step>\"`) and `ciRepairConcerns`.\n`summaryLine` appends `CI still failing: <a>, <b>` and `CI repair concerns: <a>; <b>`.\n\nThe PR's draft reason stays `CI failed`: `publish` posts it before the CI read (ruled out of scope).\n\n**Scope** \u2014 In: CiRemainingCheck/optional ciRemaining, terminal read helper and publish wiring, comparison to US-005 targets, exact terminal ledger notes, graph produces, conditional summary-view remaining checks and end-of-run formatting. Out: introducing concerns/targets/ciRepairPlan (already US-005), changes to repair prompts or routing (US-001/002/004), and review build setup (US-007). Classifying a failure as new when a second repair round is decided; only the final remaining-CI read classifies. The default of `workflow.ciRepairRounds` stays 1. The PR's draft reason for a failed CI stays `CI failed`; the remaining checks and concerns go to the ledger, `result.json` and the end-of-run summary only.\n\n**Interface** \u2014 Verbatim target types/fields:\n```typescript\nCiRemainingCheck = CiCheckRef & { readonly newFailure: boolean };\nciRemaining?: readonly CiRemainingCheck[];\n```\n`WorkflowSummaryView` gains `ciRemaining?: readonly string[] | undefined`. `publish` also produces `ciRemaining`. Extend `ci-repair-steps.ts` with `ciRemainingAfterRepair(env, rec, out, head)`; reuse the upstream ciRepairPlan and preserve ciRepairDecision's signature.\n\n**Failure handling** \u2014 Remaining-CI read throws: Ledger `CI logs unavailable: <message>`; no `ciRemaining`. Remaining-CI read returns no check: No `ciRemaining`, no still-failing note. The terminal helper also must not emit a `(repairing)` note, including empty responses.\n\n**Implementation and test notes** \u2014 Drive ACs through publishStep carrying ciRepairTargets, including a cost-limited run, mismatched/same steps, no repair ever run, green CI, ready outcome, thrown reads and empty reads. This is a non-agent read and must bypass cost gating. Existing graph persistence carries the new optional field into result.json. Update expectedProduces.publish in feature-graph.test.ts. In feature-steps-ci-repair-decision.test.ts rename AC-13 'spent repair rounds read no CI logs' to say spent rounds decide no repair; assert one terminal read and no ci-repair exit, preserving the round-to-spare one-read control. Direct ciRepairDecision still returns no repair with spent rounds. Add ci-repair-steps-remaining.test.ts and extend summary/end-report tests.",
+      "acceptanceCriteria": [
+        "[unit] publishStep on a record with ciRepairRounds: 1 and ciRepairTargets: [{ name: \"Security audit\", failedStep: \"bun audit\" }], with workflow.ciRepairRounds 1, a draft outcome, CI failed, a URL and HEAD, and readCiFailures returning Security audit with failedStep: \"pip-audit\", patches ciRemaining equal to [{ name: \"Security audit\", failedStep: \"pip-audit\", newFailure: true }].",
+        "[unit] publishStep after one repair round with one allowed, a draft outcome, CI failed, URL and HEAD, ciRepairTargets: [{ name: \"Security audit\", failedStep: \"bun audit\" }] and readCiFailures returning Security audit at pip-audit writes the ledger note `CI still failing after 1 repair round(s): Security audit at step \"pip-audit\" (new failure)`.",
+        "[unit] publishStep after one repair round with one allowed, a draft outcome, CI failed, URL and HEAD, ciRepairTargets: [{ name: \"Security audit\", failedStep: \"bun audit\" }] and readCiFailures returning Security audit at pip-audit returns no exit of \"ci-repair\".",
+        "[unit] publishStep after one repair round with one allowed, a draft outcome, CI failed, URL and HEAD, ciRepairTargets: [{ name: \"Security audit\", failedStep: \"bun audit\" }] and readCiFailures returning Security audit at bun audit patches ciRemaining equal to [{ name: \"Security audit\", failedStep: \"bun audit\", newFailure: false }].",
+        "[unit] publishStep after one repair round with one allowed, a draft outcome, CI failed, URL and HEAD, ciRepairTargets: [{ name: \"Security audit\", failedStep: \"bun audit\" }] and readCiFailures returning Security audit at bun audit writes the ledger note `CI still failing after 1 repair round(s): Security audit at step \"bun audit\" (still failing)`.",
+        "[unit] publishStep after one repair round with one allowed, a draft outcome, CI failed, URL and HEAD, ciRepairTargets: [{ name: \"Security audit\", failedStep: \"bun audit\" }] and readCiFailures returning e2e (no step) then Security audit at bun audit writes the ledger note `CI still failing after 1 repair round(s): e2e (new failure); Security audit at step \"bun audit\" (still failing)`.",
+        "[unit] publishStep after one repair round with one allowed, a draft outcome, CI failed, URL and HEAD, ciRepairTargets: [{ name: \"Security audit\", failedStep: \"bun audit\" }] and readCiFailures returning Security audit with failedStep: \"pip-audit\" calls readCiFailures once when env.costExceeded returns true.",
+        "[unit] publishStep after one repair round with one allowed, a draft outcome, CI failed, URL and HEAD, ciRepairTargets: [{ name: \"Security audit\", failedStep: \"bun audit\" }] and readCiFailures returning Security audit with failedStep: \"pip-audit\" patches ciRemaining when env.costExceeded returns true.",
+        "[unit] publishStep on a record with no ciRepairRounds, workflow.ciRepairRounds 0, a draft outcome and CI failed never calls readCiFailures.",
+        "[unit] publishStep on a record with no ciRepairRounds, workflow.ciRepairRounds 0, a draft outcome and CI failed patches no ciRemaining key.",
+        "[unit] publishStep after one repair round with CI green never calls readCiFailures.",
+        "[unit] publishStep after one repair round with one allowed, CI failed, a draft outcome, URL and HEAD, whose readCiFailures throws Error(\"gh down\"), writes the ledger note `CI logs unavailable: gh down`.",
+        "[unit] publishStep after one repair round with one allowed, CI failed, a draft outcome, URL and HEAD, whose readCiFailures throws Error(\"gh down\"), patches no ciRemaining key.",
+        "[unit] publishStep after one repair round with one allowed, CI failed, a draft outcome, URL and HEAD, whose readCiFailures returns [], patches no ciRemaining key.",
+        "[unit] publishStep after one repair round with one allowed, CI failed, a draft outcome, URL and HEAD, whose readCiFailures returns [], writes no ledger note containing `CI still failing`.",
+        "[unit] publishStep after one repair round with one allowed, CI failed, a draft outcome, URL and HEAD, whose readCiFailures returns [], writes no ledger note containing `(repairing)`.",
+        "[unit] buildWorkflowRunSummary for a feature record with ciRemaining: [{ name: \"Security audit\", failedStep: \"pip-audit\", newFailure: true }, { name: \"e2e\", newFailure: false }] returns a view whose ciRemaining equals ['Security audit at step \"pip-audit\"', \"e2e\"].",
+        "[unit] reportWorkflowRun with a view whose ciRemaining is ['Security audit at step \"pip-audit\"', \"e2e\"] logs a summary line containing `CI still failing: Security audit at step \"pip-audit\", e2e`.",
+        "[unit] publishStep after one repair round, one round allowed, CI failed and outcome ready, never calls readCiFailures.",
+        "[unit] publishStep on a record with ciRepairRounds: 1, workflow.ciRepairRounds 2, a draft outcome, CI failed, URL and HEAD, no cost limit exceeded, and readCiFailures returning one check with a readable log, calls readCiFailures exactly once.",
+        "[unit] publishStep on a record with ciRepairRounds: 1, workflow.ciRepairRounds 2, a draft outcome, CI failed, URL and HEAD, no cost limit exceeded, and readCiFailures returning one check with a readable log, returns exit \"ci-repair\".",
+        "[unit] publishStep on a record with ciRepairRounds: 1, workflow.ciRepairRounds 2, a draft outcome, CI failed, URL and HEAD, no cost limit exceeded, and readCiFailures returning one check with a readable log, patches no ciRemaining key."
+      ],
+      "tags": [
+        "workflow",
+        "ci",
+        "repair",
+        "evidence",
+        "summary"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module terminal evidence and classification with disjoint read predicates, cost-limit exception, persistence and summaries; no new session or access-control behavior."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/ci-repair-steps.ts",
+        "packages/nax/src/workflow/feature-steps.ts",
+        "packages/nax/src/workflow/feature-graph.ts",
+        "packages/nax/src/workflow/run-summary.ts",
+        "packages/nax/src/execution/workflow-end-report.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/ci-repair-steps-remaining.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a terminal remaining-CI check and a prior target both have the name e2e and no failedStep, publishStep records newFailure: false.",
+        "When a draft failed-CI publish after the final repair has no URL, publishStep never calls readCiFailures.",
+        "When HEAD is unavailable after a draft failed-CI publish following the final repair, publishStep never calls readCiFailures.",
+        "When a terminal remaining-CI read throws Error(\"gh down\"), no CI-evidence ledger note contains (repairing) or CI still failing."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/feature-graph.test.ts",
+          "reason": "after US-005, `expectedProduces.publish` ends with `ciRepairTargets`; `publish` now also produces `ciRemaining`, so that entry gains it. The invariant that every node's `produces` matches the graph is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/feature-steps-ci-repair-decision.test.ts",
+          "reason": "\"AC-13: spent repair rounds read no CI logs\" (`record: { ciRepairRounds: 1 }`, one round allowed, draft with failed CI) asserts `h.reads` equals `[]`; a spent round now reads the failed checks once for `ciRemaining`, so it is renamed to say spent rounds decide no repair, asserts `h.reads` has length 1 and that the step returns no `exit` of `\"ci-repair\"`. Its control (a round to spare reads once) is unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "Build bot review worktrees and distinguish checks that could not start",
+      "description": "**Goal** \u2014 Build trusted fresh bot-review worktrees after installation and report setup-blocked checks as could not start rather than defects in the change.\n\n**Motivation** \u2014 `nax bot review` runs `execution.preRun` (the install) in a fresh worktree, but nothing builds that library.\n\n**Approach** \u2014 7. **Bot review build.** `reviewBuildSteps(checks)` (`src/bot/checks.ts`) turns the `command` of the gate named exactly `build` into steps: a list becomes one step per element, and every step gets `timeoutSeconds: REVIEW_BUILD_TIMEOUT_SECONDS`. A `build` gate never carries a `setup` (`resolveGateCommands` gives only `e2e` one), so `setup` is ignored. `REVIEW_BUILD_TIMEOUT_SECONDS` is `DEFAULT_GATE_TIMEOUT_MS / 1000` (900), derived from the gate runner's own default, as `DERIVED_INSTALL_TIMEOUT_SECONDS` is for the install; the build is the same gate command, so it gets the same bound. `DEFAULT_GATE_TIMEOUT_MS` is added to the `@/finish` barrel's `./gates/quality` exports.\n- `prepareReviewChecks` runs these steps through `runPreRunSteps` after a successful install, but only when the list is non-empty and the checkout is not `inPlace`.\n- A `PRE_RUN_FAILED` from the build records `buildFailed: <command>`; any other error propagates.\n- `ReviewPreparation` gains `buildRan: readonly string[]`: every command of `reviewBuildSteps(checks)` once the build was attempted (including the commands after a failing one), and `[]` on every other return path (static mode, install failed, in-place, no `build` gate). The checkout state's `setup` lists the install commands followed by `buildRan`, and its `setupFailed` is the install's failure or else the build's.\n- `postPrReview` forwards `buildFailed` into the summary input beside `preRunFailed` (`src/bot/post.ts`), and the review summary gains the line `Build step failed (<command>); checks that import built workspace packages may not have started.`\n- The commands come only from the trusted base snapshot (`resolveBotChecks`), and static mode (an untrusted PR) still runs nothing.\n\n8. **\"Could not start\".** `buildBotPrReviewPrompt` appends `COULD_NOT_START_RULE` as the last line of its `## Checkout state` section. That section exists only when `checkoutState` is set, which `reviewEnvironment` does only outside static mode; no new heading is added, so the pinned `## Checklist` slice, the heading order and the `## Your task` tail are unchanged. The rule: a check that stops before it runs any test did not run. It goes in `cannotVerify` as `could not start: <check>: <reason>`, naming the setup step it needs, and is never reported as a defect in the change.\n\n**Scope** \u2014 In: reviewBuildSteps and derived timeout, finish barrel constant, trusted fresh-checkout post-install build, buildRan/buildFailed preparation fields, checkout-state setup concatenation and failure precedence, buildFailed summary forwarding/rendering, and the conditional checkout-state prompt rule. Out: repair role/routing/prompt/evidence work (US-001 through US-006). Bot review never runs per-package build overlays (`build@<package>`), only the root gate named `build`. Bot review runs no build step for an `--in-place` review, which reuses the user's existing build. Bot fix gets no build step; its bar already runs the build gate after the session. A new verdict field for checks that could not start; the reviewer reports them through `cannotVerify` with the `could not start:` prefix.\n\n**Interface** \u2014 Verbatim new declarations:\n```typescript\n// src/bot/checks.ts\nexport const REVIEW_BUILD_TIMEOUT_SECONDS: number; // DEFAULT_GATE_TIMEOUT_MS / 1000\nexport function reviewBuildSteps(checks: BotChecks): PreRunStepConfig[];\n```\n`ReviewPreparation` target: `{ checks; preRunFailed?; ci; buildFailed?: string; buildRan: readonly string[] }`. `PostReviewInput` in src/bot/post.ts and `ReviewSummaryInput` in src/bot/render-comments.ts each gain `buildFailed?: string`. `DEFAULT_GATE_TIMEOUT_MS` is exported from `@/finish`.\n\n**Exact prompt rule** \u2014 If a check stops before it runs any test, for example because a module or workspace package cannot be resolved, it did not run: list it in \"cannotVerify\" as \"could not start: <check>: <reason>\" and name the setup step it needs. Never report it as a defect in the change.\n\n**Failure handling** \u2014 Review install step fails: Build steps not run; `preRunFailed` recorded as today. Review build step fails (`PRE_RUN_FAILED`): `buildFailed` recorded; review still runs. Review build step throws anything else: The error propagates out of `runBotReview`. Do not catch build errors in the install catch or treat unexpected errors as setup warnings. Build commands use the existing trusted host-side runner, not a new shell path.\n\n**Implementation and test notes** \u2014 Use review-run.test.ts's dependency harness and its #2631 real postPrReview path to verify actual summary posting, plus review-checkout-state.test.ts's captured real prompt for command order and success/failure text. Existing fixtures have no build gate, so their one-install calls and checkout-state setup text remain unchanged. Add checks-review-build.test.ts and integration/bot/review-build.test.ts; cover install-first/build-second ordering, continuation after PRE_RUN_FAILED, unrelated error propagation, in-place and static suppression, exact root-gate filtering and list order. Populate buildRan on every return path, including all commands once a multi-command build was attempted even if its runner stopped early. The prompt-only rule must not alter headings, Checklist or Your task tail.",
+      "acceptanceCriteria": [
+        "[unit] reviewBuildSteps for checks whose gates are test (npm run test) and build (bun run build) returns [{ command: \"bun run build\", timeoutSeconds: 900 }].",
+        "[unit] REVIEW_BUILD_TIMEOUT_SECONDS equals DEFAULT_GATE_TIMEOUT_MS / 1000, with DEFAULT_GATE_TIMEOUT_MS imported from @/finish.",
+        "[unit] reviewBuildSteps for a build gate with command: [\"c\", \"d\"] returns steps with commands c then d, each with timeoutSeconds 900.",
+        "[unit] reviewBuildSteps for checks with no build gate returns [].",
+        "[unit] reviewBuildSteps for checks whose only build gate is named build@packages/lib returns [].",
+        "[integration] runBotReview for a trusted PR in a fresh worktree, whose resolved checks have preRun [bun install --frozen-lockfile] and a build gate bun run build, calls runPreRunSteps twice: first with the install steps, then with the build steps, both with workdir equal to the checkout worktree.",
+        "[integration] runBotReview for a trusted PR in a fresh worktree with preRun [bun install --frozen-lockfile] and a build gate bun run build, when both setup invocations succeed, sends a review prompt containing `Setup nax ran: bun install --frozen-lockfile, bun run build \u2014 all succeeded`.",
+        "[integration] runBotReview for a trusted PR in a fresh worktree with preRun [bun install --frozen-lockfile] and a build gate bun run build calls runPreRunSteps once when the install throws NaxError code PRE_RUN_FAILED with context.command bun install --frozen-lockfile.",
+        "[integration] runBotReview for a trusted PR in a fresh worktree with preRun [bun install --frozen-lockfile] and a build gate bun run build sends a review prompt containing `Setup nax ran: bun install --frozen-lockfile \u2014 failed at bun install --frozen-lockfile` when the install throws PRE_RUN_FAILED for that command.",
+        "[integration] runBotReview for a trusted PR in a fresh worktree with successful installation and a build gate bun run build still calls runPrReview once when the build throws NaxError code PRE_RUN_FAILED with context.command bun run build.",
+        "[integration] runBotReview for a trusted PR in a fresh worktree with successful installation and a build gate bun run build sends a review prompt containing `failed at bun run build` when the build throws PRE_RUN_FAILED with context.command bun run build.",
+        "[integration] runBotReview for a trusted PR in a fresh worktree with successful installation and a build gate bun run build calls postPrReview with buildFailed equal to \"bun run build\" when the build throws PRE_RUN_FAILED with context.command bun run build.",
+        "[integration] The real postPrReview, given an input with buildFailed: \"bun run build\", posts a review summary body containing `Build step failed (bun run build); checks that import built workspace packages may not have started.`.",
+        "[integration] runBotReview for a trusted PR in a fresh worktree with successful installation and a build gate bun run build rejects with the same NaxError when the build throws a NaxError whose code is not PRE_RUN_FAILED.",
+        "[integration] runBotReview for a trusted PR in a fresh worktree with successful installation and a build gate bun run build rejects with the same Error when the build throws an ordinary Error.",
+        "[integration] An --in-place review whose resolved checks have preRun [bun install --frozen-lockfile] and a build gate calls runPreRunSteps once, with the install steps only.",
+        "[integration] A review of an untrusted PR (static mode) whose base has a build gate calls runPreRunSteps zero times.",
+        "[unit] renderReviewSummary with buildFailed: \"bun run build\" returns a body containing `Build step failed (bun run build); checks that import built workspace packages may not have started.`.",
+        "[unit] buildBotPrReviewPrompt with a checkoutState returns a ## Checkout state section whose last line equals `If a check stops before it runs any test, for example because a module or workspace package cannot be resolved, it did not run: list it in \"cannotVerify\" as \"could not start: <check>: <reason>\" and name the setup step it needs. Never report it as a defect in the change.`.",
+        "[unit] buildBotPrReviewPrompt in static mode with no checkoutState returns text that does not contain `could not start:`."
+      ],
+      "tags": [
+        "bot",
+        "review",
+        "worktree",
+        "build",
+        "trust-boundary",
+        "prompts"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Coordinates trusted host-side command execution, static/in-place isolation, setup failure propagation and posted review evidence; access/trust-boundary changes require strict isolation."
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/checks.ts",
+        "packages/nax/src/bot/review-run.ts",
+        "packages/nax/src/bot/post.ts",
+        "packages/nax/src/bot/render-comments.ts",
+        "packages/nax/src/prompts/builders/bot-pr-review-builder.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/bot/checks-review-build.test.ts",
+        "packages/nax/test/integration/bot/review-build.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a trusted fresh review attempts build commands c and d and c fails with PRE_RUN_FAILED, the checkout state's setup lists both c and d after the install commands.",
+        "When a trusted fresh review has no root build gate, its checkout-state setup lists only the install commands.",
+        "When an in-place review has a root build gate, its checkout-state setup omits the build command.",
+        "When reviewBuildSteps receives a build gate carrying setup: \"prepare\", its returned steps contain only that gate's command and never \"prepare\"."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Goal and definition of done: close #2642 and #2641 by identifying all repair sessions separately from review-driven branch fixes, giving workflow CI repair a step-aware verification brief, persisting its targets/concerns/final red checks, and building trusted fresh bot-review worktrees before review. Exactly seven stories execute entirely in packages/nax, with the binding dependency chain US-001 -> US-002; US-002 + US-003 -> US-004 -> US-005 -> US-006, and independent US-007. No changes to nax-ai, nax-agent or nax-agent-acp are needed. MCP navigation was unavailable in this host; findings below come from direct file reads and text searches, not a graph index. No runtime tests were executed while drafting this PRD.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:17 identifies the injectable _deps pattern and error conventions; docs/architecture/ARCHITECTURE.md:131 identifies workflow mode as the default orchestration path; docs/architecture/ARCHITECTURE.md:149 describes the workspace boundaries. This enhancement belongs to nax's typed operations, workflow step graph, forge adapters, prompt builders and bot orchestration, not agent transport internals. Use Bun APIs, strict TypeScript, existing barrels, and bun:test helpers. Preserve canonical permission resolution and existing sandbox/trust boundaries; a new session role is an accounting/rule-delivery identity, not permission escalation. Stories involving session identity/routing or trusted host-side execution use strict three-session-tdd. Other cross-module integration stories use three-session-tdd-lite. Commands must run from packages/nax; never run bare bun test or bun run nax.\n\nUS-001 findings: packages/nax/src/runtime/session-role.ts:14 declares CanonicalSessionRole, with wf-branch-fix as the final member, and :55 starts KNOWN_SESSION_ROLES; isSessionRole at :87 checks that array. Add wf-repair to both rather than introducing free-form role strings elsewhere. packages/nax/src/operations/workflow-branch-fix.ts:15 defines WorkflowBranchFixInput; :25 defines the op with workflow config selection, write tools, branchFix model fallback, input timeout plus STEP_TIMEOUT_MARGIN_MS, writable report, softInterruptTurn, implementer parser and empty-output recovery. Mirror this contract with workflowRepairOp, changing only name and session identity; export through packages/nax/src/operations/index.ts beside the existing workflow-branch-fix exports at :171. packages/nax/src/context/rules/rule-delivery/index.ts:76 and :85 contain the read/write role lists; omitting the new role here would silently remove the existing file-scoped rule delivery for repairs. packages/nax/src/workflow/branch-fix.ts:39 commits leftovers using the hardcoded wf-branch-fix role; :64 contains the internal input, :72 dispatches workflowBranchFixOp, and :90 chooses the default prompt. Select op and leftover-commit role from kind while retaining abort propagation, best-effort commit behavior, dirty reporting, prompt overrides and call-scoped providers. The resulting auto-commit message must use wf-repair. packages/nax/src/workflow/tokens.ts:63 already meters dispatches by e.sessionRole at :77, so neither meter changes nor historical reclassification is needed. Existing tests in packages/nax/test/unit/workflow/branch-fix.test.ts:27 use makeScriptedCallOp and collect commit arguments; :76 pins all seven autoCommitIfDirty arguments. Add repair cases without changing the existing default-kind expectations.\n\nUS-002 findings: packages/nax/src/workflow/feature-machine.ts:26 defines FeatureSteps, with branchFix currently accepting only optional prUrl at :29. packages/nax/src/workflow/feature-env.ts:72 wires this step to runBranchFix and attaches one forge reader provider only for prUrl. Pass repair through as kind while retaining provider behavior and ordinary calls. packages/nax/src/workflow/feature-steps.ts:189 implements ordinary branchFixStep, :375 gateRepairStep, and :411 ciRepairStep; the latter currently uses a two-call URL ternary at :433. Gate and CI repairs need repair: true, but ordinary branch fixes keep exactly one argument and no PR binding. Keep each changed call one line until US-004 extracts the module: this file is actually 597 lines. packages/nax/src/bot/repair-step.ts:23 derives prepare versus repair mode and :40 invokes runBranchFix without a kind; add kind for both modes while preserving the prepare tracked-file boundary at :51 and ordinary fix behavior. packages/nax/src/prompts/builders/workflow-implementer-builder.ts:108 contains WORKFLOW_REPLY_CONTRACT; add/export the exact REPAIR_VERIFICATION_RULE beside it through packages/nax/src/prompts/index.ts:110. packages/nax/src/prompts/builders/bot-pr-fix-builder.ts:30 switches instructions by mode; only repair and prepare gain the rule. Tests: packages/nax/test/unit/workflow/feature-env.test.ts:33 builds the real environment around makeFeatureContext/makeScriptedCallOp, making it the correct seam for op/provider assertions. packages/nax/test/unit/workflow/feature-steps-ci-repair.test.ts:93 pins the CI URL arguments, :104 pins ordinary branch fix, and :115 pins unbound repair cases. In US-002 add repair: true to CI/gate argument expectations, keeping URL forwarding restricted to CI; US-004 later adds ciRound only to CI cases. packages/nax/test/integration/bot/repair-step.test.ts:108 pins the full repair input at :124 and must gain kind: repair, leaving prompt/patch assertions intact. Regenerate packages/nax/test/fixtures/workflow-equivalence/feature/final-gates-repair.json using the feature-machine equivalence test with NAX_UPDATE_WORKFLOW_GOLDEN=1; review that only the second argument { repair: true } on gate-repair calls changes. Existing role tests use membership assertions, so the additive role does not require rewriting them.\n\nUS-003 findings: packages/nax/src/forge/ci-failures.ts:22 defines FailedCheck, :207 reads Actions job logs versus other apps' check output, :220 normalizes a failed check, and :228 lists GitHub checks, capped at MAX_FAILED_CHECKS and assembled in reply order. Attach step metadata after awaiting the existing excerpt so the established listing/log call order stays intact. Only a github-actions run with a job id receives the extra gh jobs API call; CircleCI/check-run output and GitLab traces stay unchanged. packages/nax/src/forge/job-log.ts:33 already implements the fixed whole-job logs endpoint and compatibility fallback; this feature must not modify that fix or excerpt sanitization/bounds. New job-steps.ts should depend on ForgeDeps/PrRef without importing ci-failures.ts in a way that creates a cycle. Parse API data defensively as unknown; a command/parse/shape/no-failure problem produces absent fields and cannot replace or lose the excerpt. Only the first failure counts, and skipped steps before it are excluded; cancelled/timed_out are not failure. Preserve optional-key absence rather than emitting undefined keys or empty skippedSteps. packages/nax/test/unit/forge/ci-failures.test.ts:103 supplies githubFixture, whose fallback response is check-runs JSON without steps; unchanged fixtures therefore remain compatible. Its log-command assertions remain at calls[1]. Add dedicated job-steps tests plus integration-through-readFailedChecks cases, and retain packages/nax/test/unit/forge/ci-failures-gitlab.test.ts as the cross-forge regression.\n\nUS-004 findings: packages/nax/src/prompts/builders/workflow-branch-builder.ts:186 builds the existing whole-branch fix prompt, composing renderWorkflowFindings, WORKFLOW_ARTIFACTS_RULE and WORKFLOW_REPLY_CONTRACT from workflow-implementer-builder.ts. Add a sibling CI-specific builder and prompts barrel export, selecting it only when ciRepair is supplied; the explicit input.prompt override remains authoritative. ciRound from FeatureSteps must reach buildFeatureEnv, then runBranchFix's ciRepair payload, then the real builder. A gate repair uses the new role but retains the existing branch-fix prompt. packages/nax/src/workflow/feature-steps.ts:479 maps checks to findings, :494 reads repair evidence, and :534 exposes ciRepairDecision. Move those functions plus ciRepairStep into ci-repair-steps.ts. Shared DEFAULT_LIMITS/limitsOf/costExceeded/NO_MIRROR currently live at :36-46, roundLabel at :78 and featureStep at :108; move them into feature-step-helpers.ts and import FEATURE_SCOPE there. Both feature-steps.ts and ci-repair-steps.ts import the third module; the latter must never import feature-steps.ts. Preserve feature-steps.ts re-exports of ciRepairStep, ciRepairDecision, featureStep and NO_MIRROR so packages/nax/src/workflow/feature-graph.ts:3 and current tests keep their imports. Keep C ids separate from the branch B counter and preserve finding suggestions. Verify the structural move with package typecheck, check:import-cycles (baseline zero) and check:file-sizes, not new meta-ACs.\n\nUS-005/006 evidence and persistence findings: packages/nax/src/workflow/types.ts:197 defines WorkflowFeatureRecord with optional ciRepairFindings at :264 and ciRepairRounds at :266; add optional CiCheckRef/concerns/remaining fields without changing existing required defaults. packages/nax/src/workflow/feature-record.ts:24 initializes records without optional evidence, and :72 accepts older records using a shallow core-shape guard. packages/nax/src/workflow/result.ts:164 upsertFeatureRecord writes the entire feature record at :177 while retaining story records, so normal graph patches already carry additive evidence into result.json without a new writer or schema bump. packages/nax/src/workflow/feature-env.ts:111 supplies sink.update and merges per-role tokens. packages/nax/src/workflow/feature-graph.ts:86 currently declares ci-repair produces rounds/findings, and :97 declares publish outputs; update produces along with patches, because graph output validation and packages/nax/test/unit/workflow/feature-graph.test.ts pin those sets. Add concerns only for a reply with non-empty concerns; append round-labelled text to previous concerns and write the exact ledger line. Failure without a reply and absent/empty concerns must not add a patch key or ledger concern line. US-005 introduces ciRepairPlan so publish can record both findings and targets from the SAME CI read, while direct callers of ciRepairDecision retain its findings-only signature. Preserve the repair reader's existing cost/round/outcome/readability conditions and no-evidence notes.\n\npackages/nax/src/workflow/feature-steps.ts:550 publishes first, then reads HEAD at :557 and writes the publish ledger note before deciding a repair at :568. Preserve this ordering, the flagged-decision collection and post-publish item threads; the draft reason remains CI failed because it was posted already. US-006 adds a disjoint terminal-evidence read only for a draft failed-CI publish with reader, URL and HEAD, at least one repair round completed, and no rounds left. Unlike scheduling an agent, this read is allowed past the cost limit. Call env.steps.readCiFailures directly, never the repair helper that emits (repairing). Compare a remaining check to targets by BOTH name and failedStep (undefined matches undefined); a new step in the same job is newFailure: true. Missing targets imply no match. On a throw emit only the CI logs unavailable note for this read; on empty results emit no terminal-CI note and no ciRemaining patch. At most one CI read per publish is permitted: repair planning and terminal reading have mutually exclusive round predicates. packages/nax/test/unit/workflow/feature-steps-ci-repair-decision.test.ts:61 provides the publish harness and at :218 pins the old spent-round no-read behavior; change that expectation in US-006 to one terminal read and no ci-repair exit, retaining the round-to-spare control. Preserve direct ciRepairDecision spent-round no-read behavior.\n\nSummary consumers: packages/nax/src/log-format/types.ts:80 defines WorkflowSummaryView; packages/nax/src/workflow/run-summary.ts:68 builds it from result.json and conditionally adds rounds at :90. Add fields conditionally so old records retain absent-key behavior. packages/nax/src/execution/workflow-end-report.ts:33 builds the summary line and :49 reportWorkflowRun logs it through the safe logger; surface concerns joined by semicolons and remaining checks joined by commas, using exact text and step formatting. Existing regression homes are packages/nax/test/unit/workflow/run-summary.test.ts and packages/nax/test/unit/execution/workflow-end-report.test.ts. No PR draft-reason or general verdict/open-items redesign is planned.\n\nUS-007 findings: packages/nax/src/bot/checks.ts:13 defines BotCheck, :18 BotChecks, :187 resolveBotChecks and :206 barCommands. Commands originate only in trusted base config, instruction files or base package scripts; do not read PR-head commands or invoke per-package overlays. Add reviewBuildSteps extracting only the gate named exactly build, flattening command strings/lists and ignoring setup. packages/nax/src/finish/gates/quality.ts:46 declares DEFAULT_GATE_TIMEOUT_MS = 900_000 and :285 uses it; export it from packages/nax/src/finish/index.ts:79-88 and derive review timeout by dividing by 1000. The existing DERIVED_INSTALL_TIMEOUT_SECONDS in checks.ts:24 is 600; the review build must use 900, not the install bound. packages/nax/src/bot/review-run.ts:66 defines ReviewPreparation, :153 prepares checks with one install invocation, :180 builds reviewEnvironment, and :243 renders checkout state. Add buildRan on ALL return paths. After successful installation run nonempty root build steps only in fresh trusted checkouts; populate buildRan with all planned build commands once attempted, even commands after a failing one. Keep installation and build failure catches separate so PRE_RUN_FAILED becomes preRunFailed or buildFailed as appropriate; all other errors propagate. packages/nax/src/execution/lifecycle/pre-run-steps.ts:55 executes sequential trusted host steps, stops at the first failing command and carries context.command in PRE_RUN_FAILED. Reuse it through _botReviewDeps rather than adding a subprocess path. Static reviews return before resolving/running commands; in-place reviews retain installation and clean-tree checks but no build.\n\nThe checkout state's setup list must concatenate installation commands and buildRan, with install failure taking precedence over build failure. packages/nax/src/bot/review-run.ts:293 already spreads preparation into the post input, but packages/nax/src/bot/post.ts:274 explicitly assembles renderReviewSummary input and forwards preRunFailed at :286; add buildFailed there AND to PostReviewInput and ReviewSummaryInput. packages/nax/src/bot/render-comments.ts:140 assembles readiness lines and :168 reports install failure; add the exact workspace-package build warning while retaining summary bounds/sanitization. packages/nax/src/prompts/builders/bot-pr-review-builder.ts:77 builds ordered project sections; :89 conditionally adds Checkout state. Append COULD_NOT_START_RULE as that section's last line, not a new heading or a change to the pinned Checklist/Your task blocks. No new verdict field is needed: cannotVerify carries the prefix.\n\nUS-007 tests and seams: packages/nax/test/integration/bot/review-run.test.ts:21 defaults to checks with only a test gate, so existing one-install expectations should remain unchanged; its real postPrReview import at :4 and existing #2631 case can verify that buildFailed reaches an actual posted summary, not only a mocked input. packages/nax/test/integration/bot/review-checkout-state.test.ts:14-56 captures the real prompt through makeScriptedCallOp and :74-105 covers setup success/failure/static mode. Use these harnesses plus new checks-review-build unit and review-build integration files; avoid global mock.module and restore _deps after tests. Include trusted build success, install failure/no build, build PRE_RUN_FAILED/review continuation, unrelated NaxError/ordinary error propagation, in-place/no build, and static/no execution.\n\nCompatibility/migration and risks: the new role is additive; omitted kind still dispatches workflowBranchFixOp and commits as wf-branch-fix, while bot fix and ordinary branch fix remain unchanged. Optional record/summary/forge fields let historical result.json and external fixtures continue to read without backfill. Do not change result schemaVersion, repair-round defaults, model resolution or costs; native costUsd: 0 is unrelated. The highest risks are missing role/rule/barrel wiring, altering no-kind behavior, creating a feature-steps/ci-repair import cycle, exceeding file size during US-002, double-reading CI, using cost gating on terminal evidence, emitting optional keys when absent, and catching unexpected host setup errors as ordinary build failure. New evidence must not accidentally modify publish eligibility, the posted draft reason, bot prepare's tracked-file restriction or static-review security. Maintain the narrow intentional test migrations recorded above; no broad snapshot refresh. The adapter-wiring role table in .nax/rules is a maintainer's manual follow-up after execution and is not an implementation output. Completion means the specified op/routing/prompt/evidence/build behaviors are exercised through their real caller seams, with the existing package gates and regression suites run by the implementation pipeline.\n\nRefine-pass self-audit: enumerated all 113 explicit spec ACs (US-001: 16; US-002: 14; US-003: 14; US-004: 17; US-005: 12; US-006: 21; US-007: 19) and verified each remains in its declared story, including renderer-equivalence, pre-failure skipped-step exclusion, after-log command order, prepare-mode and install-only regression qualifiers. Additional criteria enumerate the failure table's compound omissions; US-001 also pins existing non-abort thrown-session behavior under kind repair. All 16 feature-level exclusions remain verbatim, and US-004's structural-verification-only deferral stays local; extraction itself is still required scope. All contextFiles already match the spec's recommended inputs and five-file cap; US-004's created module is an upstream-readable context for US-005/006. Dependencies remain exactly binding. Reread branch-fix.ts, feature-env.ts, feature-steps.ts, bot/repair-step.ts, bot/review-run.ts, bot/checks.ts and forge/ci-failures.ts: no invented call sites or changed parameter semantics were needed. Corrected ambiguous literal punctuation/double-escaping and replaced dependent That-run/That-text AC wording with concrete fixtures, including spent-round and readable-evidence preconditions. Lowered US-001 to medium because its five production-file changes mirror existing patterns; retained the mandatory strict session/role test strategy. Other routing remains justified by multi-module integrations and the stated security overrides. Negative paths and backward-compatibility assertions exist in every story. The draft was audited through file reads; runtime tests and a machine JSON parser were not available in this tool set.",
+  "outOfScope": [
+    "nax#2642 gap 1 (log unavailable while the Actions run is in progress) was fixed by nax#2659; this feature does not change how the job log is read.",
+    "The `costUsd: 0` booked for native-agent repair tokens in nax#2642 is a cost-estimation issue in the dispatch events, not a role issue; this feature only separates the role.",
+    "The default of `workflow.ciRepairRounds` stays 1.",
+    "The PR's draft reason for a failed CI stays `CI failed`; the remaining checks and concerns go to the ledger, `result.json` and the end-of-run summary only.",
+    "Workflow final-gate repair changes its session role to `wf-repair` but keeps the branch-fix prompt.",
+    "Bot `fix` mode's prompt and role are unchanged.",
+    "Classifying a failure as new when a second repair round is decided; only the final remaining-CI read classifies.",
+    "GitLab jobs expose no step list, so a GitLab failed check never carries `failedStep` or `skippedSteps`.",
+    "Reading CI workflow files to list a job's steps; the steps come only from the Actions jobs API.",
+    "Bot review never runs per-package build overlays (`build@<package>`), only the root gate named `build`.",
+    "Bot review runs no build step for an `--in-place` review, which reuses the user's existing build.",
+    "Bot fix gets no build step; its bar already runs the build gate after the session.",
+    "A job whose step ended `cancelled` or `timed_out` gets no `failedStep`; only a step with conclusion `failure` is named.",
+    "A new verdict field for checks that could not start; the reviewer reports them through `cannotVerify` with the `could not start:` prefix.",
+    "Recording the `concerns` of the bot repair and the workflow final-gate repair replies; only the workflow CI repair records its concerns.",
+    "The session-role table in `.nax/rules/adapter-wiring.md` gains `wf-repair` as a manual follow-up after the run (`.nax/` is read-only to the run)."
+  ],
+  "routingProfile": "native-claude-ds"
+}
