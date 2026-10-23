@@ -3,7 +3,7 @@
   "feature": "workflow-input-bundle",
   "branchName": "feat/workflow-input-bundle",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T08:56:40.480Z",
+  "updatedAt": "2026-10-23T09:05:52.221Z",
   "userStories": [
     {
       "id": "US-001",
@@ -188,14 +188,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Small additive dispatch wiring plus descriptions/docs, but it transports a session write authorization and requires strict security isolation."
+        "reasoning": "Small additive dispatch wiring plus descriptions/docs, but it transports a session write authorization and requires strict security isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/agents/coding-tool-support-resolve.ts",
@@ -222,7 +225,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "455815c92c27f35276cb7a9c5793e393b1eb84e2"
     },
     {
       "id": "US-004",
