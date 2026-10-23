@@ -10,6 +10,7 @@ import type { LintOutputFormat, LintParseResult } from "../review/lint-parsing";
 import { parseLintOutput } from "../review/lint-parsing";
 import { appendScratchEntry } from "../session/scratch-writer";
 import { resolveGateCwd } from "./gate-cwd";
+import { GATE_OUTPUT_TAIL_LINES, gateOutputTail } from "./gate-output-tail";
 import type { CallContext, DeterministicOperation } from "./types";
 
 export interface LintCheckInput {
@@ -149,6 +150,7 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
     const parsedFindings = parsed?.findings ?? [];
     // Sentinel ensures mechanical-lintfix strategy fires even when the linter's
     // output format is unrecognised (parsedFindings empty).
+    const tail = parsedFindings.length === 0 ? gateOutputTail(result.output) : "";
     const sentinel: Finding = {
       source: "lint",
       severity: "error",
@@ -158,7 +160,7 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
         detectedFromPackage
           ? `\`${command}\``
           : `RunCommand {"command": "lint"} if that tool is available to you, otherwise \`${command}\``
-      }`,
+      }${tail ? `\n\nOutput (last ${GATE_OUTPUT_TAIL_LINES} lines):\n${tail}` : ""}`,
     };
     const findings = parsedFindings.length > 0 ? parsedFindings : [sentinel];
     return { success: false, findings, durationMs: Date.now() - start };

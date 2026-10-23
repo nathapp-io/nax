@@ -9,13 +9,20 @@ import { lintCheckOp } from "@/operations";
 import { _commandDefaultsDeps, clearCommandDefaultsCache } from "@/quality";
 import type { ToolDiagnosticsScratchEntry } from "@/session/scratch-writer";
 
+const runtimes: CallContext["runtime"][] = [];
+afterEach(async () => {
+  await Promise.allSettled(runtimes.splice(0).map((runtime) => runtime.close()));
+});
+
 function ctxWithQuality(
   quality?: DeepPartial<QualityConfig>,
   opts: { hasOverride?: boolean; repoRoot?: string; overlay?: Partial<NaxConfig> } = {},
 ): CallContext {
   const config = makeNaxConfig({ quality });
+  const runtime = makeTestRuntime({ config });
+  runtimes.push(runtime);
   return {
-    runtime: makeTestRuntime({ config }),
+    runtime,
     storyId: "US-003",
     packageDir: "packages/agent",
     agentName: "claude",
@@ -406,5 +413,47 @@ describe("lintCheckOp — tool-diagnostics scratch capture", () => {
       expect(out.findings.length).toBeGreaterThan(0);
       expect(appendSpy).toHaveBeenCalledTimes(0);
     });
+  });
+});
+
+describe("lintCheckOp — bounded output sentinel", () => {
+  test("AC-10: includes the exact tail and preserves command guidance", async () => {
+    const output = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join("\n");
+    const result = await lintCheckOp.execute(
+      { storyId: "US-009", workdir: "/repo" },
+      ctxWithQuality({ commands: { lint: "bun run lint" } }),
+      makeDeps({ runQualityCommand: async () => ({ ...failedResult, output }), parseLintOutput: () => null }),
+    );
+    expect(result.success).toBe(false);
+    expect(result.findings).toHaveLength(1);
+    const message = result.findings[0]?.message ?? "";
+    expect(message).toContain("Output (last 40 lines):");
+    expect(message).toContain("line 60");
+    expect(message).not.toContain("line 20");
+    expect(message).toContain('RunCommand {"command": "lint"}');
+    expect(message).toContain("`bun run lint`");
+    expect(message.split("\n\nOutput (last 40 lines):\n")[1]).toBe(output.split("\n").slice(20).join("\n"));
+  });
+
+  test("AC-13: blank output omits the output heading", async () => {
+    const result = await lintCheckOp.execute(
+      { storyId: "US-009", workdir: "/repo" },
+      ctxWithQuality({ commands: { lint: "bun run lint" } }),
+      makeDeps({ runQualityCommand: async () => ({ ...failedResult, output: "  \n\n" }), parseLintOutput: () => null }),
+    );
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]?.message).not.toContain("Output (last");
+  });
+
+  test("keeps structured findings unchanged", async () => {
+    const result = await lintCheckOp.execute(
+      { storyId: "US-009", workdir: "/repo" },
+      ctxWithQuality({ commands: { lint: "bun run lint" } }),
+      makeDeps({
+        runQualityCommand: async () => failedResult,
+        parseLintOutput: () => ({ format: "text-block", diagnostics: [], findings: [mockFinding] }),
+      }),
+    );
+    expect(result.findings).toEqual([mockFinding]);
   });
 });
