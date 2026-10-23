@@ -11,6 +11,7 @@ import { statSync } from "node:fs";
 import { join } from "node:path";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { globToRegex, normalizePath } from "../context/engine";
+import { ruleMatchesPackage } from "../context/engine/scope-path-match";
 import {
   CANONICAL_RULES_DIR,
   type CanonicalRule,
@@ -281,6 +282,26 @@ function reportFrontmatterIssues(
   }
 }
 
+/** Warn once per package-scoping glob that cannot select a workspace package. */
+function lintPackagePaths(
+  rule: CanonicalRule,
+  root: string,
+  { packages, logger }: { packages: readonly string[]; logger: ReturnType<RulesLintDeps["getLogger"]> },
+): number {
+  if (packages.length === 0) return 0;
+  let warningCount = 0;
+  for (const pattern of rule.paths ?? []) {
+    if (packages.some((pkg) => ruleMatchesPackage([pattern], root, join(root, pkg), pkg))) continue;
+    warningCount++;
+    logger.warn(
+      "rules-lint",
+      "Canonical rule paths: glob matches no workspace package directory - paths: scopes packages; use appliesTo: for file globs",
+      { file: rule.path ?? rule.fileName, pattern, code: "PATHS_MATCH_NO_PACKAGE", root },
+    );
+  }
+  return warningCount;
+}
+
 /**
  * Lint every loaded rule for one root: re-emit parser warnings, flag dead
  * `appliesTo` globs, and warn on inert `paths:` in single-package repos.
@@ -290,6 +311,7 @@ function lintRulesForRoot(
   rules: CanonicalRule[],
   root: string,
   isSinglePackageRepo: boolean,
+  packages: readonly string[],
   deps: RulesLintDeps,
   logger: ReturnType<RulesLintDeps["getLogger"]>,
 ): number {
@@ -328,6 +350,9 @@ function lintRulesForRoot(
         root,
       });
     }
+    // Only repo-root rules receive workspace packages; nested overlays are
+    // already package-local and must not be checked in the repo's frame.
+    warningCount += lintPackagePaths(rule, root, { packages, logger });
     // US-002: warn when a rule declares `paths:` in a single-package repo.
     // nax's `paths:` is package scope (matched against the story's package
     // dir), so in a single-package repo it always short-circuits to true
@@ -366,11 +391,13 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
   // block is inert — silently passing lint while scoping never applies. Fail-
   // open: a rejecting workspace resolver skips this check entirely; a false
   // "your scoping is broken" warning is worse than a missing one.
-  let isSinglePackageRepo = true;
+  let packages: readonly string[] = [];
+  let isSinglePackageRepo = false;
   try {
-    isSinglePackageRepo = (await deps.discoverWorkspacePackages(workdir)).length === 0;
+    packages = await deps.discoverWorkspacePackages(workdir);
+    isSinglePackageRepo = packages.length === 0;
   } catch {
-    isSinglePackageRepo = false;
+    // Discovery failure is not evidence of broken scoping: skip both checks.
   }
 
   let totalRuleFiles = 0;
@@ -396,7 +423,7 @@ export async function rulesLintCommand(options: RulesLintOptions, deps: RulesLin
     }
     const rules = load.rules;
     totalRuleFiles += rules.length;
-    warningCount += lintRulesForRoot(rules, root, isSinglePackageRepo, deps, logger);
+    warningCount += lintRulesForRoot(rules, root, isSinglePackageRepo, root === workdir ? packages : [], deps, logger);
   }
 
   // Empty canonical store: the operator gets a clean [OK] pass today, which

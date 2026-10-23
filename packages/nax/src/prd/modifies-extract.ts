@@ -55,7 +55,17 @@ export type SpecModifiedFile = GroupedPathEntry;
  * existing-file changes has a scope problem, not a modification list; truncating
  * keeps every downstream story prompt bounded.
  */
-export const MAX_MODIFIED_FILES = 25;
+export const MAX_MODIFIED_FILES = 200;
+
+/** Each story (including the unattributed bucket) keeps at most this many bullets. */
+export const MAX_MODIFIED_FILES_PER_STORY = 40;
+
+/** A story whose declared bullets exceed its extraction budget. */
+export interface ModifiesStoryOverflow {
+  readonly storyId: string | null;
+  readonly count: number;
+  readonly dropped: string[];
+}
 
 /**
  * `### Modifies`, `## Modified Files (per story)`, `### Modifies:` …
@@ -68,7 +78,9 @@ export const MAX_MODIFIED_FILES = 25;
 const MODIFIES_HEADING = /^(#{1,6})\s*modifi(?:es|ed\s+files)\b/i;
 
 /**
- * Every `### Modifies` entry the spec declares, in document order.
+ * Bounded `### Modifies` entries, in document order.
+ * The spec-wide cap is applied first, then the per-story cap; duplicate paths
+ * count as separate bullets here (deduplication belongs to `applyModifiedFiles`).
  *
  * Grammar, fencing, and grouping are shared with `### Context Files`
  * extraction — see `extractGroupedPathSection` in `./markdown-scan`.
@@ -77,5 +89,28 @@ const MODIFIES_HEADING = /^(#{1,6})\s*modifi(?:es|ed\s+files)\b/i;
  * — deciding what to do with one is the caller's business (see `./modifies`).
  */
 export function extractSpecModifiedFiles(specContent: string): SpecModifiedFile[] {
-  return extractGroupedPathSection(specContent, MODIFIES_HEADING, MAX_MODIFIED_FILES);
+  const counts = new Map<string | null, number>();
+  return extractGroupedPathSection(specContent, MODIFIES_HEADING, MAX_MODIFIED_FILES).filter((entry) => {
+    const count = (counts.get(entry.storyId) ?? 0) + 1;
+    counts.set(entry.storyId, count);
+    return count <= MAX_MODIFIED_FILES_PER_STORY;
+  });
+}
+
+/** Inspect every parsed bullet without either cap, retaining duplicate paths. */
+export function findModifiesOverflow(specContent: string): { total: number; stories: ModifiesStoryOverflow[] } {
+  const entries = extractGroupedPathSection(specContent, MODIFIES_HEADING, Number.POSITIVE_INFINITY);
+  const byStory = new Map<string | null, string[]>();
+  for (const entry of entries) {
+    const paths = byStory.get(entry.storyId) ?? [];
+    paths.push(entry.path);
+    byStory.set(entry.storyId, paths);
+  }
+  const stories: ModifiesStoryOverflow[] = [];
+  for (const [storyId, paths] of byStory) {
+    if (paths.length > MAX_MODIFIED_FILES_PER_STORY) {
+      stories.push({ storyId, count: paths.length, dropped: paths.slice(MAX_MODIFIED_FILES_PER_STORY) });
+    }
+  }
+  return { total: entries.length, stories };
 }

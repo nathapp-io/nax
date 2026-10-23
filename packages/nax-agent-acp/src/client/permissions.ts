@@ -57,6 +57,8 @@ export interface PermissionContext {
   readonly signal: AbortSignal;
   /** nax#2500: the session sandbox policy (review/full on claude); drives the network and R4 path rules. */
   readonly sandbox?: SandboxPolicy;
+  /** Single writable output; bypasses denyWrite only, never write-root containment. */
+  readonly writeExemption?: string;
   /** nax#2500: the session cwd, for resolving relative edit targets (R4). */
   readonly cwd?: string;
   /**
@@ -255,7 +257,7 @@ async function decideFull(
   const unknownWrite = ctx.sandbox !== undefined && WRITE_KINDS.has(display.tool) && targets.length === 0;
   const outside =
     ctx.sandbox !== undefined && display.tool !== "execute" && !READ_ONLY_KINDS.has(display.tool)
-      ? await firstOutsidePolicy(targets, ctx.sandbox, ctx.cwd)
+      ? await firstOutsidePolicy(targets, ctx.sandbox, ctx.cwd, ctx.writeExemption)
       : undefined;
   if (unknownWrite || outside !== undefined) {
     auto(OUTSIDE_WRITE_ROOTS_REASON, "deny");

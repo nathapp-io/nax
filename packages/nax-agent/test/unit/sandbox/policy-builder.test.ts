@@ -321,7 +321,10 @@ describe("buildSandboxPolicy", () => {
   test("network: absent allowedDomains is open (no key); a list passes through", () => {
     expect(buildSandboxPolicy(input()).network).toEqual({});
     const config: SandboxConfig = { ...DEFAULT_SANDBOX_CONFIG, network: { allowedDomains: ["registry.npmjs.org"] } };
-    expect(buildSandboxPolicy(input({ config })).network).toEqual({ allowedDomains: ["registry.npmjs.org"] });
+    expect(buildSandboxPolicy(input({ config })).network).toEqual({
+      allowedDomains: ["registry.npmjs.org"],
+      allowLocalBinding: true,
+    });
   });
 
   test("no duplicates", () => {

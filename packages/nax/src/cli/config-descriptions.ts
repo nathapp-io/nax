@@ -187,7 +187,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.sandbox.network": "Network policy for sandboxed commands",
   "execution.sandbox.network.allowedDomains": "Domains sandboxed commands may reach; absent means open",
   "execution.sandbox.network.allowLocalBinding":
-    "Allow sandboxed commands to reach loopback ports when allowedDomains restricts the network; off when absent",
+    "Allow sandboxed commands to reach loopback ports. Defaults on when allowedDomains is set; set false to keep loopback closed",
   "execution.commandSafety": "Command classifier: shadow rows, plus the optional flag-for-review guard",
   "execution.commandSafety.shadow": "Classifier endpoint settings; absent means off",
   "execution.commandSafety.shadow.url": "Classifier URL (loopback unless allowRemote)",

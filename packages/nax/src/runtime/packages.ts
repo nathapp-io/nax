@@ -125,6 +125,21 @@ export function packageOverrideKey(packageDir: string): string {
   return segments.slice(2).join("/");
 }
 
+async function resolvePackageOverride(options: {
+  repoRoot: string;
+  packageDir: string;
+  rootConfig: NaxConfig;
+  loadOverride?: PackageOverrideLoader;
+}): Promise<{ overlay: Partial<NaxConfig>; config: NaxConfig } | null> {
+  const { repoRoot, packageDir, rootConfig, loadOverride } = options;
+  if (!loadOverride) {
+    const { loadPackageOverrideWithConfig } = await import("../config");
+    return loadPackageOverrideWithConfig({ repoRoot, packageDir, rootConfig });
+  }
+  const overlay = await Promise.resolve(loadOverride(repoRoot, packageDir));
+  return overlay === null ? null : { overlay, config: mergePackageConfig(rootConfig, overlay) };
+}
+
 export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): PackageRegistry {
   const cache = new Map<string, PackageView>();
   const mergedConfigs = new Map<string, NaxConfig>();
@@ -193,8 +208,6 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
   }
 
   async function hydrate(packageDirs: readonly string[], loadOverride?: PackageOverrideLoader): Promise<void> {
-    const load = loadOverride ?? (await import("../config")).loadPackageOverride;
-
     for (const dir of packageDirs) {
       if (!dir) {
         continue;
@@ -203,11 +216,12 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
       if (mergedConfigs.has(dir)) {
         continue;
       }
-      const override = await load(repoRoot, dir);
-      if (override !== null) {
-        overlays.set(dir, override);
+      const rootConfig = loader.current();
+      const resolved = await resolvePackageOverride({ repoRoot, packageDir: dir, rootConfig, loadOverride });
+      if (resolved !== null) {
+        overlays.set(dir, resolved.overlay);
         // Workflow mode must hold per package: an overlay cannot re-enable what it turns off.
-        const merged = pinRootOnlyKeys(mergePackageConfig(loader.current(), override), loader.current());
+        const merged = pinRootOnlyKeys(resolved.config, rootConfig);
         mergedConfigs.set(
           dir,
           applyWorkflowMode(merged, (msg) => _packagesDeps.getSafeLogger()?.warn("packages", msg, { packageDir: dir })),

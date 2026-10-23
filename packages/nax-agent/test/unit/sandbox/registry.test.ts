@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { DEFAULT_SANDBOX_CONFIG } from "#src/config/schemas-sandbox";
+import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "#src/config/schemas-sandbox";
 import {
   _resetSandboxRegistryForTests,
   _sandboxRegistryDeps,
@@ -12,6 +12,32 @@ import { makeFakeSandboxBackend, withDepsRestore } from "#test/helpers/index";
 describe("sandbox registry", () => {
   withDepsRestore(_sandboxRegistryDeps);
   afterEach(() => _resetSandboxRegistryForTests());
+
+  test.each<{ name: string; network: SandboxConfig["network"]; expected: SandboxConfig["network"] }>([
+    {
+      name: "AC-9 allow-list defaults on",
+      network: { allowedDomains: ["x.test"] },
+      expected: { allowedDomains: ["x.test"], allowLocalBinding: true },
+    },
+    {
+      name: "AC-10 explicit false wins",
+      network: { allowedDomains: ["x.test"], allowLocalBinding: false },
+      expected: { allowedDomains: ["x.test"], allowLocalBinding: false },
+    },
+    {
+      name: "AC-11 default network is off",
+      network: DEFAULT_SANDBOX_CONFIG.network,
+      expected: { allowLocalBinding: false },
+    },
+  ])("$name", ({ network, expected }) => {
+    const seen: unknown[] = [];
+    _sandboxRegistryDeps.createBackend = (resolved) => {
+      seen.push(resolved);
+      return makeFakeSandboxBackend();
+    };
+    sandboxBackendFor({ ...DEFAULT_SANDBOX_CONFIG, network });
+    expect(seen).toEqual([expected]);
+  });
 
   test("one backend per process", () => {
     let created = 0;

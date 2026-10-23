@@ -16,8 +16,13 @@ export { extractSpecContextFiles, MAX_SPEC_CONTEXT_FILES } from "./context-files
 export { deriveNextStoryId, validateInjectedStory } from "./inject";
 export type { ApplyModifiedFilesResult } from "./modifies";
 export { applyModifiedFiles, isSafeRelativePath } from "./modifies";
-export type { SpecModifiedFile } from "./modifies-extract";
-export { extractSpecModifiedFiles, MAX_MODIFIED_FILES } from "./modifies-extract";
+export type { ModifiesStoryOverflow, SpecModifiedFile } from "./modifies-extract";
+export {
+  extractSpecModifiedFiles,
+  findModifiesOverflow,
+  MAX_MODIFIED_FILES,
+  MAX_MODIFIED_FILES_PER_STORY,
+} from "./modifies-extract";
 export {
   applyOutOfScopeFallback,
   demoteStoryScopedOutOfScope,

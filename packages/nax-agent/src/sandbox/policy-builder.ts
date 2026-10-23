@@ -20,6 +20,7 @@ import {
   SRT_MACOS_TMPDIR_DENIES,
 } from "./defaults.ts";
 import { WORKTREE_COMMON_WRITE_DIRS, WORKTREE_CONFIG_FILE } from "./git-guards.ts";
+import { effectiveAllowLocalBinding } from "./network.ts";
 import type { GitLayout } from "./policy-inputs.ts";
 import type { SandboxPolicy } from "./types.ts";
 
@@ -217,10 +218,8 @@ export function buildSandboxPolicy(input: SandboxPolicyInput): SandboxPolicy {
     ...config.filesystem.denyRead.map((p) => resolve(root, expandHome(p, home))),
   ]);
   const allowed = config.network.allowedDomains;
-  // US-002: the flag is carried only when the config asks for it, so an absent
-  // -- or explicitly false -- config leaves `network` without the key. The type
-  // only admits `true` (see SandboxNetworkPolicy), and srt treats absent as off.
-  const loopback = config.network.allowLocalBinding === true;
+  // Resolve the config default before constructing a true-or-absent policy.
+  const loopback = effectiveAllowLocalBinding(config.network);
   return {
     writeRoots,
     denyWrite,

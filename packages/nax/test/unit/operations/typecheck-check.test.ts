@@ -9,13 +9,20 @@ import { typecheckCheckOp } from "@/operations";
 import { _commandDefaultsDeps, clearCommandDefaultsCache } from "@/quality";
 import type { ToolDiagnosticsScratchEntry } from "@/session/scratch-writer";
 
+const runtimes: CallContext["runtime"][] = [];
+afterEach(async () => {
+  await Promise.allSettled(runtimes.splice(0).map((runtime) => runtime.close()));
+});
+
 function ctxWithQuality(
   quality?: DeepPartial<QualityConfig>,
   opts: { hasOverride?: boolean; repoRoot?: string; overlay?: Partial<NaxConfig> } = {},
 ): CallContext {
   const config = makeNaxConfig({ quality });
+  const runtime = makeTestRuntime({ config });
+  runtimes.push(runtime);
   return {
-    runtime: makeTestRuntime({ config }),
+    runtime,
     storyId: "US-003",
     packageDir: "packages/agent",
     agentName: "claude",
@@ -406,5 +413,50 @@ describe("typecheckCheckOp — tool-diagnostics scratch capture", () => {
       expect(out.findings.length).toBeGreaterThan(0);
       expect(appendSpy).toHaveBeenCalledTimes(0);
     });
+  });
+});
+
+describe("typecheckCheckOp — bounded output sentinel", () => {
+  test("AC-5: includes the exact tail and preserves command guidance", async () => {
+    const output = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join("\n");
+    const result = await typecheckCheckOp.execute(
+      { storyId: "US-009", workdir: "/repo" },
+      ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }),
+      makeDeps({ runQualityCommand: async () => ({ ...failedResult, output }), parseTypecheckOutput: () => null }),
+    );
+    expect(result.success).toBe(false);
+    expect(result.findings).toHaveLength(1);
+    const message = result.findings[0]?.message ?? "";
+    expect(message).toContain("Output (last 40 lines):");
+    expect(message).toContain("line 60");
+    expect(message).not.toContain("line 20");
+    expect(message).toContain('RunCommand {"command": "typecheck"}');
+    expect(message).toContain("`bun run typecheck`");
+    expect(message.split("\n\nOutput (last 40 lines):\n")[1]).toBe(output.split("\n").slice(20).join("\n"));
+  });
+
+  test("AC-9: blank output omits the output heading", async () => {
+    const result = await typecheckCheckOp.execute(
+      { storyId: "US-009", workdir: "/repo" },
+      ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }),
+      makeDeps({
+        runQualityCommand: async () => ({ ...failedResult, output: "  \n\n" }),
+        parseTypecheckOutput: () => null,
+      }),
+    );
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]?.message).not.toContain("Output (last");
+  });
+
+  test("keeps structured findings unchanged", async () => {
+    const result = await typecheckCheckOp.execute(
+      { storyId: "US-009", workdir: "/repo" },
+      ctxWithQuality({ commands: { typecheck: "bun run typecheck" } }),
+      makeDeps({
+        runQualityCommand: async () => failedResult,
+        parseTypecheckOutput: () => ({ format: "tsc", diagnostics: [], findings: [mockFinding] }),
+      }),
+    );
+    expect(result.findings).toEqual([mockFinding]);
   });
 });

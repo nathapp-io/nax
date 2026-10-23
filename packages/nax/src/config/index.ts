@@ -9,7 +9,13 @@ export {
 export { configureNaxCredentials, readGlobalAuthConfig } from "./auth";
 export { rejectGlobalOnlyKeys } from "./global-only-keys";
 export { BASH_DECLARING_STAGES, findInertBashStages } from "./inert-bash-stages";
-export { globalConfigPath, loadConfig, loadConfigForWorkdir, loadPackageOverride } from "./loader";
+export {
+  globalConfigPath,
+  loadConfig,
+  loadConfigForWorkdir,
+  loadPackageOverride,
+  loadPackageOverrideWithConfig,
+} from "./loader";
 export type { ConfigLoader } from "./loader-runtime";
 export { createConfigLoader } from "./loader-runtime";
 export { mergePackageConfig } from "./merge";

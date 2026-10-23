@@ -144,7 +144,14 @@ function routerFor(ctx: BackendOpenContext, options: ResolvedAcpOptions): Inboun
     cwd: ctx.workdir,
     agentName: options.agentName,
     rules: options.rules,
-    ...(sandbox === undefined ? {} : { sandbox }),
+    ...(sandbox === undefined
+      ? {}
+      : {
+          sandbox,
+          ...(ctx.sandbox?.kind === "policy" && ctx.sandbox.writeExemption !== undefined
+            ? { writeExemption: ctx.sandbox.writeExemption }
+            : {}),
+        }),
     ...(options.shellSandboxPlan === undefined
       ? {}
       : {

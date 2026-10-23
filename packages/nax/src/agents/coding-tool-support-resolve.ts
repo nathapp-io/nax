@@ -569,7 +569,10 @@ export async function resolveCodingToolSupport(
     ...(surface.toolSurface !== undefined ? { toolSurface: surface.toolSurface } : {}),
   });
   if (support === undefined) return undefined;
-  const acpSandbox = reviewerWithheld || !root?.trim() ? undefined : await sessionSandboxFrom(launcher, root);
+  const acpSandbox =
+    reviewerWithheld || !root?.trim()
+      ? undefined
+      : await sessionSandboxFrom(launcher, root, options.codingToolFileOutput);
   const withSandbox = acpSandbox === undefined ? support : { ...support, acpSandbox };
   return attachAcpDelivery(withSandbox, surface);
 }

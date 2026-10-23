@@ -10,6 +10,7 @@ import { parseTypecheckOutput } from "../review/typecheck-parsing";
 import type { TypecheckOutputFormat, TypecheckParseResult } from "../review/typecheck-parsing/types";
 import { appendScratchEntry } from "../session/scratch-writer";
 import { resolveGateCwd } from "./gate-cwd";
+import { GATE_OUTPUT_TAIL_LINES, gateOutputTail } from "./gate-output-tail";
 import type { CallContext, DeterministicOperation } from "./types";
 
 export interface TypecheckCheckInput {
@@ -155,6 +156,7 @@ export const typecheckCheckOp: DeterministicOperation<
     // Sentinel ensures autofix-implementer strategy fires even when the typecheck
     // output format is unrecognised. fixTarget="source" is required — autofix-implementer
     // gates on it, and typecheck errors always land in source code.
+    const tail = parsedFindings.length === 0 ? gateOutputTail(result.output) : "";
     const sentinel: Finding = {
       source: "typecheck",
       severity: "error",
@@ -170,7 +172,7 @@ export const typecheckCheckOp: DeterministicOperation<
         detectedFromPackage
           ? `\`${command}\``
           : `RunCommand {"command": "typecheck"} if that tool is available to you, otherwise \`${command}\``
-      }`,
+      }${tail ? `\n\nOutput (last ${GATE_OUTPUT_TAIL_LINES} lines):\n${tail}` : ""}`,
     };
     const findings = parsedFindings.length > 0 ? parsedFindings : [sentinel];
     return { success: false, findings, durationMs: Date.now() - start };

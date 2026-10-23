@@ -3,10 +3,28 @@
  * so an ACP open can hand it to a backend that runs its own shell.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import type { CodingToolName } from "@nathapp/nax-agent";
 import { _resetSandboxRegistryForTests, _sandboxRegistryDeps, type SandboxBackend } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeNaxConfig, makeTempDir, withDepsRestore } from "@test/helpers";
+import {
+  assertDefined,
+  cleanupTempDir,
+  makeNaxConfig,
+  makeStory,
+  makeTempDir,
+  makeTestRuntime,
+  withDepsRestore,
+} from "@test/helpers";
 import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
+import { buildRunDispatchOptions } from "@/operations/call-run-options";
+import { workflowImplementOp } from "@/operations/workflow-implement";
+import type { NaxRuntime } from "@/runtime";
+
+const createdRuntimes: NaxRuntime[] = [];
+afterEach(async () => {
+  await Promise.allSettled(createdRuntimes.map((r) => r.close()));
+  createdRuntimes.length = 0;
+});
 
 let root: string;
 beforeEach(() => {
@@ -53,6 +71,72 @@ describe("resolveCodingToolSupport — acpSandbox (nax#2500)", () => {
     const support = await resolveWith({ enabled: false });
     expect(support).toBeDefined();
     expect(support?.acpSandbox).toBeUndefined();
+  });
+
+  test("forwards the writable report only as a policy edit exemption", async () => {
+    _sandboxRegistryDeps.createBackend = () => fakeBackend;
+    _sandboxRegistryDeps.probe = async () => ({ available: true });
+    const reportPath = join(root, ".nax/features/f/workflow/r/US-001/report.md");
+    const support = await resolveCodingToolSupport({
+      declaredTools: ["Read", "Bash"],
+      codingToolRoot: root,
+      codingToolFileOutput: reportPath,
+      config: makeNaxConfig({ execution: { bashApproval: "raw", sandbox: { enabled: true } } }),
+    });
+    expect(support?.acpSandbox?.kind).toBe("policy");
+    expect(support?.acpSandbox).toHaveProperty("writeExemption", reportPath);
+    if (support?.acpSandbox?.kind === "policy") {
+      expect(support.acpSandbox.policy.writeRoots).not.toContain(reportPath);
+    }
+  });
+
+  test("omits the writeExemption key without a writable output", async () => {
+    _sandboxRegistryDeps.createBackend = () => fakeBackend;
+    _sandboxRegistryDeps.probe = async () => ({ available: true });
+    const support = await resolveWith({ enabled: true });
+    expect(support?.acpSandbox?.kind).toBe("policy");
+    expect(support?.acpSandbox).not.toHaveProperty("writeExemption");
+  });
+
+  test("does not attach a sandbox for a writable output when disabled", async () => {
+    const support = await resolveCodingToolSupport({
+      declaredTools: ["Read", "Bash"],
+      codingToolRoot: root,
+      codingToolFileOutput: join(root, ".nax/features/f/workflow/r/US-001/report.md"),
+      config: makeNaxConfig({ execution: { sandbox: { enabled: false } } }),
+    });
+    expect(support).toBeDefined();
+    expect(support?.acpSandbox).toBeUndefined();
+  });
+
+  test("carries workflowImplementOp writableOutput through real dispatch options", async () => {
+    _sandboxRegistryDeps.createBackend = () => fakeBackend;
+    _sandboxRegistryDeps.probe = async () => ({ available: true });
+    const config = makeNaxConfig({ execution: { bashApproval: "raw", sandbox: { enabled: true } } });
+    const runtime = makeTestRuntime({ config, workdir: root });
+    createdRuntimes.push(runtime);
+    const reportPath = join(root, ".nax/features/f/workflow/r/US-001/report.md");
+    const input = { story: makeStory(), prompt: "implement", timeoutMs: 1_000, reportPath };
+    assertDefined(workflowImplementOp.writableOutput);
+    const options = buildRunDispatchOptions(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "", config, agentName: "claude" },
+      {
+        prompt: input.prompt,
+        effectiveTier: "balanced",
+        dispatchModelDef: { provider: "claude", model: "sonnet" },
+        config,
+        callId: "workflow-report",
+        pipelineStage: "run",
+        declaredTools: ["Read", "Bash"],
+        writableOutputPath: workflowImplementOp.writableOutput(input),
+        keepOpen: true,
+      },
+    );
+    expect(options.codingToolRoot).toBe(root);
+    expect(options.codingToolFileOutput).toBe(reportPath);
+    const support = await resolveCodingToolSupport(options);
+    expect(support?.acpSandbox?.kind).toBe("policy");
+    expect(support?.acpSandbox).toHaveProperty("writeExemption", reportPath);
   });
 
   describe("reviewer commands need a usable sandbox (R9)", () => {

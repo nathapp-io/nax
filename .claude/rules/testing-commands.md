@@ -23,7 +23,7 @@ Nothing enforces this automatically — it is on you to wrap every scoped run. A
 | One file / directory (iteration) | `timeout 30 bun test <path> --timeout=5000` |
 | Long-running targeted test | `timeout -k 5s 60s bun test <path> --timeout=60000` |
 | AGENT Friendly (Only print errors) | `AGENT=1 timeout 30 bun test <path> --timeout=5000` |
-| Coverage gate (enforces 80% floor) | `bun run test:coverage` |
+| Coverage gate (enforces 80% floor; CI-only, never inside a nax session) | `bun run test:coverage` |
 | Coverage report (no gate) | `bun run test:coverage:report` |
 
 ## Coverage
@@ -33,6 +33,10 @@ in **one** `bun test` invocation (~55s) and **fails if overall line or function 
 drops below 80%**. The floor is enforced by `packages/repo-tooling/scripts/check-coverage.ts`, which parses
 `coverage/lcov.info` — Bun's `bunfig` `coverageThreshold` computes coverage but does NOT
 gate the exit code, so the script does.
+
+Do not run `test:coverage` inside a nax agent session (`NAX_SANDBOXED=1`). About 60 tests skip
+under the agent sandbox that run in CI, so per-file floors fail on files the story never touched.
+Inside a session, use `bun run test` plus scoped tests; CI enforces the coverage floors.
 
 All three directories go to one invocation because Bun writes a single merged report per
 invocation and cannot merge across them — splitting them into phases the way

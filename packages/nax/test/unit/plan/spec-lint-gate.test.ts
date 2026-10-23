@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
+import { withTempDir } from "@test/helpers";
 import { NaxError } from "@/errors";
 import { assertSpecLintClean } from "@/plan";
 
@@ -66,6 +68,31 @@ const TWO_STORIES_NO_DEPENDENCIES = `# SPEC: Fixture
 `;
 
 describe("assertSpecLintClean", () => {
+  test.each([
+    { counts: [0, 0, 0, 0, 45], code: "modifies-story-over-cap" },
+    { counts: [40, 40, 40, 40, 40, 5], code: "modifies-over-cap" },
+  ])("AC-19/20/22/23: blocks $code with existing files, unless skipped", async ({ counts, code }) => {
+    await withTempDir(async (workdir) => {
+      const paths = counts.flatMap((count, story) => Array.from({ length: count }, (_, i) => `s${story}-${i}.ts`));
+      await Promise.all(paths.map((path) => Bun.write(join(workdir, path), "export {};")));
+      const text = [
+        "## Stories",
+        ...counts.map((_, i) => `### US-00${i + 1} — Story`),
+        "### Modifies",
+        ...counts.flatMap((count, story) => [
+          `**US-00${story + 1}**`,
+          ...Array.from({ length: count }, (_, i) => `- \`s${story}-${i}.ts\` — reason`),
+        ]),
+      ].join("\n");
+      const options = { ...OPTIONS, workdir };
+      const err = caughtNaxError(() => assertSpecLintClean(text, options));
+      expect(err.code).toBe("PLAN_SPEC_LINT_FAILED");
+      expect(err.message).toContain(code);
+      expect(err.context?.codes).toEqual([code]);
+      expect(assertSpecLintClean(text, { ...options, skip: true })).toEqual([]);
+    });
+  });
+
   test("throws on a Modifies block that declares intent but extracts nothing; skips every check when the caller opted out", () => {
     const dropped = `Modifies:
 - **US-001** \`src/a.ts\` — reason`;
