@@ -25,7 +25,12 @@ export interface FindingRulingsInput {
   readonly isWriter: (comment: PrComment) => Promise<boolean>;
 }
 
-type FindingRulingEntry = { readonly threadId: string; readonly ruling: BotSettledRuling };
+type FindingRulingEntry = {
+  readonly threadId: string;
+  readonly ruling: BotSettledRuling;
+  /** A bot fix reply after this ruling closed the confirmed work. */
+  readonly fixClosed?: boolean;
+};
 export interface FindingRulingsOutcome {
   readonly settled: readonly FindingRulingEntry[];
   readonly confirmed: readonly FindingRulingEntry[];
@@ -116,7 +121,11 @@ async function recordThread(
     }
     if (!confirming && !(await resolve(input, thread))) failed++;
   }
-  return { entry: { threadId: thread.id, ruling }, confirming, echoed, failed };
+  const fixClosed =
+    confirming &&
+    thread.resolved &&
+    ownComments(thread.comments.slice(index + 1), input.login).some((own) => own.key === `fix-${key}`);
+  return { entry: { threadId: thread.id, ruling, ...(fixClosed && { fixClosed: true }) }, confirming, echoed, failed };
 }
 
 /** Echo/resolve failures are presentation failures: authorized rulings still apply. */

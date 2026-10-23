@@ -166,6 +166,44 @@ describe("runBotReview finding rulings", () => {
     expect(echo).toHaveBeenCalledTimes(1);
     expect(resolve).not.toHaveBeenCalled();
   });
+  test.each(["confirm", "verified"])("restores fix work after waive → resolve → %s", async (keyword) => {
+    const thread = findingThread("waive: a", true);
+    threads = [{ ...thread, comments: [...thread.comments, comment("C3", "writer", keyword)] }];
+    await runBotReview(input);
+    expect(artifact?.agreed).toContainEqual(expect.objectContaining({ kind: "finding", key }));
+    expect(prompt).not.toContain("Your earlier finding");
+    expect(echo).not.toHaveBeenCalled();
+    expect(resolve).not.toHaveBeenCalled();
+  });
+  test("a new confirmation after a prior successful fix restores work again", async () => {
+    const thread = findingThread("confirm", true);
+    threads = [
+      {
+        ...thread,
+        comments: [
+          ...thread.comments,
+          comment("C3", "bot", withNaxBotMarker("Fixed in abc1234", `fix-${key}`)),
+          comment("C4", "writer", "confirm: still broken"),
+        ],
+      },
+    ];
+    await runBotReview(input);
+    expect(artifact?.agreed).toContainEqual(expect.objectContaining({ kind: "finding", key }));
+    expect(prompt).not.toContain("Your earlier finding");
+  });
+  test("a successful fix after confirmation does not restore resolved fix work", async () => {
+    const thread = findingThread("confirm", true);
+    threads = [
+      {
+        ...thread,
+        comments: [...thread.comments, comment("C3", "bot", withNaxBotMarker("Fixed in abc1234", `fix-${key}`))],
+      },
+    ];
+    await runBotReview(input);
+    expect(artifact?.agreed).toEqual([]);
+    expect(echo).not.toHaveBeenCalled();
+    expect(resolve).not.toHaveBeenCalled();
+  });
   test("AC-8 hides confirmed finding from review earlier verdicts", async () => {
     threads = [findingThread("confirm")];
     await runBotReview(input);

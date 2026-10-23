@@ -72,7 +72,7 @@ async function resolveOwnFindings(env: BotFixEnv, state: BotFixState): Promise<{
   let resolved = 0;
   for (const thread of env.threads) {
     const first = thread.comments[0];
-    if (!first || first.author !== env.user.login || thread.resolved) continue;
+    if (!first || first.author !== env.user.login) continue;
     const marker = parseNaxBotMarker(first.body);
     const item = marker && agreed.get(marker.key);
     if (!item || item.key.startsWith("w-")) continue;
@@ -91,6 +91,8 @@ async function resolveOwnFindings(env: BotFixEnv, state: BotFixState): Promise<{
       });
       continue;
     }
+    // A confirmation can restore agreed work without reopening the forge thread.
+    if (thread.resolved) continue;
     try {
       await _fixReportDeps.resolveThread(env.ref, thread, env.forge, env.repoRoot);
       resolved++;
