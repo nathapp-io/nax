@@ -180,28 +180,34 @@ Symbols this feature changes. The baseline exists only to locate the code; it is
 
 ## Stories
 
-Three stories in `packages/nax`. US-001 is #2666; US-002 and US-003 are #2667.
+Four stories in `packages/nax`. US-001 and US-002 are #2666; US-003 and US-004 are #2667.
 
 ### US-001: Ask the approval advisor before the publish push
 No dependencies. Workdir: packages/nax.
 
 Reorders `prMode` per Approach 1, adds `minorsLeftOf`, changes `finishPr`'s ready rule and final reasons, drops the
-`ci` parameter from `approvalEvidence` with the fixed CI line, and rewords `askApproval`'s summary. With nothing left
-to call it, it deletes `commitApprovalRuling`, `PublishOutcome.pushedHead` and `waitForCi`'s `pushedHead`, and makes
-`publishStep` hand item threads and the CI-repair read the local `head`. The `prMode` docstring, the F1 comment in
-`bodyFacts` ("at this point no advisor has been asked"), the `waitForCi` doc about `pushedHead` and the nax#2646
-comment in `publishStep` are rewritten to the new order; in `finalize.test.ts` the titles "AC-10: approval follows the
-single pre-CI push" and "AC-6: approval does not add a post-CI ledger commit or push" are reworded to the same order. Those removals are verified by
-`bun run typecheck` and `bun run lint` (run from `packages/nax`).
+`ci` parameter from `approvalEvidence` with the fixed CI line, and rewords `askApproval`'s summary. `prMode` no longer
+calls `commitApprovalRuling`. The `prMode` docstring and the F1 comment in `bodyFacts` ("at this point no advisor has
+been asked") are rewritten to the new order; in `finalize.test.ts` the titles "AC-10: approval follows the single
+pre-CI push" and "AC-6: approval does not add a post-CI ledger commit or push" are reworded to the same order.
 
-### US-002: Explain an incremental bot review range in the prompt
+### US-002: Publish failure paths, CI repair rounds, and removing the post-push ruling commit
+Depends on US-001. Workdir: packages/nax.
+
+Pins the reordered publish's failure paths (advisor unavailable, ledger commit failure, push failure, abort during the
+CI wait) and the CI-repair sequence of two publishes. With nothing left to call it, deletes `commitApprovalRuling`,
+`PublishOutcome.pushedHead` and `waitForCi`'s `pushedHead`, and makes `publishStep` hand item threads and the CI-repair
+read the local `head`. The `waitForCi` doc about `pushedHead` and the nax#2646 comment in `publishStep` are rewritten.
+Those removals are verified by `bun run typecheck` and `bun run lint` (run from `packages/nax`).
+
+### US-003: Explain an incremental bot review range in the prompt
 No dependencies. Workdir: packages/nax.
 
 Adds `BotReviewScope` and `reviewScopeOf` to `src/bot/review-rulings.ts`, `incrementalSince` on
 `BotPrReviewPromptInput` with the incremental paragraph, and has `runPrReview` pass it.
 
-### US-003: Review scope in the artifact and summary, and `nax bot review --full`
-Depends on US-002. Workdir: packages/nax.
+### US-004: Review scope in the artifact and summary, and `nax bot review --full`
+Depends on US-003. Workdir: packages/nax.
 
 Adds `--full`, `BotReviewOptions.full` and `BotReviewInput.full`, makes `reviewEnvironment` skip `reviewRange` under
 `full` and fill `scope` / `incrementalSince` on the post input, writes them into `bot-review.json`, and renders them
@@ -210,20 +216,26 @@ in the summary's first line.
 ### Context Files
 
 **US-001**
-- `packages/nax/src/workflow/finalize.ts` — `prMode`, `finishPr`, `approvalEvidence`, `bodyFacts`, `waitForCi`, `PublishOutcome`
+- `packages/nax/src/workflow/finalize.ts` — `prMode`, `finishPr`, `approvalEvidence`, `bodyFacts`
 - `packages/nax/src/workflow/approval.ts` — `askApproval`, `readinessReasons`, `ciReason`
-- `packages/nax/src/workflow/publish-ledger.ts` — `ledgerCommit`, `ledgerReasons`, `commitApprovalRuling`
-- `packages/nax/src/workflow/feature-steps.ts` — `publishStep`, `ciRepairDecision`
+- `packages/nax/src/workflow/publish-ledger.ts` — `ledgerCommit`, `ledgerReasons`
 - `packages/nax/test/helpers/finalize.ts` — `wireFinalize`, `makeFinalizeAdvisor`
 
 **US-002**
+- `packages/nax/src/workflow/finalize.ts` — `prMode`, `waitForCi`, `PublishOutcome`
+- `packages/nax/src/workflow/publish-ledger.ts` — `ledgerCommit`, `commitApprovalRuling`
+- `packages/nax/src/workflow/feature-steps.ts` — `publishStep`, `ciRepairDecision`
+- `packages/nax/test/helpers/finalize.ts` — `wireFinalize`, `makeFinalizeAdvisor`
+- `packages/nax/test/unit/workflow/finalize-approval-order.test.ts` — created by US-001, the advisor-in-call-log harness reused here
+
+**US-003**
 - `packages/nax/src/bot/review-rulings.ts` — `reviewRange`
 - `packages/nax/src/prompts/builders/bot-pr-review-builder.ts` — `BotPrReviewPromptInput`, `buildBotPrReviewPrompt`
 - `packages/nax/src/bot/review-step.ts` — `PrReviewInput`, `runPrReview`
 - `packages/nax/test/unit/bot/review-step.test.ts` — the `runPrReview` stubs
 - `packages/nax/test/integration/bot/review-run-incremental.test.ts` — the incremental `runBotReview` harness
 
-**US-003**
+**US-004**
 - `packages/nax/src/cli/bot.ts` — `withBotOptions`, `withBotInput`, `registerBotCommand`, `BotReviewOptions`
 - `packages/nax/src/bot/review-run.ts` — `BotReviewInput`, `reviewEnvironment`
 - `packages/nax/src/bot/post.ts` — `PostReviewInput`, `BotReviewArtifact`, `persistArtifact`, `postSummary`
@@ -236,64 +248,81 @@ in the summary's first line.
 - `packages/nax/test/unit/workflow/finalize-approval-order.test.ts`
 
 **US-002**
-- `packages/nax/test/unit/bot/review-scope.test.ts`
+- `packages/nax/test/unit/workflow/finalize-approval-failures.test.ts`
 
 **US-003**
+- `packages/nax/test/unit/bot/review-scope.test.ts`
+
+**US-004**
 - `packages/nax/test/unit/cli/bot-review-full.test.ts`
 - `packages/nax/test/integration/bot/review-run-scope.test.ts`
 
 ### Modifies
 
 **US-001**
-- `packages/nax/test/unit/workflow/finalize-approval-push.test.ts` — the `["ledger", "push", "draft", "ci", "promote", "ledger"]` sequence and the cases expecting two `ledger` calls with `out.pushedHead` equal to `PUSHED` pin the nax#2646 post-push ruling commit; the approval now precedes the single ledger commit and `pushedHead` is deleted, so the sequence becomes `["ledger", "push", "draft", "ci", "promote"]`, every case expects exactly one `ledger` call, every `out.pushedHead` read is removed, the post-approval-commit cases (a ruling commit that made no commit, a failed post-approval commit) are removed together with the `PUSHED` constant and the `setup` options only they used (`headUnreadable`, `ledger`, `ledgerThrowsAt`), and the describe title "publish commits the approval ruling locally" is renamed to the single-commit order. The invariant that the push happens once and before the CI wait is unchanged.
+- `packages/nax/test/unit/workflow/finalize-approval-push.test.ts` — the `["ledger", "push", "draft", "ci", "promote", "ledger"]` sequence and the cases expecting two `ledger` calls with `out.pushedHead` equal to `PUSHED` pin the nax#2646 post-push ruling commit; the approval now precedes the single ledger commit, so the sequence becomes `["ledger", "push", "draft", "ci", "promote"]`, every case expects exactly one `ledger` call, the expectations that `out.pushedHead` equals `PUSHED` are removed, the post-approval-commit cases (a ruling commit that made no commit, a failed post-approval commit) are removed, and the describe title "publish commits the approval ruling locally" is renamed to the single-commit order. The invariant that the push happens once and before the CI wait is unchanged.
 - `packages/nax/test/unit/workflow/finalize-ci-gate.test.ts` — the conflicting, no-checks (both cases), unavailable and pending cases assert `asked` equals `[]`; the advisor is now asked before the CI wait, so they assert `asked` equals `["finish-approval"]`, keeping their draft and reason assertions. The conflicting case's whole-result `toEqual` gains `approval: { approved: true, rationale: "clean", decisionId: <the decision id> }`, because its default advisor approves. AC-11 ("a failed CI never asks the advisor, so there is no approval key") becomes: a failed CI with an approving advisor keeps the draft and returns an `approval` with `approved: true`. F1 switches its trigger from a failed CI to `reviewRan: false` with a green CI, so the advisor is still never asked and the stale `D-0` hold is still not cited; its ready-line assertion becomes `- [ ] **_run:reason1** (reason) — branch review did not run`, and its comment about the draft body being written before the advisor is asked is reworded to the new order. The cost-limited, git-status and re-review-skipped cases are unchanged.
 - `packages/nax/test/unit/workflow/finalize-ci.test.ts` — AC-20 asserts `observed.asked()` is 0 for a CI head mismatch; the advisor is now asked before the wait, so it asserts 1, keeping the `draft` / `unavailable` outcome and the keep-draft assertion.
 - `packages/nax/test/unit/workflow/finalize-evidence.test.ts` — `evidenceFor` and the AC-3/4 helper call `approvalEvidence` with a `ci` argument; the parameter is removed, so the calls drop it and the module-level `ci` constant they used is removed. "a failed CI never runs the changed-file diff" becomes "a deterministic non-CI reason never runs the changed-file diff", triggered by passing the publish input a story in `complete-gate-open` (the test's `wire` gains a `stories` override for it), because a failed CI is now observed only after the diff ran for the advisor.
 - `packages/nax/test/unit/workflow/finalize.test.ts` — the W-R3 abort case asserts `asked` equals `[]`; the advisor is now asked before the push, so it asserts `["finish-approval"]`, keeping the `WORKFLOW_ABORTED` rejection and the `["ledger", "push", "draft", "ci"]` call sequence. AC-15 ("pr mode keeps the PR a draft and never asks the advisor", `ledgerThrowsAt: 1` with a 3-line ledger) asserts `asked` equals `[]`; the advisor is now asked before the failing ledger commit, so it is renamed to say the PR stays a draft after the advisor ruled and asserts `asked` equals `["finish-approval"]`, keeping the `draft` outcome, the `LEDGER_REASON` and the keep-draft assertions.
 - `packages/nax/test/integration/workflow/finalize-approval.test.ts` — the approve/hold case asserts the draft body's `## Advisor decisions` section is `None.`; `bodyFacts` now runs after the advisor, so the draft section contains `D-3`, the same as the final body. The `reads()` count of 2 is unchanged (one read in `bodyFacts`, one in `finishPr`).
-- `packages/nax/test/unit/workflow/publish-item-threads.test.ts` — the nax#2646 case builds a publish outcome with `pushedHead` and expects item threads to cite it; the field is deleted, so the case is removed. The invariant that item threads cite the local HEAD read after publish is pinned by US-001's own AC.
 
 **US-002**
-None. The existing review-step and builder tests assert with `stringContaining` and `toMatchObject` on the full and conversation-only prompts, which this story leaves unchanged.
+- `packages/nax/test/unit/workflow/publish-item-threads.test.ts` — the nax#2646 case builds a publish outcome with `pushedHead` and expects item threads to cite it; the field is deleted, so the case is removed. The invariant that item threads cite the local HEAD read after publish is pinned by US-002's own AC.
+- `packages/nax/test/unit/workflow/finalize-approval-push.test.ts` — after US-001 its remaining `out.pushedHead` reads expect `undefined`; the field is deleted, so they no longer typecheck and are removed, together with the `PUSHED` constant and the `setup` options only the removed cases used (`headUnreadable`, `ledger`, `ledgerThrowsAt`). The single-ledger-call assertions from US-001 are unchanged.
 
 **US-003**
+None. The existing review-step and builder tests assert with `stringContaining` and `toMatchObject` on the full and conversation-only prompts, which this story leaves unchanged.
+
+**US-004**
 None. The existing artifact assertions use `toMatchObject`, and the exact summary assertions in `render-comments.test.ts` build inputs with no scope, whose first line is unchanged.
 
 ### Seams
 
-- US-002 -> US-003: `reviewScopeOf` and `BotReviewScope` (US-002) are called by `reviewEnvironment` (US-003) to fill the post input. US-003's seam ACs enter at `runBotReview`.
-- US-002's prompt change is consumed by `runPrReview` within the same story; its `runPrReview` ACs drive the real builder. `runBotReview` already passes `runPrReview` the narrowed `rangeBase` (pinned by `review-run-incremental.test.ts` AC-2), so no new entry-point AC is needed.
+- US-003 -> US-004: `reviewScopeOf` and `BotReviewScope` (US-003) are called by `reviewEnvironment` (US-004) to fill the post input. US-004's seam ACs enter at `runBotReview`.
+- US-003's prompt change is consumed by `runPrReview` within the same story; its `runPrReview` ACs drive the real builder. `runBotReview` already passes `runPrReview` the narrowed `rangeBase` (pinned by `review-run-incremental.test.ts` AC-2), so no new entry-point AC is needed.
 
 ## Acceptance Criteria
 
 ### US-001
 
 - [integration] `publish` in `pr` mode with green CI and an approving advisor, whose `advise` appends `advise` to the `wireFinalize` call log, produces the call sequence `["advise", "ledger", "push", "draft", "ci", "promote"]`.
-- [integration] That run returns outcome `ready` with `reasons` equal to `[]`.
+- [integration] That run returns outcome `ready`.
+- [integration] That run returns `reasons` equal to `[]`.
 - [integration] That run's `promote` call has `keepDraft` false.
-- [integration] `publish` in `pr` mode with failed CI and an approving advisor returns outcome `draft` with `reasons` equal to `["CI failed"]`.
+- [integration] That run calls `commitLedger` exactly once.
+- [integration] `publish` in `pr` mode with failed CI and an approving advisor returns outcome `draft`.
+- [integration] That run returns `reasons` equal to `["CI failed"]`.
 - [integration] That run returns `approval` with `approved: true` and the decision's id.
 - [integration] `publish` in `pr` mode with pending CI and an approving advisor calls `promote` with `keepDraft` true.
-- [integration] `publish` in `pr` mode with green CI and a holding advisor returns outcome `draft` with `reasons` equal to `["advisor held: risky"]`.
+- [integration] `publish` in `pr` mode with green CI and a holding advisor returns outcome `draft`.
+- [integration] That run returns `reasons` equal to `["advisor held: risky"]`.
 - [integration] `publish` in `pr` mode for a story in `complete-gate-open` never calls the advisor's `advise`.
 - [integration] That run still calls `ledger`, `push`, `draft` and `ci`, in that order.
-- [integration] `publish` in `pr` mode with an advisor whose `advise` returns no decision still calls `push`, and returns outcome `draft` with a reason starting `advisor unavailable:`.
-- [integration] `publish` in `pr` mode with green CI, an approving advisor, `commitLedger` throwing and a feature ledger file holding one line (the new test writes it into its own temp project directory) returns outcome `draft` with a reason containing `the branch is missing 1 advisor rulings`.
-- [integration] `publish` in `pr` mode with an approving advisor and a failing push returns outcome `local-only` with a reason starting `push failed:`, and never calls `draft` or `ci`.
 - [integration] `publish` in `pr` mode with an approving advisor that writes decision `D-3`, where `_workflowDeps.readTrustedDecisions` returns `[]` before the advice and `[D-3]` after it, passes `openDraftFinishPr` a body whose `## Advisor decisions` section contains `D-3`.
-- [integration] `publish` in `pr` mode with green CI and an approving advisor calls `commitLedger` exactly once.
-- [integration] Two consecutive `publish` calls in `pr` mode on the same feature context (the CI repair path), the first with failed CI and the second with green CI, an approving advisor that appends `advise` to the `wireFinalize` call log and returns decision `D-1` then `D-2`, produce the call sequence `["advise", "ledger", "push", "draft", "ci", "promote", "advise", "ledger", "push", "draft", "ci", "promote"]`; the first result is a `draft` with `approval.decisionId` `D-1` and the second is `ready` with `approval.decisionId` `D-2`.
 - [unit] `approvalEvidence(input, [], { kind: "files", files: [] })` returns the line `CI: not run yet. It runs on the pushed head after this ruling, and the PR is ready only when it is green.` directly after the `Final gates:` line.
 - [unit] `askApproval` sends the advisor a question whose `summary` is `Approve the workflow PR for f? Every deterministic ready condition except CI holds. CI runs on the pushed head after this ruling, and the PR is ready only when it is green.` for feature `f`.
 
-- [integration] `publish` in `pr` mode with an approving advisor, whose run is aborted during the CI wait, rejects with code `WORKFLOW_ABORTED` and never calls `promote` (regression guard: the abort check already precedes promotion).
-- [integration] `publishStep` with a `publish` stub returning a `ready` outcome and a local HEAD of `"a".repeat(40)` hands the item-threads step the head `"a".repeat(40)` (regression guard for the `pushedHead` removal).
+**Out of scope:** US-001 only: an advisor call followed by a failed push or a red CI is accepted (see the feature Out of Scope); the failure paths are pinned by US-002.
 
-**Out of scope:** an advisor call followed by a failed push or a red CI is accepted (see the feature Out of Scope).
+### US-002
+
+- [integration] `publish` in `pr` mode with an advisor whose `advise` returns no decision still calls `push`.
+- [integration] That run returns outcome `draft` with a reason starting `advisor unavailable:`.
+- [integration] `publish` in `pr` mode with an advisor whose `advise` throws still calls `ledger`, `push`, `draft` and `ci`, in that order, and returns outcome `draft` with a reason starting `advisor unavailable:`.
+- [integration] `publish` in `pr` mode with green CI, an approving advisor, `commitLedger` throwing and a feature ledger file holding one line (the test writes it into its own temp project directory) returns outcome `draft`.
+- [integration] That run returns a reason containing `the branch is missing 1 advisor rulings`.
+- [integration] `publish` in `pr` mode with an approving advisor and a failing push returns outcome `local-only` with a reason starting `push failed:`.
+- [integration] That run never calls `draft` or `ci`.
+- [integration] `publish` in `pr` mode with an approving advisor, whose run is aborted during the CI wait, rejects with code `WORKFLOW_ABORTED` and never calls `promote` (regression guard: the abort check already precedes promotion).
+- [integration] Two consecutive `publish` calls in `pr` mode on the same feature context (the CI repair path), the first with failed CI and the second with green CI, an approving advisor that appends `advise` to the `wireFinalize` call log and returns decision `D-1` then `D-2`, produce the call sequence `["advise", "ledger", "push", "draft", "ci", "promote", "advise", "ledger", "push", "draft", "ci", "promote"]`.
+- [integration] In those two calls the first result is a `draft` whose `approval.decisionId` is `D-1`.
+- [integration] In those two calls the second result is `ready` whose `approval.decisionId` is `D-2`.
+- [integration] `publishStep` with a `publish` stub returning a `ready` outcome and a local HEAD of `"a".repeat(40)` hands the item-threads step the head `"a".repeat(40)` (regression guard for the `pushedHead` removal).
 
 Verification note: the deletions of `commitApprovalRuling`, `PublishOutcome.pushedHead` and `waitForCi`'s `pushedHead` are verified by `bun run typecheck` and `bun run lint` from `packages/nax`.
 
-### US-002
+### US-003
 
 - [unit] `reviewScopeOf` is importable from `@/bot/review-rulings`; `reviewScopeOf({ rangeBase: "m", mergeBase: "m" })` returns `"full"`.
 - [unit] `reviewScopeOf({ mergeBase: "m" })` returns `"full"`.
@@ -309,7 +338,7 @@ Verification note: the deletions of `commitApprovalRuling`, `PublishOutcome.push
 - [unit] `runPrReview` with `rangeBase` absent sends a prompt not containing `This is an incremental review`.
 - [unit] `runPrReview` with `rangeBase` equal to `mergeBase` sends a prompt not containing `This is an incremental review`.
 
-### US-003
+### US-004
 
 - [cli] Parsing `bot review 12 --full` calls `runBotReview` with an input whose `full` is `true`.
 - [cli] Parsing `bot review 12` calls `runBotReview` with an input that has no `full` key.
