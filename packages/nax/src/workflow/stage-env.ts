@@ -13,9 +13,9 @@ import { specPathFor } from "./brief";
 import { costLimitReached } from "./cost-limit";
 import { runStoryGates, runWorkflowSuiteGate } from "./gates";
 import { listUncommitted, readHead } from "./git";
-import { runImplementerTurn } from "./implement";
+import { autoCommitTurnEdits, runImplementerTurn } from "./implement";
 import { appendLedger, ensureLedger } from "./ledger";
-import { storyWorkEvidence } from "./no-work";
+import { storyChangedFiles, storyWorkEvidence } from "./no-work";
 import { workflowFeatureDir, workflowRunDir, workflowStoryDir } from "./paths";
 import { runReReview } from "./re-review";
 import { loadPriorStory, newStoryRecord, upsertStoryRecord } from "./result";
@@ -129,6 +129,12 @@ export async function buildStoryEnv(
     head: () => readHead(sc.projectDir),
     uncommitted: () => listUncommitted(sc.projectDir),
     workProduced: () => storyWorkEvidence(sc),
+    // US-005: the evidence and fallback the interrupt path reads. `workSinceBase` throws on a git
+    // failure like the checks above, and the continue turn says so in its prompt instead of claiming
+    // nothing changed; `autoCommitDirty` is best effort and never throws.
+    workSinceBase: () => storyChangedFiles(sc),
+    autoCommitDirty: () => autoCommitTurnEdits(sc),
+    reportExists: () => Bun.file(sc.reportPath).exists(),
     modelFor: storyModelFor(sc),
     costExceeded: () => costLimitReached(costLimit, ctx.runtime),
   };
@@ -164,6 +170,12 @@ export async function buildStoryEnv(
       ledger: (text, options) => appendLedger(runDir, ctx.story.id, text, options),
     },
     resume: resumeRecord,
+    // US-005: the limits a story loop continues an interrupted turn under (US-006/US-007 read them).
+    interrupt: {
+      maxAttempts: workflow.interruptRetry.maxAttempts,
+      implementMs: workflow.timeouts.implementMs,
+      fixMs: workflow.timeouts.fixMs,
+    },
   };
   // Error containment (W-R3): the stage swallowed a non-abort error, so close the record gate-open
   // rather than leave it mid-loop. Best-effort, like the ledger line.

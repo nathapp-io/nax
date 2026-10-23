@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
   cleanupTempDir,
+  type DeepPartial,
   makeMockCallContext,
   makeMockRuntime,
   makeNaxConfig,
@@ -10,6 +11,7 @@ import {
   makeTestContext,
 } from "@test/helpers";
 import type { Advisor, QuestionDraft } from "@/advisor";
+import type { NaxConfig } from "@/config";
 import { _workflowResumeDeps } from "@/execution";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { ICostAggregator } from "@/runtime";
@@ -31,14 +33,14 @@ function costAggregatorAt(totalCostUsd: number): ICostAggregator {
   return { ...base, snapshot: () => ({ ...base.snapshot(), totalCostUsd }) };
 }
 
-function setup(opts: { costUsd?: number } = {}) {
+function setup(opts: { costUsd?: number; workflow?: DeepPartial<NaxConfig>["workflow"] } = {}) {
   const outputDir = makeTempDir("wf-env-out-");
   const workdir = makeTempDir("wf-env-work-");
   dirs.push(outputDir, workdir);
   const config = makeNaxConfig({
     outputDir,
     execution: { costLimit: 5 },
-    workflow: { maxFixRounds: 4 },
+    workflow: { maxFixRounds: 4, ...opts.workflow },
   });
   const runtime = makeMockRuntime({ config, workdir, costAggregator: costAggregatorAt(opts.costUsd ?? 0) });
   const ctx = makeTestContext({
@@ -324,5 +326,96 @@ describe("buildStoryEnv — workflow resume mode (US-003)", () => {
     const { env } = await buildStoryEnv(ctx, makeMockCallContext());
     expect(env.resume).toBeNull();
     expect(ignoreEntries()).toHaveLength(0);
+  });
+});
+
+/**
+ * US-005: `buildStoryEnv` supplies the loop's changed-file evidence, the best-effort auto-commit,
+ * the report check and the configured interrupt limits. Every test drives the real `buildStoryEnv`
+ * through the `_workflowDeps` seams, so what is asserted is the producer-consumer connection — not
+ * that an optional field exists.
+ */
+describe("buildStoryEnv — evidence and interrupt steps (US-005)", () => {
+  const original = { ..._workflowDeps };
+
+  afterEach(() => {
+    Object.assign(_workflowDeps, original);
+  });
+
+  /** Answer the two reads behind the evidence steps; `diff` is the committed list, `status` the dirty one. */
+  function stubGit(diff: string, status: string, diffExitCode = 0): string[][] {
+    const calls: string[][] = [];
+    _workflowDeps.git = async (args, _cwd) => {
+      calls.push(args);
+      return args[0] === "diff" ? { stdout: diff, exitCode: diffExitCode } : { stdout: status, exitCode: 0 };
+    };
+    return calls;
+  }
+
+  test("AC-3: interrupt carries the configured attempt count and both step limits", async () => {
+    const { ctx } = setup({
+      workflow: { interruptRetry: { maxAttempts: 2 }, timeouts: { implementMs: 5_400_000, fixMs: 3_600_000 } },
+    });
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(env.interrupt).toEqual({ maxAttempts: 2, implementMs: 5_400_000, fixMs: 3_600_000 });
+  });
+
+  test("AC-3: both limits come from the workflow config, not the defaults", async () => {
+    const { ctx } = setup({
+      workflow: { interruptRetry: { maxAttempts: 0 }, timeouts: { implementMs: 1_800_000, fixMs: 1_200_000 } },
+    });
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(env.interrupt).toEqual({ maxAttempts: 0, implementMs: 1_800_000, fixMs: 1_200_000 });
+  });
+
+  test("AC-4: steps.reportExists follows the story's report.md", async () => {
+    const { ctx } = setup();
+    const { sc, env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(await env.steps.reportExists?.()).toBe(false);
+    await Bun.write(sc.reportPath, "# report\n");
+    expect(await env.steps.reportExists?.()).toBe(true);
+  });
+
+  test("AC-5: steps.workSinceBase reads the diff and the dirty list through _workflowDeps.git", async () => {
+    const { ctx } = setup();
+    const calls = stubGit("src/a.ts\n", "?? src/b.ts\n");
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(await env.steps.workSinceBase?.()).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(calls.some((args) => args[0] === "diff")).toBe(true);
+    expect(calls.some((args) => args[0] === "status")).toBe(true);
+  });
+
+  test("AC-6: steps.autoCommitDirty commits the dirty tree once and answers true", async () => {
+    const { ctx } = setup();
+    stubGit("", " M src/a.ts\n");
+    const commits: string[][] = [];
+    _workflowDeps.autoCommitIfDirty = async (workdir, stage, role, storyId) => {
+      commits.push([workdir, stage, role, storyId]);
+    };
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(await env.steps.autoCommitDirty?.()).toBe(true);
+    expect(commits).toHaveLength(1);
+    expect(commits[0]?.[3]).toBe(ctx.story.id);
+  });
+
+  test("AC-6: steps.autoCommitDirty does not commit a clean tree", async () => {
+    const { ctx } = setup();
+    stubGit("", "");
+    const commits: string[][] = [];
+    _workflowDeps.autoCommitIfDirty = async (workdir, stage, role, storyId) => {
+      commits.push([workdir, stage, role, storyId]);
+    };
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(await env.steps.autoCommitDirty?.()).toBe(false);
+    expect(commits).toHaveLength(0);
+  });
+
+  test("AC-7: workProduced still counts a written report as work when git sees nothing", async () => {
+    const { ctx } = setup();
+    stubGit("", "");
+    const { sc, env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(await env.steps.workProduced?.()).toBe(false);
+    await Bun.write(sc.reportPath, "# report\n");
+    expect(await env.steps.workProduced?.()).toBe(true);
   });
 });
