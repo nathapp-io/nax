@@ -14,6 +14,30 @@ function makeStory(overrides: Partial<StoryDisplayState> = {}): StoryDisplayStat
 }
 
 describe("StoriesPanel", () => {
+  test.each([false, true])("renders pre-run and post-run phases (compact=%s)", (compact) => {
+    const { lastFrame, unmount } = render(
+      React.createElement(StoriesPanel, {
+        stories: [],
+        compact,
+        preRunPhases: {
+          install: { status: "running" },
+          checks: { status: "passed" },
+          setup: { status: "failed" },
+        },
+        postRunPhases: {
+          acceptance: { status: "running" },
+          regression: { status: "passed" },
+          review: { status: "failed" },
+        },
+      }),
+    );
+    expect(lastFrame()).toContain(compact ? "instal" : "install");
+    expect(lastFrame()).toContain("Post-Run");
+    expect(lastFrame()).toContain(compact ? "acc" : "acceptance");
+    expect(lastFrame()).toContain(compact ? "reg" : "regression");
+    expect(lastFrame()).toContain(compact ? "rev" : "review");
+    unmount();
+  });
   test("renders a story id in non-compact mode", () => {
     const { lastFrame } = render(React.createElement(StoriesPanel, { stories: [makeStory()] }));
     expect(lastFrame()).toContain("US-001");

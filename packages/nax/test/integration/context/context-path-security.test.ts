@@ -51,6 +51,43 @@ afterAll(() => {
 });
 
 describe("Path Security", () => {
+  test.each(["resolve-directory", "stat-directory", "resolve-file"])("chains filesystem failures: %s", (stage) => {
+    const original = { ..._pathSecurityDeps };
+    const cause = new Error("filesystem unavailable");
+    try {
+      if (stage === "stat-directory")
+        _pathSecurityDeps.lstatSync = () => {
+          throw cause;
+        };
+      else
+        _pathSecurityDeps.realpathSync = Object.assign(
+          () => {
+            throw cause;
+          },
+          { native: original.realpathSync.native },
+        );
+      const run = () =>
+        stage === "resolve-file"
+          ? validateFilePath(join(testProject, ".nax/config.json"), testProject)
+          : validateDirectory(testProject);
+      expect(run).toThrow(NaxError);
+      try {
+        run();
+      } catch (error) {
+        expect(error).toMatchObject({
+          code:
+            stage === "stat-directory"
+              ? "PATH_DIRECTORY_STAT_FAILED"
+              : stage === "resolve-file"
+                ? "FILE_PATH_RESOLUTION_FAILED"
+                : "PATH_DIRECTORY_RESOLUTION_FAILED",
+          context: { cause },
+        });
+      }
+    } finally {
+      Object.assign(_pathSecurityDeps, original);
+    }
+  });
   describe("validateDirectory", () => {
     test("accepts valid directory", () => {
       const result = validateDirectory(testProject);

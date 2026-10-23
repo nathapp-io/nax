@@ -69,6 +69,21 @@ describe("detectCommand", () => {
     expect(parsed.root.detected.patterns).toContain("tests/**/*.test.ts");
   });
 
+  test("--package restricts JSON discovery to the selected package", async () => {
+    seedProject();
+    mkdirSync(join(dir, "packages", "app"), { recursive: true });
+    writeFileSync(
+      join(dir, "packages", "app", "vitest.config.ts"),
+      'export default { test: { include: ["tests/**/*.test.ts"] } };\n',
+    );
+    const out = startCapture();
+    await detectCommand({ json: true, dir, package: "packages/app" });
+    const parsed: { packages: Record<string, { patterns: string[] }> } = JSON.parse(out.join("\n"));
+    expect(Object.keys(parsed.packages)).toEqual(["packages/app"]);
+    expect(parsed.packages["packages/app"]?.patterns).toContain("tests/**/*.test.ts");
+    expect(process.exitCode).toBe(0);
+  });
+
   test("--json exits 1 when detection finds no signals", async () => {
     seedProject();
     const out = startCapture();
