@@ -107,6 +107,12 @@ export {
   buildWorkflowBranchReReviewPrompt,
   buildWorkflowBranchReviewPrompt,
 } from "./builders/workflow-branch-builder";
+// US-004 — the CI repair's own brief, and the two rules it must never break.
+export {
+  buildWorkflowCiRepairPrompt,
+  CI_REPAIR_NO_SHORTCUTS_RULE,
+  CI_REPAIR_STEP_REPRODUCTION_RULE,
+} from "./builders/workflow-ci-repair-builder";
 export type { WorkflowBriefInput, WorkflowPromptFinding } from "./builders/workflow-implementer-builder";
 export {
   buildWorkflowAnswerPrompt,

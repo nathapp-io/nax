@@ -28,7 +28,7 @@ export interface FeatureSteps {
   branchReview(seed: string, facts: BranchReviewFacts): Promise<ReviewOutcome<BranchReviewVerdict>>;
   branchFix(
     findings: readonly WorkflowFinding[],
-    opts?: { readonly prUrl?: string; readonly repair?: true },
+    opts?: { readonly prUrl?: string; readonly repair?: true; readonly ciRound?: number },
   ): Promise<BranchFixOutcome>;
   branchReReview(findings: readonly WorkflowFinding[], fixBase: string): Promise<ReviewOutcome<ReReviewVerdict>>;
   adjudicate(items: readonly WorkflowFinding[]): Promise<readonly WorkflowRuling[]>;

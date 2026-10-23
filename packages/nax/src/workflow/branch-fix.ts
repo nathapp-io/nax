@@ -9,7 +9,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ConfiguredModel } from "@/config";
 import { getSafeLogger } from "@/logger";
 import { workflowBranchFixOp, workflowRepairOp } from "@/operations";
-import { buildWorkflowBranchFixPrompt } from "@/prompts";
+import { buildWorkflowBranchFixPrompt, buildWorkflowCiRepairPrompt } from "@/prompts";
 import type { SessionRole } from "@/session/types";
 import { FEATURE_SCOPE } from "./advisor-live";
 import type { BranchStepContext } from "./branch-step-context";
@@ -80,6 +80,12 @@ interface BranchFixInput {
    * the branch fix, unchanged for every existing caller.
    */
   kind?: "fix" | "repair";
+  /**
+   * US-004: the CI repair round. Its presence selects the CI repair's brief — the failed checks of
+   * the published PR, which is not the branch fix's "fixing a feature branch after its whole-branch
+   * review". The final-gate repair names no round and keeps the branch-fix prompt.
+   */
+  ciRepair?: { readonly round: number; readonly prUrl?: string };
 }
 
 /** The dispatch identity of one pass — the op to call, and the role its leftover edits are committed as. */
@@ -115,17 +121,27 @@ async function runFixSession(
   }
 }
 
-export async function runBranchFix(fc: BranchStepContext, input: BranchFixInput): Promise<BranchFixOutcome> {
-  await ensureReport(fc);
-  const { op, role } = dispatchFor(input.kind);
-  const prompt =
-    input.prompt ??
-    buildWorkflowBranchFixPrompt({
-      ...(input.specPath ? { specPath: input.specPath } : {}),
-      ...(fc.prdPath !== undefined ? { prdPath: fc.prdPath } : {}),
+/** The pass's brief: an explicit override wins, then the CI repair round, then the branch fix. */
+function promptFor(fc: BranchStepContext, input: BranchFixInput): string {
+  if (input.prompt !== undefined) return input.prompt;
+  const prd = fc.prdPath !== undefined ? { prdPath: fc.prdPath } : {};
+  const spec = input.specPath ? { specPath: input.specPath } : {};
+  if (input.ciRepair) {
+    return buildWorkflowCiRepairPrompt({
+      ...spec,
+      ...prd,
+      round: input.ciRepair.round,
+      ...(input.ciRepair.prUrl ? { prUrl: input.ciRepair.prUrl } : {}),
       reportPath: fc.reportPath,
       findings: input.findings,
     });
-  const session = await runFixSession(fc, op, { ...input, prompt });
+  }
+  return buildWorkflowBranchFixPrompt({ ...spec, ...prd, reportPath: fc.reportPath, findings: input.findings });
+}
+
+export async function runBranchFix(fc: BranchStepContext, input: BranchFixInput): Promise<BranchFixOutcome> {
+  await ensureReport(fc);
+  const { op, role } = dispatchFor(input.kind);
+  const session = await runFixSession(fc, op, { ...input, prompt: promptFor(fc, input) });
   return { ...session, ...(await commitLeftovers(fc, role)) };
 }

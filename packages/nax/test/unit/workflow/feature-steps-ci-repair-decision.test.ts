@@ -335,6 +335,62 @@ describe("the CI repair decision's ledger mirroring (US-006)", () => {
   });
 });
 
+/**
+ * US-004: a finding that names only the check sends the repair at the first failure and leaves the
+ * steps behind it unrun. The issue carries the failed step and the steps the job then skipped.
+ */
+describe("the failed and skipped steps in the finding's issue (US-004)", () => {
+  /** The issue the publish step patched for one failed check. */
+  async function issueOf(check: FailedCheck): Promise<string | undefined> {
+    const h = harness({ checks: [check], limits: LIMITS });
+    const out = await publishStep(h.env, h.env.record);
+    return out.patch.ciRepairFindings?.[0]?.issue;
+  }
+
+  const STEPPED: FailedCheck = {
+    name: "Security audit",
+    failedStep: "bun audit",
+    skippedSteps: ["pip-audit"],
+    excerpt: "E",
+  };
+
+  test("AC-13: the issue names the step that failed", async () => {
+    expect(await issueOf(STEPPED)).toStartWith('CI check Security audit failed at step "bun audit".');
+  });
+
+  test("AC-14: the skipped steps are a line of their own, naming what never ran", async () => {
+    const issue = await issueOf(STEPPED);
+    expect(issue).toContain("\nSteps CI skipped after it, which never ran: pip-audit\n");
+  });
+
+  test("AC-15: the step, the skipped line and the excerpt, each on its own line", async () => {
+    expect(await issueOf(STEPPED)).toBe(
+      'CI check Security audit failed at step "bun audit".\nSteps CI skipped after it, which never ran: pip-audit\nE',
+    );
+  });
+
+  test("AC-16: a failed step with nothing skipped after it omits the skipped line", async () => {
+    expect(await issueOf({ name: "Security audit", failedStep: "bun audit", excerpt: "E" })).toBe(
+      'CI check Security audit failed at step "bun audit".\nE',
+    );
+  });
+
+  test("AC-17: a check with no step facts keeps the plain failure text", async () => {
+    expect(await issueOf({ name: "Security audit", excerpt: "E" })).toBe("CI check Security audit failed:\nE");
+  });
+
+  test("several skipped steps are listed in job order", async () => {
+    expect(
+      await issueOf({
+        name: "Security audit",
+        failedStep: "bun audit",
+        skippedSteps: ["pip-audit", "cargo audit"],
+        excerpt: "E",
+      }),
+    ).toContain("Steps CI skipped after it, which never ran: pip-audit, cargo audit\n");
+  });
+});
+
 describe("the shared harness's CI repair seams (US-006)", () => {
   test("the scripted publish outcomes come in order, and the last one repeats", async () => {
     const seq: PublishOutcome[] = [

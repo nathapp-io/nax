@@ -233,6 +233,59 @@ describe("buildFeatureEnv repair routing (US-002)", () => {
   });
 });
 
+// US-004: the repair round reaches `runBranchFix`, which builds the CI repair's own brief. These go
+// through the real `buildFeatureEnv` seam, so the option -> prompt selection is the production one.
+describe("buildFeatureEnv CI repair prompt (US-004)", () => {
+  const findings = [{ id: "C1", kind: "gate", severity: "important", issue: "CI check e2e failed:\nboom" }] as const;
+
+  /** The prompts of every dispatch the step made, in order, plus the op names. */
+  function dispatched(): { ops: string[]; prompts: string[] } {
+    const ops: string[] = [];
+    const prompts: string[] = [];
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    _workflowDeps.callOp = makeScriptedCallOp((op, input) => {
+      ops.push(op.name);
+      if (typeof input === "object" && input !== null && "prompt" in input && typeof input.prompt === "string") {
+        prompts.push(input.prompt);
+      }
+      return { status: "DONE", commits: [], testSummary: "", interrupted: false };
+    });
+    return { ops, prompts };
+  }
+
+  const setupWithReport = () =>
+    setup((runDir) => ({ outputDir: join(runDir, "out"), reportPath: join(runDir, "feature-report.md") }));
+
+  test("AC-11: a repair round dispatches the CI repair's brief, labelled with its round", async () => {
+    const { ops, prompts } = dispatched();
+    const { env } = setupWithReport();
+    await env.steps.branchFix(findings, {
+      repair: true,
+      ciRound: 2,
+      prUrl: "https://github.com/o/r/pull/7",
+    });
+    expect(ops).toEqual(["workflow-repair"]);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("CI repair r2");
+    expect(prompts[0]).toContain("You are repairing the CI of pull request https://github.com/o/r/pull/7.");
+  });
+
+  test("AC-12: a repair with no round keeps the branch-fix brief", async () => {
+    const { prompts } = dispatched();
+    const { env } = setupWithReport();
+    await env.steps.branchFix(findings, { repair: true });
+    expect(prompts[0]).toContain("You are fixing a feature branch after its whole-branch review");
+    expect(prompts[0]).not.toContain("CI repair");
+  });
+
+  test("an ordinary branch fix keeps the branch-fix brief", async () => {
+    const { prompts } = dispatched();
+    const { env } = setupWithReport();
+    await env.steps.branchFix(findings);
+    expect(prompts[0]).toContain("You are fixing a feature branch after its whole-branch review");
+  });
+});
+
 // US-008: the production seam. The publish step reads the failed CI checks of the PR it opened, and
 // the reader is the real forge reader — so these go through `buildFeatureEnv(...).steps`.
 describe("buildFeatureEnv CI failure reader (US-008)", () => {
