@@ -87,6 +87,48 @@ describe("package profile registry integration", () => {
     expect(config.profileChain).toEqual(["package-checks"]);
   });
 
+  test.each([false, true])(
+    "partial profiles preserve inherited smart test settings (overlay: %s)",
+    async (withOverlay) => {
+      const inherited = {
+        enabled: false,
+        fallback: "full-suite" as const,
+        testFilePatterns: ["**/*.custom.ts"],
+        maxScanFiles: 123,
+      };
+      const rootFields = {
+        execution: { smartTestRunner: inherited },
+        quality: { commands: { test: "root-test" } },
+      };
+      const config = makeNaxConfig(rootFields);
+      await Bun.write(join(repo, ".nax/config.json"), JSON.stringify(rootFields));
+      await Bun.write(
+        join(repo, ".nax/mono/packages/api/config.json"),
+        JSON.stringify({
+          profile: "package-checks,scan-limit",
+          ...(withOverlay
+            ? { execution: { smartTestRunner: { ...inherited, testFilePatterns: ["**/*.overlay.ts"] } } }
+            : {}),
+        }),
+      );
+      await Bun.write(
+        join(repo, "packages/api/.nax/profiles/scan-limit.json"),
+        JSON.stringify({ execution: { smartTestRunner: { maxScanFiles: 42 } } }),
+      );
+      const registry = createPackageRegistry(createConfigLoader(config), repo);
+      await registry.hydrate(["packages/api"]);
+      const workdir = await loadConfigForWorkdir(join(repo, ".nax/config.json"), "packages/api");
+      const expected = {
+        ...inherited,
+        maxScanFiles: 42,
+        testFilePatterns: withOverlay ? ["**/*.overlay.ts"] : inherited.testFilePatterns,
+      };
+      expect(workdir.execution.smartTestRunner).toEqual(expected);
+      expect(registry.resolve("packages/api").config.execution.smartTestRunner).toEqual(expected);
+      expect(registry.resolve("packages/api").overlay?.quality?.commands?.test).toBeUndefined();
+    },
+  );
+
   test("AC-16 hydration propagates missing profile NaxError", async () => {
     await Bun.write(join(repo, ".nax/mono/packages/api/config.json"), JSON.stringify({ profile: "missing" }));
     const registry = createPackageRegistry(createConfigLoader(root()), repo);

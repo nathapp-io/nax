@@ -338,13 +338,8 @@ export function _clearRootConfigCache(): void {
   _rootConfigCache.clear();
 }
 
-/**
- * Read the per-package override at <repoRoot>/.nax/mono/<packageDir>/config.json.
- * Returns null when absent; otherwise deep-merge its named package profiles in
- * chain order over the overlay fields. The returned override never carries
- * `profile`. Consumers merge package-eligible fields and pin root-only keys.
- */
-export async function loadPackageOverride(repoRoot: string, packageDir: string): Promise<Partial<NaxConfig> | null> {
+/** Read package-declared fields and profile layers without flattening their merge order. */
+async function loadPackageOverrideData(repoRoot: string, packageDir: string) {
   const packageConfigPath = join(repoRoot, PROJECT_NAX_DIR, "mono", packageDir, "config.json");
   const override = await loadJsonFileStrict<Partial<NaxConfig> & { profile?: string }>(packageConfigPath, "config");
   if (!override) return null;
@@ -356,10 +351,36 @@ export async function loadPackageOverride(repoRoot: string, packageDir: string):
     logger: getLogger(),
     warnDedupe: createConfigWarnDedupe(),
   });
-  let merged: Record<string, unknown> = fields;
+  return { fields, layers };
+}
+
+function applyPackageProfileLayers(base: Record<string, unknown>, layers: Record<string, unknown>[]) {
+  let merged = base;
   for (const layer of layers) merged = deepMergeConfig<Record<string, unknown>>(merged, layer);
   const { profile: _profile, ...resolvedFields } = merged;
-  return resolvedFields as Partial<NaxConfig>;
+  return resolvedFields;
+}
+
+/** Package-declared values only, including profile commands, for command provenance. */
+export async function loadPackageOverride(repoRoot: string, packageDir: string): Promise<Partial<NaxConfig> | null> {
+  const data = await loadPackageOverrideData(repoRoot, packageDir);
+  return data ? (applyPackageProfileLayers(data.fields, data.layers) as Partial<NaxConfig>) : null;
+}
+
+/** Resolve profiles AFTER the root/package merge; keep declared values separate from inherited ones. */
+export async function loadPackageOverrideWithConfig(options: {
+  repoRoot: string;
+  packageDir: string;
+  rootConfig: NaxConfig;
+}): Promise<{ overlay: Partial<NaxConfig>; config: NaxConfig } | null> {
+  const { repoRoot, packageDir, rootConfig } = options;
+  const data = await loadPackageOverrideData(repoRoot, packageDir);
+  if (!data) return null;
+  const overlay = applyPackageProfileLayers(data.fields, data.layers) as Partial<NaxConfig>;
+  const base = mergePackageConfig(rootConfig, data.fields);
+  const resolved = applyPackageProfileLayers(base as unknown as Record<string, unknown>, data.layers);
+  // Retain the registry's package-mergeable whitelist. Root-only pinning happens in hydrate.
+  return { overlay, config: mergePackageConfig(rootConfig, resolved as Partial<NaxConfig>) };
 }
 
 /**
@@ -500,9 +521,7 @@ export async function loadConfigForWorkdir(
   });
   let rawMerged = envResolvedMerged;
   if (packageChain.length > 0) {
-    for (const layer of layers) {
-      rawMerged = deepMergeConfig<Record<string, unknown>>(rawMerged, layer);
-    }
+    rawMerged = applyPackageProfileLayers(rawMerged, layers);
     rawMerged.profile = packageChain.join("+");
     rawMerged.profileChain = packageChain;
   }

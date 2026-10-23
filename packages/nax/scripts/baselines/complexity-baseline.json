@@ -135,7 +135,6 @@
     "src/runtime/index.ts": { "createRuntime": 28 },
     "src/runtime/middleware/cost.ts": { "=>": 44, "=>#2": 25 },
     "src/runtime/middleware/idle-watchdog/index.ts": { "=>": 37 },
-    "src/runtime/packages.ts": { "hydrate": 21 },
     "src/runtime/session-run-hop.ts": { "=>": 57 },
     "src/tdd/verdict-reader.ts": { "isValidVerdict": 27 },
     "src/test-runners/conventions.ts": { "globToRegex": 22 },
