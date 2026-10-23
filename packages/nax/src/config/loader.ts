@@ -380,7 +380,11 @@ export async function loadPackageOverrideWithConfig(options: {
   const base = mergePackageConfig(rootConfig, data.fields);
   const resolved = applyPackageProfileLayers(base as unknown as Record<string, unknown>, data.layers);
   // Retain the registry's package-mergeable whitelist. Root-only pinning happens in hydrate.
-  return { overlay, config: mergePackageConfig(rootConfig, resolved as Partial<NaxConfig>) };
+  const config = mergePackageConfig(rootConfig, resolved as Partial<NaxConfig>);
+  // Bridge only package-declared commands: resolved includes inherited review commands,
+  // which must not masquerade as explicit overrides of profile quality commands.
+  config.review.commands = mergePackageConfig(rootConfig, overlay).review.commands;
+  return { overlay, config };
 }
 
 /**

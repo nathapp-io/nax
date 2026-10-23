@@ -129,6 +129,30 @@ describe("package profile registry integration", () => {
     },
   );
 
+  test.each([false, true])(
+    "profile quality commands bridge over inherited review commands (explicit: %s)",
+    async (explicit) => {
+      const config = makeNaxConfig({
+        review: { commands: { test: "root-test", lint: "root-lint" } },
+        quality: { commands: { lint: "root-quality-lint" } },
+      });
+      await Bun.write(
+        join(repo, "packages/api/.nax/profiles/package-checks.json"),
+        JSON.stringify({
+          quality: { commands: { test: "package-test" } },
+          ...(explicit ? { review: { commands: { test: "package-review-test" } } } : {}),
+        }),
+      );
+      const registry = createPackageRegistry(createConfigLoader(config), repo);
+      await registry.hydrate(["packages/api"]);
+      const view = registry.resolve("packages/api");
+      expect(view.config.review.commands.test).toBe(explicit ? "package-review-test" : "package-test");
+      expect(view.config.review.commands.lint).toBe("root-lint");
+      expect(view.overlay?.quality?.commands?.test).toBe("package-test");
+      expect(config.review.commands.test).toBe("root-test");
+    },
+  );
+
   test("AC-16 hydration propagates missing profile NaxError", async () => {
     await Bun.write(join(repo, ".nax/mono/packages/api/config.json"), JSON.stringify({ profile: "missing" }));
     const registry = createPackageRegistry(createConfigLoader(root()), repo);
