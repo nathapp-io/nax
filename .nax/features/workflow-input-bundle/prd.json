@@ -3,7 +3,7 @@
   "feature": "workflow-input-bundle",
   "branchName": "feat/workflow-input-bundle",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T09:16:45.618Z",
+  "updatedAt": "2026-10-23T09:25:40.806Z",
   "userStories": [
     {
       "id": "US-001",
@@ -353,14 +353,17 @@
         "bun"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A bounded text parser using the established strategy interface, result discriminator and finding converter, with clear malformed-block behavior."
+        "reasoning": "A bounded text parser using the established strategy interface, result discriminator and finding converter, with clear malformed-block behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/review/typecheck-parsing/parse.ts",
@@ -383,7 +386,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "11cea40c56e343950e7eed3f91b742a6d79f0021"
     },
     {
       "id": "US-006",
