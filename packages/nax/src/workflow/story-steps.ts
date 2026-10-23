@@ -95,6 +95,9 @@ export const turnLabel = (turn: ImplementTurn): string => {
   if (turn.kind === "answer") return "implementer answer";
   // US-001: a restart is its own run-log step, so a no-work story's restarts read distinctly from the first turn.
   if (turn.kind === "restart") return turn.fresh ? "implementer restart (fresh)" : "implementer restart";
+  // US-004: a continue or report turn is its own run-log step too, so a recovered interrupt reads distinctly.
+  if (turn.kind === "continue") return "implementer continue";
+  if (turn.kind === "report") return "implementer report";
   return `fix r${turn.round}`;
 };
 

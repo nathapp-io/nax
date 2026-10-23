@@ -5,10 +5,15 @@ import { resolveWorkflowConfig } from "@/config";
 import type { WorkflowImplementInput } from "@/operations";
 import { workflowImplementOp } from "@/operations";
 import type { UserStory } from "@/prd";
-import { buildWorkflowImplementPrompt, buildWorkflowRestartPrompt } from "@/prompts";
+import {
+  buildWorkflowContinuePrompt,
+  buildWorkflowImplementPrompt,
+  buildWorkflowReportPrompt,
+  buildWorkflowRestartPrompt,
+} from "@/prompts";
 import type { SessionDescriptor } from "@/session/types";
 import { fixModelFor } from "@/workflow/fix-round";
-import { runImplementerTurn } from "@/workflow/implement";
+import { autoCommitTurnEdits, implementerModelFor, runImplementerTurn } from "@/workflow/implement";
 import { _workflowDeps } from "@/workflow/step-context";
 import type { ImplementerReply } from "@/workflow/types";
 
@@ -384,5 +389,216 @@ describe("runImplementerTurn restart turns (US-001)", () => {
     );
     expect(seen[0]?.timeoutMs).toBe(workflow.timeouts.implementMs);
     expect(seen[0]?.timeoutMs).toBe(111);
+  });
+});
+
+/** US-004: the real limits and the default half-budget, so a continue timeout is a fraction of the limit it hit. */
+const interruptWorkflow: WorkflowConfig = {
+  ...workflow,
+  interruptRetry: { maxAttempts: 1, budgetMultiplier: 0.5 },
+  timeouts: { ...workflow.timeouts, implementMs: 3_600_000, fixMs: 1_000_001, reportMs: 600_000 },
+};
+
+const continueTurn = {
+  kind: "continue",
+  limit: "implement",
+  stepUps: 0,
+  attempt: 1,
+  maxAttempts: 1,
+} as const;
+
+const reportPath = "/r/report.md";
+
+describe("runImplementerTurn continue turns (US-004)", () => {
+  test.each([
+    ["implement", 1_800_000],
+    ["fix", 500_000],
+  ] as const)("continue turn over the %s limit is budgeted at budgetMultiplier of it", async (limit, expected) => {
+    const seen: WorkflowImplementInput[] = [];
+    fakeImplement(doneReply, seen);
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    await runImplementerTurn(makeStepContext({ workflow: interruptWorkflow }), {
+      kind: "continue",
+      limit,
+      stepUps: 0,
+      attempt: 1,
+      maxAttempts: 1,
+    });
+    expect(seen[0]?.timeoutMs).toBe(expected);
+  });
+
+  test("continue turn keeps the warm session", async () => {
+    const order: string[] = [];
+    const seen: WorkflowImplementInput[] = [];
+    fakeImplement(() => {
+      order.push("call");
+      return doneReply;
+    }, seen);
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    await runImplementerTurn(
+      makeStepContext({ workflow: interruptWorkflow, sessionManager: liveImplementerSessions(order) }),
+      continueTurn,
+    );
+    expect(order).toEqual(["call"]);
+  });
+
+  test("continue turn renders the continue prompt with the limit and the budget in minutes", async () => {
+    const seen: WorkflowImplementInput[] = [];
+    fakeImplement(doneReply, seen);
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    await runImplementerTurn(makeStepContext({ workflow: interruptWorkflow, reportPath }), {
+      ...continueTurn,
+      changedFiles: ["src/a.ts"],
+    });
+    expect(seen[0]?.prompt).toBe(
+      buildWorkflowContinuePrompt({
+        storyId: "US-001",
+        reportPath,
+        limitMinutes: 60,
+        budgetMinutes: 30,
+        attempt: 1,
+        maxAttempts: 1,
+        changedFiles: ["src/a.ts"],
+      }),
+    );
+  });
+
+  test("a continue budget under a minute is still reported as a minute", async () => {
+    const seen: WorkflowImplementInput[] = [];
+    fakeImplement(doneReply, seen);
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    const sc = makeStepContext({
+      workflow: { ...interruptWorkflow, timeouts: { ...interruptWorkflow.timeouts, implementMs: 60_000 } },
+      reportPath,
+    });
+    await runImplementerTurn(sc, continueTurn);
+    expect(seen[0]?.timeoutMs).toBe(30_000);
+    expect(seen[0]?.prompt).toBe(
+      buildWorkflowContinuePrompt({
+        storyId: "US-001",
+        reportPath,
+        limitMinutes: 1,
+        budgetMinutes: 1,
+        attempt: 1,
+        maxAttempts: 1,
+      }),
+    );
+  });
+
+  test("a continue turn with no readable changed-file list says so", async () => {
+    const seen: WorkflowImplementInput[] = [];
+    fakeImplement(doneReply, seen);
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    await runImplementerTurn(makeStepContext({ workflow: interruptWorkflow, reportPath }), continueTurn);
+    expect(seen[0]?.prompt).toBe(
+      buildWorkflowContinuePrompt({
+        storyId: "US-001",
+        reportPath,
+        limitMinutes: 60,
+        budgetMinutes: 30,
+        attempt: 1,
+        maxAttempts: 1,
+      }),
+    );
+    expect(seen[0]?.prompt).toContain("could not be read");
+  });
+
+  test("a continue turn keeps its origin's step-up", () => {
+    const sc = makeStepContext({ story: routed("fast"), tierOrder: tiers.slice(0, 2) });
+    const stepped = implementerModelFor(sc, { ...continueTurn, stepUps: 1 });
+    expect(stepped).toBeDefined();
+    expect(stepped).toBe(
+      implementerModelFor(sc, { kind: "fix", round: 4, fresh: true, stepUps: 1, findings: [], uncommitted: [] }),
+    );
+  });
+
+  test("an interrupted continue turn does not auto-commit", async () => {
+    let committed = false;
+    fakeImplement({ ...doneReply, status: "DONE_WITH_CONCERNS", interrupted: true });
+    _workflowDeps.git = async () => ({ stdout: " M src/a.ts\n", exitCode: 0 });
+    _workflowDeps.autoCommitIfDirty = async () => {
+      committed = true;
+    };
+    const out = await runImplementerTurn(makeStepContext({ workflow: interruptWorkflow }), continueTurn);
+    expect(out.reply?.interrupted).toBe(true);
+    expect(out.autoCommitted).toBe(false);
+    expect(committed).toBe(false);
+  });
+});
+
+describe("runImplementerTurn report turns (US-004)", () => {
+  test("report turn runs at reportMs", async () => {
+    const seen: WorkflowImplementInput[] = [];
+    fakeImplement(doneReply, seen);
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    await runImplementerTurn(makeStepContext({ workflow: interruptWorkflow }), { kind: "report", stepUps: 0 });
+    expect(seen[0]?.timeoutMs).toBe(600_000);
+  });
+
+  test("report turn renders the report prompt on the warm session", async () => {
+    const order: string[] = [];
+    const seen: WorkflowImplementInput[] = [];
+    fakeImplement(() => {
+      order.push("call");
+      return doneReply;
+    }, seen);
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    await runImplementerTurn(
+      makeStepContext({ workflow: interruptWorkflow, reportPath, sessionManager: liveImplementerSessions(order) }),
+      { kind: "report", stepUps: 0 },
+    );
+    expect(seen[0]?.prompt).toBe(buildWorkflowReportPrompt({ storyId: "US-001", reportPath }));
+    expect(order).toEqual(["call"]);
+  });
+});
+
+describe("autoCommitTurnEdits (US-004)", () => {
+  test("a dirty tree is auto-committed for the story and resolves true", async () => {
+    const calls: unknown[][] = [];
+    _workflowDeps.git = async () => ({ stdout: " M src/a.ts\n", exitCode: 0 });
+    _workflowDeps.autoCommitIfDirty = async (...args) => {
+      calls.push(args);
+    };
+    expect(await autoCommitTurnEdits(makeStepContext({ projectDir: "/repo", dryRun: true }))).toBe(true);
+    expect(calls[0]).toEqual(["/repo", "workflow", "wf-implementer", "US-001", undefined, true]);
+  });
+
+  test("a clean tree resolves false without committing", async () => {
+    let committed = false;
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    _workflowDeps.autoCommitIfDirty = async () => {
+      committed = true;
+    };
+    expect(await autoCommitTurnEdits(makeStepContext())).toBe(false);
+    expect(committed).toBe(false);
+  });
+
+  test("an unreadable tree resolves false without committing", async () => {
+    let committed = false;
+    _workflowDeps.git = async () => ({ stdout: "", stderr: "fatal: not a git repository", exitCode: 128 });
+    _workflowDeps.autoCommitIfDirty = async () => {
+      committed = true;
+    };
+    expect(await autoCommitTurnEdits(makeStepContext())).toBe(false);
+    expect(committed).toBe(false);
+  });
+
+  test("a failing commit resolves false rather than failing the turn", async () => {
+    _workflowDeps.git = async () => ({ stdout: " M src/a.ts\n", exitCode: 0 });
+    _workflowDeps.autoCommitIfDirty = async () => {
+      throw new Error("commit failed");
+    };
+    expect(await autoCommitTurnEdits(makeStepContext())).toBe(false);
+  });
+});
+
+describe("runImplementerTurn completed turns (US-004 regression)", () => {
+  test("a completed implement turn still auto-commits its edits", async () => {
+    const seen: WorkflowImplementInput[] = [];
+    fakeImplement(doneReply, seen);
+    _workflowDeps.git = async () => ({ stdout: " M src/a.ts\n", exitCode: 0 });
+    _workflowDeps.autoCommitIfDirty = async () => {};
+    const out = await runImplementerTurn(makeStepContext({ workflow }), { kind: "implement" });
+    expect(out).toEqual({ reply: doneReply, autoCommitted: true });
   });
 });
