@@ -16,7 +16,13 @@ import {
   storyLoopFixtures,
   withDepsRestore,
 } from "@test/helpers";
-import { type ImplementOutcome, type ImplementTurn, runImplementerTurn } from "@/workflow/implement";
+import type { WorkflowAdvisor } from "@/workflow/advisor";
+import {
+  autoCommitTurnEdits,
+  type ImplementOutcome,
+  type ImplementTurn,
+  runImplementerTurn,
+} from "@/workflow/implement";
 import { newStoryRecord } from "@/workflow/result";
 import { _workflowDeps } from "@/workflow/step-context";
 import { runStoryLoop, type StoryLoopEnv, type StoryLoopSteps } from "@/workflow/story-loop";
@@ -232,5 +238,193 @@ describe("interrupt continue failure handling (US-006)", () => {
     await runStoryLoop(envWith(h));
     expect(continues(h.turns)).toHaveLength(1);
     expect(h.record().openFindings.map((finding) => finding.issue)).toContain("implementer session failed: boom");
+  });
+});
+
+/** US-007: the note the fallback writes when the spent tries leave a commit behind. */
+const AUTO_COMMITTED = "auto-committed the implementer's uncommitted edits";
+const AFTER_ONE = "stopped at the step limit after 1 continue attempt(s)";
+/** The concern `recordConcern` builds from the fallback reply, as the story reviewer receives it. */
+const COMMITTED_CONCERN = `DONE_WITH_CONCERNS: ${AFTER_ONE}; its uncommitted edits were auto-committed, and it may not have finished the story or written report.md`;
+const NOTHING_CONCERN = `DONE_WITH_CONCERNS: ${AFTER_ONE}; nothing was auto-committed, and it may not have finished the story or written report.md`;
+
+type AutoCommitDirty = NonNullable<StoryLoopSteps["autoCommitDirty"]>;
+
+interface OrderedOpts {
+  /** A fixed answer, the real seam, or absent for a caller that has not wired the step at all. */
+  readonly autoCommit?: boolean | AutoCommitDirty;
+  readonly steps?: Partial<StoryLoopSteps>;
+  readonly interrupt?: Partial<InterruptLimits>;
+  readonly advisor?: WorkflowAdvisor;
+}
+
+/**
+ * The shared harness plus the two things the fallback ACs read: `events`, turns, gates and the
+ * auto-commit interleaved in call order, and `seen`, the concerns each story review was handed.
+ */
+function orderedHarness(outcomes: ImplementOutcome[], over: OrderedOpts = {}) {
+  const events: string[] = [];
+  const seen: (readonly string[])[] = [];
+  const next = scripted(...outcomes);
+  const auto = over.autoCommit;
+  const autoCommitDirty: Partial<StoryLoopSteps> =
+    auto === undefined
+      ? {}
+      : {
+          autoCommitDirty: () => {
+            events.push("autoCommitDirty");
+            return typeof auto === "function" ? auto() : Promise.resolve(auto);
+          },
+        };
+  const h = makeStoryLoopHarness(
+    {
+      implement: (turn) => {
+        events.push(`turn:${turn.kind}`);
+        return next(turn);
+      },
+    },
+    {
+      advisor: over.advisor,
+      steps: {
+        gates: async () => {
+          events.push("gates");
+          return storyLoopFixtures.GREEN;
+        },
+        storyReview: async (concerns: readonly string[]) => {
+          seen.push([...concerns]);
+          const verdict: StoryReviewVerdict = storyLoopFixtures.PASS;
+          return { ran: true, verdict };
+        },
+        ...autoCommitDirty,
+        ...over.steps,
+      },
+    },
+  );
+  return { h, seen, events, env: envWith(h, over.interrupt) };
+}
+
+describe("interrupt fallback (US-007)", () => {
+  test("AC-1: the fallback auto-commits once, after the continue turn and before the gates", async () => {
+    const { env, events } = orderedHarness([interrupted], { autoCommit: true });
+    await runStoryLoop(env);
+    expect(events).toEqual(["turn:implement", "turn:continue", "autoCommitDirty", "gates"]);
+  });
+
+  test("AC-2: a committed fallback writes the auto-commit note exactly once", async () => {
+    const { h, env } = orderedHarness([interrupted], { autoCommit: true });
+    await runStoryLoop(env);
+    expect(h.ledger.filter((line) => line === AUTO_COMMITTED)).toHaveLength(1);
+  });
+
+  test("AC-3: the review is told the uncommitted edits were auto-committed", async () => {
+    const { seen, env } = orderedHarness([interrupted], { autoCommit: true });
+    await runStoryLoop(env);
+    expect(seen).toEqual([[COMMITTED_CONCERN]]);
+  });
+
+  test("AC-4: the ledger records the fallback as the interrupted implementer's concern", async () => {
+    const { h, env } = orderedHarness([interrupted], { autoCommit: true });
+    await runStoryLoop(env);
+    expect(h.ledger).toContain(`implementer (interrupted) ${COMMITTED_CONCERN}`);
+  });
+
+  test("AC-5: an uncommitted fallback says nothing was auto-committed", async () => {
+    const { seen, env } = orderedHarness([interrupted], { autoCommit: false });
+    await runStoryLoop(env);
+    expect(seen).toEqual([[NOTHING_CONCERN]]);
+  });
+
+  test("AC-6: an unwired auto-commit still records the nothing-was-committed concern, with no note", async () => {
+    const { h, seen, env } = orderedHarness([interrupted]);
+    await runStoryLoop(env);
+    expect(seen).toEqual([[NOTHING_CONCERN]]);
+    expect(h.ledger.filter((line) => line.includes(AUTO_COMMITTED))).toEqual([]);
+  });
+
+  test("AC-7: with no attempt allowed the fallback reports zero continue attempts", async () => {
+    const { seen, env } = orderedHarness([interrupted], { interrupt: { maxAttempts: 0 } });
+    await runStoryLoop(env);
+    expect(seen[0]?.[0]).toContain("after 0 continue attempt(s)");
+  });
+
+  test("AC-8: an interrupted answer turn still ends in the fallback concern", async () => {
+    const { h, seen, env } = orderedHarness([interrupted, needsContext, interrupted], {
+      autoCommit: false,
+      advisor: makeStoryLoopAdvisor({ answerQuestion: async () => "try X" }),
+    });
+    await runStoryLoop(env);
+    expect(h.turns.map((turn) => turn.kind)).toEqual(["implement", "continue", "answer"]);
+    expect(seen).toEqual([[NOTHING_CONCERN]]);
+  });
+
+  test("AC-9: a failed continue turn never reaches the fallback auto-commit", async () => {
+    const { h, events, env } = orderedHarness([interrupted, failed], { autoCommit: true });
+    await runStoryLoop(env);
+    expect(events).not.toContain("autoCommitDirty");
+    expect(h.record().openFindings.map((finding) => finding.issue)).toContain("implementer session failed: boom");
+  });
+
+  test("AC-10: the cost limit skips the continue, then falls back to the auto-commit", async () => {
+    const { h, events, env } = orderedHarness([interrupted], {
+      autoCommit: true,
+      steps: { costExceeded: () => true },
+    });
+    await runStoryLoop(env);
+    expect(h.turns).toEqual([{ kind: "implement" }]);
+    expect(events).toContain("autoCommitDirty");
+    const skipped = h.ledger.indexOf(COST_SKIP_60);
+    const committed = h.ledger.indexOf(AUTO_COMMITTED);
+    expect(skipped).toBeGreaterThan(-1);
+    expect(committed).toBeGreaterThan(skipped);
+  });
+});
+
+describe("interrupt fallback auto-commit failures (US-007)", () => {
+  withDepsRestore(_workflowDeps, ["git", "autoCommitIfDirty"]);
+
+  /** The real seam, wired as the loop's `autoCommitDirty` step: it resolves, never throws. */
+  const realSeam = () => {
+    const sc = makeStepContext();
+    return () => autoCommitTurnEdits(sc);
+  };
+
+  test("AC-11: an empty dirty list emits no auto-commit note", async () => {
+    let commits = 0;
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    _workflowDeps.autoCommitIfDirty = async () => {
+      commits += 1;
+    };
+    const { h, seen, env } = orderedHarness([interrupted], { autoCommit: realSeam() });
+    await runStoryLoop(env);
+    expect(commits).toBe(0);
+    expect(h.ledger.filter((line) => line.includes(AUTO_COMMITTED))).toEqual([]);
+    expect(seen[0]?.[0]).toContain("nothing was auto-committed");
+  });
+
+  test("AC-12: a tree that cannot be read leaves the edits uncommitted", async () => {
+    let commits = 0;
+    _workflowDeps.git = async () => ({ stdout: "", stderr: "fatal: not a git repository", exitCode: 128 });
+    _workflowDeps.autoCommitIfDirty = async () => {
+      commits += 1;
+    };
+    const { h, seen, env } = orderedHarness([interrupted], { autoCommit: realSeam() });
+    await runStoryLoop(env);
+    expect(commits).toBe(0);
+    expect(h.ledger.filter((line) => line.includes(AUTO_COMMITTED))).toEqual([]);
+    expect(seen[0]?.[0]).toContain("nothing was auto-committed");
+  });
+
+  test("AC-13: a commit that throws leaves the edits uncommitted", async () => {
+    let commits = 0;
+    _workflowDeps.git = async () => ({ stdout: " M src/a.ts\n", exitCode: 0 });
+    _workflowDeps.autoCommitIfDirty = async () => {
+      commits += 1;
+      throw new Error("commit failed");
+    };
+    const { h, seen, env } = orderedHarness([interrupted], { autoCommit: realSeam() });
+    await runStoryLoop(env);
+    expect(commits).toBe(1);
+    expect(h.ledger.filter((line) => line.includes(AUTO_COMMITTED))).toEqual([]);
+    expect(seen[0]?.[0]).toContain("nothing was auto-committed");
   });
 });

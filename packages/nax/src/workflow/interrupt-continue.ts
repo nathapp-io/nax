@@ -10,7 +10,11 @@
  * labelled turn runner lives in `story-steps.ts`, which imports this module (the `runNoWorkLadder`
  * pattern). A recovered interrupt is a ledger note only: no concern and no `(interrupted)` line.
  *
- * Spec: docs/specs/SPEC-workflow-interrupt-continue.md § US-006.
+ * US-007: a story whose tries ran out falls back — it commits the implementer's uncommitted edits
+ * best-effort and hands back a reply whose concern says so, so the reviewer sees unfinished work
+ * instead of a bare step-limit notice.
+ *
+ * Spec: docs/specs/SPEC-workflow-interrupt-continue.md § US-006, § US-007.
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { WORKFLOW_DEFAULTS } from "@/config";
@@ -69,6 +73,36 @@ function costSkipNote(limitMinutes: number): string {
   return `implementer interrupted at the step limit (${limitMinutes} min): continue skipped, cost limit reached`;
 }
 
+/** The US-007 note: the fallback committed what the interrupted turn left behind. */
+const AUTO_COMMITTED_NOTE = "auto-committed the implementer's uncommitted edits";
+
+/**
+ * What the story reviewer is told when the tries are spent (US-007). Worded by whether the edits got
+ * committed, because those two states need different follow-up from whoever reads the story next.
+ */
+function fallbackConcern(used: number, committed: boolean): string {
+  const edits = committed ? "its uncommitted edits were auto-committed" : "nothing was auto-committed";
+  return `stopped at the step limit after ${used} continue attempt(s); ${edits}, and it may not have finished the story or written report.md`;
+}
+
+/**
+ * US-007: the fallback once the continue attempts are exhausted or cost-skipped. It commits the
+ * implementer's uncommitted edits best-effort and replaces the reply's concern with what actually
+ * happened, so the reviewer is not told a bare "step time limit reached" while the work sits on disk
+ * and `report.md` may not exist. The reply is rebuilt, never mutated: the outcome handed in is the
+ * caller's object and a fixture may be shared between tests.
+ */
+async function fallbackOutcome(env: StoryLoopEnv, outcome: ImplementOutcome, used: number): Promise<ImplementOutcome> {
+  // An unwired step reads as "nothing committed", and the real seam (`autoCommitTurnEdits`) resolves
+  // `false` itself on a read or commit failure — so the fallback never fails a story over a commit.
+  const step = env.steps.autoCommitDirty;
+  const committed = step === undefined ? false : await step();
+  if (committed) await env.sink.ledger(ledgerText.note(AUTO_COMMITTED_NOTE));
+  const reply = outcome.reply;
+  if (reply === undefined) return outcome;
+  return { ...outcome, reply: { ...reply, concerns: fallbackConcern(used, committed) } };
+}
+
 /**
  * The files the continue prompt lists, so the warm session knows what it already did. Fail-open by
  * design: an absent step or a git failure reads as `undefined`, and the prompt tells the agent to
@@ -111,6 +145,11 @@ async function continueTurnFor(env: StoryLoopEnv, input: ContinueTurnInput): Pro
  * Continues an interrupted turn while the allowance lasts. Each attempt is skipped once the cost
  * limit is reached, and the first outcome that is not an interrupt — a reply or a failure — is
  * returned for `absorbTurn` to absorb exactly as it absorbs any other turn today.
+ *
+ * US-007: when the outcome is still interrupted after the loop, the fallback commits the
+ * implementer's uncommitted edits best-effort and hands back a reply whose concern says what
+ * happened, so the story reviewer learns the work may be unfinished rather than only that a limit
+ * was hit. `fallback: true` also tells US-008's report check to spend no report turn on this story.
  */
 export async function continueAfterInterrupt(
   env: StoryLoopEnv,
@@ -132,7 +171,8 @@ export async function continueAfterInterrupt(
     await env.sink.ledger(ledgerText.note(continuingNote(limitMinutes, attempts, limits.maxAttempts)));
     current = await runTurn(await continueTurnFor(env, { origin, attempt: attempts, maxAttempts: limits.maxAttempts }));
   }
-  return { outcome: current, used: attempts, fallback: isInterrupted(current) };
+  if (!isInterrupted(current)) return { outcome: current, used: attempts, fallback: false };
+  return { outcome: await fallbackOutcome(env, current, attempts), used: attempts, fallback: true };
 }
 
 /**

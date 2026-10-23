@@ -308,11 +308,18 @@ describe("no-work ladder (US-002)", () => {
     expect(answers(h.turns)).toEqual([{ kind: "answer", text: "try X", stepUps: 1, limit: "implement" }]);
   });
 
-  test("AC-21: an interrupted restart ends the ladder and the gates run on the concern", async () => {
+  test("AC-21 (US-007 AC-14…AC-16): an interrupted restart continues once and the gates run on the fallback concern", async () => {
     const h = harness({ outcomes: [noWorkTurn, interruptedTurn], work: [false, true] });
     await runStoryLoop(h.env);
     expect(restarts(h.turns)).toEqual([WARM_RESTART]);
-    expect(h.events.indexOf("gates")).toBeGreaterThan(h.events.indexOf("turn:restart"));
-    expect(h.reviews.at(-1)).toContain("DONE_WITH_CONCERNS: step time limit reached");
+    // AC-14: the harness repeats `interruptedTurn`, so exactly one continue follows the warm restart.
+    expect(h.turns.filter((turn) => turn.kind === "continue")).toHaveLength(1);
+    expect(h.events.indexOf("turn:continue")).toBeGreaterThan(h.events.indexOf("turn:restart"));
+    // AC-15: the gates run after that continue.
+    expect(h.events.indexOf("gates")).toBeGreaterThan(h.events.indexOf("turn:continue"));
+    // AC-16: the fallback concern replaces the raw step-limit one the reply carried.
+    const concern = h.reviews.at(-1)?.[0] ?? "";
+    expect(concern).toContain("stopped at the step limit after 1 continue attempt(s)");
+    expect(concern).not.toContain("DONE_WITH_CONCERNS: step time limit reached");
   });
 });
