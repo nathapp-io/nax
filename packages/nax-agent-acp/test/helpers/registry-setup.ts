@@ -5,7 +5,7 @@ import type { OpenSessionRequest } from "#src/server/open-session";
 import type { ServerOptions } from "#src/server/options";
 import { createSessionRegistry, type ReloadedOptions } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
-import { createSessionStorage } from "#src/server/storage";
+import { createSessionStorage, type SessionStorage } from "#src/server/storage";
 import { type FakeAgentSession, fakeAgentSession, type Script, turnEnd } from "#test/helpers/fake-agent-session";
 import { ALL_FEATURES, fakePort } from "#test/helpers/fake-client-port";
 import { recordingLogger } from "#test/helpers/recording-logger";
@@ -39,6 +39,11 @@ export interface RegistrySetupExtra {
   readonly failOpens?: readonly number[];
   /** Every openSession call waits for this first. */
   readonly openGate?: Promise<void>;
+  /**
+   * The 1-based openSession call from which `openGate` applies, so a test can
+   * create a session and then gate only a switch's open. Unset: every call.
+   */
+  readonly openGateFrom?: number;
   readonly failWriteMeta?: boolean;
   readonly failUpdates?: boolean;
   /** Scripts for each opened session's turns; default: two short replies. */
@@ -55,6 +60,7 @@ export function setupRegistry(dir: string, options: ServerOptions = OPTIONS, ext
   const port = fakePort({ features: ALL_FEATURES, ...(extra.failUpdates === true ? { failUpdates: true } : {}) });
   const { logger, lines } = recordingLogger();
   let next = 0;
+  let releaseCalls = 0;
   const base = createSessionStorage({
     dir,
     pid: 1000,
@@ -62,20 +68,31 @@ export function setupRegistry(dir: string, options: ServerOptions = OPTIONS, ext
     logger,
     isAlive: extra.isAlive ?? (() => false),
   });
-  const storage =
-    extra.failWriteMeta === true
+  const storage: SessionStorage = {
+    ...base,
+    ...(extra.failWriteMeta === true
       ? {
-          ...base,
           writeMeta: async () => {
             throw new Error("disk full");
           },
         }
-      : base;
+      : {}),
+    // Counted here, not at the storage: every lock-release invocation after the
+    // switch settled is a second cleanup owner.
+    acquireLock: async (sessionId) => {
+      const release = await base.acquireLock(sessionId);
+      return async () => {
+        releaseCalls += 1;
+        await release();
+      };
+    },
+  };
   const registry = createSessionRegistry({
     options,
     openSession: async (request) => {
       opened.push(request);
-      if (extra.openGate !== undefined) await extra.openGate;
+      // Unset openGateFrom means every call, so existing tests keep their behaviour.
+      if (extra.openGate !== undefined && opened.length >= (extra.openGateFrom ?? 1)) await extra.openGate;
       if (extra.failOpens?.includes(opened.length) === true) throw new Error(`open ${opened.length} failed`);
       const fake = fakeAgentSession(request.sessionId, extra.scripts ?? [said("hi"), said("again")], {
         ...(extra.lastTurn !== undefined ? { lastTurn: extra.lastTurn } : {}),
@@ -99,5 +116,17 @@ export function setupRegistry(dir: string, options: ServerOptions = OPTIONS, ext
     ...(extra.ensureCredentials !== undefined ? { ensureCredentials: extra.ensureCredentials } : {}),
   });
   const input = (cwd = "/w", mcpServers: readonly unknown[] = []) => ({ cwd, mcpServers, port: () => port.port });
-  return { registry, input, port, lines, storage, transcripts, opened, fakes, dir };
+  return {
+    registry,
+    input,
+    port,
+    lines,
+    storage,
+    transcripts,
+    opened,
+    fakes,
+    dir,
+    /** Every lock-release invocation `acquireLock` handed out, counted at call time. */
+    releases: () => releaseCalls,
+  };
 }
