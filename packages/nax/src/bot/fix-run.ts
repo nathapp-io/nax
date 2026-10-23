@@ -253,7 +253,10 @@ async function initialFixState(env: BotFixEnv, outputDir: string, input: BotFixI
   try {
     await _botFixDeps.runPreRunSteps({ steps: env.checks.preRun, workdir: env.checkout.worktree });
     if (env.checkout.inPlace) {
-      const status = await _botFixDeps.runGit(["status", "--porcelain"], env.checkout.worktree);
+      const status = await _botFixDeps.runGit(
+        ["status", "--porcelain", "--untracked-files=all"],
+        env.checkout.worktree,
+      );
       if (status.exitCode !== 0 || status.stdout.trim())
         initial = {
           step: "report",

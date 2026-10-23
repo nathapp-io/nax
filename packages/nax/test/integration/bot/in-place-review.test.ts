@@ -76,7 +76,8 @@ describe("runBotReview in-place", () => {
     expect(isolated).not.toHaveBeenCalled();
     expect(review).not.toHaveBeenCalled();
   });
-  test("setup untracked file refuses before review and disposes (AC-9/10)", async () => {
+  test("setup untracked file refuses even when git hides untracked files (AC-9/10)", async () => {
+    expect((await botGit(["config", "status.showUntrackedFiles", "no"], repoRoot)).exitCode).toBe(0);
     _botReviewDeps.runPreRunSteps = async ({ workdir }) => {
       await Bun.write(join(workdir, "setup-generated.txt"), "untracked");
     };
@@ -84,6 +85,8 @@ describe("runBotReview in-place", () => {
     expect(result).toEqual({ outcome: "refused", reason: "in-place checkout not clean after setup" });
     expect(review).not.toHaveBeenCalled();
     expect(prepared.dispose).toHaveBeenCalledTimes(1);
-    expect((await botGit(["status", "--porcelain"], repoRoot)).stdout).toContain("?? setup-generated.txt");
+    expect((await botGit(["status", "--porcelain", "--untracked-files=all"], repoRoot)).stdout).toContain(
+      "?? setup-generated.txt",
+    );
   });
 });

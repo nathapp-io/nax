@@ -127,7 +127,8 @@ describe("runBotFix in-place", () => {
     expect(await git(["symbolic-ref", "--short", "HEAD"])).toBe("feat/x");
   });
 
-  test("refuses untracked setup output before starting session (AC-9–11)", async () => {
+  test("refuses untracked setup output even when git hides untracked files (AC-9–11)", async () => {
+    await git(["config", "status.showUntrackedFiles", "no"]);
     _botFixDeps.runPreRunSteps = async ({ workdir }) => {
       await Bun.write(join(workdir, "generated.txt"), "untracked");
     };
@@ -135,7 +136,7 @@ describe("runBotFix in-place", () => {
     expect(result.outcome).toBe("setup-failed");
     expect(result).toMatchObject({ setupFailed: "in-place checkout not clean after setup" });
     expect(session).not.toHaveBeenCalled();
-    expect(await git(["status", "--porcelain"])).toContain("?? generated.txt");
+    expect(await git(["status", "--porcelain", "--untracked-files=all"])).toContain("?? generated.txt");
   });
 
   test("pushes ledger and fix commits without detaching the real branch (AC-16/17)", async () => {

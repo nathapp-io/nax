@@ -200,7 +200,18 @@ async function reviewEnvironment(
   });
   const settledIds = new Set(findings.settled.map(({ threadId }) => threadId));
   const confirmedIds = new Set(findings.confirmed.map(({ threadId }) => threadId));
-  const postEarlier = items.earlier.filter(({ id }) => !settledIds.has(id));
+  const activeConfirmedIds = new Set(
+    findings.confirmed.filter(({ fixClosed }) => !fixClosed).map(({ threadId }) => threadId),
+  );
+  // Triage omits resolved threads, but a later confirmation can restore their fix work.
+  const postEarlier = [
+    ...new Map(
+      [
+        ...items.earlier.filter(({ id }) => !settledIds.has(id)),
+        ...ownFindingThreads.filter(({ id }) => activeConfirmedIds.has(id)),
+      ].map((thread) => [thread.id, thread]),
+    ).values(),
+  ];
   const { reviewedIndex, settled, ...recorded } = await readReviewRulings(
     {
       ref,
@@ -309,7 +320,7 @@ async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRu
 }
 
 async function checkoutClean(workdir: string): Promise<boolean> {
-  const result = await _botReviewDeps.runGit(["status", "--porcelain"], workdir);
+  const result = await _botReviewDeps.runGit(["status", "--porcelain", "--untracked-files=all"], workdir);
   if (result.exitCode !== 0) {
     throw new NaxError("[bot] Cannot check in-place checkout after setup", "BOT_CHECKOUT_FAILED", {
       stage: "bot",

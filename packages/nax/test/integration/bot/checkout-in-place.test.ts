@@ -18,6 +18,43 @@ async function git(repo: string, argv: string[]): Promise<string> {
   return out.trim();
 }
 describe("prepareInPlaceCheckout", () => {
+  test("refuses untracked files even when status.showUntrackedFiles is no", async () => {
+    await withTempDir(async (repo) => {
+      await git(repo, ["init", "-b", "feat/x"]);
+      await git(repo, ["config", "user.email", "test@example.com"]);
+      await git(repo, ["config", "user.name", "Test"]);
+      await Bun.write(join(repo, "tracked.txt"), "base");
+      await git(repo, ["add", "."]);
+      await git(repo, ["commit", "-m", "base"]);
+      await git(repo, ["config", "status.showUntrackedFiles", "no"]);
+      await Bun.write(join(repo, "notes.txt"), "user notes");
+      expect(await git(repo, ["status", "--porcelain"])).toBe("");
+      await expect(
+        prepareInPlaceCheckout({
+          repoRoot: repo,
+          ref: { forge: "github", host: "github.com", repo: "o/r", number: 42 },
+          info: {
+            number: 42,
+            title: "PR",
+            body: "",
+            url: "",
+            state: "open",
+            draft: false,
+            author: { login: "a" },
+            baseRef: "main",
+            headRef: "feat/x",
+            headSha: "head",
+            crossRepo: false,
+          },
+          suffix: "real",
+        }),
+      ).rejects.toMatchObject({
+        code: "BOT_IN_PLACE_REFUSED",
+        message: expect.stringContaining("working tree is not clean"),
+      });
+      expect(await Bun.file(join(repo, "notes.txt")).text()).toBe("user notes");
+    });
+  });
   test.each(["PR head", "ledger commit", "reverted source commit"])(
     "AC-19/F1: real checkout safety with %s",
     async (localHistory) => {

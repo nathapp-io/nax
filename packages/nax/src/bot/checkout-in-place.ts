@@ -46,7 +46,8 @@ async function checkLocalCheckout(repoRoot: string, info: PrInfo): Promise<void>
   if (info.crossRepo) refused("PR head is in another repository");
   const branch = await runGit(["symbolic-ref", "--short", "HEAD"], repoRoot);
   if (branch.exitCode !== 0 || branch.stdout.trim() !== info.headRef) refused(`check out ${info.headRef} first`);
-  if ((await git(["status", "--porcelain"], repoRoot)).trim()) refused("working tree is not clean");
+  if ((await git(["status", "--porcelain", "--untracked-files=all"], repoRoot)).trim())
+    refused("working tree is not clean");
 }
 
 function isFeatureLedger(repoRoot: string, path: string): boolean {

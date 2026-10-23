@@ -101,7 +101,7 @@ describe("prepareInPlaceCheckout", () => {
       { exitCode: 1, stdout: "", stderr: "detached" },
       "check out feat/x first",
     ],
-    ["AC-11 untracked", "status --porcelain", ok("?? notes.txt\n"), "working tree is not clean"],
+    ["AC-11 untracked", "status --porcelain --untracked-files=all", ok("?? notes.txt\n"), "working tree is not clean"],
   ] as const)("%s refuses before fetch", async (label, command, reply, message) => {
     replies.set(command, reply);
     await expect(
