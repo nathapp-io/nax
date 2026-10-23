@@ -195,6 +195,8 @@ describe("the concerns a CI repair reply raises (US-005)", () => {
     expect(out.patch.ciRepairFindings).toBeUndefined();
     // The key is stated, so the record's findings are cleared rather than left behind.
     expect("ciRepairFindings" in out.patch).toBe(true);
+    // The concerns ride along with them rather than replacing either.
+    expect(out.patch.ciRepairConcerns).toEqual([`r1: ${CONCERNS}`]);
   });
 });
 
@@ -260,5 +262,8 @@ describe("the checks a decided CI repair targets (US-005)", () => {
     expect("ciRepairTargets" in out.patch).toBe(false);
     // The premise: the read happened, and named no failed check.
     expect(h.reads).toHaveLength(1);
+    // The control: the same seams with one failed check do patch a target.
+    const control = publishHarness({ checks: [PLAIN] });
+    expect((await publishStep(control.env, control.env.record)).patch.ciRepairTargets).toEqual([{ name: "e2e" }]);
   });
 });
