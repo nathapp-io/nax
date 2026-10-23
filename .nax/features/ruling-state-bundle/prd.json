@@ -3,7 +3,7 @@
   "feature": "ruling-state-bundle",
   "branchName": "feat/ruling-state-bundle",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T04:07:16.346Z",
+  "updatedAt": "2026-10-23T04:20:22.721Z",
   "userStories": [
     {
       "id": "US-001",
@@ -95,14 +95,17 @@
         "rulings"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Standard additive data projection and optional-field forwarding through existing review layers; consumes already-authorized item outcomes without changing authorization decisions."
+        "reasoning": "Standard additive data projection and optional-field forwarding through existing review layers; consumes already-authorized item outcomes without changing authorization decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/review-rulings.ts",
@@ -118,7 +121,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "99eeb637a2c62bff3816e70455282c17e7dfe7d5"
     },
     {
       "id": "US-003",
