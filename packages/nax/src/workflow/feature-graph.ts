@@ -108,6 +108,8 @@ export const FEATURE_GRAPH: StepGraph<WorkflowFeatureRecord, FeatureEnv, Feature
         "ciRepairFindings",
         // US-005: the checks a decided repair targets.
         "ciRepairTargets",
+        // US-006: the checks still red once the repair allowance is spent.
+        "ciRemaining",
         "endedAt",
       ],
       exits: ["ci-repair"],

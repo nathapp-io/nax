@@ -15,7 +15,7 @@ import type { FeatureEnv, FeatureSteps } from "./feature-machine";
 import { costExceeded, featureStep, limitsOf, NO_MIRROR, roundLabel } from "./feature-step-helpers";
 import type { PublishOutcome } from "./finalize";
 import { ledgerText } from "./ledger";
-import type { CiCheckRef, WorkflowFeatureRecord, WorkflowFindingDraft } from "./types";
+import type { CiCheckRef, CiRemainingCheck, WorkflowFeatureRecord, WorkflowFindingDraft } from "./types";
 
 /**
  * US-004: a check's issue names the step that failed and the steps the job skipped after it, so the
@@ -132,6 +132,72 @@ export async function ciRepairDecision(
   head: string | undefined,
 ): Promise<readonly WorkflowFindingDraft[] | undefined> {
   return (await ciRepairPlan(env, rec, out, head))?.findings;
+}
+
+/** US-006: whether a repair round ran and the allowance is used up. */
+function repairRoundsSpent(env: FeatureEnv, rounds: number): boolean {
+  return rounds >= 1 && rounds >= (limitsOf(env).ciRepairRounds ?? 0);
+}
+
+/** US-006: a check is only "still failing" when a target names it *and* the step it failed at. */
+function sameTarget(target: CiCheckRef, check: FailedCheck): boolean {
+  return target.name === check.name && target.failedStep === check.failedStep;
+}
+
+/** US-006: one check as the record keeps it — the name, the step when known, and the verdict. */
+function ciRemainingCheckOf(targets: readonly CiCheckRef[], check: FailedCheck): CiRemainingCheck {
+  return {
+    name: check.name,
+    ...(check.failedStep ? { failedStep: check.failedStep } : {}),
+    newFailure: !targets.some((target) => sameTarget(target, check)),
+  };
+}
+
+/** US-006: `<name>[ at step "<step>"] (new failure|still failing)`, checks joined by `; `. */
+function stillFailingNote(rounds: number, remaining: readonly CiRemainingCheck[]): string {
+  const checks = remaining.map((check) => {
+    const step = check.failedStep ? ` at step "${check.failedStep}"` : "";
+    return `${check.name}${step} (${check.newFailure ? "new failure" : "still failing"})`;
+  });
+  return `CI still failing after ${rounds} repair round(s): ${checks.join("; ")}`;
+}
+
+/**
+ * US-006: the checks still failing after the last repair round, recorded rather than repaired.
+ *
+ * The repair's allowance is spent — its tokens are booked with the branch fix — so there is nothing
+ * left to schedule and no agent to run: the read only says what is still red, for the ledger,
+ * `result.json` and the end-of-run summary. It reads through `env.steps.readCiFailures` directly,
+ * never `readCiFailuresForRepair`, so it can never write the `(repairing)` note of a repair that is
+ * not happening. This condition and `ciRepairPlan`'s (a round left) never both hold, so a publish
+ * reads the failed checks at most once.
+ *
+ * A thrown read is one ledger note and no record; an empty list is neither a record nor a note.
+ */
+export async function ciRemainingAfterRepair(
+  env: FeatureEnv,
+  rec: WorkflowFeatureRecord,
+  out: PublishOutcome,
+  head: string | undefined,
+): Promise<readonly CiRemainingCheck[] | undefined> {
+  const reader = env.steps.readCiFailures;
+  if (!reader) return undefined;
+  if (out.outcome !== "draft" || out.ci !== "failed") return undefined;
+  if (!out.url || !head) return undefined;
+  const rounds = rec.ciRepairRounds ?? 0;
+  if (!repairRoundsSpent(env, rounds)) return undefined;
+  let checks: readonly FailedCheck[];
+  try {
+    checks = await reader({ url: out.url, head });
+  } catch (err) {
+    await env.sink.ledger(ledgerText.note(`CI logs unavailable: ${errorMessage(err)}`), NO_MIRROR);
+    return undefined;
+  }
+  if (checks.length === 0) return undefined;
+  const targets = rec.ciRepairTargets ?? [];
+  const remaining = checks.map((check) => ciRemainingCheckOf(targets, check));
+  await env.sink.ledger(ledgerText.note(stillFailingNote(rounds, remaining)), NO_MIRROR);
+  return remaining;
 }
 
 /**

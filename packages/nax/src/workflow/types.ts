@@ -202,6 +202,13 @@ export interface CiCheckRef {
   readonly failedStep?: string;
 }
 
+/**
+ * US-006: one CI check still failing after the last repair round, classified against
+ * `ciRepairTargets`. `newFailure` is false only when a target has the same name *and* the same
+ * failed step, so a check that moved to a new step is a new failure, not a repeated one.
+ */
+export type CiRemainingCheck = CiCheckRef & { readonly newFailure: boolean };
+
 /** The feature workflow's persisted state (spec §7, §10, P4-R1). `step` is the NEXT step to run. */
 export interface WorkflowFeatureRecord {
   readonly step: FeatureStep;
@@ -284,6 +291,13 @@ export interface WorkflowFeatureRecord {
    * presence alone means a repair's reply admitted something it could not check.
    */
   readonly ciRepairConcerns?: readonly string[];
+  /**
+   * US-006: the failed CI checks still red after the last repair round, each classified against
+   * `ciRepairTargets`. Written by `publish` from a read that runs no agent; absent when no round
+   * ran, when the rounds are not spent, when the check is green, when the read threw, and when it
+   * named no failed check.
+   */
+  readonly ciRemaining?: readonly CiRemainingCheck[];
   readonly ci?: FeatureCiState;
   readonly outcome?: FeatureOutcome;
   readonly reasons: readonly string[];

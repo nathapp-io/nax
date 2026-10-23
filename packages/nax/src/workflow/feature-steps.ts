@@ -12,7 +12,7 @@ import type { StepResult } from "@/step-graph";
 import { describeUnread, featurePassed } from "./approval";
 import { dropKnownRestatements, nextBranchFixRound } from "./branch-fix-rounds";
 import type { BranchReviewFacts } from "./branch-review";
-import { ciRepairPlan } from "./ci-repair-steps";
+import { ciRemainingAfterRepair, ciRepairPlan } from "./ci-repair-steps";
 import type { FeatureEnv } from "./feature-machine";
 import { costExceeded, featureStep, limitsOf, NO_MIRROR, roundLabel } from "./feature-step-helpers";
 import { ledgerCannotVerify } from "./gate-timing";
@@ -438,6 +438,10 @@ export async function publishStep(
   // separate node, and a run that may not repair keeps the draft it has. US-005: the one read also
   // names the checks the repair targets, so result.json says what the repaired round was for.
   const ciPlan = await ciRepairPlan(env, rec, out, head);
+  // US-006: a repair whose rounds are spent still has to say what is red — its tokens went with the
+  // branch fix, so the ledger would otherwise read only `CI failed`. The read runs no agent, so it
+  // happens whatever the cost state; this and `ciRepairPlan` never both read.
+  const ciRemaining = await ciRemainingAfterRepair(env, rec, out, head);
   // US-005: collected after publish, whatever it did — a local-only or draft feature still needs
   // its flagged rulings named at run end.
   return {
@@ -462,6 +466,8 @@ export async function publishStep(
       ...(flagged.length > 0 || rec.flaggedDecisions !== undefined ? { flaggedDecisions: flagged } : {}),
       // US-006: the repair targets, only when there is a repair to make.
       ...(ciPlan ? { ciRepairFindings: ciPlan.findings, ciRepairTargets: ciPlan.targets } : {}),
+      // US-006: the checks still red once the repair allowance is spent, and nothing to repair.
+      ...(ciRemaining ? { ciRemaining } : {}),
       endedAt: new Date().toISOString(),
     },
     ...(ciPlan ? { exit: "ci-repair" } : {}),

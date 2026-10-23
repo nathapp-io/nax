@@ -215,11 +215,13 @@ describe("the CI repair decision after publish (US-006)", () => {
     expect(await readsOf({ checks: [E2E], limits: LIMITS })).toBe(1);
   });
 
-  test("AC-13: spent repair rounds read no CI logs", async () => {
+  test("AC-13: spent repair rounds decide no repair, and read the checks once for the record", async () => {
     const h = harness({ checks: [E2E], limits: LIMITS, record: { ciRepairRounds: 1 } });
-    await publishStep(h.env, h.env.record);
-    expect(h.reads).toEqual([]);
-    // The control: the same seams with a round to spare do read.
+    const out = await publishStep(h.env, h.env.record);
+    expect(out.exit).not.toBe("ci-repair");
+    // US-006: the one read is the remaining-CI read, not a repair decision.
+    expect(h.reads).toHaveLength(1);
+    // The control: the same seams with a round to spare read the checks once, and do repair.
     expect(await readsOf({ checks: [E2E], limits: LIMITS })).toBe(1);
   });
 

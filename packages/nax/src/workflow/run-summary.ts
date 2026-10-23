@@ -65,6 +65,17 @@ function flaggedOf(
   return { ids: [...ids], hint: flaggedHint(feature) };
 }
 
+/**
+ * US-006: the checks still red after the last repair round, each `<name>` or
+ * `<name> at step "<step>"`. An empty list says nothing the missing section does not, and a record
+ * written before the field has none at all.
+ */
+function ciRemainingOf(rec: WorkflowFeatureRecord | undefined): readonly string[] | undefined {
+  const checks = rec?.ciRemaining;
+  if (!checks || checks.length === 0) return undefined;
+  return checks.map((check) => (check.failedStep ? `${check.name} at step "${check.failedStep}"` : check.name));
+}
+
 export function buildWorkflowRunSummary(
   result: WorkflowResultFile | null,
   timing: WorkflowTiming,
@@ -74,6 +85,7 @@ export function buildWorkflowRunSummary(
   const rec = result.featureWorkflow;
   const finalGates = rec?.finalGates ?? rec?.repoGates;
   const flagged = flaggedOf(rec, feature);
+  const ciRemaining = ciRemainingOf(rec);
   return {
     ...timing,
     roles: rolesOf(result),
@@ -91,6 +103,8 @@ export function buildWorkflowRunSummary(
     // US-005: what the CI repair's replies admitted they could not check. An empty list says
     // nothing the missing field does not, and a record written before the field has none at all.
     ...(rec?.ciRepairConcerns && rec.ciRepairConcerns.length > 0 ? { ciRepairConcerns: rec.ciRepairConcerns } : {}),
+    // US-006: what the run's last repair round left red, so a human knows where to look.
+    ...(ciRemaining ? { ciRemaining } : {}),
     ...(rec?.outcome
       ? { publish: { outcome: rec.outcome, ...(rec.url ? { url: rec.url } : {}), reasons: rec.reasons } }
       : {}),

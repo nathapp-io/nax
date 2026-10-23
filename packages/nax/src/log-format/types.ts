@@ -97,6 +97,12 @@ export interface WorkflowSummaryView {
    * could not check.
    */
   ciRepairConcerns?: readonly string[] | undefined;
+  /**
+   * US-006: the CI checks still red after the last repair round, each `<name>` or
+   * `<name> at step "<step>"`. Absent when the CI recovered, when no round ran, or when the read
+   * named no failed check.
+   */
+  ciRemaining?: readonly string[] | undefined;
   publish?: { outcome: string; url?: string; reasons: readonly string[] } | undefined;
   /** US-005: the rulings flagged for a human, plus the command that lists them. Absent when none. */
   flagged?: { ids: readonly string[]; hint: string } | undefined;

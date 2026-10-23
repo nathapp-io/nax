@@ -78,6 +78,8 @@ const expectedProduces: Record<NodeId, string[]> = {
     "ciRepairFindings",
     // US-005: the checks the decided repair targets.
     "ciRepairTargets",
+    // US-006: the checks still red once the repair allowance is spent.
+    "ciRemaining",
     "endedAt",
   ],
 };
