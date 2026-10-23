@@ -104,6 +104,20 @@ paths:
 
 In a monorepo with `apps/api`, `apps/web`, `apps/cli`, this scopes the rule so a story under `apps/web` doesn't carry API-specific guidance.
 
+`paths:` matches **package directories only**, not files inside a package. For example,
+`paths: ["apps/api/src/**/*"]` never matches the package directory `apps/api`.
+Move that file glob into `appliesTo:` and keep package scoping in `paths:`:
+
+```yaml
+---
+paths: ["apps/api/**"]
+appliesTo: ["apps/api/src/**/*"]
+---
+```
+
+`nax rules lint` warns with `PATHS_MATCH_NO_PACKAGE` for each `paths:` glob that
+matches no discovered workspace package directory. These warnings do not fail lint.
+
 Single-package repos: skip `paths:` entirely. It's a no-op.
 
 ### When to use `appliesTo:`
