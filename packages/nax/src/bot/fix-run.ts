@@ -72,6 +72,7 @@ export const _botFixDeps = {
 };
 
 export interface BotFixInput {
+  readonly inPlace?: boolean;
   readonly readyOnly?: boolean;
   readonly fresh?: boolean;
   readonly costLimitUsd?: number;

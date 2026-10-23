@@ -17,6 +17,7 @@ import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import { buildPrStepContext } from "../workflow/pr-step-context";
 import { loadBotConfig } from "./base-config";
 import { preparePrCheckout } from "./checkout";
+import { prepareInPlaceCheckout } from "./checkout-in-place";
 import { resolveBotChecks } from "./checks";
 import { recordFindingRulings } from "./finding-rulings";
 import { readHeadCi } from "./gate-baseline";
@@ -64,6 +65,7 @@ export const _botReviewDeps = {
   readLinkedIssues,
   readHeadCi,
   preparePrCheckout,
+  prepareInPlaceCheckout,
   loadBotConfig,
   createRuntime,
   setupBotRuntime,

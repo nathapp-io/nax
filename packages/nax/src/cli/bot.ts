@@ -43,6 +43,7 @@ export interface BotReviewOptions {
   readonly profile?: string[];
   readonly model?: string;
   readonly decisions?: string;
+  readonly inPlace?: boolean;
 }
 
 export interface BotFixOptions extends Omit<BotReviewOptions, "decisions"> {
@@ -71,6 +72,7 @@ async function withBotInput(
       profiles: parseProfileList(options.profile),
       model,
       interactive: deps.isInteractive(),
+      ...(options.inPlace === true && { inPlace: true }),
     });
   } catch (err) {
     deps.logErr(errorMessage(err));
@@ -158,7 +160,8 @@ function withBotOptions(command: Command): Command {
       (value: string, previous: string[]) => [...previous, value],
       [],
     )
-    .option("--model <value>", "Model tier or agent:model");
+    .option("--model <value>", "Model tier or agent:model")
+    .option("--in-place", "Use the current clean PR branch (trusted PRs only)");
 }
 
 /** Register both actions on the existing bot group; help never runs orchestration. */

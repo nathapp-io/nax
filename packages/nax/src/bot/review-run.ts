@@ -44,6 +44,7 @@ export type BotReviewResult =
   | { readonly outcome: "not-reviewed" | "refused"; readonly reason: string };
 
 export interface BotReviewInput {
+  readonly inPlace?: boolean;
   readonly costLimitUsd?: number;
   readonly decisions?: readonly BotDecision[];
   readonly dir: string;
@@ -177,11 +178,11 @@ async function prepareReviewChecks(
 async function reviewEnvironment(
   input: BotReviewInput,
   prepared: PreparedReview,
-  context: { ctx: PrStepContext; stateDir: string; cost: BotCostEnv },
+  context: { ctx: PrStepContext; stateDir: string; cost: BotCostEnv; checks: Omit<ReviewPreparation, "ci"> },
 ): Promise<ReviewEnv> {
   const { repoRoot, ref, info, checkout, staticMode } = prepared;
   const { ctx, stateDir } = context;
-  const checks = await prepareReviewChecks(prepared, ctx);
+  const { checks } = context;
   const [items, issues, ci] = await Promise.all([
     triage(ref, repoRoot),
     _botReviewDeps.readLinkedIssues(ref, info.body, _botReviewDeps.forge, repoRoot),
@@ -307,6 +308,18 @@ async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRu
   };
 }
 
+async function checkoutClean(workdir: string): Promise<boolean> {
+  const result = await _botReviewDeps.runGit(["status", "--porcelain"], workdir);
+  if (result.exitCode !== 0) {
+    throw new NaxError("[bot] Cannot check in-place checkout after setup", "BOT_CHECKOUT_FAILED", {
+      stage: "bot",
+      workdir,
+      stderr: result.stderr,
+    });
+  }
+  return result.stdout.trim() === "";
+}
+
 async function reviewCheckout(input: BotReviewInput, prepared: PreparedReview): Promise<BotReviewResult> {
   const deps = _botReviewDeps;
   const { repoRoot, ref, info, checkout, staticMode } = prepared;
@@ -327,7 +340,12 @@ async function reviewCheckout(input: BotReviewInput, prepared: PreparedReview): 
       agentName: resolveDefaultAgent(config),
       pr: { forge: ref.forge, number: ref.number, base: checkout.mergeBase, head: info.headSha },
     });
+    const checks = await prepareReviewChecks(prepared, context.ctx);
+    if (checkout.inPlace && !(await checkoutClean(checkout.worktree))) {
+      return { outcome: "refused", reason: "in-place checkout not clean after setup" };
+    }
     const env = await reviewEnvironment(input, prepared, {
+      checks,
       ctx: context.ctx,
       stateDir,
       cost: botCostEnv(config, runtime, input.costLimitUsd),
@@ -356,13 +374,11 @@ export async function runBotReview(input: BotReviewInput): Promise<BotReviewResu
   const info = await deps.readPrInfo(ref, deps.forge, repoRoot);
   if (info.state !== "open") return { outcome: "refused", reason: `PR #${ref.number} is ${info.state}` };
   const trust = await deps.classifyPrTrust(ref, info, deps.forge, repoRoot);
-  const checkout = await deps.preparePrCheckout({
-    repoRoot,
-    ref,
-    info,
-    suffix: deps.randomSuffix(),
-    pinBaseFiles: true,
-  });
+  if (input.inPlace && !trust.trusted) return { outcome: "refused", reason: "--in-place needs a trusted PR" };
+  const checkoutInput = { repoRoot, ref, info, suffix: deps.randomSuffix() };
+  const checkout = input.inPlace
+    ? await deps.prepareInPlaceCheckout(checkoutInput)
+    : await deps.preparePrCheckout({ ...checkoutInput, pinBaseFiles: true });
   try {
     return await reviewCheckout(input, { repoRoot, ref, info, checkout, staticMode: !trust.trusted });
   } finally {
