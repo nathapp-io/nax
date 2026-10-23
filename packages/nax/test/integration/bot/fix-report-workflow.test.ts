@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeBotFixDraftEnv, makeNaxConfig } from "@test/helpers";
 import { _fixReportDeps, readyStep } from "@/bot/fix-report";
 import type { BotFixState } from "@/bot/fix-steps";
@@ -40,6 +40,9 @@ const evidence = withNaxBotMarker(
   "w-evidence",
 );
 const comment: PrComment = { id: "7", kind: "comment", author: "bot", body: evidence, createdAt: "" };
+beforeEach(() => {
+  spyOn(_fixReportDeps, "waitForPrHead").mockResolvedValue(true);
+});
 afterEach(() => mock.restore());
 
 function setup(outcome: RecordRulingsOutcome = complete, comments: PrComment[] = []) {

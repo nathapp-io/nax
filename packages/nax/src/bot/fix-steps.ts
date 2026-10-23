@@ -22,7 +22,17 @@ import { botModel } from "./models";
 import { fixProtectedPaths } from "./path-policy";
 import type { BotReviewArtifact } from "./post";
 
-export type BotFixStep = "fix" | "repair" | "check" | "gates" | "push" | "reply" | "ready" | "report" | "done";
+export type BotFixStep =
+  | "fix"
+  | "repair"
+  | "check"
+  | "gates"
+  | "ledger"
+  | "push"
+  | "reply"
+  | "ready"
+  | "report"
+  | "done";
 
 export interface BotFixState extends GraphState<BotFixStep> {
   readonly readyOnly?: boolean;
@@ -56,6 +66,7 @@ export interface BotFixState extends GraphState<BotFixStep> {
   readonly baselineFailing?: readonly string[];
   /** CI's verdict on the exact PR head, read once when a gate failed. */
   readonly ciOutcome?: CiWaitOutcome;
+  readonly ledgerCarried?: boolean;
   readonly pushedSha?: string;
   readonly replied?: number;
   readonly resolved?: number;
@@ -269,5 +280,5 @@ export async function pushStep(env: BotFixEnv, _state: BotFixState): Promise<Ste
   if (result.timedOut) return { patch: { outcome: "push-unknown" }, exit: "rejected" };
   if (result.exitCode !== 0) return { patch: { outcome: "push-rejected" }, exit: "rejected" };
   const pushedSha = await _fixStepsDeps.readHead(env.checkout.worktree);
-  return { patch: { pushedSha, outcome: "pushed" }, exit: "pushed" };
+  return { patch: { pushedSha, outcome: _state.outcome === "nothing" ? "nothing" : "pushed" }, exit: "pushed" };
 }

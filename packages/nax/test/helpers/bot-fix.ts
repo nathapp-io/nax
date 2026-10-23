@@ -1,4 +1,4 @@
-import type { AgreedItem, BotFixEnv } from "@/bot";
+import type { AgreedItem, BotFixEnv, BotFixState } from "@/bot";
 import { resolveWorkflowConfig } from "@/config";
 import { makeMockCallContext } from "./call-context";
 import { makeNaxConfig } from "./mock-nax-config";
@@ -71,6 +71,10 @@ export function makeBotFixDraftEnv(overrides: { body?: string; url?: string } = 
 /** Shared orchestration boundary defaults; tests override only scenario-specific reads and nodes. */
 export function makeBotFixDeps(env: BotFixEnv, runtime: ReturnType<typeof import("./runtime").makeTestRuntime>) {
   return {
+    ledgerStep: async (_env: BotFixEnv, state: BotFixState) => ({
+      patch: {},
+      exit: state.outcome === "nothing" ? "skip" : "push",
+    }),
     gitToplevel: async () => env.repoRoot,
     ensureProjectTrusted: async () => {},
     resolvePrRef: async () => env.ref,

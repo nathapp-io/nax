@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeBotFixDraftEnv, makeBotFixEnv, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import {
   _fixReportDeps,
@@ -49,6 +49,9 @@ function thread(author: string, key: string): PrThread {
     comments: [{ ...comment, kind: "thread", author, body: withNaxBotMarker("finding", key) }],
   };
 }
+beforeEach(() => {
+  spyOn(_fixReportDeps, "waitForPrHead").mockResolvedValue(true);
+});
 afterEach(() => mock.restore());
 
 describe("replyStep", () => {

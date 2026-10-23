@@ -32,10 +32,7 @@ export {
 export {
   _fixCycleDeps,
   type BotFixCycleResult,
-  PR_HEAD_POLL_MS,
-  PR_HEAD_WAIT_MS,
   runBotFixCycle,
-  waitForPrHead,
 } from "./fix-cycle";
 export { _fixInputDeps, checkPushAccess, loadLatestReview, toFixFindings } from "./fix-input";
 export { _fixReportDeps, readyStep, renderFixSummary, replyStep, reportStep } from "./fix-report";
@@ -67,6 +64,7 @@ export {
   type PostReviewOutcome,
   postPrReview,
 } from "./post";
+export { _prHeadWaitDeps, PR_HEAD_POLL_MS, PR_HEAD_WAIT_MS, waitForPrHead } from "./pr-head-wait";
 export { breakLinks, commentKey, earlierKey, findingKey, safeText, threadKey } from "./render";
 export {
   type ReviewSummaryInput,

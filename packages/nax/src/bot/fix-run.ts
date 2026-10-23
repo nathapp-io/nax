@@ -26,6 +26,7 @@ import {
   pushStep,
 } from "./fix-steps";
 import { botGit } from "./git";
+import { ledgerStep } from "./ledger-carry";
 import { type BotLog, openBotLog } from "./log";
 import { repairStep } from "./repair-step";
 import { _botReviewDeps } from "./review-run";
@@ -67,6 +68,7 @@ export const _botFixDeps = {
   repairStep,
   checkStep,
   gatesStep,
+  ledgerStep,
   pushStep,
   replyStep,
   readyStep,
@@ -111,7 +113,7 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
       produces: ["agreedCount", "outcome", "fixFailure", "fixDirty", "fixSha"],
       exits: ["nothing", "ran"],
       transitions: [
-        { on: "nothing", to: "ready" },
+        { on: "nothing", to: "ledger" },
         { on: "ran", to: "check" },
       ],
       run: (env, state) => _botFixDeps.fixStep(env, state),
@@ -155,8 +157,18 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
         "repairSkippedForCost",
       ],
       exits: ["no-gates", "failed", "passed", "dirty", "repair"],
-      transitions: [{ on: "passed", to: "push" }, { on: "repair", to: "repair" }, { to: "report" }],
+      transitions: [{ on: "passed", to: "ledger" }, { on: "repair", to: "repair" }, { to: "report" }],
       run: (env, state) => _botFixDeps.gatesStep(env, state),
+    },
+    ledger: {
+      kind: "git",
+      produces: ["ledgerCarried"],
+      exits: ["push", "skip"],
+      transitions: [
+        { on: "push", to: "push" },
+        { on: "skip", to: "ready" },
+      ],
+      run: (env, state) => _botFixDeps.ledgerStep(env, state),
     },
     push: {
       kind: "git",

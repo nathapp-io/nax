@@ -106,8 +106,7 @@ async function carry(env: BotFixEnv, feature: string): Promise<boolean> {
 }
 
 export async function ledgerStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {
-  // US-009 declares this produced field on graph state; keep this step standalone until then.
-  const patch: Partial<BotFixState> & { ledgerCarried?: true } = {};
+  const patch: { ledgerCarried?: true } = {};
   if (!env.checkout.inPlace) {
     try {
       const feature = ledgerFeature(env);

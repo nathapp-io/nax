@@ -59,6 +59,14 @@ beforeEach(() => {
 afterEach(() => mock.restore());
 
 describe("botFixCommand cycle", () => {
+  test("US-009 AC-17 prints ledger-only push summary for PR 12", async () => {
+    result = { fix: { ...pushed, outcome: "nothing", pushedSha: "abcdef1234" } };
+    const program = new Command().exitOverride();
+    registerBotCommand(program, deps());
+    await program.parseAsync(["bot", "fix", "12"], { from: "user" });
+    expect(stdout).toEqual(["nax bot fix: PR #12 — nothing to fix; pushed advisor ledger abcdef1"]);
+    expect(exits).toEqual([0]);
+  });
   test("AC-1 defaults to rereview and saved-fix reuse, including direct callers", async () => {
     await botFixCommand({ pr: "42", dir: "/repo" }, deps());
     expect(cycle).toHaveBeenCalledWith({
@@ -128,7 +136,10 @@ describe("botFixCommand cycle", () => {
   test.each(["nothing", "pushed"] as const)(
     "AC-11/12/13 preserves %s summary and success despite chained failure",
     async (outcome) => {
-      result = { fix: { ...pushed, outcome }, review: { outcome: "not-reviewed", reason: "blocked" } };
+      result = {
+        fix: { ...pushed, outcome, ...(outcome === "nothing" ? { pushedSha: undefined } : {}) },
+        review: { outcome: "not-reviewed", reason: "blocked" },
+      };
       await run();
       expect(stdout).toEqual([`nax bot fix: PR #42 — ${outcome === "nothing" ? "nothing to fix" : "pushed abcdef1"}`]);
       expect(exits).toEqual([0]);

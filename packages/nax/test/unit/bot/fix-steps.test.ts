@@ -30,6 +30,11 @@ describe("checkStep", () => {
 });
 
 describe("pushStep", () => {
+  test.each(["nothing", undefined] as const)("ledger push preserves outcome %s (US-009 AC-1–3)", async (outcome) => {
+    const result = await pushStep(makeBotFixEnv(), { ...state, outcome });
+    expect(result.patch).toMatchObject({ outcome: outcome ?? "pushed", pushedSha: "fixed" });
+    expect(result.exit).toBe("pushed");
+  });
   test.each(["other", "feat/x", "detached"])("guards in-place branch %s (AC-12–15)", async (branch) => {
     const base = makeBotFixEnv();
     const env = { ...base, info: { ...base.info, headRef: "feat/x" }, checkout: { ...base.checkout, inPlace: true } };

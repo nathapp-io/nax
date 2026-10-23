@@ -120,13 +120,17 @@ export async function botFixCommand(options: BotFixOptions, deps: BotCliDeps = _
         pr: input.pr,
       });
     }
-    const summary =
-      result.outcome === "nothing" ? "nothing to fix" : `pushed ${result.pushedSha?.slice(0, SHORT_SHA_LENGTH)}`;
+    const summary = fixSummary(result.outcome, result.pushedSha);
     deps.log(`nax bot fix: PR #${input.pr} — ${summary}`);
     printFixCycle({ cycle, pr: input.pr, deps });
     if (result.logPath !== undefined) deps.log(`nax bot fix: log ${result.logPath}`);
     return 0;
   });
+}
+
+function fixSummary(outcome: "nothing" | "pushed", sha?: string): string {
+  if (outcome === "pushed") return `pushed ${sha?.slice(0, SHORT_SHA_LENGTH)}`;
+  return sha ? `nothing to fix; pushed advisor ledger ${sha.slice(0, SHORT_SHA_LENGTH)}` : "nothing to fix";
 }
 
 function printFixCycle({ cycle, pr, deps }: { cycle: BotFixCycleResult; pr: number; deps: BotCliDeps }): void {
