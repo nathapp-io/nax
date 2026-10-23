@@ -1,0 +1,534 @@
+{
+  "project": "nax-monorepo",
+  "feature": "workflow-interrupt-continue",
+  "branchName": "feat/workflow-interrupt-continue",
+  "createdAt": "2026-10-23T00:00:00.000Z",
+  "updatedAt": "2026-10-23T12:10:44.823Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Node glob lists files under a literal .nax prefix",
+      "description": "**Goal** — Make Node async and sync agent Glob discover visible files under an explicitly named leading .nax directory without exposing other hidden paths.\n\n**Motivation** — nax's own artifacts (briefs, reports, the ledger) live under `.nax/`, so an agent can Read them but never find them.\n\n**Approach** — Glob `.nax` exemption (both runtimes), Node portion verbatim:\n- Rule: strip leading `./` segments from the pattern. If its first `/`-separated segment is exactly `.nax` (no glob metacharacter, no escape), a result whose **first** result-relative segment is `.nax` is not hidden for that segment. Every other dot segment in the result, including deeper ones under `.nax/`, is still hidden, and a pattern whose first segment is anything else (`**`, `.nax-wt`, `{.nax,src}`) hides `.nax/` as today.\n- `nodeGlob` / `nodeGlobSync` (`nax-agent/src/runtime/node-glob.ts`): `scanOptions`' `exclude` and `filePath`'s result filter both apply the rule, so Node descends into `.nax` only for an exempt pattern.\n- The shared `GLOB_CASES` contract (`packages/test-kit/src/cases/glob-cases.ts`) is unchanged and still passes: none of its patterns starts with `.nax`.\n\n**Scope** — In: packages/nax-agent/src/runtime/node-glob.ts and new packages/nax-agent/test/unit/runtime/node-glob-nax-dir.test.ts. Out: Bun runtime changes belong to US-002; workflow orchestration/config/prompts belong to US-003–US-009. Glob exposure of any dot path other than a literal leading `.nax` segment: ruling D21 stands for `.git`, `.env`, `.nax-wt` and every other hidden path. ACP agents' own Glob tools, which nax does not implement. Adding the `.nax` exemption cases to the shared `GLOB_CASES` contract in `packages/test-kit`: each runtime pins them in its own test file.\n\n**Interface** — Existing runtime entry points remain unchanged: `nodeGlob` / `nodeGlobSync`; `scanOptions` and `filePath` implement the exemption. All ACs use a temporary root holding `.nax/features/f/workflow/r1/US-001/report.md`, `.nax/.hidden/x.md`, `.nax-wt/a.ts`, `.git/HEAD` and `src/a.ts`. Reuse the shared fixture/testing conventions; preserve relative leading ./ output and absolute output behavior.",
+      "acceptanceCriteria": [
+        "AC-1 [unit] nodeRuntime.glob(\".nax/features/**/report.md\", { cwd: root, absolute: false }) yields exactly .nax/features/f/workflow/r1/US-001/report.md.",
+        "AC-2 [unit] nodeRuntime.globSync(\".nax/features/**/report.md\", { cwd: root, absolute: false }) yields exactly .nax/features/f/workflow/r1/US-001/report.md.",
+        "AC-3 [unit] nodeRuntime.glob(\"./.nax/features/**/report.md\", { cwd: root, absolute: false }) yields exactly ./.nax/features/f/workflow/r1/US-001/report.md.",
+        "AC-4 [unit] nodeRuntime.glob(\".nax/**/*\", { cwd: root, absolute: false }) yields the report path and not .nax/.hidden/x.md, because a dot segment below .nax stays hidden.",
+        "AC-5 [unit] nodeRuntime.glob(\"**/*\", { cwd: root, absolute: false }) yields exactly src/a.ts, so a wildcard first segment never reaches .nax/.",
+        "AC-6 [unit] nodeRuntime.glob(\"**/report.md\", { cwd: root, absolute: false }) yields nothing.",
+        "AC-7 [unit] nodeRuntime.glob(\".nax-wt/**/*\", { cwd: root, absolute: false }) yields nothing.",
+        "AC-8 [unit] nodeRuntime.glob(\"{.nax,src}/**/*\", { cwd: root, absolute: false }) yields exactly src/a.ts.",
+        "AC-9 [unit] nodeRuntime.glob(\".git/*\", { cwd: root, absolute: false }) yields nothing.",
+        "AC-10 [unit] nodeRuntime.glob(\".nax/features/**/report.md\", { cwd: root, absolute: true }) yields exactly the absolute path of the report under root."
+      ],
+      "tags": [
+        "feature",
+        "glob",
+        "runtime"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two existing hidden-result filters must agree with Node scan pruning; focused TDD covers this bounded listing change without altering read permissions or session management."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/runtime/node-glob.ts",
+        "packages/nax-agent/test/unit/runtime/node-glob.test.ts",
+        "packages/test-kit/src/cases/glob-cases.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/runtime/node-glob-nax-dir.test.ts"
+      ],
+      "suggestedCriteria": [
+        "nodeRuntime.glob(\"././.nax/features/**/report.md\", { cwd: root, absolute: false }) yields the report path with both leading ./ segments preserved.",
+        "nodeRuntime.glob with an escaped first segment spelling .nax yields no hidden report paths.",
+        "nodeRuntime.globSync(\".nax/**/*\", { cwd: root, absolute: false }) excludes .nax/.hidden/x.md."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Bun glob lists files under a literal .nax prefix",
+      "description": "**Goal** — Make Bun async and sync agent Glob discover visible files under an explicitly named leading .nax directory while retaining D21 for every other hidden segment.\n\n**Motivation** — nax's own artifacts (briefs, reports, the ledger) live under `.nax/`, so an agent can Read them but never find them.\n\n**Approach** — Glob `.nax` exemption (both runtimes), Bun portion verbatim:\n- Rule: strip leading `./` segments from the pattern. If its first `/`-separated segment is exactly `.nax` (no glob metacharacter, no escape), a result whose **first** result-relative segment is `.nax` is not hidden for that segment. Every other dot segment in the result, including deeper ones under `.nax/`, is still hidden, and a pattern whose first segment is anything else (`**`, `.nax-wt`, `{.nax,src}`) hides `.nax/` as today.\n- `bunAgentRuntime.glob` / `globSync` (`nax/src/agent-runtime/bun-runtime.ts`): the result filter applies the rule. `dot: false` stays; Bun matches a literal dot segment on its own.\n- The shared `GLOB_CASES` contract (`packages/test-kit/src/cases/glob-cases.ts`) is unchanged and still passes: none of its patterns starts with `.nax`.\n\n**Scope** — In: packages/nax/src/agent-runtime/bun-runtime.ts and new packages/nax/test/unit/agent-runtime/bun-runtime-nax-dir.test.ts. Out: Node runtime changes belong to US-001; workflow changes belong to US-003–US-009. Glob exposure of any dot path other than a literal leading `.nax` segment: ruling D21 stands for `.git`, `.env`, `.nax-wt` and every other hidden path. ACP agents' own Glob tools, which nax does not implement. Adding the `.nax` exemption cases to the shared `GLOB_CASES` contract in `packages/test-kit`: each runtime pins them in its own test file.\n\n**Interface** — `bunAgentRuntime.glob` / `globSync` retain the AgentRuntime contract and existing scan options. Fixture for every AC: a temporary root holding `.nax/features/f/workflow/r1/US-001/report.md`, `.nax/.hidden/x.md`, `.nax-wt/a.ts`, `.git/HEAD` and `src/a.ts`. Keep leading ./ in yielded relative strings and inspect cwd-relative segments when absolute:true.",
+      "acceptanceCriteria": [
+        "AC-1 [unit] bunAgentRuntime.glob(\".nax/features/**/report.md\", { cwd: root, absolute: false }) yields exactly .nax/features/f/workflow/r1/US-001/report.md.",
+        "AC-2 [unit] bunAgentRuntime.globSync(\".nax/features/**/report.md\", { cwd: root, absolute: false }) yields exactly .nax/features/f/workflow/r1/US-001/report.md.",
+        "AC-3 [unit] bunAgentRuntime.glob(\"./.nax/features/**/report.md\", { cwd: root, absolute: false }) yields exactly ./.nax/features/f/workflow/r1/US-001/report.md.",
+        "AC-4 [unit] bunAgentRuntime.glob(\".nax/**/*\", { cwd: root, absolute: false }) yields the report path and not .nax/.hidden/x.md.",
+        "AC-5 [unit] bunAgentRuntime.glob(\"**/*\", { cwd: root, absolute: false }) yields exactly src/a.ts.",
+        "AC-6 [unit] bunAgentRuntime.glob(\".nax-wt/**/*\", { cwd: root, absolute: false }) yields nothing.",
+        "AC-7 [unit] bunAgentRuntime.glob(\"{.nax,src}/**/*\", { cwd: root, absolute: false }) yields exactly src/a.ts.",
+        "AC-8 [unit] bunAgentRuntime.glob(\".git/*\", { cwd: root, absolute: false }) yields nothing.",
+        "AC-9 [unit] bunAgentRuntime.glob(\".nax/features/**/report.md\", { cwd: root, absolute: true }) yields exactly the absolute path of the report under root."
+      ],
+      "tags": [
+        "feature",
+        "glob",
+        "runtime"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One runtime module changes only its async/sync result predicates while retaining Bun scan options; focused TDD is sufficient because permissions, symlink policy and sessions are unchanged."
+      },
+      "contextFiles": [
+        "packages/nax/src/agent-runtime/bun-runtime.ts",
+        "packages/nax/test/unit/agent-runtime/glob-runtime.test.ts",
+        "packages/test-kit/src/cases/glob-cases.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/agent-runtime/bun-runtime-nax-dir.test.ts"
+      ],
+      "suggestedCriteria": [
+        "bunAgentRuntime.glob(\"**/report.md\", { cwd: root, absolute: false }) yields nothing.",
+        "bunAgentRuntime.glob(\"././.nax/features/**/report.md\", { cwd: root, absolute: false }) yields the report path with both leading ./ segments preserved.",
+        "bunAgentRuntime.globSync(\".nax/**/*\", { cwd: root, absolute: false }) excludes .nax/.hidden/x.md."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Add interrupt retry configuration and continue/report prompts",
+      "description": "**Goal** — Define workflow interrupt/report budgets and the exact warm-session prompts consumed by later stories.\n\n**Motivation** — No nax code checks `report.md` before review; the story reviewer discovers its absence, which costs a spec fail and a fix round.\n\n**Approach** — Config (`src/config/schemas-workflow.ts`), verbatim:\n- `workflow.interruptRetry`: `{ maxAttempts: int >= 0, default 1; budgetMultiplier: number > 0 and <= 1, default 0.5 }`, a nested object with `.prefault({})`. `maxAttempts: 0` turns the continue off.\n- `workflow.timeouts.reportMs`: positive int, default `600_000` (10 minutes).\n- `WorkflowConfig` (`src/config/runtime-types-workflow.ts`) gains the matching fields; `FIELD_DESCRIPTIONS` (`src/cli/config-descriptions.ts`) gains `workflow.interruptRetry`, `workflow.interruptRetry.maxAttempts`, `workflow.interruptRetry.budgetMultiplier` and `workflow.timeouts.reportMs`. `docs/guides/workflow-mode.md` (config table plus a short \"Step limits\" paragraph) and `docs/guides/configuration.md` document them.\n\nPrompts (`src/prompts/builders/workflow-implementer-builder.ts`, exported through `src/prompts/index.ts`), verbatim:\n- `buildWorkflowContinuePrompt(input: { storyId: string; reportPath: string; limitMinutes: number; budgetMinutes: number; attempt: number; maxAttempts: number; changedFiles?: readonly string[] }): string`. Text, in order:\n  - `You were stopped at the <limitMinutes>-minute step limit before you finished story <storyId>. This is continue attempt <attempt> of <maxAttempts>; you have up to <budgetMinutes> minutes.`\n  - the changed files: `Files changed since the story base:` and one `- <path>` line each; or `No files have changed since the story base.` for `[]`; or `The changed-file list could not be read; check git status yourself.` when `changedFiles` is undefined;\n  - `Continue from where you stopped. Do not revert, delete or redo work that is already on disk.`\n  - `When you are done, commit your work, write <reportPath>, and end your reply with the json status block. If you cannot finish in this turn, commit what you have, write the report marking each unfinished acceptance criterion, and reply DONE_WITH_CONCERNS.`\n  - `WORKFLOW_REPLY_CONTRACT`, last.\n  It does not resend the brief: the warm session already holds it.\n- `buildWorkflowReportPrompt(input: { storyId: string; reportPath: string }): string`. Text: `Your report for story <storyId> is missing: <reportPath> does not exist. Write it now for the work you already did, with the sections the implement prompt listed: What was built, TDD evidence, Files changed, Decisions & assumptions. Report only evidence you captured; for an acceptance criterion whose failing run you did not capture, say so under Decisions & assumptions. Do not change any other file.` then `WORKFLOW_ARTIFACTS_RULE` and `WORKFLOW_REPLY_CONTRACT`, last.\n\n**Scope** — In: schema, WORKFLOW_DEFAULTS, runtime types, CLI descriptions, root guides, implementer builders and public prompts barrel. Out: turn execution belongs to US-004, real env wiring to US-005, retry/fallback orchestration to US-006/US-007, report checks to US-008, branch listing to US-009.\n\n**Interface** — Verbatim signatures:\n```typescript\nbuildWorkflowContinuePrompt(input: { storyId: string; reportPath: string; limitMinutes: number; budgetMinutes: number; attempt: number; maxAttempts: number; changedFiles?: readonly string[] }): string\nbuildWorkflowReportPrompt(input: { storyId: string; reportPath: string }): string\n```\n\nRegression anchor: packages/nax/test/unit/config/workflow-config.test.ts has a closed-world toEqual on parsed workflow defaults; add interruptRetry: { maxAttempts: 1, budgetMultiplier: 0.5 } and timeouts.reportMs: 600000, preserving the invariant that parse({}) yields every documented workflow default. Extend existing builder tests rather than inventing a new test-only story. Guide paths are repository-root relative even though the binding workdir is packages/nax.",
+      "acceptanceCriteria": [
+        "AC-1 [unit] NaxConfigSchema.parse({}) yields workflow.interruptRetry equal to { maxAttempts: 1, budgetMultiplier: 0.5 }.",
+        "AC-2 [unit] NaxConfigSchema.parse({}) yields workflow.timeouts.reportMs === 600000.",
+        "AC-3 [unit] NaxConfigSchema.safeParse({ workflow: { interruptRetry: { maxAttempts: 0 } } }) returns a result with success: true.",
+        "AC-4 [unit] NaxConfigSchema.safeParse({ workflow: { interruptRetry: { maxAttempts: -1 } } }) returns a result with success: false.",
+        "AC-5 [unit] NaxConfigSchema.safeParse({ workflow: { interruptRetry: { maxAttempts: 1.5 } } }) returns a result with success: false.",
+        "AC-6 [unit] NaxConfigSchema.safeParse({ workflow: { interruptRetry: { budgetMultiplier: 0 } } }) returns a result with success: false.",
+        "AC-7 [unit] NaxConfigSchema.safeParse({ workflow: { interruptRetry: { budgetMultiplier: 1.5 } } }) returns a result with success: false.",
+        "AC-8 [unit] NaxConfigSchema.safeParse({ workflow: { timeouts: { reportMs: 0 } } }) returns a result with success: false.",
+        "AC-9 [unit] buildWorkflowContinuePrompt({ storyId: \"US-005\", reportPath: \"/r/report.md\", limitMinutes: 60, budgetMinutes: 30, attempt: 1, maxAttempts: 1, changedFiles: [\"src/a.ts\"] }) starts with \"You were stopped at the 60-minute step limit before you finished story US-005. This is continue attempt 1 of 1; you have up to 30 minutes.\"",
+        "AC-10 [unit] With changedFiles: [\"src/a.ts\", \"test/a.test.ts\"], buildWorkflowContinuePrompt returns text holding \"Files changed since the story base:\" followed by the lines \"- src/a.ts\" and \"- test/a.test.ts\".",
+        "AC-11 [unit] With changedFiles: [], buildWorkflowContinuePrompt returns text holding \"No files have changed since the story base.\"",
+        "AC-12 [unit] With changedFiles undefined, buildWorkflowContinuePrompt returns text holding \"The changed-file list could not be read; check git status yourself.\"",
+        "AC-13 [unit] buildWorkflowContinuePrompt returns text holding \"Do not revert, delete or redo work that is already on disk.\"",
+        "AC-14 [unit] buildWorkflowContinuePrompt returns text holding \"When you are done, commit your work, write /r/report.md, and end your reply with the json status block.\"",
+        "AC-15 [unit] buildWorkflowContinuePrompt returns text whose last characters are the value of the exported WORKFLOW_REPLY_CONTRACT constant.",
+        "AC-16 [unit] buildWorkflowReportPrompt({ storyId: \"US-005\", reportPath: \"/r/report.md\" }) starts with \"Your report for story US-005 is missing: /r/report.md does not exist.\"",
+        "AC-17 [unit] buildWorkflowReportPrompt returns text holding \"Do not change any other file.\"",
+        "AC-18 [unit] buildWorkflowReportPrompt returns text whose last characters are the value of the exported WORKFLOW_REPLY_CONTRACT constant, and which holds the value of WORKFLOW_ARTIFACTS_RULE.",
+        "AC-19 [unit] buildWorkflowContinuePrompt and buildWorkflowReportPrompt are importable from src/prompts/index.ts and callable as functions returning strings.",
+        "Regression [unit] NaxConfigSchema.parse({}).workflow returns exactly { models: {}, maxFixRounds: 5, maxBranchFixRounds: 2, finalGateRepairRounds: 1, ciRepairRounds: 1, preflight: true, publish: 'pr', interruptRetry: { maxAttempts: 1, budgetMultiplier: 0.5 }, timeouts: { implementMs: 3600000, fixMs: 3600000, reportMs: 600000, reviewMs: 1800000, ciWaitMs: 1200000, ciPollMs: 30000 } }, preserving the existing complete-defaults invariant while adding the documented new defaults."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "config",
+        "prompts"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive schema/type/description and pure prompt-builder changes use established patterns, with no new orchestration abstraction."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-workflow.ts",
+        "packages/nax/src/config/runtime-types-workflow.ts",
+        "packages/nax/src/cli/config-descriptions.ts",
+        "packages/nax/src/prompts/builders/workflow-implementer-builder.ts",
+        "packages/nax/test/unit/config/workflow-config.test.ts"
+      ],
+      "suggestedCriteria": [
+        "NaxConfigSchema.parse({ workflow: { interruptRetry: { maxAttempts: 2 } } }) yields workflow.interruptRetry.budgetMultiplier equal to 0.5.",
+        "NaxConfigSchema.safeParse accepts workflow.interruptRetry.budgetMultiplier: 1.",
+        "buildWorkflowReportPrompt returns text instructing the implementer to report only evidence already captured and disclose uncaptured failing runs under Decisions & assumptions."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/config/workflow-config.test.ts",
+          "reason": "the closed-world `toEqual` on the parsed `workflow` defaults must gain `interruptRetry: { maxAttempts: 1, budgetMultiplier: 0.5 }` and `timeouts.reportMs: 600000`; the invariant is that `parse({})` yields every documented workflow default."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Execute continue and report turns on the warm implementer session",
+      "description": "**Goal** — Add continue/report turn kinds, budgets, model-preserving prompts and labels, and a best-effort auto-commit helper.\n\n**Motivation** — Nothing tells the still-warm session it was cut off.\n\n**Approach** — Turns (`src/workflow/implement.ts`), verbatim except the superseded zero-minute budget expression is resolved to the final at-least-one-minute ruling:\n- `ImplementTurn` gains two kinds:\n  - `{ kind: \"continue\"; limit: \"implement\" | \"fix\"; stepUps: number; attempt: number; maxAttempts: number; changedFiles?: readonly string[] }`;\n  - `{ kind: \"report\"; stepUps: number }`.\n- `runImplementerTurn` timeouts: `continue` = `Math.floor(limitMs * workflow.interruptRetry.budgetMultiplier)`, where `limitMs` is `timeouts.implementMs` for `limit: \"implement\"` and `timeouts.fixMs` for `limit: \"fix\"`; `report` = `timeouts.reportMs`. Neither kind closes the session first (`closesSessionFirst` stays false for them). Both run on `implementerModelFor(sc, turn)`, so a continue keeps its origin's step-up.\n- `promptFor`: `continue` renders `buildWorkflowContinuePrompt` with `limitMinutes = Math.max(1, Math.round(limitMs / 60_000))`, `budgetMinutes = Math.max(1, Math.round(continueTimeoutMs / 60_000))` and the turn's fields; `report` renders `buildWorkflowReportPrompt`.\n- An interrupted turn of any kind still returns without auto-committing (unchanged).\n- New export `autoCommitTurnEdits(sc: StepContext): Promise<boolean>`: reads the dirty list through the existing fail-open `dirtyAfterTurn` and, when it is non-empty, calls `_workflowDeps.autoCommitIfDirty(sc.projectDir, \"workflow\", \"wf-implementer\", sc.story.id, undefined, sc.dryRun)` and returns `true`; otherwise `false`. A throw from `autoCommitIfDirty` is caught, logged with `getSafeLogger()?.warn(\"workflow\", \"<message>\", { storyId: sc.story.id, error: errorMessage(err) })` (`check:logger-storyid` requires the `storyId`), and returns `false`. `runImplementerTurn`'s own auto-commit goes through it.\n- `budgetMinutes` in the continue prompt is at least 1 (`Math.max(1, Math.round(continueTimeoutMs / 60_000))`).\n\nLabel design, verbatim: `turnLabel` (`src/workflow/story-steps.ts`; `story-loop.ts` only re-exports it): `continue` -> `\"implementer continue\"`, `report` -> `\"implementer report\"`.\n\n**Scope** — In: implement.ts union, prompt/timeout dispatch, model/session behavior, autoCommitTurnEdits, and story-steps turnLabel. Out: config/builders are US-003; step/env wiring is US-005; retry orchestration is US-006; fallback invocation/concern is US-007; report-check eligibility/state is US-008. Pipeline mode's interrupt and timeout handling, including `agent.timeoutRetry`: pipeline mode is frozen. Changing `STEP_TIMEOUT_MARGIN_MS` or the soft-interrupt mechanism in `softInterruptTurn`. A fresh-session retry or a restart of the story on a step-limit interrupt.\n\n**Interface** — Verbatim target declarations:\n```typescript\n{ kind: \"continue\"; limit: \"implement\" | \"fix\"; stepUps: number; attempt: number; maxAttempts: number; changedFiles?: readonly string[] }\n{ kind: \"report\"; stepUps: number }\nautoCommitTurnEdits(sc: StepContext): Promise<boolean>\nrunImplementerTurn(sc, turn): Promise<ImplementOutcome>\n```\n\nUse the existing _workflowDeps.callOp seam and fakeImplement/makeStepContext tests. Preserve runSignal abort rethrow and failure handling. A report call still uses workflowImplementOp and its existing writableOutput reportPath; this story does not add tools or permissions.",
+      "acceptanceCriteria": [
+        "AC-1 [unit] runImplementerTurn with turn { kind: \"continue\", limit: \"implement\", stepUps: 0, attempt: 1, maxAttempts: 1 }, timeouts.implementMs 3600000 and interruptRetry.budgetMultiplier 0.5 passes timeoutMs: 1800000 to workflowImplementOp through _workflowDeps.callOp.",
+        "AC-2 [unit] runImplementerTurn with a continue turn of limit: \"fix\", timeouts.fixMs 1000001 and budgetMultiplier 0.5 passes timeoutMs: 500000.",
+        "AC-3 [unit] runImplementerTurn with a continue turn never calls closeImplementerSession (the session manager's close is not invoked).",
+        "AC-4 [unit] runImplementerTurn with turn { kind: \"continue\", limit: \"implement\", stepUps: 0, attempt: 1, maxAttempts: 1, changedFiles: [\"src/a.ts\"] }, implementMs 3600000 and multiplier 0.5 passes as prompt exactly buildWorkflowContinuePrompt({ storyId, reportPath, limitMinutes: 60, budgetMinutes: 30, attempt: 1, maxAttempts: 1, changedFiles: [\"src/a.ts\"] }).",
+        "AC-5 [unit] With a step context whose tierOrder holds two tiers, implementerModelFor for a continue turn with stepUps: 1 returns a defined model equal to the one it returns for a fix turn with stepUps: 1.",
+        "AC-6 [unit] runImplementerTurn with turn { kind: \"report\", stepUps: 0 } and timeouts.reportMs 600000 passes timeoutMs: 600000.",
+        "AC-7 [unit] runImplementerTurn with a report turn passes as prompt exactly buildWorkflowReportPrompt({ storyId, reportPath }).",
+        "AC-8 [unit] runImplementerTurn with a report turn never calls closeImplementerSession.",
+        "AC-9 [unit] An interrupted reply (interrupted: true) to a continue turn returns autoCommitted: false without calling autoCommitIfDirty.",
+        "AC-10 [unit] autoCommitTurnEdits(sc) with a dirty tree calls _workflowDeps.autoCommitIfDirty with (sc.projectDir, \"workflow\", \"wf-implementer\", sc.story.id, undefined, sc.dryRun).",
+        "AC-11 [unit] autoCommitTurnEdits(sc) with a dirty tree resolves true.",
+        "AC-12 [unit] autoCommitTurnEdits(sc) with a clean tree resolves false without calling autoCommitIfDirty.",
+        "AC-13 [unit] autoCommitTurnEdits(sc) when git status exits non-zero resolves false without calling autoCommitIfDirty.",
+        "AC-14 [unit] autoCommitTurnEdits(sc) with a dirty tree and autoCommitIfDirty rejecting resolves false.",
+        "AC-15 [unit] turnLabel returns \"implementer continue\" for a continue turn.",
+        "AC-16 [unit] turnLabel returns \"implementer report\" for a report turn.",
+        "Regression [unit] runImplementerTurn(sc, { kind: 'implement' }) with a non-interrupted DONE reply, a dirty tree and a successful auto-commit returns { reply, autoCommitted: true }, preserving the normal completed-turn auto-commit behavior through autoCommitTurnEdits."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "sessions",
+        "interrupt"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Extends a discriminated turn executor using established seams; strict isolation is required because warm-session lifecycle and model preservation are involved."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/implement.ts",
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/prompts/builders/workflow-implementer-builder.ts",
+        "packages/nax/src/workflow/step-context.ts",
+        "packages/nax/test/unit/workflow/implement.test.ts"
+      ],
+      "suggestedCriteria": [
+        "runImplementerTurn with a continue timeout below 30000 ms sends a prompt whose budget is at least 1 minute.",
+        "autoCommitTurnEdits(sc) logs a workflow warning containing sc.story.id and the error message when autoCommitIfDirty rejects.",
+        "runImplementerTurn returns autoCommitted: false rather than rejecting when the completed turn's best-effort auto-commit rejects."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Wire story-loop interrupt and report evidence steps",
+      "description": "**Goal** — Supply the story loop with changed-file evidence, best-effort commit, report existence and configured interrupt limits.\n\n**Motivation** — The implementer ran 60 minutes, the review diff showed no commits, review failed on `report.md` ENOENT, and fix round 1 spent 6 minutes committing the work and reconstructing the TDD evidence.\n\n**Approach** — Steps and wiring (`src/workflow/story-loop.ts`, `src/workflow/stage-env.ts`, `src/workflow/no-work.ts`), relevant design verbatim:\n- `StoryLoopSteps` gains three optional steps, each absent in a caller that has not wired it:\n  - `workSinceBase?(): Promise<string[]>`: the files changed since the story base, committed or not;\n  - `autoCommitDirty?(): Promise<boolean>`: the fallback auto-commit;\n  - `reportExists?(): Promise<boolean>`: whether the story's `report.md` exists.\n- `StoryLoopEnv` gains `readonly interrupt?: { readonly maxAttempts: number; readonly implementMs: number; readonly fixMs: number }`. Absent reads as `WORKFLOW_DEFAULTS` (`maxAttempts` 1, both limits 3,600,000).\n- `no-work.ts` exports `storyChangedFiles(sc: StepContext): Promise<string[]>`: the union of `changedFilesSince(sc.projectDir, sc.base)` and `listUncommitted(sc.projectDir)`, deduplicated, in that order, with nax-owned paths (`isNaxOwned`) removed. It throws on a git error, like `storyWorkEvidence`.\n- `buildStoryEnv` wires `workSinceBase: () => storyChangedFiles(sc)`, `autoCommitDirty: () => autoCommitTurnEdits(sc)`, `reportExists: () => Bun.file(sc.reportPath).exists()`, and `interrupt` from `workflow.interruptRetry.maxAttempts`, `workflow.timeouts.implementMs` and `workflow.timeouts.fixMs`.\n\n**Scope** — In: optional step/env contracts, storyChangedFiles, real buildStoryEnv wiring and preservation of the existing workProduced evidence check. Out: turn labels/execution/helper implementation are US-004; changed-file check interpretation, retries and fallback are US-006/US-007; report-check interpretation and eligibility/state machine are US-008. Do not convert throwing git evidence reads into silent empty lists in storyChangedFiles.\n\n**Interface** — Verbatim declarations:\n```typescript\nworkSinceBase?(): Promise<string[]>\nautoCommitDirty?(): Promise<boolean>\nreportExists?(): Promise<boolean>\nreadonly interrupt?: { readonly maxAttempts: number; readonly implementMs: number; readonly fixMs: number }\nstoryChangedFiles(sc: StepContext): Promise<string[]>\n```\n\nRetain old callers without the optional steps. Tests should drive real buildStoryEnv using temporary report files and the existing _workflowDeps.git/autoCommitIfDirty seams, asserting the producer-consumer connections rather than interface existence.",
+      "acceptanceCriteria": [
+        "AC-1 [unit] storyChangedFiles(sc) with git diff --name-only returning src/a.ts and .nax/features/f/x.md, and git status --porcelain returning ' M src/a.ts' and '?? src/b.ts', resolves [\"src/a.ts\", \"src/b.ts\"].",
+        "AC-2 [unit] storyChangedFiles(sc) rejects when git diff exits non-zero.",
+        "AC-3 [unit] buildStoryEnv with workflow.interruptRetry.maxAttempts: 2, timeouts.implementMs: 5400000 and timeouts.fixMs: 3600000 returns an env whose interrupt is { maxAttempts: 2, implementMs: 5400000, fixMs: 3600000 }.",
+        "AC-4 [unit] The env from buildStoryEnv has steps.reportExists resolving false while the story's report.md is absent, and true once that file is written.",
+        "AC-5 [unit] The env from buildStoryEnv, with _workflowDeps.git answering git diff --name-only with src/a.ts and git status --porcelain with '?? src/b.ts', has steps.workSinceBase() resolving [\"src/a.ts\", \"src/b.ts\"].",
+        "AC-6 [unit] The env from buildStoryEnv, with git status --porcelain answering ' M src/a.ts', has steps.autoCommitDirty() resolving true after calling _workflowDeps.autoCommitIfDirty once.",
+        "Regression [unit] The env from buildStoryEnv still has steps.workProduced() resolving true when git diff and git status return no visible files but sc.reportPath exists, preserving the existing report-as-work evidence check alongside the new optional steps."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "wiring",
+        "git"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three optional I/O seams and stable git-file union are wired into the existing environment; temporary-file and injected-git TDD verifies them without changing session lifecycle."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/story-loop.ts",
+        "packages/nax/src/workflow/stage-env.ts",
+        "packages/nax/src/workflow/no-work.ts",
+        "packages/nax/src/workflow/implement.ts",
+        "packages/nax/test/unit/workflow/stage-env.test.ts"
+      ],
+      "suggestedCriteria": [
+        "storyChangedFiles(sc) rejects when git status exits non-zero.",
+        "storyChangedFiles(sc) excludes committed .nax-wt/a.ts paths while preserving the first occurrence order of visible paths."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Continue interrupted implementer turns before evaluating the story",
+      "description": "**Goal** — Recover interrupted implement/restart/advisor-answer/fix outcomes on the same warm session within one shared per-absorption retry allowance.\n\n**Motivation** — Nothing tells the still-warm session it was cut off.\n\n**Approach** — Continue on interrupt (new `src/workflow/interrupt-continue.ts`, called from `absorbTurn`), retry/orchestration design verbatim:\n- Signature: `continueAfterInterrupt(env: StoryLoopEnv, outcome: ImplementOutcome, origin: { stepUps: number; limit: \"implement\" | \"fix\" }, used: number, runTurn: (turn: ImplementTurn) => Promise<ImplementOutcome>): Promise<{ outcome: ImplementOutcome; used: number; fallback: boolean }>`. It is pure orchestration over `env`, like the rest of the loop, and is injected with `runTurn` to avoid an import cycle with `story-steps.ts` (the `runNoWorkLadder` pattern).\n- `absorbTurn` hands every outcome to one helper in the same module, `absorbInterrupt(env, current, origin, used, runTurn): Promise<{ outcome: ImplementOutcome; used: number; fallback: boolean }>`, which calls `continueAfterInterrupt` only when the outcome has no `failure` and `reply.interrupted` is true and otherwise returns the outcome unchanged. It runs before the auto-commit note and the advisor-answer check, and `absorbTurn` keeps `used` across its whole call. `absorbTurn` scores 18 against `check:complexity`'s limit of 20 today, so its loop body gains no new branch: the interrupt test lives in `absorbInterrupt`, and setting `lastTurn` (US-008) goes through a small helper too. So the tries are counted per absorbed turn: the first implement turn (with its no-work restarts and answers) or one fix round.\n- While `used < maxAttempts` and the outcome is interrupted:\n  - cost limit reached (`env.steps.costExceeded()`): ledger note `implementer interrupted at the step limit (<limitMinutes> min): continue skipped, cost limit reached`, and stop trying;\n  - otherwise: ledger note `implementer interrupted at the step limit (<limitMinutes> min): continuing on the warm session (attempt <n> of <maxAttempts>)`; read `changedFiles` from `env.steps.workSinceBase` (absent or throwing -> `undefined`); run `{ kind: \"continue\", limit: origin.limit, stepUps: origin.stepUps, attempt: n, maxAttempts, changedFiles }`; `used += 1`.\n  `limitMinutes` is `Math.max(1, Math.round(limitMs / 60_000))`, with `limitMs` from `env.interrupt` (`implementMs` for `origin.limit: \"implement\"`, `fixMs` for `\"fix\"`).\n- The first outcome that is not interrupted (including a `failure`) goes back to `absorbTurn` and is absorbed exactly as today: a DONE reply records no concern; NEEDS_CONTEXT or BLOCKED gets an advisor answer; a failure records `implementer session failed: <failure>`.\n- A recovered interrupt writes only the \"continuing\" note: no concern and no `(interrupted)` line.\n\n**Scope** — In: new interrupt-continue.ts exporting continueAfterInterrupt and absorbInterrupt, story-steps absorption integration, injected labelled runner, cost skip, changed-file fail-open behavior and attempt accounting. Out: US-007 adds the fallback auto-commit/note/replacement concern; until that dependent story the still-interrupted exhausted outcome is recorded through the existing concern flow, with fallback true available for the later state consumer. US-008 adds lastTurn/report state and report turns. A fresh-session retry or a restart of the story on a step-limit interrupt. Continue turns for the branch fix, the branch review, the story review or the re-review: only story implementer turns (implement, restart, answer, fix round) continue.\n\n**Interface** — Verbatim signatures:\n```typescript\ncontinueAfterInterrupt(env: StoryLoopEnv, outcome: ImplementOutcome, origin: { stepUps: number; limit: \"implement\" | \"fix\" }, used: number, runTurn: (turn: ImplementTurn) => Promise<ImplementOutcome>): Promise<{ outcome: ImplementOutcome; used: number; fallback: boolean }>\nabsorbInterrupt(env, current, origin, used, runTurn): Promise<{ outcome: ImplementOutcome; used: number; fallback: boolean }>\n```\n\nAn absent env.interrupt reads WORKFLOW_DEFAULTS (one attempt, implement/fix limits 3,600,000). Create packages/nax/test/unit/workflow/interrupt-continue.test.ts and drive every numbered AC through runStoryLoop with scripted steps. Unless overridden, env.interrupt is { maxAttempts: 1, implementMs: 3600000, fixMs: 3600000 }; interrupted means reply { status: \"DONE_WITH_CONCERNS\", concerns: \"step time limit reached\", interrupted: true }. Real operation throws are converted to failure by runImplementerTurn and must reach ordinary session-finding absorption, never fallback. Reuse shared loop helpers instead of duplicating a harness.",
+      "acceptanceCriteria": [
+        "AC-1 [unit] When the first implement turn is interrupted and the next turn replies DONE, steps.implement receives exactly one turn of kind continue, with limit: \"implement\", stepUps: 0, attempt: 1 and maxAttempts: 1.",
+        "AC-2 [unit] The continue turn's changedFiles equals what steps.workSinceBase resolved ([\"src/a.ts\"]).",
+        "AC-3 [unit] When steps.workSinceBase rejects, the continue turn is still sent, with changedFiles undefined.",
+        "AC-4 [unit] After an interrupted turn recovered by a DONE continue, the ledger holds \"implementer interrupted at the step limit (60 min): continuing on the warm session (attempt 1 of 1)\".",
+        "AC-5 [unit] After an interrupted turn recovered by a DONE continue, steps.storyReview receives an empty concerns list.",
+        "AC-6 [unit] After an interrupted turn recovered by a DONE continue, no ledger line holds \"(interrupted)\".",
+        "AC-7 [unit] With env.interrupt.maxAttempts: 2 and every turn interrupted, steps.implement receives two continue turns, with attempt 1 and then 2.",
+        "AC-8 [unit] With env.interrupt.maxAttempts: 0, an interrupted first turn sends no continue turn.",
+        "AC-9 [unit] When steps.costExceeded returns true from its first call, an interrupted first implement turn sends no continue turn, and the ledger holds \"implementer interrupted at the step limit (60 min): continue skipped, cost limit reached\".",
+        "AC-10 [unit] When a fix round's turn (stepUps: 1) is interrupted, with steps.costExceeded returning false at the top of the fix pass, the continue turn carries limit: \"fix\" and stepUps: 1.",
+        "AC-11 [unit] With env.interrupt.implementMs: 5400000, the continuing ledger note reads \"(90 min)\".",
+        "AC-12 [unit] When the continue turn replies NEEDS_CONTEXT and the advisor answers, an answer turn follows the continue turn.",
+        "AC-13 [unit] When that answer turn is interrupted after the only continue attempt was used, no second continue turn is sent.",
+        "AC-14 [unit] When the continue turn returns failure: \"boom\", the story's open findings hold \"implementer session failed: boom\".",
+        "Failure handling [unit] When steps.workSinceBase is not wired, an interrupted outcome still sends a continue turn with changedFiles undefined.",
+        "Failure handling [unit] When the continue operation throws Error(\"boom\") and runImplementerTurn returns that failure, the story's open findings hold \"implementer session failed: boom\"."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "interrupt",
+        "sessions"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New injected orchestration spans retry accounting, advisor answers, no-work origins and cost stops; warm-session continuity requires strict isolated TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/workflow/no-work.ts",
+        "packages/nax/src/workflow/story-loop.ts",
+        "packages/nax/src/workflow/implement.ts",
+        "packages/nax/test/unit/workflow/story-loop-no-work.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/interrupt-continue.ts",
+        "packages/nax/test/unit/workflow/interrupt-continue.test.ts"
+      ],
+      "suggestedCriteria": [
+        "With env.interrupt absent, an interrupted implement turn followed by DONE receives exactly one continue with maxAttempts: 1 and a ledger limit of 60 min.",
+        "When an interrupted fix turn recovers and a later independent fix round is interrupted, the later round receives its own attempt 1.",
+        "When workSinceBase resolves a different list for each retry, each continue turn receives the list read immediately before that retry."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "Auto-commit interrupt fallback and disclose unfinished work to story review",
+      "description": "**Goal** — After continue attempts are exhausted or cost-skipped, commit dirty edits best-effort and replace the interrupted concern with an accurate reviewer warning.\n\n**Motivation** — The review diff showed no commits, review failed on `report.md` ENOENT, and fix round 1 spent 6 minutes committing the work and reconstructing the TDD evidence.\n\n**Approach** — Fallback portion of Continue on interrupt, verbatim:\n- **Fallback**, when the outcome is still interrupted after the loop: call `env.steps.autoCommitDirty` (absent -> skipped, read as `false`); when it returns `true`, ledger note `auto-committed the implementer's uncommitted edits`. The outcome goes back with its reply's `concerns` replaced (a spread, not a mutation) and `fallback: true`. The concern is `stopped at the step limit after <used> continue attempt(s); its uncommitted edits were auto-committed, and it may not have finished the story or written report.md` when the auto-commit returned `true`, and `stopped at the step limit after <used> continue attempt(s); nothing was auto-committed, and it may not have finished the story or written report.md` otherwise. `absorbTurn` then records it through the existing `recordConcern`, so the story reviewer's concerns and the ledger line `implementer (interrupted) DONE_WITH_CONCERNS: <that text>` both carry it.\n- A recovered interrupt writes only the \"continuing\" note: no concern and no `(interrupted)` line.\n\nFailure handling, verbatim:\n- A continue turn fails (op throws or returns `failure`): Absorbed like any failed implementer turn: `implementer session failed: <failure>`; no fallback auto-commit.\n- The cost limit is reached at an interrupt: No continue turn; the \"continue skipped\" note; then the fallback.\n- `autoCommitDirty` reads no dirty file, cannot read the tree, its commit throws, or it is not wired: No auto-commit note; the fallback concern is still recorded, with the \"nothing was auto-committed\" wording.\n\n**Scope** — In: add fallback behavior to interrupt-continue.ts from US-006 and fallback cases to its existing test file; update the interrupted-restart regression in story-loop-no-work.test.ts. Out: retry scheduling/accounting is US-006; best-effort commit helper and its exception containment are US-004; state/report-check suppression from fallback is US-008. Telling the re-review about an interrupt fallback in a fix round: the re-review prompt is unchanged. Rewriting or filtering existing ledger lines or deferred minors: a stale missing-report claim is settled in the branch-review prompt.\n\n**Interface** — Existing US-006 contract, verbatim:\n```typescript\ncontinueAfterInterrupt(env: StoryLoopEnv, outcome: ImplementOutcome, origin: { stepUps: number; limit: \"implement\" | \"fix\" }, used: number, runTurn: (turn: ImplementTurn) => Promise<ImplementOutcome>): Promise<{ outcome: ImplementOutcome; used: number; fallback: boolean }>\n```\n\nAll numbered ACs drive runStoryLoop as in US-006; unless overridden, maxAttempts is 1 and both initial and continue replies are interrupted. The real autoCommitDirty seam is autoCommitTurnEdits, which resolves false on read/commit failures. Preserve the original reply object by spreading. Avoid duplicate auto-commit notes: fallback's note is distinct from completed-turn autoCommitted absorption. Update the existing \"AC-21: an interrupted restart ends the ladder and the gates run on the concern\" regression: turns after the warm restart include exactly one continue, gates run after it, and the review concern contains `stopped at the step limit after 1 continue attempt(s)` instead of the old `DONE_WITH_CONCERNS: step time limit reached`.\n\nEvery AC drives `runStoryLoop` with faked `StoryLoopSteps` whose `implement` returns scripted outcomes; \"interrupted\" means a reply `{ status: \"DONE_WITH_CONCERNS\", concerns: \"step time limit reached\", interrupted: true }`; `env.interrupt` is `{ maxAttempts: 1, implementMs: 3600000, fixMs: 3600000 }` unless an AC says otherwise.",
+      "acceptanceCriteria": [
+        "AC-1 [unit] With steps.autoCommitDirty resolving true, steps.autoCommitDirty is called once, after the continue turn and before steps.gates.",
+        "AC-2 [unit] With steps.autoCommitDirty resolving true, the ledger holds \"auto-committed the implementer's uncommitted edits\".",
+        "AC-3 [unit] With steps.autoCommitDirty resolving true, steps.storyReview receives the concern \"DONE_WITH_CONCERNS: stopped at the step limit after 1 continue attempt(s); its uncommitted edits were auto-committed, and it may not have finished the story or written report.md\".",
+        "AC-4 [unit] With steps.autoCommitDirty resolving true, the ledger holds \"implementer (interrupted) DONE_WITH_CONCERNS: stopped at the step limit after 1 continue attempt(s); its uncommitted edits were auto-committed, and it may not have finished the story or written report.md\".",
+        "AC-5 [unit] With steps.autoCommitDirty resolving false, the concern reaching steps.storyReview is \"DONE_WITH_CONCERNS: stopped at the step limit after 1 continue attempt(s); nothing was auto-committed, and it may not have finished the story or written report.md\".",
+        "AC-6 [unit] With steps.autoCommitDirty not wired, steps.storyReview receives \"DONE_WITH_CONCERNS: stopped at the step limit after 1 continue attempt(s); nothing was auto-committed, and it may not have finished the story or written report.md\" and no ledger line holds \"auto-committed the implementer's uncommitted edits\".",
+        "AC-7 [unit] With env.interrupt.maxAttempts: 0 and only the first turn interrupted, the concern reaching steps.storyReview holds \"after 0 continue attempt(s)\".",
+        "AC-8 [unit] When the continue turn replies NEEDS_CONTEXT, the advisor answers, and the answer turn is interrupted, the fallback concern reaches steps.storyReview.",
+        "AC-9 [unit] When the continue turn returns failure: \"boom\", steps.autoCommitDirty is not called.",
+        "Failure handling [unit] When the cost limit is reached at an interrupt before any retry, steps.autoCommitDirty is invoked as the fallback after the continue-skipped ledger note.",
+        "Failure handling [unit] When the wired autoCommitDirty resolves false because the dirty list is empty, the fallback emits no auto-commit ledger note.",
+        "Failure handling [unit] When the wired autoCommitDirty resolves false because reading the working tree fails, the fallback concern contains \"nothing was auto-committed\".",
+        "Failure handling [unit] When the wired autoCommitDirty resolves false because committing throws, the fallback concern contains \"nothing was auto-committed\".",
+        "Regression [unit] Given an initial no-status/no-work reply followed by an interrupted warm restart and an interrupted continue with maxAttempts: 1, runStoryLoop sends exactly one continue after the warm restart, replacing the old straight-to-gates interrupted-restart behavior.",
+        "Regression [unit] Given an initial no-status/no-work reply followed by an interrupted warm restart and an interrupted continue with maxAttempts: 1, steps.gates runs after that continue.",
+        "Regression [unit] Given an initial no-status/no-work reply followed by an interrupted warm restart and an interrupted continue with maxAttempts: 1, steps.storyReview receives a concern containing 'stopped at the step limit after 1 continue attempt(s)' instead of the obsolete 'DONE_WITH_CONCERNS: step time limit reached' concern."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "interrupt",
+        "git",
+        "review"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "An upstream retry helper gains one best-effort commit call and immutable concern replacement; scripted loop TDD covers ordering and failures without adding session lifecycle behavior."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/interrupt-continue.ts",
+        "packages/nax/test/unit/workflow/interrupt-continue.test.ts",
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/workflow/implement.ts",
+        "packages/nax/test/unit/workflow/story-loop-no-work.test.ts"
+      ],
+      "suggestedCriteria": [
+        "continueAfterInterrupt leaves the original interrupted reply.concerns unchanged while returning a reply with the replacement fallback concern.",
+        "When fallback successfully auto-commits, the ledger records its auto-commit note exactly once.",
+        "When a continue operation throws and is converted to failure by runImplementerTurn, steps.autoCommitDirty is not called."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/story-loop-no-work.test.ts",
+          "reason": "\"AC-21: an interrupted restart ends the ladder and the gates run on the concern\" asserts the review concern contains `DONE_WITH_CONCERNS: step time limit reached`. Once the fallback replaces the reply's concern, the interrupted restart (followed by one continue turn, since the harness repeats the interrupted outcome) reaches the review with the fallback concern instead. The replacement invariant: the turns after the warm restart include exactly one `continue` turn, the gates run after it, and the review concern contains `stopped at the step limit after 1 continue attempt(s)`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-008",
+      "title": "Check and repair a missing story report before review",
+      "description": "**Goal** — On every eligible green-gate evaluate pass, request a missing report once from the same warm implementer session before story review or re-review.\n\n**Motivation** — No nax code checks `report.md` before review; the story reviewer discovers its absence, which costs a spec fail and a fix round.\n\n**Approach** — Report check (new `src/workflow/report-check.ts`, called from `evaluate`), verbatim:\n- `StoryLoopState` gains `reportTurnRan: boolean` (initial `false`) and `lastTurn?: { status: ImplementerStatus; fallback: boolean; stepUps: number }` (initial `undefined`; a resumed story starts without one). The `LoopState` class (`story-steps.ts`) gains both fields and copies them in its constructor; `initialStoryState` sets them.\n- `absorbTurn` sets `lastTurn` from the reply it finally absorbs, with the `stepUps` of the turn that produced it (`origin.stepUps`). When it returns early on a `failure` or with no reply, it clears `lastTurn` to `undefined`.\n- `implementStep` and `fixStep` return `lastTurn` in their patches; `evaluateStep` returns `reportTurnRan`. The step-graph engine refuses an undeclared patch key (`STEP_GRAPH_UNDECLARED_OUTPUT`, `src/step-graph/run.ts`), so `STORY_GRAPH` (`src/workflow/story-graph.ts`) adds `lastTurn` to the `implement` and `fix` nodes' `produces` and `reportTurnRan` to the `evaluate` node's.\n- `report-check.ts` exports `runReportCheck(env: StoryLoopEnv, state: { reportTurnRan: boolean; lastTurn?: StoryLoopState[\"lastTurn\"] }, runTurn: (turn: ImplementTurn) => Promise<ImplementOutcome>): Promise<boolean>`, which returns the new `reportTurnRan`. `runTurn` is injected (the `runNoWorkLadder` pattern) to avoid an import cycle with `story-steps.ts`.\n- In `evaluate`, after the gates come back not red and before `review`, nax runs the report turn when all of these hold:\n  - `reportTurnRan` is false (at most one report turn per story);\n  - `lastTurn` is set, its `status` is `DONE` or `DONE_WITH_CONCERNS`, and `fallback` is false;\n  - `env.steps.costExceeded()` is false;\n  - `env.steps.reportExists` is wired and resolves `false` (a throw reads as present, so no turn).\n- The turn: ledger note `report.md missing after the implementer's reply: asking the session to write it`; run `{ kind: \"report\", stepUps: lastTurn.stepUps }` through the labelled turn runner, so it runs on the same model, and so the same warm session, as the turn that replied; set `reportTurnRan`. Its outcome is **not** absorbed (no concern, no advisor answer, no session finding). Afterwards, one ledger note: `report turn failed: <failure>` on a failure; else `report turn: report written` when `reportExists` now resolves `true`; else `report turn: report still missing, reviewing without it`. An interrupted report turn gets no continue. Review then runs as today.\n\nAbsorption complexity note, verbatim: `absorbTurn` scores 18 against `check:complexity`'s limit of 20 today, so its loop body gains no new branch: the interrupt test lives in `absorbInterrupt`, and setting `lastTurn` (US-008) goes through a small helper too.\n\n**Scope** — In: new report-check.ts/test, StoryLoopState and LoopState fields, final absorbed-turn bookkeeping, graph output declarations, evaluate ordering and existing test fixture corrections. Out: retry/fallback execution is US-006/US-007; continue/report prompts and turn execution are US-003/US-004; real reportExists wiring is US-005; branch report listing is US-009. A report turn for a resumed story before any implementer turn has run in this process. Continue turns for the branch fix, the branch review, the story review or the re-review: only story implementer turns (implement, restart, answer, fix round) continue.\n\n**Interface** — Verbatim declarations:\n```typescript\nreportTurnRan: boolean\nlastTurn?: { status: ImplementerStatus; fallback: boolean; stepUps: number }\nrunReportCheck(env: StoryLoopEnv, state: { reportTurnRan: boolean; lastTurn?: StoryLoopState[\"lastTurn\"] }, runTurn: (turn: ImplementTurn) => Promise<ImplementOutcome>): Promise<boolean>\n```\n\nTest setup for numbered ACs: drive runStoryLoop with gates green, storyReview recording call order, costExceeded false, and scripted reportExists unless an AC overrides them. Update packages/nax/test/unit/workflow/story-graph.test.ts EXPECTED_PRODUCES exactly: implement/fix gain lastTurn, evaluate gains reportTurnRan, maintaining equality to the keys each patch can carry. Update packages/nax/test/integration/workflow/story-e2e.test.ts fakeAgent and packages/nax/test/integration/workflow/advisor-e2e.test.ts fakeWorkflowAgent so every workflowImplementOp branch writes input.reportPath. The invariant is that a story whose implementer writes its report sends no report turn, preserving the existing two operation calls and two advisor-flow prompts rather than loosening their counts. Report outcomes must not overwrite lastTurn or enter ordinary absorption. A failure or missing reply from a later fix clears stale prior DONE state, suppressing repair. Existence checks fail open as present, including checks after a report turn.",
+      "acceptanceCriteria": [
+        "AC-1 [unit] When the implement turn replies DONE and steps.reportExists resolves false, steps.implement receives a report turn after steps.gates and before steps.storyReview.",
+        "AC-2 [unit] When the implement turn replies DONE_WITH_CONCERNS (not interrupted) and the report is missing, a report turn is sent.",
+        "AC-3 [unit] When steps.reportExists resolves true, no report turn is sent.",
+        "AC-4 [unit] When the implement turn replies BLOCKED and the advisor gives no answer, no report turn is sent.",
+        "AC-5 [unit] When the gates are red on the first pass, no report turn is sent in that pass.",
+        "AC-6 [unit] When the implement turn ends in the interrupt fallback, no report turn is sent.",
+        "AC-7 [unit] With steps.costExceeded counting its calls, returning false for the cost stop at the top of the evaluate pass and true for the report check after the gates, no report turn is sent.",
+        "AC-8 [unit] When steps.reportExists is not wired, no report turn is sent.",
+        "AC-9 [unit] When steps.reportExists rejects, no report turn is sent.",
+        "AC-10 [unit] When steps.reportExists rejects, steps.storyReview still runs.",
+        "AC-11 [unit] For a resumed story (env.resume set), the first evaluate pass sends no report turn.",
+        "AC-12 [unit] When the report is still missing after a fix round, and a report turn already ran earlier in the story, no second report turn is sent before the re-review.",
+        "AC-13 [unit] When the first review passes the report check with the report present, and a fix round replies DONE with the report then missing, a report turn is sent before the re-review.",
+        "AC-14 [unit] Before the report turn, the ledger holds \"report.md missing after the implementer's reply: asking the session to write it\".",
+        "AC-15 [unit] When steps.reportExists resolves true after the report turn, the ledger holds \"report turn: report written\".",
+        "AC-16 [unit] When steps.reportExists still resolves false after the report turn, the ledger holds \"report turn: report still missing, reviewing without it\".",
+        "AC-17 [unit] When the report turn returns failure: \"boom\", the ledger holds \"report turn failed: boom\" and the story's open findings hold no implementer session failed item.",
+        "AC-18 [unit] When the report turn is interrupted, no continue turn follows it.",
+        "AC-19 [unit] When the turn that replied DONE ran at stepUps: 1 (a fresh no-work restart), the report turn carries stepUps: 1.",
+        "AC-20 [unit] When a fix round's turn fails (failure: \"boom\") after an earlier DONE reply, and the report is missing, no report turn is sent before the next review step.",
+        "Failure handling [unit] When an implementer turn returns no reply after an earlier DONE reply, the missing report does not trigger a report turn before the next review step.",
+        "Failure handling [unit] When the report turn fails, steps.storyReview still runs after the report turn.",
+        "Regression [integration] Given real buildStoryEnv wiring, green gates, one story-review finding addressed by one warm fix and every implementer turn writing input.reportPath, workflowStage.execute invokes workflowImplementOp exactly twice (implement and fix), preserving the existing story flow without an extra report turn.",
+        "Regression [integration] Given real buildStoryEnv wiring, an initial NEEDS_CONTEXT reply answered by the advisor, a subsequent DONE reply and every implementer turn writing input.reportPath, workflowStage.execute sends exactly two workflowImplementOp prompts, preserving the existing advisor-answer flow without an extra report turn."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "report",
+        "sessions",
+        "step-graph"
+      ],
+      "dependencies": [
+        "US-007"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New report orchestration crosses graph outputs, final-turn state, resume and review ordering; same-session execution requires strict isolated TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/workflow/story-loop.ts",
+        "packages/nax/src/workflow/story-graph.ts",
+        "packages/nax/src/workflow/interrupt-continue.ts",
+        "packages/nax/test/unit/workflow/story-loop.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/report-check.ts",
+        "packages/nax/test/unit/workflow/report-check.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a continue recovers an interrupt with DONE and report.md is absent, a report turn runs before story review.",
+        "When the existence check after a report turn throws, the ledger records \"report turn: report written\" and review proceeds.",
+        "When a stepped-up fix turn replies DONE and the report is missing, the report turn uses that fix turn's stepUps.",
+        "Failure handling [unit] When the report turn is interrupted and the report remains missing, the ledger holds \"report turn: report still missing, reviewing without it\".",
+        "Failure handling [unit] When the report turn replies NEEDS_CONTEXT, the advisor receives no question from that report turn.",
+        "Failure handling [unit] When the report turn returns a concern, steps.storyReview receives no additional concern from the report turn."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/story-graph.test.ts",
+          "reason": "`EXPECTED_PRODUCES` pins each node's `produces` by exact equality; it must gain `lastTurn` for `implement` and `fix` and `reportTurnRan` for `evaluate`. The invariant: every node's `produces` equals exactly the keys its patch can carry."
+        },
+        {
+          "path": "packages/nax/test/integration/workflow/story-e2e.test.ts",
+          "reason": "`fakeAgent`'s `workflowImplementOp` branch never writes report.md, so with the real `buildStoryEnv` wiring `reportExists` the report check adds a `report` turn and the `toHaveLength(2)` count of `workflowImplementOp` calls breaks. The fake must write `input.reportPath` on every implementer turn; the invariant is that a story whose implementer writes its report sends no report turn and the original call count holds."
+        },
+        {
+          "path": "packages/nax/test/integration/workflow/advisor-e2e.test.ts",
+          "reason": "`fakeWorkflowAgent`'s `workflowImplementOp` branch never writes report.md, so the report check adds a turn and \"implementer question: an answered NEEDS_CONTEXT reaches the next implementer turn\" sees 3 prompts instead of 2. The fake must write `input.reportPath` on every implementer turn; the invariant is that a story whose implementer writes its report sends no report turn and the existing prompt counts hold."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-009",
+      "title": "List authoritative story report paths in branch review",
+      "description": "**Goal** — Give branch review a present/missing report inventory and instructions to leave stale report-absence claims when the listed report exists.\n\n**Motivation** — The branch reviewer cannot find the reports.\n\n**Approach** — Story report listing (branch review), verbatim:\n- `BranchReviewPromptInput` gains `storyReports?: readonly { storyId: string; path: string; present: boolean }[]`. When it is non-empty, `buildWorkflowBranchReviewPrompt` adds, right after `## Stories`, a `## Story reports` section: `- <storyId>: <path>` for a present report, `- <storyId>: no report (<path> does not exist)` for a missing one, then the line `A deferred minor or cannot-verify item that says a story's report is missing or unreadable is settled by this list: when the list shows the report, triage that minor \"leave\" and do not repeat the claim in \"cannotVerify\".`. Absent or empty: no section (the `nax bot review` prompt is unchanged).\n- The `stories` entries of `BranchReviewPromptInput` gain `runDir?: string`. `reviewFacts` (`src/workflow/feature-steps.ts`) passes each `StorySummary.runDir` through. `feature-steps.ts` is at 597 of the 600 lines `check:file-sizes` allows, so this change must not grow it past 600: use the truthy one-line spread `...(s.runDir ? { runDir: s.runDir } : {})`, which fits Biome's 120-column width, not a `!== undefined` form that Biome wraps onto several lines.\n- `runBranchReview` builds `storyReports` from `input.facts.stories`: each story with a `runDir` maps to `path = join(workflowStoryDir(runDir, id), \"report.md\")` and `present` from a new `_workflowDeps.fileExists(path)` (default `Bun.file(path).exists()`); a throw reads as present. Stories without `runDir` are not listed.\n\n**Scope** — In: workflow-branch-builder.ts input/prompt, feature-steps.ts reviewFacts propagation, branch-review.ts report inventory and step-context.ts fileExists seam. Out: runtime Glob fixes are US-001/US-002, implementer retries/fallback and report repair are US-003–US-008. Rewriting or filtering existing ledger lines or deferred minors: a stale missing-report claim is settled in the branch-review prompt. A new `nax` subcommand or agent tool that lists story reports. Telling the re-review about an interrupt fallback in a fix round: the re-review prompt is unchanged.\n\n**Interface** — Verbatim additions:\n```typescript\nstoryReports?: readonly { storyId: string; path: string; present: boolean }[]\nrunDir?: string\nfileExists(path: string): Promise<boolean>\n```\n\nKeep BranchReviewFacts structurally based on the existing prompt input and let runDir survive the feature-step boundary. Use the per-story runDir, not the current feature runDir, so reports from earlier runs remain readable. Extend existing branch-review and prompt tests using _workflowDeps.callOp capture and restore fileExists after each test. Omission is backwards compatible with nax bot review; no new public tool or command is introduced.",
+      "acceptanceCriteria": [
+        "AC-1 [unit] buildWorkflowBranchReviewPrompt with storyReports: [{ storyId: \"US-001\", path: \"/r/US-001/report.md\", present: true }] returns text holding a ## Story reports section with the line \"- US-001: /r/US-001/report.md\".",
+        "AC-2 [unit] With storyReports: [{ storyId: \"US-002\", path: \"/r/US-002/report.md\", present: false }], the section holds \"- US-002: no report (/r/US-002/report.md does not exist)\".",
+        "AC-3 [unit] With a non-empty storyReports, the prompt holds \"A deferred minor or cannot-verify item that says a story's report is missing or unreadable is settled by this list\".",
+        "AC-4 [unit] With storyReports absent, and again with it empty, the prompt holds no ## Story reports heading.",
+        "AC-5 [unit] runBranchReview with facts.stories [{ id: \"US-001\", state: \"complete\", runDir: \"/run\" }] and _workflowDeps.fileExists resolving true sends a prompt (captured from _workflowDeps.callOp) holding \"- US-001: /run/US-001/report.md\".",
+        "AC-6 [unit] runBranchReview with facts.stories [{ id: \"US-001\", state: \"complete\", runDir: \"/run\" }] and _workflowDeps.fileExists resolving false sends a prompt captured from _workflowDeps.callOp holding \"- US-001: no report (/run/US-001/report.md does not exist)\".",
+        "AC-7 [unit] runBranchReview with facts.stories [{ id: \"US-001\", state: \"complete\", runDir: \"/run\" }] and _workflowDeps.fileExists rejecting sends a prompt captured from _workflowDeps.callOp holding \"- US-001: /run/US-001/report.md\".",
+        "AC-8 [unit] A story in facts.stories with no runDir gets no line in the ## Story reports section.",
+        "AC-9 [unit] branchReviewStep(env, rec) with a record that has a seed, and env.facts.stories holding a StorySummary with runDir: \"/run\", calls env.steps.branchReview with facts whose matching stories entry carries runDir: \"/run\"."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "review",
+        "prompts",
+        "report"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Optional prompt facts and one injectable existence check extend existing review construction without introducing new session behavior or abstractions."
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/workflow-branch-builder.ts",
+        "packages/nax/src/workflow/branch-review.ts",
+        "packages/nax/src/workflow/feature-steps.ts",
+        "packages/nax/test/unit/workflow/branch-review.test.ts",
+        "packages/nax/test/unit/prompts/workflow-branch-builder.test.ts"
+      ],
+      "suggestedCriteria": [
+        "buildWorkflowBranchReviewPrompt places ## Story reports after ## Stories and before ## Repo gate failures.",
+        "runBranchReview with stories from distinct runDir values lists each report under its own story runDir.",
+        "With nonempty storyReports, buildWorkflowBranchReviewPrompt instructs triaging a stale missing-report minor as \"leave\" and not repeating its claim in \"cannotVerify\"."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Enhancement/bug fix closing #2668, not greenfield. The binding decomposition is nine stories across packages/nax-agent and packages/nax; ship them as one capability. Codebase-memory MCP is unavailable in this host, so findings were verified with direct source reads and text searches. No implementation or test execution was performed while drafting this PRD.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:149 identifies workflow as the default and pipeline as deprecated/frozen; its index documents dependency injection, prompt builders, session ownership, and graph orchestration. nax-agent ships Node-compatible source, whereas nax owns its Bun runtime. Preserve the dependency direction and use existing package entries; no changes are needed in nax-ai or nax-agent-acp. nax-agent relative source imports require .ts extensions and #src aliases, not nax's @ aliases. External I/O should use existing injectable seams, especially _workflowDeps, and tests must restore those seams. Regression tests in nax-agent must be demonstrated failing against the old behavior. Run targeted bun:test files from the appropriate package, never bare bun test or bun run nax. Follow the repository's sandbox restrictions for coverage runs; lint/typecheck/build are pipeline gates, not feature ACs.\n\nInterrupt root cause and affected consumers: packages/nax/src/operations/_interrupt.ts:27 implements softInterruptTurn, converting the interrupted stale-session exception to WORKFLOW_INTERRUPT_MARKER while keeping edits/session warm. packages/nax/src/operations/workflow-replies.ts:37 parses that marker as an interrupted implementer reply. packages/nax/src/operations/workflow-implement.ts:52 declares wf-implementer lifetime warm, keepOpen true, writableOutput=input.reportPath, and at :59 sets the outer agent timeout to input.timeoutMs + STEP_TIMEOUT_MARGIN_MS. packages/nax/src/utils/step-signal.ts:7 defines the unchanged 60,000 ms margin. Therefore pipeline timeoutRetry is not the remedy. packages/nax/src/workflow/implement.ts:18 defines the existing implement/restart/answer/fix discriminated union; :41 builds prompts, :67 selects stepped-up models, :73 closes only fresh restarts/fixes, :83 fail-opens dirty-tree reads, and :95 runs the operation. Its :115 interrupted early return bypasses the inline auto-commit. Add continue/report cases without accidentally falling through to fix-prompt fields, closing sessions, or changing abort rethrow behavior. Extract the best-effort auto-commit into autoCommitTurnEdits, additionally catching commit rejection with workflow warn metadata containing storyId. All completed turns use that helper, but interrupted turns still skip it. New continue budgets use the original implement/fix limit and floor the multiplier result; prompt minutes round and clamp to at least one, including the final budgetMinutes ruling. Preserve origin.stepUps so the endpoint/model and warm session remain the same.\n\nLoop seams and state: packages/nax/src/workflow/story-loop.ts:35 defines StoryLoopSteps, :66 StoryLoopEnv, :87 StoryLoopState, and :125 delegates to the graph engine. packages/nax/src/workflow/story-steps.ts:48 contains the node-local LoopState copy, :97 turnLabel, :109 initialStoryState, :135 the labelled implementTurn, :143 absorbTurn, :189 recordConcern, :263 evaluate, :321 implementStep, :348 evaluateStep, and :387 fixStep. absorbTurn currently records interrupted concerns immediately; introduce injected-runner helpers rather than a reverse value import into story-steps. Keep its new loop body branch-free via absorbInterrupt and a small lastTurn helper because the spec reports complexity 18/20. Count continue attempts across the whole absorbTurn call, including advisor answers, resetting for each independent fix absorption. Restarts flow through the existing no-work ladder before absorption; an interrupted restart is not a no-work result and must continue on the correct stepped-up origin. Recovered interrupts yield ledger notes only; failures must still enter pending session findings and never invoke interrupt fallback.\n\npackages/nax/src/workflow/no-work.ts:39 filters .nax/ and .nax-* as owned paths, :47 checks work evidence, and :84 provides runNoWorkLadder's injected-runner pattern. Add storyChangedFiles as committed-since-base then uncommitted union, stable deduplication and owned-path filtering. packages/nax/src/workflow/git.ts:75 changedFilesSince uses base..HEAD and throws on git errors; :91 listUncommitted parses porcelain and already removes owned paths. Do not weaken those git contracts: continue's wrapper tolerates list errors, whereas storyChangedFiles itself throws. packages/nax/src/workflow/stage-env.ts:49 builds the real context from root workflow config and repo-rooted base/report paths; :116 wires timed real steps and :135 builds env. Wire workSinceBase, autoCommitDirty, reportExists and interrupt there, retaining timing/model/tool-error wrappers and optional seams for old callers. Existing buildStoryEnv tests use temporary roots and _workflowDeps in packages/nax/test/unit/workflow/stage-env.test.ts:34.\n\nThe report guard runs only after non-red gates and before review/re-review. lastTurn must describe the finally absorbed reply and fallback flag, not a stale earlier successful reply, and must clear on failure or no reply. reportTurnRan is one-at-most per story in this process. packages/nax/src/workflow/story-steps.ts:109 initializes fresh/resumed graph state; resumed stories begin at evaluate with no warm-turn evidence, so no initial report repair. Both fields are in-memory graph state, not persisted workflow records; no durable data migration is needed. packages/nax/src/workflow/story-graph.ts:25, :35 and :63 declare exact node outputs. Add lastTurn to implement/fix produces and reportTurnRan to evaluate produces in lockstep with patches, because packages/nax/src/step-graph/run.ts:81 rejects undeclared outputs with STEP_GRAPH_UNDECLARED_OUTPUT. Report turns use the labelled runner on lastTurn.stepUps but are never absorbed or continued; failures/interruption only create the specified ledger note and review still runs. Fail-open existence checks deliberately avoid creating findings on I/O failure.\n\nConfig and prompt impact: packages/nax/src/config/schemas-workflow.ts:11 defines WorkflowConfigObjectSchema, :25 contains the nested prefault timeouts and :36 derives WORKFLOW_DEFAULTS. packages/nax/src/config/runtime-types-workflow.ts:16 WorkflowTimeoutsConfig and :28 WorkflowConfig require matching fields. packages/nax/src/cli/config-descriptions.ts:100 lists timeouts; add the four descriptions there. packages/nax/src/prompts/builders/workflow-implementer-builder.ts:106 and :109 define the reusable artifacts/reply contracts; :164 has the short warm restart pattern. New continue/report builders must preserve specified wording and end in WORKFLOW_REPLY_CONTRACT; export them through packages/nax/src/prompts/index.ts:110. Documentation updates belong to US-003 even though its binding workdir is packages/nax: docs/guides/workflow-mode.md:179 has the timeout table, and docs/guides/configuration.md is the other root guide. Nested interruptRetry must use prefault({}), not default({}), to fill field defaults. Existing configs need no migration: parse({}) supplies one half-budget continue and a 600,000 ms report limit; maxAttempts 0 explicitly disables continue. Update hand-built full WorkflowConfig/timeout objects if required, without weakening required runtime types.\n\nBranch report facts: packages/nax/src/prompts/builders/workflow-branch-builder.ts:14 defines BranchReviewPromptInput and :77 builds the prompt; insert Story reports directly after Stories only for a nonempty list. packages/nax/src/workflow/types.ts:165 already has StorySummary.runDir, and packages/nax/src/workflow/paths.ts:23 workflowStoryDir simply joins runDir/storyId. packages/nax/src/workflow/feature-steps.ts:91 reviewFacts currently drops runDir before :146 branchReviewStep calls the seam. That source is exactly 597 lines; use the specified one-line truthy runDir spread to stay within its 600-line limit, not a multi-line !== undefined check. packages/nax/src/workflow/branch-review.ts:77 runBranchReview constructs the prompt from facts; derive storyReports using each story's own runDir (potentially from an older run), not fc.runDir. packages/nax/src/workflow/step-context.ts:56 hosts _workflowDeps; add injectable fileExists defaulting to Bun.file(path).exists(), treating a thrown check as present. Stories with no runDir are omitted rather than falsely listed missing. The optional input keeps the nax bot review caller unchanged; do not rewrite ledger/deferred minors or re-review prompts.\n\nGlob impact and safety: packages/nax-agent/src/runtime/node-glob.ts:7 scanOptions uses a Dirent exclusion callback at :26 and :39 filePath applies a second hidden-path filter at :51. Both must honor the narrow literal-leading-.nax exception, otherwise Node will prune the directory before yielding or will discard results. Keep symlink/literal-prefix handling, file-only behavior, deduplication, cwd errors, and leading ./ output formatting unchanged. packages/nax/src/agent-runtime/bun-runtime.ts:10 and :23 implement async/sync glob with dot:false and followSymlinks:false, then independently hide dot segments. Keep those scan options: Bun matches literal dots without enabling all hidden matches. Normalize leading ./ segments for deciding eligibility and examining result segments without losing returned ./ prefixes. Only result-relative segment zero .nax is exempt; .nax/.hidden, .git, .env, .nax-wt, escaped or brace/wildcard first segments remain hidden. Avoid inspecting absolute root segments, since an otherwise visible cwd can itself be hidden. This is a bounded tool-listing policy change, warranting focused async/sync regression tests rather than a security classification: Read already permits these artifact paths, and the change does not alter permission resolution, credentials, session lifecycle or write access. It must not expand write permissions or ACP tools.\n\nExisting test/regression anchors: packages/nax-agent/test/unit/runtime/node-glob.test.ts:1 and packages/nax/test/unit/agent-runtime/glob-runtime.test.ts:1 both drive the unchanged shared GLOB_CASES from packages/test-kit/src/cases/glob-cases.ts:34, covering D21 hidden paths, symlinks, leading ./, absolute paths and invalid cwd. Author each runtime's exemption tests in its own new file, not test-kit. packages/nax/test/unit/config/workflow-config.test.ts:8 pins the whole parsed workflow object with toEqual; preserve that closed-world assertion while adding interruptRetry and reportMs. packages/nax/test/unit/prompts/workflow-builders.test.ts is the existing builder test home. packages/nax/test/unit/workflow/implement.test.ts:73 provides fakeImplement and shared makeStepContext/makeSessionManager fixtures, with dirty/clean/interrupted cases at :81 onward. packages/nax/test/unit/workflow/story-loop-no-work.test.ts:96 supplies a scripted harness whose last outcome repeats, and :311 currently expects the obsolete step-time-limit concern after an interrupted warm restart. US-007 must instead assert exactly one continue after that restart, gates after it, and the replacement fallback concern. packages/nax/test/unit/workflow/story-loop.test.ts:55 shows direct loop fakes, while shared @test/helpers also provides makeStoryLoopHarness used by packages/nax/test/unit/workflow/story-graph.test.ts:10. Extend/reuse shared helpers instead of copying a competing harness. packages/nax/test/unit/workflow/story-graph.test.ts:37 EXPECTED_PRODUCES must change with graph outputs, not be relaxed. packages/nax/test/integration/workflow/story-e2e.test.ts:62 fakeAgent and packages/nax/test/integration/workflow/advisor-e2e.test.ts:99 fakeWorkflowAgent currently commit source but never create report.md. US-008 must have their workflowImplementOp branches write input.reportPath on every turn so already-reported stories keep their two-call/two-prompt regression counts (:104 and :219 respectively), rather than adjusting expectations to accept spurious report turns. packages/nax/test/unit/workflow/branch-review.test.ts:30 supplies facts/callOp capture, and packages/nax/test/unit/prompts/workflow-branch-builder.test.ts:16 covers prompt sections; add present/missing/throw/omitted and runDir propagation assertions there.\n\nDelivery order and risks: US-001, US-002, US-003 and US-009 are independent; US-004 -> US-005 -> US-006 -> US-007 -> US-008 forms the orchestrator chain after US-003. US-006 creates the helper/test that US-007 modifies; US-008 consumes fallback=true from US-007 to suppress report repair. Every context path is existing or an upstream output, and every expectedFiles path is a new output of its own story. Highest risks are hidden-path overexposure, wrong model/session selection after a stepped-up restart, retry budgets accidentally resetting on advisor answers, duplicate/stale interrupted concerns, duplicate auto-commit ledger notes, stale lastTurn on failures, graph output drift, and report outcomes leaking into findings/advisor flow. Failure-table scenarios are explicitly represented in story ACs, including absent/throwing file-list checks, op failures, cost skip, best-effort commits, missing reply, report-check I/O failures, and branch listing I/O failures. No branch/session restart, schema/data rewrite, release/version bump, new dependency, command, or tool is required. Feature completion means an interrupted implementer can finish on the same warm session within configured attempts, exhausted attempts commit best-effort and tell story review, eligible missing reports receive one report-only repair before review, branch review sees authoritative report paths, and both native runtimes expose only the literal .nax exception while D21 regressions stay unchanged.\n\nSecond-pass adversarial audit: all 112 numbered spec ACs were compared individually with the same-numbered entry in their binding story, with this exhaustive retained-ID inventory: US-001 {AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10}; US-002 {AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9}; US-003 {AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10, AC-11, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19}; US-004 {AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10, AC-11, AC-12, AC-13, AC-14, AC-15, AC-16}; US-005 {AC-1, AC-2, AC-3, AC-4, AC-5, AC-6}; US-006 {AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10, AC-11, AC-12, AC-13, AC-14}; US-007 {AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9}; US-008 {AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10, AC-11, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19, AC-20}; US-009 {AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9}. No numbered spec AC was deleted, reassigned or demoted to suggestedCriteria. Qualifiers retained include US-001 AC-4's deeper-dot exclusion and AC-5's wildcard-first-segment restriction, US-004 AC-3's session-close parenthetical and AC-5's defined equal model, US-006 AC-10's fix-pass cost precondition, US-008 AC-2's non-interrupted qualifier, AC-5's same-pass restriction, AC-12/13's before-re-review ordering, AC-19's fresh-no-work-restart origin and AC-20's earlier-DONE/fix-failure setup, and US-009 AC-5's captured-op prompt and AC-9's matching-story runDir. Validation ACs now expose safeParse result.success explicitly; branch listing false/throw ACs now include their own facts and captured-op setup.\n\nEvery failure-table row has an observable AC: unavailable/throwing workSinceBase (US-006), thrown/returned continue failure (US-006 and US-007), cost skip then fallback (US-006/US-007), clean/unreadable/failed-commit/absent auto-commit (US-004/US-007), failed/no-reply turn clearing report eligibility (US-008), throwing reportExists preserving review (US-008), failed/interrupted report turn without continuation or absorption (US-008), and throwing branch report lookup listed present (US-009). Each story already has a negative path: hidden matches excluded in US-001/002; invalid config in US-003; commit/read failure in US-004/005; continue failure in US-006; failed/no commit in US-007; skipped/failed report repair in US-008; failed file lookup in US-009. Added explicitly labelled behavioral regression ACs protect the complete config-default object, normal completed-turn auto-commit after helper extraction, existing workProduced wiring, the interrupted warm-restart replacement flow, and original implement/fix and advisor-answer operation counts when reports are written. These are runtime assertions, not test-count or quality-gate requirements.\n\nAll eleven feature exclusions remain verbatim at top level; adjacent story Scope exclusions remain inter-story consistent. Exactly the nine binding IDs/workdirs/dependency arrays remain unchanged; every dependency resolves to an existing story. contextFiles were checked against the spec: US-009 now includes its explicitly recommended prompt test in place of the lower-priority seam file, with five entries maximum and no own-created file as context. US-007/008 correctly reference upstream-created interrupt-continue outputs. Routing was reduced where the draft overclassified indirect session-adjacent work: Node listing is medium/tdd-simple, Bun's single-module predicate change simple/tdd-simple, evidence wiring medium/tdd-simple, and fallback commit/concern logic medium/tdd-simple. US-004/006/008 retain isolated three-session-tdd because those stories actually extend warm-session turn execution/continuity; the latter two remain complex due to retry/advisor and graph-state/review integration. Additional speculative edge cases remain suggestedCriteria rather than becoming spec ACs. No source implementation or tests were changed or executed during this audit.",
+  "outOfScope": [
+    "Pipeline mode's interrupt and timeout handling, including `agent.timeoutRetry`: pipeline mode is frozen.",
+    "Changing `STEP_TIMEOUT_MARGIN_MS` or the soft-interrupt mechanism in `softInterruptTurn`.",
+    "A fresh-session retry or a restart of the story on a step-limit interrupt.",
+    "Continue turns for the branch fix, the branch review, the story review or the re-review: only story implementer turns (implement, restart, answer, fix round) continue.",
+    "Telling the re-review about an interrupt fallback in a fix round: the re-review prompt is unchanged.",
+    "A report turn for a resumed story before any implementer turn has run in this process.",
+    "Rewriting or filtering existing ledger lines or deferred minors: a stale missing-report claim is settled in the branch-review prompt.",
+    "A new `nax` subcommand or agent tool that lists story reports.",
+    "Glob exposure of any dot path other than a literal leading `.nax` segment: ruling D21 stands for `.git`, `.env`, `.nax-wt` and every other hidden path.",
+    "ACP agents' own Glob tools, which nax does not implement.",
+    "Adding the `.nax` exemption cases to the shared `GLOB_CASES` contract in `packages/test-kit`: each runtime pins them in its own test file."
+  ],
+  "routingProfile": "native-dsai-codex"
+}
