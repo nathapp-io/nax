@@ -49,7 +49,9 @@ Bun + TypeScript CLI that orchestrates AI coding agents (Claude Code) with model
 nax runs lint, typecheck, and tests automatically via the pipeline. Run these manually only when working outside a nax session.
 
 `test:coverage` is **not** part of the nax pipeline — it is a separate CI step with a per-file floor.
-Run it by hand after changes that add or move tests, since a passing suite can still fail the gate.
+Run it by hand, outside a nax session, after changes that add or move tests, since a passing suite can still fail
+the gate. Never run it inside a nax agent session (`NAX_SANDBOXED=1`): tests that skip under the sandbox pull
+per-file floors down on files the story never touched.
 
 ## Engineering Persona
 
