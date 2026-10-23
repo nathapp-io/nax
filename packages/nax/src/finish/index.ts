@@ -81,6 +81,7 @@ export {
   _qualityGateDeps,
   classifyGateExit,
   DEFAULT_GATE_TAIL_LINES,
+  DEFAULT_GATE_TIMEOUT_MS,
   GATE_ORDER,
   gateOutputTail,
   resolveGateCommands,

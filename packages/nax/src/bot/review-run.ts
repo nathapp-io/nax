@@ -14,7 +14,7 @@ import type { buildPrStepContext } from "../workflow/pr-step-context";
 import { _workflowDeps } from "../workflow/step-context";
 import type { PrCheckout } from "./checkout";
 import { listCiConfigFiles } from "./checkout-state";
-import { type BotCheckSource, type BotChecks, checkCommands } from "./checks";
+import { type BotCheckSource, type BotChecks, checkCommands, reviewBuildSteps } from "./checks";
 import { type BotCostEnv, botCostEnv } from "./cost";
 import type { BotDecision } from "./decisions";
 import { featureIntentPaths } from "./intent";
@@ -67,6 +67,10 @@ interface ReviewPreparation {
   readonly checks: BotChecks | null;
   readonly preRunFailed?: string;
   readonly ci: CiWaitResult;
+  /** The build step that failed; the review still runs. */
+  readonly buildFailed?: string;
+  /** Every build command once the build was attempted, `[]` otherwise. */
+  readonly buildRan: readonly string[];
 }
 interface ReviewEnv extends ReviewPreparation {
   readonly cost: BotCostEnv;
@@ -153,10 +157,23 @@ async function prepareReviewChecks(
   prepared: PreparedReview,
   ctx: PrStepContext,
 ): Promise<Omit<ReviewPreparation, "ci">> {
-  if (prepared.staticMode) return { checks: null };
+  if (prepared.staticMode) return { checks: null, buildRan: [] };
+  const { checkout } = prepared;
+  const checks = await resolveReviewChecks(prepared, ctx);
+  getLogger().info("bot", "Checks resolved", { source: checks.source, commands: checkCommands(checks) });
+  try {
+    await _botReviewDeps.runPreRunSteps({ steps: checks.preRun, workdir: checkout.worktree });
+  } catch (err) {
+    const failed = preRunFailedCommand(err, "Install step failed");
+    return { checks, buildRan: [], ...(failed === undefined ? {} : { preRunFailed: failed }) };
+  }
+  return { checks, ...(await runReviewBuild(prepared, checks)) };
+}
+
+async function resolveReviewChecks(prepared: PreparedReview, ctx: PrStepContext): Promise<BotChecks> {
   const { repoRoot, checkout } = prepared;
   const config = ctx.config;
-  const checks = await _botReviewDeps.resolveBotChecks({
+  return _botReviewDeps.resolveBotChecks({
     repoRoot,
     baseSha: checkout.baseSha,
     snapshotDir: checkout.snapshotDir,
@@ -165,16 +182,53 @@ async function prepareReviewChecks(
     extract: (input) =>
       _workflowDeps.callOp(ctx.callCtx, botChecksExtractOp, { ...input, model: config.bot?.models.checks }),
   });
-  getLogger().info("bot", "Checks resolved", { source: checks.source, commands: checkCommands(checks) });
+}
+
+/**
+ * Absorb only a `PRE_RUN_FAILED` — it names the step that stopped the setup,
+ * and the review runs anyway. Anything else (a trust refusal, a spawn failure)
+ * propagates rather than reading as a setup warning.
+ */
+function preRunFailedCommand(err: unknown, message: string): string | undefined {
+  if (!(err instanceof NaxError) || err.code !== "PRE_RUN_FAILED") throw err;
+  const command = err.context?.command;
+  getLogger().warn("bot", message, { command });
+  return typeof command === "string" ? command : undefined;
+}
+
+interface ReviewBuildRun {
+  readonly buildRan: readonly string[];
+  readonly buildFailed?: string;
+}
+
+/**
+ * Build the fresh checkout after a successful install. An `--in-place` review
+ * reuses the user's own build, and a repo with no root `build` gate has nothing
+ * to run. `buildRan` still lists every command when a step fails, so the prompt
+ * reports the whole build it asked for rather than stopping at the failure.
+ */
+async function runReviewBuild(prepared: PreparedReview, checks: BotChecks): Promise<ReviewBuildRun> {
+  const steps = reviewBuildSteps(checks);
+  const { inPlace, worktree } = prepared.checkout;
+  if (inPlace === true || steps.length === 0) return { buildRan: [] };
+  const buildRan = steps.map(({ command }) => command);
   try {
-    await _botReviewDeps.runPreRunSteps({ steps: checks.preRun, workdir: checkout.worktree });
-    return { checks };
+    await _botReviewDeps.runPreRunSteps({ steps, workdir: worktree });
+    return { buildRan };
   } catch (err) {
-    if (!(err instanceof NaxError) || err.code !== "PRE_RUN_FAILED") throw err;
-    const command = err.context?.command;
-    getLogger().warn("bot", "Install step failed", { command });
-    return { checks, ...(typeof command === "string" ? { preRunFailed: command } : {}) };
+    const failed = preRunFailedCommand(err, "Build step failed");
+    return { buildRan, ...(failed === undefined ? {} : { buildFailed: failed }) };
   }
+}
+
+/**
+ * What the checkout state reports nax ran: the install commands, then whatever
+ * build commands were attempted — including the ones after a build step that
+ * failed, since the review's prompt describes the setup it asked for.
+ */
+function setupCommands(preparation: ReviewPreparation): string[] {
+  const install = preparation.checks?.preRun.map((step) => step.command) ?? [];
+  return [...install, ...preparation.buildRan];
 }
 
 async function reviewEnvironment(
@@ -244,8 +298,8 @@ async function reviewEnvironment(
     : renderCheckoutState({
         phase: "fresh",
         headSha: info.headSha,
-        setup: preparation.checks?.preRun.map((step) => step.command) ?? [],
-        setupFailed: preparation.preRunFailed,
+        setup: setupCommands(preparation),
+        setupFailed: preparation.preRunFailed ?? preparation.buildFailed,
         ciFiles: await listCiConfigFiles(checkout.worktree),
       });
   // One chosen range feeds the review, the summary and the artifact, so no two can disagree.

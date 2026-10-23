@@ -76,6 +76,21 @@ describe("buildBotPrReviewPrompt", () => {
   test("US-003 AC-8 omits absent checkout state", () => {
     expect(prompts.buildBotPrReviewPrompt(base)).not.toContain("## Checkout state");
   });
+  test("review-build US-007 AC-19: the could-not-start rule is the last line of the checkout state", () => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, checkoutState: "fresh checkout details" });
+    const section = result.slice(
+      result.indexOf("## Checkout state"),
+      result.indexOf("\n\n", result.indexOf("## Checkout state")),
+    );
+    expect(section.split("\n").at(-1)).toBe(
+      'If a check stops before it runs any test, for example because a module or workspace package cannot be resolved, it did not run: list it in "cannotVerify" as "could not start: <check>: <reason>" and name the setup step it needs. Never report it as a defect in the change.',
+    );
+  });
+  test("review-build US-007 AC-20: a static review with no checkout state carries no could-not-start rule", () => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, staticMode: true });
+    expect(result).not.toContain("## Checkout state");
+    expect(result).not.toContain("could not start:");
+  });
   test("US-003 AC-9 names PRD and spec on intent line in order", () => {
     const result = prompts.buildBotPrReviewPrompt({ ...base, prdPath: "/prd.json", specPath: "/spec.md" });
     expect(result.split("\n").find((line) => line.startsWith("Intent:"))).toBe(
