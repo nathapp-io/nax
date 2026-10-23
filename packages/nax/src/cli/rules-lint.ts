@@ -282,6 +282,26 @@ function reportFrontmatterIssues(
   }
 }
 
+/** Warn once per package-scoping glob that cannot select a workspace package. */
+function lintPackagePaths(
+  rule: CanonicalRule,
+  root: string,
+  { packages, logger }: { packages: readonly string[]; logger: ReturnType<RulesLintDeps["getLogger"]> },
+): number {
+  if (packages.length === 0) return 0;
+  let warningCount = 0;
+  for (const pattern of rule.paths ?? []) {
+    if (packages.some((pkg) => ruleMatchesPackage([pattern], root, join(root, pkg), pkg))) continue;
+    warningCount++;
+    logger.warn(
+      "rules-lint",
+      "Canonical rule paths: glob matches no workspace package directory - paths: scopes packages; use appliesTo: for file globs",
+      { file: rule.path ?? rule.fileName, pattern, code: "PATHS_MATCH_NO_PACKAGE", root },
+    );
+  }
+  return warningCount;
+}
+
 /**
  * Lint every loaded rule for one root: re-emit parser warnings, flag dead
  * `appliesTo` globs, and warn on inert `paths:` in single-package repos.
@@ -332,17 +352,7 @@ function lintRulesForRoot(
     }
     // Only repo-root rules receive workspace packages; nested overlays are
     // already package-local and must not be checked in the repo's frame.
-    if (packages.length > 0) {
-      for (const pattern of rule.paths ?? []) {
-        if (packages.some((pkg) => ruleMatchesPackage([pattern], root, join(root, pkg), pkg))) continue;
-        warningCount++;
-        logger.warn(
-          "rules-lint",
-          "Canonical rule paths: glob matches no workspace package directory - paths: scopes packages; use appliesTo: for file globs",
-          { file: rule.path ?? rule.fileName, pattern, code: "PATHS_MATCH_NO_PACKAGE", root },
-        );
-      }
-    }
+    warningCount += lintPackagePaths(rule, root, { packages, logger });
     // US-002: warn when a rule declares `paths:` in a single-package repo.
     // nax's `paths:` is package scope (matched against the story's package
     // dir), so in a single-package repo it always short-circuits to true
