@@ -38,6 +38,35 @@ function setup(reply: ImplementerReply | Error, dirty: string) {
 }
 
 describe("runBranchFix", () => {
+  test.each([{ toolProviders: undefined }, { toolProviders: [] }])(
+    "preserves call context identity without providers: %j",
+    async ({ toolProviders }) => {
+      const { fc } = setup(done, "");
+      let received: unknown;
+      _workflowDeps.callOp = makeScriptedCallOp((_op, _input, ctx) => {
+        received = ctx;
+        return done;
+      });
+      await runBranchFix(fc, { findings, toolProviders });
+      expect(received).toBe(fc.callCtx);
+    },
+  );
+
+  test("forwards call-scoped providers and preserves every other context field", async () => {
+    const { fc } = setup(done, "");
+    const toolProviders: import("@nathapp/nax-agent").ToolProvider[] = [
+      { id: "nax-forge", kind: "static", stages: ["*"], tools: async () => [] },
+    ];
+    let received: unknown;
+    _workflowDeps.callOp = makeScriptedCallOp((_op, _input, ctx) => {
+      received = ctx;
+      return done;
+    });
+    await runBranchFix(fc, { findings, toolProviders });
+    expect(received).toEqual({ ...fc.callCtx, toolProviders });
+    expect(received).not.toBe(fc.callCtx);
+    expect(fc.callCtx).not.toHaveProperty("toolProviders");
+  });
   test.each([false, true])("forwards seventh runner argument; injected=%s", async (injected) => {
     const { fc, commits } = setup(done, " M source.txt\n");
     const runGit = injected ? async () => ({ stdout: "", stderr: "", exitCode: 0 }) : undefined;

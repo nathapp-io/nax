@@ -1,4 +1,5 @@
 /** Repo-scoped bounded repair session; independent tree and gate checks follow it. */
+import { createForgeReadProvider } from "@/forge-tools";
 import { getLogger } from "@/logger";
 import { buildBotPrFixPrompt, renderCheckoutState } from "@/prompts";
 import type { StepResult } from "@/step-graph";
@@ -39,6 +40,7 @@ export async function repairStep(env: BotFixEnv, state: BotFixState): Promise<St
     findings: [],
     model: botModel(env.config, "fix", env.model),
     prompt,
+    toolProviders: [createForgeReadProvider({ resolveRef: async () => env.ref, deps: env.forge, cwd: env.repoRoot })],
   });
   const patch: Partial<BotFixState> = {
     gateRepairRounds: (state.gateRepairRounds ?? 0) + 1,

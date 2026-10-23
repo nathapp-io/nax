@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { ForgeRunResult } from "@/forge";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
-import { _ciWaitDeps, CI_ERROR_POLL_LIMIT, ciAllowsReady, waitForChecks } from "@/workflow/ci-wait";
+import { _ciWaitDeps, CI_ERROR_POLL_LIMIT, ciAllowsReady, readChecksOnce, waitForChecks } from "@/workflow/ci-wait";
 
 const original = { ..._ciWaitDeps };
 afterEach(() => Object.assign(_ciWaitDeps, original));
@@ -110,6 +110,107 @@ describe("waitForChecks (github)", () => {
     ac.abort();
     expect((await waitForChecks("github", "b", { ...OPTS, signal: ac.signal })).outcome).toBe("pending");
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("GitHub failing polls settle (US-003)", () => {
+  beforeEach(() => {
+    _ciWaitDeps.schedule = () => () => {};
+  });
+
+  test("AC-1/2: waits for the remaining check before returning failed", async () => {
+    const { calls } = script([gh(["fail", "pending"]), gh(["fail", "pass"])]);
+    expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("failed");
+    expect(calls).toHaveLength(2);
+  });
+
+  test("AC-3: failing polls never read mergeability even when it would conflict", async () => {
+    const { calls } = script([gh(["fail", "pending"])]);
+    const run = _ciWaitDeps.run;
+    let views = 0;
+    _ciWaitDeps.run = async (cmd, opts) => {
+      if (cmd[2] === "view") {
+        views++;
+        return r('{"mergeable":"CONFLICTING"}');
+      }
+      return run(cmd, opts);
+    };
+    expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("failed");
+    expect(calls.length).toBeGreaterThan(1);
+    expect(views).toBe(0);
+  });
+
+  test("AC-4: a rerun turning all checks green wins over earlier failures", async () => {
+    script([gh(["fail", "pending"]), gh(["pass", "pass"])]);
+    expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("green");
+  });
+
+  test.each([false, true])("AC-5: deadline names failures and still pending checks (errors=%s)", async (errors) => {
+    script([gh(["fail", "pending"]), ...(errors ? [r("", 4, "blip")] : [])]);
+    const out = await waitForChecks("github", "b", { ...OPTS, timeoutMs: 30 });
+    expect(out.outcome).toBe("failed");
+    expect(out.detail).toContain("c0");
+    expect(out.detail).toContain("1 still pending");
+  });
+
+  test.each([false, true])("AC-6/7: unreadable limit preserves observed failure=%s", async (failed) => {
+    const { calls } = script([...(failed ? [gh(["fail", "pending"])] : []), r("", 4, "blip")]);
+    const out = await waitForChecks("github", "b", { ...OPTS, timeoutMs: 1_000 });
+    expect(out.outcome).toBe(failed ? "failed" : "unavailable");
+    expect(calls).toHaveLength(CI_ERROR_POLL_LIMIT + Number(failed));
+  });
+
+  test("a later readable waiting poll replaces a failing deadline verdict", async () => {
+    script([gh(["fail", "pending"]), gh(["pending", "pending"]), r("", 4, "blip")]);
+    expect((await waitForChecks("github", "b", { ...OPTS, timeoutMs: 60 })).outcome).toBe("unavailable");
+  });
+
+  test("a failing readable poll resets the unreadable run", async () => {
+    const err = r("", 4, "blip");
+    const { calls } = script([err, err, gh(["fail", "pending"]), err, err, gh(["pass", "pass"])]);
+    expect((await waitForChecks("github", "b", { ...OPTS, timeoutMs: 1_000 })).outcome).toBe("green");
+    expect(calls).toHaveLength(6);
+  });
+
+  test("failure history survives a later waiting poll at the error limit", async () => {
+    const { calls } = script([gh(["fail", "pending"]), gh(["pending"]), r("", 4, "blip")]);
+    expect((await waitForChecks("github", "b", { ...OPTS, timeoutMs: 1_000 })).outcome).toBe("failed");
+    expect(calls).toHaveLength(2 + CI_ERROR_POLL_LIMIT);
+  });
+
+  test("AC-8: a settled failure ends after one poll", async () => {
+    const { calls } = script([gh(["pass", "fail"])]);
+    expect((await waitForChecks("github", "b", OPTS)).outcome).toBe("failed");
+    expect(calls).toHaveLength(1);
+  });
+
+  test("AC-9: logs the failing summary while waiting", async () => {
+    resetLogger();
+    const messages: string[] = [];
+    initLogger({ level: "silent" });
+    addSink((entry) => messages.push(entry.message));
+    try {
+      const { sleeps } = script([
+        r(
+          JSON.stringify([
+            { name: "test", bucket: "fail" },
+            { name: "e2e", bucket: "pending" },
+          ]),
+        ),
+      ]);
+      await waitForChecks("github", "b", OPTS);
+      expect(messages).toContain("CI checks: 0/2 passed, 1 pending, failing: test");
+      expect(sleeps.length).toBeGreaterThan(0);
+    } finally {
+      resetLogger();
+    }
+  });
+
+  test("AC-10: one-shot fail plus pending remains failed", async () => {
+    const { calls, sleeps } = script([gh(["fail", "pending"])]);
+    expect((await readChecksOnce("github", "b", { cwd: "/repo", expectedSha: "head" })).outcome).toBe("failed");
+    expect(calls).toHaveLength(1);
+    expect(sleeps).toEqual([]);
   });
 });
 

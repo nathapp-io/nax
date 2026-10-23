@@ -26,7 +26,7 @@ import type {
 export interface FeatureSteps {
   repoGates(): Promise<RepoGateRun>;
   branchReview(seed: string, facts: BranchReviewFacts): Promise<ReviewOutcome<BranchReviewVerdict>>;
-  branchFix(findings: readonly WorkflowFinding[]): Promise<BranchFixOutcome>;
+  branchFix(findings: readonly WorkflowFinding[], opts?: { readonly prUrl?: string }): Promise<BranchFixOutcome>;
   branchReReview(findings: readonly WorkflowFinding[], fixBase: string): Promise<ReviewOutcome<ReReviewVerdict>>;
   adjudicate(items: readonly WorkflowFinding[]): Promise<readonly WorkflowRuling[]>;
   publish(record: WorkflowFeatureRecord): Promise<PublishOutcome>;

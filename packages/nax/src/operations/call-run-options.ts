@@ -42,14 +42,18 @@ export interface RunDispatchOptionsParams {
 }
 
 /**
- * The run-scoped objects every dispatch takes from the runtime: MCP providers
- * and the command interceptor. Both hops resolve tool support from these
+ * Runtime providers followed by call-local providers, plus the runtime's
+ * command interceptor. Both hops resolve tool support from these
  * options, so injecting once here cannot leave the two paths with different
  * tools or a different interceptor.
  */
-function runtimeDispatchFields(runtime: CallContext["runtime"]) {
+function runtimeDispatchFields(ctx: CallContext) {
+  const { runtime } = ctx;
+  const providers = ctx.toolProviders?.length
+    ? [...runtime.toolProviders, ...ctx.toolProviders]
+    : runtime.toolProviders;
   return {
-    ...(runtime.toolProviders.length > 0 ? { providers: runtime.toolProviders } : {}),
+    ...(providers.length > 0 ? { providers } : {}),
     ...(runtime.commandInterceptor !== undefined ? { commandInterceptor: runtime.commandInterceptor } : {}),
   };
 }
@@ -93,7 +97,7 @@ export function buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOpt
     storyId: ctx.storyId,
     callId,
     declaredTools,
-    ...runtimeDispatchFields(ctx.runtime),
+    ...runtimeDispatchFields(ctx),
     ...(toolPatterns !== undefined ? { toolPatterns } : {}),
     codingToolRoot: storyExecRoot(ctx.packageView),
     ...(ownedWriteExemption !== undefined ? { codingToolFileOutput: ownedWriteExemption } : {}),

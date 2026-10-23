@@ -16,7 +16,7 @@ import type { FailedCheck } from "@/forge";
 import type { FeatureLimits } from "@/workflow/branch-fix-rounds";
 import type { FeatureEnv, FeatureSteps } from "@/workflow/feature-machine";
 import { FEATURE_STEPS, newFeatureRecord } from "@/workflow/feature-record";
-import { publishStep } from "@/workflow/feature-steps";
+import { ciRepairDecision, publishStep } from "@/workflow/feature-steps";
 import type { PublishOutcome } from "@/workflow/finalize";
 import type { LedgerWriteOptions } from "@/workflow/ledger";
 import type { WorkflowFeatureRecord } from "@/workflow/types";
@@ -111,6 +111,37 @@ async function readsOf(opts: HarnessOpts): Promise<number> {
   await publishStep(h.env, h.env.record);
   return h.reads.length;
 }
+
+describe("CI repair needs readable evidence (US-003)", () => {
+  const unreadable: readonly FailedCheck[] = [
+    { name: "e2e", excerpt: "log unavailable", logUnavailable: true },
+    { name: "lint", excerpt: "log unavailable", logUnavailable: true },
+  ];
+
+  test("AC-11: all unavailable logs return no repair and preserve the draft", async () => {
+    const h = harness({ checks: unreadable, limits: LIMITS });
+    expect(await ciRepairDecision(h.env, h.env.record, DRAFT_FAILED, HEAD)).toBeUndefined();
+    const out = await publishStep(h.env, h.env.record);
+    expect(out.exit).toBeUndefined();
+    expect(out.patch).toMatchObject({ outcome: "draft", ci: "failed", url: PR_URL });
+    expect(out.patch.ciRepairFindings).toBeUndefined();
+  });
+
+  test("AC-12: the ledger explains the unreadable-log skip", async () => {
+    const h = harness({ checks: unreadable, limits: LIMITS });
+    await ciRepairDecision(h.env, h.env.record, DRAFT_FAILED, HEAD);
+    expect(h.ledger).toEqual(["CI repair skipped: no failed check's log could be read (e2e, lint)"]);
+    expect(h.writes[0]?.options?.mirror).toBe(false);
+  });
+
+  test("AC-13: mixed evidence keeps one finding per failed check", async () => {
+    const h = harness({ checks: [unreadable[1] ?? E2E, E2E], limits: LIMITS });
+    expect(await ciRepairDecision(h.env, h.env.record, DRAFT_FAILED, HEAD)).toEqual([
+      { kind: "gate", severity: "important", issue: "CI check lint failed:\nlog unavailable" },
+      { kind: "gate", severity: "important", issue: "CI check e2e failed:\nboom", suggestion: "See u" },
+    ]);
+  });
+});
 
 describe("the CI repair decision after publish (US-006)", () => {
   test("AC-4: FEATURE_STEPS includes the ci-repair step", () => {

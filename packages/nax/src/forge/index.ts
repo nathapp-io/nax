@@ -5,7 +5,9 @@
  * barrel, so consumers import from `@/forge` and never `@/forge/detect`.
  */
 
-export { hasWriteAccess } from "./access";
+export { hasWriteAccess, type WriterCheck, writerCheck } from "./access";
+export type { ForgeCheck, ForgeCheckStatus } from "./checks-read";
+export { listHeadChecks } from "./checks-read";
 export type { FailedCheck } from "./ci-failures";
 export {
   CI_EXCERPT_CHARS,
@@ -29,6 +31,8 @@ export { defaultForgeDeps } from "./deps";
 export { detectForge, forgeFromRemoteUrl, remoteHost } from "./detect";
 export type { LinkedIssue } from "./issues";
 export { MAX_LINKED_ISSUES, parseClosingRefs, readIssue, readLinkedIssues } from "./issues";
+export type { JobLogRead } from "./job-log";
+export { CI_ANNOTATION_CHARS, CI_ANNOTATION_LINES, readJobLog, stripAnsi } from "./job-log";
 export {
   findOwnComments,
   hasNaxWorkflowMarker,

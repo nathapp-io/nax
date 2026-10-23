@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeBotFixEnv as environment } from "@test/helpers";
+import { resolveProviderTools } from "@nathapp/nax-agent";
+import { assertDefined, makeBotFixEnv as environment } from "@test/helpers";
 import * as bot from "@/bot";
 import type { ConfiguredModel } from "@/config";
+import { _forgeToolsDeps } from "@/forge-tools";
 
+const forgeOriginal = { ..._forgeToolsDeps };
+afterEach(() => Object.assign(_forgeToolsDeps, forgeOriginal));
 const original = { ...bot._fixStepsDeps };
 beforeEach(() => {
   bot._fixStepsDeps.readHead = async () => "fix-head";
@@ -32,6 +36,24 @@ function fakeFix(failure?: string) {
 }
 
 describe("fixStep", () => {
+  test("US-012 AC-6/7 attached pr tool reads the bot ref with bot forge deps", async () => {
+    const run = mock<typeof bot._fixStepsDeps.runBranchFix>(async () => ({ autoCommitted: false, dirty: false }));
+    bot._fixStepsDeps.runBranchFix = run;
+    const env = environment(items);
+    const read = mock(async () => env.info);
+    _forgeToolsDeps.readPrInfo = read;
+    await bot.fixStep(env, state());
+    const providers = run.mock.calls[0]?.[1].toolProviders;
+    expect(providers).toHaveLength(1);
+    expect(providers?.[0]?.id).toBe("nax-forge");
+    const resolved = await resolveProviderTools(providers ?? [], "run", "/unrelated");
+    const pr = resolved.tools.find((tool) => tool.name === "nax-forge__pr");
+    assertDefined(pr);
+    expect(
+      (await pr.run({}, { root: "/unrelated", resolvedPaths: [], maxBytes: 2000, maxFileBytes: 2000 })).isError,
+    ).not.toBe(true);
+    expect(read).toHaveBeenCalledWith(env.ref, env.forge, env.repoRoot);
+  });
   test("AC-1 forwards both agreed items through toFixFindings", async () => {
     const run = fakeFix();
     const env = environment(items);
@@ -40,6 +62,7 @@ describe("fixStep", () => {
     expect(run).toHaveBeenCalledWith(env.ctx, {
       findings: bot.toFixFindings(items),
       model: bot.botModel(env.config, "fix"),
+      toolProviders: [expect.objectContaining({ id: "nax-forge" })],
       prompt: expect.stringContaining("PR #42"),
     });
   });
@@ -53,6 +76,7 @@ describe("fixStep", () => {
       expect(run).toHaveBeenCalledWith(env.ctx, {
         findings: bot.toFixFindings(items),
         model: bot.botModel(env.config, "fix", model),
+        toolProviders: [expect.objectContaining({ id: "nax-forge" })],
         prompt: expect.stringContaining("PR #42"),
       });
     },

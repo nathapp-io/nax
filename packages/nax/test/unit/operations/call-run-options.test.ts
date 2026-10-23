@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { AskResolver, CommandShadow } from "@nathapp/nax-agent";
+import type { AskResolver, CommandShadow, ToolProvider } from "@nathapp/nax-agent";
 import type { CommandInterceptor } from "@nathapp/nax-agent/internal";
 import { makeNaxConfig, makeStory, makeTestRuntime } from "@test/helpers";
 import { buildRunDispatchOptions } from "@/operations/call-run-options";
@@ -10,6 +10,51 @@ const createdRuntimes: NaxRuntime[] = [];
 afterEach(async () => {
   await Promise.allSettled(createdRuntimes.map((r) => r.close()));
   createdRuntimes.length = 0;
+});
+
+describe("buildRunDispatchOptions — call-scoped providers", () => {
+  const a: ToolProvider = { id: "a", kind: "static", stages: ["*"], tools: async () => [] };
+  const b: ToolProvider = { id: "b", kind: "static", stages: ["*"], tools: async () => [] };
+
+  test.each([
+    { runtimeProviders: [a], callProviders: [b], expected: [a, b] },
+    { runtimeProviders: [], callProviders: [b], expected: [b] },
+    { runtimeProviders: [a], callProviders: undefined, expected: [a] },
+    { runtimeProviders: [a], callProviders: [], expected: [a] },
+    { runtimeProviders: [], callProviders: [], expected: undefined },
+    { runtimeProviders: [], callProviders: undefined, expected: undefined },
+  ])("merges providers without mutating shared state: %j", ({ runtimeProviders, callProviders, expected }) => {
+    const config = makeNaxConfig();
+    const runtime = Object.assign(makeTestRuntime({ config, workdir: "/repo" }), {
+      toolProviders: Object.freeze(runtimeProviders),
+    });
+    createdRuntimes.push(runtime);
+    const ctx = {
+      runtime,
+      packageView: runtime.packages.repo(),
+      packageDir: "",
+      config,
+      agentName: "native",
+      ...(callProviders !== undefined ? { toolProviders: Object.freeze(callProviders) } : {}),
+    };
+    const result = buildRunDispatchOptions(ctx, {
+      prompt: "hi",
+      effectiveTier: "balanced",
+      dispatchModelDef: { provider: "claude", model: "sonnet" },
+      config,
+      callId: "providers",
+      pipelineStage: "run",
+      declaredTools: ["Read"],
+      keepOpen: false,
+    });
+    expect(result.providers).toEqual(expected === undefined ? undefined : [...expected]);
+    expect("providers" in result).toBe(expected !== undefined);
+    expect(runtime.toolProviders).toEqual(runtimeProviders);
+    expect(ctx.toolProviders).toBe(callProviders);
+    if (runtimeProviders.length > 0 && !callProviders?.length) {
+      expect(result.providers).toBe(runtime.toolProviders);
+    }
+  });
 });
 
 describe("buildRunDispatchOptions — PR1 fields (single-frame redesign)", () => {

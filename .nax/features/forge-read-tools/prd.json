@@ -1,0 +1,755 @@
+{
+  "project": "nax-monorepo",
+  "feature": "forge-read-tools",
+  "branchName": "feat/forge-read-tools",
+  "createdAt": "2026-10-22T00:00:00.000Z",
+  "updatedAt": "2026-10-22T17:34:45.965Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Job logs are read through the jobs API",
+      "description": "**Goal** — Read a job's whole sanitized log through its forge API even while sibling jobs run, and distinguish unavailable logs from readable evidence.\n\n**Motivation** — The repair agent spent 38 minutes reconstructing CI locally, asked for the log through `RequestCapability` (refused, as designed), and ended with an empty commit to re-trigger CI.\n\n**Approach** — **Log read (#2657 defect 1).** A new `readJobLog(ref, checkId, deps, cwd)` in `src/forge/job-log.ts` reads one job's whole log: GitHub through `gh api --allow-escape-sequences --hostname <host> repos/<repo>/actions/jobs/<id>/logs` (retried once without the flag when gh reports it as an unknown flag), GitLab through `glab api --hostname <host> projects/<p>/jobs/<id>/trace`. The text comes back with ANSI CSI colour codes and a leading byte-order mark removed and every secret redacted over the whole log. `stripAnsi` moves from `src/forge/ci-failures.ts` into `src/forge/job-log.ts`, which exports it; `ci-failures.ts` imports it from there. Both forges' CI repair excerpts (`readFailedChecks`) read through `readJobLog`, which replaces `excerptOf` and `logUnavailableExcerpt` in `ci-failures.ts`. `FailedCheck` gains `logUnavailable?: true`, set when the log could not be read. The excerpt source changes from the failed steps only (`--log-failed`) to the whole job log.\n\n`reason` is the first non-empty line of the failed call's stderr, ANSI-stripped, redacted and cut to `CI_EXCERPT_CHARS` characters; `\"unknown\"` when stderr has no non-empty line.\n\nFailure handling: `gh api` exits non-zero with stderr naming `--allow-escape-sequences` as an unknown flag → `readJobLog` runs the same argv once without the flag and uses that result. Job log read fails for any other reason (including a subprocess timeout) → `readJobLog` returns `{ ok: false, reason }`; the excerpt is `(log unavailable: <reason>)` and `FailedCheck.logUnavailable` is `true`.\n\nUpdate the existing GitHub fixture migrations exactly: ci-failures.test.ts's githubFixture must distinguish a gh api endpoint ending in actions/jobs/<id>/logs and return that id's log, while other gh api calls still return check-runs. Replace the expected job 991 argv with gh api --allow-escape-sequences --hostname github.com repos/o/r/actions/jobs/991/logs. In ci-failures-gitlab.test.ts replace ghJobLog's joined argv for jobs 991/992 only; scripted replies and expected excerpts are unchanged. The invariant that a failed Actions check's excerpt is built from that job's own log (AC-15 and its neighbours) is unchanged.\n\n**Scope** — In: new job-log reader, sanitization, single flag fallback, failure reason, FailedCheck marker, both CI excerpt call sites, forge barrel exports and fixture migration. Out: annotation-led excerpts (US-002), wait/repair eligibility (US-003), head check listing (US-004), agent log tool (US-007). Job log reads use the forge module's default subprocess timeout; no separate log-read timeout is added.\n\n**Interface** — `src/forge/job-log.ts` (export through `src/forge/index.ts`):\n```ts\nexport type JobLogRead = { readonly ok: true; readonly text: string } | { readonly ok: false; readonly reason: string };\nexport async function readJobLog(ref: PrRef, checkId: string, deps: ForgeDeps, cwd: string): Promise<JobLogRead>;\nexport function stripAnsi(text: string): string;\nexport const CI_ANNOTATION_LINES = 20;\nexport const CI_ANNOTATION_CHARS = 2_000;\n```\n`FailedCheck` target: `{ name; url?; excerpt; logUnavailable?: true }`.",
+      "acceptanceCriteria": [
+        "[unit] readJobLog for a GitHub PrRef (host github.com, repo o/r) and check id \"991\" calls deps.run with [\"gh\", \"api\", \"--allow-escape-sequences\", \"--hostname\", \"github.com\", \"repos/o/r/actions/jobs/991/logs\"].",
+        "[unit] When that call exits 0 with stdout starting with a byte-order mark, the text that readJobLog returns does not start with the byte-order mark.",
+        "[unit] When that call exits 0 with stdout holding the ANSI colour code ESC[31m, the returned text holds no ESC[31m sequence.",
+        "[unit] When the log holds postgres://user:synthetic_password_123@db on its last line, the returned text holds [REDACTED] in place of synthetic_password_123.",
+        "[unit] When the first call exits 1 with stderr unknown flag: --allow-escape-sequences, readJobLog makes a second call with the same argv minus --allow-escape-sequences and returns that call's stdout as text.",
+        "[unit] When the first call exits 1 with stderr boom\nmore, readJobLog returns { ok: false, reason: \"boom\" } without a second call.",
+        "[unit] When the call exits 124 with stderr \n[forge] command killed after 30000ms timeout, the reason readJobLog returns is [forge] command killed after 30000ms timeout.",
+        "[unit] When the call exits 1 with empty stderr, readJobLog returns { ok: false, reason: \"unknown\" }.",
+        "[unit] readJobLog for a GitLab PrRef (host gitlab.com, repo g/p) and check id \"55\" calls deps.run with [\"glab\", \"api\", \"--hostname\", \"gitlab.com\", \"projects/g%2Fp/jobs/55/trace\"].",
+        "[unit] stripAnsi is importable from @/forge and returns red for the input ESC[31mredESC[0m.",
+        "[unit] readFailedChecks for a GitHub PR whose failed check run 991 belongs to the github-actions app reads that check's log with the repos/o/r/actions/jobs/991/logs argv and never with a gh run view argv.",
+        "[unit] A failed GitHub Actions check whose log read exits 1 with stderr boom has excerpt (log unavailable: boom).",
+        "[unit] A failed GitHub Actions check whose log read exits 1 with stderr boom has logUnavailable true.",
+        "[unit] A failed GitHub Actions check whose log is readable has no logUnavailable field.",
+        "[unit] A failed GitLab job whose trace read exits 1 with stderr boom has excerpt (log unavailable: boom).",
+        "[unit] A failed GitLab job whose trace read exits 1 with stderr boom has logUnavailable true."
+      ],
+      "tags": [
+        "forge",
+        "ci",
+        "bugfix",
+        "security"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Small shared reader and two call-site migrations, but credential redaction before truncation makes this security-critical.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/forge/ci-failures.ts",
+        "packages/nax/src/forge/deps.ts",
+        "packages/nax/src/forge/index.ts",
+        "packages/nax/test/unit/forge/ci-failures.test.ts",
+        "packages/nax/test/unit/forge/ci-failures-gitlab.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/forge/job-log.ts",
+        "packages/nax/test/unit/forge/job-log.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/forge/ci-failures.test.ts",
+          "reason": "the GitHub Actions log read expects the second forge call to be the gh run view argv for job 991 with the log-failed flag and repo github.com/o/r; it becomes the gh api argv with the allow-escape-sequences flag, hostname github.com and endpoint repos/o/r/actions/jobs/991/logs. Its githubFixture helper answers every gh api call with the check-runs listing and reads the job id after a job flag; it becomes: a gh api call whose endpoint ends with the actions jobs logs path for a job id answers from the logs map for that id, every other gh api call answers with the listing. The invariant that a failed Actions check's excerpt is built from that job's own log (AC-15 and its neighbours) is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/forge/ci-failures-gitlab.test.ts",
+          "reason": "its ghJobLog helper, the key that scripts the GitHub job-log reply for jobs 991 and 992, joins the gh run view argv with the log-failed flag and repo github.com/o/r; it becomes the gh api argv with the allow-escape-sequences flag, hostname github.com and endpoint repos/o/r/actions/jobs/<id>/logs, joined the same way. The scripted replies and every expected excerpt are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "cef78884650fd3c61fbe8d6ef9041a7245cc3a4a"
+    },
+    {
+      "id": "US-002",
+      "title": "The GitHub Actions excerpt leads with error annotations",
+      "description": "**Goal** — Lead GitHub Actions repair excerpts with bounded error annotations while preserving the end of the job log.\n\n**Motivation** — The 200-line tail excerpt shows none of it.\n\n**Approach** — **Annotation excerpt (part of defect 1).** For a GitHub Actions job whose log has lines containing `##[error]` (anywhere in the line: the API prefixes each line with a timestamp), the excerpt is an annotation block followed by a tail block:\n\n```\nGitHub Actions error annotations:\n<up to CI_ANNOTATION_LINES lines containing ##[error], in log order>\n\nLog tail:\n<the end of ciExcerpt(log)>\n```\n\nThe annotation block, header line included, is at most `CI_ANNOTATION_CHARS` characters; lines that would pass that bound are dropped from the end of the block, and a single first line longer than the bound is cut to it. The tail block gets the remaining budget: it is `ciExcerpt(log)` cut from its start so the whole excerpt is at most `CI_EXCERPT_CHARS` characters. A log with no `##[error]` line, and every GitLab trace, keeps the excerpt `ciExcerpt(log)`.\n\nRead through US-001's sanitized readJobLog rather than introducing another subprocess or moving redaction after bounds. Preserve the last non-empty log line even with a trailing newline.\n\n**Scope** — In: annotation selection, annotation/tail character budgeting, GitHub Actions excerpt composition and regression preservation of unavailable-log results. Out: log API and sanitization (US-001), CI wait/skip (US-003), interactive log views (US-007/008). Excerpt anchoring on language- or tool-specific failure markers (for example a test runner's fail lines) is not done; only GitHub Actions `##[error]` annotations lead the excerpt.\n\n**Interface** — Reuse the upstream constants verbatim:\n```ts\nexport const CI_ANNOTATION_LINES = 20;\nexport const CI_ANNOTATION_CHARS = 2_000;\n```\nExisting `ciExcerpt(log)` and `CI_EXCERPT_CHARS` remain the fallback and total excerpt budget; no new public signature is specified.",
+      "acceptanceCriteria": [
+        "[unit] For a GitHub Actions log of 3 000 lines whose line 1 500 is 2026-10-22T13:21:21.2513942Z ##[error]command (apps/runner) bun run test exited (1), the failed check's excerpt starts with the line GitHub Actions error annotations: followed by that timestamped line.",
+        "[unit] For the same log, the excerpt holds a Log tail: line after the annotation block, followed later by the log's last non-empty line.",
+        "[unit] For a GitHub Actions log with no line containing ##[error], the failed check's excerpt equals ciExcerpt(log).",
+        "[unit] For a log with 30 lines containing ##[error], the annotation block holds the first 20 (CI_ANNOTATION_LINES) in log order and not the 21st.",
+        "[unit] For a log whose 20 annotation lines are 300 characters each, the annotation block, header line included, is at most CI_ANNOTATION_CHARS characters.",
+        "[unit] For a log whose 20 annotation lines are 300 characters each, the annotation block ends with a whole annotation line.",
+        "[unit] For a log whose only annotation line is 5 000 characters, the annotation block is at most CI_ANNOTATION_CHARS characters.",
+        "[unit] For a log with annotations and 20 000 characters of tail text, the whole excerpt is at most CI_EXCERPT_CHARS characters.",
+        "[unit] For that same log, which ends with a newline, the excerpt's last non-empty line is the log's last non-empty line.",
+        "[unit] A failed GitLab job whose trace holds a line containing ##[error] has an excerpt equal to ciExcerpt(trace).",
+        "[unit] When a GitHub Actions job log read fails with reason boom, annotation-aware readFailedChecks returns that check with excerpt (log unavailable: boom) and logUnavailable true, preserving the unavailable-log result instead of constructing annotation/tail blocks."
+      ],
+      "tags": [
+        "forge",
+        "ci",
+        "bugfix"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Bounded deterministic excerpt composition using the upstream sanitized reader, without new access-control decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/forge/ci-failures.ts",
+        "packages/nax/src/forge/job-log.ts",
+        "packages/nax/test/unit/forge/ci-failures.test.ts",
+        "packages/nax/test/unit/forge/ci-failures-gitlab.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1f125a35c0c93156f7bd4636a286535b5a0c5a85"
+    },
+    {
+      "id": "US-003",
+      "title": "The GitHub CI wait settles, and a repair needs a readable log",
+      "description": "**Goal** — Wait for remaining GitHub checks after an observed failure and skip CI repair when no failed-check log can be read.\n\n**Motivation** — The real failures were a test timeout in an untouched package (a flake: green on the re-run) and an `e2e` regression the agent never saw, because the wait had stopped before `e2e` finished.\n\n**Approach** — **CI wait (defect 2).** In `waitForChecks` for GitHub, a poll with a failed bucket and at least one bucket that is neither failed nor passed is a *failing* poll: not terminal, and not passed through the mergeability read (a failed check keeps its meaning, as today). The rules, in order:\n1. A later readable poll decides as today: all passed is `green`, a failed bucket with none pending is `failed`, a conflict is `conflicting`. A re-run that turns everything green ends `green`.\n2. Error polls count toward the existing unreadable-poll run (`CI_ERROR_POLL_LIMIT`). When the run reaches the limit, the wait ends `failed` if a failing poll was observed for this head since the wait started, and `unavailable` otherwise (today's behaviour).\n3. At the deadline, when the latest readable poll was failing, the wait ends `failed` with a detail naming the failing checks and saying how many checks were `still pending`; this wins over the errored-poll `unavailable` rule, because a failed check was observed for this head.\nGitLab is unchanged: its pipeline status turns `failed` only when the pipeline is done. `readChecksOnce` (one read, used by the bot) is unchanged. Every `waitForChecks` caller inherits the change: the workflow publish (`src/workflow/finalize.ts`), `nax workflow promote` (`src/cli/workflow-promote.ts`) and the bot fix report (`src/bot/fix-report.ts`).\n\n**No evidence, no repair (defect 3).** When every failed check of the repair read has `logUnavailable`, the CI repair decision returns no repair and the ledger says why. The draft PR stays as published. `src/workflow/feature-steps.ts` is 582 lines against the 600-line limit; the change there stays within it.\n\nWhen every failed check of a CI repair read has `logUnavailable` → no CI repair round; ledger note `CI repair skipped: no failed check's log could be read (<names>)`. Check the existing empty-list case separately; mixed readable/unreadable evidence still yields one finding per failed check. Preserve existing progress lines, heartbeat cancellation, abort, head binding and unreadable-poll reset behavior. Shared classifyGh/pollOnce logic must not change readChecksOnce's fail+pending verdict. Use the scripted virtual clock and ledger harness, not real sleeps.\n\n**Scope** — In: GitHub failing-poll wait/history/deadline classification and all-unreadable repair skip. Out: excerpt generation (US-001/002), provider transport and PR bindings (US-011/012). The GitLab CI wait is unchanged; a GitLab pipeline reports `failed` only once it has finished. `readChecksOnce`, the bot's one-shot CI read, is unchanged. A skipped CI repair is not retried later in the same run.\n\n**Interface** — Existing `waitForChecks` / `CiWaitResult`, `ciRepairDecision` and `readCiFailuresForRepair` retain their external contracts. Consume US-001's `FailedCheck` target: `{ name; url?; excerpt; logUnavailable?: true }`.",
+      "acceptanceCriteria": [
+        "[unit] waitForChecks(\"github\", ...) scripted with a first poll of buckets fail and pending and a second poll of fail and pass returns outcome failed.",
+        "[unit] In that scripted wait, gh pr checks runs twice.",
+        "[unit] A failing poll (buckets fail and pending) on a PR whose mergeability read would report a conflict makes no mergeability (gh pr view) call.",
+        "[unit] waitForChecks(\"github\", ...) scripted with a first poll of fail and pending and a second poll of pass and pass returns outcome green.",
+        "[unit] waitForChecks(\"github\", ...) scripted so every poll reports buckets fail and pending until the deadline returns outcome failed with a detail that holds still pending.",
+        "[unit] waitForChecks(\"github\", ...) scripted with one failing poll followed by CI_ERROR_POLL_LIMIT polls whose gh pr checks call exits 4 returns outcome failed.",
+        "[unit] waitForChecks(\"github\", ...) scripted with CI_ERROR_POLL_LIMIT polls whose gh pr checks call exits 4 and no failing poll returns outcome unavailable.",
+        "[unit] waitForChecks(\"github\", ...) scripted with one poll of buckets pass and fail returns outcome failed after a single gh pr checks call.",
+        "[unit] While a failing poll waits on pending checks, waitForChecks logs the progress line CI checks: 0/2 passed, 1 pending, failing: test for buckets fail (named test) and pending.",
+        "[unit] readChecksOnce(\"github\", ...) with buckets fail and pending returns outcome failed.",
+        "[unit] ciRepairDecision for a draft PR whose CI failed, with the reader returning checks e2e and lint that both have logUnavailable true, returns undefined.",
+        "[unit] In that case the ledger holds the note CI repair skipped: no failed check's log could be read (e2e, lint).",
+        "[unit] ciRepairDecision with the reader returning one check with logUnavailable true and one readable check returns two repair findings, one per check."
+      ],
+      "tags": [
+        "workflow",
+        "ci",
+        "bugfix"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two small changes extend the existing poll-history/error/deadline machinery and repair reader using established virtual-clock and ledger seams; no new abstraction or transport is required.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/ci-wait.ts",
+        "packages/nax/src/workflow/feature-steps.ts",
+        "packages/nax/src/forge/ci-failures.ts",
+        "packages/nax/test/unit/workflow/ci-wait.test.ts",
+        "packages/nax/test/unit/workflow/feature-steps-ci-repair-decision.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3569ed54ce5310c6bc6258f45902242b58f99ba3"
+    },
+    {
+      "id": "US-004",
+      "title": "Head check listing",
+      "description": "**Goal** — List every check of one head commit on GitHub or GitLab with normalized status and job-log availability.\n\n**Motivation** — An agent needs to search the log, not read its tail; that is what the `log` tool does.\n\n**Approach** — **Check listing.** A new `listHeadChecks(ref, headSha, deps, cwd)` in `src/forge/checks-read.ts` lists every check of a head commit, running ones included, with a normalized status (table below). It reads one page of at most 100 check runs (GitHub) or 100 jobs (GitLab). It reuses `readCiListing` and `asRecord`, which `src/forge/ci-failures.ts` exports for use inside the forge module (not from the barrel), so a failed or unparseable GitLab listing fails exactly like the GitHub one.\n\n| Forge status | `ForgeCheck.status` | `conclusion` |\n|---|---|---|\n| GitHub `completed` | `completed` | the run's `conclusion`, or `\"unknown\"` when null |\n| GitHub `in_progress` | `in_progress` | absent |\n| GitHub `queued`, `waiting`, `requested`, `pending`, or any other value | `queued` | absent |\n| GitLab `running` | `in_progress` | absent |\n| GitLab `success`, `failed`, `canceled`, `skipped` | `completed` | the job's status |\n| GitLab `created`, `pending`, `preparing`, `waiting_for_resource`, `scheduled`, `manual`, or any other value | `queued` | absent |\n\nA check run or job without a numeric id is not listed. All of the above are exported from `src/forge/index.ts`.\n\nMirror the existing MR pipelines lookup for headSha, returning [] if there is no head pipeline. Read `projects/<encoded-project>/pipelines/<id>/jobs?per_page=100` with no failure scope; this all-check listing is distinct from readFailedChecks and its allow_failure/failure-only filtering. Preserve FORGE_CI_READ_FAILED on subprocess, JSON and malformed-listing failures.\n\n**Scope** — In: all-check normalization for both forges, internal listing helper exports, public ForgeCheck exports. Out: reading logs (US-001), tool rendering/head authorization (US-006/007). Check listings read one page: at most 100 GitHub check runs or 100 GitLab jobs of the head's pipeline.\n\n**Interface** — `src/forge/checks-read.ts`:\n```ts\nexport type ForgeCheckStatus = \"queued\" | \"in_progress\" | \"completed\";\nexport interface ForgeCheck {\n  readonly id: string;\n  readonly name: string;\n  readonly status: ForgeCheckStatus;\n  /** Present only when status is \"completed\". */\n  readonly conclusion?: string;\n  readonly url?: string;\n  /** True for a GitHub Actions job or a GitLab job: readJobLog can read it. */\n  readonly hasJobLog: boolean;\n}\nexport async function listHeadChecks(ref: PrRef, headSha: string, deps: ForgeDeps, cwd: string): Promise<readonly ForgeCheck[]>;\n```",
+      "acceptanceCriteria": [
+        "[unit] listHeadChecks for a GitHub PrRef and head abc123 calls deps.run with [\"gh\", \"api\", \"--hostname\", \"github.com\", \"repos/o/r/commits/abc123/check-runs?per_page=100&filter=latest\"].",
+        "[unit] A completed GitHub check run { id: 7, name: \"test\", status: \"completed\", conclusion: \"failure\", html_url: \"u\", app: { slug: \"github-actions\" } } is listed as { id: \"7\", name: \"test\", status: \"completed\", conclusion: \"failure\", url: \"u\", hasJobLog: true }.",
+        "[unit] A GitHub check run with status in_progress and conclusion null is listed with status in_progress and no conclusion field.",
+        "[unit] A GitHub check run with status waiting is listed with status queued.",
+        "[unit] A GitHub check run with an unrecognised status stalled is listed with status queued.",
+        "[unit] A GitHub check run with status completed and conclusion null is listed with conclusion unknown.",
+        "[unit] A GitHub check run from an app other than github-actions is listed with hasJobLog false.",
+        "[unit] A GitHub check run with no numeric id is not listed.",
+        "[unit] When the check-runs call exits 1, listHeadChecks rejects with a NaxError whose code is FORGE_CI_READ_FAILED.",
+        "[unit] listHeadChecks for a GitLab PrRef whose merge request pipelines reply holds pipeline 9 for head abc123 reads projects/g%2Fp/pipelines/9/jobs?per_page=100 with no scope filter.",
+        "[unit] In that GitLab listing, a running job is listed with status in_progress and hasJobLog true.",
+        "[unit] In that GitLab listing, a waiting_for_resource job is listed with status queued.",
+        "[unit] In that GitLab listing, a canceled job is listed with status completed and conclusion canceled.",
+        "[unit] listHeadChecks for a GitLab merge request with no pipeline for the head returns an empty list.",
+        "[unit] When the GitLab jobs call exits 1, listHeadChecks rejects with a NaxError whose code is FORGE_CI_READ_FAILED."
+      ],
+      "tags": [
+        "forge",
+        "ci",
+        "api"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two known forge listing formats and a deterministic normalization table reuse existing subprocess and error contracts.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/forge/ci-failures.ts",
+        "packages/nax/src/forge/pr-read.ts",
+        "packages/nax/src/forge/pr-types.ts",
+        "packages/nax/src/forge/index.ts",
+        "packages/nax/test/unit/forge/ci-failures-gitlab.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/forge/checks-read.ts",
+        "packages/nax/test/unit/forge/checks-read.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a2f1d7fd73e3ca0ef0d0afc42796713fba72affd"
+    },
+    {
+      "id": "US-005",
+      "title": "The nax-forge provider core",
+      "description": "**Goal** — Establish the PR-bound static provider, forge dependency seam, safe bounded result assembly and shared instructions for downstream read tools.\n\n**Motivation** — Agents get forge reads, not forge writes: creating PRs, posting comments and marking ready stay with nax, which already does them at fixed points; an agent write would bypass the writer gate that decides which PR text becomes fix work.\n\n**Approach** — **The provider.** A new module `src/forge-tools/` builds a static `ToolProvider` with id `nax-forge`, `kind: \"static\"` and `stages: [\"*\"]`. Its tools are `pr`, `checks`, `log`, `threads` and `comments`, advertised as `nax-forge__<name>` (and served to ACP Claude as `mcp__nax__nax-forge__<name>`). The PR comes from a `resolveRef` the caller supplies; no tool input names a repo, PR, head or URL. Every tool is read-only and never throws: a failure is an `isError` result. Every forge call the module makes, PR resolution from a URL included, goes through the exported `_forgeToolsDeps` object, the module's test seam.\n\n**Untrusted text and the output budget.** Everything a tool returns that came from the forge (PR fields, check names, log lines, comment bodies) is rendered inside one `markdownFence` block per tool result; the lines nax writes itself (headers, counts, footers) stay outside it. Every tool builds its result with `fitToolResult`, which fits whole entries (a log line, a check line, a comment) to the run context's `maxBytes` instead of cutting the finished string: it keeps the header, as many whole entries as fit from the kept side (`\"end\"` for the `log` tail view, `\"start\"` for every other view), always closes the fence, keeps the footer, and adds a `[truncated: <k> entries not shown]` line after the footer when it dropped any. A single entry that does not fit alone is cut on a code-point boundary.\n\n`fitToolResult` renders the header lines, then the entries joined by newlines inside one `markdownFence` block, then the footer lines. `src/prompts/builders/forge-read-builder.ts` exports `buildForgeReadInstructions(): string`, exported from `src/prompts/index.ts`; the provider's `instructions()` returns it.\n\nEvery tool takes the bound PR from `resolveRef`, which the provider calls at most once per successful resolution (a rejected resolution is retried on the next call). Every input is validated before mode selection and before any forge call.\n\nFailure handling: `resolveRef` rejects, or the bound URL carries no PR number → the tool returns `isError` naming the reason; no other forge call. A forge read inside a tool throws → the tool returns `isError` with the first non-empty line of the error's message, redacted. Preserve the exact short error content asserted by downstream tools; successful forge payloads use the fenced entry renderer. Share successful/in-flight reference resolution per instance and evict rejected resolutions; binding.cwd/deps determine all forge context independently of the tool run root. The URL helper extracts prNumberFromUrl and resolves via `_forgeToolsDeps.resolvePrRef(number, deps, cwd)`.\n\n**Scope** — In: module/barrel/provider assembly, bindings, resolver/error wrapper, all forge seam fields, UTF-8 whole-entry budget algorithm and instructions builder/barrel export. Out: concrete pr/checks handlers (US-006), log handler/views (US-007/008), writer-only tools (US-009/010), dispatch and attachment (US-011/012). Forge writes are not tools: creating or editing PRs, posting or editing comments, replying to or resolving threads, and marking a PR ready stay with nax's own workflow and bot steps. A configured MCP server whose id is `nax-forge` is not detected as a collision.\n\n**Interface** — `src/forge-tools/` (barrel `index.ts`):\n```ts\nexport const FORGE_READ_PROVIDER_ID = \"nax-forge\";\nexport interface ForgeReadBinding {\n  readonly resolveRef: () => Promise<PrRef>;\n  readonly deps: ForgeDeps;\n  readonly cwd: string;\n}\nexport function createForgeReadProvider(binding: ForgeReadBinding): ToolProvider;\nexport function forgeReadProviderForUrl(url: string, deps: ForgeDeps, cwd: string): ToolProvider;\n/** The test seam: every forge call the tools make goes through these fields. */\nexport const _forgeToolsDeps: {\n  resolvePrRef: typeof resolvePrRef;\n  readPrInfo: typeof readPrInfo;\n  listHeadChecks: typeof listHeadChecks;\n  readJobLog: typeof readJobLog;\n  listReviewThreads: typeof listReviewThreads;\n  listPrComments: typeof listPrComments;\n  hasWriteAccess: typeof hasWriteAccess;\n};\nexport interface ToolResultParts {\n  readonly header: readonly string[];\n  readonly entries: readonly string[];\n  readonly footer: readonly string[];\n}\nexport function fitToolResult(parts: ToolResultParts, maxBytes: number, keep: \"start\" | \"end\"): string;\nexport const FORGE_LOG_DEFAULT_LINES = 200;\nexport const FORGE_LOG_MAX_LINES = 500;\nexport const FORGE_LOG_MAX_MATCHES = 50;\nexport const FORGE_LOG_LINE_CHARS = 1_000;\nexport const FORGE_COMMENT_CHARS = 2_000;\nexport const FORGE_MAX_THREADS = 50;\nexport const FORGE_MAX_COMMENTS = 50;\n```\n```ts\nexport function buildForgeReadInstructions(): string;\n```",
+      "acceptanceCriteria": [
+        "[unit] createForgeReadProvider(binding) returns a provider whose id is FORGE_READ_PROVIDER_ID (\"nax-forge\").",
+        "[unit] That provider's kind is static and its stages is [\"*\"].",
+        "[unit] The provider's instructions(root) resolves to buildForgeReadInstructions(), and that string names nax-forge__checks, nax-forge__log, nax-forge__threads and nax-forge__comments.",
+        "[unit] Two tool calls on one provider call resolveRef once.",
+        "[unit] When resolveRef rejects with boom, a tool call returns isError with content holding boom.",
+        "[unit] After resolveRef rejected once, the next tool call calls resolveRef again.",
+        "[unit] A tool of forgeReadProviderForUrl(\"https://github.com/o/r/pull/7\", deps, \"/repo\") calls _forgeToolsDeps.resolvePrRef with 7, that deps and \"/repo\".",
+        "[unit] A tool of forgeReadProviderForUrl(\"https://example.com/no-number\", deps, cwd) returns isError naming that URL.",
+        "[unit] A tool of forgeReadProviderForUrl(\"https://example.com/no-number\", deps, cwd) never calls _forgeToolsDeps.resolvePrRef.",
+        "[unit] fitToolResult for parts that fit maxBytes returns the header lines, a markdownFence block of the entries, and the footer lines, in that order.",
+        "[unit] fitToolResult for ten 100-byte entries with maxBytes 600 and keep start returns a result of at most 600 UTF-8 bytes that holds the first entry, not the tenth, and ends with a [truncated: <k> entries not shown] line.",
+        "[unit] fitToolResult for the same parts with keep end returns a result that holds the tenth entry and not the first.",
+        "[unit] A fitToolResult result that dropped entries still holds the closing fence and every footer line.",
+        "[unit] fitToolResult for a single entry of 1 000 three-byte characters with maxBytes 600 returns at most 600 UTF-8 bytes and holds no broken multi-byte character.",
+        "[unit] When resolveRef rejects, the tool makes no other forge call.",
+        "[unit] When a forge read inside a tool throws, the tool returns isError with the first non-empty line of the error's message, redacted, instead of rejecting."
+      ],
+      "tags": [
+        "forge",
+        "tools",
+        "security",
+        "prompts"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New provider abstraction with PR isolation, rejected-promise retry and untrusted UTF-8 output/error handling; security-critical redaction and binding boundary.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/tools/provider-types.ts",
+        "packages/nax-agent/src/tools/registry.ts",
+        "packages/nax/src/forge/pr-read.ts",
+        "packages/nax/src/forge/ci-failures.ts",
+        "packages/nax/src/utils/markdown-fence.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/forge-tools/index.ts",
+        "packages/nax/src/forge-tools/provider.ts",
+        "packages/nax/src/forge-tools/fit-result.ts",
+        "packages/nax/src/prompts/builders/forge-read-builder.ts",
+        "packages/nax/test/unit/forge-tools/provider.test.ts",
+        "packages/nax/test/unit/forge-tools/fit-result.test.ts",
+        "packages/nax/test/unit/prompts/builders/forge-read-builder.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When two tool calls concurrently await the same successful resolveRef, resolveRef is called once.",
+        "When two provider instances resolve different bindings, calls on one instance never reuse the other instance's PrRef."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "15e6d0a1ccddd9e38de1975b666bf3364cb3d440"
+    },
+    {
+      "id": "US-006",
+      "title": "The pr and checks tools",
+      "description": "**Goal** — Expose bound-PR metadata and its current head's complete check listing through the provider core.\n\n**Motivation** — The repair agent spent 38 minutes reconstructing CI locally, asked for the log through `RequestCapability` (refused, as designed), and ended with an empty commit to re-trigger CI.\n\n**Approach** — Tool contracts:\n| Tool | Input | Output |\n|---|---|---|\n| `pr` | none | number, state, draft flag, base ref, head ref, head sha, URL and title |\n| `checks` | none | one line per check of the PR's current head: id, name, status, the conclusion when completed, and the URL when present |\n\nEvery tool takes the bound PR from `resolveRef`, which the provider calls at most once per successful resolution (a rejected resolution is retried on the next call). Every input is validated before mode selection and before any forge call.\n\nEverything a tool returns that came from the forge (PR fields, check names, log lines, comment bodies) is rendered inside one `markdownFence` block per tool result; the lines nax writes itself (headers, counts, footers) stay outside it. Every tool builds its result with `fitToolResult`, which fits whole entries (a log line, a check line, a comment) to the run context's `maxBytes` instead of cutting the finished string: it keeps the header, as many whole entries as fit from the kept side (`\"end\"` for the `log` tail view, `\"start\"` for every other view), always closes the fence, keeps the footer, and adds a `[truncated: <k> entries not shown]` line after the footer when it dropped any. A single entry that does not fit alone is cut on a code-point boundary.\n\nA forge read inside a tool throws → the tool returns `isError` with the first non-empty line of the error's message, redacted.\n\nAdd pr-tools.ts and register localName pr/checks in the upstream provider. Resolve the bound ref with the shared successful-resolution cache. Read PrInfo through _forgeToolsDeps.readPrInfo on each relevant invocation; checks then passes its headSha to _forgeToolsDeps.listHeadChecks, binding deps/cwd throughout. This must exercise the real provider handler chain, not merely direct listing helper tests. Error content for a message `\nboom\nmore` is exactly `boom`; token-bearing messages are redacted.\n\n**Scope** — In: pr/checks handlers, namespace advertisement, metadata and check entry rendering and non-throwing errors. Out: provider core (US-005), log tool (US-007/008), writer tools (US-009/010), dispatch/binding (US-011/012). The `pr` tool does not return the PR description body. Logs or checks of any head, PR or repository other than the bound PR's current head are not readable.\n\n**Interface** — Consume the existing/upstream `readPrInfo(ref, deps, cwd)`, `listHeadChecks(ref, headSha, deps, cwd)` and `ProviderTool.run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult>` contracts through _forgeToolsDeps. No additional public function signature is prescribed.",
+      "acceptanceCriteria": [
+        "[unit] resolveProviderTools([createForgeReadProvider(binding)], \"run\", root) advertises tools that include nax-forge__pr and nax-forge__checks.",
+        "[unit] The pr tool calls _forgeToolsDeps.readPrInfo with the PrRef that resolveRef returned.",
+        "[unit] The pr tool, with _forgeToolsDeps.readPrInfo stubbed with a PR whose head sha is abc123, returns a result without isError whose content holds abc123.",
+        "[unit] The pr tool's content holds the PR title inside a markdownFence block, so a title holding a triple-backtick run stays inside the fence.",
+        "[integration] The checks tool calls _forgeToolsDeps.listHeadChecks with the bound PrRef and the head sha that _forgeToolsDeps.readPrInfo returned.",
+        "[unit] The checks tool's content shows, for each returned check, its id, name and status inside a markdownFence block.",
+        "[unit] The checks tool's line for a completed check with conclusion failure holds failure.",
+        "[unit] The checks tool's line for a check with url https://ci/7 holds https://ci/7.",
+        "[unit] When _forgeToolsDeps.listHeadChecks throws an error whose message is \nboom\nmore, the checks tool resolves to isError with content boom instead of rejecting.",
+        "[unit] When _forgeToolsDeps.listHeadChecks throws an error whose message holds ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789, the checks tool's isError content does not hold that token."
+      ],
+      "tags": [
+        "forge",
+        "tools",
+        "security"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Straightforward handler composition, with credential-bearing error redaction and strict bound-PR data exposure requiring security isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/forge-tools/provider.ts",
+        "packages/nax/src/forge-tools/fit-result.ts",
+        "packages/nax/src/forge/checks-read.ts",
+        "packages/nax/src/forge/pr-types.ts",
+        "packages/nax/src/forge/pr-read.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/forge-tools/pr-tools.ts",
+        "packages/nax/test/unit/forge-tools/pr-tools.test.ts",
+        "packages/nax/test/integration/forge-tools/pr-tools.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "cd50dbba8d0b6b41ff5656df0629b2fdc164a637"
+    },
+    {
+      "id": "US-007",
+      "title": "The log tool reads a check of the PR's head",
+      "description": "**Goal** — Read and tail only a job belonging to the bound PR's current head, validating input and caching completed job logs per provider.\n\n**Motivation** — An agent needs to search the log, not read its tail; that is what the `log` tool does.\n\n**Approach** — Tool contract: `log` input is `check` (string of digits, or an integer, required), `search` (non-empty string), `from` (integer >= 1), `lines` (integer 1..500, default 200); output is a header naming the check, its status and a `showing lines <x>-<y> of <n>` line; then the numbered log lines.\n\nEvery input is validated before mode selection and before any forge call.\n\nThe log's lines are its text split on newline, with one empty final element after a trailing newline not counted. Every emitted log line is prefixed with its 1-based line number and cut to `FORGE_LOG_LINE_CHARS` characters. The `check` must be the id of a check in `listHeadChecks` for the PR's current head sha. A completed check's log text is read once per provider and reused; a check that is not completed is read on every call. The tail view fits to `maxBytes` with `keep: \"end\"`; the page and search views with `keep: \"start\"`.\n\nImplement input validation for all four fields in this story, even though page/search selection is delivered by US-008. With neither search nor from, tail returns the last lines (default 200). Read current PrInfo and head checks through _forgeToolsDeps before authorizing the id and before consulting completed-log cache; no cached log may bypass head membership. Use US-001's readJobLog result and never another subprocess path. A non-completed job is partial, and an in_progress check's output says `job still running: this log is partial`. Render numbered lines and forge-derived check text inside the upstream single-fence fitter, with nax-owned showing/count lines outside.\n\nFailure handling: `log` names a check that is not a check of the PR's head → `isError` naming the id and pointing to `nax-forge__checks`; no log read. `log` names a check with no job log (a non-Actions GitHub check) → `isError` saying the check has no job log. `log` input invalid (wrong type, out of range, empty `search`, missing `check`) → `isError` naming the field; no forge call. A failed readJobLog returns isError holding its reason.\n\n**Scope** — In: log handler/advertisement, complete input validation, current-head check authorization, per-provider completed-log cache, tail selection and partial-log notice. Out: page/search algorithms (US-008), listing implementation (US-004), API log implementation (US-001), dispatch/binding (US-011/012). The `log` tool does not read the output text of non-Actions GitHub checks; that text stays in the CI repair excerpt. Logs or checks of any head, PR or repository other than the bound PR's current head are not readable.\n\n**Interface** — Reuse upstream exports verbatim:\n```ts\nexport async function readJobLog(ref: PrRef, checkId: string, deps: ForgeDeps, cwd: string): Promise<JobLogRead>;\nexport const FORGE_LOG_DEFAULT_LINES = 200;\nexport const FORGE_LOG_MAX_LINES = 500;\nexport const FORGE_LOG_LINE_CHARS = 1_000;\n```\nThe tool is a ProviderTool with localName `log`; all forge calls use `_forgeToolsDeps`.",
+      "acceptanceCriteria": [
+        "[unit] resolveProviderTools([createForgeReadProvider(binding)], \"run\", root) advertises tools that include nax-forge__log.",
+        "[unit] The log tool with check \"99\" when the head's checks are ids 7 and 8 returns isError naming 99 and nax-forge__checks.",
+        "[unit] That rejected log call never calls _forgeToolsDeps.readJobLog.",
+        "[unit] The log tool with the id of a check whose hasJobLog is false returns isError saying that check has no job log.",
+        "[integration] The log tool with a valid check id calls _forgeToolsDeps.readJobLog with the bound PrRef and that check id.",
+        "[unit] The log tool given check as the integer 7 reads the log of check \"7\".",
+        "[unit] The log tool on a 1 000-line log with neither search nor from returns lines 801 to 1000, each prefixed with its 1-based line number.",
+        "[unit] That tail result holds the line showing lines 801-1000 of 1000 outside the fence.",
+        "[unit] The log tool on a log of 3 lines that ends with a newline reports of 3 in its showing line.",
+        "[unit] A tail result that does not fit maxBytes keeps the log's last line and drops lines from the start.",
+        "[unit] The log tool with lines 501 returns isError naming lines.",
+        "[unit] The log tool with no check returns isError naming check.",
+        "[unit] A log call rejected for invalid input makes no deps.run call.",
+        "[unit] The log tool for a check whose status is in_progress returns content holding job still running: this log is partial.",
+        "[unit] When _forgeToolsDeps.readJobLog returns { ok: false, reason: \"gone\" }, the log tool returns isError holding gone.",
+        "[unit] Two log calls for the same completed check call _forgeToolsDeps.readJobLog once.",
+        "[unit] Two log calls for the same in_progress check call _forgeToolsDeps.readJobLog twice.",
+        "[unit] When log input has a wrong field type, an out-of-range value, an empty search or a missing check, the tool returns isError naming the invalid field before making any forge call."
+      ],
+      "tags": [
+        "forge",
+        "tools",
+        "ci",
+        "security"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One log handler and provider registration reuse the existing forge readers and result fitter; strict three-session TDD remains required for current-head authorization and validation before I/O.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/forge/job-log.ts",
+        "packages/nax/src/forge/checks-read.ts",
+        "packages/nax/src/forge-tools/provider.ts",
+        "packages/nax/src/forge-tools/fit-result.ts",
+        "packages/nax/src/forge/pr-types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/forge-tools/log-tool.ts",
+        "packages/nax/test/unit/forge-tools/log-tool.test.ts",
+        "packages/nax/test/integration/forge-tools/log-tool.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a completed check's log is cached and a later call reads a PR head that does not contain that id, log returns isError without serving the cached text.",
+        "When readJobLog fails for a completed check and succeeds on the next call, log returns the successful text on that next call."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d05e2a5696ce8a897a7a64b942a69947dfb8c56a"
+    },
+    {
+      "id": "US-008",
+      "title": "The log tool's page and search views",
+      "description": "**Goal** — Add page and literal-search views to the authorized log tool, preserving original line numbers and bounded fenced output.\n\n**Motivation** — Even a readable log did not help: in the failed `test` job's 24 155-line log the failing test sits at line 2 845, followed by about 19 000 lines of other packages' output that a monorepo task runner prints after the failure.\n\n**Approach** — `log` modes compose in this order: `search` present selects search mode (case-insensitive literal substring, no regex; `from` and `lines` are ignored); otherwise `from` present selects page mode (`lines` lines from `from`); otherwise tail mode (the last `lines` lines). The log's lines are its text split on newline, with one empty final element after a trailing newline not counted. Search mode returns at most `FORGE_LOG_MAX_MATCHES` matching lines plus a `<shown> of <total> matches` line. Every emitted log line is prefixed with its 1-based line number and cut to `FORGE_LOG_LINE_CHARS` characters. The `check` must be the id of a check in `listHeadChecks` for the PR's current head sha. A completed check's log text is read once per provider and reused; a check that is not completed is read on every call. The tail view fits to `maxBytes` with `keep: \"end\"`; the page and search views with `keep: \"start\"`.\n\nEvery input is validated before mode selection and before any forge call.\n\nExtract pure view selection/rendering into log-view.ts and extend log-tool.ts using the upstream validation, head authorization and log cache. A page starting after the log end contains no numbered lines and reports `showing lines 0-0 of <n>`. Apply literal case-insensitive matching to full sanitized log lines, count all matches, show the first 50, and only then apply per-emitted-line character limits and whole-entry byte fitting. A supplied invalid from remains invalid even when search selects the view. Use markdownFence through fitToolResult; never slice a finished fenced result.\n\n**Scope** — In: search/page composition, matching/counting, page bounds, line numbering/line cap, start-kept byte fitting and regression preservation of the existing default tail view. Out: log API (US-001), provider core (US-005), changes to log authorization/cache contracts (US-007), PR/session binding (US-012). Log search is a literal substring match; regular expressions are not supported.\n\n**Interface** — Reuse upstream constants:\n```ts\nexport const FORGE_LOG_DEFAULT_LINES = 200;\nexport const FORGE_LOG_MAX_LINES = 500;\nexport const FORGE_LOG_MAX_MATCHES = 50;\nexport const FORGE_LOG_LINE_CHARS = 1_000;\n```\nInputs: `check` (string of digits, or an integer, required), `search` (non-empty string), `from` (integer >= 1), `lines` (integer 1..500, default 200). No new public view-function signature is prescribed.",
+      "acceptanceCriteria": [
+        "[unit] The log tool with from 10 and lines 5 returns lines 10 to 14.",
+        "[unit] The log tool with from 50 on a 10-line log returns no numbered lines and the line showing lines 0-0 of 10.",
+        "[unit] The log tool with search (FAIL) returns the line (fail) x with its line number, matching case-insensitively and treating the parentheses literally.",
+        "[unit] The log tool with a search that matches 70 lines returns the first 50 matches and the line 50 of 70 matches.",
+        "[unit] The log tool given both search and from returns search-mode output.",
+        "[unit] The log tool given search and lines 3, on a log with 10 matches, returns 10 matches.",
+        "[unit] The log tool with from 2.5 returns isError naming from, also when search is given.",
+        "[unit] The log tool with an empty search returns isError naming search.",
+        "[unit] The log tool cuts a 5 000-character log line to FORGE_LOG_LINE_CHARS characters.",
+        "[unit] The log tool's numbered lines sit inside a markdownFence block, so a log line holding a triple-backtick run stays inside the fence.",
+        "[unit] A page result that does not fit maxBytes keeps the page's first line and drops lines from the end.",
+        "[unit] After page and search views are added, log on a 1 000-line log with neither search nor from nor lines still returns numbered lines 801-1000, preserving the existing default 200-line tail view."
+      ],
+      "tags": [
+        "forge",
+        "tools",
+        "ci"
+      ],
+      "dependencies": [
+        "US-007"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Deterministic view algorithms reuse already-established authorization, sanitization and cache boundaries without changing access policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/forge-tools/log-tool.ts",
+        "packages/nax/src/forge-tools/fit-result.ts",
+        "packages/nax/src/utils/markdown-fence.ts",
+        "packages/nax/test/unit/forge-tools/log-tool.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/forge-tools/log-view.ts",
+        "packages/nax/test/unit/forge-tools/log-view.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0da021debc7e86d6e5d2c024fe4d1480119b950e"
+    },
+    {
+      "id": "US-009",
+      "title": "Writer-only threads tool, with writerCheck in the forge module",
+      "description": "**Goal** — Expose writer-authored review-thread text and relocate the bot's cached writer check to the shared forge boundary without changing bot behavior.\n\n**Motivation** — Agents get forge reads, not forge writes: creating PRs, posting comments and marking ready stay with nax, which already does them at fixed points; an agent write would bypass the writer gate that decides which PR text becomes fix work.\n\n**Approach** — **Writer-only PR text.** `threads` and `comments` show only comments whose author has write access, and count the rest as withheld, the same rule the bot applies to fix items. The check is `writerCheck` over `_forgeToolsDeps.hasWriteAccess`, called with `{ login: comment.author, id: comment.authorId }` (GitLab needs the id), cached per login for the life of one provider instance, and fail closed. `writerCheck` moves from `src/bot/writers.ts` to `src/forge/access.ts` so the new module can use it without an import cycle; `src/bot/writers.ts` re-exports it, so bot callers are unchanged.\n\nTool contract: `threads` input `includeResolved` (boolean, default false); output per review thread: location, resolved/outdated flags, writer comments (author + body).\n\n`threads` and `comments` footers come after the fence, in this order: the not-shown line (`<k> more thread(s) not shown`, or `<k> earlier comment(s) not shown`) when any were not shown, then `withheld <n> comment(s) from authors without write access` when `n` is above zero. The withheld count covers every non-writer comment the tool read (for `threads`, across every thread that passed the resolved filter, shown or not), because the writer filter runs before the display cap.\n\nEvery input is validated before mode selection and before any forge call.\n\nFailure handling: `hasWriteAccess` throws for a login → that login's comments are withheld (fail closed); one `forge-tools` warning per login. `threads` input invalid (wrong type) → `isError` naming the field; no forge call.\n\nMove both writerCheck and WriterCheck to access.ts, export from @/forge, and re-export them from bot/writers.ts while retaining readWriters and bot barrel compatibility. Preserve the existing in-flight and settled promise cache exactly. The provider creates one writer checker, using _forgeToolsDeps.hasWriteAccess with binding ref/deps/cwd; downstream comments reuses it. Add thread-tools.ts for shared writer filtering/comment rendering and register threads in provider.ts. Filter out resolved threads by default, authorize every remaining thread's comments before the first-50 display cap, and cap each body at 2,000 characters. When every comment is withheld retain the thread location and `(no comments from writers)`. Fence all forge-derived locations, flags, authors and bodies using fitToolResult with keep start; preserve not-shown/withheld footers and any subsequent output-budget truncation notice.\n\n**Scope** — In: writer helper relocation and compatible re-exports, per-provider writer cache, threads input/filter/render/cap/counts and shared comment rendering. Out: comments selection (US-010), provider core (US-005), session transport/binding (US-011/012). Forge writes are not tools: creating or editing PRs, posting or editing comments, replying to or resolving threads, and marking a PR ready stay with nax's own workflow and bot steps.\n\n**Interface** — `writerCheck`, `WriterCheck`. Baseline: defined in `src/bot/writers.ts`. Target: defined in `src/forge/access.ts`, exported from `@/forge`; `src/bot/writers.ts` re-exports both. Preserve the existing signatures. Reuse upstream constants:\n```ts\nexport const FORGE_COMMENT_CHARS = 2_000;\nexport const FORGE_MAX_THREADS = 50;\n```",
+      "acceptanceCriteria": [
+        "[unit] writerCheck is importable from @/forge, and two calls for the same login call the injected hasWriteAccess stub once.",
+        "[unit] writerCheck from @/forge, given a hasWriteAccess stub that throws for login x, resolves false for x.",
+        "[unit] writerCheck from @/forge, given a hasWriteAccess stub that throws for login x, calls the warn sink once with x.",
+        "[unit] The writerCheck exported from @/bot is the same function as the one exported from @/forge.",
+        "[unit] resolveProviderTools([createForgeReadProvider(binding)], \"run\", root) advertises tools that include nax-forge__threads.",
+        "[integration] The threads tool calls _forgeToolsDeps.listReviewThreads with the bound PrRef.",
+        "[unit] The threads tool with no input lists only threads whose resolved is false.",
+        "[unit] The threads tool with includeResolved true also lists resolved threads, each marked resolved.",
+        "[unit] The threads tool shows a writer's comment with its author and body and omits a non-writer's comment.",
+        "[unit] With one non-writer comment, the threads tool's footer holds withheld 1 comment(s) from authors without write access.",
+        "[unit] With no non-writer comment, the threads tool's result holds no withheld line.",
+        "[unit] Across threads holding three comments by the same login, the threads tool calls _forgeToolsDeps.hasWriteAccess once for that login.",
+        "[unit] For a GitLab PrRef, the threads tool calls _forgeToolsDeps.hasWriteAccess with the bound PrRef, { login: comment.author, id: comment.authorId } as the subject argument, binding.deps and binding.cwd.",
+        "[unit] When _forgeToolsDeps.hasWriteAccess throws for login x, the threads tool withholds x's comments.",
+        "[unit] When _forgeToolsDeps.hasWriteAccess throws for login x, the threads tool logs one forge-tools warning naming x.",
+        "[unit] A thread comment body longer than FORGE_COMMENT_CHARS characters is cut to FORGE_COMMENT_CHARS characters.",
+        "[unit] The threads tool's comment bodies sit inside a markdownFence block, so a body holding a triple-backtick run stays inside the fence.",
+        "[unit] With 60 unresolved threads, one non-writer comment in thread 55, the threads tool lists the first 50 (FORGE_MAX_THREADS) and its footer holds 10 more thread(s) not shown followed by withheld 1 comment(s) from authors without write access.",
+        "[unit] A thread whose every comment is withheld is listed with its location and (no comments from writers).",
+        "[unit] The threads tool with includeResolved set to a string returns isError naming includeResolved.",
+        "[unit] When includeResolved has an invalid type, the threads tool makes no forge call."
+      ],
+      "tags": [
+        "forge",
+        "tools",
+        "security",
+        "bot"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Relocates an existing 23-line writer checker unchanged and adds one thread handler on the provider core; writer-role filtering and GitLab author identity require strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/forge/threads.ts",
+        "packages/nax/src/forge/access.ts",
+        "packages/nax/src/bot/writers.ts",
+        "packages/nax/src/bot/index.ts",
+        "packages/nax/src/forge-tools/provider.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/forge-tools/thread-tools.ts",
+        "packages/nax/test/unit/forge-tools/thread-tools.test.ts",
+        "packages/nax/test/integration/forge-tools/thread-tools.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "90334b10b569dbec552bb4a5192dfb652428f7f7"
+    },
+    {
+      "id": "US-010",
+      "title": "Writer-only comments tool",
+      "description": "**Goal** — Expose the latest writer-authored PR comments and review bodies in chronological order through the shared writer filter.\n\n**Motivation** — Agents get forge reads, not forge writes: creating PRs, posting comments and marking ready stay with nax, which already does them at fixed points; an agent write would bypass the writer gate that decides which PR text becomes fix work.\n\n**Approach** — Tool contract: `comments` input none; output top-level PR comments and review bodies by writers: the `FORGE_MAX_COMMENTS` with the latest `createdAt`, oldest first (author + body).\n\n`threads` and `comments` show only comments whose author has write access, and count the rest as withheld, the same rule the bot applies to fix items. The check is `writerCheck` over `_forgeToolsDeps.hasWriteAccess`, called with `{ login: comment.author, id: comment.authorId }` (GitLab needs the id), cached per login for the life of one provider instance, and fail closed.\n\n`threads` and `comments` footers come after the fence, in this order: the not-shown line (`<k> more thread(s) not shown`, or `<k> earlier comment(s) not shown`) when any were not shown, then `withheld <n> comment(s) from authors without write access` when `n` is above zero. The withheld count covers every non-writer comment the tool read (for `threads`, across every thread that passed the resolved filter, shown or not), because the writer filter runs before the display cap.\n\nFailure handling: `hasWriteAccess` throws for a login → that login's comments are withheld (fail closed); one `forge-tools` warning per login. A forge read inside a tool throws → the tool returns `isError` with the first non-empty line of the error's message, redacted.\n\nAdd comment-tools.ts, register comments in provider.ts, and reuse US-009's writer checker and comment renderer. Call _forgeToolsDeps.listPrComments with the bound ref/deps/cwd; do not omit GitHub kind review entries. Filter every returned comment for write access before selecting the latest 50 by createdAt, then present those oldest first. Cap each body at FORGE_COMMENT_CHARS, fence authors/bodies and fit whole comment entries with keep start. Preserve footer order and the fitter's after-footer truncation notice. A permissions failure never converts that login to a writer or rejects the tool call.\n\n**Scope** — In: comments handler, latest-writer-comment selection, body rendering/cap, withheld/not-shown counts and non-throwing read errors. Out: writer helper relocation/threads implementation (US-009), core fitting (US-005), transport/PR session bindings (US-011/012). Forge writes are not tools: creating or editing PRs, posting or editing comments, replying to or resolving threads, and marking a PR ready stay with nax's own workflow and bot steps.\n\n**Interface** — Reuse `listPrComments(ref, deps, cwd)`, `PrComment` (kind `\"thread\" | \"comment\" | \"review\"`, author, authorId?, createdAt), `writerCheck` and the upstream constants:\n```ts\nexport const FORGE_COMMENT_CHARS = 2_000;\nexport const FORGE_MAX_COMMENTS = 50;\n```\nNo additional public handler signature is prescribed.",
+      "acceptanceCriteria": [
+        "[unit] resolveProviderTools([createForgeReadProvider(binding)], \"run\", root) advertises tools that include nax-forge__comments.",
+        "[integration] The comments tool calls _forgeToolsDeps.listPrComments with the bound PrRef.",
+        "[unit] The comments tool shows a writer's comment and a writer's review body (kind review) with their authors.",
+        "[unit] The comments tool omits a non-writer's comment and its footer holds withheld 1 comment(s) from authors without write access.",
+        "[unit] With 70 writer comments the comments tool shows the 50 (FORGE_MAX_COMMENTS) with the latest createdAt, oldest first.",
+        "[unit] In that case its footer holds 20 earlier comment(s) not shown.",
+        "[unit] A comment body longer than FORGE_COMMENT_CHARS characters is cut to FORGE_COMMENT_CHARS characters in the comments result.",
+        "[unit] The comments tool's bodies sit inside a markdownFence block, so a body holding a triple-backtick run stays inside the fence.",
+        "[unit] When _forgeToolsDeps.hasWriteAccess throws for login x, the comments tool withholds x's comments.",
+        "[unit] When _forgeToolsDeps.listPrComments throws, the comments tool resolves to isError instead of rejecting."
+      ],
+      "tags": [
+        "forge",
+        "tools",
+        "security"
+      ],
+      "dependencies": [
+        "US-009"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Standard selection and rendering on shared helpers, but writer-role authorization and fail-closed comment exposure require strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/forge/threads.ts",
+        "packages/nax/src/forge/pr-types.ts",
+        "packages/nax/src/forge-tools/thread-tools.ts",
+        "packages/nax/src/forge-tools/provider.ts",
+        "packages/nax/src/forge/access.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/forge-tools/comment-tools.ts",
+        "packages/nax/test/unit/forge-tools/comment-tools.test.ts",
+        "packages/nax/test/integration/forge-tools/comment-tools.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When threads and comments on the same provider read comments from the same login, hasWriteAccess is called once across both tools."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5d107107140a88924f8cdf382c4bb302c7ddc466"
+    },
+    {
+      "id": "US-011",
+      "title": "Call-scoped tool providers reach the session",
+      "description": "**Goal** — Merge call-scoped providers after runtime providers and forward them through branch-fix dispatch to the existing permission-gated native and ACP Claude tool surfaces.\n\n**Motivation** — The repair agent spent 38 minutes reconstructing CI locally, asked for the log through `RequestCapability` (refused, as designed), and ended with an empty commit to re-trigger CI.\n\n**Approach** — **Dispatch plumbing.** `CallContext` gains `toolProviders`, call-scoped providers that `buildRunDispatchOptions` appends after the runtime's `toolProviders`; from there the existing provider path delivers them to native sessions (`extraTools` and grants) and to ACP Claude (`acpDelivery`). `runBranchFix` takes an optional `toolProviders` and passes it on the call context.\n\n`CallContext` (`src/operations/types.ts`). Target: gains `readonly toolProviders?: readonly import(\"@nathapp/nax-agent\").ToolProvider[]` (input-side).\n`runtimeDispatchFields` / `buildRunDispatchOptions` (`src/operations/call-run-options.ts`). Baseline: `providers` = `runtime.toolProviders` when non-empty. Target: `providers` = `runtime.toolProviders` then `ctx.toolProviders`, omitted when both are empty.\n`runBranchFix(fc, input)` (`src/workflow/branch-fix.ts`). Target: `input` gains `toolProviders?: readonly ToolProvider[]`; `runFixSession` calls `callOp` with `{ ...fc.callCtx, toolProviders }` when that list is non-empty and with `fc.callCtx` itself otherwise.\n\nIntegration contracts: `resolveCodingToolSupport(options)` (`src/agents/coding-tool-support-resolve.ts`); resolves providers only when the permission profile's `providerScope` is not `\"none\"` (`unrestricted` = `\"all\"`, `safe` = `\"none\"`, `scoped` = `\"rules\"`, see `resolvePermissions` in `src/config/permissions.ts`). `finalizeAcpSurface` / `toEmbedderTools` (`src/agents/acp/provider-embedder.ts`): ACP delivery to agents with a pre-approval channel (Claude only), calling `tool.run` with `resolvedPaths: []`, no policy check.\n\nFailure handling: The session's permission profile has `providerScope` `\"none\"` (`safe`) → the provider is not resolved; the session has no forge tools.\n\nKeep merge call-scoped: never mutate the runtime array or attach a repair provider to shared runtime state. Preserve all other call context fields and no-provider object identity. Existing deny/ask admission and ACP pre-approval delivery must stay authoritative; do not add a parallel native/ACP registration mechanism. Prove provider advertisement and acpDelivery through the real resolveCodingToolSupport entry point, not a real native/ACP process. For this dispatch-only integration use a static ToolProvider fixture with id nax-forge and a read-only localName pr tool: US-006 is not an upstream dependency, so these tests must not import its future pr-tools.ts handler. Production handler behavior is exercised by US-006 and the completed PR bindings by US-012. This story owns the dispatch source changes even though its end-to-end ACs exercise existing tool-support code.\n\n**Scope** — In: optional CallContext/runBranchFix input, stable provider merge order, callOp forwarding and permission-gated delivery proof. Out: concrete tools (US-006 through US-010), workflow/bot PR attachment (US-012). ACP agents with no pre-approval channel (codex, opencode, gemini, cursor, pi) get no forge tools; they rely on the CI excerpt in their brief. Permission profiles are unchanged: `safe` gets no forge tools, and `scoped` gets them only when the stage's rules carry an `Mcp(nax-forge)` allow rule; no default rule is added.\n\n**Interface** — Input-side CallContext field:\n```ts\nreadonly toolProviders?: readonly import(\"@nathapp/nax-agent\").ToolProvider[]\n```\n`runBranchFix` input addition: `toolProviders?: readonly ToolProvider[]`. Existing return and session lifecycle contracts are unchanged.",
+      "acceptanceCriteria": [
+        "[unit] buildRunDispatchOptions with runtime toolProviders [A] and a call context whose toolProviders is [B] returns providers [A, B] in that order.",
+        "[unit] buildRunDispatchOptions with runtime toolProviders [] and call-context toolProviders [B] returns providers [B].",
+        "[unit] buildRunDispatchOptions with both lists empty or absent returns options with no providers field.",
+        "[unit] runBranchFix with toolProviders [P] calls _workflowDeps.callOp with a call context whose toolProviders is [P] and whose other fields equal fc.callCtx's.",
+        "[unit] runBranchFix with no toolProviders calls _workflowDeps.callOp with fc.callCtx itself (same object).",
+        "[integration] resolveCodingToolSupport for a run-kind dispatch whose providers hold a nax-forge provider, under permission profile unrestricted, returns support whose advertised tools include nax-forge__pr.",
+        "[integration] For the same dispatch, the support's acpDelivery.tools include a tool named nax-forge__pr.",
+        "[integration] resolveCodingToolSupport for the same dispatch under permission profile safe advertises no tool whose name starts with nax-forge__.",
+        "[integration] Under permission profile safe (providerScope none), the nax-forge provider is not resolved."
+      ],
+      "tags": [
+        "operations",
+        "workflow",
+        "tools",
+        "security",
+        "acp"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Adds one optional input field and merges/forwards provider arrays through three existing modules without changing native/ACP delivery; permission-gated session exposure still requires strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/types.ts",
+        "packages/nax/src/operations/call-run-options.ts",
+        "packages/nax/src/workflow/branch-fix.ts",
+        "packages/nax/src/agents/coding-tool-support-resolve.ts",
+        "packages/nax/src/agents/tool-surface.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/agents/forge-read-delivery.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8ab92cea6988cbee9baa2dd566df3f29924f9d77"
+    },
+    {
+      "id": "US-012",
+      "title": "Repair sessions are bound to their PR",
+      "description": "**Goal** — Bind the workflow CI repair to its published PR URL and bot fix/repair to their existing PrRef, leaving unrelated sessions unbound.\n\n**Motivation** — The real failures were a test timeout in an untouched package (a flake: green on the re-run) and an `e2e` regression the agent never saw, because the wait had stopped before `e2e` finished.\n\n**Approach** — **Bindings.** The workflow CI repair binds the published PR URL; the bot fix and bot repair bind the bot's `PrRef`. Every other session gets no provider. The workflow binding uses `_featureDeps.forge`, the same `ForgeDeps` the workflow's thread posting uses.\n\n`FeatureSteps.branchFix` (`src/workflow/feature-machine.ts`). Baseline: `branchFix(findings)`. Target: `branchFix(findings, opts?: { readonly prUrl?: string })`.\n`buildFeatureEnv` (`src/workflow/feature-env.ts`). Target: its `branchFix` passes `toolProviders: [forgeReadProviderForUrl(opts.prUrl, _featureDeps.forge, fc.projectDir)]` to `runBranchFix` when `opts.prUrl` is set.\n`ciRepairStep` (`src/workflow/feature-steps.ts`). Target: calls `env.steps.branchFix(findings, { prUrl: rec.url })` when `rec.url` is set.\n`fixStep` (`src/bot/fix-steps.ts`) and `repairStep` (`src/bot/repair-step.ts`). Target: both pass `toolProviders: [createForgeReadProvider({ resolveRef: async () => env.ref, deps: env.forge, cwd: env.repoRoot })]` to `runBranchFix`.\n\nUS-011 → US-012: `CallContext.toolProviders` and `runBranchFix`'s `toolProviders` are what the bindings fill. US-012's seam ACs enter at `ciRepairStep`, at `buildFeatureEnv(...).steps.branchFix`, at `fixStep` and at `repairStep`.\n\nRequired regression migrations: `packages/nax/test/integration/bot/fix-check-steps.test.ts` — \"AC-1 forwards both agreed items through toFixFindings\" and \"AC-2 resolves fix model with override\" expect `runBranchFix` to be called with exactly `{ findings, model, prompt }`; each expected input gains `toolProviders: [expect.objectContaining({ id: \"nax-forge\" })]`. Findings, model and prompt are unchanged. `packages/nax/test/integration/bot/repair-step.test.ts` — \"AC-8/9/10 builds repair prompt with every tail and increments round\" expects `runBranchFix` to be called with exactly `{ findings: [], model: undefined, prompt }`; the expected input gains `toolProviders: [expect.objectContaining({ id: \"nax-forge\" })]`. Findings, model and prompt are unchanged.\n\nVerify the binding by invoking the actual attached provider's pr tool: workflow URL resolution must use _featureDeps.forge/fc.projectDir and bot metadata reads must use env.ref/env.forge. Preserve branchFixStep's one-argument invocation and no-options call context absence; gate repair and review/implementer paths must not inherit a provider. Do not replace explicit workflow/bot ForgeDeps with defaultForgeDeps or choose a PR from agent input. Coordinate the small feature-steps edit with US-003 so the 582-line baseline remains within the 600-line limit.\n\n**Scope** — In: optional FeatureSteps PR URL, feature-env provider construction, ciRepairStep forwarding, bot fix/repair construction, non-throwing malformed-URL binding verification and exact-expectation migrations. Out: dispatch plumbing (US-011), tool implementations (US-005 through US-010), CI eligibility/wait (US-003). Bot review sessions, workflow implementer, story review, branch review and branch fix sessions outside the CI repair round are not bound to the provider.\n\n**Interface** — `branchFix(findings, opts?: { readonly prUrl?: string })`; upstream provider entry points:\n```ts\nexport function createForgeReadProvider(binding: ForgeReadBinding): ToolProvider;\nexport function forgeReadProviderForUrl(url: string, deps: ForgeDeps, cwd: string): ToolProvider;\n```",
+      "acceptanceCriteria": [
+        "[unit] ciRepairStep on a record with url https://github.com/o/r/pull/7 and one CI finding calls env.steps.branchFix with that finding in the findings array, retaining the existing C1 id assignment, and { prUrl: \"https://github.com/o/r/pull/7\" } as the second argument.",
+        "[unit] branchFixStep calls env.steps.branchFix with its findings and no second argument.",
+        "[integration] buildFeatureEnv(...).steps.branchFix(findings, { prUrl: \"https://github.com/o/r/pull/7\" }), with _workflowDeps.callOp scripted, calls callOp with a call context whose toolProviders holds exactly one provider with id nax-forge.",
+        "[integration] Calling that provider's pr tool calls _forgeToolsDeps.resolvePrRef with 7, the _featureDeps.forge instance and fc.projectDir.",
+        "[integration] buildFeatureEnv(...).steps.branchFix(findings) with no options calls callOp with a call context that has no toolProviders.",
+        "[integration] fixStep with agreed items calls _fixStepsDeps.runBranchFix with toolProviders holding one provider with id nax-forge.",
+        "[integration] The pr tool of the provider fixStep attaches calls _forgeToolsDeps.readPrInfo with env.ref and env.forge.",
+        "[integration] repairStep on a red-gate round calls _fixStepsDeps.runBranchFix with toolProviders holding one provider with id nax-forge.",
+        "[integration] When buildFeatureEnv(...).steps.branchFix attaches a provider for prUrl https://example.com/no-number, invoking that provider's pr tool resolves to isError naming that URL instead of rejecting."
+      ],
+      "tags": [
+        "workflow",
+        "bot",
+        "forge",
+        "tools",
+        "security"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-006",
+        "US-008",
+        "US-010",
+        "US-011"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Five small workflow/bot wiring edits use already-built provider factories and branch-fix forwarding; PR-bound session capabilities and absence in unrelated sessions require strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/feature-steps.ts",
+        "packages/nax/src/workflow/feature-machine.ts",
+        "packages/nax/src/workflow/feature-env.ts",
+        "packages/nax/src/bot/fix-steps.ts",
+        "packages/nax/src/bot/repair-step.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/workflow/forge-read-bindings.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/integration/bot/fix-check-steps.test.ts",
+          "reason": "\"AC-1 forwards both agreed items through toFixFindings\" and \"AC-2 resolves fix model with override\" expect `runBranchFix` to be called with exactly `{ findings, model, prompt }`; each expected input gains `toolProviders: [expect.objectContaining({ id: \"nax-forge\" })]`. Findings, model and prompt are unchanged."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/repair-step.test.ts",
+          "reason": "\"AC-8/9/10 builds repair prompt with every tail and increments round\" expects `runBranchFix` to be called with exactly `{ findings: [], model: undefined, prompt }`; the expected input gains `toolProviders: [expect.objectContaining({ id: \"nax-forge\" })]`. Findings, model and prompt are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "51075f0a648362e3ba03a949d0b37c1b8245a369"
+    }
+  ],
+  "analysis": "Adversarial refine audit: all 146 numbered acceptance criteria in the supplied spec were enumerated and checked against their original story; none were deleted or moved. The revised draft has 160 criteria because compound source assertions were split, failure-table obligations were made explicit, US-008 now directly protects the unchanged default tail, and US-002/012 explicitly exercise unreadable-log and malformed-bound-URL failure paths. Source ordinal -> acceptanceCriteria ordinal mapping (ranges map in order): US-001 1-11->1-11, 12->12/13, 13->14, 14->15/16; US-002 1-4->1-4, 5->5/6, 6-9->7-10; US-003 1-13->1-13; US-004 1-15->1-15; US-005 1-7->1-7, 8->8/9, 9-13->10-14; US-006 1-10->1-10; US-007 1-17->1-17; US-008 1-11->1-11; US-009 1->1, 2->2/3, 3-12->4-13, 13->14/15, 14-18->16-20; US-010 1-10->1-10; US-011 1-8->1-8; US-012 1-8->1-8. Qualifying clauses were retained, including literal case-insensitive matching with parentheses, invalid from even when search is supplied, the trailing-newline last-non-empty-line constraint, same-object call context identity, nested-backtick fencing, before-cap writer filtering/counts and chronological latest-comment selection. No deprecated content-check tags occur. Every criterion is observable as a returned ToolResult/check/result, thrown NaxError, recorded dependency call/absence, emitted log/ledger text, or rendered bytes.\n\nFailure-table audit, row by row: unknown-flag retry is US-001.5; log failures/timeouts/empty stderr are US-001.6-8 and unavailable excerpts/markers are US-001.12-16; every failed log unreadable is US-003.11-12; failed-plus-pending wait is US-003.1-9; failed/missing-number reference resolution is US-005.5-9/15; thrown forge reads are US-005.16, US-006.9-10 and US-010.10; foreign check id is US-007.2-3; no job log is US-007.4; invalid inputs are US-007.11-13/18, US-008.7-8 and US-009.20-21; thrown writer lookup is US-009.2-3/14-15 and US-010.9; providerScope none is US-011.8-9. Each story has a negative path: US-001 unreadable log, US-002 unreadable-log fallback, absent annotations/GitLab annotation exclusion and over-budget annotation rejection, US-003 error-poll exhaustion/no-evidence skip, US-004 failed listing, US-005 rejected resolution, US-006 thrown listing/token suppression, US-007 invalid or foreign check, US-008 invalid search/from and out-of-range page, US-009 writer denial/invalid includeResolved, US-010 writer denial/listing rejection, US-011 safe profile, and US-012 malformed bound URL and no-options/unbound session. Existing-behavior anchors remain in US-001 (own-job API read/no old gh run view and readable-field absence), US-002 (no-annotation/GitLab ciExcerpt), US-003 (one-shot reader and settled failures), US-008 (new explicit unchanged default-tail assertion), US-009 (same bot/forge writerCheck function), US-011 (same context object without providers), and US-012 (ordinary branchFixStep/no-options path).\n\nContext/dependency audit: every critical spec-recommended context file is retained within each story's five-file ceiling. Context entries are existing files or transitive upstream outputs, never files that story creates; proposed new test files mirror the new source modules rather than representing existing helpers. All twelve ids, workdirs and dependency lists match the Binding Story Structure exactly, and every referenced id exists. US-011 has only US-005 as its bound dependency: its dispatch-only integration uses a static nax-forge provider fixture exposing local pr through the real resolver, not an import of US-006's future pr-tools.ts. US-006 and US-012 exercise the production handlers. Complexity was reduced to medium for US-003/007/009/011/012 because they extend existing seams rather than introduce new transports; US-003 uses tdd-simple, while access-control/credential/session stories retain the required three-session security override. Only the new provider/fitting abstraction US-005 remains complex. Explicit parameter semantics were clarified for GitLab writer subjects and for ciRepairStep's existing C1-normalized findings array; no production signature or dependency was invented. All sixteen feature exclusions were checked individually and retained verbatim at top level: forge writes; incapable ACP agents; unchanged profiles; unrelated sessions; PR description; non-Actions output; regex search; foreign heads/PRs/repos; one-page checks; default timeout; unchanged GitLab wait; unchanged readChecksOnce; no collision detection; no language-specific markers; no retry of skipped repairs; manual documentation. Nearby story scopes echo their relevant exclusions, and US-008's scope now includes its tail-regression protection instead of excluding tail behavior altogether. Corrected source-line references below were verified against this worktree during refinement.\n\nGoal and completion: close #2657 by shipping the CI evidence fixes together with a PR-bound, read-only static nax-forge provider, delivered only to workflow CI repair and bot fix/repair sessions through the existing provider path. This is an enhancement of existing forge/workflow/bot code, not a greenfield agent or transport. Exactly twelve stories, their workdirs, dependencies and acceptance-criterion ownership follow the binding specification. All implementation is in packages/nax; packages/nax-agent is a read-only contract dependency. No package version, public nax-agent API, transport protocol, permission default or user documentation change is required. Navigation: codebase-memory MCP was unavailable, so findings were obtained through direct reads and targeted searches, not an index. No source implementation or tests were changed during PRD generation.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:15 identifies the dependency-injection, error and constant conventions; docs/architecture/ARCHITECTURE.md:151 sets a 600-line source hard cap, 400-line soft cap, 800-line test hard cap, small functions, explicit permissions and injectable I/O. Use Bun-native APIs in nax, existing bun:test helpers and mutable dependency seams rather than mock.module or global monkey patches. Import forge consumers through @/forge (packages/nax/src/forge/index.ts:1); only forge-internal readers use relative imports into ci-failures. Prompt prose belongs in src/prompts/builders with an export from src/prompts/index.ts. Agent package types must be imported through @nathapp/nax-agent, and errorMessage through @nathapp/nax-agent/internal, never by cross-package relative imports. New modules should remain separated by provider assembly, fitting, PR/check tools, log I/O/view logic, and writer-filtered thread/comment tools.\n\nUS-001/002 evidence baseline: packages/nax/src/forge/ci-failures.ts:19 defines FailedCheck without a logUnavailable marker; :28-31 bound excerpts to 200 lines and 8,000 characters. The local ANSI CSI stripper and ciExcerpt at :52-71 redact the entire log before truncation, deliberately protecting credentials whose closing delimiter crosses the excerpt boundary. Preserve this regression anchor when moving stripAnsi. Local logUnavailableExcerpt currently examines only stderr's first physical line (:86), so leading-empty stderr hides the timeout reason; the new reader must select the first non-empty stripped/redacted line and bound after redaction. readCiListing (:158) already converts CLI/JSON failures to NaxError FORGE_CI_READ_FAILED. readExcerpt (:197) currently runs gh run view --job <id> --log-failed; non-Actions checks instead use output title/summary/text. readGitlabExcerpt (:290) reads the job trace separately. Introduce job-log.ts and route both job-log branches through it, remove excerptOf/logUnavailableExcerpt, leave non-Actions output excerpts intact, and export the intended public reader/types/constants/stripAnsi from forge/index.ts without exporting listing internals. The API log must remove a leading BOM and ANSI CSI and redact the whole text before any annotation, line or byte bounds. Retry only the GitHub unknown --allow-escape-sequences flag failure, once, using the same argv without that flag. packages/nax/src/forge/deps.ts:18 and :39-88 already supply a 30,000ms wall-clock cap, concurrent stdout/stderr drain, process-group cleanup and a timeout stderr line; do not add another timeout or spawn path. Annotation extraction must search anywhere in timestamp-prefixed lines, keep first annotations in original order, include its header within 2,000 characters, reserve remaining 8,000-character budget for the end of ciExcerpt, and never apply annotation anchoring to GitLab.\n\nExisting regression fixtures: packages/nax/test/unit/forge/ci-failures.test.ts:104-118 has githubFixture that treats every gh api call as the check listing and extracts job ids from --job. At :148-152 it asserts the old log argv. Update endpoint discrimination so actions/jobs/<id>/logs reads the correct log map entry, with the Actions excerpt invariants unchanged. packages/nax/test/unit/forge/ci-failures-gitlab.test.ts:20-27 scripts joined argv, including ghJobLog; update only that GitHub key shape and retain trace/listing replies and excerpt assertions. Tests also exercise whole-log credential redaction, bounded errors, listing errors, non-Actions output and GitLab head-pipeline selection. New job-log tests must use injected ForgeDeps and synthetic credentials, not live forge access.\n\nUS-003 wait and repair baseline: packages/nax/src/workflow/ci-wait.ts:119 classifies any fail/cancel bucket as terminal failed before considering pending checks. githubWaiting (:184) reads mergeability only for waiting/green; retain that bypass for a failing poll. terminalPoll (:292), errorRun (:309), checkHistory (:341) and waitForChecks (:355) separately own terminal outcomes, consecutive unreadable polls, reported-check history, heartbeat scheduling, deadlines, abort and expected-head green binding. Add wait-specific failing state/history without changing readChecksOnce (:433): it shares pollOnce/classifyGh today, so a naive shared classifier change can accidentally make the bot's one-shot failed+pending result pending. Preserve readChecksOnce's head binding and detail, ordinary no-check/pending/unavailable outcomes, heartbeat cleanup and GitLab pipeline behavior. A later readable poll remains authoritative, including a rerun going green; the error-poll limit uses whether failure was ever observed, while deadline precedence uses the latest readable failing poll. Failing+pending must not invoke mergeability. Callers automatically inherit the wait fix: packages/nax/src/workflow/finalize.ts:390, packages/nax/src/cli/workflow-promote.ts:159 via workflow-forge, and packages/nax/src/bot/fix-report.ts:117. No per-caller divergent CI policy is needed. packages/nax/test/unit/workflow/ci-wait.test.ts:10-36 already scripts polls and virtual time; extend it with failing transitions and existing logging sink support.\n\npackages/nax/src/workflow/feature-steps.ts:405 begins ciRepairStep; :475 maps checks into findings; :489 reads CI failures and currently skips only reader errors or an empty list. ciRepairDecision (:519) already gates on draft+failed, published URL/head, repair rounds and cost, and publishStep (:534) preserves the publish outcome while scheduling repair. Add the every(logUnavailable) skip only after the empty-list case and before repairing ledger output; mixed evidence must still produce findings for every failed check. Ledger text must be exactly CI repair skipped: no failed check's log could be read (<names>). The file is currently 582 lines, confirmed by the read result; US-003 and US-012 together must stay within 600 lines by keeping edits minimal or moving supporting logic to a focused helper only if necessary. Preserve NO_MIRROR ledger options and the draft outcome. packages/nax/test/unit/workflow/feature-steps-ci-repair-decision.test.ts:60-116 provides an injected reader/ledger harness and :119 onward tests the publish decision; keep the existing positive controls for every no-repair case. A skipped repair is not deferred or retried later in the run.\n\nUS-004 head checks: existing check-runs listing and GitLab merge-request pipelines/head matching live in packages/nax/src/forge/ci-failures.ts:219-231 and :317-350. Add checks-read.ts using the same readCiListing/asRecord exported internally from that file; do not duplicate weaker parsing/error behavior for GitLab. GitHub uses one latest-filtered page of at most 100 check runs; GitLab selects the first pipeline for headSha from the existing MR-pipeline response pattern and reads at most 100 jobs without scope[]=failed. Do not reuse the failure-only/allow_failure filters for the all-checks listing. IDs without numeric source values are excluded. Normalize statuses exactly per the story table; only completed checks carry conclusion. Only github-actions runs and GitLab jobs have logs. New listing types/readers are public through @/forge, but readCiListing/asRecord are not barrel exports.\n\nUS-005/006 provider contract and result safety: packages/nax-agent/src/tools/provider-types.ts:20-49 exposes ProviderTool.run(input, ctx), ToolProvider.tools(workdir), stages and async instructions. packages/nax-agent/src/tools/registry.ts:21-23 defines ToolResult {content,isError?}; :64-73 gives ToolRunContext.root/resolvedPaths/maxBytes. No nax-agent edits are necessary. Every actual forge interaction in forge-tools, including URL resolution, goes through _forgeToolsDeps, with binding.deps and binding.cwd, not the agent's supplied root or a global default. packages/nax/src/forge/pr-read.ts:20 resolves a PR number against checkout origin (explicit forge/host/repo), and :134 reads current PR metadata. forgeReadProviderForUrl must extract the URL's number with prNumberFromUrl and use that resolver as specified, not silently invent a URL-host/repository routing API. Resolve once on success per provider (share an in-flight resolution); rejected resolutions must be evicted so the next invocation retries. Do not cache PrInfo/headSha forever: checks and log calls validate against readPrInfo's current head. pr deliberately omits description body even though PrInfo carries it (packages/nax/src/forge/pr-types.ts:14-29).\n\nUse fitToolResult for every tool's payload assembly: budget whole UTF-8 entries, not a finished string slice; reserve headers, dynamic markdownFence delimiters, footers and truncation accounting, and cut a lone oversized entry only at code-point boundaries. packages/nax/src/utils/markdown-fence.ts:40 chooses a fence longer than any backtick run, so slicing a completed block would break its safety guarantee. Forge-derived PR fields, check names, log content and comments all belong inside one fence; nax-owned counts/headers/footers remain outside. Error results must preserve the concrete first-non-empty redacted message contract (in particular checks returns content boom for a newline-prefixed boom error), never reject or leak a token. The specification does not define how to fit an impossibly small budget below the fixed header/footer/fence envelope; keep the tested envelope invariant, do not silently omit required footer/fence content, and treat any broader tiny-budget policy as a hardening question rather than inventing an AC. Provider instructions must describe bound, read-only capabilities and literal search and be generated by buildForgeReadInstructions, not inline prompt literals in forge-tools.\n\nUS-007/008 log safety and views: validate every supplied field before mode selection or ANY forge call, even a from/lines value ignored by search. check accepts digit strings or integers, never an agent-selected PR, repo, head or URL. Read current PrInfo then listHeadChecks to authorize membership before readJobLog; reject non-head ids and non-job checks without a log read. Cache successful completed-job text per provider; queued/in-progress jobs are reread each call. Do not let cached text bypass current-head membership. Split on newline and remove exactly one trailing empty split element; preserve interior blanks and line numbering. Tail defaults to 200, maximum 500; tail retains entries from the end, page/search from the start. Search is a case-insensitive literal substring, first 50 matches with total-match count, and ignores from/lines only after full validation. Per emitted log line, retain the original 1-based number and cap text at 1,000 characters. In-progress logs explicitly say job still running: this log is partial. Keep log I/O/cache in log-tool.ts and pure view selection/rendering in log-view.ts.\n\nUS-009/010 writer trust: packages/nax/src/bot/writers.ts:4-26 defines WriterCheck and a Map<string,Promise<boolean>> that caches in-flight and settled permission results per login and fails closed with one warning per failed login; :29-36 defines readWriters. Move the first two unchanged to forge/access.ts, keep readWriters in bot/writers.ts using and re-exporting the relocated symbols, and preserve the bot barrel at packages/nax/src/bot/index.ts:78. Existing bot consumers are packages/nax/src/bot/review-run.ts:152 and packages/nax/src/bot/rulings.ts:59. packages/nax/src/forge/access.ts:10-35 already enforces explicit-host GitHub write/admin or GitLab access_level >=30 and requires a GitLab author id. New tools must call writerCheck over _forgeToolsDeps.hasWriteAccess with {login: comment.author,id: comment.authorId}; missing IDs/lookup failures stay denied. Instantiate the writer cache once per provider so threads and comments share it.\n\npackages/nax/src/forge/threads.ts:30-61 already paginates with complete-page decoding and failure propagation; :145-155 rejects incomplete nested GitHub thread conversations rather than authorizing from partial text. listPrComments (:266) includes GitHub review bodies, listReviewThreads (:294) yields normalized threads. packages/nax/src/forge/pr-types.ts:40-64 preserves comment kinds/createdAt/authorId and thread location/resolved/outdated flags. Reuse these readers unchanged. Filter resolved threads first, then authorize every comment of every included thread before limiting display to 50 threads; withheld counts include thread 55 even when only 50 are displayed. Empty-after-filter threads retain location plus (no comments from writers). For comments, authorize all read entries before selecting the latest 50 writer comments by createdAt and showing those oldest first. Bodies are capped at 2,000 characters and remain fenced. Preserve not-shown then withheld footer ordering, with output-budget truncation notice after all footers. packages/nax/test/unit/bot/writers.test.ts:25-65 already pins in-flight cache identity, fail-closed repeated warnings and GitLab subject forwarding; extend it to assert the forge and bot exports have identical function identity.\n\nUS-011 dispatch path: packages/nax/src/operations/types.ts:21 defines CallContext without call-scoped providers. packages/nax/src/operations/call-run-options.ts:50-55 copies only runtime.toolProviders; :98 spreads these into AgentRunOptions. Merge runtime then context providers without mutating shared runtime state and omit providers when both empty. packages/nax/src/workflow/branch-fix.ts:65-78 calls _workflowDeps.callOp with fc.callCtx; :81-95 builds the prompt and commits leftovers. Add optional input.toolProviders, preserve fc.callCtx object identity for absent/empty lists, otherwise spread only the call context and add the passed providers. Keep prompt/model/timeout/report/auto-commit/error/abort behavior unchanged. Existing unit seams are packages/nax/test/unit/operations/call-run-options.test.ts and packages/nax/test/unit/workflow/branch-fix.test.ts:20-36, which use makeFeatureContext/makeScriptedCallOp.\n\nNo new delivery mechanism is needed. packages/nax/src/agents/coding-tool-support-resolve.ts:275-329 admits providers only when resolved providerScope is not none, evaluates scoped Mcp rules before adaptation, and :467 onward feeds extraTools plus grants into native support and attaches ACP delivery. Both operations/build-hop-callback.ts and runtime/session-run-hop.ts consume this shared resolver, as its module documentation states. packages/nax/src/agents/tool-surface.ts:75-105 filters ACP deny/ask rules before pre-approval, and :150 attaches the delivery set. packages/nax/src/agents/acp/provider-embedder.ts:30-56 adapts names to MCP embedder tools with resolvedPaths:[], and :72-96 drops delivery for agents without registry preApproval. Native names are nax-forge__<local>, Claude serves mcp__nax__nax-forge__<local>. Never bypass these permission gates to make integration tests pass: safe has no providers, scoped requires an existing stage allow rule, unrestricted allows all. Reuse existing coding-tool-support provider-gate/surface tests as models and add nax-forge integration tests without launching agents.\n\nUS-012 bindings and migration: packages/nax/src/workflow/feature-machine.ts:29 defines branchFix(findings); extend with optional {readonly prUrl?:string}. packages/nax/src/workflow/feature-env.ts:71 currently forwards findings only; bind opts.prUrl using forgeReadProviderForUrl with _featureDeps.forge and fc.projectDir. The same forge instance is already used for postItemThreads (:83-84) and defined in packages/nax/src/workflow/feature-deps.ts:7-17. ciRepairStep must pass the published rec.url; ordinary branchFixStep and gate repair remain unbound. BotFixEnv (packages/nax/src/bot/fix-steps.ts:72-88) owns ref/forge/repoRoot, and fixStep (:103-128) and repairStep (packages/nax/src/bot/repair-step.ts:12-43) call the shared runBranchFix seam. Bind those two using createForgeReadProvider with async resolveRef returning env.ref, env.forge and env.repoRoot (not the checkout path as forge context). Existing exact expectations in packages/nax/test/integration/bot/fix-check-steps.test.ts:34-60 and packages/nax/test/integration/bot/repair-step.test.ts:108-133 must gain toolProviders:[expect.objectContaining({id:'nax-forge'})] while findings/model/prompt remain unchanged. Test the real chain ciRepairStep -> feature branchFix options -> buildFeatureEnv -> runBranchFix -> callOp, plus invoke the attached provider to prove URL/ref and dependency binding, not just provider id presence.\n\nDependencies and rollout: implement job log foundation US-001 and head listing US-004 first; US-002 annotation and US-003 wait/skip use US-001; US-005 combines US-001/004 into the provider foundation; US-006/007/009 build tool handlers, US-008 adds log views, US-010 adds comments, US-011 threads per-call providers, and US-012 attaches only at the permitted call sites. Several stories touch forge/index.ts or provider.ts; keep edits additive and confined to each story's exports/registration to avoid independent-branch conflicts. Optional input fields and the bot re-export preserve existing callers; there is no persistent-data migration or config/schema migration. Existing FailedCheck fixtures without the optional true marker remain readable evidence. Runtime providers retain their order and identity; no provider is installed globally.\n\nVerification and risks: each story writes failing behavioral tests before implementation using _deps restoration and shared helpers, with strict three-session isolation for credential redaction, PR/head authorization, writer access checks, permission-gated session plumbing and bindings. Show regressions fail against old behavior. Primary risks are accidentally returning the listing as job text, redaction after truncation, byte/character confusion with Unicode and dynamic fences, early termination or masking observed failure with unavailable, altering readChecksOnce while sharing the classifier, caching failures/head metadata globally, authorizing GitLab comments without ids, filtering only displayed threads, and making providers visible in unrelated sessions. Use targeted bun test <path> --timeout=30000 from packages/nax (never bare bun test), then the package pipeline's normal gates; coverage is separately gated, so follow repository coverage guidance when adding tests. No real gh/glab network, hosted CI run, native agent session or ACP process is necessary to establish these contracts. Quality gates are not feature acceptance criteria. Failure-table obligations are explicitly represented in the matching stories, not deferred to suggested hardening.",
+  "outOfScope": [
+    "Forge writes are not tools: creating or editing PRs, posting or editing comments, replying to or resolving threads, and marking a PR ready stay with nax's own workflow and bot steps.",
+    "ACP agents with no pre-approval channel (codex, opencode, gemini, cursor, pi) get no forge tools; they rely on the CI excerpt in their brief.",
+    "Permission profiles are unchanged: `safe` gets no forge tools, and `scoped` gets them only when the stage's rules carry an `Mcp(nax-forge)` allow rule; no default rule is added.",
+    "Bot review sessions, workflow implementer, story review, branch review and branch fix sessions outside the CI repair round are not bound to the provider.",
+    "The `pr` tool does not return the PR description body.",
+    "The `log` tool does not read the output text of non-Actions GitHub checks; that text stays in the CI repair excerpt.",
+    "Log search is a literal substring match; regular expressions are not supported.",
+    "Logs or checks of any head, PR or repository other than the bound PR's current head are not readable.",
+    "Check listings read one page: at most 100 GitHub check runs or 100 GitLab jobs of the head's pipeline.",
+    "Job log reads use the forge module's default subprocess timeout; no separate log-read timeout is added.",
+    "The GitLab CI wait is unchanged; a GitLab pipeline reports `failed` only once it has finished.",
+    "`readChecksOnce`, the bot's one-shot CI read, is unchanged.",
+    "A configured MCP server whose id is `nax-forge` is not detected as a collision.",
+    "Excerpt anchoring on language- or tool-specific failure markers (for example a test runner's fail lines) is not done; only GitHub Actions `##[error]` annotations lead the excerpt.",
+    "A skipped CI repair is not retried later in the same run.",
+    "User documentation of the forge tools is a manual follow-up after merge."
+  ],
+  "routingProfile": "native-codex"
+}

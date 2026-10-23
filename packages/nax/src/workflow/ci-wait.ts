@@ -1,8 +1,9 @@
 /**
  * CI wait (spec §7.1, P4-R4). Polls the branch's PR/MR checks until they are green,
- * one fails, a conflict is detected, or `timeoutMs` passes. A CLI error is retried; a run of
- * `CI_ERROR_POLL_LIMIT` unreadable polls, or a deadline reached on one, is `unavailable` (nax#2550),
- * never `failed`. A check-less timeout is `no-checks`; slow CI is `pending`, which blocks readiness
+ * all settle, a conflict is detected, or `timeoutMs` passes. GitHub failures wait for unfinished
+ * checks. A run of `CI_ERROR_POLL_LIMIT` unreadable polls preserves an observed failure; otherwise
+ * it is `unavailable`. At the deadline the latest readable failing poll wins over errors.
+ * A check-less timeout is `no-checks`; slow CI is `pending`, which blocks readiness
  * like every other non-green outcome (strict green, ruled 2026-10-21). `_ciWaitDeps` is the test
  * seam (spawn, sleep, clock).
  *
@@ -66,6 +67,9 @@ type Poll =
   | {
       readonly state: "green" | "failed" | "waiting";
       readonly summary?: string;
+      /** GitHub failures with unfinished checks wait, but remain failed for one-shot reads. */
+      readonly pending?: number;
+      readonly failureDetail?: string;
       /** Every reported check with its bucket; only a one-shot read reports it (nax#2631). */
       readonly checks?: string;
       readonly sha?: string;
@@ -127,7 +131,17 @@ function classifyGh(r: ForgeRunResult): Poll {
   if (checks.length === 0) return { state: "waiting" };
   const summary = `CI checks: ${ghSummary(checks)}`;
   const listed = checks.map((c) => `${c.name} (${c.bucket})`).join(", ");
-  if (checks.some((c) => GH_FAILED.has(c.bucket))) return { state: "failed", summary, checks: listed };
+  const failed = checks.filter((c) => GH_FAILED.has(c.bucket));
+  if (failed.length > 0) {
+    const pending = checks.filter((c) => !GH_FAILED.has(c.bucket) && !GH_OK.has(c.bucket)).length;
+    return {
+      state: "failed",
+      summary,
+      checks: listed,
+      pending,
+      failureDetail: `CI failed: ${failed.map((c) => c.name).join(", ")}; ${pending} still pending`,
+    };
+  }
   return checks.every((c) => GH_OK.has(c.bucket))
     ? { state: "green", summary, checks: listed }
     : { state: "waiting", summary, checks: listed };
@@ -292,7 +306,7 @@ function bindToHead(poll: Poll, expectedSha?: string): Poll {
 function terminalPoll(poll: Poll): CiWaitResult | undefined {
   if (poll.state === "unavailable") return { outcome: "unavailable", detail: poll.detail };
   if (poll.state === "green") return { outcome: "green", detail: "all checks passed" };
-  if (poll.state === "failed") return { outcome: "failed", detail: "a check failed" };
+  if (poll.state === "failed" && !poll.pending) return { outcome: "failed", detail: "a check failed" };
   if (poll.state === "conflicting") {
     getSafeLogger()?.info("workflow", `CI wait: ${poll.detail} — CI cannot start`, { storyId: RUN_SCOPE });
     return { outcome: "conflicting", detail: poll.detail };
@@ -303,8 +317,8 @@ function terminalPoll(poll: Poll): CiWaitResult | undefined {
 /**
  * The run of unreadable polls (nax#2550). One error is retried — a rate limit or network blip must
  * not end the wait — and any readable poll resets the run. `CI_ERROR_POLL_LIMIT` in a row, or a
- * deadline reached while the latest poll errored, is `unavailable`: a readiness reason, because CI
- * was never observed.
+ * deadline reached while the latest poll errored, supplies `unavailable`. The wait's check history
+ * overrides that fallback when a failing poll was observed.
  */
 function errorRun(forge: ForgeKind) {
   let consecutive = 0;
@@ -340,9 +354,23 @@ function errorRun(forge: ForgeKind) {
 /** A summary exists exactly when this poll reported checks (GitHub) or a pipeline status (GitLab). */
 function checkHistory() {
   let reported = false;
+  let observedFailure: CiWaitResult | undefined;
+  let latestFailure: CiWaitResult | undefined;
   return {
     note(poll: Poll) {
       if ("summary" in poll && poll.summary !== undefined) reported = true;
+      if (poll.state === "error") return;
+      latestFailure =
+        poll.state === "failed" && poll.pending
+          ? { outcome: "failed", detail: poll.failureDetail ?? "a check failed" }
+          : undefined;
+      observedFailure ??= latestFailure;
+    },
+    onErrorLimit(result: CiWaitResult | undefined): CiWaitResult | undefined {
+      return result ? (observedFailure ?? result) : undefined;
+    },
+    failingTimeout(): CiWaitResult | undefined {
+      return latestFailure;
     },
     timeout(timeoutMs: number): CiWaitResult {
       return reported
@@ -388,11 +416,11 @@ export async function waitForChecks(
       const poll = bindToHead(await pollOnce(forge, prRef, opts.cwd), opts.expectedSha);
       history.note(poll);
       if ("summary" in poll) progress.note(poll.summary);
-      const terminal = terminalPoll(poll) ?? errors.note(poll);
+      const terminal = terminalPoll(poll) ?? history.onErrorLimit(errors.note(poll));
       if (terminal) return end(terminal.outcome, terminal.detail);
       if (_ciWaitDeps.now() + opts.pollMs > deadline) {
         if ("mismatch" in poll && poll.mismatch) return end("unavailable", poll.mismatch);
-        const timeout = errors.timeout() ?? history.timeout(opts.timeoutMs);
+        const timeout = history.failingTimeout() ?? errors.timeout() ?? history.timeout(opts.timeoutMs);
         return end(timeout.outcome, timeout.detail);
       }
       // Both sides of the wait: `_ciWaitDeps.now` may move during a slow forge call or during the

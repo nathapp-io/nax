@@ -4,6 +4,7 @@
  * every non-abort path (even after an interrupt or a failure: a later round only re-checks what is
  * still open, so it may never pick them up), and the fix appends its section to feature-report.md.
  */
+import type { ToolProvider } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ConfiguredModel } from "@/config";
 import { getSafeLogger } from "@/logger";
@@ -63,9 +64,19 @@ async function commitLeftovers(fc: BranchStepContext): Promise<{ autoCommitted: 
   }
 }
 
-async function runFixSession(fc: BranchStepContext, prompt: string, model?: ConfiguredModel): Promise<FixSession> {
+interface BranchFixInput {
+  specPath?: string;
+  findings: readonly WorkflowFinding[];
+  model?: ConfiguredModel;
+  prompt?: string;
+  toolProviders?: readonly ToolProvider[];
+}
+
+async function runFixSession(fc: BranchStepContext, prompt: string, input: BranchFixInput): Promise<FixSession> {
+  const { model, toolProviders } = input;
+  const callCtx = toolProviders?.length ? { ...fc.callCtx, toolProviders } : fc.callCtx;
   try {
-    const reply = await _workflowDeps.callOp(fc.callCtx, workflowBranchFixOp, {
+    const reply = await _workflowDeps.callOp(callCtx, workflowBranchFixOp, {
       prompt,
       ...(model !== undefined ? { model } : {}),
       timeoutMs: fc.workflow.timeouts.fixMs,
@@ -78,10 +89,7 @@ async function runFixSession(fc: BranchStepContext, prompt: string, model?: Conf
   }
 }
 
-export async function runBranchFix(
-  fc: BranchStepContext,
-  input: { specPath?: string; findings: readonly WorkflowFinding[]; model?: ConfiguredModel; prompt?: string },
-): Promise<BranchFixOutcome> {
+export async function runBranchFix(fc: BranchStepContext, input: BranchFixInput): Promise<BranchFixOutcome> {
   await ensureReport(fc);
   const prompt =
     input.prompt ??
@@ -91,6 +99,6 @@ export async function runBranchFix(
       reportPath: fc.reportPath,
       findings: input.findings,
     });
-  const session = await runFixSession(fc, prompt, input.model);
+  const session = await runFixSession(fc, prompt, input);
   return { ...session, ...(await commitLeftovers(fc)) };
 }
