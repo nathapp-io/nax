@@ -343,3 +343,25 @@ describe("renderReviewSummary CI line (nax#2631)", () => {
     expect(bot.renderReviewSummary(summary())).not.toContain("CI on");
   });
 });
+
+describe("renderReviewSummary review scope (nax#2667)", () => {
+  /** The marker block precedes the summary; the summary's own first line is what a human reads first. */
+  function firstLine(overrides: Partial<ReviewSummaryInput>): string {
+    const body = bot.renderReviewSummary(summary(overrides));
+    return (body.slice(body.indexOf("Review of")).split("\n")[0] ?? "").trim();
+  }
+  test("AC-11 states an incremental review and its since sha", () => {
+    expect(firstLine({ scope: "incremental", incrementalSince: "def5678aaaa" })).toBe(
+      "Review of abc1234 (incremental since def5678): intent pass, quality approved.",
+    );
+  });
+  test("AC-12 states a conversation-only review", () => {
+    expect(firstLine({ scope: "conversation-only" })).toStartWith("Review of abc1234 (conversation only): intent");
+  });
+  test("AC-13 keeps the plain head line for a full review", () => {
+    expect(firstLine({ scope: "full" })).toStartWith("Review of abc1234: intent");
+  });
+  test("keeps the first line plain when the scope is absent", () => {
+    expect(firstLine({})).toBe("Review of abc1234: intent pass, quality approved.");
+  });
+});

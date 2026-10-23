@@ -6,6 +6,7 @@ import { safeCode } from "../workflow/pr-body-safe";
 import type { BotChecks } from "./checks";
 import { checkCommands } from "./checks";
 import { earlierKey, findingKey, safeText, threadKey } from "./render";
+import type { BotReviewScope } from "./review-rulings";
 
 const TEXT_LIMIT = 2_000;
 const AUTHOR_LIMIT = 100;
@@ -25,6 +26,9 @@ export interface ReviewSummaryInput {
   readonly preRunFailed?: string;
   readonly ci?: { readonly outcome: string; readonly detail: string };
   readonly headSha: string;
+  /** What this review covered (nax#2667); absent keeps the plain head line. */
+  readonly scope?: BotReviewScope;
+  readonly incrementalSince?: string;
   readonly intent: PrIntent;
   readonly quality: "approved" | "changes";
   readonly inlineFindings: number;
@@ -167,10 +171,17 @@ function readinessLines(input: ReviewSummaryInput): string[] {
   return lines;
 }
 
+/** Name the scope the review actually had, so a narrowed review is never read as a full one. */
+function scopeSuffix(scope: BotReviewScope | undefined, incrementalSince: string | undefined): string {
+  if (scope === "conversation-only") return " (conversation only)";
+  if (scope !== "incremental" || incrementalSince === undefined) return "";
+  return ` (incremental since ${safeText(incrementalSince, SHORT_SHA_LENGTH)})`;
+}
+
 /** Render the ordered review summary, dropping list tails before exceeding the forge budget. */
 export function renderReviewSummary(input: ReviewSummaryInput): string {
   const prefix = [
-    `Review of ${input.headSha.slice(0, SHORT_SHA_LENGTH)}: intent ${input.intent}, quality ${input.quality}.`,
+    `Review of ${input.headSha.slice(0, SHORT_SHA_LENGTH)}${scopeSuffix(input.scope, input.incrementalSince)}: intent ${input.intent}, quality ${input.quality}.`,
     `${input.inlineFindings} inline findings, ${input.threadsAnswered} threads answered, ${input.commentVerdicts.length} comments answered.`,
     ...readinessLines(input),
   ];

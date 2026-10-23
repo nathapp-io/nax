@@ -44,9 +44,12 @@ export interface BotReviewOptions {
   readonly model?: string;
   readonly decisions?: string;
   readonly inPlace?: boolean;
+  /** Review the whole range from the merge base, ignoring an earlier review (nax#2667). */
+  readonly full?: boolean;
 }
 
-export interface BotFixOptions extends Omit<BotReviewOptions, "decisions"> {
+/** `nax bot fix` shares the bot inputs, but never the review-only flags: its re-review is incremental. */
+export interface BotFixOptions extends Omit<BotReviewOptions, "decisions" | "full"> {
   readonly rereview?: boolean;
   readonly fresh?: boolean;
 }
@@ -84,7 +87,11 @@ async function withBotInput(
 export async function botReviewCommand(options: BotReviewOptions, deps: BotCliDeps = _botCliDeps): Promise<number> {
   return withBotInput(options, deps, async (input) => {
     const decisions = options.decisions === undefined ? undefined : await deps.loadBotDecisions(options.decisions);
-    const result = await deps.runBotReview({ ...input, ...(decisions === undefined ? {} : { decisions }) });
+    const result = await deps.runBotReview({
+      ...input,
+      ...(options.full === true && { full: true }),
+      ...(decisions === undefined ? {} : { decisions }),
+    });
     if (result.outcome !== "posted") {
       deps.logErr(result.reason);
       return 2;
@@ -176,6 +183,7 @@ export function registerBotCommand(program: Command, deps: BotCliDeps = _botCliD
   });
   withBotOptions(group.command("review <pr>").description("Review a pull request and post findings"))
     .option("--decisions <path>", "Caller decisions file")
+    .option("--full", "Review the whole range from the merge base, ignoring an earlier review")
     .action(async (pr: string, options: Omit<BotReviewOptions, "pr">) => {
       deps.exit(await botReviewCommand({ ...options, pr }, deps));
     });

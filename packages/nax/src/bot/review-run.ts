@@ -23,7 +23,7 @@ import { botModel } from "./models";
 import { sensitivePaths } from "./path-policy";
 import { BOT_REVIEW_FILENAME, type PostReviewInput, type PostReviewOutcome } from "./post";
 import { _botReviewDeps } from "./review-deps";
-import { readReviewRulings, reviewRange } from "./review-rulings";
+import { readReviewRulings, reviewRange, reviewScopeOf } from "./review-rulings";
 import type { PrReviewInput } from "./review-step";
 import { triage } from "./review-triage";
 
@@ -52,6 +52,8 @@ export interface BotReviewInput {
   readonly profiles: readonly string[];
   readonly model?: ConfiguredModel;
   readonly interactive: boolean;
+  /** Review everything since the merge base, ignoring any earlier reviewed head (nax#2667). */
+  readonly full?: boolean;
 }
 type ReviewStep = "review" | "post" | "done";
 interface ReviewState extends GraphState<ReviewStep> {
@@ -246,13 +248,19 @@ async function reviewEnvironment(
         setupFailed: preparation.preRunFailed,
         ciFiles: await listCiConfigFiles(checkout.worktree),
       });
+  // One chosen range feeds the review, the summary and the artifact, so no two can disagree.
+  const range =
+    input.full === true
+      ? { rangeBase: checkout.mergeBase }
+      : await reviewRange({ index: reviewedIndex, checkout, head: info.headSha }, _botReviewDeps.isAncestor);
+  const scope = reviewScopeOf({ ...range, mergeBase: checkout.mergeBase });
   return {
     ...preparation,
     cost: context.cost,
     ctx,
     review: {
       mergeBase: checkout.mergeBase,
-      ...(await reviewRange({ index: reviewedIndex, checkout, head: info.headSha }, _botReviewDeps.isAncestor)),
+      ...range,
       info,
       issues,
       threads: items.threads,
@@ -276,6 +284,8 @@ async function reviewEnvironment(
       earlier: postEarlier,
       settledKeys: new Set(findings.settled.map(({ ruling }) => ruling.id)),
       ...(rulings !== undefined && { rulings }),
+      scope,
+      ...(scope === "incremental" && { incrementalSince: range.rangeBase }),
       staticMode,
       sensitive: sensitivePaths(checkout.changedFiles),
       stateDir,

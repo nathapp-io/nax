@@ -510,3 +510,25 @@ describe("postPrReview", () => {
     expect(failing.mock.calls).toHaveLength(2);
   });
 });
+
+describe("postPrReview review scope (nax#2667)", () => {
+  const since = "b".repeat(40);
+  /** The body of the top-level summary comment, which is the only issue-comment write here. */
+  function summaryBody(): string {
+    const argv = run.mock.calls.find(([args]) => args.includes("repos/o/r/issues/7/comments"))?.[0] ?? [];
+    return argv.find((arg) => arg.startsWith("body="))?.slice("body=".length) ?? "";
+  }
+  test("AC-9 persists the incremental scope and its since sha beside version 3", async () => {
+    await bot.postPrReview({ ...input, scope: "incremental", incrementalSince: since });
+    expect(await artifact()).toMatchObject({ version: 3, scope: "incremental", incrementalSince: since });
+  });
+  test("AC-10 writes no scope key for a review that reports none", async () => {
+    await bot.postPrReview(input);
+    expect(Object.hasOwn(await artifact(), "scope")).toBe(false);
+    expect(Object.hasOwn(await artifact(), "incrementalSince")).toBe(false);
+  });
+  test("AC-14 states the incremental scope in the posted summary", async () => {
+    await bot.postPrReview({ ...input, scope: "incremental", incrementalSince: since });
+    expect(summaryBody()).toContain("(incremental since ");
+  });
+});

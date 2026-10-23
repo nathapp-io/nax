@@ -11,6 +11,7 @@ import type { BotChecks } from "./checks";
 import { earlierCounts, earlierIssue, effectiveEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
 import { commentKey, findingKey, threadKey } from "./render";
 import { renderFindingComment, renderReviewSummary, renderThreadReply } from "./render-comments";
+import type { BotReviewScope } from "./review-rulings";
 
 interface AgreedBase {
   readonly key: string;
@@ -52,6 +53,9 @@ export interface BotReviewEvent {
 export interface BotReviewArtifact {
   readonly version: 1 | 2 | 3;
   readonly rulings?: PostReviewInput["rulings"];
+  /** What the review actually covered (nax#2667); optional to every earlier reader. */
+  readonly scope?: BotReviewScope;
+  readonly incrementalSince?: string;
   readonly checks?: BotChecks | null;
   readonly events?: readonly BotReviewEvent[];
   readonly pr: PrRef;
@@ -72,6 +76,10 @@ export interface PostReviewInput {
   readonly earlier?: readonly PrThread[];
   readonly itemEarlier?: readonly PrThread[];
   readonly rulings?: { recorded: number; open: number; asked: number };
+  /** What the review actually covered (nax#2667); absent when the caller does not classify it. */
+  readonly scope?: BotReviewScope;
+  /** The already-reviewed head an incremental review starts after. */
+  readonly incrementalSince?: string;
   readonly login?: string;
   readonly checks?: BotChecks | null;
   readonly ref: PrRef;
@@ -166,6 +174,8 @@ async function persistArtifact(input: PostReviewInput): Promise<void> {
   const artifact: BotReviewArtifact = {
     version: 3,
     ...(input.rulings === undefined ? {} : { rulings: input.rulings }),
+    ...(input.scope === undefined ? {} : { scope: input.scope }),
+    ...(input.incrementalSince === undefined ? {} : { incrementalSince: input.incrementalSince }),
     checks: input.staticMode ? null : (input.checks ?? null),
     events: withdrawalEvents(input),
     pr: input.ref,
@@ -267,6 +277,8 @@ async function postSummary(
 ): Promise<void> {
   const body = renderReviewSummary({
     headSha: input.info.headSha,
+    ...(input.scope === undefined ? {} : { scope: input.scope }),
+    ...(input.incrementalSince === undefined ? {} : { incrementalSince: input.incrementalSince }),
     intent: input.verdict.intent,
     quality: input.verdict.quality,
     earlier: earlierCounts(input),
