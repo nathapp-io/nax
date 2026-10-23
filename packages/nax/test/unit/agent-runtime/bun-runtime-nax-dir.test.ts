@@ -21,7 +21,7 @@ afterEach(() => cleanupTempDir(root));
 async function glob(pattern: string, absolute = false): Promise<string[]> {
   const hits: string[] = [];
   for await (const hit of bunAgentRuntime.glob(pattern, { cwd: root, absolute })) hits.push(hit);
-  return hits.sort();
+  return hits.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 describe("Bun glob literal .nax prefix", () => {
@@ -30,7 +30,9 @@ describe("Bun glob literal .nax prefix", () => {
   });
 
   test("AC-2: sync glob finds report under literal .nax", () => {
-    expect([...bunAgentRuntime.globSync(".nax/features/**/report.md", { cwd: root, absolute: false })]).toEqual([REPORT]);
+    expect([...bunAgentRuntime.globSync(".nax/features/**/report.md", { cwd: root, absolute: false })]).toEqual([
+      REPORT,
+    ]);
   });
 
   test("AC-3: leading ./ is preserved", async () => {
