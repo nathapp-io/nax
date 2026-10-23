@@ -177,6 +177,15 @@ describe("prepareInPlaceCheckout", () => {
     await expect(prepareInPlaceCheckout(input)).rejects.toMatchObject({ code: "BOT_IN_PLACE_REFUSED" });
     cleanupExpected();
   });
+  test.each([
+    [ok("src/a.ts\0src/a.ts\0"), "BOT_IN_PLACE_REFUSED"],
+    [{ exitCode: 128, stdout: "", stderr: "log failed" }, "BOT_CHECKOUT_FAILED"],
+    [new Error("log spawn failed"), "BOT_CHECKOUT_FAILED"],
+  ] as const)("F1: historical path scan rejects unsafe history or scan failure %#", async (reply, code) => {
+    replies.set("log --format= --name-only -z --no-renames -m head..HEAD", reply);
+    await expect(prepareInPlaceCheckout(input)).rejects.toMatchObject({ code });
+    cleanupExpected();
+  });
   test("AC-17/18: disposal deletes only refs and snapshot", async () => {
     const result = await prepareInPlaceCheckout(input);
     calls = [];

@@ -78,7 +78,15 @@ async function checkLocalCommits(repoRoot: string, headSha: string): Promise<str
   const paths = (await git(["diff", "--name-only", "-z", "--no-renames", headSha, "HEAD"], repoRoot))
     .split("\0")
     .filter(Boolean);
-  if (paths.some((path) => !isFeatureLedger(repoRoot, path))) refused("local branch has commits the PR does not have");
+  // A net tree diff misses source changes reverted by later local commits. Inspect
+  // every commit as well; -m includes merge changes against each parent.
+  const touched = (
+    await git(["log", "--format=", "--name-only", "-z", "--no-renames", "-m", `${headSha}..HEAD`], repoRoot)
+  )
+    .split("\0")
+    .filter(Boolean);
+  if ([...paths, ...touched].some((path) => !isFeatureLedger(repoRoot, path)))
+    refused("local branch has commits the PR does not have");
   return startHead;
 }
 
