@@ -3,7 +3,7 @@
   "feature": "publish-approval-and-review-scope",
   "branchName": "feat/publish-approval-and-review-scope",
   "createdAt": "2026-10-23T00:00:00Z",
-  "updatedAt": "2026-10-23T11:43:00.702Z",
+  "updatedAt": "2026-10-23T11:53:55.042Z",
   "userStories": [
     {
       "id": "US-001",
@@ -190,14 +190,17 @@
         "2667"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Three existing modules gain a small pure classifier and conditional prompt metadata using established builder and operation seams; no trust or authorization rules change."
+        "reasoning": "Three existing modules gain a small pure classifier and conditional prompt metadata using established builder and operation seams; no trust or authorization rules change.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/review-rulings.ts",
@@ -213,7 +216,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f6b263fc17cdc40506dfa92c7b8678967798f752"
     },
     {
       "id": "US-004",
