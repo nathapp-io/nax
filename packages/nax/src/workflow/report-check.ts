@@ -7,7 +7,8 @@
  * The report turn's outcome is **not** absorbed — no concern, no advisor answer, no session finding.
  * The story review stays the one place a reviewer's input is gathered, and a report turn that fails
  * says so in the ledger rather than in the findings. It is never continued either: an interrupted
- * report turn gets the "still missing" note and review runs.
+ * report turn takes whichever of the "written" / "still missing" notes the file then earns, and the
+ * review runs.
  *
  * Pure orchestration over `env`, like the rest of the loop. `runTurn` is injected because the labelled
  * turn runner lives in `story-steps.ts`, which imports this module (the `runNoWorkLadder` pattern).
