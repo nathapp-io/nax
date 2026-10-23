@@ -29,8 +29,9 @@ type Options = {
   ledger?: readonly boolean[];
   headUnreadable?: boolean;
   advisor?: Advisor;
+  stories?: readonly StorySummary[];
 };
-function setup({ ci, approve, ledgerThrowsAt, ledger, headUnreadable, advisor }: Options) {
+function setup({ ci, approve, ledgerThrowsAt, ledger, headUnreadable, advisor, stories }: Options) {
   const log = wireFinalize({ ci, ...(ledgerThrowsAt ? { ledgerThrowsAt } : {}), ...(ledger ? { ledger } : {}) });
   _workflowDeps.git = async (args) =>
     args[0] === "rev-parse"
@@ -40,7 +41,7 @@ function setup({ ci, approve, ledgerThrowsAt, ledger, headUnreadable, advisor }:
       : { stdout: "", exitCode: 0 };
   const input: PublishInput = {
     record,
-    stories: [story],
+    stories: stories ?? [story],
     flagged: 0,
     advisor: advisor ?? makeFinalizeAdvisor(approve),
     preflight: null,
@@ -58,10 +59,12 @@ describe("publish PR approval push", () => {
     );
     expect(calls.map((call) => call.name).indexOf("push")).toBeLessThan(calls.map((call) => call.name).indexOf("ci"));
   });
-  test("approving advisor commits ledger before push, then commits its ruling locally (nax#2646)", async () => {
+  // US-001 (nax#2666): the advisor rules before the single ledger commit, so the ruling is in the
+  // pushed commit and there is no post-CI commit of its own.
+  test("approving advisor's ruling rides the single ledger commit before the push", async () => {
     const { calls, run } = setup({ ci: "green", approve: true });
     await run();
-    expect(calls.map((call) => call.name)).toEqual(["ledger", "push", "draft", "ci", "promote", "ledger"]);
+    expect(calls.map((call) => call.name)).toEqual(["ledger", "push", "draft", "ci", "promote"]);
   });
   test("ready retains CI observed on pushed head", async () => {
     const { calls, run } = setup({ ci: "green", approve: true });
@@ -85,15 +88,16 @@ describe("publish PR approval push", () => {
   });
 });
 
-/** nax#2646: the ruling `askApproval` appends is committed locally, never pushed (#2629: one CI run). */
-describe("publish commits the approval ruling locally", () => {
-  test.each([true, false])("approve=%p: one push, a post-approval ledger commit, the pushed head", async (approve) => {
+/**
+ * US-001 (nax#2666): the ruling `askApproval` writes rides the ledger commit that precedes the push, so
+ * a publish round commits the ledger once and never pushes twice.
+ */
+describe("publish commits the ruling in its one pre-push ledger commit", () => {
+  test.each([true, false])("approve=%p: one push and one ledger commit", async (approve) => {
     const { calls, run } = setup({ ci: "green", approve });
-    const out = await run();
+    await run();
     expect(calls.filter((call) => call.name === "push")).toHaveLength(1);
-    expect(calls.filter((call) => call.name === "ledger")).toHaveLength(2);
-    expect(calls.at(-1)?.name).toBe("ledger");
-    expect(out.pushedHead).toBe(PUSHED);
+    expect(calls.filter((call) => call.name === "ledger")).toHaveLength(1);
   });
   test("an advisor that decided nothing wrote no ruling, so nothing more is committed", async () => {
     const silent: Advisor = {
@@ -106,8 +110,15 @@ describe("publish commits the approval ruling locally", () => {
     expect(out.pushedHead).toBeUndefined();
   });
   test("a deterministic reason asks no advisor, so nothing more is committed", async () => {
-    const { calls, run } = setup({ ci: "pending", approve: true });
+    const asked: string[] = [];
+    const { calls, run } = setup({
+      ci: "green",
+      approve: true,
+      stories: [{ ...story, state: "complete-gate-open" }],
+      advisor: makeFinalizeAdvisor(true, asked),
+    });
     const out = await run();
+    expect(asked).toEqual([]);
     expect(calls.filter((call) => call.name === "ledger")).toHaveLength(1);
     expect(out.pushedHead).toBeUndefined();
   });
@@ -115,19 +126,6 @@ describe("publish commits the approval ruling locally", () => {
     const { calls, run } = setup({ ci: "green", approve: true, headUnreadable: true });
     const out = await run();
     expect(calls.filter((call) => call.name === "ledger")).toHaveLength(1);
-    expect(out.pushedHead).toBeUndefined();
-  });
-  test("a ruling commit that made no commit reports no pushed head", async () => {
-    const { calls, run } = setup({ ci: "green", approve: true, ledger: [true, false] });
-    const out = await run();
-    expect(calls.filter((call) => call.name === "ledger")).toHaveLength(2);
-    expect(out.pushedHead).toBeUndefined();
-  });
-  test("a failed post-approval commit is fail-open: the outcome stands", async () => {
-    const { calls, run } = setup({ ci: "green", approve: true, ledgerThrowsAt: 2 });
-    const out = await run();
-    expect(calls.filter((call) => call.name === "ledger")).toHaveLength(2);
-    expect(out).toMatchObject({ outcome: "ready", ci: "green" });
     expect(out.pushedHead).toBeUndefined();
   });
 });

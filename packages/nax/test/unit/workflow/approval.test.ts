@@ -214,6 +214,19 @@ describe("askApproval (P4-R10)", () => {
     expect(seen[0]?.evidence.map((e) => e.text)).toEqual(["Stories: US-001 complete"]);
   });
 
+  // AC-16 (nax#2666): the question is asked before the push, so it says CI has not run yet instead of
+  // claiming every condition holds.
+  test("AC-16: the summary names CI as the one condition still outstanding", async () => {
+    const seen: QuestionDraft[] = [];
+    await askApproval(
+      advisor({ decision: makeAdviceDecision({ action: { type: "approve" }, rationale: "clean" }) }, seen),
+      { feature: "f", evidence: [] },
+    );
+    expect(seen[0]?.summary).toBe(
+      "Approve the workflow PR for f? Every deterministic ready condition except CI holds. CI runs on the pushed head after this ruling, and the PR is ready only when it is green.",
+    );
+  });
+
   test("hold, no decision, or a throw -> not approved with the reason", async () => {
     const held = await askApproval(
       advisor({ decision: makeAdviceDecision({ action: { type: "hold", reason: "x" }, rationale: "risky" }) }),

@@ -100,7 +100,9 @@ test("AC-11: empty HEAD omits expectedSha", async () => {
   expect(observed.waits[0]).not.toHaveProperty("expectedSha");
 });
 
-test("AC-20: real CI mismatch timeout keeps publish draft without approval", async () => {
+// US-001 (nax#2666): the advisor rules before the push, so a CI head mismatch is observed after its
+// approval — the PR still stays a draft, and the advisor was asked exactly once.
+test("AC-20: real CI mismatch timeout keeps publish draft after the advisor was asked", async () => {
   const observed = wire();
   let clock = 0;
   _ciWaitDeps.now = () => clock;
@@ -123,5 +125,5 @@ test("AC-20: real CI mismatch timeout keeps publish draft without approval", asy
   expect(result).toMatchObject({ outcome: "draft", ci: "unavailable" });
   expect(result.reasons.join(" ")).toContain("checks report bbb but HEAD is aaa");
   expect(observed.keepDraft()).toBe(true);
-  expect(observed.asked()).toBe(0);
+  expect(observed.asked()).toBe(1);
 });

@@ -178,14 +178,16 @@ describe("publish (P4-R3, P4-R11)", () => {
     expect(body).toContain("**B1**");
   });
 
-  test("an abort during the CI wait rejects: no approval, no promotion (W-R3)", async () => {
+  // US-001 (nax#2666): the advisor rules before the push, so an abort during the CI wait stops a
+  // publish that already asked — nothing is promoted and nothing follows the wait.
+  test("an abort during the CI wait rejects: no promotion after the ruling (W-R3)", async () => {
     const ac = new AbortController();
     const calls = wire({ ci: "pending", onCi: () => ac.abort() });
     const asked: string[] = [];
     const fc = makeFeatureContext({ runSignal: ac.signal });
     const err = await publish(fc, input({ advisor: advisor(true, asked) })).catch((e: unknown) => e);
     expect(err).toMatchObject({ code: "WORKFLOW_ABORTED" });
-    expect(asked).toEqual([]);
+    expect(asked).toEqual(["finish-approval"]);
     expect(calls.map((c) => c.name)).toEqual(["ledger", "push", "draft", "ci"]);
   });
 
@@ -357,7 +359,7 @@ describe("publish commits the ledger (US-003)", () => {
     expect(ledger).toBeLessThan(calls.findIndex((c) => c.name === "push"));
   });
 
-  test("AC-6: approval does not add a post-CI ledger commit or push", async () => {
+  test("AC-6: approval adds no ledger commit and no second push", async () => {
     const calls = wire({ ci: "green" });
     const out = await publish(makeFeatureContext(), input());
     expect(names(calls)).toEqual(["ledger", "push", "draft", "ci", "promote"]);
@@ -393,7 +395,7 @@ describe("publish commits the ledger (US-003)", () => {
     expect(calls.at(-1)?.keepDraft).toBe(true);
   });
 
-  test("AC-10: approval follows the single pre-CI push", async () => {
+  test("AC-10: the ruling rides the single ledger commit before the push", async () => {
     const calls = wire({ ci: "green" });
     const out = await publish(makeFeatureContext(), input());
     expect(calls.filter((c) => c.name === "push")).toHaveLength(1);
@@ -648,14 +650,16 @@ describe("publish reports a ledger it could not commit (US-007)", () => {
     expect(out.reasons).toContain(LEDGER_REASON);
   });
 
-  test("AC-15: pr mode keeps the PR a draft and never asks the advisor", async () => {
+  // US-001 (nax#2666): the advisor is asked before the failing ledger commit, so its ruling is taken
+  // even though the branch cannot carry it — the PR stays a draft on the ledger reason.
+  test("AC-15: pr mode keeps the PR a draft when the ledger commit fails after the advisor ruled", async () => {
     const dir = await projectWithLedger(3);
     const calls = wire({ ci: "green", ledgerThrowsAt: 1 });
     const asked: string[] = [];
 
     const out = await publish(project(dir), input({ advisor: advisor(true, asked) }));
 
-    expect(asked).toEqual([]);
+    expect(asked).toEqual(["finish-approval"]);
     expect(out).toMatchObject({ outcome: "draft", ci: "green" });
     expect(out.reasons).toContain(LEDGER_REASON);
     expect(calls.at(-1)?.keepDraft).toBe(true);
