@@ -3,7 +3,7 @@
   "feature": "workflow-input-bundle",
   "branchName": "feat/workflow-input-bundle",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T09:05:52.221Z",
+  "updatedAt": "2026-10-23T09:16:45.618Z",
   "userStories": [
     {
       "id": "US-001",
@@ -264,14 +264,17 @@
         "input-preservation"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The existing grouped scanner and blocking-code gate already provide both seams; bounded grouping, an overflow helper and exports are deterministic standard changes suited to same-session fail-first tests."
+        "reasoning": "The existing grouped scanner and blocking-code gate already provide both seams; bounded grouping, an overflow helper and exports are deterministic standard changes suited to same-session fail-first tests.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prd/modifies-extract.ts",
@@ -310,7 +313,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1aa688bc53b54a784d0d7b6b035fffa4d610d9e7"
     },
     {
       "id": "US-005",
