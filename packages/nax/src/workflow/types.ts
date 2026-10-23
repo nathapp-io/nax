@@ -193,6 +193,15 @@ export interface StoryStateItem {
   readonly reason?: string;
 }
 
+/**
+ * US-005: one CI check a repair round targeted — the check's name, plus the step that failed when
+ * the job log named it. `failedStep` is absent, never empty, when the CI could not say.
+ */
+export interface CiCheckRef {
+  readonly name: string;
+  readonly failedStep?: string;
+}
+
 /** The feature workflow's persisted state (spec §7, §10, P4-R1). `step` is the NEXT step to run. */
 export interface WorkflowFeatureRecord {
   readonly step: FeatureStep;
@@ -264,6 +273,17 @@ export interface WorkflowFeatureRecord {
   readonly ciRepairFindings?: readonly WorkflowFindingDraft[];
   /** US-006: repair rounds run for a failed CI on the published PR. Absent when none ran. */
   readonly ciRepairRounds?: number;
+  /**
+   * US-005: the CI checks the last decided repair targeted. Written by `publish` from the same read
+   * that produced `ciRepairFindings`; absent when no repair was decided, and on older records.
+   */
+  readonly ciRepairTargets?: readonly CiCheckRef[];
+  /**
+   * US-005: the concerns the CI repair replies raised, one `r<N>: <concerns>` entry per round that
+   * raised any, in round order. Absent when no round raised a concern (and on older records), so its
+   * presence alone means a repair's reply admitted something it could not check.
+   */
+  readonly ciRepairConcerns?: readonly string[];
   readonly ci?: FeatureCiState;
   readonly outcome?: FeatureOutcome;
   readonly reasons: readonly string[];

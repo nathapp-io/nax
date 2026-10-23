@@ -15,7 +15,7 @@ import type { FeatureEnv, FeatureSteps } from "./feature-machine";
 import { costExceeded, featureStep, limitsOf, NO_MIRROR, roundLabel } from "./feature-step-helpers";
 import type { PublishOutcome } from "./finalize";
 import { ledgerText } from "./ledger";
-import type { WorkflowFeatureRecord, WorkflowFindingDraft } from "./types";
+import type { CiCheckRef, WorkflowFeatureRecord, WorkflowFindingDraft } from "./types";
 
 /**
  * US-004: a check's issue names the step that failed and the steps the job skipped after it, so the
@@ -43,16 +43,34 @@ function ciRepairFindingsOf(checks: readonly FailedCheck[]): WorkflowFindingDraf
 }
 
 /**
+ * US-005: the checks a repair round targets, as the record keeps them. One small ref per failed
+ * check, so `result.json` says what the repair was for without repeating the log excerpt.
+ */
+function ciRepairTargetsOf(checks: readonly FailedCheck[]): CiCheckRef[] {
+  return checks.map((check) => ({
+    name: check.name,
+    ...(check.failedStep ? { failedStep: check.failedStep } : {}),
+  }));
+}
+
+/** US-005: what one CI read decides — the findings to repair and the checks they came from. */
+export interface CiRepairPlan {
+  readonly findings: readonly WorkflowFindingDraft[];
+  readonly targets: readonly CiCheckRef[];
+}
+
+/**
  * US-006: read the failed checks of the published PR and turn them into repair findings. An empty
  * list and a failed read are both "no repair": the ledger says which, and the publish outcome
- * stands.
+ * stands. US-005: the same single read yields the checks the repair targets, so the publish step
+ * never has to read the CI twice.
  */
 async function readCiFailuresForRepair(
   env: FeatureEnv,
   reader: NonNullable<FeatureSteps["readCiFailures"]>,
   url: string,
   head: string,
-): Promise<readonly WorkflowFindingDraft[] | undefined> {
+): Promise<CiRepairPlan | undefined> {
   let checks: readonly FailedCheck[];
   try {
     checks = await reader({ url, head });
@@ -77,7 +95,7 @@ async function readCiFailuresForRepair(
     ledgerText.note(`CI failed: ${checks.map((check) => check.name).join(", ")} (repairing)`),
     NO_MIRROR,
   );
-  return ciRepairFindingsOf(checks);
+  return { findings: ciRepairFindingsOf(checks), targets: ciRepairTargetsOf(checks) };
 }
 
 /**
@@ -85,13 +103,14 @@ async function readCiFailuresForRepair(
  *
  * Only a draft PR whose CI failed can be repaired, and only while the run has an allowance left
  * and money to spend. Every other answer is silence: the publish outcome stands as it was.
+ * US-005: one read decides both the findings and the targets.
  */
-export async function ciRepairDecision(
+export async function ciRepairPlan(
   env: FeatureEnv,
   rec: WorkflowFeatureRecord,
   out: PublishOutcome,
   head: string | undefined,
-): Promise<readonly WorkflowFindingDraft[] | undefined> {
+): Promise<CiRepairPlan | undefined> {
   const reader = env.steps.readCiFailures;
   if (!reader) return undefined;
   if (out.outcome !== "draft" || out.ci !== "failed") return undefined;
@@ -99,6 +118,20 @@ export async function ciRepairDecision(
   if ((rec.ciRepairRounds ?? 0) >= (limitsOf(env).ciRepairRounds ?? 0)) return undefined;
   if (costExceeded(env)) return undefined;
   return await readCiFailuresForRepair(env, reader, out.url, head);
+}
+
+/**
+ * The plan's findings alone. Its callers and tests predate the targets, so the compatibility
+ * wrapper keeps the findings-only answer — the publish step uses `ciRepairPlan` directly, which is
+ * what keeps the targets and the findings on one read.
+ */
+export async function ciRepairDecision(
+  env: FeatureEnv,
+  rec: WorkflowFeatureRecord,
+  out: PublishOutcome,
+  head: string | undefined,
+): Promise<readonly WorkflowFindingDraft[] | undefined> {
+  return (await ciRepairPlan(env, rec, out, head))?.findings;
 }
 
 /**
@@ -140,5 +173,28 @@ export async function ciRepairStep(
   if (out.failure) await env.sink.ledger(ledgerText.note(`CI repair session failed: ${out.failure}`), NO_MIRROR);
   if (out.autoCommitted) await env.sink.ledger(ledgerText.note("auto-committed the CI repair's edits"));
   if (out.dirty) await env.sink.ledger(ledgerText.note("CI repair left uncommitted edits: the auto-commit failed"));
-  return { patch: { ciRepairRounds: round, ciRepairFindings: undefined } };
+  // US-005: a repair whose reply admits it could not check something must not read as done. The
+  // round labels the entry, and every earlier round's entry stays: the history is the point.
+  const concerns = out.reply?.concerns?.trim() ?? "";
+  const raised = await noteConcerns(env, round, concerns, rec.ciRepairConcerns ?? []);
+  return { patch: { ciRepairRounds: round, ciRepairFindings: undefined, ...raised } };
 }
+
+/**
+ * US-005: the ledger note and the record patch for one round's concerns. An empty reply (no
+ * `concerns` field, an empty one, or no reply at all) writes no note and patches no key — the
+ * field's presence alone would otherwise say a repair admitted something.
+ */
+async function noteConcerns(
+  env: FeatureEnv,
+  round: number,
+  concerns: string,
+  history: readonly string[],
+): Promise<ConcernsPatch> {
+  if (concerns.length === 0) return {};
+  await env.sink.ledger(ledgerText.note(`CI repair r${round} concerns: ${concerns}`), NO_MIRROR);
+  return { ciRepairConcerns: [...history, `r${round}: ${concerns}`] };
+}
+
+/** US-005: the concerns history a round adds to the record — nothing at all when it raised none. */
+type ConcernsPatch = Partial<Pick<WorkflowFeatureRecord, "ciRepairConcerns">>;

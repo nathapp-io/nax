@@ -86,7 +86,8 @@ export const FEATURE_GRAPH: StepGraph<WorkflowFeatureRecord, FeatureEnv, Feature
     "ci-repair": {
       kind: "agent",
       commits: true,
-      produces: ["ciRepairRounds", "ciRepairFindings"],
+      // US-005: the reply's concerns join the round and the findings it already records.
+      produces: ["ciRepairRounds", "ciRepairFindings", "ciRepairConcerns"],
       transitions: [{ to: "final-gates" }],
       run: ciRepairStep,
     },
@@ -105,6 +106,8 @@ export const FEATURE_GRAPH: StepGraph<WorkflowFeatureRecord, FeatureEnv, Feature
         "passed",
         "flaggedDecisions",
         "ciRepairFindings",
+        // US-005: the checks a decided repair targets.
+        "ciRepairTargets",
         "endedAt",
       ],
       exits: ["ci-repair"],

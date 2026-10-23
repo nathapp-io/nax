@@ -40,6 +40,9 @@ function summaryLine(view: WorkflowSummaryView): string {
   if (view.gateRepairRounds) parts.push(`gate repair rounds ${view.gateRepairRounds}`);
   // US-008: a CI repair is a repair like any other, so its rounds are named at run end too.
   if (view.ciRepairRounds) parts.push(`CI repair rounds ${view.ciRepairRounds}`);
+  // US-005: a repair whose reply admitted it could not check something must not read as done.
+  if (view.ciRepairConcerns && view.ciRepairConcerns.length > 0)
+    parts.push(`CI repair concerns: ${view.ciRepairConcerns.join("; ")}`);
   if (view.publish) parts.push(`publish ${view.publish.outcome}`);
   // US-005: a ruling that changed an acceptance criterion must not go unnoticed at run end.
   if (view.flagged) parts.push(`flagged ${view.flagged.ids.length} (${view.flagged.hint})`);

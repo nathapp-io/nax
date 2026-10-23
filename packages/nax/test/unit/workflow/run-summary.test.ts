@@ -155,6 +155,29 @@ describe("buildWorkflowRunSummary", () => {
     });
   });
 
+  describe("CI repair concerns (US-005)", () => {
+    const timing = { storiesDurationMs: 100, featureWorkflowDurationMs: 40 };
+
+    /** The fixture's record with the CI repair concerns the run's replies raised. */
+    function withConcerns(concerns: readonly string[] | undefined): WorkflowResultFile {
+      const file = resultFile();
+      const rec = file.featureWorkflow;
+      if (!rec) throw new Error("fixture has a feature record");
+      return { ...file, featureWorkflow: { ...rec, ciRepairConcerns: concerns } };
+    }
+
+    test("AC-13: the record's CI repair concerns reach the view", () => {
+      expect(buildWorkflowRunSummary(withConcerns(["r1: a"]), timing)?.ciRepairConcerns).toEqual(["r1: a"]);
+    });
+
+    test("AC-14: no CI repair concerns, no ciRepairConcerns field", () => {
+      // The control: the same fixture with a concern does carry the field.
+      expect(buildWorkflowRunSummary(withConcerns(["r1: a"]), timing)).toHaveProperty("ciRepairConcerns");
+      expect(buildWorkflowRunSummary(withConcerns(undefined), timing)).not.toHaveProperty("ciRepairConcerns");
+      expect(buildWorkflowRunSummary(withConcerns([]), timing)).not.toHaveProperty("ciRepairConcerns");
+    });
+  });
+
   describe("branch review skipped (L3)", () => {
     test("no branch section, and the view says the review was skipped", () => {
       const file = resultFile();

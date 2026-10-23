@@ -88,6 +88,9 @@ export function buildWorkflowRunSummary(
     ...(finalGates ? { finalGates: finalGates.failing.length === 0 ? ("green" as const) : ("red" as const) } : {}),
     ...(rec?.gateRepairRounds ? { gateRepairRounds: rec.gateRepairRounds } : {}),
     ...(rec?.ciRepairRounds ? { ciRepairRounds: rec.ciRepairRounds } : {}),
+    // US-005: what the CI repair's replies admitted they could not check. An empty list says
+    // nothing the missing field does not, and a record written before the field has none at all.
+    ...(rec?.ciRepairConcerns && rec.ciRepairConcerns.length > 0 ? { ciRepairConcerns: rec.ciRepairConcerns } : {}),
     ...(rec?.outcome
       ? { publish: { outcome: rec.outcome, ...(rec.url ? { url: rec.url } : {}), reasons: rec.reasons } }
       : {}),

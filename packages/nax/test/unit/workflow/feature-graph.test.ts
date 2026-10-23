@@ -62,7 +62,8 @@ const expectedProduces: Record<NodeId, string[]> = {
   adjudicate: ["rulings"],
   "final-gates": ["finalGates", "finalGateFindings", "gateRepairFindings"],
   "gate-repair": ["gateRepairRounds"],
-  "ci-repair": ["ciRepairRounds", "ciRepairFindings"],
+  // US-005: `ci-repair` also records the concerns its replies raised.
+  "ci-repair": ["ciRepairRounds", "ciRepairFindings", "ciRepairConcerns"],
   publish: [
     "outcome",
     "ci",
@@ -75,6 +76,8 @@ const expectedProduces: Record<NodeId, string[]> = {
     "passed",
     "flaggedDecisions",
     "ciRepairFindings",
+    // US-005: the checks the decided repair targets.
+    "ciRepairTargets",
     "endedAt",
   ],
 };

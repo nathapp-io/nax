@@ -91,6 +91,12 @@ export interface WorkflowSummaryView {
   gateRepairRounds?: number | undefined;
   /** US-008: repair rounds run for a failed CI on the published PR. Absent when none ran. */
   ciRepairRounds?: number | undefined;
+  /**
+   * US-005: the concerns the CI repair replies raised, one `r<N>: <concerns>` entry per round.
+   * Absent when no round raised one, so its presence alone means a repair admitted something it
+   * could not check.
+   */
+  ciRepairConcerns?: readonly string[] | undefined;
   publish?: { outcome: string; url?: string; reasons: readonly string[] } | undefined;
   /** US-005: the rulings flagged for a human, plus the command that lists them. Absent when none. */
   flagged?: { ids: readonly string[]; hint: string } | undefined;

@@ -12,7 +12,7 @@ import type { StepResult } from "@/step-graph";
 import { describeUnread, featurePassed } from "./approval";
 import { dropKnownRestatements, nextBranchFixRound } from "./branch-fix-rounds";
 import type { BranchReviewFacts } from "./branch-review";
-import { ciRepairDecision } from "./ci-repair-steps";
+import { ciRepairPlan } from "./ci-repair-steps";
 import type { FeatureEnv } from "./feature-machine";
 import { costExceeded, featureStep, limitsOf, NO_MIRROR, roundLabel } from "./feature-step-helpers";
 import { ledgerCannotVerify } from "./gate-timing";
@@ -435,8 +435,9 @@ export async function publishStep(
   await env.sink.ledger(ledgerText.note(`feature ${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`), NO_MIRROR);
   // US-006: a draft PR whose CI failed may still be repairable, so the decision reads the failed
   // checks before the step ends. It never changes the publish outcome itself: the repair is a
-  // separate node, and a run that may not repair keeps the draft it has.
-  const ciFindings = await ciRepairDecision(env, rec, out, head);
+  // separate node, and a run that may not repair keeps the draft it has. US-005: the one read also
+  // names the checks the repair targets, so result.json says what the repaired round was for.
+  const ciPlan = await ciRepairPlan(env, rec, out, head);
   // US-005: collected after publish, whatever it did — a local-only or draft feature still needs
   // its flagged rulings named at run end.
   return {
@@ -460,10 +461,10 @@ export async function publishStep(
       passed: featurePassed({ ...(rec.finalGates ? { finalGates: rec.finalGates } : {}), stories: env.facts.stories }),
       ...(flagged.length > 0 || rec.flaggedDecisions !== undefined ? { flaggedDecisions: flagged } : {}),
       // US-006: the repair targets, only when there is a repair to make.
-      ...(ciFindings ? { ciRepairFindings: ciFindings } : {}),
+      ...(ciPlan ? { ciRepairFindings: ciPlan.findings, ciRepairTargets: ciPlan.targets } : {}),
       endedAt: new Date().toISOString(),
     },
-    ...(ciFindings ? { exit: "ci-repair" } : {}),
+    ...(ciPlan ? { exit: "ci-repair" } : {}),
   };
 }
 
