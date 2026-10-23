@@ -225,22 +225,33 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
     live = true;
   }
 
+  /**
+   * What `open` or `restore` left (§Design 3): the replacement, the restored
+   * session plus the open error it must still surface, or nothing at all. A
+   * discriminated outcome, so an open that rejects with `undefined` is never
+   * mistaken for a failure-free switch.
+   */
+  type SwitchOutcome =
+    | { readonly kind: "opened"; readonly target: SwitchTarget }
+    | { readonly kind: "restored"; readonly target: SwitchTarget; readonly failure: unknown }
+    | { readonly kind: "failed"; readonly failure: unknown };
+
   /** `open`, else `restore`; the open error survives even a successful restore. */
   async function openOrRestore(
     open: () => Promise<SwitchTarget>,
     restore: () => Promise<SwitchTarget>,
-  ): Promise<{ readonly target?: SwitchTarget; readonly failure?: unknown }> {
+  ): Promise<SwitchOutcome> {
     try {
-      return { target: await open() };
+      return { kind: "opened", target: await open() };
     } catch (failure) {
       try {
-        return { target: await restore(), failure };
+        return { kind: "restored", target: await restore(), failure };
       } catch (restoreError) {
         deps.logger.error("session", "could not reopen the session after a failed switch", {
           sessionId: deps.session.id,
           error: messageOf(restoreError),
         });
-        return { failure };
+        return { kind: "failed", failure };
       }
     }
   }
@@ -249,7 +260,8 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
    * One switchTo (§3.3, §Design 2-3): close the old S3 session, then adopt what
    * `open` or `restore` left. A close requested meanwhile keeps the session
    * closed and turns the outcome into `session is closed`, after the adoption so
-   * close() still knows what to close.
+   * close() still knows what to close. Any failed open rejects, whatever its
+   * reason, including an `undefined` one.
    */
   async function switchSession(open: () => Promise<SwitchTarget>, restore: () => Promise<SwitchTarget>): Promise<void> {
     stopWaiting();
@@ -263,11 +275,16 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
         error: messageOf(error),
       });
     }
-    const { target, failure } = await openOrRestore(open, restore);
-    if (target !== undefined) adopt(target);
+    const outcome = await openOrRestore(open, restore);
+    // Nothing was adopted: the session stays dead for the registry's cleanup.
+    if (outcome.kind === "failed") {
+      if (closeRequested) throw sessionClosed();
+      throw outcome.failure;
+    }
+    adopt(outcome.target);
     if (closeRequested) throw sessionClosed();
-    if (target !== undefined) closed = false;
-    if (failure !== undefined) throw failure;
+    closed = false;
+    if (outcome.kind === "restored") throw outcome.failure;
   }
 
   return {

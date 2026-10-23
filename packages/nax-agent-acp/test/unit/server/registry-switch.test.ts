@@ -95,6 +95,26 @@ describe("set_mode (spec §3.3, §5.3)", () => {
     expect(s.opened.at(-1)).toMatchObject({ profile: "full" });
   });
 
+  test("a reopen rejected with no reason still fails and keeps the old settings and metadata", async () => {
+    let calls = 0;
+    const s = setup((request) => {
+      calls += 1;
+      // A provider failure carries no reason: the open rejects with undefined.
+      if (calls === 2) return Promise.reject(undefined);
+      return Promise.resolve(fakeAgentSession(request.sessionId, []).session);
+    });
+    await s.registry.create(s.input);
+    const outcome = await s.registry.setMode("s1", "read").then(
+      () => ({ kind: "resolved" as const }),
+      (reason: unknown) => ({ kind: "rejected" as const, reason }),
+    );
+    expect(outcome).toEqual({ kind: "rejected", reason: undefined });
+    // The restore reopened the old settings: the requested mode is never committed.
+    expect(s.opened.at(-1)).toMatchObject({ profile: "full" });
+    expect((await metaOf("s1")).mode).toBe("full");
+    expect(s.registry.find("s1")).toBeDefined();
+  });
+
   test("an unknown session is resource_not_found; an unknown mode is invalid_params", async () => {
     const s = setup();
     expect(
