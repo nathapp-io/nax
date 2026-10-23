@@ -22,6 +22,13 @@ export {
 } from "./checks";
 export { _decisionsDeps, type BotDecision, loadBotDecisions } from "./decisions";
 export {
+  _findingRulingsDeps,
+  type FindingRulingsInput,
+  type FindingRulingsOutcome,
+  findingRulingKey,
+  recordFindingRulings,
+} from "./finding-rulings";
+export {
   _fixCycleDeps,
   type BotFixCycleResult,
   PR_HEAD_POLL_MS,
