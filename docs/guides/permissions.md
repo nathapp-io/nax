@@ -317,7 +317,8 @@ Controls under `agent.acp.shellSandbox`:
 
 The session policy controls write roots, denied reads/writes and networking. Network is
 **open by default**: absent `allowedDomains` means unrestricted, not an empty allowlist.
-An explicit `[]` denies network destinations; `allowLocalBinding: true` permits local binding.
+An explicit `[]` denies network destinations. Loopback defaults on when `allowedDomains` is set;
+`allowLocalBinding: true` permits local binding, while `false` keeps loopback closed.
 The runner uses nax-agent's srt backend, not the srt CLI, whose schema cannot express that
 open-network default. Invalid policy files and wrap/platform failures refuse with exit 126.
 

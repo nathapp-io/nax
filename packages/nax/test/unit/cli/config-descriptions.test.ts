@@ -10,6 +10,14 @@ import type { z } from "zod";
 import { FIELD_DESCRIPTIONS } from "@/cli";
 import { ExecutionConfigSchema, RoutingConfigSchema } from "@/config";
 
+describe("FIELD_DESCRIPTIONS sandbox network", () => {
+  test("documents the allow-list loopback default and explicit opt-out", () => {
+    expect(FIELD_DESCRIPTIONS["execution.sandbox.network.allowLocalBinding"]).toBe(
+      "Allow sandboxed commands to reach loopback ports. Defaults on when allowedDomains is set; set false to keep loopback closed",
+    );
+  });
+});
+
 /** Unwraps optional/default/prefault/effects wrappers down to the inner schema. */
 function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {
   const inner = (schema as { _def?: { innerType?: z.ZodTypeAny; schema?: z.ZodTypeAny } })._def;
