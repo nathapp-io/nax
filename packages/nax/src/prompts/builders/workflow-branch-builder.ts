@@ -18,7 +18,18 @@ export interface BranchReviewPromptInput {
   readonly packagePath: string;
   /** `<seed>..HEAD`: the commit range every changed file is read through (US-001). */
   readonly range: string;
-  readonly stories: readonly { readonly id: string; readonly state: string; readonly note?: string }[];
+  readonly stories: readonly {
+    readonly id: string;
+    readonly state: string;
+    readonly note?: string;
+    /** US-009: the run dir holding this story's artifacts; absent when it has no record. */
+    readonly runDir?: string;
+  }[];
+  /**
+   * US-009: each story's `report.md` and whether it is on disk. The reviewer cannot glob, so a
+   * report nax does not list reads as missing to it whatever the tree holds.
+   */
+  readonly storyReports?: readonly { readonly storyId: string; readonly path: string; readonly present: boolean }[];
   readonly minors: readonly { readonly id: string; readonly storyId: string; readonly text: string }[];
   readonly parked: readonly { readonly storyId: string; readonly text: string }[];
   readonly cannotVerify: readonly { readonly storyId: string; readonly text: string }[];
@@ -59,6 +70,22 @@ function storyLines(input: BranchReviewPromptInput): string {
   return bullets(input.stories.map((s) => `${s.id}: ${s.state}${s.note ? ` (${s.note})` : ""}`));
 }
 
+/** US-009: a missing report is settled here, so the reviewer cannot claim an unlisted one is absent. */
+const STORY_REPORTS_RULE =
+  'A deferred minor or cannot-verify item that says a story\'s report is missing or unreadable is settled by this list: when the list shows the report, triage that minor "leave" and do not repeat the claim in "cannotVerify".';
+
+/**
+ * US-009: the `## Story reports` section, or nothing at all when nax listed no report — the
+ * `nax bot review` prompt passes none and stays byte-for-byte what it was.
+ */
+function storyReportsBlock(reports: BranchReviewPromptInput["storyReports"]): string {
+  if (!reports || reports.length === 0) return "";
+  const lines = reports.map((r) =>
+    r.present ? `- ${r.storyId}: ${r.path}` : `- ${r.storyId}: no report (${r.path} does not exist)`,
+  );
+  return `\n## Story reports\n${lines.join("\n")}\n${STORY_REPORTS_RULE}\n`;
+}
+
 /**
  * The branch package's "How to read the diff" section: the package holds no diff body, so the
  * reviewer pulls each changed file itself (SPEC-workflow-review-depth § Approach 2). `writeBranchReviewPackage`
@@ -84,7 +111,7 @@ ${buildBranchPackageReadingNote(input.range)}
 
 ## Stories
 ${storyLines(input)}
-
+${storyReportsBlock(input.storyReports)}
 ## Repo gate failures
 ${gates}
 

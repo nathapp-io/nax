@@ -92,7 +92,7 @@ function reviewFacts(env: FeatureEnv, rec: WorkflowFeatureRecord): BranchReviewF
   return {
     stories: env.facts.stories.map((s) => {
       const note = storyNote(s);
-      return { id: s.id, state: s.state, ...(note ? { note } : {}) };
+      return { id: s.id, state: s.state, ...(note ? { note } : {}), ...(s.runDir ? { runDir: s.runDir } : {}) };
     }),
     minors: rec.minors.map((m) => ({ id: m.id, storyId: m.storyId, text: m.text })),
     parked: env.facts.parked,
