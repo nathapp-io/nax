@@ -3,7 +3,7 @@
   "feature": "ruling-state-bundle",
   "branchName": "feat/ruling-state-bundle",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T04:57:43.281Z",
+  "updatedAt": "2026-10-23T05:08:43.620Z",
   "userStories": [
     {
       "id": "US-001",
@@ -342,14 +342,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Five existing files gain optional input forwarding and selection of the US-005 checkout helper using existing trust/setup seams; standard wiring is medium complexity, but trusted-PR access control requires strict three-session TDD."
+        "reasoning": "Five existing files gain optional input forwarding and selection of the US-005 checkout helper using existing trust/setup seams; standard wiring is medium complexity, but trusted-PR access control requires strict three-session TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/bot.ts",
@@ -365,7 +368,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8d2f1505d63a98fd63e001fffefce05fdc19319a"
     },
     {
       "id": "US-007",
