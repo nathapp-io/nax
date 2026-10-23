@@ -3,7 +3,7 @@
   "feature": "workflow-interrupt-continue",
   "branchName": "feat/workflow-interrupt-continue",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T13:32:20.598Z",
+  "updatedAt": "2026-10-23T13:46:07.988Z",
   "userStories": [
     {
       "id": "US-001",
@@ -472,14 +472,17 @@
       "dependencies": [
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "New report orchestration crosses graph outputs, final-turn state, resume and review ordering; same-session execution requires strict isolated TDD."
+        "reasoning": "New report orchestration crosses graph outputs, final-turn state, resume and review ordering; same-session execution requires strict isolated TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/story-steps.ts",
@@ -518,7 +521,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5e1c8789a08d82e94728a5d6182819af30c8a669"
     },
     {
       "id": "US-009",
