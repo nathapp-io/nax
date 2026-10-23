@@ -41,6 +41,8 @@ afterEach(() => {
 const DONE: StorySummary = { id: "US-001", title: "A", state: "complete", rounds: 1, unreviewed: false, flagged: 0 };
 const URL = "https://gh/pr/7";
 const LOCAL_HEAD = "a".repeat(40);
+/** A head distinct from `LOCAL_HEAD`: what the retired nax#2646 `pushedHead` would have claimed. */
+const LEGACY_PUSHED = "b".repeat(40);
 /** The ledger gap a failed commit leaves: the one line the test wrote is not on the branch. */
 const LEDGER_REASON = "advisor ledger not committed: the branch is missing 1 advisor rulings";
 
@@ -265,8 +267,16 @@ describe("the CI repair round publishes again (US-002)", () => {
   });
 });
 
+/**
+ * A publish result that still carries the retired nax#2646 `pushedHead`. `PublishOutcome` has no such
+ * field any more, so the extra key is declared here: without it the fixtures below could not offer the
+ * head the deleted `out.pushedHead ?? head` fallback preferred, and their assertions could not tell the
+ * two behaviours apart (F1).
+ */
+type WithLegacyPushedHead = PublishOutcome & { readonly pushedHead?: string };
+
 /** `publishStep` with the publish stub of the test's choosing and a `head` step that answers `LOCAL_HEAD`. */
-function stepHarness(out: PublishOutcome) {
+function stepHarness(out: WithLegacyPushedHead) {
   const base = makeFeatureMachineHarness({ published: out }, { stories: [makeDoneStory("S1")] });
   const inputs: ItemThreadsInput[] = [];
   const env: FeatureEnv = {
@@ -286,8 +296,8 @@ function stepHarness(out: PublishOutcome) {
 }
 
 describe("publishStep hands the local head downstream (US-002)", () => {
-  test("AC-14: a ready publish hands the item-threads step the local HEAD", async () => {
-    const h = stepHarness({ outcome: "ready", url: URL, ci: "green", reasons: [] });
+  test("AC-14: a ready publish hands the item-threads step the local HEAD, not the retired pushed head", async () => {
+    const h = stepHarness({ outcome: "ready", url: URL, ci: "green", reasons: [], pushedHead: LEGACY_PUSHED });
     const out = await publishStep(h.env, h.env.record);
     expect(h.inputs).toHaveLength(1);
     expect(h.inputs[0]?.head).toBe(LOCAL_HEAD);
@@ -295,12 +305,34 @@ describe("publishStep hands the local head downstream (US-002)", () => {
     expect(out.patch?.head).toBe(LOCAL_HEAD);
   });
 
-  test("the CI-repair read is handed that same local HEAD", async () => {
+  test("AC-14 discriminates: the retired fallback would have cited a different head", async () => {
+    // The expression US-002 deleted, run against the very fixture AC-14 uses: it answers the legacy head,
+    // which AC-14 forbids. So the fixture does distinguish the removal from a reintroduction of it.
+    const retiredSelection = (out: WithLegacyPushedHead): string | undefined => out.pushedHead ?? LOCAL_HEAD;
+    const stub: WithLegacyPushedHead = {
+      outcome: "ready",
+      url: URL,
+      ci: "green",
+      reasons: [],
+      pushedHead: LEGACY_PUSHED,
+    };
+    const h = stepHarness(stub);
+    await publishStep(h.env, h.env.record);
+    expect(retiredSelection(stub)).toBe(LEGACY_PUSHED);
+    expect(h.inputs[0]?.head).toBe(LOCAL_HEAD);
+    expect(retiredSelection(stub)).not.toBe(h.inputs[0]?.head);
+  });
+
+  test("the CI-repair read is handed that same local HEAD, not the retired pushed head", async () => {
+    const stub: WithLegacyPushedHead = {
+      outcome: "draft",
+      url: URL,
+      ci: "failed",
+      reasons: ["CI failed"],
+      pushedHead: LEGACY_PUSHED,
+    };
     const base = makeFeatureMachineHarness(
-      {
-        published: { outcome: "draft", url: URL, ci: "failed", reasons: ["CI failed"] },
-        ciFailures: [{ name: "unit", excerpt: "1 failing", url: "https://gh/run/1" }],
-      },
+      { published: stub, ciFailures: [{ name: "unit", excerpt: "1 failing", url: "https://gh/run/1" }] },
       { stories: [makeDoneStory("S1")] },
     );
     const env: FeatureEnv = { ...base.env, steps: { ...base.env.steps, head: async () => LOCAL_HEAD } };
