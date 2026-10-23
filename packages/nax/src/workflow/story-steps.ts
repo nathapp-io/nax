@@ -15,6 +15,7 @@ import { isFlaggedRuling } from "./advisor";
 import { deriveEndState } from "./close";
 import { ledgerCannotVerify } from "./gate-timing";
 import type { ImplementOutcome, ImplementTurn } from "./implement";
+import { absorbInterrupt, type InterruptOrigin } from "./interrupt-continue";
 import { type LedgerWriteOptions, ledgerText } from "./ledger";
 import { runNoWorkLadder } from "./no-work";
 import { absorbReReviewVerdict } from "./re-review-absorb";
@@ -85,11 +86,6 @@ class LoopState {
   }
 }
 
-interface TurnOrigin {
-  readonly stepUps: number;
-  readonly limit: "implement" | "fix";
-}
-
 export const turnLabel = (turn: ImplementTurn): string => {
   if (turn.kind === "implement") return "implementer";
   if (turn.kind === "answer") return "implementer answer";
@@ -141,10 +137,16 @@ async function absorbTurn(
   env: StoryLoopEnv,
   s: LoopState,
   outcome: ImplementOutcome,
-  origin: TurnOrigin,
+  origin: InterruptOrigin,
 ): Promise<void> {
   let current = outcome;
+  // US-006: one allowance per absorbed turn — the first implement turn (with its no-work restarts
+  // and answers) or one fix round — so every continue turn it spends counts against the same budget.
+  let used = 0;
   for (;;) {
+    const absorbed = await absorbInterrupt(env, current, origin, used, (turn) => implementTurn(env, turn));
+    current = absorbed.outcome;
+    used = absorbed.used;
     if (current.failure) {
       s.pendingSession = [
         ...s.pendingSession,
