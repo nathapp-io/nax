@@ -60,6 +60,24 @@ export function rulingEarlier(outcome: RecordRulingsOutcome, login: string): PrT
   });
 }
 
+/** What a bot review actually has to look at: everything, the range since an earlier review, or talk only. */
+export type BotReviewScope = "full" | "incremental" | "conversation-only";
+
+/**
+ * Classify a review from the same inputs `runPrReview` receives (nax#2667). The
+ * caller already narrowed `rangeBase`; this only names the resulting scope so the
+ * prompt, the artifact and the summary cannot disagree about it.
+ */
+export function reviewScopeOf(input: {
+  readonly rangeBase?: string;
+  readonly mergeBase: string;
+  readonly conversationOnly?: boolean;
+}): BotReviewScope {
+  if (input.conversationOnly === true) return "conversation-only";
+  if (input.rangeBase !== undefined && input.rangeBase !== input.mergeBase) return "incremental";
+  return "full";
+}
+
 /** Only the privileged recorder's validated provenance can narrow a code review. */
 export async function reviewRange(
   input: { index?: ItemIndex; checkout: PrCheckout; head: string },
