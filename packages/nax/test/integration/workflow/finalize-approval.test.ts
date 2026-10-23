@@ -94,7 +94,9 @@ describe("publish approval decisions in the final PR body", () => {
     expect(final.keepDraft).toBe(action === "hold");
     expect(decisionsSection(final.body)).toContain("D-3");
     expect(decisionsSection(final.body)).toContain(action);
-    expect(decisionsSection(h.drafts[0] ?? "")).toBe("None.");
+    // US-001 (nax#2666): the advisor rules before the draft body is built, so the draft already cites
+    // the decision it just wrote — the same one the final body carries.
+    expect(decisionsSection(h.drafts[0] ?? "")).toContain("D-3");
     expect(h.reads()).toBe(2);
   });
 

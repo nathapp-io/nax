@@ -16,7 +16,6 @@ const record = {
   reviewRan: true,
   finalGates: { ran: ["test"], failing: [] },
 };
-const ci = { outcome: "green", detail: "3/3" } as const;
 const NO_FILES: ChangedFilesEvidence = { kind: "files", files: [] };
 const UNRESOLVED: ChangedFilesEvidence = { kind: "unavailable", reason: "no base commit was resolved" };
 
@@ -27,7 +26,7 @@ const UNRESOLVED_BASE_LINE =
 
 /** The evidence list for one record seed, changed-file inventory and deferred-minor set. */
 function evidenceFor(seed: string | null, changed: ChangedFilesEvidence, minorsLeft: readonly string[] = []): string[] {
-  return approvalEvidence({ record: { ...record, seed }, stories: [] }, ci, minorsLeft, changed);
+  return approvalEvidence({ record: { ...record, seed }, stories: [] }, minorsLeft, changed);
 }
 
 /** The index of the first line that starts with `prefix`; -1 when no line does. */
@@ -46,7 +45,7 @@ describe("approvalEvidence", () => {
   test.each([{ reviewUnread: undefined }, { reviewUnread: [] }])(
     "AC-1: complete coverage with %p",
     ({ reviewUnread }) => {
-      const lines = approvalEvidence({ record: { ...record, reviewUnread }, stories: [] }, ci, [], NO_FILES);
+      const lines = approvalEvidence({ record: { ...record, reviewUnread }, stories: [] }, [], NO_FILES);
       expect(lines).toContain(
         "Branch review ran; it read every changed file it must review (0 unread); open findings after the fix pass: 0; branch rulings: 0",
       );
@@ -66,7 +65,6 @@ describe("approvalEvidence", () => {
         },
         stories: [],
       },
-      ci,
       [],
       NO_FILES,
     );
@@ -75,10 +73,20 @@ describe("approvalEvidence", () => {
     );
   });
 
+  // AC-15 (nax#2666): the question is asked before the push, so it reports no CI result — and says
+  // when CI runs and what it gates, in the position the CI line has always held.
+  test("AC-15: the CI line says CI has not run yet, directly after the final gates", () => {
+    const lines = approvalEvidence({ record, stories: [] }, [], NO_FILES);
+    const gates = indexOfLine(lines, "Final gates: ");
+    expect(gates).toBeGreaterThanOrEqual(0);
+    expect(lines[gates + 1]).toBe(
+      "CI: not run yet. It runs on the pushed head after this ruling, and the PR is ready only when it is green.",
+    );
+  });
+
   test("AC-3/4: unread paths never claim complete coverage", () => {
     const lines = approvalEvidence(
       { record: { ...record, reviewUnread: ["a.ts", "b.ts"] }, stories: [] },
-      ci,
       [],
       NO_FILES,
     );
@@ -88,25 +96,25 @@ describe("approvalEvidence", () => {
     expect(lines.some((line) => line.includes("read every changed file"))).toBe(false);
   });
   test("a gate repair is named as an unreviewed diff (nax#2548)", () => {
-    const lines = approvalEvidence({ record: { ...record, gateRepairRounds: 1 }, stories: [] }, ci, [], NO_FILES);
+    const lines = approvalEvidence({ record: { ...record, gateRepairRounds: 1 }, stories: [] }, [], NO_FILES);
     expect(lines).toContain(
       "Gate repair: 1 round(s) after the final gates went red; the repair diff was not re-reviewed",
     );
   });
 
   test("no repair, no gate-repair line", () => {
-    const lines = approvalEvidence({ record, stories: [] }, ci, [], NO_FILES);
+    const lines = approvalEvidence({ record, stories: [] }, [], NO_FILES);
     expect(lines.some((l) => l.startsWith("Gate repair"))).toBe(false);
   });
 
   // AC-11 (US-008): a CI repair commits after the re-review too, so its diff is unreviewed as well.
   test("AC-11: a CI repair is named as an unreviewed diff", () => {
-    const lines = approvalEvidence({ record: { ...record, ciRepairRounds: 1 }, stories: [] }, ci, [], NO_FILES);
+    const lines = approvalEvidence({ record: { ...record, ciRepairRounds: 1 }, stories: [] }, [], NO_FILES);
     expect(lines).toContain("CI repair: 1 round(s) after CI failed on the PR; the repair diff was not re-reviewed");
   });
 
   test("AC-11 control: no CI repair, no CI-repair line", () => {
-    const lines = approvalEvidence({ record, stories: [] }, ci, [], NO_FILES);
+    const lines = approvalEvidence({ record, stories: [] }, [], NO_FILES);
     expect(lines.some((l) => l.startsWith("CI repair"))).toBe(false);
   });
 
@@ -200,6 +208,8 @@ interface WireOptions {
   readonly seed?: string | null;
   readonly minors?: readonly MinorItem[];
   readonly newMinors?: readonly string[];
+  /** The stories the run reports; the default is one complete story. */
+  readonly stories?: PublishInput["stories"];
   /** Answers one git call; the default is an empty, successful one. Throw to fail the call. */
   readonly git?: (args: readonly string[]) => GitResult | Promise<GitResult>;
 }
@@ -254,7 +264,9 @@ function wire(opts: WireOptions) {
       reviewRan: true,
       finalGates: { ran: ["test"], failing: [] },
     },
-    stories: [{ id: "US-001", title: "A", state: "complete", rounds: 1, unreviewed: false, flagged: 0 }],
+    stories: opts.stories ?? [
+      { id: "US-001", title: "A", state: "complete", rounds: 1, unreviewed: false, flagged: 0 },
+    ],
     flagged: 0,
     advisor,
     preflight: null,
@@ -346,11 +358,18 @@ describe("publish finish-approval evidence (US-001)", () => {
     expect(evidence).toContain("Deferred minor: late note");
   });
 
-  // AC-13: a deterministic reason means the advisor is never asked, so nothing is diffed for it.
-  test("a failed CI never runs the changed-file diff", async () => {
-    const { input, asked, gitCalls } = wire({ ci: { outcome: "failed", detail: "test failed" }, seed: "abc123" });
+  // AC-13: a deterministic reason known before the push means the advisor is never asked, so nothing
+  // is diffed for it. A failed CI cannot carry this AC any more (US-001, nax#2666): the ruling is taken
+  // before the push, so the diff has already run by the time CI is observed.
+  test("a deterministic non-CI reason never runs the changed-file diff", async () => {
+    const { input, asked, gitCalls } = wire({
+      ci: GREEN,
+      seed: "abc123",
+      stories: [{ id: "US-001", title: "A", state: "complete-gate-open", rounds: 1, unreviewed: false, flagged: 0 }],
+    });
     const result = await publish(makeFeatureContext(), input);
     expect(result.outcome).toBe("draft");
+    expect(result.reasons).toEqual(["stories gate-open: US-001"]);
     expect(asked).toEqual([]);
     expect(gitCalls.filter((args) => args[0] === "diff" && args[1] === "--name-only")).toEqual([]);
   });

@@ -12,6 +12,7 @@ import { _workflowDeps } from "../workflow/step-context";
 import { type ReviewOutcome, underReviewLimit } from "../workflow/story-review";
 
 import type { BotDecision } from "./decisions";
+import { reviewScopeOf } from "./review-rulings";
 
 export const _reviewStepDeps = { writeBranchReviewPackage };
 
@@ -75,6 +76,7 @@ export async function runPrReview(ctx: PrStepContext, input: PrReviewInput): Pro
     packagePath,
     range: `${rangeBase}..HEAD`,
     conversationOnly: input.conversationOnly,
+    ...(reviewScopeOf(input) === "incremental" && { incrementalSince: rangeBase }),
     pr: { number: input.info.number, title: input.info.title, body: input.info.body, author: input.info.author.login },
     issues: input.issues,
     threads: input.threads,

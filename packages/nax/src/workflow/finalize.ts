@@ -1,6 +1,7 @@
 /**
- * Publish (spec §7 steps 7-9, P4-R3, P4-R11): push, open (or find) the draft PR, wait for CI,
- * ask for approval only when every deterministic condition holds, then promote or keep the draft.
+ * Publish (spec §7 steps 7-9, P4-R3, P4-R11): ask the approval advisor once every deterministic
+ * condition but CI holds, commit the ledger its ruling lands in, push the branch, open (or find) the
+ * draft PR, wait for CI, then promote only when the ruling and the CI/readiness result both permit it.
  * `workflow.publish` selects the depth: `pr` (default) is the above, `push` stops after the CI wait,
  * `none` touches nothing. nax never merges. A non-feature branch, a dry run, no forge or a failed
  * push ends local-only.
@@ -23,7 +24,7 @@ import { buildOpenItems } from "./open-items";
 import { workflowStoryDir } from "./paths";
 import { buildWorkflowPrBody, extractAssumptions, type WorkflowPrBodyFacts } from "./pr-body";
 import type { PreflightFile } from "./preflight";
-import { commitApprovalRuling, ledgerCommit, ledgerReasons } from "./publish-ledger";
+import { ledgerCommit, ledgerReasons } from "./publish-ledger";
 import { repairEvidence } from "./repair-evidence";
 import { _workflowDeps } from "./step-context";
 import type { ApprovalOutcome, FeatureCiState, FeatureOutcome, StorySummary, WorkflowFeatureRecord } from "./types";
@@ -51,11 +52,6 @@ export interface PublishOutcome {
    * three states whose reason is built from it. Absent for every other state.
    */
   readonly ciDetail?: string;
-  /**
-   * nax#2646: the pushed head, present only when the approval ruling's local commit moved HEAD past it.
-   * Item threads and CI reads cite it, so they never name a sha the forge does not have.
-   */
-  readonly pushedHead?: string;
 }
 
 /** The CI states whose readiness reason is the wait's own `detail` rather than a fixed sentence. */
@@ -159,9 +155,21 @@ async function specClosingIssues(fc: FeatureContext): Promise<readonly number[] 
   }
 }
 
+/**
+ * US-001 (nax#2666): the deferred minors the PR body lists and the approval question names, in one
+ * place — a `leave`-triaged minor as `<storyId>: <text>`, then the minors this run parked.
+ */
+function minorsLeftOf(record: WorkflowFeatureRecord): string[] {
+  return [
+    ...record.minors.filter((m) => m.triage === "leave").map((m) => `${m.storyId}: ${m.text}`),
+    ...record.newMinors,
+  ];
+}
+
 async function bodyFacts(fc: FeatureContext, input: PublishInput): Promise<WorkflowPrBodyFacts> {
-  // F1: the draft body lists no approval either — at this point no advisor has been asked, and a
-  // record resumed into a re-publish may still carry the earlier run's hold.
+  // F1: the advisor has already ruled, so the ledger this body reads back carries the ruling it just
+  // wrote. The record's own approval is still dropped: a record resumed into a re-publish may carry an
+  // earlier run's hold, and this publish's approval reaches the body through `finishPr` instead.
   const { approval: _priorApproval, ...r } = input.record;
   const closes = await specClosingIssues(fc);
   return {
@@ -170,7 +178,7 @@ async function bodyFacts(fc: FeatureContext, input: PublishInput): Promise<Workf
     preflight: input.preflight,
     decisions: await loadDecisions(fc),
     rulings: r.rulings,
-    minorsLeft: [...r.minors.filter((m) => m.triage === "leave").map((m) => `${m.storyId}: ${m.text}`), ...r.newMinors],
+    minorsLeft: minorsLeftOf(r),
     ...(r.finalGates ? { finalGates: r.finalGates } : {}),
     ...(r.finalGateFindings ? { finalGateFindings: r.finalGateFindings } : {}),
     assumptions: await loadAssumptions(input.stories),
@@ -225,10 +233,13 @@ function minorLines(minorsLeft: readonly string[]): string[] {
   return [`Deferred minors left: ${minorsLeft.length}`, ...minorsLeft.map((m) => `Deferred minor: ${m}`)];
 }
 
+/** The one sentence the question carries about CI: the ruling is taken before CI has run. */
+const CI_NOT_RUN =
+  "CI: not run yet. It runs on the pushed head after this ruling, and the PR is ready only when it is green.";
+
 /** What the approval advisor reads before ruling on readiness. Exported for its own test. */
 export function approvalEvidence(
   input: Pick<PublishInput, "record" | "stories">,
-  ci: Pick<CiWaitResult, "outcome" | "detail">,
   minorsLeft: readonly string[],
   changed: ChangedFilesEvidence,
 ): string[] {
@@ -239,7 +250,9 @@ export function approvalEvidence(
   return [
     `Stories: ${input.stories.map((s) => `${s.id} ${s.state} (${s.rounds} round(s))`).join(", ") || "none"}`,
     `Final gates: ${r.finalGates?.ran.join(", ") || "none"}, all green`,
-    `CI: ${ci.outcome} (${ci.detail})`,
+    // US-001 (nax#2666): the ruling is taken before the push, so there is no CI result to report —
+    // only when CI runs and what it gates.
+    CI_NOT_RUN,
     `Branch review ran; ${coverage}; open findings after the fix pass: ${r.reviewOpen.length}; branch rulings: ${r.rulings.length}`,
     baseCommitLine(r.seed),
     inventoryLine(changed),
@@ -319,6 +332,11 @@ function openItemRecord(
   };
 }
 
+/** US-001 (nax#2666): the reason a hold or an unavailable advisor adds; an approval adds none of its own. */
+function holdReasons(approval: ApprovalOutcome | null): string[] {
+  return approval?.approved === false ? [approval.rationale] : [];
+}
+
 async function finishPr(
   fc: FeatureContext,
   parts: PrParts,
@@ -326,8 +344,11 @@ async function finishPr(
   reasons: readonly string[],
   approval: ApprovalOutcome | null,
 ): Promise<PublishOutcome> {
-  const ready = approval?.approved === true;
-  const finalReasons = ready ? [] : approval ? [...reasons, approval.rationale] : [...reasons];
+  // US-001 (nax#2666): the ruling is taken before the push, so readiness is both halves — the advisor
+  // approved *and* nothing deterministic (CI included) still blocks. A hold or an unavailable advisor
+  // contributes its own rationale; an approval a red CI contradicted contributes none.
+  const ready = approval?.approved === true && reasons.length === 0;
+  const finalReasons = ready ? [] : [...reasons, ...holdReasons(approval)];
   const finalBody = buildWorkflowPrBody({
     ...parts.body,
     decisions: approval?.decisionId ? await loadDecisions(fc) : parts.body.decisions,
@@ -375,13 +396,12 @@ function logFinishPr(ready: boolean, url: string | undefined, kept: readonly str
 }
 
 /**
- * The CI wait both publishing modes share; the timeout and poll interval come from the workflow config.
- * `pushedHead` is the HEAD the wait was bound to, absent when it could not be read.
+ * The CI wait both publishing modes share; the timeout and poll interval come from the workflow
+ * config. The wait is bound to the HEAD that was pushed — read here, because nothing is committed
+ * after the push any more (US-002: the approval ruling rides the pre-push ledger commit) — and an
+ * unreadable HEAD only warns: `readinessReasons` decides what a missing binding means, not the wait.
  */
-async function waitForCi(
-  fc: FeatureContext,
-  forge: ForgeKind,
-): Promise<{ readonly ci: CiWaitResult; readonly pushedHead?: string }> {
+async function waitForCi(fc: FeatureContext, forge: ForgeKind): Promise<CiWaitResult> {
   let expectedSha: string | undefined;
   try {
     expectedSha = (await readHead(fc.projectDir)) || undefined;
@@ -391,14 +411,13 @@ async function waitForCi(
       error: errorMessage(err),
     });
   }
-  const ci = await _featureDeps.waitForChecks(forge, fc.branch, {
+  return await _featureDeps.waitForChecks(forge, fc.branch, {
     cwd: fc.projectDir,
     ...(expectedSha ? { expectedSha } : {}),
     timeoutMs: fc.workflow.timeouts.ciWaitMs,
     pollMs: fc.workflow.timeouts.ciPollMs,
     ...(fc.runSignal ? { signal: fc.runSignal } : {}),
   });
-  return expectedSha ? { ci, pushedHead: expectedSha } : { ci };
 }
 
 /** Everything a pushing mode needs: the facts, the dirty tree and the target-less base reasons. */
@@ -421,7 +440,7 @@ async function pushMode(plan: PublishPlan): Promise<PublishOutcome> {
   if (pushFailed) {
     return { outcome: "local-only", ci: "skipped", reasons: [...plan.base, ...ledgerReasons(ledger), pushFailed] };
   }
-  const { ci } = await waitForCi(plan.fc, plan.forge);
+  const ci = await waitForCi(plan.fc, plan.forge);
   if (plan.fc.runSignal?.aborted) throw abortedError();
   const reasons = [
     ...readinessReasons({ ...plan.facts, ci: ci.outcome, ciDetail: ci.detail }),
@@ -432,11 +451,24 @@ async function pushMode(plan: PublishPlan): Promise<PublishOutcome> {
 }
 
 /**
- * `pr` mode: commit the ledger, push the branch, open the draft PR, wait for CI, ask for approval,
- * then promote or keep the draft. The approved head is the same head whose CI was observed.
+ * `pr` mode (US-001, nax#2666): ask the advisor while every deterministic condition but CI holds, then
+ * commit the ledger it wrote, push, open the draft PR, wait for CI and promote or keep the draft. The
+ * ruling needs no CI result, so it is taken before the push; CI is enforced afterwards by
+ * `readinessReasons`, and `finishPr` promotes only when the ruling and that result both allow it.
  */
 async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOutcome> {
   const fc = plan.fc;
+  // `plan.base` holds every pre-push condition — `ciReason("skipped")` is undefined, so no CI reason is
+  // in there. A deterministic reason means the advisor is never asked and nothing is diffed for it.
+  let approval: ApprovalOutcome | null = null;
+  if (plan.base.length === 0) {
+    const changed = await changedFilesEvidence(fc.projectDir, input.record.seed);
+    approval = await askApproval(input.advisor, {
+      feature: fc.feature,
+      evidence: approvalEvidence(input, minorsLeftOf(input.record), changed),
+    });
+  }
+  // One ledger commit, after the advisor: it carries the `finish-approval` line the advisor just wrote.
   const ledger = await ledgerCommit(fc);
   const ledgerReason = ledgerReasons(ledger);
   const pushFailed = await pushBranch(fc);
@@ -460,26 +492,15 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
   );
   // US-005: a URL the forge did not return is left out rather than invented; the step is still named.
   getSafeLogger()?.info("workflow", `Publish: draft PR${draft?.url ? ` ${draft.url}` : ""}`, { storyId: "_run" });
-  const { ci, pushedHead } = await waitForCi(fc, plan.forge);
-  // An aborted wait reports `pending`, which blocks readiness (US-003): stop before approval or promotion.
+  const ci = await waitForCi(fc, plan.forge);
+  // An aborted wait reports `pending`, which blocks readiness (US-003): stop before promotion.
   if (fc.runSignal?.aborted) throw abortedError();
-  // US-007: a ledger the branch lacks is a readiness reason like any other, so the advisor is never
-  // asked to approve a PR citing rulings the branch does not carry.
+  // US-007: a ledger the branch lacks is a readiness reason like any other.
   const reasons = [
     ...readinessReasons({ ...plan.facts, ci: ci.outcome, ciDetail: ci.detail }),
     ...plan.dirty,
     ...ledgerReason,
   ];
-  // A deterministic reason means the advisor is never asked: nothing is diffed for it (US-001) and
-  // no second ledger line is written for it.
-  let approval: ApprovalOutcome | null = null;
-  if (reasons.length === 0) {
-    const changed = await changedFilesEvidence(fc.projectDir, input.record.seed);
-    approval = await askApproval(input.advisor, {
-      feature: fc.feature,
-      evidence: approvalEvidence(input, ci, body.minorsLeft, changed),
-    });
-  }
   const parts: PrParts = {
     pr,
     body,
@@ -487,8 +508,8 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
     stories: input.stories,
     ...(draft?.url ? { draftUrl: draft.url } : {}),
   };
-  const out = await finishPr(fc, parts, ci, reasons, approval);
-  return (await commitApprovalRuling(fc, approval, pushedHead)) ? { ...out, pushedHead } : out;
+  // Nothing is committed after this: the advisory ruling already rode the ledger commit above.
+  return finishPr(fc, parts, ci, reasons, approval);
 }
 
 export async function publish(fc: FeatureContext, input: PublishInput): Promise<PublishOutcome> {

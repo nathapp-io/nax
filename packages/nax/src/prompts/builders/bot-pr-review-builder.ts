@@ -22,6 +22,12 @@ export interface BotPrReviewPromptInput {
   readonly packagePath: string;
   readonly range: string;
   readonly conversationOnly?: boolean;
+  /**
+   * The sha an earlier nax review of this PR already covered (nax#2667). Set only
+   * for an incremental range; the prompt then says the earlier commits are
+   * reviewed, not unverifiable.
+   */
+  readonly incrementalSince?: string;
   readonly pr: { readonly number: number; readonly title: string; readonly body: string; readonly author: string };
   readonly issues: readonly LinkedIssue[];
   readonly threads: readonly PrThread[];
@@ -101,6 +107,20 @@ function renderDecision(decision: BotDecision): string {
   return `Decision id:\n${fence(decision.id)}\nStatement:\n${fence(decision.statement)}${decision.source !== undefined ? `\nSource:\n${fence(decision.source)}` : ""}`;
 }
 
+/**
+ * The paragraph that stops an incremental review from reporting the earlier,
+ * already-reviewed commits as unverifiable (nax#2667). Filled with the sha the
+ * earlier review covered.
+ */
+export const INCREMENTAL_REVIEW_NOTE = (sha: string): string =>
+  `This is an incremental review: every commit up to ${sha} was already reviewed by an earlier nax review of this pull request. Review only the commits in this range. Judge intent only for what this range changes. Do not list earlier commits, or parts of the PRD or spec this range does not change, in cannotVerify.`;
+
+/** A conversation-only review re-reads no code, so it can never be incremental. */
+function incrementalSection(input: BotPrReviewPromptInput): readonly string[] {
+  if (input.incrementalSince === undefined || input.conversationOnly) return [];
+  return [INCREMENTAL_REVIEW_NOTE(input.incrementalSince)];
+}
+
 /** Author text can never terminate its enclosing fence, even with embedded Markdown. */
 
 function intentLine(input: BotPrReviewPromptInput): string {
@@ -150,6 +170,7 @@ export function buildBotPrReviewPrompt(input: BotPrReviewPromptInput): string {
     input.conversationOnly
       ? `Review the conversation on pull request #${input.pr.number}. The code at this head was reviewed by the workflow's branch review. Findings may come only from what a thread, comment or earlier finding points at. Do not perform a fresh general code review.`
       : `Review pull request #${input.pr.number} (range ${input.range}, diff package ${input.packagePath}).`,
+    ...incrementalSection(input),
     intentLine(input),
     ...(input.staticMode ? ["You cannot run commands in this review: judge from the files alone."] : []),
     ...projectSections(input),

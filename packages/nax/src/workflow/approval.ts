@@ -144,7 +144,9 @@ export async function askApproval(
   const draft: QuestionDraft = {
     kind: "finish-approval",
     feature: input.feature,
-    summary: `Approve the workflow PR for ${input.feature}? Every deterministic ready condition holds.`,
+    // US-001 (nax#2666): the ruling is taken before the push, so CI is the one condition it cannot
+    // speak for — the question says when CI runs and what it gates rather than claiming it holds.
+    summary: `Approve the workflow PR for ${input.feature}? Every deterministic ready condition except CI holds. CI runs on the pushed head after this ruling, and the PR is ready only when it is green.`,
     evidence: input.evidence.map((text) => ({ source: "review-round", text })),
     options: buildMenu({
       kind: "finish-approval",

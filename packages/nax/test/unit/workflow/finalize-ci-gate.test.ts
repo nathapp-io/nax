@@ -74,10 +74,12 @@ function wire(ci: CiWaitResult, opts: { hold?: { id: string; rationale: string }
 }
 
 describe("publish CI draft gate (US-002)", () => {
-  test("AC-21/22/23/24/25: conflict keeps draft, explains why, never asks the advisor", async () => {
+  // US-001 (nax#2666): the advisor is asked before the push, so a CI conflict is observed after its
+  // ruling — the draft is kept and the approval is reported alongside the CI reason.
+  test("AC-21/22/23/24/25: conflict keeps draft, explains why, after the advisor approved", async () => {
     const { input, asked, updated } = wire({ outcome: "conflicting", detail: "PR has merge conflicts with main" });
     const result = await publish(makeFeatureContext(), input);
-    expect(asked).toEqual([]);
+    expect(asked).toEqual(["finish-approval"]);
     expect(updated).toHaveLength(1);
     expect(updated[0]?.keepDraft).toBe(true);
     expect(updated[0]?.body).toContain("PR has merge conflicts with main");
@@ -87,6 +89,7 @@ describe("publish CI draft gate (US-002)", () => {
       ci: "conflicting",
       url: "https://gh/pr/7",
       reasons: ["PR has merge conflicts with main"],
+      approval: { approved: true, rationale: "clean", decisionId: "D-1" },
       ciDetail: "PR has merge conflicts with main",
     });
   });
@@ -107,25 +110,27 @@ describe("publish CI draft gate (US-002)", () => {
   test("missing checks also block PR approval", async () => {
     const { input, asked, updated } = wire({ outcome: "no-checks", detail: "no CI check reported within 20m 0s" });
     expect((await publish(makeFeatureContext(), input)).outcome).toBe("draft");
-    expect(asked).toEqual([]);
+    expect(asked).toEqual(["finish-approval"]);
     expect(updated[0]?.keepDraft).toBe(true);
   });
 
-  // nax#2550: CI that could not be read is a reason, not a quiet pending.
-  test("CI unavailable keeps the draft with the wait's detail, never asks the advisor", async () => {
+  // nax#2550: CI that could not be read is a reason, not a quiet pending. US-001 (nax#2666): the
+  // advisor was asked before the push, so it has already ruled by the time this state is observed.
+  test("CI unavailable keeps the draft with the wait's detail, after the advisor ruled", async () => {
     const detail = "CI status unavailable: gh: auth required";
     const { input, asked, updated } = wire({ outcome: "unavailable", detail });
     const result = await publish(makeFeatureContext(), input);
-    expect(asked).toEqual([]);
+    expect(asked).toEqual(["finish-approval"]);
     expect(updated[0]?.keepDraft).toBe(true);
     expect(result).toMatchObject({ outcome: "draft", ci: "unavailable", reasons: [detail] });
   });
 
   // US-003: strict green — a CI that is still pending is a readiness reason, so the PR stays a draft.
-  test("slow CI (pending) keeps the draft and never asks the advisor", async () => {
+  // US-001 (nax#2666): the ruling is taken before the push, so the advisor is asked regardless.
+  test("slow CI (pending) keeps the draft after the advisor was asked", async () => {
     const { input, asked, updated } = wire({ outcome: "pending", detail: "no CI result within 1200000ms" });
     const result = await publish(makeFeatureContext(), input);
-    expect(asked).toEqual([]);
+    expect(asked).toEqual(["finish-approval"]);
     expect(updated[0]?.keepDraft).toBe(true);
     expect(result.outcome).toBe("draft");
     expect(result.reasons).toContain("no CI result within 1200000ms");
@@ -206,20 +211,23 @@ describe("publish rebuilds the body's open items (US-002)", () => {
     expectReadyLine(String(updated[0]?.body), "- [ ] **_run:reason1** (reason) — branch review did not run");
   });
 
-  // F1: the record a resumed publish holds may carry an earlier run's hold; this publish asked no one.
+  // F1: the record a resumed publish holds may carry an earlier run's hold; this publish asked no one
+  // because a branch review that never ran is a deterministic reason — not because CI was red.
   test("F1: a record's earlier hold is not cited when this publish never asked the advisor", async () => {
-    const { input, asked, updated, drafted } = wire({ outcome: "failed", detail: "1 check failed" });
+    const { input, asked, updated, drafted } = wire({ outcome: "green", detail: "all checks passed" });
     const record = {
       ...input.record,
+      reviewRan: false,
       approval: { approved: false, rationale: "advisor held: stale", decisionId: "D-0" },
     };
     await publish(makeFeatureContext(), { ...input, record });
     const body = String(updated[0]?.body);
     expect(asked).toEqual([]);
-    expectReadyLine(body, "- [ ] **_run:ci** (ci) — CI failed");
+    expectReadyLine(body, "- [ ] **_run:reason1** (reason) — branch review did not run");
     expect(body).not.toContain("D-0");
     expect(body).not.toContain("advisor held: stale");
-    // The draft body is written before the advisor is asked, so it cites no hold of its own either.
+    // The draft body is written after the advisor would have been asked, so it cites no hold either:
+    // nothing was asked here, and the record's own approval is stripped before the body is built.
     expect(String(drafted[0])).not.toContain("D-0");
   });
 });
@@ -234,12 +242,14 @@ describe("publish keeps the approval and the CI detail (US-001)", () => {
     expect(result.outcome).toBe("draft");
   });
 
-  test("AC-11: a failed CI never asks the advisor, so there is no approval key", async () => {
+  // US-001 (nax#2666): the ruling is taken before the push, so a red CI cannot suppress it — the PR
+  // stays a draft and the approval is reported with it.
+  test("AC-11: a failed CI after an approving advisor keeps the draft and reports the approval", async () => {
     const { input, asked } = wire({ outcome: "failed", detail: "1 check failed" });
     const result = await publish(makeFeatureContext(), input);
-    expect(asked).toEqual([]);
+    expect(asked).toEqual(["finish-approval"]);
     expect(result.outcome).toBe("draft");
-    expect("approval" in result).toBe(false);
+    expect(result.approval).toEqual({ approved: true, rationale: "clean", decisionId: "D-1" });
   });
 
   test("AC-12: a conflicting CI records the wait's detail", async () => {
