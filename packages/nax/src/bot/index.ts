@@ -53,6 +53,7 @@ export {
 export { _gateBaselineDeps, failingOnHead, logGateFailure, readHeadCi } from "./gate-baseline";
 export { BOT_GIT_HOOKS_OFF, botGit } from "./git";
 export { featureIntentPaths } from "./intent";
+export { _ledgerCarryDeps, ledgerStep } from "./ledger-carry";
 export { _botLogDeps, type BotLog, openBotLog } from "./log";
 export { botModel, parseModelOption } from "./models";
 export { fixProtectedPaths, sensitivePaths } from "./path-policy";
