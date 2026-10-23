@@ -212,7 +212,12 @@ describe("runBotReview finding rulings", () => {
     expect(artifact?.rulings).toEqual({ recorded: 1, open: 0, asked: 0 });
   });
   test("AC-12 shares cached login permission across triage and recorder", async () => {
-    _botReviewDeps.listPrComments = async () => [comment("general", "writer", "please review")];
+    _botReviewDeps.listPrComments = async () => [{ ...comment("general", "writer", "please review"), kind: "comment" }];
+    record.mockImplementationOnce(async (value) => {
+      // Triage must have checked this login before the recorder reads its reply.
+      expect(access).toHaveBeenCalledTimes(1);
+      return recordFindingRulings(value);
+    });
     await runBotReview(input);
     expect(record).toHaveBeenCalledTimes(1);
     expect(access).toHaveBeenCalledTimes(1);
