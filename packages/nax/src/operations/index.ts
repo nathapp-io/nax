@@ -176,6 +176,7 @@ export type { WorkflowImplementInput } from "./workflow-implement";
 export { WORKFLOW_WRITE_TOOLS, workflowImplementOp } from "./workflow-implement";
 export type { WorkflowReReviewInput } from "./workflow-re-review";
 export { workflowReReviewOp } from "./workflow-re-review";
+export { workflowRepairOp } from "./workflow-repair";
 export {
   parseBranchReviewReply,
   parseImplementerReply,

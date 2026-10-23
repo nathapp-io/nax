@@ -30,6 +30,8 @@ import {
   createRuleDeliveryHandlers,
   MAX_RULE_INJECTION_BYTES,
   RULE_DELIVERY_PLUGIN,
+  RULE_READ_ROLES,
+  RULE_WRITE_ROLES,
 } from "@/context/rules/rule-delivery";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,6 +171,45 @@ describe("before_tool — role scope", () => {
 
       expect(advisor).toEqual({ kind: "allow" });
       expect(roleless).toEqual({ kind: "allow" });
+    });
+  });
+
+  /**
+   * US-001 — a repair is a fresh write session like the branch fix (it edits the
+   * same tree under the same rules), so it is on both role lists. Missing from
+   * the write list, its first Edit of a governed file would be allowed instead of
+   * blocked, and the session would never be shown the rule it is governed by.
+   */
+  describe("wf-repair role (US-001)", () => {
+    test("AC-11: RULE_READ_ROLES contains 'wf-repair'", () => {
+      expect(RULE_READ_ROLES).toContain("wf-repair");
+    });
+
+    test("AC-12: RULE_WRITE_ROLES contains 'wf-repair'", () => {
+      expect(RULE_WRITE_ROLES).toContain("wf-repair");
+    });
+
+    test("a wf-repair Read is nudged and its Edit is blocked, exactly like wf-branch-fix", async () => {
+      await withTempDir(async (repoRoot) => {
+        await seedRepo(repoRoot);
+        const set = handlersFor(repoRoot);
+
+        const nudged = await callBeforeTool(
+          set,
+          read(A_PATH),
+          handlerContext({ role: "wf-repair", sessionName: "sess-repair" }),
+        );
+        expect(nudged.kind).toBe("nudge");
+        expect(outcomeText(nudged)).toContain(RULE_R_BODY);
+
+        const blocked = await callBeforeTool(
+          set,
+          edit(A_PATH),
+          handlerContext({ role: "wf-repair", sessionName: "sess-repair-edit" }),
+        );
+        expect(blocked.kind).toBe("block");
+        expect(outcomeText(blocked)).toContain(RULE_R_BODY);
+      });
     });
   });
 

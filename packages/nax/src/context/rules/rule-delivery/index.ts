@@ -16,7 +16,7 @@
  * The pair is registered after the plugin handlers at run setup
  * (`configureRunRules`) and scoped by `LoopHandlerContext.role`: read nudges for
  * every workflow role that reads (`RULE_READ_ROLES`), write blocks only for the
- * two roles that may mutate (`RULE_WRITE_ROLES`). An `advisor` session, or a
+ * roles that may mutate (`RULE_WRITE_ROLES`). An `advisor` session, or a
  * context with no role at all, is never touched — including its Reads.
  *
  * Design notes that are load-bearing:
@@ -76,13 +76,15 @@ export const MAX_RULE_INJECTION_BYTES = 16_384;
 export const RULE_READ_ROLES: readonly string[] = Object.freeze([
   "wf-implementer",
   "wf-branch-fix",
+  /** US-001: a repair pass edits the same tree under the same rules as the branch fix. */
+  "wf-repair",
   "wf-story-review",
   "wf-rereview",
   "wf-branch-review",
 ]);
 
 /** Roles whose Writes and Edits may be refused once. */
-export const RULE_WRITE_ROLES: readonly string[] = Object.freeze(["wf-implementer", "wf-branch-fix"]);
+export const RULE_WRITE_ROLES: readonly string[] = Object.freeze(["wf-implementer", "wf-branch-fix", "wf-repair"]);
 
 /** The plugin name every entry this module registers carries. */
 export const RULE_DELIVERY_PLUGIN = "nax-rules";
