@@ -1,9 +1,56 @@
 import { describe, expect, test } from "bun:test";
+import { BUN_CHECK_SAMPLE } from "@test/fixtures/bun-check";
 import { formatTypecheckDiagnosticsOutput, parseTypecheckOutput } from "@/review/typecheck-parsing/parse";
 
 const TSC_OUTPUT = "src/foo.ts(1,1): error TS2304: Cannot find name 'foo'.";
 
 describe("parseTypecheckOutput", () => {
+  test.each([
+    ["AC-1 format", (r: ReturnType<typeof parseTypecheckOutput>) => r?.format, "bun-check"],
+    ["AC-2 count", (r: ReturnType<typeof parseTypecheckOutput>) => r?.diagnostics.length, 1],
+    [
+      "AC-3 file",
+      (r: ReturnType<typeof parseTypecheckOutput>) => r?.diagnostics[0]?.file,
+      "test/unit/forge-tools/log-tool.test.ts",
+    ],
+    ["AC-4 line", (r: ReturnType<typeof parseTypecheckOutput>) => r?.diagnostics[0]?.line, 90],
+    ["AC-5 column", (r: ReturnType<typeof parseTypecheckOutput>) => r?.diagnostics[0]?.column, 86],
+    ["AC-6 code", (r: ReturnType<typeof parseTypecheckOutput>) => r?.diagnostics[0]?.code, "2769"],
+    [
+      "AC-7 message",
+      (r: ReturnType<typeof parseTypecheckOutput>) => r?.diagnostics[0]?.message,
+      "No overload matches this call.",
+    ],
+    [
+      "AC-8 raw start",
+      (r: ReturnType<typeof parseTypecheckOutput>) => r?.diagnostics[0]?.raw.startsWith("<error file="),
+      true,
+    ],
+    ["AC-9 raw end", (r: ReturnType<typeof parseTypecheckOutput>) => r?.diagnostics[0]?.raw.endsWith("</error>"), true],
+    ["AC-16 tool", (r: ReturnType<typeof parseTypecheckOutput>) => r?.findings?.[0]?.tool, "bun check"],
+    ["AC-17 rule", (r: ReturnType<typeof parseTypecheckOutput>) => r?.findings?.[0]?.rule, "TS2769"],
+  ] as const)("%s", (_name, select, expected) => {
+    expect(select(parseTypecheckOutput(BUN_CHECK_SAMPLE, "auto", { workdir: "/repo" }))).toBe(expected);
+  });
+
+  test("auto prefers bun blocks over mixed tsc diagnostics", () => {
+    const result = parseTypecheckOutput(`${TSC_OUTPUT}\n${BUN_CHECK_SAMPLE}`);
+    expect(result?.format).toBe("bun-check");
+    expect(result?.diagnostics).toHaveLength(1);
+  });
+
+  test("AC-23 auto preserves tsc fallback", () => {
+    expect(parseTypecheckOutput(TSC_OUTPUT, "auto", { workdir: "/repo" })?.format).toBe("tsc");
+  });
+
+  test("AC-24 none disables bun parsing", () => {
+    expect(parseTypecheckOutput(BUN_CHECK_SAMPLE, "none", { workdir: "/repo" })).toBeNull();
+  });
+
+  test("explicit tsc does not select bun blocks", () => {
+    expect(parseTypecheckOutput(BUN_CHECK_SAMPLE, "tsc")).toBeNull();
+  });
+
   test("returns null for blank output", () => {
     expect(parseTypecheckOutput("")).toBeNull();
     expect(parseTypecheckOutput("   \n  ")).toBeNull();
@@ -41,7 +88,7 @@ describe("parseTypecheckOutput", () => {
     expect(parseTypecheckOutput(TSC_OUTPUT, "none")).toBeNull();
   });
 
-  test("'auto' tries tsc first, falling through to text-block when tsc finds nothing", () => {
+  test("'auto' recognizes tsc output when no bun error block is present", () => {
     const result = parseTypecheckOutput(TSC_OUTPUT); // default format is "auto"
     expect(result).not.toBeNull();
     expect(result?.format).toBe("tsc");

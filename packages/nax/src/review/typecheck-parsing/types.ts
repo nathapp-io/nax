@@ -2,7 +2,7 @@ import type { Finding } from "@/findings";
 
 export type TypecheckOutputFormat = "auto" | "tsc" | "text" | "none";
 
-export type TypecheckParserFormat = "tsc" | "text-block";
+export type TypecheckParserFormat = "tsc" | "text-block" | "bun-check";
 
 export interface TypecheckDiagnostic {
   file: string;

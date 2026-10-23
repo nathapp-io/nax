@@ -1,4 +1,5 @@
 import { genericTypecheckDiagnosticToFinding } from "@/findings";
+import { bunCheckStrategy } from "./strategies/bun-check";
 import { typecheckTextBlockStrategy } from "./strategies/text-block";
 import { tscStrategy } from "./strategies/tsc";
 import type {
@@ -13,11 +14,12 @@ function strategiesFor(format: TypecheckOutputFormat): ReadonlyArray<TypecheckPa
   if (format === "tsc") return [tscStrategy];
   if (format === "text") return [typecheckTextBlockStrategy];
   if (format === "none") return [];
-  return [tscStrategy, typecheckTextBlockStrategy];
+  return [bunCheckStrategy, tscStrategy, typecheckTextBlockStrategy];
 }
 
 function toolForFormat(format: TypecheckParserFormat): string | undefined {
   if (format === "tsc") return "tsc";
+  if (format === "bun-check") return "bun check";
   return undefined;
 }
 
