@@ -3,7 +3,7 @@
   "feature": "workflow-input-bundle",
   "branchName": "feat/workflow-input-bundle",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T09:46:26.109Z",
+  "updatedAt": "2026-10-23T10:07:54.835Z",
   "userStories": [
     {
       "id": "US-001",
@@ -567,14 +567,17 @@
         "quality"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A deterministic mode/exit helper and a narrowly extracted script tail preserve existing measurements and CLI flows."
+        "reasoning": "A deterministic mode/exit helper and a narrowly extracted script tail preserve existing measurements and CLI flows.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/repo-tooling/scripts/check-coverage.ts",
@@ -600,7 +603,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fb20fc763022c75478a0bc3f81688476103ce275"
     },
     {
       "id": "US-009",
