@@ -375,6 +375,40 @@ describe("a deny that makes the agent cancel its turn is continued (nax#2582)", 
 });
 
 describe("Claude keeps the embedder sandbox (nax#2500, unchanged)", () => {
+  test.each([true, false])("AC-14/15 full report edit with exemption=%s", async (exempt) => {
+    const report = `${workdir}/.nax/features/f/workflow/r/US-005/report.md`;
+    const policy = { ...policyFor(workdir), denyWrite: [`${workdir}/.nax/features`] };
+    const o = await open("full", {
+      agent: "claude",
+      sandbox: { kind: "policy", policy, ...(exempt ? { writeExemption: report } : {}) },
+      script: {
+        turns: [
+          {
+            steps: [
+              {
+                ...EDIT,
+                toolCall: {
+                  kind: "edit",
+                  title: "Write report",
+                  rawInput: { file_path: report },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await driveTurn(o.session, "write the report");
+    expect(answers(o)).toEqual([{ outcome: "selected", optionId: exempt ? "opt-allow_once" : "opt-reject_once" }]);
+  });
+
+  test("AC-21 full with unavailable sandbox refuses before opening", async () => {
+    const err = sessionError(
+      await rejection(open("full", { agent: "claude", sandbox: { kind: "unavailable", reason: "no bwrap" } })),
+    );
+    expect(err.code).toBe("AGENT_SESSION_CAPABILITY_UNSUPPORTED");
+    expect(err.context).toMatchObject({ capability: "profile" });
+  });
   test("review with a policy sandbox allows an execute request once", async () => {
     const o = await open("review", {
       agent: "claude",

@@ -130,16 +130,21 @@ export async function firstOutsidePolicy(
   targets: readonly string[],
   policy: SandboxPolicy,
   cwd: string | undefined,
+  writeExemption?: string,
 ): Promise<string | undefined> {
   const roots = await Promise.all(policy.writeRoots.map(canonicalPolicyPath));
   const denied = await Promise.all(policy.denyWrite.map(canonicalPolicyPath));
+  const exemption = writeExemption === undefined ? undefined : await canonical(writeExemption);
   for (const target of targets) {
     if (hasDotDotSegment(target)) return target;
     const absolute = expand(target, cwd);
     if (absolute === undefined) return target;
     const real = await canonical(absolute);
     if (real === undefined) return target;
-    if (denied.some((d) => withinDenied(real, d)) || !roots.some((r) => withinRoot(real, r))) return target;
+    // Only this exact canonical file bypasses denyWrite; containment and traversal still apply.
+    const exempt = exemption !== undefined && nfc(real) === nfc(exemption);
+    if ((!exempt && denied.some((d) => withinDenied(real, d))) || !roots.some((r) => withinRoot(real, r)))
+      return target;
   }
   return undefined;
 }

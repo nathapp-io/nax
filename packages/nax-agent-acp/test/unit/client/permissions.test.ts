@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type {
   PermissionOptionKind,
   RequestPermissionRequest,
@@ -71,6 +73,49 @@ const selected = (kind: string): RequestPermissionResponse => ({
   outcome: { outcome: "selected", optionId: `opt-${kind}` },
 });
 const CANCELLED: RequestPermissionResponse = { outcome: { outcome: "cancelled" } };
+
+describe("decidePermission: single writable output", () => {
+  const root = "/nax-exemption-root";
+  const report = `${root}/.nax/features/f/workflow/r/US-005/report.md`;
+  const brief = `${root}/.nax/features/f/workflow/r/US-005/brief.md`;
+  const outside = join(tmpdir(), "nax-outside/report.md");
+  const sandbox: SandboxPolicy = {
+    writeRoots: [root],
+    denyWrite: [`${root}/.nax/features`],
+    denyRead: [],
+    network: {},
+  };
+  test.each([
+    ["AC-10 report exemption", report, report, sandbox, true],
+    ["AC-11/12 no exemption", report, undefined, sandbox, false],
+    ["AC-13/18/19 brief is still denied", brief, report, sandbox, false],
+    ["AC-16/17 outside-root exemption", outside, outside, sandbox, false],
+    ["AC-20 no policy", report, undefined, undefined, true],
+  ] as const)("%s", async (_name, target, writeExemption, policy, allowed) => {
+    const { port, seen } = asks();
+    const result = await decidePermission(
+      request(["allow_once", "reject_once"], {
+        toolCallId: "t-report",
+        kind: "edit",
+        title: "Write output",
+        rawInput: { file_path: target },
+      }),
+      {
+        ...ctx("full", port),
+        cwd: root,
+        ...(policy === undefined ? {} : { sandbox: policy }),
+        ...(writeExemption === undefined ? {} : { writeExemption }),
+      },
+    );
+    expect(result).toEqual(selected(allowed ? "allow_once" : "reject_once"));
+    expect(seen.auto).toHaveLength(1);
+    expect(seen.auto[0]).toMatchObject({
+      decision: allowed ? "allow" : "deny",
+      req: { reason: allowed ? FULL_REASON : OUTSIDE_WRITE_ROOTS_REASON },
+    });
+    expect(seen.asked).toEqual([]);
+  });
+});
 
 describe("offeredOptions and rejectLocally", () => {
   test("only the *_once kinds are picked; the first of each wins", () => {

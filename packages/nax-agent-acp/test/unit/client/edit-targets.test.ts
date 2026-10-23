@@ -61,6 +61,58 @@ describe("editTargets", () => {
 });
 
 describe("firstOutsidePolicy", () => {
+  test.each([
+    ["AC-1 report", "report.md", true, true],
+    ["AC-2 brief", "brief.md", true, false],
+    ["AC-3 other story", "../US-004/report.md", true, false],
+    ["AC-4 prd", "../../../prd.json", true, false],
+    ["AC-5 no exemption", "report.md", false, false],
+    ["AC-8 case-sensitive", "REPORT.md", true, false],
+  ] as const)("%s", async (_name, file, exempt, allowed) => {
+    const dir = join(root, ".nax/features/f/workflow/r/US-005");
+    const report = join(dir, "report.md");
+    const target = join(dir, file);
+    const denied = { ...policy(), denyWrite: [join(root, ".nax/features")] };
+    expect(await firstOutsidePolicy([target], denied, root, exempt ? report : undefined)).toBe(
+      allowed ? undefined : target,
+    );
+  });
+  test("AC-6 relative report resolves to the exemption", async () => {
+    const relative = ".nax/features/f/workflow/r/US-005/report.md";
+    expect(
+      await firstOutsidePolicy(
+        [relative],
+        { ...policy(), denyWrite: [join(root, ".nax/features")] },
+        root,
+        join(root, relative),
+      ),
+    ).toBeUndefined();
+  });
+  test("AC-7 exemption cannot grant an outside root", async () => {
+    const target = join(outside, "report.md");
+    expect(await firstOutsidePolicy([target], policy(), root, target)).toBe(target);
+  });
+  test("AC-9 exemption cannot grant a literal traversal", async () => {
+    const report = `${root}/.nax/features/f/workflow/r/US-005/report.md`;
+    const dotted = `${root}/.nax/features/f/workflow/r/US-004/../US-005/report.md`;
+    expect(
+      await firstOutsidePolicy([dotted], { ...policy(), denyWrite: [join(root, ".nax/features")] }, root, report),
+    ).toBe(dotted);
+  });
+  test("canonical exemption is NFC-normalised and follows an in-root symlink", async () => {
+    const denied = { ...policy(), denyWrite: [root] };
+    expect(
+      await firstOutsidePolicy([join(root, "inroot")], denied, root, join(root, "sub/target.txt")),
+    ).toBeUndefined();
+    expect(
+      await firstOutsidePolicy([join(root, "caf\u00e9.md")], denied, root, join(root, "cafe\u0301.md")),
+    ).toBeUndefined();
+  });
+  test("an exempt target does not exempt a second denied target", async () => {
+    const report = join(root, "report.md");
+    const brief = join(root, "brief.md");
+    expect(await firstOutsidePolicy([report, brief], { ...policy(), denyWrite: [root] }, root, report)).toBe(brief);
+  });
   test("inside the root: undefined", async () => {
     expect(await firstOutsidePolicy([join(root, "src", "new.ts")], policy(), root)).toBeUndefined();
   });
