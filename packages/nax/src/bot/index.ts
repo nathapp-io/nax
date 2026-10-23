@@ -10,6 +10,7 @@ export {
   type PrCheckout,
   preparePrCheckout,
 } from "./checkout";
+export { prepareInPlaceCheckout } from "./checkout-in-place";
 export {
   _botChecksDeps,
   type BotCheck,
