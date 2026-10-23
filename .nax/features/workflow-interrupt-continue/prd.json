@@ -3,7 +3,7 @@
   "feature": "workflow-interrupt-continue",
   "branchName": "feat/workflow-interrupt-continue",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T12:41:50.363Z",
+  "updatedAt": "2026-10-23T12:50:09.754Z",
   "userStories": [
     {
       "id": "US-001",
@@ -214,14 +214,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Extends a discriminated turn executor using established seams; strict isolation is required because warm-session lifecycle and model preservation are involved."
+        "reasoning": "Extends a discriminated turn executor using established seams; strict isolation is required because warm-session lifecycle and model preservation are involved.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/implement.ts",
@@ -239,7 +242,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "dcbe042eddae33ef9103d17c270ab26406c23cba"
     },
     {
       "id": "US-005",
