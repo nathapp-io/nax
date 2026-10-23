@@ -22,7 +22,9 @@ parallel execution) describe pipeline behaviour that workflow mode does not run;
     "maxBranchFixRounds": 2,
     "finalGateRepairRounds": 1,
     "preflight": true,
-    "publish": "pr"
+    "publish": "pr",
+    "interruptRetry": { "maxAttempts": 1, "budgetMultiplier": 0.5 },
+    "timeouts": { "reportMs": 600000 }
   }
 }
 ```
@@ -57,6 +59,20 @@ key; a package overlay supplies only a gate the root leaves unconfigured (see
 5. **Full suite.** Once the review passes, the `full-suite` gate runs once.
 6. **Residual.** Findings still open when the rounds run out go to one batched advisor call. A missing or failed
    answer becomes a `hold`.
+
+### Step limits
+
+Each implementer turn (implement, restart, advisor answer or fix round) has a step limit: the
+`workflow.timeouts.implementMs` implement limit for an implement turn, and the `workflow.timeouts.fixMs` fix
+limit for a fix turn. When a turn hits it, the story does not restart from scratch. nax sends a *continue* turn
+on the same warm session, at `workflow.interruptRetry.budgetMultiplier` of the limit that was hit (default 0.5)
+and for up to `workflow.interruptRetry.maxAttempts` tries (default 1; `0` turns the continue off). The continue
+prompt lists the files changed since the story base and tells the agent not to redo work already on disk.
+
+When the tries are spent and the turn is still stopped, nax auto-commits the dirty tree and tells the story
+reviewer the implementer was interrupted, so the work is reviewed rather than lost. A missing `report.md` is
+handled separately: when the implementer replies without one, one more turn asks for it, bounded by
+`workflow.timeouts.reportMs` (default 10 minutes).
 
 The story closes with one of three end states:
 
@@ -173,11 +189,14 @@ All keys live under the top-level `workflow` block unless noted.
 | `workflow.finalGateRepairRounds` | `1` | Minimum 0 |
 | `workflow.preflight` | `true` | Advisor pre-flight before the first story |
 | `workflow.publish` | `"pr"` | `"pr"`, `"push"` or `"none"` |
+| `workflow.interruptRetry.maxAttempts` | `1` | Minimum 0. Continue turns after an implementer turn hits its step limit; `0` turns the continue off |
+| `workflow.interruptRetry.budgetMultiplier` | `0.5` | Greater than 0 and at most 1. Each continue turn's budget as a fraction of the limit that was hit. See [Step limits](#step-limits) |
 | `workflow.models.storyReview` | unset | Model for the story review |
 | `workflow.models.branchReview` | unset | Model for the branch review |
 | `workflow.models.branchFix` | unset | Model for the branch fix |
 | `workflow.timeouts.implementMs` | 3600000 | Implement turn |
 | `workflow.timeouts.fixMs` | 3600000 | Fix turn |
+| `workflow.timeouts.reportMs` | 600000 | The turn that asks for a missing `report.md` |
 | `workflow.timeouts.reviewMs` | 1800000 | Review turn |
 | `workflow.timeouts.ciWaitMs` | 1200000 | Total CI wait |
 | `workflow.timeouts.ciPollMs` | 30000 | CI poll interval |

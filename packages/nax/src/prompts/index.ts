@@ -111,9 +111,12 @@ export type { WorkflowBriefInput, WorkflowPromptFinding } from "./builders/workf
 export {
   buildWorkflowAnswerPrompt,
   buildWorkflowBrief,
+  buildWorkflowContinuePrompt,
   buildWorkflowFixPrompt,
   buildWorkflowImplementPrompt,
+  buildWorkflowReportPrompt,
   buildWorkflowRestartPrompt,
+  WORKFLOW_ARTIFACTS_RULE,
   WORKFLOW_REPLY_CONTRACT,
 } from "./builders/workflow-implementer-builder";
 // A5 workflow mode — the shared code-quality checklist both reviewer prompts embed (US-001).

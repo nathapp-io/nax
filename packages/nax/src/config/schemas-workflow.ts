@@ -22,10 +22,19 @@ export const WorkflowConfigObjectSchema = z.object({
   ciRepairRounds: z.number().int().min(0).default(1),
   preflight: z.boolean().default(true),
   publish: z.enum(["pr", "push", "none"]).default("pr"),
+  // US-003: an implementer turn that hits its step limit gets a continue turn on the same warm
+  // session, at `budgetMultiplier` of the limit it hit. `maxAttempts: 0` turns the continue off.
+  interruptRetry: z
+    .object({
+      maxAttempts: z.number().int().min(0).default(1),
+      budgetMultiplier: z.number().gt(0).max(1).default(0.5),
+    })
+    .prefault({}),
   timeouts: z
     .object({
       implementMs: z.number().int().positive().default(3_600_000),
       fixMs: z.number().int().positive().default(3_600_000),
+      reportMs: z.number().int().positive().default(600_000),
       reviewMs: z.number().int().positive().default(1_800_000),
       ciWaitMs: z.number().int().positive().default(1_200_000),
       ciPollMs: z.number().int().positive().default(30_000),

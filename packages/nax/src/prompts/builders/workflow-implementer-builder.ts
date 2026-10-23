@@ -203,3 +203,50 @@ ${answer}
 
 Continue the work with this answer. Commit, update the report, and reply with the same json block as before.`;
 }
+
+/**
+ * US-003: the changed-file block of the continue prompt — three states, each its own sentence so
+ * the agent can tell "nothing changed" apart from "nax could not read the list".
+ */
+function changedFilesBlock(changedFiles: readonly string[] | undefined): string {
+  if (changedFiles === undefined) return "The changed-file list could not be read; check git status yourself.";
+  if (changedFiles.length === 0) return "No files have changed since the story base.";
+  return `Files changed since the story base:\n${changedFiles.map((f) => `- ${f}`).join("\n")}`;
+}
+
+/**
+ * US-003: the turn sent when an implementer turn hits its step limit. The session is warm, so this
+ * does not resend the brief — it says where the work stands and exactly how to finish.
+ */
+export function buildWorkflowContinuePrompt(input: {
+  storyId: string;
+  reportPath: string;
+  limitMinutes: number;
+  budgetMinutes: number;
+  attempt: number;
+  maxAttempts: number;
+  /** The files changed since the story base; `undefined` when the list could not be read. */
+  changedFiles?: readonly string[];
+}): string {
+  return `You were stopped at the ${input.limitMinutes}-minute step limit before you finished story ${input.storyId}. This is continue attempt ${input.attempt} of ${input.maxAttempts}; you have up to ${input.budgetMinutes} minutes.
+
+${changedFilesBlock(input.changedFiles)}
+
+Continue from where you stopped. Do not revert, delete or redo work that is already on disk.
+
+When you are done, commit your work, write ${input.reportPath}, and end your reply with the json status block. If you cannot finish in this turn, commit what you have, write the report marking each unfinished acceptance criterion, and reply DONE_WITH_CONCERNS.
+
+${WORKFLOW_REPLY_CONTRACT}`;
+}
+
+/**
+ * US-003: the turn sent when the implementer replied but left no `report.md`. The story reviewer
+ * reads the report, so a missing one costs a spec fail and a fix round; asking is cheaper.
+ */
+export function buildWorkflowReportPrompt(input: { storyId: string; reportPath: string }): string {
+  return `Your report for story ${input.storyId} is missing: ${input.reportPath} does not exist. Write it now for the work you already did, with the sections the implement prompt listed: What was built, TDD evidence, Files changed, Decisions & assumptions. Report only evidence you captured; for an acceptance criterion whose failing run you did not capture, say so under Decisions & assumptions. Do not change any other file.
+
+${WORKFLOW_ARTIFACTS_RULE}
+
+${WORKFLOW_REPLY_CONTRACT}`;
+}
