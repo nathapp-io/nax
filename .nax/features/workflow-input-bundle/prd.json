@@ -1,0 +1,629 @@
+{
+  "project": "nax-monorepo",
+  "feature": "workflow-input-bundle",
+  "branchName": "feat/workflow-input-bundle",
+  "createdAt": "2026-10-23T00:00:00.000Z",
+  "updatedAt": "2026-10-23T08:29:20.142Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Resolve sandbox loopback defaults and carry a session write exemption",
+      "description": "**Goal** \u2014 Resolve the shared sandbox loopback default and extend the policy session contract with one optional writable output.\n\n**Motivation** \u2014 Workflow sessions get loopback closed under an allow-list, so with a global `allowedDomains` list, tests that start a local server or reach a local test database fail inside agent sessions and come back as false cannot-verify items.\n\n**Approach** \u2014 Verbatim Design 3, nax-agent portion:\n- nax-agent: a new `effectiveAllowLocalBinding(network: SandboxConfig[\"network\"]): boolean` in `src/sandbox/network.ts` returns `network.allowLocalBinding` when it is a boolean, otherwise `network.allowedDomains !== undefined`.\n- `buildSandboxPolicy` reads the flag through it. `sandboxBackendFor(config)` (`src/sandbox/registry.ts`) passes `{ ...config.network, allowLocalBinding: effectiveAllowLocalBinding(config.network) }` to `_sandboxRegistryDeps.createBackend`, so srt's process-wide `initialize` gets the same answer.\n- `createSrtBackend` is unchanged: it still turns loopback on only for `allowLocalBinding === true`. That keeps `nax sandbox exec`, which builds its backend from a policy file whose network can only say `true` or nothing, from turning loopback on where the config said `false`. The policy type and srt's input still carry only `allowLocalBinding: true` or no key.\n\nVerbatim Design 2, nax-agent portion:\n- nax-agent: the `policy` arm of `SessionSandbox` gains `readonly writeExemption?: string` (absolute path). `sessionSandboxFrom(launcher, root, writeExemption?)` sets it, resolved against `root`, only on the `policy` arm and only when given.\n\n**Scope** \u2014 In: network.ts, policy-builder.ts, registry.ts, session-sandbox.ts, SessionSandbox in types.ts, matching tests, and the schemas-sandbox.ts/types.ts default comments. The allowLocalBinding config comment becomes \"absent: on when `allowedDomains` is set (see `effectiveAllowLocalBinding`), off otherwise\"; the policy comment notes that the default is resolved before construction. Update the existing policy-builder allow-list expectation to include true, preserving every other policy field assertion. Existing registry singleton/probe-cache and two-argument session-sandbox cases are unchanged. Out: ACP edit enforcement (US-002), dispatch forwarding and nax docs/config description (US-003). `createSrtBackend` and sandbox-exec behavior are unchanged. `nax sandbox probe` gets no new warning about `allowLocalBinding`. `bot/review-run.ts` `reviewConfig` keeps its own `allowLocalBinding` default, which stays a superset of the new resolver (it also turns loopback on with an open network).\n\n**Interface** \u2014 `effectiveAllowLocalBinding(network: SandboxConfig[\"network\"]): boolean`; `sessionSandboxFrom(launcher, root, writeExemption?)`; target `SessionSandbox`: `{ kind: \"policy\"; policy: SandboxPolicy; writeExemption?: string } | { kind: \"unavailable\"; reason: string }`. Retain the existing asynchronous return and readonly members. `sandboxBackendFor(config)` target: `createBackend({ ...config.network, allowLocalBinding: effectiveAllowLocalBinding(config.network) })`.",
+      "acceptanceCriteria": [
+        "[unit] effectiveAllowLocalBinding({ allowedDomains: [\"x.test\"] }) returns true.",
+        "[unit] effectiveAllowLocalBinding({ allowedDomains: [] }) returns true.",
+        "[unit] effectiveAllowLocalBinding({ allowedDomains: [\"x.test\"], allowLocalBinding: false }) returns false.",
+        "[unit] effectiveAllowLocalBinding({}) returns false.",
+        "[unit] effectiveAllowLocalBinding({ allowLocalBinding: true }) returns true.",
+        "[unit] buildSandboxPolicy with config network { allowedDomains: [\"registry.npmjs.org\"] } returns network equal to { allowedDomains: [\"registry.npmjs.org\"], allowLocalBinding: true }.",
+        "[unit] buildSandboxPolicy with config network { allowedDomains: [\"x.test\"], allowLocalBinding: false } returns network equal to { allowedDomains: [\"x.test\"] }.",
+        "[unit] buildSandboxPolicy with the default sandbox config returns network with no allowLocalBinding key.",
+        "[unit] sandboxBackendFor with config network { allowedDomains: [\"x.test\"] } calls _sandboxRegistryDeps.createBackend with { allowedDomains: [\"x.test\"], allowLocalBinding: true }.",
+        "[unit] sandboxBackendFor with config network { allowedDomains: [\"x.test\"], allowLocalBinding: false } calls _sandboxRegistryDeps.createBackend with { allowedDomains: [\"x.test\"], allowLocalBinding: false }.",
+        "[unit] sandboxBackendFor with the default sandbox config calls _sandboxRegistryDeps.createBackend with a network whose allowLocalBinding is false.",
+        "[unit] createSrtBackend({ allowedDomains: [\"x.test\"] }), on its first wrap, calls srt initialize with a network that has no allowLocalBinding key.",
+        "[unit] sessionSandboxFrom(launcher, \"/repo\", \"/repo/.nax/features/f/workflow/r/US-001/report.md\") with an available launcher returns { kind: \"policy\", policy, writeExemption: \"/repo/.nax/features/f/workflow/r/US-001/report.md\" }, where policy is the launcher's policyAt(\"/repo\").",
+        "[unit] sessionSandboxFrom(launcher, \"/repo\", \"out/report.md\") with an available launcher returns writeExemption equal to /repo/out/report.md.",
+        "[unit] sessionSandboxFrom(launcher, \"/repo\") with an available launcher returns an object with no writeExemption key.",
+        "[unit] sessionSandboxFrom(launcher, \"/repo\", \"/repo/report.md\") with an unavailable launcher returns { kind: \"unavailable\", reason } with no writeExemption key."
+      ],
+      "tags": [
+        "sandbox",
+        "security",
+        "session",
+        "network"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Small additive resolver and optional session field reuse the existing policy/registry seams without new lifecycle state; sandbox access-control changes still mandate strict isolated TDD."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/sandbox/policy-builder.ts",
+        "packages/nax-agent/src/sandbox/registry.ts",
+        "packages/nax-agent/src/sandbox/session-sandbox.ts",
+        "packages/nax-agent/src/sandbox/types.ts",
+        "packages/nax-agent/test/unit/sandbox/registry.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/sandbox/network.ts",
+        "packages/nax-agent/test/unit/sandbox/network.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/unit/sandbox/registry.test.ts",
+          "reason": "gains the `sandboxBackendFor` network cases; the existing one-backend-per-process and probe-cache cases are unchanged."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/sandbox/session-sandbox.test.ts",
+          "reason": "gains the `sessionSandboxFrom` `writeExemption` cases; the existing two-argument cases are unchanged."
+        },
+        {
+          "path": "packages/nax-agent/src/config/schemas-sandbox.ts",
+          "reason": "the `allowLocalBinding` doc comment says \"Off when absent\"; it becomes \"absent: on when `allowedDomains` is set (see `effectiveAllowLocalBinding`), off otherwise\". Comment only."
+        },
+        {
+          "path": "packages/nax-agent/src/sandbox/types.ts",
+          "reason": "the `SandboxNetworkPolicy.allowLocalBinding` doc comment gains that the config default is resolved by `effectiveAllowLocalBinding` before the policy is built. Comment only."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/sandbox/policy-builder.test.ts",
+          "reason": "the case asserting `buildSandboxPolicy` with `network: { allowedDomains: [\"registry.npmjs.org\"] }` returns network `{ allowedDomains: [\"registry.npmjs.org\"] }` now returns `{ allowedDomains: [\"registry.npmjs.org\"], allowLocalBinding: true }`. Every other policy field assertion is unchanged."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Honor the single-file writable output in ACP edit permissions",
+      "description": "**Goal** \u2014 Let the ACP edit gate exempt exactly the session's writable output from denyWrite while retaining all other path protections.\n\n**Motivation** \u2014 On ACP, `decideFull` (`nax-agent-acp/src/client/permissions.ts`) checks every edit target with `firstOutsidePolicy`, and `buildSandboxPolicy` denies the whole `.nax/features` entry, so Claude's `Write` of `report.md` is refused 5 times per story and the story review reports \"TDD evidence absent\".\n\n**Approach** \u2014 Verbatim Design 2, ACP portion:\n- nax-agent-acp: `PermissionContext` gains `readonly writeExemption?: string`. `routerFor` (`backend.ts`) copies `ctx.sandbox.writeExemption` into it whenever it sets `sandbox`. `decideFull` passes it as a new optional 4th argument of `firstOutsidePolicy`.\n- `firstOutsidePolicy(targets, policy, cwd, writeExemption?)`: a target whose canonical path equals the canonical exemption path (exact, NFC, case-sensitive) skips the `denyWrite` check. The `..` rule and the `writeRoots` containment still apply to it. Every other target is checked exactly as today. The equality is on the NFC form; it is case-sensitive, so a differently cased spelling of the path is not exempt.\n\n**Scope** \u2014 In: edit-targets.ts, PermissionContext/decideFull in permissions.ts, routerFor in backend.ts and tests in edit-targets.test.ts, permissions.test.ts and backend-codex.test.ts. Extend existing three-argument gate cases and existing backend cases without changing them. Use the in-memory fake agent's Claude branch through _acpBackendDeps.launch and enter the cross-package seam at acpBackend. Treat canonical, canonicalPolicyPath, hasDotDotSegment, withinRoot and withinDenied as existing primitives to reuse rather than redesign. Only copy an exemption when the existing preApproval-aware router actually sets sandbox. Preserve the existing unavailable-sandbox open refusal for Claude review/full; do not test that case as if it reached a permission request. Out: the session contract/default implementation (US-001), nax dispatch propagation (US-003) and shell sandbox grants. Forwarding an implementer's inline report to the story review when `report.md` is absent is not done. A Bash command writing the report path stays denied by the shell sandbox; only the agent's file-edit permission gate gets the exemption.\n\n**Interface** \u2014 `firstOutsidePolicy(targets, policy, cwd, writeExemption?)`; PermissionContext gains `readonly writeExemption?: string`. The existing Promise<string | undefined> result and OUTSIDE_WRITE_ROOTS_REASON refusal remain unchanged.",
+      "acceptanceCriteria": [
+        "[unit] firstOutsidePolicy([report], policy, root, report), where writeRoots is [root], denyWrite is [<root>/.nax/features] and report is <root>/.nax/features/f/workflow/r/US-005/report.md, returns undefined.",
+        "[unit] firstOutsidePolicy([brief], policy, root, report), with writeRoots [root], denyWrite [<root>/.nax/features], report <root>/.nax/features/f/workflow/r/US-005/report.md and brief <root>/.nax/features/f/workflow/r/US-005/brief.md, returns brief.",
+        "[unit] firstOutsidePolicy([other], policy, root, report), with that policy and other <root>/.nax/features/f/workflow/r/US-004/report.md, returns other.",
+        "[unit] firstOutsidePolicy([prd], policy, root, report), with that policy and prd <root>/.nax/features/f/prd.json, returns prd.",
+        "[unit] firstOutsidePolicy([report], policy, root), with that policy and no exemption, returns report.",
+        "[unit] firstOutsidePolicy([\".nax/features/f/workflow/r/US-005/report.md\"], policy, root, report), with that policy, returns undefined.",
+        "[unit] firstOutsidePolicy([outside], policy, root, outside), where outside is a file under a temp dir not in policy.writeRoots, returns outside.",
+        "[unit] firstOutsidePolicy([upper], policy, root, report), where upper is <root>/.nax/features/f/workflow/r/US-005/REPORT.md and report is the lower-case report.md path, returns upper.",
+        "[unit] firstOutsidePolicy([dotted], policy, root, report), where dotted is <root>/.nax/features/f/workflow/r/US-004/../US-005/report.md, returns dotted.",
+        "[unit] decidePermission with profile full, sandbox equal to that policy, writeExemption equal to report and an edit targeting report answers with the request's allow-once option.",
+        "[unit] decidePermission with profile full, the same sandbox, no writeExemption and an edit targeting report answers with the reject option.",
+        "[unit] decidePermission with profile full, the same sandbox, no writeExemption and an edit targeting report records reason OUTSIDE_WRITE_ROOTS_REASON.",
+        "[unit] decidePermission with profile full, the same sandbox, writeExemption equal to report and an edit targeting brief answers with the reject option.",
+        "[integration] acpBackend for claude, opened with sandbox { kind: \"policy\", policy, writeExemption: report } and profile full, answers the in-memory fake agent's session/request_permission for an edit of report with the allow-once option.",
+        "[integration] acpBackend for claude, opened with the same policy and profile full but no writeExemption, answers the fake agent's session/request_permission for an edit of report with the reject option.",
+        "[unit] decidePermission with profile full, a sandbox with writeRoots [root], writeExemption equal to an outside temp file and an edit targeting that same outside file selects the reject option, as today.",
+        "[unit] decidePermission for that outside-root exempt-target request records OUTSIDE_WRITE_ROOTS_REASON, as today.",
+        "[unit] decidePermission with profile full, writeRoots [root], denyWrite [<root>/.nax/features], writeExemption equal to report and an edit targeting non-exempt brief under that denied entry selects the reject option, as today.",
+        "[unit] decidePermission for that non-exempt denied-entry request records OUTSIDE_WRITE_ROOTS_REASON, as today.",
+        "[unit] decidePermission with profile full, no sandbox policy, writeExemption omitted and an edit targeting report selects the offered allow-once option, preserving the existing no-policy behavior rather than introducing a write exemption.",
+        "[integration] acpBackend for claude, opened with profile full and sandbox { kind: \"unavailable\", reason: \"no bwrap\" }, rejects with AGENT_SESSION_CAPABILITY_UNSUPPORTED rather than opening a session with a write exemption, preserving the existing unavailable-sandbox refusal."
+      ],
+      "tags": [
+        "acp",
+        "security",
+        "permissions",
+        "workflow"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Three existing modules gain one optional field and one exact-match branch using established canonicalization helpers; authorization risk, not architectural novelty, requires strict isolated TDD."
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/client/edit-targets.ts",
+        "packages/nax-agent-acp/src/client/permissions.ts",
+        "packages/nax-agent-acp/src/client/backend.ts",
+        "packages/nax-agent-acp/test/unit/client/backend-codex.test.ts",
+        "packages/nax-agent-acp/test/unit/client/edit-targets.test.ts"
+      ],
+      "suggestedCriteria": [
+        "firstOutsidePolicy returns undefined when the canonical target and exemption paths differ only in Unicode normalization form and the target remains inside writeRoots.",
+        "firstOutsidePolicy returns the first denied sibling when a multi-target edit includes both the exempt report and that denied sibling.",
+        "firstOutsidePolicy returns the target when its symlink canonicalizes outside writeRoots, even when the exemption canonicalizes to that same target."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/edit-targets.test.ts",
+          "reason": "gains the `firstOutsidePolicy` exemption cases; the existing three-argument cases are unchanged."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/permissions.test.ts",
+          "reason": "gains the `decidePermission` exemption cases; existing cases are unchanged."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/backend-codex.test.ts",
+          "reason": "gains the two `acpBackend` claude write-exemption cases beside its claude sandbox cases; existing cases are unchanged."
+        }
+      ],
+      "workdir": "packages/nax-agent-acp",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Forward operation writable outputs into ACP sandbox data",
+      "description": "**Goal** \u2014 Forward the operation's existing writable-output option into SessionSandbox and document the shared loopback default.\n\n**Motivation** \u2014 `buildRunDispatchOptions` forwards it as `codingToolFileOutput`, which only the native coding tools turn into `ownedWriteExemption`.\n\n**Approach** \u2014 Verbatim Design 2, nax portion:\n- nax: `resolveCodingToolSupport` passes `options.codingToolFileOutput` as the third argument of `sessionSandboxFrom`, so `acpSandbox.writeExemption` is the op's `fileOutput ?? writableOutput` path.\n\nVerbatim Design 3, nax portion:\n- nax: the `execution.sandbox.network.allowLocalBinding` entry in `FIELD_DESCRIPTIONS` is reworded (Integration), and `docs/guides/permissions.md` says loopback defaults on under an allow-list.\n\nIntegration target text: `Allow sandboxed commands to reach loopback ports. Defaults on when allowedDomains is set; set false to keep loopback closed`.\n\n**Scope** \u2014 In: coding-tool-support-resolve.ts, its existing acp sandbox tests, config-descriptions.ts and root docs/guides/permissions.md. Read buildRunDispatchOptions and workflowImplementOp.writableOutput as existing integration producers: the former sets codingToolFileOutput from fileOutputPath ?? writableOutputPath and the latter returns input.reportPath; neither producer needs a behavior change. Enter the seam using the real options those producers build and an available fake sandbox backend. Preserve existing policy, disabled and reviewer cases. Out: shared sessionSandboxFrom implementation and network resolution (US-001), ACP permission enforcement (US-002). A Bash command writing the report path stays denied by the shell sandbox; only the agent's file-edit permission gate gets the exemption. Forwarding an implementer's inline report to the story review when `report.md` is absent is not done.\n\n**Interface** \u2014 `sessionSandboxFrom(launcher, root, writeExemption?)` is called with `options.codingToolFileOutput` as its third argument. `SessionSandbox` policy data gains `writeExemption?: string`; no exemption is returned without an available policy.",
+      "acceptanceCriteria": [
+        "[unit] resolveCodingToolSupport with an available sandbox backend, declaredTools [\"Read\", \"Bash\"], codingToolRoot <tmp> and codingToolFileOutput <tmp>/.nax/features/f/workflow/r/US-001/report.md returns acpSandbox.kind equal to \"policy\".",
+        "[unit] resolveCodingToolSupport with that backend and options returns acpSandbox.writeExemption equal to <tmp>/.nax/features/f/workflow/r/US-001/report.md.",
+        "[unit] resolveCodingToolSupport with an available sandbox backend, declaredTools [\"Read\", \"Bash\"] and no codingToolFileOutput returns acpSandbox with no writeExemption key.",
+        "[unit] resolveCodingToolSupport with the sandbox disabled and codingToolFileOutput set returns no acpSandbox.",
+        "[integration] resolveCodingToolSupport with an available sandbox backend, declaredTools [\"Read\", \"Bash\"] and the codingToolRoot/codingToolFileOutput produced by buildRunDispatchOptions for workflowImplementOp with reportPath <tmp>/.nax/features/f/workflow/r/US-001/report.md returns acpSandbox.writeExemption equal to that reportPath.",
+        "[unit] FIELD_DESCRIPTIONS[\"execution.sandbox.network.allowLocalBinding\"] equals \"Allow sandboxed commands to reach loopback ports. Defaults on when allowedDomains is set; set false to keep loopback closed\"."
+      ],
+      "tags": [
+        "workflow",
+        "acp",
+        "security",
+        "dispatch"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Small additive dispatch wiring plus descriptions/docs, but it transports a session write authorization and requires strict security isolation."
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/coding-tool-support-resolve.ts",
+        "packages/nax/src/operations/call-run-options.ts",
+        "packages/nax/src/cli/config-descriptions.ts",
+        "packages/nax/test/unit/agents/coding-tool-support-acp-sandbox.test.ts",
+        "packages/nax-agent/src/sandbox/session-sandbox.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/agents/coding-tool-support-acp-sandbox.test.ts",
+          "reason": "gains the `writeExemption` cases; the existing policy, disabled and reviewer cases are unchanged."
+        },
+        {
+          "path": "packages/nax/src/cli/config-descriptions.ts",
+          "reason": "the `execution.sandbox.network.allowLocalBinding` description says \"off when absent\", which the new default makes false; it becomes the target text in Integration."
+        },
+        {
+          "path": "docs/guides/permissions.md",
+          "reason": "the sentence \"`allowLocalBinding: true` permits local binding\" gains that loopback defaults on when `allowedDomains` is set and `false` keeps it closed."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Enforce per-story and feature-wide Modifies limits before planning",
+      "description": "**Goal** \u2014 Preserve up to 40 Modifies entries per story within a 200-entry spec bound and block silent overflow before planning.\n\n**Motivation** \u2014 On a 69-entry cleanup feature, US-004 kept 3 of 17 entries and US-005 kept 0 of 30, so the deletion story had no authorisation to touch the tests it had to change.\n\n**Approach** \u2014 Verbatim Design 1:\n- `MAX_MODIFIED_FILES` becomes 200 and keeps its role as the guard over the whole spec. A new `MAX_MODIFIED_FILES_PER_STORY` is 40.\n- `extractSpecModifiedFiles` extracts up to `MAX_MODIFIED_FILES` entries in document order, then keeps the first `MAX_MODIFIED_FILES_PER_STORY` entries of each story, also in document order. Stories are grouped by exact `storyId`, as `applyModifiedFiles` groups them; entries with `storyId: null` form one bucket of their own. Every extracted bullet counts toward the cap, duplicates of a path included.\n- A new export, `findModifiesOverflow(specContent)`, extracts with no cap and returns `{ total: number; stories: ModifiesStoryOverflow[] }`. Each `ModifiesStoryOverflow` is `{ storyId: string | null; count: number; dropped: string[] }`, listed only for a story whose count is over `MAX_MODIFIED_FILES_PER_STORY`; `dropped` holds the paths after the 40th, in document order.\n- `checkModifies` in `src/prd/spec-lint.ts` drops the `modifies-at-cap` warning; a new helper `checkModifiesCaps` (same file, keeping `checkModifies` under the complexity ratchet) adds two `error` findings:\n  - `modifies-story-over-cap`, one per overflowing story: `<storyId> declares <count> Modifies entries; only the first 40 are kept. Dropped: <paths, comma separated>. Split the story.` For the `null` bucket, `<storyId>` reads `Unattributed entries`;\n  - `modifies-over-cap`, when `total` is over 200: `<total> Modifies entries exceed the 200-entry cap for one spec; entries after the 200th are dropped. Split the feature.`\n- Both codes join `BLOCKING_SPEC_LINT_CODES`, so `assertSpecLintClean` (`nax plan`) throws `PLAN_SPEC_LINT_FAILED` instead of planning a spec that would lose entries.\n\n**Scope** \u2014 In: modifies-extract.ts, spec-lint.ts and prd/index.ts exports; extend modifies.test.ts, spec-lint.test.ts and spec-lint-gate.test.ts. Replace the existing MAX_MODIFIED_FILES+10-under-one-story expectation with the 40-per-story/200-per-spec invariant, and replace the old 25-entry modifies-at-cap warning expectation with a 41-entry error case. Preserve the shared markdown grammar and later applyModifiedFiles path deduplication; duplicate bullets count before that stage. Read applyModifiedFiles and assertSpecLintClean as existing consumers. Out: sandbox/report exemptions (US-001\u2013US-003), other input fixes (US-005\u2013US-009), planner-prompt folding and Context Files caps. The planner prompt's folding of dropped Modifies paths into `analysis` is not changed; the lint now blocks before planning instead. The `### Context Files` cap (`MAX_SPEC_CONTEXT_FILES`) is not changed.\n\n**Interface** \u2014 `extractSpecModifiedFiles(specContent)`; `findModifiesOverflow(specContent)` returns `{ total: number; stories: ModifiesStoryOverflow[] }`; `ModifiesStoryOverflow` is `{ storyId: string | null; count: number; dropped: string[] }`. Export `MAX_MODIFIED_FILES_PER_STORY`, `findModifiesOverflow` and the `ModifiesStoryOverflow` type beside `extractSpecModifiedFiles, MAX_MODIFIED_FILES` from `@/prd`.",
+      "acceptanceCriteria": [
+        "[unit] MAX_MODIFIED_FILES_PER_STORY is importable from @/prd and equals 40.",
+        "[unit] MAX_MODIFIED_FILES equals 200.",
+        "[unit] extractSpecModifiedFiles for a spec whose stories US-001 to US-005 declare 8, 7, 7, 17 and 30 entries returns 69 entries.",
+        "[unit] extractSpecModifiedFiles for that 69-entry spec returns 30 entries attributed to US-005.",
+        "[unit] extractSpecModifiedFiles for a spec whose US-001 declares 45 entries returns 40 entries.",
+        "[unit] extractSpecModifiedFiles for a spec whose US-001 and US-002 each declare 45 entries returns 40 entries for each story.",
+        "[unit] extractSpecModifiedFiles for a spec whose six stories each declare 40 entries returns 200 entries, the first 200 in document order.",
+        "[unit] findModifiesOverflow for a spec whose US-005 declares 45 entries returns stories equal to [{ storyId: \"US-005\", count: 45, dropped: <the 41st to 45th paths> }].",
+        "[unit] findModifiesOverflow for a spec whose five stories declare 69 entries in all, none over 40, returns stories equal to [].",
+        "[unit] findModifiesOverflow for a spec with 41 entries above any **US-00N** lead-in returns one entry whose storyId is null and count is 41.",
+        "[unit] findModifiesOverflow for a spec whose US-001 lists one path 41 times returns one entry for US-001 with count 41.",
+        "[unit] lintSpecContent for a spec whose US-005 declares 45 Modifies entries returns a finding with level error and code modifies-story-over-cap.",
+        "[unit] The modifies-story-over-cap finding for US-005's 45-entry spec names every one of the 41st to 45th paths in its message.",
+        "[unit] lintSpecContent for a spec declaring 205 Modifies entries over six stories, none over 40, returns a finding with level error and code modifies-over-cap.",
+        "[unit] The modifies-over-cap finding for that 205-entry spec has a message containing 205.",
+        "[unit] lintSpecContent for a spec declaring 69 entries, none over 40 per story, returns no finding whose code starts with modifies- and ends with -cap.",
+        "[unit] BLOCKING_SPEC_LINT_CODES contains modifies-story-over-cap.",
+        "[unit] BLOCKING_SPEC_LINT_CODES contains modifies-over-cap.",
+        "[integration] assertSpecLintClean with a temp workdir in which all 45 declared paths exist as files throws a NaxError with code PLAN_SPEC_LINT_FAILED for a spec whose US-005 declares those 45 Modifies entries.",
+        "[integration] That assertSpecLintClean error's message contains modifies-story-over-cap.",
+        "[integration] applyModifiedFiles for a PRD with stories US-001 to US-005 and the 69-entry spec returns US-005 with 30 modifiedFiles.",
+        "[integration] assertSpecLintClean for a spec declaring more than 200 Modifies entries throws PLAN_SPEC_LINT_FAILED.",
+        "[integration] assertSpecLintClean with skip: true (the nax plan --no-spec-lint path) returns [] without throwing for a spec whose US-005 declares 45 Modifies entries."
+      ],
+      "tags": [
+        "planning",
+        "prd",
+        "spec-lint",
+        "input-preservation"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The existing grouped scanner and blocking-code gate already provide both seams; bounded grouping, an overflow helper and exports are deterministic standard changes suited to same-session fail-first tests."
+      },
+      "contextFiles": [
+        "packages/nax/src/prd/modifies-extract.ts",
+        "packages/nax/src/prd/markdown-scan.ts",
+        "packages/nax/src/prd/spec-lint.ts",
+        "packages/nax/src/plan/spec-lint-gate.ts",
+        "packages/nax/src/prd/modifies.ts"
+      ],
+      "suggestedCriteria": [
+        "lintSpecContent emits no Modifies cap finding when one story declares exactly 40 entries and the spec total is exactly 200.",
+        "findModifiesOverflow returns the uncapped total including entries beyond the 200th.",
+        "lintSpecContent uses Unattributed entries as the label in the modifies-story-over-cap message for a null story bucket.",
+        "extractSpecModifiedFiles does not refill slots removed by the per-story cap with entries after the 200th bullet.",
+        "lintSpecContent for a story declaring more than 40 Modifies entries emits modifies-story-over-cap with the story id, count and every dropped path in its message.",
+        "lintSpecContent for a spec with more than 200 entries emits modifies-over-cap naming the total count."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/prd/modifies.test.ts",
+          "reason": "\"caps runaway sections at MAX_MODIFIED_FILES\" puts `MAX_MODIFIED_FILES + 10` entries under one story and expects `MAX_MODIFIED_FILES`; with the per-story cap one story keeps `MAX_MODIFIED_FILES_PER_STORY`. The invariant becomes: one story keeps at most 40 entries, and the spec at most 200. The file also gains the per-story extraction, `findModifiesOverflow` and `applyModifiedFiles` cap cases."
+        },
+        {
+          "path": "packages/nax/test/unit/prd/spec-lint.test.ts",
+          "reason": "\"warns when the Modifies section hits the entry cap\" expects `modifies-at-cap` for 25 entries; that code is removed. It becomes a case where one story's 41 entries yield `modifies-story-over-cap`. The file also gains the other cap cases."
+        },
+        {
+          "path": "packages/nax/test/unit/plan/spec-lint-gate.test.ts",
+          "reason": "gains the `assertSpecLintClean` overflow case; existing cases are unchanged."
+        },
+        {
+          "path": "packages/nax/src/prd/index.ts",
+          "reason": "the barrel gains `MAX_MODIFIED_FILES_PER_STORY`, `findModifiesOverflow` and the `ModifiesStoryOverflow` type beside the existing `extractSpecModifiedFiles, MAX_MODIFIED_FILES` export."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Parse bun check error blocks into typecheck findings",
+      "description": "**Goal** \u2014 Recognize bun check error blocks before other auto strategies and produce file/line/code findings instead of an opaque sentinel.\n\n**Motivation** \u2014 `parseTypecheckOutput` tries `tscStrategy`, then `typecheckTextBlockStrategy`; neither reads `<error file=\"\u2026\" line=\"\u2026\" column=\"\u2026\" code=\"\u2026\">`, so `bun check` output parses to `null`.\n\n**Approach** \u2014 Verbatim Design 4, parsing portion:\n- A new strategy, `bunCheckStrategy` (`src/review/typecheck-parsing/strategies/bun-check.ts`, name `\"bun-check\"`), reads every `<error \u2026>` block. The fixture below (`BUN_CHECK_SAMPLE`) is the output from #2662, verbatim; Bun 1.4.4 prints the same shape for a one-line error (verified locally).\n  - A block opens at a line starting `<error ` and ends at the next line `</error>`; with no `</error>`, it ends before the next `<error ` line or at the end of the output.\n  - Attributes may appear in any order; `file` and `line` are required, `column` and `code` optional. A block missing `file` or `line` is skipped. A leading `TS` is stripped from `code` (`\"TS2769\"` -> `\"2769\"`), the digits-only form `tscStrategy` stores, so `genericTypecheckDiagnosticToFinding` builds the rule `TS2769`.\n  - `message` = the first non-empty line after the opening tag that does not start with `<` (so `<source>`, `</source>`, `<related \u2026>` and `</error>` are never the message); text on the opening tag line after `>` is used first when present.\n  - `raw` = the block's lines from the opening tag through `</error>` (or its end).\n  - Under `\"auto\"` the first strategy with diagnostics wins, so output mixing `<error>` blocks and tsc lines yields only the `bun-check` diagnostics.\n  - `<source>` and `<related>` children are never parsed as diagnostics, and `<warning \u2026>` blocks are ignored.\n  It returns `null` when no diagnostic is left.\n\n```text\n=== bun check -p tsconfig.test.json (exit 1) ===\n<error file=\"test/unit/forge-tools/log-tool.test.ts\" line=\"90\" column=\"86\" code=\"TS2769\">\nNo overload matches this call.\n  ...\n<source>\n90 |     expect(result.content.split(\"\\n\").filter(...)).toEqual(expected);\n</source>\n<related file=\".../bun-types/test.d.ts\" line=\"1030\" column=\"5\">The last overload is declared here.</related>\n</error>\n\nFound 1 error in 1 file, checked 3,668 files [602.81ms]\n```\n\n- `TypecheckParserFormat` gains `\"bun-check\"`. Under `\"auto\"` the order is `bunCheckStrategy`, `tscStrategy`, `typecheckTextBlockStrategy`. `toolForFormat(\"bun-check\")` returns `\"bun check\"`.\n\n**Scope** \u2014 In: new strategy and mirrored tests, types.ts and parse.ts, existing parser cases and a real-parser seam through typecheckCheckOp.execute. Keep explicit tsc/text/none selection as today. Out: sentinel output-tail construction (US-009), lint parsing and the other input fixes. No new explicit typecheck output-format value is added; `bunCheckStrategy` runs under `\"auto\"` only. `bun check` `<warning>` blocks are not turned into findings.\n\n**Interface** \u2014 `bunCheckStrategy` implements existing `TypecheckParseStrategy` with name `\"bun-check\"`; `TypecheckParserFormat` target: `\"tsc\" | \"text-block\" | \"bun-check\"`; `toolForFormat(\"bun-check\")` returns `\"bun check\"`. TypecheckOutputFormat is not extended.",
+      "acceptanceCriteria": [
+        "[unit] parseTypecheckOutput(BUN_CHECK_SAMPLE, \"auto\", { workdir: \"/repo\" }) returns format \"bun-check\".",
+        "[unit] That parse result holds exactly one diagnostic.",
+        "[unit] That diagnostic's file is test/unit/forge-tools/log-tool.test.ts.",
+        "[unit] That diagnostic's line is 90.",
+        "[unit] That diagnostic's column is 86.",
+        "[unit] That diagnostic's code is \"2769\".",
+        "[unit] That diagnostic's message is \"No overload matches this call.\".",
+        "[unit] That diagnostic's raw starts with <error file=.",
+        "[unit] That diagnostic's raw ends with </error>.",
+        "[unit] bunCheckStrategy.parse of two <error> blocks returns two diagnostics in document order.",
+        "[unit] bunCheckStrategy.parse of a block with attributes ordered code, column, line, file returns the same file, line, column and code as the ordered form.",
+        "[unit] bunCheckStrategy.parse of output holding only a <warning \u2026>\u2026</warning> block returns null.",
+        "[unit] bunCheckStrategy.parse of an <error> block with no file attribute returns null.",
+        "[unit] bunCheckStrategy.parse of an <error> block with no line attribute returns null.",
+        "[unit] bunCheckStrategy.parse of BUN_CHECK_SAMPLE with its </error> line removed returns one diagnostic with message \"No overload matches this call.\".",
+        "[unit] parseTypecheckOutput of BUN_CHECK_SAMPLE with format \"auto\" and workdir /repo returns a finding whose tool is \"bun check\".",
+        "[unit] That finding's rule is TS2769.",
+        "[unit] bunCheckStrategy.parse of a block whose opening tag line ends code=\"TS2322\">Type 'string' is not assignable to type 'number'. returns \"Type 'string' is not assignable to type 'number'.\" as the message.",
+        "[unit] bunCheckStrategy.parse of two consecutive <error> blocks with no </error> lines returns two diagnostics.",
+        "[unit] In that unclosed two-block parse, the first diagnostic's raw ends before the second <error line.",
+        "[integration] typecheckCheckOp.execute with the real parseTypecheckOutput and a typecheck command failing with BUN_CHECK_SAMPLE returns one finding whose file names test/unit/forge-tools/log-tool.test.ts.",
+        "[integration] That typecheckCheckOp finding's line is 90.",
+        "[unit] parseTypecheckOutput(\"src/foo.ts(1,1): error TS2304: Cannot find name 'foo'.\", \"auto\", { workdir: \"/repo\" }) returns format \"tsc\", preserving the existing tsc fallback when no bun-check error block is present.",
+        "[unit] parseTypecheckOutput(BUN_CHECK_SAMPLE, \"none\", { workdir: \"/repo\" }) returns null, preserving the existing explicit parser-disable behavior."
+      ],
+      "tags": [
+        "typecheck",
+        "parser",
+        "quality",
+        "bun"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded text parser using the established strategy interface, result discriminator and finding converter, with clear malformed-block behavior."
+      },
+      "contextFiles": [
+        "packages/nax/src/review/typecheck-parsing/parse.ts",
+        "packages/nax/src/review/typecheck-parsing/types.ts",
+        "packages/nax/src/review/typecheck-parsing/strategies/tsc.ts",
+        "packages/nax/src/operations/typecheck-check.ts",
+        "packages/nax/test/unit/review/typecheck-parsing/parse.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/review/typecheck-parsing/strategies/bun-check.ts",
+        "packages/nax/test/unit/review/typecheck-parsing/strategies/bun-check.test.ts"
+      ],
+      "suggestedCriteria": [
+        "parseTypecheckOutput with auto and mixed bun-check/tsc output returns only bun-check diagnostics when at least one valid error block is present.",
+        "bunCheckStrategy.parse of a block without optional column and code returns a diagnostic without those values.",
+        "bunCheckStrategy.parse ignores an invalid block but still returns a valid subsequent error block.",
+        "bunCheckStrategy.parse does not produce extra diagnostics from source or related child elements."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Warn when rule paths match no workspace package directory",
+      "description": "**Goal** \u2014 Surface inert package-scoping globs in rules lint without changing matching or failing the command.\n\n**Motivation** \u2014 A glob such as `apps/api/src/**/*` never matches, so the rule is never delivered in that package, and `nax rules lint` passes it.\n\n**Approach** \u2014 Verbatim Design 6:\n- `rulesLintCommand` passes the discovered workspace package list into `lintRulesForRoot`.\n- When the list is not empty, each `paths` glob of each rule is tested with `ruleMatchesPackage([glob], workdir, join(workdir, pkg), pkg)` for every package. A glob that matches none of them emits one warning, counted in the summary:\n  `Canonical rule paths: glob matches no workspace package directory - paths: scopes packages; use appliesTo: for file globs`,\n  with data `{ file, pattern, code: \"PATHS_MATCH_NO_PACKAGE\", root }`.\n- A rejecting `discoverWorkspacePackages` skips the check, as it does for `INERT_PATHS`.\n- Only rules loaded from the root equal to the lint `workdir` are checked; `lintRulesForRoot` receives the package list as `[]` for a nested package rule root, so nested roots are not checked.\n- `docs/guides/static-rules.md` (section \"When to use `paths:` (monorepo)\") states that `paths` matches package directories only, and shows a file glob moved into `appliesTo`.\n\n**Scope** \u2014 In: rules-lint.ts and new rules-lint-package-paths.test.ts plus root docs/guides/static-rules.md. Retain existing warning counts, INERT_PATHS behavior, frontmatter failures and discovery failure posture. Existing rules-lint.test.ts is near its size limit and its makeRule/stubInertScopingDeps/logger-capture helpers are file-local; the new file redefines the necessary local wiring while reusing shared helpers where applicable. Out: all other input fixes and changes to runtime matching. The rules-setup skill text in the separate skills repository is not changed. `ruleMatchesPackage` is not widened to match file globs inside a package. `PATHS_MATCH_NO_PACKAGE` checks only rules whose repo has workspace packages; a single-package repo keeps the `INERT_PATHS` warning. Rules in nested package rule roots (`<pkg>/.nax/rules/`) are not checked for `PATHS_MATCH_NO_PACKAGE`.\n\n**Interface** \u2014 `lintRulesForRoot` gains a `packages: readonly string[]` parameter; reuse `ruleMatchesPackage(paths, repoRoot, packageDir, storyWorkdir)` with `ruleMatchesPackage([glob], workdir, join(workdir, pkg), pkg)`.",
+      "acceptanceCriteria": [
+        "[unit] rulesLintCommand with workspace packages [\"apps/api\"] and rule paths [\"apps/api/src/**/*\"] logs a rules-lint warning whose data.code is PATHS_MATCH_NO_PACKAGE.",
+        "[unit] That warning's data.pattern is apps/api/src/**/*.",
+        "[unit] That warning's data.file names the rule file.",
+        "[unit] That warning's message contains appliesTo:.",
+        "[unit] rulesLintCommand with workspace packages [\"apps/api\"] and rule paths [\"apps/api/*\"] logs no PATHS_MATCH_NO_PACKAGE warning.",
+        "[unit] rulesLintCommand with workspace packages [\"apps/api\"] and rule paths [\"apps/api/**\"] logs no PATHS_MATCH_NO_PACKAGE warning.",
+        "[unit] rulesLintCommand with workspace packages [\"packages/core\"] and rule paths [\"packages/core/src/x/*\", \"packages/core/tests/unit/x/*\"] logs two PATHS_MATCH_NO_PACKAGE warnings.",
+        "[unit] rulesLintCommand with workspace packages [\"apps/api\"] and rule paths [\"apps/api/*\", \"apps/api/src/**/*\"] logs one PATHS_MATCH_NO_PACKAGE warning with pattern apps/api/src/**/*.",
+        "[unit] rulesLintCommand with workspace packages [] and rule paths [\"apps/api/src/**/*\"] logs no PATHS_MATCH_NO_PACKAGE warning.",
+        "[unit] rulesLintCommand with a rejecting discoverWorkspacePackages and rule paths [\"apps/api/src/**/*\"] logs no PATHS_MATCH_NO_PACKAGE warning.",
+        "[unit] rulesLintCommand with workspace packages [\"apps/api\"], one rule with paths [\"apps/api/src/**/*\"] and no other warnings prints a stdout summary containing [WARN] Canonical rules lint completed with 1 warning(s).",
+        "[unit] In that warning-only run, process.exitCode stays undefined or 0."
+      ],
+      "tags": [
+        "rules",
+        "lint",
+        "monorepo",
+        "diagnostics"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Local CLI data threading and warning emission reuse an unchanged matcher and established discovery/logging seams."
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/rules-lint.ts",
+        "packages/nax/src/context/engine/scope-path-match/index.ts",
+        "packages/nax/test/unit/cli/rules-lint.test.ts",
+        "docs/guides/static-rules.md"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/cli/rules-lint-package-paths.test.ts"
+      ],
+      "suggestedCriteria": [
+        "rulesLintCommand logs no PATHS_MATCH_NO_PACKAGE warnings for rules loaded from a nested package rule root, even when their paths match no root workspace package.",
+        "rulesLintCommand emits the exact canonical PATHS_MATCH_NO_PACKAGE warning message and root data for each unmatched glob."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "docs/guides/static-rules.md",
+          "reason": "\"When to use `paths:` (monorepo)\" gains that `paths` matches package directories only, with a file glob shown moved into `appliesTo`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "Apply package profile layers to runtime package overrides",
+      "description": "**Goal** \u2014 Make package profiles feed runtime PackageView overlays and all existing override consumers consistently with workdir config loading.\n\n**Motivation** \u2014 `loadConfigForWorkdir` applies the package profile, but `lintCheckOp` reads the runtime `PackageView`, so a package-profile lint command never runs and the gate records a pass.\n\n**Approach** \u2014 Verbatim Design 7:\n- A new module `src/config/package-profile.ts` exports `loadPackageProfileLayers({ profile, repoRoot, packageDir, logger, warnDedupe })`. It returns `{ chain: string[]; layers: Record<string, unknown>[] }`: the profile chain (`parseProfileList`, `\"default\"` and empty names dropped) and, per name, the profile data after `loadProfile`, `resolveProfileEnvVars`, `applyConfigCompatShims` and `warnQualityCommandChains`. That is the loop `loadConfigForWorkdir` runs today, moved.\n- `resolveProfileEnvVars` is private to `loader.ts` today (it also serves the root profile layer). It moves, unchanged, to `src/config/profile.ts` as an export (with its `resolveEnvVars` / `UnresolvedEnvVarError` imports from `./dotenv`; `loadProfileEnv` is already there). `loader.ts` and `package-profile.ts` both import it from `./profile`, so `package-profile.ts` never imports `loader.ts` and no import cycle forms.\n- Every `loadPackageOverride` caller now sees the package profile's values. Besides `hydrate`, that is `resolveGateCommands` (`src/finish/gates/quality.ts`, the `nax finish` per-package gate commands) and `resolveGroupCommand` (`src/cli/features-acceptance.ts`, a package's `acceptance.command`). This is intended: for the package-mergeable keys they now agree with `loadConfigForWorkdir`. A profile key outside `mergePackageConfig`'s mergeable set is still dropped by `hydrate`, as an overlay key is today.\n- The profile's commands also reach `PackageView.overlay`, which `gate-cwd.ts` reads, so a profile-declared command runs in the package dir, as an overlay-declared one does.\n- Tests for this part isolate the global profile directory (`NAX_GLOBAL_CONFIG_DIR` set to a temp dir), because `loadProfile` also reads global profiles.\n- `loadConfigForWorkdir` calls it and deep-merges the layers as today, so its result is unchanged.\n- `loadPackageOverride` calls it with the stripped `profile` and returns the overlay fields deep-merged with every layer in chain order. The returned override never carries `profile`. `hydrate` then merges it and pins the root-only keys as today.\n\n**Scope** \u2014 In: package-profile.ts, moved resolver in profile.ts, loader.ts extraction and profile-aware loadPackageOverride; extend load-package-override.test.ts, add package-profile.test.ts and integration/runtime/package-profile-registry.test.ts. Rewrite loadPackageOverride's stale doc comment. Read runtime/packages.ts, lint-check.ts, gate-cwd.ts, resolveGateCommands and resolveGroupCommand as existing consumers, not alternate config loaders. Preserve shims, per-resolution warning deduplication, env substitution, chain order, metadata and root pins in loadConfigForWorkdir. Out: sentinel tail changes (US-009), coverage behavior (US-008), other bundle defects. Root-only keys a package profile sets (`auth`, `advisor`, `workflow`, `execution.sandbox` and the other pinned keys) stay pinned to the root, as today.\n\n**Interface** \u2014 `loadPackageProfileLayers({ profile, repoRoot, packageDir, logger, warnDedupe })` returns `{ chain: string[]; layers: Record<string, unknown>[] }`; `loadPackageOverride(repoRoot, packageDir)` returns the overlay fields deep-merged with the package profile layers and never profile. Move the existing `resolveProfileEnvVars(name: string, profileDir: string, profileData: Record<string, unknown>, label: string, extra: Record<string, unknown> = {}): Promise<Record<string, unknown>>` unchanged and export it from profile.ts. Missing named profiles propagate loadProfile's PROFILE_NOT_FOUND NaxError through loadPackageOverride and hydrate without a catch, failing setup.",
+      "acceptanceCriteria": [
+        "[unit] loadPackageOverride(repo, \"packages/api\") with .nax/mono/packages/api/config.json { profile: \"package-checks\" } and packages/api/.nax/profiles/package-checks.json setting quality.commands.lint to \"false\" returns an override whose quality.commands.lint is \"false\".",
+        "[unit] That returned override has no profile key.",
+        "[unit] loadPackageOverride with package config { profile: \"package-checks\", quality: { commands: { lint: \"x\" } } } and the same profile returns quality.commands.lint equal to \"false\".",
+        "[unit] loadPackageOverride with package profile \"a,b\", profile a setting lint to \"a\" and profile b setting lint to \"b\", returns quality.commands.lint equal to \"b\".",
+        "[unit] loadPackageOverride with package config { profile: \"default\", quality: { commands: { lint: \"x\" } } } returns quality.commands.lint equal to \"x\".",
+        "[unit] loadPackageOverride with a package profile naming a nonexistent profile file rejects with a NaxError whose code is PROFILE_NOT_FOUND.",
+        "[unit] loadPackageProfileLayers for profile \"a,b\" returns chain equal to [\"a\", \"b\"].",
+        "[unit] loadPackageProfileLayers for profile \"a,b\" returns two layers in that order.",
+        "[unit] loadPackageProfileLayers for an absent profile returns chain equal to [].",
+        "[unit] loadPackageProfileLayers for an absent profile returns no layers.",
+        "[integration] createPackageRegistry(createConfigLoader(rootConfig), repo).hydrate([\"packages/api\"]), with rootConfig.quality.commands.lint \"true\" and the package profile setting it to \"false\", makes resolve(\"packages/api\").config.quality.commands.lint equal \"false\".",
+        "[integration] lintCheckOp.execute on that PackageView with the real command runner returns success false.",
+        "[integration] createPackageRegistry(...).hydrate([\"packages/web\"]) for a package with no mono config makes resolve(\"packages/web\").config.quality.commands.lint equal the root's \"true\".",
+        "[integration] loadConfigForWorkdir(<repo>/.nax/config.json, \"packages/api\") with package-checks returns quality.commands.lint equal to \"false\".",
+        "[integration] That loadConfigForWorkdir config's profileChain equals [\"package-checks\"].",
+        "[integration] createPackageRegistry(...).hydrate([\"packages/api\"]) with a package profile naming a missing profile file rejects with a NaxError whose code is PROFILE_NOT_FOUND.",
+        "[integration] resolveGateCommands(repo, [\"packages/api\"]), with real loadPackageOverride, no root quality.commands.lint and a package profile setting quality.commands.lint to \"false\", returns a gate keyed lint@packages/api whose command is \"false\".",
+        "[integration] createPackageRegistry(...).hydrate([\"packages/api\"]), where the package profile also sets execution.sandbox.enabled to the opposite of the root value, makes resolve(\"packages/api\").config.execution.sandbox.enabled equal the root value."
+      ],
+      "tags": [
+        "config",
+        "profiles",
+        "monorepo",
+        "quality",
+        "security"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Layer extraction crosses cached config loading, runtime registry and quality consumers; env-secret filtering and root-only sandbox key pinning require strict security TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/loader.ts",
+        "packages/nax/src/config/profile.ts",
+        "packages/nax/src/runtime/packages.ts",
+        "packages/nax/src/operations/lint-check.ts",
+        "packages/nax/test/unit/config/load-package-override.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/config/package-profile.ts",
+        "packages/nax/test/unit/config/package-profile.test.ts",
+        "packages/nax/test/integration/runtime/package-profile-registry.test.ts"
+      ],
+      "suggestedCriteria": [
+        "lintCheckOp.execute runs a profile-declared lint command from the package workdir rather than the repo root.",
+        "resolveGroupCommand returns a package profile's acceptance.command when that profile overrides the package's acceptance command.",
+        "loadPackageProfileLayers rejects unresolved profile env references with PROFILE_ENV_VAR_UNRESOLVED while preserving the original error cause.",
+        "loadPackageProfileLayers preserves the existing filtered ambient environment behavior when resolving a profile's variables."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/profile.ts",
+          "reason": "receives `resolveProfileEnvVars` from the loader module, exported, unchanged in behaviour."
+        },
+        {
+          "path": "packages/nax/src/config/loader.ts",
+          "reason": "the package-profile loop in `loadConfigForWorkdir` moves to `loadPackageProfileLayers`, and `loadPackageOverride`'s doc comment (\"package profiles are resolved by loadConfigForWorkdir, not by the runtime registry\") is no longer true; it is rewritten to the target behaviour."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-008",
+      "title": "Report sandbox per-file coverage without relaxing aggregate floors",
+      "description": "**Goal** \u2014 Make per-file and unreported-file coverage report-only under NAX_SANDBOXED=1 while retaining aggregate enforcement.\n\n**Motivation** \u2014 About 60 tests skip inside the agent sandbox that run in CI, so `check-coverage.ts`'s per-file floors fail on files a story never touched, and every such story ends `DONE_WITH_CONCERNS`.\n\n**Approach** \u2014 Verbatim Design 5:\n- A new module `packages/repo-tooling/scripts/coverage-gate-mode.ts` exports:\n  - `coverageGateMode(env)`: `\"sandboxed\"` when `env.NAX_SANDBOXED === \"1\"`, else `\"enforce\"`;\n  - `coverageExitCode({ aggregateFailures, perFileOk, allFilesOk, mode })`: `1` when `aggregateFailures` is not empty; otherwise `1` in `\"enforce\"` mode when `perFileOk` or `allFilesOk` is false; otherwise `0`;\n  - `SANDBOXED_COVERAGE_NOTE` = `[coverage] sandboxed run (NAX_SANDBOXED=1): per-file floors not enforced (CI enforces them)`.\n  - `finishCoverage({ aggregateFailures, perFileOk, allFilesOk, env, log, error }): 0 | 1`, the tail of today's `main` after `checkPerFile` and `checkUnreported` ran: it computes the mode from `env`, prints `SANDBOXED_COVERAGE_NOTE` through `log` in `\"sandboxed\"` mode, prints today's `[coverage] FAIL \u2014 \u2026` lines through `error` when `aggregateFailures` is not empty, prints `[coverage] OK \u2014 at or above floor.` through `log` when the result is `0` and every check passed, prints `[coverage] OK (sandboxed) \u2014 aggregate at or above floor; per-file results above are report-only.` through `log` when the result is `0` in `\"sandboxed\"` mode with a per-file or unreported-file failure, and returns `coverageExitCode(...)`.\n- `check-coverage.ts` gains an exported `evaluateCoverageGate({ totals, perFile, unreported, env, log, error }): 0 | 1`, the tail of today's `main` from `aggregateFailures` on: it runs `aggregateFailures(totals)`, `checkPerFile(perFile, { list: false })` and `checkUnreported(unreported)` as today, then returns `finishCoverage(...)`. `main` ends with `process.exit(evaluateCoverageGate({ \u2026, env: process.env, log: console.log, error: console.error }))`, so only argument reading, the test run and `process.exit` stay untested.\n- The printed lines keep today's leading blank line: `finishCoverage` passes `log` and `error` a message that starts with `\\n` exactly where today's `console.log` / `console.error` calls do; the ACs match on the message with its leading `\\n` trimmed.\n- The rule store says `test:coverage` is CI-only and must not be run inside a nax session; that wording lands by hand in the spec commit (Out of Scope).\n\n**Scope** \u2014 In: coverage-gate-mode.ts, the exported evaluation tail/main delegation in check-coverage.ts, new coverage-gate-mode.test.ts and added evaluateCoverageGate cases in check-coverage.test.ts; existing cases are unchanged. Keep per-file and missing-file detail reporting, aggregate floors, test failure/missing-report behavior and list/report/update-baseline flows. Out: gate-output findings (US-009) and all other fixes. The aggregate coverage floor is still enforced inside the sandbox; CI's coverage job is unchanged. The rule-store wording that `test:coverage` is CI-only (`.nax/rules/testing-commands.md`, `.nax/mono/packages/nax/context.md`) is edited by hand in the spec commit, not by the run. `check-coverage.ts` `main`'s single call into `evaluateCoverageGate` is not driven by a test (that would run the whole suite).\n\n**Interface** \u2014 `coverageGateMode(env)`; `coverageExitCode({ aggregateFailures, perFileOk, allFilesOk, mode })`; `finishCoverage({ aggregateFailures, perFileOk, allFilesOk, env, log, error }): 0 | 1`; `evaluateCoverageGate({ totals, perFile, unreported, env, log, error }): 0 | 1`; `SANDBOXED_COVERAGE_NOTE` has the exact value above. Use explicit 0 | 1 return values and injected env/log/error for evaluation tests.",
+      "acceptanceCriteria": [
+        "[unit] coverageGateMode({ NAX_SANDBOXED: \"1\" }) returns \"sandboxed\".",
+        "[unit] coverageGateMode({}) returns \"enforce\".",
+        "[unit] coverageGateMode({ NAX_SANDBOXED: \"0\" }) returns \"enforce\".",
+        "[unit] coverageGateMode({ NAX_SANDBOXED: \"true\" }) returns \"enforce\".",
+        "[unit] coverageExitCode({ aggregateFailures: [], perFileOk: false, allFilesOk: true, mode: \"sandboxed\" }) returns 0.",
+        "[unit] coverageExitCode({ aggregateFailures: [], perFileOk: true, allFilesOk: false, mode: \"sandboxed\" }) returns 0.",
+        "[unit] coverageExitCode({ aggregateFailures: [\"lines 79.00% < 80.00%\"], perFileOk: true, allFilesOk: true, mode: \"sandboxed\" }) returns 1.",
+        "[unit] coverageExitCode({ aggregateFailures: [], perFileOk: false, allFilesOk: true, mode: \"enforce\" }) returns 1.",
+        "[unit] coverageExitCode({ aggregateFailures: [], perFileOk: true, allFilesOk: false, mode: \"enforce\" }) returns 1.",
+        "[unit] coverageExitCode({ aggregateFailures: [], perFileOk: true, allFilesOk: true, mode: \"enforce\" }) returns 0.",
+        "[unit] SANDBOXED_COVERAGE_NOTE equals \"[coverage] sandboxed run (NAX_SANDBOXED=1): per-file floors not enforced (CI enforces them)\".",
+        "[unit] finishCoverage with env { NAX_SANDBOXED: \"1\" }, no aggregate failures and perFileOk false returns 0.",
+        "[unit] In that finishCoverage call, log receives SANDBOXED_COVERAGE_NOTE.",
+        "[unit] In that finishCoverage call, log receives \"[coverage] OK (sandboxed) \u2014 aggregate at or above floor; per-file results above are report-only.\" after trimming the message's leading newline.",
+        "[unit] finishCoverage with env {}, no aggregate failures and perFileOk false returns 1.",
+        "[unit] In that enforce-mode call, log never receives SANDBOXED_COVERAGE_NOTE.",
+        "[unit] finishCoverage with env { NAX_SANDBOXED: \"1\" } and aggregateFailures [\"lines 79.00% < 80.00%\"] returns 1.",
+        "[unit] In that aggregate-failing call, error receives a line starting [coverage] FAIL \u2014 and containing lines 79.00% < 80.00%, after trimming its leading newline.",
+        "[unit] finishCoverage with env {} and every check passing returns 0.",
+        "[unit] In that all-passing enforce-mode call, log receives \"[coverage] OK \u2014 at or above floor.\" after trimming its leading newline.",
+        "[integration] evaluateCoverageGate with totals above both floors, a perFile map holding one file not in the per-file baseline at 10%, no unreported files and env { NAX_SANDBOXED: \"1\" } returns 0.",
+        "[integration] evaluateCoverageGate with the same above-floor totals, low perFile map and no unreported files but env {} returns 1.",
+        "[unit] finishCoverage with NAX_SANDBOXED unset or any value other than \"1\", aggregateFailures [] and either perFileOk false or allFilesOk false returns 1, preserving enforcement of per-file floors and the unreported-file check as today."
+      ],
+      "tags": [
+        "coverage",
+        "tooling",
+        "sandbox",
+        "quality"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A deterministic mode/exit helper and a narrowly extracted script tail preserve existing measurements and CLI flows."
+      },
+      "contextFiles": [
+        "packages/repo-tooling/scripts/check-coverage.ts",
+        "packages/repo-tooling/test/unit/scripts/check-coverage.test.ts",
+        "packages/repo-tooling/package.json"
+      ],
+      "expectedFiles": [
+        "packages/repo-tooling/scripts/coverage-gate-mode.ts",
+        "packages/repo-tooling/test/unit/scripts/coverage-gate-mode.test.ts"
+      ],
+      "suggestedCriteria": [
+        "evaluateCoverageGate reports per-file violations even when sandboxed mode returns 0.",
+        "finishCoverage with sandboxed env and every check passing logs the sandbox note and the ordinary all-passing message rather than the report-only message.",
+        "finishCoverage retains the existing leading newline on the aggregate FAIL and final OK messages."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/repo-tooling/test/unit/scripts/check-coverage.test.ts",
+          "reason": "gains the `evaluateCoverageGate` cases; existing cases are unchanged."
+        }
+      ],
+      "workdir": "packages/repo-tooling",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-009",
+      "title": "Retain bounded redacted output in unparsed gate findings",
+      "description": "**Goal** \u2014 Include the last 40 bounded, redacted output lines in failing lint/typecheck sentinel findings when parsing produces no findings.\n\n**Motivation** \u2014 The sentinel finding in `typecheckCheckOp` (and `lintCheckOp`) then names only the command to re-run and drops the output, so the fixer rediscovers the error.\n\n**Approach** \u2014 Verbatim Design 4, output-tail portion:\n- A new module `src/operations/gate-output-tail.ts` exports `GATE_OUTPUT_TAIL_LINES` (40) and `gateOutputTail(output: string): string`: the last 40 lines of `redactSecrets(output)`, trailing blank lines removed, each line cut to `GATE_OUTPUT_TAIL_LINE_CHARS` (500) characters with `\u2026` appended when cut; `\"\"` for blank output. It is imported by relative path from the two ops and is not added to the operations barrel.\n- The sentinel finding of `typecheckCheckOp` and of `lintCheckOp` appends `\\n\\nOutput (last 40 lines):\\n<tail>` to today's message when the tail is not empty.\n\n**Scope** \u2014 In: gate-output-tail.ts exporting both constants and the function, its mirrored unit test, typecheck-check.ts/lint-check.ts sentinel messages and their existing operation tests. Reuse redactSecrets from @/logger before bounding the output; trim trailing blank lines before selecting the last 40. Keep existing RunCommand guidance, fallback command string, finding fields and successful structured-finding paths unchanged. Import the helper by relative path and keep it out of the operations barrel; do not confuse it with the existing finish/gates/quality.ts gateOutputTail, which has a different contract. Out: bun-check parsing (US-005), package-profile resolution (US-007), coverage enforcement (US-008) and other input fixes.\n\n**Interface** \u2014 `gateOutputTail(output: string): string`; `GATE_OUTPUT_TAIL_LINES` (40); `GATE_OUTPUT_TAIL_LINE_CHARS` (500). Append exactly `\\n\\nOutput (last 40 lines):\\n<tail>` only when the returned tail is non-empty.",
+      "acceptanceCriteria": [
+        "[unit] gateOutputTail of 60 lines line 1 to line 60 returns 40 lines, line 21 to line 60.",
+        "[unit] gateOutputTail of output containing ghp_ followed by 36 alphanumeric characters returns text without that token.",
+        "[unit] gateOutputTail(\"  \\n\\n\") returns \"\".",
+        "[unit] gateOutputTail of one line of 800 x characters returns 500 x characters followed by \u2026.",
+        "[unit] typecheckCheckOp.execute with a declared failing typecheck command, the 60-line output and parseTypecheckOutput stubbed to return null returns one finding whose message contains Output (last 40 lines):.",
+        "[unit] That typecheck sentinel finding's message contains line 60.",
+        "[unit] That typecheck sentinel finding's message omits line 20.",
+        "[unit] That typecheck sentinel finding's message still contains RunCommand {\"command\": \"typecheck\"}.",
+        "[unit] typecheckCheckOp.execute with a declared failing command, blank output and parseTypecheckOutput stubbed to return null returns one finding whose message omits Output (last.",
+        "[unit] lintCheckOp.execute with a declared failing lint command, the 60-line output and no parsed findings returns one finding whose message contains Output (last 40 lines):.",
+        "[unit] That lint sentinel finding's message contains line 60.",
+        "[unit] That lint sentinel finding's message omits line 20.",
+        "[unit] lintCheckOp.execute with a declared failing lint command, blank output and no parsed findings returns one finding whose message omits Output (last."
+      ],
+      "tags": [
+        "quality",
+        "findings",
+        "diagnostics",
+        "security",
+        "redaction"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A shared bounded-output helper is straightforward, but transporting command output into findings crosses a secrets-redaction boundary and needs strict security TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/typecheck-check.ts",
+        "packages/nax/src/operations/lint-check.ts",
+        "packages/nax/test/unit/operations/typecheck-check.test.ts",
+        "packages/nax/test/unit/operations/lint-check.test.ts",
+        "packages/nax/src/logger/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/operations/gate-output-tail.ts",
+        "packages/nax/test/unit/operations/gate-output-tail.test.ts"
+      ],
+      "suggestedCriteria": [
+        "gateOutputTail removes trailing whitespace-only lines before selecting the last 40 remaining lines; interior blank lines still count toward the limit.",
+        "typecheckCheckOp.execute with parsed structured findings returns those findings without appending an output-tail section.",
+        "lintCheckOp.execute with parsed structured findings returns those findings without appending an output-tail section."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "This is a maintenance feature, not greenfield architecture: seven lost/garbled workflow inputs, closing #2634, #2638, #2644, #2662, #2663, #2617 and #2651. The user explicitly confirmed the bundle as one capability with exactly nine stories. Preserve the binding workdirs and dependency graph: US-002 and US-003 depend only on US-001; the remaining stories have no dependencies. Codebase-memory MCP was unavailable in this session, so the following findings come from direct repository reads and text searches. No source changes or test runs are part of PRD drafting.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:15 indexes conventions, dependency injection, errors, coding standards and subsystem references; its runtime/config/operation entries explain why configuration and execution should continue through existing ports. Bun workspaces contain nax, nax-agent, nax-agent-acp, nax-ai, repo-tooling and test-kit; repo-tooling is real despite not appearing in the abbreviated source-root table (packages/repo-tooling/package.json:2). It has scripts/test aliases, #scripts imports and bun:test (packages/repo-tooling/package.json:10). nax is Bun-native and uses @/ aliases; nax-agent and nax-agent-acp ship Node-compatible ESM, use #src/ imports, and source-relative imports must include .ts. ACP imports nax-agent only through its supported root entry. New nax-agent API names must be named exports and reflected in its API snapshot if exposed publicly; the existing SessionSandbox and sessionSandboxFrom exports already carry the changed contract. Do not put dependency seams or reset hooks in the public entry. Keep existing _deps seams and restore them in tests. Run package-targeted tests, never bare bun test or bun run nax; regression tests must demonstrate failure against old code. Tests belong in mirrored test directories. Do not edit generated AGENTS/CLAUDE files, bump package versions, or change nax-ai.\n\nUS-001: packages/nax-agent/src/sandbox/session-sandbox.ts:4 currently takes only launcher/root and returns policy without an exemption; its disabled, unavailable and missing-policy guards at :8 must retain their exact absence semantics. packages/nax-agent/src/sandbox/types.ts:38 defines the policy/unavailable union; only the policy arm gains readonly writeExemption?: string, resolved against root when provided. packages/nax-agent/src/sandbox/policy-builder.ts:216 constructs network from allowedDomains and currently reads allowLocalBinding === true at :223. packages/nax-agent/src/sandbox/registry.ts:22 passes config.network straight to a singleton backend; normalize there as well as in the policy builder or srt initialize and policy will disagree. _sandboxRegistryDeps at :13 and _resetSandboxRegistryForTests at :63 support deterministic cases; retain singleton/probe caching. packages/nax-agent/src/sandbox/srt-backend.ts:58 maps only explicit true, and :89 passes network to process-wide initialize: leave this module's behavior unchanged to protect policy-file sandbox exec. SandboxNetworkPolicy at packages/nax-agent/src/sandbox/types.ts:12 remains true-or-absent, unlike config's boolean-or-absent. Update the misleading comments in schemas-sandbox.ts and types.ts, and the existing policy-builder network expectation. Existing tests: packages/nax-agent/test/unit/sandbox/registry.test.ts:16 asserts one backend per process and :28 probe caching; session-sandbox.test.ts:14 covers all current two-argument forms. Extend those and policy-builder.test.ts; add network.test.ts and use the existing srt backend seam for the direct-create regression. Main risk: an overly low-level default would reopen loopback for a policy file representing explicit false.\n\nUS-002: packages/nax-agent-acp/src/client/edit-targets.ts:128 is firstOutsidePolicy, which currently canonicalizes roots/denies, rejects lexical '..', expands relative paths, resolves symlinks and checks denies plus root containment. canonical at :96 follows deepest existing ancestors and dangling links with a hop bound; :114 NFC-normalizes and :117 case-folds only deny matches on darwin/win32. Add exact case-sensitive NFC canonical exemption equality, never directory-prefix equality, and skip only denyWrite for that one target; root containment and traversal rejection remain mandatory. The file's header documents the existing permission-time TOCTOU limitation; do not broaden this into an OS-shell exemption. packages/nax-agent-acp/src/client/permissions.ts:52 defines PermissionContext; decideFull at :244 currently calls the three-argument check at :258 and uses OUTSIDE_WRITE_ROOTS_REASON. packages/nax-agent-acp/src/client/backend.ts:137 routerFor attaches policy only for an entry with preApproval; propagate writeExemption only in that same branch, never to a non-policy or unsupported-agent context. Existing coverage lives in edit-targets.test.ts and permissions.test.ts. packages/nax-agent-acp/test/unit/client/backend-codex.test.ts:57 provides withSandbox, :72 open, :77 switches to Claude options and :101 builds policies; use its in-memory fake and _acpBackendDeps.launch, never a real agent. Security risks are accidental sibling/directory grants, case-folded exemption equality, symlink escapes, traversal bypass and changing non-Claude policy behavior. US-001 must land first so the supported session type carries the field.\n\nUS-003: packages/nax/src/operations/call-run-options.ts:80 already selects fileOutputPath ?? writableOutputPath and :101 forwards codingToolFileOutput; this function is read-only integration context. packages/nax/src/agents/coding-tool-support-resolve.ts:392 already feeds fileOutputPath into native support, but :572 calls sessionSandboxFrom(launcher, root) without it. Add the third argument without changing reviewer withholding, disabled support, stage permissions or native file output behavior. The shared resolver serves both build-hop-callback and session-run-hop (its header at :466 explains this seam). packages/nax/test/unit/agents/coding-tool-support-acp-sandbox.test.ts:12 resets the registry and :43 stubs backend/probe; extend the same fake setup. Enter the seam via buildRunDispatchOptions using workflowImplementOp's reportPath, not a fabricated downstream context. Update FIELD_DESCRIPTIONS entry at packages/nax/src/cli/config-descriptions.ts:189 and root docs/guides/permissions.md; despite a root documentation edit the binding workdir remains packages/nax. Depends only on US-001, not US-002, so wiring tests must not require ACP consumer changes to exist yet.\n\nUS-004: packages/nax/src/prd/modifies-extract.ts:57 currently caps at 25 and :79 delegates to the shared markdown scanner. packages/nax/src/prd/markdown-scan.ts:231 accepts a numeric maxEntries and :252 slices document-order bullets; it already handles fences, multiple sections, grouped and nested story attribution. Reuse it with an uncapped bound for overflow detection, preserving grammar and Context Files limits; do not fork parsing. Apply the 200-entry document cap BEFORE per-story filtering, without refilling unused slots. Count extracted bullets, including duplicate paths, and use exact storyId buckets with null as one bucket. packages/nax/src/prd/modifies.ts:86 consumes the extractor; :94 groups exact ids, while :65 deduplicates paths only later when attaching modifiedFiles. Thus do not move deduplication ahead of cap/overflow counting. packages/nax/src/prd/spec-lint.ts:82 holds blocking codes, :217 checkModifies does attribution/existence/reason checks, :286 emits the obsolete modifies-at-cap warning, and :420 lintSpecContent assembles checks. Add a separate checkModifiesCaps helper to avoid increasing checkModifies complexity; export the new constant, function and type through prd/index.ts. packages/nax/src/plan/spec-lint-gate.ts:50 already gates all blocking codes and :51 supports skip=true, so adding codes should block planning without altering that gate's algorithm. Tests to extend: test/unit/prd/modifies.test.ts, spec-lint.test.ts and test/unit/plan/spec-lint-gate.test.ts. Existing 25-entry closed-world expectations must change exactly as the spec authorizes. At-cap 40/200 is permitted; overflow is >40/>200. Migration is intentional: previously silently truncated specs now fail lint/plan; --no-spec-lint remains an escape hatch with deterministic bounded extraction.\n\nUS-005: packages/nax/src/review/typecheck-parsing/types.ts:3 separates externally configured TypecheckOutputFormat (auto/tsc/text/none) from the parser-result discriminator at :5. Add bun-check ONLY to TypecheckParserFormat, not to the output config enum. packages/nax/src/review/typecheck-parsing/parse.ts:12 chooses strategy order and :20 assigns tool labels; auto must try bun-check first and still choose the first nonempty strategy, not merge formats. strategies/tsc.ts:1 defines the diagnostic conventions; :94 exposes the strategy object. Use digits-only codes so packages/nax/src/findings/adapters/typecheck.ts:5 emits TS2769 rather than TSTS2769. packages/nax/src/operations/typecheck-check.ts:151 calls the real parser with auto and workdir; the seam test must reach execute with the real parser and fake failing runner. Existing parse.test.ts and test/unit/operations/typecheck-check.test.ts cover this behavior; the latter's :12 ctxWithQuality and :71 makeDeps permit scoped injection. Add the new strategy and mirrored test file. Risks: malformed/unclosed blocks swallowing the next error, nested related/source tags becoming diagnostics, wrong inline message selection, or modifying explicit tsc/text modes. Preserve BUN_CHECK_SAMPLE verbatim in the story description. US-005 and US-009 share the operation test area but remain independently runnable and have no added dependency.\n\nUS-006: packages/nax/src/cli/rules-lint.ts:295 lintRulesForRoot already re-emits warnings, checks appliesTo globs and INERT_PATHS. :369 rulesLintCommand currently discards the discovered list, retaining only its emptiness; :412 calls the root helper and :444 reports counts. Preserve discovery rejection's fail-open behavior, retain packages and pass them only for root === workdir, using [] for nested package stores. packages/nax/src/context/engine/scope-path-match/index.ts:212 ruleMatchesPackage compares normalized storyWorkdir against its bare and trailing-slash forms at :224. Call this exact matcher once per glob/package rather than widening runtime semantics or using filesystem glob scans. apps/api/* and apps/api/** therefore still match the package dir, whereas apps/api/src/**/* does not. test/unit/cli/rules-lint.test.ts:539 and :555 contain file-local makeRule/stubInertScopingDeps; the existing file is near its size ratchet, so create the specified separate rules-lint-package-paths.test.ts with only necessary local wiring and shared helper reuse. Log one warning per unmatched glob with the exact data/code/message, count it in stdout, and do not set a failure exit code. Update root docs/guides/static-rules.md without changing the binding package workdir.\n\nUS-007: packages/nax/src/config/loader.ts:377 loadPackageOverride currently strips profile and returns fields; :399 loadConfigForWorkdir caches root and per-package configs, applies shims and env resolution, then :514 runs the package profile loop. Extract only that loop into package-profile.ts, preserving order (loadProfile -> resolveProfileEnvVars -> compat shims -> quality chain warning), logger/dedupe threading, default filtering, profileChain metadata, validation, cache keys, root pins and workflow-mode application. Move resolveProfileEnvVars unchanged from loader.ts:197 into profile.ts; profile.ts:81 already loads global/package profile JSON, :134 handles companion env, :184 parses comma/array chains and :94 throws PROFILE_NOT_FOUND. Keep the secret-filtered environment and error cause chaining unchanged. package-profile.ts must not import loader.ts: both loader and helper import the resolver from profile.ts, preventing a cycle. loadPackageOverride deep-merges fields with profile layers left-to-right (profiles beat fields, later profiles beat earlier ones), omits profile from the return and still returns null when the mono config is absent. packages/nax/src/runtime/packages.ts:195 hydrate loads this override, :209 stores it in overlays, :211 merges/repins and :215 reapplies workflow mode; no catch means a missing profile propagates to setup. packages/nax/src/operations/gate-cwd.ts:40 reads overlay.quality.commands to select the package cwd, so profile commands must reach overlay as well as merged config. packages/nax/src/operations/lint-check.ts:93 reads the PackageView selector, which was the lost-input path. Other real callers are packages/nax/src/finish/gates/quality.ts:220 (root-key precedence must remain) and packages/nax/src/cli/features-acceptance.ts:160 (acceptance.command); both intentionally gain profile-aware overrides. Existing test/unit/config/load-package-override.test.ts:14 covers overlay reading and :25 absent files; add package-profile.test.ts and integration/runtime/package-profile-registry.test.ts. Isolate NAX_GLOBAL_CONFIG_DIR to temp storage, clear applicable caches and restore env so actual user profiles cannot satisfy a missing-profile test. Risks: duplicated warnings, altered dotenv precedence, import cycles, stale profile caches, profile-only commands incorrectly run in repo root, and root-only security keys leaking into PackageView. No config migration is needed; profiles that were ignored become effective, and missing ones now fail setup.\n\nUS-008: packages/repo-tooling/scripts/check-coverage.ts:62 chooses the target package and baseline; :447 checkPerFile reports baseline/ratchet/missing-record details; :528 checkUnreported prints missing source files; :538 main retains argument reading, test execution, lcov ingestion and report/list/update modes. :595 starts aggregate/per-file checks and :602 exits for aggregate failures; refactor this tail into exported evaluateCoverageGate, then pure finishCoverage in the new mode module. Preserve calls to checkPerFile/checkUnreported even in sandboxed mode: only their contribution to exit status changes, not their reports. Keep the existing leading newline conventions in messages and aggregate advice text. Only NAX_SANDBOXED === '1' relaxes per-file/unreported enforcement; failures of the aggregate, test run, missing lcov and existing CLI modes remain unchanged. main must exit with evaluateCoverageGate(...), not bypass it with a direct finishCoverage call: the detailed design and integration ACs are authoritative over the abbreviated story summary. Existing test/unit/scripts/check-coverage.test.ts:11 imports this module safely (main is guarded at check-coverage.ts:615); extend it to drive the real evaluation tail with a non-baselined low-coverage file and add coverage-gate-mode.test.ts. Use package-scoped fixtures for baseline-dependent checks; do not run the whole coverage suite as a test of main or modify the CI job, baseline, rule store or generated agent context. The manually committed CI-only coverage wording is explicitly not part of this run.\n\nUS-009: packages/nax/src/operations/typecheck-check.ts:156 builds the fallback source finding and :175 prefers parsed findings; lint-check.ts:152 does the analogous fallback. Append a tail only to these fallback messages, keeping declared RunCommand advice and detected-command shell advice intact. Add operations/gate-output-tail.ts as a relative-import leaf, never to operations/index.ts. packages/nax/src/logger/index.ts:10 already re-exports redactSecrets from nax-agent/internal: reuse it BEFORE slicing/truncating, rather than adding a redactor. There is an unrelated existing gateOutputTail at packages/nax/src/finish/gates/quality.ts:104 with different, unredacted behavior: do not reuse, replace or barrel-export the new helper in a way that collides with it. Trim trailing blank lines before selecting the final 40; return empty for whitespace-only output and cap each line at 500 plus ellipsis. Extend operation tests using existing makeDeps/context/result helpers and add the leaf helper test. Risk is secret leakage into findings or changing parser-success findings; strict isolated TDD applies to this redaction boundary as well as sandbox/access-control stories.\n\nDelivery/migration: this is additive API extension and bounded behavior correction, with no new third-party dependencies, storage/schema migration, matcher widening or release bump. US-001 establishes the shared contract, US-002 consumes it and US-003 independently forwards existing dispatch data. Preserve current native tools, sandbox-shell denies, unavailable/disabled paths, root-only keys and external output-format configuration. Shared-file changes in US-005/US-009 and US-007/US-009 require careful merging but do not justify changing binding dependencies. Implementation verification belongs in each story's TDD stage, including seam entrypoints acpBackend, resolveCodingToolSupport with real dispatch options, assertSpecLintClean, typecheckCheckOp.execute, lintCheckOp.execute, registry.hydrate and evaluateCoverageGate. Done means all stated positive, negative and failure-mode behaviors are represented, with documentation edits attached to the relevant code stories and every feature-level deferral preserved below.\n\nRefinement audit: enumerated all 129 source acceptance bullets (US-001:16, US-002:14, US-003:5, US-004:21, US-005:15, US-006:11, US-007:16, US-008:20, US-009:11); every assertion remains in its original story, with compound field/log assertions split without losing qualifying setup or regression anchors. All 15 failure-table rows and all 16 verbatim feature-level exclusions remain represented. Every story has negative-path and backward-compatibility criteria; explicit tsc auto-fallback and parser-disable regressions were added to US-005. Re-reading packages/nax-agent-acp/src/client/open.ts:243-250 exposed an error in the draft's extra no-policy criterion: an unavailable Claude review/full sandbox refuses open, so it cannot receive a fake permission request. US-002 now asserts the existing AGENT_SESSION_CAPABILITY_UNSUPPORTED refusal separately from the absent-policy full-permission behavior. packages/nax-agent-acp/src/client/errors.ts:44 supplies that exact code. US-008's extra environment criterion now enters finishCoverage (which accepts env), not coverageExitCode (which accepts resolved mode). packages/nax/src/plan/strategies/context-builder.ts:40-45 threads skipSpecLint into assertSpecLintClean; the no-spec-lint assertion therefore observes skip:true returning [] without invoking paid planning, while the extraction-limit criteria remain intact. Context lists retain all critical spec recommendations within five existing files; expected outputs and binding story dependencies/workdirs are unchanged. US-001/US-002 were reduced to medium complexity because their changes reuse established small seams, retaining mandatory strict security TDD; US-004 is medium/tdd-simple because the scanner and blocking gate already exist. US-007 remains complex with strict security TDD for its config/env/pinning integration. Tail hardening wording now counts interior blank lines rather than implying content-only filtering. No implementation code was modified or runtime validation claimed during this audit.",
+  "outOfScope": [
+    "The planner prompt's folding of dropped Modifies paths into `analysis` is not changed; the lint now blocks before planning instead.",
+    "The `### Context Files` cap (`MAX_SPEC_CONTEXT_FILES`) is not changed.",
+    "A Bash command writing the report path stays denied by the shell sandbox; only the agent's file-edit permission gate gets the exemption.",
+    "Forwarding an implementer's inline report to the story review when `report.md` is absent is not done.",
+    "`nax sandbox probe` gets no new warning about `allowLocalBinding`.",
+    "`bot/review-run.ts` `reviewConfig` keeps its own `allowLocalBinding` default, which stays a superset of the new resolver (it also turns loopback on with an open network).",
+    "No new explicit typecheck output-format value is added; `bunCheckStrategy` runs under `\"auto\"` only.",
+    "`bun check` `<warning>` blocks are not turned into findings.",
+    "The aggregate coverage floor is still enforced inside the sandbox; CI's coverage job is unchanged.",
+    "The rule-store wording that `test:coverage` is CI-only (`.nax/rules/testing-commands.md`, `.nax/mono/packages/nax/context.md`) is edited by hand in the spec commit, not by the run.",
+    "`check-coverage.ts` `main`'s single call into `evaluateCoverageGate` is not driven by a test (that would run the whole suite).",
+    "`ruleMatchesPackage` is not widened to match file globs inside a package.",
+    "The rules-setup skill text in the separate skills repository is not changed.",
+    "`PATHS_MATCH_NO_PACKAGE` checks only rules whose repo has workspace packages; a single-package repo keeps the `INERT_PATHS` warning.",
+    "Rules in nested package rule roots (`<pkg>/.nax/rules/`) are not checked for `PATHS_MATCH_NO_PACKAGE`.",
+    "Root-only keys a package profile sets (`auth`, `advisor`, `workflow`, `execution.sandbox` and the other pinned keys) stay pinned to the root, as today."
+  ],
+  "routingProfile": "native-claude"
+}
