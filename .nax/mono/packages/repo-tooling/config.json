@@ -1,0 +1,12 @@
+{
+  "quality": {
+    "commands": {
+      "test": "bun run test",
+      "typecheck": "bun run typecheck",
+      "lint": "AGENT=1 bun run check:all",
+      "testScoped": "CI=1 AGENT=1 bun test --timeout=60000 {{files}}",
+      "lintFix": "bun run lint:fix",
+      "formatFix": "bun run lint:fix"
+    }
+  }
+}
