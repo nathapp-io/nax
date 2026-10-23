@@ -3,7 +3,7 @@
   "feature": "ci-repair-and-review-sandbox",
   "branchName": "feat/ci-repair-and-review-sandbox",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T17:17:10.279Z",
+  "updatedAt": "2026-10-23T17:52:37.735Z",
   "userStories": [
     {
       "id": "US-001",
@@ -304,14 +304,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Coordinates single-read repair planning, graph patches, persistent optional evidence and summary consumers; no new security or session-control logic."
+        "reasoning": "Coordinates single-read repair planning, graph patches, persistent optional evidence and summary consumers; no new security or session-control logic.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/ci-repair-steps.ts",
@@ -337,7 +340,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "89a2ce7ae93d0dd132ee717925e5a16fbd1129dd"
     },
     {
       "id": "US-006",
