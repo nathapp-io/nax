@@ -10,6 +10,7 @@ export {
   type PrCheckout,
   preparePrCheckout,
 } from "./checkout";
+export { prepareInPlaceCheckout } from "./checkout-in-place";
 export {
   _botChecksDeps,
   type BotCheck,
@@ -22,12 +23,16 @@ export {
 } from "./checks";
 export { _decisionsDeps, type BotDecision, loadBotDecisions } from "./decisions";
 export {
+  _findingRulingsDeps,
+  type FindingRulingsInput,
+  type FindingRulingsOutcome,
+  findingRulingKey,
+  recordFindingRulings,
+} from "./finding-rulings";
+export {
   _fixCycleDeps,
   type BotFixCycleResult,
-  PR_HEAD_POLL_MS,
-  PR_HEAD_WAIT_MS,
   runBotFixCycle,
-  waitForPrHead,
 } from "./fix-cycle";
 export { _fixInputDeps, checkPushAccess, loadLatestReview, toFixFindings } from "./fix-input";
 export { _fixReportDeps, readyStep, renderFixSummary, replyStep, reportStep } from "./fix-report";
@@ -45,6 +50,7 @@ export {
 export { _gateBaselineDeps, failingOnHead, logGateFailure, readHeadCi } from "./gate-baseline";
 export { BOT_GIT_HOOKS_OFF, botGit } from "./git";
 export { featureIntentPaths } from "./intent";
+export { _ledgerCarryDeps, ledgerStep } from "./ledger-carry";
 export { _botLogDeps, type BotLog, openBotLog } from "./log";
 export { botModel, parseModelOption } from "./models";
 export { fixProtectedPaths, sensitivePaths } from "./path-policy";
@@ -58,6 +64,7 @@ export {
   type PostReviewOutcome,
   postPrReview,
 } from "./post";
+export { _prHeadWaitDeps, PR_HEAD_POLL_MS, PR_HEAD_WAIT_MS, waitForPrHead } from "./pr-head-wait";
 export { breakLinks, commentKey, earlierKey, findingKey, safeText, threadKey } from "./render";
 export {
   type ReviewSummaryInput,

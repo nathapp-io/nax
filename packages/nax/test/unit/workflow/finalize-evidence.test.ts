@@ -43,6 +43,50 @@ function inventoryLine(lines: readonly string[]): string {
 }
 
 describe("approvalEvidence", () => {
+  test.each([{ reviewUnread: undefined }, { reviewUnread: [] }])(
+    "AC-1: complete coverage with %p",
+    ({ reviewUnread }) => {
+      const lines = approvalEvidence({ record: { ...record, reviewUnread }, stories: [] }, ci, [], NO_FILES);
+      expect(lines).toContain(
+        "Branch review ran; it read every changed file it must review (0 unread); open findings after the fix pass: 0; branch rulings: 0",
+      );
+    },
+  );
+
+  test("AC-2: coverage preserves open finding and ruling counts", () => {
+    const lines = approvalEvidence(
+      {
+        record: {
+          ...record,
+          reviewOpen: [
+            { id: "F-1", kind: "quality", severity: "important", issue: "first" },
+            { id: "F-2", kind: "quality", severity: "important", issue: "second" },
+          ],
+          rulings: [{ action: "waive", text: "parked", why: "out of scope", costIfWrong: "low", source: "advisor" }],
+        },
+        stories: [],
+      },
+      ci,
+      [],
+      NO_FILES,
+    );
+    expect(lines).toContain(
+      "Branch review ran; it read every changed file it must review (0 unread); open findings after the fix pass: 2; branch rulings: 1",
+    );
+  });
+
+  test("AC-3/4: unread paths never claim complete coverage", () => {
+    const lines = approvalEvidence(
+      { record: { ...record, reviewUnread: ["a.ts", "b.ts"] }, stories: [] },
+      ci,
+      [],
+      NO_FILES,
+    );
+    expect(lines.find((line) => line.startsWith("Branch review ran;"))).toStartWith(
+      "Branch review ran; it did not read 2 changed file(s);",
+    );
+    expect(lines.some((line) => line.includes("read every changed file"))).toBe(false);
+  });
   test("a gate repair is named as an unreviewed diff (nax#2548)", () => {
     const lines = approvalEvidence({ record: { ...record, gateRepairRounds: 1 }, stories: [] }, ci, [], NO_FILES);
     expect(lines).toContain(

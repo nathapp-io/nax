@@ -8,8 +8,22 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { assertCaughtInstanceOf } from "@test/helpers";
-import { cancellableDelay } from "@/utils/bun-deps";
+import { assertCaughtInstanceOf, withTempDir } from "@test/helpers";
+import { cancellableDelay, file, which } from "@/utils/bun-deps";
+
+describe("Bun wrappers", () => {
+  test("which resolves the current runtime and rejects absent executables", () => {
+    expect(which(process.execPath)).toBe(process.execPath);
+    expect(which("nax-nonexistent-executable-coverage")).toBeNull();
+  });
+  test("file reads the requested path", async () => {
+    await withTempDir(async (dir) => {
+      const path = `${dir}/content.txt`;
+      await Bun.write(path, "wrapper content");
+      expect(await file(path).text()).toBe("wrapper content");
+    });
+  });
+});
 
 describe("cancellableDelay", () => {
   test("without a signal — resolves after the requested delay", async () => {

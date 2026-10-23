@@ -22,7 +22,17 @@ import { botModel } from "./models";
 import { fixProtectedPaths } from "./path-policy";
 import type { BotReviewArtifact } from "./post";
 
-export type BotFixStep = "fix" | "repair" | "check" | "gates" | "push" | "reply" | "ready" | "report" | "done";
+export type BotFixStep =
+  | "fix"
+  | "repair"
+  | "check"
+  | "gates"
+  | "ledger"
+  | "push"
+  | "reply"
+  | "ready"
+  | "report"
+  | "done";
 
 export interface BotFixState extends GraphState<BotFixStep> {
   readonly readyOnly?: boolean;
@@ -56,6 +66,7 @@ export interface BotFixState extends GraphState<BotFixStep> {
   readonly baselineFailing?: readonly string[];
   /** CI's verdict on the exact PR head, read once when a gate failed. */
   readonly ciOutcome?: CiWaitOutcome;
+  readonly ledgerCarried?: boolean;
   readonly pushedSha?: string;
   readonly replied?: number;
   readonly resolved?: number;
@@ -169,7 +180,7 @@ export async function checkStep(env: BotFixEnv, _state: BotFixState): Promise<St
   const unsafe = await unsafeTree(env, _state);
   if (unsafe) return unsafe;
   // changedPaths uses --no-renames: a move out of a protected directory is still a protected edit.
-  const changed = await _fixStepsDeps.changedPaths(env.checkout.worktree, env.info.headSha);
+  const changed = await _fixStepsDeps.changedPaths(env.checkout.worktree, env.checkout.startHead ?? env.info.headSha);
   if (changed.length === 0) return { patch: { changed, outcome: "no-change" }, exit: "no-change" };
   const protectedFiles = fixProtectedPaths(changed);
   if (protectedFiles.length > 0) {
@@ -232,12 +243,15 @@ async function classifyRedGates(
   const red = gates.filter((gate) => failing.includes(gate.name));
   const [ci, baselineFailing] = await Promise.all([
     _fixStepsDeps.readHeadCi({ forge: ref.forge, url: info.url, repoRoot, headSha: info.headSha }),
-    _fixStepsDeps.failingOnHead(checkout.worktree, info.headSha, red).catch((err) => {
-      getLogger()?.warn("bot-fix", "Baseline gate run failed; the red gates stay attributed to the fix", {
-        error: errorMessage(err),
-      });
-      return undefined;
-    }),
+    // Baseline checkout detaches HEAD; never move the user's in-place branch.
+    checkout.inPlace
+      ? undefined
+      : _fixStepsDeps.failingOnHead(checkout.worktree, info.headSha, red).catch((err) => {
+          getLogger()?.warn("bot-fix", "Baseline gate run failed; the red gates stay attributed to the fix", {
+            error: errorMessage(err),
+          });
+          return undefined;
+        }),
   ]);
   const preExisting = baselineFailing !== undefined && failing.every((name) => baselineFailing.includes(name));
   return {
@@ -249,6 +263,13 @@ async function classifyRedGates(
 }
 
 export async function pushStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {
+  if (env.checkout.inPlace) {
+    const branch = await _fixStepsDeps.runGit(["symbolic-ref", "--short", "HEAD"], env.checkout.worktree);
+    if (branch.exitCode !== 0 || branch.stdout.trim() !== env.info.headRef) {
+      getLogger()?.warn("bot-fix", `In-place checkout left branch ${env.info.headRef}`);
+      return { patch: { outcome: "push-rejected" }, exit: "rejected" };
+    }
+  }
   const unsafe = await unsafeTree(env, _state);
   if (unsafe) return unsafe;
   const result = await _fixStepsDeps.runGit(
@@ -259,5 +280,5 @@ export async function pushStep(env: BotFixEnv, _state: BotFixState): Promise<Ste
   if (result.timedOut) return { patch: { outcome: "push-unknown" }, exit: "rejected" };
   if (result.exitCode !== 0) return { patch: { outcome: "push-rejected" }, exit: "rejected" };
   const pushedSha = await _fixStepsDeps.readHead(env.checkout.worktree);
-  return { patch: { pushedSha, outcome: "pushed" }, exit: "pushed" };
+  return { patch: { pushedSha, outcome: _state.outcome === "nothing" ? "nothing" : "pushed" }, exit: "pushed" };
 }

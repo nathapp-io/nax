@@ -195,6 +195,10 @@ describe("BOT_FIX_GRAPH repair loop", () => {
       events.push("repair");
       return repair(env, rec);
     };
+    _botFixDeps.ledgerStep = async () => {
+      events.push("ledger");
+      return { exit: "push", patch: {} };
+    };
     _botFixDeps.pushStep = async () => {
       events.push("push");
       return { exit: "pushed", patch: { outcome: "pushed", pushedSha: "sha" } };
@@ -209,7 +213,7 @@ describe("BOT_FIX_GRAPH repair loop", () => {
       { persist: async () => {} },
       { now: () => 0, aborted: () => false },
     );
-    expect(events).toEqual(["fix", "check", "gates", "repair", "check", "gates", ...(green ? ["push"] : [])]);
+    expect(events).toEqual(["fix", "check", "gates", "repair", "check", "gates", ...(green ? ["ledger", "push"] : [])]);
     expect(result.outcome).toBe(green ? "pushed" : "gates-failed");
     expect(result.gateRepairRounds).toBe(1);
   });

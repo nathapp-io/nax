@@ -64,6 +64,7 @@ export interface BotReviewArtifact {
 }
 export interface PostReviewInput {
   readonly writers?: ReadonlySet<string>;
+  readonly settledKeys?: ReadonlySet<string>;
   readonly unreadFiles?: readonly string[];
   readonly preRunFailed?: string;
   /** CI's verdict on the reviewed head (nax#2631). */
@@ -107,16 +108,18 @@ function notQueued(input: PostReviewInput, decision: PrTriageDecision, comment: 
 }
 
 function agreedItems(input: PostReviewInput): AgreedItem[] {
-  const items: AgreedItem[] = input.verdict.findings.map(({ severity, issue, file, line, suggestion, decision }) => ({
-    key: findingKey({ file, issue }),
-    kind: "finding",
-    severity,
-    issue,
-    file,
-    line,
-    suggestion,
-    ...(decision === undefined ? {} : { decision }),
-  }));
+  const items: AgreedItem[] = input.verdict.findings
+    .filter((finding) => !input.settledKeys?.has(findingKey(finding)))
+    .map(({ severity, issue, file, line, suggestion, decision }) => ({
+      key: findingKey({ file, issue }),
+      kind: "finding",
+      severity,
+      issue,
+      file,
+      line,
+      suggestion,
+      ...(decision === undefined ? {} : { decision }),
+    }));
   for (const verdict of input.verdict.threads) {
     if (verdict.decision !== "agree") continue;
     const thread = input.threads.find(({ id }) => id === verdict.id);
@@ -206,6 +209,7 @@ async function postFindings(
   const minor: WorkflowFindingDraft[] = [];
   let inlineFindings = 0;
   for (const finding of input.verdict.findings) {
+    if (input.settledKeys?.has(findingKey(finding))) continue;
     if (!finding.file || finding.line === undefined) {
       offLine.push(finding);
       continue;

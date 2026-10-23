@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { PrIntent, PrReviewVerdict, PrTriageDecision, PrTriageVerdict } from "@/operations";
 import type { BotPrReviewPromptInput } from "@/prompts";
 import * as prompts from "@/prompts";
+import { markdownFence } from "@/utils/markdown-fence";
 
 const base: BotPrReviewPromptInput = {
   packagePath: "/p.diff",
@@ -26,7 +27,44 @@ const thread = {
 const intent = "Intent: the PR description and the linked issues below.";
 const staticLine = "You cannot run commands in this review: judge from the files alone.";
 
+const settledEntry = {
+  id: "_run:cv1",
+  kind: "cannot-verify",
+  issue: "Live job-log availability was not exercised",
+  disposition: "verified" as const,
+  reason: "ran live calls",
+};
+
 describe("buildBotPrReviewPrompt", () => {
+  test.each([
+    [1, "## Settled rulings"],
+    [2, "_run:cv1"],
+    [3, "verified"],
+    [4, settledEntry.issue],
+    [5, settledEntry.reason],
+    [6, "Do not report a settled item again as a finding or list it in cannotVerify."],
+  ])("settled AC-%s contains %s", (_ac, text) => {
+    expect(prompts.buildBotPrReviewPrompt({ ...base, settled: [settledEntry] })).toContain(String(text));
+  });
+  test.each([[undefined], [[]]])("settled AC-7/8 omits section for %j", (settled) => {
+    expect(prompts.buildBotPrReviewPrompt({ ...base, settled })).not.toContain("## Settled rulings");
+  });
+  test("settled AC-9 safely fences issue and reason", () => {
+    const issue = "untrusted ``` issue";
+    const reason = "untrusted ```` reason";
+    const result = prompts.buildBotPrReviewPrompt({ ...base, settled: [{ ...settledEntry, issue, reason }] });
+    expect(result).toContain(markdownFence(issue));
+    expect(result).toContain(markdownFence(reason));
+  });
+  test("settled AC-10 caps entries and reports omitted count", () => {
+    const settled = Array.from({ length: 52 }, (_, i) => ({ ...settledEntry, id: `settled-${i}-end` }));
+    const result = prompts.buildBotPrReviewPrompt({ ...base, settled });
+    for (const entry of settled.slice(0, 50)) expect(result).toContain(entry.id);
+    for (const entry of settled.slice(50)) expect(result).not.toContain(entry.id);
+    expect(result).toContain("… and 2 more");
+    expect(result.indexOf("… and 2 more")).toBeGreaterThan(result.indexOf("settled-49-end"));
+    expect(prompts.MAX_SETTLED_RULINGS).toBe(50);
+  });
   test.each([[[]], [["project-check"]]])("US-003 AC-6/7 checkout state follows checks or checklist (%j)", (checks) => {
     const result = prompts.buildBotPrReviewPrompt({ ...base, checks, checkoutState: "fresh checkout details" });
     expect(result).toContain("## Checkout state\nfresh checkout details");

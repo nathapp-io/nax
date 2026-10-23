@@ -50,7 +50,7 @@ describe("runBotFixCycle", () => {
     expect(deps.gitToplevel).not.toHaveBeenCalled();
   });
   test.each(["nothing", "disabled"])("AC-1/2 %s returns only fix", async (mode) => {
-    const fix: BotFixResult = mode === "nothing" ? { step: "done", timings: {}, outcome: "nothing" } : pushed;
+    const fix: BotFixResult = mode === "nothing" ? { ...pushed, outcome: "nothing" } : pushed;
     const { deps } = fixture(fix);
     expect(await runBotFixCycle({ ...input, rereview: mode !== "disabled" }, deps)).toEqual({ fix });
     expect(deps.runBotReview).not.toHaveBeenCalled();

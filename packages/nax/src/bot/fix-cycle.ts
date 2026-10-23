@@ -2,48 +2,23 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { DEFAULT_CONFIG } from "@/config";
 import { NaxError } from "@/errors";
-import type { PrRef } from "@/forge";
-import { getLogger } from "@/logger";
 import { botCostLimit } from "./cost";
 import { _botFixDeps, type BotFixInput, type BotFixResult, runBotFix } from "./fix-run";
+import { _prHeadWaitDeps, PR_HEAD_WAIT_MS, waitForPrHead } from "./pr-head-wait";
 import { type BotReviewResult, runBotReview } from "./review-run";
 
-export const PR_HEAD_POLL_MS = 5_000;
-export const PR_HEAD_WAIT_MS = 60_000;
+export { PR_HEAD_POLL_MS, PR_HEAD_WAIT_MS, waitForPrHead } from "./pr-head-wait";
+
 const SHORT_SHA_LENGTH = 7;
 
 export const _fixCycleDeps = {
-  readPrInfo: _botFixDeps.readPrInfo,
-  forge: _botFixDeps.forge,
-  sleep: (ms: number): Promise<void> => Bun.sleep(ms),
-  now: () => Date.now(),
+  ..._prHeadWaitDeps,
   runBotFix,
   runBotReview,
   gitToplevel: _botFixDeps.gitToplevel,
   resolvePrRef: _botFixDeps.resolvePrRef,
   waitForPrHead,
 };
-
-export async function waitForPrHead(
-  input: { ref: PrRef; repoRoot: string; sha: string },
-  deps = _fixCycleDeps,
-): Promise<boolean> {
-  const deadline = deps.now() + PR_HEAD_WAIT_MS;
-  while (true) {
-    try {
-      const info = await deps.readPrInfo(input.ref, deps.forge, input.repoRoot);
-      if (info.headSha === input.sha) return true;
-    } catch (error) {
-      getLogger()?.warn("bot-fix", "Could not read PR head; retrying within poll window", {
-        pr: input.ref.number,
-        error: errorMessage(error),
-      });
-    }
-    const remaining = deadline - deps.now();
-    if (remaining <= 0) return false;
-    await deps.sleep(Math.min(PR_HEAD_POLL_MS, remaining));
-  }
-}
 
 export interface BotFixCycleResult {
   readonly fix: BotFixResult;

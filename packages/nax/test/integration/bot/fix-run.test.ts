@@ -429,6 +429,10 @@ describe("runBotFix", () => {
       nodes.push("gates");
       return { patch: {}, exit: "passed" };
     };
+    _botFixDeps.ledgerStep = async () => {
+      nodes.push("ledger");
+      return { patch: {}, exit: "push" };
+    };
     _botFixDeps.pushStep = async () => {
       nodes.push("push");
       return { patch: { outcome: "pushed", pushedSha: "new-head" }, exit: "pushed" };
@@ -454,8 +458,8 @@ describe("runBotFix", () => {
       resolved: 0,
       markedReady: true,
     });
-    expect(nodes).toEqual(["fix", "check", "gates", "push", "reply", "ready", "report"]);
-    expect(write).toHaveBeenCalledTimes(7);
+    expect(nodes).toEqual(["fix", "check", "gates", "ledger", "push", "reply", "ready", "report"]);
+    expect(write).toHaveBeenCalledTimes(8);
     expect(events.slice(-3)).toEqual(["context-close", "runtime-close", "checkout-close"]);
   });
   test.each(["config", "context", "context-dispose", "runtime-close"] as const)(

@@ -46,6 +46,8 @@ export function checkoutRefs(n: number, suffix: string): CheckoutRefs {
 
 export interface PrCheckout {
   readonly worktree: string;
+  readonly inPlace?: boolean;
+  readonly startHead?: string;
   readonly baseSha: string;
   readonly mergeBase: string;
   readonly snapshotDir: string;
@@ -146,7 +148,7 @@ async function reserveWorktree(path: string): Promise<void> {
   }
 }
 
-async function cleanup(input: {
+export async function cleanupCheckout(input: {
   repoRoot: string;
   worktree?: string;
   snapshotDir?: string;
@@ -178,7 +180,7 @@ async function cleanup(input: {
   }
 }
 
-async function fetchRefs(input: {
+export async function fetchCheckoutRefs(input: {
   repoRoot: string;
   ref: PrRef;
   info: PrInfo;
@@ -224,7 +226,7 @@ export async function preparePrCheckout(input: {
     await _checkoutDeps.ensureGitExcludes(repoRoot);
     await reserveWorktree(worktree);
     created = true; // Only our exclusive reservation grants cleanup ownership on a failed add.
-    const { baseSha, mergeBase } = await fetchRefs({ repoRoot, ref, info, refs });
+    const { baseSha, mergeBase } = await fetchCheckoutRefs({ repoRoot, ref, info, refs });
     addAttempted = true;
     await git(["worktree", "add", "--detach", worktree, info.headSha], repoRoot, BOT_GIT_NETWORK_TIMEOUT_MS);
     added = true;
@@ -244,10 +246,10 @@ export async function preparePrCheckout(input: {
       retain: () => {
         retained = true;
       },
-      dispose: () => cleanup({ ...artifacts, worktree: retained ? undefined : worktree }),
+      dispose: () => cleanupCheckout({ ...artifacts, worktree: retained ? undefined : worktree }),
     };
   } catch (cause) {
-    await cleanup({
+    await cleanupCheckout({
       repoRoot,
       worktree: created ? worktree : undefined,
       refs: created ? refs : undefined,

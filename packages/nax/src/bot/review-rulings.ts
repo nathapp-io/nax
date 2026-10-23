@@ -1,10 +1,12 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { hasNaxWorkflowMarker, ownComments, type PrThread } from "@/forge";
 import { getLogger } from "@/logger";
+import type { BotSettledRuling } from "@/prompts";
 import type { PrStepContext } from "../workflow/branch-step-context";
-import type { ItemIndex } from "../workflow/item-threads";
+import { type ItemIndex, parseItemOpener } from "../workflow/item-threads";
 import type { PrCheckout } from "./checkout";
 import type { PostReviewInput } from "./post";
+import { earlierIssue } from "./post-earlier";
 import { rulingModelReader } from "./ruling-reader";
 import type { RecordRulingsInput, RecordRulingsOutcome, recordPrRulings } from "./rulings";
 
@@ -12,7 +14,9 @@ import type { RecordRulingsInput, RecordRulingsOutcome, recordPrRulings } from "
 export async function readReviewRulings(
   input: Omit<RecordRulingsInput, "readModel"> & { staticMode: boolean; ctx: PrStepContext },
   record: typeof recordPrRulings,
-): Promise<Pick<PostReviewInput, "itemEarlier" | "rulings"> & { reviewedIndex?: ItemIndex }> {
+): Promise<
+  Pick<PostReviewInput, "itemEarlier" | "rulings"> & { reviewedIndex?: ItemIndex; settled?: BotSettledRuling[] }
+> {
   const { staticMode, ctx, ...raw } = input;
   if (staticMode || !hasNaxWorkflowMarker(raw.info.body)) return {};
   try {
@@ -22,6 +26,14 @@ export async function readReviewRulings(
     });
     return {
       reviewedIndex: outcome.index,
+      settled: outcome.settled.map((item) => ({
+        id: item.itemId,
+        kind: item.kind,
+        issue: parseItemOpener(item.thread.comments[0]?.body ?? "")?.issue ?? earlierIssue(item.thread),
+        disposition: item.ruling.disposition,
+        reason: item.ruling.reason,
+        ...(item.ruling.sha !== undefined && { sha: item.ruling.sha }),
+      })),
       itemEarlier: rulingEarlier(outcome, raw.login),
       rulings: { recorded: outcome.recorded.length, open: outcome.open.length, asked: outcome.asked },
     };

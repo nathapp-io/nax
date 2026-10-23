@@ -68,6 +68,21 @@ afterEach(() => {
 });
 
 describe("runPrReview", () => {
+  test("settled AC-15 forwards rulings into the operation prompt", async () => {
+    await runPrReview(ctx, {
+      ...input,
+      settled: [
+        {
+          id: "_run:cv1",
+          kind: "cannot-verify",
+          issue: "Live logs",
+          disposition: "verified",
+          reason: "ran live calls",
+        },
+      ],
+    });
+    expect(calls[0]).toMatchObject({ prompt: expect.stringMatching(/## Settled rulings[\s\S]*_run:cv1/) });
+  });
   test.each([false, true])(
     "US-015 AC-6/9 classifies changed paths and reports unread files, static=%s",
     async (staticMode) => {

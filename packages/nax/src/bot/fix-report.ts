@@ -25,6 +25,7 @@ import { isOpenItemKind } from "../workflow/item-threads";
 import { safeCode } from "../workflow/pr-body-safe";
 import { evidenceComment, markReadyArgv } from "../workflow/promote";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
+import { waitForPrHead } from "./pr-head-wait";
 import { safeText } from "./render";
 import { rulingModelReader } from "./ruling-reader";
 import { type RecordRulingsOutcome, recordPrRulings } from "./rulings";
@@ -39,6 +40,7 @@ export const _fixReportDeps = {
   editComment,
   postPrComment,
   waitForChecks,
+  waitForPrHead,
   readPrInfo,
   readCurrentUser,
   listReviewThreads,
@@ -70,7 +72,7 @@ async function resolveOwnFindings(env: BotFixEnv, state: BotFixState): Promise<{
   let resolved = 0;
   for (const thread of env.threads) {
     const first = thread.comments[0];
-    if (!first || first.author !== env.user.login || thread.resolved) continue;
+    if (!first || first.author !== env.user.login) continue;
     const marker = parseNaxBotMarker(first.body);
     const item = marker && agreed.get(marker.key);
     if (!item || item.key.startsWith("w-")) continue;
@@ -89,6 +91,8 @@ async function resolveOwnFindings(env: BotFixEnv, state: BotFixState): Promise<{
       });
       continue;
     }
+    // A confirmation can restore agreed work without reopening the forge thread.
+    if (thread.resolved) continue;
     try {
       await _fixReportDeps.resolveThread(env.ref, thread, env.forge, env.repoRoot);
       resolved++;
@@ -207,6 +211,14 @@ async function writeEvidence(
 
 /** Only durable workflow rulings and exact-head green CI can release a workflow draft. */
 export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
+  if (
+    state.pushedSha &&
+    !(await _fixReportDeps.waitForPrHead({ ref: env.ref, repoRoot: env.repoRoot, sha: state.pushedSha }))
+  )
+    return {
+      patch: { markedReady: false, readyHeld: `PR head did not reach ${state.pushedSha.slice(0, SHORT_SHA_LENGTH)}` },
+      exit: "report",
+    };
   if (!env.info.draft) return { patch: { markedReady: false }, exit: "report" };
   if (hasNaxWorkflowMarker(env.info.body)) {
     const readyHeld = await workflowReadyHold(env, state);
@@ -288,8 +300,8 @@ function outcomeText(state: BotFixState): string {
   }
 }
 
-export function renderFixSummary(state: BotFixState): string {
-  const lines = [outcomeText(state)];
+export function renderFixSummary(state: BotFixState, details: readonly string[] = []): string {
+  const lines = [outcomeText(state), ...details];
   if (state.reusedFix)
     lines.push(
       `Reused the saved fix ${safeText(state.reusedFix.slice(0, SHORT_SHA_LENGTH), SHORT_SHA_LENGTH)}; no new fix session.`,
@@ -307,7 +319,14 @@ export function renderFixSummary(state: BotFixState): string {
 }
 
 export async function reportStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
-  const body = renderFixSummary(state);
+  const lines: string[] = [];
+  if (state.outcome === "nothing" && state.pushedSha)
+    lines.push(
+      `Pushed ${state.pushedSha.slice(0, SHORT_SHA_LENGTH)}: advisor ledger. Run nax bot review ${env.ref.number} before the next nax bot fix.`,
+    );
+  if (state.ledgerCarried)
+    lines.push("Run `git pull --rebase` in your main checkout to pick up the carried advisor ledger.");
+  const body = renderFixSummary(state, lines);
   const own = env.own.find(({ key }) => key === "fix-summary");
   if (own) await _fixReportDeps.editComment(env.ref, own.comment, body, env.forge, env.repoRoot);
   else await _fixReportDeps.postPrComment(env.ref, body, env.forge, env.repoRoot);

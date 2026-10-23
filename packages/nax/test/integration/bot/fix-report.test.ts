@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeBotFixDraftEnv, makeBotFixEnv, makeNaxConfig, makeTestRuntime } from "@test/helpers";
 import {
   _fixReportDeps,
@@ -49,6 +49,9 @@ function thread(author: string, key: string): PrThread {
     comments: [{ ...comment, kind: "thread", author, body: withNaxBotMarker("finding", key) }],
   };
 }
+beforeEach(() => {
+  spyOn(_fixReportDeps, "waitForPrHead").mockResolvedValue(true);
+});
 afterEach(() => mock.restore());
 
 describe("replyStep", () => {
@@ -169,7 +172,20 @@ describe("replyStep", () => {
     if (count) expect(resolve).toHaveBeenCalledWith(env.ref, env.threads[0], env.forge, env.repoRoot);
     expect(result.patch.resolved).toBe(count);
   });
-  test("continues resolution after failure and excludes empty, unmarked, and resolved threads", async () => {
+  test("records fix completion for agreed work on an already-resolved thread", async () => {
+    const key = findingKey({ issue: "Leak" });
+    const env = {
+      ...makeBotFixEnv([{ kind: "finding", key, issue: "Leak", severity: "minor" }]),
+      threads: [{ ...thread("bot", key), resolved: true }],
+    };
+    const reply = spyOn(_fixReportDeps, "replyToThread").mockResolvedValue({ id: "new" });
+    const resolve = spyOn(_fixReportDeps, "resolveThread").mockResolvedValue();
+    const result = await replyStep(env, state);
+    expect(reply.mock.calls[0]?.[2]).toBe(withNaxBotMarker("Fixed in abcdef1: Leak", `fix-${key}`));
+    expect(resolve).not.toHaveBeenCalled();
+    expect(result.patch).toMatchObject({ replied: 1, resolved: 0 });
+  });
+  test("continues resolution after failure and excludes empty and unmarked threads", async () => {
     const key = findingKey({ issue: "Leak" });
     const own = thread("bot", key);
     const env = {
@@ -189,8 +205,8 @@ describe("replyStep", () => {
     const result = await replyStep(env, state);
     expect(resolve).toHaveBeenCalledTimes(2);
     expect(resolve.mock.calls[1]?.[1].id).toBe("next");
-    expect(reply.mock.calls.map((call) => call[1])).toEqual([{ replyTo: "99" }, { replyTo: "99" }]);
-    expect(result.patch).toMatchObject({ replied: 2, resolved: 1 });
+    expect(reply.mock.calls.map((call) => call[1])).toEqual([{ replyTo: "99" }, { replyTo: "99" }, { replyTo: "99" }]);
+    expect(result.patch).toMatchObject({ replied: 3, resolved: 1 });
   });
   test("continues replies after a failed write", async () => {
     const env = makeBotFixEnv([item, { ...item, key: "t-2", replyTo: "r2" }]);

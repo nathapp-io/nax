@@ -12,7 +12,7 @@ import { NaxError } from "../errors";
 /** Maximum directory depth to prevent infinite loops */
 export const MAX_DIRECTORY_DEPTH = 10;
 
-export const _pathSecurityDeps = { isAbsolute, normalize, relative };
+export const _pathSecurityDeps = { isAbsolute, normalize, relative, realpathSync, lstatSync };
 
 /**
  * Validate and resolve a directory path safely
@@ -36,7 +36,7 @@ export function validateDirectory(dirPath: string, baseDir?: string): string {
   // Get real path (resolves symlinks)
   let realPath: string;
   try {
-    realPath = realpathSync(resolved);
+    realPath = _pathSecurityDeps.realpathSync(resolved);
   } catch (error) {
     throw new NaxError(
       `Failed to resolve path: ${dirPath} (${errorMessage(error)})`,
@@ -52,7 +52,7 @@ export function validateDirectory(dirPath: string, baseDir?: string): string {
   // Check if it's a directory
   let isDirectory: boolean;
   try {
-    isDirectory = lstatSync(realPath).isDirectory();
+    isDirectory = _pathSecurityDeps.lstatSync(realPath).isDirectory();
   } catch (error) {
     throw new NaxError(`Failed to stat path: ${dirPath} (${errorMessage(error)})`, "PATH_DIRECTORY_STAT_FAILED", {
       stage: "config",
@@ -68,7 +68,7 @@ export function validateDirectory(dirPath: string, baseDir?: string): string {
   // If baseDir provided, ensure realPath is within baseDir
   if (baseDir) {
     const resolvedBase = resolve(baseDir);
-    const realBase = existsSync(resolvedBase) ? realpathSync(resolvedBase) : resolvedBase;
+    const realBase = existsSync(resolvedBase) ? _pathSecurityDeps.realpathSync(resolvedBase) : resolvedBase;
 
     if (!isWithinDirectory(realPath, realBase)) {
       throw new NaxError(
@@ -133,13 +133,13 @@ export function validateFilePath(filePath: string, baseDir: string): string {
     if (!existsSync(resolved)) {
       const parent = resolve(resolved, "..");
       if (existsSync(parent)) {
-        const realParent = realpathSync(parent);
+        const realParent = _pathSecurityDeps.realpathSync(parent);
         realPath = resolve(realParent, basename(resolved));
       } else {
         realPath = resolved;
       }
     } else {
-      realPath = realpathSync(resolved);
+      realPath = _pathSecurityDeps.realpathSync(resolved);
     }
   } catch (error) {
     throw new NaxError(`Failed to resolve path: ${filePath} (${errorMessage(error)})`, "FILE_PATH_RESOLUTION_FAILED", {
@@ -151,7 +151,7 @@ export function validateFilePath(filePath: string, baseDir: string): string {
 
   // Ensure realPath is within baseDir
   const resolvedBase = resolve(baseDir);
-  const realBase = existsSync(resolvedBase) ? realpathSync(resolvedBase) : resolvedBase;
+  const realBase = existsSync(resolvedBase) ? _pathSecurityDeps.realpathSync(resolvedBase) : resolvedBase;
 
   if (!isWithinDirectory(realPath, realBase)) {
     throw new NaxError(

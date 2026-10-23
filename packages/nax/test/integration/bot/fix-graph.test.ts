@@ -38,6 +38,10 @@ beforeEach(() => {
     calls.push("gates");
     return { patch: {}, exit: "passed" };
   };
+  _botFixDeps.ledgerStep = async (_env, state) => {
+    calls.push("ledger");
+    return { patch: {}, exit: state.outcome === "nothing" ? "skip" : "push" };
+  };
   _botFixDeps.pushStep = async () => {
     calls.push("push");
     return { patch: { outcome: "pushed", pushedSha: "abcdef12" }, exit: "pushed" };
@@ -62,7 +66,31 @@ afterEach(async () => {
 });
 
 describe("runBotFix graph routing", () => {
-  test("AC-1/12 success executes all seven injected nodes and returns final state", async () => {
+  test("US-009 AC-4/12/13 ledger-only run visits reply and ready with pushed head", async () => {
+    _botFixDeps.readPrInfo = async () => ({ ...makeBotFixEnv().info, body: NAX_WORKFLOW_PR_MARKER });
+    _botFixDeps.recordPrRulings = async () => ({ recorded: [], settled: [], open: [], asked: 0, failed: 0 });
+    _botFixDeps.fixStep = async () => {
+      calls.push("fix");
+      return { patch: { outcome: "nothing", agreedCount: 0 }, exit: "nothing" };
+    };
+    _botFixDeps.ledgerStep = async () => {
+      calls.push("ledger");
+      return { patch: { ledgerCarried: true }, exit: "push" };
+    };
+    const push = spyOn(_botFixDeps, "pushStep").mockImplementation(async () => {
+      calls.push("push");
+      return { patch: { outcome: "nothing", pushedSha: "abcdef12" }, exit: "pushed" };
+    });
+    _botFixDeps.readyStep = async (_env, state) => {
+      calls.push("ready");
+      expect(state.pushedSha).toBe("abcdef12");
+      return { patch: {}, exit: "report" };
+    };
+    expect(await runBotFix(input)).toMatchObject({ outcome: "nothing", pushedSha: "abcdef12" });
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(["fix", "ledger", "push", "reply", "ready", "report"]);
+  });
+  test("AC-1/12 success executes all eight injected nodes and returns final state", async () => {
     expect(await runBotFix(input)).toMatchObject({
       step: "done",
       outcome: "pushed",
@@ -72,8 +100,8 @@ describe("runBotFix graph routing", () => {
       resolved: 1,
       markedReady: true,
     });
-    expect(calls).toEqual(["fix", "check", "gates", "push", "reply", "ready", "report"]);
-    expect(writes).toHaveLength(7);
+    expect(calls).toEqual(["fix", "check", "gates", "ledger", "push", "reply", "ready", "report"]);
+    expect(writes).toHaveLength(8);
   });
 
   test.each([
@@ -84,13 +112,13 @@ describe("runBotFix graph routing", () => {
       outcome: "gates-failed",
       sequence: ["fix", "check", "gates", "report"],
     },
-    { ac: "AC-4/5", node: "fix", exit: "nothing", outcome: "nothing", sequence: ["fix", "ready", "report"] },
+    { ac: "AC-4/5", node: "fix", exit: "nothing", outcome: "nothing", sequence: ["fix", "ledger", "ready", "report"] },
     {
       ac: "AC-6/7",
       node: "push",
       exit: "rejected",
       outcome: "push-rejected",
-      sequence: ["fix", "check", "gates", "push", "report"],
+      sequence: ["fix", "check", "gates", "ledger", "push", "report"],
     },
     { ac: "AC-8/9", node: "check", exit: "protected", outcome: "protected", sequence: ["fix", "check", "report"] },
     {

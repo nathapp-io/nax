@@ -62,6 +62,37 @@ function makeChain(plugin: InteractionPlugin): InteractionChain {
 // Normalization: action="choose" + value="<key>" → action="<key>"
 // ─────────────────────────────────────────────────────────────────────────────
 
+describe("InteractionChain failures and cancellation", () => {
+  test("empty chain rejects send and receive", async () => {
+    const chain = new InteractionChain({ defaultTimeout: 5000, defaultFallback: "abort" });
+    await expect(chain.send(makeRequest())).rejects.toThrow("No interaction plugin registered");
+    await expect(chain.receive("missing")).rejects.toThrow("No interaction plugin registered");
+  });
+  test("receive cascades after failure and aggregates failures if none succeeds", async () => {
+    const first = makePlugin({});
+    first.receive = mock(async () => {
+      throw new Error("first unavailable");
+    });
+    const second = makePlugin({ action: "approve" });
+    const chain = makeChain(first);
+    chain.register(second);
+    expect((await chain.receive("request", 12)).action).toBe("approve");
+    expect(second.receive).toHaveBeenCalledWith("request", 12);
+    second.receive = mock(async () => {
+      throw new Error("second unavailable");
+    });
+    await expect(chain.receive("request")).rejects.toThrow("first unavailable; second unavailable");
+  });
+  test("cancels only the primary plugin", async () => {
+    const plugin = makePlugin({});
+    const cancel = mock(async () => {});
+    plugin.cancel = cancel;
+    const chain = makeChain(plugin);
+    await chain.cancel("request");
+    expect(cancel).toHaveBeenCalledWith("request");
+  });
+});
+
 describe("InteractionChain.prompt() — choose normalization", () => {
   test("remaps action='choose' + value='approve' → action='approve'", async () => {
     const plugin = makePlugin({ action: "choose", value: "approve" });

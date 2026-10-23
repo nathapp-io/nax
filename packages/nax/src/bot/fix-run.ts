@@ -26,6 +26,7 @@ import {
   pushStep,
 } from "./fix-steps";
 import { botGit } from "./git";
+import { ledgerStep } from "./ledger-carry";
 import { type BotLog, openBotLog } from "./log";
 import { repairStep } from "./repair-step";
 import { _botReviewDeps } from "./review-run";
@@ -41,6 +42,8 @@ export const _botFixDeps = {
   readPrInfo: _botReviewDeps.readPrInfo,
   classifyPrTrust: _botReviewDeps.classifyPrTrust,
   preparePrCheckout: _botReviewDeps.preparePrCheckout,
+  prepareInPlaceCheckout: _botReviewDeps.prepareInPlaceCheckout,
+  runGit: botGit,
   loadBotConfig: _botReviewDeps.loadBotConfig,
   createRuntime: _botReviewDeps.createRuntime,
   setupBotRuntime: _botReviewDeps.setupBotRuntime,
@@ -65,6 +68,7 @@ export const _botFixDeps = {
   repairStep,
   checkStep,
   gatesStep,
+  ledgerStep,
   pushStep,
   replyStep,
   readyStep,
@@ -72,6 +76,7 @@ export const _botFixDeps = {
 };
 
 export interface BotFixInput {
+  readonly inPlace?: boolean;
   readonly readyOnly?: boolean;
   readonly fresh?: boolean;
   readonly costLimitUsd?: number;
@@ -108,7 +113,7 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
       produces: ["agreedCount", "outcome", "fixFailure", "fixDirty", "fixSha"],
       exits: ["nothing", "ran"],
       transitions: [
-        { on: "nothing", to: "ready" },
+        { on: "nothing", to: "ledger" },
         { on: "ran", to: "check" },
       ],
       run: (env, state) => _botFixDeps.fixStep(env, state),
@@ -152,8 +157,18 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
         "repairSkippedForCost",
       ],
       exits: ["no-gates", "failed", "passed", "dirty", "repair"],
-      transitions: [{ on: "passed", to: "push" }, { on: "repair", to: "repair" }, { to: "report" }],
+      transitions: [{ on: "passed", to: "ledger" }, { on: "repair", to: "repair" }, { to: "report" }],
       run: (env, state) => _botFixDeps.gatesStep(env, state),
+    },
+    ledger: {
+      kind: "git",
+      produces: ["ledgerCarried"],
+      exits: ["push", "skip"],
+      transitions: [
+        { on: "push", to: "push" },
+        { on: "skip", to: "ready" },
+      ],
+      run: (env, state) => _botFixDeps.ledgerStep(env, state),
     },
     push: {
       kind: "git",
@@ -232,9 +247,24 @@ async function recordFixRulings(
 
 async function initialFixState(env: BotFixEnv, outputDir: string, input: BotFixInput): Promise<BotFixState> {
   if (input.readyOnly) return { step: "ready", timings: {}, readyOnly: true, outcome: "ready-pass" };
-  let initial = await reuseSavedFix({ env, outputDir, fresh: input.fresh, savedFix: _botFixDeps.savedFix });
+  let initial: BotFixState = env.checkout.inPlace
+    ? { step: "fix", timings: {} }
+    : await reuseSavedFix({ env, outputDir, fresh: input.fresh, savedFix: _botFixDeps.savedFix });
   try {
     await _botFixDeps.runPreRunSteps({ steps: env.checks.preRun, workdir: env.checkout.worktree });
+    if (env.checkout.inPlace) {
+      const status = await _botFixDeps.runGit(
+        ["status", "--porcelain", "--untracked-files=all"],
+        env.checkout.worktree,
+      );
+      if (status.exitCode !== 0 || status.stdout.trim())
+        initial = {
+          step: "report",
+          timings: {},
+          outcome: "setup-failed",
+          setupFailed: "in-place checkout not clean after setup",
+        };
+    }
   } catch (error) {
     if (!(error instanceof NaxError) || error.code !== "PRE_RUN_FAILED") throw error;
     const setupFailed = typeof error.context?.command === "string" ? error.context.command : "unknown";
@@ -372,7 +402,7 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
     await recordFixRulings(env, items.comments);
     try {
       const result = await executeFix(env, runtime, input);
-      if (!input.readyOnly && result.outcome !== "refused")
+      if (!checkout.inPlace && !input.readyOnly && result.outcome !== "refused")
         await persistSavedFix({ env, state: result, outputDir: runtime.outputDir, savedFix: deps.savedFix });
       return finishFix(result, log);
     } finally {
@@ -402,7 +432,8 @@ export async function runBotFix(input: BotFixInput): Promise<BotFixResult> {
     return { outcome: "refused", reason: "head branch is in another repository; nax bot fix cannot push to it" };
   const trust = await deps.classifyPrTrust(ref, info, deps.forge, repoRoot);
   if (!trust.trusted) return { outcome: "refused", reason: `untrusted PR: ${trust.reasons.join("; ")}` };
-  const checkout = await deps.preparePrCheckout({
+  const prepare = input.inPlace ? deps.prepareInPlaceCheckout : deps.preparePrCheckout;
+  const checkout = await prepare({
     repoRoot,
     ref,
     info,

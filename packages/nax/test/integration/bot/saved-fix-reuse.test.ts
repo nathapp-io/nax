@@ -66,6 +66,7 @@ async function fixture() {
   Object.assign(_botFixDeps, makeBotFixDeps(env, runtime), {
     savedFix: { read: readSavedFix, save: saveFix, clear: clearSavedFix },
     checkStep: check,
+    ledgerStep: async () => ({ patch: {}, exit: "push" }),
     reportStep: async () => ({ patch: {}, exit: "done" }),
   });
   const run = (fresh = false) => runBotFix({ dir: root, pr: 42, profiles: [], interactive: false, fresh });
