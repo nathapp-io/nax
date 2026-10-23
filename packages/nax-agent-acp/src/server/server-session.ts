@@ -51,6 +51,8 @@ export interface ServerSession {
   /** Close-and-reopen for a mode or config change (spec §3.3); `restore` reopens the old settings when `open` fails. */
   switchTo(open: () => Promise<SwitchTarget>, restore: () => Promise<SwitchTarget>): Promise<void>;
   isClosed(): boolean;
+  /** A terminal close() was requested, whether or not it has finished (spec §Design 1). */
+  isClosing(): boolean;
   cancel(): void;
   close(): Promise<void>;
 }
@@ -61,6 +63,12 @@ const CANCELLED_BEFORE_SEND: PromptOutcome = {
   response: { stopReason: "cancelled", usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } },
   notices: [],
 };
+
+const SESSION_CLOSED = "session is closed";
+
+function sessionClosed(): RequestError {
+  return RequestError.invalidRequest(undefined, SESSION_CLOSED);
+}
 
 interface Turn {
   readonly permissions: PermissionBroker;
@@ -134,6 +142,12 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
   let queued: readonly SessionUpdate[] = [];
   let costUsd = deps.priorCostUsd ?? 0;
   let closed = false;
+  /** The closing flag: set by the first close(), so isClosing() is true from then on. */
+  let closeRequested = false;
+  /** The in-flight switchTo, while its gap runs (§Design 2). */
+  let switching: Promise<void> | undefined;
+  /** Whether the current agent is a live S3 session: false from the moment a switch closes it. */
+  let live = true;
   let running = false;
   /** A cancel before send() claimed the S3 turn, where AgentSession.cancel() is a no-op. */
   let cancelBeforeSend = false;
@@ -204,9 +218,62 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
     return outcome;
   }
 
+  /** Adopts the session a switch's `open` or `restore` returned, and marks it live. */
+  function adopt(target: SwitchTarget): void {
+    agent = target.session;
+    contextWindow = target.contextWindow;
+    live = true;
+  }
+
+  /** `open`, else `restore`; the open error survives even a successful restore. */
+  async function openOrRestore(
+    open: () => Promise<SwitchTarget>,
+    restore: () => Promise<SwitchTarget>,
+  ): Promise<{ readonly target?: SwitchTarget; readonly failure?: unknown }> {
+    try {
+      return { target: await open() };
+    } catch (failure) {
+      try {
+        return { target: await restore(), failure };
+      } catch (restoreError) {
+        deps.logger.error("session", "could not reopen the session after a failed switch", {
+          sessionId: deps.session.id,
+          error: messageOf(restoreError),
+        });
+        return { failure };
+      }
+    }
+  }
+
+  /**
+   * One switchTo (§3.3, §Design 2-3): close the old S3 session, then adopt what
+   * `open` or `restore` left. A close requested meanwhile keeps the session
+   * closed and turns the outcome into `session is closed`, after the adoption so
+   * close() still knows what to close.
+   */
+  async function switchSession(open: () => Promise<SwitchTarget>, restore: () => Promise<SwitchTarget>): Promise<void> {
+    stopWaiting();
+    closed = true;
+    live = false;
+    try {
+      await agent.close();
+    } catch (error) {
+      deps.logger.warn("session", "session close failed during switch", {
+        sessionId: deps.session.id,
+        error: messageOf(error),
+      });
+    }
+    const { target, failure } = await openOrRestore(open, restore);
+    if (target !== undefined) adopt(target);
+    if (closeRequested) throw sessionClosed();
+    if (target !== undefined) closed = false;
+    if (failure !== undefined) throw failure;
+  }
+
   return {
     id: deps.session.id,
     isClosed: () => closed,
+    isClosing: () => closeRequested,
     get running() {
       return running;
     },
@@ -215,7 +282,7 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
     },
     async prompt(blocks) {
       if (running) throw turnInProgress();
-      if (closed) throw RequestError.invalidRequest(undefined, "session is closed");
+      if (closed) throw sessionClosed();
       const message = flattenPrompt(blocks);
       running = true;
       cancelBeforeSend = false;
@@ -241,40 +308,16 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
       return outcome.response;
     },
     async switchTo(open, restore) {
-      if (closed) throw RequestError.invalidRequest(undefined, "session is closed");
+      if (closed) throw sessionClosed();
       if (running) throw turnInProgress();
       running = true;
+      const work = switchSession(open, restore);
+      switching = work;
       try {
-        stopWaiting();
-        closed = true;
-        try {
-          await agent.close();
-        } catch (error) {
-          deps.logger.warn("session", "session close failed during switch", {
-            sessionId: deps.session.id,
-            error: messageOf(error),
-          });
-        }
-        try {
-          const next = await open();
-          closed = false;
-          agent = next.session;
-          contextWindow = next.contextWindow;
-        } catch (error) {
-          try {
-            const back = await restore();
-            closed = false;
-            agent = back.session;
-            contextWindow = back.contextWindow;
-          } catch (restoreError) {
-            deps.logger.error("session", "could not reopen the session after a failed switch", {
-              sessionId: deps.session.id,
-              error: messageOf(restoreError),
-            });
-          }
-          throw error;
-        }
+        await work;
       } finally {
+        // Cleared before this promise settles, whatever the outcome (§Design 2).
+        switching = undefined;
         running = false;
       }
     },
@@ -285,14 +328,24 @@ export function createServerSession(deps: ServerSessionDeps): ServerSession {
     },
     close() {
       if (closing !== undefined) return closing;
-      if (closed) return Promise.resolve();
+      closeRequested = true;
+      // A switch whose open and restore both failed leaves a dead session that
+      // the registry's dead-entry cleanup closes: nothing here to close.
+      if (closed && switching === undefined) {
+        closing = Promise.resolve();
+        return closing;
+      }
+      const inFlight = switching;
       closed = true; // Refuse new prompts/switches before the first await.
       cancelBeforeSend = true;
       agent.cancel("session is closing");
       stopWaiting();
       closing = (async () => {
+        // The switch owns `agent` until it settles; then close only what it
+        // left live, so a switch that left nothing is not closed twice.
+        if (inFlight !== undefined) await inFlight.catch(() => undefined);
         try {
-          await agent.close();
+          if (live) await agent.close();
         } finally {
           // AgentSession.close need not await the facade's event delivery or
           // onTurnEnd. Ownership must outlive both, even if close rejects.
