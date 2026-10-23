@@ -68,13 +68,14 @@ function jobStepsArgv(ref: PrRef, jobId: string): string[] {
 
 /** Read one Actions job's steps; every failure mode leaves both fields absent. */
 export async function readJobSteps(ref: PrRef, jobId: string, deps: ForgeDeps, cwd: string): Promise<JobSteps> {
-  const result = await deps.run(jobStepsArgv(ref, jobId), { cwd });
-  if (result.exitCode !== 0) return {};
   let reply: unknown;
   try {
+    const result = await deps.run(jobStepsArgv(ref, jobId), { cwd });
+    if (result.exitCode !== 0) return {};
     reply = JSON.parse(result.stdout);
   } catch {
-    // An unparsable reply carries no steps; the excerpt already came from the log.
+    // A command that never ran, and a reply that is not JSON, carry no steps.
+    // The excerpt already came from the log, and the check is still reported.
     return {};
   }
   const steps = stepsOf(reply);

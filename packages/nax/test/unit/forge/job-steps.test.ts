@@ -94,15 +94,26 @@ function steps(...entries: readonly StepPayload[]): Reply {
 /** The one failed GitHub Actions check every fixture reports. */
 const ACTIONS_CHECK = { id: 991, name: "build", conclusion: "failure", app: { slug: "github-actions" } };
 
+/** A steps command that rejects, as a spawn that never produced a process does. */
+interface Rejected {
+  readonly reject: string;
+}
+
+/** What the steps command answers: a reply, or the error it rejects with. */
+type StepsCommand = Reply | Rejected;
+
 /** A forge whose listing, job log and job steps answer from the arguments. */
-function actionsFixture(jobs: Reply, log: Reply = text(LOG)): { deps: ForgeDeps; calls: Call[] } {
+function actionsFixture(jobs: StepsCommand, log: Reply = text(LOG)): { deps: ForgeDeps; calls: Call[] } {
   const calls: Call[] = [];
   const deps: ForgeDeps = {
     run: async (cmd, opts) => {
       calls.push({ cmd, cwd: opts.cwd });
       const endpoint = cmd.at(-1) ?? "";
       if (endpoint.endsWith("/logs")) return log;
-      if (endpoint === "repos/o/r/actions/jobs/991") return jobs;
+      if (endpoint === "repos/o/r/actions/jobs/991") {
+        if ("reject" in jobs) throw new Error(jobs.reject);
+        return jobs;
+      }
       return ok({ check_runs: [ACTIONS_CHECK] });
     },
     readText: async () => null,
@@ -111,7 +122,7 @@ function actionsFixture(jobs: Reply, log: Reply = text(LOG)): { deps: ForgeDeps;
 }
 
 /** The one failed check of a fixture whose jobs reply is `jobs`. */
-async function actionsCheck(jobs: Reply, log?: Reply): Promise<{ check: FailedCheck; calls: Call[] }> {
+async function actionsCheck(jobs: StepsCommand, log?: Reply): Promise<{ check: FailedCheck; calls: Call[] }> {
   const { deps, calls } = actionsFixture(jobs, log);
   const checks = await forge.readFailedChecks(gh, "abc123", deps, "/repo");
   expect(checks).toHaveLength(1);
@@ -187,6 +198,14 @@ describe("readFailedChecks job steps", () => {
     const noSteps = await actionsCheck(NO_STEPS);
     expect(failedJobs.check.excerpt).toBe(noSteps.check.excerpt);
     expect(failedJobs.check.excerpt).toBe(forge.ciExcerpt(LOG));
+  });
+
+  test("keeps the check when the jobs command rejects instead of answering (AC-7)", async () => {
+    const { check } = await actionsCheck({ reject: "[forge] gh is not installed" });
+    expect(check.name).toBe("build");
+    expect(check).not.toHaveProperty("failedStep");
+    expect(check).not.toHaveProperty("skippedSteps");
+    expect(check.excerpt).toBe(forge.ciExcerpt(LOG));
   });
 
   test("US-003 AC-10 names no failed step when the jobs reply is not JSON", async () => {
@@ -274,13 +293,14 @@ describe("readFailedChecks job steps", () => {
 });
 
 describe("readJobSteps", () => {
-  /** A forge whose only call answers with `reply`. */
-  function stepsFixture(reply: Reply): { deps: ForgeDeps; calls: Call[] } {
+  /** A forge whose only call answers with `command`. */
+  function stepsFixture(command: StepsCommand): { deps: ForgeDeps; calls: Call[] } {
     const calls: Call[] = [];
     const deps: ForgeDeps = {
       run: async (cmd, opts) => {
         calls.push({ cmd, cwd: opts.cwd });
-        return reply;
+        if ("reject" in command) throw new Error(command.reject);
+        return command;
       },
       readText: async () => null,
     };
@@ -310,6 +330,7 @@ describe("readJobSteps", () => {
 
   test.each([
     ["the command fails", { exitCode: 2, stdout: "", stderr: "HTTP 404" }],
+    ["the command rejects", { reject: "[forge] spawn gh ENOENT" }],
     ["the reply is not JSON", text("not JSON")],
     ["the reply is JSON null", text("null")],
     ["the reply is a JSON array", ok([])],
