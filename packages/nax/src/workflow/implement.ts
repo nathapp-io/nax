@@ -12,7 +12,7 @@ import {
   buildWorkflowRestartPrompt,
 } from "@/prompts";
 import { fixModelFor } from "./fix-round";
-import { listUncommitted } from "./git";
+import { listUncommitted, readHead } from "./git";
 import { closeImplementerSession } from "./sessions";
 import { _workflowDeps, type StepContext } from "./step-context";
 import type { ImplementerReply, WorkflowFinding } from "./types";
@@ -145,13 +145,19 @@ async function dirtyAfterTurn(sc: StepContext): Promise<string[]> {
 
 /**
  * US-004: the best-effort auto-commit of whatever the last turn left behind, shared by
- * `runImplementerTurn` and the interrupt fallback. True only when a commit was attempted.
- * A failing commit is a warning, never a failed turn: the edits are still on disk, and the
- * gates and `publish`'s clean-tree check still see them.
+ * `runImplementerTurn` and the interrupt fallback. True only when a commit was actually created.
+ *
+ * F1 (US-007): `autoCommitIfDirty` is fail-open and returns *without* committing under a dry run, a
+ * rejected workdir, a failed `git add` or an empty staging set, so its return says nothing about the
+ * tree. The answer is therefore read off HEAD moving — and an unreadable HEAD reads as "no commit",
+ * because claiming a commit that cannot be proved is what told the story reviewer its edits were
+ * committed while they still sat on disk. A failing commit is a warning, never a failed turn: the
+ * edits are still on disk, and the gates and `publish`'s clean-tree check still see them.
  */
 export async function autoCommitTurnEdits(sc: StepContext): Promise<boolean> {
   const dirty = await dirtyAfterTurn(sc);
   if (dirty.length === 0) return false;
+  const before = await headOrUndefined(sc);
   try {
     await _workflowDeps.autoCommitIfDirty(
       sc.projectDir,
@@ -161,13 +167,25 @@ export async function autoCommitTurnEdits(sc: StepContext): Promise<boolean> {
       undefined,
       sc.dryRun,
     );
-    return true;
   } catch (err) {
     getSafeLogger()?.warn("workflow", "Auto-commit of the implementer's edits failed; leaving them uncommitted", {
       storyId: sc.story.id,
       error: errorMessage(err),
     });
     return false;
+  }
+  if (before === undefined) return false;
+  const after = await headOrUndefined(sc);
+  return after !== undefined && after !== before;
+}
+
+/** HEAD's sha, or `undefined` when it cannot be read — the caller then never claims a commit. */
+async function headOrUndefined(sc: StepContext): Promise<string | undefined> {
+  try {
+    return await readHead(sc.projectDir);
+  } catch {
+    // A repo with no readable HEAD cannot prove a commit; the auto-commit is best-effort, so say nothing.
+    return undefined;
   }
 }
 

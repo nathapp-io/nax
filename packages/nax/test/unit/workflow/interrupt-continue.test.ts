@@ -427,4 +427,35 @@ describe("interrupt fallback auto-commit failures (US-007)", () => {
     expect(h.ledger.filter((line) => line.includes(AUTO_COMMITTED))).toEqual([]);
     expect(seen[0]?.[0]).toContain("nothing was auto-committed");
   });
+
+  // F1: `autoCommitIfDirty` is fail-open — a dry run, a rejected workdir, a failed `git add` or an
+  // empty staging set all return without committing. The fallback must not call that a commit.
+  test("F1: an auto-commit that commits nothing says nothing was auto-committed", async () => {
+    let commits = 0;
+    // HEAD answers the same sha before and after the call: no commit was created.
+    _workflowDeps.git = async (args) =>
+      args[0] === "rev-parse" ? { stdout: "h1\n", exitCode: 0 } : { stdout: " M src/a.ts\n", exitCode: 0 };
+    _workflowDeps.autoCommitIfDirty = async () => {
+      commits += 1; // refused: nothing staged, so HEAD never moves
+    };
+    const { h, seen, env } = orderedHarness([interrupted], { autoCommit: realSeam() });
+    await runStoryLoop(env);
+    expect(commits).toBe(1);
+    expect(h.ledger.filter((line) => line.includes(AUTO_COMMITTED))).toEqual([]);
+    expect(seen).toEqual([[NOTHING_CONCERN]]);
+  });
+
+  test("F1: a commit that lands writes the note and the committed concern", async () => {
+    let reads = 0;
+    _workflowDeps.git = async (args) => {
+      if (args[0] !== "rev-parse") return { stdout: " M src/a.ts\n", exitCode: 0 };
+      reads += 1;
+      return { stdout: reads === 1 ? "h1\n" : "h2\n", exitCode: 0 };
+    };
+    _workflowDeps.autoCommitIfDirty = async () => {};
+    const { h, seen, env } = orderedHarness([interrupted], { autoCommit: realSeam() });
+    await runStoryLoop(env);
+    expect(h.ledger).toContain(AUTO_COMMITTED);
+    expect(seen).toEqual([[COMMITTED_CONCERN]]);
+  });
 });

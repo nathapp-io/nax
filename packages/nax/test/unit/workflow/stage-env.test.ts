@@ -345,8 +345,11 @@ describe("buildStoryEnv — evidence and interrupt steps (US-005)", () => {
   /** Answer the two reads behind the evidence steps; `diff` is the committed list, `status` the dirty one. */
   function stubGit(diff: string, status: string, diffExitCode = 0): string[][] {
     const calls: string[][] = [];
+    let head = 0;
     _workflowDeps.git = async (args, _cwd) => {
       calls.push(args);
+      // US-007 F1: the auto-commit seam reports a commit only when HEAD moves, so give it a moving sha.
+      if (args[0] === "rev-parse") return { stdout: `h${++head}\n`, exitCode: 0 };
       return args[0] === "diff" ? { stdout: diff, exitCode: diffExitCode } : { stdout: status, exitCode: 0 };
     };
     return calls;

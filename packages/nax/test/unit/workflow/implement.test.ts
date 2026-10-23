@@ -20,6 +20,20 @@ import type { ImplementerReply } from "@/workflow/types";
 const original = { ..._workflowDeps };
 afterEach(() => Object.assign(_workflowDeps, original));
 
+/**
+ * The git stub `autoCommitTurnEdits` needs (US-007 F1): a dirty tree for `git status`, and HEAD
+ * answering `heads` in order for `rev-parse`, so a landed commit and a refused one are distinguishable.
+ */
+function gitStub(heads: readonly string[], status = " M src/a.ts\n"): typeof _workflowDeps.git {
+  let reads = 0;
+  return async (args) => {
+    if (args[0] !== "rev-parse") return { stdout: status, exitCode: 0 };
+    const sha = heads[Math.min(reads, heads.length - 1)] ?? "h1";
+    reads += 1;
+    return { stdout: `${sha}\n`, exitCode: 0 };
+  };
+}
+
 const tiers: TierConfig[] = [
   { tier: "fast", attempts: 2 },
   { tier: "balanced", attempts: 2 },
@@ -88,7 +102,7 @@ describe("runImplementerTurn", () => {
     const seen: WorkflowImplementInput[] = [];
     const commits: unknown[][] = [];
     fakeImplement(doneReply, seen);
-    _workflowDeps.git = async () => ({ stdout: " M src/a.ts\n", exitCode: 0 });
+    _workflowDeps.git = gitStub(["h1", "h2"]);
     _workflowDeps.autoCommitIfDirty = async (...args) => {
       commits.push(args);
     };
@@ -553,13 +567,26 @@ describe("runImplementerTurn report turns (US-004)", () => {
 });
 
 describe("autoCommitTurnEdits (US-004)", () => {
-  test("a dirty tree is auto-committed for the story and resolves true", async () => {
+  test("a dirty tree that gets committed resolves true", async () => {
     const calls: unknown[][] = [];
-    _workflowDeps.git = async () => ({ stdout: " M src/a.ts\n", exitCode: 0 });
+    _workflowDeps.git = gitStub(["h1", "h2"]);
     _workflowDeps.autoCommitIfDirty = async (...args) => {
       calls.push(args);
     };
-    expect(await autoCommitTurnEdits(makeStepContext({ projectDir: "/repo", dryRun: true }))).toBe(true);
+    expect(await autoCommitTurnEdits(makeStepContext({ projectDir: "/repo" }))).toBe(true);
+    expect(calls[0]).toEqual(["/repo", "workflow", "wf-implementer", "US-001", undefined, false]);
+  });
+
+  // US-007 F1: `autoCommitIfDirty` is fail-open — a dry run, a rejected workdir, a failed `git add`
+  // and an empty staging set all return without committing — so the seam must read whether a commit
+  // landed, not whether the call returned.
+  test("an auto-commit that commits nothing resolves false, with dryRun forwarded", async () => {
+    const calls: unknown[][] = [];
+    _workflowDeps.git = gitStub(["h1", "h1"]); // HEAD never moves: nothing was committed
+    _workflowDeps.autoCommitIfDirty = async (...args) => {
+      calls.push(args);
+    };
+    expect(await autoCommitTurnEdits(makeStepContext({ projectDir: "/repo", dryRun: true }))).toBe(false);
     expect(calls[0]).toEqual(["/repo", "workflow", "wf-implementer", "US-001", undefined, true]);
   });
 
@@ -584,7 +611,7 @@ describe("autoCommitTurnEdits (US-004)", () => {
   });
 
   test("a failing commit resolves false rather than failing the turn", async () => {
-    _workflowDeps.git = async () => ({ stdout: " M src/a.ts\n", exitCode: 0 });
+    _workflowDeps.git = gitStub(["h1"]);
     _workflowDeps.autoCommitIfDirty = async () => {
       throw new Error("commit failed");
     };
@@ -596,7 +623,7 @@ describe("runImplementerTurn completed turns (US-004 regression)", () => {
   test("a completed implement turn still auto-commits its edits", async () => {
     const seen: WorkflowImplementInput[] = [];
     fakeImplement(doneReply, seen);
-    _workflowDeps.git = async () => ({ stdout: " M src/a.ts\n", exitCode: 0 });
+    _workflowDeps.git = gitStub(["h1", "h2"]);
     _workflowDeps.autoCommitIfDirty = async () => {};
     const out = await runImplementerTurn(makeStepContext({ workflow }), { kind: "implement" });
     expect(out).toEqual({ reply: doneReply, autoCommitted: true });
