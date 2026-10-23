@@ -237,7 +237,7 @@ async function reviewEnvironment(
     _botReviewDeps.readHeadCi({ forge: ref.forge, url: info.url, repoRoot, headSha: info.headSha }),
   ]);
   const { rawThreads, rawComments, ...triaged } = items;
-  const { reviewedIndex, ...recorded } = await readReviewRulings(
+  const { reviewedIndex, settled, ...recorded } = await readReviewRulings(
     {
       ref,
       info,
@@ -274,6 +274,7 @@ async function reviewEnvironment(
       threads: items.threads,
       comments: items.comments,
       earlier: [...items.earlier, ...(recorded.itemEarlier ?? [])],
+      ...(settled !== undefined && { settled }),
       checks: preparation.checks === null ? [] : checkCommands(preparation.checks),
       decisions: input.decisions ?? [],
       staticMode,

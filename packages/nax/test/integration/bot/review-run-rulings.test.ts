@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { assertDefined, makeBotReviewDeps, makeNaxConfig, makeScriptedCallOp, makeTestRuntime } from "@test/helpers";
 import { _botReviewDeps, runBotReview } from "@/bot/review-run";
 import { _reviewStepDeps, runPrReview } from "@/bot/review-step";
-import type { RecordRulingsOutcome, recordPrRulings } from "@/bot/rulings";
+import { _rulingsDeps, type RecordRulingsOutcome, recordPrRulings } from "@/bot/rulings";
 import { NAX_WORKFLOW_PR_MARKER, type PrComment, type PrInfo, type PrThread, withNaxBotMarker } from "@/forge";
 import { getLogger, initLogger, resetLogger } from "@/logger";
 import { botRulingReadOp, type PrReviewVerdict } from "@/operations";
 import { MAX_EARLIER_THREADS } from "@/prompts";
+import { itemKey, renderItemIndex, renderItemOpener } from "@/workflow/item-threads";
 import { _workflowDeps } from "@/workflow/step-context";
 
 const original = { ..._botReviewDeps };
@@ -152,6 +153,48 @@ function openItems(): void {
 }
 
 describe("runBotReview workflow rulings", () => {
+  test("settled AC-16 writer keyword reaches real review operation through item index", async () => {
+    const rulingDeps = { ..._rulingsDeps };
+    const item = { id: "_run:cv1", kind: "cannot-verify" as const, issue: "Live job-log availability" };
+    const key = itemKey(item);
+    threads = [
+      {
+        ...thread("cv", key),
+        comments: [
+          comment("cv", "bot", withNaxBotMarker(renderItemOpener(item), key)),
+          comment("reply", "writer", "verified: ran live calls"),
+        ],
+      },
+    ];
+    _botReviewDeps.listPrComments = async () => [
+      comment("index", "bot", withNaxBotMarker(renderItemIndex({ keys: [key] }), "w-index")),
+    ];
+    _botReviewDeps.recordPrRulings = recordPrRulings;
+    _botReviewDeps.runPrReview = runPrReview;
+    _reviewStepDeps.writeBranchReviewPackage = async () => [];
+    _workflowDeps.appendChangedFileRules = async () => {};
+    const calls: unknown[] = [];
+    _workflowDeps.callOp = makeScriptedCallOp((_op, value) => {
+      calls.push(value);
+      return verdict;
+    });
+    const access = mock(async () => true);
+    Object.assign(_rulingsDeps, {
+      hasWriteAccess: access,
+      readPrInfo: async () => info,
+      replyToThread: async () => {},
+      resolveThread: async () => {},
+    });
+    try {
+      expect((await runBotReview(input)).outcome).toBe("posted");
+      expect(access).toHaveBeenCalled();
+      expect(calls[0]).toMatchObject({
+        prompt: expect.stringMatching(/## Settled rulings[\s\S]*_run:cv1[\s\S]*ran live calls/),
+      });
+    } finally {
+      Object.assign(_rulingsDeps, rulingDeps);
+    }
+  });
   test("AC-1 records once after checkout and before review, using raw reads", async () => {
     openItems();
     await runBotReview(input);

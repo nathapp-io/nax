@@ -3,7 +3,7 @@ import type { ConfiguredModel } from "@/config";
 import type { LinkedIssue, PrComment, PrInfo, PrThread } from "@/forge";
 import { getSafeLogger } from "@/logger";
 import { botPrReviewOp, botPrStaticReviewOp, type PrReviewVerdict, unreadFiles } from "@/operations";
-import { buildBotPrReviewPrompt, MAX_EARLIER_THREADS } from "@/prompts";
+import { type BotSettledRuling, buildBotPrReviewPrompt, MAX_EARLIER_THREADS } from "@/prompts";
 import type { PrStepContext } from "../workflow/branch-step-context";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import { writeBranchReviewPackage } from "../workflow/git";
@@ -16,6 +16,7 @@ import type { BotDecision } from "./decisions";
 export const _reviewStepDeps = { writeBranchReviewPackage };
 
 export interface PrReviewInput {
+  readonly settled?: readonly BotSettledRuling[];
   readonly mergeBase: string;
   readonly rangeBase?: string;
   readonly conversationOnly?: boolean;
@@ -79,6 +80,7 @@ export async function runPrReview(ctx: PrStepContext, input: PrReviewInput): Pro
     threads: input.threads,
     comments: input.comments,
     earlier: input.earlier,
+    settled: input.settled,
     checks: input.checks,
     decisions: input.decisions,
     ...(input.prdPath !== undefined && { prdPath: input.prdPath }),

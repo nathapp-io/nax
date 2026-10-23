@@ -27,10 +27,12 @@ export { type BotChecksExtractPromptInput, buildBotChecksExtractPrompt } from ".
 export { type BotPrFixPromptInput, buildBotPrFixPrompt } from "./builders/bot-pr-fix-builder";
 export {
   type BotPrReviewPromptInput,
+  type BotSettledRuling,
   buildBotPrReviewPrompt,
   buildBotTriageRetry,
   buildUntrustedRequestIssue,
   MAX_EARLIER_THREADS,
+  MAX_SETTLED_RULINGS,
 } from "./builders/bot-pr-review-builder";
 export { buildBotRulingReadPrompt } from "./builders/bot-ruling-builder";
 export type { DecomposePromptInput } from "./builders/decompose-builder";
