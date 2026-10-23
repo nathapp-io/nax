@@ -3,7 +3,7 @@
   "feature": "workflow-input-bundle",
   "branchName": "feat/workflow-input-bundle",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T09:35:34.950Z",
+  "updatedAt": "2026-10-23T09:46:26.109Z",
   "userStories": [
     {
       "id": "US-001",
@@ -484,14 +484,17 @@
         "security"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Layer extraction crosses cached config loading, runtime registry and quality consumers; env-secret filtering and root-only sandbox key pinning require strict security TDD."
+        "reasoning": "Layer extraction crosses cached config loading, runtime registry and quality consumers; env-secret filtering and root-only sandbox key pinning require strict security TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/loader.ts",
@@ -525,7 +528,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8cae2ffa4bf5cd7b4b8b200a6cf5385f1c294cc9"
     },
     {
       "id": "US-008",
