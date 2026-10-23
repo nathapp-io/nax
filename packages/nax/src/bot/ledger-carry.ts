@@ -120,6 +120,7 @@ export async function ledgerStep(env: BotFixEnv, _state: BotFixState): Promise<S
     return { patch, exit: head !== env.info.headSha ? "push" : "skip" };
   } catch (error) {
     warn(env, "Advisor ledger step could not read HEAD", error);
-    return { patch, exit: "skip" };
+    // A successful carry committed a new ledger; an unreadable HEAD must not bypass its push.
+    return { patch, exit: patch.ledgerCarried ? "push" : "skip" };
   }
 }

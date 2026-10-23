@@ -109,12 +109,15 @@ describe("ledgerStep", () => {
     },
   );
 
-  test("AC-16: unreadable HEAD warns and skips", async () => {
+  test.each([true, false])("F1: unreadable HEAD warns; successful carry=%s still reaches push", async (carried) => {
+    if (!carried) files.set(ledgerPath(env.repoRoot, "f"), "old\n");
     _ledgerCarryDeps.readHead = async () => {
       throw new Error("HEAD unreadable");
     };
     const result = await ledgerStep(env, state);
-    expect(result.exit).toBe("skip");
+    expect(result).toEqual({ patch: carried ? { ledgerCarried: true } : {}, exit: carried ? "push" : "skip" });
+    expect(calls.filter(({ args }) => args[0] === "commit")).toHaveLength(carried ? 1 : 0);
+    expect(files.get(ledgerPath(env.checkout.worktree, "f"))).toBe(carried ? "old\nnew\n" : "old\n");
     warned("Advisor ledger step could not read HEAD");
   });
 
