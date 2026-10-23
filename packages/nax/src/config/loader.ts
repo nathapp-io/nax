@@ -28,11 +28,12 @@ import { rejectGlobalOnlyKeys } from "./global-only-keys";
 import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
 import { packageConfigCache } from "./package-config-cache";
+import { loadPackageProfileLayers } from "./package-profile";
 import { findProjectDir, globalConfigDir, PROJECT_NAX_DIR } from "./paths";
 import {
   loadProfile,
-  loadProfileEnv,
   parseProfileList,
+  resolveProfileEnvVars,
   resolveProfileNames,
   sensitiveFilteredProcessEnv,
 } from "./profile";
@@ -184,37 +185,6 @@ async function applyProfileChainLayer(
     });
   }
   return merged;
-}
-
-/**
- * Resolve one profile's $VAR references against its companion .env file.
- * Shared by the root and per-package chains (CFG-3): load the profile's own
- * `.env` (AC 9 — never write to process.env) and resolve references against
- * it. BUG-21 — an unresolved reference throws a NaxError naming the profile
- * and key path; `label` is the profile identity and `extra` carries extra
- * error context for the per-package chain.
- */
-async function resolveProfileEnvVars(
-  name: string,
-  profileDir: string,
-  profileData: Record<string, unknown>,
-  label: string,
-  extra: Record<string, unknown> = {},
-): Promise<Record<string, unknown>> {
-  const profileEnv = await loadProfileEnv(name, profileDir);
-  try {
-    return Object.keys(profileEnv).length > 0
-      ? (resolveEnvVars(profileData, profileEnv) as Record<string, unknown>)
-      : profileData;
-  } catch (err) {
-    const varName = err instanceof UnresolvedEnvVarError ? err.varName : undefined;
-    const path = err instanceof UnresolvedEnvVarError ? err.path.join(".") : undefined;
-    throw new NaxError(
-      `${label} references an undefined environment variable${varName ? ` $${varName}` : ""}${path ? ` at "${path}"` : ""}.`,
-      "PROFILE_ENV_VAR_UNRESOLVED",
-      { stage: "config", profileName: name, ...extra, varName, path, cause: err },
-    );
-  }
 }
 
 /** Layer 4: CLI overrides (highest priority). */
@@ -369,17 +339,27 @@ export function _clearRootConfigCache(): void {
 }
 
 /**
- * Read (but do NOT merge) the per-package override at
- * <repoRoot>/.nax/mono/<packageDir>/config.json. Returns null when absent.
- * The `profile` key (if present) is stripped — package profiles are resolved by
- * loadConfigForWorkdir, not by the runtime registry.
+ * Read the per-package override at <repoRoot>/.nax/mono/<packageDir>/config.json.
+ * Returns null when absent; otherwise deep-merge its named package profiles in
+ * chain order over the overlay fields. The returned override never carries
+ * `profile`. Consumers merge package-eligible fields and pin root-only keys.
  */
 export async function loadPackageOverride(repoRoot: string, packageDir: string): Promise<Partial<NaxConfig> | null> {
   const packageConfigPath = join(repoRoot, PROJECT_NAX_DIR, "mono", packageDir, "config.json");
   const override = await loadJsonFileStrict<Partial<NaxConfig> & { profile?: string }>(packageConfigPath, "config");
   if (!override) return null;
-  const { profile: _profile, ...fields } = rejectGlobalOnlyKeys(override, `package:${packageDir}`);
-  return fields;
+  const { profile, ...fields } = rejectGlobalOnlyKeys(override, `package:${packageDir}`);
+  const { layers } = await loadPackageProfileLayers({
+    profile,
+    repoRoot,
+    packageDir,
+    logger: getLogger(),
+    warnDedupe: createConfigWarnDedupe(),
+  });
+  let merged: Record<string, unknown> = fields;
+  for (const layer of layers) merged = deepMergeConfig<Record<string, unknown>>(merged, layer);
+  const { profile: _profile, ...resolvedFields } = merged;
+  return resolvedFields as Partial<NaxConfig>;
 }
 
 /**
@@ -511,27 +491,17 @@ export async function loadConfigForWorkdir(
 
   // Per-package profile: apply the profile chain overlay on top of merged config.
   // Accepts the comma form; profiles overlay left-to-right (later overrides earlier).
-  const packageChain = parseProfileList(packageProfile as string | string[] | undefined).filter(
-    (name) => name && name !== "default",
-  );
+  const { chain: packageChain, layers } = await loadPackageProfileLayers({
+    profile: packageProfile,
+    repoRoot,
+    packageDir,
+    logger,
+    warnDedupe,
+  });
   let rawMerged = envResolvedMerged;
   if (packageChain.length > 0) {
-    const packageRoot = join(repoRoot, packageDir);
-    for (const name of packageChain) {
-      const profileData = await loadProfile(name, packageRoot);
-      const resolvedProfileData = await resolveProfileEnvVars(
-        name,
-        packageRoot,
-        profileData,
-        `Per-package profile "${name}" (${packageDir})`,
-        { packageDir },
-      );
-      // #1620: same chain as the root profile layer (BUG-51).
-      const shimmedProfileData = applyConfigCompatShims(resolvedProfileData, logger, warnDedupe);
-      // nax#1990 — same per-layer scoping as the package overlay above: run the
-      // check on the profile's own data, never the accumulating `rawMerged`.
-      warnQualityCommandChains(shimmedProfileData, warnDedupe.warn);
-      rawMerged = deepMergeConfig<Record<string, unknown>>(rawMerged, shimmedProfileData);
+    for (const layer of layers) {
+      rawMerged = deepMergeConfig<Record<string, unknown>>(rawMerged, layer);
     }
     rawMerged.profile = packageChain.join("+");
     rawMerged.profileChain = packageChain;

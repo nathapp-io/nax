@@ -7,7 +7,7 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { NaxError } from "../errors";
-import { parseDotenv } from "./dotenv";
+import { parseDotenv, resolveEnvVars, UnresolvedEnvVarError } from "./dotenv";
 import { rejectGlobalOnlyKeys } from "./global-only-keys";
 import { deepMergeConfig } from "./merger";
 import { globalConfigDir, projectConfigDir } from "./paths";
@@ -324,4 +324,35 @@ export async function listProfiles(projectRoot: string): Promise<ProfileEntry[]>
   }
 
   return entries;
+}
+
+/**
+ * Resolve one profile's $VAR references against its companion .env file.
+ * Shared by the root and per-package chains (CFG-3): load the profile's own
+ * `.env` (AC 9 — never write to process.env) and resolve references against
+ * it. BUG-21 — an unresolved reference throws a NaxError naming the profile
+ * and key path; `label` is the profile identity and `extra` carries extra
+ * error context for the per-package chain.
+ */
+export async function resolveProfileEnvVars(
+  name: string,
+  profileDir: string,
+  profileData: Record<string, unknown>,
+  label: string,
+  extra: Record<string, unknown> = {},
+): Promise<Record<string, unknown>> {
+  const profileEnv = await loadProfileEnv(name, profileDir);
+  try {
+    return Object.keys(profileEnv).length > 0
+      ? (resolveEnvVars(profileData, profileEnv) as Record<string, unknown>)
+      : profileData;
+  } catch (err) {
+    const varName = err instanceof UnresolvedEnvVarError ? err.varName : undefined;
+    const path = err instanceof UnresolvedEnvVarError ? err.path.join(".") : undefined;
+    throw new NaxError(
+      `${label} references an undefined environment variable${varName ? ` $${varName}` : ""}${path ? ` at "${path}"` : ""}.`,
+      "PROFILE_ENV_VAR_UNRESOLVED",
+      { stage: "config", profileName: name, ...extra, varName, path, cause: err },
+    );
+  }
 }
