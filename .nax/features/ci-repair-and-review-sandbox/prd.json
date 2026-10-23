@@ -3,7 +3,7 @@
   "feature": "ci-repair-and-review-sandbox",
   "branchName": "feat/ci-repair-and-review-sandbox",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T16:59:36.782Z",
+  "updatedAt": "2026-10-23T17:17:10.279Z",
   "userStories": [
     {
       "id": "US-001",
@@ -232,14 +232,17 @@
         "US-002",
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module prompt dispatch, session input forwarding and cycle-free extraction under a hard file-size limit; session-dispatch changes trigger the security override."
+        "reasoning": "Cross-module prompt dispatch, session input forwarding and cycle-free extraction under a hard file-size limit; session-dispatch changes trigger the security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/workflow-branch-builder.ts",
@@ -265,6 +268,7 @@
       "priorErrors": [],
       "priorFailures": [],
       "storyPoints": 1,
+      "storyGitRef": "dfd3467aef2eeb1396d84a74fde94e8814e05138",
       "outOfScope": [
         "US-004 only: the moves to `src/workflow/feature-step-helpers.ts` and `src/workflow/ci-repair-steps.ts` are verified by `bun run typecheck`, `bun run check:import-cycles` and `bun run check:file-sizes` (run from `packages/nax`), not by an AC."
       ]
