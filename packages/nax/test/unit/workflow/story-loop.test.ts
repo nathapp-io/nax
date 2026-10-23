@@ -516,6 +516,18 @@ describe("turnLabel (US-001)", () => {
   });
 });
 
+describe("turnLabel continue and report turns (US-004)", () => {
+  test("a continue turn is labelled as the implementer continuing", () => {
+    expect(turnLabel({ kind: "continue", limit: "implement", stepUps: 0, attempt: 1, maxAttempts: 1 })).toBe(
+      "implementer continue",
+    );
+  });
+
+  test("a report turn is labelled as the implementer reporting", () => {
+    expect(turnLabel({ kind: "report", stepUps: 0 })).toBe("implementer report");
+  });
+});
+
 describe("US-002 persisted fix base", () => {
   test("AC-4 persists before fix and clears after re-review", async () => {
     const h = harness({ review: [failing()] });

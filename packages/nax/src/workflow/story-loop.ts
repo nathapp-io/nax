@@ -22,6 +22,7 @@ import type {
   GateName,
   GateRunResult,
   GateState,
+  ImplementerStatus,
   ReReviewVerdict,
   StoryReviewVerdict,
   WorkflowEndState,
@@ -57,6 +58,19 @@ export interface StoryLoopSteps {
    * no-work guard never fires for a caller that has not wired it.
    */
   workProduced?(): Promise<boolean>;
+  /**
+   * US-005: the files changed since the story base, committed or not — what a continue turn tells
+   * the still-warm session it already did. Throws on a git error; the caller reads a throw as
+   * "the list could not be read" and says so in the prompt.
+   */
+  workSinceBase?(): Promise<string[]>;
+  /**
+   * US-005: the best-effort auto-commit of whatever the last turn left behind, for the interrupt
+   * fallback once the continue tries are spent (US-007). True only when a commit was attempted.
+   */
+  autoCommitDirty?(): Promise<boolean>;
+  /** US-005: does the story's `report.md` exist yet? The report check runs for every story (US-008). */
+  reportExists?(): Promise<boolean>;
   /** The model a step will run on, for its start line (nax#2491 P6). Optional: absent names none. */
   modelFor?(step: "implementer" | "story-review" | "re-review", turn?: ImplementTurn): StepModel | undefined;
 }
@@ -72,6 +86,12 @@ export interface StoryLoopEnv {
   readonly sink: StoryLoopSink;
   /** A prior run's unfinished record (spec §10 resume); null for a fresh story. */
   readonly resume: WorkflowStoryRecord | null;
+  /**
+   * US-005: the limits an interrupted turn continues under — the attempt count from
+   * `workflow.interruptRetry.maxAttempts` and the two step limits it may hit. An env built without
+   * it reads as `WORKFLOW_DEFAULTS` (1 attempt, 3,600,000 ms for each limit).
+   */
+  readonly interrupt?: { readonly maxAttempts: number; readonly implementMs: number; readonly fixMs: number };
 }
 export interface StoryLoopOutcome {
   readonly state: WorkflowEndState;
@@ -108,6 +128,13 @@ export interface StoryLoopState extends GraphState<StoryNode> {
   readonly rulings: readonly WorkflowRuling[];
   /** Set by `implement` when the no-work ladder closes the story; `close` uses it instead of `deriveEndState`. */
   readonly closeAs?: { readonly state: WorkflowEndState; readonly reason: string };
+  /**
+   * US-008: the reply and step-up the last absorbed turn ended with, and whether it was the interrupt
+   * fallback. The evaluate pass reads it to decide whether the story is owed one report turn.
+   */
+  readonly lastTurn?: { readonly status: ImplementerStatus; readonly fallback: boolean; readonly stepUps: number };
+  /** US-008: true once the story has spent its one report turn, so it never spends a second. */
+  readonly reportTurnRan: boolean;
   /** Set by `close`; what `runStoryLoop` resolves to. */
   readonly outcome?: StoryLoopOutcome;
 }

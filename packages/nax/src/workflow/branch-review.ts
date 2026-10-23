@@ -12,6 +12,7 @@ import {
 } from "@/prompts";
 import type { BranchStepContext } from "./branch-step-context";
 import { writeBranchReviewPackage, writeReviewPackage } from "./git";
+import { workflowStoryDir } from "./paths";
 import { reviewRequiredFiles } from "./review-coverage";
 import { _workflowDeps } from "./step-context";
 import { type ReviewOutcome, underReviewLimit } from "./story-review";
@@ -22,6 +23,27 @@ export type BranchReviewFacts = Pick<
   BranchReviewPromptInput,
   "stories" | "minors" | "parked" | "cannotVerify" | "gateFindings" | "repoGates"
 >;
+
+/** The type `runBranchReview` inventories: each listed story's report and whether it is on disk. */
+type StoryReport = NonNullable<BranchReviewPromptInput["storyReports"]>[number];
+
+/**
+ * US-009: every story that kept a run dir, with the `report.md` it should hold. The per-story run
+ * dir, not this run's, so a report written by an earlier run still reads as present.
+ *
+ * A `fileExists` throw reads as present: an unreadable report is not a missing one, and telling
+ * the reviewer it is missing is exactly the stale claim this inventory exists to prevent.
+ */
+async function storyReportInventory(stories: BranchReviewPromptInput["stories"]): Promise<StoryReport[]> {
+  const reports: StoryReport[] = [];
+  for (const s of stories) {
+    if (!s.runDir) continue;
+    const path = join(workflowStoryDir(s.runDir, s.id), "report.md");
+    const present = await _workflowDeps.fileExists(path).catch(() => true);
+    reports.push({ storyId: s.id, path, present });
+  }
+  return reports;
+}
 
 /** Feature artifacts are best effort: a write failure is logged and the step goes on. */
 export async function writeFeatureArtifact(fc: BranchStepContext, name: string, value: unknown): Promise<void> {
@@ -83,6 +105,8 @@ export async function runBranchReview(
 ): Promise<ReviewOutcome<BranchReviewVerdict>> {
   const packagePath = join(fc.runDir, "package-branch.diff");
   const range = `${input.seed}..HEAD`;
+  // US-009: the reviewer cannot look for the reports, so nax takes the inventory before it asks.
+  const storyReports = await storyReportInventory(input.facts.stories);
   const prompt = buildWorkflowBranchReviewPrompt({
     ...(input.specPath ? { specPath: input.specPath } : {}),
     ...(fc.prdPath !== undefined ? { prdPath: fc.prdPath } : {}),
@@ -90,6 +114,7 @@ export async function runBranchReview(
     packagePath,
     range,
     ...input.facts,
+    ...(storyReports.length > 0 ? { storyReports } : {}),
   });
   // The package writer's callback assigns this before the op runs; a throw from either step is a
   // skipped review, so the op never sees a half-built set.

@@ -22,7 +22,7 @@ export const STORY_GRAPH: StepGraph<StoryLoopState, StoryLoopEnv, StoryNode> = d
   nodes: {
     implement: {
       kind: "agent",
-      produces: ["pendingSession", "nextId", "questions", "concerns", "closeAs"],
+      produces: ["pendingSession", "nextId", "questions", "concerns", "closeAs", "lastTurn"],
       exits: ["worked", "no-work"],
       transitions: [
         { on: "worked", to: "evaluate" },
@@ -44,6 +44,7 @@ export const STORY_GRAPH: StepGraph<StoryLoopState, StoryLoopEnv, StoryNode> = d
         "fixBase",
         "open",
         "pendingSession",
+        "reportTurnRan",
       ],
       exits: ["clean", "capped", "open"],
       transitions: [
@@ -61,7 +62,16 @@ export const STORY_GRAPH: StepGraph<StoryLoopState, StoryLoopEnv, StoryNode> = d
     },
     fix: {
       kind: "agent",
-      produces: ["round", "firstAfterResume", "fixBase", "pendingSession", "nextId", "questions", "concerns"],
+      produces: [
+        "round",
+        "firstAfterResume",
+        "fixBase",
+        "pendingSession",
+        "nextId",
+        "questions",
+        "concerns",
+        "lastTurn",
+      ],
       transitions: [{ to: "evaluate" }],
       run: fixStep,
     },

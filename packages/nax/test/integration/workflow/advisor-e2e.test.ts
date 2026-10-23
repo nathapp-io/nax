@@ -96,6 +96,15 @@ interface AgentScript {
   readonly review: unknown;
 }
 
+/**
+ * US-008: every implementer turn writes the story's report, so the report check finds it and the
+ * story sends no report turn — the prompt counts below pin that invariant.
+ */
+async function writeTurnReport(input: unknown): Promise<void> {
+  if (typeof input !== "object" || input === null || !("reportPath" in input)) return;
+  await Bun.write(String(input.reportPath), "# report\n\nAC-1: done\n");
+}
+
 function fakeWorkflowAgent(repo: string, script: AgentScript): string[] {
   const prompts: string[] = [];
   let turns = 0;
@@ -105,6 +114,7 @@ function fakeWorkflowAgent(repo: string, script: AgentScript): string[] {
       const prompt = typeof input === "object" && input !== null && "prompt" in input ? String(input.prompt) : "";
       prompts.push(prompt);
       await Bun.write(join(repo, `impl-${turns}.ts`), "export const x = 1;\n");
+      await writeTurnReport(input);
       await sh(repo, "git", "add", ".");
       await sh(repo, "git", "commit", "-qm", "feat: work");
       return { commits: [], testSummary: "1 pass", interrupted: false, ...script.implementer(turns, prompt) };

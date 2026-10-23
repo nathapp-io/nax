@@ -100,9 +100,17 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "workflow.timeouts": "Timeouts for workflow mode phases",
   "workflow.timeouts.implementMs": "Timeout for the implement phase in milliseconds (default 3600000)",
   "workflow.timeouts.fixMs": "Timeout for each fix phase in milliseconds (default 3600000)",
+  "workflow.timeouts.reportMs":
+    "Timeout for the turn that asks a warm session to write its missing report.md, in milliseconds (default 600000)",
   "workflow.timeouts.reviewMs": "Timeout for each review phase in milliseconds (default 1800000)",
   "workflow.timeouts.ciWaitMs": "Max time to wait for CI in milliseconds (default 1200000)",
   "workflow.timeouts.ciPollMs": "Interval between CI status polls in milliseconds (default 30000)",
+  "workflow.interruptRetry":
+    "What nax does when an implementer turn hits its step limit: it sends a continue turn on the same warm session, so the work already on disk is not lost",
+  "workflow.interruptRetry.maxAttempts":
+    "Max continue turns after an interrupted implementer turn (default 1); 0 turns the continue off and nax falls back to auto-committing the dirty tree",
+  "workflow.interruptRetry.budgetMultiplier":
+    "Budget of each continue turn as a fraction of the limit that was hit, greater than 0 and at most 1 (default 0.5)",
   "advisor.fallbackModels":
     "Models tried in order after advisor.model fails (quota, error, timeout, unparseable); default is none",
 

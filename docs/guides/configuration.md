@@ -60,7 +60,7 @@ Some blocks are restricted by layer:
 | `execution` | `mode: "workflow"`, `maxIterations: 20`, `costLimit: 30`, `sessionTimeoutSeconds: 3600`, `storyIsolation: "shared"`, `permissionProfile: "unrestricted"` | Run loop, rectification, regression gate, permissions, sandbox. `mode` selects the run loop — [below](#execution-mode) |
 | `auth` | unset | Global-only credential source for the `native` agent (`source`: `file`/`exec`, `onChange`: `warn`/`refuse`). See [CLI reference](cli-reference.md) (`nax auth`) |
 | `advisor` | `enabled: false`, every caller off, `model: "powerful"`, `memory: "stateless"` | Advisor rules on judgment calls instead of stopping the run — [below](#advisor) |
-| `workflow` | `publish: "pr"`, `maxFixRounds: 5`, `maxBranchFixRounds: 2`, `finalGateRepairRounds: 1`, `preflight: true` | Workflow-mode loop, fix rounds, publish and CI wait — [below](#workflow) |
+| `workflow` | `publish: "pr"`, `maxFixRounds: 5`, `maxBranchFixRounds: 2`, `finalGateRepairRounds: 1`, `preflight: true`, `interruptRetry: { maxAttempts: 1, budgetMultiplier: 0.5 }` | Workflow-mode loop, fix rounds, step-limit continues, publish and CI wait — [below](#workflow) |
 | `quality` | `commands: {}`, `autofix.enabled: true`, `shell: "/bin/sh"`, `testing.hermetic: true` | Project lint/typecheck/test commands and gates |
 | `tdd` | `strategy: "auto"`, `sessionTiers` fast/fast | TDD strategy — [options](#tdd-strategy-options) |
 | `review` | `enabled: true`, `checks: ["typecheck", "lint"]`, `pluginMode: "observational"` | Review checks (`typecheck`, `lint`, `test`, `build`, `semantic`, `adversarial`) |
@@ -1071,9 +1071,14 @@ The `workflow` block configures workflow mode (`execution.mode: "workflow"`, the
     "finalGateRepairRounds": 1,
     "preflight": true,
     "publish": "pr",
+    "interruptRetry": {
+      "maxAttempts": 1,
+      "budgetMultiplier": 0.5
+    },
     "timeouts": {
       "implementMs": 3600000,
       "fixMs": 3600000,
+      "reportMs": 600000,
       "reviewMs": 1800000,
       "ciWaitMs": 1200000,
       "ciPollMs": 30000
@@ -1091,9 +1096,12 @@ The `workflow` block configures workflow mode (`execution.mode: "workflow"`, the
 | `maxBranchFixRounds` | `2` | Max branch-fix rounds after the feature's branch review. `0` skips the branch fix |
 | `finalGateRepairRounds` | `1` | Max repair rounds when the final repo gates turn red after a branch fix. `0` publishes the red gates without repair |
 | `preflight` | `true` | Run the workflow preflight checks before implementing |
+| `interruptRetry.maxAttempts` | `1` | Max continue turns after an implementer turn hits its step limit (minimum 0). `0` turns the continue off |
+| `interruptRetry.budgetMultiplier` | `0.5` | Each continue turn's budget as a fraction of the limit that was hit; greater than 0 and at most 1 |
 | `publish` | `"pr"` | `pr`: push, open or promote the PR, and wait for CI. `push`: push and wait for CI, but open no PR. `none`: push nothing and stay local. nax never merges |
 | `timeouts.implementMs` | `3600000` | Timeout for the implement phase |
 | `timeouts.fixMs` | `3600000` | Timeout for each fix phase |
+| `timeouts.reportMs` | `600000` | Timeout for the turn that asks a warm session to write a missing `report.md` |
 | `timeouts.reviewMs` | `1800000` | Timeout for each review phase |
 | `timeouts.ciWaitMs` | `1200000` | Max time to wait for CI |
 | `timeouts.ciPollMs` | `30000` | Interval between CI status polls |

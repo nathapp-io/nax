@@ -2,14 +2,16 @@ import { describe, expect, test } from "bun:test";
 import {
   buildWorkflowAnswerPrompt,
   buildWorkflowBrief,
+  buildWorkflowContinuePrompt,
   buildWorkflowFixPrompt,
   buildWorkflowImplementPrompt,
+  buildWorkflowReportPrompt,
   buildWorkflowReReviewPrompt,
   buildWorkflowRestartPrompt,
   buildWorkflowStoryReviewPrompt,
   WORKFLOW_REPLY_CONTRACT,
 } from "@/prompts";
-import { renderWorkflowFindings } from "@/prompts/builders/workflow-implementer-builder";
+import { renderWorkflowFindings, WORKFLOW_ARTIFACTS_RULE } from "@/prompts/builders/workflow-implementer-builder";
 
 const brief = {
   storyId: "US-003",
@@ -270,5 +272,122 @@ ${WORKFLOW_REPLY_CONTRACT}`);
     expect(text).toContain('"residual": {"issue": "...", "suggestion": "...", "file": "path", "line": 0}');
     expect(text).toContain("describe only what remains");
     expect(text).not.toContain("ADDRESSED or NOT_ADDRESSED");
+  });
+});
+
+// US-003: the two warm-session prompts the workflow sends around an interrupted turn.
+const continueInput = {
+  storyId: "US-005",
+  reportPath: "/r/report.md",
+  limitMinutes: 60,
+  budgetMinutes: 30,
+  attempt: 1,
+  maxAttempts: 1,
+  changedFiles: ["src/a.ts"],
+};
+
+describe("buildWorkflowContinuePrompt", () => {
+  test("AC-9: opens with the limit, the story, and the attempt's budget", () => {
+    const text = buildWorkflowContinuePrompt(continueInput);
+    expect(
+      text.startsWith(
+        "You were stopped at the 60-minute step limit before you finished story US-005. This is continue attempt 1 of 1; you have up to 30 minutes.",
+      ),
+    ).toBe(true);
+  });
+
+  test("AC-10: lists the changed files under their heading", () => {
+    const text = buildWorkflowContinuePrompt({ ...continueInput, changedFiles: ["src/a.ts", "test/a.test.ts"] });
+    expect(text).toContain("Files changed since the story base:\n- src/a.ts\n- test/a.test.ts");
+  });
+
+  test("AC-11: an empty list says nothing changed", () => {
+    expect(buildWorkflowContinuePrompt({ ...continueInput, changedFiles: [] })).toContain(
+      "No files have changed since the story base.",
+    );
+  });
+
+  test("AC-12: an unreadable list tells the agent to check git status itself", () => {
+    expect(buildWorkflowContinuePrompt({ ...continueInput, changedFiles: undefined })).toContain(
+      "The changed-file list could not be read; check git status yourself.",
+    );
+  });
+
+  test("AC-13: forbids redoing the work already on disk", () => {
+    expect(buildWorkflowContinuePrompt(continueInput)).toContain(
+      "Do not revert, delete or redo work that is already on disk.",
+    );
+  });
+
+  test("AC-14: names the report path and the finishing steps, including the DONE_WITH_CONCERNS escape", () => {
+    const text = buildWorkflowContinuePrompt(continueInput);
+    expect(text).toContain(
+      "When you are done, commit your work, write /r/report.md, and end your reply with the json status block.",
+    );
+    expect(text).toContain(
+      "If you cannot finish in this turn, commit what you have, write the report marking each unfinished acceptance criterion, and reply DONE_WITH_CONCERNS.",
+    );
+  });
+
+  test("AC-15: ends with the reply contract", () => {
+    expect(buildWorkflowContinuePrompt(continueInput).endsWith(WORKFLOW_REPLY_CONTRACT)).toBe(true);
+  });
+
+  test("the blocks appear in the order the story specifies", () => {
+    const text = buildWorkflowContinuePrompt(continueInput);
+    const at = (needle: string) => {
+      const index = text.indexOf(needle);
+      expect(index).toBeGreaterThan(-1);
+      return index;
+    };
+    expect(at("You were stopped at the 60-minute step limit")).toBe(0);
+    expect(at("Files changed since the story base:")).toBeLessThan(at("Continue from where you stopped."));
+    expect(at("Continue from where you stopped.")).toBeLessThan(at("When you are done, commit your work"));
+    expect(at("When you are done, commit your work")).toBeLessThan(at(WORKFLOW_REPLY_CONTRACT));
+  });
+
+  test("it does not resend the brief: the warm session already holds it", () => {
+    const text = buildWorkflowContinuePrompt(continueInput);
+    expect(text).not.toContain("Read the brief");
+    expect(text).not.toContain("# Brief:");
+    expect(text).not.toContain("Acceptance criteria");
+  });
+});
+
+describe("buildWorkflowReportPrompt", () => {
+  const reportInput = { storyId: "US-005", reportPath: "/r/report.md" };
+
+  test("AC-16: opens by naming the missing report", () => {
+    expect(
+      buildWorkflowReportPrompt(reportInput).startsWith(
+        "Your report for story US-005 is missing: /r/report.md does not exist.",
+      ),
+    ).toBe(true);
+  });
+
+  test("AC-17: forbids touching any other file", () => {
+    expect(buildWorkflowReportPrompt(reportInput)).toContain("Do not change any other file.");
+  });
+
+  test("AC-18: carries the artifacts rule and ends with the reply contract", () => {
+    const text = buildWorkflowReportPrompt(reportInput);
+    expect(text).toContain(WORKFLOW_ARTIFACTS_RULE);
+    expect(text.endsWith(WORKFLOW_REPLY_CONTRACT)).toBe(true);
+    expect(text.indexOf(WORKFLOW_ARTIFACTS_RULE)).toBeLessThan(text.indexOf(WORKFLOW_REPLY_CONTRACT));
+  });
+
+  test("names the four report sections the implement prompt asked for", () => {
+    expect(buildWorkflowReportPrompt(reportInput)).toContain(
+      "What was built, TDD evidence, Files changed, Decisions & assumptions",
+    );
+  });
+});
+
+describe("the interrupted-turn prompts are public", () => {
+  test("AC-19: both builders are importable from the prompts barrel and return strings", () => {
+    expect(typeof buildWorkflowContinuePrompt).toBe("function");
+    expect(typeof buildWorkflowReportPrompt).toBe("function");
+    expect(buildWorkflowContinuePrompt(continueInput)).toBeString();
+    expect(buildWorkflowReportPrompt({ storyId: "US-005", reportPath: "/r/report.md" })).toBeString();
   });
 });

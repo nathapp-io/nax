@@ -16,9 +16,21 @@ export interface WorkflowModelsConfig {
 export interface WorkflowTimeoutsConfig {
   implementMs: number;
   fixMs: number;
+  /** The turn that asks a warm session to write its missing `report.md` (US-003). */
+  reportMs: number;
   reviewMs: number;
   ciWaitMs: number;
   ciPollMs: number;
+}
+
+/**
+ * US-003: what happens when an implementer turn hits its step limit. nax sends a continue turn on
+ * the same warm session, `budgetMultiplier` of the limit that was hit, up to `maxAttempts` times;
+ * `maxAttempts: 0` turns the continue off.
+ */
+export interface WorkflowInterruptRetryConfig {
+  maxAttempts: number;
+  budgetMultiplier: number;
 }
 
 /** What `publish()` does after the final gates: `pr` opens or promotes a PR, `push` only pushes, `none` stays local. */
@@ -43,6 +55,8 @@ export interface WorkflowConfig {
   preflight: boolean;
   /** What publishing does after the final gates. Optional so a hand-built config reads as the `pr` default. */
   publish?: WorkflowPublishMode;
+  /** US-003: the continue budget for an implementer turn that hit its step limit. */
+  interruptRetry: WorkflowInterruptRetryConfig;
   timeouts: WorkflowTimeoutsConfig;
 }
 

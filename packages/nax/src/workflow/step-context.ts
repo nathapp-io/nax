@@ -72,5 +72,7 @@ export const _workflowDeps = {
   appendChangedFileRules,
   /** US-007: the run's `context.projectContext.file`, verbatim (`undefined` when unconfigured). */
   loadProjectContextOverride,
+  /** US-009: whether a story report is on disk, for the branch review's report inventory. */
+  fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   now: (): number => Date.now(),
 };

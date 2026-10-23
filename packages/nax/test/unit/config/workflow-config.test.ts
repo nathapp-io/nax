@@ -16,12 +16,14 @@ describe("workflow config", () => {
       ciRepairRounds: 1,
       preflight: true,
       publish: "pr",
+      interruptRetry: { maxAttempts: 1, budgetMultiplier: 0.5 },
       timeouts: {
         implementMs: 3_600_000,
         fixMs: 3_600_000,
         reviewMs: 1_800_000,
         ciWaitMs: 1_200_000,
         ciPollMs: 30_000,
+        reportMs: 600_000,
       },
     });
   });
@@ -116,5 +118,59 @@ describe("workflow config", () => {
     expect(out).toMatchObject({ execution: { mode: "workflow" }, workflow: { maxFixRounds: 3 } });
     expect(warnings.some((w) => w.includes("execution.mode is root-only"))).toBe(true);
     expect(warnings.some((w) => w.includes("workflow is root-only"))).toBe(true);
+  });
+});
+
+// US-003: the interrupt-continue budgets and the report turn's timeout.
+describe("workflow.interruptRetry and workflow.timeouts.reportMs", () => {
+  test("AC-1: interruptRetry defaults to one attempt at half the limit that was hit", () => {
+    expect(NaxConfigSchema.parse({}).workflow.interruptRetry).toEqual({ maxAttempts: 1, budgetMultiplier: 0.5 });
+  });
+
+  test("AC-2: timeouts.reportMs defaults to ten minutes", () => {
+    expect(NaxConfigSchema.parse({}).workflow.timeouts.reportMs).toBe(600_000);
+  });
+
+  test("AC-3: interruptRetry.maxAttempts: 0 is accepted (it turns the continue off)", () => {
+    const parsed = NaxConfigSchema.safeParse({ workflow: { interruptRetry: { maxAttempts: 0 } } });
+    if (!parsed.success) throw new Error(`maxAttempts: 0 should parse: ${parsed.error.message}`);
+    expect(parsed.data.workflow.interruptRetry.maxAttempts).toBe(0);
+  });
+
+  test("AC-4: interruptRetry.maxAttempts rejects a negative count", () => {
+    expect(NaxConfigSchema.safeParse({ workflow: { interruptRetry: { maxAttempts: -1 } } }).success).toBe(false);
+  });
+
+  test("AC-5: interruptRetry.maxAttempts rejects a fraction", () => {
+    expect(NaxConfigSchema.safeParse({ workflow: { interruptRetry: { maxAttempts: 1.5 } } }).success).toBe(false);
+  });
+
+  test("AC-6: interruptRetry.budgetMultiplier rejects 0", () => {
+    expect(NaxConfigSchema.safeParse({ workflow: { interruptRetry: { budgetMultiplier: 0 } } }).success).toBe(false);
+  });
+
+  test("AC-7: interruptRetry.budgetMultiplier rejects more than 1", () => {
+    expect(NaxConfigSchema.safeParse({ workflow: { interruptRetry: { budgetMultiplier: 1.5 } } }).success).toBe(false);
+  });
+
+  test("AC-8: timeouts.reportMs rejects 0", () => {
+    expect(NaxConfigSchema.safeParse({ workflow: { timeouts: { reportMs: 0 } } }).success).toBe(false);
+  });
+
+  test("a partial interruptRetry keeps the other default", () => {
+    const parsed = NaxConfigSchema.parse({ workflow: { interruptRetry: { maxAttempts: 3 } } });
+    expect(parsed.workflow.interruptRetry).toEqual({ maxAttempts: 3, budgetMultiplier: 0.5 });
+  });
+
+  test("every new key has a non-empty CLI description", () => {
+    for (const key of [
+      "workflow.interruptRetry",
+      "workflow.interruptRetry.maxAttempts",
+      "workflow.interruptRetry.budgetMultiplier",
+      "workflow.timeouts.reportMs",
+    ]) {
+      expect(FIELD_DESCRIPTIONS[key]).toBeString();
+      expect(FIELD_DESCRIPTIONS[key].trim().length).toBeGreaterThan(0);
+    }
   });
 });

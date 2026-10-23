@@ -59,13 +59,23 @@ async function setup() {
   return { repo, out, ctx };
 }
 
+/**
+ * US-008: every implementer turn writes the story's report, so the report check finds it and the
+ * story sends no report turn — the invariant the operation counts below pin.
+ */
+async function writeTurnReport(input: unknown): Promise<void> {
+  if (typeof input !== "object" || input === null || !("reportPath" in input)) return;
+  await Bun.write(String(input.reportPath), "# report\n\nAC-1: done\n");
+}
+
 function fakeAgent(repo: string, reviews: unknown[]): string[] {
   const queue = [...reviews];
   const seen: string[] = [];
-  _workflowDeps.callOp = makeScriptedCallOp(async (op) => {
+  _workflowDeps.callOp = makeScriptedCallOp(async (op, input) => {
     seen.push(op.name);
     if (op.name === workflowImplementOp.name) {
       await Bun.write(join(repo, `impl-${seen.length}.ts`), "export const x = 1;\n");
+      await writeTurnReport(input);
       await sh(repo, "git", "add", ".");
       await sh(repo, "git", "commit", "-qm", "feat: work");
       return { status: "DONE", commits: [], testSummary: "1 pass", interrupted: false };

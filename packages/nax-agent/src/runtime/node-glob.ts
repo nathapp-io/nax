@@ -1,11 +1,33 @@
-/** Node glob normalized to the agent contract and Bun's symlink traversal. */
+/**
+ * Node glob normalized to the agent contract and Bun's symlink traversal.
+ *
+ * Every dot segment hides a result (ruling D21), with one exemption: a pattern
+ * whose first segment is literally `.nax` may surface results whose first
+ * result-relative segment is `.nax` (nax's own artifacts live there). Dot
+ * segments below `.nax/` stay hidden, and so does every other hidden path.
+ */
 import { type Dirent, globSync, lstatSync, statSync } from "node:fs";
 import { glob } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import type { AgentGlobOptions } from "./types.ts";
 
+const NAX_DIR = ".nax";
+
+/** True when the pattern's first `/` segment is exactly `.nax`: no glob metacharacter, no escape. */
+function exemptsNaxDir(pattern: string): boolean {
+  return pattern.replace(/^(?:\.\/)+/, "").split("/")[0] === NAX_DIR;
+}
+
+/** Whether a result-relative path has a hidden dot segment, ignoring a leading `.nax` the pattern asked for. */
+function hasHiddenSegment(path: string, naxExempt: boolean): boolean {
+  return path
+    .split(sep)
+    .some((segment, index) => segment.startsWith(".") && !(naxExempt && index === 0 && segment === NAX_DIR));
+}
+
 function scanOptions(pattern: string, opts: AgentGlobOptions) {
   const cwd = resolve(opts.cwd);
+  const naxExempt = exemptsNaxDir(pattern);
   if (!statSync(cwd).isDirectory()) {
     throw Object.assign(new Error(`ENOTDIR: not a directory, glob '${cwd}'`), { code: "ENOTDIR", path: cwd });
   }
@@ -24,7 +46,7 @@ function scanOptions(pattern: string, opts: AgentGlobOptions) {
   };
   const exclude = (entry: Dirent): boolean => {
     const path = relative(cwd, resolve(cwd, entry.parentPath, entry.name));
-    if (path.split(sep).some((segment) => segment.startsWith("."))) return true;
+    if (hasHiddenSegment(path, naxExempt)) return true;
     // Node can optimize brace/class segments without reporting their symlink
     // entries. Check lexical ancestors too, allowing only the literal prefix.
     const parts = path.split(sep);
@@ -48,7 +70,7 @@ function filePath(entry: Dirent, cwd: string, absolute: boolean, pattern: string
   )
     return null;
   const path = relative(cwd, full);
-  if (path.split(sep).some((segment) => segment.startsWith("."))) return null;
+  if (hasHiddenSegment(path, exemptsNaxDir(pattern))) return null;
   const dotPrefix = pattern.match(/^(?:\.\/)+/)?.[0] ?? "";
   return absolute ? resolve(full) : `${dotPrefix}${path}`;
 }

@@ -52,6 +52,24 @@ export async function storyWorkEvidence(sc: StepContext): Promise<boolean> {
 }
 
 /**
+ * US-005: the files the story has touched since its base, committed or not — what a continue turn
+ * tells the still-warm session it already did (spec § US-005). The union of the two answers, in
+ * that order and deduplicated, with the paths nax owns removed: a continue prompt that listed the
+ * ledger or a scratch file would invite the agent to "fix" nax's own artifacts.
+ *
+ * Throws on a git error like `storyWorkEvidence` (nax#2550): a continue prompt that says "nothing
+ * changed" because git failed is worse than making the caller fall back to "check git yourself"
+ * (`ImplementTurn.changedFiles` undefined).
+ */
+export async function storyChangedFiles(sc: StepContext): Promise<string[]> {
+  const [changed, uncommitted] = await Promise.all([
+    changedFilesSince(sc.projectDir, sc.base),
+    listUncommitted(sc.projectDir),
+  ]);
+  return [...new Set([...changed, ...uncommitted].filter((path) => !isNaxOwned(path)))];
+}
+
+/**
  * Fail-open, deliberately: an absent check means "work produced", and a throwing one (a git
  * failure, an unreadable report path) does too. A broken check must never close a story that did
  * work, so the ladder's worst failure is doing what nax did before it existed.

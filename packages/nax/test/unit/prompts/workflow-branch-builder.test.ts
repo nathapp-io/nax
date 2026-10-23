@@ -153,6 +153,36 @@ describe("buildWorkflowBranchReviewPrompt", () => {
       "Say a tool or service is unavailable only together with the command you ran and the error it returned; otherwise say what you did not try.",
     );
   });
+
+  // US-009: the reviewer cannot look for the story reports, so nax lists them with their state.
+  const reports = (list: { storyId: string; path: string; present: boolean }[] | undefined) =>
+    buildWorkflowBranchReviewPrompt({ ...gateBase, ...(list !== undefined ? { storyReports: list } : {}) });
+
+  test("lists a present story report under a ## Story reports section right after ## Stories (AC-1)", () => {
+    const text = reports([{ storyId: "US-001", path: "/r/US-001/report.md", present: true }]);
+    expect(text).toContain("## Story reports");
+    expect(text).toContain("- US-001: /r/US-001/report.md");
+    expect(text.indexOf("## Story reports")).toBeGreaterThan(text.indexOf("## Stories"));
+    expect(text.indexOf("## Story reports")).toBeLessThan(text.indexOf("## Repo gate failures"));
+  });
+
+  test("names a missing report and the path that does not exist (AC-2)", () => {
+    const text = reports([{ storyId: "US-002", path: "/r/US-002/report.md", present: false }]);
+    expect(text).toContain("- US-002: no report (/r/US-002/report.md does not exist)");
+  });
+
+  test("says how a stale missing-report claim is settled (AC-3)", () => {
+    const text = reports([{ storyId: "US-001", path: "/r/US-001/report.md", present: true }]);
+    expect(text).toContain(
+      "A deferred minor or cannot-verify item that says a story's report is missing or unreadable is settled by this list",
+    );
+    expect(text).toContain('triage that minor "leave" and do not repeat the claim in "cannotVerify"');
+  });
+
+  test("no reports: no ## Story reports section, absent or empty (AC-4)", () => {
+    expect(reports(undefined)).not.toContain("## Story reports");
+    expect(reports([])).not.toContain("## Story reports");
+  });
 });
 
 describe("buildWorkflowBranchCoverageRetry (US-003, nax#2532)", () => {

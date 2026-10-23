@@ -173,6 +173,91 @@ describe("runBranchReview required set and coverage", () => {
   });
 });
 
+describe("runBranchReview story reports (US-009)", () => {
+  /** The `## Story reports` section: from its heading up to the next `## ` heading. */
+  function storyReportsSection(prompt: string): string {
+    const marker = "## Story reports";
+    const start = prompt.indexOf(marker);
+    if (start < 0) return "";
+    const rest = prompt.slice(start + marker.length);
+    const end = rest.indexOf("\n## ");
+    return end < 0 ? rest : rest.slice(0, end);
+  }
+
+  /** Script the branch op to answer cleanly, returning the prompts it received. */
+  function recordPrompts(): string[] {
+    const prompts: string[] = [];
+    _workflowDeps.callOp = makeScriptedCallOp((_op, input) => {
+      prompts.push((input as { prompt: string }).prompt);
+      return PASS_VERDICT;
+    });
+    return prompts;
+  }
+
+  /** The story list every AC here reviews: one story whose record names its run dir. */
+  const withReport = { ...facts, stories: [{ id: "US-001", state: "complete", runDir: "/run" }] };
+
+  test("lists a story report the run dir holds (AC-5)", async () => {
+    const ctx = fc();
+    const prompts = recordPrompts();
+    const probed: string[] = [];
+    _workflowDeps.fileExists = async (path) => {
+      probed.push(path);
+      return true;
+    };
+    await runBranchReview(ctx, { seed: "seed0", facts: withReport });
+    expect(probed).toEqual(["/run/US-001/report.md"]);
+    expect(storyReportsSection(prompts[0])).toContain("- US-001: /run/US-001/report.md");
+  });
+
+  test("a report the run dir lacks is listed as missing (AC-6)", async () => {
+    const ctx = fc();
+    const prompts = recordPrompts();
+    _workflowDeps.fileExists = async () => false;
+    await runBranchReview(ctx, { seed: "seed0", facts: withReport });
+    expect(storyReportsSection(prompts[0])).toContain("- US-001: no report (/run/US-001/report.md does not exist)");
+  });
+
+  test("an unreadable report reads as present, never as missing (AC-7)", async () => {
+    const ctx = fc();
+    const prompts = recordPrompts();
+    _workflowDeps.fileExists = async () => {
+      throw new Error("EACCES");
+    };
+    await runBranchReview(ctx, { seed: "seed0", facts: withReport });
+    expect(storyReportsSection(prompts[0])).toContain("- US-001: /run/US-001/report.md");
+  });
+
+  test("a story with no run dir is not listed (AC-8)", async () => {
+    const ctx = fc();
+    const prompts = recordPrompts();
+    _workflowDeps.fileExists = async () => true;
+    await runBranchReview(ctx, {
+      seed: "seed0",
+      facts: { ...facts, stories: [...withReport.stories, { id: "US-002", state: "not-run" }] },
+    });
+    const section = storyReportsSection(prompts[0]);
+    expect(section).toContain("- US-001: /run/US-001/report.md");
+    expect(section).not.toContain("US-002");
+  });
+
+  test("the default probe reads the report on disk (AC-5, AC-6)", async () => {
+    const ctx = fc();
+    const prompts = recordPrompts();
+    const runDir = makeTempDir("wf-br-runs-");
+    dirs.push(runDir);
+    await Bun.write(join(runDir, "US-001", "report.md"), "# report\n");
+    const stories = [
+      { id: "US-001", state: "complete", runDir },
+      { id: "US-002", state: "complete", runDir },
+    ];
+    await runBranchReview(ctx, { seed: "seed0", facts: { ...facts, stories } });
+    const section = storyReportsSection(prompts[0]);
+    expect(section).toContain(`- US-001: ${join(runDir, "US-001", "report.md")}`);
+    expect(section).toContain(`- US-002: no report (${join(runDir, "US-002", "report.md")} does not exist)`);
+  });
+});
+
 describe("runBranchReReview", () => {
   test("re-review op on the fix diff with the branch model (AC-23: still an inline -U10 diff)", async () => {
     const ctx = fc({ workflow: { ...makeFeatureContext().workflow, models: { branchReview: "powerful" } } });
