@@ -233,11 +233,14 @@ export function approvalEvidence(
   changed: ChangedFilesEvidence,
 ): string[] {
   const r = input.record;
+  const unread = r.reviewUnread?.length ?? 0;
+  const coverage =
+    unread === 0 ? "it read every changed file it must review (0 unread)" : `it did not read ${unread} changed file(s)`;
   return [
     `Stories: ${input.stories.map((s) => `${s.id} ${s.state} (${s.rounds} round(s))`).join(", ") || "none"}`,
     `Final gates: ${r.finalGates?.ran.join(", ") || "none"}, all green`,
     `CI: ${ci.outcome} (${ci.detail})`,
-    `Branch review ran; open findings after the fix pass: ${r.reviewOpen.length}; branch rulings: ${r.rulings.length}`,
+    `Branch review ran; ${coverage}; open findings after the fix pass: ${r.reviewOpen.length}; branch rulings: ${r.rulings.length}`,
     baseCommitLine(r.seed),
     inventoryLine(changed),
     ...minorLines(minorsLeft),
@@ -327,6 +330,7 @@ async function finishPr(
   const finalReasons = ready ? [] : approval ? [...reasons, approval.rationale] : [...reasons];
   const finalBody = buildWorkflowPrBody({
     ...parts.body,
+    decisions: approval?.decisionId ? await loadDecisions(fc) : parts.body.decisions,
     outcome: ready ? "ready" : "draft",
     ci: ci.outcome,
     reasons: finalReasons,

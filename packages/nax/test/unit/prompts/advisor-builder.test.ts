@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { AdviceDecision, AdviceQuestion } from "@/advisor";
 import { buildMenu } from "@/advisor";
 import { buildAdvisorPrompt } from "@/prompts";
-import { FINISH_APPROVAL_READ_RULE } from "@/prompts/builders/advisor-builder";
+import { ADVISOR_POLICY, FINISH_APPROVAL_READ_RULE } from "@/prompts/builders/advisor-builder";
 
 const question: AdviceQuestion = {
   id: "Q-1",
@@ -70,8 +70,13 @@ describe("buildAdvisorPrompt", () => {
 });
 
 const READ_RULE =
-  "Before you approve, open at least the changed file you judge riskiest. Use the changed files and the base commit the evidence names, when it names them. List every file you opened in inspectedFiles.";
+  "nax asks this question only after the branch review read every changed file, so decision policy 4 is met and you are not asked to review the whole diff again. Your reading is a spot-check: before you approve, open at least the changed file you judge riskiest. Use the changed files and the base commit the evidence names, when it names them. List every file you opened in inspectedFiles. Approve unless you find a concrete problem: a defect you can point to in a file, a conflict with the spec, or a deferred minor that should not ship. A hold names that problem; not having read the whole diff yourself is never a reason to hold.";
 describe("advisor read instructions", () => {
+  test("AC-6: policy 4 binds the reported review rather than the advisor spot-check", () => {
+    expect(ADVISOR_POLICY).toContain(
+      "4. A review that did not read the whole diff is never an approval. This binds the reviews the evidence reports, not your own reading: when the evidence says a review read every changed file, this rule is met.",
+    );
+  });
   test.each([
     ["AC-14", "finish-approval", false],
     ["AC-17", "finish-approval", true],

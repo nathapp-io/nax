@@ -25,7 +25,7 @@ export const ADVISOR_POLICY = `## Decision policy
 1. Real defects get fixed, with the most conservative option (keep old data until new data is committed, take the same lock, count the real work done).
 2. The spec wins. If the code drifted from the spec, the code follows the spec, even when the code's choice looks better. A trade-off the spec states is a decision, not a wrong premise.
 3. Waive only with a spec-backed or scope-backed reason (e.g. "US-005 owns this"). Choose supersede only when the spec cannot stand as written: it contradicts itself or an AC, or it is impossible to satisfy. Then give the corrected text. If you disagree with a choice the spec made, choose hold and say why; never supersede to make the spec match the code.
-4. A review that did not read the whole diff is never an approval.
+4. A review that did not read the whole diff is never an approval. This binds the reviews the evidence reports, not your own reading: when the evidence says a review read every changed file, this rule is met.
 5. Prefer reversible choices. Set needsHumanConfirm when you are unsure or the choice is hard to undo.
 6. Verify claims by reading the code before you rule. Do not trust a finding's description on its own.
 7. An acceptance test excerpt in the evidence that asserts the behaviour the finding wants changed means a plain fix turns acceptance red. Then choose "Fix, and update acceptance tests" (say exactly what changes in them), waive (the test pins the behaviour on purpose), or supersede.`;
@@ -39,7 +39,7 @@ export function advisorDecisionsBlock(decisions: readonly AdviceDecision[]): str
 }
 
 export const FINISH_APPROVAL_READ_RULE =
-  "Before you approve, open at least the changed file you judge riskiest. Use the changed files and the base commit the evidence names, when it names them. List every file you opened in inspectedFiles.";
+  "nax asks this question only after the branch review read every changed file, so decision policy 4 is met and you are not asked to review the whole diff again. Your reading is a spot-check: before you approve, open at least the changed file you judge riskiest. Use the changed files and the base commit the evidence names, when it names them. List every file you opened in inspectedFiles. Approve unless you find a concrete problem: a defect you can point to in a file, a conflict with the spec, or a deferred minor that should not ship. A hold names that problem; not having read the whole diff yourself is never a reason to hold.";
 
 export function advisorQuestionBlock(q: AdviceQuestion): string {
   const evidence = q.evidence.map((e) => `- (${e.source}${e.ref ? ` ${e.ref}` : ""}) ${e.text}`).join("\n");
