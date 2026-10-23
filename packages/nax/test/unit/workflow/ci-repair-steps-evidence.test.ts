@@ -69,87 +69,128 @@ function ciHarness(
   return { env: base.env, ledger: base.ledger };
 }
 
-/** A fresh CI repair step and record with the given repair outcome, for a control inside a test. */
-const withFix = (fix: BranchFixOutcome): [CiHarness["env"], WorkflowFeatureRecord] => {
-  const h = ciHarness({ fix });
-  return [h.env, h.env.record];
-};
+/** One CI repair round: what the step returned, and every ledger note it wrote. */
+interface Round {
+  readonly out: Awaited<ReturnType<typeof ciRepairStep>>;
+  readonly ledger: readonly string[];
+}
 
-/** Whether the step wrote any ledger note starting with `prefix`. */
-const wroteNote = (h: CiHarness, prefix: string): boolean => h.ledger.some((text) => text.startsWith(prefix));
+/** Run one CI repair round with the repair session scripted by `fix`. */
+async function runRound(
+  fix: BranchFixOutcome,
+  opts: { readonly record?: Partial<WorkflowFeatureRecord>; readonly limit?: number } = {},
+): Promise<Round> {
+  const h = ciHarness({ fix, ...opts });
+  return { out: await ciRepairStep(h.env, h.env.record), ledger: h.ledger };
+}
 
 describe("the concerns a CI repair reply raises (US-005)", () => {
   const CONCERNS = "pip-audit not run: PyPI blocked";
+  /** The round note every repair round writes, whatever its reply says. */
+  const ROUND_NOTE = "CI repair r1: 1 item(s): C1";
+  /** The note this round's reply earns, when it carries concerns. */
+  const CONCERNS_NOTE = `CI repair r1 concerns: ${CONCERNS}`;
 
   test("AC-1: the ledger records the round's concerns", async () => {
-    const h = ciHarness({ fix: repairOutcome(CONCERNS) });
-    await ciRepairStep(h.env, h.env.record);
-    expect(h.ledger).toContain(`CI repair r1 concerns: ${CONCERNS}`);
+    expect((await runRound(repairOutcome(CONCERNS))).ledger).toContain(CONCERNS_NOTE);
   });
 
   test("AC-2: the round's concerns are patched, labelled with the round", async () => {
-    const h = ciHarness({ fix: repairOutcome(CONCERNS) });
-    const out = await ciRepairStep(h.env, h.env.record);
-    expect(out.patch.ciRepairConcerns).toEqual([`r1: ${CONCERNS}`]);
+    expect((await runRound(repairOutcome(CONCERNS))).out.patch.ciRepairConcerns).toEqual([`r1: ${CONCERNS}`]);
   });
 
   test("AC-3: a later round appends to the history instead of replacing it", async () => {
-    const h = ciHarness({ fix: repairOutcome("b"), record: { ciRepairRounds: 1 }, limit: 2 });
-    const out = await ciRepairStep(h.env, { ...h.env.record, ciRepairConcerns: ["r1: a"] });
+    const { out } = await runRound(repairOutcome("b"), {
+      record: { ciRepairRounds: 1, ciRepairConcerns: ["r1: a"] },
+      limit: 2,
+    });
     expect(out.patch.ciRepairConcerns).toEqual(["r1: a", "r2: b"]);
+    // The round's own note is labelled r2, so the two entries cannot be confused.
+    expect(out.patch.ciRepairRounds).toBe(2);
   });
 
   test("AC-4: empty concerns patch no key at all", async () => {
-    const h = ciHarness({ fix: repairOutcome("") });
-    const out = await ciRepairStep(h.env, h.env.record);
-    expect("ciRepairConcerns" in out.patch).toBe(false);
+    const empty = await runRound(repairOutcome(""));
+    expect("ciRepairConcerns" in empty.out.patch).toBe(false);
     // The control: the same seams with concerns text do patch one.
-    const control = await ciRepairStep(...withFix(repairOutcome(CONCERNS)));
-    expect(control.patch.ciRepairConcerns).toEqual([`r1: ${CONCERNS}`]);
+    const control = await runRound(repairOutcome(CONCERNS));
+    expect(control.out.patch.ciRepairConcerns).toEqual([`r1: ${CONCERNS}`]);
   });
 
   test("AC-5: empty concerns write no concerns note", async () => {
-    const h = ciHarness({ fix: repairOutcome("") });
-    await ciRepairStep(h.env, h.env.record);
-    expect(wroteNote(h, "CI repair r1 concerns")).toBe(false);
-    // The premise: the repair session ran, and its round note was written.
-    expect(wroteNote(h, "CI repair r1: 1 item(s)")).toBe(true);
+    // The whole ledger, so the note's absence is not the only thing asserted: the round still ran.
+    expect((await runRound(repairOutcome(""))).ledger).toEqual([ROUND_NOTE]);
+    // The control: the same seams with concerns text add exactly the note the empty reply omits.
+    expect((await runRound(repairOutcome(CONCERNS))).ledger).toEqual([ROUND_NOTE, CONCERNS_NOTE]);
   });
 
   test("AC-6: a repair session that failed with no reply patches no concerns", async () => {
-    const h = ciHarness({ fix: { failure: "boom", autoCommitted: false, dirty: false } });
-    const out = await ciRepairStep(h.env, h.env.record);
-    expect("ciRepairConcerns" in out.patch).toBe(false);
-    // The premise: the session ran and failed.
-    expect(h.ledger).toContain("CI repair session failed: boom");
+    const failed = await runRound({ failure: "boom", autoCommitted: false, dirty: false });
+    expect("ciRepairConcerns" in failed.out.patch).toBe(false);
+    // The premise: the round ran and spent itself.
+    expect(failed.out.patch.ciRepairRounds).toBe(1);
+    // The control: a failed session whose reply did carry concerns patches them.
+    const control = await runRound({
+      reply: repairReply(CONCERNS),
+      failure: "boom",
+      autoCommitted: false,
+      dirty: false,
+    });
+    expect(control.out.patch.ciRepairConcerns).toEqual([`r1: ${CONCERNS}`]);
   });
 
   test("AC-7: a repair session that failed with no reply writes no concerns note", async () => {
-    const h = ciHarness({ fix: { failure: "boom", autoCommitted: false, dirty: false } });
-    await ciRepairStep(h.env, h.env.record);
-    expect(wroteNote(h, "CI repair r1 concerns")).toBe(false);
-    expect(wroteNote(h, "CI repair r1: 1 item(s)")).toBe(true);
+    expect((await runRound({ failure: "boom", autoCommitted: false, dirty: false })).ledger).toEqual([
+      ROUND_NOTE,
+      "CI repair session failed: boom",
+    ]);
+    // The control: the same failure with a reply that carries concerns adds the note too.
+    expect(
+      (
+        await runRound({
+          reply: repairReply(CONCERNS),
+          failure: "boom",
+          autoCommitted: false,
+          dirty: false,
+        })
+      ).ledger,
+    ).toEqual([ROUND_NOTE, "CI repair session failed: boom", CONCERNS_NOTE]);
   });
 
   test("AC-8: a reply with no concerns field patches no concerns", async () => {
-    const h = ciHarness({ fix: repairOutcome() });
-    const out = await ciRepairStep(h.env, h.env.record);
-    expect("ciRepairConcerns" in out.patch).toBe(false);
-    // The control: the same reply shape with concerns text does patch one.
-    const control = await ciRepairStep(...withFix(repairOutcome(CONCERNS)));
-    expect(control.patch.ciRepairConcerns).toEqual([`r1: ${CONCERNS}`]);
+    const bare = await runRound(repairOutcome());
+    expect("ciRepairConcerns" in bare.out.patch).toBe(false);
+    // The control: the same reply shape with a concerns field does patch one.
+    const control = await runRound(repairOutcome(CONCERNS));
+    expect(control.out.patch.ciRepairConcerns).toEqual([`r1: ${CONCERNS}`]);
   });
 
   test("AC-9: a reply with no concerns field writes no concerns note", async () => {
-    const h = ciHarness({ fix: repairOutcome() });
-    await ciRepairStep(h.env, h.env.record);
-    expect(wroteNote(h, "CI repair r1 concerns")).toBe(false);
-    expect(wroteNote(h, "CI repair r1: 1 item(s)")).toBe(true);
+    expect((await runRound(repairOutcome())).ledger).toEqual([ROUND_NOTE]);
+    // The control: the same reply shape with a concerns field adds the note.
+    expect((await runRound(repairOutcome(CONCERNS))).ledger).toEqual([ROUND_NOTE, CONCERNS_NOTE]);
+  });
+
+  /**
+   * AC-4 to AC-9 are absences, which a feature that does not exist also satisfies. This pins the
+   * path itself: the step *reads* the reply's `concerns`, so the field — not the reply's mere
+   * presence — is what decides. Nothing else in a round's outcome is read this way.
+   */
+  test("the step reads the reply's concerns, so the field is what decides", async () => {
+    let reads = 0;
+    const reply = {
+      ...repairReply(),
+      get concerns(): string {
+        reads += 1;
+        return "";
+      },
+    };
+    expect((await runRound({ reply, autoCommitted: false, dirty: false })).ledger).toEqual([ROUND_NOTE]);
+    expect(reads).toBe(1);
   });
 
   test("the round is still recorded and the findings still cleared alongside the concerns", async () => {
-    const h = ciHarness({ fix: repairOutcome(CONCERNS) });
-    const out = await ciRepairStep(h.env, h.env.record);
+    const { out } = await runRound(repairOutcome(CONCERNS));
     expect(out.patch.ciRepairRounds).toBe(1);
     expect(out.patch.ciRepairFindings).toBeUndefined();
     // The key is stated, so the record's findings are cleared rather than left behind.
