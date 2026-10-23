@@ -3,7 +3,7 @@
   "feature": "ruling-state-bundle",
   "branchName": "feat/ruling-state-bundle",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T04:32:45.781Z",
+  "updatedAt": "2026-10-23T04:47:03.594Z",
   "userStories": [
     {
       "id": "US-001",
@@ -217,14 +217,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module authorization cache reuse and privileged keyword rulings must drive prompt suppression, forge posting and durable agreed work consistently, including static mode."
+        "reasoning": "Cross-module authorization cache reuse and privileged keyword rulings must drive prompt suppression, forge posting and durable agreed work consistently, including static mode.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/review-run.ts",
@@ -240,7 +243,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4199da0d383de888163510f9cda302cd50d300ce"
     },
     {
       "id": "US-005",
