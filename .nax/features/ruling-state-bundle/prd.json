@@ -3,7 +3,7 @@
   "feature": "ruling-state-bundle",
   "branchName": "feat/ruling-state-bundle",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T04:47:03.594Z",
+  "updatedAt": "2026-10-23T04:57:43.281Z",
   "userStories": [
     {
       "id": "US-001",
@@ -279,14 +279,17 @@
         "security"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "New privileged checkout safety boundary validates repository/branch/cleanliness/ancestry and controls artifact cleanup without mutating the user's checkout; strict security isolation applies."
+        "reasoning": "New privileged checkout safety boundary validates repository/branch/cleanliness/ancestry and controls artifact cleanup without mutating the user's checkout; strict security isolation applies.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/checkout.ts",
@@ -308,7 +311,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "260c15bb48dda742225b93a6936a70c8d6394910"
     },
     {
       "id": "US-006",
