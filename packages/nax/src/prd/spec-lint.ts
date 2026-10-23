@@ -40,7 +40,12 @@ import { existsSync } from "node:fs";
 import { fencedLineIndices } from "../utils/markdown-fence";
 import { findAcNumericReferences } from "./ac-references";
 import { extractSpecContextFiles } from "./context-files-extract";
-import { extractSpecModifiedFiles, MAX_MODIFIED_FILES } from "./modifies-extract";
+import {
+  extractSpecModifiedFiles,
+  findModifiesOverflow,
+  MAX_MODIFIED_FILES,
+  MAX_MODIFIED_FILES_PER_STORY,
+} from "./modifies-extract";
 import { extractSpecOutOfScope } from "./out-of-scope-extract";
 // US-005: the unstated-dependency check lives in its own module — it reads the
 // structure the plan gate reads rather than re-implementing the grammar here.
@@ -86,6 +91,8 @@ export const BLOCKING_SPEC_LINT_CODES: ReadonlySet<string> = new Set([
   "modifies-unknown-story",
   "modifies-path-missing",
   "modifies-multi-path-bullet",
+  "modifies-story-over-cap",
+  "modifies-over-cap",
   "out-of-scope-not-extractable",
 ]);
 
@@ -257,11 +264,22 @@ function checkModifies({ text, declaration, storyIds, pathExists }: ModifiesChec
     }
   }
 
-  if (extracted.length >= MAX_MODIFIED_FILES) {
+  return out;
+}
+
+/** Report losses from the uncapped parse, not the already-truncated extraction. */
+function checkModifiesCaps(text: string): SpecLintFinding[] {
+  const { total, stories } = findModifiesOverflow(text);
+  const out: SpecLintFinding[] = stories.map(({ storyId, count, dropped }) => ({
+    level: "error",
+    code: "modifies-story-over-cap",
+    message: `${storyId ?? "Unattributed entries"} declares ${count} Modifies entries; only the first ${MAX_MODIFIED_FILES_PER_STORY} are kept. Dropped: ${dropped.join(", ")}. Split the story.`,
+  }));
+  if (total > MAX_MODIFIED_FILES) {
     out.push({
-      level: "warn",
-      code: "modifies-at-cap",
-      message: `${extracted.length} entries hits the ${MAX_MODIFIED_FILES}-entry cap; anything beyond it is truncated.`,
+      level: "error",
+      code: "modifies-over-cap",
+      message: `${total} Modifies entries exceed the ${MAX_MODIFIED_FILES}-entry cap for one spec; entries after the ${MAX_MODIFIED_FILES}th are dropped. Split the feature.`,
     });
   }
   return out;
@@ -435,6 +453,7 @@ export function lintSpecContent(text: string, options: SpecLintOptions = {}): Sp
 
   const findings = [
     ...checkModifies({ text, declaration, storyIds, pathExists }),
+    ...checkModifiesCaps(text),
     ...checkOutOfScope(text, storyIds),
     ...checkContextFiles(text, lines, pathExists),
     ...checkAcceptanceCriteria(lines, maxAcCount),

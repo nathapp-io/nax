@@ -1,6 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import { makePRD, makeStory } from "@test/helpers";
+import * as prdApi from "@/prd";
 import { applyModifiedFiles, extractSpecModifiedFiles, MAX_MODIFIED_FILES } from "@/prd";
+
+function capSpec(counts: readonly number[]): string {
+  return [
+    "### Modifies",
+    ...counts.flatMap((count, story) => [
+      `**US-00${story + 1}**`,
+      ...Array.from({ length: count }, (_, i) => `- \`src/s${story + 1}-${i + 1}.ts\` — reason`),
+    ]),
+  ].join("\n");
+}
+
+const CLEANUP_COUNTS = [8, 7, 7, 17, 30];
 
 /** The canonical shape spec-kit's spec-writing guide produces. */
 const CANONICAL_SPEC = [
@@ -151,15 +164,94 @@ describe("extractSpecModifiedFiles", () => {
     expect(extractSpecModifiedFiles("")).toEqual([]);
   });
 
-  test("caps runaway sections at MAX_MODIFIED_FILES", () => {
-    const bullets = Array.from({ length: MAX_MODIFIED_FILES + 10 }, (_, i) => `- \`src/f${i}.ts\` — reason ${i}`);
-    const spec = ["### Modifies", "", "**US-001**", ...bullets].join("\n");
+  test("AC-1: exports the per-story cap of 40", () => {
+    expect(prdApi.MAX_MODIFIED_FILES_PER_STORY).toBe(40);
+  });
 
-    expect(extractSpecModifiedFiles(spec)).toHaveLength(MAX_MODIFIED_FILES);
+  test("AC-2: exports the spec cap of 200", () => {
+    expect(MAX_MODIFIED_FILES).toBe(200);
+  });
+
+  test("AC-3/4: preserves all 69 cleanup entries including US-005's 30", () => {
+    const entries = extractSpecModifiedFiles(capSpec(CLEANUP_COUNTS));
+    expect(entries).toHaveLength(69);
+    expect(entries.filter((entry) => entry.storyId === "US-005")).toHaveLength(30);
+  });
+
+  test.each([{ counts: [45] }, { counts: [45, 45] }])(
+    "AC-5/6: caps each story independently for $counts",
+    ({ counts }) => {
+      const entries = extractSpecModifiedFiles(capSpec(counts));
+      for (let story = 0; story < counts.length; story++) {
+        expect(entries.filter((entry) => entry.storyId === `US-00${story + 1}`)).toHaveLength(40);
+      }
+    },
+  );
+
+  test("AC-7: keeps the first 200 entries in document order", () => {
+    const entries = extractSpecModifiedFiles(capSpec([40, 40, 40, 40, 40, 40]));
+    expect(entries.map((entry) => entry.path)).toEqual(
+      Array.from({ length: 200 }, (_, i) => `src/s${Math.floor(i / 40) + 1}-${(i % 40) + 1}.ts`),
+    );
+  });
+
+  test("applies the spec cap before filtering overflowing stories", () => {
+    const entries = extractSpecModifiedFiles(capSpec([45, 40, 40, 40, 40]));
+    expect(entries).toHaveLength(195);
+    expect(entries.at(-1)?.path).toBe("src/s5-35.ts");
+  });
+
+  test("counts repeated groups and duplicate bullets before deduplication", () => {
+    const repeated = capSpec([20]) + "\n**US-001**\n" + Array(21).fill("- `src/dup.ts` — reason").join("\n");
+    expect(extractSpecModifiedFiles(repeated)).toHaveLength(40);
+  });
+
+  test("caps the null bucket independently", () => {
+    const spec = "### Modifies\n" + Array(41).fill("- `src/orphan.ts` — reason").join("\n");
+    expect(extractSpecModifiedFiles(spec)).toHaveLength(40);
+  });
+});
+
+describe("findModifiesOverflow", () => {
+  test("AC-8: reports all five dropped paths in order", () => {
+    const spec = capSpec([0, 0, 0, 0, 45]);
+    expect(prdApi.findModifiesOverflow(spec)).toEqual({
+      total: 45,
+      stories: [{ storyId: "US-005", count: 45, dropped: Array.from({ length: 5 }, (_, i) => `src/s5-${i + 41}.ts`) }],
+    });
+  });
+
+  test("AC-9: reports no story overflow for the 69-entry cleanup", () => {
+    expect(prdApi.findModifiesOverflow(capSpec(CLEANUP_COUNTS))).toEqual({ total: 69, stories: [] });
+  });
+
+  test.each([null, "US-001"])("AC-10/11: counts duplicate bullets in bucket %s", (storyId) => {
+    const spec = ["### Modifies", storyId ? `**${storyId}**` : "", ...Array(41).fill("- `src/dup.ts` — reason")].join(
+      "\n",
+    );
+    expect(prdApi.findModifiesOverflow(spec)).toEqual({
+      total: 41,
+      stories: [{ storyId, count: 41, dropped: ["src/dup.ts"] }],
+    });
+  });
+
+  test("scans beyond the spec cap using the shared fenced markdown grammar", () => {
+    const spec = capSpec([40, 40, 40, 40, 40, 45]);
+    expect(prdApi.findModifiesOverflow(spec + "\n```md\n### Modifies\n- `fake.ts`\n```")).toEqual({
+      total: 245,
+      stories: [{ storyId: "US-006", count: 45, dropped: Array.from({ length: 5 }, (_, i) => `src/s6-${i + 41}.ts`) }],
+    });
   });
 });
 
 describe("applyModifiedFiles", () => {
+  test("AC-21: carries all 30 US-005 authorisations from the cleanup spec", () => {
+    const input = makePRD({ userStories: CLEANUP_COUNTS.map((_, i) => makeStory({ id: `US-00${i + 1}` })) });
+    const { prd } = applyModifiedFiles(input, capSpec(CLEANUP_COUNTS));
+    expect(prd.userStories[4].modifiedFiles).toHaveLength(30);
+    expect(prd.userStories.map((story) => story.modifiedFiles?.length)).toEqual(CLEANUP_COUNTS);
+  });
+
   const prdWithTwoStories = () =>
     makePRD({
       userStories: [makeStory({ id: "US-001" }), makeStory({ id: "US-002" })],

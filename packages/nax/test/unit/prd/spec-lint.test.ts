@@ -43,6 +43,58 @@ const OWN_LINE_LEAD_IN = `### Modifies
 
 - \`scripts/check-spec-extractable.ts\` — reason`;
 
+describe("Modifies cap findings", () => {
+  function capFindings(counts: readonly number[]) {
+    const text = [
+      "## Stories",
+      ...counts.map((_, i) => `### US-00${i + 1} — Story`),
+      "### Modifies",
+      ...counts.flatMap((count, story) => [
+        `**US-00${story + 1}**`,
+        ...Array.from({ length: count }, (_, i) => `- \`scripts/s${story + 1}-${i + 1}.ts\` — reason`),
+      ]),
+    ].join("\n");
+    return lintText(text);
+  }
+
+  test("AC-12/13: errors with every dropped path for US-005", () => {
+    const finding = capFindings([0, 0, 0, 0, 45]).find((f) => f.code === "modifies-story-over-cap");
+    expect(finding?.level).toBe("error");
+    expect(finding?.message).toBe(
+      "US-005 declares 45 Modifies entries; only the first 40 are kept. Dropped: scripts/s5-41.ts, scripts/s5-42.ts, scripts/s5-43.ts, scripts/s5-44.ts, scripts/s5-45.ts. Split the story.",
+    );
+  });
+
+  test("AC-14/15: reports the uncapped total of 205 across six compliant stories", () => {
+    const findings = capFindings([40, 40, 40, 40, 40, 5]);
+    expect(findings.filter((f) => f.code === "modifies-story-over-cap")).toEqual([]);
+    expect(findings.find((f) => f.code === "modifies-over-cap")).toEqual({
+      level: "error",
+      code: "modifies-over-cap",
+      message:
+        "205 Modifies entries exceed the 200-entry cap for one spec; entries after the 200th are dropped. Split the feature.",
+    });
+  });
+
+  test.each([{ counts: [8, 7, 7, 17, 30] }, { counts: [40, 40, 40, 40, 40] }])(
+    "AC-16: no cap finding at or below both bounds: $counts",
+    ({ counts }) => {
+      expect(capFindings(counts).filter((f) => f.code.startsWith("modifies-") && f.code.endsWith("-cap"))).toEqual([]);
+    },
+  );
+
+  test.each(["modifies-story-over-cap", "modifies-over-cap"])("AC-17/18: blocks %s", (code) => {
+    expect(BLOCKING_SPEC_LINT_CODES.has(code)).toBe(true);
+  });
+
+  test("names the unattributed bucket in its cap error", () => {
+    const text = "### Modifies\n" + Array(41).fill("- `scripts/dup.ts` — reason").join("\n");
+    expect(lintText(text).find((f) => f.code === "modifies-story-over-cap")?.message).toBe(
+      "Unattributed entries declares 41 Modifies entries; only the first 40 are kept. Dropped: scripts/dup.ts. Split the story.",
+    );
+  });
+});
+
 describe("check-spec-extractable", () => {
   test("flags a Modifies block whose lead-in is inline, which extracts to nothing", async () => {
     const findings = lintText(specWith(INLINE_LEAD_IN));
@@ -138,9 +190,9 @@ describe("check-spec-extractable", () => {
     expect(codes).toContain("modifies-no-reason");
   });
 
-  test("warns when the Modifies section hits the entry cap", async () => {
+  test("errors when one story declares 41 Modifies entries", async () => {
     const bullets = Array.from(
-      { length: 25 },
+      { length: 41 },
       (_, i) => `- \`scripts/check-spec-extractable.ts?${i}\` — reason ${i}`,
     ).join("\n");
     const atCap = `### Modifies
@@ -149,7 +201,8 @@ describe("check-spec-extractable", () => {
 
 ${bullets}`;
     const codes = lintText(specWith(atCap)).map((f) => f.code);
-    expect(codes).toContain("modifies-at-cap");
+    expect(codes).toContain("modifies-story-over-cap");
+    expect(codes).not.toContain("modifies-at-cap");
   });
 
   test("flags an Out of Scope heading that extracts 0 items", async () => {
