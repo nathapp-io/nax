@@ -22,6 +22,7 @@ import type {
   GateName,
   GateRunResult,
   GateState,
+  ImplementerStatus,
   ReReviewVerdict,
   StoryReviewVerdict,
   WorkflowEndState,
@@ -127,6 +128,13 @@ export interface StoryLoopState extends GraphState<StoryNode> {
   readonly rulings: readonly WorkflowRuling[];
   /** Set by `implement` when the no-work ladder closes the story; `close` uses it instead of `deriveEndState`. */
   readonly closeAs?: { readonly state: WorkflowEndState; readonly reason: string };
+  /**
+   * US-008: the reply and step-up the last absorbed turn ended with, and whether it was the interrupt
+   * fallback. The evaluate pass reads it to decide whether the story is owed one report turn.
+   */
+  readonly lastTurn?: { readonly status: ImplementerStatus; readonly fallback: boolean; readonly stepUps: number };
+  /** US-008: true once the story has spent its one report turn, so it never spends a second. */
+  readonly reportTurnRan: boolean;
   /** Set by `close`; what `runStoryLoop` resolves to. */
   readonly outcome?: StoryLoopOutcome;
 }

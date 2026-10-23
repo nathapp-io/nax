@@ -19,6 +19,7 @@ import { absorbInterrupt, type InterruptOrigin } from "./interrupt-continue";
 import { type LedgerWriteOptions, ledgerText } from "./ledger";
 import { runNoWorkLadder } from "./no-work";
 import { absorbReReviewVerdict } from "./re-review-absorb";
+import { runReportCheck } from "./report-check";
 import { describeFindings, startStep } from "./run-log";
 import type { StoryLoopEnv, StoryLoopOutcome, StoryLoopState } from "./story-loop";
 import type { ReviewOutcome } from "./story-review";
@@ -63,6 +64,8 @@ class LoopState {
   suite: GateRunResult | undefined;
   suiteThisIteration: boolean;
   costStop: boolean;
+  lastTurn: StoryLoopState["lastTurn"];
+  reportTurnRan: boolean;
 
   constructor(state: StoryLoopState) {
     this.round = state.round;
@@ -79,6 +82,8 @@ class LoopState {
     this.suite = state.suite;
     this.suiteThisIteration = state.suiteThisIteration;
     this.costStop = state.costLimited;
+    this.lastTurn = state.lastTurn;
+    this.reportTurnRan = state.reportTurnRan;
   }
 
   assign(drafts: readonly WorkflowFindingDraft[]): WorkflowFinding[] {
@@ -122,6 +127,9 @@ export function initialStoryState(env: StoryLoopEnv): StoryLoopState {
     firstAfterResume: resume !== null,
     open: [],
     rulings: [],
+    // US-008: no report turn has been spent yet, and a resumed story starts with no absorbed turn of
+    // its own — so its first evaluate pass has no reply to repair a report for.
+    reportTurnRan: false,
   };
 }
 
@@ -131,6 +139,15 @@ async function implementTurn(env: StoryLoopEnv, turn: ImplementTurn): Promise<Im
   const out = await env.steps.implement(turn);
   step.done(out.failure ? `failed (${out.failure})` : (out.reply?.status ?? "no reply"));
   return out;
+}
+
+/**
+ * US-008: the reply the next evaluate pass reads to decide whether a report turn is owed. A failure
+ * or a turn with no reply clears it, so a stale DONE from an earlier round cannot repair a report
+ * after a later turn blew up.
+ */
+function recordLastTurn(s: LoopState, reply: ImplementerReply | undefined, fallback: boolean, stepUps: number): void {
+  s.lastTurn = reply === undefined ? undefined : { status: reply.status, fallback, stepUps };
 }
 
 async function absorbTurn(
@@ -143,10 +160,13 @@ async function absorbTurn(
   // US-006: one allowance per absorbed turn — the first implement turn (with its no-work restarts
   // and answers) or one fix round — so every continue turn it spends counts against the same budget.
   let used = 0;
+  // US-008: whether the turn that finally replied was the interrupt fallback; its report may be missing.
+  let fallback = false;
   for (;;) {
     const absorbed = await absorbInterrupt(env, current, origin, used, (turn) => implementTurn(env, turn));
     current = absorbed.outcome;
     used = absorbed.used;
+    fallback = absorbed.fallback;
     if (current.failure) {
       s.pendingSession = [
         ...s.pendingSession,
@@ -154,12 +174,16 @@ async function absorbTurn(
           { kind: "session", severity: "important", issue: `implementer session failed: ${current.failure}` },
         ]),
       ];
+      recordLastTurn(s, undefined, fallback, origin.stepUps);
       return;
     }
     if (current.autoCommitted)
       await env.sink.ledger(ledgerText.note("auto-committed the implementer's uncommitted edits"));
     const reply = current.reply;
-    if (!reply) return;
+    if (!reply) {
+      recordLastTurn(s, undefined, fallback, origin.stepUps);
+      return;
+    }
     const needsAnswer = reply.status === "NEEDS_CONTEXT" || reply.status === "BLOCKED";
     if (needsAnswer && s.questions < MAX_IMPLEMENTER_QUESTIONS) {
       s.questions += 1;
@@ -180,6 +204,7 @@ async function absorbTurn(
       }
     }
     if (reply.status !== "DONE" || reply.interrupted) await recordConcern(env, s, reply);
+    recordLastTurn(s, reply, fallback, origin.stepUps);
     return;
   }
 }
@@ -259,6 +284,10 @@ async function evaluate(env: StoryLoopEnv, s: LoopState): Promise<WorkflowFindin
   s.gates = await env.steps.gates();
   await env.sink.update({ gates: { ...s.gates.states } });
   if (s.gates.red) return [...s.assign(s.gates.findings), ...s.reviewOpen];
+  // US-008: one report turn, after the gates came back green and before the review spends itself on a
+  // report the implementer never wrote. The runner is the loop's own labelled one, so the turn keeps
+  // that session and its model.
+  s.reportTurnRan = await runReportCheck(env, s, (turn) => implementTurn(env, turn));
   await env.sink.update({ phase: s.reviewed ? "rereview" : "review" });
   await review(env, s);
   if (s.reviewOpen.length > 0) return [...s.reviewOpen];
@@ -313,6 +342,7 @@ export async function implementStep(env: StoryLoopEnv, state: StoryLoopState): P
       nextId: s.nextId,
       questions: s.questions,
       concerns: s.concerns,
+      lastTurn: s.lastTurn,
       closeAs,
     },
     exit: result.closed ? "no-work" : "worked",
@@ -352,6 +382,7 @@ export async function evaluateStep(env: StoryLoopEnv, state: StoryLoopState): Pr
       fixBase: s.fixBase,
       open,
       pendingSession: s.pendingSession,
+      reportTurnRan: s.reportTurnRan,
     },
     exit: passExit(open, s.round, env.maxFixRounds),
   };
@@ -405,6 +436,7 @@ export async function fixStep(env: StoryLoopEnv, state: StoryLoopState): Promise
       nextId: s.nextId,
       questions: s.questions,
       concerns: s.concerns,
+      lastTurn: s.lastTurn,
     },
   };
 }

@@ -35,7 +35,7 @@ const EXPECTED_KINDS: Record<NodeId, StepKind> = {
   close: "pure",
 };
 const EXPECTED_PRODUCES: Record<NodeId, string[]> = {
-  implement: ["pendingSession", "nextId", "questions", "concerns", "closeAs"],
+  implement: ["pendingSession", "nextId", "questions", "concerns", "closeAs", "lastTurn"],
   evaluate: [
     "suiteThisIteration",
     "gates",
@@ -48,9 +48,10 @@ const EXPECTED_PRODUCES: Record<NodeId, string[]> = {
     "fixBase",
     "open",
     "pendingSession",
+    "reportTurnRan",
   ],
   residual: ["suite", "rulings"],
-  fix: ["round", "firstAfterResume", "fixBase", "pendingSession", "nextId", "questions", "concerns"],
+  fix: ["round", "firstAfterResume", "fixBase", "pendingSession", "nextId", "questions", "concerns", "lastTurn"],
   close: ["outcome"],
 };
 const EXPECTED_TRANSITIONS: Record<NodeId, { on?: string; to: StoryNode }[]> = {
