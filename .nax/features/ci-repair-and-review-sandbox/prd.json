@@ -3,7 +3,7 @@
   "feature": "ci-repair-and-review-sandbox",
   "branchName": "feat/ci-repair-and-review-sandbox",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T16:44:20.779Z",
+  "updatedAt": "2026-10-23T16:59:36.782Z",
   "userStories": [
     {
       "id": "US-001",
@@ -169,14 +169,17 @@
         "failure-evidence"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive best-effort API reader integrated into an existing injected forge path; no new authentication, permissions or session behavior."
+        "reasoning": "Additive best-effort API reader integrated into an existing injected forge path; no new authentication, permissions or session behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/ci-failures.ts",
@@ -192,7 +195,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "af4149027e2cf132a41f51409c9570e01040f089"
     },
     {
       "id": "US-004",
