@@ -116,6 +116,7 @@ export {
   buildWorkflowImplementPrompt,
   buildWorkflowReportPrompt,
   buildWorkflowRestartPrompt,
+  REPAIR_VERIFICATION_RULE,
   WORKFLOW_ARTIFACTS_RULE,
   WORKFLOW_REPLY_CONTRACT,
 } from "./builders/workflow-implementer-builder";

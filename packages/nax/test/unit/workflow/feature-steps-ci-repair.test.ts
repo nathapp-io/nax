@@ -98,7 +98,7 @@ describe("the CI repair step (US-007)", () => {
       return { autoCommitted: false, dirty: false };
     };
     await featureSteps.ciRepairStep(h.env, { ...h.env.record, url: "https://github.com/o/r/pull/7" });
-    expect(calls).toEqual([[[{ ...CHECK_E2E, id: "C1" }], { prUrl: "https://github.com/o/r/pull/7" }]]);
+    expect(calls).toEqual([[[{ ...CHECK_E2E, id: "C1" }], { repair: true, prUrl: "https://github.com/o/r/pull/7" }]]);
   });
 
   test("US-012 AC-2 ordinary branch fix uses one argument", async () => {
@@ -112,7 +112,7 @@ describe("the CI repair step (US-007)", () => {
     await featureSteps.branchFixStep(h.env, { ...h.env.record, reviewOpen: findings });
     expect(calls).toEqual([[findings]]);
   });
-  test.each(["ci-without-url", "gate-with-url"])("%s stays unbound", async (mode) => {
+  test.each(["ci-without-url", "gate-with-url"])("%s asks for a repair and no PR URL", async (mode) => {
     const h = stepHarness({ findings: [CHECK_E2E] });
     const calls: unknown[][] = [];
     h.env.steps.branchFix = async (...args) => {
@@ -126,7 +126,7 @@ describe("the CI repair step (US-007)", () => {
         url: "https://github.com/o/r/pull/7",
         gateRepairFindings: [CHECK_E2E],
       });
-    expect(calls).toEqual([[[{ ...CHECK_E2E, id: mode === "ci-without-url" ? "C1" : "G1" }]]]);
+    expect(calls).toEqual([[[{ ...CHECK_E2E, id: mode === "ci-without-url" ? "C1" : "G1" }], { repair: true }]]);
   });
 
   test("AC-1: the repair session gets the failed checks as findings C1 and C2", async () => {

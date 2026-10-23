@@ -106,6 +106,14 @@ export function buildWorkflowBrief(input: WorkflowBriefInput): string {
 export const WORKFLOW_ARTIFACTS_RULE =
   "The report is the only place for evidence, command output and notes: write it with the Write or Edit tool (shell redirects into it are blocked). Do not create evidence, log or note files anywhere else in the repository; use your scratchpad (.nax/scratchpad/) for throwaway files.";
 
+/**
+ * US-002: a repair session is the one place a check is routinely un-runnable — the sandbox blocks
+ * its network, or its tool is not installed in the sandbox. A check the session only *read* about is
+ * not a green check, so the rule is stated in every repair brief and nowhere else.
+ */
+export const REPAIR_VERIFICATION_RULE =
+  'If you cannot run a check here (for example the sandbox blocks its network, or its tool is missing), reply DONE_WITH_CONCERNS and name each such check in "concerns". Never reply DONE for a check you only reasoned about.';
+
 export const WORKFLOW_REPLY_CONTRACT = `End your reply with exactly one fenced json block:
 
 \`\`\`json
