@@ -7,8 +7,6 @@ import { type PublishInput, publish } from "@/workflow/finalize";
 import { _workflowDeps } from "@/workflow/step-context";
 import type { StorySummary } from "@/workflow/types";
 
-const PUSHED = "c".repeat(40);
-
 const originalFeature = { ..._featureDeps };
 const originalWorkflow = { ..._workflowDeps };
 afterEach(() => {
@@ -25,20 +23,11 @@ const record = {
 type Options = {
   ci: "green" | "pending";
   approve: boolean;
-  ledgerThrowsAt?: number;
-  ledger?: readonly boolean[];
-  headUnreadable?: boolean;
   advisor?: Advisor;
   stories?: readonly StorySummary[];
 };
-function setup({ ci, approve, ledgerThrowsAt, ledger, headUnreadable, advisor, stories }: Options) {
-  const log = wireFinalize({ ci, ...(ledgerThrowsAt ? { ledgerThrowsAt } : {}), ...(ledger ? { ledger } : {}) });
-  _workflowDeps.git = async (args) =>
-    args[0] === "rev-parse"
-      ? headUnreadable
-        ? { stdout: "", stderr: "fatal: bad HEAD", exitCode: 128 }
-        : { stdout: `${PUSHED}\n`, exitCode: 0 }
-      : { stdout: "", exitCode: 0 };
+function setup({ ci, approve, advisor, stories }: Options) {
+  const log = wireFinalize({ ci });
   const input: PublishInput = {
     record,
     stories: stories ?? [story],
@@ -105,9 +94,8 @@ describe("publish commits the ruling in its one pre-push ledger commit", () => {
       advise: async () => ({ decision: null, fallbackReason: "offline" }),
     };
     const { calls, run } = setup({ ci: "green", approve: true, advisor: silent });
-    const out = await run();
+    await run();
     expect(calls.filter((call) => call.name === "ledger")).toHaveLength(1);
-    expect(out.pushedHead).toBeUndefined();
   });
   test("a deterministic reason asks no advisor, so nothing more is committed", async () => {
     const asked: string[] = [];
@@ -117,15 +105,8 @@ describe("publish commits the ruling in its one pre-push ledger commit", () => {
       stories: [{ ...story, state: "complete-gate-open" }],
       advisor: makeFinalizeAdvisor(true, asked),
     });
-    const out = await run();
+    await run();
     expect(asked).toEqual([]);
     expect(calls.filter((call) => call.name === "ledger")).toHaveLength(1);
-    expect(out.pushedHead).toBeUndefined();
-  });
-  test("an unknown pushed head commits nothing, so threads never cite an unpushed sha", async () => {
-    const { calls, run } = setup({ ci: "green", approve: true, headUnreadable: true });
-    const out = await run();
-    expect(calls.filter((call) => call.name === "ledger")).toHaveLength(1);
-    expect(out.pushedHead).toBeUndefined();
   });
 });

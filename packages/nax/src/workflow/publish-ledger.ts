@@ -1,13 +1,13 @@
 /**
- * The publish step's ledger commits (US-003, US-007, nax#2646): the pre-push commit the PR body's
- * rulings depend on, and the local commit of the approval ruling written after it.
+ * The publish step's ledger commit (US-003, US-007): the pre-push commit the PR body's rulings depend
+ * on. US-002 (nax#2666) retired the second, post-push commit of the approval ruling — the advisor now
+ * rules before this one, so the ruling it writes is already in it.
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { ledgerPath } from "@/advisor";
 import { getSafeLogger } from "@/logger";
 import type { FeatureContext } from "./feature-context";
 import { _featureDeps } from "./feature-deps";
-import type { ApprovalOutcome } from "./types";
 
 /** What one ledger commit attempt did. */
 interface LedgerCommitResult {
@@ -65,27 +65,4 @@ export function ledgerReasons(ledger: LedgerCommitResult): string[] {
 
 function ledgerMissingReason(missingRulings: number): string {
   return `${LEDGER_MISSING_PREFIX} the branch is missing ${missingRulings} advisor rulings`;
-}
-
-/**
- * nax#2646: `askApproval` appends its ruling after the pushed ledger commit, so the ruling gets a local
- * commit of its own. It is never pushed (#2629: an approved PR runs CI once) and rides the next push.
- * Without a known pushed head nothing is committed, so threads never cite an unpushed sha. Fail-open
- * like `ledgerCommit`; true only when a commit moved HEAD past the pushed head.
- */
-export async function commitApprovalRuling(
-  fc: FeatureContext,
-  approval: ApprovalOutcome | null,
-  pushedHead: string | undefined,
-): Promise<boolean> {
-  if (fc.dryRun || !pushedHead || approval?.decisionId === undefined) return false;
-  try {
-    return await _featureDeps.commitLedger(fc.projectDir, fc.feature);
-  } catch (err) {
-    getSafeLogger()?.warn("workflow", "Advisor approval ruling not committed — it stays in the working tree", {
-      storyId: "_run",
-      error: errorMessage(err),
-    });
-    return false;
-  }
 }

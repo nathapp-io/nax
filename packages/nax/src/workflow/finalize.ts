@@ -52,11 +52,6 @@ export interface PublishOutcome {
    * three states whose reason is built from it. Absent for every other state.
    */
   readonly ciDetail?: string;
-  /**
-   * nax#2646: the pushed head, present only when the approval ruling's local commit moved HEAD past it.
-   * Item threads and CI reads cite it, so they never name a sha the forge does not have.
-   */
-  readonly pushedHead?: string;
 }
 
 /** The CI states whose readiness reason is the wait's own `detail` rather than a fixed sentence. */
@@ -401,13 +396,12 @@ function logFinishPr(ready: boolean, url: string | undefined, kept: readonly str
 }
 
 /**
- * The CI wait both publishing modes share; the timeout and poll interval come from the workflow config.
- * `pushedHead` is the HEAD the wait was bound to, absent when it could not be read.
+ * The CI wait both publishing modes share; the timeout and poll interval come from the workflow
+ * config. The wait is bound to the HEAD that was pushed — read here, because nothing is committed
+ * after the push any more (US-002: the approval ruling rides the pre-push ledger commit) — and an
+ * unreadable HEAD only warns: `readinessReasons` decides what a missing binding means, not the wait.
  */
-async function waitForCi(
-  fc: FeatureContext,
-  forge: ForgeKind,
-): Promise<{ readonly ci: CiWaitResult; readonly pushedHead?: string }> {
+async function waitForCi(fc: FeatureContext, forge: ForgeKind): Promise<CiWaitResult> {
   let expectedSha: string | undefined;
   try {
     expectedSha = (await readHead(fc.projectDir)) || undefined;
@@ -417,14 +411,13 @@ async function waitForCi(
       error: errorMessage(err),
     });
   }
-  const ci = await _featureDeps.waitForChecks(forge, fc.branch, {
+  return await _featureDeps.waitForChecks(forge, fc.branch, {
     cwd: fc.projectDir,
     ...(expectedSha ? { expectedSha } : {}),
     timeoutMs: fc.workflow.timeouts.ciWaitMs,
     pollMs: fc.workflow.timeouts.ciPollMs,
     ...(fc.runSignal ? { signal: fc.runSignal } : {}),
   });
-  return expectedSha ? { ci, pushedHead: expectedSha } : { ci };
 }
 
 /** Everything a pushing mode needs: the facts, the dirty tree and the target-less base reasons. */
@@ -447,7 +440,7 @@ async function pushMode(plan: PublishPlan): Promise<PublishOutcome> {
   if (pushFailed) {
     return { outcome: "local-only", ci: "skipped", reasons: [...plan.base, ...ledgerReasons(ledger), pushFailed] };
   }
-  const { ci } = await waitForCi(plan.fc, plan.forge);
+  const ci = await waitForCi(plan.fc, plan.forge);
   if (plan.fc.runSignal?.aborted) throw abortedError();
   const reasons = [
     ...readinessReasons({ ...plan.facts, ci: ci.outcome, ciDetail: ci.detail }),
@@ -499,7 +492,7 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
   );
   // US-005: a URL the forge did not return is left out rather than invented; the step is still named.
   getSafeLogger()?.info("workflow", `Publish: draft PR${draft?.url ? ` ${draft.url}` : ""}`, { storyId: "_run" });
-  const { ci } = await waitForCi(fc, plan.forge);
+  const ci = await waitForCi(fc, plan.forge);
   // An aborted wait reports `pending`, which blocks readiness (US-003): stop before promotion.
   if (fc.runSignal?.aborted) throw abortedError();
   // US-007: a ledger the branch lacks is a readiness reason like any other.

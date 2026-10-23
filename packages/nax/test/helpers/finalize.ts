@@ -32,8 +32,17 @@ interface Call {
   skipCommit?: boolean;
 }
 
+/** The CI states `wireFinalize` can report: a green, red or pending first/last wait. */
+type WireCi = "green" | "failed" | "pending";
+
 interface WireOpts {
-  ci?: "green" | "failed" | "pending";
+  ci?: WireCi;
+  /**
+   * US-002: the CI results successive `waitForChecks` calls report. The CI repair path publishes
+   * twice — a red wait, then a green one — and a single `ci` cannot describe both. The last entry
+   * repeats, so a third wait keeps it; absent falls back to `ci`.
+   */
+  ciQueue?: readonly WireCi[];
   pushFails?: boolean;
   promoteThrows?: boolean;
   alreadyReady?: boolean;
@@ -53,6 +62,12 @@ interface WireOpts {
 export function wireFinalize(opts: WireOpts = {}) {
   const calls: Call[] = [];
   const ledgerResults = [...(opts.ledger ?? [])];
+  const ciQueue = [...(opts.ciQueue ?? [])];
+  /** The queue's answers in order, the last one repeating; `ci` answers when there is no queue. */
+  const nextCi = (): WireCi => {
+    if (ciQueue.length === 0) return opts.ci ?? "pending";
+    return ciQueue.length === 1 ? (ciQueue[0] ?? "pending") : (ciQueue.shift() ?? "pending");
+  };
   _featureDeps.detectForge = async () => "github";
   _featureDeps.commitLedger = async (projectDir, feature) => {
     calls.push({ name: "ledger", arg: [projectDir, feature] });
@@ -71,7 +86,7 @@ export function wireFinalize(opts: WireOpts = {}) {
   _featureDeps.waitForChecks = async () => {
     calls.push({ name: "ci" });
     opts.onCi?.();
-    return { outcome: opts.ci ?? "pending", detail: "d" };
+    return { outcome: nextCi(), detail: "d" };
   };
   async function fakePromote(args: OpenOrPromoteArgs & { keepDraft: true }, deps: ForgeDeps): Promise<PromoteKept>;
   async function fakePromote(args: OpenOrPromoteArgs & { keepDraft?: false }, deps: ForgeDeps): Promise<PromoteReady>;
