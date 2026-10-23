@@ -3,7 +3,7 @@
   "feature": "workflow-interrupt-continue",
   "branchName": "feat/workflow-interrupt-continue",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T12:34:28.640Z",
+  "updatedAt": "2026-10-23T12:41:50.363Z",
   "userStories": [
     {
       "id": "US-001",
@@ -145,14 +145,17 @@
         "prompts"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive schema/type/description and pure prompt-builder changes use established patterns, with no new orchestration abstraction."
+        "reasoning": "Additive schema/type/description and pure prompt-builder changes use established patterns, with no new orchestration abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas-workflow.ts",
@@ -176,7 +179,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "90f37575f869c747cebc5aa63cfd4a5a2c8b2f22"
     },
     {
       "id": "US-004",
