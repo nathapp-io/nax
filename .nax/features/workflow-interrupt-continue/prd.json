@@ -3,7 +3,7 @@
   "feature": "workflow-interrupt-continue",
   "branchName": "feat/workflow-interrupt-continue",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T12:27:16.311Z",
+  "updatedAt": "2026-10-23T12:34:28.640Z",
   "userStories": [
     {
       "id": "US-001",
@@ -80,14 +80,17 @@
         "runtime"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "One runtime module changes only its async/sync result predicates while retaining Bun scan options; focused TDD is sufficient because permissions, symlink policy and sessions are unchanged."
+        "reasoning": "One runtime module changes only its async/sync result predicates while retaining Bun scan options; focused TDD is sufficient because permissions, symlink policy and sessions are unchanged.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/agent-runtime/bun-runtime.ts",
@@ -106,7 +109,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "95427a1b4285fc87b2f63268e002530fc2de6f17"
     },
     {
       "id": "US-003",
