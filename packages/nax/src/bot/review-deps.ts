@@ -18,6 +18,7 @@ import { buildPrStepContext } from "../workflow/pr-step-context";
 import { loadBotConfig } from "./base-config";
 import { preparePrCheckout } from "./checkout";
 import { resolveBotChecks } from "./checks";
+import { recordFindingRulings } from "./finding-rulings";
 import { readHeadCi } from "./gate-baseline";
 import { botGit } from "./git";
 import { openBotLog } from "./log";
@@ -72,6 +73,7 @@ export const _botReviewDeps = {
   runPreRunSteps,
   runPrReview,
   recordPrRulings,
+  recordFindingRulings,
   postPrReview,
   async writeJson(path: string, value: unknown): Promise<void> {
     await Bun.write(path, `${JSON.stringify(value, null, 2)}\n`);

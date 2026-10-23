@@ -2,8 +2,7 @@ import { join } from "node:path";
 import { resolveDefaultAgent } from "@/agents";
 import { type ConfiguredModel, DEFAULT_SANDBOX_CONFIG, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
-import { ownComments, type PrComment, parseNaxBotMarker } from "@/forge";
-import { getLogger, getSafeLogger } from "@/logger";
+import { getLogger } from "@/logger";
 import { botChecksExtractOp, type PrReviewVerdict } from "@/operations";
 import { renderCheckoutState } from "@/prompts";
 import type { createRuntime } from "@/runtime";
@@ -26,7 +25,7 @@ import { BOT_REVIEW_FILENAME, type PostReviewInput, type PostReviewOutcome } fro
 import { _botReviewDeps } from "./review-deps";
 import { readReviewRulings, reviewRange } from "./review-rulings";
 import type { PrReviewInput } from "./review-step";
-import { readWriters, writerCheck } from "./writers";
+import { triage } from "./review-triage";
 
 export { _botReviewDeps } from "./review-deps";
 
@@ -123,53 +122,6 @@ export const BOT_REVIEW_GRAPH: StepGraph<ReviewState, ReviewEnv, ReviewStep> = d
   },
 });
 
-async function triage(
-  ref: PostReviewInput["ref"],
-  cwd: string,
-): Promise<
-  Required<Pick<PostReviewInput, "threads" | "comments" | "own" | "earlier" | "login" | "writers">> & {
-    rawThreads: PostReviewInput["threads"];
-    rawComments: PostReviewInput["comments"];
-  }
-> {
-  const deps = _botReviewDeps;
-  const [user, threads, comments] = await Promise.all([
-    deps.readCurrentUser(ref, deps.forge, cwd),
-    deps.listReviewThreads(ref, deps.forge, cwd),
-    deps.listPrComments(ref, deps.forge, cwd),
-  ]);
-  const own = [
-    ...threads.flatMap((thread) => ownComments(thread.comments, user.login, thread.id)),
-    ...ownComments(comments, user.login),
-  ];
-  const isOwn = (comment: PrComment | undefined): boolean =>
-    comment !== undefined && ownComments([comment], user.login).length > 0;
-  const keptThreads = threads.filter((thread) => !thread.resolved && !isOwn(thread.comments[0]));
-  const keptComments = comments.filter(
-    (comment) =>
-      (comment.kind === "comment" || comment.kind === "review") && comment.body.trim() !== "" && !isOwn(comment),
-  );
-  const writers = await readWriters(
-    [...keptThreads.flatMap((thread) => (thread.comments[0] ? [thread.comments[0]] : [])), ...keptComments],
-    writerCheck({ ref, deps: deps.forge, cwd }, deps.hasWriteAccess, (login, error) =>
-      getSafeLogger()?.warn("bot", "Could not check commenter permission", { login, error }),
-    ),
-  );
-  return {
-    writers,
-    rawThreads: threads,
-    rawComments: comments,
-    own,
-    login: user.login,
-    earlier: threads.filter((thread) => {
-      const first = thread.comments[0];
-      return !thread.resolved && isOwn(first) && parseNaxBotMarker(first?.body ?? "")?.key.startsWith("f-");
-    }),
-    threads: keptThreads,
-    comments: keptComments,
-  };
-}
-
 interface PreparedReview {
   readonly repoRoot: string;
   readonly ref: PostReviewInput["ref"];
@@ -236,7 +188,18 @@ async function reviewEnvironment(
     // The agent sandbox cannot run the full checks; CI on this exact head can vouch for them (nax#2631).
     _botReviewDeps.readHeadCi({ forge: ref.forge, url: info.url, repoRoot, headSha: info.headSha }),
   ]);
-  const { rawThreads, rawComments, ...triaged } = items;
+  const { rawThreads, rawComments, ownFindingThreads, writerCheck, ...triaged } = items;
+  const findings = await _botReviewDeps.recordFindingRulings({
+    ref,
+    login: items.login,
+    threads: ownFindingThreads,
+    deps: _botReviewDeps.forge,
+    cwd: repoRoot,
+    isWriter: (comment) => writerCheck({ login: comment.author, id: comment.authorId }),
+  });
+  const settledIds = new Set(findings.settled.map(({ threadId }) => threadId));
+  const confirmedIds = new Set(findings.confirmed.map(({ threadId }) => threadId));
+  const postEarlier = items.earlier.filter(({ id }) => !settledIds.has(id));
   const { reviewedIndex, settled, ...recorded } = await readReviewRulings(
     {
       ref,
@@ -251,6 +214,15 @@ async function reviewEnvironment(
     },
     _botReviewDeps.recordPrRulings,
   );
+  const findingSettled = [...findings.settled, ...findings.confirmed].map(({ ruling }) => ruling);
+  const rulings =
+    recorded.rulings || findings.echoed > 0
+      ? {
+          recorded: (recorded.rulings?.recorded ?? 0) + findings.echoed,
+          open: recorded.rulings?.open ?? 0,
+          asked: recorded.rulings?.asked ?? 0,
+        }
+      : undefined;
   const preparation: ReviewPreparation = { ...checks, ci };
   const intent = featureIntentPaths(checkout);
   const checkoutState = staticMode
@@ -273,8 +245,8 @@ async function reviewEnvironment(
       issues,
       threads: items.threads,
       comments: items.comments,
-      earlier: [...items.earlier, ...(recorded.itemEarlier ?? [])],
-      ...(settled !== undefined && { settled }),
+      earlier: [...postEarlier.filter(({ id }) => !confirmedIds.has(id)), ...(recorded.itemEarlier ?? [])],
+      ...((settled !== undefined || findingSettled.length > 0) && { settled: [...(settled ?? []), ...findingSettled] }),
       checks: preparation.checks === null ? [] : checkCommands(preparation.checks),
       decisions: input.decisions ?? [],
       staticMode,
@@ -289,6 +261,9 @@ async function reviewEnvironment(
       info,
       ...triaged,
       ...recorded,
+      earlier: postEarlier,
+      settledKeys: new Set(findings.settled.map(({ ruling }) => ruling.id)),
+      ...(rulings !== undefined && { rulings }),
       staticMode,
       sensitive: sensitivePaths(checkout.changedFiles),
       stateDir,
