@@ -3,7 +3,7 @@
   "feature": "workflow-interrupt-continue",
   "branchName": "feat/workflow-interrupt-continue",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T12:50:09.754Z",
+  "updatedAt": "2026-10-23T12:58:17.000Z",
   "userStories": [
     {
       "id": "US-001",
@@ -267,14 +267,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Three optional I/O seams and stable git-file union are wired into the existing environment; temporary-file and injected-git TDD verifies them without changing session lifecycle."
+        "reasoning": "Three optional I/O seams and stable git-file union are wired into the existing environment; temporary-file and injected-git TDD verifies them without changing session lifecycle.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/story-loop.ts",
@@ -291,7 +294,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "626e8e8d918cbc5a7d7b732e236ebd211392192c"
     },
     {
       "id": "US-006",
