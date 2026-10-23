@@ -3,7 +3,7 @@
   "feature": "ruling-state-bundle",
   "branchName": "feat/ruling-state-bundle",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-23T05:21:54.739Z",
+  "updatedAt": "2026-10-23T05:38:03.418Z",
   "userStories": [
     {
       "id": "US-001",
@@ -468,14 +468,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A standalone injectable git step mirrors the existing ledger commit pattern with bounded prefix comparison and rollback; cross-graph orchestration is deferred to US-009."
+        "reasoning": "A standalone injectable git step mirrors the existing ledger commit pattern with bounded prefix comparison and rollback; cross-graph orchestration is deferred to US-009.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/advisor/ledger.ts",
@@ -493,7 +496,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9348bdfb637529d009aecfba823961ac46d725f8"
     },
     {
       "id": "US-009",
