@@ -57,6 +57,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { type CoverageEnvironment, finishCoverage } from "#scripts/coverage-gate-mode";
 import { gateBaselinePath, gatePackageRoot } from "#scripts/lib/package-root";
 
 const ROOT = gatePackageRoot();
@@ -442,6 +443,9 @@ function savePerFileBaseline(byFile: Record<string, number>) {
   );
 }
 
+/** Baseline I/O seam so evaluation tests exercise the ratchet without editing package baselines. */
+export const _coverageDeps = { loadPerFileBaseline };
+
 /** Evaluates the per-file ratchet. Returns false and prints details if it should fail the run. */
 function checkPerFile(perFile: Map<string, number>, opts: { list: boolean }): boolean {
   const belowFloor = [...perFile.entries()].filter(([, p]) => p < PER_FILE_FLOOR).sort(([, a], [, b]) => a - b);
@@ -459,7 +463,7 @@ function checkPerFile(perFile: Map<string, number>, opts: { list: boolean }): bo
     return true;
   }
 
-  const baseline = loadPerFileBaseline();
+  const baseline = _coverageDeps.loadPerFileBaseline();
   if (!baseline) {
     console.error(`\n[coverage] ERROR: ${PER_FILE_BASELINE_FILE} missing.`);
     console.error(
@@ -532,6 +536,28 @@ function checkUnreported(unreported: readonly string[]): boolean {
   return false;
 }
 
+/** Evaluates all coverage checks; sandboxing changes only file-level enforcement. */
+export function evaluateCoverageGate({
+  totals,
+  perFile,
+  unreported,
+  env,
+  log,
+  error,
+}: {
+  totals: Totals;
+  perFile: Map<string, number>;
+  unreported: readonly string[];
+  env: CoverageEnvironment;
+  log: (message: string) => void;
+  error: (message: string) => void;
+}): 0 | 1 {
+  const failures = aggregateFailures(totals);
+  const perFileOk = checkPerFile(perFile, { list: false });
+  const allFilesOk = checkUnreported(unreported);
+  return finishCoverage({ aggregateFailures: failures, perFileOk, allFilesOk, env, log, error });
+}
+
 async function main() {
   const requireAllFiles = process.argv.includes("--require-all-files");
   const reportOnly = process.argv.includes("--report");
@@ -593,23 +619,9 @@ async function main() {
     return;
   }
 
-  const failures = aggregateFailures(totals);
-
-  const perFileOk = checkPerFile(perFile, { list: false });
-  const allFilesOk = checkUnreported(unreported);
-
-  if (failures.length > 0) {
-    console.error(`\n[coverage] FAIL — ${failures.join("; ")}`);
-    console.error("Add tests for the uncovered code (see the per-file report above), or");
-    console.error(
-      "if the floor is genuinely too high, adjust FLOOR in packages/repo-tooling/scripts/check-coverage.ts.",
-    );
-    process.exit(1);
-  }
-
-  if (!perFileOk || !allFilesOk) process.exit(1);
-
-  console.log("\n[coverage] OK — at or above floor.");
+  process.exit(
+    evaluateCoverageGate({ totals, perFile, unreported, env: process.env, log: console.log, error: console.error }),
+  );
 }
 
 if (import.meta.main) await main();

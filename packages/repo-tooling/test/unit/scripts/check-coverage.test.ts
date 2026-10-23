@@ -7,10 +7,12 @@
  * graduation. The two pure functions below are what stops that.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
+  _coverageDeps,
   aggregateFailures,
   buildUpdatedBaseline,
+  evaluateCoverageGate,
   extractTestSummary,
   findMissingBaselined,
   findUnreportedFiles,
@@ -310,5 +312,33 @@ describe("aggregateFailures", () => {
       "line coverage 70.00% < floor 80.00%",
       "function coverage 70.00% < floor 80.00%",
     ]);
+  });
+});
+
+describe("evaluateCoverageGate", () => {
+  test.each([
+    ["AC-21", { NAX_SANDBOXED: "1" }, 0],
+    ["AC-22", {}, 1],
+  ] as const)("%s evaluates real per-file failures with above-floor totals", (_ac, env, expected) => {
+    const logs: string[] = [];
+    const baseline = spyOn(_coverageDeps, "loadPerFileBaseline").mockReturnValue({ byFile: {}, updatedAt: "test" });
+    const details = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const code = evaluateCoverageGate({
+        totals: { linesFound: 100, linesHit: 90, fnFound: 100, fnHit: 90 },
+        perFile: new Map([["src/__coverage_gate_new_file__.ts", 0.1]]),
+        unreported: [],
+        env,
+        log: (message) => logs.push(message),
+        error: () => {},
+      });
+      expect(code).toBe(expected);
+      expect(baseline).toHaveBeenCalled();
+      expect(details).toHaveBeenCalledWith("  src/__coverage_gate_new_file__.ts: 10.00% (floor 80%)");
+      expect(logs.some((message) => message.includes("OK (sandboxed)"))).toBe(expected === 0);
+    } finally {
+      baseline.mockRestore();
+      details.mockRestore();
+    }
   });
 });
