@@ -38,6 +38,31 @@ function setup(reply: ImplementerReply | Error, dirty: string) {
 }
 
 describe("runBranchFix", () => {
+  test("pinned AC-1/2 scope contains only the session, not report creation or leftover commit", async () => {
+    const { fc } = setup(done, " M src/a.ts\n");
+    const events: string[] = [];
+    _workflowDeps.callOp = makeScriptedCallOp(() => {
+      events.push("session");
+      return done;
+    });
+    _workflowDeps.autoCommitIfDirty = async () => {
+      events.push("commit");
+    };
+    const sessionScope = async <T>(run: () => Promise<T>): Promise<T> => {
+      expect(await Bun.file(fc.reportPath).exists()).toBe(true);
+      events.push("start");
+      const result = await run();
+      events.push("end");
+      return result;
+    };
+    await runBranchFix({ ...fc, sessionScope }, { findings });
+    expect(events).toEqual(["start", "session", "end", "commit"]);
+  });
+  test("pinned AC-3 no scope still calls the op exactly once", async () => {
+    const { fc, inputs } = setup(done, "");
+    await runBranchFix(fc, { findings });
+    expect(inputs).toHaveLength(1);
+  });
   test.each([{ toolProviders: undefined }, { toolProviders: [] }])(
     "preserves call context identity without providers: %j",
     async ({ toolProviders }) => {

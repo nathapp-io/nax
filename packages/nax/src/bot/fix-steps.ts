@@ -122,6 +122,7 @@ export async function fixStep(env: BotFixEnv, _state: BotFixState): Promise<Step
     bar: barCommands(env.checks),
     checkoutState: renderCheckoutState({
       phase: "fresh",
+      pinnedBase: env.checkout.inPlace !== true,
       headSha: env.info.headSha,
       setup: env.checks.preRun.map((step) => step.command),
       ciFiles: await listCiConfigFiles(env.checkout.worktree),

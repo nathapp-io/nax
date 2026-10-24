@@ -33,8 +33,10 @@ import { _botReviewDeps } from "./review-run";
 import { rulingModelReader } from "./ruling-reader";
 import { recordPrRulings } from "./rulings";
 import { clearSavedFix, persistSavedFix, readSavedFix, reuseSavedFix, saveFix } from "./saved-fix";
+import { basePinScope } from "./session-pin";
 
 export const _botFixDeps = {
+  basePinScope,
   gitToplevel: _botReviewDeps.gitToplevel,
   ensureProjectTrusted: _botReviewDeps.ensureProjectTrusted,
   forge: _botReviewDeps.forge,
@@ -392,7 +394,11 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
       ...prepared,
       ...items,
       checks,
-      ctx: { ...context.ctx, runGit: botGit },
+      ctx: {
+        ...context.ctx,
+        runGit: botGit,
+        ...(checkout.inPlace ? {} : { sessionScope: deps.basePinScope(checkout.worktree, checkout.baseSha) }),
+      },
       config,
       review,
       model: input.model,
