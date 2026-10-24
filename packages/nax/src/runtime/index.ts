@@ -326,6 +326,15 @@ export const _runtimeLoggerDeps = { getSafeLogger };
 /** Injectable for tests: the afterTurn run-state repair (#2497). */
 export const _runtimeRunStateDeps = { repairRunState };
 
+function warnMissingPromptAuditIdentity(auditEnabled: boolean, workdir: string): void {
+  if (!auditEnabled) return;
+  _runtimeLoggerDeps
+    .getSafeLogger()
+    ?.warn("runtime", "Prompt audit is enabled but no feature name was given; prompts will not be audited", {
+      workdir,
+    });
+}
+
 export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime {
   const runId = crypto.randomUUID();
 
@@ -357,13 +366,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     promptAuditor = new PromptAuditor(runId, auditDir, opts.featureName);
   } else {
     promptAuditor = createNoOpPromptAuditor();
-    if (auditEnabled) {
-      _runtimeLoggerDeps
-        .getSafeLogger()
-        ?.warn("runtime", "Prompt audit is enabled but no feature name was given; prompts will not be audited", {
-          workdir,
-        });
-    }
+    warnMissingPromptAuditIdentity(auditEnabled, workdir);
   }
 
   const reviewAuditor =
