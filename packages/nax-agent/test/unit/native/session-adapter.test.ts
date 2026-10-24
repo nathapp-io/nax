@@ -227,6 +227,31 @@ describe("NativeSessionAdapter.sendTurn contextWindow override", () => {
   });
 });
 
+describe("NativeSessionAdapter compaction summary thinking", () => {
+  test("the summary asks for thinking off while the round trip keeps the session's level", async () => {
+    // An absent level means the backend default, which on a model that cannot
+    // disable thinking is adaptive at effort high. "off" is clamped by the
+    // client to the least thinking the model allows instead.
+    const requests: ClientRequest[] = [];
+    const { client } = countingClient(catalogModel(), async (_m: ResolvedModel, req: ClientRequest) => {
+      requests.push(req);
+      return { text: "ok", usage: { inputTokens: 1, outputTokens: 1 }, stopReason: "stop" };
+    });
+    _clientDeps.build = async () => client;
+    const adapter = new NativeSessionAdapter();
+    const modelDef: SessionModel = { provider: "unknown", model: "openai/gpt-5.4-mini[high]", contextWindow: 8_000 };
+    const { handle, dir } = await openIn(adapter, "sess-summary-thinking", { modelDef, compaction: COMPACTION });
+    await seedOversizedTranscript(dir, handle.id);
+
+    await adapter.sendTurn(handle, "next", turn);
+
+    // requests[0] is the summary, requests[1] the round trip, which ends on the
+    // turn's own prompt; the summary ends on the summary prompt instead.
+    expect(requests.map((req) => req.messages.at(-1)?.content === "next")).toEqual([false, true]);
+    expect(requests.map((req) => req.thinking)).toEqual(["off", "high"]);
+  });
+});
+
 describe("NativeSessionAdapter closePhysicalSession -- run teardown reaches the session maps", () => {
   let closeDir: string;
   beforeEach(async () => {
