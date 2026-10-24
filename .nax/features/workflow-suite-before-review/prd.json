@@ -3,7 +3,7 @@
   "feature": "workflow-suite-before-review",
   "branchName": "feat/workflow-suite-before-review",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-24T10:10:37.791Z",
+  "updatedAt": "2026-10-24T10:17:21.659Z",
   "userStories": [
     {
       "id": "US-001",
@@ -211,14 +211,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A narrow conditional refinement over the upstream loop with bounded round, finding-ID, residual, and fixBase behaviors exposed by existing seams; no new state model or API."
+        "reasoning": "A narrow conditional refinement over the upstream loop with bounded round, finding-ID, residual, and fixBase behaviors exposed by existing seams; no new state model or API.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/story-steps.ts",
@@ -241,7 +244,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8f5fe9a548ae2053b1ebcf3a3ab40c9aec864d57"
     },
     {
       "id": "US-004",
