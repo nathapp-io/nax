@@ -3,7 +3,7 @@
   "feature": "agent-session-modes",
   "branchName": "feat/agent-session-modes",
   "createdAt": "2026-10-24T00:00:00.000Z",
-  "updatedAt": "2026-10-24T15:13:46.206Z",
+  "updatedAt": "2026-10-24T15:17:16.104Z",
   "userStories": [
     {
       "id": "US-001",
@@ -123,8 +123,8 @@
         "backend"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -136,7 +136,19 @@
         "profileModelTier": "fast",
         "initialAgent": "native",
         "initialProfileId": "native-luna",
-        "initialModelTier": "fast"
+        "initialModelTier": "fast",
+        "initialComplexity": "medium",
+        "modelTier": "fast",
+        "routerDecision": {
+          "mode": "shadow",
+          "router": "decision-proxy:nax-routing",
+          "outcome": "picked",
+          "profileId": "native-deepseek",
+          "confidence": 0.8199999999999998,
+          "plannedProfileId": "native-luna",
+          "applied": false,
+          "decidedAt": "2026-10-24T15:13:49.928Z"
+        }
       },
       "contextFiles": [
         "packages/nax-agent/src/sandbox/launcher.ts",
@@ -153,7 +165,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3d9c304885b5129fe64c68b0a6b9365f2506b7e0"
     },
     {
       "id": "US-003",
