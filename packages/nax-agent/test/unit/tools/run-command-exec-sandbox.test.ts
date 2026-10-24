@@ -272,6 +272,25 @@ describe("US-008 — RunCommand's argv branch offers unsandboxed", () => {
     expect(description.endsWith(UNSANDBOXED_ARGV_SENTENCE)).toBe(true);
   });
 
+  // US-003's sandbox note and US-008's escape sentence compose: on a machine
+  // whose sandbox is unavailable, every argv call already runs outside it, so
+  // the note says so and the argument's sentence still follows it (the runtime
+  // still routes an escape request through the approval). Both, or neither --
+  // never the sentence without its separator.
+  test("AC-6 boundary: an unavailable sandbox keeps its note and still ends on the sentence", () => {
+    const unavailable = () =>
+      createCommandLauncher({
+        state: { kind: "unavailable", backend: "srt", reason: "no bwrap" },
+        backend: makeFakeSandboxBackend(),
+        policyFor,
+      });
+    const on = tool({ exec: exec({ launcher: unavailable(), unsandboxedCommands: true }) }).description;
+    expect(on).toContain("Commands are NOT sandboxed on this machine (no bwrap).");
+    expect(on.endsWith(UNSANDBOXED_ARGV_SENTENCE)).toBe(true);
+    const off = tool({ exec: exec({ launcher: unavailable() }) }).description;
+    expect(off).not.toContain(UNSANDBOXED_ARGV_SENTENCE);
+  });
+
   test("AC-7: an unsandboxed argv request reaches the launcher unwrapped", async () => {
     const { launcher, seen } = recordingLauncher();
     await runExecBranch({ argv: ["bun", "--version"], unsandboxed: true, unsandboxedReason: "registry" }, ctx(), {
