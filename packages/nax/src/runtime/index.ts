@@ -111,7 +111,7 @@ import type { ReviewRecurrenceStore } from "../execution/recurrence-store";
 import type { Iteration, StoryFixHistory } from "../findings";
 import { createStoryFixHistory } from "../findings";
 import type { Logger } from "../logger";
-import { getLogger } from "../logger";
+import { getLogger, getSafeLogger } from "../logger";
 import { buildMcpRollup, createMcpPool, createMcpProviders, writeMcpRollup } from "../mcp";
 import type { IReviewAuditor } from "../review/review-audit";
 import { createNoOpReviewAuditor, ReviewAuditor } from "../review/review-audit";
@@ -320,6 +320,9 @@ export interface CreateRuntimeOptions {
   commandInterceptor?: import("@nathapp/nax-agent/internal").CommandInterceptor;
 }
 
+/** Injectable logger lookup for runtime construction warnings. */
+export const _runtimeLoggerDeps = { getSafeLogger };
+
 /** Injectable for tests: the afterTurn run-state repair (#2497). */
 export const _runtimeRunStateDeps = { repairRunState };
 
@@ -354,6 +357,13 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     promptAuditor = new PromptAuditor(runId, auditDir, opts.featureName);
   } else {
     promptAuditor = createNoOpPromptAuditor();
+    if (auditEnabled) {
+      _runtimeLoggerDeps
+        .getSafeLogger()
+        ?.warn("runtime", "Prompt audit is enabled but no feature name was given; prompts will not be audited", {
+          workdir,
+        });
+    }
   }
 
   const reviewAuditor =
