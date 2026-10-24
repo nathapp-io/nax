@@ -13,6 +13,7 @@ import { describe, expect, test } from "bun:test";
 import { makeFeatureMachineHarness } from "@test/helpers";
 import { NaxError } from "@/errors";
 import type { FailedCheck } from "@/forge";
+import { markdownFence } from "@/utils/markdown-fence";
 import type { FeatureLimits } from "@/workflow/branch-fix-rounds";
 import type { FeatureEnv, FeatureSteps } from "@/workflow/feature-machine";
 import { FEATURE_STEPS, newFeatureRecord } from "@/workflow/feature-record";
@@ -137,8 +138,13 @@ describe("CI repair needs readable evidence (US-003)", () => {
   test("AC-13: mixed evidence keeps one finding per failed check", async () => {
     const h = harness({ checks: [unreadable[1] ?? E2E, E2E], limits: LIMITS });
     expect(await ciRepairDecision(h.env, h.env.record, DRAFT_FAILED, HEAD)).toEqual([
-      { kind: "gate", severity: "important", issue: "CI check lint failed:\nlog unavailable" },
-      { kind: "gate", severity: "important", issue: "CI check e2e failed:\nboom", suggestion: "See u" },
+      { kind: "gate", severity: "important", issue: `CI check lint failed:\n${markdownFence("log unavailable")}` },
+      {
+        kind: "gate",
+        severity: "important",
+        issue: `CI check e2e failed:\n${markdownFence("boom")}`,
+        suggestion: "See u",
+      },
     ]);
   });
 });
@@ -153,7 +159,12 @@ describe("the CI repair decision after publish (US-006)", () => {
     const out = await publishStep(h.env, h.env.record);
     expect(out.exit).toBe("ci-repair");
     expect(out.patch.ciRepairFindings).toEqual([
-      { kind: "gate", severity: "important", issue: "CI check e2e failed:\nboom", suggestion: "See u" },
+      {
+        kind: "gate",
+        severity: "important",
+        issue: `CI check e2e failed:\n${markdownFence("boom")}`,
+        suggestion: "See u",
+      },
     ]);
   });
 
@@ -349,6 +360,12 @@ describe("the failed and skipped steps in the finding's issue (US-004)", () => {
     return out.patch.ciRepairFindings?.[0]?.issue;
   }
 
+  test("US-008 AC-7 fences embedded triple backticks with four backticks", async () => {
+    expect(await issueOf({ name: "e2e", excerpt: "before\n```\nafter" })).toBe(
+      "CI check e2e failed:\n````\nbefore\n```\nafter\n````",
+    );
+  });
+
   const STEPPED: FailedCheck = {
     name: "Security audit",
     failedStep: "bun audit",
@@ -367,18 +384,20 @@ describe("the failed and skipped steps in the finding's issue (US-004)", () => {
 
   test("AC-15: the step, the skipped line and the excerpt, each on its own line", async () => {
     expect(await issueOf(STEPPED)).toBe(
-      'CI check Security audit failed at step "bun audit".\nSteps CI skipped after it, which never ran: pip-audit\nE',
+      `CI check Security audit failed at step "bun audit".\nSteps CI skipped after it, which never ran: pip-audit\n${markdownFence("E")}`,
     );
   });
 
   test("AC-16: a failed step with nothing skipped after it omits the skipped line", async () => {
     expect(await issueOf({ name: "Security audit", failedStep: "bun audit", excerpt: "E" })).toBe(
-      'CI check Security audit failed at step "bun audit".\nE',
+      `CI check Security audit failed at step "bun audit".\n${markdownFence("E")}`,
     );
   });
 
   test("AC-17: a check with no step facts keeps the plain failure text", async () => {
-    expect(await issueOf({ name: "Security audit", excerpt: "E" })).toBe("CI check Security audit failed:\nE");
+    expect(await issueOf({ name: "Security audit", excerpt: "E" })).toBe(
+      `CI check Security audit failed:\n${markdownFence("E")}`,
+    );
   });
 
   test("several skipped steps are listed in job order", async () => {

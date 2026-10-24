@@ -34,6 +34,7 @@ import { workflowPrReadiness } from "./workflow-ready";
 const SHORT_SHA_LENGTH = 7;
 const MAX_FAILURE_LENGTH = 500;
 const MAX_ISSUE_LENGTH = 200;
+const OUT_OF_ITEM_FILES_SHOWN = 20;
 export const _fixReportDeps = {
   replyToThread,
   resolveThread,
@@ -318,6 +319,22 @@ export function renderFixSummary(state: BotFixState, details: readonly string[] 
   return withNaxBotMarker(lines.join("\n"), "fix-summary");
 }
 
+function outOfItemDetail(env: BotFixEnv, state: BotFixState): string | undefined {
+  if (state.outcome !== "pushed" || !state.changed) return;
+  const named = new Set(
+    env.review.agreed.flatMap((item) => (item.kind !== "comment" && item.file !== undefined ? [item.file] : [])),
+  );
+  if (named.size === 0) return;
+  const unnamed = state.changed.filter((file) => !named.has(file));
+  if (unnamed.length === 0) return;
+  const shown = unnamed
+    .slice(0, OUT_OF_ITEM_FILES_SHOWN)
+    .map((file) => `\`${safeCode(file)}\``)
+    .join(", ");
+  const remaining = unnamed.length - OUT_OF_ITEM_FILES_SHOWN;
+  return `Also changed, not named by an agreed item: ${shown}${remaining > 0 ? ` and ${remaining} more` : ""}`;
+}
+
 export async function reportStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
   const lines: string[] = [];
   if (state.outcome === "nothing" && state.pushedSha)
@@ -326,6 +343,8 @@ export async function reportStep(env: BotFixEnv, state: BotFixState): Promise<St
     );
   if (state.ledgerCarried)
     lines.push("Run `git pull --rebase` in your main checkout to pick up the carried advisor ledger.");
+  const outOfItem = outOfItemDetail(env, state);
+  if (outOfItem !== undefined) lines.push(outOfItem);
   const body = renderFixSummary(state, lines);
   const own = env.own.find(({ key }) => key === "fix-summary");
   if (own) await _fixReportDeps.editComment(env.ref, own.comment, body, env.forge, env.repoRoot);

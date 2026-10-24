@@ -30,6 +30,7 @@ export async function repairStep(env: BotFixEnv, state: BotFixState): Promise<St
     bar: barCommands(env.checks),
     checkoutState: renderCheckoutState({
       phase: "after-fix",
+      pinnedBase: env.checkout.inPlace !== true,
       headSha: env.info.headSha,
       setup: env.checks.preRun.map((step) => step.command),
       ciFiles: await listCiConfigFiles(env.checkout.worktree),

@@ -14,6 +14,25 @@ import { DEFAULT_CONFIG } from "@/config/defaults";
 import { NaxConfigSchema } from "@/config/schemas";
 import { QualityConfigSchema } from "@/config/schemas-execution";
 
+describe("US-008 forge token defaults", () => {
+  test.each(["GITLAB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"])(
+    "AC-10/11/12 DEFAULT_CONFIG strips %s",
+    (token) => {
+      expect(DEFAULT_CONFIG.quality.stripEnvVars).toContain(token);
+    },
+  );
+  test.each(["GITLAB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"])(
+    "AC-14 quality object default strips %s",
+    (token) => {
+      expect(QualityConfigSchema.parse({}).stripEnvVars).toContain(token);
+    },
+  );
+  test("explicit token lists replace defaults", () => {
+    expect(QualityConfigSchema.parse({ stripEnvVars: ["CUSTOM"] }).stripEnvVars).toEqual(["CUSTOM"]);
+    expect(NaxConfigSchema.parse({ quality: { stripEnvVars: [] } }).quality.stripEnvVars).toEqual([]);
+  });
+});
+
 /** Minimal valid config base — everything except models */
 function baseConfig(models: unknown) {
   return { ...DEFAULT_CONFIG, models };

@@ -77,6 +77,8 @@ export interface PostReviewInput {
   readonly ci?: CiWaitResult;
   readonly earlier?: readonly PrThread[];
   readonly itemEarlier?: readonly PrThread[];
+  /** Fail closed on fixed workflow items when the review read non-writer comments. */
+  readonly itemFixedBlocked?: boolean;
   readonly rulings?: { recorded: number; open: number; asked: number };
   /** What the review actually covered (nax#2667); absent when the caller does not classify it. */
   readonly scope?: BotReviewScope;

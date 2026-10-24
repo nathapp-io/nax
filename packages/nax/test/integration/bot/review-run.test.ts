@@ -259,6 +259,22 @@ describe("runBotReview", () => {
     expect(readIssues).toHaveBeenCalledWith(ref, info.body, _botReviewDeps.forge, "/repo");
     expect(review.mock.calls[0]?.[1].issues).toEqual(issues);
   });
+  test.each([false, true])("US-008 AC-8/9 intent paths require trusted=%s", async (trusted) => {
+    changedFiles = [`${PROJECT_FEATURES_DIR}/x/prd.json`, `${PROJECT_FEATURES_DIR}/x/spec.md`];
+    _botReviewDeps.classifyPrTrust = async () => ({ trusted, headSha: "head", reasons: [] });
+    await runBotReview(input);
+    expect(review).toHaveBeenCalledTimes(1);
+    const reviewInput = review.mock.calls[0]?.[1];
+    if (trusted) {
+      expect(reviewInput).toMatchObject({
+        prdPath: join("/checkout", PROJECT_FEATURES_DIR, "x/prd.json"),
+        specPath: join("/checkout", PROJECT_FEATURES_DIR, "x/spec.md"),
+      });
+    } else {
+      expect(reviewInput).not.toHaveProperty("prdPath");
+      expect(reviewInput).not.toHaveProperty("specPath");
+    }
+  });
   test("AC-15 selects single feature PRD", async () => {
     changedFiles = [`${PROJECT_FEATURES_DIR}/one/prd.json`, "src/a.ts"];
     await runBotReview(input);

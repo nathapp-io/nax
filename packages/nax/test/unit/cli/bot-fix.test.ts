@@ -52,6 +52,19 @@ async function run(args: string[], command = "fix"): Promise<void> {
   await program.parseAsync(["bot", command, ...args], { from: "user" });
 }
 describe("registerBotCommand fix", () => {
+  test("AC-7 forwards explicit invocation trust to the fix cycle", async () => {
+    await run(["42", "--trust"]);
+    expect(fix).toHaveBeenCalledWith(expect.objectContaining({ trust: true }));
+  });
+  test("AC-8 omits trust when not requested", async () => {
+    await run(["42"]);
+    expect(fix).toHaveBeenCalledTimes(1);
+    expect(fix.mock.calls[0]?.[0]).not.toHaveProperty("trust");
+  });
+  test("review rejects the fix-only trust flag", async () => {
+    await expect(run(["42", "--trust"], "review")).rejects.toThrow("unknown option");
+    expect(review).not.toHaveBeenCalled();
+  });
   test("AC-1 forwards positive PR, default directory and interactivity", async () => {
     await run(["42"]);
     expect(fix).toHaveBeenCalledTimes(1);

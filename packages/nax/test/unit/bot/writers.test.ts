@@ -70,6 +70,28 @@ describe("writerCheck", () => {
   });
 });
 
+describe("hasNonWriterAuthor", () => {
+  test("AC-1 detects an outsider", async () => {
+    const check = mock(async ({ login }: { login: string }) => login === "alice");
+    expect(await bot.hasNonWriterAuthor([comment("alice"), comment("mallory")], "bot", check)).toBe(true);
+  });
+  test("AC-2 ignores the bot login", async () => {
+    const check = mock(async ({ login }: { login: string }) => login === "alice");
+    expect(await bot.hasNonWriterAuthor([comment("alice"), comment("bot")], "bot", check)).toBe(false);
+    expect(check).toHaveBeenCalledTimes(1);
+  });
+  test("AC-3 empty input performs no checks", async () => {
+    const check = mock(async () => false);
+    expect(await bot.hasNonWriterAuthor([], "bot", check)).toBe(false);
+    expect(check).not.toHaveBeenCalled();
+  });
+  test("AC-4 forwards author id", async () => {
+    const check = mock(async () => true);
+    expect(await bot.hasNonWriterAuthor([comment("carol", 9)], "bot", check)).toBe(false);
+    expect(check).toHaveBeenCalledWith({ login: "carol", id: 9 });
+  });
+});
+
 describe("readWriters", () => {
   test("AC-6 returns distinct authorized comment authors", async () => {
     const check = mock(async ({ login }: { login: string }) => login !== "mallory");

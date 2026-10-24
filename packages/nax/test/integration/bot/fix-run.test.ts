@@ -19,7 +19,7 @@ import { _workflowDeps } from "@/workflow/step-context";
 const originalCallOp = _workflowDeps.callOp;
 const resolve = mock<typeof resolveBotChecks>(async () => env.checks);
 const original = { ..._botFixDeps };
-const input = { dir: "/repo/sub", pr: 42, profiles: ["a"], interactive: false };
+const input = { dir: "/repo/sub", pr: 42, profiles: ["a"], interactive: false, trust: true };
 let env: ReturnType<typeof makeBotFixEnv>;
 let runtime: ReturnType<typeof makeTestRuntime>;
 let events: string[];

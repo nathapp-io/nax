@@ -33,8 +33,10 @@ import { _botReviewDeps } from "./review-run";
 import { rulingModelReader } from "./ruling-reader";
 import { recordPrRulings } from "./rulings";
 import { clearSavedFix, persistSavedFix, readSavedFix, reuseSavedFix, saveFix } from "./saved-fix";
+import { basePinScope } from "./session-pin";
 
 export const _botFixDeps = {
+  basePinScope,
   gitToplevel: _botReviewDeps.gitToplevel,
   ensureProjectTrusted: _botReviewDeps.ensureProjectTrusted,
   forge: _botReviewDeps.forge,
@@ -75,7 +77,11 @@ export const _botFixDeps = {
   reportStep,
 };
 
+export const BOT_FIX_DETECTED_REFUSAL =
+  "the base branch has no nax config and no AGENTS.md or CLAUDE.md checks; run nax setup, or pass --trust to run the package scripts nax detected";
+
 export interface BotFixInput {
+  readonly trust?: boolean;
   readonly inPlace?: boolean;
   readonly readyOnly?: boolean;
   readonly fresh?: boolean;
@@ -387,12 +393,18 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
         },
         log,
       );
+    if (checks.source === "detected" && input.trust !== true)
+      return finishFix({ outcome: "refused", reason: BOT_FIX_DETECTED_REFUSAL }, log);
     const items = await triage(prepared);
     const env: BotFixEnv = {
       ...prepared,
       ...items,
       checks,
-      ctx: { ...context.ctx, runGit: botGit },
+      ctx: {
+        ...context.ctx,
+        runGit: botGit,
+        ...(checkout.inPlace ? {} : { sessionScope: deps.basePinScope(checkout.worktree, checkout.baseSha) }),
+      },
       config,
       review,
       model: input.model,
