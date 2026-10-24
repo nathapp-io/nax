@@ -104,6 +104,13 @@ describe("fixStep", () => {
 });
 
 describe("checkStep", () => {
+  test("US-002 AC-8: rejects pinned instruction edits before gates", async () => {
+    bot._fixStepsDeps.changedPaths = async () => ["AGENTS.md", "src/a.ts"];
+    expect(await bot.checkStep(environment(items), state())).toEqual({
+      exit: "protected",
+      patch: { changed: ["AGENTS.md", "src/a.ts"], protectedFiles: ["AGENTS.md"], outcome: "protected" },
+    });
+  });
   test.each(["dirty", "unreadable", "throwing"])(
     "fails closed on %s status and retains recovery checkout",
     async (mode) => {

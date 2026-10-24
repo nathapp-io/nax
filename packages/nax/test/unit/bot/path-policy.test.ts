@@ -50,6 +50,12 @@ describe("isPinnedPath", () => {
 });
 
 describe("sensitivePaths", () => {
+  test("US-002 AC-7: flags agent config and root husky hooks", () => {
+    expect(bot.sensitivePaths([".claude/hooks/x.sh", "src/a.ts", ".husky/pre-push"])).toEqual([
+      ".claude/hooks/x.sh",
+      ".husky/pre-push",
+    ]);
+  });
   test("AC-1: flags sensitive files in input order", () => {
     const files = [
       ".nax/config.json",
@@ -95,6 +101,30 @@ describe("sensitivePaths", () => {
 });
 
 describe("fixProtectedPaths", () => {
+  test.each([
+    [1, [".claude/settings.json", "src/a.ts"], [".claude/settings.json"]],
+    [2, ["packages/x/CLAUDE.md"], ["packages/x/CLAUDE.md"]],
+    [3, [".mcp.json"], [".mcp.json"]],
+    [4, [".husky/pre-commit"], [".husky/pre-commit"]],
+    [5, ["AGENTS.override.md", "opencode.json"], ["AGENTS.override.md", "opencode.json"]],
+    [6, ["src/claude.ts", "app/.huskyrc"], []],
+  ] as const)("US-002 AC-%s: protects only agent config and root hooks", (_ac, files, expected) => {
+    expect(bot.fixProtectedPaths(files)).toEqual([...expected]);
+  });
+  test("preserves spelling and duplicates without protecting other hook managers or lowercase names", () => {
+    const files = [".husky/x", "docs/CLAUDE.md", ".husky/x"];
+    expect(
+      bot.fixProtectedPaths([
+        ...files,
+        "app/.husky/x",
+        "claude.md",
+        ".githooks/x",
+        "lefthook.yml",
+        ".pre-commit-config.yaml",
+      ]),
+    ).toEqual(files);
+    expect(bot.sensitivePaths(files)).toEqual(files);
+  });
   test("AC-3: protects control directories in input order", () => {
     expect(bot.fixProtectedPaths([".nax/rules/a.md", ".gitlab/ci.yml", "src/a.ts"])).toEqual([
       ".nax/rules/a.md",

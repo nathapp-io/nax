@@ -44,7 +44,10 @@ function fileName(file: string): string {
 
 /** Files the review summary should flag, preserving input order and spelling. */
 export function sensitivePaths(files: readonly string[]): string[] {
-  return files.filter((file) => isControlPath(file) || SENSITIVE_NAMES.has(fileName(file)));
+  return files.filter(
+    (file) =>
+      isControlPath(file) || isPinnedPath(file) || file.startsWith(".husky/") || SENSITIVE_NAMES.has(fileName(file)),
+  );
 }
 
 /** Files a fix must never change; manifests alone are deliberately not protected. */
@@ -53,6 +56,8 @@ export function fixProtectedPaths(files: readonly string[]): string[] {
     const name = fileName(file);
     return (
       isControlPath(file) ||
+      isPinnedPath(file) ||
+      file.startsWith(".husky/") ||
       name === ".env" ||
       name.startsWith(".env.") ||
       name === ".npmrc" ||
