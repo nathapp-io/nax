@@ -3,10 +3,11 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, useUntrustedRegistry } from "@test/helpers";
 import type { LoadedHooksConfig } from "@/hooks/runner";
-import { fireHook, validateHookCommand } from "@/hooks/runner";
+import { _hookRunnerDeps, fireHook, validateHookCommand } from "@/hooks/runner";
 import type { HookContext } from "@/hooks/types";
 import { markTrusted } from "@/trust";
 
@@ -64,6 +65,32 @@ describe("fireHook — US-005 trust backstop", () => {
     const config: LoadedHooksConfig = { hooks: { "on-start": { command: `touch '${marker}'` } } };
     await fireHook(config, "on-start", ctx, project);
     expect(await Bun.file(marker).exists()).toBe(true);
+  });
+});
+
+describe("fireHook — output drain is bounded after the hook exits", () => {
+  let project = "";
+  const original = _hookRunnerDeps.streamDrainTimeoutMs;
+  afterEach(() => {
+    _hookRunnerDeps.streamDrainTimeoutMs = original;
+    cleanupTempDir(project);
+  });
+
+  test("a hook that exits but leaves a background child holding stdout does not hang", async () => {
+    project = makeTempDir();
+    const marker = join(project, "hook-ran");
+    const script = join(project, "notify.sh");
+    // The background `sleep` inherits stdout, so the pipe stays open for 3s after the hook exits 0.
+    writeFileSync(script, `#!/bin/sh\ntouch '${marker}'\nsleep 3 &\necho started\n`);
+    chmodSync(script, 0o755);
+    _hookRunnerDeps.streamDrainTimeoutMs = 50;
+    const config: LoadedHooksConfig = { hooks: {}, _global: { hooks: { "on-start": { command: `'${script}'` } } } };
+
+    const started = performance.now();
+    await fireHook(config, "on-start", { event: "on-start", feature: "drain-test" }, project);
+
+    expect(await Bun.file(marker).exists()).toBe(true);
+    expect(performance.now() - started).toBeLessThan(2000);
   });
 });
 

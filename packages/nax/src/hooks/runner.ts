@@ -19,6 +19,9 @@ const STREAM_DRAIN_TIMEOUT_MS = 2000;
 /** Grace period after SIGTERM before escalating to SIGKILL for a hook that ignores it. */
 const HOOK_KILL_GRACE_MS = 5000;
 
+/** Injectable for tests: how long output may keep draining after the hook process exits or is killed. */
+export const _hookRunnerDeps = { streamDrainTimeoutMs: STREAM_DRAIN_TIMEOUT_MS };
+
 function createDrainDeadline(deadlineMs: number): { promise: Promise<string>; cancel: () => void } {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const promise = new Promise<string>((resolve) => {
@@ -254,21 +257,22 @@ async function executeHook(
   clearTimeout(timeoutId);
   clearTimeout(killTimeoutId);
 
-  const [stdout, stderr] = timedOut
-    ? await (async () => {
-        const stdoutDrain = createDrainDeadline(STREAM_DRAIN_TIMEOUT_MS);
-        const stderrDrain = createDrainDeadline(STREAM_DRAIN_TIMEOUT_MS);
-        try {
-          return await Promise.all([
-            Promise.race([stdoutPromise, stdoutDrain.promise]),
-            Promise.race([stderrPromise, stderrDrain.promise]),
-          ]);
-        } finally {
-          stdoutDrain.cancel();
-          stderrDrain.cancel();
-        }
-      })()
-    : await Promise.all([stdoutPromise, stderrPromise]);
+  // Bounded on BOTH paths: a hook that exits 0 but left a background child (`notify &`, a daemon)
+  // leaves that child holding the pipes, and the kill timer is already cleared, so an unbounded
+  // drain would wait as long as the child lives and hang the run's completion.
+  const stdoutDrain = createDrainDeadline(_hookRunnerDeps.streamDrainTimeoutMs);
+  const stderrDrain = createDrainDeadline(_hookRunnerDeps.streamDrainTimeoutMs);
+  let stdout: string;
+  let stderr: string;
+  try {
+    [stdout, stderr] = await Promise.all([
+      Promise.race([stdoutPromise, stdoutDrain.promise]),
+      Promise.race([stderrPromise, stderrDrain.promise]),
+    ]);
+  } finally {
+    stdoutDrain.cancel();
+    stderrDrain.cancel();
+  }
 
   const output = (stdout + stderr).trim();
 
