@@ -13,15 +13,19 @@ export type WorkflowStoryGateStates = Readonly<
 
 /** The gates nax itself ran on the story before the review, and what it runs thereafter. */
 function naxCheckedBlock(gates: WorkflowStoryGateStates, e2eGate: boolean): string {
-  const state = (name: "lint" | "typecheck" | "scoped"): string => gates[name] ?? "not run";
+  const state = (name: keyof WorkflowStoryGateStates): string => gates[name] ?? "not run";
+  const redSuite =
+    gates["full-suite"] === "red"
+      ? "\nThe full suite is red; nax already records its failures as open findings, so do not repeat them as findings."
+      : "";
   // US-009 (nax#2530): the host runs e2e, so its journeys are never something the reviewer could
   // not verify — only the projects that declare the gate hear about it.
   const e2e = e2eGate
     ? "\nnax runs the e2e suite as a repository gate on the host; do not list e2e journeys in cannotVerify."
     : "";
   return `## What nax already checked
-nax ran these gates on this story before your review: lint ${state("lint")}, typecheck ${state("typecheck")}, scoped tests ${state("scoped")}.
-After your review nax runs the full test suite on this story, and once every story is done it runs the repository gates. Both run only when the workflow reaches them: a red gate, or a finding left open, can end the story before the suite. nax records whether each one ran and what it returned, so never list the full suite or the repository gates in "cannotVerify", even though they have not run yet.
+nax ran these gates on this story before your review: lint ${state("lint")}, typecheck ${state("typecheck")}, scoped tests ${state("scoped")}, full suite ${state("full-suite")}.${redSuite}
+Do not list these gates in "cannotVerify": their results are stated here. Once every story is done nax runs the repository gates; nax records whether they ran and what they returned, so do not list the repository gates in "cannotVerify" either.
 If you have a shell tool, run this story's own test files with one scoped test command before you give the spec verdict.${e2e}`;
 }
 
