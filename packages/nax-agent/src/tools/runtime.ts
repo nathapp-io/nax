@@ -31,6 +31,7 @@ import { requestCapabilityTool } from "./request-capability.ts";
 import {
   openCallShadowTap,
   resolveAskOutcome,
+  resolveAskVerdict,
   resolveDenialOutcome,
   resolveGuardDenial,
   resolvePolicyIdentity,
@@ -522,13 +523,17 @@ export function createCodingToolRuntime(opts: {
         }
       }
 
-      if (!verdict.allowed && verdict.outcome === "ask") {
+      // US-005/US-006: the ONE ask route. A verdict the policy raised as an
+      // ask goes there as it always did; an ALLOWED escape request is
+      // converted into one unless the mode already let it run (`raw`).
+      const askVerdict = resolveAskVerdict({ identity: policyIdentity, verdict, unsandboxed });
+      if (askVerdict !== undefined) {
         return resolveAskOutcome({
           identity: policyIdentity,
           tool,
           input,
           context,
-          verdict,
+          verdict: askVerdict,
           runtimeSignal: signal,
           askResolver,
           stage: opts.pipelineStage,
@@ -536,8 +541,7 @@ export function createCodingToolRuntime(opts: {
           root: opts.policy.root,
           logCall,
           runTool,
-          // US-005: an escape request that had to ask says so, with the reason
-          // suffix. Converting an ALLOW into an ask is US-006's.
+          // US-004/US-005: the ask says the command runs outside the sandbox.
           ...(unsandboxed?.kind === "unsandboxed" ? { unsandboxed: { suffix: unsandboxed.suffix } } : {}),
         });
       }

@@ -100,7 +100,17 @@ const UNSANDBOXED_NOT_ENABLED = "unsandboxed commands are not enabled for this s
  */
 export type UnsandboxedCall =
   | { readonly kind: "error"; readonly content: string }
-  | { readonly kind: "unsandboxed"; readonly suffix: string };
+  | {
+      readonly kind: "unsandboxed";
+      /** The clause appended to any ask this call raises: WHY it wants out. */
+      readonly suffix: string;
+      /**
+       * US-006: true when an ALLOWED verdict must still become an ask. False
+       * under `raw`, which never asks by definition (ADR-030) — the mode's
+       * whole point is that a command the policy let through runs.
+       */
+      readonly asksOnAllow: boolean;
+    };
 
 /**
  * US-005: the sandbox-escape gate, run once per call BEFORE the policy.
@@ -119,11 +129,16 @@ export type UnsandboxedCall =
  *   than in the tool is what makes "disabled" mean disabled.
  * - `unsandboxed` — the escape is allowed. `suffix` is the clause an ask this
  *   call raises must carry, so the person approving it is told the command
- *   runs outside the sandbox. Turning an ALLOW into an ask is US-006's; this
- *   only reports that the request is legitimate.
+ *   runs outside the sandbox; `asksOnAllow` says whether an ALLOW still has to
+ *   be raised as one (US-006). The policy itself is evaluated unchanged: the
+ *   flag is not a policy input, so the verdict is the one the call would get
+ *   without it.
  *
- * Only `enabled` is read from the runtime's option: `bashApproval` decides how
- * an ENABLED request is routed, which is the caller's business.
+ * The mode is read from the runtime's option rather than the compiled policy:
+ * `bashApproval` decides how an ENABLED request is ROUTED, which is the
+ * runtime's business, while the policy line answers only "is this command
+ * form granted". An `Exec` (argv) call is routed by the same mode — it is the
+ * other model-authored identity, and no separate Exec approval mode exists.
  */
 export function resolveUnsandboxedCall(p: {
   identity: string;
@@ -136,7 +151,65 @@ export function resolveUnsandboxedCall(p: {
   if (p.identity !== BASH_TOOL_NAME && p.identity !== EXEC_TOOL_NAME) return undefined;
   if (p.input[field] !== true) return undefined;
   if (p.option?.enabled !== true) return { kind: "error", content: UNSANDBOXED_NOT_ENABLED };
-  return { kind: "unsandboxed", suffix: unsandboxedReasonSuffix(p.input) };
+  return {
+    kind: "unsandboxed",
+    suffix: unsandboxedReasonSuffix(p.input),
+    asksOnAllow: p.option.bashApproval !== "raw",
+  };
+}
+
+/** The reason a converted allow carries (spec US-006), before the suffix. */
+const UNSANDBOXED_ASK_REASON = "unsandboxed run requested";
+
+/**
+ * US-006: the ask a permitted escape request raises where the policy only
+ * allowed it.
+ *
+ * An allow says "this command form is granted", nothing about the sandbox:
+ * under `gated` that same grant runs the command WRAPPED, and under `escalate`
+ * only a grant MISS asks. So an escape request the policy merely allowed would
+ * otherwise run unwrapped with nobody told, which is the whole thing the
+ * approval exists to prevent. `raw` is exempt (`asksOnAllow`), and a verdict
+ * that already asks or denies is left to the ordinary paths.
+ *
+ * The rule is SYNTHETIC — `Unsandboxed(<identity>)` is expressible in no
+ * config — so it goes on `rule` only; `matchedRule` stays unset (see
+ * `SYNTHETIC_UNSANDBOXED_RULE`). `resolvedPaths` is carried over so an
+ * approved call admits exactly what the policy resolved.
+ */
+export function convertUnsandboxedAllow(p: {
+  identity: string;
+  unsandboxed: UnsandboxedCall | undefined;
+  verdict: PolicyVerdict;
+}): DeniedVerdict | undefined {
+  if (p.unsandboxed?.kind !== "unsandboxed" || !p.unsandboxed.asksOnAllow) return undefined;
+  if (!p.verdict.allowed) return undefined;
+  return {
+    allowed: false,
+    outcome: "ask",
+    breach: false,
+    rule: `Unsandboxed(${p.identity})`,
+    reason: UNSANDBOXED_ASK_REASON,
+    resolvedPaths: p.verdict.resolvedPaths,
+  };
+}
+
+/**
+ * The verdict this call raises an ask with, or undefined when it raises none.
+ *
+ * One place decides both the ask the policy itself produced (US-005) and the
+ * one an ALLOWED escape request is converted into (US-006), so `callTool`
+ * keeps a single ask branch and the conversion cannot drift from the ordinary
+ * route. A denial that is final — `outcome` absent or "denied" — is NOT an
+ * ask and comes back undefined, leaving `resolveDenialOutcome` to answer it.
+ */
+export function resolveAskVerdict(p: {
+  identity: string;
+  verdict: PolicyVerdict;
+  unsandboxed: UnsandboxedCall | undefined;
+}): DeniedVerdict | undefined {
+  if (p.verdict.allowed) return convertUnsandboxedAllow(p);
+  return p.verdict.outcome === "ask" ? p.verdict : undefined;
 }
 
 /**
