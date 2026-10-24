@@ -76,6 +76,14 @@ function warnSkippedEarlier(input: PostReviewInput, handledIds: readonly string[
   }
 }
 
+function warnBlockedEarlier({ thread, key, blocked }: EarlierEntry): void {
+  if (!blocked) return;
+  getLogger()?.warn("bot-post", "Kept item open: the review read text from someone without write access", {
+    threadId: thread.id,
+    key,
+  });
+}
+
 function fixedItemBody(input: { key: string; thread: PrThread; reason: string; sha: string }): string {
   const { key, thread, reason, sha } = input;
   return withNaxBotMarker(
@@ -98,12 +106,9 @@ export async function postEarlier(input: PostReviewInput): Promise<{ earlierAnsw
     input,
     earlier.map(({ thread }) => thread.id),
   );
-  for (const { thread, key, verdict, blocked } of earlier) {
-    if (blocked)
-      getLogger()?.warn("bot-post", "Kept item open: the review read text from someone without write access", {
-        threadId: thread.id,
-        key,
-      });
+  for (const entry of earlier) {
+    warnBlockedEarlier(entry);
+    const { thread, key, verdict } = entry;
     if (!verdict || verdict.status === "open") continue;
     const itemFixed = key.startsWith("w-") && verdict.status === "fixed";
     const replyKey = itemFixed ? `wr-fixed-${key}` : earlierKey(thread.id);
