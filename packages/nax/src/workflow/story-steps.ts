@@ -280,7 +280,7 @@ async function deferMinors(env: StoryLoopEnv, s: LoopState, drafts: readonly Wor
   }
 }
 
-/** One pass: gates -> suite -> report check -> review. Red gates or suite return directly to routing. */
+/** One pass: gates -> suite -> report check -> review. A red suite bypasses review only before the cap. */
 async function evaluate(env: StoryLoopEnv, s: LoopState): Promise<WorkflowFinding[]> {
   s.suiteThisIteration = false;
   await env.sink.update({ phase: "gates" });
@@ -291,9 +291,9 @@ async function evaluate(env: StoryLoopEnv, s: LoopState): Promise<WorkflowFindin
   s.suite = await env.steps.fullSuite();
   s.suiteThisIteration = true;
   const suiteFindings = s.suite.red ? s.assign(s.suite.findings) : [];
-  // Preserve the open review's fix base while suite failures bypass re-review, including at the cap.
-  if (s.suite.red) return [...suiteFindings, ...s.reviewOpen];
-  // One report turn after the suite is non-red, before the review spends itself on a missing report.
+  // Preserve the open review's fix base while suite failures bypass re-review before the cap.
+  if (s.suite.red && s.round < env.maxFixRounds) return [...suiteFindings, ...s.reviewOpen];
+  // One report turn before review, even with a red suite on the last pass.
   s.reportTurnRan = await runReportCheck(env, s, (turn) => implementTurn(env, turn));
   await env.sink.update({ phase: s.reviewed ? "rereview" : "review" });
   await review(env, s);

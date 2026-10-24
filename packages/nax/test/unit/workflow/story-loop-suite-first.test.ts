@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { failingReview, makeStoryLoopHarness, recordStoryTrace, storyLoopFixtures } from "@test/helpers";
+import {
+  failingReview,
+  makeStoryLoopAdvisor,
+  makeStoryLoopHarness,
+  recordStoryTrace,
+  storyLoopFixtures,
+} from "@test/helpers";
+import type { ResidualRequest } from "@/workflow/advisor";
 import { runStoryLoop } from "@/workflow/story-loop";
 import type { GateRunResult } from "@/workflow/types";
 
@@ -124,12 +131,119 @@ describe("runStoryLoop suite-first passes", () => {
     expect(fixes(h)[0]?.findings).toEqual([expect.objectContaining({ kind: "gate", gate: "lint" })]);
   });
 
-  test("red suite at the cap goes to residual without a review or another fix", async () => {
-    const h = makeStoryLoopHarness({ suite: [SUITE_RED, SUITE_RED] }, { maxFixRounds: 1 });
+  test.each([1, 2, 3, 4, 5, 6, 7])("US-003 AC-%i: final red suite reaches review and residual", async (ac) => {
+    const requests: ResidualRequest[] = [];
+    const h = makeStoryLoopHarness(
+      { suite: [SUITE_RED, SUITE_RED], review: [failingReview()] },
+      {
+        maxFixRounds: 1,
+        advisor: makeStoryLoopAdvisor({
+          ruleResidual: async (request) => {
+            requests.push(request);
+            return { rulings: [], diagnoses: {} };
+          },
+        }),
+      },
+    );
+    const { calls, outcome } = await traced(h);
+    const open = h.updates.flatMap((patch) => (patch.openFindings ? [patch.openFindings] : []));
+    switch (ac) {
+      case 1:
+        expect(calls.filter((name) => name === "storyReview")).toHaveLength(1);
+        break;
+      case 2:
+        expect(calls.filter((name) => ["fullSuite", "storyReview"].includes(name))).toEqual([
+          "fullSuite",
+          "fullSuite",
+          "storyReview",
+        ]);
+        break;
+      case 3:
+        expect(outcome).toMatchObject({ state: "complete-gate-open", reason: "red: full-suite", rounds: 1 });
+        expect(fixes(h)).toHaveLength(1);
+        break;
+      case 4:
+        expect(h.reviewGates).toEqual([{ ...GREEN.states, "full-suite": "red" }]);
+        break;
+      case 5:
+        expect(requests[0]?.items).toEqual([expect.objectContaining({ id: "F3", ...failingReview().findings[0] })]);
+        break;
+      case 6:
+        expect(requests[0]?.redGates).toEqual(["full-suite"]);
+        break;
+      case 7:
+        expect(open.at(-1)).toEqual([
+          expect.objectContaining({ id: "F2", kind: "gate", gate: "full-suite" }),
+          expect.objectContaining({ id: "F3", kind: "spec" }),
+        ]);
+        break;
+    }
+  });
+
+  test.each([8, 9, 10, 11])("US-003 AC-%i: final red re-review retains the original fix base", async (ac) => {
+    const h = makeStoryLoopHarness(
+      { suite: [SUITE_GREEN, SUITE_RED, SUITE_RED], review: [failingReview()], reReviewAllAddressed: [false] },
+      { maxFixRounds: 2 },
+    );
     const { calls } = await traced(h);
-    expect(h.reviewGates).toHaveLength(0);
-    expect(fixes(h)).toHaveLength(1);
-    expect(calls.filter((name) => name === "fullSuite")).toHaveLength(2);
-    expect(h.record().state).toBe("complete-gate-open");
+    switch (ac) {
+      case 8:
+        expect(h.reReviews).toHaveLength(1);
+        break;
+      case 9:
+        expect(h.reReviews[0]?.round).toBe(2);
+        expect(calls.filter((name) => ["fullSuite", "reReview"].includes(name))).toEqual([
+          "fullSuite",
+          "fullSuite",
+          "fullSuite",
+          "reReview",
+        ]);
+        break;
+      case 10:
+        expect(h.reReviews[0]?.fixBase).toBe("h1");
+        expect(calls.filter((name) => name === "head")).toHaveLength(1);
+        break;
+      case 11:
+        expect(h.record().openFindings).toEqual([
+          expect.objectContaining({ id: "F3", kind: "gate", gate: "full-suite" }),
+          expect.objectContaining({ id: "F1", kind: "spec" }),
+        ]);
+        break;
+    }
+  });
+
+  test("US-003: final red suite runs the report check before the first review", async () => {
+    const calls: string[] = [];
+    const h = makeStoryLoopHarness(
+      { suite: [SUITE_RED, SUITE_RED] },
+      {
+        maxFixRounds: 1,
+        steps: {
+          reportExists: async () => {
+            calls.push("reportExists");
+            return false;
+          },
+        },
+      },
+    );
+    const { fullSuite, storyReview } = h.env.steps;
+    h.env.steps.fullSuite = async () => {
+      calls.push("fullSuite");
+      return fullSuite();
+    };
+    h.env.steps.storyReview = async (...args) => {
+      calls.push("storyReview");
+      return storyReview(...args);
+    };
+    await runStoryLoop(h.env);
+    expect(h.turns.map((turn) => turn.kind)).toEqual(["implement", "fix", "report"]);
+    expect(calls).toEqual(["fullSuite", "fullSuite", "reportExists", "reportExists", "storyReview"]);
+  });
+
+  test.each([12, 13])("US-003 AC-%i: round zero is the last pass with no allowed fixes", async (ac) => {
+    const h = makeStoryLoopHarness({ suite: [SUITE_RED] }, { maxFixRounds: 0 });
+    const { calls } = await traced(h);
+    if (ac === 12) expect(calls.filter((name) => name === "storyReview")).toHaveLength(1);
+    else expect(fixes(h)).toHaveLength(0);
   });
 });
