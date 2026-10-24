@@ -3,7 +3,7 @@
   "feature": "bot-security-boundary-2",
   "branchName": "feat/bot-security-boundary-2",
   "createdAt": "2026-10-24T00:00:00.000Z",
-  "updatedAt": "2026-10-24T05:55:59.326Z",
+  "updatedAt": "2026-10-24T06:04:28.159Z",
   "userStories": [
     {
       "id": "US-001",
@@ -87,14 +87,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Existing policy and reporting extension without a new graph abstraction; protected-path access control requires isolated security TDD."
+        "reasoning": "Existing policy and reporting extension without a new graph abstraction; protected-path access control requires isolated security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/path-policy.ts",
@@ -111,7 +114,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b6d1277cbc2b9efb0b3319ec741add2143d18e4f"
     },
     {
       "id": "US-003",
