@@ -22,6 +22,53 @@ function stubPatterns(seen: (string | undefined)[], regex: readonly RegExp[]): v
 }
 
 describe("reviewRequiredFiles", () => {
+  test("US-004 AC-1/3 keeps changed tests without resolving package patterns", async () => {
+    const seen: (string | undefined)[] = [];
+    stubPatterns(seen, [/_test\.go$/]);
+    expect(
+      await reviewRequiredFiles(["pkg/main.go", "pkg/main_test.go"], fc({ packageDirs: ["pkg"] }), {
+        keepTests: true,
+      }),
+    ).toEqual(["pkg/main.go", "pkg/main_test.go"]);
+    expect(seen).toEqual([]);
+  });
+
+  test.each([{ paths: [] }, { paths: ["README.md"] }, { paths: ["root_test.go", "pkg/main_test.go"] }])(
+    "US-004 AC-3 never resolves patterns with keepTests, paths=%j",
+    async ({ paths }) => {
+      const seen: (string | undefined)[] = [];
+      stubPatterns(seen, [/_test\.go$/]);
+      const required = await reviewRequiredFiles(paths, fc({ packageDirs: ["pkg"] }), { keepTests: true });
+      expect(required).toEqual(paths.filter((path) => path !== "README.md"));
+      expect(seen).toEqual([]);
+    },
+  );
+
+  test("US-004 AC-2 keeps non-source filtering when keeping tests", async () => {
+    const seen: (string | undefined)[] = [];
+    stubPatterns(seen, []);
+    expect(
+      await reviewRequiredFiles(["README.md", "bun.lock", "logo.png", "src/a.ts"], fc(), { keepTests: true }),
+    ).toEqual(["src/a.ts"]);
+    expect(seen).toEqual([]);
+  });
+
+  test.each([undefined, false])(
+    "US-004 AC-4/5 preserves package classification with keepTests=%s",
+    async (keepTests) => {
+      const seen: (string | undefined)[] = [];
+      stubPatterns(seen, [/_test\.go$/]);
+      const paths = ["pkg/main.go", "pkg/main_test.go"];
+      const context = fc({ packageDirs: ["pkg"] });
+      const required =
+        keepTests === undefined
+          ? await reviewRequiredFiles(paths, context)
+          : await reviewRequiredFiles(paths, context, { keepTests });
+      expect(required).toEqual(["pkg/main.go"]);
+      expect(seen).toEqual(["pkg"]);
+    },
+  );
+
   test("drops a test file classified by its owning package's patterns (AC-10)", async () => {
     const seen: (string | undefined)[] = [];
     stubPatterns(seen, [/\.spec\.ts$/]);

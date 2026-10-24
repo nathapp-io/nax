@@ -110,11 +110,45 @@ describe("runPrReview", () => {
         { ...input, rangeBase: "reviewed", staticMode },
       );
       expect(calls[0]).toMatchObject({
-        requiredFiles: ["pkg/main.go", "settings.json"],
+        requiredFiles: ["pkg/main.go", "pkg/main_test.go", "settings.json"],
         repoRoot: "/checkout",
         range: "reviewed..HEAD",
       });
-      expect(result).toMatchObject({ ran: true, unreadFiles: ["pkg/main.go", "settings.json"] });
+      expect(result).toMatchObject({ ran: true, unreadFiles: ["pkg/main.go", "pkg/main_test.go", "settings.json"] });
+    },
+  );
+  test.each([false, true])(
+    "US-004 AC-8/9 reports an unread test but retains the exhausted approved verdict, static=%s",
+    async (staticMode) => {
+      _reviewStepDeps.writeBranchReviewPackage = async () => [
+        "pkg/main.go",
+        "pkg/main_test.go",
+        "README.md",
+        "settings.json",
+      ];
+      _workflowDeps.resolveTestPatterns = async () => ({
+        regex: [/_test\.go$/],
+        globs: [],
+        testDirs: [],
+        pathspec: [],
+        resolution: "per-package",
+      });
+      // The op owns retry exhaustion; this is its final usable result, not a new retry in runPrReview.
+      const verdict = {
+        intent: "pass",
+        quality: "approved",
+        findings: [],
+        threads: [],
+        comments: [],
+        cannotVerify: [],
+        inspectedFiles: ["pkg/main.go", "settings.json"],
+      };
+      _workflowDeps.callOp = makeScriptedCallOp(() => verdict);
+      const result = await runPrReview({ ...ctx, packageDirs: ["pkg"] }, { ...input, staticMode });
+      expect(result).toMatchObject({ ran: true, unreadFiles: ["pkg/main_test.go"] });
+      if (!result.ran) throw new Error("Expected a usable review verdict");
+      expect(result.verdict).toBe(verdict);
+      expect(result.verdict.quality).toBe("approved");
     },
   );
   test("US-015 AC-9 reports only required paths not inspected", async () => {
