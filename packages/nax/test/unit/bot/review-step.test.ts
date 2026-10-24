@@ -68,6 +68,12 @@ afterEach(() => {
 });
 
 describe("runPrReview", () => {
+  test.each([false, true])("review depth AC-8 forwards new sections to the op (static=%s)", async (staticMode) => {
+    const result = await runPrReview(ctx, { ...input, staticMode });
+    expect(result).toMatchObject({ ran: true, verdict: { quality: "approved" } });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ prompt: expect.stringMatching(/## Beyond the diff[\s\S]*## Tests/) });
+  });
   test("settled AC-15 forwards rulings into the operation prompt", async () => {
     await runPrReview(ctx, {
       ...input,

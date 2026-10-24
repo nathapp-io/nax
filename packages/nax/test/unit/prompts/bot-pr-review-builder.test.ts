@@ -35,7 +35,53 @@ const settledEntry = {
   reason: "ran live calls",
 };
 
+const beyondDiff = `## Beyond the diff
+A change is correct only if the code it did not touch still agrees with it. For every function, type, config key or contract the diff changes, and for every defect the PR description says it fixes:
+- Search the repository for the other callers of each changed or wrapped function, and for other sites with the same pattern, including files the diff does not touch. A fix applied at some sites but not at others is a finding: quote the missed site.
+- Check that callers and callees still agree, and that every new piece is reachable from where it is meant to be used.
+- If the repository already solves the same problem elsewhere, for example in a helper or a sibling module the PR also changes, compare the new code with that solution and report where it is weaker.
+- List the files you opened outside the diff in inspectedFiles.`;
+const testReading = `## Tests
+Read the test changes, not only the source. For each behaviour the PR changes and each defect it says it fixes:
+- Name the test that covers it, and check that the test asserts the outcome the change promises (the returned value or the data kept), not only that the call returns or how long it took.`;
+const testRunning = `- Run that test file with the project's test command, scoped to the file. If you cannot run it, list it in cannotVerify as "not run: <test file>: <reason>".`;
+const testClosing = "A changed behaviour with no test that would fail without the change is a finding.";
+
 describe("buildBotPrReviewPrompt", () => {
+  test("review depth AC-1 exports exact shared beyond-diff text from the barrel", () => {
+    expect(typeof prompts.WORKFLOW_BEYOND_DIFF_SECTION).toBe("string");
+    expect(prompts.WORKFLOW_BEYOND_DIFF_SECTION).toBe(beyondDiff);
+  });
+  test.each([false, true])("review depth AC-2/3 includes beyond-diff after enumeration (static=%s)", (staticMode) => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, staticMode });
+    expect(result).toContain(beyondDiff);
+    expect(result.indexOf(beyondDiff)).toBeGreaterThan(result.indexOf(prompts.WORKFLOW_ENUMERATION_INSTRUCTION));
+    expect(result.indexOf(beyondDiff)).toBeLessThan(result.indexOf("## Untrusted content"));
+  });
+  test.each([false, true])("review depth AC-4/5 orders project sections (static=%s)", (staticMode) => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, staticMode, checks: ["project-check"] });
+    const tests = [testReading, ...(staticMode ? [] : [testRunning]), testClosing].join("\n");
+    expect(result).toContain(tests);
+    expect(result).toContain(beyondDiff);
+    if (staticMode) expect(result).not.toContain("Run that test file");
+    const sections = [
+      "## Checklist",
+      prompts.WORKFLOW_QUALITY_CHECKLIST,
+      prompts.WORKFLOW_ENUMERATION_INSTRUCTION,
+      beyondDiff,
+      tests,
+      "## Project checks",
+      "## Untrusted content",
+    ];
+    const positions = sections.map((section) => result.indexOf(section));
+    for (const position of positions) expect(position).toBeGreaterThanOrEqual(0);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  });
+  test.each([false, true])("review depth AC-6 excludes new sections in conversation-only (static=%s)", (staticMode) => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, staticMode, conversationOnly: true });
+    expect(result).not.toContain("## Beyond the diff");
+    expect(result).not.toContain("## Tests");
+  });
   test.each([
     [1, "## Settled rulings"],
     [2, "_run:cv1"],
