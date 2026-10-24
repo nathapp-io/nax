@@ -1,4 +1,36 @@
 /** Pure policies for canonical, repo-relative Git paths (forward-slash separated). */
+export const BASE_PINNED_PATHS = [
+  ".nax/rules",
+  ".claude",
+  ".cursor",
+  ".mcp.json",
+  ".github/copilot-instructions.md",
+  ".opencode",
+  "opencode.json",
+  ".gemini",
+  ".codex",
+  ".pi",
+  ".aider.conf.yml",
+  ".windsurfrules",
+] as const;
+
+export const BASE_PINNED_NAMES = [
+  "AGENTS.md",
+  "CLAUDE.md",
+  "GEMINI.md",
+  "codex.md",
+  ".cursorrules",
+  "AGENTS.override.md",
+  "CLAUDE.local.md",
+] as const;
+
+/** Agent configuration: root paths and their descendants, or exact basenames at any depth. */
+export function isPinnedPath(file: string): boolean {
+  return (
+    BASE_PINNED_PATHS.some((path) => file === path || file.startsWith(`${path}/`)) ||
+    BASE_PINNED_NAMES.some((name) => fileName(file) === name)
+  );
+}
 const CONTROL_DIRECTORIES = [".nax/", ".github/", ".gitlab/"];
 const SENSITIVE_NAMES = new Set(["package.json", ".npmrc", "bunfig.toml"]);
 

@@ -1,8 +1,6 @@
 export { _baseConfigDeps, loadBotConfig, snapshotBaseNax } from "./base-config";
 export {
   _checkoutDeps,
-  BASE_PINNED_NAMES,
-  BASE_PINNED_PATHS,
   botWorktreePath,
   type CheckoutRefs,
   changedPaths,
@@ -55,7 +53,7 @@ export { featureIntentPaths } from "./intent";
 export { _ledgerCarryDeps, ledgerStep } from "./ledger-carry";
 export { _botLogDeps, type BotLog, openBotLog } from "./log";
 export { botModel, parseModelOption } from "./models";
-export { fixProtectedPaths, sensitivePaths } from "./path-policy";
+export { BASE_PINNED_NAMES, BASE_PINNED_PATHS, fixProtectedPaths, isPinnedPath, sensitivePaths } from "./path-policy";
 export {
   _postDeps,
   type AgreedItem,

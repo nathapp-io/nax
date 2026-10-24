@@ -117,6 +117,32 @@ describe("preparePrCheckout parent cleanup and reservation", () => {
     expect(reserve).toHaveBeenCalledTimes(2);
   });
 });
+describe("preparePrCheckout extended agent config pin", () => {
+  test.each([
+    [11, "opencode.json", "base"],
+    [12, ".gemini/settings.json", null],
+    [13, "packages/x/AGENTS.override.md", null],
+    [14, ".codex/config.toml", "base"],
+    [15, ".opencode/agent.md", "base"],
+  ] as const)("US-001 AC-%s: pins %s from base", async (_ac, file, baseText) => {
+    if (baseText !== null) {
+      await git(["checkout", "main"]);
+      await Bun.write(join(repo, file), baseText);
+      await commit();
+      await git(["checkout", "topic"]);
+      await git(["merge", "main"]);
+    }
+    await Bun.write(join(repo, file), "head");
+    await commit();
+    const prepared = await prepare(true);
+    if (baseText === null) {
+      await expect(lstat(join(prepared.worktree, file))).rejects.toMatchObject({ code: "ENOENT" });
+    } else {
+      expect(await Bun.file(join(prepared.worktree, file)).text()).toBe(baseText);
+    }
+  });
+});
+
 describe("preparePrCheckout", () => {
   test("US-003 AC-22/23: overlapping fetch cannot redirect base and disposal deletes checkout refs", async () => {
     const base = await git(["rev-parse", "main"]);
