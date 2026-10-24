@@ -6,6 +6,7 @@
  * satisfy this contract; nothing here is backend-specific.
  */
 import type { TranscriptDoc, TranscriptStore } from "#src/native/session/transcript-types";
+import type { SandboxState } from "#src/sandbox/types";
 import type { AgentSessionProfile, ApprovalDecidedBy, EmbedderTool } from "./agent-session-types.ts";
 import type { AgentSessionAdapter, SendTurnOpts, SessionHandle } from "./session-types.ts";
 
@@ -14,6 +15,13 @@ export interface BackendInfo {
   readonly kind: string;
   /** Read-only, JSON-safe capability summary. `{}` for native. */
   readonly capabilities: Readonly<Record<string, unknown>>;
+  /**
+   * US-001: the sandbox this backend resolved when it opened, so the embedder can
+   * say what the session's commands actually run under. Reported once at open — a
+   * sandbox that stops working mid-session is not re-probed. Absent for a backend
+   * that runs no shell of its own (the ACP backend leaves it out).
+   */
+  readonly sandbox?: SandboxState;
 }
 
 export interface ApprovalRequest {

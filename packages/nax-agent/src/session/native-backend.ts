@@ -60,7 +60,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     ...defaultProtectedPaths(raw.credentials !== undefined),
     ...raw.hostPorts?.protectedPaths,
   };
-  const launcher = await resolveSessionLauncher({
+  const { launcher, sandbox } = await resolveSessionLauncher({
     profile: ctx.profile,
     root: ctx.workdir,
     protectedPaths,
@@ -116,7 +116,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
   return {
     adapter,
     handle,
-    info: { kind: NATIVE_BACKEND_KIND, capabilities: {} },
+    info: { kind: NATIVE_BACKEND_KIND, capabilities: {}, sandbox },
     turnOpts: () => ({
       interactionHandler,
       codingTools,

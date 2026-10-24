@@ -12,7 +12,7 @@ import type { BashApprovalMode } from "#src/config/bash-approval";
 import { DEFAULT_SANDBOX_CONFIG } from "#src/config/schemas-sandbox";
 import { credentialsConfig } from "#src/infra/credentials-config";
 import type { AskResolver } from "#src/permissions/index";
-import type { CommandLauncher } from "#src/sandbox/index";
+import type { CommandLauncher, SandboxState } from "#src/sandbox/index";
 import { EMPTY_OWNED_PATHS_POLICY } from "#src/tools/owned-paths";
 import type { ProtectedPathsPolicy } from "#src/tools/protected-paths";
 import type { CodingToolName, ToolGrant } from "#src/tools/types";
@@ -81,13 +81,33 @@ export interface SessionLauncherArgs {
   readonly profile: AgentSessionProfile;
   readonly root: string;
   readonly protectedPaths: ProtectedPathsPolicy;
+  /**
+   * The resolved mode. Since US-001 the floor itself no longer keys on it —
+   * `nativeProfileRules` has already validated which mode may pair with
+   * `allowUnsandboxed` — but it stays part of the call so the caller declares
+   * the session's posture in one place.
+   */
   readonly bashApproval: BashApprovalMode;
   readonly allowUnsandboxed: boolean;
 }
 
-/** The sandbox floor (spec 6.3): "ask", "full" and "review" need a usable sandbox unless gated + allowUnsandboxed. */
-export async function resolveSessionLauncher(args: SessionLauncherArgs): Promise<CommandLauncher | undefined> {
-  if (args.profile !== "full" && args.profile !== "ask" && args.profile !== "review") return undefined;
+/** What the floor decided: the launcher to run under (if any), and the state to report. */
+export interface ResolvedSessionLauncher {
+  readonly launcher: CommandLauncher | undefined;
+  readonly sandbox: SandboxState;
+}
+
+/**
+ * The sandbox floor (spec 6.3): "ask", "full" and "review" need a usable sandbox,
+ * unless the session explicitly allows running without one — under `gated` (every
+ * call still goes to the person) or under `raw` (the person's own standing choice).
+ * The resolved state rides back beside the launcher, so the session can report
+ * what its commands actually run under.
+ */
+export async function resolveSessionLauncher(args: SessionLauncherArgs): Promise<ResolvedSessionLauncher> {
+  if (args.profile !== "full" && args.profile !== "ask" && args.profile !== "review") {
+    return { launcher: undefined, sandbox: { kind: "disabled" } };
+  }
   const launcher = await resolveSessionSandbox({
     config: DEFAULT_SANDBOX_CONFIG,
     root: args.root,
@@ -95,11 +115,11 @@ export async function resolveSessionLauncher(args: SessionLauncherArgs): Promise
     protectedPaths: args.protectedPaths,
     ownedPaths: EMPTY_OWNED_PATHS_POLICY,
   });
-  if (launcher.state.kind === "available") return launcher;
-  if (args.bashApproval === "gated" && args.allowUnsandboxed) return undefined;
+  if (launcher.state.kind === "available") return { launcher, sandbox: launcher.state };
+  if (args.allowUnsandboxed) return { launcher: undefined, sandbox: launcher.state };
   const reason = launcher.state.kind === "unavailable" ? launcher.state.reason : "the sandbox is disabled";
   throw new AgentSessionError(
-    `Profile "${args.profile}" needs a usable sandbox (${reason}). Pass bashApproval "gated" with allowUnsandboxed: true to run without one.`,
+    `Profile "${args.profile}" needs a usable sandbox (${reason}). Pass allowUnsandboxed: true to run without one.`,
     "AGENT_SESSION_SANDBOX_UNAVAILABLE",
     { reason },
   );

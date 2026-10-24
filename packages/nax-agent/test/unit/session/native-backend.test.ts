@@ -76,7 +76,7 @@ describe("nativeBackend", () => {
     const backend = nativeBackend({ model: MODEL });
     expect(backend.kind).toBe(NATIVE_BACKEND_KIND);
     const opened = await openBackend(backend, await ctx());
-    expect(opened.info).toEqual({ kind: "native", capabilities: {} });
+    expect(opened.info).toEqual({ kind: "native", capabilities: {}, sandbox: { kind: "disabled" } });
     const names = (opened.turnOpts().codingTools ?? []).map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "Git"]));
     expect(names).not.toContain("Write");

@@ -72,7 +72,13 @@ class FacadeAgentSession implements AgentSession {
 
   get backend(): BackendInfo {
     const info = this.parts.opened.info;
-    return Object.freeze({ kind: info.kind, capabilities: Object.freeze({ ...info.capabilities }) });
+    // US-001: the sandbox state rides through the facade frozen, so an embedder
+    // cannot edit the record of what its commands ran under.
+    return Object.freeze({
+      kind: info.kind,
+      capabilities: Object.freeze({ ...info.capabilities }),
+      ...(info.sandbox !== undefined ? { sandbox: Object.freeze({ ...info.sandbox }) } : {}),
+    });
   }
 
   get lastTurn(): LastTurn | undefined {
