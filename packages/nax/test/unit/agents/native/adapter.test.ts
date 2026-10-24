@@ -536,7 +536,7 @@ describe("NativeAgentAdapter session identity", () => {
     expect(seen[0]?.temperature).toBe(0.2);
   });
 
-  test("before_request may disable the session's inherited thinking level", async () => {
+  test("before_request thinking: false replaces the session's inherited level with off", async () => {
     const { client, seen } = capturingClient(MODEL);
     _clientDeps.build = async () => client;
     const adapter = new NativeAgentAdapter();
@@ -557,7 +557,9 @@ describe("NativeAgentAdapter session identity", () => {
       loopEvents,
     });
 
-    expect(seen[0] && "thinking" in seen[0]).toBe(false);
+    // "off", not an absent level: absent means the backend default, which on
+    // a model that cannot disable thinking runs at effort high (#2686).
+    expect(seen[0]?.thinking).toBe("off");
   });
 });
 

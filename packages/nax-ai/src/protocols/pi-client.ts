@@ -212,8 +212,11 @@ export function toPiOptions(req: ProtocolRequest): SimpleStreamOptions {
     // Empty is treated as absent, matching vendorSessionHeaders: an id that
     // cannot identify anything should not reach pi as though it could.
     ...(req.sessionId !== undefined && req.sessionId !== "" ? { sessionId: req.sessionId } : {}),
-    // pi-ai's scale has no "off": the absence of the field is how thinking is
-    // disabled, so mapping "off" to a value would silently enable it.
+    // pi-ai's scale has no "off", so "off" is sent as the absence of the
+    // field: mapping it to a value would silently enable thinking. Absence
+    // disables thinking only where the model allows "off"; via the client,
+    // "off" is clamped away for a model that does not, so it never reaches
+    // here as such on that path.
     ...(req.thinking !== undefined && req.thinking !== "off" ? { reasoning: req.thinking } : {}),
   };
 }

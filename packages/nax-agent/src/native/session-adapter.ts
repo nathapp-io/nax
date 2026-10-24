@@ -345,11 +345,16 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
               ? [opts.signal, controller.signal, turnController.signal, deadlineController.signal]
               : [controller.signal, turnController.signal, deadlineController.signal],
           );
-          // The loop-event bag speaks in booleans: `false` explicitly drops
-          // the session's inherited thinking level for this request, while
-          // `true` leaves that resolved level in place. nax-ai accepts a
-          // thinking LEVEL rather than a boolean, so normalize at this boundary.
-          const requestThinking = requestOptions?.thinking === false ? undefined : thinking;
+          // The loop-event bag speaks in booleans: `false` turns thinking off
+          // for this request, while `true` leaves the session's resolved level
+          // in place. nax-ai accepts a thinking LEVEL rather than a boolean, so
+          // normalize at this boundary. `false` must become "off", not an
+          // absent level: absent means the backend default, which on a model
+          // that cannot disable thinking is adaptive at effort high (#2686).
+          // nax-ai clamps "off" to the lowest level such a model supports, so
+          // there `false` still enables thinking, and a `temperature` set
+          // alongside it is dropped by the backend as for any thinking request.
+          const requestThinking = requestOptions?.thinking === false ? "off" : thinking;
 
           try {
             instructionInteraction.acknowledge();

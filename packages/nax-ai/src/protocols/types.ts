@@ -169,6 +169,14 @@ export interface ProtocolRequest {
   readonly toolChoice?: "auto" | "none";
   readonly maxTokens?: number;
   readonly temperature?: number;
+  /**
+   * Requested thinking level. The client clamps it to the model's
+   * `thinkingLevels` before a protocol sees it. Absent means the backend's
+   * default, NOT off: on a model that cannot disable thinking that default can
+   * be costly (the Anthropic backend sends adaptive thinking at effort high on
+   * models whose catalog entry marks "off" unsupported). Send "off" for the
+   * least thinking the model allows.
+   */
   readonly thinking?: ThinkingLevel;
   readonly cacheRetention?: CacheRetention;
   /**

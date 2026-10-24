@@ -30,4 +30,11 @@ describe("clampThinkingLevel", () => {
   it("returns off when the model supports no thinking", () => {
     expect(clampThinkingLevel("high", [])).toBe("off");
   });
+
+  // nax#2686: "off" on a model that cannot disable thinking must land on its
+  // least thinking, never on a higher level.
+  it("clamps off up to the lowest supported level when off is unsupported", () => {
+    expect(clampThinkingLevel("off", ["low", "medium", "high", "xhigh", "max"])).toBe("low");
+    expect(clampThinkingLevel("off", ["max", "minimal", "low"])).toBe("minimal");
+  });
 });
