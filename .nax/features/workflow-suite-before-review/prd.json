@@ -3,7 +3,7 @@
   "feature": "workflow-suite-before-review",
   "branchName": "feat/workflow-suite-before-review",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-24T10:01:37.495Z",
+  "updatedAt": "2026-10-24T10:10:37.791Z",
   "userStories": [
     {
       "id": "US-001",
@@ -99,14 +99,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A bounded orchestration reorder in one production module with existing injected contracts and harnesses; finding IDs, fixBase retention, and deliberate trace updates need focused TDD but no new abstraction or cross-package integration."
+        "reasoning": "A bounded orchestration reorder in one production module with existing injected contracts and harnesses; finding IDs, fixBase retention, and deliberate trace updates need focused TDD but no new abstraction or cross-package integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/story-steps.ts",
@@ -176,7 +179,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "726513b5db1fee83dda5f9e6d0db851dc9043705"
     },
     {
       "id": "US-003",
