@@ -94,6 +94,28 @@ describe("loadConfigForPackage — profile chain survives per-package resolution
     expect(effective.models.native?.fast).toBe("minimax/MiniMax-M2.7");
   });
 
+  test("carries the run's root-only CLI overrides (--rules-dir / --context-file), with or without a package config", async () => {
+    const runConfig = makeNaxConfig({
+      profileChain: ["fixture-native"],
+      context: { rules: { overrideDir: "/run/rules" }, projectContext: { file: "/run/context.md" } },
+    });
+
+    const withoutPackageConfig = await loadConfigForPackage(tempDir, PKG, runConfig);
+    mkdirSync(join(tempDir, ".nax", "mono", PKG), { recursive: true });
+    writeFileSync(
+      join(tempDir, ".nax", "mono", PKG, "config.json"),
+      JSON.stringify({ quality: { commands: { test: "pkg-test" } } }),
+    );
+    _clearRootConfigCache();
+    const withPackageConfig = await loadConfigForPackage(tempDir, PKG, runConfig);
+
+    for (const effective of [withoutPackageConfig, withPackageConfig]) {
+      expect(effective.context.rules.overrideDir).toBe("/run/rules");
+      expect(effective.context.projectContext.file).toBe("/run/context.md");
+    }
+    expect(withPackageConfig.quality.commands.test).toBe("pkg-test");
+  });
+
   // Negative control: without this the assertions above could pass vacuously. The
   // built-in `models.native` is always present, so the control asserts the profile's
   // id is gone — dropping the profile is exactly what the two broken call sites did.

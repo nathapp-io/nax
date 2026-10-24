@@ -8,7 +8,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { isWorkflowMode, type NaxConfig, profileOverrideFromConfig } from "../config";
+import { isWorkflowMode, type NaxConfig, pinRootOnlyKeys, profileOverrideFromConfig } from "../config";
 import { loadConfigForWorkdir } from "../config/loader";
 import { getLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
@@ -140,11 +140,16 @@ export async function runIteration(
   // .nax/mono/./config.json and falls back to the root config anyway -- same
   // result, one wasted read and a misleading log line per story.
   const storyPkg = storyPackageDir(story);
+  // The reload sees only the profile, not the run's other CLI overrides (`--rules-dir`,
+  // `--context-file`), so the root-only keys are re-pinned from the run config itself.
   const effectiveConfig = storyPkg
-    ? await _iterationRunnerDeps.loadConfigForWorkdir(
-        join(ctx.workdir, ".nax", "config.json"),
-        storyPkg,
-        profileOverride,
+    ? pinRootOnlyKeys(
+        await _iterationRunnerDeps.loadConfigForWorkdir(
+          join(ctx.workdir, ".nax", "config.json"),
+          storyPkg,
+          profileOverride,
+        ),
+        ctx.config,
       )
     : ctx.config;
 
