@@ -218,8 +218,7 @@ Adds the `keepTests` option to `reviewRequiredFiles` and passes it from `runPrRe
 
 **US-002**
 - `packages/nax/src/prompts/builders/bot-pr-review-builder.ts` — `projectSections`, `ciSection`, `REPLY_TASK`, `buildBotPrReviewPrompt`
-- `packages/nax/src/prompts/builders/workflow-quality-checklist.ts` — shared checklist constants
-- `packages/nax/src/prompts/index.ts` — barrel exporting the checklist constants
+- `packages/nax/src/prompts/builders/workflow-quality-checklist.ts` — shared checklist constants; `src/prompts/index.ts` re-exports them beside `WORKFLOW_QUALITY_CHECKLIST`
 - `packages/nax/src/bot/review-step.ts` — `runPrReview`, which builds the prompt and calls the op; its test file `test/unit/bot/review-step.test.ts` takes the `runPrReview` test
 - `packages/nax/test/unit/prompts/bot-pr-review-builder.test.ts` — existing prompt cases and the `base` fixture; the new prompt tests go here
 - `packages/nax/test/unit/prompts/workflow-branch-builder.test.ts` — the branch prompt test (US-002 AC-7) goes here
