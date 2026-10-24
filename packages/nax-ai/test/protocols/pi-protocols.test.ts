@@ -37,28 +37,28 @@ describe("piProtocols", () => {
 
 describe("createPiDeps model resolution", () => {
   it("scopes an id served by many providers to the requested provider", async () => {
-    const model = await createPiDeps().resolveModel("gpt-5.5", "openai-codex");
+    const model = await createPiDeps().resolveModel("gpt-6-astra", "openai-codex");
     expect(model.provider).toBe("openai-codex");
   });
 
   it("resolves the same id under a different provider", async () => {
-    const model = await createPiDeps().resolveModel("gpt-5.5", "azure");
+    const model = await createPiDeps().resolveModel("gpt-6-astra", "azure");
     expect(model.provider).toBe("azure");
   });
 
   it("throws naming both the model and the provider for an unknown pairing", async () => {
-    await expect(createPiDeps().resolveModel("gpt-5.5", "deepseek")).rejects.toThrow(
-      'Unknown model "gpt-5.5" for provider "deepseek" in the pi-ai catalog.',
+    await expect(createPiDeps().resolveModel("gpt-6-astra", "deepseek")).rejects.toThrow(
+      'Unknown model "gpt-6-astra" for provider "deepseek" in the pi-ai catalog.',
     );
   });
 
   it("throws the unknown pairing as a setup error, which the retry layer leaves alone", async () => {
-    await expect(createPiDeps().resolveModel("gpt-5.5", "deepseek")).rejects.toBeInstanceOf(ProtocolSetupError);
+    await expect(createPiDeps().resolveModel("gpt-6-astra", "deepseek")).rejects.toBeInstanceOf(ProtocolSetupError);
   });
 
   it("keeps the global first-match fallback when no provider is given", async () => {
-    const model = await createPiDeps().resolveModel("gpt-5.5");
-    expect(model.id).toBe("gpt-5.5");
+    const model = await createPiDeps().resolveModel("gpt-6-astra");
+    expect(model.id).toBe("gpt-6-astra");
     expect(model.provider).toBeTruthy();
   });
 });
@@ -71,7 +71,7 @@ describe("createPiDeps transport", () => {
       seen = streamOptions;
       return emptyStream();
     });
-    const model = await deps.resolveModel("gpt-5.5", "openai-codex");
+    const model = await deps.resolveModel("gpt-6-astra", "openai-codex");
     for await (const _ of deps.stream(model, { messages: [] }, {}, () => {})) {
       // Drained for the side effect: the options are built on first pull.
     }

@@ -92,7 +92,7 @@ describe("createPiDeps session wiring", () => {
       seen = options;
       return emptyStream();
     });
-    const model = await deps.resolveModel("deepseek-v4-flash", "opencode-go");
+    const model = await deps.resolveModel("deepseek-v4.1-flash", "opencode-go");
 
     for await (const _ of deps.stream(model, { messages: [] }, { sessionId: "s-1" }, () => {})) {
       // drain
@@ -107,7 +107,7 @@ describe("createPiDeps session wiring", () => {
       seen = options;
       return emptyStream();
     });
-    const model = await deps.resolveModel("deepseek-v4-flash", "opencode-go");
+    const model = await deps.resolveModel("deepseek-v4.1-flash", "opencode-go");
 
     for await (const _ of deps.stream(model, { messages: [] }, { sessionId: "s-1" }, () => {})) {
       // drain
@@ -153,7 +153,7 @@ describe("createPiDeps session wiring", () => {
       seen = options;
       return emptyStream();
     });
-    const model = await deps.resolveModel("gpt-5.5", "openai-codex");
+    const model = await deps.resolveModel("gpt-6-astra", "openai-codex");
 
     for await (const _ of deps.stream(model, { messages: [] }, { sessionId: "s-1" }, () => {})) {
       // drain
@@ -181,7 +181,7 @@ describe("header precedence against the vendor header", () => {
       seen = options;
       return emptyStream();
     });
-    const model = await deps.resolveModel("deepseek-v4-flash", "opencode-go");
+    const model = await deps.resolveModel("deepseek-v4.1-flash", "opencode-go");
 
     for await (const _ of deps.stream(
       model,
@@ -218,14 +218,14 @@ describe("session id validation at the wire", () => {
   }
 
   it("rejects a spliceable id for a non-opencode provider, which no header check covers", async () => {
-    await expect(drain("openai-codex", "gpt-5.5", badId)).rejects.toThrow(/sessionId/);
+    await expect(drain("openai-codex", "gpt-6-astra", badId)).rejects.toThrow(/sessionId/);
   });
 
   it("rejects it for an opencode provider too", async () => {
-    await expect(drain("opencode-go", "deepseek-v4-flash", badId)).rejects.toThrow();
+    await expect(drain("opencode-go", "deepseek-v4.1-flash", badId)).rejects.toThrow();
   });
 
   it("still accepts an ordinary id", async () => {
-    await expect(drain("openai-codex", "gpt-5.5", "s-1")).resolves.toBeUndefined();
+    await expect(drain("openai-codex", "gpt-6-astra", "s-1")).resolves.toBeUndefined();
   });
 });

@@ -129,8 +129,8 @@ export type ConversationMessage =
       /**
        * The catalog provider and model id that wrote this message, when known.
        * Replay stamps it so pi-ai can tell another model's turn from the
-       * current model's: another model's thinking is sent as text without its
-       * signature. Absent means the current model.
+       * current model's: another model's thinking is dropped, signature
+       * included. Absent means the current model.
        */
       readonly origin?: { readonly provider: string; readonly model: string };
     }

@@ -86,7 +86,11 @@ describe("createPiDeps app wiring", () => {
   });
 
   it("leaves a provider that documents no such header alone", async () => {
-    const headers = await headersFor({ name: "nax", url: "https://example.invalid/nax" }, "openai-codex", "gpt-5.5");
+    const headers = await headersFor(
+      { name: "nax", url: "https://example.invalid/nax" },
+      "openai-codex",
+      "gpt-6-astra",
+    );
     expect(headers?.["X-Title"]).toBeUndefined();
     expect(headers?.["HTTP-Referer"]).toBeUndefined();
   });

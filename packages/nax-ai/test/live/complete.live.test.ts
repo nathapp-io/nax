@@ -61,7 +61,7 @@ const TARGETS: readonly Target[] = [
     fixture: "opencode-go-openai-completions-text",
     provider: "opencode-go",
     protocol: "openai-completions",
-    model: "deepseek-v4-flash",
+    model: "deepseek-v4-pro",
     api: "openai-completions",
     request: { messages: [{ role: "user", content: "Reply with the single word: ok" }], maxTokens: 16 },
   },

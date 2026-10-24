@@ -495,10 +495,9 @@ function toPiCost(pricing: Pricing): Model<Api>["cost"] {
  *
  * This can change which sibling an *existing* override inherits its other
  * unstated fields from, not just `thinkingLevelMap` — `synthesiseModel`
- * spreads the whole template, `input` (text/image support) included. On
- * `opencode-go`, for example, `kimi-k3` (the size winner) accepts images
- * while `deepseek-v4-flash` (a thinking-compatible but smaller winner) does
- * not, so an override whose declared levels flip the pick this way loses
+ * spreads the whole template, `input` (text/image support) included. When
+ * the size winner accepts images and a smaller thinking-compatible winner
+ * does not, an override whose declared levels flip the pick this way loses
  * vision support it previously inherited incidentally. That is accepted:
  * getting the declared thinking levels translated correctly is the override's
  * one explicit contract, while `input` was always an inherited accident of
@@ -676,8 +675,8 @@ function copyTarget(target: PercentileTarget): PercentileTarget {
  * reach the wire as a real `reasoning_effort`/`reasoning`/`thinking` string on
  * every non-thinking request, which several of pi's `thinkingFormat` branches
  * (`deepseek`, `openrouter`, `string-thinking`) would send as-is. Instead
- * `off` preserves the template's own three states exactly, because those same
- * branches distinguish two of them: a missing key (`undefined`) sends the
+ * `off` is taken from the template's own state, by the rule below, because
+ * those same branches distinguish two of its three states: a missing key (`undefined`) sends the
  * disable-thinking signal (`model.thinkingLevelMap?.off !== null` reads true),
  * an explicit `null` suppresses it (the check reads false), and a string
  * overrides it with that value. Collapsing "missing" and `null` into one
@@ -685,9 +684,14 @@ function copyTarget(target: PercentileTarget): PercentileTarget {
  * sending the disable signal for every template that simply never stated an
  * "off" entry, which is the same silent-extra-reasoning-cost defect issue #47
  * exists to close, just relocated to the "off" side. So: template value is a
- * string → that string; `null` → `null`; key absent → leave the key unset on
- * the derived map too (`Model.thinkingLevelMap.off` stays `undefined`),
- * matching what case 2's `...template` inherit-as-is already does correctly.
+ * string → that string; key absent → leave the key unset on the derived map
+ * too (`Model.thinkingLevelMap.off` stays `undefined`), matching what case 2's
+ * `...template` inherit-as-is already does correctly; `null` → `null` only
+ * when the override does not declare "off". A declared "off" over a `null`
+ * template is left unset as well: the override's declaration is its contract,
+ * as for every positive level, and an inherited `null` would make pi clamp an
+ * "off" request up to the lowest positive level (pi-ai 1.4.0 left opencode-go
+ * with no sibling that avoids this).
  */
 function deriveThinkingLevelMap(
   model: ResolvedModel,
@@ -697,13 +701,15 @@ function deriveThinkingLevelMap(
   const map: Partial<Record<ThinkingLevel, string | null>> = {};
 
   const templateOff = templateMap?.off;
-  if (templateOff === null) {
-    map.off = null;
-  } else if (typeof templateOff === "string") {
+  if (typeof templateOff === "string") {
     map.off = templateOff;
+  } else if (templateOff === null && !model.thinkingLevels.includes("off")) {
+    map.off = null;
   }
-  // else: the template has no "off" key at all — leave it unset rather than
-  // inventing either a string or a `null`.
+  // else: the template has no "off" key at all, or marks it null while the
+  // override declares "off" — leave it unset rather than inventing a string.
+  // Copying that null would make pi read a declared "off" as unsupported and
+  // clamp an "off" request up to the lowest positive level.
 
   for (const level of THINKING_LEVELS) {
     if (level === "off") continue;

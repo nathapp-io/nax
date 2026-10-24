@@ -10,6 +10,7 @@
  */
 
 import type { Api, AssistantMessageEvent, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 // Only this test file reaches past pi-ai's top-level export to exercise the
 // real openai-completions wire-body builder via its `onPayload` hook — the
 // one way to prove issue #47's fix at the actual wire, not merely at the
@@ -329,6 +330,12 @@ describe("provider overrides at the protocol seam", () => {
  * from template compatibility picked it over `deepseek-v4-flash` and turned
  * a non-thinking request into reasoning_effort "low". These tests exercise
  * the real catalog and wire builder to catch that regression on future bumps.
+ *
+ * pi-ai 1.4.0 dropped `opencode-go/deepseek-v4-flash`, and no remaining
+ * opencode-go completions sibling supports "off" together with "low", "high"
+ * and "max". The compatible-template cases therefore run on openrouter, and
+ * opencode-go is the subject of the derive (case 3) cases, templated off the
+ * size winner `beam-free`, whose "off" is null.
  */
 describe("thinkingLevelMap synthesis (issue #47)", () => {
   /**
@@ -339,12 +346,15 @@ describe("thinkingLevelMap synthesis (issue #47)", () => {
    * issue #47 — so the premise is now asserted rather than assumed.
    */
   const ABSENT = "deepseek-v9.9-not-in-snapshot";
+  const ABSENT_OPENROUTER = "deepseek/deepseek-v9.9-not-in-snapshot";
 
-  it("rests on an id pi-ai does not bundle", async () => {
-    const [provider] = await defaultProviders(["opencode-go"]);
-    expect(provider?.models.map((model) => model.id)).not.toContain(ABSENT);
+  it("rests on ids pi-ai does not bundle", async () => {
+    const [opencodeGo, openrouter] = await defaultProviders(["opencode-go", "openrouter"]);
+    expect(opencodeGo?.models.map((model) => model.id)).not.toContain(ABSENT);
+    expect(openrouter?.models.map((model) => model.id)).not.toContain(ABSENT_OPENROUTER);
   });
 
+  /** On opencode-go, where no sibling is compatible: always the derive path. */
   const OVERRIDE: ResolvedModel = {
     id: ABSENT,
     provider: "opencode-go",
@@ -357,37 +367,59 @@ describe("thinkingLevelMap synthesis (issue #47)", () => {
     thinkingLevels: ["off", "low", "high", "max"],
   };
 
-  it("templates the override off a sibling supporting off as well as positive thinking levels", async () => {
-    const deps = createPiDeps({ providerOverrides: [{ provider: "opencode-go", models: [OVERRIDE] }] });
-    const model = await deps.resolveModel(OVERRIDE.id, "opencode-go");
+  /** The same declaration on openrouter, where compatible siblings exist. */
+  const COMPATIBLE_OVERRIDE: ResolvedModel = { ...OVERRIDE, id: ABSENT_OPENROUTER, provider: "openrouter" };
 
-    expect(model.thinkingLevelMap).toMatchObject({ low: "low", high: "high", max: "max" });
-    expect(model.compat).toMatchObject({ thinkingFormat: "deepseek" });
+  it("templates the override off a sibling supporting off as well as positive thinking levels", async () => {
+    const deps = createPiDeps({ providerOverrides: [{ provider: "openrouter", models: [COMPATIBLE_OVERRIDE] }] });
+    const model = await deps.resolveModel(COMPATIBLE_OVERRIDE.id, "openrouter");
+
+    // The template's own off value, inherited as-is: openrouter spells it "none".
+    expect(model.thinkingLevelMap).toMatchObject({ off: "none", low: "low", high: "high", max: "max" });
+    expect(model.compat).toMatchObject({ thinkingFormat: "openrouter" });
   });
 
   it("round-trips each declared level to the wire correctly, without collapsing to 'max'", async () => {
-    const deps = createPiDeps({ providerOverrides: [{ provider: "opencode-go", models: [OVERRIDE] }] });
-    const model = await deps.resolveModel(OVERRIDE.id, "opencode-go");
+    const deps = createPiDeps({ providerOverrides: [{ provider: "openrouter", models: [COMPATIBLE_OVERRIDE] }] });
+    const model = await deps.resolveModel(COMPATIBLE_OVERRIDE.id, "openrouter");
 
-    // The exact regression: pre-fix, every one of these collapsed to
-    // reasoning_effort "max" because the synthesised model's inherited map
-    // only recognised "max".
-    await expect(wirePayload(model, "low")).resolves.toMatchObject({ reasoning_effort: "low" });
-    await expect(wirePayload(model, "high")).resolves.toMatchObject({ reasoning_effort: "high" });
-    await expect(wirePayload(model, "max")).resolves.toMatchObject({ reasoning_effort: "max" });
+    // Issue #47's regression collapsed every level to "max" (on opencode-go,
+    // via kimi-k3's map). Here only "max" can fail: the size winner,
+    // x-ai/grok-4.20, does not support it, so a wrong pick clamps it to "high".
+    await expect(wirePayload(model, "low")).resolves.toMatchObject({ reasoning: { effort: "low" } });
+    await expect(wirePayload(model, "high")).resolves.toMatchObject({ reasoning: { effort: "high" } });
+    await expect(wirePayload(model, "max")).resolves.toMatchObject({ reasoning: { effort: "max" } });
   });
 
-  it("never invents an 'off' value on the wire", async () => {
+  it("sends the provider's own off value, never a positive level, when a compatible sibling exists", async () => {
+    const deps = createPiDeps({ providerOverrides: [{ provider: "openrouter", models: [COMPATIBLE_OVERRIDE] }] });
+    const model = await deps.resolveModel(COMPATIBLE_OVERRIDE.id, "openrouter");
+
+    await expect(wirePayload(model, "off")).resolves.toMatchObject({ reasoning: { effort: "none" } });
+  });
+
+  it("never clamps a declared 'off' up to a paid level when no compatible sibling exists", async () => {
+    // Case 3: no opencode-go sibling is compatible, and the size winner
+    // beam-free marks "off" null. Inheriting that null would tell pi "off" is
+    // unsupported, and pi clamps an "off" request up to the lowest supported
+    // level: reasoning_effort "low", billed.
     const deps = createPiDeps({ providerOverrides: [{ provider: "opencode-go", models: [OVERRIDE] }] });
     const model = await deps.resolveModel(OVERRIDE.id, "opencode-go");
 
+    expect(getSupportedThinkingLevels(model)).toContain("off");
     const payload = await wirePayload(model, "off");
     expect(payload).not.toHaveProperty("reasoning_effort");
-    expect(payload).toMatchObject({ thinking: { type: "disabled" } });
+    expect(JSON.stringify(payload)).not.toContain('"off"');
+    // Recorded, not endorsed: beam-free has no thinkingFormat, so nothing at
+    // all is sent for "off" — no disable signal either. On pi-ai 1.1.0 this
+    // override inherited deepseek-v4-flash's "deepseek" format and sent
+    // `thinking: { type: "disabled" }`. A bump that changes this shape again
+    // should fail here and be looked at.
+    expect(payload).not.toHaveProperty("thinking");
   });
 
   it("prefers a level-compatible sibling over the larger-context incompatible one, falling back to size order otherwise", async () => {
-    const compatible: ResolvedModel = { ...OVERRIDE, thinkingLevels: ["off", "low", "high", "max"] };
+    const compatible: ResolvedModel = { ...COMPATIBLE_OVERRIDE, thinkingLevels: ["off", "low", "high", "max"] };
     // No single "opencode-go" sibling supports "off", "high" and "xhigh"
     // together in the real catalog (verified against the bundled snapshot),
     // so this forces the size-order fallback even under the new rule.
@@ -398,14 +430,19 @@ describe("thinkingLevelMap synthesis (issue #47)", () => {
     };
 
     const deps = createPiDeps({
-      providerOverrides: [{ provider: "opencode-go", models: [compatible, noCompatibleSibling] }],
+      providerOverrides: [
+        { provider: "openrouter", models: [compatible] },
+        { provider: "opencode-go", models: [noCompatibleSibling] },
+      ],
     });
 
-    const compatModel = await deps.resolveModel(compatible.id, "opencode-go");
-    expect(compatModel.thinkingLevelMap).toMatchObject({ low: "low", high: "high", max: "max" });
+    const compatModel = await deps.resolveModel(compatible.id, "openrouter");
+    // `off: "none"` is what tells the picks apart: a map derived off the size
+    // winner (x-ai/grok-4.20, which has no map) would leave "off" unset.
+    expect(compatModel.thinkingLevelMap).toMatchObject({ off: "none", low: "low", high: "high", max: "max" });
 
     const fallbackModel = await deps.resolveModel(noCompatibleSibling.id, "opencode-go");
-    // The size-order fallback is space-bunny, whose "off" is unsupported.
+    // The size-order fallback is beam-free, whose "off" is unsupported.
     // Derivation keeps the override's declared levels instead of inheriting
     // the sibling's positive levels wholesale.
     expect(fallbackModel.thinkingLevelMap).toMatchObject({ high: "high", xhigh: "xhigh" });
@@ -421,7 +458,6 @@ describe("thinkingLevelMap synthesis (issue #47)", () => {
     const model = await deps.resolveModel(noCompatibleSibling.id, "opencode-go");
 
     expect(model.thinkingLevelMap).toMatchObject({
-      off: null, // space-bunny's own "off" is null, so none is invented
       minimal: null, // undeclared levels map to null
       low: null,
       medium: null,
@@ -429,6 +465,19 @@ describe("thinkingLevelMap synthesis (issue #47)", () => {
       xhigh: "xhigh", // declared, retains the template's wire value
       max: null,
     });
+    // Declared, but beam-free's own "off" is null: the key is left unset, so
+    // "off" stays supported without inventing a string for it.
+    expect("off" in (model.thinkingLevelMap ?? {})).toBe(false);
+  });
+
+  it("keeps the template's null 'off' when the override does not declare 'off'", async () => {
+    // No opencode-go sibling supports "minimal" and "max" together, so this
+    // too takes the derive path off beam-free.
+    const noOff: ResolvedModel = { ...OVERRIDE, id: "phantom-no-off", thinkingLevels: ["minimal", "max"] };
+    const deps = createPiDeps({ providerOverrides: [{ provider: "opencode-go", models: [noOff] }] });
+    const model = await deps.resolveModel(noOff.id, "opencode-go");
+
+    expect(model.thinkingLevelMap).toMatchObject({ off: null });
   });
 
   it("still sends the wire's disable-thinking signal when the derived map's off is undefined, not null", async () => {
