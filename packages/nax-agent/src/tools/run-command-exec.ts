@@ -79,6 +79,8 @@ async function launchExec(req: {
   mergedEnv: Record<string, string> | undefined;
   stripEnvVars: readonly string[];
   signal: AbortSignal | undefined;
+  /** US-008: the call asked for exactly `unsandboxed: true`, so run outside the sandbox. */
+  unwrapped: boolean;
 }): Promise<ArgvExecResult & { sandbox?: SandboxRecord }> {
   if (req.launcher !== undefined) {
     return await req.launcher.run({
@@ -89,6 +91,10 @@ async function launchExec(req: {
       stripEnvVars: req.stripEnvVars,
       ...(req.mergedEnv !== undefined ? { env: req.mergedEnv } : {}),
       ...(req.signal !== undefined ? { signal: req.signal } : {}),
+      // US-008: the key is present only for an exact `true` on the call, so
+      // every other request stays byte-identical to what US-002 shipped -- and
+      // the launcher, not this branch, decides what "unwrapped" means.
+      ...(req.unwrapped ? { unwrapped: true } : {}),
     });
   }
   return {
@@ -156,6 +162,14 @@ export async function runExecBranch(
       mergedEnv,
       stripEnvVars: opts.stripEnvVars ?? [],
       signal: ctx.signal,
+      // US-008: exact `true` only, read off the CALL. Whether the session
+      // offers the argument, and whether the request is permitted at all, was
+      // settled before `run` was reached (the runtime's `resolveUnsandboxedCall`
+      // and its ask), so re-reading `opts.exec.unsandboxedCommands` here would
+      // be a second authorization gate in the one place that cannot see the
+      // approval. A `"true"` string is not an escape request: it is the ordinary
+      // call it reads as.
+      unwrapped: input.unsandboxed === true,
     });
 
     // US-001: match Bash's framing so an aborted Exec is rendered as an

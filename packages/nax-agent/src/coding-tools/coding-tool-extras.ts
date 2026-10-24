@@ -39,9 +39,11 @@ export interface DeclaredCommandToolsArgs {
   /** P4: how Bash and Exec-branch commands run; absent = direct spawn (tests). */
   readonly launcher?: CommandLauncher;
   /**
-   * US-003: whether this session offers the per-call `unsandboxed` argument on
-   * Bash (`NativeBackendOptions.allowUnsandboxedCommands`). Advertisement only:
-   * RunCommand's own `unsandboxed` argument is a separate, later surface.
+   * US-003/US-008: whether this session offers the per-call `unsandboxed`
+   * argument — on Bash (`createBashTool`) and on RunCommand's argv branch
+   * (`createRunCommandTool`'s `exec` option, US-008). Advertisement only:
+   * RunCommand's DECLARED-command branch has no argv to unwrap and refuses the
+   * flag by name.
    */
   readonly unsandboxedCommands?: boolean;
 }
@@ -49,7 +51,7 @@ export interface DeclaredCommandToolsArgs {
 /**
  * US-003: `unsandboxedCommands` as a spreadable field — present only when the
  * session opted in, so "off" and "absent" stay one shape all the way down to
- * `createBashTool`.
+ * `createBashTool` and to RunCommand's `exec` option (US-008).
  *
  * A helper rather than an inline `cond ? { field } : {}` spread because
  * `buildDeclaredCommandTools` and `buildCodingToolSupport` both sit at their
@@ -111,6 +113,10 @@ export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): Codin
                     patterns: args.execGrant?.patterns ?? [],
                     ...(args.packageName !== undefined ? { packageName: args.packageName } : {}),
                     ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
+                    // US-008: the same option Bash takes, forwarded to the argv
+                    // branch's advertisement through the same helper — one
+                    // shape for "off" and "absent" on both tools.
+                    ...unsandboxedToolOptions(args),
                   },
                 }
               : {}),

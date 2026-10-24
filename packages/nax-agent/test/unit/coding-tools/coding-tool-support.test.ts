@@ -69,6 +69,46 @@ describe("buildCodingToolSupport — unsandboxedCommands (US-003)", () => {
 });
 
 /**
+ * US-008: the same option reaches RunCommand's argv branch through
+ * `buildCodingToolSupport`, so an `Exec`-declaring session is the one that sees
+ * (and may ask for) the escape argument. `Exec` is a capability marker plus an
+ * `Exec(...)` grant, not an advertised tool — exactly how the argv branch is
+ * switched on everywhere else.
+ */
+describe("buildCodingToolSupport — unsandboxedCommands on RunCommand (US-008)", () => {
+  const execSupport = (extra: { unsandboxedCommands?: boolean } = {}) =>
+    buildCodingToolSupport({
+      root,
+      declared: ["Read", "RunCommand", "Exec"],
+      grants: [
+        { tool: "Read", patterns: ["*"] },
+        { tool: "RunCommand", patterns: ["*"] },
+        { tool: "Exec", patterns: ["bun *"] },
+      ],
+      ...extra,
+    });
+
+  /** The RunCommand tool's `properties` keys, without casting to a Capitalised type. */
+  function runCommandKeys(built: ReturnType<typeof execSupport>): string[] {
+    const runCommand = built?.tools.find((tool) => tool.name === "RunCommand");
+    if (runCommand === undefined) throw new Error("expected an advertised RunCommand tool");
+    const properties: unknown = runCommand.inputSchema.properties;
+    if (typeof properties !== "object" || properties === null) {
+      throw new Error("expected the RunCommand tool's inputSchema.properties to be an object");
+    }
+    return Object.keys(properties).sort();
+  }
+
+  test("AC-11: the option reaches RunCommand's argv schema", () => {
+    expect(runCommandKeys(execSupport({ unsandboxedCommands: true }))).toContain("unsandboxed");
+  });
+
+  test("AC-11 boundary: without the option the argv schema has no unsandboxed key", () => {
+    expect(runCommandKeys(execSupport())).not.toContain("unsandboxed");
+  });
+});
+
+/**
  * US-005: `unsandboxedCommands` is not only an advertisement (US-003) — it is
  * also the runtime's permission to run a call outside the sandbox at all. The
  * pair below is how the story makes the forwarding observable: the same
