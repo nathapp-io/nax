@@ -275,6 +275,23 @@ describe("buildSandboxPolicy", () => {
     expect(policy.denyRead).toContain(join(base, "gnax", "credentials-bak-2"));
   });
 
+  test("US-009 AC-1: glab credentials are denied under the input home", () => {
+    const policy = buildSandboxPolicy(input());
+    expect(policy.denyRead).toContain(join(home, ".config", "glab-cli"));
+  });
+
+  test("US-009 AC-2: gh credentials remain denied under the input home", () => {
+    const policy = buildSandboxPolicy(input());
+    expect(policy.denyRead).toContain(join(home, ".config", "gh"));
+  });
+
+  test("US-009 AC-3: a glob in a nonexistent home is rejected as a non-literal policy path", () => {
+    const malformedHome = join(base, "missing-home-*");
+    expect(() => buildSandboxPolicy(input({ home: malformedHome }))).toThrow(
+      expect.objectContaining({ code: "SANDBOX_POLICY_NOT_LITERAL" }),
+    );
+  });
+
   test("config extras: ~ expands, relative allowWrite resolves against the root", () => {
     const config: SandboxConfig = {
       ...DEFAULT_SANDBOX_CONFIG,

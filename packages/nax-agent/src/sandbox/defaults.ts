@@ -50,4 +50,5 @@ export const BUILTIN_CREDENTIAL_READ_DENIES: readonly string[] = [
   ".pypirc",
   ".git-credentials",
   ".config/gh",
+  ".config/glab-cli",
 ];
