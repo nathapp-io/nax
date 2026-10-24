@@ -21,7 +21,7 @@ import {
   newFeatureRecord,
   summariseStories,
 } from "./feature-record";
-import { readHead } from "./git";
+import { onlyLedgerChangedSince, readHead } from "./git";
 import { appendLedger, ensureLedger, ledgerText } from "./ledger";
 import { collectLedgerItems } from "./ledger-items";
 import { logWorkflow } from "./run-log";
@@ -103,6 +103,16 @@ async function currentHead(fc: FeatureContext): Promise<string | undefined> {
   }
 }
 
+/** `onlyLedgerChangedSince`, fail-soft: a throw reads as "moved", which restarts — the safe default. */
+async function ledgerOnlySince(fc: FeatureContext, base: string): Promise<boolean> {
+  try {
+    return await onlyLedgerChangedSince(fc.projectDir, fc.feature, base);
+  } catch {
+    // A git failure is an unknown answer, and an unknown HEAD never proves a record is current.
+    return false;
+  }
+}
+
 async function freshRecord(fc: FeatureContext, head: string | undefined): Promise<WorkflowFeatureRecord> {
   return newFeatureRecord({
     now: new Date().toISOString(),
@@ -130,6 +140,17 @@ async function resumeOrRestart(
   if (recorded === undefined || (head !== undefined && recorded === head)) {
     await appendLedger(fc.runDir, "_run", ledgerText.note(`resumed the feature workflow at ${prior.step}`));
     return prior;
+  }
+  // Publish commits the ledger before it pushes and waits for CI, and the record only moves on once the
+  // step returns, so a crash in that window leaves HEAD one ledger commit past `lastHead`. That is not
+  // movement: restarting would rerun the branch review and fixes and reset every round counter.
+  if (head !== undefined && (await ledgerOnlySince(fc, recorded))) {
+    await appendLedger(
+      fc.runDir,
+      "_run",
+      ledgerText.note(`resumed the feature workflow at ${prior.step} (HEAD moved only by the advisor-ledger commit)`),
+    );
+    return { ...prior, lastHead: head };
   }
   await appendLedger(
     fc.runDir,
