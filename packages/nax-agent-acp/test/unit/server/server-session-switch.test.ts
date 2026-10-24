@@ -77,6 +77,40 @@ describe("switchTo (spec §3.3)", () => {
     expect(s.lines.some((l) => l.level === "error" && l.data?.error === "still bad")).toBe(true);
   });
 
+  test("an open rejected with no reason still rejects after a successful restore", async () => {
+    const a = fakeAgentSession("s1", []);
+    const restored = fakeAgentSession("s1", [priced]);
+    const s = setup(a);
+    const outcome = await s.session
+      .switchTo(
+        () => Promise.reject(undefined),
+        async () => ({ session: restored.session }),
+      )
+      .then(
+        () => ({ kind: "resolved" as const }),
+        (reason: unknown) => ({ kind: "rejected" as const, reason }),
+      );
+    expect(outcome).toEqual({ kind: "rejected", reason: undefined });
+    // The restored session is the live one: the switch adopted it before rejecting.
+    await s.session.prompt(text("after"));
+    expect(restored.messages).toEqual(["after"]);
+  });
+
+  test("an open and restore both rejected with no reason still leave the session closed", async () => {
+    const s = setup(fakeAgentSession("s1", []));
+    const outcome = await s.session
+      .switchTo(
+        () => Promise.reject(undefined),
+        () => Promise.reject(undefined),
+      )
+      .then(
+        () => ({ kind: "resolved" as const }),
+        (reason: unknown) => ({ kind: "rejected" as const, reason }),
+      );
+    expect(outcome).toEqual({ kind: "rejected", reason: undefined });
+    expect(s.session.isClosed()).toBe(true);
+  });
+
   test("rejected while a turn runs; a prompt during a switch is turn in progress", async () => {
     let releaseOpen: () => void = () => {};
     const gate = new Promise<void>((resolve) => {

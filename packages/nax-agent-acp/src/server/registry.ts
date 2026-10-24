@@ -260,7 +260,11 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
         () => target(sessionId, entry.meta.cwd, from, entry.mcp.embedderTools(from.mode)),
       );
     } catch (error) {
-      if (entry.server.isClosed()) {
+      // A terminal close that interrupted the switch owns the cleanup (Approach 4):
+      // its closeRegistryEntry/closeEntries/delete awaits close(), then releases the
+      // lock and closes the MCP tools. Cleaning up here too would release the lock
+      // twice. Only a switch that failed on its own leaves a dead entry to clean.
+      if (entry.server.isClosed() && !entry.server.isClosing()) {
         try {
           await closeEntry(sessionId, entry);
         } catch (cleanupError) {
