@@ -3,7 +3,7 @@
   "feature": "bot-review-depth",
   "branchName": "feat/bot-review-depth",
   "createdAt": "2026-10-23T00:00:00Z",
-  "updatedAt": "2026-10-24T10:47:41.953Z",
+  "updatedAt": "2026-10-24T10:58:50.499Z",
   "userStories": [
     {
       "id": "US-001",
@@ -127,14 +127,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "A single prompt builder changes wording and conditional text using an existing flag; its existing tests pin the required compatibility boundaries."
+        "reasoning": "A single prompt builder changes wording and conditional text using an existing flag; its existing tests pin the required compatibility boundaries.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/bot-pr-review-builder.ts",
@@ -150,7 +153,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "90129f93fbe5cc5198c850d43539909ea652b17c"
     },
     {
       "id": "US-004",
