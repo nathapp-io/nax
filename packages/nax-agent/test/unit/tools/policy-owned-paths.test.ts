@@ -88,6 +88,14 @@ describe("compileToolPolicy and resolveWithin consume the OwnedPathsPolicy port"
     expect(resolveWithin(root, ".git/config", EMPTY_OWNED_PATHS_POLICY)).toBeNull();
   });
 
+  test("the .git refusal ignores case: .GIT/config is .git/config on macOS and Windows", () => {
+    const policy = compileToolPolicy(ALL, root);
+    for (const spelling of [".GIT/config", ".Git/hooks/pre-commit", "vendor/lib/.GiT/config"]) {
+      expect(policy.check("Write", PATH_SCOPE, { path: spelling, content: "x" }).allowed).toBe(false);
+      expect(resolveWithin(root, spelling, EMPTY_OWNED_PATHS_POLICY)).toBeNull();
+    }
+  });
+
   test("nax's policy restores today's config refusal and reason", () => {
     const policy = compileToolPolicy(ALL, root, { ownedPaths: naxOwnedPathsPolicy });
     const verdict = policy.check("Read", PATH_SCOPE, { path: ".nax/config.json" });

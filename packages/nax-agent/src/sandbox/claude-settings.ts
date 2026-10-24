@@ -56,14 +56,20 @@ const CLAUDE_SETTINGS_WRITE_TOOLS: ReadonlySet<string> = new Set(["Write", "Edit
  * policy compile time, so a symlink created mid-session is still seen.
  *
  * Segment-exact on the full path — a sibling such as `settings.json.bak`, or any
- * other file under `.claude/`, is an ordinary path a tool must still reach.
+ * other file under `.claude/`, is an ordinary path a tool must still reach. The
+ * compare ignores case: `.Claude/settings.json` is the same file on macOS and Windows.
  */
 export function claudeSettingsWriteRefusal(tool: string, rel: string, resolvedRoot: string): string | undefined {
   if (!CLAUDE_SETTINGS_WRITE_TOOLS.has(tool)) return undefined;
-  const entry = CLAUDE_SETTINGS_FILES.find((e) => e === rel || resolvedSettingsRel(resolvedRoot, e) === rel);
+  // Case-folded for the same reason as the `.git/` ban: on a case-insensitive filesystem
+  // `.Claude/settings.json` is the settings file, under a spelling a literal compare misses.
+  const folded = rel.toLowerCase();
+  const entry = CLAUDE_SETTINGS_FILES.find(
+    (e) => e.toLowerCase() === folded || resolvedSettingsRel(resolvedRoot, e).toLowerCase() === folded,
+  );
   if (entry === undefined) return undefined;
   const subject =
-    entry === rel
+    entry.toLowerCase() === folded
       ? `"${rel}" is a Claude Code settings file`
       : `"${rel}" is the target of the Claude Code settings file "${entry}"`;
   return (

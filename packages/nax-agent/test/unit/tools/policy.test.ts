@@ -469,6 +469,14 @@ describe("compileToolPolicy — deny rules (spec R6)", () => {
     expect(policy.grantedTools()).toContain("Read"); // scoped deny does not de-advertise
   });
 
+  test("path-scoped deny ignores case, so a respelled path cannot walk past it", () => {
+    const policy = compileToolPolicy([{ tool: "Read", patterns: ["*"] }], root, {
+      ownedPaths: naxOwnedPathsPolicy,
+      denyRules: [{ tool: "Read", patterns: [".env*"] }],
+    });
+    expect(policy.check("Read", PATH_SCOPE, { path: ".ENV.local" }).allowed).toBe(false);
+  });
+
   test("verb deny refuses the verb, allows siblings", () => {
     const verbScope: ToolScope = {
       pathFields: [],

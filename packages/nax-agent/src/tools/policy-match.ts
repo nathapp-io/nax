@@ -22,7 +22,7 @@ import type { ToolGrant } from "./types.ts";
  * -- but it made a *scoped* grant wider than its author wrote, which is the one
  * thing a scoped profile exists to prevent.
  */
-export function globToRegExp(pattern: string): RegExp {
+export function globToRegExp(pattern: string, ignoreCase = false): RegExp {
   let out = "";
   for (let i = 0; i < pattern.length; i += 1) {
     const char = pattern[i];
@@ -47,7 +47,7 @@ export function globToRegExp(pattern: string): RegExp {
     }
     out += char.replace(/[.+^${}()|[\]\\]/g, "\\$&");
   }
-  return new RegExp(`^${out}$`);
+  return new RegExp(`^${out}$`, ignoreCase ? "i" : "");
 }
 
 /** A compiled glob, keeping its source so verb names can be told from paths. */
@@ -92,11 +92,11 @@ export function matchedGlobSource(patterns: readonly CompiledPattern[], value: s
  * is exactly bun, argv[1] starts with add", never "the space-joined argv
  * matches this glob".
  */
-export function compileArgvPattern(pattern: string): readonly CompiledPattern[] {
+export function compileArgvPattern(pattern: string, ignoreCase = false): readonly CompiledPattern[] {
   return pattern
     .split(/\s+/)
     .filter((token) => token.length > 0)
-    .map((token) => ({ source: token, re: globToRegExp(token) }));
+    .map((token) => ({ source: token, re: globToRegExp(token, ignoreCase) }));
 }
 
 /** A grant pattern's tokens are a PREFIX of argv — trailing argv tokens
@@ -129,8 +129,11 @@ export function compileRuleMap(rules: readonly ToolGrant[] | undefined): Map<str
     const nonWildcard = patterns.filter((p) => p !== "*");
     map.set(rule.tool, {
       unconditional: patterns.includes("*"),
-      matchers: nonWildcard.map((source) => ({ source, re: globToRegExp(source) })),
-      argvPatterns: nonWildcard.map((source) => compileArgvPattern(source)),
+      // Case-insensitive, unlike grants: on a case-insensitive filesystem `.ENV` and `.env` are one
+      // file, and a deny/ask rule must not be walked past by respelling it (nax#1972, as denyPaths).
+      // Over-matching only asks or refuses more, the direction these lists should fail in.
+      matchers: nonWildcard.map((source) => ({ source, re: globToRegExp(source, true) })),
+      argvPatterns: nonWildcard.map((source) => compileArgvPattern(source, true)),
       raw: patterns,
       rulePatterns: [...(existing?.rulePatterns ?? []), rule.patterns],
     });
