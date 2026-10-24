@@ -61,6 +61,20 @@ async function restorePinned(worktree: string, paths: readonly string[]): Promis
   await pathCommand(git, ["checkout", "HEAD"], current);
 }
 
+async function assertOnlyPinnedChanges(git: GitCall, worktree: string, pinned: readonly string[]): Promise<void> {
+  const allowed = new Set(pinned);
+  const paths = (await git(["diff", "--cached", "--name-only", "-z", "--no-renames"]))
+    .split("\0")
+    .filter((path) => path !== "" && !allowed.has(path));
+  if (paths.length) {
+    throw new NaxError(`[bot-fix] Session pin left staged changes in ${worktree}`, "BOT_SESSION_PIN_FAILED", {
+      stage: "bot-fix",
+      worktree,
+      paths,
+    });
+  }
+}
+
 /** Temporarily load base agent config without staging it in the session's commits. */
 export async function pinBaseForSession(worktree: string, baseSha: string): Promise<SessionPin> {
   const git = sessionGit(worktree, "BOT_SESSION_PIN_FAILED");
@@ -71,9 +85,13 @@ export async function pinBaseForSession(worktree: string, baseSha: string): Prom
   const baseOnly = base.filter((path) => !headSet.has(path));
   for (const path of head) await _sessionPinDeps.rm(join(worktree, path));
   await pathCommand(git, ["checkout", baseSha], base);
+  // Check before reset: a directory pathspec can unstage collateral deletions,
+  // leaving them in the worktree for the agent's next add -A to stage again.
+  if (paths.length) await assertOnlyPinnedChanges(git, worktree, paths);
   await pathCommand(git, ["reset", "-q", "HEAD"], paths);
+  // Force only base-tracked paths: HEAD's ignore rules must not prevent index isolation.
   // Intent-to-add makes base-only files eligible for skip-worktree without staging their content.
-  await pathCommand(git, ["add", "-N"], baseOnly);
+  await pathCommand(git, ["add", "-N", "-f"], baseOnly);
   if (paths.length) await git(["update-index", "--skip-worktree", "--", ...paths]);
   return { paths, restore: () => restorePinned(worktree, paths) };
 }

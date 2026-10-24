@@ -39,6 +39,7 @@ describe("pinBaseForSession", () => {
       ["ls-tree", "-r", "--name-only", "-z", "HEAD"],
       ["ls-tree", "-r", "--name-only", "-z", "base"],
       ["checkout", "base", "--", ":(literal)CLAUDE.md"],
+      ["diff", "--cached", "--name-only", "-z", "--no-renames"],
       ["reset", "-q", "HEAD", "--", ":(literal)CLAUDE.md"],
       ["update-index", "--skip-worktree", "--", "CLAUDE.md"],
       ["update-index", "--no-skip-worktree", "--", "CLAUDE.md"],

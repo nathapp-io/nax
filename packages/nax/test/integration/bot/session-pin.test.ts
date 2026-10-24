@@ -84,6 +84,35 @@ describe("pinBaseForSession", () => {
     expect(await exists(path)).toBe(false);
     expect(await git(["status", "--porcelain"])).toBe("");
   });
+  test("F1 pins base-only config ignored by HEAD without staging it", async () => {
+    await Bun.write(join(repo, ".gitignore"), ".mcp.json\n");
+    await git(["add", ".gitignore"]);
+    await git(["commit", "-m", "ignore removed config"]);
+    const pin = await pinBaseForSession(repo, base);
+    expect(await read(".mcp.json")).toBe("base-mcp");
+    expect(await git(["status", "--porcelain"])).toBe("");
+    expect(await git(["diff", "--cached", "--name-only"])).toBe("");
+    await Bun.write(join(repo, "src/a.ts"), "changed");
+    await git(["add", "-A"]);
+    await git(["commit", "-m", "x"]);
+    expect(await git(["show", "--format=", "--name-only", "HEAD"])).toBe("src/a.ts");
+    await pin.restore();
+    expect(await exists(".mcp.json")).toBe(false);
+    expect(await git(["status", "--porcelain"])).toBe("");
+  });
+  test("F2 refuses a pin that stages deletion of a head directory's unpinned files", async () => {
+    await git(["rm", "CLAUDE.md"]);
+    await Bun.write(join(repo, "CLAUDE.md/notes.md"), "head notes");
+    await git(["add", "."]);
+    await git(["commit", "-m", "replace config with directory"]);
+    const head = await git(["rev-parse", "HEAD"]);
+    await expect(pinBaseForSession(repo, base)).rejects.toMatchObject({
+      code: "BOT_SESSION_PIN_FAILED",
+      context: { stage: "bot-fix", paths: ["CLAUDE.md/notes.md"] },
+    });
+    expect(await git(["rev-parse", "HEAD"])).toBe(head);
+    expect(await git(["show", "HEAD:CLAUDE.md/notes.md"])).toBe("head notes");
+  });
   test("AC-13 restores current HEAD, not the original head", async () => {
     const pin = await pinBaseForSession(repo, base);
     await Bun.write(join(repo, "CLAUDE.md"), "agent");
