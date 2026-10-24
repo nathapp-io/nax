@@ -3,7 +3,7 @@
   "feature": "bot-security-boundary-2",
   "branchName": "feat/bot-security-boundary-2",
   "createdAt": "2026-10-24T00:00:00.000Z",
-  "updatedAt": "2026-10-24T06:41:57.756Z",
+  "updatedAt": "2026-10-24T07:01:54.121Z",
   "userStories": [
     {
       "id": "US-001",
@@ -331,14 +331,17 @@
         "checks"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Standard optional input and CLI plumbing, but it authorizes script execution and must reject saved-check bypasses under isolated security TDD."
+        "reasoning": "Standard optional input and CLI plumbing, but it authorizes script execution and must reject saved-check bypasses under isolated security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/fix-run.ts",
@@ -365,7 +368,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "2d106c8ddcc685fbb70e33e27ac23ff90fa4add6"
     },
     {
       "id": "US-007",
