@@ -138,6 +138,33 @@ describe("parseStoryReviewReply", () => {
     expect(v?.findings.filter((f) => f.severity === "important")).toHaveLength(1);
   });
 
+  test("quality changes with no blocking finding gets a synthetic quality one (nax#2550)", () => {
+    for (const findings of [
+      [],
+      [{ severity: "minor", kind: "quality", issue: "naming" }],
+      // A blocking finding with no `issue` key is dropped, which must not leave the review clean.
+      [{ severity: "important", kind: "quality", description: "race in X" }],
+    ]) {
+      const v = parseStoryReviewReply(JSON.stringify({ spec: "pass", quality: "changes", findings }));
+      expect(v?.findings.filter((f) => f.severity !== "minor")).toEqual([
+        expect.objectContaining({ kind: "quality", severity: "important" }),
+      ]);
+    }
+  });
+
+  test("quality changes with a blocking finding, or quality approved, adds nothing", () => {
+    const blocking = parseStoryReviewReply(
+      JSON.stringify({
+        spec: "pass",
+        quality: "changes",
+        findings: [{ severity: "important", kind: "quality", issue: "leaks handle" }],
+      }),
+    );
+    expect(blocking?.findings).toHaveLength(1);
+    const approved = parseStoryReviewReply(JSON.stringify({ spec: "pass", quality: "approved", findings: [] }));
+    expect(approved?.findings).toEqual([]);
+  });
+
   test("bad verdict enums -> null", () => {
     expect(parseStoryReviewReply(JSON.stringify({ spec: "ok", quality: "approved", findings: [] }))).toBeNull();
     expect(parseStoryReviewReply("not json")).toBeNull();
