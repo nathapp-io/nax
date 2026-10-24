@@ -23,7 +23,7 @@ const client = createClient({
   protocols: piProtocols(),
 });
 
-const model = await client.model("deepseek", "deepseek-v4-flash");
+const model = await client.model("deepseek", "deepseek-flash");
 const result = await client.complete(model, { messages: [{ role: "user", content: "hi" }] });
 ```
 

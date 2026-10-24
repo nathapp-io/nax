@@ -104,7 +104,7 @@ describe("createPiDeps header wiring", () => {
       seen = options;
       return emptyStream();
     });
-    const model = await deps.resolveModel("deepseek-v4-flash", "opencode-go");
+    const model = await deps.resolveModel("deepseek-v4.1-flash", "opencode-go");
 
     for await (const _ of deps.stream(
       model,
@@ -143,7 +143,7 @@ describe("createPiDeps auth/request header merge", () => {
       },
       resolver,
     );
-    const model = await deps.resolveModel("deepseek-v4-flash", "opencode-go");
+    const model = await deps.resolveModel("deepseek-v4.1-flash", "opencode-go");
     for await (const _ of deps.stream(model, { messages: [] }, req, () => {})) {
       // drain
     }
@@ -177,7 +177,7 @@ describe("header option absence", () => {
       seen = options;
       return emptyStream();
     });
-    const model = await deps.resolveModel("gpt-5.5", "openai-codex");
+    const model = await deps.resolveModel("gpt-6-astra", "openai-codex");
 
     for await (const _ of deps.stream(model, { messages: [] }, {}, () => {})) {
       // drain

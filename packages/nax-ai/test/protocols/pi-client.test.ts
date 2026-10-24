@@ -238,7 +238,9 @@ describe("toPiContext", () => {
     expect(withOrigin({ provider: "deepseek", model: "deepseek-chat" })).toEqual(withOrigin());
   });
 
-  it("through pi-ai: another model's thinking becomes text without its signature; the current model's keeps it", () => {
+  // pi-ai 1.4.0 drops another model's thinking outright; 1.1.0 replayed it as plain text without
+  // its signature, which the new model read as part of the visible reply.
+  it("through pi-ai: another model's thinking is dropped with its signature; the current model's keeps it", () => {
     const context = toPiContext(
       {
         ...BASE,
@@ -265,7 +267,8 @@ describe("toPiContext", () => {
     const sent = transformMessages(context.messages, MODEL);
     const foreign = JSON.stringify(sent[1]);
     const own = JSON.stringify(sent[3]);
-    expect(foreign).toContain("haiku thought");
+    expect(foreign).toContain('"text":"a"');
+    expect(foreign).not.toContain("haiku thought");
     expect(foreign).not.toContain("sig-haiku");
     expect(own).toContain("sig-own");
   });
@@ -856,8 +859,8 @@ describe("createPiProtocol error path", () => {
     ).stream({
       ...BASE,
       // BASE's "deepseek-chat" is not in the real pi-ai catalog (resolveModel would throw before
-      // the header check); "gpt-5.5" resolves via the global first-match fallback (pi-protocols.test.ts:55).
-      model: "gpt-5.5",
+      // the header check); "gpt-6-astra" resolves via the global first-match fallback (pi-protocols.test.ts, "keeps the global first-match fallback").
+      model: "gpt-6-astra",
       headers: { "x-a": "a\nb" },
     })) {
       events.push(event);
