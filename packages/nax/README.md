@@ -64,7 +64,7 @@ nax has two execution modes. **Workflow mode** is the default (`execution.mode: 
 ### Workflow mode (default)
 
 ```
-story: implement → gates → story review → fix rounds → full suite → residual ruling
+story: implement → gates → full suite → story review → fix rounds → residual ruling
 feature: repo gates → branch review → branch fix → re-review → adjudicate → final gates → publish
 ```
 

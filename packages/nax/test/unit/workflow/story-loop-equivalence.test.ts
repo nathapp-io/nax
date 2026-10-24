@@ -196,7 +196,7 @@ describe("recordStoryTrace", () => {
   test("AC-9: every steps and advisor call records a call and a return, in invocation order", async () => {
     const h = makeStoryLoopHarness({ implement: asksOnce }, { advisor: ANSWERING });
     const trace = await recordStoryTrace("calls", h);
-    const expected = ["implement", "answerQuestion", "implement", "costExceeded", "gates", "storyReview", "fullSuite"];
+    const expected = ["implement", "answerQuestion", "implement", "costExceeded", "gates", "fullSuite", "storyReview"];
     expect(methodsOf(trace, "call")).toEqual(expected);
     expect(methodsOf(trace, "return")).toEqual(expected);
     const callAndReturn = trace.events.filter((event) => event.kind === "call" || event.kind === "return");
@@ -209,7 +209,7 @@ describe("recordStoryTrace", () => {
       method: "answerQuestion",
       args: [{ storyId: "US-001", status: "NEEDS_CONTEXT", concerns: "which API?" }],
     });
-    expect(calls[5]?.args).toEqual([[], GREEN.states]);
+    expect(calls[6]?.args).toEqual([[], { ...GREEN.states, ...SUITE_GREEN.states }]);
     const returns = eventsOf(trace, "return");
     // Results, including a synchronous one that lands before the next call.
     expect(returns[0]).toEqual({ kind: "return", method: "implement", value: NEEDS_CONTEXT });

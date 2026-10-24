@@ -164,6 +164,28 @@
     {
       "kind": "update",
       "record": {
+        "phase": "suite"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "fullSuite"
+    },
+    {
+      "kind": "return",
+      "method": "fullSuite",
+      "value": {
+        "findings": [],
+        "red": false,
+        "states": {
+          "full-suite": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
         "phase": "review"
       }
     },
@@ -180,6 +202,7 @@
       "args": [
         [],
         {
+          "full-suite": "green",
           "lint": "green",
           "scoped": "green",
           "typecheck": "green"
@@ -211,28 +234,6 @@
       "kind": "log",
       "level": "info",
       "message": "US-001 story-review: spec pass, quality approved - no findings  <dur>"
-    },
-    {
-      "kind": "update",
-      "record": {
-        "phase": "suite"
-      }
-    },
-    {
-      "args": [],
-      "kind": "call",
-      "method": "fullSuite"
-    },
-    {
-      "kind": "return",
-      "method": "fullSuite",
-      "value": {
-        "findings": [],
-        "red": false,
-        "states": {
-          "full-suite": "green"
-        }
-      }
     },
     {
       "kind": "update",
