@@ -137,6 +137,11 @@ export interface BeforeRequestPatch {
  * parameter, not a new concept.
  */
 export interface CompleteCallOptions {
+  /**
+   * `false` asks for no thinking on this request; on a model that cannot
+   * disable thinking it gets the least thinking the model supports instead.
+   * `true` keeps the session's resolved level.
+   */
   readonly thinking?: boolean;
   readonly temperature?: number;
 }

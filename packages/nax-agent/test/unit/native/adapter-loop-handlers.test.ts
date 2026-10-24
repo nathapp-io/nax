@@ -72,6 +72,8 @@ interface Capture {
   readonly requests: (readonly ConversationMessage[])[];
   /** Every coding-tool call the loop actually INVOKED, in order. */
   readonly invokedTools: string[];
+  /** The thinking level of every model request, in request order (`undefined` = none sent). */
+  readonly thinking: (string | undefined)[];
   roundTrips: number;
 }
 
@@ -81,9 +83,13 @@ function scriptedClient(script: (roundTrip: number) => ScriptedAnswer, capture: 
     listModels: async () => [MODEL],
     pricing: () => ({ input: 3, output: 15, cacheRead: 0, cacheWrite: 0 }),
     stream: async function* stream() {},
-    complete: async (_model: ResolvedModel, req: { readonly messages: readonly ConversationMessage[] }) => {
+    complete: async (
+      _model: ResolvedModel,
+      req: { readonly messages: readonly ConversationMessage[]; readonly thinking?: string },
+    ) => {
       capture.roundTrips += 1;
       capture.requests.push([...req.messages]);
+      capture.thinking.push(req.thinking);
       const answer = script(capture.roundTrips);
       return {
         text: answer.text,
@@ -128,10 +134,12 @@ async function driveTurn(args: {
   readonly loopHandlers: LoopHandlerSet;
   readonly loopHandlerContext?: LoopHandlerContext;
   readonly codingTools?: readonly CodingTool[];
+  /** The native model spec; defaults to one with no `[effort]` suffix. */
+  readonly model?: string;
 }): Promise<TurnFixture> {
   const root = tempDir("nax-adapter-loop-handlers-root-");
   const transcriptDir = tempDir("nax-adapter-loop-handlers-");
-  const capture: Capture = { requests: [], invokedTools: [], roundTrips: 0 };
+  const capture: Capture = { requests: [], invokedTools: [], thinking: [], roundTrips: 0 };
   _clientDeps.build = async () => scriptedClient(args.script, capture);
 
   const adapter = new NativeSessionAdapter();
@@ -140,7 +148,7 @@ async function driveTurn(args: {
     agentName: "native",
     workdir: root,
     resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
-    modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
+    modelDef: { provider: "unknown", model: args.model ?? "openai/gpt-5.4-mini" },
     timeoutSeconds: 60,
     transcriptDir,
   });
@@ -432,5 +440,34 @@ describe("US-003 — NativeSessionAdapter.sendTurn: opts.loopHandlerContext", ()
 
     expect(seen).toHaveLength(2);
     for (const handlerContext of seen) expect(handlerContext).toBe(context);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #2686 — a before_request `thinking: false` reaches nax-ai as "off"
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("NativeSessionAdapter.sendTurn: before_request thinking option", () => {
+  test('thinking: false sends the level "off", not an absent level', async () => {
+    // Absent means the backend default, which on a model that cannot disable
+    // thinking is adaptive at effort high. "off" is clamped by the client to
+    // the lowest level the model supports instead.
+    const fixture = await driveTurn({
+      script: () => ({ text: "done" }),
+      model: "openai/gpt-5.4-mini[high]",
+      loopHandlers: [pluginEntry("before_request", () => ({ options: { thinking: false } }))],
+    });
+
+    expect(fixture.capture.thinking).toEqual(["off"]);
+  });
+
+  test("thinking: true keeps the session's resolved level", async () => {
+    const fixture = await driveTurn({
+      script: () => ({ text: "done" }),
+      model: "openai/gpt-5.4-mini[high]",
+      loopHandlers: [pluginEntry("before_request", () => ({ options: { thinking: true } }))],
+    });
+
+    expect(fixture.capture.thinking).toEqual(["high"]);
   });
 });
