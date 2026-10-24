@@ -3,7 +3,7 @@
   "feature": "bot-security-boundary-2",
   "branchName": "feat/bot-security-boundary-2",
   "createdAt": "2026-10-24T00:00:00.000Z",
-  "updatedAt": "2026-10-24T07:01:54.121Z",
+  "updatedAt": "2026-10-24T07:14:31.285Z",
   "userStories": [
     {
       "id": "US-001",
@@ -401,14 +401,17 @@
         "workflow"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module role-check aggregation and verdict downgrading affect posting, summaries and artifacts; authorization failure must remain fail closed without extra model calls."
+        "reasoning": "Cross-module role-check aggregation and verdict downgrading affect posting, summaries and artifacts; authorization failure must remain fail closed without extra model calls.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/post-earlier.ts",
@@ -424,7 +427,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7b5b5c235dccda8e4db867487f6e3d63cb599812"
     },
     {
       "id": "US-008",
