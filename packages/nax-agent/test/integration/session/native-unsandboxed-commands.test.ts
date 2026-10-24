@@ -59,15 +59,17 @@ afterEach(async () => {
 async function bashPropertyKeys(options: { readonly allowUnsandboxedCommands?: boolean }): Promise<string[]> {
   const provider = installScriptedProvider();
   provider.push(textRound("ok"));
+  // Deliberately built through the shared `sessionOptions` factory with NO
+  // explicit `backend`: the option is a native-only key, so this also pins that
+  // the factory routes it into `nativeBackend()` instead of dropping it. A
+  // session opened here therefore really has the option on, which is what the
+  // advertisement assertion below is worth.
   const session = await createAgentSession(
     sessionOptions({
       profile: "full",
       workdir: makeTestDir("nax-unsandboxed-commands-"),
-      backend: nativeBackend({
-        model: MODEL,
-        bashApproval: "gated",
-        ...(options.allowUnsandboxedCommands === true ? { allowUnsandboxedCommands: true } : {}),
-      }),
+      bashApproval: "gated",
+      ...(options.allowUnsandboxedCommands === true ? { allowUnsandboxedCommands: true } : {}),
     }),
   );
   sessionCleanups.push(() => session.close());

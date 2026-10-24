@@ -3,11 +3,13 @@ import {
   type AgentSession,
   type AgentSessionAdapter,
   attachTurnSpend,
+  type BackendInfo,
   type BackendOpenContext,
   createAgentSession,
   nativeBackend,
   type OpenedBackend,
   resumeAgentSession,
+  type SandboxState,
   type SendTurnOpts,
   type SessionBackend,
   type SessionEvent,
@@ -26,7 +28,7 @@ interface StubState {
   adapterCloseThrows: boolean;
 }
 
-function stubBackend(kind: string, state: StubState): SessionBackend {
+function stubBackend(kind: string, state: StubState, info: Partial<BackendInfo> = {}): SessionBackend {
   return {
     kind,
     async open(ctx) {
@@ -47,7 +49,7 @@ function stubBackend(kind: string, state: StubState): SessionBackend {
       const opened: OpenedBackend = {
         adapter,
         handle: { id: "h", agentName: "stub" },
-        info: { kind, capabilities: { resume: true } },
+        info: { kind, capabilities: { resume: true }, ...info },
         turnOpts: () => ({ interactionHandler: { onInteraction: async () => null } }),
         close: async () => {
           state.closes += 1;
@@ -88,6 +90,28 @@ describe("agent session: backend seam", () => {
     const end = turnEndOf(await collect(session.send("ping")));
     expect(end).toMatchObject({ status: "completed", output: "pong", costSource: "unpriced" });
     expect(state.opened[0]?.workdir).toBeString();
+    await session.close();
+  });
+
+  test("a backend-supplied sandbox is copied through frozen, its network array included", async () => {
+    const network = ["registry.npmjs.org"];
+    const sandbox: SandboxState = { kind: "available", backend: "srt", network };
+    const session = await createAgentSession({
+      backend: stubBackend("native", fresh(), { sandbox }),
+      profile: "none",
+      transcriptStore: createMemoryTranscriptStore(),
+    });
+    const reported = session.backend.sandbox;
+    expect(reported).toEqual(sandbox);
+    expect(Object.isFrozen(reported)).toBe(true);
+    if (reported?.kind !== "available") throw new Error("expected the available sandbox state");
+    // The freeze is deep enough to cover what an embedder could otherwise edit
+    // under a frozen record: the `network` list an `available` state carries.
+    expect(Object.isFrozen(reported.network)).toBe(true);
+    // ...and the report is a COPY: editing the backend's own record cannot
+    // rewrite what the session reports its commands ran under.
+    network.push("evil.example");
+    expect(reported.network).toEqual(["registry.npmjs.org"]);
     await session.close();
   });
 

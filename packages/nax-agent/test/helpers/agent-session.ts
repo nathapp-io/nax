@@ -158,17 +158,31 @@ export function installManualTimers(): ManualTimers {
 export type SessionTestOptions = Partial<Omit<CreateAgentSessionOptions, "backend">> &
   Partial<NativeBackendOptions> & { readonly backend?: SessionBackend };
 
-/** Shared options, with native-only keys routed into nativeBackend() (S4: the 0.3.0 options shape). */
+/**
+ * Shared options, with native-only keys routed into nativeBackend() (S4: the 0.3.0 options shape).
+ *
+ * Every key `NativeBackendOptions` declares is named in both the destructure and
+ * the forward below, on purpose: the parameter type advertises them
+ * (`Partial<NativeBackendOptions>`), so a native key left out here is silently
+ * DROPPED rather than refused — a test that opts in through this factory would
+ * then exercise a session with the option off. Adding a native option means
+ * adding it here too; `test/integration/session/native-unsandboxed-commands.test.ts`
+ * is the case that fails when `allowUnsandboxedCommands` is dropped, because it
+ * opens its session through this factory with no explicit backend.
+ */
 export function sessionOptions(extra: SessionTestOptions = {}): CreateAgentSessionOptions {
   const {
     backend,
     model,
+    instructionFileName,
     credentials,
     catalogOverrides,
     loopHandlers,
     hostPorts,
     bashApproval,
     allowUnsandboxed,
+    allowUnsandboxedCommands,
+    carryHistoryAcrossModels,
     compaction,
     ...shared
   } = extra;
@@ -177,12 +191,15 @@ export function sessionOptions(extra: SessionTestOptions = {}): CreateAgentSessi
       backend ??
       nativeBackend({
         model: model ?? MODEL,
+        ...(instructionFileName !== undefined ? { instructionFileName } : {}),
         ...(credentials !== undefined ? { credentials } : {}),
         ...(catalogOverrides !== undefined ? { catalogOverrides } : {}),
         ...(loopHandlers !== undefined ? { loopHandlers } : {}),
         ...(hostPorts !== undefined ? { hostPorts } : {}),
         ...(bashApproval !== undefined ? { bashApproval } : {}),
         ...(allowUnsandboxed !== undefined ? { allowUnsandboxed } : {}),
+        ...(allowUnsandboxedCommands !== undefined ? { allowUnsandboxedCommands } : {}),
+        ...(carryHistoryAcrossModels !== undefined ? { carryHistoryAcrossModels } : {}),
         ...(compaction !== undefined ? { compaction } : {}),
       }),
     sessionId: shared.sessionId,

@@ -69,10 +69,14 @@ const REASON_WITHHELD = "reason withheld";
  * would hide shell syntax is WITHHELD rather than denying the ask (the command
  * itself is already vetted by `askSummary`); the person still learns the call
  * wants to run outside the sandbox, which is the fact the suffix exists for.
+ *
+ * A blank or whitespace-only reason takes the SAME fallback as an absent one:
+ * the model wrote nothing that could explain anything, and the approver must
+ * never be shown the dangling clause the prefix alone renders.
  */
 export function unsandboxedReasonSuffix(input: { readonly unsandboxedReason?: unknown }): string {
   const raw = input.unsandboxedReason;
-  if (typeof raw !== "string") return `${UNSANDBOXED_PREFIX}${NO_REASON}`;
+  if (typeof raw !== "string" || raw.trim() === "") return `${UNSANDBOXED_PREFIX}${NO_REASON}`;
   const masked = maskForPrompt(raw);
   if (!masked.ok) return `${UNSANDBOXED_PREFIX}${REASON_WITHHELD}`;
   return `${UNSANDBOXED_PREFIX}${masked.masked.slice(0, MAX_ASK_SUMMARY_CHARS)}`;

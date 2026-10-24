@@ -4,7 +4,7 @@
  * suite covers the parallel backend's contract only.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { type BackendOpenContext, createAgentSession } from "@nathapp/nax-agent";
+import { type AgentSession, type BackendOpenContext, createAgentSession } from "@nathapp/nax-agent";
 import { _sessionSandboxDeps } from "#src/coding-tools/coding-tool-sandbox";
 import { _clientDeps } from "#src/native/client";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
@@ -20,8 +20,10 @@ import {
   installManualTimers,
   installScriptedProvider,
   MODEL,
+  type Round,
   reader,
   resetScriptedProvider,
+  type ScriptedProvider,
   sessionOptions,
   textRound,
   toolRound,
@@ -29,6 +31,7 @@ import {
 } from "#test/helpers/agent-session";
 import {
   assertNaxError,
+  type ConfinedSessionSeam,
   cleanupTempDir,
   makeTempDir,
   stubSessionSandboxDeps,
@@ -252,18 +255,37 @@ describe("nativeBackend — the assembled session's unsandboxed Bash escape", ()
     return session;
   }
 
-  test("AC-1..AC-3: under gated the escape asks with its reason, and an allow runs the logical argv unwrapped", async () => {
+  /** The escape request the scripted model sends; what differs per test is the rounds around it. */
+  const ESCAPE = { command: "curl x", unsandboxed: true, unsandboxedReason: "needs network" };
+
+  interface EscapeHarness {
+    readonly seam: ConfinedSessionSeam;
+    readonly runArgvCalls: (readonly string[])[];
+    readonly provider: ScriptedProvider;
+    readonly session: AgentSession;
+  }
+
+  /**
+   * The ONE fixture every test in this block starts from: manual timers, an
+   * available sandbox seam, the recording launcher stub, the scripted model and
+   * the opened full-profile session. Per test, only the scripted rounds and the
+   * backend options differ -- so those are the fixture's only two parameters.
+   */
+  async function openEscapeSession(rounds: readonly Round[], backend: NativeOptions): Promise<EscapeHarness> {
     installManualTimers();
     const seam = stubSessionSandboxDeps(_sessionSandboxDeps);
     const runArgvCalls = stubLauncherRunArgv();
     const provider = installScriptedProvider();
-    provider.push(
-      toolRound([
-        { id: "u1", name: "Bash", input: { command: "curl x", unsandboxed: true, unsandboxedReason: "needs network" } },
-      ]),
-      textRound("ok"),
+    provider.push(...rounds);
+    const session = await openFullSession(backend);
+    return { seam, runArgvCalls, provider, session };
+  }
+
+  test("AC-1..AC-3: under gated the escape asks with its reason, and an allow runs the logical argv unwrapped", async () => {
+    const { seam, runArgvCalls, session } = await openEscapeSession(
+      [toolRound([{ id: "u1", name: "Bash", input: ESCAPE }]), textRound("ok")],
+      { model: MODEL, bashApproval: "gated", allowUnsandboxedCommands: true },
     );
-    const session = await openFullSession({ model: MODEL, bashApproval: "gated", allowUnsandboxedCommands: true });
 
     const events = reader(session.send("reach the network"));
     const [request] = eventsOf(await events.until("approval_requested"), "approval_requested");
@@ -278,21 +300,16 @@ describe("nativeBackend — the assembled session's unsandboxed Bash escape", ()
   });
 
   test("AC-4..AC-5: a denial runs nothing, wraps nothing, and the model gets a refused tool result", async () => {
-    installManualTimers();
-    const seam = stubSessionSandboxDeps(_sessionSandboxDeps);
-    const runArgvCalls = stubLauncherRunArgv();
-    const provider = installScriptedProvider();
-    provider.push(
-      toolRound([
-        { id: "u1", name: "Bash", input: { command: "curl x", unsandboxed: true, unsandboxedReason: "needs network" } },
-      ]),
-      textRound("ok"),
+    const { seam, runArgvCalls, provider, session } = await openEscapeSession(
+      [toolRound([{ id: "u1", name: "Bash", input: ESCAPE }]), textRound("ok")],
+      { model: MODEL, bashApproval: "gated", allowUnsandboxedCommands: true },
     );
-    const session = await openFullSession({ model: MODEL, bashApproval: "gated", allowUnsandboxedCommands: true });
 
     const events = reader(session.send("reach the network"));
     const [request] = eventsOf(await events.until("approval_requested"), "approval_requested");
-    session.answer(request?.requestId ?? "", { decision: "deny" });
+    // The answer must REACH the pending ask: a discard here would surface only
+    // as the turn hanging until its deadline, not as this test failing by name.
+    expect(session.answer(request?.requestId ?? "", { decision: "deny" })).toBe("accepted");
     expect(turnEndOf(await events.rest()).status).toBe("completed");
 
     expect(runArgvCalls).toEqual([]);
@@ -305,19 +322,15 @@ describe("nativeBackend — the assembled session's unsandboxed Bash escape", ()
   });
 
   test("AC-6: a later ordinary Bash call in the same session is wrapped again", async () => {
-    installManualTimers();
-    const seam = stubSessionSandboxDeps(_sessionSandboxDeps);
-    const runArgvCalls = stubLauncherRunArgv();
-    const provider = installScriptedProvider();
-    provider.push(
-      toolRound([
-        { id: "u1", name: "Bash", input: { command: "curl x", unsandboxed: true, unsandboxedReason: "needs network" } },
-      ]),
-      textRound("ok"),
-      toolRound([{ id: "b2", name: "Bash", input: { command: "ls" } }]),
-      textRound("done"),
+    const { seam, runArgvCalls, session } = await openEscapeSession(
+      [
+        toolRound([{ id: "u1", name: "Bash", input: ESCAPE }]),
+        textRound("ok"),
+        toolRound([{ id: "b2", name: "Bash", input: { command: "ls" } }]),
+        textRound("done"),
+      ],
+      { model: MODEL, bashApproval: "gated", allowUnsandboxedCommands: true },
     );
-    const session = await openFullSession({ model: MODEL, bashApproval: "gated", allowUnsandboxedCommands: true });
 
     const firstTurn = reader(session.send("reach the network"));
     const [unwrapped] = eventsOf(await firstTurn.until("approval_requested"), "approval_requested");
@@ -338,15 +351,10 @@ describe("nativeBackend — the assembled session's unsandboxed Bash escape", ()
   });
 
   test("AC-7..AC-9: under raw the escape never asks, runs unwrapped, and is never wrapped", async () => {
-    installManualTimers();
-    const seam = stubSessionSandboxDeps(_sessionSandboxDeps);
-    const runArgvCalls = stubLauncherRunArgv();
-    const provider = installScriptedProvider();
-    provider.push(
-      toolRound([{ id: "u1", name: "Bash", input: { command: "curl x", unsandboxed: true } }]),
-      textRound("ok"),
+    const { seam, runArgvCalls, session } = await openEscapeSession(
+      [toolRound([{ id: "u1", name: "Bash", input: { command: "curl x", unsandboxed: true } }]), textRound("ok")],
+      { model: MODEL, bashApproval: "raw", allowUnsandboxedCommands: true },
     );
-    const session = await openFullSession({ model: MODEL, bashApproval: "raw", allowUnsandboxedCommands: true });
 
     const events = await collect(session.send("reach the network"));
     expect(eventsOf(events, "approval_requested")).toEqual([]);
@@ -356,15 +364,10 @@ describe("nativeBackend — the assembled session's unsandboxed Bash escape", ()
   });
 
   test("AC-10..AC-12: without allowUnsandboxedCommands no ask is raised, the model is told why, nothing runs", async () => {
-    installManualTimers();
-    const seam = stubSessionSandboxDeps(_sessionSandboxDeps);
-    const runArgvCalls = stubLauncherRunArgv();
-    const provider = installScriptedProvider();
-    provider.push(
-      toolRound([{ id: "u1", name: "Bash", input: { command: "curl x", unsandboxed: true } }]),
-      textRound("ok"),
+    const { seam, runArgvCalls, provider, session } = await openEscapeSession(
+      [toolRound([{ id: "u1", name: "Bash", input: { command: "curl x", unsandboxed: true } }]), textRound("ok")],
+      { model: MODEL, bashApproval: "gated" },
     );
-    const session = await openFullSession({ model: MODEL, bashApproval: "gated" });
 
     const events = await collect(session.send("reach the network"));
     expect(eventsOf(events, "approval_requested")).toEqual([]);

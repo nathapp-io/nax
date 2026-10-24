@@ -93,6 +93,12 @@ describe("a native session with no usable sandbox", () => {
       }),
     );
     expect(session.backend.sandbox).toEqual({ kind: "unavailable", backend: "srt", reason: "srt missing" });
+    // The record is what an embedder quotes to a person, so it is frozen and
+    // cannot be rewritten after the fact (US-001; the deep case -- an
+    // `available` state's `network` list -- is pinned in
+    // test/unit/session/agent-session-backend.test.ts).
+    expect(Object.isFrozen(session.backend.sandbox)).toBe(true);
+    expect(Object.isFrozen(session.backend)).toBe(true);
   });
 
   // AC-15

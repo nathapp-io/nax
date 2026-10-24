@@ -69,6 +69,16 @@ describe("unsandboxedReasonSuffix", () => {
     expect(unsandboxedReasonSuffix({})).toBe(`${PREFIX}no reason given`);
   });
 
+  test("a blank reason renders the fallback, never a dangling clause", () => {
+    // A string is "a reason the model gave" only if it says something: the
+    // approver must not see ' -- runs OUTSIDE the sandbox: ' with nothing after
+    // the colon. Model-authored, so "" and "   " are both reachable (US-006
+    // passes the value straight in).
+    expect(unsandboxedReasonSuffix({ unsandboxedReason: "" })).toBe(`${PREFIX}no reason given`);
+    expect(unsandboxedReasonSuffix({ unsandboxedReason: "   " })).toBe(`${PREFIX}no reason given`);
+    expect(unsandboxedReasonSuffix({ unsandboxedReason: "\n\t " })).toBe(`${PREFIX}no reason given`);
+  });
+
   test("AC-3: a 300-character reason is cut to MAX_ASK_SUMMARY_CHARS", () => {
     const suffix = unsandboxedReasonSuffix({ unsandboxedReason: "x".repeat(300) });
     expect(suffix).toBe(`${PREFIX}${"x".repeat(MAX_ASK_SUMMARY_CHARS)}`);

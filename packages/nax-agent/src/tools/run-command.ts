@@ -319,9 +319,9 @@ function declaredCommandRunner(opts: RunCommandToolOptions): DeclaredCommandRunn
  * The refusal for a field that applies only to an `argv` call, or undefined when
  * the call carries none.
  *
- * Both refusals live in ONE function because `run` sits at its
+ * Every refusal lives in ONE function because `run` sits at its
  * cognitive-complexity baseline (`scripts/baselines/complexity-baseline.json`:
- * the gate only ever lowers, and a second `if` in `run` fails
+ * the gate only ever lowers, and another `if` in `run` fails
  * `bun run check:complexity`), which is why the message strings moved out too.
  *
  * #2066 is the reason `target` is refused rather than ignored: 48 of 136
@@ -330,10 +330,15 @@ function declaredCommandRunner(opts: RunCommandToolOptions): DeclaredCommandRunn
  * to fix a failure. `unsandboxed` gets the same treatment for the same reason,
  * plus a harder one: silently dropping an escape request would run the command
  * SANDBOXED while the caller believes it escaped, which is a wrong answer rather
- * than a missing one.
+ * than a missing one. `unsandboxedReason` is refused for the #2066 reason alone:
+ * on its own no escape was requested, so nothing unsafe happens -- but a silent
+ * drop teaches the model nothing, and it re-sends the same call.
  */
 function argvOnlyFieldRefusal(input: Record<string, unknown>): string | undefined {
   if (input.unsandboxed === true) return '"unsandboxed" applies only to "argv" calls';
+  if (input.unsandboxedReason !== undefined) {
+    return '"unsandboxedReason" applies only to "argv" calls, alongside "unsandboxed": true. Remove "unsandboxedReason".';
+  }
   if (input.target === undefined) return undefined;
   const key = typeof input.command === "string" ? input.command : "";
   return `"target" applies only to "argv" calls; a declared command runs in the directory its configuration declares. Remove "target" and call "${key}" on its own.`;

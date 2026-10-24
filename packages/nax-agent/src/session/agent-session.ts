@@ -7,6 +7,7 @@
  * resumeAgentSession reopens a stored session (spec 4.2, 6.4).
  */
 import type { TranscriptDoc, TranscriptStore } from "#src/native/session/transcript-types";
+import type { SandboxState } from "#src/sandbox/types";
 import { _agentSessionDeps } from "./agent-session-deps.ts";
 import { AgentSessionError } from "./agent-session-errors.ts";
 import { type ResolvedAgentSessionOptions, resolveAgentSessionOptions } from "./agent-session-options.ts";
@@ -39,6 +40,17 @@ interface Opening {
 
 /** The handler's turn signal between turns: never aborts. */
 const IDLE_SIGNAL = new AbortController().signal;
+
+/**
+ * The sandbox state as the embedder sees it: a frozen COPY, down to the
+ * `network` list an `available` state carries. Copying keeps the backend's own
+ * record out of the embedder's reach; freezing keeps the embedder from editing
+ * the record of what its commands ran under (US-001).
+ */
+function frozenSandbox(state: SandboxState): SandboxState {
+  if (state.kind !== "available" || typeof state.network === "string") return Object.freeze({ ...state });
+  return Object.freeze({ ...state, network: Object.freeze([...state.network]) });
+}
 
 interface SessionRoot {
   readonly dir: string;
@@ -77,7 +89,7 @@ class FacadeAgentSession implements AgentSession {
     return Object.freeze({
       kind: info.kind,
       capabilities: Object.freeze({ ...info.capabilities }),
-      ...(info.sandbox !== undefined ? { sandbox: Object.freeze({ ...info.sandbox }) } : {}),
+      ...(info.sandbox !== undefined ? { sandbox: frozenSandbox(info.sandbox) } : {}),
     });
   }
 

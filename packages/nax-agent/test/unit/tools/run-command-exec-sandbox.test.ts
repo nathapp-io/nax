@@ -319,6 +319,23 @@ describe("US-008 — RunCommand's argv branch offers unsandboxed", () => {
     expect(runs).toBe(0);
   });
 
+  test("a declared command refuses a stray unsandboxedReason too, rather than dropping it", async () => {
+    // The #2066 shape the refusal helper's own comment cites: a field belonging
+    // to the OTHER branch, silently discarded. No escape was requested here, so
+    // nothing unsafe happens either way -- but a silent drop teaches the model
+    // nothing, and it re-sends the same call. The reason alone gets a
+    // correction, the same way a stray `target` does.
+    let runs = 0;
+    const result = await tool({ exec: exec({ unsandboxedCommands: true }), runner: () => (runs += 1) }).run(
+      { command: "test", unsandboxedReason: "needs network" },
+      ctx(),
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("unsandboxedReason");
+    expect(result.content).toContain("argv");
+    expect(runs).toBe(0);
+  });
+
   test("AC-12: a non-boolean unsandboxed value is not an escape request", async () => {
     const { launcher, seen } = recordingLauncher();
     await runExecBranch({ argv: ["bun", "--version"], unsandboxed: "true" }, ctx(), {
