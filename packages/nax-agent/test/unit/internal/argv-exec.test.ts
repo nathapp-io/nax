@@ -129,6 +129,30 @@ describe("US-001 runArgv abort & drain", () => {
     expect(result.orphansKilled).toBe(false);
   });
 
+  test("output past the capture cap keeps its head and tail, drops the middle, and still drains to EOF", async () => {
+    _argvExecDeps.streamCaptureBytes = 1000;
+    const result = await runArgv({
+      argv: ["awk", 'BEGIN { printf "HEAD"; for (i = 0; i < 262144; i++) printf "x"; printf "TAIL" }'],
+      cwd: root,
+      timeoutMs: 10_000,
+    });
+    // Read to EOF, not cut off: the child exits 0 rather than dying on a closed pipe.
+    expect(result.exitCode).toBe(0);
+    expect(result.orphansKilled).toBe(false);
+    expect(result.stdout.startsWith("HEAD")).toBe(true);
+    expect(result.stdout.endsWith("TAIL")).toBe(true);
+    expect(result.stdout).toContain(`[... ${262152 - 1000} bytes of output omitted ...]`);
+    expect(result.stdout.length).toBeLessThan(1100);
+  });
+
+  test("the tail cut never opens on a split multi-byte character", async () => {
+    _argvExecDeps.streamCaptureBytes = 11; // half = 5 bytes, so the tail cut falls inside a 2-byte "é"
+    const result = await runArgv({ argv: ["printf", "%s", "aaaaaéééééééé"], cwd: root, timeoutMs: 10_000 });
+    expect(result.stdout).not.toContain("\uFFFD");
+    expect(result.stdout.startsWith("aaaaa")).toBe(true);
+    expect(result.stdout.endsWith("éé")).toBe(true);
+  });
+
   test("US-001 AC9: a deadline timeout resolves timedOut true and aborted false", async () => {
     const result = await runArgv({ argv: ["sleep", "5"], cwd: root, timeoutMs: 250 });
     expect(result.timedOut).toBe(true);

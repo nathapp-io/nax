@@ -57,6 +57,16 @@ export interface ArgvExecResult {
  */
 export const DRAIN_GRACE_MS = 500;
 
+/**
+ * Most bytes of ONE stream runArgv keeps in memory: its first half and its last half, with the
+ * middle replaced by a marker naming how much was dropped. Callers cap what they show far below
+ * this (Bash at READ_CEILING, 2 MB), so it bounds the work rather than the answer: before it, a
+ * `yes` or a looping test runner was buffered whole for up to the timeout and could exhaust the
+ * orchestrator's memory. The stream is still read to EOF, so the child never blocks or takes a
+ * SIGPIPE on a full pipe; the tail survives because that is where a failure's error usually is.
+ */
+const STREAM_CAPTURE_BYTES = 8_000_000;
+
 /** Injectable seam, mirroring _worktreeDependencyDeps. */
 export const _argvExecDeps = {
   spawn: runtimeSpawn,
@@ -67,6 +77,8 @@ export const _argvExecDeps = {
    * stays at the DRAIN_GRACE_MS constant.
    */
   drainGraceMs: DRAIN_GRACE_MS,
+  /** Per-stream capture cap (STREAM_CAPTURE_BYTES); a test shrinks it to exercise the cut. */
+  streamCaptureBytes: STREAM_CAPTURE_BYTES,
   /**
    * Injectable timer pair — lets the BUG-13 "hung install" test drive the
    * timeout off a virtual clock instead of waiting the full 1s schema minimum.
@@ -115,11 +127,10 @@ interface StreamDrain {
  */
 async function drainToEof(stream: ReadableStream<Uint8Array>, signal?: AbortSignal): Promise<StreamDrain> {
   const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let text = "";
+  const capture = new BoundedCapture(_argvExecDeps.streamCaptureBytes);
   const onAbort = (): void => {
     // Closing the stream forces the in-flight `read()` below to resolve with
-    // `{done: true}`; any bytes already captured stay in `text`.
+    // `{done: true}`; any bytes already captured stay in `capture`.
     reader.cancel().catch(() => {
       // Cancelling after the pipe already closed is a no-op race; ignore.
     });
@@ -129,21 +140,76 @@ async function drainToEof(stream: ReadableStream<Uint8Array>, signal?: AbortSign
     while (true) {
       const { done, value } = await reader.read();
       if (done === true) break;
-      if (value !== undefined) text += decoder.decode(value, { stream: true });
+      if (value !== undefined) capture.push(value);
     }
   } catch {
     // Stream cancelled by SIGKILL on the process group; the partial text
-    // is still in `text`, so resolve with closed=false and let the caller
+    // is still in `capture`, so resolve with what it holds and let the caller
     // decide.
   }
-  text += decoder.decode();
   if (signal !== undefined) signal.removeEventListener("abort", onAbort);
   try {
     reader.releaseLock();
   } catch {
     // Already released; nothing to do.
   }
-  return { text, closed: true };
+  return { text: capture.text(), closed: true };
+}
+
+/**
+ * Keeps the first and the last `maxBytes / 2` bytes of a stream and counts what falls between
+ * (STREAM_CAPTURE_BYTES). The head is decoded as it arrives; the tail is kept as bytes, trimmed from
+ * the front, and decoded once at the end from a codepoint boundary.
+ */
+class BoundedCapture {
+  private readonly half: number;
+  private readonly decoder = new TextDecoder();
+  private head = "";
+  private headBytes = 0;
+  private tail: Uint8Array[] = [];
+  private tailBytes = 0;
+  private omitted = 0;
+
+  constructor(maxBytes: number) {
+    this.half = Math.max(1, Math.floor(maxBytes / 2));
+  }
+
+  push(chunk: Uint8Array): void {
+    let rest = chunk;
+    if (this.headBytes < this.half) {
+      const take = Math.min(this.half - this.headBytes, rest.length);
+      this.head += this.decoder.decode(rest.subarray(0, take), { stream: true });
+      this.headBytes += take;
+      rest = rest.subarray(take);
+    }
+    if (rest.length === 0) return;
+    this.tail.push(rest);
+    this.tailBytes += rest.length;
+    while (this.tailBytes > this.half) {
+      const first = this.tail[0] as Uint8Array;
+      const excess = this.tailBytes - this.half;
+      if (first.length <= excess) {
+        this.tail.shift();
+        this.tailBytes -= first.length;
+        this.omitted += first.length;
+      } else {
+        this.tail[0] = first.subarray(excess);
+        this.tailBytes -= excess;
+        this.omitted += excess;
+      }
+    }
+  }
+
+  text(): string {
+    const tail = Buffer.concat(this.tail);
+    if (this.omitted === 0) return this.head + this.decoder.decode(tail);
+    // The cut can land inside a codepoint: skip its continuation bytes so the tail opens cleanly.
+    let start = 0;
+    while (start < tail.length && ((tail[start] as number) & 0xc0) === 0x80) start += 1;
+    const head = this.head + this.decoder.decode();
+    const marker = `\n[... ${this.omitted + start} bytes of output omitted ...]\n`;
+    return head + marker + new TextDecoder().decode(tail.subarray(start));
+  }
 }
 
 export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> {
