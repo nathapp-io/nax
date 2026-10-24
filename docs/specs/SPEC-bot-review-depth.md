@@ -106,7 +106,8 @@ Verified on `main` @ `ecea2c0b4`:
    Before you answer "approved", read every changed test file and search outside the diff as "Beyond the diff" asks; name any step you skipped in cannotVerify.
    ```
 
-   A conversation-only `## Your task` is byte-for-byte unchanged. The reply JSON schema is unchanged.
+   `REPLY_TASK` is a constant today, so it becomes a function of `conversationOnly`; a conversation-only `## Your task`
+   is byte-for-byte unchanged. The reply JSON schema is unchanged.
 7. **Test files are required reading (#2682 B, enforced in code).** `reviewRequiredFiles` gains an optional third
    parameter `options?: { readonly keepTests?: boolean }`. With `keepTests: true` it does not resolve test
    patterns and keeps every path except the documentation, lockfile and image/document basenames it already drops.
@@ -138,7 +139,7 @@ Symbols this spec changes. The baseline only locates the code; it is never the i
 - `fixCheckout` in `src/bot/fix-run.ts`
   - Baseline: `const runtime = deps.createRuntime(config, repoRoot);`
   - Target: `const runtime = deps.createRuntime(config, repoRoot, { featureName: \`bot-pr-${ref.number}\` });`
-- `src/runtime/index.ts` gains `export const _runtimeLoggerDeps = { getSafeLogger }` (new; `getSafeLogger` is imported from `../logger`, which the file already imports).
+- `src/runtime/index.ts` gains `export const _runtimeLoggerDeps = { getSafeLogger }` (new; add `getSafeLogger` to the file's existing `../logger` import, which today imports only `getLogger`).
 - `createRuntime` in `src/runtime/index.ts`
   - Baseline: the `else` branch assigns `createNoOpPromptAuditor()` with no log.
   - Target: the same assignment, plus the warning in Approach 1 when `auditEnabled` is true (that branch is reached
@@ -221,6 +222,7 @@ Adds the `keepTests` option to `reviewRequiredFiles` and passes it from `runPrRe
 - `packages/nax/src/prompts/index.ts` — barrel exporting the checklist constants
 - `packages/nax/src/bot/review-step.ts` — `runPrReview`, which builds the prompt and calls the op; its test file `test/unit/bot/review-step.test.ts` takes the `runPrReview` test
 - `packages/nax/test/unit/prompts/bot-pr-review-builder.test.ts` — existing prompt cases and the `base` fixture; the new prompt tests go here
+- `packages/nax/test/unit/prompts/workflow-branch-builder.test.ts` — the branch prompt test (US-002 AC-7) goes here
 
 **US-003**
 - `packages/nax/src/prompts/builders/bot-pr-review-builder.ts` — `ciSection`, `REPLY_TASK`, `projectSections`, as changed by US-002
