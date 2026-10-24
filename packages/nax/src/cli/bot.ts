@@ -50,6 +50,7 @@ export interface BotReviewOptions {
 
 /** `nax bot fix` shares the bot inputs, but never the review-only flags: its re-review is incremental. */
 export interface BotFixOptions extends Omit<BotReviewOptions, "decisions" | "full"> {
+  readonly trust?: boolean;
   readonly rereview?: boolean;
   readonly fresh?: boolean;
 }
@@ -112,6 +113,7 @@ export async function botFixCommand(options: BotFixOptions, deps: BotCliDeps = _
   return withBotInput(options, deps, async (input) => {
     const cycle = await deps.runBotFixCycle({
       ...input,
+      ...(options.trust === true && { trust: true }),
       rereview: options.rereview ?? true,
       fresh: options.fresh ?? false,
     });
@@ -188,6 +190,7 @@ export function registerBotCommand(program: Command, deps: BotCliDeps = _botCliD
       deps.exit(await botReviewCommand({ ...options, pr }, deps));
     });
   withBotOptions(group.command("fix <pr>").description("Fix agreed findings and push changes"))
+    .option("--trust", "Run on checks detected from package scripts (no nax config on the base branch)")
     .option("--no-rereview", "Skip post-push review and ready pass")
     .option("--fresh", "Discard the saved fix", false)
     .action(async (pr: string, options: Omit<BotFixOptions, "pr">) => {

@@ -142,6 +142,7 @@ function promptFor(fc: BranchStepContext, input: BranchFixInput): string {
 export async function runBranchFix(fc: BranchStepContext, input: BranchFixInput): Promise<BranchFixOutcome> {
   await ensureReport(fc);
   const { op, role } = dispatchFor(input.kind);
-  const session = await runFixSession(fc, op, { ...input, prompt: promptFor(fc, input) });
+  const run = () => runFixSession(fc, op, { ...input, prompt: promptFor(fc, input) });
+  const session = await (fc.sessionScope ? fc.sessionScope(run) : run());
   return { ...session, ...(await commitLeftovers(fc, role)) };
 }

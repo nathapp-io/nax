@@ -12,6 +12,7 @@ import {
 import { NAX_WORKFLOW_PR_MARKER, type PrComment, type PrThread, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
 import { initLogger, resetLogger } from "@/logger";
 import { _ciWaitDeps } from "@/workflow/ci-wait";
+import { safeCode } from "@/workflow/pr-body-safe";
 import { markReadyArgv } from "@/workflow/promote";
 
 const state: BotFixState = { step: "reply", timings: {}, outcome: "pushed", pushedSha: "abcdef12" };
@@ -53,6 +54,48 @@ beforeEach(() => {
   spyOn(_fixReportDeps, "waitForPrHead").mockResolvedValue(true);
 });
 afterEach(() => mock.restore());
+
+describe("reportStep out-of-item files", () => {
+  const prefix = "Also changed, not named by an agreed item: ";
+  const named = [{ kind: "finding" as const, key: "f1", issue: "fix", severity: "minor" as const, file: "src/a.ts" }];
+  test.each([
+    [9, "pushed", named, ["src/a.ts", "src/b.ts"], `${prefix}\`src/b.ts\``],
+    [10, "pushed", named, ["src/a.ts"], undefined],
+    [11, "pushed", [{ kind: "comment", key: "c1", issue: "fix", reason: "yes" }], ["src/b.ts"], undefined],
+    [12, "gates-failed", named, ["src/b.ts"], undefined],
+    [
+      13,
+      "pushed",
+      named,
+      Array.from({ length: 23 }, (_, i) => `src/extra${i}.ts`),
+      `${prefix}${Array.from({ length: 20 }, (_, i) => `\`src/extra${i}.ts\``).join(", ")} and 3 more`,
+    ],
+    [14, "pushed", named, ["src/@alice.ts"], `${prefix}\`${safeCode("src/@alice.ts")}\``],
+    ["absent changed", "pushed", named, undefined, undefined],
+    ["as spelled", "pushed", named, ["./src/a.ts"], `${prefix}\`./src/a.ts\``],
+    [
+      "fileless finding",
+      "pushed",
+      [{ kind: "finding", key: "f2", issue: "fix", severity: "minor" }],
+      ["src/b.ts"],
+      undefined,
+    ],
+    ["thread", "pushed", [{ ...item, file: "src/a.ts" }], ["src/b.ts"], `${prefix}\`src/b.ts\``],
+  ] satisfies readonly (readonly [
+    number | string,
+    BotFixState["outcome"],
+    Parameters<typeof makeBotFixEnv>[0],
+    string[] | undefined,
+    string | undefined,
+  ])[])("US-002 AC-%s: discloses only pushed unnamed paths", async (_ac, outcome, agreed, changed, expected) => {
+    const env = makeBotFixEnv(agreed);
+    const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "summary" });
+    expect(await reportStep(env, { ...state, outcome, changed })).toEqual({ patch: {}, exit: "done" });
+    expect(post).toHaveBeenCalledTimes(1);
+    const body = post.mock.calls[0]?.[1] ?? "";
+    expect(body.split("\n").find((line) => line.startsWith(prefix))).toBe(expected);
+  });
+});
 
 describe("replyStep", () => {
   test.each([

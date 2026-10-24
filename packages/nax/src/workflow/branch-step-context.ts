@@ -23,6 +23,8 @@ export interface BranchStepContext {
   readonly dryRun: boolean;
   /** Optional runner for leftover commits; bot commands supply their hook-free runner. */
   readonly runGit?: typeof gitWithTimeout;
+  /** Temporary agent configuration applies only to the session, never leftover commits. */
+  readonly sessionScope?: <T>(run: () => Promise<T>) => Promise<T>;
 }
 
 export interface PrStepRef {

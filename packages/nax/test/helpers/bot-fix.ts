@@ -81,6 +81,10 @@ export function makeBotFixDeps(env: BotFixEnv, runtime: ReturnType<typeof import
     readPrInfo: async () => env.info,
     classifyPrTrust: async () => ({ trusted: true, headSha: env.info.headSha, reasons: [] }),
     preparePrCheckout: async () => env.checkout,
+    basePinScope:
+      () =>
+      async <T>(run: () => Promise<T>): Promise<T> =>
+        run(),
     loadBotConfig: async () => env.config,
     createRuntime: () => runtime,
     setupBotRuntime: async () => {},

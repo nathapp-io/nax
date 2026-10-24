@@ -11,6 +11,7 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { FailedCheck } from "@/forge";
 import type { StepResult } from "@/step-graph";
+import { markdownFence } from "@/utils/markdown-fence";
 import type { FeatureEnv, FeatureSteps } from "./feature-machine";
 import { costExceeded, featureStep, limitsOf, NO_MIRROR, roundLabel } from "./feature-step-helpers";
 import type { PublishOutcome } from "./finalize";
@@ -23,10 +24,11 @@ import type { CiCheckRef, CiRemainingCheck, WorkflowFeatureRecord, WorkflowFindi
  * check run, an unreadable jobs reply) keeps the plain failure text.
  */
 function ciCheckIssue(check: FailedCheck): string {
-  if (!check.failedStep) return `CI check ${check.name} failed:\n${check.excerpt}`;
+  const excerpt = markdownFence(check.excerpt);
+  if (!check.failedStep) return `CI check ${check.name} failed:\n${excerpt}`;
   const skipped = check.skippedSteps ?? [];
   const skippedLine = skipped.length > 0 ? `\nSteps CI skipped after it, which never ran: ${skipped.join(", ")}` : "";
-  return `CI check ${check.name} failed at step "${check.failedStep}".${skippedLine}\n${check.excerpt}`;
+  return `CI check ${check.name} failed at step "${check.failedStep}".${skippedLine}\n${excerpt}`;
 }
 
 /**

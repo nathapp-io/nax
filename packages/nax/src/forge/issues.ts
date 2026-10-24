@@ -43,6 +43,7 @@ function parseReply(ref: PrRef, number: number, stdout: string): LinkedIssue | n
   }
   if (!reply || typeof reply !== "object" || Array.isArray(reply)) throw responseError(ref, number);
   if (ref.forge === "github" && "pull_request" in reply) return null;
+  if (ref.forge === "gitlab" && "confidential" in reply && reply.confidential === true) return null;
   const body =
     ref.forge === "github" ? ("body" in reply ? reply.body : null) : "description" in reply ? reply.description : null;
   if (!("title" in reply) || typeof reply.title !== "string" || (body != null && typeof body !== "string")) {
@@ -92,7 +93,7 @@ export async function readLinkedIssues(ref: PrRef, body: string, deps: ForgeDeps
       try {
         const issue = await readIssue(ref, number, deps, cwd);
         if (issue) return issue;
-        getLogger()?.warn("forge", "Skipping linked reference: number is a pull request", context);
+        getLogger()?.warn("forge", "Skipping linked reference: a pull request or a confidential issue", context);
       } catch (cause) {
         getLogger()?.warn("forge", "Skipping unreadable linked issue", { ...context, error: errorMessage(cause) });
       }

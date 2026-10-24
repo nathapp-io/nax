@@ -1,11 +1,25 @@
 import { describe, expect, test } from "bun:test";
-import { renderCheckoutState } from "@/prompts";
+import { PINNED_BASE_NOTE, renderCheckoutState } from "@/prompts";
 
 const base = { phase: "fresh", headSha: "abcdef1234567890", setup: [], ciFiles: [] } as const;
 const warning =
   "Git-ignored outputs (generated code, build output, caches) may be missing. If a check fails for missing setup, run the setup steps CI runs (see the CI config files); changes to git-ignored files are kept and are not part of your commit.";
 
+const pinnedNote =
+  "Agent configuration (CLAUDE.md, AGENTS.md and the other instruction files, .claude/, .mcp.json and each agent's config directory) holds the base branch's versions for this session; nax restores the PR's versions afterwards. Do not edit, stage or commit those files.";
+
 describe("renderCheckoutState", () => {
+  test("pinned AC-9 appends the pinned note as the last line", () => {
+    expect(PINNED_BASE_NOTE).toBe(pinnedNote);
+    expect(
+      renderCheckoutState({ ...base, pinnedBase: true })
+        .split("\n")
+        .at(-1),
+    ).toBe(PINNED_BASE_NOTE);
+  });
+  test("pinned AC-10 omits the pinned note by default", () => {
+    expect(renderCheckoutState(base).split("\n")).not.toContain(pinnedNote);
+  });
   test("AC-5/6: barrel export renders fresh checkout with exactly the short SHA", () => {
     const text = renderCheckoutState(base);
     expect(text.split("\n")[0]).toBe(

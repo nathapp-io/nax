@@ -8,17 +8,9 @@ import { getSafeLogger } from "@/logger";
 import { WorktreeManager } from "../worktree/manager";
 import { snapshotBaseNax } from "./base-config";
 import { botGit } from "./git";
+import { BASE_PINNED_NAMES, BASE_PINNED_PATHS } from "./path-policy";
 
 export const BOT_GIT_NETWORK_TIMEOUT_MS = 120_000;
-
-export const BASE_PINNED_PATHS = [
-  ".nax/rules",
-  ".claude",
-  ".cursor",
-  ".mcp.json",
-  ".github/copilot-instructions.md",
-] as const;
-export const BASE_PINNED_NAMES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "codex.md", ".cursorrules"] as const;
 
 export const _checkoutDeps = {
   runGit: botGit,

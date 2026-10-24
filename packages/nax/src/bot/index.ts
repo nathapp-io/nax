@@ -1,8 +1,6 @@
 export { _baseConfigDeps, loadBotConfig, snapshotBaseNax } from "./base-config";
 export {
   _checkoutDeps,
-  BASE_PINNED_NAMES,
-  BASE_PINNED_PATHS,
   botWorktreePath,
   type CheckoutRefs,
   changedPaths,
@@ -38,7 +36,14 @@ export {
 } from "./fix-cycle";
 export { _fixInputDeps, checkPushAccess, loadLatestReview, toFixFindings } from "./fix-input";
 export { _fixReportDeps, readyStep, renderFixSummary, replyStep, reportStep } from "./fix-report";
-export { _botFixDeps, BOT_FIX_GRAPH, type BotFixInput, type BotFixResult, runBotFix } from "./fix-run";
+export {
+  _botFixDeps,
+  BOT_FIX_DETECTED_REFUSAL,
+  BOT_FIX_GRAPH,
+  type BotFixInput,
+  type BotFixResult,
+  runBotFix,
+} from "./fix-run";
 export {
   _fixStepsDeps,
   type BotFixEnv,
@@ -55,7 +60,7 @@ export { featureIntentPaths } from "./intent";
 export { _ledgerCarryDeps, ledgerStep } from "./ledger-carry";
 export { _botLogDeps, type BotLog, openBotLog } from "./log";
 export { botModel, parseModelOption } from "./models";
-export { fixProtectedPaths, sensitivePaths } from "./path-policy";
+export { BASE_PINNED_NAMES, BASE_PINNED_PATHS, fixProtectedPaths, isPinnedPath, sensitivePaths } from "./path-policy";
 export {
   _postDeps,
   type AgreedItem,
@@ -84,4 +89,4 @@ export {
 } from "./review-run";
 export { _reviewStepDeps, type PrReviewInput, runPrReview } from "./review-step";
 export { setupBotRuntime } from "./run-setup";
-export { readWriters, type WriterCheck, writerCheck } from "./writers";
+export { hasNonWriterAuthor, readWriters, type WriterCheck, writerCheck } from "./writers";

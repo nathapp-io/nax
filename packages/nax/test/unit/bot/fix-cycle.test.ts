@@ -1,6 +1,49 @@
 import { describe, expect, mock, test } from "bun:test";
 import { makeBotFixEnv } from "@test/helpers";
-import { _fixCycleDeps, PR_HEAD_POLL_MS, PR_HEAD_WAIT_MS, waitForPrHead } from "@/bot/fix-cycle";
+import { BOT_FIX_DETECTED_REFUSAL } from "@/bot";
+import { _fixCycleDeps, PR_HEAD_POLL_MS, PR_HEAD_WAIT_MS, runBotFixCycle, waitForPrHead } from "@/bot/fix-cycle";
+
+describe("runBotFixCycle trust", () => {
+  test("AC-10 public detected-check refusal describes both remedies", () => {
+    expect(BOT_FIX_DETECTED_REFUSAL).toContain("run nax setup");
+    expect(BOT_FIX_DETECTED_REFUSAL).toContain("--trust");
+  });
+  test("AC-9 preserves invocation trust in the ready pass after a pushed fix", async () => {
+    const env = makeBotFixEnv();
+    const fix = mock<typeof _fixCycleDeps.runBotFix>(async (input) =>
+      input.readyOnly
+        ? { outcome: "ready-pass", step: "done", timings: {} }
+        : { outcome: "pushed", pushedSha: "new-head", step: "done", timings: {} },
+    );
+    const result = await runBotFixCycle(
+      { dir: "/repo", pr: 42, profiles: [], interactive: false, rereview: true, trust: true },
+      {
+        ..._fixCycleDeps,
+        runBotFix: fix,
+        gitToplevel: async () => "/repo",
+        resolvePrRef: async () => env.ref,
+        waitForPrHead: async () => true,
+        runBotReview: async () => ({
+          outcome: "posted",
+          artifactPath: "/review",
+          inlineFindings: 0,
+          threadsAnswered: 0,
+          earlierAnswered: 0,
+          commentsAnswered: 0,
+          offLine: 0,
+          failed: 0,
+          intent: "pass",
+          quality: "approved",
+          staticMode: false,
+          checksSource: "detected",
+        }),
+      },
+    );
+    expect(result.ready?.outcome).toBe("ready-pass");
+    expect(fix).toHaveBeenCalledTimes(2);
+    expect(fix.mock.calls[1]?.[0]).toMatchObject({ readyOnly: true, trust: true });
+  });
+});
 
 describe("waitForPrHead", () => {
   test.each([false, true])("retries forge errors within the deadline; permanent=%s", async (permanent) => {

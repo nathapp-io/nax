@@ -4,7 +4,11 @@ export interface CheckoutStateInput {
   setup: readonly string[];
   setupFailed?: string;
   ciFiles: readonly string[];
+  pinnedBase?: boolean;
 }
+
+export const PINNED_BASE_NOTE =
+  "Agent configuration (CLAUDE.md, AGENTS.md and the other instruction files, .claude/, .mcp.json and each agent's config directory) holds the base branch's versions for this session; nax restores the PR's versions afterwards. Do not edit, stage or commit those files.";
 
 const SHORT_SHA_LENGTH = 7;
 
@@ -22,5 +26,6 @@ export function renderCheckoutState(input: CheckoutStateInput): string {
     `Setup nax ran: ${setup}`,
     `CI config files: ${input.ciFiles.length ? input.ciFiles.join(", ") : "none found"}`,
     "Git-ignored outputs (generated code, build output, caches) may be missing. If a check fails for missing setup, run the setup steps CI runs (see the CI config files); changes to git-ignored files are kept and are not part of your commit.",
+    ...(input.pinnedBase ? [PINNED_BASE_NOTE] : []),
   ].join("\n");
 }
