@@ -3,7 +3,7 @@
   "feature": "bot-security-boundary-2",
   "branchName": "feat/bot-security-boundary-2",
   "createdAt": "2026-10-24T00:00:00.000Z",
-  "updatedAt": "2026-10-24T07:14:31.285Z",
+  "updatedAt": "2026-10-24T07:23:56.536Z",
   "userStories": [
     {
       "id": "US-001",
@@ -458,14 +458,17 @@
         "credentials"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Five existing files need local guards, one existing fencing helper and two default-list extensions, with no new abstraction; confidential data and token handling require the strict security TDD override."
+        "reasoning": "Five existing files need local guards, one existing fencing helper and two default-list extensions, with no new abstraction; confidential data and token handling require the strict security TDD override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/issues.ts",
@@ -484,7 +487,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f6d9d79ea0cf0203c5472927912d29c48af4c14a"
     },
     {
       "id": "US-009",
