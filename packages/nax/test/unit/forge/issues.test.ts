@@ -54,6 +54,12 @@ describe("parseClosingRefs", () => {
 });
 
 describe("readIssue", () => {
+  test.each([true, false])("US-008 AC-1/2 GitLab confidential=%s", async (confidential) => {
+    const { deps } = fixture(ok({ title: "Leak", description: "secret", confidential }));
+    expect(await forge.readIssue(gl, 1, deps, "/repo")).toEqual(
+      confidential ? null : { number: 1, title: "Leak", body: "secret" },
+    );
+  });
   test.each([
     ["AC-9 AC-10", gh, { title: "Crash", body: "Steps" }, "gh", "repos/acme/widgets/issues/12"],
     [
@@ -109,6 +115,32 @@ describe("readLinkedIssues", () => {
     spyOnGetLogger = spyOn(logging, "getLogger").mockReturnValue(logger);
     return logger.calls;
   }
+  test("US-008 AC-3 returns only public linked issues", async () => {
+    const { deps } = fixture(
+      ok({ title: "Leak", description: "secret", confidential: true }),
+      ok({ title: "Public", description: "intent", confidential: false }),
+    );
+    expect(await forge.readLinkedIssues(gl, "Closes #1, closes #2", deps, "/repo")).toEqual([
+      { number: 2, title: "Public", body: "intent" },
+    ]);
+  });
+  test("US-008 AC-3/4 skips confidential intent and warns with its number", async () => {
+    const warnings = captureWarnings();
+    const { deps } = fixture(
+      ok({ title: "Leak", description: "secret", confidential: true }),
+      ok({ title: "Public", description: "intent", confidential: false }),
+    );
+    const issues = await forge.readLinkedIssues(gl, "Closes #1, closes #2", deps, "/repo");
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        level: "warn",
+        stage: "forge",
+        message: "Skipping linked reference: a pull request or a confidential issue",
+        data: { host: gl.host, repo: gl.repo, number: 1 },
+      }),
+    ]);
+    expect(issues).toEqual([{ number: 2, title: "Public", body: "intent" }]);
+  });
   test("AC-17 AC-20 warns on failed issue and continues in reference order", async () => {
     const warnings = captureWarnings();
     const { deps, calls } = fixture(failed, ok({ title: "Second", body: "Intent" }));

@@ -494,6 +494,9 @@ export const QualityConfigSchema = z.object({
       "SLACK_WEBHOOK_URL",
       "SENTRY_AUTH_TOKEN",
       "DATADOG_API_KEY",
+      "GITLAB_TOKEN",
+      "GH_ENTERPRISE_TOKEN",
+      "GITHUB_ENTERPRISE_TOKEN",
     ]),
 
   testing: z

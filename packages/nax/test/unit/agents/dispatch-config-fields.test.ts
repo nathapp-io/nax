@@ -11,6 +11,13 @@ import {
   type TimedDeclaredCommandRunner,
   withSuiteCommandTimeout,
 } from "@/agents/dispatch-config-fields";
+import { DEFAULT_CONFIG } from "@/config/defaults";
+
+test("US-008 AC-13 native Bash dispatch strips forge tokens", () => {
+  expect(extractDispatchConfigFields(DEFAULT_CONFIG).stripEnvVars).toEqual(
+    expect.arrayContaining(["GITLAB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"]),
+  );
+});
 
 const commands = {
   test: "bun test",

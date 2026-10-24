@@ -327,7 +327,7 @@ async function reviewEnvironment(
       staticMode,
       ci,
       model: botModel(ctx.config, "review", input.model),
-      ...intent,
+      ...(!staticMode && intent),
       ...(checkoutState !== undefined && { checkoutState }),
     },
     post: {
