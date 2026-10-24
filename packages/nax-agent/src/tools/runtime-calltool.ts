@@ -204,6 +204,21 @@ export async function resolveGuardDenial(p: {
 }
 
 /**
+ * US-004: `Unsandboxed(<identity>)` is the SYNTHETIC rule US-006's
+ * converted-allow verdict carries — not an ask rule anyone configured. It is
+ * kept on `rule` (the request has to name what it is) but never becomes
+ * `matchedRule`, because a remembered approval derives its `origin` from that
+ * field and would then remember a rule that exists in no config.
+ */
+const SYNTHETIC_UNSANDBOXED_RULE = /^Unsandboxed\(.*\)$/;
+
+/** The configured ask rule behind a verdict, or undefined when there is none. */
+function matchedRuleOf(verdict: DeniedVerdict): string | undefined {
+  if (verdict.rule === undefined) return undefined;
+  return SYNTHETIC_UNSANDBOXED_RULE.test(verdict.rule) ? undefined : verdict.rule;
+}
+
+/**
  * The ask branch: a call the policy gates matched an ask rule, so an
  * AskResolver decides. US-003: build the AskControl from the per-call
  * context. The turn's abort signal is forwarded verbatim, and onWaiting is
@@ -223,6 +238,13 @@ export async function resolveAskOutcome(p: {
   root: string;
   logCall: LogCallFn;
   runTool: RunToolFn;
+  /**
+   * US-004: set when this ask is an unsandboxed run. `suffix` is
+   * `unsandboxedReasonSuffix(...)`, appended to the request's `reason` so the
+   * person sees WHY the call wants to leave the sandbox; the flag itself is
+   * what a host keys on.
+   */
+  unsandboxed?: { readonly suffix: string };
 }): Promise<CodingToolOutcome> {
   const { context, input, tool, verdict } = p;
   const callSignal = context?.signal ?? p.runtimeSignal;
@@ -231,6 +253,8 @@ export async function resolveAskOutcome(p: {
     ...(context?.onWaiting !== undefined ? { onWaiting: context.onWaiting } : {}),
   };
   const ask = askSummary(p.identity, tool.scope, input);
+  const askReason = p.unsandboxed === undefined ? verdict.reason : `${verdict.reason}${p.unsandboxed.suffix}`;
+  const matchedRule = matchedRuleOf(verdict);
   let askVerdict: AskVerdict;
   try {
     askVerdict = await p.askResolver.resolve(
@@ -238,15 +262,16 @@ export async function resolveAskOutcome(p: {
         tool: p.identity,
         stage: p.stage ?? "unknown",
         rule: verdict.rule ?? verdict.reason,
-        ...(verdict.rule !== undefined ? { matchedRule: verdict.rule } : {}),
+        ...(matchedRule !== undefined ? { matchedRule } : {}),
         summary: ask.summary,
         ...(ask.unshowable ? { unshowable: true as const } : {}),
         ...(typeof input[tool.scope.commandField ?? ""] === "string"
           ? { command: input[tool.scope.commandField as string] as string }
           : {}),
         root: p.root,
-        reason: verdict.reason,
+        reason: askReason,
         ...(p.storyId !== undefined ? { storyId: p.storyId } : {}),
+        ...(p.unsandboxed !== undefined ? { unsandboxed: true as const } : {}),
       },
       askControl,
     );

@@ -30,6 +30,12 @@ export interface ApprovalRequest {
   readonly summary: string;
   readonly command?: string;
   readonly reason: string;
+  /**
+   * US-004: the ask is for a run OUTSIDE the OS sandbox. Copied from the
+   * `AskRequest` by `createSessionAskLink` and forwarded onto the
+   * `approval_requested` event by `askPerson`; absent on every ordinary ask.
+   */
+  readonly unsandboxed?: true;
   /** Extra abort source, combined with the turn signal (for example a tool-level abort). */
   readonly signal?: AbortSignal;
 }

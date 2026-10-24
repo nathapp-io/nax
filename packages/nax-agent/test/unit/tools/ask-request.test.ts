@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { ASK_NO_CHANNEL_REASON, ASK_PROFILE_REASON, ASK_UNSHOWABLE_REASON } from "#src/permissions/index";
-import { askDenyReason, askSummary, MAX_ASK_SUMMARY_CHARS } from "#src/tools/ask-request";
+import {
+  ASK_NO_CHANNEL_REASON,
+  ASK_PROFILE_REASON,
+  ASK_UNSHOWABLE_REASON,
+  type AskRequest,
+} from "#src/permissions/index";
+import { askDenyReason, askSummary, MAX_ASK_SUMMARY_CHARS, unsandboxedReasonSuffix } from "#src/tools/ask-request";
+import type { CodingTool, PolicyVerdict } from "#src/tools/index";
+import { resolveAskOutcome } from "#src/tools/runtime-calltool";
 
 const GHP = "ghp_abcdefghijklmnop1234";
 
@@ -49,6 +56,38 @@ describe("askSummary", () => {
   });
 });
 
+describe("unsandboxedReasonSuffix", () => {
+  /** The AC's literal prefix, pinned verbatim rather than read from the source under test. */
+  const PREFIX = " -- runs OUTSIDE the sandbox: ";
+
+  test("AC-1: a plain reason is rendered after the prefix", () => {
+    expect(unsandboxedReasonSuffix({ unsandboxedReason: "needs network" })).toBe(`${PREFIX}needs network`);
+  });
+
+  test("AC-2: a non-string reason and an absent reason both fall back to no reason given", () => {
+    expect(unsandboxedReasonSuffix({ unsandboxedReason: 42 })).toBe(`${PREFIX}no reason given`);
+    expect(unsandboxedReasonSuffix({})).toBe(`${PREFIX}no reason given`);
+  });
+
+  test("AC-3: a 300-character reason is cut to MAX_ASK_SUMMARY_CHARS", () => {
+    const suffix = unsandboxedReasonSuffix({ unsandboxedReason: "x".repeat(300) });
+    expect(suffix).toBe(`${PREFIX}${"x".repeat(MAX_ASK_SUMMARY_CHARS)}`);
+    expect(suffix.slice(PREFIX.length)).toHaveLength(200);
+  });
+
+  test("AC-4: a reason maskForPrompt reports unshowable is withheld", () => {
+    // The same shell-syntax straddle askSummary withholds: a `Cookie` value
+    // containing `;` would hide code from the person approving the command.
+    expect(unsandboxedReasonSuffix({ unsandboxedReason: "curl -H 'Cookie: a=b'" })).toBe(`${PREFIX}reason withheld`);
+  });
+
+  test("a maskable secret is masked, never rendered", () => {
+    const suffix = unsandboxedReasonSuffix({ unsandboxedReason: `needs the token ${GHP}` });
+    expect(suffix).not.toContain(GHP);
+    expect(suffix).toBe(`${PREFIX}needs the token [REDACTED:github]`);
+  });
+});
+
 describe("askDenyReason", () => {
   test("unshowable has its own reason", () => {
     expect(askDenyReason("unshowable")).toBe(ASK_UNSHOWABLE_REASON);
@@ -58,5 +97,91 @@ describe("askDenyReason", () => {
   test("profile has its own reason, not the no-channel fallback", () => {
     expect(askDenyReason("profile")).toBe(ASK_PROFILE_REASON);
     expect(askDenyReason("profile")).not.toBe(ASK_NO_CHANNEL_REASON);
+  });
+});
+
+type DeniedVerdict = Extract<PolicyVerdict, { readonly allowed: false }>;
+
+const BASH_TOOL: CodingTool = {
+  name: "Bash",
+  description: "Run a shell command",
+  inputSchema: { type: "object", properties: {} },
+  scope: { pathFields: [], commandField: "command" },
+  run: async () => ({ content: "ran" }),
+};
+
+/**
+ * Runs `resolveAskOutcome` once, with a resolver that denies, and returns the
+ * AskRequest it handed the resolver. Driving the real function rather than
+ * restating it is what pins the request's exact key set.
+ */
+async function askRequestFor(verdict: DeniedVerdict, unsandboxed?: { readonly suffix: string }): Promise<AskRequest> {
+  const asked: AskRequest[] = [];
+  await resolveAskOutcome({
+    identity: "Bash",
+    tool: BASH_TOOL,
+    input: { command: "curl https://example.com" },
+    context: undefined,
+    verdict,
+    runtimeSignal: undefined,
+    askResolver: {
+      resolve: (req) => {
+        asked.push(req);
+        return Promise.resolve({ decision: "deny", decidedBy: "human", latencyMs: 0 });
+      },
+    },
+    stage: "session",
+    storyId: undefined,
+    root: "/tmp/ask-root",
+    logCall: () => {},
+    runTool: async () => ({ kind: "ok", content: "ran" }),
+    ...(unsandboxed !== undefined ? { unsandboxed } : {}),
+  });
+  const request = asked[0];
+  if (request === undefined) throw new Error("resolveAskOutcome did not ask the resolver");
+  return request;
+}
+
+describe("resolveAskOutcome — unsandboxed metadata (US-004)", () => {
+  const askRule: DeniedVerdict = {
+    allowed: false,
+    outcome: "ask",
+    breach: false,
+    rule: "Bash(*)",
+    reason: "matches an ask rule",
+    resolvedPaths: [],
+  };
+  /** US-006's converted allow: a synthetic rule, never a configured ask rule. */
+  const converted: DeniedVerdict = {
+    allowed: false,
+    outcome: "ask",
+    breach: false,
+    rule: "Unsandboxed(Bash)",
+    reason: "unsandboxed run requested",
+    resolvedPaths: [],
+  };
+
+  test("AC-5: a real ask rule keeps matchedRule and appends the suffix", async () => {
+    const request = await askRequestFor(askRule, { suffix: " -- S" });
+    expect(request).toMatchObject({
+      rule: "Bash(*)",
+      matchedRule: "Bash(*)",
+      unsandboxed: true,
+      reason: "matches an ask rule -- S",
+    });
+  });
+
+  test("AC-6: a synthetic Unsandboxed rule sets the flag, keeps rule, leaves matchedRule unset", async () => {
+    const request = await askRequestFor(converted, { suffix: " -- S" });
+    expect(request.rule).toBe("Unsandboxed(Bash)");
+    expect(request.reason).toBe("unsandboxed run requested -- S");
+    expect(request).toHaveProperty("unsandboxed", true);
+    expect("matchedRule" in request).toBe(false);
+  });
+
+  test("AC-7: without the unsandboxed argument nothing is added", async () => {
+    const request = await askRequestFor(askRule);
+    expect(request.reason).toBe("matches an ask rule");
+    expect("unsandboxed" in request).toBe(false);
   });
 });
