@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeMockCallContext, makeNaxConfig, makeScriptedCallOp } from "@test/helpers";
 import { _reviewStepDeps, type PrReviewInput, runPrReview } from "@/bot/review-step";
 import { resolveWorkflowConfig } from "@/config";
+import type { PrReviewVerdict } from "@/operations";
 import type { PrStepContext } from "@/workflow/branch-step-context";
 import { _workflowDeps } from "@/workflow/step-context";
 
@@ -142,7 +143,7 @@ describe("runPrReview", () => {
         comments: [],
         cannotVerify: [],
         inspectedFiles: ["pkg/main.go", "settings.json"],
-      };
+      } satisfies PrReviewVerdict;
       _workflowDeps.callOp = makeScriptedCallOp(() => verdict);
       const result = await runPrReview({ ...ctx, packageDirs: ["pkg"] }, { ...input, staticMode });
       expect(result).toMatchObject({ ran: true, unreadFiles: ["pkg/main_test.go"] });
