@@ -300,11 +300,48 @@ describe("per-story effective-config threading", () => {
     const result = await runParallelBatch({ stories: [story], ctx, prd });
 
     // Dependency prep saw the per-story config, not the root config object.
-    expect(prepConfig).toBe(storyConfig);
+    // (re-pinned root-only keys make it a copy, so compare by value)
+    expect(prepConfig).toEqual(storyConfig);
     expect(prepConfig).not.toBe(ctx.config);
     // The worker received the effective-config map keyed by raw story id.
-    expect(observedConfigs?.get("US-041")).toBe(storyConfig);
+    expect(observedConfigs?.get("US-041")).toBe(prepConfig);
     expect(result.failed).toEqual([]);
+  });
+
+  test("the per-story reload keeps the run's root-only rules override (--rules-dir)", async () => {
+    const story = makeStory({ id: "US-043", workdir: "packages/app" });
+    const prd = edgePrd([story]);
+    const ctx = makeEdgeCtx(tmpDir);
+    const rulesOverride = { ...DEFAULT_CONFIG.context.rules, overrideDir: "/cli/rules-dir" };
+    ctx.config = { ...DEFAULT_CONFIG, context: { ...DEFAULT_CONFIG.context, rules: rulesOverride } };
+    // The reload re-reads the on-disk root config, which knows nothing of the CLI override.
+    const reloaded = structuredClone(DEFAULT_CONFIG);
+
+    let observedConfigs: Map<string, NaxConfig> | undefined;
+    _parallelBatchDeps.createWorktreeManager = mock(async () => makeWorktreeManager());
+    _parallelBatchDeps.loadConfigForWorkdir = mock(async () => reloaded);
+    _parallelBatchDeps.prepareWorktreeDependencies = mock(async (opts) => ({ cwd: opts.worktreeRoot }));
+    _parallelBatchDeps.executeParallelBatch = mock(
+      async (
+        _stories: UserStory[],
+        _projectRoot: string,
+        _config: NaxConfig,
+        _context: unknown,
+        _worktreePaths: Map<string, string>,
+        _dependencyContexts: Map<string, unknown>,
+        _maxConcurrency: number,
+        _eventEmitter: unknown,
+        effectiveConfigs?: Map<string, NaxConfig>,
+      ) => {
+        observedConfigs = effectiveConfigs;
+        return emptyWorkerResult();
+      },
+    );
+    _parallelBatchDeps.createMergeEngine = mock(async () => makeMergeEngine());
+
+    await runParallelBatch({ stories: [story], ctx, prd });
+
+    expect(observedConfigs?.get("US-043")?.context.rules).toEqual(rulesOverride);
   });
 
   test("with no per-story package configs the worker receives no effective-config map", async () => {

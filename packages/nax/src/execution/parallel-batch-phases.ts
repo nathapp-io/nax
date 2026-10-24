@@ -17,7 +17,7 @@
 
 import path from "node:path";
 import type { NaxConfig } from "../config";
-import { profileOverrideFromConfig } from "../config";
+import { pinRootOnlyKeys, profileOverrideFromConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import { getSafeLogger } from "../logger";
 import type { PipelineEventEmitter } from "../pipeline/events";
@@ -126,10 +126,11 @@ export async function resolveStoryConfigs(input: {
       .filter((story) => storyPackageDir(story))
       .map(async (story) => {
         try {
-          const effectiveConfig = await deps.loadConfigForWorkdir(
-            rootConfigPath,
-            storyPackageDir(story) as string,
-            profileOverride,
+          // The reload sees only the profile, not the run's other CLI overrides (`--rules-dir`,
+          // `--context-file`), so the root-only keys are re-pinned from the run config.
+          const effectiveConfig = pinRootOnlyKeys(
+            await deps.loadConfigForWorkdir(rootConfigPath, storyPackageDir(story) as string, profileOverride),
+            config,
           );
           return { storyId: story.id, effectiveConfig };
         } catch (err) {

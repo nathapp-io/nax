@@ -7,7 +7,7 @@ import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, useUntrustedRegistry } from "@test/helpers";
 import type { LoadedHooksConfig } from "@/hooks/runner";
-import { _hookRunnerDeps, fireHook, validateHookCommand } from "@/hooks/runner";
+import { _hookRunnerDeps, executeHook, fireHook, validateHookCommand } from "@/hooks/runner";
 import type { HookContext } from "@/hooks/types";
 import { markTrusted } from "@/trust";
 
@@ -91,6 +91,22 @@ describe("fireHook — output drain is bounded after the hook exits", () => {
 
     expect(await Bun.file(marker).exists()).toBe(true);
     expect(performance.now() - started).toBeLessThan(2000);
+  });
+
+  test("output written before the drain deadline is kept when a background child holds the pipe", async () => {
+    project = makeTempDir();
+    const script = join(project, "fail.sh");
+    writeFileSync(script, "#!/bin/sh\nsleep 3 &\necho 'error: out-marker'\necho 'error: err-marker' >&2\nexit 1\n");
+    chmodSync(script, 0o755);
+    _hookRunnerDeps.streamDrainTimeoutMs = 100;
+
+    const started = performance.now();
+    const result = await executeHook({ command: `'${script}'` }, { event: "on-start", feature: "drain-test" }, project);
+
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("error: out-marker");
+    expect(result.output).toContain("error: err-marker");
   });
 });
 
