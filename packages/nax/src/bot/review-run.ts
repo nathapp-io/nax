@@ -26,6 +26,7 @@ import { _botReviewDeps } from "./review-deps";
 import { readReviewRulings, reviewRange, reviewScopeOf } from "./review-rulings";
 import type { PrReviewInput } from "./review-step";
 import { triage } from "./review-triage";
+import { hasNonWriterAuthor } from "./writers";
 
 export { _botReviewDeps } from "./review-deps";
 
@@ -335,6 +336,17 @@ async function reviewEnvironment(
       info,
       ...triaged,
       ...recorded,
+      ...((recorded.itemEarlier?.length ?? 0) > 0 && {
+        itemFixedBlocked: await hasNonWriterAuthor(
+          [
+            ...items.threads.flatMap((thread) => thread.comments),
+            ...items.comments,
+            ...postEarlier.flatMap((thread) => thread.comments),
+          ],
+          items.login,
+          writerCheck,
+        ),
+      }),
       earlier: postEarlier,
       settledKeys: new Set(findings.settled.map(({ ruling }) => ruling.id)),
       ...(rulings !== undefined && { rulings }),
