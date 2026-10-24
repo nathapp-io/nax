@@ -112,6 +112,65 @@ describe("createCommandLauncher", () => {
     expect(calls[0]?.env).toEqual({ YARN_ENABLE_SCRIPTS: "false" });
   });
 
+  test("US-002: explicit unwrapped request bypasses wrapping and callbacks with temp overlay", async () => {
+    const calls: Parameters<typeof _launcherDeps.runArgv>[0][] = [];
+    let policies = 0;
+    let after = 0;
+    _launcherDeps.runArgv = async (o) => {
+      calls.push(o);
+      return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+    };
+    const backend = makeFakeSandboxBackend("enforce");
+    const tmpDir = `${root}/session-tmp`;
+    const launcher = createCommandLauncher({
+      state: available,
+      backend,
+      tmpDir,
+      policyFor: async (r) => {
+        policies += 1;
+        return policy(r);
+      },
+      afterWrapped: async () => {
+        after += 1;
+      },
+    });
+    const request = {
+      spec: { kind: "shell", shell: "/bin/sh", command: "echo hi" } as const,
+      root,
+      cwd: root,
+      timeoutMs: 1000,
+      stripEnvVars: [],
+      unwrapped: true as const,
+    };
+    const result = await launcher.run(request);
+    expect(calls[0]?.argv).toEqual(["/bin/sh", "-c", "echo hi"]);
+    expect(calls[0]?.env).toEqual({ TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir });
+    expect(result.executed).toEqual(["/bin/sh", "-c", "echo hi"]);
+    expect(result.sandbox).toEqual({ backend: "none", wrapped: false, reason: "requested" });
+    expect(backend.calls).toHaveLength(0);
+    expect(policies).toBe(0);
+    expect(after).toBe(0);
+  });
+
+  test.each([
+    [DISABLED_SANDBOX_STATE, { backend: "none", wrapped: false, reason: "requested" }],
+    [
+      { kind: "unavailable", backend: "srt", reason: "no bwrap" } as const,
+      { backend: "none", wrapped: false, reason: "requested" },
+    ],
+  ] as const)("US-002: requested unwrapped record takes precedence for %j state", async (state, expected) => {
+    _launcherDeps.runArgv = async () => ({ exitCode: 0, stdout: "", stderr: "", timedOut: false });
+    const result = await createCommandLauncher({ state }).run({
+      spec: { kind: "shell", shell: "/bin/sh", command: "true" },
+      root,
+      cwd: root,
+      timeoutMs: 1000,
+      stripEnvVars: [],
+      unwrapped: true,
+    });
+    expect(result.sandbox).toEqual(expected);
+  });
+
   test("available: wraps, runs the wrapper argv, records wrapped", async () => {
     const backend = makeFakeSandboxBackend("enforce");
     const launcher = createCommandLauncher({ state: available, backend, policyFor: async (r) => policy(r) });
