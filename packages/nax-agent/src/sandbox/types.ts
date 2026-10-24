@@ -109,6 +109,8 @@ export interface LaunchRequest {
   readonly stripEnvVars: readonly string[];
   /** The CALLER's own overlay (Exec's Yarn no-scripts env). Never the backend's. */
   readonly env?: Readonly<Record<string, string>>;
+  /** Explicitly run this command outside the sandbox without changing launcher state. */
+  readonly unwrapped?: true;
   /** Aborts the run: forwarded to runArgv, which SIGKILLs the process group. US-001. */
   readonly signal?: AbortSignal;
 }

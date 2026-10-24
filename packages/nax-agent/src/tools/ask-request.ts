@@ -52,6 +52,36 @@ export function askSummary(tool: string, scope: ToolScope, input: Record<string,
   return { summary: masked.masked.slice(0, MAX_ASK_SUMMARY_CHARS), unshowable: false };
 }
 
+/** The clause `unsandboxedReasonSuffix` renders, before the reason itself. */
+const UNSANDBOXED_PREFIX = " -- runs OUTSIDE the sandbox: ";
+/** What the suffix says when the model gave no usable reason. */
+const NO_REASON = "no reason given";
+/** What the suffix says instead of a reason that cannot be shown safely. */
+const REASON_WITHHELD = "reason withheld";
+
+/**
+ * The reason clause an unsandboxed approval carries (US-004).
+ *
+ * The reason is model-authored and travels to a human, so it is masked through
+ * `maskForPrompt` and cut to `MAX_ASK_SUMMARY_CHARS` — in that order, for the
+ * same reason `askSummary` masks before it cuts: cutting first can split a
+ * secret so that no pattern matches what is left. A reason whose masked form
+ * would hide shell syntax is WITHHELD rather than denying the ask (the command
+ * itself is already vetted by `askSummary`); the person still learns the call
+ * wants to run outside the sandbox, which is the fact the suffix exists for.
+ *
+ * A blank or whitespace-only reason takes the SAME fallback as an absent one:
+ * the model wrote nothing that could explain anything, and the approver must
+ * never be shown the dangling clause the prefix alone renders.
+ */
+export function unsandboxedReasonSuffix(input: { readonly unsandboxedReason?: unknown }): string {
+  const raw = input.unsandboxedReason;
+  if (typeof raw !== "string" || raw.trim() === "") return `${UNSANDBOXED_PREFIX}${NO_REASON}`;
+  const masked = maskForPrompt(raw);
+  if (!masked.ok) return `${UNSANDBOXED_PREFIX}${REASON_WITHHELD}`;
+  return `${UNSANDBOXED_PREFIX}${masked.masked.slice(0, MAX_ASK_SUMMARY_CHARS)}`;
+}
+
 /**
  * The reason a `denied:ask` ledger row carries, chosen by WHO refused.
  *

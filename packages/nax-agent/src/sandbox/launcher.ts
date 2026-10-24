@@ -194,6 +194,9 @@ export function createCommandLauncher(opts: CommandLauncherOptions): CommandLaun
     state,
     async run(req) {
       const tmpDir = env.tmpDir !== undefined && (await ensureTmpDir(env.tmpDir)) ? env.tmpDir : undefined;
+      if (req.unwrapped === true) {
+        return runUnwrapped(req, { backend: "none", wrapped: false, reason: "requested" }, { ...env, tmpDir });
+      }
       if (state.kind === "disabled") return runUnwrapped(req, { backend: "none", wrapped: false }, { ...env, tmpDir });
       if (state.kind === "unavailable") {
         return runUnwrapped(req, { backend: state.backend, wrapped: false, reason: state.reason }, { ...env, tmpDir });

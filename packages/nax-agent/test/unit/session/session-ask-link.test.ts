@@ -16,6 +16,7 @@ import {
   type SessionAskDeps,
 } from "#src/session/session-ask-link";
 import { createSessionAskPort } from "#src/session/session-ask-port";
+import type { ApprovalRequest, SessionAskPort } from "#src/session/session-backend";
 import { withDepsRestore } from "#test/helpers/index";
 
 interface Harness {
@@ -59,6 +60,33 @@ const request: AskRequest = {
   reason: "matches an ask rule",
 };
 
+/** A port that records the ApprovalRequest it is handed and allows at once. */
+function capturingPort(): { readonly port: SessionAskPort; readonly requests: ApprovalRequest[] } {
+  const requests: ApprovalRequest[] = [];
+  return {
+    requests,
+    port: {
+      requestApproval: (req) => {
+        requests.push(req);
+        return Promise.resolve({ decision: "allow", decidedBy: "human" });
+      },
+      recordAutoDecision: () => {},
+      askQuestion: () => Promise.resolve(null),
+      noteQuestion: () => {},
+    },
+  };
+}
+
+/** Resolves one request through the link and returns what the port was handed. */
+async function forwardedBy(req: AskRequest): Promise<ApprovalRequest> {
+  const { port, requests } = capturingPort();
+  const link = createSessionAskLink({ port, currentCallId: () => undefined });
+  await link.resolve(req);
+  const forwarded = requests[0];
+  if (forwarded === undefined) throw new Error("the port was never asked");
+  return forwarded;
+}
+
 describe("askPerson", () => {
   withDepsRestore(_agentSessionDeps);
 
@@ -99,6 +127,32 @@ describe("askPerson", () => {
     const outcome = askPerson(deps, { tool: "deploy", summary: "s", reason: "r" }, controller.signal);
     controller.abort();
     expect(await outcome).toEqual({ decision: "deny", decidedBy: "cancelled" });
+  });
+
+  test("AC-9: an unsandboxed ask carries the flag on approval_requested", () => {
+    const { deps, events } = harness();
+    void askPerson(deps, { tool: "Bash", summary: "s", reason: "r", unsandboxed: true }, undefined);
+    expect(events[0]?.type).toBe("approval_requested");
+    expect(events[0]).toHaveProperty("unsandboxed", true);
+  });
+
+  test("AC-9: without the flag the emitted event has no unsandboxed key", () => {
+    const { deps, events } = harness();
+    void askPerson(deps, { tool: "Bash", summary: "s", reason: "r" }, undefined);
+    expect(events[0]?.type).toBe("approval_requested");
+    const first = events[0];
+    expect(first !== undefined && "unsandboxed" in first).toBe(false);
+  });
+});
+
+describe("createSessionAskLink — unsandboxed metadata (US-004)", () => {
+  test("AC-8: unsandboxed is copied onto the ApprovalRequest", async () => {
+    expect(await forwardedBy({ ...request, unsandboxed: true })).toHaveProperty("unsandboxed", true);
+  });
+
+  test("AC-8: without the field the forwarded object has no unsandboxed key", async () => {
+    const forwarded = await forwardedBy(request);
+    expect("unsandboxed" in forwarded).toBe(false);
   });
 });
 

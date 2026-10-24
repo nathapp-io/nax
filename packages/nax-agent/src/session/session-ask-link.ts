@@ -27,6 +27,12 @@ export interface ApprovalAsk {
   readonly command?: string;
   readonly reason: string;
   readonly callId?: string;
+  /**
+   * US-004: the call wants to run OUTSIDE the OS sandbox. Forwarded verbatim
+   * from `AskRequest` onto the `approval_requested` event; a host that does not
+   * recognise it shows the same prompt it always did.
+   */
+  readonly unsandboxed?: true;
 }
 
 export async function askPerson(
@@ -43,6 +49,7 @@ export async function askPerson(
     summary: ask.summary,
     ...(ask.command !== undefined ? { command: ask.command } : {}),
     reason: ask.reason,
+    ...(ask.unsandboxed !== undefined ? { unsandboxed: ask.unsandboxed } : {}),
     expiresAt,
   });
   const settlement = await settled;
@@ -76,6 +83,10 @@ export function createSessionAskLink(deps: SessionAskLinkDeps): AskLink {
         ...(masked !== undefined ? { command: masked.masked } : {}),
         reason: req.reason ?? `matched ${req.rule}`,
         ...(callId !== undefined ? { callId } : {}),
+        // US-004: carried through untouched, so a host that offers a distinct
+        // unsandboxed decision sees it on the port; a host that ignores it
+        // keeps the one approval prompt it has.
+        ...(req.unsandboxed !== undefined ? { unsandboxed: req.unsandboxed } : {}),
         ...(control?.signal !== undefined ? { signal: control.signal } : {}),
       });
     },

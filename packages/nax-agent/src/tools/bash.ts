@@ -77,6 +77,15 @@ export interface BashToolOptions {
    * description, so the agent always knows whether it is sandboxed.
    */
   readonly launcher?: CommandLauncher;
+  /**
+   * US-003: whether this session offers the per-call `unsandboxed` argument
+   * (`NativeBackendOptions.allowUnsandboxedCommands`, threaded down through
+   * `buildSessionToolSupport`). It shapes the ADVERTISEMENT only -- the schema
+   * and one description sentence. `run` never reads it: the tool only honours
+   * the flag on the call, so a session that did not advertise the argument
+   * cannot be steered into running unwrapped by a stray input field.
+   */
+  readonly unsandboxedCommands?: boolean;
 }
 
 /**
@@ -246,6 +255,8 @@ interface BashLaunchRequest {
   readonly opts: BashToolOptions;
   readonly ctx: ToolRunContext;
   readonly timeoutMs: number;
+  /** US-003: the call asked for exactly `unsandboxed: true`, so run it outside the sandbox. */
+  readonly unwrapped: boolean;
 }
 
 /**
@@ -264,6 +275,7 @@ async function launchIntercepted({
   opts,
   ctx,
   timeoutMs,
+  unwrapped,
 }: BashLaunchRequest): Promise<{ launched: BashLaunch; stdout: string }> {
   // The run's interceptor arrives on the context (S1 spec port 7), immutable
   // for this call, so the launch below and `postProcess` see the same object.
@@ -291,6 +303,9 @@ async function launchIntercepted({
           spec: { kind: "shell", shell, command: intercepted.command },
           root: ctx.root,
           ...common,
+          // US-003: the key is present only for an exact `true` on the call, so
+          // every other request stays byte-identical to what US-002 shipped.
+          ...(unwrapped ? { unwrapped: true } : {}),
         })
       : { ...(await _bashToolDeps.runArgv({ argv: executed, ...common })), executed, sandbox: undefined };
   if (!intercepted.rewritten) return { launched, stdout: launched.stdout };
@@ -309,6 +324,54 @@ async function launchIntercepted({
   }
 }
 
+/**
+ * US-003: the one sentence an opted-in session appends to its description, so
+ * the model knows the argument exists and what it is for. Absent from every
+ * description when the option is off, which keeps those byte-identical.
+ */
+const UNSANDBOXED_ARGUMENT_SENTENCE =
+  'Set "unsandboxed": true with an "unsandboxedReason" only when the command needs the network, a local socket or a device the sandbox blocks.';
+
+/**
+ * US-003: the description with the opt-in sentence appended.
+ *
+ * A separate function rather than a final ternary inside `bashToolDescription`
+ * so every existing variant keeps its own wording verbatim, and the separator
+ * is chosen here: most variants already end on a space, the sandbox-sentence
+ * ones do not, and a description must never end on two spaces or none.
+ */
+function withUnsandboxedSentence(description: string, opts: BashToolOptions): string {
+  if (opts.unsandboxedCommands !== true) return description;
+  const separator = description.endsWith(" ") ? "" : " ";
+  return `${description}${separator}${UNSANDBOXED_ARGUMENT_SENTENCE}`;
+}
+
+/**
+ * US-003: the input schema, plus the two argument fields when the session opted
+ * in. Built here rather than inline in `createBashTool` so the schema's shape
+ * has one owner, and the off-form is exactly the three properties it always was.
+ *
+ * Neither added field is `required`: the escape is per call, and a call without
+ * it runs exactly as it does today.
+ */
+function bashToolInputSchema(opts: BashToolOptions): CodingTool["inputSchema"] {
+  return {
+    type: "object",
+    properties: {
+      command: { type: "string", description: 'The shell command to run, e.g. "bun test src/a.test.ts"' },
+      timeoutMs: {
+        type: "number",
+        description: `Deadline in milliseconds (default and maximum ${BASH_TIMEOUT_MS}).`,
+      },
+      description: { type: "string", description: "One short line on what this command is for." },
+      ...(opts.unsandboxedCommands === true
+        ? { unsandboxed: { type: "boolean" }, unsandboxedReason: { type: "string" } }
+        : {}),
+    },
+    required: ["command"],
+  };
+}
+
 export function createBashTool(opts: BashToolOptions = {}): CodingTool {
   const shell = opts.shell ?? DEFAULT_BASH_SHELL;
   return {
@@ -317,23 +380,16 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
     // not a fault worth an operator's attention — the same reason RunCommand
     // sets this.
     routineErrors: true,
-    description: bashToolDescription(shell, opts),
-    inputSchema: {
-      type: "object",
-      properties: {
-        command: { type: "string", description: 'The shell command to run, e.g. "bun test src/a.test.ts"' },
-        timeoutMs: {
-          type: "number",
-          description: `Deadline in milliseconds (default and maximum ${BASH_TIMEOUT_MS}).`,
-        },
-        description: { type: "string", description: "One short line on what this command is for." },
-      },
-      required: ["command"],
-    },
+    description: withUnsandboxedSentence(bashToolDescription(shell, opts), opts),
+    inputSchema: bashToolInputSchema(opts),
     // `commandField` is what routes this call to the Bash branch of the policy
     // (src/tools/policy-bash.ts). No pathFields: the paths are inside the
     // command string, where only that branch can see them.
-    scope: { pathFields: [], commandField: "command" },
+    //
+    // US-003: `unsandboxedField` is declared unconditionally, so the runtime can
+    // see the field whether or not this session advertises it -- the option
+    // shapes the schema, never the scope.
+    scope: { pathFields: [], commandField: "command", unsandboxedField: "unsandboxed" },
 
     async run(input, ctx) {
       const command = input.command;
@@ -345,7 +401,11 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
       const timeoutMs = Math.min(Math.max(Math.trunc(requested), MIN_BASH_TIMEOUT_MS), BASH_TIMEOUT_MS);
 
       try {
-        const { launched, stdout } = await launchIntercepted({ command, shell, opts, ctx, timeoutMs });
+        // US-003: exact `true` only. The tool never consults `opts.unsandboxedCommands`
+        // here: whether the argument is ADVERTISED is the option's business, and what a
+        // given call asked for is the call's.
+        const unwrapped = input.unsandboxed === true;
+        const { launched, stdout } = await launchIntercepted({ command, shell, opts, ctx, timeoutMs, unwrapped });
         // Same framing ladder as RunCommand (Exec) via the shared
         // `formatExecBody`: an aborted call opens with the cancellation line
         // and surfaces whatever partial output the readers captured before the

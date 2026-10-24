@@ -18,12 +18,17 @@ import { statSync } from "node:fs";
 import type { QualityCommandSpec } from "#src/internal/command-spec/index";
 import { describeValuesType } from "#src/internal/describe-value-type";
 import { shellQuoteArg } from "#src/internal/shell-quote";
-import { type CommandLauncher, sandboxSentence, unsandboxedSentence } from "../sandbox/index.ts";
-import { describeExecAllowlist } from "./exec-allowlist-text.ts";
+import type { CommandLauncher } from "../sandbox/index.ts";
 import { pathListElements } from "./path-list.ts";
 import type { CodingTool, ToolResult, ToolRunContext } from "./registry.ts";
 import { runExecBranch } from "./run-command-exec.ts";
+import { runCommandDescription, runCommandInputSchema } from "./run-command-surface.ts";
 import { cutToByteCap, READ_CEILING } from "./truncate.ts";
+
+// Re-exported so the seam keeps its `#src/tools/run-command` specifier (tests)
+// and its `./internal` API-snapshot name after US-008 moved it next to the
+// description it feeds. Same object instance either way: one import graph.
+export { _runCommandToolDeps } from "./run-command-surface.ts";
 
 const PLACEHOLDER = /\{\{([a-zA-Z]+)\}\}/g;
 
@@ -53,6 +58,21 @@ export interface RunCommandExecOptions {
   readonly patterns: readonly string[];
   /** P4: how the argv runs. Absent = direct runArgv (unit tests). */
   readonly launcher?: CommandLauncher;
+  /**
+   * US-008: whether this session offers the per-call `unsandboxed` argument on
+   * the argv branch (`NativeBackendOptions.allowUnsandboxedCommands`, threaded
+   * down through `buildDeclaredCommandTools`). It shapes the ADVERTISEMENT only
+   * -- the two schema fields and one description sentence.
+   *
+   * `runExecBranch` never reads it: an `argv` call carrying `unsandboxed: true`
+   * runs unwrapped whenever the RUNTIME let the call through, which is where
+   * "is this permitted" is decided (US-005/US-006, `resolveUnsandboxedCall` in
+   * `src/tools/runtime-calltool.ts`). Making the option a second gate here
+   * would put the same decision in two places, and a session that simply did
+   * not advertise the field could then be steered into running unwrapped by a
+   * stray input key.
+   */
+  readonly unsandboxedCommands?: boolean;
 }
 
 /** What RunCommand hands the runner for one declared command. */
@@ -283,30 +303,6 @@ function otherCommandsDeclaring(
   return names;
 }
 
-/**
- * US-006: the platform seam `execSandboxNote` reads to decide whether the
- * description carries the macOS ps note.
- *
- * Kept out of `src/tools/index.ts` on purpose: `src/index.ts` takes named
- * exports from that barrel, so a seam there would reach the package's public
- * `.` entry, where `_` names are forbidden. It DOES reach `./internal`, because
- * `src/internal.ts` star-exports this module — which is exactly where a
- * `_*Deps` seam belongs (nax-only, outside semver), and why adding it here
- * needed the one-line api/ snapshot update. Tests reach it through
- * `#src/tools/run-command`.
- */
-export const _runCommandToolDeps = {
-  platform: (): NodeJS.Platform => process.platform,
-};
-
-function execSandboxNote(launcher: CommandLauncher | undefined): string {
-  const state = launcher?.state;
-  if (state?.kind === "available")
-    return ` An "argv" call runs ${sandboxSentence(state.network, state.sharedTmp !== false, _runCommandToolDeps.platform())}`;
-  if (state?.kind === "unavailable") return ` ${unsandboxedSentence(state.reason)}`;
-  return "";
-}
-
 const MISSING_RUNNER_OUTPUT = "no declared-command runner is configured for this session";
 
 /** The runner a tool built without one uses: refuses, spawns nothing. */
@@ -317,6 +313,35 @@ async function refuseWithoutRunner(): Promise<DeclaredCommandResult> {
 /** One named default, so the refusal path lives in a single place. */
 function declaredCommandRunner(opts: RunCommandToolOptions): DeclaredCommandRunner {
   return opts.runDeclaredCommand ?? refuseWithoutRunner;
+}
+
+/**
+ * The refusal for a field that applies only to an `argv` call, or undefined when
+ * the call carries none.
+ *
+ * Every refusal lives in ONE function because `run` sits at its
+ * cognitive-complexity baseline (`scripts/baselines/complexity-baseline.json`:
+ * the gate only ever lowers, and another `if` in `run` fails
+ * `bun run check:complexity`), which is why the message strings moved out too.
+ *
+ * #2066 is the reason `target` is refused rather than ignored: 48 of 136
+ * declared-command calls in one audited run carried a `target` that was silently
+ * discarded, and the transcript shows the model reasoning about it while trying
+ * to fix a failure. `unsandboxed` gets the same treatment for the same reason,
+ * plus a harder one: silently dropping an escape request would run the command
+ * SANDBOXED while the caller believes it escaped, which is a wrong answer rather
+ * than a missing one. `unsandboxedReason` is refused for the #2066 reason alone:
+ * on its own no escape was requested, so nothing unsafe happens -- but a silent
+ * drop teaches the model nothing, and it re-sends the same call.
+ */
+function argvOnlyFieldRefusal(input: Record<string, unknown>): string | undefined {
+  if (input.unsandboxed === true) return '"unsandboxed" applies only to "argv" calls';
+  if (input.unsandboxedReason !== undefined) {
+    return '"unsandboxedReason" applies only to "argv" calls, alongside "unsandboxed": true. Remove "unsandboxedReason".';
+  }
+  if (input.target === undefined) return undefined;
+  const key = typeof input.command === "string" ? input.command : "";
+  return `"target" applies only to "argv" calls; a declared command runs in the directory its configuration declares. Remove "target" and call "${key}" on its own.`;
 }
 
 export function createRunCommandTool(
@@ -332,40 +357,8 @@ export function createRunCommandTool(
     name: "RunCommand",
     // A non-zero exit here is the agent's red/green loop, not a fault.
     routineErrors: true,
-    description:
-      exec !== undefined
-        ? `Two ways to run something. (1) Run one of this project's declared commands: ${commandDescriptions} — supply "command" and, optionally, "values" for its placeholders. (2) Run an allowlisted external command via "argv" (an array, e.g. ["bun","add","left-pad"]) — no shell, so no quoting and no shell metacharacters; ${describeExecAllowlist(exec.patterns)}. Supply exactly one of "command" or "argv".${execSandboxNote(exec.launcher)}`
-        : `Run one of this project's declared commands: ${commandDescriptions}. Supply values for its placeholders; you cannot write a command of your own.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        command: { type: "string", enum: keys, description: "Which declared command to run" },
-        values: {
-          type: "object",
-          description:
-            'Values for the command\'s placeholders, e.g. { files: "a.test.ts" }. A path placeholder takes several paths separated by spaces, e.g. { files: "a.test.ts b.test.ts" }, or as an array of paths, e.g. { files: ["test/a.test.ts", "test/b.test.ts"] } -- one call, not one per file.',
-        },
-        ...(hasExec
-          ? {
-              argv: {
-                type: "array",
-                items: { type: "string" },
-                description:
-                  'Argv for an allowlisted external command, e.g. ["bun","add","left-pad"]. No shell: each element is one literal argument. Supply exactly one of "command" or "argv".',
-              },
-              target: {
-                type: "string",
-                enum: ["repoRoot", "package"],
-                description: 'Working directory for "argv": this package (default) or the repo root.',
-              },
-            }
-          : {}),
-      },
-      // With exec available, neither field is unconditionally required —
-      // run() enforces "exactly one of command or argv" at call time, which
-      // a static JSON Schema `required` list cannot express as an either/or.
-      ...(hasExec ? {} : { required: ["command"] }),
-    },
+    description: runCommandDescription(commandDescriptions, exec),
+    inputSchema: runCommandInputSchema(keys, exec),
     // `{{files}}` is the declared scoped-test path parameter. Keeping it in
     // the policy's containment seam prevents a quoted-but-otherwise harmless
     // absolute filename from making the configured command act outside root.
@@ -373,12 +366,19 @@ export function createRunCommandTool(
     // policy recognize an argv call and check it under the `Exec` identity
     // (see src/tools/runtime.ts and src/tools/policy.ts) rather than under
     // RunCommand's own grant.
+    //
+    // US-008: `unsandboxedField` is likewise set whenever exec is available,
+    // unconditionally -- the runtime reads the field to route an escaping argv
+    // call (Bash's rule, US-003), while whether the argument is OFFERED is
+    // `exec.unsandboxedCommands`' business. A declared-command call carries no
+    // Exec identity, so the runtime leaves that flag to `run` below, which
+    // refuses it by name.
     scope: {
       pathFields: [],
       listPathFields: ["values.files"],
       verbField: "command",
       allowedVerbs: keys,
-      ...(hasExec ? { argvField: "argv" } : {}),
+      ...(hasExec ? { argvField: "argv", unsandboxedField: "unsandboxed" } : {}),
     },
 
     async run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult> {
@@ -389,17 +389,8 @@ export function createRunCommandTool(
       }
       if (hasArgv) return runExecBranch(input, ctx, opts);
 
-      // #2066: `target` is read only on the argv branch (run-command-exec.ts).
-      // 48 of 136 declared-command calls in one audited run carried a `target`
-      // that was silently discarded, and the transcript shows the model
-      // reasoning about it while trying to fix a failure. Silently ignoring it
-      // is the one option that teaches nothing.
-      if (input.target !== undefined) {
-        return {
-          content: `"target" applies only to "argv" calls; a declared command runs in the directory its configuration declares. Remove "target" and call "${typeof input.command === "string" ? input.command : ""}" on its own.`,
-          isError: true,
-        };
-      }
+      const misplaced = argvOnlyFieldRefusal(input);
+      if (misplaced !== undefined) return { content: misplaced, isError: true };
 
       const key = typeof input.command === "string" ? input.command : "";
       const template = declared.get(key);
