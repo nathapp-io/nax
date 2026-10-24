@@ -3,7 +3,7 @@
   "feature": "agent-session-modes",
   "branchName": "feat/agent-session-modes",
   "createdAt": "2026-10-24T00:00:00.000Z",
-  "updatedAt": "2026-10-24T15:17:16.104Z",
+  "updatedAt": "2026-10-24T15:36:00.811Z",
   "userStories": [
     {
       "id": "US-001",
@@ -202,8 +202,8 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -215,7 +215,9 @@
         "profileModelTier": "balanced",
         "initialAgent": "native",
         "initialProfileId": "native-deepseek",
-        "initialModelTier": "balanced"
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/tools/bash.ts",
@@ -250,7 +252,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "bf08cc87e6b69a5b264aab37d1e16070b8813ca2"
     },
     {
       "id": "US-004",
