@@ -38,6 +38,27 @@ export interface DeclaredCommandToolsArgs {
   readonly runDeclaredCommand?: DeclaredCommandRunner;
   /** P4: how Bash and Exec-branch commands run; absent = direct spawn (tests). */
   readonly launcher?: CommandLauncher;
+  /**
+   * US-003: whether this session offers the per-call `unsandboxed` argument on
+   * Bash (`NativeBackendOptions.allowUnsandboxedCommands`). Advertisement only:
+   * RunCommand's own `unsandboxed` argument is a separate, later surface.
+   */
+  readonly unsandboxedCommands?: boolean;
+}
+
+/**
+ * US-003: `unsandboxedCommands` as a spreadable field — present only when the
+ * session opted in, so "off" and "absent" stay one shape all the way down to
+ * `createBashTool`.
+ *
+ * A helper rather than an inline `cond ? { field } : {}` spread because
+ * `buildDeclaredCommandTools` and `buildCodingToolSupport` both sit at their
+ * cognitive-complexity baseline and a ternary inside either one would raise it.
+ */
+export function unsandboxedToolOptions(args: { readonly unsandboxedCommands?: boolean }): {
+  readonly unsandboxedCommands?: true;
+} {
+  return args.unsandboxedCommands === true ? { unsandboxedCommands: true } : {};
 }
 
 export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): CodingTool[] {
@@ -90,6 +111,7 @@ export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): Codin
             bashApproval: args.bashApproval,
             ...(args.humanApproval === true ? { humanApproval: true } : {}),
             ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
+            ...unsandboxedToolOptions(args),
           }),
         ]
       : []),

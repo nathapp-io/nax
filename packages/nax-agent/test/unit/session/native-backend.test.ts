@@ -5,13 +5,21 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import type { BackendOpenContext } from "@nathapp/nax-agent";
+import { _sessionSandboxDeps } from "#src/coding-tools/coding-tool-sandbox";
 import { _clientDeps } from "#src/native/client";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
 import { NATIVE_BACKEND_KIND, nativeBackend } from "#src/session/native-backend";
 import { createPendingAskTable } from "#src/session/pending-asks";
 import { createSessionAskPort } from "#src/session/session-ask-port";
 import { MODEL } from "#test/helpers/agent-session";
-import { assertNaxError, cleanupTempDir, makeTempDir } from "#test/helpers/index";
+import {
+  assertNaxError,
+  cleanupTempDir,
+  makeTempDir,
+  stubSessionSandboxDeps,
+  withDepsRestore,
+  withSessionSandboxSeam,
+} from "#test/helpers/index";
 
 const tempDirs: string[] = [];
 const sessionCleanups: (() => Promise<void>)[] = [];
@@ -151,5 +159,37 @@ describe("nativeBackend", () => {
     } finally {
       _clientDeps.build = real;
     }
+  });
+});
+
+/**
+ * US-003: `allowUnsandboxedCommands` is the profile's validated opt-in for
+ * Bash's per-call `unsandboxed` argument. This pins the THREADING — from
+ * nativeBackend's own options, through `nativeProfileRules`, into the tool the
+ * session advertises. The `review` profile reaches Bash without the write tools
+ * and requires a usable sandbox, so the seam is stubbed; the end-to-end
+ * `createAgentSession` case lives in
+ * test/integration/session/native-unsandboxed-commands.test.ts.
+ */
+describe("nativeBackend — unsandboxedCommands", () => {
+  withDepsRestore(_sessionSandboxDeps);
+  withSessionSandboxSeam(_sessionSandboxDeps);
+
+  async function bashPropertyKeys(extra: { readonly allowUnsandboxedCommands?: boolean }): Promise<string[]> {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    const opened = await openBackend(nativeBackend({ model: MODEL, ...extra }), await ctx({ profile: "review" }));
+    const bash = (opened.turnOpts().codingTools ?? []).find((tool) => tool.name === "Bash");
+    if (bash === undefined) throw new Error("the review profile must advertise Bash");
+    // Read without casting to a Capitalised type, which the looseCast ratchet counts.
+    const properties: unknown = bash.inputSchema.properties;
+    if (typeof properties !== "object" || properties === null) {
+      throw new Error("expected the Bash tool's inputSchema.properties to be an object");
+    }
+    return Object.keys(properties).sort();
+  }
+
+  test("the option reaches the advertised Bash tool, and is absent without it", async () => {
+    expect(await bashPropertyKeys({ allowUnsandboxedCommands: true })).toContain("unsandboxed");
+    expect(await bashPropertyKeys({})).not.toContain("unsandboxed");
   });
 });

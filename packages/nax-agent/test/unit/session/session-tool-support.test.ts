@@ -64,6 +64,15 @@ function names(support: { tools: readonly { name: string }[] }): string[] {
   return support.tools.map((tool) => tool.name).sort();
 }
 
+/** A tool's `inputSchema.properties` keys, without casting to a Capitalised type. */
+function bashPropertyKeys(tool: { readonly inputSchema: Record<string, unknown> }): string[] {
+  const properties: unknown = tool.inputSchema.properties;
+  if (typeof properties !== "object" || properties === null) {
+    throw new Error("expected the Bash tool's inputSchema.properties to be an object");
+  }
+  return Object.keys(properties).sort();
+}
+
 describe("declaredToolsFor and grantsFor", () => {
   test("none is the scratchpad trio; read adds the read tools; full adds the write tools", () => {
     expect(declaredToolsFor("none", EMPTY)).toEqual(TRIO);
@@ -174,6 +183,24 @@ describe("buildSessionToolSupport", () => {
     expect(outcome.kind).toBe("error");
     const plain = await support.runtime.callTool("Read", { path: "creds" });
     expect(plain.kind).not.toBe("ok");
+  });
+
+  /**
+   * US-003 AC-14: the session's `unsandboxedCommands` option reaches the Bash
+   * tool it advertises. Read off `tools`, which is what the prompt is built
+   * from -- an option the schema does not show the model does not exist.
+   */
+  test("unsandboxedCommands reaches the advertised Bash schema (and is absent without it)", async () => {
+    const on = buildSessionToolSupport(await args({ profile: "full", unsandboxedCommands: true }));
+    const bashOn = on.support.tools.find((tool) => tool.name === "Bash");
+    if (bashOn === undefined) throw new Error("full must advertise Bash");
+    expect(bashPropertyKeys(bashOn)).toContain("unsandboxed");
+
+    const off = buildSessionToolSupport(await args({ profile: "full" }));
+    const bashOff = off.support.tools.find((tool) => tool.name === "Bash");
+    if (bashOff === undefined) throw new Error("full must advertise Bash");
+    expect(bashPropertyKeys(bashOff)).not.toContain("unsandboxed");
+    expect(bashPropertyKeys(bashOff)).not.toContain("unsandboxedReason");
   });
 });
 

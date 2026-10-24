@@ -4,6 +4,7 @@
  * buildCodingToolSupport takes, picks the embedder default protected-paths
  * policy, and enforces the sandbox floor for "full".
  */
+import { unsandboxedToolOptions } from "#src/coding-tools/coding-tool-extras";
 import { resolveSessionSandbox } from "#src/coding-tools/coding-tool-sandbox";
 import { buildCodingToolSupport, type CodingToolSupport } from "#src/coding-tools/coding-tool-support";
 import { UNIVERSAL_CODING_TOOLS } from "#src/coding-tools/universal-coding-tools";
@@ -134,6 +135,12 @@ export interface SessionToolSupportArgs {
   readonly launcher: CommandLauncher | undefined;
   readonly askResolver: AskResolver;
   readonly interceptor: CommandInterceptor | undefined;
+  /**
+   * US-003: offer Bash's per-call `unsandboxed` argument for this session
+   * (from `nativeProfileRules(...).allowUnsandboxedCommands`). Optional and
+   * defaulting to off, so every existing caller keeps today's tool surface.
+   */
+  readonly unsandboxedCommands?: boolean;
 }
 
 export interface SessionToolSupport {
@@ -159,6 +166,7 @@ export function buildSessionToolSupport(args: SessionToolSupportArgs): SessionTo
     ...(askRules.length > 0 ? { askRules } : {}),
     ...(args.interceptor !== undefined ? { interceptor: args.interceptor } : {}),
     ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
+    ...unsandboxedToolOptions(args),
   });
   // Unreachable while the scratchpad trio is always declared and granted; kept for the type.
   if (support === undefined) {

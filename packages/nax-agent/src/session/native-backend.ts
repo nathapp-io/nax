@@ -55,7 +55,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
   const raw = resolved.raw;
   if (ctx.resume !== undefined && raw.carryHistoryAcrossModels !== true)
     checkResumeModel(ctx.resume.doc, ctx.sessionId, raw.model);
-  const { bashApproval, allowUnsandboxed } = nativeProfileRules(ctx.profile, raw);
+  const { bashApproval, allowUnsandboxed, allowUnsandboxedCommands } = nativeProfileRules(ctx.profile, raw);
   const protectedPaths = {
     ...defaultProtectedPaths(raw.credentials !== undefined),
     ...raw.hostPorts?.protectedPaths,
@@ -77,6 +77,9 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     launcher,
     askResolver: createSessionAskResolver(createSessionAskLink({ port: ctx.asks, currentCallId: () => callId })),
     interceptor: raw.hostPorts?.commandInterceptor,
+    // US-003: the profile's validated opt-in, so an interactive "full" session
+    // can offer Bash's per-call escape without turning the sandbox off.
+    ...(allowUnsandboxedCommands ? { unsandboxedCommands: true } : {}),
   });
   const interactionHandler = createSessionInteractionHandler({
     sessionId: ctx.sessionId,

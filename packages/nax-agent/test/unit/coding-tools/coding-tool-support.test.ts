@@ -30,3 +30,40 @@ describe("buildCodingToolSupport — providerInstructions", () => {
     expect("providerInstructions" in (support() ?? {})).toBe(false);
   });
 });
+
+/** A support that declares Bash, so the session-local tool is really built. */
+const bashSupport = (extra: { unsandboxedCommands?: boolean } = {}) =>
+  buildCodingToolSupport({
+    root,
+    declared: ["Read", "Bash"],
+    grants: [
+      { tool: "Read", patterns: ["*"] },
+      { tool: "Bash", patterns: ["*"] },
+    ],
+    ...extra,
+  });
+
+/** The Bash tool's `properties` keys, without casting to a Capitalised type. */
+function bashPropertyKeys(tool: { readonly inputSchema: Record<string, unknown> }): string[] {
+  const properties: unknown = tool.inputSchema.properties;
+  if (typeof properties !== "object" || properties === null) {
+    throw new Error("expected the Bash tool's inputSchema.properties to be an object");
+  }
+  return Object.keys(properties).sort();
+}
+
+describe("buildCodingToolSupport — unsandboxedCommands (US-003)", () => {
+  test("AC-12: the option reaches the Bash tool's advertised schema", () => {
+    const built = bashSupport({ unsandboxedCommands: true });
+    const bash = built?.tools.find((tool) => tool.name === "Bash");
+    if (bash === undefined) throw new Error("expected an advertised Bash tool");
+    expect(bashPropertyKeys(bash)).toContain("unsandboxed");
+  });
+
+  test("AC-12 boundary: without the option the Bash schema has no unsandboxed key", () => {
+    const built = bashSupport();
+    const bash = built?.tools.find((tool) => tool.name === "Bash");
+    if (bash === undefined) throw new Error("expected an advertised Bash tool");
+    expect(bashPropertyKeys(bash)).not.toContain("unsandboxed");
+  });
+});
