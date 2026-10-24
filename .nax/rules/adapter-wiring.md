@@ -62,7 +62,7 @@ The agent adapter exposes exactly 4 primitives: `openSession`, `sendTurn`, `clos
 
 | Role | Dispatch |
 |:---|:---|
-| `main` *(default)*, `test-writer`, `verifier`, `implementer`, `diagnose`, `source-fix`, `test-fix`, `repo-scoped-test-fix`, `reviewer-semantic`, `reviewer-adversarial`, `acceptance-gen`, `plan`, `plan-refine`, `setup`, `finish-review-spec`, `finish-review-quality`, `finish-fix`, `finish-narrative`, `advisor`, `wf-implementer`, `wf-story-review`, `wf-rereview`, `wf-branch-review`, `wf-branch-fix` | `callOp` run-kind |
+| `main` *(default)*, `test-writer`, `verifier`, `implementer`, `diagnose`, `source-fix`, `test-fix`, `repo-scoped-test-fix`, `reviewer-semantic`, `reviewer-adversarial`, `reviewer-fix`, `nbf-worth-check`, `acceptance-gen`, `plan`, `plan-refine`, `setup`, `finish-review-spec`, `finish-review-quality`, `finish-fix`, `advisor`, `wf-implementer`, `wf-story-review`, `wf-rereview`, `wf-branch-review`, `wf-branch-fix`, `wf-repair` | `callOp` run-kind |
 | `decompose`, `refine`, `fix-gen`, `auto` | `callOp` complete-kind |
 
 ## Rule 3: Adapter primitives stay inside the wiring layer
