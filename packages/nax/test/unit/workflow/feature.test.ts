@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import {
   cleanupTempDir,
   makeFeatureContext,
@@ -9,6 +9,7 @@ import {
   makeTestRuntime,
   makeTestStory,
 } from "@test/helpers";
+import { ledgerPath } from "@/advisor";
 import type { WorkflowStatusBlock } from "@/execution";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { NaxRuntime } from "@/runtime";
@@ -218,6 +219,55 @@ describe("runWorkflowFeature", () => {
     await runWorkflowFeature(input);
     expect(envs[0]?.record.step).toBe("repo-gates");
     expect(envs[0]?.record.lastHead).toBeUndefined();
+  });
+
+  // Publish commits the ledger, then pushes and waits for CI before the record moves on: a crash in
+  // that wait leaves HEAD one ledger commit past lastHead, which must resume rather than restart.
+  test("a crash in publish with HEAD moved only by the ledger commit resumes at publish", async () => {
+    const { input, envs, featureDir, fc } = setup();
+    const ledger = relative(fc.projectDir, ledgerPath(fc.projectDir, fc.feature));
+    _workflowDeps.git = async (args) => {
+      if (args[0] === "rev-parse") return { stdout: "headX\n", exitCode: 0 };
+      if (args[0] === "diff" && args.at(-1) === "fixCommit..HEAD") return { stdout: `${ledger}\n`, exitCode: 0 };
+      return { stdout: "", exitCode: 1 };
+    };
+    const prior = join(featureDir, "r-old");
+    await upsertStoryRecord(prior, { runId: "r-old", feature: input.feature }, newStoryRecord("US-001", 5, "t"));
+    await upsertFeatureRecord(
+      prior,
+      { runId: "r-old", feature: input.feature },
+      {
+        ...newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+        step: "publish",
+        startHead: "oldHead",
+        lastHead: "fixCommit",
+        fixRan: true,
+        fixRounds: 1,
+      },
+    );
+    await runWorkflowFeature(input);
+    expect(envs[0]?.record.step).toBe("publish");
+    expect(envs[0]?.record.fixRounds).toBe(1);
+    expect(envs[0]?.record.lastHead).toBe("headX");
+  });
+
+  test("a HEAD that moved by the ledger and any other path still restarts at repo-gates", async () => {
+    const { input, envs, featureDir, fc } = setup();
+    const ledger = relative(fc.projectDir, ledgerPath(fc.projectDir, fc.feature));
+    _workflowDeps.git = async (args) => {
+      if (args[0] === "rev-parse") return { stdout: "headX\n", exitCode: 0 };
+      if (args[0] === "diff") return { stdout: `${ledger}\nsrc/a.ts\n`, exitCode: 0 };
+      return { stdout: "", exitCode: 1 };
+    };
+    const prior = join(featureDir, "r-old");
+    await upsertStoryRecord(prior, { runId: "r-old", feature: input.feature }, newStoryRecord("US-001", 5, "t"));
+    await upsertFeatureRecord(
+      prior,
+      { runId: "r-old", feature: input.feature },
+      { ...newFeatureRecord({ now: "t", seed: "s", minors: [] }), step: "publish", lastHead: "fixCommit" },
+    );
+    await runWorkflowFeature(input);
+    expect(envs[0]?.record.step).toBe("repo-gates");
   });
 
   test("a resumed record on the same HEAD resumes where it was", async () => {

@@ -19,19 +19,55 @@ const STREAM_DRAIN_TIMEOUT_MS = 2000;
 /** Grace period after SIGTERM before escalating to SIGKILL for a hook that ignores it. */
 const HOOK_KILL_GRACE_MS = 5000;
 
-function createDrainDeadline(deadlineMs: number): { promise: Promise<string>; cancel: () => void } {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const promise = new Promise<string>((resolve) => {
-    timeoutId = setTimeout(() => resolve(""), deadlineMs);
-  });
-  return {
-    promise,
-    cancel: () => {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
+/** Injectable for tests: how long output may keep draining after the hook process exits or is killed. */
+export const _hookRunnerDeps = { streamDrainTimeoutMs: STREAM_DRAIN_TIMEOUT_MS };
+
+/** A stream read incrementally, so what arrived before a deadline is kept. */
+interface StreamCapture {
+  /** Resolves at EOF (or on a read error). */
+  done: Promise<void>;
+  /** Everything decoded so far. */
+  text: () => string;
+  /** Stop reading; releases a pending read. */
+  cancel: () => void;
+}
+
+function captureStream(stream: ReadableStream<Uint8Array>): StreamCapture {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let collected = "";
+  const done = (async () => {
+    try {
+      for (;;) {
+        const { done: eof, value } = await reader.read();
+        if (eof) break;
+        collected += decoder.decode(value, { stream: true });
       }
+    } catch {
+      // A read error ends the capture; what arrived before it is still returned.
+    }
+    collected += decoder.decode();
+  })();
+  return {
+    done,
+    text: () => collected,
+    cancel: () => {
+      reader.cancel().catch(() => {});
     },
   };
+}
+
+/** Wait for EOF or the deadline, whichever is first; the caller reads `capture.text()` afterwards. */
+async function waitForDrain(capture: StreamCapture, deadlineMs: number): Promise<void> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    timeoutId = setTimeout(resolve, deadlineMs);
+  });
+  try {
+    await Promise.race([capture.done, deadline]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /** Extended hooks config that tracks global vs project hooks */
@@ -175,7 +211,7 @@ export { parseCommandToArgv };
  * @param workdir - Working directory for command execution
  * @returns Promise with success status and output
  */
-async function executeHook(
+export async function executeHook(
   hookDef: HookDef,
   ctx: HookContext,
   workdir: string,
@@ -248,27 +284,24 @@ async function executeHook(
     killTimeoutId = setTimeout(() => killProcessGroup(proc.pid, "SIGKILL"), HOOK_KILL_GRACE_MS);
   }, timeout);
 
-  const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
-  const stderrPromise = new Response(proc.stderr).text().catch(() => "");
+  const stdoutCapture = captureStream(proc.stdout);
+  const stderrCapture = captureStream(proc.stderr);
   const exitCode = await proc.exited;
   clearTimeout(timeoutId);
   clearTimeout(killTimeoutId);
 
-  const [stdout, stderr] = timedOut
-    ? await (async () => {
-        const stdoutDrain = createDrainDeadline(STREAM_DRAIN_TIMEOUT_MS);
-        const stderrDrain = createDrainDeadline(STREAM_DRAIN_TIMEOUT_MS);
-        try {
-          return await Promise.all([
-            Promise.race([stdoutPromise, stdoutDrain.promise]),
-            Promise.race([stderrPromise, stderrDrain.promise]),
-          ]);
-        } finally {
-          stdoutDrain.cancel();
-          stderrDrain.cancel();
-        }
-      })()
-    : await Promise.all([stdoutPromise, stderrPromise]);
+  // Bounded on BOTH paths: a hook that exits 0 but left a background child (`notify &`, a daemon)
+  // leaves that child holding the pipes, and the kill timer is already cleared, so an unbounded
+  // drain would wait as long as the child lives and hang the run's completion. Output is read
+  // incrementally, so whatever the hook wrote before the deadline is kept.
+  await Promise.all([
+    waitForDrain(stdoutCapture, _hookRunnerDeps.streamDrainTimeoutMs),
+    waitForDrain(stderrCapture, _hookRunnerDeps.streamDrainTimeoutMs),
+  ]);
+  stdoutCapture.cancel();
+  stderrCapture.cancel();
+  const stdout = stdoutCapture.text();
+  const stderr = stderrCapture.text();
 
   const output = (stdout + stderr).trim();
 

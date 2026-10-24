@@ -104,6 +104,13 @@ describe("B1: the native Write tool cannot create or rewrite a settings file", (
     }
     for (const rel of [SETTINGS, SETTINGS_LOCAL]) expect(readFileSync(join(root, rel), "utf8")).toBe(ORIGINAL);
   });
+
+  test("B1 AC-3 boundary: a case respelling is refused, since it is the same file on macOS and Windows", async () => {
+    for (const spelling of [".Claude/settings.json", ".claude/SETTINGS.local.json"]) {
+      const reason = denyReason(await runtime.callTool("Write", { path: spelling, content: "{}" }));
+      expect(reason).toContain("is a Claude Code settings file");
+    }
+  });
 });
 
 describe("B1: Edit and Delete are covered by the same deny", () => {

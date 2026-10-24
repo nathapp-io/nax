@@ -117,7 +117,8 @@ describe("runStoryGates", () => {
 describe("runWorkflowSuiteGate", () => {
   const cases: ReadonlyArray<readonly [FullSuiteGateOutput["status"], boolean, GateState]> = [
     ["passed", false, "green"],
-    ["passed-on-timeout", false, "green"],
+    // acceptOnTimeout is a pipeline-mode allowance: in workflow a suite that never finished is red.
+    ["passed-on-timeout", true, "red"],
     ["skipped", false, "skipped"],
     ["failed", true, "red"],
     ["execution-failed", true, "red"],

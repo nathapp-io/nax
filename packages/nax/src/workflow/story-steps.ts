@@ -240,12 +240,13 @@ async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
   if (s.reviewOpen.length === 0 || s.fixBase === undefined) return;
   const step = startStep(env.storyId, `re-review r${s.round}`, { model: env.steps.modelFor?.("re-review") });
   const out: ReviewOutcome<ReReviewVerdict> = await env.steps.reReview(s.round, s.reviewOpen, s.fixBase);
-  s.fixBase = undefined;
   if (!out.ran) {
+    // fixBase is kept, so the next re-review covers this round's fix diff as well as the next one's.
     step.done(`skipped (${out.why})`);
     await env.sink.ledger(ledgerText.reviewSkipped(`re-review round ${s.round}: ${out.why}`), NO_MIRROR);
     return;
   }
+  s.fixBase = undefined;
   const asked = s.reviewOpen;
   const absorbed = absorbReReviewVerdict(asked, out.verdict);
   await deferMinors(env, s, absorbed.newDrafts);

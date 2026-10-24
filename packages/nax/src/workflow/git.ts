@@ -83,6 +83,20 @@ export async function changedFilesSince(projectDir: string, base: string): Promi
 }
 
 /**
+ * Whether the only path that differs between `base` and HEAD is the feature's advisor ledger, i.e. HEAD
+ * moved by nothing but publish's own ledger commit. A resume treats that HEAD as unmoved: the ledger is
+ * not code, so the recorded gates, review and findings still describe the branch. False when nothing
+ * differs (HEAD did not move by a commit) and on any git failure, so an unknown answer restarts.
+ */
+export async function onlyLedgerChangedSince(projectDir: string, feature: string, base: string): Promise<boolean> {
+  const ledger = relative(projectDir, ledgerPath(projectDir, feature));
+  const result = await _workflowDeps.git(["diff", "--name-only", `${base}..HEAD`], projectDir);
+  if (result.exitCode !== 0) return false;
+  const paths = result.stdout.split("\n").filter((line) => line !== "");
+  return paths.length > 0 && paths.every((path) => path === ledger);
+}
+
+/**
  * Paths with uncommitted edits (modified, staged, untracked), minus nax-owned paths. Throws
  * `WORKFLOW_GIT_FAILED` on a git failure (nax#2550): it used to return [], which read as a clean tree.
  */

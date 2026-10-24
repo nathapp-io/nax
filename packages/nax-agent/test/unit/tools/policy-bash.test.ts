@@ -141,6 +141,12 @@ describe("the deny suite rows this branch owns (spec §6)", () => {
     if (!verdict.allowed) expect(verdict.breach).toBe(true);
   });
 
+  test("row 5: a .git/ redirect target respelled in another case denies with breach", () => {
+    const verdict = check(policyFor(["cat *"]), "cat a >> .GIT/config");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) expect(verdict.breach).toBe(true);
+  });
+
   test("row 6: a redirect target outside the root denies", () => {
     const verdict = check(policyFor(["bun test *"]), "bun test > ../escape.txt");
     expect(verdict.allowed).toBe(false);

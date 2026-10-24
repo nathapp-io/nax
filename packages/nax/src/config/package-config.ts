@@ -10,7 +10,8 @@
  * every `native` dispatch in it failed at tier `fast`).
  *
  * This helper takes the run config it must inherit the chain from as a REQUIRED
- * argument, so the chain cannot be dropped by omission. Per-package resolution in
+ * argument, so the chain cannot be dropped by omission. The root-only keys are
+ * pinned from it too, so run-level CLI overrides reach every package. Per-package resolution in
  * new code goes through here; `scripts/check-config-profile-threading.ts` keeps
  * direct `loadConfigForWorkdir` call sites honest.
  */
@@ -19,6 +20,7 @@ import { join } from "node:path";
 import { loadConfigForWorkdir } from "./loader";
 import { PROJECT_NAX_DIR } from "./paths";
 import { profileOverrideFromConfig } from "./profile";
+import { pinRootOnlyKeys } from "./root-only-keys";
 import type { NaxConfig } from "./types";
 
 /**
@@ -35,5 +37,9 @@ export function loadConfigForPackage(
 ): Promise<NaxConfig> {
   const rootConfigPath = join(projectDir, PROJECT_NAX_DIR, "config.json");
   const relative = packageDir && packageDir !== "." ? packageDir : undefined;
-  return loadConfigForWorkdir(rootConfigPath, relative, profileOverrideFromConfig(from));
+  // The reload sees only `from`'s profile, not its other CLI overrides (`--rules-dir`,
+  // `--context-file`), so the root-only keys are re-pinned from `from` itself.
+  return loadConfigForWorkdir(rootConfigPath, relative, profileOverrideFromConfig(from)).then((config) =>
+    pinRootOnlyKeys(config, from),
+  );
 }

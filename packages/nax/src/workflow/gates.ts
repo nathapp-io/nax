@@ -24,6 +24,13 @@ import type { GateName, GateRunResult, GateState, WorkflowFindingDraft } from ".
 export const MAX_GATE_FINDINGS = 25;
 
 const SUITE_RED = new Set(["failed", "execution-failed", "timeout", "inconclusive"]);
+/**
+ * A suite that hit its timeout never finished, so it proves nothing about the story. Pipeline mode
+ * honours `regressionGate.acceptOnTimeout` (BUG-026); workflow mode does not, or a story that makes
+ * the suite hang would get a green gate (and a ready PR) with no finding at all.
+ */
+const SUITE_TIMED_OUT_ISSUE =
+  "full suite hit its timeout before finishing (passed-on-timeout): a suite that never completed proves nothing. Find the hang or the test that now runs too long, and fix it.";
 const SUITE_SKIPPED = new Set(["skipped"]);
 
 interface OneGate {
@@ -150,6 +157,7 @@ export async function runWorkflowSuiteGate(sc: StepContext): Promise<GateRunResu
       resolvedTestPatterns: sc.resolvedTestPatterns,
     });
     if (SUITE_SKIPPED.has(out.status)) return { state: "skipped", findings: [] };
+    if (out.status === "passed-on-timeout") return redWithoutDetail("full-suite", SUITE_TIMED_OUT_ISSUE);
     if (!SUITE_RED.has(out.status)) return { state: "green", findings: [] };
     return out.findings.length > 0
       ? { state: "red", findings: toDrafts("full-suite", out.findings) }

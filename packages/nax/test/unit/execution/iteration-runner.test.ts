@@ -29,6 +29,7 @@ import {
   makeTestContext,
   makeWorktreeManager,
 } from "@test/helpers";
+import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { SequentialExecutionContext } from "@/execution/executor-types";
 import { _iterationRunnerDeps, releaseHeavyPipelineContext, runIteration } from "@/execution/iteration-runner";
@@ -166,6 +167,44 @@ describe("runIteration", () => {
     expect(result.costDelta).toBeCloseTo(0.25);
     expect(ctx.statusWriter.setPrd).toHaveBeenCalled();
     expect(ctx.statusWriter.setCurrentStory).toHaveBeenCalled();
+  });
+
+  test("package story: run-level root-only keys (--rules-dir / --context-file) survive the per-package reload", async () => {
+    const ctx = makeCtx(tempDir, {
+      config: makeNaxConfig({
+        execution: { storyIsolation: "shared" },
+        context: { rules: { overrideDir: "/run/rules" }, projectContext: { file: "/run/context.md" } },
+      }),
+    });
+    const pkgStory = makeStory({ id: "US-002", title: "Package story", workdir: "packages/api" });
+    // The disk reload knows only the profile, so it carries none of the run's CLI overrides.
+    const origLoad = _iterationRunnerDeps.loadConfigForWorkdir;
+    _iterationRunnerDeps.loadConfigForWorkdir = mock(async () =>
+      makeNaxConfig({ quality: { commands: { test: "pkg-test" } } }),
+    );
+    let seen: NaxConfig | undefined;
+    _iterationRunnerDeps.runPipeline = mock(async (_stages: PipelineStage[], pctx: PipelineContext) => {
+      seen = pctx.config;
+      return makePipelineResult({ success: true, finalAction: "complete" }, { prd });
+    });
+
+    try {
+      await runIteration(
+        ctx,
+        makePRD({ userStories: [pkgStory] }),
+        { story: pkgStory, storiesToExecute: [pkgStory], routing: ROUTING, isBatchExecution: false },
+        1,
+        0,
+        [],
+      );
+    } finally {
+      _iterationRunnerDeps.loadConfigForWorkdir = origLoad;
+    }
+
+    expect(seen?.context.rules.overrideDir).toBe("/run/rules");
+    expect(seen?.context.projectContext.file).toBe("/run/context.md");
+    // Package-tunable keys still come from the per-package load.
+    expect(seen?.quality.commands.test).toBe("pkg-test");
   });
 
   test("failure path: 'fail' finalAction marks the story failed, persists the PRD, and surfaces the reason", async () => {

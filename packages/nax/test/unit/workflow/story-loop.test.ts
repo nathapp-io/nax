@@ -379,6 +379,31 @@ describe("runStoryLoop", () => {
     expect(reReviewBases).toEqual(["h1", "h2"]);
   });
 
+  test("fixBase: a skipped re-review keeps it, so the next re-review covers both rounds' fixes", async () => {
+    const h = harness({ review: [failing()] });
+    const headCalls: string[] = [];
+    const reReviewBases: string[] = [];
+    const originalHead = h.env.steps.head;
+    const originalReReview = h.env.steps.reReview;
+    h.env.steps.head = async () => {
+      const value = await originalHead();
+      headCalls.push(value);
+      return value;
+    };
+    let n = 0;
+    h.env.steps.reReview = async (round, findings, fixBase) => {
+      reReviewBases.push(fixBase);
+      n++;
+      if (n === 1) return { ran: false, why: "timeout" };
+      return originalReReview(round, findings, fixBase);
+    };
+    const out = await runStoryLoop(h.env);
+    expect(out).toMatchObject({ state: "complete", rounds: 2 });
+    // round 1 takes h1; its re-review is skipped, so round 2 keeps h1 rather than taking h2
+    expect(headCalls).toEqual(["h1"]);
+    expect(reReviewBases).toEqual(["h1", "h1"]);
+  });
+
   test("new breakage from a re-review joins the open list with a fresh id", async () => {
     const h = harness({ review: [failing()] });
     let n = 0;

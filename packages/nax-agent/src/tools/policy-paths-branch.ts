@@ -69,7 +69,10 @@ export interface PathsBranchContext {
 function entersGitMetadata(root: string, resolved: string): boolean {
   const rel = relative(realOrRaw(root), resolved);
   if (rel === "" || rel.startsWith("..")) return false;
-  return rel.split(sep).includes(".git");
+  // Case-folded: on a case-insensitive filesystem (macOS, Windows defaults) `.GIT/config` IS
+  // `.git/config`, and the canonical path keeps the caller's spelling. Over-refusing a genuinely
+  // distinct `.GIT` on a case-sensitive filesystem is the direction this ban should fail in.
+  return rel.split(sep).some((segment) => segment.toLowerCase() === ".git");
 }
 
 /**
