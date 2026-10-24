@@ -764,7 +764,7 @@ The regression gate runs the full test suite. Its budget is `execution.regressio
 |:----|:--------|:------------|
 | `enabled` | `true` | Master switch for the regression gate |
 | `timeoutSeconds` | `600` | Per-run budget for the full suite, 10–3600 |
-| `acceptOnTimeout` | `true` | A gate timeout is reported as `passed-on-timeout` rather than a failure |
+| `acceptOnTimeout` | `true` | A gate timeout is reported as `passed-on-timeout` rather than a failure. Pipeline mode only: in workflow mode a timed-out suite is always a red gate |
 | `mode` | `"deferred"` | `deferred`, `per-story` or `disabled`. Applies to pipeline mode; workflow mode does not use it |
 
 The same budget is the hard timeout for a suite-running command the agent runs itself (its `RunCommand` tool, for example a full test run). The agent is therefore never held to a shorter limit than the gate that judges its work (nax#2536). See [Regression gate](regression-gate.md).
