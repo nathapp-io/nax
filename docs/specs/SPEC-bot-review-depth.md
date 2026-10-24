@@ -21,7 +21,7 @@ Verified on `main` @ `ecea2c0b4`:
 - **#2682.** On PR #2680 (27 files, 2 HIGH + 6 MEDIUM fixes), `nax bot review` approved twice with 0 findings,
   each run in one agent turn of about 22 s and three shell calls (`git diff --stat`, `git diff -- packages/*/src`,
   one grep). An independent review found two verified mediums: a third caller of `loadConfigForWorkdir` in
-  `parallel-batch-phases.ts:129` still reloaded without the pin, and the bounded hook drain lost all output on the
+  `src/execution/parallel-batch-phases.ts:129` (at the PR head `bf181cd`) still reloaded without the pin, and the bounded hook drain lost all output on the
   deadline. Both sit just outside the diff.
 - **The cause is the review split, not only wording.** On a nax-built PR, the story review reads and runs each
   story's tests, and the branch review checks "callers and callees agree" and reachability. The bot review then
@@ -56,12 +56,14 @@ Verified on `main` @ `ecea2c0b4`:
    `deps.createRuntime(config, repoRoot, { featureName: \`bot-pr-${ref.number}\` })`; `fixCheckout` does the same.
    In `createRuntime`, the branch that falls back to the no-op auditor logs one warning when
    `config.agent?.promptAudit?.enabled` is true and neither `opts.featureName` nor `opts.promptAuditor` is set:
-   `getSafeLogger()?.warn("runtime", "Prompt audit is enabled but no feature name was given; prompts will not be audited", { workdir })`.
+   `_runtimeLoggerDeps.getSafeLogger()?.warn("runtime", "Prompt audit is enabled but no feature name was given; prompts will not be audited", { workdir })`.
+   `_runtimeLoggerDeps` is a new exported seam in `src/runtime/index.ts`, `export const _runtimeLoggerDeps = { getSafeLogger }`,
+   following `_packagesDeps` in `src/runtime/packages.ts`; tests replace its `getSafeLogger` instead of mocking the module.
    It is one call per `createRuntime` call. No other behaviour of `createRuntime` changes.
 2. **"Beyond the diff" section (#2682 A).** A new exported constant `WORKFLOW_BEYOND_DIFF_SECTION` in
    `src/prompts/builders/workflow-quality-checklist.ts`, re-exported from `src/prompts/index.ts`. It lives in the
    shared checklist module so the two review engines draw review text from one place; only the bot prompt embeds
-   it in this spec. Its exact text:
+   it in this spec, and the module's header comment gains one sentence saying so. Its exact text:
 
    ```
    ## Beyond the diff
@@ -136,6 +138,7 @@ Symbols this spec changes. The baseline only locates the code; it is never the i
 - `fixCheckout` in `src/bot/fix-run.ts`
   - Baseline: `const runtime = deps.createRuntime(config, repoRoot);`
   - Target: `const runtime = deps.createRuntime(config, repoRoot, { featureName: \`bot-pr-${ref.number}\` });`
+- `src/runtime/index.ts` gains `export const _runtimeLoggerDeps = { getSafeLogger }` (new; `getSafeLogger` is imported from `../logger`, which the file already imports).
 - `createRuntime` in `src/runtime/index.ts`
   - Baseline: the `else` branch assigns `createNoOpPromptAuditor()` with no log.
   - Target: the same assignment, plus the warning in Approach 1 when `auditEnabled` is true (that branch is reached
@@ -156,7 +159,7 @@ Symbols this spec changes. The baseline only locates the code; it is never the i
 | Failure | Behaviour |
 |---|---|
 | Prompt audit enabled, `createRuntime` given neither `featureName` nor `promptAuditor` | No-op auditor as today, plus the one `warn` from Approach 1; the runtime is still returned |
-| No logger initialised when that warning fires | `getSafeLogger()` returns `null`; nothing is logged and `createRuntime` does not throw |
+| `_runtimeLoggerDeps.getSafeLogger()` returns `null` when that warning fires | nothing is logged and `createRuntime` does not throw |
 | The reviewer still skips a changed test file after the coverage retry | Verdict kept as today; the file is in `unreadFiles`, which the review summary already lists as not read |
 
 ## Out of Scope
@@ -176,8 +179,9 @@ Symbols this spec changes. The baseline only locates the code; it is never the i
 
 ## Stories
 
-Three stories in `packages/nax`, no dependencies between them. US-001 is #2683; US-002 and US-003 are #2682 (prompt,
-then the coverage rule that enforces part of it in code).
+Four stories in `packages/nax`. US-001 is #2683. US-002 to US-004 are #2682: the two new prompt sections, the
+green-CI wording and approval line that refer to them, and the coverage rule that enforces the test reading in code.
+The prompt work is two stories only because its acceptance criteria exceed the per-story cap as one.
 
 ### US-001: Bot runs write a prompt audit
 No dependencies. Workdir: packages/nax.
@@ -188,10 +192,16 @@ No dependencies. Workdir: packages/nax.
 ### US-002: Bot review prompt reaches beyond the diff and into the tests
 No dependencies. Workdir: packages/nax.
 
-Adds `WORKFLOW_BEYOND_DIFF_SECTION` to the shared checklist module and the barrel, adds the Tests section, the
-green-CI wording and the approval line to the bot prompt, all omitted from conversation-only prompts.
+Adds `WORKFLOW_BEYOND_DIFF_SECTION` to the shared checklist module and the barrel, and embeds it and the Tests
+section in the bot prompt; conversation-only prompts get neither.
 
-### US-003: Bot review coverage requires the changed test files
+### US-003: Green-CI wording and the approval line in the bot prompt
+Depends on US-002. Workdir: packages/nax.
+
+Rewords the green CI verdict in `ciSection` (Design Approach 5) and adds the approval line to `## Your task`
+(Design Approach 6); both name the sections US-002 adds, and conversation-only prompts keep their task text.
+
+### US-004: Bot review coverage requires the changed test files
 No dependencies. Workdir: packages/nax.
 
 Adds the `keepTests` option to `reviewRequiredFiles` and passes it from `runPrReview`.
@@ -209,56 +219,59 @@ Adds the `keepTests` option to `reviewRequiredFiles` and passes it from `runPrRe
 - `packages/nax/src/prompts/builders/bot-pr-review-builder.ts` — `projectSections`, `ciSection`, `REPLY_TASK`, `buildBotPrReviewPrompt`
 - `packages/nax/src/prompts/builders/workflow-quality-checklist.ts` — shared checklist constants
 - `packages/nax/src/prompts/index.ts` — barrel exporting the checklist constants
-- `packages/nax/src/bot/review-step.ts` — `runPrReview`, which builds the prompt and calls the op
-- `packages/nax/test/unit/prompts/bot-pr-review-builder.test.ts` — existing prompt cases and the `base` fixture
+- `packages/nax/src/bot/review-step.ts` — `runPrReview`, which builds the prompt and calls the op; its test file `test/unit/bot/review-step.test.ts` takes the `runPrReview` test
+- `packages/nax/test/unit/prompts/bot-pr-review-builder.test.ts` — existing prompt cases and the `base` fixture; the new prompt tests go here
 
 **US-003**
+- `packages/nax/src/prompts/builders/bot-pr-review-builder.ts` — `ciSection`, `REPLY_TASK`, `projectSections`, as changed by US-002
+- `packages/nax/test/unit/prompts/bot-pr-review-builder.test.ts` — the two tests in Modifies; the new tests go here
+
+**US-004**
 - `packages/nax/src/workflow/review-coverage.ts` — `reviewRequiredFiles`, `isNonSource`
 - `packages/nax/src/bot/review-step.ts` — `runPrReview`, `_reviewStepDeps`
 - `packages/nax/src/workflow/branch-review.ts` — the branch review's `reviewRequiredFiles` call, which must not change
-- `packages/nax/test/unit/workflow/review-coverage.test.ts` — existing classification cases
-- `packages/nax/test/unit/bot/review-step.test.ts` — existing `runPrReview` coverage cases
+- `packages/nax/test/unit/workflow/review-coverage.test.ts` — existing classification cases; the new `keepTests` tests go here
+- `packages/nax/test/unit/bot/review-step.test.ts` — existing `runPrReview` coverage cases; the new `runPrReview` tests go here
 
 ### Creates
 
 **US-001**
-- `packages/nax/test/unit/bot/bot-prompt-audit.test.ts`
-- `packages/nax/test/unit/runtime/prompt-audit-warn.test.ts`
+- `packages/nax/test/integration/bot/review-run-prompt-audit.test.ts`
+- `packages/nax/test/integration/bot/fix-run-prompt-audit.test.ts`
+- `packages/nax/test/unit/runtime/runtime-prompt-audit.test.ts`
 
-**US-002**
-- `packages/nax/test/unit/prompts/bot-pr-review-depth.test.ts`
-
-**US-003**
-- `packages/nax/test/unit/workflow/review-coverage-keep-tests.test.ts`
+US-002 to US-004 add their tests to the existing test file of the module they change (`.nax/rules/test-architecture.md`); `review-run.test.ts` (731 lines) and `runtime.test.ts` (648 lines) are near the split size, so US-001 uses `<module>-<concern>` files.
 
 ### Modifies
 
 US-001 changes no existing test: createRuntime keeps returning the same runtime, the bot deps helpers stub createRuntime with a function that ignores its arguments, and no existing test asserts the arguments the bot passes to createRuntime or that no warning is logged.
 
-**US-002**
+**US-003**
 - `packages/nax/test/unit/prompts/bot-pr-review-builder.test.ts` — two tests change. (1) "US-014 AC-9 preserves checklist items 1-5 and the entire task/JSON contract verbatim" builds the non-conversation `base` prompt and pins the whole `## Your task` slice; the expected slice gains the line `Before you answer "approved", read every changed test file and search outside the diff as "Beyond the diff" asks; name any step you skipped in cannotVerify.` directly after the line `Review whether the code fulfills the stated intent and assess its quality. List every file you inspected in inspectedFiles.`. Every other line of the slice, and the checklist items 1-5 assertion, stay unchanged. (2) "green CI claims only what CI reported, and lets the check names decide coverage" expects `only those that ran and passed are verified: do not list them in "cannotVerify"`; that expectation becomes `treat those that ran and passed as proof that the existing suite passes: do not list them in "cannotVerify"`. The test's other expectations (the heading line, the fenced detail, no "full checks already passed") stay unchanged.
 
-**US-003**
+**US-004**
 - `packages/nax/test/unit/bot/review-step.test.ts` — "US-015 AC-6/9 classifies changed paths and reports unread files" (both `staticMode` values) expects requiredFiles and unreadFiles to be the two paths pkg/main.go and settings.json, with the test file pkg/main_test.go dropped; the bot review now keeps test files, so both become the three paths pkg/main.go, pkg/main_test.go and settings.json, in that order. README.md stays dropped, and the `repoRoot` and `range` expectations are unchanged.
 
 ### Seams
 
-None across stories: each story's new symbol is consumed in the same story (`WORKFLOW_BEYOND_DIFF_SECTION` by the bot
-prompt builder in US-002, `keepTests` by `runPrReview` in US-003). US-002 and US-003 each pin their wiring at
-`runPrReview`; US-001 pins it at `runBotReview` and `runBotFix`.
+- US-002 → US-003: the green-CI sentence and the approval line (US-003) name the "Tests" and "Beyond the diff"
+  sections that US-002 adds; US-003 changes the same builder file after US-002.
+- Each story's new symbol is consumed in the same story (`WORKFLOW_BEYOND_DIFF_SECTION` by the bot prompt builder
+  in US-002, `keepTests` by `runPrReview` in US-004). US-002 and US-004 pin their wiring at `runPrReview`; US-001
+  pins it at `runBotReview` and `runBotFix`.
 
 ## Acceptance Criteria
 
 ### US-001
 
-1. [integration] `runBotReview` on PR number 42, driven with the bot review deps helper and a `_botReviewDeps.createRuntime` mock, calls `createRuntime` with a third argument equal to `{ featureName: "bot-pr-42" }`.
-2. [integration] `runBotFix` on PR number 42, driven with the bot fix deps helper and a `_botFixDeps.createRuntime` mock, calls `createRuntime` with a third argument equal to `{ featureName: "bot-pr-42" }`.
-3. [unit] `createRuntime` with `agent.promptAudit.enabled` true and no options logs exactly one `warn` with stage `"runtime"` and message `"Prompt audit is enabled but no feature name was given; prompts will not be audited"`.
+1. [integration] `runBotReview`, driven with the bot review deps helper (`test/helpers/bot-review.ts`, PR number 7) and `_botReviewDeps.createRuntime` replaced by a mock returning the helper's runtime, calls `createRuntime` with a third argument equal to `{ featureName: "bot-pr-7" }`.
+2. [integration] `runBotFix`, driven with the bot fix deps helper (`test/helpers/bot-fix.ts`, PR number 42) and `_botFixDeps.createRuntime` replaced by a mock returning the helper's runtime, calls `createRuntime` with a third argument equal to `{ featureName: "bot-pr-42" }`.
+3. [unit] `createRuntime` with `agent.promptAudit.enabled` true and no options, with `_runtimeLoggerDeps.getSafeLogger` returning a test logger, logs exactly one `warn` on it with stage `"runtime"` and message `"Prompt audit is enabled but no feature name was given; prompts will not be audited"`.
 4. [unit] The warning logged by `createRuntime` with `agent.promptAudit.enabled` true and no options carries `{ workdir }` as its data, where `workdir` is the second argument given to `createRuntime`.
 5. [unit] `createRuntime` with `agent.promptAudit.enabled` true and `{ featureName: "bot-pr-42" }` logs no warning with that message.
 6. [unit] `createRuntime` with `agent.promptAudit.enabled` true, a supplied `promptAuditor` and no `featureName` logs no warning with that message.
 7. [unit] `createRuntime` with `agent.promptAudit.enabled` false and no options logs no warning with that message.
-8. [unit] `createRuntime` with `agent.promptAudit.enabled` true and no options, when `getSafeLogger()` returns `null`, returns a runtime whose `promptAuditor` is the no-op auditor and does not throw.
+8. [unit] `createRuntime` with `agent.promptAudit.enabled` true and no options, with `_runtimeLoggerDeps.getSafeLogger` returning `null`, returns a runtime whose `promptAuditor` is the no-op auditor and does not throw.
 
 ### US-002
 
@@ -268,21 +281,24 @@ prompt builder in US-002, `keepTests` by `runPrReview` in US-003). US-002 and US
 4. [unit] `buildBotPrReviewPrompt` with `staticMode` false and `conversationOnly` unset returns a prompt containing the non-static Tests section text from Design Approach 3, after `WORKFLOW_BEYOND_DIFF_SECTION` and before `## Untrusted content`.
 5. [unit] `buildBotPrReviewPrompt` with `staticMode` true and `conversationOnly` unset returns a prompt whose `## Tests` section contains the "Name the test that covers it" bullet and the closing sentence `A changed behaviour with no test that would fail without the change is a finding.`, and omits the `Run that test file` bullet.
 6. [unit] `buildBotPrReviewPrompt` with `conversationOnly` true returns a prompt containing neither `## Beyond the diff` nor `## Tests`, for `staticMode` false and for `staticMode` true.
-7. [unit] `buildBotPrReviewPrompt` with `ci` `{ outcome: "green", detail }` and `conversationOnly` unset returns a prompt containing the green verdict from Design Approach 5 followed by ` The Tests and Beyond the diff sections still apply.`.
-8. [unit] `buildBotPrReviewPrompt` with `ci` `{ outcome: "green", detail }` returns a prompt that omits the old sentence `only those that ran and passed are verified`.
-9. [unit] `buildBotPrReviewPrompt` with `ci` `{ outcome: "green", detail }` and `conversationOnly` true returns a prompt containing `CI does not show that the new or changed tests would fail without the change, or that every affected site was fixed.` and not containing `The Tests and Beyond the diff sections still apply.`.
-10. [unit] `buildBotPrReviewPrompt` with `conversationOnly` unset returns a `## Your task` section whose second line is `Before you answer "approved", read every changed test file and search outside the diff as "Beyond the diff" asks; name any step you skipped in cannotVerify.`.
-11. [unit] `buildBotPrReviewPrompt` with `conversationOnly` true returns a `## Your task` section without the `Before you answer "approved"` line, identical to the task text before this change.
-12. [unit] `buildWorkflowBranchReviewPrompt` with any valid input returns a prompt that contains neither `WORKFLOW_BEYOND_DIFF_SECTION` nor `## Tests`.
-13. [integration] `runPrReview` with `conversationOnly` unset and `_workflowDeps.callOp` scripted to return a valid verdict sends the op an input whose `prompt` contains `## Beyond the diff` and `## Tests`.
+7. [unit] `buildWorkflowBranchReviewPrompt` with any valid input returns a prompt that contains neither `WORKFLOW_BEYOND_DIFF_SECTION` nor `## Tests`.
+8. [unit] `runPrReview` with `conversationOnly` unset and `_workflowDeps.callOp` scripted to return a valid verdict sends the op an input whose `prompt` contains `## Beyond the diff` and `## Tests`.
 
 ### US-003
+
+1. [unit] `buildBotPrReviewPrompt` with `ci` `{ outcome: "green", detail }` and `conversationOnly` unset returns a prompt containing the green verdict from Design Approach 5 followed by ` The Tests and Beyond the diff sections still apply.`.
+2. [unit] `buildBotPrReviewPrompt` with `ci` `{ outcome: "green", detail }` returns a prompt that omits the old sentence `only those that ran and passed are verified`.
+3. [unit] `buildBotPrReviewPrompt` with `ci` `{ outcome: "green", detail }` and `conversationOnly` true returns a prompt containing `CI does not show that the new or changed tests would fail without the change, or that every affected site was fixed.` and not containing `The Tests and Beyond the diff sections still apply.`.
+4. [unit] `buildBotPrReviewPrompt` with `conversationOnly` unset returns a `## Your task` section in which the line directly after `Review whether the code fulfills the stated intent and assess its quality. List every file you inspected in inspectedFiles.` is `Before you answer "approved", read every changed test file and search outside the diff as "Beyond the diff" asks; name any step you skipped in cannotVerify.`.
+5. [unit] `buildBotPrReviewPrompt` with `conversationOnly` true returns a `## Your task` section without the `Before you answer "approved"` line, identical to the task text before this change.
+
+### US-004
 
 1. [unit] `reviewRequiredFiles(["pkg/main.go", "pkg/main_test.go"], fc, { keepTests: true })`, where the package `pkg` resolves test patterns matching `_test.go`, returns `["pkg/main.go", "pkg/main_test.go"]`.
 2. [unit] `reviewRequiredFiles(["README.md", "bun.lock", "logo.png", "src/a.ts"], fc, { keepTests: true })` returns `["src/a.ts"]`.
 3. [unit] `reviewRequiredFiles` with `{ keepTests: true }` never calls `_workflowDeps.resolveTestPatterns`.
 4. [unit] `reviewRequiredFiles(["pkg/main.go", "pkg/main_test.go"], fc)` with no options, where `pkg` resolves test patterns matching `_test.go`, returns `["pkg/main.go"]`.
 5. [unit] `reviewRequiredFiles(["pkg/main.go", "pkg/main_test.go"], fc, { keepTests: false })`, where `pkg` resolves test patterns matching `_test.go`, returns `["pkg/main.go"]`.
-6. [integration] `runPrReview` with `staticMode` false, a review package listing `pkg/main.go`, `pkg/main_test.go`, `README.md` and `settings.json`, and test patterns matching `_test.go`, calls the op with `requiredFiles` equal to `["pkg/main.go", "pkg/main_test.go", "settings.json"]`.
-7. [integration] `runPrReview` with `staticMode` true, a review package listing `pkg/main.go`, `pkg/main_test.go`, `README.md` and `settings.json`, and test patterns matching `_test.go`, calls the op with `requiredFiles` equal to `["pkg/main.go", "pkg/main_test.go", "settings.json"]`.
-8. [integration] `runPrReview` with a review package listing `pkg/main.go`, `pkg/main_test.go`, `README.md` and `settings.json`, test patterns matching `_test.go`, and a verdict whose `inspectedFiles` names `pkg/main.go` and `settings.json` but not `pkg/main_test.go` returns `unreadFiles` equal to `["pkg/main_test.go"]`.
+6. [unit] `runPrReview` with `staticMode` false, a review package listing `pkg/main.go`, `pkg/main_test.go`, `README.md` and `settings.json`, and test patterns matching `_test.go`, calls the op with `requiredFiles` equal to `["pkg/main.go", "pkg/main_test.go", "settings.json"]`.
+7. [unit] `runPrReview` with `staticMode` true, a review package listing `pkg/main.go`, `pkg/main_test.go`, `README.md` and `settings.json`, and test patterns matching `_test.go`, calls the op with `requiredFiles` equal to `["pkg/main.go", "pkg/main_test.go", "settings.json"]`.
+8. [unit] `runPrReview` with a review package listing `pkg/main.go`, `pkg/main_test.go`, `README.md` and `settings.json`, test patterns matching `_test.go`, and a verdict whose `inspectedFiles` names `pkg/main.go` and `settings.json` but not `pkg/main_test.go` returns `unreadFiles` equal to `["pkg/main_test.go"]`.
