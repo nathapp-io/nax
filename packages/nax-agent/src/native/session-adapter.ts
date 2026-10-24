@@ -316,6 +316,12 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
               messages: [...span, { role: "user", content: summaryPrompt(previousSummary) }],
               sessionId,
               signal,
+              // A summary restates the transcript; it does not need reasoning.
+              // "off", not an absent level: absent means the backend default,
+              // which on a model that cannot disable thinking is adaptive at
+              // effort high (#2686). The client clamps "off" to the least
+              // thinking such a model allows.
+              thinking: "off",
             });
             const summaryUsage = res.usage;
             const { costUsd, resolvedRates } = priceCall(summaryUsage, rates);
