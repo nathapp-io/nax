@@ -715,7 +715,8 @@
         "phase": "closed",
         "reason": "1 ruling(s)",
         "rulings": 1,
-        "state": "complete-with-rulings"
+        "state": "complete-with-rulings",
+        "unreviewed": false
       }
     },
     {

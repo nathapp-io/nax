@@ -29,10 +29,8 @@ import type {
   ImplementerReply,
   ReReviewVerdict,
   StoryReviewVerdict,
-  WorkflowEndState,
   WorkflowFinding,
   WorkflowFindingDraft,
-  WorkflowRuling,
 } from "./types";
 
 export const WARM_ROUND_CAP = 3;
@@ -308,23 +306,22 @@ function redGateNames(s: LoopState): GateName[] {
 async function closeLoop(
   env: StoryLoopEnv,
   s: LoopState,
-  state: WorkflowEndState,
-  reason: string,
-  rulings: readonly WorkflowRuling[],
+  { state, reason, rulings, unreviewed }: Omit<StoryLoopOutcome, "rounds">,
 ): Promise<StoryLoopOutcome> {
   await env.sink.update({
     state,
     reason,
+    unreviewed,
     phase: "closed",
     rulings: rulings.length,
     flagged: rulings.filter(isFlaggedRuling).length,
     endedAt: new Date().toISOString(),
   });
   await env.sink.ledger(
-    ledgerText.end(state, `${s.round} round(s), ${reason}${s.unreviewed ? ", unreviewed" : ""}`),
+    ledgerText.end(state, `${s.round} round(s), ${reason}${unreviewed ? ", unreviewed" : ""}`),
     NO_MIRROR, // the stage logs "Story closed" with the same state and reason
   );
-  return { state, reason, rounds: s.round, rulings, unreviewed: s.unreviewed };
+  return { state, reason, rounds: s.round, rulings, unreviewed };
 }
 
 /**
@@ -450,6 +447,7 @@ export async function closeStep(env: StoryLoopEnv, state: StoryLoopState): Promi
   const end =
     state.closeAs ??
     deriveEndState({ costStop: s.costStop, gates: s.gates, suite: s.suite, rulings: state.rulings.length });
-  const outcome = await closeLoop(env, s, end.state, end.reason, state.rulings);
+  const unreviewed = s.unreviewed || !s.reviewed;
+  const outcome = await closeLoop(env, s, { ...end, rulings: state.rulings, unreviewed });
   return { patch: { outcome } };
 }

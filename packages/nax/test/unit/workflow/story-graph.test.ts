@@ -263,7 +263,7 @@ describe("closeStep", () => {
       reason: "no work produced",
       rounds: 0,
       rulings: [],
-      unreviewed: false,
+      unreviewed: true,
     });
     expect(h.updates).toHaveLength(1);
     expect(h.updates[0]).toMatchObject({ state: "complete-gate-open", reason: "no work produced", phase: "closed" });

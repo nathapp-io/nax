@@ -335,7 +335,8 @@
         "phase": "closed",
         "reason": "clean",
         "rulings": 0,
-        "state": "complete"
+        "state": "complete",
+        "unreviewed": false
       }
     },
     {
