@@ -1,6 +1,7 @@
 /**
  * The shared code-quality checklist both workflow reviewers judge a change against
  * (SPEC-workflow-review-depth § Approach 1, nax#2622).
+ * The shared Beyond the diff section is currently embedded only by the bot review.
  *
  * Text, not a builder: the story review and the branch review embed it verbatim, so one
  * edit here changes the remit of both and the two can never drift apart. The nine
@@ -27,6 +28,13 @@ A state loss a caller can reach is a critical or important finding, never minor;
  */
 export const WORKFLOW_ENUMERATION_INSTRUCTION =
   "Before you give the quality verdict, walk every function or method the diff adds or changes and judge it against the checklist.";
+
+export const WORKFLOW_BEYOND_DIFF_SECTION: string = `## Beyond the diff
+A change is correct only if the code it did not touch still agrees with it. For every function, type, config key or contract the diff changes, and for every defect the PR description says it fixes:
+- Search the repository for the other callers of each changed or wrapped function, and for other sites with the same pattern, including files the diff does not touch. A fix applied at some sites but not at others is a finding: quote the missed site.
+- Check that callers and callees still agree, and that every new piece is reachable from where it is meant to be used.
+- If the repository already solves the same problem elsewhere, for example in a helper or a sibling module the PR also changes, compare the new code with that solution and report where it is weaker.
+- List the files you opened outside the diff in inspectedFiles.`;
 
 /** Shared design remit for branch and bot reviews; edited designs are not settled authority. */
 export const WORKFLOW_DESIGN_DECISIONS_ITEM =

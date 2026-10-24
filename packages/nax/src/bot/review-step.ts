@@ -97,7 +97,7 @@ export async function runPrReview(ctx: PrStepContext, input: PrReviewInput): Pro
     async () => {
       if (input.conversationOnly) return;
       const paths = await writePackage(ctx, rangeBase, packagePath, input.staticMode);
-      requiredFiles = await reviewRequiredFiles(paths, ctx);
+      requiredFiles = await reviewRequiredFiles(paths, ctx, { keepTests: true });
     },
     (signal) =>
       _workflowDeps.callOp(

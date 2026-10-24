@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeMockCallContext, makeNaxConfig, makeScriptedCallOp } from "@test/helpers";
 import { _reviewStepDeps, type PrReviewInput, runPrReview } from "@/bot/review-step";
 import { resolveWorkflowConfig } from "@/config";
+import type { PrReviewVerdict } from "@/operations";
 import type { PrStepContext } from "@/workflow/branch-step-context";
 import { _workflowDeps } from "@/workflow/step-context";
 
@@ -68,6 +69,12 @@ afterEach(() => {
 });
 
 describe("runPrReview", () => {
+  test.each([false, true])("review depth AC-8 forwards new sections to the op (static=%s)", async (staticMode) => {
+    const result = await runPrReview(ctx, { ...input, staticMode });
+    expect(result).toMatchObject({ ran: true, verdict: { quality: "approved" } });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ prompt: expect.stringMatching(/## Beyond the diff[\s\S]*## Tests/) });
+  });
   test("settled AC-15 forwards rulings into the operation prompt", async () => {
     await runPrReview(ctx, {
       ...input,
@@ -104,11 +111,45 @@ describe("runPrReview", () => {
         { ...input, rangeBase: "reviewed", staticMode },
       );
       expect(calls[0]).toMatchObject({
-        requiredFiles: ["pkg/main.go", "settings.json"],
+        requiredFiles: ["pkg/main.go", "pkg/main_test.go", "settings.json"],
         repoRoot: "/checkout",
         range: "reviewed..HEAD",
       });
-      expect(result).toMatchObject({ ran: true, unreadFiles: ["pkg/main.go", "settings.json"] });
+      expect(result).toMatchObject({ ran: true, unreadFiles: ["pkg/main.go", "pkg/main_test.go", "settings.json"] });
+    },
+  );
+  test.each([false, true])(
+    "US-004 AC-8/9 reports an unread test but retains the exhausted approved verdict, static=%s",
+    async (staticMode) => {
+      _reviewStepDeps.writeBranchReviewPackage = async () => [
+        "pkg/main.go",
+        "pkg/main_test.go",
+        "README.md",
+        "settings.json",
+      ];
+      _workflowDeps.resolveTestPatterns = async () => ({
+        regex: [/_test\.go$/],
+        globs: [],
+        testDirs: [],
+        pathspec: [],
+        resolution: "per-package",
+      });
+      // The op owns retry exhaustion; this is its final usable result, not a new retry in runPrReview.
+      const verdict = {
+        intent: "pass",
+        quality: "approved",
+        findings: [],
+        threads: [],
+        comments: [],
+        cannotVerify: [],
+        inspectedFiles: ["pkg/main.go", "settings.json"],
+      } satisfies PrReviewVerdict;
+      _workflowDeps.callOp = makeScriptedCallOp(() => verdict);
+      const result = await runPrReview({ ...ctx, packageDirs: ["pkg"] }, { ...input, staticMode });
+      expect(result).toMatchObject({ ran: true, unreadFiles: ["pkg/main_test.go"] });
+      if (!result.ran) throw new Error("Expected a usable review verdict");
+      expect(result.verdict).toBe(verdict);
+      expect(result.verdict.quality).toBe("approved");
     },
   );
   test("US-015 AC-9 reports only required paths not inspected", async () => {

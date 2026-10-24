@@ -5,7 +5,8 @@
  * The branch package no longer inlines a diff, so the reviewer is told exactly which files to pull
  * with `git diff <range> -- <path>`. This trims the list to files whose contents are worth reading:
  * test files (classified per owning package through the ADR-009 resolver SSOT) and documentation /
- * non-source files are dropped. Everything else stays — configuration, JSON, YAML and i18n message
+ * non-source files are dropped by default. Bot reviews opt into keeping tests without resolving test
+ * patterns. Everything else stays — configuration, JSON, YAML and i18n message
  * files are cheap to diff and a wrong value in them is a real defect.
  *
  * Lives under `src/workflow` beside the branch op that uses it, and is consumed by
@@ -71,7 +72,9 @@ function unresolvedPackage(packageDir: string | undefined): string {
 export async function reviewRequiredFiles(
   paths: readonly string[],
   fc: Pick<FeatureContext, "config" | "projectDir" | "packageDirs">,
+  options?: { readonly keepTests?: boolean },
 ): Promise<string[]> {
+  if (options?.keepTests) return paths.filter((path) => !isNonSource(path));
   const byPackage = new Map<string | undefined, readonly RegExp[]>();
 
   // Resolve once per package dir, not once per file (ADR-009 §2.8). A resolution failure widens the

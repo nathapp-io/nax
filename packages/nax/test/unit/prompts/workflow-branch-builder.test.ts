@@ -5,6 +5,7 @@ import {
   buildWorkflowBranchFixPrompt,
   buildWorkflowBranchReReviewPrompt,
   buildWorkflowBranchReviewPrompt,
+  WORKFLOW_BEYOND_DIFF_SECTION,
   WORKFLOW_DESIGN_DECISIONS_ITEM,
   WORKFLOW_ENUMERATION_INSTRUCTION,
   WORKFLOW_QUALITY_CHECKLIST,
@@ -35,6 +36,12 @@ describe("buildWorkflowBranchReviewPrompt", () => {
     const remit = prompt.slice(prompt.indexOf("## Your remit"), prompt.indexOf(WORKFLOW_QUALITY_CHECKLIST));
     expect(remit).toContain(`\n- ${WORKFLOW_DESIGN_DECISIONS_ITEM}\n`);
     expect(remit).not.toContain("If project decisions are listed below");
+  });
+
+  test("review depth AC-7 excludes bot-only beyond-diff and Tests sections", () => {
+    expect(prompt).not.toContain(WORKFLOW_BEYOND_DIFF_SECTION);
+    expect(prompt).not.toContain("## Beyond the diff");
+    expect(prompt).not.toContain("## Tests");
   });
 
   test("names every input file", () => {

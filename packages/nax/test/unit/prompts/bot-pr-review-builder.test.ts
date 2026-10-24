@@ -27,6 +27,34 @@ const thread = {
 const intent = "Intent: the PR description and the linked issues below.";
 const staticLine = "You cannot run commands in this review: judge from the files alone.";
 
+const reviewIntentLine =
+  "Review whether the code fulfills the stated intent and assess its quality. List every file you inspected in inspectedFiles.";
+const approvalLine =
+  'Before you answer "approved", read every changed test file and search outside the diff as "Beyond the diff" asks; name any step you skipped in cannotVerify.';
+const greenCiVerdict =
+  'Every CI check reported on this exact head passed; a skipped check counts as passed. The checks are listed below. Where they include the project\'s build, lint or test suite, treat those that ran and passed as proof that the existing suite passes: do not list them in "cannotVerify". CI does not show that the new or changed tests would fail without the change, or that every affected site was fixed.';
+const greenCiReviewSuffix = " The Tests and Beyond the diff sections still apply.";
+const redCiVerdict = "CI is red on this exact head. A failing check you can tie to the change is a finding.";
+/** Everything in `## Your task` after the review sentence: unchanged by this story, pinned verbatim. */
+const taskContract = `Answer every listed thread id and comment id exactly once.
+"agree" = the request is right and the code should change; "disagree" = the request is wrong or not worth doing, with the reason; "handled" = the current code already does it.
+Answer every earlier finding id exactly once. "open" = the problem is still in the code; "fixed" = the current code no longer has it; "withdrawn" = the finding was wrong or not worth doing, for example after a reply showed why.
+Set "decision" on a finding only when it breaks a listed project decision. The "decision" field is optional.
+Reply with only one JSON object:
+{
+  "intent": "pass | fail | n/a",
+  "quality": "approved | changes",
+  "findings": [{ "kind": "spec|quality", "severity": "critical|important|minor", "issue": "...", "file": "src/a.ts", "line": 12, "suggestion": "...", "decision": "<decision id>" }],
+  "earlier": [{ "id": "<thread id>", "status": "open|fixed|withdrawn", "reason": "..." }],
+  "threads": [{ "id": "<thread id>", "decision": "agree|disagree|handled", "reason": "..." }],
+  "comments": [{ "id": "<comment id>", "decision": "agree|disagree|handled", "reason": "..." }],
+  "cannotVerify": ["..."],
+  "inspectedFiles": ["src/a.ts"]
+}`;
+/** The complete `## Your task` text before the approval line existed. */
+const preChangeTask = ["## Your task", reviewIntentLine, taskContract].join("\n");
+const taskWithApprovalLine = ["## Your task", reviewIntentLine, approvalLine, taskContract].join("\n");
+
 const settledEntry = {
   id: "_run:cv1",
   kind: "cannot-verify",
@@ -35,7 +63,53 @@ const settledEntry = {
   reason: "ran live calls",
 };
 
+const beyondDiff = `## Beyond the diff
+A change is correct only if the code it did not touch still agrees with it. For every function, type, config key or contract the diff changes, and for every defect the PR description says it fixes:
+- Search the repository for the other callers of each changed or wrapped function, and for other sites with the same pattern, including files the diff does not touch. A fix applied at some sites but not at others is a finding: quote the missed site.
+- Check that callers and callees still agree, and that every new piece is reachable from where it is meant to be used.
+- If the repository already solves the same problem elsewhere, for example in a helper or a sibling module the PR also changes, compare the new code with that solution and report where it is weaker.
+- List the files you opened outside the diff in inspectedFiles.`;
+const testReading = `## Tests
+Read the test changes, not only the source. For each behaviour the PR changes and each defect it says it fixes:
+- Name the test that covers it, and check that the test asserts the outcome the change promises (the returned value or the data kept), not only that the call returns or how long it took.`;
+const testRunning = `- Run that test file with the project's test command, scoped to the file. If you cannot run it, list it in cannotVerify as "not run: <test file>: <reason>".`;
+const testClosing = "A changed behaviour with no test that would fail without the change is a finding.";
+
 describe("buildBotPrReviewPrompt", () => {
+  test("review depth AC-1 exports exact shared beyond-diff text from the barrel", () => {
+    expect(typeof prompts.WORKFLOW_BEYOND_DIFF_SECTION).toBe("string");
+    expect(prompts.WORKFLOW_BEYOND_DIFF_SECTION).toBe(beyondDiff);
+  });
+  test.each([false, true])("review depth AC-2/3 includes beyond-diff after enumeration (static=%s)", (staticMode) => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, staticMode });
+    expect(result).toContain(beyondDiff);
+    expect(result.indexOf(beyondDiff)).toBeGreaterThan(result.indexOf(prompts.WORKFLOW_ENUMERATION_INSTRUCTION));
+    expect(result.indexOf(beyondDiff)).toBeLessThan(result.indexOf("## Untrusted content"));
+  });
+  test.each([false, true])("review depth AC-4/5 orders project sections (static=%s)", (staticMode) => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, staticMode, checks: ["project-check"] });
+    const tests = [testReading, ...(staticMode ? [] : [testRunning]), testClosing].join("\n");
+    expect(result).toContain(tests);
+    expect(result).toContain(beyondDiff);
+    if (staticMode) expect(result).not.toContain("Run that test file");
+    const sections = [
+      "## Checklist",
+      prompts.WORKFLOW_QUALITY_CHECKLIST,
+      prompts.WORKFLOW_ENUMERATION_INSTRUCTION,
+      beyondDiff,
+      tests,
+      "## Project checks",
+      "## Untrusted content",
+    ];
+    const positions = sections.map((section) => result.indexOf(section));
+    for (const position of positions) expect(position).toBeGreaterThanOrEqual(0);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  });
+  test.each([false, true])("review depth AC-6 excludes new sections in conversation-only (static=%s)", (staticMode) => {
+    const result = prompts.buildBotPrReviewPrompt({ ...base, staticMode, conversationOnly: true });
+    expect(result).not.toContain("## Beyond the diff");
+    expect(result).not.toContain("## Tests");
+  });
   test.each([
     [1, "## Settled rulings"],
     [2, "_run:cv1"],
@@ -136,23 +210,7 @@ describe("buildBotPrReviewPrompt", () => {
 3. Tests: are the changed behaviours tested, and would the tests fail if the change were reverted?
 4. Security: input validation, injection, secrets, authorization, and unsafe file or shell use.
 5. Project rules: the rules listed for the changed files.`);
-    expect(result.slice(result.lastIndexOf("## Your task"))).toBe(`## Your task
-Review whether the code fulfills the stated intent and assess its quality. List every file you inspected in inspectedFiles.
-Answer every listed thread id and comment id exactly once.
-"agree" = the request is right and the code should change; "disagree" = the request is wrong or not worth doing, with the reason; "handled" = the current code already does it.
-Answer every earlier finding id exactly once. "open" = the problem is still in the code; "fixed" = the current code no longer has it; "withdrawn" = the finding was wrong or not worth doing, for example after a reply showed why.
-Set "decision" on a finding only when it breaks a listed project decision. The "decision" field is optional.
-Reply with only one JSON object:
-{
-  "intent": "pass | fail | n/a",
-  "quality": "approved | changes",
-  "findings": [{ "kind": "spec|quality", "severity": "critical|important|minor", "issue": "...", "file": "src/a.ts", "line": 12, "suggestion": "...", "decision": "<decision id>" }],
-  "earlier": [{ "id": "<thread id>", "status": "open|fixed|withdrawn", "reason": "..." }],
-  "threads": [{ "id": "<thread id>", "decision": "agree|disagree|handled", "reason": "..." }],
-  "comments": [{ "id": "<comment id>", "decision": "agree|disagree|handled", "reason": "..." }],
-  "cannotVerify": ["..."],
-  "inspectedFiles": ["src/a.ts"]
-}`);
+    expect(result.slice(result.lastIndexOf("## Your task"))).toBe(taskWithApprovalLine);
   });
   test("US-013 AC-10 conversation-only limits findings to conversation pointers", () => {
     const result = prompts.buildBotPrReviewPrompt({ ...base, conversationOnly: true });
@@ -388,9 +446,57 @@ describe("buildBotPrReviewPrompt CI on this head (nax#2631)", () => {
     expect(prompt).toContain(
       "## CI on this head\nEvery CI check reported on this exact head passed; a skipped check counts as passed.",
     );
-    expect(prompt).toContain('only those that ran and passed are verified: do not list them in "cannotVerify"');
+    expect(prompt).toContain(
+      'treat those that ran and passed as proof that the existing suite passes: do not list them in "cannotVerify"',
+    );
     expect(prompt).toContain(detail);
     expect(prompt).not.toContain("full checks already passed");
+  });
+  test("US-003 AC-1: green CI names the existing suite and points at the still-applying sections", () => {
+    const detail = "CI checks: 2/2 passed, 0 pending; checks: build (pass), test (pass)";
+    const prompt = prompts.buildBotPrReviewPrompt({ ...base, ci: { outcome: "green", detail } });
+    expect(prompt).toContain(`## CI on this head\n${greenCiVerdict}${greenCiReviewSuffix}\n`);
+  });
+  test("US-003 AC-2: no prompt still claims only the checks that ran are verified", () => {
+    const detail = "CI checks: 2/2 passed, 0 pending";
+    const prompt = prompts.buildBotPrReviewPrompt({ ...base, ci: { outcome: "green", detail } });
+    expect(prompt).not.toContain("only those that ran and passed are verified");
+  });
+  test("US-003 AC-3: conversation-only green CI keeps the limits and drops the section pointer", () => {
+    const detail = "CI checks: 1/1 passed, 0 pending";
+    const prompt = prompts.buildBotPrReviewPrompt({
+      ...base,
+      conversationOnly: true,
+      ci: { outcome: "green", detail },
+    });
+    expect(prompt).toContain(
+      "CI does not show that the new or changed tests would fail without the change, or that every affected site was fixed.",
+    );
+    expect(prompt).not.toContain("The Tests and Beyond the diff sections still apply.");
+  });
+  test("US-003 AC-4: a code review asks for the reading and search steps before approving", () => {
+    const prompt = prompts.buildBotPrReviewPrompt(base);
+    const task = prompt.slice(prompt.lastIndexOf("## Your task"));
+    const lines = task.split("\n");
+    expect(lines[1]).toBe(reviewIntentLine);
+    expect(lines[2]).toBe(approvalLine);
+    expect(task).toBe(taskWithApprovalLine);
+  });
+  test("US-003 AC-5: a conversation-only task keeps the pre-change text byte for byte", () => {
+    const prompt = prompts.buildBotPrReviewPrompt({ ...base, conversationOnly: true });
+    const task = prompt.slice(prompt.lastIndexOf("## Your task"));
+    expect(task).not.toContain('Before you answer "approved"');
+    expect(task).toBe(preChangeTask);
+  });
+  test.each([false, true])("US-003 AC-6: red CI verdict is unchanged (conversationOnly=%s)", (conversationOnly) => {
+    const prompt = prompts.buildBotPrReviewPrompt({
+      ...base,
+      conversationOnly,
+      ci: { outcome: "failed", detail: "failing: lint" },
+    });
+    const section = prompt.slice(prompt.indexOf("## CI on this head"));
+    expect(section.split("\n").slice(0, 2)).toEqual(["## CI on this head", redCiVerdict]);
+    expect(redCiVerdict).toBe("CI is red on this exact head. A failing check you can tie to the change is a finding.");
   });
   test("red CI makes a failing check tied to the change a finding", () => {
     const prompt = prompts.buildBotPrReviewPrompt({ ...base, ci: { outcome: "failed", detail: "failing: lint" } });

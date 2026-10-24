@@ -412,7 +412,7 @@ async function reviewCheckout(input: BotReviewInput, prepared: PreparedReview): 
   const { repoRoot, ref, info, checkout, staticMode } = prepared;
   const loaded = await deps.loadBotConfig({ snapshotDir: checkout.snapshotDir, profiles: input.profiles });
   const config = reviewConfig(loaded, staticMode);
-  const runtime = deps.createRuntime(config, repoRoot);
+  const runtime = deps.createRuntime(config, repoRoot, { featureName: `bot-pr-${ref.number}` });
   const stateDir = botRunDir(runtime.outputDir, ref.number, runtime.runId);
   let log: BotLog | undefined;
   let context: Awaited<ReturnType<typeof buildPrStepContext>> | undefined;

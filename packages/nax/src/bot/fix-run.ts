@@ -354,7 +354,7 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
   const deps = _botFixDeps;
   const { repoRoot, ref, info, checkout } = prepared;
   const config = await deps.loadBotConfig({ snapshotDir: checkout.snapshotDir, profiles: input.profiles });
-  const runtime = deps.createRuntime(config, repoRoot);
+  const runtime = deps.createRuntime(config, repoRoot, { featureName: `bot-pr-${ref.number}` });
   const stateDir = botRunDir(runtime.outputDir, ref.number, runtime.runId);
   let log: BotLog | undefined;
   let context: Awaited<ReturnType<typeof deps.buildPrStepContext>> | undefined;
