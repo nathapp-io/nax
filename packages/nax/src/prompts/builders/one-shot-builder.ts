@@ -108,8 +108,9 @@ export class OneShotPromptBuilder {
       "When agent profiles are listed above, pick exactly ONE profile id per story and set it on the `agentProfileId` field. Apply these steps in order:",
       "1. Eliminate any profile whose weaknesses conflict with the story.",
       "2. Keep profiles whose strengths or affinity cover the story's main job (task type + primary domain).",
-      "3. If more than one remains, choose the LOWEST cost profile.",
-      "4. If none clearly fit, omit `agentProfileId` entirely — never invent a profile id.",
+      "3. If the story's complexity is `simple` or `medium`, also keep every profile step 1 did not eliminate whose Cost is lower than the Cost of every profile step 2 kept (low < medium < high), even when its affinity does not list the story's task type or domain. If step 2 kept none, keep the lowest-Cost profiles step 1 did not eliminate. Profiles whose Cost is — are ignored by this step, both as candidates and in the comparison.",
+      "4. If more than one remains, choose the LOWEST cost profile.",
+      "5. If none clearly fit, omit `agentProfileId` entirely — never invent a profile id.",
     ].join("\n");
   }
 

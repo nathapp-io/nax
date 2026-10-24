@@ -198,6 +198,32 @@ function enforceSpecStructure(prd: PRD, specContent: string, outputPath: string)
   );
 }
 
+/** Count finalized assignments only; unknown ids without a default remain unassigned. */
+function logAgentProfileAssignment(prd: PRD, args: PersistPrdArgs): void {
+  const routing = args.agentRouting;
+  if (routing?.enabled !== true || routing.profiles.length === 0) return;
+
+  const configured = new Set(routing.profiles.map((profile) => profile.id));
+  const counts = new Map<string, number>();
+  let storyCount = 0;
+  let unassigned = 0;
+  for (const story of prd.userStories) {
+    if (args.scope && !args.scope.has(story.id)) continue;
+    storyCount++;
+    const id = story.routing?.agentProfileId;
+    if (id !== undefined && configured.has(id)) {
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    } else {
+      unassigned++;
+    }
+  }
+  getLogger().info("plan", "agent profile assignment", {
+    storyCount,
+    byProfile: Object.fromEntries(counts),
+    unassigned,
+  });
+}
+
 /**
  * Repair → canonicalize → finalize routing → write. Returns the path written.
  *
@@ -326,6 +352,7 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
     args.scope,
     args.preserveScopedAgents,
   );
+  logAgentProfileAssignment(finalized, args);
   await args.writeFile(args.outputPath, JSON.stringify(finalized, null, 2));
   return args.outputPath;
 }
