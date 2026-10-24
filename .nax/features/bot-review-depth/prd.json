@@ -3,7 +3,7 @@
   "feature": "bot-review-depth",
   "branchName": "feat/bot-review-depth",
   "createdAt": "2026-10-23T00:00:00Z",
-  "updatedAt": "2026-10-24T10:40:16.973Z",
+  "updatedAt": "2026-10-24T10:47:41.953Z",
   "userStories": [
     {
       "id": "US-001",
@@ -79,14 +79,17 @@
         "bugfix"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Three source files use existing prompt composition and export patterns; static/conversation variants and the shared-module boundary require explicit regressions but introduce no new abstraction."
+        "reasoning": "Three source files use existing prompt composition and export patterns; static/conversation variants and the shared-module boundary require explicit regressions but introduce no new abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/bot-pr-review-builder.ts",
@@ -99,7 +102,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4c592e63c9a7cc7727eab1662f83484919536ada"
     },
     {
       "id": "US-003",
