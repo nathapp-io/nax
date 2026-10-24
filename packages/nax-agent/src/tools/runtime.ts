@@ -12,6 +12,7 @@
 import { randomUUID } from "node:crypto";
 import type { CommandInterceptor } from "#src/command-interceptor/index";
 import type { CommandShadow } from "#src/command-safety/index";
+import type { BashApprovalMode } from "#src/config/bash-approval";
 import { getSafeLogger } from "#src/infra/index";
 import { type AskResolver, headlessAskResolver } from "#src/permissions/index";
 import type { SandboxRecord } from "../sandbox/index.ts";
@@ -33,6 +34,7 @@ import {
   resolveDenialOutcome,
   resolveGuardDenial,
   resolvePolicyIdentity,
+  resolveUnsandboxedCall,
 } from "./runtime-calltool.ts";
 import { scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./scratchpad.ts";
 import { applyModelTruncationPolicy } from "./spill.ts";
@@ -221,6 +223,13 @@ export function createCodingToolRuntime(opts: {
   protectedPaths?: ProtectedPathsPolicy;
   /** S3-2 port: placed on every ToolRunContext this runtime builds. */
   ownedPaths?: OwnedPathsPolicy;
+  /**
+   * US-005: whether this session may run one call OUTSIDE the OS sandbox, and
+   * the Bash mode that routes an enabled request. ABSENT means disabled: a
+   * `Bash`/`Exec` call carrying `unsandboxed: true` is then refused before the
+   * policy evaluates it.
+   */
+  unsandboxed?: { readonly enabled: boolean; readonly bashApproval: BashApprovalMode };
 }): CodingToolRuntime {
   registerBuiltinCodingTools();
   // The global registry cannot hold session-local tools like RunCommand (its
@@ -366,24 +375,11 @@ export function createCodingToolRuntime(opts: {
 
       const { policyIdentity, argvField, hasArgv } = resolvePolicyIdentity(name, tool, input);
 
-      const verdict = opts.policy.check(policyIdentity, tool.scope, input);
+      // Settled by `logCall`, which is declared FIRST so the refusal that
+      // precedes the policy can ledger through the same wrapper. Undefined
+      // until the shadow opens: nothing observed, nothing to settle.
+      let tap: ReturnType<typeof openCallShadowTap>;
 
-      // P5: observe the command now (not awaited), settle from logCall below.
-      const tap = openCallShadowTap({
-        shadow: opts.commandShadow,
-        identity: policyIdentity,
-        tool,
-        input,
-        hasArgv,
-        argvField,
-        root: opts.policy.root,
-        stage: opts.pipelineStage,
-        storyId: opts.storyId,
-        callId: opts.callId,
-        scopeId: opts.scopeId,
-        context,
-        verdict,
-      });
       // Every ledger outcome of this call settles the tap exactly once, with
       // `denied:ask` and `decidedBy` intact -- which CodingToolOutcome.kind
       // alone would lose (spec 4.2). The audit is a named parameter, not a
@@ -413,6 +409,34 @@ export function createCodingToolRuntime(opts: {
               },
         );
       };
+
+      // US-005: a `Bash`/`Exec` escape request is answered before the policy,
+      // the ask chain and any spawn — refused when this session never enabled
+      // it, and otherwise marked so the ask below carries the reason suffix.
+      const unsandboxed = resolveUnsandboxedCall({ identity: policyIdentity, tool, input, option: opts.unsandboxed });
+      if (unsandboxed?.kind === "error") {
+        logCall(policyIdentity, "error", unsandboxed.content.length, input, context, false, unsandboxed.content);
+        return unsandboxed;
+      }
+
+      const verdict = opts.policy.check(policyIdentity, tool.scope, input);
+
+      // P5: observe the command now (not awaited), settle from logCall below.
+      tap = openCallShadowTap({
+        shadow: opts.commandShadow,
+        identity: policyIdentity,
+        tool,
+        input,
+        hasArgv,
+        argvField,
+        root: opts.policy.root,
+        stage: opts.pipelineStage,
+        storyId: opts.storyId,
+        callId: opts.callId,
+        scopeId: opts.scopeId,
+        context,
+        verdict,
+      });
 
       /**
        * Executes a permitted call and records its outcome. Shared by the
@@ -512,6 +536,9 @@ export function createCodingToolRuntime(opts: {
           root: opts.policy.root,
           logCall,
           runTool,
+          // US-005: an escape request that had to ask says so, with the reason
+          // suffix. Converting an ALLOW into an ask is US-006's.
+          ...(unsandboxed?.kind === "unsandboxed" ? { unsandboxed: { suffix: unsandboxed.suffix } } : {}),
         });
       }
 

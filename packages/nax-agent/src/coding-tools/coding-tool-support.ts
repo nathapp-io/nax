@@ -37,7 +37,7 @@ import {
 } from "#src/tools/index";
 import type { OwnedPathsPolicy } from "#src/tools/owned-paths";
 import { resolveBashSupport } from "./coding-tool-bash.ts";
-import { buildDeclaredCommandTools, unsandboxedToolOptions } from "./coding-tool-extras.ts";
+import { buildDeclaredCommandTools, unsandboxedRuntimeOption, unsandboxedToolOptions } from "./coding-tool-extras.ts";
 import { isTempConfined, rawScreenOptionsFor } from "./coding-tool-sandbox.ts";
 
 export interface CodingToolSupport {
@@ -297,6 +297,11 @@ export function buildCodingToolSupport(args: {
       }),
     ],
     ...(args.providerIdByTool !== undefined ? { providerIdByTool: args.providerIdByTool } : {}),
+    // US-005: the escape option reaches the RUNTIME too, not just the Bash
+    // schema — with the locally resolved mode, so a caller that left
+    // `bashApproval` unset cannot enable an escape under a mode it did not
+    // choose.
+    ...unsandboxedRuntimeOption({ unsandboxedCommands: args.unsandboxedCommands, bashApproval }),
   });
   const tools = runtime.advertised(advertised);
   // The fixed per-hop cost of advertising provider tools: their schemas enter

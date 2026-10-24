@@ -18,11 +18,12 @@
 
 import { randomUUID } from "node:crypto";
 import { type CommandGuard, type CommandShadow, openShadowTap } from "#src/command-safety/index";
+import type { BashApprovalMode } from "#src/config/bash-approval";
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger } from "#src/infra/index";
 import { ASK_CANCELLED_REASON, type AskControl, type AskResolver, type AskVerdict } from "#src/permissions/index";
 import type { SandboxRecord } from "../sandbox/index.ts";
-import { askDenyReason, askSummary } from "./ask-request.ts";
+import { askDenyReason, askSummary, unsandboxedReasonSuffix } from "./ask-request.ts";
 import { redirectForArgv, redirectForCommand, redirectForVerb } from "./denial-redirect.ts";
 import type { CodingTool } from "./registry.ts";
 import type { CodingToolOutcome, ToolCallContext } from "./runtime.ts";
@@ -88,6 +89,54 @@ export function resolvePolicyIdentity(name: string, tool: CodingTool, input: Rec
   const hasArgv = argvField !== undefined && input[argvField] !== undefined;
   const policyIdentity = hasArgv ? EXEC_TOOL_NAME : name;
   return { policyIdentity, argvField, hasArgv };
+}
+
+/** The content of the refusal a disabled escape request gets (spec US-005). */
+const UNSANDBOXED_NOT_ENABLED = "unsandboxed commands are not enabled for this session (allowUnsandboxedCommands)";
+
+/**
+ * What `resolveUnsandboxedCall` answers for a call that really asked to run
+ * outside the sandbox: `error` is the refusal, `unsandboxed` the permission.
+ */
+export type UnsandboxedCall =
+  | { readonly kind: "error"; readonly content: string }
+  | { readonly kind: "unsandboxed"; readonly suffix: string };
+
+/**
+ * US-005: the sandbox-escape gate, run once per call BEFORE the policy.
+ *
+ * Whether an escape is PERMITTED is the runtime's decision, not the tool's:
+ * the tool only knows what the call asked for, and it runs exactly as it
+ * always did once this gate lets it through. Three conditions narrow the field
+ * to the calls that really are escape requests — the tool declares an
+ * `unsandboxedField`, the policy identity is one the flag is defined for, and
+ * the value is exactly `true` (a `"true"` string is not an escape: an opted-in
+ * session's schema rejects it at the transport, and every other session reads
+ * it as the ordinary call it is).
+ *
+ * - `error` — this session was not opened with `unsandboxed.enabled`, so the
+ *   call never reaches the policy, an ask or a spawn. Deciding it here rather
+ *   than in the tool is what makes "disabled" mean disabled.
+ * - `unsandboxed` — the escape is allowed. `suffix` is the clause an ask this
+ *   call raises must carry, so the person approving it is told the command
+ *   runs outside the sandbox. Turning an ALLOW into an ask is US-006's; this
+ *   only reports that the request is legitimate.
+ *
+ * Only `enabled` is read from the runtime's option: `bashApproval` decides how
+ * an ENABLED request is routed, which is the caller's business.
+ */
+export function resolveUnsandboxedCall(p: {
+  identity: string;
+  tool: CodingTool;
+  input: Record<string, unknown>;
+  option: { readonly enabled: boolean; readonly bashApproval: BashApprovalMode } | undefined;
+}): UnsandboxedCall | undefined {
+  const field = p.tool.scope.unsandboxedField;
+  if (field === undefined) return undefined;
+  if (p.identity !== BASH_TOOL_NAME && p.identity !== EXEC_TOOL_NAME) return undefined;
+  if (p.input[field] !== true) return undefined;
+  if (p.option?.enabled !== true) return { kind: "error", content: UNSANDBOXED_NOT_ENABLED };
+  return { kind: "unsandboxed", suffix: unsandboxedReasonSuffix(p.input) };
 }
 
 /**

@@ -61,6 +61,24 @@ export function unsandboxedToolOptions(args: { readonly unsandboxedCommands?: bo
   return args.unsandboxedCommands === true ? { unsandboxedCommands: true } : {};
 }
 
+/**
+ * US-005: the same option as the RUNTIME's field — whether a `Bash`/`Exec`
+ * call may run outside the sandbox at all, plus the Bash approval mode that
+ * decides how an enabled request is routed.
+ *
+ * Absent when the session did not opt in, so "off" and "absent" stay one shape
+ * all the way to `createCodingToolRuntime` (absent means disabled). A helper
+ * for the same reason as `unsandboxedToolOptions`: `buildCodingToolSupport`
+ * sits at its cognitive-complexity baseline and a ternary inside it would
+ * raise it.
+ */
+export function unsandboxedRuntimeOption(args: {
+  readonly unsandboxedCommands?: boolean;
+  readonly bashApproval: BashApprovalMode;
+}): { readonly unsandboxed?: { readonly enabled: boolean; readonly bashApproval: BashApprovalMode } } {
+  return args.unsandboxedCommands === true ? { unsandboxed: { enabled: true, bashApproval: args.bashApproval } } : {};
+}
+
 export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): CodingTool[] {
   return [
     ...(args.declaredCommands.size > 0 || args.allowExec
