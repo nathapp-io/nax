@@ -193,6 +193,22 @@ export interface StoryStateItem {
   readonly reason?: string;
 }
 
+/**
+ * US-005: one CI check a repair round targeted — the check's name, plus the step that failed when
+ * the job log named it. `failedStep` is absent, never empty, when the CI could not say.
+ */
+export interface CiCheckRef {
+  readonly name: string;
+  readonly failedStep?: string;
+}
+
+/**
+ * US-006: one CI check still failing after the last repair round, classified against
+ * `ciRepairTargets`. `newFailure` is false only when a target has the same name *and* the same
+ * failed step, so a check that moved to a new step is a new failure, not a repeated one.
+ */
+export type CiRemainingCheck = CiCheckRef & { readonly newFailure: boolean };
+
 /** The feature workflow's persisted state (spec §7, §10, P4-R1). `step` is the NEXT step to run. */
 export interface WorkflowFeatureRecord {
   readonly step: FeatureStep;
@@ -264,6 +280,24 @@ export interface WorkflowFeatureRecord {
   readonly ciRepairFindings?: readonly WorkflowFindingDraft[];
   /** US-006: repair rounds run for a failed CI on the published PR. Absent when none ran. */
   readonly ciRepairRounds?: number;
+  /**
+   * US-005: the CI checks the last decided repair targeted. Written by `publish` from the same read
+   * that produced `ciRepairFindings`; absent when no repair was decided, and on older records.
+   */
+  readonly ciRepairTargets?: readonly CiCheckRef[];
+  /**
+   * US-005: the concerns the CI repair replies raised, one `r<N>: <concerns>` entry per round that
+   * raised any, in round order. Absent when no round raised a concern (and on older records), so its
+   * presence alone means a repair's reply admitted something it could not check.
+   */
+  readonly ciRepairConcerns?: readonly string[];
+  /**
+   * US-006: the failed CI checks still red after the last repair round, each classified against
+   * `ciRepairTargets`. Written by `publish` from a read that runs no agent; absent when no round
+   * ran, when the rounds are not spent, when the check is green, when the read threw, and when it
+   * named no failed check.
+   */
+  readonly ciRemaining?: readonly CiRemainingCheck[];
   readonly ci?: FeatureCiState;
   readonly outcome?: FeatureOutcome;
   readonly reasons: readonly string[];

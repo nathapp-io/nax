@@ -128,3 +128,20 @@ describe("buildBotPrFixPrompt", () => {
     },
   );
 });
+
+/**
+ * US-002: the repair and prepare sessions are the ones that cannot always run a check — prepare has
+ * no code change of its own, and a repair may need network the sandbox blocks. Both carry the rule;
+ * `fix` is a full implementer session and keeps its unchanged instructions.
+ */
+describe("the repair verification rule in the bot fix prompt (US-002)", () => {
+  test.each(["repair", "prepare"] as const)("AC-12/13: %s carries the rule as the last instruction", (mode) => {
+    const text = prompts.buildBotPrFixPrompt({ ...base, mode });
+    expect(text).toContain(prompts.REPAIR_VERIFICATION_RULE);
+    expect(text).toContain(`- ${prompts.REPAIR_VERIFICATION_RULE}`);
+  });
+
+  test("AC-14: fix does not carry the rule", () => {
+    expect(prompts.buildBotPrFixPrompt({ ...base, mode: "fix" })).not.toContain(prompts.REPAIR_VERIFICATION_RULE);
+  });
+});

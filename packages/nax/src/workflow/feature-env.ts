@@ -74,6 +74,14 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
         runBranchFix(fc, {
           ...spec,
           findings,
+          // US-002: a repair runs the same pass under the `wf-repair` identity, so the gate and CI
+          // repairs are told apart from the branch fix in the meter, the commit and the log.
+          ...(opts?.repair ? { kind: "repair" } : {}),
+          // US-004: only the CI repair names a round, and it is what makes `runBranchFix` build the
+          // CI repair's own brief instead of the branch-fix one.
+          ...(opts?.ciRound !== undefined
+            ? { ciRepair: { round: opts.ciRound, ...(opts.prUrl ? { prUrl: opts.prUrl } : {}) } }
+            : {}),
           ...(opts?.prUrl
             ? { toolProviders: [forgeReadProviderForUrl(opts.prUrl, _featureDeps.forge, fc.projectDir)] }
             : {}),

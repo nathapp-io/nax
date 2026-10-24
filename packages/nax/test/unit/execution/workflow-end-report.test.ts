@@ -65,6 +65,49 @@ describe("reportWorkflowRun", () => {
     expect(line?.message).toContain("CI repair rounds 2");
   });
 
+  // US-005: a repair that could not check everything says so at run end, not only in result.json.
+  test("AC-15: the line names the CI repair concerns", async () => {
+    _workflowEndReportDeps.readSummary = async () => ({ ...view, ciRepairConcerns: ["r1: a", "r2: b"] });
+    await reportWorkflowRun(opts, timing);
+    const line = logs.find((e) => e.message.startsWith("Workflow summary:"));
+    expect(line?.message).toContain("CI repair concerns: r1: a; r2: b");
+  });
+
+  test("a repair that raised no concern says nothing about concerns", async () => {
+    _workflowEndReportDeps.readSummary = async () => ({ ...view, ciRepairConcerns: [] });
+    await reportWorkflowRun(opts, timing);
+    const line = logs.find((e) => e.message.startsWith("Workflow summary:"));
+    expect(line?.message).not.toContain("CI repair concerns");
+    // The control: the same fixtures with a concern do name it.
+    _workflowEndReportDeps.readSummary = async () => ({ ...view, ciRepairConcerns: ["r1: a"] });
+    logs.length = 0;
+    await reportWorkflowRun(opts, timing);
+    expect(logs.find((e) => e.message.startsWith("Workflow summary:"))?.message).toContain("CI repair concerns");
+  });
+
+  // US-006: the checks the repair rounds did not turn green are named at run end, not left in result.json.
+  test("AC-18: the line names the checks still failing after the last repair round", async () => {
+    _workflowEndReportDeps.readSummary = async () => ({
+      ...view,
+      ciRemaining: ['Security audit at step "pip-audit"', "e2e"],
+    });
+    await reportWorkflowRun(opts, timing);
+    const line = logs.find((e) => e.message.startsWith("Workflow summary:"));
+    expect(line?.message).toContain('CI still failing: Security audit at step "pip-audit", e2e');
+  });
+
+  test("a run whose CI recovered says nothing about still-failing checks", async () => {
+    _workflowEndReportDeps.readSummary = async () => ({ ...view, ciRemaining: [] });
+    await reportWorkflowRun(opts, timing);
+    const line = logs.find((e) => e.message.startsWith("Workflow summary:"));
+    expect(line?.message).not.toContain("CI still failing");
+    // The control: the same fixture with one remaining check does name it.
+    _workflowEndReportDeps.readSummary = async () => ({ ...view, ciRemaining: ["e2e"] });
+    logs.length = 0;
+    await reportWorkflowRun(opts, timing);
+    expect(logs.find((e) => e.message.startsWith("Workflow summary:"))?.message).toContain("CI still failing: e2e");
+  });
+
   test("no result.json: nothing logged, nothing returned", async () => {
     _workflowEndReportDeps.readSummary = async () => null;
     expect(await reportWorkflowRun(opts, timing)).toBeUndefined();

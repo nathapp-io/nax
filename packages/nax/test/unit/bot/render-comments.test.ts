@@ -174,6 +174,13 @@ describe("renderReviewSummary", () => {
       "Install step failed (npm ci); checks may not have run.",
     );
   });
+  test("review-build US-007 AC-18: reports a failed build after the install", () => {
+    const body = bot.renderReviewSummary(summary({ buildFailed: "bun run build" }));
+    expect(body).toContain(
+      "Build step failed (bun run build); checks that import built workspace packages may not have started.",
+    );
+    expect(body).not.toContain("Install step failed");
+  });
   test("US-010 AC-15: budgets minor items with an accurate omission notice", () => {
     const minor = Array.from({ length: 200 }, () => ({
       ...finding,

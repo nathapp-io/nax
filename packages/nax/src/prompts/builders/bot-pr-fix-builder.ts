@@ -1,6 +1,7 @@
 /** PR-specific fix, repair and checkout preparation instructions. */
 import { markdownFence } from "@/utils/markdown-fence";
 import {
+  REPAIR_VERIFICATION_RULE,
   renderWorkflowFindings,
   WORKFLOW_ARTIFACTS_RULE,
   WORKFLOW_REPLY_CONTRACT,
@@ -36,11 +37,13 @@ function instructions(input: BotPrFixPromptInput): string {
     case "repair":
       return `- The items are the gates that were red after the fix.
 - Make every command in The bar pass, changing code where the fix broke it.
-- Commit your changes.`;
+- Commit your changes.
+- ${REPAIR_VERIFICATION_RULE}`;
     case "prepare":
       return `- The items are gates that fail on the unmodified PR head too while CI is green on it, so this checkout differs from CI.
 - Make The bar pass by running setup only (code generation, installs, builds).
-- Do not change, stage or commit any tracked file. A tracked change ends the run without a push.`;
+- Do not change, stage or commit any tracked file. A tracked change ends the run without a push.
+- ${REPAIR_VERIFICATION_RULE}`;
   }
 }
 

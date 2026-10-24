@@ -40,6 +40,9 @@ export async function repairStep(env: BotFixEnv, state: BotFixState): Promise<St
     findings: [],
     model: botModel(env.config, "fix", env.model),
     prompt,
+    // US-002: both repair modes are repair sessions, so they book as `wf-repair` — not as the
+    // branch fix's `wf-branch-fix`, which is what `fixStep` alone keeps.
+    kind: "repair",
     toolProviders: [createForgeReadProvider({ resolveRef: async () => env.ref, deps: env.forge, cwd: env.repoRoot })],
   });
   const patch: Partial<BotFixState> = {

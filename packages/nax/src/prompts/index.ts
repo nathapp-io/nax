@@ -31,6 +31,7 @@ export {
   buildBotPrReviewPrompt,
   buildBotTriageRetry,
   buildUntrustedRequestIssue,
+  COULD_NOT_START_RULE,
   MAX_EARLIER_THREADS,
   MAX_SETTLED_RULINGS,
 } from "./builders/bot-pr-review-builder";
@@ -107,6 +108,12 @@ export {
   buildWorkflowBranchReReviewPrompt,
   buildWorkflowBranchReviewPrompt,
 } from "./builders/workflow-branch-builder";
+// US-004 — the CI repair's own brief, and the two rules it must never break.
+export {
+  buildWorkflowCiRepairPrompt,
+  CI_REPAIR_NO_SHORTCUTS_RULE,
+  CI_REPAIR_STEP_REPRODUCTION_RULE,
+} from "./builders/workflow-ci-repair-builder";
 export type { WorkflowBriefInput, WorkflowPromptFinding } from "./builders/workflow-implementer-builder";
 export {
   buildWorkflowAnswerPrompt,
@@ -116,6 +123,7 @@ export {
   buildWorkflowImplementPrompt,
   buildWorkflowReportPrompt,
   buildWorkflowRestartPrompt,
+  REPAIR_VERIFICATION_RULE,
   WORKFLOW_ARTIFACTS_RULE,
   WORKFLOW_REPLY_CONTRACT,
 } from "./builders/workflow-implementer-builder";

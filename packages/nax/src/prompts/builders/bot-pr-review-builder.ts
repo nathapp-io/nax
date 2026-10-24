@@ -46,6 +46,14 @@ export interface BotPrReviewPromptInput {
 export const MAX_EARLIER_THREADS = 50;
 export const MAX_SETTLED_RULINGS = 50;
 
+/**
+ * The last line of the `## Checkout state` section. A sandbox that could not
+ * load a built workspace package makes a check stop before it ran a single
+ * test; that is a missing setup step, not a defect in the change.
+ */
+export const COULD_NOT_START_RULE =
+  'If a check stops before it runs any test, for example because a module or workspace package cannot be resolved, it did not run: list it in "cannotVerify" as "could not start: <check>: <reason>" and name the setup step it needs. Never report it as a defect in the change.';
+
 function settledSection(settled: readonly BotSettledRuling[]): string {
   const entries = settled
     .slice(0, MAX_SETTLED_RULINGS)
@@ -83,7 +91,8 @@ function projectSections(input: BotPrReviewPromptInput): string[] {
     sections.push(
       `## Project checks\nThese are the project's check commands. Prefer running them, scoped to the changed files where you can:\n${input.checks.map((command) => `- ${command}`).join("\n")}`,
     );
-  if (input.checkoutState !== undefined) sections.push(`## Checkout state\n${input.checkoutState}`);
+  if (input.checkoutState !== undefined)
+    sections.push(`## Checkout state\n${input.checkoutState}\n${COULD_NOT_START_RULE}`);
   if (input.ci) sections.push(ciSection(input.ci));
   if (input.settled?.length) sections.push(settledSection(input.settled));
   if (input.decisions?.length)

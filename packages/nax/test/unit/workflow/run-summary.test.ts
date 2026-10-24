@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { newStoryRecord } from "@/workflow/result";
 import { buildWorkflowRunSummary } from "@/workflow/run-summary";
-import type { RoleTokens, WorkflowResultFile } from "@/workflow/types";
+import type { RoleTokens, WorkflowFeatureRecord, WorkflowResultFile } from "@/workflow/types";
 
 const tok = (inputTokens: number, outputTokens: number, costUsd: number, calls: number) => ({
   inputTokens,
@@ -152,6 +152,62 @@ describe("buildWorkflowRunSummary", () => {
 
     test("an empty list: no flagged key", () => {
       expect(buildWorkflowRunSummary(withFeature({ flaggedDecisions: [] }), timing, "f")).not.toHaveProperty("flagged");
+    });
+  });
+
+  describe("CI repair concerns (US-005)", () => {
+    const timing = { storiesDurationMs: 100, featureWorkflowDurationMs: 40 };
+
+    /** The fixture's record with the CI repair concerns the run's replies raised. */
+    function withConcerns(concerns: readonly string[] | undefined): WorkflowResultFile {
+      const file = resultFile();
+      const rec = file.featureWorkflow;
+      if (!rec) throw new Error("fixture has a feature record");
+      return { ...file, featureWorkflow: { ...rec, ciRepairConcerns: concerns } };
+    }
+
+    test("AC-13: the record's CI repair concerns reach the view", () => {
+      expect(buildWorkflowRunSummary(withConcerns(["r1: a"]), timing)?.ciRepairConcerns).toEqual(["r1: a"]);
+    });
+
+    test("AC-14: no CI repair concerns, no ciRepairConcerns field", () => {
+      // The control: the same fixture with a concern does carry the field.
+      expect(buildWorkflowRunSummary(withConcerns(["r1: a"]), timing)).toHaveProperty("ciRepairConcerns");
+      expect(buildWorkflowRunSummary(withConcerns(undefined), timing)).not.toHaveProperty("ciRepairConcerns");
+      expect(buildWorkflowRunSummary(withConcerns([]), timing)).not.toHaveProperty("ciRepairConcerns");
+    });
+  });
+
+  // US-006: what the last repair round left red, named so a human knows where to look.
+  describe("the checks still failing after the last repair round (US-006)", () => {
+    const timing = { storiesDurationMs: 100, featureWorkflowDurationMs: 40 };
+
+    /** The fixture's record with the checks still red after the last repair round. */
+    function withRemaining(remaining: WorkflowFeatureRecord["ciRemaining"]): WorkflowResultFile {
+      const file = resultFile();
+      const rec = file.featureWorkflow;
+      if (!rec) throw new Error("fixture has a feature record");
+      return { ...file, featureWorkflow: { ...rec, ciRemaining: remaining } };
+    }
+
+    test("AC-17: each remaining check names the step it failed at, when the CI named one", () => {
+      const v = buildWorkflowRunSummary(
+        withRemaining([
+          { name: "Security audit", failedStep: "pip-audit", newFailure: true },
+          { name: "e2e", newFailure: false },
+        ]),
+        timing,
+      );
+      expect(v?.ciRemaining).toEqual(['Security audit at step "pip-audit"', "e2e"]);
+    });
+
+    test("no checks left red: no ciRemaining key", () => {
+      // The control: the same fixture with a remaining check does carry the field.
+      expect(buildWorkflowRunSummary(withRemaining([{ name: "e2e", newFailure: true }]), timing)).toHaveProperty(
+        "ciRemaining",
+      );
+      expect(buildWorkflowRunSummary(withRemaining(undefined), timing)).not.toHaveProperty("ciRemaining");
+      expect(buildWorkflowRunSummary(withRemaining([]), timing)).not.toHaveProperty("ciRemaining");
     });
   });
 

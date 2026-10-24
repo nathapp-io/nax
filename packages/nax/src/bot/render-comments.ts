@@ -24,6 +24,8 @@ export interface ReviewSummaryInput {
   readonly earlier?: { readonly open: number; readonly fixed: number; readonly withdrawn: number };
   readonly checks?: BotChecks | null;
   readonly preRunFailed?: string;
+  /** The build step that failed after a successful install (US-007). */
+  readonly buildFailed?: string;
   readonly ci?: { readonly outcome: string; readonly detail: string };
   readonly headSha: string;
   /** What this review covered (nax#2667); absent keeps the plain head line. */
@@ -167,6 +169,11 @@ function readinessLines(input: ReviewSummaryInput): string[] {
   }
   if (input.preRunFailed !== undefined) {
     lines.push(`Install step failed (${safeText(input.preRunFailed, TEXT_LIMIT)}); checks may not have run.`);
+  }
+  if (input.buildFailed !== undefined) {
+    lines.push(
+      `Build step failed (${safeText(input.buildFailed, TEXT_LIMIT)}); checks that import built workspace packages may not have started.`,
+    );
   }
   return lines;
 }

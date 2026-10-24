@@ -5,6 +5,7 @@ import { assertDefined, cleanupTempDir, makeFeatureContext, makeScriptedCallOp, 
 import type { Advisor } from "@/advisor";
 import type { ForgeDeps, PrRef } from "@/forge";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
+import type { CallContext } from "@/operations";
 import { type PipelineEvent, pipelineEventBus } from "@/pipeline/event-bus";
 import { _ciFailuresDeps } from "@/workflow/ci-failures";
 import { buildFeatureEnv } from "@/workflow/feature-env";
@@ -185,6 +186,103 @@ describe("buildFeatureEnv sink step events (US-003)", () => {
       { step: "publish", stories: { "US-001": { state: "complete", round: 2 } }, outcome: "draft", url: "u" },
     ]);
     expect(stepEvents()).toEqual([{ type: "workflow:step", step: "publish" }]);
+  });
+});
+
+// US-002: `opts.repair` is what routes a repair session's dispatch to `workflow-repair`. These go
+// through the real `buildFeatureEnv` seam so the option -> `kind` -> op mapping is the production one.
+describe("buildFeatureEnv repair routing (US-002)", () => {
+  const findings = [{ id: "B1", kind: "quality", severity: "important", issue: "drift" }] as const;
+
+  /** The op names and call contexts of every dispatch the step made, in order. */
+  function dispatched(): { ops: string[]; contexts: CallContext[] } {
+    const ops: string[] = [];
+    const contexts: CallContext[] = [];
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    _workflowDeps.callOp = makeScriptedCallOp((op, _input, ctx) => {
+      ops.push(op.name);
+      contexts.push(ctx);
+      return { status: "DONE", commits: [], testSummary: "", interrupted: false };
+    });
+    return { ops, contexts };
+  }
+
+  const setupWithReport = () =>
+    setup((runDir) => ({ outputDir: join(runDir, "out"), reportPath: join(runDir, "feature-report.md") }));
+
+  test("AC-1: branchFix(findings, { repair: true }) dispatches workflow-repair", async () => {
+    const { ops } = dispatched();
+    const { env } = setupWithReport();
+    await env.steps.branchFix(findings, { repair: true });
+    expect(ops).toEqual(["workflow-repair"]);
+  });
+
+  test("AC-2: branchFix(findings) dispatches workflow-branch-fix", async () => {
+    const { ops } = dispatched();
+    const { env } = setupWithReport();
+    await env.steps.branchFix(findings);
+    expect(ops).toEqual(["workflow-branch-fix"]);
+  });
+
+  test("AC-3: a repair with a PR URL keeps the one forge read provider", async () => {
+    const { ops, contexts } = dispatched();
+    const { env } = setupWithReport();
+    await env.steps.branchFix(findings, { repair: true, prUrl: "https://github.com/o/r/pull/7" });
+    expect(ops).toEqual(["workflow-repair"]);
+    expect(contexts[0]?.toolProviders).toHaveLength(1);
+  });
+});
+
+// US-004: the repair round reaches `runBranchFix`, which builds the CI repair's own brief. These go
+// through the real `buildFeatureEnv` seam, so the option -> prompt selection is the production one.
+describe("buildFeatureEnv CI repair prompt (US-004)", () => {
+  const findings = [{ id: "C1", kind: "gate", severity: "important", issue: "CI check e2e failed:\nboom" }] as const;
+
+  /** The prompts of every dispatch the step made, in order, plus the op names. */
+  function dispatched(): { ops: string[]; prompts: string[] } {
+    const ops: string[] = [];
+    const prompts: string[] = [];
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+    _workflowDeps.callOp = makeScriptedCallOp((op, input) => {
+      ops.push(op.name);
+      if (typeof input === "object" && input !== null && "prompt" in input && typeof input.prompt === "string") {
+        prompts.push(input.prompt);
+      }
+      return { status: "DONE", commits: [], testSummary: "", interrupted: false };
+    });
+    return { ops, prompts };
+  }
+
+  const setupWithReport = () =>
+    setup((runDir) => ({ outputDir: join(runDir, "out"), reportPath: join(runDir, "feature-report.md") }));
+
+  test("AC-11: a repair round dispatches the CI repair's brief, labelled with its round", async () => {
+    const { ops, prompts } = dispatched();
+    const { env } = setupWithReport();
+    await env.steps.branchFix(findings, {
+      repair: true,
+      ciRound: 2,
+      prUrl: "https://github.com/o/r/pull/7",
+    });
+    expect(ops).toEqual(["workflow-repair"]);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("CI repair r2");
+    expect(prompts[0]).toContain("You are repairing the CI of pull request https://github.com/o/r/pull/7.");
+  });
+
+  test("AC-12: a repair with no round keeps the branch-fix brief", async () => {
+    const { prompts } = dispatched();
+    const { env } = setupWithReport();
+    await env.steps.branchFix(findings, { repair: true });
+    expect(prompts[0]).toContain("You are fixing a feature branch after its whole-branch review");
+    expect(prompts[0]).not.toContain("CI repair");
+  });
+
+  test("an ordinary branch fix keeps the branch-fix brief", async () => {
+    const { prompts } = dispatched();
+    const { env } = setupWithReport();
+    await env.steps.branchFix(findings);
+    expect(prompts[0]).toContain("You are fixing a feature branch after its whole-branch review");
   });
 });
 

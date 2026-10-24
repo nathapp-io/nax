@@ -48,7 +48,9 @@ export type CanonicalSessionRole =
   /** A5 — fresh, read-only whole-branch review (one per feature). */
   | "wf-branch-review"
   /** A5 — fresh, write-tool branch fix (exactly one pass). */
-  | "wf-branch-fix";
+  | "wf-branch-fix"
+  /** US-001 (SPEC-ci-repair-and-review-sandbox) — a repair pass, booked apart from the branch fix. */
+  | "wf-repair";
 
 export type SessionRole = CanonicalSessionRole;
 
@@ -82,6 +84,7 @@ export const KNOWN_SESSION_ROLES: readonly CanonicalSessionRole[] = [
   "wf-rereview",
   "wf-branch-review",
   "wf-branch-fix",
+  "wf-repair",
 ] as const;
 
 export function isSessionRole(s: string): s is SessionRole {

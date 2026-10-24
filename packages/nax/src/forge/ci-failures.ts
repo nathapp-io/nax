@@ -13,6 +13,8 @@ import { NaxError } from "@/errors";
 import { redactSecrets } from "@/logger";
 import type { JobLogRead } from "./job-log";
 import { CI_ANNOTATION_CHARS, CI_ANNOTATION_LINES, CI_EXCERPT_CHARS, readJobLog, stripAnsi } from "./job-log";
+import type { JobSteps } from "./job-steps";
+import { readJobSteps } from "./job-steps";
 import { encodeProjectPath } from "./pr-read";
 import type { PrRef } from "./pr-types";
 import type { ForgeDeps } from "./types";
@@ -26,6 +28,10 @@ export interface FailedCheck {
   readonly url?: string;
   readonly excerpt: string;
   readonly logUnavailable?: true;
+  /** The step that failed, when the forge reports the job's steps. */
+  readonly failedStep?: string;
+  /** The steps CI skipped after the failed step, in job order. */
+  readonly skippedSteps?: readonly string[];
 }
 
 /** How many failed checks one read returns. */
@@ -199,6 +205,15 @@ function invalidReply(what: string, context: CiReadContext): NaxError {
   });
 }
 
+/** The app slug of a GitHub Actions check run, the only app with a job endpoint. */
+const ACTIONS_APP = "github-actions";
+
+/** The Actions job id of a check run; undefined for every other app and for a run without an id. */
+function actionsJobId(run: GithubCheckRun): string | undefined {
+  if (run.app?.slug !== ACTIONS_APP) return undefined;
+  return run.id === undefined ? undefined : String(run.id);
+}
+
 /**
  * The excerpt of one failed check: the job log for a GitHub Actions run, the
  * check-run output for every other app.
@@ -209,16 +224,26 @@ async function readExcerpt(
   deps: ForgeDeps,
   cwd: string,
 ): Promise<Pick<FailedCheck, "excerpt" | "logUnavailable">> {
-  const jobId = run.app?.slug === "github-actions" ? run.id : undefined;
+  const jobId = actionsJobId(run);
   if (jobId === undefined) return { excerpt: ciExcerpt(outputText(run)) };
-  return logExcerpt(await readJobLog(ref, String(jobId), deps, cwd), true);
+  return logExcerpt(await readJobLog(ref, jobId, deps, cwd), true);
 }
 
-/** One failed check, with its bounded excerpt. */
+/**
+ * The steps of an Actions job, read after its log. Best effort and GitHub-only:
+ * a GitLab job exposes no step list, so it is never asked for one.
+ */
+async function readSteps(run: GithubCheckRun, ref: PrRef, deps: ForgeDeps, cwd: string): Promise<JobSteps> {
+  const jobId = actionsJobId(run);
+  return jobId === undefined ? {} : readJobSteps(ref, jobId, deps, cwd);
+}
+
+/** One failed check, with its bounded excerpt and, for Actions, its job's steps. */
 async function toFailedCheck(run: GithubCheckRun, ref: PrRef, deps: ForgeDeps, cwd: string): Promise<FailedCheck> {
   const log = await readExcerpt(run, ref, deps, cwd);
+  const steps = await readSteps(run, ref, deps, cwd);
   const url = run.html_url && run.html_url.length > 0 ? run.html_url : undefined;
-  return { name: run.name ?? "", ...(url === undefined ? {} : { url }), ...log };
+  return { name: run.name ?? "", ...(url === undefined ? {} : { url }), ...log, ...steps };
 }
 
 /** The failed checks of one GitHub commit, in reply order. */

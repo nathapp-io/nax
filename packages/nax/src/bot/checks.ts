@@ -3,7 +3,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "@/config";
 import type { PreRunStepConfig } from "@/config/runtime-types-execution";
 import { NaxError } from "@/errors";
-import { GATE_ORDER, resolveGateCommands } from "@/finish";
+import { DEFAULT_GATE_TIMEOUT_MS, GATE_ORDER, resolveGateCommands } from "@/finish";
 import { getSafeLogger } from "@/logger";
 import type { BotChecksExtractOutput } from "@/operations/bot-checks-extract";
 import type { QualityCommandSpec } from "@/quality";
@@ -22,6 +22,14 @@ export interface BotChecks {
 }
 
 export const DERIVED_INSTALL_TIMEOUT_SECONDS = 600;
+
+/**
+ * The build step's bound. The build is the same gate command the gate runner
+ * runs, so it gets that runner's own default — derived, never copied, so the
+ * two cannot drift.
+ */
+export const REVIEW_BUILD_TIMEOUT_SECONDS: number = DEFAULT_GATE_TIMEOUT_MS / 1000;
+
 const MAX_INSTRUCTION_BYTES = 65_536;
 export const _botChecksDeps = { runGit: botGit, resolveGateCommands };
 
@@ -219,4 +227,20 @@ export function barCommands(checks: BotChecks): string[] {
 /** Lists represent multiple shell commands, not argv; setup and preRun are not gates. */
 export function checkCommands(checks: BotChecks): string[] {
   return checks.gates.flatMap(({ command }) => (typeof command === "string" ? [command] : command));
+}
+
+/**
+ * The post-install build steps a fresh review checkout runs.
+ *
+ * Only the root gate named exactly `build`: `build@<package>` is a per-package
+ * overlay the review never fans out, and a `build` gate never carries a
+ * `setup` (`resolveGateCommands` gives only `e2e` one), so there is none to
+ * honour here. A list command is several shell commands and becomes one step
+ * each.
+ */
+export function reviewBuildSteps(checks: BotChecks): PreRunStepConfig[] {
+  const build = checks.gates.find(({ name }) => name === "build");
+  if (build === undefined) return [];
+  const commands = typeof build.command === "string" ? [build.command] : build.command;
+  return commands.map((command) => ({ command, timeoutSeconds: REVIEW_BUILD_TIMEOUT_SECONDS }));
 }

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeFeatureContext, makeScriptedCallOp, makeTempDir } from "@test/helpers";
-import { workflowBranchFixOp } from "@/operations";
+import { workflowBranchFixOp, workflowRepairOp } from "@/operations";
 import { buildWorkflowBranchFixPrompt } from "@/prompts";
 import { runBranchFix } from "@/workflow/branch-fix";
 import { _workflowDeps } from "@/workflow/step-context";
@@ -169,5 +169,79 @@ describe("runBranchFix", () => {
     const out = await runBranchFix(fc, { findings });
     expect(out).toEqual({ reply: done, autoCommitted: false, dirty: false });
     expect(commits).toHaveLength(0);
+  });
+
+  /**
+   * US-001 — `kind: "repair"` is the same pass under a different identity: the
+   * repair op for the dispatch (so the meter books `wf-repair`) and the repair
+   * role for the leftover commit (so the commit history says which session left
+   * the edits). Omitting `kind` keeps every existing caller on the branch fix.
+   */
+  describe("kind (US-001)", () => {
+    function captureDispatchedOp(reply: ImplementerReply | Error) {
+      const ops: unknown[] = [];
+      _workflowDeps.callOp = makeScriptedCallOp((op) => {
+        ops.push(op);
+        if (reply instanceof Error) throw reply;
+        return reply;
+      });
+      return ops;
+    }
+
+    test("AC-13: kind 'repair' dispatches workflowRepairOp", async () => {
+      const { fc } = setup(done, "");
+      const ops = captureDispatchedOp(done);
+      await runBranchFix(fc, { findings, kind: "repair" });
+      expect(ops).toHaveLength(1);
+      expect(ops[0]).toBe(workflowRepairOp);
+    });
+
+    test("AC-14: no kind dispatches workflowBranchFixOp", async () => {
+      const { fc } = setup(done, "");
+      const ops = captureDispatchedOp(done);
+      await runBranchFix(fc, { findings });
+      expect(ops).toHaveLength(1);
+      expect(ops[0]).toBe(workflowBranchFixOp);
+    });
+
+    test("AC-15: a repair commits the uncommitted file under the wf-repair role", async () => {
+      const { fc, commits } = setup(done, " M src/a.ts\n");
+      const out = await runBranchFix(fc, { findings, kind: "repair" });
+      expect(out.autoCommitted).toBe(true);
+      expect(commits).toHaveLength(1);
+      expect(commits[0]?.[2]).toBe("wf-repair");
+    });
+
+    test("AC-16: a branch fix still commits under wf-branch-fix", async () => {
+      const { fc, commits } = setup(done, " M src/a.ts\n");
+      await runBranchFix(fc, { findings });
+      expect(commits).toHaveLength(1);
+      expect(commits[0]?.[2]).toBe("wf-branch-fix");
+    });
+
+    test("AC-17: a thrown session failure on a repair resolves with failure, not a rejection", async () => {
+      const { fc } = setup(done, "");
+      captureDispatchedOp(new Error("boom"));
+      expect(fc.runSignal?.aborted ?? false).toBe(false);
+      expect((await runBranchFix(fc, { findings, kind: "repair" })).failure).toBe("boom");
+    });
+
+    test("AC-17 boundary: an aborted repair still rethrows", async () => {
+      const ac = new AbortController();
+      ac.abort();
+      const { fc } = setup(done, "");
+      captureDispatchedOp(new Error("stopped"));
+      await expect(runBranchFix({ ...fc, runSignal: ac.signal }, { findings, kind: "repair" })).rejects.toThrow(
+        "stopped",
+      );
+    });
+
+    test("kind 'fix' is the branch fix: same op, same commit role", async () => {
+      const { fc, commits } = setup(done, " M src/a.ts\n");
+      const ops = captureDispatchedOp(done);
+      await runBranchFix(fc, { findings, kind: "fix" });
+      expect(ops[0]).toBe(workflowBranchFixOp);
+      expect(commits[0]?.[2]).toBe("wf-branch-fix");
+    });
   });
 });

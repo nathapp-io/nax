@@ -550,7 +550,10 @@
             "kind": "gate",
             "severity": "important"
           }
-        ]
+        ],
+        {
+          "repair": true
+        }
       ],
       "kind": "call",
       "method": "branchFix"

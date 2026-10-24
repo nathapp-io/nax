@@ -71,6 +71,8 @@ export interface PostReviewInput {
   readonly settledKeys?: ReadonlySet<string>;
   readonly unreadFiles?: readonly string[];
   readonly preRunFailed?: string;
+  /** The build step that failed after a successful install; the review still ran (US-007). */
+  readonly buildFailed?: string;
   /** CI's verdict on the reviewed head (nax#2631). */
   readonly ci?: CiWaitResult;
   readonly earlier?: readonly PrThread[];
@@ -284,6 +286,7 @@ async function postSummary(
     earlier: earlierCounts(input),
     checks: input.staticMode ? null : input.checks,
     preRunFailed: input.preRunFailed,
+    ...(input.buildFailed === undefined ? {} : { buildFailed: input.buildFailed }),
     ...(input.ci === undefined ? {} : { ci: input.ci }),
     ...findings,
     ...threads,

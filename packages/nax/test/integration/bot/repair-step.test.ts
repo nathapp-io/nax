@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeBotFixEnv, makeNaxConfig } from "@test/helpers";
 import { _botFixDeps, BOT_FIX_GRAPH } from "@/bot/fix-run";
-import { _fixStepsDeps, type BotFixState, checkStep, gatesStep } from "@/bot/fix-steps";
+import { _fixStepsDeps, type BotFixState, checkStep, fixStep, gatesStep } from "@/bot/fix-steps";
 import { _savedFixDeps, persistSavedFix } from "@/bot/saved-fix";
 import { gateOutputTail } from "@/finish/gates/quality";
 import { runStepGraph } from "@/step-graph";
@@ -124,6 +124,7 @@ describe("repairStep", () => {
     expect(_fixStepsDeps.runBranchFix).toHaveBeenCalledWith(env.ctx, {
       findings: [],
       model: undefined,
+      kind: "repair",
       toolProviders: [expect.objectContaining({ id: "nax-forge" })],
       prompt: expect.stringContaining("test broke"),
     });
@@ -216,6 +217,39 @@ describe("BOT_FIX_GRAPH repair loop", () => {
     expect(events).toEqual(["fix", "check", "gates", "repair", "check", "gates", ...(green ? ["ledger", "push"] : [])]);
     expect(result.outcome).toBe(green ? "pushed" : "gates-failed");
     expect(result.gateRepairRounds).toBe(1);
+  });
+});
+
+/**
+ * US-002: a repair and a prepare are repair sessions, so `runBranchFix` books them as `wf-repair`;
+ * the fix is not, and keeps the branch fix's identity. Only the identity changes here — the prompt
+ * and the patch are what they were.
+ */
+describe("the bot repair session's identity (US-002)", () => {
+  const AGREED = [{ kind: "finding", key: "f-1", issue: "fix this", severity: "important" }] as const;
+
+  function recordingRun(): ReturnType<typeof mock<typeof _fixStepsDeps.runBranchFix>> {
+    const run = mock<typeof _fixStepsDeps.runBranchFix>(async () => ({ dirty: false, autoCommitted: false }));
+    _fixStepsDeps.runBranchFix = run;
+    return run;
+  }
+
+  test.each([
+    { label: "repair mode (gates-failed)", patch: { outcome: "gates-failed" } },
+    { label: "prepare mode (baseline-red on green CI)", patch: { outcome: "baseline-red", ciOutcome: "green" } },
+  ] as const)("AC-8/9: $label passes kind repair", async ({ patch }) => {
+    const run = recordingRun();
+    await _botFixDeps.repairStep(envFor(), state(patch));
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]?.[1].kind).toBe("repair");
+  });
+
+  test("AC-10: fixStep passes no kind at all", async () => {
+    const run = recordingRun();
+    const base = envFor();
+    await fixStep({ ...base, review: { ...base.review, agreed: AGREED } }, state());
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]?.[1]).not.toHaveProperty("kind");
   });
 });
 

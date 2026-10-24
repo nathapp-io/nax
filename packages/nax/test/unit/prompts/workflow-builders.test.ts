@@ -9,6 +9,7 @@ import {
   buildWorkflowReReviewPrompt,
   buildWorkflowRestartPrompt,
   buildWorkflowStoryReviewPrompt,
+  REPAIR_VERIFICATION_RULE,
   WORKFLOW_REPLY_CONTRACT,
 } from "@/prompts";
 import { renderWorkflowFindings, WORKFLOW_ARTIFACTS_RULE } from "@/prompts/builders/workflow-implementer-builder";
@@ -389,5 +390,17 @@ describe("the interrupted-turn prompts are public", () => {
     expect(typeof buildWorkflowReportPrompt).toBe("function");
     expect(buildWorkflowContinuePrompt(continueInput)).toBeString();
     expect(buildWorkflowReportPrompt({ storyId: "US-005", reportPath: "/r/report.md" })).toBeString();
+  });
+});
+
+/**
+ * US-002: a check the session could not run is not a check it ran. The rule is shared by every
+ * repair brief, so it lives beside the reply contract and is exported from the barrel.
+ */
+describe("REPAIR_VERIFICATION_RULE (US-002)", () => {
+  test("AC-11: the barrel export is the exact rule", () => {
+    expect(REPAIR_VERIFICATION_RULE).toBe(
+      'If you cannot run a check here (for example the sandbox blocks its network, or its tool is missing), reply DONE_WITH_CONCERNS and name each such check in "concerns". Never reply DONE for a check you only reasoned about.',
+    );
   });
 });
