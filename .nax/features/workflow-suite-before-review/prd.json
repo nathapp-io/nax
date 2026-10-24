@@ -1,0 +1,380 @@
+{
+  "project": "nax-monorepo",
+  "feature": "workflow-suite-before-review",
+  "branchName": "feat/workflow-suite-before-review",
+  "createdAt": "2026-10-23T00:00:00.000Z",
+  "updatedAt": "2026-10-24T10:24:35.541Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "The story-review prompt states the full suite's result",
+      "description": "**Goal** — State the full suite's recorded result alongside the other story gates in the initial story-review prompt.\n\n**Motivation** — A stated suite result removes the reason to write them. Here, 'them' means cannot-verify lines about the suite running later.\n\n**Approach** — The prompt block becomes:\n\n```\n## What nax already checked\nnax ran these gates on this story before your review: lint <s>, typecheck <s>, scoped tests <s>, full suite <s>.\nDo not list these gates in \"cannotVerify\": their results are stated here. Once every story is done nax runs the repository gates; nax records whether they ran and what they returned, so do not list the repository gates in \"cannotVerify\" either.\nIf you have a shell tool, run this story's own test files with one scoped test command before you give the spec verdict.<e2e>\n```\n\nwhere each `<s>` is the recorded state or `not run`. When the full suite state is `red`, one more line follows the gates line: `The full suite is red; nax already records its failures as open findings, so do not repeat them as findings.`\nThe e2e sentence and `CANNOT_VERIFY_RULE` are unchanged.\n\n`naxCheckedBlock` names the full suite's recorded state next to lint, typecheck and scoped tests, drops the \"after your review nax runs the full test suite\" wording, keeps the repository-gates rule, and adds the red-suite line.\n\n**Scope** — In: packages/nax/src/prompts/builders/workflow-story-review-builder.ts and its existing prompt tests. Replace the tests \"story review says which gates run after it (AC-6)\" and \"story review qualifies the suite as conditional and leaves unreached gates to nax's record (F1)\" with assertions on the gates line naming full suite and the repository-gates sentence. The `not.toContain(\"if nax never reached one\")` assertion stays. Out: suite ordering and merged-state forwarding (US-002), the last-pass exception (US-003), and unreviewed close metadata (US-004). The re-review prompt (`buildWorkflowReReviewPrompt`) is not given gate states. `isGateTimingItem` and `ledgerCannotVerify` are not changed. The repository gates that run after every story is done keep their place and behaviour.\n\n**Interface** — Keep `naxCheckedBlock(gates, e2eGate)` and `buildWorkflowStoryReviewPrompt`'s existing input contract; `WorkflowStoryGateStates` already includes `\"full-suite\"`. The existing TypeScript declaration is:\n```typescript\nexport type WorkflowStoryGateStates = Readonly<\n  Partial<Record<\"lint\" | \"typecheck\" | \"scoped\" | \"full-suite\", \"green\" | \"red\" | \"skipped\">>\n>;\n```\nNo new required prompt argument is introduced; absent gate states continue to render `not run`. Write failing prompt assertions before implementing the block change.",
+      "acceptanceCriteria": [
+        "[unit] buildWorkflowStoryReviewPrompt with gates { lint: \"green\", typecheck: \"green\", scoped: \"green\", \"full-suite\": \"green\" } returns a prompt containing \"nax ran these gates on this story before your review: lint green, typecheck green, scoped tests green, full suite green.\"",
+        "[unit] buildWorkflowStoryReviewPrompt with gates { lint: \"green\", typecheck: \"green\", scoped: \"green\" } returns a prompt whose gates line ends \"full suite not run.\"",
+        "[unit] buildWorkflowStoryReviewPrompt with gates whose \"full-suite\" is \"skipped\" returns a prompt whose gates line ends \"full suite skipped.\"",
+        "[unit] buildWorkflowStoryReviewPrompt with any gates returns a prompt that does not contain \"After your review nax runs the full test suite\".",
+        "[unit] buildWorkflowStoryReviewPrompt returns a prompt containing 'Do not list these gates in \"cannotVerify\": their results are stated here.'",
+        "[unit] buildWorkflowStoryReviewPrompt returns a prompt containing 'Once every story is done nax runs the repository gates; nax records whether they ran and what they returned, so do not list the repository gates in \"cannotVerify\" either.'",
+        "[unit] buildWorkflowStoryReviewPrompt with gates whose \"full-suite\" is \"red\" returns a prompt containing \"The full suite is red; nax already records its failures as open findings, so do not repeat them as findings.\"",
+        "[unit] buildWorkflowStoryReviewPrompt with gates whose \"full-suite\" is \"green\" returns a prompt that does not contain \"The full suite is red\".",
+        "[unit] buildWorkflowStoryReviewPrompt with e2eGate: true still returns a prompt containing \"do not list e2e journeys in cannotVerify\"."
+      ],
+      "tags": [
+        "workflow",
+        "prompts",
+        "review",
+        "bugfix"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One existing prompt builder and its unit tests change using existing gate-state types; no new dependencies, abstractions, or security-sensitive behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/workflow-story-review-builder.ts",
+        "packages/nax/test/unit/prompts/workflow-builders.test.ts",
+        "packages/nax/src/workflow/story-review.ts"
+      ],
+      "suggestedCriteria": [
+        "buildWorkflowStoryReviewPrompt with no gates argument returns a prompt whose gates line ends \"full suite not run.\"",
+        "buildWorkflowStoryReviewPrompt with full-suite red places the red-suite explanation immediately after the gates line.",
+        "buildWorkflowStoryReviewPrompt with full-suite skipped returns a prompt that does not contain \"The full suite is red\"."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/prompts/workflow-builders.test.ts",
+          "reason": "the test \"story review says which gates run after it (AC-6)\" expects the prompt to contain \"After your review nax runs the full test suite on this story\", and the test \"story review qualifies the suite as conditional and leaves unreached gates to nax's record (F1)\" expects the sentences \"Both run only when the workflow reaches them: ...\" and \"nax records whether each one ran and what it returned, so never list the full suite or the repository gates in \"cannotVerify\", even though they have not run yet.\"; the suite now runs before the review, so both tests are replaced by assertions on the new block (the gates line naming `full suite`, and the repository-gates sentence). The `not.toContain(\"if nax never reached one\")` assertion stays."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c73054400ffef3326e3dcf49ef99bcdc65ef4b02"
+    },
+    {
+      "id": "US-002",
+      "title": "The story loop runs the full suite before the review",
+      "description": "**Goal** — Run the suite before report check and review on every pass whose story gates are green, short-circuiting every red-suite pass in this intermediate story.\n\n**Motivation** — Code a fix round writes to turn a red suite green is never reviewed today: the review already ran, nothing is in `reviewOpen`, so no re-review runs.\n\n**Approach** — Implement the suite-first algorithm below; the last-pass exception is deliberately deferred to US-003.\n\n1. `s.suiteThisIteration = false`; run `env.steps.gates()`. Red gates return the gate findings followed by `s.reviewOpen`, exactly as today; the suite, report check and review do not run in that pass.\n2. Set phase `suite`; `s.suite = await env.steps.fullSuite()`; `s.suiteThisIteration = true`. When `s.suite.red`, the suite findings are assigned ids (`s.assign(s.suite.findings)`) here, before any review finding of this pass.\n\nA red suite returns its findings followed by `s.reviewOpen` without running the report check or the review; in this story that holds on every pass, the last one included (US-003 adds the last-pass exception). The existing `passExit` routing sends that open list to a fix only while rounds remain; at the cap it sends the list to residual adjudication, not to another fix turn.\n\nFor that early return, retain the design's state-preservation rule: The report check and the review do not run, and `s.fixBase` is left as it is, so the next re-review diffs from the head recorded before the first fix of the open review findings.\n\nFor a non-red suite, continue with the remaining steps (the final-pass-red clause is intentionally excluded until US-003):\n4. Otherwise: `runReportCheck`, set phase `review` or `rereview`, then `review()`.\n5. Return the suite findings (empty when green or skipped) followed by `s.reviewOpen`.\n\n`review()` passes the merged gate states, `{ ...s.gates?.states, ...s.suite?.states }`, as the second argument of `env.steps.storyReview`. `reReview` is unchanged.\n\n`residualStep` keeps its guard `!s.gates?.red && !s.suiteThisIteration`. With the suite in every pass whose gates are green, the residual runs the suite only when the last pass ended on red gates, and then the guard skips it, so in practice the residual no longer runs the suite. Its code does not change.\n\nThe cost: the suite now runs on every pass whose gates are green, re-review passes included, so a story the review sends back pays one extra suite run per fix round. A clean story runs the suite once, as today.\n\n**Scope** — In: evaluate/review ordering and state forwarding in packages/nax/src/workflow/story-steps.ts; new loop scenarios in packages/nax/test/unit/workflow/story-loop-suite-first.test.ts; existing call-order/state/count assertions and equivalence traces; step-order comments above evaluate, evaluateStep and residualStep. Update packages/nax/README.md's story line to `story: implement → gates → full suite → story review → fix rounds → residual ruling`; update repository-root docs/guides/regression-gate.md to say the workflow suite runs before the story review in every pass whose gates are green. Keep the binding workdir packages/nax for this explicitly required documentation edit. Out: the red-final-pass exception and residual review evidence (US-003), and computed closing unreviewed metadata (US-004). Do not rework the prompt block owned by US-001. The repository gates that run after every story is done keep their place and behaviour. The re-review prompt (`buildWorkflowReReviewPrompt`) is not given gate states. `residualStep` code is not changed; its suite branch stays for a residual entered with `suiteThisIteration` false. Pipeline mode is frozen and not changed. A suite result from an earlier pass is not cleared when a later pass stops on red gates; `deriveEndState` and the residual's `redGates` may still name `full-suite` from that earlier pass, as they can today.\n\n**Interface** — Keep existing contracts read-only: `StoryLoopSteps.fullSuite(): Promise<GateRunResult>` and `StoryLoopSteps.storyReview(concerns, gates?)`; `runReportCheck(env, state, runTurn): Promise<boolean>`. `fullSuite()` throws: Not caught by the loop, as today: the error escapes `runStoryLoop`. Suite skipped (gate disabled): Treated as not red: review runs; the prompt states `full suite skipped`. The prompt/state seam enters at runStoryLoop and asserts what storyReview received, not just builder output. Use makeStoryLoopHarness, whose script.suite queues fullSuite results (exhaustion defaults green), reviewGates captures review arguments, and updates captures sink patches.\n\nWrite failing behavioral cases first. In story-loop-equivalence.test.ts, change the recorded call list from `[\"implement\", \"answerQuestion\", \"implement\", \"costExceeded\", \"gates\", \"storyReview\", \"fullSuite\"]` to `[\"implement\", \"answerQuestion\", \"implement\", \"costExceeded\", \"gates\", \"fullSuite\", \"storyReview\"]`; move the review-arguments assertion to `calls[6]?.args`, equal to `[[], { ...GREEN.states, ...SUITE_GREEN.states }]`. Preserve call/return pairing. In story-loop.test.ts, add `\"full-suite\": \"green\"` to the gate-context expectation and change the maxFixRounds:1 residual suite count from 1 to 2, with a name saying the suite ran in the last pass. Regenerate order/state traces for clean, full-suite-red, review-fail-one-round, rereview-new-finding, residual-rulings, fresh-after-warm-cap, needs-context-answered, red-gates-then-green, review-not-ran, resume-mid-fix and no-work-restart. From packages/nax use `NAX_UPDATE_WORKFLOW_GOLDEN=1 bun test test/unit/workflow/story-loop-equivalence.test.ts`, then `bun x biome format --write test/fixtures/workflow-equivalence/story/`. Do not hand-reorder trace events or add the final-pass exception ahead of US-003.",
+      "acceptanceCriteria": [
+        "[unit] When runStoryLoop runs a fresh story with green gates, a green full suite, and storyReview returning { ran: true, verdict: { spec: \"pass\", quality: \"approved\", findings: [], cannotVerify: [], inspectedFiles: [] } }, the recorded gate/review step calls are gates, then fullSuite, then storyReview.",
+        "[unit] When runStoryLoop runs a fresh story with green gates, a green full suite, and a passing storyReview verdict with no findings, the record's phase updates are implement, gates, suite, review, closed, in that order.",
+        "[unit] When runStoryLoop runs a fresh story with green gates, a green full suite, and a passing storyReview verdict with no findings, storyReview receives its second argument equal to { lint: \"green\", typecheck: \"green\", scoped: \"green\", \"full-suite\": \"green\" }.",
+        "[unit] With maxFixRounds: 2 and the suite queued red then green, runStoryLoop does not call storyReview before the first fix turn.",
+        "[unit] With maxFixRounds: 2 and the suite queued red then green, the first fix turn receives only findings with kind: \"gate\" and gate: \"full-suite\".",
+        "[unit] With maxFixRounds: 2 and the suite queued red then green, runStoryLoop calls storyReview exactly once.",
+        "[unit] With maxFixRounds: 2 and the suite queued red then green, the storyReview call occurs after the second fullSuite call.",
+        "[unit] With maxFixRounds: 2 and the suite queued red then green, runStoryLoop returns an outcome with state: \"complete\" and rounds: 1.",
+        "[unit] With maxFixRounds: 2, the suite queued red then green, and a story whose last implementer reply is DONE while reportExists returns false, runStoryLoop runs no report turn before the first fix turn.",
+        "[unit] With maxFixRounds: 3, a first review that opens one blocking spec finding F1, and the suite queued green, red, green, the second fix turn receives findings in the order suite finding, then F1.",
+        "[unit] With maxFixRounds: 3, a first review that opens one blocking spec finding F1, and the suite queued green, red, green, runStoryLoop does not call reReview between the first and second fix turns.",
+        "[unit] With maxFixRounds: 3, a first review that opens one blocking spec finding F1, and the suite queued green, red, green, runStoryLoop calls reReview exactly once.",
+        "[unit] With maxFixRounds: 3, a first review that opens one blocking spec finding F1, and the suite queued green, red, green, the one reReview call receives as its fix base the head recorded before the first fix turn.",
+        "[unit] With maxFixRounds: 3, a first review that opens one blocking spec finding F1, and the suite queued green, red, green, runStoryLoop calls head once.",
+        "[unit] With fullSuite returning { red: false, states: { \"full-suite\": \"skipped\" }, findings: [] }, runStoryLoop calls storyReview once.",
+        "[unit] With fullSuite returning { red: false, states: { \"full-suite\": \"skipped\" }, findings: [] }, storyReview receives gate states with \"full-suite\": \"skipped\".",
+        "[unit] With a fullSuite step that throws an error, runStoryLoop rejects with that same error object.",
+        "[unit] With a fullSuite step that throws an error, runStoryLoop never calls storyReview.",
+        "[unit] With the first gates red (lint), runStoryLoop does not call fullSuite before the first fix turn.",
+        "[unit] With the first gates red (lint), runStoryLoop does not call storyReview before the first fix turn.",
+        "[unit] With the first gates red (lint), the first fix turn receives only findings with kind: \"gate\"."
+      ],
+      "tags": [
+        "workflow",
+        "orchestration",
+        "gates",
+        "review",
+        "bugfix"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded orchestration reorder in one production module with existing injected contracts and harnesses; finding IDs, fixBase retention, and deliberate trace updates need focused TDD but no new abstraction or cross-package integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/workflow/report-check.ts",
+        "packages/nax/test/helpers/workflow-story-loop.ts",
+        "packages/nax/test/unit/workflow/story-loop.test.ts",
+        "packages/nax/test/unit/workflow/story-loop-equivalence.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/story-loop-suite-first.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/story-loop-equivalence.test.ts",
+          "reason": "\"AC-9: every steps and advisor call records a call and a return, in invocation order\" expects the call list `[\"implement\", \"answerQuestion\", \"implement\", \"costExceeded\", \"gates\", \"storyReview\", \"fullSuite\"]` and `calls[5]?.args` to equal `[[], GREEN.states]`; the suite now runs before the review, so the list becomes `[..., \"gates\", \"fullSuite\", \"storyReview\"]`, and the review-arguments assertion moves to `calls[6]?.args`, equal to `[[], { ...GREEN.states, ...SUITE_GREEN.states }]`. The call/return pairing invariant is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/story-loop.test.ts",
+          "reason": "\"the gate states the loop already recorded reach storyReview (AC-10)\" expects `h.reviewGates[0]` to equal `{ lint: \"green\", typecheck: \"green\", scoped: \"green\" }`; the suite now runs first and its state is passed too, so the expected value gains `\"full-suite\": \"green\"`. Also: \"residual at the cap with green gates runs the suite once for the record\" expects `suiteRuns` to be 1 with `maxFixRounds: 1`; the suite now runs in each of the two evaluate passes and the residual skips it (`suiteThisIteration` is true), so the expected count is 2 and the test name says the suite ran in the last pass."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/clean.json",
+          "reason": "golden trace regenerated with `NAX_UPDATE_WORKFLOW_GOLDEN=1` then biome format: the `fullSuite` call and phase `suite` now come before phase `review` and `storyReview`, whose gate-states argument gains `\"full-suite\"`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/full-suite-red.json",
+          "reason": "golden trace regenerated as above for the new step order: a red suite now returns to a fix on both passes, so this story's trace has no `storyReview` call (US-003 regenerates it again)."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/review-fail-one-round.json",
+          "reason": "golden trace regenerated as above for the new step order and the merged gate states passed to `storyReview`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/rereview-new-finding.json",
+          "reason": "golden trace regenerated as above for the new step order and the merged gate states passed to `storyReview`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/residual-rulings.json",
+          "reason": "golden trace regenerated as above: the suite now runs in every evaluate pass with green gates, and the residual no longer calls `fullSuite`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/fresh-after-warm-cap.json",
+          "reason": "golden trace regenerated as above: the suite now runs in every evaluate pass with green gates, and the residual no longer calls `fullSuite`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/needs-context-answered.json",
+          "reason": "golden trace regenerated as above for the new step order and the merged gate states passed to `storyReview`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/red-gates-then-green.json",
+          "reason": "golden trace regenerated as above for the new step order once the gates are green."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/review-not-ran.json",
+          "reason": "golden trace regenerated as above for the new step order."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/resume-mid-fix.json",
+          "reason": "golden trace regenerated as above for the new step order and the merged gate states passed to `storyReview`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/no-work-restart.json",
+          "reason": "golden trace regenerated as above: after its restart the story works, so its pass runs the suite before the review."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "726513b5db1fee83dda5f9e6d0db851dc9043705"
+    },
+    {
+      "id": "US-003",
+      "title": "On the last pass a red suite still goes to the review",
+      "description": "**Goal** — Allow a red suite on the final evaluate pass to reach report check and review/re-review, so residual adjudication sees review findings even when the story ends red.\n\n**Motivation** — A plain reorder would skip the review on every such story. This refers to repositories whose baseline is already red.\n\n**Approach** — Replace US-002's unconditional red-suite return with the final-pass-aware algorithm. One pass of `evaluate()`, in order:\n\n1. `s.suiteThisIteration = false`; run `env.steps.gates()`. Red gates return the gate findings followed by `s.reviewOpen`, exactly as today; the suite, report check and review do not run in that pass.\n2. Set phase `suite`; `s.suite = await env.steps.fullSuite()`; `s.suiteThisIteration = true`. When `s.suite.red`, the suite findings are assigned ids (`s.assign(s.suite.findings)`) here, before any review finding of this pass.\n3. Last pass means `s.round >= env.maxFixRounds`. When the suite is red and this is not the last pass, return the suite findings followed by `s.reviewOpen`. The report check and the review do not run, and `s.fixBase` is left as it is, so the next re-review diffs from the head recorded before the first fix of the open review findings.\n4. Otherwise (suite green, skipped, or red on the last pass): `runReportCheck`, set phase `review` or `rereview`, then `review()`.\n5. Return the suite findings (empty when green or skipped) followed by `s.reviewOpen`.\n\n`review()` passes the merged gate states, `{ ...s.gates?.states, ...s.suite?.states }`, as the second argument of `env.steps.storyReview`. `reReview` is unchanged.\n\nWhen the suite is red and `s.round >= env.maxFixRounds`, `evaluate()` runs the report check and the review (or re-review) anyway, and returns the suite findings followed by the review's open findings, so the residual adjudicates the review findings of a story that ends red.\n\nFailure handling: Suite red on the last pass: Report check and review run; open = suite findings, then review findings; the residual adjudicates the non-gate items; end state `complete-gate-open`.\n\n**Scope** — In: the red-suite condition in story-steps.ts, extension of the suite-first loop cases created by US-002, and regeneration of the existing full-suite-red equivalence fixture for the final-pass review call. Preserve suite-before-review ordering, merged gate states, suite-first finding IDs, maxFixRounds accounting, and the original fixBase across a skipped middle re-review. The suite-first foundation and prompt block are already provided by US-002/US-001. Out: closing unreviewed computation/persistence (US-004). `deriveEndState` and the end states are unchanged; a red suite still ends a story `complete-gate-open`. `residualStep` code is not changed; its suite branch stays for a residual entered with `suiteThisIteration` false. The full suite still blocks the review on failures that were already present in the baseline; making only new failures block is a separate change. The re-review prompt (`buildWorkflowReReviewPrompt`) is not given gate states.\n\n**Interface** — Keep `StoryLoopSteps.fullSuite(): Promise<GateRunResult>` and `StoryLoopSteps.storyReview(concerns, gates?)` unchanged. Keep reReview's existing round/findings/fixBase contract. All seam cases enter at runStoryLoop; capture advisor.ruleResidual requests using makeStoryLoopAdvisor and observe sink updates for the final open findings. With two red suite passes, assign F1 on pass one, F2 to the final suite finding, and F3 to the first review's new spec finding. With zero allowed fix rounds, round zero is already the last pass, so review still runs without a fix turn.\n\nWrite failing final-pass scenarios in packages/nax/test/unit/workflow/story-loop-suite-first.test.ts before changing the condition. One golden reaches the last pass with a red suite: story-loop-equivalence.test.ts:535-540 (full-suite-red) uses maxFixRounds:1 with an always-red suite. Regenerate its existing full-suite-red.json trace for the newly permitted final-pass storyReview call and merged red suite state, preserving end state/reason and fix-turn count. Use the existing NAX_UPDATE_WORKFLOW_GOLDEN command and Biome formatting documented in that test. This is a necessary update to an existing fixture, not a new story or additional functional requirement.",
+      "acceptanceCriteria": [
+        "[unit] With maxFixRounds: 1 and the suite queued red, red, runStoryLoop calls storyReview exactly once.",
+        "[unit] With maxFixRounds: 1 and the suite queued red, red, the storyReview call occurs after the second fullSuite call.",
+        "[unit] With maxFixRounds: 1 and the suite queued red, red, runStoryLoop returns state: \"complete-gate-open\" with reason: \"red: full-suite\".",
+        "[unit] With maxFixRounds: 1 and the suite queued red, red, storyReview receives gate states with \"full-suite\": \"red\".",
+        "[unit] With maxFixRounds: 1, the suite queued red, red, and the one story review returning one blocking spec finding, advisor.ruleResidual receives a request whose items contain that spec finding.",
+        "[unit] With maxFixRounds: 1, the suite queued red, red, and the one story review returning one blocking spec finding, advisor.ruleResidual receives a request with redGates equal to [\"full-suite\"].",
+        "[unit] With maxFixRounds: 1, the suite queued red, red, and the one story review returning one blocking spec finding, the open findings recorded for the last pass are, in order, the suite finding F2 and the spec finding F3.",
+        "[unit] With maxFixRounds: 2, a first review that opens one blocking spec finding F1, a re-review that leaves it open, and the suite queued green, red, red, runStoryLoop calls reReview exactly once.",
+        "[unit] With maxFixRounds: 2, a first review that opens one blocking spec finding F1, a re-review that leaves it open, and the suite queued green, red, red, the reReview call occurs in the last pass.",
+        "[unit] With maxFixRounds: 2, a first review that opens one blocking spec finding F1, a re-review that leaves it open, and the suite queued green, red, red, the reReview call receives the head recorded before the first fix turn as its fix base.",
+        "[unit] With maxFixRounds: 2, a first review that opens one blocking spec finding F1, a re-review that leaves it open, and the suite queued green, red, red, the last pass's open findings are the new suite finding followed by F1.",
+        "[unit] With maxFixRounds: 0 and the suite queued red, runStoryLoop calls storyReview exactly once.",
+        "[unit] With maxFixRounds: 0 and the suite queued red, runStoryLoop runs no fix turn."
+      ],
+      "tags": [
+        "workflow",
+        "orchestration",
+        "review",
+        "advisor",
+        "bugfix"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A narrow conditional refinement over the upstream loop with bounded round, finding-ID, residual, and fixBase behaviors exposed by existing seams; no new state model or API.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/workflow/adjudicate.ts",
+        "packages/nax/test/helpers/workflow-story-loop.ts",
+        "packages/nax/test/unit/workflow/story-loop-suite-first.test.ts",
+        "packages/nax/test/unit/workflow/story-loop-equivalence.test.ts"
+      ],
+      "suggestedCriteria": [
+        "With maxFixRounds:1, the suite queued red, red, a DONE implementer reply, and reportExists returning false, runStoryLoop runs the report turn after the second fullSuite call and before the final storyReview call.",
+        "When runStoryLoop resumes a record with reviewed:false at a round greater than maxFixRounds and the suite is red with green story gates, it calls storyReview before closing."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/full-suite-red.json",
+          "reason": "golden trace regenerated with `NAX_UPDATE_WORKFLOW_GOLDEN=1` then biome format: its scenario (`maxFixRounds: 1`, a suite that is always red) reaches the last pass with a red suite, which now runs the report check and one `storyReview` after the second `fullSuite`, with `\"full-suite\": \"red\"` in its gate states. The end state (`complete-gate-open`, `red: full-suite`) and the fix-turn count are unchanged."
+        }
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8f5fe9a548ae2053b1ebcf3a3ab40c9aec864d57"
+    },
+    {
+      "id": "US-004",
+      "title": "A story that was never reviewed closes as unreviewed",
+      "description": "**Goal** — Make every story that never reached a review close with unreviewed:true consistently in its outcome, persisted record, and ledger end line.\n\n**Motivation** — A story that closes having never reached a review (gates red to the cap, a no-work close) reports `unreviewed: false`.\n\n**Approach** — `closeStep` computes `unreviewed = s.unreviewed || !s.reviewed` and passes it to `closeLoop`, which writes it to the record in its closing `env.sink.update` (alongside `state`, `reason`, `phase: \"closed\"`, ...) and uses it for the end line and the returned outcome. This covers the `closeAs` no-work close too. The flag is display-only: besides the story summary and the PR body table, `storyNote` (`packages/nax/src/workflow/feature-steps.ts`) appends `unreviewed` to the story's line in the branch-review facts, so cost-limit, gates-red-to-the-cap and no-work stories now carry that note to the branch reviewer. Nothing gates behaviour on it.\n\nFailure handling: Story never reviewed (gates red to the cap, no-work close, cost limit before the first review): `unreviewed: true` in the outcome, the closing record update and the end line.\n\n**Scope** — In: closeStep/closeLoop in packages/nax/src/workflow/story-steps.ts; new close cases in packages/nax/test/unit/workflow/story-loop-unreviewed.test.ts; the existing story-graph closeAs expectation; regeneration of closing record updates and affected outcomes/end lines. Read feature-record.ts/fromRecord and ledger.ts/ledgerText.end as integration context, without changing their existing consuming behavior. Preserve the existing single closing update, state/reason selection including closeAs, timestamps, ruling/flagged counts, rounds and mirror:false. Keep skipped/unparseable-review behavior: a skipped attempted review sets s.unreviewed and remains complete with unreviewed:true. Out: suite-first evaluation and final-pass review scheduling (US-002/US-003), prompt wording (US-001), new behavior gates based on unreviewed, and backfilling already closed historical records. `deriveEndState` and the end states are unchanged; a red suite still ends a story `complete-gate-open`.\n\n**Interface** — `closeStep` / `closeLoop` in `story-steps.ts`: Baseline: `unreviewed` is `s.unreviewed`; the closing update does not write `unreviewed`. Target: `unreviewed = s.unreviewed || !s.reviewed`, written in the closing update. No public type is added: StoryLoopOutcome and WorkflowStoryRecord already carry a boolean unreviewed. The graph's close node still produces only outcome; pass the resolved flag into the private closing helper without changing graph topology. A successful review means reviewed:true and unreviewed:false; an attempted unparseable review means reviewed:true and unreviewed:true; a never-attempted review means reviewed:false and therefore must close unreviewed:true.\n\nWrite failing cases through runStoryLoop using makeStoryLoopHarness, including red lint at both passes, three no-work implementer turns, clean review, cost stop before review, and review returning ran:false for an unparseable reply. Follow the no-work setup in story-loop-no-work.test.ts. Update story-graph.test.ts's \"AC-39/AC-40: closeAs decides the outcome, and the record is closed once through the sink\" expected outcome from unreviewed:false to true; preserve the single closing update and existing toMatchObject fields. Regenerate all twelve existing story equivalence goldens: clean, full-suite-red, review-fail-one-round, rereview-new-finding, residual-rulings, fresh-after-warm-cap, needs-context-answered, red-gates-then-green, review-not-ran, resume-mid-fix, cost-exceeded and no-work-restart. Every closing update gains unreviewed, false for successfully reviewed stories and true otherwise. The cost-exceeded outcome becomes unreviewed:true and its end line gains `, unreviewed`; no-work-restart is reviewed after its successful restart and closes unreviewed:false. Use `NAX_UPDATE_WORKFLOW_GOLDEN=1 bun test test/unit/workflow/story-loop-equivalence.test.ts` from packages/nax and then Biome-format the fixture directory.",
+      "acceptanceCriteria": [
+        "[unit] With maxFixRounds: 1 and the gates red (lint) on both passes, runStoryLoop returns an outcome with unreviewed: true.",
+        "[unit] With maxFixRounds: 1 and the gates red (lint) on both passes, runStoryLoop never calls storyReview.",
+        "[unit] With maxFixRounds: 1 and the gates red (lint) on both passes, the ledger's end line is \"complete-gate-open (1 round(s), red: lint, unreviewed)\".",
+        "[unit] With maxFixRounds: 1 and the gates red (lint) on both passes, the record update that sets phase: \"closed\" also sets unreviewed: true.",
+        "[unit] When the no-work ladder closes a story after three no-work implementer turns, runStoryLoop returns an outcome with unreviewed: true.",
+        "[unit] When the no-work ladder closes a story after three no-work implementer turns, its closing record update sets unreviewed: true.",
+        "[unit] When a fresh story has green gates, a green full suite, and a passing storyReview verdict with no findings, runStoryLoop returns an outcome with unreviewed: false.",
+        "[unit] When a fresh story has green gates, a green full suite, and a passing storyReview verdict with no findings, its closing record update sets unreviewed: false.",
+        "[unit] When a fresh story reaches the cost check before its first review and costExceeded() returns true, runStoryLoop returns an outcome with unreviewed: true.",
+        "[unit] When a fresh story reaches the cost check before its first review and costExceeded() returns true, runStoryLoop returns state: \"complete-gate-open\" with reason: \"cost-limit\".",
+        "[unit] With otherwise-green gates and suite, when storyReview returns { ran: false, why: \"unparseable reply\" }, runStoryLoop still returns an outcome with unreviewed: true.",
+        "[unit] With otherwise-green gates and suite, when storyReview returns { ran: false, why: \"unparseable reply\" }, runStoryLoop still returns an outcome with state: \"complete\".",
+        "[unit] When a fresh story reaches the cost check before its first review and costExceeded() returns true, the record update that sets phase: \"closed\" sets unreviewed: true.",
+        "[unit] When a fresh story reaches the cost check before its first review and costExceeded() returns true, the ledger's end line ends with \", unreviewed)\".",
+        "[unit] When the no-work ladder closes a story after three no-work implementer turns, the ledger's end line ends with \", unreviewed)\"."
+      ],
+      "tags": [
+        "workflow",
+        "review",
+        "records",
+        "bugfix"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A private close-path computation and existing-record write propagated to established display consumers, with focused loop regressions and golden refreshes; no schema migration or security-sensitive logic.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/workflow/feature-record.ts",
+        "packages/nax/src/workflow/ledger.ts",
+        "packages/nax/test/unit/workflow/story-loop-no-work.test.ts",
+        "packages/nax/test/unit/workflow/story-graph.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/story-loop-unreviewed.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When runStoryLoop resumes a story recorded as reviewed:true and unreviewed:false, a cost stop before another review preserves unreviewed:false in the closing outcome.",
+        "When runStoryLoop resumes a story recorded as unreviewed:true, its closing record preserves unreviewed:true."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/story-graph.test.ts",
+          "reason": "\"AC-39/AC-40: closeAs decides the outcome, and the record is closed once through the sink\" builds its state from `initialStoryState`, so `reviewed` is false, and expects `result.patch.outcome` to equal `{ ..., unreviewed: false }`; a story closed with no review now reports `unreviewed: true`, so the expected outcome has `unreviewed: true`. The single closing update and its `toMatchObject` fields are unchanged."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/clean.json",
+          "reason": "golden trace regenerated with `NAX_UPDATE_WORKFLOW_GOLDEN=1` then biome format: the closing record update gains `unreviewed` (`false` for a reviewed story)."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/full-suite-red.json",
+          "reason": "golden trace regenerated as above: the closing record update gains `unreviewed`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/review-fail-one-round.json",
+          "reason": "golden trace regenerated as above: the closing record update gains `unreviewed`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/rereview-new-finding.json",
+          "reason": "golden trace regenerated as above: the closing record update gains `unreviewed`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/residual-rulings.json",
+          "reason": "golden trace regenerated as above: the closing record update gains `unreviewed`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/fresh-after-warm-cap.json",
+          "reason": "golden trace regenerated as above: the closing record update gains `unreviewed`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/needs-context-answered.json",
+          "reason": "golden trace regenerated as above: the closing record update gains `unreviewed`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/red-gates-then-green.json",
+          "reason": "golden trace regenerated as above: the closing record update gains `unreviewed`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/review-not-ran.json",
+          "reason": "golden trace regenerated as above: the closing record update gains `unreviewed`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/resume-mid-fix.json",
+          "reason": "golden trace regenerated as above: the closing record update gains `unreviewed`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/cost-exceeded.json",
+          "reason": "golden trace regenerated as above: the story stops on the cost limit before any review, so the closing record update gains `unreviewed: true` and the end line ends `, unreviewed`."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/story/no-work-restart.json",
+          "reason": "golden trace regenerated as above: the story works after its restart and is reviewed, so the closing record update gains `unreviewed: false`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a9e388a046e7ea460d49bbad55a4553f529e7a94"
+    }
+  ],
+  "analysis": "Goal and scope: close #2678 by changing only workflow-mode story evaluation to gates → full suite → report check → review, withholding review on a red suite while fixes remain but reviewing red code on the final pass. Record stories that never reached review as unreviewed. This is an enhancement of the existing Bun/TypeScript workflow, not a new subsystem. Exactly four sequential stories are required: US-001 prompt, US-002 suite-first evaluation with unconditional red-suite short-circuit as an intermediate state, US-003 final-pass exception, US-004 closing metadata. All have workdir packages/nax as mandated, including US-002's specifically required repository-root documentation edit. Existing draft content is superseded; final-pass criteria must remain in US-003 rather than being folded into US-002. Navigation used direct reads and text searches because the codebase-memory MCP tools were unavailable. No implementation or validation command was run during PRD generation.\n\nArchitecture and contracts: packages/nax/src/workflow/story-loop.ts:35 defines injected StoryLoopSteps, including fullSuite(): Promise<GateRunResult>, storyReview(concerns, gates?), reReview(round, findings, fixBase), head(), and costExceeded(). Its runStoryLoop entry at :154 invokes the step graph without catching step errors. packages/nax/src/workflow/story-graph.ts:18 defines implement/evaluate/fix/residual/close nodes; evaluate already produces suite, suiteThisIteration, reviewOpen, fixBase, reviewed and unreviewed. Its cost-stop rule at :85 checks evaluate/fix boundaries, preserving the initial implement turn and stopping before a first review when cost is already exceeded. No graph topology or new state fields are needed. packages/nax/src/workflow/types.ts:24-34 already declares GateState, GateRunResult, WorkflowEndState and the suite phase; WorkflowStoryRecord at :53 already has reviewed and unreviewed, so no persisted schema/version migration is required. Read docs/architecture/ARCHITECTURE.md before implementation; use existing dependency seams and Bun test helpers rather than module mocks or new external dependencies.\n\nUS-001 source and consumers: packages/nax/src/prompts/builders/workflow-story-review-builder.ts:10 already includes full-suite in WorkflowStoryGateStates. However, naxCheckedBlock at :15 only renders lint/typecheck/scoped, and :24 says the suite runs later. Extend the existing state formatter and block, add the conditional red-suite sentence directly after the gates line, preserve the e2e sentence at :19 and CANNOT_VERIFY_RULE at :29, and keep all other prompt content unchanged. The optional gates input at :37 and default {} at :52 preserve direct callers: omitted states render not run. The builder/type are exported by packages/nax/src/prompts/index.ts:137-142 and consumed by packages/nax/src/workflow/story-review.ts:78-95, whose runStoryReview already forwards gates into the prompt. packages/nax/src/workflow/stage-env.ts:119-126 already wires fullSuite to runWorkflowSuiteGate and forwards storyReview's second argument to runStoryReview, so neither adapter nor operation wiring needs changing. Existing prompt tests are in packages/nax/test/unit/prompts/workflow-builders.test.ts:195-268. Replace obsolete expectations at :221 and :230, retaining not.toContain(\"if nax never reached one\") and the existing scoped-command/cannotVerify regression assertions.\n\nUS-002/US-003 implementation: packages/nax/src/workflow/story-steps.ts:281 currently resets suiteThisIteration, runs gates, report check, and review, returns early for reviewOpen, then runs the suite. Move the suite phase/call before report check and review on every non-red-gates pass, including re-review passes. Keep the red-gates return unchanged. Assign red-suite draft IDs immediately after the suite result, before this pass's review assigns IDs; reuse those assigned findings when returning suite findings followed by reviewOpen. The assign method at :89 advances F identifiers. review at :220 currently passes only s.gates?.states; pass { ...s.gates?.states, ...s.suite?.states } to initial storyReview, with suite states taking precedence, and leave reReview's interface and behavior unchanged. evaluateStep at :359 appends pending session findings after evaluate's findings and persists openFindings/fixBase/reviewed/nextFindingId; preserve that ordering and persistence. fixStep at :406 increments the round and records head only when review findings are open and fixBase is undefined. Red-suite short-circuits must not call review or clear fixBase, so an existing review cycle continues to diff from the head before its first fix even across multiple red-suite passes. US-002 implements a red-suite return on every pass, including the cap; US-003 narrows it to s.suite.red && s.round < env.maxFixRounds. Final-pass detection is >=, including maxFixRounds: 0 and resumed rounds already at/past the cap. US-003 must run runReportCheck and review/re-review on a red final pass without creating an extra fix round or changing end-state derivation.\n\nReport, suite and residual seams: packages/nax/src/workflow/report-check.ts:75 exposes runReportCheck(env, state, runTurn): Promise<boolean>; it spends at most one report turn and retains its existing cost/fail-open rules. Only its placement changes; red suites before the cap must not even reach the check. Its behavior is also covered by packages/nax/test/unit/workflow/report-check.test.ts. packages/nax/src/workflow/story-steps.ts:392-403 keeps residualStep's executable code unchanged: !s.gates?.red && !s.suiteThisIteration guards the fallback suite; ordinary green-gates evaluate passes now already ran it, while red-gates passes still skip it. Residual items exclude gates, while redGateNames merges gate and suite states; packages/nax/src/workflow/adjudicate.ts:8 then forwards review findings and redGates to advisor.ruleResidual. packages/nax/src/workflow/close.ts:9 remains authoritative: red suites yield complete-gate-open with reason red: full-suite regardless of review findings/rulings. Do not clear an earlier suite result when a later pass stops on red gates. Real suite failures are intentionally not reclassified: packages/nax/src/operations/full-suite-gate.ts:414-427 labels baseline attribution but still returns status failed with all findings, and packages/nax/src/workflow/gates.ts:26-27,142-158 maps failed/error/timeout/inconclusive to red and disabled gates to skipped. A thrown injected fullSuite error must still escape runStoryLoop with its identity unchanged; do not introduce catches in evaluate.\n\nUS-004 metadata and consumers: initialStoryState in packages/nax/src/workflow/story-steps.ts:110-137 restores reviewed/unreviewed from resume or defaults both false. review at :220-230 sets reviewed true even when an attempted review returns ran:false, and additionally sets unreviewed true for that skipped attempt. Therefore !reviewed alone is insufficient: closeStep at :445 must compute s.unreviewed || !s.reviewed, including closeAs no-work exits, and pass that resolved value to closeLoop at :305. closeLoop must include it in its single phase:closed update and use the same value for ledgerText.end and the returned StoryLoopOutcome. Preserve state/reason/rulings/flagged/endedAt and mirror:false. packages/nax/src/workflow/ledger.ts:27 already formats the end line; changing that formatter is unnecessary. packages/nax/src/workflow/feature-record.ts:101-113 copies record.unreviewed into StorySummary, packages/nax/src/workflow/pr-body.ts:77 displays it in the PR story table, and packages/nax/src/workflow/feature-steps.ts:70-79 adds unreviewed to branch-review story facts. These are read-only integration consumers: the flag is display-only and must not gate execution, adjudication, publishing, or story state selection. Existing historical closed records are not backfilled; new close writes make resumed/in-progress and new stories accurate using the existing record shape.\n\nTests and fixtures: packages/nax/test/helpers/workflow-story-loop.ts:87,95,178-236 provides makeStoryLoopAdvisor/makeStoryLoopHarness, cloned suite queues whose exhausted default is green, reviewGates, updates, turns, reReviews with fixBase, deterministic head values, and accumulated record(). Reuse these helpers through @test/helpers. US-002 creates packages/nax/test/unit/workflow/story-loop-suite-first.test.ts; US-003 extends that upstream output. US-004 creates packages/nax/test/unit/workflow/story-loop-unreviewed.test.ts. The existing packages/nax/test/unit/workflow/story-loop.test.ts is already 579 lines; update its clean-order wording, merged gate-state expectation at :478, and residual suite count at :258 to two for maxFixRounds:1, rather than growing it with the new scenario matrix. packages/nax/test/unit/workflow/story-loop-equivalence.test.ts:196-225 expects the old call sequence and review arguments: change gates/storyReview/fullSuite to gates/fullSuite/storyReview and calls[5] to calls[6] with merged GREEN.states and SUITE_GREEN.states; preserve call/return pairing. Regenerate affected committed traces using NAX_UPDATE_WORKFLOW_GOLDEN=1 bun test test/unit/workflow/story-loop-equivalence.test.ts from packages/nax, then bun x biome format --write test/fixtures/workflow-equivalence/story/. US-002 order/state changes affect clean, full-suite-red, review-fail-one-round, rereview-new-finding, residual-rulings, fresh-after-warm-cap, needs-context-answered, red-gates-then-green, review-not-ran, resume-mid-fix and no-work-restart. US-004 adds unreviewed to closing updates in those eleven plus cost-exceeded; cost-exceeded's outcome/end line also change. packages/nax/test/unit/workflow/story-graph.test.ts:250-269 must expect unreviewed:true for closeAs from initial unreviewed state, preserving its single-close-write assertion. packages/nax/test/unit/workflow/story-loop-no-work.test.ts:179-222 shows how three no-status/no-work turns exercise closeAs without gates/review.\n\nVerified spec discrepancy: the statement that no golden reaches a last pass with a red suite is false in the current checkout. packages/nax/test/unit/workflow/story-loop-equivalence.test.ts:535-540 explicitly runs full-suite-red with maxFixRounds:1 and an always-red fullSuite. Consequently the intermediate US-002 trace skips review on both red passes, and US-003 moves the initial review onto the second, red final pass; full-suite-red.json must be regenerated again in US-003. This is maintenance of the existing golden, not an additional story or changed behavior requirement. Follow authoritative ACs rather than preserving that inaccurate no-golden-change note.\n\nDocumentation, risks and rollout: update step-order comments above evaluate/evaluateStep/residualStep, packages/nax/README.md:67 to story: implement → gates → full suite → story review → fix rounds → residual ruling, and docs/guides/regression-gate.md:10 to describe the workflow suite before review on every pass whose gates are green, without changing the pipeline guide's pipeline behavior. Principal risks are off-by-one cap detection, assigning suite IDs after review IDs, losing/replacing the original fixBase across a red-suite pass, spending a report/review turn prematurely, duplicating a residual suite run, misleading display flags on no-work/cost stops, and accidentally changing pipeline/repository gate semantics. Baseline-red repos intentionally spend their available fix rounds before one final review; review-requested fixes now incur another suite run per eligible pass, while a clean story still runs the suite once. No package/dependency/config/schema/public-signature migration is needed. Roll out in dependency order, use focused bun:test scenarios and deliberate trace regeneration as part of implementation, and leave normal pipeline quality gates to the execution system; never use bare bun test or run sandboxed coverage.\n\nRefine-pass adversarial audit: all 33 explicit spec acceptance criteria are preserved in their original stories. The following mapping uses each story's one-based acceptanceCriteria index after separating compound assertions; no spec assertion was deleted or moved. US-001: spec 1 (complete green gates line) → AC1; spec 2 (missing suite state rendered not run) → AC2; spec 3 (skipped suite rendered skipped) → AC3; spec 4 (obsolete after-review suite text absent) → AC4; spec 5 (stated-gates cannotVerify rule) → AC5; spec 6 (repository-gates cannotVerify sentence) → AC6; spec 7 (red-suite failures already recorded, do not repeat) → AC7; spec 8 (no red-suite warning for green suite) → AC8; spec 9 (e2eGate:true still retains the e2e cannotVerify rule) → AC9. US-002: spec 1 (gates/fullSuite/storyReview order) → AC1; spec 2 (implement/gates/suite/review/closed phase order) → AC2; spec 3 (merged initial-review gate argument) → AC3; spec 4 (red/green suite delays review and fixes only suite gate findings) → AC4-5; spec 5 (one review after the second suite, complete in one round) → AC6-8; spec 6 (missing report not repaired before the suite fix) → AC9; spec 7 (green/red/green suite preserves suite-then-F1 fix order and skips middle re-review) → AC10-11; spec 8 (one re-review with the original pre-first-fix base and one head call) → AC12-14; spec 9 (skipped suite permits review and forwards skipped state) → AC15-16; spec 10 (identical thrown suite error escapes and no storyReview runs) → AC17-18; spec 11 (red lint skips suite/review before the first fix and fixes only gate findings) → AC19-21. US-003: spec 1 (one review after the second red suite, gate-open with red: full-suite) → AC1-3; spec 2 (red suite state reaches review) → AC4; spec 3 (residual request contains the review finding and full-suite redGates) → AC5-6; spec 4 (final open list F2 suite then F3 spec) → AC7; spec 5 (one last-pass re-review with original base and suite-then-F1 open list) → AC8-11; spec 6 (zero-round red suite still reviewed without a fix turn) → AC12-13. US-004: spec 1 (red lint to cap returns unreviewed with no storyReview) → AC1-2; spec 2 (exact unreviewed end line) → AC3; spec 3 (closing patch unreviewed:true) → AC4; spec 4 (three no-work turns mark outcome and closing record unreviewed) → AC5-6; spec 5 (clean reviewed story marks outcome and closing record false) → AC7-8; spec 6 (cost stop before first review marks unreviewed and gate-open/cost-limit) → AC9-10; spec 7 (unparseable review still completes unreviewed) → AC11-12. The spec's failure-table never-reviewed row additionally supplies US-004 AC13-15 for cost/no-work closing-record/end-line propagation; these are explicit failure-handling requirements, not invented behavior.\n\nFailure-table coverage is complete: red suite with rounds left → US-002 AC4-5/9-11; red suite on the last pass → US-003 AC1-7; skipped suite → US-001 AC3 and US-002 AC15-16; thrown fullSuite → US-002 AC17-18; never-reviewed gates/no-work/cost exits → US-004 AC1-6/9-10/13-15. Each story has a negative path. Regression anchors remain: US-001's still-retained e2e rule, US-002's unchanged red-gates short-circuit and thrown-error identity, US-003's unchanged red-suite end state, and US-004's still-complete unparseable review. All quoted prompt text, including already-recorded failures, is retained. No deprecated grep/file/verbatim AC tags occur.\n\nAudit corrections: replaced ambiguous green-review language with the actual ran:true/StoryReviewVerdict contract and made clean-story criteria independently specify their setup; made review gate states explicitly the second argument; made residual checks explicitly observe advisor.ruleResidual request.items/redGates; expressed unparseable review at the loop seam as ran:false with why:unparseable reply rather than pretending the step returns raw text. Fresh-story/cost-check conditions disambiguate resume and no-work exits without changing the spec's cases. Corrected US-002's misleading implication that a capped red pass starts another fix: existing passExit routes it to residual instead. Explicitly included US-003's required existing-golden refresh in its In scope.\n\nAll eight feature-level out-of-scope items remain verbatim, with nearby repository-gate/re-review-prompt boundaries echoed in story scopes; none became an AC. Context selection remains aligned: US-001 includes both specified files, US-002 uses the five most critical of its six recommendations, US-003 includes every specified file plus the existing equivalence test, and US-004 includes all four specified files plus the existing graph regression. US-003's suite-first test context is an upstream US-002 output, not a file US-003 creates. Only US-002 and US-004 create files, each listed solely in expectedFiles. All story IDs and dependencies remain exactly the binding chain; all workdirs remain packages/nax. Medium/tdd-simple remains the lightest realistic routing for bounded source-and-test edits using existing seams; no new integration or security contract justifies a heavier strategy.",
+  "outOfScope": [
+    "The full suite still blocks the review on failures that were already present in the baseline; making only new failures block is a separate change.",
+    "`isGateTimingItem` and `ledgerCannotVerify` are not changed.",
+    "The re-review prompt (`buildWorkflowReReviewPrompt`) is not given gate states.",
+    "The repository gates that run after every story is done keep their place and behaviour.",
+    "`deriveEndState` and the end states are unchanged; a red suite still ends a story `complete-gate-open`.",
+    "Pipeline mode is frozen and not changed.",
+    "`residualStep` code is not changed; its suite branch stays for a residual entered with `suiteThisIteration` false.",
+    "A suite result from an earlier pass is not cleared when a later pass stops on red gates; `deriveEndState` and the residual's `redGates` may still name `full-suite` from that earlier pass, as they can today."
+  ],
+  "routingProfile": "native-codex"
+}

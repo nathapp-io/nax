@@ -218,24 +218,59 @@ ${WORKFLOW_REPLY_CONTRACT}`);
     expect(buildWorkflowStoryReviewPrompt({ ...storyReviewBase, gates: { lint: "red" } })).toContain("lint red");
   });
 
-  test("story review says which gates run after it (AC-6)", () => {
-    expect(buildWorkflowStoryReviewPrompt(storyReviewBase)).toContain(
-      "After your review nax runs the full test suite on this story",
+  test.each([
+    ["green", "green"],
+    [undefined, "not run"],
+    ["skipped", "skipped"],
+    ["red", "red"],
+  ] as const)("story review states full suite %s on the gates line (suite AC-1/2/3)", (suite, rendered) => {
+    const text = buildWorkflowStoryReviewPrompt({
+      ...storyReviewBase,
+      gates: { lint: "green", typecheck: "green", scoped: "green", ...(suite ? { "full-suite": suite } : {}) },
+    });
+    expect(text.split("\n")).toContain(
+      `nax ran these gates on this story before your review: lint green, typecheck green, scoped tests green, full suite ${rendered}.`,
+    );
+    expect(text).not.toContain("After your review nax runs the full test suite");
+    expect(text).toContain('Do not list these gates in "cannotVerify": their results are stated here.');
+    expect(text.includes("The full suite is red")).toBe(suite === "red");
+  });
+
+  test("story review no longer places the full suite after review (suite AC-4)", () => {
+    expect(buildWorkflowStoryReviewPrompt(storyReviewBase)).not.toContain(
+      "After your review nax runs the full test suite",
     );
   });
 
-  // F1 (fix round 1): the suite is conditional — a red gate or an open finding ends the story first.
-  // nax records whether each gate ran, so the reviewer, which cannot see whether a later gate will run,
-  // is never asked to report one: "if nax never reached one, say so" read as "list the suite" (10-19).
-  test("story review qualifies the suite as conditional and leaves unreached gates to nax's record (F1)", () => {
+  test("story review excludes stated gates from cannotVerify (suite AC-5)", () => {
+    expect(buildWorkflowStoryReviewPrompt(storyReviewBase)).toContain(
+      'Do not list these gates in "cannotVerify": their results are stated here.',
+    );
+  });
+
+  test("story review leaves repository gates to nax's record (suite AC-6)", () => {
     const text = buildWorkflowStoryReviewPrompt(storyReviewBase);
     expect(text).toContain(
-      "Both run only when the workflow reaches them: a red gate, or a finding left open, can end the story before the suite.",
-    );
-    expect(text).toContain(
-      'nax records whether each one ran and what it returned, so never list the full suite or the repository gates in "cannotVerify", even though they have not run yet.',
+      'Once every story is done nax runs the repository gates; nax records whether they ran and what they returned, so do not list the repository gates in "cannotVerify" either.',
     );
     expect(text).not.toContain("if nax never reached one");
+    expect(text.split("\n")).toContain(
+      "nax ran these gates on this story before your review: lint not run, typecheck not run, scoped tests not run, full suite not run.",
+    );
+  });
+
+  test("story review avoids duplicate red-suite findings immediately after the gates line (suite AC-7)", () => {
+    const text = buildWorkflowStoryReviewPrompt({ ...storyReviewBase, gates: { "full-suite": "red" } });
+    expect(text).toContain(
+      "full suite red.\nThe full suite is red; nax already records its failures as open findings, so do not repeat them as findings.",
+    );
+  });
+
+  test("story review preserves the host e2e rule (suite AC-9)", () => {
+    expect(buildWorkflowStoryReviewPrompt({ ...storyReviewBase, e2eGate: true })).toContain(
+      "nax runs the e2e suite as a repository gate on the host; do not list e2e journeys in cannotVerify.",
+    );
+    expect(buildWorkflowStoryReviewPrompt(storyReviewBase)).not.toContain("do not list e2e journeys in cannotVerify");
   });
 
   test("story review expects one scoped command over the story's own tests (AC-7)", () => {

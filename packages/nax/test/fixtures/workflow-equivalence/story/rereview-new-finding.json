@@ -96,6 +96,28 @@
     {
       "kind": "update",
       "record": {
+        "phase": "suite"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "fullSuite"
+    },
+    {
+      "kind": "return",
+      "method": "fullSuite",
+      "value": {
+        "findings": [],
+        "red": false,
+        "states": {
+          "full-suite": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
         "phase": "review"
       }
     },
@@ -112,6 +134,7 @@
       "args": [
         [],
         {
+          "full-suite": "green",
           "lint": "green",
           "scoped": "green",
           "typecheck": "green"
@@ -303,6 +326,28 @@
           "lint": "green",
           "scoped": "green",
           "typecheck": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "phase": "suite"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "fullSuite"
+    },
+    {
+      "kind": "return",
+      "method": "fullSuite",
+      "value": {
+        "findings": [],
+        "red": false,
+        "states": {
+          "full-suite": "green"
         }
       }
     },
@@ -529,6 +574,28 @@
     {
       "kind": "update",
       "record": {
+        "phase": "suite"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "fullSuite"
+    },
+    {
+      "kind": "return",
+      "method": "fullSuite",
+      "value": {
+        "findings": [],
+        "red": false,
+        "states": {
+          "full-suite": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
         "phase": "rereview"
       }
     },
@@ -587,28 +654,6 @@
     {
       "kind": "update",
       "record": {
-        "phase": "suite"
-      }
-    },
-    {
-      "args": [],
-      "kind": "call",
-      "method": "fullSuite"
-    },
-    {
-      "kind": "return",
-      "method": "fullSuite",
-      "value": {
-        "findings": [],
-        "red": false,
-        "states": {
-          "full-suite": "green"
-        }
-      }
-    },
-    {
-      "kind": "update",
-      "record": {
         "deferredMinors": 0,
         "nextFindingId": 3,
         "openFindings": [],
@@ -624,7 +669,8 @@
         "phase": "closed",
         "reason": "clean",
         "rulings": 0,
-        "state": "complete"
+        "state": "complete",
+        "unreviewed": false
       }
     },
     {

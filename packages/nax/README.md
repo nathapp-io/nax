@@ -64,16 +64,16 @@ nax has two execution modes. **Workflow mode** is the default (`execution.mode: 
 ### Workflow mode (default)
 
 ```
-story: implement → gates → story review → fix rounds → full suite → residual ruling
+story: implement → gates → full suite → story review → fix rounds → residual ruling
 feature: repo gates → branch review → branch fix → re-review → adjudicate → final gates → publish
 ```
 
 1. **Pre-flight** *(optional, on by default)* — the advisor checks the PRD for stories that share files and for spec/AC contradictions, before the first story
 2. **Implement** — one implementer session per story writes the tests and code, runs them, and commits
 3. **Gates** — `lint`, `typecheck` and `scoped` tests run after each turn
-4. **Story review** — one LLM review of the story diff against the spec, returning a spec verdict and a quality verdict
-5. **Fix rounds** — open findings go back to the implementer, up to `workflow.maxFixRounds` (default 5); minor findings are deferred to the ledger
-6. **Full suite** — the `full-suite` gate runs once the review passes
+4. **Full suite** — the `full-suite` gate runs before the story review on every pass whose gates are green; a red suite goes straight to a fix while fix rounds remain, but still reaches review on the last pass
+5. **Story review** — one LLM review of the story diff against the spec, returning a spec verdict and a quality verdict
+6. **Fix rounds** — open findings go back to the implementer, up to `workflow.maxFixRounds` (default 5), then repeat gates, full suite and review; minor findings are deferred to the ledger
 7. **Feature workflow** — after the last story: repo gates, one whole-branch review, up to `workflow.maxBranchFixRounds` (default 2) fix rounds each with a scoped re-review, adjudication, final gates, and up to `workflow.finalGateRepairRounds` (default 1) repair passes
 8. **Publish** — `workflow.publish` (`pr` by default) commits the ledger, pushes, opens or finds a draft PR, waits for CI, and promotes the draft when the deterministic readiness checks pass
 

@@ -7,7 +7,7 @@ description: Running full-suite regression testing after stories complete
 
 After all stories pass their individual verification, nax can run a deferred full-suite regression gate to catch cross-story regressions.
 
-> **Pipeline mode.** The `mode` and `enabled` keys below configure the pipeline's regression gate. In workflow mode (the default since 0.88.0) the story loop runs the full test suite once per story, after the story review passes and again before the residual adjudication. The feature workflow then runs every configured quality command (including `quality.commands.test`) as repo gates at the start, and again as the final gates after the branch fix. The `regressionGate.mode` values and the deferred end-of-run pass do not apply there.
+> **Pipeline mode.** The `mode` and `enabled` keys below configure the pipeline's regression gate. In workflow mode (the default since 0.88.0) the story loop runs the full test suite before the story review in every pass whose gates are green, including re-review passes. A red suite bypasses the report check and review and goes to a fix while rounds remain, or to residual adjudication at the cap. The feature workflow then runs every configured quality command (including `quality.commands.test`) as repo gates at the start, and again as the final gates after the branch fix. The `regressionGate.mode` values and the deferred end-of-run pass do not apply there.
 
 ```json
 {

@@ -139,7 +139,7 @@ describe("answer turns", () => {
 });
 
 describe("runStoryLoop", () => {
-  test("clean story: implement, gates, review, suite -> complete, 0 rounds", async () => {
+  test("clean story: implement, gates, suite, review -> complete, 0 rounds", async () => {
     const h = harness({});
     const out = await runStoryLoop(h.env);
     expect(out).toMatchObject({ state: "complete", rounds: 0 });
@@ -255,7 +255,7 @@ describe("runStoryLoop", () => {
     expect(fixTurns(h.turns)).toHaveLength(1);
   });
 
-  test("residual at the cap with green gates runs the suite once for the record", async () => {
+  test("residual at the cap skips the suite already run in the last pass", async () => {
     let suiteRuns = 0;
     const h = harness({ review: [failing()], reReviewAllAddressed: [false] }, { maxFixRounds: 1 });
     h.env.steps.fullSuite = async () => {
@@ -263,7 +263,7 @@ describe("runStoryLoop", () => {
       return SUITE_GREEN;
     };
     await runStoryLoop(h.env);
-    expect(suiteRuns).toBe(1);
+    expect(suiteRuns).toBe(2);
   });
 
   test("unparseable story review -> review-skipped, unreviewed, story proceeds", async () => {
@@ -503,7 +503,7 @@ describe("story review gate context (US-006)", () => {
   test("the gate states the loop already recorded reach storyReview (AC-10)", async () => {
     const h = harness({});
     await runStoryLoop(h.env);
-    expect(h.reviewGates[0]).toEqual({ lint: "green", typecheck: "green", scoped: "green" });
+    expect(h.reviewGates[0]).toEqual({ lint: "green", typecheck: "green", scoped: "green", "full-suite": "green" });
   });
 });
 

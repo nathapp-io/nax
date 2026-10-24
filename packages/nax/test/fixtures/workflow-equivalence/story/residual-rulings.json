@@ -96,6 +96,28 @@
     {
       "kind": "update",
       "record": {
+        "phase": "suite"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "fullSuite"
+    },
+    {
+      "kind": "return",
+      "method": "fullSuite",
+      "value": {
+        "findings": [],
+        "red": false,
+        "states": {
+          "full-suite": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
         "phase": "review"
       }
     },
@@ -112,6 +134,7 @@
       "args": [
         [],
         {
+          "full-suite": "green",
           "lint": "green",
           "scoped": "green",
           "typecheck": "green"
@@ -303,6 +326,28 @@
           "lint": "green",
           "scoped": "green",
           "typecheck": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "phase": "suite"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "fullSuite"
+    },
+    {
+      "kind": "return",
+      "method": "fullSuite",
+      "value": {
+        "findings": [],
+        "red": false,
+        "states": {
+          "full-suite": "green"
         }
       }
     },
@@ -523,6 +568,28 @@
     {
       "kind": "update",
       "record": {
+        "phase": "suite"
+      }
+    },
+    {
+      "args": [],
+      "kind": "call",
+      "method": "fullSuite"
+    },
+    {
+      "kind": "return",
+      "method": "fullSuite",
+      "value": {
+        "findings": [],
+        "red": false,
+        "states": {
+          "full-suite": "green"
+        }
+      }
+    },
+    {
+      "kind": "update",
+      "record": {
         "phase": "rereview"
       }
     },
@@ -602,22 +669,6 @@
       }
     },
     {
-      "args": [],
-      "kind": "call",
-      "method": "fullSuite"
-    },
-    {
-      "kind": "return",
-      "method": "fullSuite",
-      "value": {
-        "findings": [],
-        "red": false,
-        "states": {
-          "full-suite": "green"
-        }
-      }
-    },
-    {
       "args": [
         {
           "items": [
@@ -664,7 +715,8 @@
         "phase": "closed",
         "reason": "1 ruling(s)",
         "rulings": 1,
-        "state": "complete-with-rulings"
+        "state": "complete-with-rulings",
+        "unreviewed": false
       }
     },
     {

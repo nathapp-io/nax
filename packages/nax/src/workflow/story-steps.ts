@@ -29,10 +29,8 @@ import type {
   ImplementerReply,
   ReReviewVerdict,
   StoryReviewVerdict,
-  WorkflowEndState,
   WorkflowFinding,
   WorkflowFindingDraft,
-  WorkflowRuling,
 } from "./types";
 
 export const WARM_ROUND_CAP = 3;
@@ -220,7 +218,10 @@ async function recordConcern(env: StoryLoopEnv, s: LoopState, reply: Implementer
 async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
   if (!s.reviewed) {
     const step = startStep(env.storyId, "story-review", { model: env.steps.modelFor?.("story-review") });
-    const out: ReviewOutcome<StoryReviewVerdict> = await env.steps.storyReview(s.concerns, s.gates?.states);
+    const out: ReviewOutcome<StoryReviewVerdict> = await env.steps.storyReview(s.concerns, {
+      ...s.gates?.states,
+      ...s.suite?.states,
+    });
     s.reviewed = true;
     if (!out.ran) {
       step.done(`skipped (${out.why})`);
@@ -278,24 +279,24 @@ async function deferMinors(env: StoryLoopEnv, s: LoopState, drafts: readonly Wor
   }
 }
 
-/** One pass of gates -> review -> suite. Returns the open findings, or [] when the story is clean. */
+/** One pass: gates -> suite -> report check -> review. A red suite bypasses review only before the cap. */
 async function evaluate(env: StoryLoopEnv, s: LoopState): Promise<WorkflowFinding[]> {
   s.suiteThisIteration = false;
   await env.sink.update({ phase: "gates" });
   s.gates = await env.steps.gates();
   await env.sink.update({ gates: { ...s.gates.states } });
   if (s.gates.red) return [...s.assign(s.gates.findings), ...s.reviewOpen];
-  // US-008: one report turn, after the gates came back green and before the review spends itself on a
-  // report the implementer never wrote. The runner is the loop's own labelled one, so the turn keeps
-  // that session and its model.
-  s.reportTurnRan = await runReportCheck(env, s, (turn) => implementTurn(env, turn));
-  await env.sink.update({ phase: s.reviewed ? "rereview" : "review" });
-  await review(env, s);
-  if (s.reviewOpen.length > 0) return [...s.reviewOpen];
   await env.sink.update({ phase: "suite" });
   s.suite = await env.steps.fullSuite();
   s.suiteThisIteration = true;
-  return s.suite.red ? s.assign(s.suite.findings) : [];
+  const suiteFindings = s.suite.red ? s.assign(s.suite.findings) : [];
+  // Preserve the open review's fix base while suite failures bypass re-review before the cap.
+  if (s.suite.red && s.round < env.maxFixRounds) return [...suiteFindings, ...s.reviewOpen];
+  // One report turn before review, even with a red suite on the last pass.
+  s.reportTurnRan = await runReportCheck(env, s, (turn) => implementTurn(env, turn));
+  await env.sink.update({ phase: s.reviewed ? "rereview" : "review" });
+  await review(env, s);
+  return [...suiteFindings, ...s.reviewOpen];
 }
 
 function redGateNames(s: LoopState): GateName[] {
@@ -306,23 +307,22 @@ function redGateNames(s: LoopState): GateName[] {
 async function closeLoop(
   env: StoryLoopEnv,
   s: LoopState,
-  state: WorkflowEndState,
-  reason: string,
-  rulings: readonly WorkflowRuling[],
+  { state, reason, rulings, unreviewed }: Omit<StoryLoopOutcome, "rounds">,
 ): Promise<StoryLoopOutcome> {
   await env.sink.update({
     state,
     reason,
+    unreviewed,
     phase: "closed",
     rulings: rulings.length,
     flagged: rulings.filter(isFlaggedRuling).length,
     endedAt: new Date().toISOString(),
   });
   await env.sink.ledger(
-    ledgerText.end(state, `${s.round} round(s), ${reason}${s.unreviewed ? ", unreviewed" : ""}`),
+    ledgerText.end(state, `${s.round} round(s), ${reason}${unreviewed ? ", unreviewed" : ""}`),
     NO_MIRROR, // the stage logs "Story closed" with the same state and reason
   );
-  return { state, reason, rounds: s.round, rulings, unreviewed: s.unreviewed };
+  return { state, reason, rounds: s.round, rulings, unreviewed };
 }
 
 /**
@@ -356,7 +356,7 @@ function passExit(open: readonly WorkflowFinding[], round: number, maxFixRounds:
   return round >= maxFixRounds ? "capped" : "open";
 }
 
-/** One loop pass: gates -> review -> suite, then the record patch the loop wrote after it. */
+/** One loop pass: gates -> suite -> report check -> review, then persist the pass's record patch. */
 export async function evaluateStep(env: StoryLoopEnv, state: StoryLoopState): Promise<StepResult<StoryLoopState>> {
   const s = new LoopState(state);
   const open = [...(await evaluate(env, s)), ...s.pendingSession];
@@ -389,7 +389,7 @@ export async function evaluateStep(env: StoryLoopEnv, state: StoryLoopState): Pr
   };
 }
 
-/** Past the fix-round cap: one last suite run for the record, and the advisor's rulings. */
+/** Past the cap: advisor rulings; only run the suite if green gates have not reached it this pass. */
 export async function residualStep(env: StoryLoopEnv, state: StoryLoopState): Promise<StepResult<StoryLoopState>> {
   const s = new LoopState(state);
   await env.sink.update({ phase: "residual" });
@@ -448,6 +448,7 @@ export async function closeStep(env: StoryLoopEnv, state: StoryLoopState): Promi
   const end =
     state.closeAs ??
     deriveEndState({ costStop: s.costStop, gates: s.gates, suite: s.suite, rulings: state.rulings.length });
-  const outcome = await closeLoop(env, s, end.state, end.reason, state.rulings);
+  const unreviewed = s.unreviewed || !s.reviewed;
+  const outcome = await closeLoop(env, s, { ...end, rulings: state.rulings, unreviewed });
   return { patch: { outcome } };
 }

@@ -67,7 +67,8 @@
         "phase": "closed",
         "reason": "cost-limit",
         "rulings": 0,
-        "state": "complete-gate-open"
+        "state": "complete-gate-open",
+        "unreviewed": true
       }
     },
     {
@@ -75,7 +76,7 @@
       "options": {
         "mirror": false
       },
-      "text": "complete-gate-open (0 round(s), cost-limit)"
+      "text": "complete-gate-open (0 round(s), cost-limit, unreviewed)"
     }
   ],
   "end": {
@@ -84,7 +85,7 @@
       "rounds": 0,
       "rulings": [],
       "state": "complete-gate-open",
-      "unreviewed": false
+      "unreviewed": true
     }
   }
 }

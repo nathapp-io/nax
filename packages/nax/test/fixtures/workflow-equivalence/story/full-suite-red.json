@@ -96,57 +96,6 @@
     {
       "kind": "update",
       "record": {
-        "phase": "review"
-      }
-    },
-    {
-      "data": {
-        "step": "story-review",
-        "storyId": "US-001"
-      },
-      "kind": "log",
-      "level": "info",
-      "message": "US-001 story-review start"
-    },
-    {
-      "args": [
-        [],
-        {
-          "lint": "green",
-          "scoped": "green",
-          "typecheck": "green"
-        }
-      ],
-      "kind": "call",
-      "method": "storyReview"
-    },
-    {
-      "kind": "return",
-      "method": "storyReview",
-      "value": {
-        "ran": true,
-        "verdict": {
-          "cannotVerify": [],
-          "findings": [],
-          "inspectedFiles": [],
-          "quality": "approved",
-          "spec": "pass"
-        }
-      }
-    },
-    {
-      "data": {
-        "durationMs": 0,
-        "step": "story-review",
-        "storyId": "US-001"
-      },
-      "kind": "log",
-      "level": "info",
-      "message": "US-001 story-review: spec pass, quality approved - no findings  <dur>"
-    },
-    {
-      "kind": "update",
-      "record": {
         "phase": "suite"
       }
     },
@@ -187,7 +136,7 @@
             "severity": "important"
           }
         ],
-        "reviewed": true,
+        "reviewed": false,
         "unreviewed": false
       }
     },
@@ -323,12 +272,6 @@
     {
       "kind": "update",
       "record": {
-        "phase": "rereview"
-      }
-    },
-    {
-      "kind": "update",
-      "record": {
         "phase": "suite"
       }
     },
@@ -354,6 +297,58 @@
           "full-suite": "red"
         }
       }
+    },
+    {
+      "kind": "update",
+      "record": {
+        "phase": "review"
+      }
+    },
+    {
+      "data": {
+        "step": "story-review",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 story-review start"
+    },
+    {
+      "args": [
+        [],
+        {
+          "full-suite": "red",
+          "lint": "green",
+          "scoped": "green",
+          "typecheck": "green"
+        }
+      ],
+      "kind": "call",
+      "method": "storyReview"
+    },
+    {
+      "kind": "return",
+      "method": "storyReview",
+      "value": {
+        "ran": true,
+        "verdict": {
+          "cannotVerify": [],
+          "findings": [],
+          "inspectedFiles": [],
+          "quality": "approved",
+          "spec": "pass"
+        }
+      }
+    },
+    {
+      "data": {
+        "durationMs": 0,
+        "step": "story-review",
+        "storyId": "US-001"
+      },
+      "kind": "log",
+      "level": "info",
+      "message": "US-001 story-review: spec pass, quality approved - no findings  <dur>"
     },
     {
       "kind": "update",
@@ -410,7 +405,8 @@
         "phase": "closed",
         "reason": "red: full-suite",
         "rulings": 0,
-        "state": "complete-gate-open"
+        "state": "complete-gate-open",
+        "unreviewed": false
       }
     },
     {
