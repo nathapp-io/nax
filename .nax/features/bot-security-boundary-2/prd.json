@@ -3,7 +3,7 @@
   "feature": "bot-security-boundary-2",
   "branchName": "feat/bot-security-boundary-2",
   "createdAt": "2026-10-24T00:00:00.000Z",
-  "updatedAt": "2026-10-24T06:29:40.562Z",
+  "updatedAt": "2026-10-24T06:41:57.756Z",
   "userStories": [
     {
       "id": "US-001",
@@ -277,14 +277,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module session lifecycle wiring affects initial fixes, repair, auto-commit and push safety; security/session override requires strict isolation."
+        "reasoning": "Cross-module session lifecycle wiring affects initial fixes, repair, auto-commit and push safety; security/session override requires strict isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/branch-fix.ts",
@@ -301,7 +304,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a2a8b475c70e9dd956fe679c5b3b533e78342054"
     },
     {
       "id": "US-006",
