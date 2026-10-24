@@ -36,7 +36,14 @@ export {
 } from "./fix-cycle";
 export { _fixInputDeps, checkPushAccess, loadLatestReview, toFixFindings } from "./fix-input";
 export { _fixReportDeps, readyStep, renderFixSummary, replyStep, reportStep } from "./fix-report";
-export { _botFixDeps, BOT_FIX_GRAPH, type BotFixInput, type BotFixResult, runBotFix } from "./fix-run";
+export {
+  _botFixDeps,
+  BOT_FIX_DETECTED_REFUSAL,
+  BOT_FIX_GRAPH,
+  type BotFixInput,
+  type BotFixResult,
+  runBotFix,
+} from "./fix-run";
 export {
   _fixStepsDeps,
   type BotFixEnv,

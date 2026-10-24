@@ -77,7 +77,11 @@ export const _botFixDeps = {
   reportStep,
 };
 
+export const BOT_FIX_DETECTED_REFUSAL =
+  "the base branch has no nax config and no AGENTS.md or CLAUDE.md checks; run nax setup, or pass --trust to run the package scripts nax detected";
+
 export interface BotFixInput {
+  readonly trust?: boolean;
   readonly inPlace?: boolean;
   readonly readyOnly?: boolean;
   readonly fresh?: boolean;
@@ -389,6 +393,8 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
         },
         log,
       );
+    if (checks.source === "detected" && input.trust !== true)
+      return finishFix({ outcome: "refused", reason: BOT_FIX_DETECTED_REFUSAL }, log);
     const items = await triage(prepared);
     const env: BotFixEnv = {
       ...prepared,
