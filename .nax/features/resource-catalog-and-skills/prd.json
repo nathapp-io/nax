@@ -3,7 +3,7 @@
   "feature": "resource-catalog-and-skills",
   "branchName": "feat/resource-catalog-and-skills",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T09:47:28.898Z",
+  "updatedAt": "2026-10-25T09:54:44.697Z",
   "userStories": [
     {
       "id": "US-001",
@@ -548,14 +548,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure string builders with bounded formatting and explicit substitution rules follow existing prompt-builder conventions."
+        "reasoning": "Pure string builders with bounded formatting and explicit substitution rules follow existing prompt-builder conventions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/forge-read-builder.ts",
@@ -570,7 +573,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6336eba41748dcad153625d36b5ae9fb21d37647"
     },
     {
       "id": "US-010",
