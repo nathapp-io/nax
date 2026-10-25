@@ -61,6 +61,7 @@ import {
   registerAdvisorCommand,
   registerApprovalsCommand,
   registerBotCommand,
+  registerChatCommand,
   registerCostCommand,
   registerGatesCommand,
   registerTrustCommand,
@@ -127,6 +128,7 @@ import {
 const program = new Command();
 
 program.name("nax").description("AI Coding Agent Orchestrator — loops until done").version(NAX_VERSION);
+registerChatCommand(program);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

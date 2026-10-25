@@ -38,6 +38,13 @@ export {
   registerBotCommand,
 } from "./bot";
 export {
+  _chatCommandDeps,
+  type ChatCommandDeps,
+  type ChatCommandOptions,
+  chatCommand,
+  registerChatCommand,
+} from "./chat";
+export {
   type ConfigCommandOptions,
   type ConfigJsonOptions,
   type ConfigJsonReport,
