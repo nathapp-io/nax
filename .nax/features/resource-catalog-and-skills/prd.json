@@ -3,7 +3,7 @@
   "feature": "resource-catalog-and-skills",
   "branchName": "feat/resource-catalog-and-skills",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T09:31:01.148Z",
+  "updatedAt": "2026-10-25T09:37:36.014Z",
   "userStories": [
     {
       "id": "US-001",
@@ -420,14 +420,17 @@
       "dependencies": [
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Deterministic lookup and aggregation over upstream discovery use a clear small interface and standard maps."
+        "reasoning": "Deterministic lookup and aggregation over upstream discovery use a clear small interface and standard maps.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/resources/claude-sources.ts",
@@ -448,7 +451,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3db0971a455c300f42c7814a0b0071f2da0d23cb"
     },
     {
       "id": "US-008",
