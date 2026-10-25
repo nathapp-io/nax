@@ -290,6 +290,23 @@ export {
   unsandboxedSentence,
   warnSandboxUnavailableOnce,
 } from "#src/sandbox/index";
+export {
+  createSessionStorage,
+  defaultSessionsDir,
+  processAlive,
+  LIST_PAGE_SIZE,
+  LOCK_HEARTBEAT_MS,
+  LOCK_STALE_MS,
+  SESSION_ID_PATTERN,
+  SESSION_META_MODES,
+  type SessionMeta,
+  type SessionMetaMode,
+  type SessionListEntry,
+  type SessionListPage,
+  type SessionStorage,
+  type SessionStorageDeps,
+} from "#src/session-store/index";
+
 export type { AdapterFailure } from "#src/session/adapter-failure";
 export { createAgentSession, resumeAgentSession } from "#src/session/agent-session";
 export { AgentSessionError, type AgentSessionErrorCode } from "#src/session/agent-session-errors";
