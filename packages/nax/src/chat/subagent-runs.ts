@@ -3,7 +3,8 @@
  *
  * Resolves each run's model and tools, starts the nested session and routes its asks
  * to the chat's ask controller while remembering which nested session owns each request,
- * so the host can answer on the right session.
+ * so the host can answer on the right session. It also attributes nested usage to the
+ * chat ledger, accumulates nested spend and forwards nested tool activity (US-010).
  */
 import type { AgentSession, LoopHandlerSet, SessionEvent, ToolProvider, ToolResult } from "@nathapp/nax-agent";
 import type { NaxConfig } from "@/config";
@@ -57,9 +58,15 @@ function attributed(event: SessionEvent, agent: AgentResource): SessionEvent {
   return event;
 }
 
+/** Per-invocation timing: the nested turn's start, then the previous usage's time. */
+interface NestedUsage {
+  previousAt?: string;
+}
+
 export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
   const owners = new Map<string, AgentSession>();
   const active = new Set<AgentSession>();
+  let spentUsd = 0;
 
   function release(session: AgentSession): void {
     active.delete(session);
@@ -93,6 +100,18 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
     deps.asks.handle(attributed(event, agent));
   }
 
+  /** Usage rows and spend; only tool activity is shown in the chat transcript. */
+  function routeActivity(event: SessionEvent, nested: NestedUsage, current: SubagentRunsCurrent, model: string): void {
+    if (event.type === "turn_start") nested.previousAt = event.at;
+    else if (event.type === "usage") {
+      deps
+        .ledger()
+        ?.record({ ...event, sessionId: current.sessionId }, nested.previousAt ?? event.at, model, "subagent");
+      nested.previousAt = event.at;
+    } else if (event.type === "turn_end") spentUsd += event.costUsd;
+    else if (event.type === "tool_call" || event.type === "tool_result") deps.turnListener()?.(event);
+  }
+
   async function run(agent: AgentResource, task: string, signal?: AbortSignal): Promise<ToolResult> {
     const current = deps.current();
     const { model } = resolveSubagentModel({
@@ -103,6 +122,7 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
     });
     const { allowedTools } = mapSubagentTools(agent.tools);
     let nested: AgentSession | undefined;
+    const usage: NestedUsage = {};
     try {
       return await runSubagent({
         agent,
@@ -122,6 +142,7 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
           active.add(session);
         },
         onEvent: (event) => {
+          routeActivity(event, usage, current, model);
           if (nested !== undefined) routeAsk(event, nested, agent);
         },
       });
@@ -133,8 +154,11 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
   return {
     run,
     sessionFor: (requestId) => owners.get(requestId),
-    // Usage and cost forwarding arrive with US-010; nothing accrues yet.
-    takeCost: () => 0,
+    takeCost() {
+      const taken = spentUsd;
+      spentUsd = 0;
+      return taken;
+    },
     cancelAll() {
       for (const session of active) session.cancel();
     },

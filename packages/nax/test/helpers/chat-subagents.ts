@@ -82,15 +82,44 @@ export function makeAgentCatalog(agents: readonly AgentResource[]): ResourceCata
   ]);
 }
 
-export function turnEndEvent(output = "done"): SessionEvent {
+export function turnEndEvent(output = "done", costUsd = 0): SessionEvent {
   return {
     ...EVENT_BASE,
     type: "turn_end",
     status: "completed",
     output,
     usage: { inputTokens: 0, outputTokens: 0 },
-    costUsd: 0,
+    costUsd,
   };
+}
+
+export function turnStartEvent(at: string = AT): SessionEvent {
+  return { ...EVENT_BASE, at, type: "turn_start" };
+}
+
+export function usageEvent(at: string = AT, costUsd = 0.1): SessionEvent {
+  return {
+    ...EVENT_BASE,
+    at,
+    type: "usage",
+    round: 1,
+    inputTokens: 10,
+    outputTokens: 5,
+    costUsd,
+    costSource: "computed",
+  };
+}
+
+export function toolCallEvent(callId = "c1"): SessionEvent {
+  return { ...EVENT_BASE, type: "tool_call", callId, name: "Read", input: { path: "a.ts" } };
+}
+
+export function toolResultEvent(callId = "c1"): SessionEvent {
+  return { ...EVENT_BASE, type: "tool_result", callId, isError: false, preview: "contents" };
+}
+
+export function textDeltaEvent(text = "hello"): SessionEvent {
+  return { ...EVENT_BASE, type: "text_delta", round: 1, text };
 }
 
 export function approvalRequestedEvent(
@@ -123,7 +152,7 @@ export function approvalResolvedEvent(requestId: string): SessionEvent {
 export function makeScriptedSession(
   id: string,
   script: () => AsyncIterable<SessionEvent>,
-  hooks: { onCancel?: () => void } = {},
+  hooks: { onCancel?: () => void; closeGate?: Promise<void> } = {},
 ): ScriptedSession {
   const session: ScriptedSession = {
     id,
@@ -143,6 +172,7 @@ export function makeScriptedSession(
     },
     async close() {
       session.closeCalls++;
+      await hooks.closeGate;
     },
   };
   return session;
@@ -159,6 +189,24 @@ export interface SubagentHostOptions {
   readonly holdNested?: boolean;
   /** Do not run the agent from the scripted chat session's send. */
   readonly skipRun?: boolean;
+  /** `costUsd` of the nested turn's `turn_end`; defaults to 0. */
+  readonly nestedCostUsd?: number;
+  /** Status of the nested turn's `turn_end`; defaults to completed. */
+  readonly nestedStatus?: "completed" | "cancelled";
+  /** `costUsd` of the chat turn's `turn_end`; defaults to 0. */
+  readonly chatCostUsd?: number;
+  /** The chat session's send throws after the nested run settled. */
+  readonly chatThrows?: boolean;
+  /** Keep every nested session's `close()` pending until `releaseNestedClose()`. */
+  readonly holdNestedClose?: boolean;
+}
+
+/** Per-send script switches; a test may change them between sends. */
+export interface SubagentHostControl {
+  skipRun: boolean;
+  nestedCostUsd: number;
+  chatCostUsd: number;
+  chatThrows: boolean;
 }
 
 export interface SubagentHostHarness {
@@ -178,6 +226,8 @@ export interface SubagentHostHarness {
   turnSignal(): AbortSignal | undefined;
   abortTurn(): void;
   releaseNested(): void;
+  releaseNestedClose(): void;
+  readonly control: SubagentHostControl;
   /** Persist metadata so `resume({ id })` finds a session. */
   storeSession(id: string, mode?: "ask" | "full"): Promise<void>;
   /** The `nax-agents` provider of the latest chat backend. */
@@ -217,6 +267,13 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
   const toolResults: ToolResult[] = [];
   const released = Promise.withResolvers<void>();
   const cancelled = Promise.withResolvers<void>();
+  const closeGate = Promise.withResolvers<void>();
+  const control: SubagentHostControl = {
+    skipRun: options.skipRun ?? false,
+    nestedCostUsd: options.nestedCostUsd ?? 0,
+    chatCostUsd: options.chatCostUsd ?? 0,
+    chatThrows: options.chatThrows ?? false,
+  };
   let turn: AbortController | undefined;
   let counter = 0;
   const runAgentName = options.runAgent ?? agents[0]?.name ?? "reviewer";
@@ -229,7 +286,7 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
   const agentsProvider = () => chatBackends.at(-1)?.toolProviders?.find((provider) => provider.id === "nax-agents");
 
   async function* chatTurn(): AsyncGenerator<SessionEvent> {
-    const tool = options.skipRun
+    const tool = control.skipRun
       ? undefined
       : (await agentsProvider()?.tools("/repo"))?.find((t) => t.localName === "run");
     if (tool) {
@@ -243,13 +300,15 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
       };
       toolResults.push(await tool.run({ agent: runAgentName, task: "check it" }, ctx));
     }
-    yield turnEndEvent("chat done");
+    if (control.chatThrows) throw new Error("chat send failed");
+    yield turnEndEvent("chat done", control.chatCostUsd);
   }
 
   async function* nestedTurn(): AsyncGenerator<SessionEvent> {
     for (const event of options.nestedEvents ?? []) yield event;
     if (options.holdNested) await Promise.race([released.promise, cancelled.promise]);
-    yield turnEndEvent("nested done");
+    const end = turnEndEvent("nested done", control.nestedCostUsd);
+    yield end.type === "turn_end" && options.nestedStatus === "cancelled" ? { ...end, status: "cancelled" } : end;
   }
 
   _openChatSessionDeps.randomUUID = () => `chat-${++counter}`;
@@ -279,6 +338,7 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
     nestedSessionOptions.push(sessionOptions);
     const session = makeScriptedSession(`nested-${nestedSessions.length + 1}`, nestedTurn, {
       onCancel: () => cancelled.resolve(),
+      ...(options.holdNestedClose ? { closeGate: closeGate.promise } : {}),
     });
     nestedSessions.push(session);
     return session;
@@ -309,6 +369,8 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
     turnSignal: () => turn?.signal,
     abortTurn: () => turn?.abort(),
     releaseNested: () => released.resolve(),
+    releaseNestedClose: () => closeGate.resolve(),
+    control,
     agentsProvider,
     async storeSession(id, mode = "ask") {
       await storage.writeMeta({
@@ -326,6 +388,7 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
     async dispose() {
       released.resolve();
       cancelled.resolve();
+      closeGate.resolve();
       try {
         await host.close();
       } finally {

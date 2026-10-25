@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { AgentSession, SessionEvent } from "@nathapp/nax-agent";
 import {
   approvalRequestedEvent,
@@ -9,11 +9,17 @@ import {
   makeScriptedSession,
   questionEvent,
   type ScriptedSession,
+  textDeltaEvent,
+  toolCallEvent,
+  toolResultEvent,
   turnEndEvent,
+  turnStartEvent,
+  usageEvent,
   waitForCondition,
   withDepsRestore,
 } from "@test/helpers";
 import { createChatAskController } from "@/chat/ask-controller";
+import type { ChatLedger } from "@/chat/chat-ledger";
 import { createSubagentRuns, type SubagentRunsDeps } from "@/chat/subagent-runs";
 import { _subagentSessionDeps } from "@/chat/subagent-session";
 
@@ -44,14 +50,18 @@ interface Fixture {
 }
 
 /** One nested session that emits `events`, then holds its turn open until `finish()`. */
-function fixture(events: readonly SessionEvent[], answer: (id: string) => void = () => {}): Fixture {
+function fixture(
+  events: readonly SessionEvent[],
+  answer: (id: string) => void = () => {},
+  extra: { endCostUsd?: number; deps?: Partial<SubagentRunsDeps> } = {},
+): Fixture {
   const gate = Promise.withResolvers<void>();
   const reached = Promise.withResolvers<void>();
   const nested = makeScriptedSession("nested-1", async function* () {
     for (const event of events) yield event;
     reached.resolve();
     await gate.promise;
-    yield turnEndEvent("nested done");
+    yield turnEndEvent("nested done", extra.endCostUsd ?? 0);
   });
   _subagentSessionDeps.createAgentSession = async () => nested;
   _subagentSessionDeps.nativeBackend = () => ({
@@ -67,7 +77,7 @@ function fixture(events: readonly SessionEvent[], answer: (id: string) => void =
     packageRulesCount: 0,
   });
   const asks = createChatAskController({ mode: "guarded", answer });
-  const runs = createSubagentRuns(runsDeps({ asks }));
+  const runs = createSubagentRuns(runsDeps({ asks, ...extra.deps }));
   return { runs, asks, nested, reached: reached.promise, finish: gate.resolve };
 }
 
@@ -182,5 +192,87 @@ describe("createSubagentRuns", () => {
     await pending;
     await f.runs.closeAll();
     expect(f.nested.closeCalls).toBe(1);
+  });
+});
+
+function recordingLedger(): { ledger: ChatLedger; record: ReturnType<typeof mock<ChatLedger["record"]>> } {
+  const record = mock<ChatLedger["record"]>(() => {});
+  return { ledger: { record, drain: async () => {} }, record };
+}
+
+describe("createSubagentRuns usage, cost and tool events", () => {
+  withDepsRestore(_subagentSessionDeps);
+
+  test("AC-3/4/5/6 records nested usage on the chat session id with the agent's model, role and turn start", async () => {
+    const { ledger, record } = recordingLedger();
+    const startAt = "2026-10-01T00:00:00.500Z";
+    const usage = usageEvent("2026-10-01T00:00:01.000Z");
+    const f = fixture([turnStartEvent(startAt), usage], () => {}, { deps: { ledger: () => ledger } });
+    const running = f.runs.run(reviewer, "check it");
+    await f.reached;
+    f.finish();
+    await running;
+    expect(record).toHaveBeenCalledTimes(1);
+    const [event, previousAt, model, role] = record.mock.calls[0] ?? [];
+    expect(event).toMatchObject({ type: "usage", at: usage.at, costUsd: 0.1, sessionId: "chat-1" });
+    expect(model).toBe("anthropic/chat");
+    expect(role).toBe("subagent");
+    expect(previousAt).toBe(startAt);
+  });
+
+  test("a second usage in the same nested turn uses the previous usage's time", async () => {
+    const { ledger, record } = recordingLedger();
+    const first = usageEvent("2026-10-01T00:00:01.000Z");
+    const second = usageEvent("2026-10-01T00:00:03.000Z");
+    const f = fixture([turnStartEvent("2026-10-01T00:00:00.500Z"), first, second], () => {}, {
+      deps: { ledger: () => ledger },
+    });
+    const running = f.runs.run(reviewer, "check it");
+    await f.reached;
+    f.finish();
+    await running;
+    expect(record.mock.calls.map((call) => call[1])).toEqual(["2026-10-01T00:00:00.500Z", first.at]);
+  });
+
+  test("usage without a ledger is dropped without throwing", async () => {
+    const f = fixture([usageEvent()]);
+    const running = f.runs.run(reviewer, "check it");
+    await f.reached;
+    f.finish();
+    expect((await running).isError).toBeUndefined();
+    expect(f.runs.takeCost()).toBe(0);
+  });
+
+  test("AC-7/8 takeCost returns the nested turn_end cost once, then 0", async () => {
+    const f = fixture([usageEvent()], () => {}, { endCostUsd: 0.4 });
+    const running = f.runs.run(reviewer, "check it");
+    await f.reached;
+    f.finish();
+    await running;
+    expect(f.runs.takeCost()).toBe(0.4);
+    expect(f.runs.takeCost()).toBe(0);
+  });
+
+  test("usage rows do not add to takeCost", async () => {
+    const f = fixture([usageEvent(undefined, 0.9)], () => {}, { endCostUsd: 0.4 });
+    const running = f.runs.run(reviewer, "check it");
+    await f.reached;
+    f.finish();
+    await running;
+    expect(f.runs.takeCost()).toBe(0.4);
+  });
+
+  test("forwards only tool_call and tool_result to the turn listener", async () => {
+    const seen: SessionEvent[] = [];
+    const call = toolCallEvent();
+    const result = toolResultEvent();
+    const f = fixture([turnStartEvent(), textDeltaEvent(), call, usageEvent(), result], () => {}, {
+      deps: { turnListener: () => (event) => seen.push(event) },
+    });
+    const running = f.runs.run(reviewer, "check it");
+    await f.reached;
+    f.finish();
+    await running;
+    expect(seen).toEqual([call, result]);
   });
 });

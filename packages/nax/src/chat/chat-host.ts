@@ -359,6 +359,7 @@ class NativeChatHost implements ChatHost {
     const ledger = this.ledger;
     if (!ledger) throw new NaxError("[chat] ledger is not initialized", "CHAT_SESSION_NOT_OPEN", { stage: "chat" });
     this.turnListener = onEvent;
+    const runs = this.runs;
     let meta: SessionMeta;
     try {
       meta = await runChatTurn({
@@ -369,9 +370,12 @@ class NativeChatHost implements ChatHost {
         ledger,
         onEvent,
         now: this.deps.now().toISOString(),
+        ...(runs ? { extraCostUsd: () => runs.takeCost() } : {}),
       });
     } finally {
       this.turnListener = undefined;
+      // Nested spend of a send that threw is dropped, never added to the next send.
+      runs?.takeCost();
     }
     if (this.handle === handle) this.handle = { ...handle, meta };
   }
@@ -386,7 +390,9 @@ class NativeChatHost implements ChatHost {
   }
 
   cancel(): void {
-    this.requireHandle().session.cancel();
+    const { session } = this.requireHandle();
+    session.cancel();
+    this.runs?.cancelAll();
   }
 
   async listSessions(): Promise<readonly ChatSessionRow[]> {
@@ -412,6 +418,14 @@ class NativeChatHost implements ChatHost {
     // closed blocks new operations. Drain existing opens, replacements and rollback
     // reopens (including late-handle cleanup) before releasing the final handle.
     await Promise.all(this.sessionOperations);
+    try {
+      await this.runs?.closeAll();
+    } finally {
+      await this.closeSessionAndResources();
+    }
+  }
+
+  private async closeSessionAndResources(): Promise<void> {
     try {
       if (this.handle) await closeHandle(this.handle);
     } finally {

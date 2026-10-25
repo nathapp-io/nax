@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
+import type { SessionEvent } from "@nathapp/nax-agent";
 import {
   approvalRequestedEvent,
   CHAT_MODEL,
@@ -7,6 +9,11 @@ import {
   questionEvent,
   type SubagentHostHarness,
   type SubagentHostOptions,
+  textDeltaEvent,
+  toolCallEvent,
+  toolResultEvent,
+  turnStartEvent,
+  usageEvent,
   waitForCondition,
 } from "@test/helpers";
 
@@ -172,5 +179,109 @@ describe("chat host nested asks", () => {
     h.releaseNested();
     await sending;
     expect(h.host.asks.pending()).toEqual([]);
+  });
+});
+
+async function subagentRows(h: SubagentHostHarness): Promise<Record<string, unknown>[]> {
+  const cost = join(h.config.outputDir ?? "", "cost");
+  const rows: Record<string, unknown>[] = [];
+  for (const file of new Bun.Glob("*.jsonl").scanSync({ cwd: cost })) {
+    const text = await Bun.file(join(cost, file)).text();
+    for (const line of text.trim().split("\n")) rows.push(JSON.parse(line));
+  }
+  return rows.filter((row) => row.sessionRole === "subagent");
+}
+
+async function spent(h: SubagentHostHarness): Promise<number> {
+  return h.host.current().meta.costUsd ?? 0;
+}
+
+describe("chat host nested usage, spend and tool events", () => {
+  test("nested usage reaches the ledger as a subagent row on the chat session id", async () => {
+    const h = setup({
+      agents: [reviewer],
+      nestedEvents: [turnStartEvent("2026-10-01T00:00:00.000Z"), usageEvent("2026-10-01T00:00:02.000Z", 0.3)],
+    });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    const chatId = h.host.current().sessionId;
+    await h.host.send("go", () => {});
+    await h.host.close();
+    const rows = await subagentRows(h);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ sessionRole: "subagent", costUsd: 0.3, durationMs: 2000 });
+    expect(rows[0]?.runId).toContain(`chat-${chatId}-`);
+  });
+
+  test("AC-11 nested and chat turn spend both reach the session metadata", async () => {
+    const h = setup({ agents: [reviewer], nestedCostUsd: 0.4, chatCostUsd: 1 });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    const before = await spent(h);
+    await h.host.send("go", () => {});
+    expect((await spent(h)) - before).toBeCloseTo(1.4);
+  });
+
+  test("AC-12/13/14 forwards nested tool events to the send's onEvent but not text", async () => {
+    const call = toolCallEvent();
+    const result = toolResultEvent();
+    const h = setup({ agents: [reviewer], nestedEvents: [textDeltaEvent(), call, result] });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    const seen: SessionEvent[] = [];
+    await h.host.send("go", (event) => seen.push(event));
+    expect(seen).toContainEqual(call);
+    expect(seen).toContainEqual(result);
+    expect(seen.some((event) => event.type === "text_delta")).toBe(false);
+  });
+
+  test("AC-15 nested spend from a send that threw is not added to the next send", async () => {
+    const h = setup({ agents: [reviewer], nestedCostUsd: 0.4, chatThrows: true });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    await expect(h.host.send("go", () => {})).rejects.toThrow("chat send failed");
+    h.control.chatThrows = false;
+    h.control.skipRun = true;
+    h.control.chatCostUsd = 1;
+    const before = await spent(h);
+    await h.host.send("again", () => {});
+    expect((await spent(h)) - before).toBeCloseTo(1);
+  });
+});
+
+describe("chat host nested cancel and close", () => {
+  test("AC-16 host.cancel() cancels the running nested session", async () => {
+    const { h, sending } = await sendWithNested([]);
+    h.host.cancel();
+    expect(h.nestedSessions[0]?.cancelCalls).toBeGreaterThan(0);
+    await sending;
+  });
+
+  test("AC-17 host.close() resolves only after the nested session's close resolved", async () => {
+    const h = setup({ agents: [reviewer], holdNested: true, holdNestedClose: true });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    const sending = h.host.send("go", () => {}).catch(() => {});
+    await waitForCondition(() => h.nestedSessions.length > 0);
+    h.releaseNested();
+    await waitForCondition(() => h.nestedSessions[0]?.closeCalls === 1);
+    let closed = false;
+    const closing = h.host.close().then(() => {
+      closed = true;
+    });
+    // closeAll asks the still-closing nested session to close again, then waits on it.
+    await waitForCondition(() => (h.nestedSessions[0]?.closeCalls ?? 0) >= 2);
+    expect(closed).toBe(false);
+    expect(h.chatSessions[0]?.closeCalls).toBe(0);
+    h.releaseNestedClose();
+    await closing;
+    expect(closed).toBe(true);
+    expect(h.chatSessions[0]?.closeCalls).toBe(1);
+    await sending;
+  });
+
+  test("AC-18 a subagent cancelled by host.cancel() is closed before the send settles", async () => {
+    const h = setup({ agents: [reviewer], holdNested: true, nestedStatus: "cancelled" });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    const sending = h.host.send("go", () => {});
+    await waitForCondition(() => h.nestedSessions.length > 0);
+    h.host.cancel();
+    await sending;
+    expect(h.nestedSessions[0]?.closeCalls).toBe(1);
   });
 });

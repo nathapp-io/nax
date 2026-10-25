@@ -15,6 +15,8 @@ export interface RunChatTurnOptions {
   readonly onEvent: (event: SessionEvent) => void;
   /** ISO timestamp for shared session metadata, not ledger milliseconds. */
   readonly now: string;
+  /** Spend of nested sessions to add to this turn's metadata; read once, after `turn_end`. */
+  readonly extraCostUsd?: () => number;
 }
 
 async function writeTurnMeta(options: RunChatTurnOptions, costUsd: number): Promise<SessionMeta> {
@@ -24,7 +26,7 @@ async function writeTurnMeta(options: RunChatTurnOptions, costUsd: number): Prom
   const meta: SessionMeta = {
     ...handle.meta,
     updatedAt: now,
-    costUsd: (stored.costUsd ?? 0) + costUsd,
+    costUsd: (stored.costUsd ?? 0) + costUsd + (options.extraCostUsd?.() ?? 0),
     title: stored.title ?? [...message.trim().replace(/\s+/gu, " ")].slice(0, TITLE_CODE_POINT_LIMIT).join(""),
   };
   await storage.writeMeta(meta);

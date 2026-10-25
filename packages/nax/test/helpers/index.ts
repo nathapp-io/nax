@@ -32,7 +32,12 @@ export {
   type ScriptedSession,
   type SubagentHostHarness,
   type SubagentHostOptions,
+  textDeltaEvent,
+  toolCallEvent,
+  toolResultEvent,
   turnEndEvent,
+  turnStartEvent,
+  usageEvent,
 } from "./chat-subagents";
 export { type CodexAcpEnvDeps, stubCodexAcpEnvDeps } from "./codex-acp-deps";
 export {
