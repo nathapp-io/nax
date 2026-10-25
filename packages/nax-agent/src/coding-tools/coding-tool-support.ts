@@ -37,7 +37,7 @@ import {
 } from "#src/tools/index";
 import type { OwnedPathsPolicy } from "#src/tools/owned-paths";
 import { resolveBashSupport } from "./coding-tool-bash.ts";
-import { buildDeclaredCommandTools } from "./coding-tool-extras.ts";
+import { buildDeclaredCommandTools, unsandboxedRuntimeOption, unsandboxedToolOptions } from "./coding-tool-extras.ts";
 import { isTempConfined, rawScreenOptionsFor } from "./coding-tool-sandbox.ts";
 
 export interface CodingToolSupport {
@@ -167,6 +167,12 @@ export function buildCodingToolSupport(args: {
   commandShadow?: CommandShadow;
   /** P4: resolved by resolveCodingToolSupport (async); data only here. */
   launcher?: CommandLauncher;
+  /**
+   * US-003: whether this session offers Bash's per-call `unsandboxed` argument
+   * (the session profile's `allowUnsandboxedCommands`). Advertisement only —
+   * the runtime's own reading of the field is a later story.
+   */
+  unsandboxedCommands?: boolean;
   /** US-001: forwarded into ToolRunContext so Bash/Exec can SIGKILL on cancel. */
   abortSignal?: AbortSignal;
   /**
@@ -287,9 +293,15 @@ export function buildCodingToolSupport(args: {
         ...(args.stripEnvVars !== undefined ? { stripEnvVars: args.stripEnvVars } : {}),
         ...(args.shell !== undefined ? { shell: args.shell } : {}),
         ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
+        ...unsandboxedToolOptions(args),
       }),
     ],
     ...(args.providerIdByTool !== undefined ? { providerIdByTool: args.providerIdByTool } : {}),
+    // US-005: the escape option reaches the RUNTIME too, not just the Bash
+    // schema — with the locally resolved mode, so a caller that left
+    // `bashApproval` unset cannot enable an escape under a mode it did not
+    // choose.
+    ...unsandboxedRuntimeOption({ unsandboxedCommands: args.unsandboxedCommands, bashApproval }),
   });
   const tools = runtime.advertised(advertised);
   // The fixed per-hop cost of advertising provider tools: their schemas enter

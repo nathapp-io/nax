@@ -4,6 +4,7 @@
  * keeps the caller's own objects. Profile rules are the native backend's own.
  */
 import { describe, expect, test } from "bun:test";
+import type { NativeBackendOptions } from "#src/session/native-backend-options";
 import { nativeProfileRules, parseNativeBackendOptions } from "#src/session/native-backend-options";
 import { assertNaxError } from "#test/helpers/index";
 
@@ -126,13 +127,18 @@ describe("nativeProfileRules", () => {
   const raw = { model: "openai/x" };
 
   test("full defaults to gated and sandboxed", () => {
-    expect(nativeProfileRules("full", raw)).toEqual({ bashApproval: "gated", allowUnsandboxed: false });
+    expect(nativeProfileRules("full", raw)).toEqual({
+      bashApproval: "gated",
+      allowUnsandboxed: false,
+      allowUnsandboxedCommands: false,
+    });
   });
 
   test("ask forces gated: raw and escalate are refused, the default is gated", () => {
     expect(nativeProfileRules("ask", { model: "openai/x" })).toEqual({
       bashApproval: "gated",
       allowUnsandboxed: false,
+      allowUnsandboxedCommands: false,
     });
     for (const mode of ["raw", "escalate"] as const) {
       let caught: unknown;
@@ -148,11 +154,19 @@ describe("nativeProfileRules", () => {
   });
 
   test("read and none accept neither knob", () => {
-    expect(nativeProfileRules("read", raw)).toEqual({ bashApproval: "gated", allowUnsandboxed: false });
-    expect(nativeProfileRules("none", raw)).toEqual({ bashApproval: "gated", allowUnsandboxed: false });
+    expect(nativeProfileRules("read", raw)).toEqual({
+      bashApproval: "gated",
+      allowUnsandboxed: false,
+      allowUnsandboxedCommands: false,
+    });
+    expect(nativeProfileRules("none", raw)).toEqual({
+      bashApproval: "gated",
+      allowUnsandboxed: false,
+      allowUnsandboxedCommands: false,
+    });
   });
 
-  test("bashApproval and allowUnsandboxed are refused for none and read", () => {
+  test("bashApproval, allowUnsandboxed and allowUnsandboxedCommands are refused for none and read", () => {
     for (const profile of ["none", "read"] as const) {
       expect(code(() => nativeProfileRules(profile, { ...raw, bashApproval: "gated" }))).toBe(
         "AGENT_SESSION_INVALID_OPTIONS",
@@ -160,6 +174,13 @@ describe("nativeProfileRules", () => {
       expect(code(() => nativeProfileRules(profile, { ...raw, allowUnsandboxed: true }))).toBe(
         "AGENT_SESSION_INVALID_OPTIONS",
       );
+      // AC-7: set to either value, the field itself is what a tool-less profile refuses.
+      for (const allowUnsandboxedCommands of [true, false]) {
+        const err = rulesFailure(profile, { ...raw, allowUnsandboxedCommands });
+        expect(err.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+        expect(err.message).toContain('allowUnsandboxedCommands applies to profiles "ask", "full" and "review" only');
+        expect(err.context).toMatchObject({ path: "backend.allowUnsandboxedCommands" });
+      }
     }
   });
 
@@ -167,17 +188,20 @@ describe("nativeProfileRules", () => {
     expect(nativeProfileRules("full", { ...raw, bashApproval: "raw" })).toEqual({
       bashApproval: "raw",
       allowUnsandboxed: false,
+      allowUnsandboxedCommands: false,
     });
     expect(nativeProfileRules("full", { ...raw, allowUnsandboxed: true })).toEqual({
       bashApproval: "gated",
       allowUnsandboxed: true,
+      allowUnsandboxedCommands: false,
     });
   });
 
-  test("allowUnsandboxed requires gated", () => {
-    expect(code(() => nativeProfileRules("full", { ...raw, bashApproval: "raw", allowUnsandboxed: true }))).toBe(
-      "AGENT_SESSION_INVALID_OPTIONS",
-    );
+  test('allowUnsandboxed is refused only under "escalate"', () => {
+    const err = rulesFailure("full", { ...raw, bashApproval: "escalate", allowUnsandboxed: true });
+    expect(err.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(err.message).toContain('allowUnsandboxed requires bashApproval "gated" or "raw"');
+    expect(err.context).toMatchObject({ path: "backend.allowUnsandboxed" });
   });
 });
 
@@ -185,5 +209,82 @@ test("review accepts bashApproval and allowUnsandboxed like full (nax#2500)", ()
   expect(nativeProfileRules("review", { model: "openai/x", bashApproval: "gated", allowUnsandboxed: true })).toEqual({
     bashApproval: "gated",
     allowUnsandboxed: true,
+    allowUnsandboxedCommands: false,
+  });
+  // AC-2: review is full's peer for the raw-plus-fallback pairing.
+  expect(
+    nativeProfileRules("review", { model: "openai/x", bashApproval: "raw", allowUnsandboxed: true }).allowUnsandboxed,
+  ).toBe(true);
+});
+
+/** The error `nativeProfileRules` throws, asserted to be an AgentSessionError. */
+function rulesFailure(
+  profile: "none" | "read" | "ask" | "full" | "review",
+  raw: NativeBackendOptions,
+): { readonly code: string; readonly message: string; readonly context: unknown } {
+  try {
+    nativeProfileRules(profile, raw);
+  } catch (err) {
+    assertNaxError(err);
+    return { code: err.code, message: err.message, context: err.context };
+  }
+  throw new Error(`nativeProfileRules("${profile}", ${JSON.stringify(raw)}) did not throw`);
+}
+
+describe("nativeProfileRules: raw with the unsandboxed fallback", () => {
+  // AC-1: the interactive host's "full" mode is raw + allowUnsandboxed, and it must be legal.
+  test('full with bashApproval "raw" and allowUnsandboxed accepts both knobs', () => {
+    expect(nativeProfileRules("full", { model: "openai/x", bashApproval: "raw", allowUnsandboxed: true })).toEqual({
+      bashApproval: "raw",
+      allowUnsandboxed: true,
+      allowUnsandboxedCommands: false,
+    });
+  });
+
+  // AC-3: escalate never asks, so there is nothing that could fall back to a human.
+  test("escalate with allowUnsandboxed is refused and names both legal modes", () => {
+    const err = rulesFailure("full", { model: "openai/x", bashApproval: "escalate", allowUnsandboxed: true });
+    expect(err.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(err.message).toContain('allowUnsandboxed requires bashApproval "gated" or "raw"');
+  });
+
+  // AC-4: the ask profile's gate comes first, so its own message is what the caller sees.
+  test("ask refuses raw before the allowUnsandboxed check runs", () => {
+    const err = rulesFailure("ask", { model: "openai/x", bashApproval: "raw", allowUnsandboxed: true });
+    expect(err.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(err.message).toContain('profile "ask" requires bashApproval "gated"');
+  });
+});
+
+describe("nativeProfileRules: allowUnsandboxedCommands", () => {
+  // AC-5
+  test("full resolves the field from the caller's options", () => {
+    expect(nativeProfileRules("full", { model: "openai/x", allowUnsandboxedCommands: true })).toEqual({
+      bashApproval: "gated",
+      allowUnsandboxed: false,
+      allowUnsandboxedCommands: true,
+    });
+  });
+
+  // AC-6
+  test("read refuses it with the profiles that do have tools", () => {
+    const err = rulesFailure("read", { model: "openai/x", allowUnsandboxedCommands: true });
+    expect(err.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(err.message).toContain('allowUnsandboxedCommands applies to profiles "ask", "full" and "review" only');
+    expect(err.context).toMatchObject({ path: "backend.allowUnsandboxedCommands" });
+  });
+
+  // AC-8
+  test("a non-boolean value is an INVALID_OPTIONS naming backend.allowUnsandboxedCommands", () => {
+    let caught: unknown;
+    try {
+      parseNativeBackendOptions({ model: "p/m", allowUnsandboxedCommands: "yes" });
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught);
+    expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(caught.context).toMatchObject({ path: "backend.allowUnsandboxedCommands" });
+    expect(caught.message).toContain("backend.allowUnsandboxedCommands");
   });
 });

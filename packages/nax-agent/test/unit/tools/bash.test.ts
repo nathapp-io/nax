@@ -19,6 +19,36 @@ function stubRunArgv(result: Partial<Awaited<ReturnType<typeof realRunArgv>>> = 
 
 const ctx = (maxBytes = 40_000) => ({ root, resolvedPaths: [], maxBytes, maxFileBytes: 2_000_000 });
 
+/** A launcher that records every request and reports a clean run. */
+function recordingLauncher(requests: LaunchRequest[]): CommandLauncher {
+  return {
+    state: DISABLED_SANDBOX_STATE,
+    async run(req) {
+      requests.push(req);
+      return {
+        exitCode: 0,
+        stdout: "out",
+        stderr: "",
+        timedOut: false,
+        executed: ["/bin/sh", "-c", "bun test"],
+        sandbox: { backend: "none", wrapped: false },
+      };
+    },
+  };
+}
+
+/**
+ * The tool's `properties` map as an object, never a cast to a Capitalised type
+ * (that spelling is what the looseCast ratchet counts).
+ */
+function schemaProperties(tool: { readonly inputSchema: Record<string, unknown> }): object {
+  const properties: unknown = tool.inputSchema.properties;
+  if (typeof properties !== "object" || properties === null) {
+    throw new Error("expected the tool's inputSchema.properties to be an object");
+  }
+  return properties;
+}
+
 beforeEach(() => {
   root = makeTempDir("bash-tool-");
   calls = [];
@@ -191,23 +221,6 @@ describe("US-004 — Bash opts its child into agent-friendly output", () => {
   withDepsRestore(_agentOutputEnvDeps, ["processEnv"]);
 
   const noMarker = (): Record<string, string | undefined> => ({ PATH: "/usr/bin" });
-
-  function recordingLauncher(requests: LaunchRequest[]): CommandLauncher {
-    return {
-      state: DISABLED_SANDBOX_STATE,
-      async run(req) {
-        requests.push(req);
-        return {
-          exitCode: 0,
-          stdout: "out",
-          stderr: "",
-          timedOut: false,
-          executed: ["/bin/sh", "-c", "bun test"],
-          sandbox: { backend: "none", wrapped: false },
-        };
-      },
-    };
-  }
 
   test("AC6: with no launcher and no inherited marker, runArgv receives env { AGENT: '1' }", async () => {
     _agentOutputEnvDeps.processEnv = noMarker;
@@ -386,5 +399,113 @@ describe("US-002 raw-mode Bash description: the whole-filesystem find refusal", 
     expect(guidance).toContain("$HOME");
     expect(guidance).toContain("refused");
     expect(guidance).toContain("repository");
+  });
+});
+
+/**
+ * US-003: `unsandboxedCommands` is the session-level opt-in for the per-call
+ * `unsandboxed` argument. Off (or absent) the tool must be byte-identical to
+ * before it existed; only an exact `true` on the INPUT reaches the launcher,
+ * and the tool itself never reads the option when it runs.
+ */
+describe("US-003 — the unsandboxedCommands option on the Bash tool", () => {
+  const UNSANDBOXED_SENTENCE =
+    'Set "unsandboxed": true with an "unsandboxedReason" only when the command needs the network, a local socket or a device the sandbox blocks.';
+
+  test("AC-1: with the option absent the schema declares exactly command, timeoutMs and description", () => {
+    const tool = createBashTool({ shell: "/bin/sh" });
+    expect(Object.keys(schemaProperties(tool)).sort()).toEqual(["command", "description", "timeoutMs"]);
+  });
+
+  test("AC-2: with the option absent the description equals the description with it explicitly false", () => {
+    expect(createBashTool({ bashApproval: "gated" }).description).toBe(
+      createBashTool({ bashApproval: "gated", unsandboxedCommands: false }).description,
+    );
+  });
+
+  test("AC-3: the scope always declares unsandboxedField, and commandField is unchanged", () => {
+    for (const unsandboxedCommands of [undefined, false, true]) {
+      const scope = createBashTool({ unsandboxedCommands }).scope;
+      expect(scope.unsandboxedField).toBe("unsandboxed");
+      expect(scope.commandField).toBe("command");
+    }
+  });
+
+  test("AC-4: the option adds boolean unsandboxed and string unsandboxedReason to the schema", () => {
+    const tool = createBashTool({ unsandboxedCommands: true });
+    expect(tool.inputSchema).toMatchObject({
+      properties: { unsandboxed: { type: "boolean" }, unsandboxedReason: { type: "string" } },
+    });
+    // Still the three original properties, unchanged and still described.
+    expect(Object.keys(schemaProperties(tool)).sort()).toEqual([
+      "command",
+      "description",
+      "timeoutMs",
+      "unsandboxed",
+      "unsandboxedReason",
+    ]);
+  });
+
+  test("AC-5: the option leaves the required list at exactly command", () => {
+    expect(createBashTool({ unsandboxedCommands: true }).inputSchema.required).toEqual(["command"]);
+  });
+
+  test("AC-6: the option appends the one guidance sentence to the description", () => {
+    expect(createBashTool({ unsandboxedCommands: true }).description).toEndWith(UNSANDBOXED_SENTENCE);
+    expect(createBashTool({ unsandboxedCommands: false }).description).not.toContain(UNSANDBOXED_SENTENCE);
+  });
+
+  test("AC-7: an exact unsandboxed: true asks the launcher to run the call unwrapped", async () => {
+    const requests: LaunchRequest[] = [];
+    const tool = createBashTool({ launcher: recordingLauncher(requests), unsandboxedCommands: true });
+    await tool.run({ command: "curl x", unsandboxed: true, unsandboxedReason: "needs network" }, ctx());
+    assertDefined(requests[0], "the launcher request");
+    expect(requests[0].unwrapped).toBe(true);
+    expect(requests[0].spec).toEqual({ kind: "shell", shell: "/bin/sh", command: "curl x" });
+  });
+
+  test("AC-8: a call without the field carries no unwrapped key", async () => {
+    const requests: LaunchRequest[] = [];
+    const tool = createBashTool({ launcher: recordingLauncher(requests), unsandboxedCommands: true });
+    await tool.run({ command: "ls" }, ctx());
+    assertDefined(requests[0], "the launcher request");
+    expect("unwrapped" in requests[0]).toBe(false);
+  });
+
+  test('AC-9: a truthy non-boolean "unsandboxed" is not the opt-in, so no unwrapped key', async () => {
+    const requests: LaunchRequest[] = [];
+    const tool = createBashTool({ launcher: recordingLauncher(requests), unsandboxedCommands: true });
+    await tool.run({ command: "ls", unsandboxed: "true" }, ctx());
+    assertDefined(requests[0], "the launcher request");
+    expect("unwrapped" in requests[0]).toBe(false);
+  });
+
+  test("AC-10: with no launcher an unsandboxed: true call direct-spawns the shell", async () => {
+    stubRunArgv();
+    const tool = createBashTool({ unsandboxedCommands: true });
+    await tool.run({ command: "ls", unsandboxed: true }, ctx());
+    expect(calls[0]?.argv).toEqual(["/bin/sh", "-c", "ls"]);
+  });
+
+  test("AC-11: that direct-spawned run is not an error result", async () => {
+    stubRunArgv();
+    const result = await createBashTool({ unsandboxedCommands: true }).run({ command: "ls", unsandboxed: true }, ctx());
+    expect(result.isError).not.toBe(true);
+  });
+
+  test("AC-16: an empty command is refused before any launch, even with the escape flag", async () => {
+    const requests: LaunchRequest[] = [];
+    const tool = createBashTool({ launcher: recordingLauncher(requests), unsandboxedCommands: true });
+    const result = await tool.run({ command: "", unsandboxed: true }, ctx());
+    expect(result).toEqual({ content: '"command" must be a non-empty string', isError: true });
+  });
+
+  test("AC-17: that refusal invokes neither the launcher nor the direct spawn", async () => {
+    const requests: LaunchRequest[] = [];
+    stubRunArgv();
+    const tool = createBashTool({ launcher: recordingLauncher(requests), unsandboxedCommands: true });
+    await tool.run({ command: "", unsandboxed: true }, ctx());
+    expect(requests).toHaveLength(0);
+    expect(calls).toHaveLength(0);
   });
 });

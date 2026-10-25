@@ -38,6 +38,47 @@ export interface DeclaredCommandToolsArgs {
   readonly runDeclaredCommand?: DeclaredCommandRunner;
   /** P4: how Bash and Exec-branch commands run; absent = direct spawn (tests). */
   readonly launcher?: CommandLauncher;
+  /**
+   * US-003/US-008: whether this session offers the per-call `unsandboxed`
+   * argument — on Bash (`createBashTool`) and on RunCommand's argv branch
+   * (`createRunCommandTool`'s `exec` option, US-008). Advertisement only:
+   * RunCommand's DECLARED-command branch has no argv to unwrap and refuses the
+   * flag by name.
+   */
+  readonly unsandboxedCommands?: boolean;
+}
+
+/**
+ * US-003: `unsandboxedCommands` as a spreadable field — present only when the
+ * session opted in, so "off" and "absent" stay one shape all the way down to
+ * `createBashTool` and to RunCommand's `exec` option (US-008).
+ *
+ * A helper rather than an inline `cond ? { field } : {}` spread because
+ * `buildDeclaredCommandTools` and `buildCodingToolSupport` both sit at their
+ * cognitive-complexity baseline and a ternary inside either one would raise it.
+ */
+export function unsandboxedToolOptions(args: { readonly unsandboxedCommands?: boolean }): {
+  readonly unsandboxedCommands?: true;
+} {
+  return args.unsandboxedCommands === true ? { unsandboxedCommands: true } : {};
+}
+
+/**
+ * US-005: the same option as the RUNTIME's field — whether a `Bash`/`Exec`
+ * call may run outside the sandbox at all, plus the Bash approval mode that
+ * decides how an enabled request is routed.
+ *
+ * Absent when the session did not opt in, so "off" and "absent" stay one shape
+ * all the way to `createCodingToolRuntime` (absent means disabled). A helper
+ * for the same reason as `unsandboxedToolOptions`: `buildCodingToolSupport`
+ * sits at its cognitive-complexity baseline and a ternary inside it would
+ * raise it.
+ */
+export function unsandboxedRuntimeOption(args: {
+  readonly unsandboxedCommands?: boolean;
+  readonly bashApproval: BashApprovalMode;
+}): { readonly unsandboxed?: { readonly enabled: boolean; readonly bashApproval: BashApprovalMode } } {
+  return args.unsandboxedCommands === true ? { unsandboxed: { enabled: true, bashApproval: args.bashApproval } } : {};
 }
 
 export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): CodingTool[] {
@@ -72,6 +113,10 @@ export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): Codin
                     patterns: args.execGrant?.patterns ?? [],
                     ...(args.packageName !== undefined ? { packageName: args.packageName } : {}),
                     ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
+                    // US-008: the same option Bash takes, forwarded to the argv
+                    // branch's advertisement through the same helper — one
+                    // shape for "off" and "absent" on both tools.
+                    ...unsandboxedToolOptions(args),
                   },
                 }
               : {}),
@@ -90,6 +135,7 @@ export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): Codin
             bashApproval: args.bashApproval,
             ...(args.humanApproval === true ? { humanApproval: true } : {}),
             ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
+            ...unsandboxedToolOptions(args),
           }),
         ]
       : []),

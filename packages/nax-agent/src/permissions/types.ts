@@ -37,6 +37,12 @@ export interface AskRequest {
    * hide shell syntax (review #9). The human link denies without prompting.
    */
   readonly unshowable?: true;
+  /**
+   * US-004: the call wants to run OUTSIDE the OS sandbox (the sandbox is never
+   * turned off for the whole session). A host that keys on it can offer a
+   * distinct decision; one that ignores it shows the ordinary approval prompt.
+   */
+  readonly unsandboxed?: true;
   /** The permitted root -- where the shell actually starts (src/tools/bash.ts:165). */
   readonly root?: string;
   /** The verdict's original reason, NOT rewritten as `matched ask rule "..."`. */

@@ -25,6 +25,12 @@ export interface NativeBackendOptions {
   readonly hostPorts?: AgentSessionHostPorts;
   readonly bashApproval?: BashApprovalMode;
   readonly allowUnsandboxed?: boolean;
+  /**
+   * US-001: offer the Bash/Exec tools' `unsandboxed` argument, so a model can ask
+   * for one command to run outside the OS sandbox. Refused by the tool-less
+   * profiles, which have no shell to unwrap.
+   */
+  readonly allowUnsandboxedCommands?: boolean;
   /** Keep a resumed or continued conversation when the model differs (ACP server model switch, S5-3). */
   readonly carryHistoryAcrossModels?: boolean;
   /**
@@ -89,6 +95,7 @@ const OptionsSchema = z.strictObject({
     .optional(),
   bashApproval: z.enum(["raw", "gated", "escalate"]).optional(),
   allowUnsandboxed: z.boolean().optional(),
+  allowUnsandboxedCommands: z.boolean().optional(),
   carryHistoryAcrossModels: z.boolean().optional(),
   compaction: compactionSettingsSchema.optional(),
 });
@@ -123,10 +130,14 @@ export function parseNativeBackendOptions(input: unknown): ResolvedNativeOptions
   return { raw: options, provider: providerOf(options.model) };
 }
 
-export function nativeProfileRules(
-  profile: AgentSessionProfile,
-  raw: NativeBackendOptions,
-): { readonly bashApproval: BashApprovalMode; readonly allowUnsandboxed: boolean } {
+/** The profile's resolved knobs: the validator's answer, consumed as data. */
+export interface ResolvedProfileRules {
+  readonly bashApproval: BashApprovalMode;
+  readonly allowUnsandboxed: boolean;
+  readonly allowUnsandboxedCommands: boolean;
+}
+
+export function nativeProfileRules(profile: AgentSessionProfile, raw: NativeBackendOptions): ResolvedProfileRules {
   const tools = profile === "full" || profile === "ask" || profile === "review";
   if (!tools && raw.bashApproval !== undefined) {
     throw invalid('bashApproval applies to profiles "ask", "full" and "review" only', { path: "backend.bashApproval" });
@@ -136,14 +147,26 @@ export function nativeProfileRules(
       path: "backend.allowUnsandboxed",
     });
   }
+  if (!tools && raw.allowUnsandboxedCommands !== undefined) {
+    throw invalid('allowUnsandboxedCommands applies to profiles "ask", "full" and "review" only', {
+      path: "backend.allowUnsandboxedCommands",
+    });
+  }
   const bashApproval = raw.bashApproval ?? "gated";
   if (profile === "ask" && bashApproval !== "gated") {
     throw invalid('profile "ask" requires bashApproval "gated" (other modes run Bash without asking)', {
       path: "backend.bashApproval",
     });
   }
-  if (raw.allowUnsandboxed === true && bashApproval !== "gated") {
-    throw invalid('allowUnsandboxed requires bashApproval "gated"', { path: "backend.allowUnsandboxed" });
+  // Raw never asks, so an unsandboxed fallback under it is the person's own standing
+  // decision; escalate has no one to fall back to. Gated and raw are the two that may.
+  const fallbackAllowed = bashApproval === "gated" || bashApproval === "raw";
+  if (raw.allowUnsandboxed === true && !fallbackAllowed) {
+    throw invalid('allowUnsandboxed requires bashApproval "gated" or "raw"', { path: "backend.allowUnsandboxed" });
   }
-  return { bashApproval, allowUnsandboxed: raw.allowUnsandboxed === true };
+  return {
+    bashApproval,
+    allowUnsandboxed: raw.allowUnsandboxed === true,
+    allowUnsandboxedCommands: raw.allowUnsandboxedCommands === true,
+  };
 }

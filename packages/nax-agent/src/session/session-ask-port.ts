@@ -50,6 +50,10 @@ export function createSessionAskPort(deps: SessionAskPortDeps): SessionAskPort {
         tool: req.tool,
         summary: req.summary,
         reason: req.reason,
+        // US-004: an auto-decision carries whatever the request carried. No
+        // caller sets this today (an unsandboxed ask is never auto-decided),
+        // so it rides along rather than being silently dropped.
+        ...(req.unsandboxed !== undefined ? { unsandboxed: req.unsandboxed } : {}),
         expiresAt: now(),
         answerable: false,
       });

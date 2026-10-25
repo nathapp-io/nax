@@ -1,0 +1,675 @@
+{
+  "project": "nax-monorepo",
+  "feature": "agent-session-modes",
+  "branchName": "feat/agent-session-modes",
+  "createdAt": "2026-10-24T00:00:00.000Z",
+  "updatedAt": "2026-10-24T16:39:02.703Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Allow raw sandbox fallback and expose native sandbox state",
+      "description": "**Goal** — Permit explicit unavailable-sandbox fallback for full/review raw native sessions and report their resolved sandbox state.\n\n**Motivation** — The interactive host's \"full\" mode is `profile: \"full\"` with `bashApproval: \"raw\"` and must keep working on a machine without `srt`, by the user's ruling of 2026-10-24.\n\n**Approach** — **Sandbox floor (US-001).** `nativeProfileRules` accepts `allowUnsandboxed: true` with `bashApproval: \"raw\"` as well as `\"gated\"` (still refused with `\"escalate\"`, and the `ask` profile still forces `gated`). `resolveSessionLauncher` returns no launcher for an unavailable sandbox whenever `allowUnsandboxed` is true, regardless of `raw` vs `gated`, and returns the resolved `SandboxState` beside the launcher. With no launcher the Bash tool already takes its direct-spawn branch (`src/tools/bash.ts`, `opts.launcher` absent) and `rawRefusalFor(undefined)` is `undefined`, so `raw` runs unwrapped with no further change. `openNative` records the state on `BackendInfo.sandbox`, and the facade's `backend` getter in `agent-session.ts`, which today rebuilds the info from `kind` and `capabilities` only, copies `sandbox` through (shallow-frozen).\n\n`nativeProfileRules(profile, raw)` — Target: throws `allowUnsandboxed requires bashApproval \"gated\" or \"raw\"` only when `bashApproval === \"escalate\"`; accepts `allowUnsandboxed: true` with `\"raw\"` for profiles `full` and `review` (the `ask` profile still throws `profile \"ask\" requires bashApproval \"gated\"` first); returns `{ bashApproval, allowUnsandboxed, allowUnsandboxedCommands }` where `allowUnsandboxedCommands` is `raw.allowUnsandboxedCommands === true`; throws `allowUnsandboxedCommands applies to profiles \"ask\", \"full\" and \"review\" only` for `none`/`read` when the field is set.\n\n`resolveSessionLauncher(args)` — Target: `Promise<{ launcher: CommandLauncher | undefined; sandbox: SandboxState }>`. Returns `launcher: undefined` for a non-available launcher whenever `args.allowUnsandboxed` is true; `sandbox` is the launcher's `state` when available, the launcher's `unavailable` state when it was dropped, and `{ kind: \"disabled\" }` for the `none`/`read` profiles. The error message ends `Pass allowUnsandboxed: true to run without one.`\n\n`BackendInfo` — Target: `{ kind; capabilities; sandbox?: SandboxState }`; `openNative` sets it for the native backend; the ACP backend leaves it absent. `get backend()` — Target: additionally copies `sandbox` (shallow-frozen) when present on `opened.info`.\n\n**Scope** — In: native option validation/profile resolution, launcher-result migration, native info and facade copying; update native-backend-options.test.ts two-field equalities and obsolete raw rejection, session-tool-support.test.ts bare-launcher assertions, and native-backend.test.ts opened.info equality. Out: US-002 request-level unwrapping, US-003 option forwarding/tool advertisement, US-004 approval fields and US-005/006 runtime routing. `SandboxState` is reported once at open; a sandbox that becomes unavailable mid-session is not re-probed. The ACP server (`packages/nax-agent-acp`) does not expose `allowUnsandboxedCommands`, `allowUnsandboxed` with `raw`, `BackendInfo.sandbox` or the `unsandboxed` approval field; its config and translate layers are unchanged.\n\n**Interface** — `readonly allowUnsandboxedCommands?: boolean`, validated as optional boolean. Resolved result: `{ bashApproval, allowUnsandboxed, allowUnsandboxedCommands }`. `resolveSessionLauncher(args)`: `Promise<{ launcher: CommandLauncher | undefined; sandbox: SandboxState }>`. `BackendInfo`: `{ kind; capabilities; sandbox?: SandboxState }`. Mirror the existing allowUnsandboxed schema/rules pattern; do not add export names or change default gated session behavior. Use scripted-session helpers and sandbox deps stubs for session assertions, including the existing direct-spawn fallback.",
+      "acceptanceCriteria": [
+        "[unit] nativeProfileRules(\"full\", { model, bashApproval: \"raw\", allowUnsandboxed: true }) returns { bashApproval: \"raw\", allowUnsandboxed: true, allowUnsandboxedCommands: false }.",
+        "[unit] nativeProfileRules(\"review\", { model, bashApproval: \"raw\", allowUnsandboxed: true }) returns allowUnsandboxed: true.",
+        "[unit] nativeProfileRules(\"full\", { model, bashApproval: \"escalate\", allowUnsandboxed: true }) throws AgentSessionError with code AGENT_SESSION_INVALID_OPTIONS and message containing 'allowUnsandboxed requires bashApproval \"gated\" or \"raw\"'.",
+        "[unit] nativeProfileRules(\"ask\", { model, bashApproval: \"raw\", allowUnsandboxed: true }) throws AGENT_SESSION_INVALID_OPTIONS with message containing 'profile \"ask\" requires bashApproval \"gated\"'.",
+        "[unit] nativeProfileRules(\"full\", { model, allowUnsandboxedCommands: true }) returns allowUnsandboxedCommands: true.",
+        "[unit] nativeProfileRules(\"read\", { model, allowUnsandboxedCommands: true }) throws AGENT_SESSION_INVALID_OPTIONS with message containing 'allowUnsandboxedCommands applies to profiles \"ask\", \"full\" and \"review\" only'.",
+        "[unit] nativeProfileRules(profile, { model, allowUnsandboxedCommands }) throws AGENT_SESSION_INVALID_OPTIONS with message containing 'allowUnsandboxedCommands applies to profiles \"ask\", \"full\" and \"review\" only' for either none or read when allowUnsandboxedCommands is set to true or false.",
+        "[unit] parseNativeBackendOptions({ model: \"p/m\", allowUnsandboxedCommands: \"yes\" }) throws AGENT_SESSION_INVALID_OPTIONS with path context backend.allowUnsandboxedCommands.",
+        "[unit] With _sessionSandboxDeps reporting unavailable with reason \"srt missing\", resolveSessionLauncher({ profile: \"full\", bashApproval: \"raw\", allowUnsandboxed: true, root, protectedPaths }) resolves to { launcher: undefined, sandbox: { kind: \"unavailable\", backend: \"srt\", reason: \"srt missing\" } }.",
+        "[unit] Under that unavailable probe, resolveSessionLauncher({ profile: \"full\", bashApproval: \"raw\", allowUnsandboxed: false, root, protectedPaths }) rejects with AgentSessionError code AGENT_SESSION_SANDBOX_UNAVAILABLE whose message ends 'Pass allowUnsandboxed: true to run without one.'.",
+        "[unit] With the probe available, resolveSessionLauncher({ profile: \"full\", bashApproval: \"raw\", allowUnsandboxed: true, root, protectedPaths }) resolves to a defined launcher.",
+        "[unit] With the probe available, resolveSessionLauncher({ profile: \"full\", bashApproval: \"raw\", allowUnsandboxed: true, root, protectedPaths }) resolves to a sandbox whose kind is \"available\".",
+        "[unit] resolveSessionLauncher({ profile: \"read\", bashApproval: \"gated\", allowUnsandboxed: false, root, protectedPaths }) resolves to { launcher: undefined, sandbox: { kind: \"disabled\" } } without calling the probe.",
+        "[integration] createAgentSession with nativeBackend({ model, bashApproval: \"raw\", allowUnsandboxed: true }), profile \"full\" and an unavailable probe with reason \"srt missing\" opens with session.backend.sandbox deep-equal to { kind: \"unavailable\", backend: \"srt\", reason: \"srt missing\" }.",
+        "[integration] In that raw fallback session, a scripted Bash call { command: \"ls\" } invokes _bashToolDeps.runArgv with argv [shell, \"-c\", \"ls\"], preserving the existing direct-spawn branch when no launcher is present.",
+        "[integration] createAgentSession with profile \"read\" returns session.backend.sandbox deep-equal to { kind: \"disabled\" }.",
+        "[integration] createAgentSession with profile \"read\" returns session.backend.kind equal to \"native\".",
+        "[integration] createAgentSession with profile \"read\" returns session.backend.capabilities deep-equal to {}.",
+        "[integration] createAgentSession with nativeBackend({ model, bashApproval: \"raw\" }), profile \"full\" and an unavailable sandbox rejects with AGENT_SESSION_SANDBOX_UNAVAILABLE when allowUnsandboxed is absent, preserving the existing failure with the new fallback message."
+      ],
+      "tags": [
+        "feature",
+        "sessions",
+        "security",
+        "sandbox",
+        "api"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Five source modules migrate an internal return shape and add optional public data using existing option/facade patterns; sandbox and session access boundaries require strict isolated TDD. Standard multi-file integration fits the balanced native profile.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "routerDecision": {
+          "mode": "shadow",
+          "router": "decision-proxy:nax-routing",
+          "outcome": "picked",
+          "profileId": "native-deepseek",
+          "confidence": 0.4800000000000004,
+          "plannedProfileId": "native-deepseek",
+          "applied": false,
+          "decidedAt": "2026-10-24T14:59:24.092Z"
+        }
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/session/native-backend-options.ts",
+        "packages/nax-agent/src/session/session-tool-support.ts",
+        "packages/nax-agent/src/session/native-backend.ts",
+        "packages/nax-agent/src/session/session-backend.ts",
+        "packages/nax-agent/src/session/agent-session.ts"
+      ],
+      "suggestedCriteria": [
+        "When session.backend exposes a sandbox object, Object.isFrozen(session.backend.sandbox) returns true.",
+        "When an opened backend supplies no sandbox field, session.backend has no sandbox key."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/unit/session/native-backend-options.test.ts",
+          "reason": "five `toEqual({ bashApproval, allowUnsandboxed })` assertions (\"full defaults to gated\", the `ask` default, \"read and none accept neither knob\", \"full accepts…\", the review test) pin the two-field result; the invariant is the three-field result with `allowUnsandboxedCommands: false` by default. The assertion that `raw` + `allowUnsandboxed: true` throws `allowUnsandboxed requires bashApproval \"gated\"` pins the old rule; the invariant is that it resolves and only `escalate` + `allowUnsandboxed` throws."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/session/session-tool-support.test.ts",
+          "reason": "`toBeUndefined()` on `resolveSessionLauncher`'s result and `launcher?.state.kind` reads pin the bare-launcher return; the invariant is the `{ launcher, sandbox }` result. Hosts the new `resolveSessionLauncher` ACs."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/session/native-backend.test.ts",
+          "reason": "line 79 `expect(opened.info).toEqual({ kind: \"native\", capabilities: {} })` pins the two-field info and fails once a `read` session reports `sandbox: { kind: \"disabled\" }`; the invariant is `kind` and `capabilities` unchanged plus the `sandbox` field. Hosts the US-001 session-level ACs."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "834b1649c5061c5bbd8997a70ebd996ef3807e18"
+    },
+    {
+      "id": "US-002",
+      "title": "Run a single launcher request unwrapped",
+      "description": "**Goal** — Let a caller explicitly launch one command outside the sandbox without changing launcher state.\n\n**Motivation** — The user's rule: \"unreachable\" (network, Docker socket, local DB port, device) is handled per command, and the sandbox is never turned off for the session.\n\n**Approach** — **Launcher (US-002).** `LaunchRequest` gains `unwrapped?: true`. `CommandLauncher.run` routes such a request to `runUnwrapped` even when `state.kind === \"available\"`, with `SandboxRecord { backend: \"none\", wrapped: false, reason: \"requested\" }`; `policyFor` and `afterWrapped` are not called for it. The session temp-directory overlay (`TMPDIR`/`TMP`/`TEMP`) still applies, as for every unwrapped run.\n\n`CommandLauncher.run` — Target: when `req.unwrapped === true`, runs through `runUnwrapped` with `SandboxRecord { backend: \"none\", wrapped: false, reason: \"requested\" }`, skipping `policyFor` and `afterWrapped`; every other request is unchanged.\n\n**Scope** — In: optional LaunchRequest member, explicit early runUnwrapped branch in createCommandLauncher, launcher regression tests. Apply the branch after existing temp-directory preparation so overlays and logical argv are preserved, and before state-specific branches so disabled/unavailable requested runs also record requested. Mirror existing disabled unwrapped spawning and available wrapper tests in test/unit/sandbox/launcher.test.ts; stub _launcherDeps.runArgv. Retain its existing wrap-failure regression: an ordinary available request whose backend.wrap throws rejects with SANDBOX_WRAP_FAILED and spawns nothing; explicit request-level escape never turns into automatic fallback. Out: session fallback/state reporting (US-001), model argument/schema/option plumbing (US-003/008), and approval/policy routing (US-004/005/006). Do not add a new spawn API, automatic wrap-failure fallback, session-state mutation or per-call recomputation of launcher-level policy relaxations.\n\n**Interface** — `LaunchRequest`: `readonly unwrapped?: true`. `CommandLauncher.run` accepts the extended request through its existing signature. Result sandbox record: `{ backend: \"none\", wrapped: false, reason: \"requested\" }`.",
+      "acceptanceCriteria": [
+        "[unit] createCommandLauncher({ state: available, backend }) running { spec: { kind: \"shell\", shell, command }, ..., unwrapped: true } calls _launcherDeps.runArgv with argv [shell, \"-c\", command].",
+        "[unit] An available launcher's unwrapped: true run never calls backend.wrap.",
+        "[unit] An unwrapped: true run returns sandbox deep-equal to { backend: \"none\", wrapped: false, reason: \"requested\" }.",
+        "[unit] An unwrapped: true shell run returns executed equal to [shell, \"-c\", command].",
+        "[unit] With afterWrapped and policyFor supplied, an unwrapped: true run invokes neither callback.",
+        "[unit] With afterWrapped and policyFor supplied, the same request without unwrapped invokes both callbacks.",
+        "[unit] With tmpDir supplied, an unwrapped: true run passes runArgv an env whose TMPDIR, TMP and TEMP all equal that directory.",
+        "[unit] A launcher whose state is unavailable returns a sandbox record with wrapped: false and reason: \"requested\" when run receives unwrapped: true.",
+        "[unit] A launcher whose state is disabled returns a sandbox record with wrapped: false and reason: \"requested\" when run receives unwrapped: true.",
+        "[unit] An available launcher calls backend.wrap for a request without unwrapped.",
+        "[unit] An available launcher returns wrapped: true for a request without unwrapped.",
+        "[unit] When backend.wrap throws for an available launcher's request without unwrapped, launcher.run rejects with NaxError code SANDBOX_WRAP_FAILED, preserving the existing fail-closed behavior rather than falling back to an unwrapped run.",
+        "[unit] When backend.wrap throws for a request without unwrapped, _launcherDeps.runArgv is not invoked, preserving the existing no-spawn-on-wrap-failure behavior."
+      ],
+      "tags": [
+        "feature",
+        "sandbox",
+        "security",
+        "backend"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One launcher branch plus an additive request field mirrors existing runUnwrapped behavior across two modules; the small, explicit change fits native-luna, with strict TDD for the sandbox escape boundary.",
+        "agentProfileId": "native-luna",
+        "agent": "native",
+        "profileModelTier": "fast",
+        "initialAgent": "native",
+        "initialProfileId": "native-luna",
+        "initialModelTier": "fast",
+        "initialComplexity": "medium",
+        "modelTier": "fast",
+        "routerDecision": {
+          "mode": "shadow",
+          "router": "decision-proxy:nax-routing",
+          "outcome": "picked",
+          "profileId": "native-deepseek",
+          "confidence": 0.8199999999999998,
+          "plannedProfileId": "native-luna",
+          "applied": false,
+          "decidedAt": "2026-10-24T15:13:49.928Z"
+        }
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/sandbox/launcher.ts",
+        "packages/nax-agent/src/sandbox/types.ts",
+        "packages/nax-agent/test/unit/sandbox/launcher.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/unit/sandbox/launcher.test.ts",
+          "reason": "hosts the new `unwrapped` ACs; any assertion that an `available` launcher calls `backend.wrap` for every request becomes \"for every request without `unwrapped`\"."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3d9c304885b5129fe64c68b0a6b9365f2506b7e0"
+    },
+    {
+      "id": "US-003",
+      "title": "Advertise and forward Bash unsandboxed requests",
+      "description": "**Goal** — Thread the opt-in to Bash and forward exact-true unsandboxed calls as one unwrapped launcher request.\n\n**Motivation** — The only unsandboxed option is the session-wide `allowUnsandboxed`, which is exactly the \"turn the sandbox off for the session because one command needed Docker\" outcome the user forbade.\n\n**Approach** — Thread `unsandboxedCommands` from `nativeProfileRules` through `openNative`, `buildSessionToolSupport`, `buildCodingToolSupport` and `buildDeclaredCommandTools` to `createBashTool`, via small extracted helpers so the two baselined functions do not grow in complexity.\n\nBash `scope` always declares `unsandboxedField: \"unsandboxed\"`; when the option is on, `inputSchema` gains `unsandboxed` and `unsandboxedReason` and the description gains one appended sentence; when off, schema and description are byte-identical to today.\n\nBash `run` passes `unwrapped: true` on the launcher request when `input.unsandboxed === true`; with no launcher it direct-spawns.\n\n`BashToolOptions` / `createBashTool` — Target: `readonly unsandboxedCommands?: boolean`. `scope` always has `unsandboxedField: \"unsandboxed\"`. When the option is true: `inputSchema` gains `unsandboxed: { type: \"boolean\" }` and `unsandboxedReason: { type: \"string\" }`, and the description gains, appended after today's last sentence, `Set \"unsandboxed\": true with an \"unsandboxedReason\" only when the command needs the network, a local socket or a device the sandbox blocks.` When false or absent, `inputSchema` and `description` are byte-identical to today's. `run` passes `unwrapped: true` on the launcher request when `input.unsandboxed === true`; with no launcher it direct-spawns as today. The tool itself never checks the option.\n\n`SessionToolSupportArgs` / `buildSessionToolSupport` — Target: `readonly unsandboxedCommands?: boolean` (optional, default false), forwarded to `buildCodingToolSupport` as `unsandboxedCommands`. `openNative` destructures `allowUnsandboxedCommands` from `nativeProfileRules` and passes `unsandboxedCommands` to `buildSessionToolSupport`.\n\n`buildDeclaredCommandTools` and `buildCodingToolSupport` receive the flag through one small extracted helper each (for example `unsandboxedToolOptions(args)`), so their complexity does not rise; `callTool`'s single call keeps it under 20.\n\n**Scope** — In: ToolScope metadata, Bash option/schema/text/request changes, and session-to-support-to-Bash propagation. Extend bash.test.ts, bash-sandbox.test.ts, coding-tool-support.test.ts, session-tool-support.test.ts and native-backend.test.ts. Mirror the existing disabled-launcher byte-identical description test; preserve today's default schema keys, required command, interception, env, timeout, abort and audit behavior, including rejection of an empty command before any launch even when the escape flag is true. Out: runtime enablement enforcement and allow-to-ask conversion (US-005/006), approval rendering (US-004), session scenario proof (US-007), and RunCommand exec plumbing (US-008). RunCommand and Exec are not declared for any session profile in this feature; `declaredToolsFor` is unchanged, so an interactive session does not see RunCommand until a later feature declares it. The RunCommand `unsandboxed` argument is exercised at the tool and support level here.\n\n**Interface** — `ToolScope`: `readonly unsandboxedField?: string`. `BashToolOptions`: `readonly unsandboxedCommands?: boolean`. `SessionToolSupportArgs`, `buildCodingToolSupport` args and `buildDeclaredCommandTools` args: `readonly unsandboxedCommands?: boolean`. Use US-002's `LaunchRequest.unwrapped` only for exact true and omit the key otherwise. Runtime option creation belongs to US-005; preserve that inter-story boundary.",
+      "acceptanceCriteria": [
+        "[unit] createBashTool(opts) with unsandboxedCommands absent produces inputSchema property keys exactly command, timeoutMs, description.",
+        "[unit] createBashTool(opts) with unsandboxedCommands absent produces a description equal to the description with unsandboxedCommands: false.",
+        "[unit] createBashTool(opts).scope.unsandboxedField equals \"unsandboxed\" whether or not unsandboxedCommands is set, with scope.commandField still equal to \"command\".",
+        "[unit] createBashTool({ ...opts, unsandboxedCommands: true }).inputSchema.properties declares unsandboxed.type as \"boolean\" and unsandboxedReason.type as \"string\".",
+        "[unit] createBashTool({ ...opts, unsandboxedCommands: true }).inputSchema.required deep-equals [\"command\"].",
+        "[unit] createBashTool({ ...opts, unsandboxedCommands: true }).description ends with 'Set \"unsandboxed\": true with an \"unsandboxedReason\" only when the command needs the network, a local socket or a device the sandbox blocks.'.",
+        "[unit] createBashTool({ launcher, unsandboxedCommands: true }).run({ command: \"curl x\", unsandboxed: true, unsandboxedReason: \"needs network\" }, ctx) calls launcher.run with unwrapped: true and spec deep-equal to { kind: \"shell\", shell, command: \"curl x\" }.",
+        "[unit] createBashTool({ launcher, unsandboxedCommands: true }).run({ command: \"ls\" }, ctx) calls launcher.run with no unwrapped key.",
+        "[unit] createBashTool({ launcher, unsandboxedCommands: true }).run({ command: \"ls\", unsandboxed: \"true\" }, ctx) calls launcher.run with no unwrapped key.",
+        "[unit] createBashTool({ unsandboxedCommands: true }).run({ command: \"ls\", unsandboxed: true }, ctx) without a launcher calls _bashToolDeps.runArgv with argv [shell, \"-c\", \"ls\"].",
+        "[unit] That no-launcher Bash run returns a result whose isError is not true.",
+        "[unit] buildCodingToolSupport({ ...args, declared: [..., \"Bash\"], unsandboxedCommands: true }) yields a Bash tool with an unsandboxed inputSchema.properties key; with unsandboxedCommands absent that key is absent.",
+        "[unit] buildDeclaredCommandTools({ ...args, unsandboxedCommands: true }) yields a Bash tool with an unsandboxed inputSchema.properties key.",
+        "[unit] buildSessionToolSupport({ ...args, unsandboxedCommands: true }) returns a support.tools Bash entry whose inputSchema.properties has unsandboxed; buildSessionToolSupport(args) without the field returns one without that key.",
+        "[integration] createAgentSession with nativeBackend({ model, bashApproval: \"gated\", allowUnsandboxedCommands: true }) and profile \"full\" advertises a Bash tool whose inputSchema.properties has unsandboxed; the same session without allowUnsandboxedCommands advertises one without that key.",
+        "[unit] createBashTool({ launcher, unsandboxedCommands: true }).run({ command: \"\", unsandboxed: true }, ctx) returns { content: '\"command\" must be a non-empty string', isError: true }, preserving the existing invalid-command refusal.",
+        "[unit] When Bash receives an empty command with unsandboxed: true, neither launcher.run nor _bashToolDeps.runArgv is invoked."
+      ],
+      "tags": [
+        "feature",
+        "sandbox",
+        "security",
+        "sessions",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Existing launcher and allowUnsandboxed plumbing provide the pattern for additive option forwarding, schema/text extensions and one Bash request flag; no new subsystem is needed. Native-deepseek fits the multi-file wiring, while the session/sandbox security override requires strict isolated TDD.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/tools/bash.ts",
+        "packages/nax-agent/src/tools/types.ts",
+        "packages/nax-agent/src/coding-tools/coding-tool-extras.ts",
+        "packages/nax-agent/src/coding-tools/coding-tool-support.ts",
+        "packages/nax-agent/src/session/session-tool-support.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/unit/tools/bash-sandbox.test.ts",
+          "reason": "hosts the \"option off is byte-identical\" and \"option on adds two properties\" ACs; the description snapshots and the `toEndWith` pins for the default case stay unchanged because the new sentence appears only with the option on."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/tools/bash.test.ts",
+          "reason": "the `scope.commandField` check at line 180 stays; hosts the `scope.unsandboxedField` AC and the launcher-request `unwrapped` ACs."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/coding-tools/coding-tool-support.test.ts",
+          "reason": "hosts the `buildCodingToolSupport` and `buildDeclaredCommandTools` forwarding ACs."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/session/session-tool-support.test.ts",
+          "reason": "the `args()` helper builds `SessionToolSupportArgs`; `unsandboxedCommands` is optional so the helper compiles unchanged; hosts the `buildSessionToolSupport` forwarding AC."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/session/native-backend.test.ts",
+          "reason": "hosts the US-003 session-level advertisement AC."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "bf08cc87e6b69a5b264aab37d1e16070b8813ca2"
+    },
+    {
+      "id": "US-004",
+      "title": "Carry safe unsandboxed metadata through approvals",
+      "description": "**Goal** — Expose an optional unsandboxed approval flag and a masked bounded explanation through the existing session approval path.\n\n**Motivation** — The user's rule: \"unreachable\" (network, Docker socket, local DB port, device) is handled per command, and the sandbox is never turned off for the session.\n\n**Approach** — Add `unsandboxed?: true` to `AskRequest`, `ApprovalRequest`, `ApprovalAsk` and the `approval_requested` event body; `createSessionAskLink` and `askPerson` forward it.\n\nNew `unsandboxedReasonSuffix(input)` in `ask-request.ts` (masked, capped, with the `no reason given` and `reason withheld` fallbacks).\n\n`resolveAskOutcome` gains the optional `unsandboxed?: { suffix }` argument that sets the flag and appends the suffix to `reason`, leaving `matchedRule` unset when the verdict's `rule` is the synthetic `Unsandboxed(<identity>)`.\n\n`unsandboxedReasonSuffix(input)` — Target: returns ` -- runs OUTSIDE the sandbox: ` + rendered reason, where the rendered reason is `input.unsandboxedReason` passed through `maskForPrompt` and cut to `MAX_ASK_SUMMARY_CHARS` when it is a string; `reason withheld` when masking reports unshowable; `no reason given` when absent or not a string.\n\n`resolveAskOutcome(args)` — Target: new optional `unsandboxed?: { readonly suffix: string }`; when present the built `AskRequest` has `unsandboxed: true` and `reason` = the verdict reason + `suffix`; `matchedRule` is set only when `verdict.rule` came from a real ask rule (the converted-allow verdict passes `rule: \"Unsandboxed(<identity>)\"` and `matchedRule` stays unset).\n\nWhy the approval carries the flag rather than a new ask kind: the session ask path is `approval_requested` -> `session.answer()` (`src/session/session-ask-link.ts`, `src/session/session-ask-port.ts`). One optional field on `AskRequest`, `ApprovalRequest` (which `createSessionAskLink` builds), `ApprovalAsk` (which `createSessionAskPort` derives from it) and the `approval_requested` body reuses that path unchanged for hosts that ignore it.\n\nThe reason renderer is `unsandboxedReasonSuffix(input)` in `src/tools/ask-request.ts`, exported from that module (tests import `#src/tools/ask-request`; it is not added to the package's `.` entry). Mask the full reason before cutting, as askSummary already does; do not turn an unsafe reason into an unshowable command or deny the request solely because its reason was withheld. Preserve existing secret-command refusals and cancellation checks.\n\n**Scope** — In: optional approval members, safe reason rendering, AskRequest construction and session link/event forwarding; extend ask-request.test.ts and session-ask-link.test.ts, including direct resolveAskOutcome assertions. Out: detecting/authorizing an unsandboxed request or converting runtime verdicts (US-005/006), launcher changes (US-002), and session end-to-end scenarios (US-007). `AskDecidedBy` gains no new value, and no approval event is emitted under `raw`. The guard-denial ask path (`commandShadow.guard` in `callTool`) does not carry the `unsandboxed` flag; sessions configure no command shadow, so it is inert here. The ACP server (`packages/nax-agent-acp`) does not expose `allowUnsandboxedCommands`, `allowUnsandboxed` with `raw`, `BackendInfo.sandbox` or the `unsandboxed` approval field; its config and translate layers are unchanged. Remembered-approval keys in `packages/nax` do not include the `unsandboxed` flag; whether a remembered plain approval should cover an unsandboxed variant is a later decision.\n\n**Interface** — `AskRequest`, `ApprovalRequest`, `ApprovalAsk` and `approval_requested` body: `readonly unsandboxed?: true`. `resolveAskOutcome` args: `unsandboxed?: { readonly suffix: string }`. Deep-module export: `unsandboxedReasonSuffix(input)`. `createSessionAskLink` copies the field onto ApprovalRequest, createSessionAskPort's rest-spread preserves it, and askPerson conditionally emits it; absent fields remain absent keys.",
+      "acceptanceCriteria": [
+        "[unit] unsandboxedReasonSuffix({ unsandboxedReason: \"needs network\" }) returns ' -- runs OUTSIDE the sandbox: needs network'.",
+        "[unit] unsandboxedReasonSuffix({ unsandboxedReason: 42 }) and unsandboxedReasonSuffix({}) each return ' -- runs OUTSIDE the sandbox: no reason given'.",
+        "[unit] unsandboxedReasonSuffix({ unsandboxedReason: a 300-character string }) returns a suffix whose rendered reason is exactly 200 characters long.",
+        "[unit] unsandboxedReasonSuffix({ unsandboxedReason: a string maskForPrompt reports unshowable }) returns ' -- runs OUTSIDE the sandbox: reason withheld'.",
+        "[unit] resolveAskOutcome with an ask verdict whose rule is \"Bash(*)\" and unsandboxed: { suffix: \" -- S\" } hands askResolver.resolve an AskRequest with unsandboxed: true, matchedRule: \"Bash(*)\" and reason equal to the verdict reason followed by ' -- S'.",
+        "[unit] resolveAskOutcome with rule \"Unsandboxed(Bash)\", reason \"unsandboxed run requested\" and unsandboxed: { suffix: \" -- S\" } hands askResolver.resolve an AskRequest with rule \"Unsandboxed(Bash)\", no matchedRule key and reason 'unsandboxed run requested -- S'.",
+        "[unit] resolveAskOutcome without unsandboxed hands askResolver.resolve an AskRequest with no unsandboxed key and reason equal to the verdict reason.",
+        "[unit] createSessionAskLink(deps).resolve(req) copies unsandboxed: true from AskRequest to deps.port.requestApproval; without the field the forwarded object has no unsandboxed key.",
+        "[unit] askPerson(deps, { tool: \"Bash\", summary, reason, unsandboxed: true }, signal) emits approval_requested with unsandboxed: true; without the field the emitted event has no unsandboxed key."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "permissions",
+        "sessions",
+        "api"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Optional-field forwarding follows the existing approval chain; the only bounded logic is a renderer mirroring askSummary and exclusion of synthetic matchedRule origin. This is standard additive integration for native-deepseek, with strict TDD retained for secret masking and approval metadata.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "routerDecision": {
+          "mode": "shadow",
+          "router": "decision-proxy:nax-routing",
+          "outcome": "picked",
+          "profileId": "native-deepseek",
+          "confidence": 0.4800000000000004,
+          "plannedProfileId": "native-deepseek",
+          "applied": false,
+          "decidedAt": "2026-10-24T15:36:04.602Z"
+        }
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/tools/ask-request.ts",
+        "packages/nax-agent/src/tools/runtime-calltool.ts",
+        "packages/nax-agent/src/permissions/types.ts",
+        "packages/nax-agent/src/session/session-ask-link.ts",
+        "packages/nax-agent/src/session/session-backend.ts"
+      ],
+      "suggestedCriteria": [
+        "When unsandboxedReason contains a maskable secret, unsandboxedReasonSuffix returns a masked reason without the original secret text."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/unit/tools/ask-request.test.ts",
+          "reason": "hosts the `unsandboxedReasonSuffix` ACs; existing imports (`askDenyReason`, `askSummary`, `MAX_ASK_SUMMARY_CHARS`) are unchanged."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/session/session-ask-link.test.ts",
+          "reason": "hosts the forwarding ACs; any deep-equal on the emitted `approval_requested` body must allow `unsandboxed`."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c753711e67de5fcd35d5fbbb4f73232bf19f6792"
+    },
+    {
+      "id": "US-005",
+      "title": "Enforce unsandboxed enablement before policy evaluation",
+      "description": "**Goal** — Refuse disabled escape requests before policy/ask/spawn while retaining ordinary calls, declared-command routing and policy denials.\n\n**Motivation** — There is no per-command escape.\n\n**Approach** — `createCodingToolRuntime` gains `unsandboxed: { enabled, bashApproval }`, set by `buildCodingToolSupport` from `unsandboxedCommands` and the resolved `bashApproval`.\n\nNew `resolveUnsandboxedCall` in `runtime-calltool.ts`, called once from `callTool` before `policy.check`, only for identities `Bash` and `Exec`: when not enabled it returns the `{ kind: \"error\", ... }` refusal (logged through `logCall`); a deny verdict is unchanged; a call without the flag is unchanged; a `RunCommand`-identity call is untouched.\n\nA human deny on an unsandboxed ask returns the `denied` outcome without running the tool.\n\n`resolveUnsandboxedCall(args)` — Target: called by `callTool` once per call, before `opts.policy.check`, with the tool, input, policy identity and the runtime's `unsandboxed` option. Returns `undefined` when the identity is not `Bash` or `Exec`, the scope has no `unsandboxedField`, or `input[field] !== true`. Returns `{ kind: \"error\", content: \"unsandboxed commands are not enabled for this session (allowUnsandboxedCommands)\" }` when the option is not enabled.\n\nThe unsandboxed routing is one exported helper in `src/tools/runtime-calltool.ts` (330 lines today), `resolveUnsandboxedCall`, which `callTool` in `src/tools/runtime.ts` (569 lines today) calls in one line.\n\n`buildCodingToolSupport` args — Target: `readonly unsandboxedCommands?: boolean`, forwarded through a small helper to `buildDeclaredCommandTools` and to `createCodingToolRuntime` as `unsandboxed: { enabled, bashApproval: <the locally resolved bashApproval> }`.\n\nFor enabled requests return a marker for the later routing work, compute policy exactly as without the flag and preserve the original input for tool execution. Denials must still pass through existing denial rendering without losing breach or changing their reason; no tool runs on denial. Place the early refusal so it records outcome error through logCall semantics before policy.check, even though today's logCall closure is declared after policy evaluation/shadow setup. Keep the helper deep-module-only, avoid adding exports to . or ./internal, and preserve the existing shadow/guard path. Existing policy asks can use US-004's suffix/flag argument here so deny-on-ask behavior is exercised; synthetic allow-to-ask conversion and its full routing matrix belong to US-006.\n\n**Scope** — In: runtime option, pre-policy helper/early refusal/logging, support runtime-option forwarding, ordinary/denied/RunCommand-identity invariants and human denial. The runtime routing tests go in a new file `packages/nax-agent/test/unit/tools/runtime-unsandboxed.test.ts` (listed under Creates), because `runtime.test.ts` is at 755 lines. Mirror runtime.test.ts's policy, resolver, registry and audit patterns but leave its existing assertions unchanged; extend coding-tool-support.test.ts for forwarding. Out: synthetic allow-to-ask conversion and raw execution matrix (US-006), session end-to-end tests (US-007), RunCommand tool rejection/argv forwarding (US-008). `unsandboxed: true` does not bypass policy evaluation: deny rules, payload checks, containment, the lexer and grant evaluation run exactly as without the flag.\n\n**Interface** — `createCodingToolRuntime(opts)`: new option `unsandboxed?: { enabled: boolean; bashApproval: BashApprovalMode }` (absent means `enabled: false`). Deep-module helper: `resolveUnsandboxedCall(args)`. Disabled-request outcome: `{ kind: \"error\", content: \"unsandboxed commands are not enabled for this session (allowUnsandboxedCommands)\" }`. Enabled marker is consumed by the existing policy/ask path, not a new permission grant.",
+      "acceptanceCriteria": [
+        "[unit] createCodingToolRuntime({ policy, ... }) without unsandboxed, given callTool(\"Bash\", { command: \"ls\", unsandboxed: true }) under an allow grant, returns { kind: \"error\", content: \"unsandboxed commands are not enabled for this session (allowUnsandboxedCommands)\" }.",
+        "[unit] In that refused Bash call, the tool's run is not invoked.",
+        "[unit] In that refused Bash call, askResolver.resolve is not invoked even when a Bash(*) ask rule is configured.",
+        "[unit] In that refused Bash call, the audit sink receives a record with outcome: \"error\" for the Bash call.",
+        "[unit] In that refused Bash call, opts.policy.check is not invoked, so disabled escape requests are refused before policy evaluation.",
+        "[unit] With unsandboxed: { enabled: true, bashApproval: \"gated\" }, callTool(\"Bash\", { command: \"cat /etc/passwd\", unsandboxed: true }) whose verdict is deny returns kind: \"denied\" with reason and breach equal to callTool(\"Bash\", { command: \"cat /etc/passwd\" }).",
+        "[unit] For that denied unsandboxed Bash call, askResolver.resolve is not invoked.",
+        "[unit] For that denied unsandboxed Bash call, the tool's run is not invoked.",
+        "[unit] With unsandboxed: { enabled: true, bashApproval: \"gated\" } and a Bash(*) ask rule, callTool(\"Bash\", { command: \"curl x\" }) hands askResolver.resolve an AskRequest with no unsandboxed key and reason equal to the verdict reason.",
+        "[unit] When askResolver.resolve answers deny on an unsandboxed ask, callTool returns kind: \"denied\".",
+        "[unit] When askResolver.resolve answers deny on an unsandboxed ask, the tool's run is not invoked.",
+        "[unit] When askResolver.resolve answers deny on an unsandboxed ask, the audit sink records denied:ask as today, with nothing spawned sandboxed or unwrapped.",
+        "[unit] With unsandboxed: { enabled: true, bashApproval: \"gated\" }, callTool for a declared-command input { command: \"test\", unsandboxed: true } whose policy identity resolves to RunCommand does not invoke askResolver.resolve.",
+        "[unit] That RunCommand-identity call invokes the registered tool's run with the original input.",
+        "[unit] buildCodingToolSupport({ ...args, bashApproval: \"gated\", unsandboxedCommands: true }) constructs its runtime with unsandboxed: { enabled: true, bashApproval: \"gated\" }; with unsandboxedCommands absent that runtime option is absent or enabled: false, observable by calling the resulting runtime's Bash tool with unsandboxed: true under an allow grant plus a configured Bash(*) ask rule and seeing an approval request when enabled versus the allowUnsandboxedCommands error when absent.",
+        "[unit] With unsandboxed enablement absent and an ordinary allow policy, callTool(\"Bash\", { command: \"ls\", unsandboxed: \"true\" }) invokes the tool's run with the original input rather than returning the allowUnsandboxedCommands refusal, preserving ordinary routing because only boolean true activates an escape request.",
+        "[integration] With allowUnsandboxedCommands enabled, when a scripted model in a native session supplies Bash { command: \"ls\", unsandboxed: \"true\" }, the transport returns a model-facing invalid-input result naming unsandboxed and the expected boolean type before executing the tool."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "permissions",
+        "sandbox",
+        "logic"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Pre-policy refusal must coexist with identity remapping, audit/shadow setup and unchanged denial routing under size/complexity constraints. Requirements are explicit enough for native-deepseek; access-control ordering requires strict isolated TDD.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "routerDecision": {
+          "mode": "shadow",
+          "router": "decision-proxy:nax-routing",
+          "outcome": "picked",
+          "profileId": "native-deepseek",
+          "confidence": 0.33999999999999986,
+          "plannedProfileId": "native-deepseek",
+          "applied": false,
+          "decidedAt": "2026-10-24T15:44:42.669Z"
+        }
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/tools/runtime.ts",
+        "packages/nax-agent/src/tools/runtime-calltool.ts",
+        "packages/nax-agent/src/coding-tools/coding-tool-support.ts",
+        "packages/nax-agent/test/unit/tools/runtime.test.ts",
+        "packages/nax-agent/src/native/session/tool-input-validation.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/tools/runtime-unsandboxed.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When unsandboxed.enabled is explicitly false, a Bash request with unsandboxed: true returns the same allowUnsandboxedCommands error as an absent runtime option.",
+        "When an Exec-identity request sets unsandboxed: true with enablement absent, callTool returns the allowUnsandboxedCommands error without invoking the tool."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/unit/tools/runtime.test.ts",
+          "reason": "no existing assertion changes; the file stays under 800 lines because the new routing tests go into the created file. US-006 later extends that created file; it needs no Modifies entry because no existing assertion in it is pinned."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "89b07280fc916a602fa46f94b394cd417b6895a5"
+    },
+    {
+      "id": "US-006",
+      "title": "Require non-raw approval for enabled escape requests",
+      "description": "**Goal** — Route enabled escape requests through human approval except for allowed raw calls, retaining policy decisions and original tool input.\n\n**Motivation** — `escalate` mode only turns a grant miss into an ask; nothing lets one command run unwrapped.\n\n**Approach** — With the option enabled and the flag set, an `ask` verdict proceeds with `unsandboxed: true` and the suffix; an allow verdict under `gated` or `escalate` (Bash) or an ask-less `Exec` grant becomes an ask with rule `Unsandboxed(<identity>)`; an allow under `raw` runs without asking.\n\nWith no launcher (dropped by `allowUnsandboxed`) the routing is the same and the tool direct-spawns on allow.\n\nThe runtime's `callTool` reads the field first, but only for calls whose policy identity is `Bash` or `Exec` (a RunCommand declared-command call is left to the tool, which rejects the flag itself):\n- option off and `input.unsandboxed === true` -> outcome `{ kind: \"error\", content: \"unsandboxed commands are not enabled for this session (allowUnsandboxedCommands)\" }`, recorded through `logCall` like the unknown-tool refusal, before any policy evaluation or ask, nothing spawned;\n- otherwise the policy verdict is computed exactly as without the flag;\n- a deny stays a deny (same `reason`, same `breach`);\n- an `ask` verdict proceeds as an ask whose `AskRequest` carries `unsandboxed: true` and a reason suffix;\n- an allow verdict under any Bash approval mode other than `raw` is converted to an ask whose `rule` is `Unsandboxed(<identity>)` and whose `matchedRule` stays unset (no ask rule matched, so remembered approvals derive no origin from it), so `gated`, `escalate`, and `Exec` calls that have no ask rule all reach the human;\n- an allow verdict under `raw` runs.\nOn allow the tool passes `unwrapped: true` to the launcher. A session whose launcher was dropped by `allowUnsandboxed` has nothing to unwrap: the tool direct-spawns as it does for every call, and the ask still says the command runs outside the sandbox, which is true.\n\n`resolveUnsandboxedCall(args)` — Otherwise returns a marker that makes `callTool` (a) evaluate the policy with the field ignored, (b) convert an allow verdict into an ask with `rule: \"Unsandboxed(<identity>)\"` and reason `unsandboxed run requested` when `bashApproval !== \"raw\"`, and (c) pass `{ suffix: unsandboxedReasonSuffix(input) }` into `resolveAskOutcome` for any ask it raises.\n\nWhy no approval event under `raw`: `raw` never asks, by definition (ADR-030), and the user's \"full\" mode never asks. A session today records tool calls through a non-recording sink (`buildSessionToolSupport` passes no `auditDir`, so `supportSink` returns `createNoOpToolAuditSink()`), so there is no durable session ledger to assert on; the sandbox record with `reason: \"requested\"` reaches the audit row wherever a caller does configure `auditDir`, and the host observes the unwrapped run through the launcher. Plumbing an audit directory into sessions is out of scope here.\n\n**Scope** — In: complete the helper/marker and runtime policy-ask routing introduced by US-005, preserve resolvedPaths on converted verdicts, decorate real asks using US-004, run original input on allow, preserve denied outcomes and no execution when the human rejects a converted ask, and extend US-005's runtime-unsandboxed.test.ts. Out: redesigning US-005 enablement/refusal, session model-driven cases (US-007), RunCommand tool implementation (US-008), new ask kinds, durable session auditing or approval caches. The guard-denial ask path (`commandShadow.guard` in `callTool`) does not carry the `unsandboxed` flag; sessions configure no command shadow, so it is inert here. Launcher-level relaxations that read the session's sandbox state (`rawScreenOptionsFor`, `isTempConfined`) are not re-decided per call; they are inert in sessions and unchanged for nax run callers. Keep callTool under its limit by putting routing in the single deep-module helper, not inline branches.\n\n**Interface** — Existing runtime option: `unsandboxed?: { enabled: boolean; bashApproval: BashApprovalMode }`. `resolveAskOutcome` metadata: `unsandboxed?: { readonly suffix: string }`. Converted verdict display rule: `\"Unsandboxed(<identity>)\"`; reason: `\"unsandboxed run requested\"`; matchedRule stays unset. The helper and reason renderer are not new package entry exports.",
+      "acceptanceCriteria": [
+        "[unit] With unsandboxed: { enabled: true, bashApproval: \"gated\" } and a Bash(*) ask rule, callTool(\"Bash\", { command: \"curl x\", unsandboxed: true, unsandboxedReason: \"needs network\" }) hands askResolver.resolve an AskRequest with unsandboxed: true, matchedRule equal to the matched ask rule, and reason ending ' -- runs OUTSIDE the sandbox: needs network'.",
+        "[unit] With unsandboxed: { enabled: true, bashApproval: \"escalate\" } and no ask rule, an allowed callTool(\"Bash\", { command: \"curl x\", unsandboxed: true }) hands askResolver.resolve an AskRequest with unsandboxed: true, rule \"Unsandboxed(Bash)\", no matchedRule key, and reason 'unsandboxed run requested -- runs OUTSIDE the sandbox: no reason given'.",
+        "[unit] With unsandboxed: { enabled: true, bashApproval: \"gated\" }, a tool registered as RunCommand with scope.argvField: \"argv\" and scope.unsandboxedField: \"unsandboxed\" under an Exec allow grant without an ask rule, callTool(\"RunCommand\", { argv: [\"bun\", \"--version\"], unsandboxed: true, unsandboxedReason: \"registry\" }) on that registered tool hands askResolver.resolve an AskRequest with unsandboxed: true, rule \"Unsandboxed(Exec)\" and reason ending ' -- runs OUTSIDE the sandbox: registry'.",
+        "[unit] With unsandboxed: { enabled: true, bashApproval: \"raw\" }, allowed callTool(\"Bash\", { command: \"curl x\", unsandboxed: true }) invokes the tool's run.",
+        "[unit] With unsandboxed: { enabled: true, bashApproval: \"raw\" }, that allowed unsandboxed Bash call never invokes askResolver.resolve.",
+        "[unit] When askResolver.resolve answers allow on a converted unsandboxed ask, callTool invokes the tool's run with the original input including unsandboxed: true.",
+        "[unit] With unsandboxed: { enabled: true, bashApproval: \"gated\" } and a Bash tool built without a launcher, an allowed unsandboxed call runs through _bashToolDeps.runArgv with argv [shell, \"-c\", \"curl x\"].",
+        "[unit] When an allowed unsandboxed Bash request has an allow verdict under gated without an ask rule, askResolver.resolve receives rule \"Unsandboxed(Bash)\" with no matchedRule key.",
+        "[unit] For a converted Exec unsandboxed ask with no matching ask rule, askResolver.resolve receives an AskRequest with no matchedRule key.",
+        "[unit] When a human allows an unsandboxed Bash ask, the tool calls launcher.run with unwrapped: true.",
+        "[unit] When that human-approved request uses a command launcher, its result sandbox.reason equals \"requested\".",
+        "[unit] With a Bash tool whose launcher was dropped by allowUnsandboxed, an unsandboxed gated request still reaches askResolver.resolve with unsandboxed: true before direct spawning on allow.",
+        "[unit] When an enabled unsandboxed ask supplies a non-string unsandboxedReason, askResolver.resolve receives a reason ending ' -- runs OUTSIDE the sandbox: no reason given'.",
+        "[unit] When an enabled unsandboxed ask supplies a reason maskForPrompt reports unshowable, askResolver.resolve still receives the ask with a reason ending ' -- runs OUTSIDE the sandbox: reason withheld'.",
+        "[unit] When askResolver.resolve answers { decision: \"deny\", decidedBy: \"human\" } to a converted Unsandboxed(Bash) allow-to-ask request, callTool returns { kind: \"denied\", reason: 'unsandboxed run requested -- ' + ASK_DENIED_REASON, breach: false }, preserving the existing askDenyReason human-denial rendering.",
+        "[unit] When askResolver.resolve denies a converted Unsandboxed(Bash) request, the tool's run is not invoked."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "permissions",
+        "sandbox",
+        "logic"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "US-005 already supplies the helper and marker, and US-004 supplies approval rendering; this story completes a specified verdict-routing matrix in two source modules without another abstraction. Native-deepseek fits the multi-step logic, and authorization decisions require strict isolated TDD.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "routerDecision": {
+          "mode": "shadow",
+          "router": "decision-proxy:nax-routing",
+          "outcome": "picked",
+          "profileId": "native-deepseek",
+          "confidence": 0.040000000000000036,
+          "plannedProfileId": "native-deepseek",
+          "applied": false,
+          "decidedAt": "2026-10-24T16:04:59.875Z"
+        }
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/tools/runtime.ts",
+        "packages/nax-agent/src/tools/runtime-calltool.ts",
+        "packages/nax-agent/test/unit/tools/runtime-unsandboxed.test.ts"
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c2bfbba6dac2af222830b6bc4f8dbcc5c48ab322"
+    },
+    {
+      "id": "US-007",
+      "title": "Prove session-level unsandboxed Bash behavior",
+      "description": "**Goal** — Prove the assembled native session exposes and executes per-command Bash escapes with the specified approval behavior.\n\n**Motivation** — The user's rule: \"unreachable\" (network, Docker socket, local DB port, device) is handled per command, and the sandbox is never turned off for the session.\n\n**Approach** — No new production code: this story proves the wiring end to end through `createAgentSession` with a scripted model, for `gated` (ask, allow, deny, sandbox stays on), `raw` (no ask), and option off (refusal).\n\nFor session-level tests that drive a scripted model and answer asks, mirror `test/unit/session/agent-session-asks.test.ts` (helpers in `test/helpers/agent-session.ts` and `stubSessionSandboxDeps`).\n\nUS-006 -> US-007: US-007 asserts a `createAgentSession` whose model requests an unsandboxed Bash call under `gated` yields an `approval_requested` with `unsandboxed: true`, and on allow the stubbed `runArgv` runs the logical argv without `backend.wrap`.\n\n**Scope** — In: extend test/unit/session/native-backend.test.ts with real facade/native/runtime wiring driven by installScriptedProvider, toolRound/textRound and event reader/session.answer. Probe is stubbed available, backend.wrap is observed, and _launcherDeps.runArgv is stubbed so curl x is never executed. Prove allow, deny, later ordinary wrapping, raw no-ask, and disabled-option model error. Restore dependency seams, provider state and sessions with the existing helper lifecycle. This is the explicit binding-spec exception to the generic prohibition on test-only stories, and its deliverable is executable test-code changes. Out: new production behavior already owned by US-001 through US-006; RunCommand support-level work in US-008; new durable audit storage or an approval cache. No tool-audit directory is plumbed into sessions; `buildSessionToolSupport` keeps the non-recording sink, so an unsandboxed run under `raw` leaves no durable session ledger row. Callers that pass `auditDir` to `buildCodingToolSupport` get the `reason: \"requested\"` record.\n\n**Interface** — Existing test-facing session path: `createAgentSession`, `nativeBackend({ model, bashApproval: \"gated\", allowUnsandboxedCommands: true })`, `profile: \"full\"`, and `session.answer(requestId, { decision: \"allow\" })` / `session.answer(requestId, { decision: \"deny\" })`. Model request: `{ command: \"curl x\", unsandboxed: true, unsandboxedReason: \"needs network\" }`. Event: `approval_requested` with `unsandboxed: true`. No new production signatures or exports.",
+      "acceptanceCriteria": [
+        "[integration] A full session created with nativeBackend({ model, bashApproval: \"gated\", allowUnsandboxedCommands: true }), probe available, and a scripted Bash call { command: \"curl x\", unsandboxed: true, unsandboxedReason: \"needs network\" } yields approval_requested with tool: \"Bash\", unsandboxed: true and reason containing 'runs OUTSIDE the sandbox: needs network'.",
+        "[integration] After session.answer(requestId, { decision: \"allow\" }) on that event, _launcherDeps.runArgv is called with argv [shell, \"-c\", \"curl x\"].",
+        "[integration] After allowing that event, backend.wrap is not called for the unsandboxed command.",
+        "[integration] After session.answer(requestId, { decision: \"deny\" }) on such an event, neither _launcherDeps.runArgv nor backend.wrap is called.",
+        "[integration] After denying that event, the scripted model receives a tool error result.",
+        "[integration] A later Bash call { command: \"ls\" } in the same session, after its own approval is answered allow, calls backend.wrap.",
+        "[integration] A full session with nativeBackend({ model, bashApproval: \"raw\", allowUnsandboxedCommands: true }), probe available and scripted Bash { command: \"curl x\", unsandboxed: true } emits no approval_requested event.",
+        "[integration] That raw session calls _launcherDeps.runArgv with argv [shell, \"-c\", \"curl x\"].",
+        "[integration] That raw session does not call backend.wrap for the unsandboxed command.",
+        "[integration] A full session with nativeBackend({ model, bashApproval: \"gated\" }) and scripted Bash { command: \"curl x\", unsandboxed: true } emits no approval_requested event.",
+        "[integration] In that option-off session, the model receives a tool error result whose text names allowUnsandboxedCommands.",
+        "[integration] In that option-off session, _launcherDeps.runArgv is not called."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "sessions",
+        "sandbox",
+        "integration"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Binding spec requires this independent test-code story. Scripted provider, session approval lifecycle and multiple dependency seams make it multi-step integration rather than a single small mirror; native-deepseek fits, with strict isolation for session/security verification.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "routerDecision": {
+          "mode": "shadow",
+          "router": "decision-proxy:nax-routing",
+          "outcome": "picked",
+          "profileId": "native-deepseek",
+          "confidence": 0.8799999999999999,
+          "plannedProfileId": "native-deepseek",
+          "applied": false,
+          "decidedAt": "2026-10-24T16:16:10.621Z"
+        }
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/session/native-backend.ts",
+        "packages/nax-agent/test/unit/session/agent-session-asks.test.ts",
+        "packages/nax-agent/test/helpers/agent-session.ts",
+        "packages/nax-agent/test/helpers/session-sandbox-deps.ts",
+        "packages/nax-agent/test/unit/session/native-backend.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/unit/session/native-backend.test.ts",
+          "reason": "hosts the end-to-end session ACs for US-007, using the scripted-model helpers and the session sandbox stub the way the existing asks test file does (see the US-007 Context Files)."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e61f630e2cdb37a3940922601acfec3172a0fcf7"
+    },
+    {
+      "id": "US-008",
+      "title": "Support unsandboxed RunCommand argv requests",
+      "description": "**Goal** — Give RunCommand's Exec argv branch the same opt-in escape argument while refusing it for declared commands.\n\n**Motivation** — The user's rule: \"unreachable\" (network, Docker socket, local DB port, device) is handled per command, and the sandbox is never turned off for the session.\n\n**Approach** — `RunCommandExecOptions.unsandboxedCommands?: boolean`, forwarded by `buildDeclaredCommandTools` from the same `unsandboxedCommands` arg.\n\nWith `exec` set: `scope.unsandboxedField` always; the two schema properties and the argv-worded sentence only when the option is on.\n\n`runExecBranch` passes `unwrapped: true` to `launchExec` and on to the launcher; the declared-command branch rejects the flag with the named error.\n\n`RunCommandExecOptions` / `createRunCommandTool` / `runExecBranch` — Target: `RunCommandExecOptions.unsandboxedCommands?: boolean`. `scope` has `unsandboxedField: \"unsandboxed\"` whenever `opts.exec` is set. When the option is true and `exec` is set: the same two schema properties and, appended, the sentence `Set \"unsandboxed\": true with an \"unsandboxedReason\" only when the argv needs the network, a local socket or a device the sandbox blocks.` `runExecBranch` passes `unwrapped: true` to `launchExec`, which sets it on the `LaunchRequest`. The declared-command (`command`) branch returns `{ content: '\"unsandboxed\" applies only to \"argv\" calls', isError: true }` when `input.unsandboxed === true`.\n\n`runExecBranch(input, ctx, opts)` normalizes the argv through the package-manager table (an install such as `[\"bun\",\"add\",\"x\"]` becomes `[\"bun\",\"add\",\"x\",\"--ignore-scripts\"]` when `allowScripts` is false; `[\"bun\",\"--version\"]` is left alone) and forwards `normalized.argv` to the private `launchExec`. Retain that normalization, argv validation, deniedFlag checks, workspace cwd/target, env overlays, signals, result framing and sandbox audit propagation. Check exact true and omit unwrapped for ordinary/non-boolean input; do not let the schema option become a second authorization gate inside the tool.\n\n**Scope** — In: exec option, conditional schema/text and exec-only scope metadata, per-call launch forwarding, declared-command error and support forwarding via the small helper introduced in US-003. Extend run-command-exec-sandbox.test.ts, reusing its existing [\"bun\",\"--version\"] fixture, and coding-tool-support.test.ts. Out: runtime Exec identity/ask conversion already pinned by US-006, session model scenarios in US-007, or declaring RunCommand for a session profile. RunCommand and Exec are not declared for any session profile in this feature; `declaredToolsFor` is unchanged, so an interactive session does not see RunCommand until a later feature declares it. The RunCommand `unsandboxed` argument is exercised at the tool and support level here.\n\n**Interface** — `RunCommandExecOptions`: `readonly unsandboxedCommands?: boolean`. Exec schema additions: `unsandboxed: { type: \"boolean\" }`, `unsandboxedReason: { type: \"string\" }`. Exec scope: `unsandboxedField: \"unsandboxed\"`. Launcher: `readonly unwrapped?: true`. Declared-command refusal: `{ content: '\"unsandboxed\" applies only to \"argv\" calls', isError: true }`. Never add shell execution to run-command-exec.ts or a new public export name.",
+      "acceptanceCriteria": [
+        "[unit] createRunCommandTool(declared, { exec }) with unsandboxedCommands absent produces inputSchema property keys exactly command, values, argv, target.",
+        "[unit] createRunCommandTool(declared, { exec }) with unsandboxedCommands absent produces a description equal to the description with unsandboxedCommands: false.",
+        "[unit] createRunCommandTool(declared, { exec }).scope.unsandboxedField equals \"unsandboxed\".",
+        "[unit] createRunCommandTool(declared, {}).scope has no unsandboxedField key.",
+        "[unit] createRunCommandTool(declared, { exec: { ...exec, unsandboxedCommands: true } }).inputSchema.properties declares unsandboxed.type as \"boolean\" and unsandboxedReason.type as \"string\".",
+        "[unit] createRunCommandTool(declared, { exec: { ...exec, unsandboxedCommands: true } }).description ends with 'only when the argv needs the network, a local socket or a device the sandbox blocks.'.",
+        "[unit] runExecBranch({ argv: [\"bun\", \"--version\"], unsandboxed: true, unsandboxedReason: \"registry\" }, ctx, { exec: { ...exec, launcher, unsandboxedCommands: true } }) calls launcher.run with unwrapped: true and spec deep-equal to { kind: \"argv\", argv: [\"bun\", \"--version\"] }.",
+        "[unit] runExecBranch({ argv: [\"bun\", \"--version\"] }, ctx, { exec: { ...exec, launcher, unsandboxedCommands: true } }) calls launcher.run with no unwrapped key.",
+        "[unit] createRunCommandTool(declared, { exec: { ...exec, unsandboxedCommands: true } }).run({ command: \"test\", unsandboxed: true }, ctx) returns { content: '\"unsandboxed\" applies only to \"argv\" calls', isError: true }.",
+        "[unit] For that declared-command unsandboxed request, the declared-command runner is not invoked.",
+        "[unit] buildDeclaredCommandTools({ ...args, allowExec: true, execGrant, unsandboxedCommands: true }) produces a RunCommand tool whose inputSchema.properties has unsandboxed; with unsandboxedCommands absent it does not.",
+        "[unit] runExecBranch with a non-boolean unsandboxed value calls launcher.run with no unwrapped key, treating the flag as not set."
+      ],
+      "tags": [
+        "feature",
+        "security",
+        "sandbox",
+        "backend",
+        "integration"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Three existing modules extend Exec schema, normalized launch forwarding and branch refusal using Bash's established pattern; multi-step command handling fits native-deepseek and the execution permission boundary requires strict TDD.",
+        "agentProfileId": "native-deepseek",
+        "agent": "native",
+        "profileModelTier": "balanced",
+        "initialAgent": "native",
+        "initialProfileId": "native-deepseek",
+        "initialModelTier": "balanced",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "routerDecision": {
+          "mode": "shadow",
+          "router": "decision-proxy:nax-routing",
+          "outcome": "picked",
+          "profileId": "native-deepseek",
+          "confidence": 0.4400000000000004,
+          "plannedProfileId": "native-deepseek",
+          "applied": false,
+          "decidedAt": "2026-10-24T16:27:26.134Z"
+        }
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/tools/run-command.ts",
+        "packages/nax-agent/src/tools/run-command-exec.ts",
+        "packages/nax-agent/src/coding-tools/coding-tool-extras.ts",
+        "packages/nax-agent/test/unit/tools/run-command-exec-sandbox.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When runExecBranch receives { argv: [\"bun\", \"add\", \"x\"], unsandboxed: true } with allowScripts: false, launcher.run receives normalized argv [\"bun\", \"add\", \"x\", \"--ignore-scripts\"] and unwrapped: true."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/unit/tools/run-command-exec-sandbox.test.ts",
+          "reason": "hosts the argv `unwrapped` ACs and the RunCommand schema and scope ACs; the existing `[\"bun\",\"--version\"]` fixture at line 45 is reused."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/coding-tools/coding-tool-support.test.ts",
+          "reason": "hosts the `buildDeclaredCommandTools` RunCommand forwarding AC."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ba347fc533d2942c077308437f8480062049ff30"
+    }
+  ],
+  "analysis": "Goal and completion: F1 adds explicit unavailable-sandbox fallback for full/review raw native sessions, immutable sandbox-state reporting at open, and opt-in per-command sandbox escape for Bash and RunCommand argv without weakening policy. Completion requires the eight binding stories, their behavioral assertions and failure cases, and proof that a later ordinary command still wraps after an escaped command. Only packages/nax-agent implementation and tests change; this PRD is the requested planning artifact.\n\nDiscovery: codebase-memory MCP is not exposed in this host, so discovery used direct reads and repository text search. The existing feature PRD was read before replacement. Source matches the supplied baseline except that the spec's src/tools/tool-input-validation.ts path does not exist: the actual validator is packages/nax-agent/src/native/session/tool-input-validation.ts:38. Its unknown-property pass-through is at :59-60, optional-null behavior at :64-65, and primitive-type rejection at :67-77. Do not create or move a validator. File paths in contextFiles and expectedFiles are repository-relative; all story workdirs are packages/nax-agent.\n\nArchitecture and dependency direction: the package owns session, native runtime, tools, permissions and sandbox. Native options are parsed by a strict zod object while retaining caller identity (packages/nax-agent/src/session/native-backend-options.ts:62-113). NativeBackendOptions currently declares bashApproval and allowUnsandboxed at :26-27; nativeProfileRules at :128-149 defaults locally to gated, limits the knobs to tool-capable profiles, enforces ask-profile gated before the old allowUnsandboxed/gated restriction, and returns two fields. US-001 adds the third resolved boolean and optional schema field; explicit false still counts as a field being set for none/read. Do not substitute the global raw default for the session/support gated default. nativeBackend validates on construction (:130-138), but openNative resolves profile/sandbox/tool support during open (packages/nax-agent/src/session/native-backend.ts:54-80). This is the production consumer of resolveSessionLauncher; text search also identified its unit tests as consumers.\n\nSandbox floor and reporting impact: packages/nax-agent/src/session/session-tool-support.ts:28-38 declares existing profile tools; keep that function unchanged, especially no RunCommand/Exec session declaration. askRulesFor at :50-58 adds a Bash ask under gated only, with no Exec ask. resolveSessionLauncher at :89-107 currently returns a bare launcher, skips probing none/read, and drops an unavailable launcher only for gated plus allowUnsandboxed. Change its return atomically with openNative to { launcher, sandbox }, preserve unavailable probe reason, and use disabled only for none/read sessions. The opt-in does not drop an available launcher. BackendInfo at packages/nax-agent/src/session/session-backend.ts:12-17 is the shared native/ACP contract; add optional sandbox, not a required field for ACP. openNative currently returns two-field info at native-backend.ts:117. FacadeAgentSession.backend at packages/nax-agent/src/session/agent-session.ts:73-76 reconstructs info and freezes capabilities; it must copy and shallow-freeze a fresh sandbox object when present, omit the key when absent, and keep existing freezing. Reporting is a construction-time snapshot, not a per-command toggle or probe loop.\n\nLauncher impact: SandboxState, SandboxRecord and LaunchRequest are at packages/nax-agent/src/sandbox/types.ts:70, :85 and :102. createCommandLauncher at packages/nax-agent/src/sandbox/launcher.ts:182-223 owns one immutable state and recreates its temp directory before each run. Insert requested-unwrapped routing after that temp setup and before disabled/unavailable/available routing. runUnwrapped at :109-121 already computes logical shell/argv execution and caller env handling; withTmpEnv at :81-84 gives request env precedence over TMPDIR/TMP/TEMP defaults. Reuse it rather than adding a spawn mechanism. An explicit request must record { backend: none, wrapped: false, reason: requested } for every launcher state, skip policyFor and afterWrapped, and leave the launcher's state unchanged. Ordinary unavailable/disabled records and available wrap-failure fail-closed behavior remain unchanged. runWrapped at :123-180 retains logical executed argv, wrapper bookkeeping and denial annotations. _launcherDeps.runArgv is the safe spawn seam.\n\nTool/support wiring: buildSessionToolSupport at packages/nax-agent/src/session/session-tool-support.ts:127-150 creates grants, ask rules and support without auditDir. buildCodingToolSupport at packages/nax-agent/src/coding-tools/coding-tool-support.ts:69-310 resolves bashApproval at :186, compiles policy at :248-258, creates the runtime at :247, and delegates command tools at :283. supportSink at :332-346 is no-op without auditDir; do not add session audit storage. buildDeclaredCommandTools at packages/nax-agent/src/coding-tools/coding-tool-extras.ts:43-97 constructs RunCommand and Bash, including exec options and launcher propagation. US-003 threads unsandboxedCommands through openNative and these layers to Bash; US-005 wires the runtime option using the locally resolved mode; US-008 completes exec-option plumbing. Use a small extracted helper in each support builder so existing complexity does not grow. ToolScope at packages/nax-agent/src/tools/types.ts:76-133 gets an optional metadata field, not a new policy permission. Bash must always expose scope.unsandboxedField even when its public schema omits the flag; runtime enforcement must catch hallucinated extra input. createBashTool at packages/nax-agent/src/tools/bash.ts:311-386 has the baseline schema at :321-332 and command scope at :336. launchIntercepted at :261-309 preserves interception/revalidation, overlays and direct spawn; add a per-call flag through its request and conditionally include unwrapped only for exact true. The tool does not enforce session enablement; that belongs to the runtime. Off/absent schemas and descriptions are byte-identical, including platform and sandbox description endings.\n\nApproval flow: AskRequest at packages/nax-agent/src/permissions/types.ts:13-45 distinguishes matchedRule origin from a display rule. resolveAskOutcome at packages/nax-agent/src/tools/runtime-calltool.ts:212-281 currently sets matchedRule for every defined verdict.rule (:239) and reason verbatim (:248); preserve real-rule origins but exclude synthetic Unsandboxed(Bash/Exec) origins. Add optional suffix metadata, not a new ask kind. Existing abort-after-allow recheck at :270-277 must remain. askSummary at packages/nax-agent/src/tools/ask-request.ts:39-53 masks the full string before slicing to MAX_ASK_SUMMARY_CHARS (200); mirror that ordering for the new reason renderer, using no reason given for non-string/missing and reason withheld for unsafe masking. Do not make the reason schema-required: missing reasons still ask with the specified fallback. The approval chain is AskRequest -> createSessionAskLink (packages/nax-agent/src/session/session-ask-link.ts:63-83) -> ApprovalRequest (session-backend.ts:19-27) -> createSessionAskPort.requestApproval (session-ask-port.ts:33-39, strips signal using rest-spread) -> ApprovalAsk (session-ask-link.ts:24-30) -> askPerson event (:39-49) -> session.answer. Add optional literal true throughout, including the approval_requested union in agent-session-types.ts:105-116, and omit absent keys to preserve old event shapes. ACP translation is not modified.\n\nRuntime security boundary: packages/nax-agent/src/tools/runtime.ts:153 defines runtime options; callTool at :359 resolves lookup, derives identity at :367 and calls policy.check at :369. resolvePolicyIdentity at packages/nax-agent/src/tools/runtime-calltool.ts:89-94 switches a RunCommand argv call to Exec but leaves declared-command calls as RunCommand. resolveUnsandboxedCall belongs in runtime-calltool.ts and must be invoked before policy.check, once per call; identity must be Bash/Exec, scope must declare the field, and only exact true activates routing. Disabled/missing enablement produces the exact error and audit outcome before any policy/ask/spawn. This introduces an early result before the current logCall wrapper, which is declared after policy and shadow setup (runtime.ts:390-419); arrange the helper/callback seam so early refusal is recorded through the same logging semantics without evaluating policy first or opening a shadow tap unnecessarily. Keep callTool compact; do not inline the routing matrix. Enabled calls compute the ordinary policy verdict without the escape flag influencing permissions, but retain the original input for the tool and audit. Existing ask branch at :502-518 and denial branch at :521-536 stay fail-closed. Denials preserve existing redirect/breach semantics via resolveDenialOutcome (runtime-calltool.ts:286-330). Non-raw allows convert to an ask with preserved resolvedPaths, reason unsandboxed run requested, synthetic rule and no matchedRule. Real asks gain suffix/flag; raw allows run with no new approval event. The guard-denial ask at runtime.ts:550 is deliberately not decorated. US-005 handles enablement/denial/ordinary-call invariants and human refusal; US-006 completes converted asks and raw/direct-spawn routing, extending the same helper and test file rather than inventing another subsystem.\n\nRunCommand impact: RunCommandExecOptions is at packages/nax-agent/src/tools/run-command.ts:36-56; createRunCommandTool at :337 builds an exec-dependent schema and scope (:355-403), and run at :405 first enforces exclusive command/argv shape. Add exec-only scope metadata and option-gated schema/text, and reject exact true on the declared branch before invoking its runner. Mirror the existing target-only-on-argv refusal near :415. runExecBranch at packages/nax-agent/src/tools/run-command-exec.ts:109-186 rechecks argv and redirecting flags, normalizes installs/workspace target at :133-142 and passes normalized.argv to launchExec at :153-162. Forward the new flag without bypassing any hardening or importing the shell-templated declared runner. For bun --version argv remains unchanged; bun add still receives --ignore-scripts when scripts are disabled. launchExec at :74-106 needs a conditional unwrapped property while preserving cwd, timeout, env and signal.\n\nTests and migration: US-001 updates pinned two-field nativeProfileRules expectations in packages/nax-agent/test/unit/session/native-backend-options.test.ts:129-187, including the obsolete raw-fallback throw at :177-181; updates bare-launcher expectations in test/unit/session/session-tool-support.test.ts:197-239; and updates opened.info equality in test/unit/session/native-backend.test.ts:79. These are intentional internal/additive shape migrations, not reasons to loosen assertions. US-002 extends test/unit/sandbox/launcher.test.ts (ordinary available behavior at :115, failure closed at :215, unavailable record at :280). US-003 extends test/unit/tools/bash-sandbox.test.ts (:17 byte-identical disabled/no-launcher description, :62 launcher/audit), test/unit/tools/bash.test.ts, test/unit/coding-tools/coding-tool-support.test.ts, session-tool-support.test.ts and native-backend.test.ts. US-004 extends test/unit/tools/ask-request.test.ts and test/unit/session/session-ask-link.test.ts, testing actual AskRequest/event payloads. US-005 creates only packages/nax-agent/test/unit/tools/runtime-unsandboxed.test.ts; runtime.test.ts is already 755 lines and remains unchanged. US-006 extends this upstream-created file, which is a valid context input only after US-005. US-007 intentionally contains no new production code: the binding spec explicitly requires this independent session-level story despite the generic rule against test-only stories. Add scripted-model cases to native-backend.test.ts, mirror test/unit/session/agent-session-asks.test.ts:108-120, and reuse test/helpers/agent-session.ts:49 (toolRound), :75 (installScriptedProvider), :162 (sessionOptions), :213 (reader). test/helpers/session-sandbox-deps.ts:116-147 stubs the probe/backend and restores through existing helper lifecycles; pair with withDepsRestore instead of global monkey-patching. Stub _launcherDeps.runArgv and _bashToolDeps.runArgv so curl x is never actually executed. US-008 extends test/unit/tools/run-command-exec-sandbox.test.ts:25-67 using its existing bun --version fixture (:45) and support tests. Keep source <=600 and tests <=800 lines; the requested new runtime test file avoids overflowing runtime.test.ts.\n\nConstraints and validation: packages/nax-agent/scripts/baselines/complexity-baseline.json:3-6 sets limit 20, buildDeclaredCommandTools 24 and buildCodingToolSupport 35; :18 also baselines existing runtime log/runTool. Baselines only shrink; no baseline growth as an escape hatch. No new exported names on . or ./internal; export helpers only from their deep modules and do not add barrel re-exports. packages/nax-agent/src/index.ts:198, :259 and :336 already exports AskRequest, LaunchRequest and BackendInfo by name. Optional members extend those contracts without api:update. Existing consumers need no config migration because both opt-ins default false and ACP can omit optional fields. Do not bump dependencies or lockstep versions. Follow Node-compatible ESM, #src/ imports or explicit .ts relative imports, existing runtime spawn and dependency seams, no cross-package imports, no generated agent-file edits. All stories are sandbox/session/access-control work and therefore use three-session-tdd with strict test/implementation isolation; demonstrate regression tests failing on old behavior before implementing. Commands from packages/nax-agent: targeted bun test ./test/unit/<path>.test.ts --timeout=60000; bun run test; bun run typecheck; bun run check:all; bun run build; bun run check:api. Never bare bun test or bun run nax. Validation gates belong to implementation workflow, not acceptance criteria.\n\nRisk management: separate unavailable fallback from per-command permission so enabling one never implies the other; never drop a usable launcher or mutate session sandbox state after escape. Guard ordering and exact-true checks prevent enablement bypass by extra schema input. Preserve policy/lexer/containment and protected-path refusals, existing masked-summary handling, ask cancellation, audit error vs denied:ask distinctions, original input after allow, optional-key omission and synthetic-rule origin semantics. raw must not gain a human prompt or promised durable session ledger. No CLI, ACP, storage, mode-switching, approval-cache or UI migration is part of this feature.\n\nRefine-pass adversarial audit: all 71 explicitly listed spec acceptance criteria are retained in their original binding story. The following exhaustive map uses one-based spec AC -> revised PRD AC positions within each story; multiple positions mean a compound assertion was separated without dropping any part. US-001: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->8, 8->9, 9->10, 10->11+12, 11->13, 12->14, 13->16+17+18. US-002: 1->1, 2->2, 3->3+4, 4->5, 5->6, 6->7, 7->8, 8->9, 9->10+11. US-003: 1->1+2, 2->3, 3->4+5, 4->6, 5->7, 6->8, 7->9, 8->10+11, 9->12, 10->13, 11->14, 12->15. US-004: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9. US-005: 1->1+2, 2->3, 3->4, 4->6+7, 5->9, 6->10+11, 7->13+14, 8->15. US-006: 1->1, 2->2, 3->3, 4->4+5, 5->6, 6->7. US-007: 1->1, 2->2+3, 3->4+5, 4->6, 5->7+8+9, 6->10+11+12. US-008: 1->1+2, 2->3+4, 3->5, 4->6, 5->7, 6->8, 7->9+10, 8->11. Regression qualifiers remain attached: none/read probe omission; existing commandField; absent-option schema/text comparisons; unchanged original verdict reasons and breach; same-session later wrapping after its own approval; original input including unsandboxed; matched real rule versus absent synthetic matchedRule; and all without-field/without-launcher clauses. No deprecated file-content tags occur in the spec AC list.\n\nAll 15 failure-table rows also have behavioral ACs, in row order: US-001[3], US-001[6,7], US-001[10,19], US-001[9,14,15], US-005[1-5], US-005[6-8], US-006[2,3,8,9], US-005[10-12], US-006[10,11], US-006[4,5] plus US-007[7-9], US-006[7,12], US-002[8,9], US-005[13,14] plus US-008[9,10], US-003[9] plus US-005[16,17] and US-008[12], US-004[2,4] plus US-006[13,14]. Additional refine-required negative-path regression assertions protect ordinary launcher wrap failure in US-002, empty Bash-command refusal in US-003, and denied converted asks in US-006. They are observable failures, not new subsystems. Other stories already contain option/profile rejection, reason masking/fallback, policy/human denial or declared-command refusal.\n\nInterface audit corrected US-006's Exec case from an invalid one-argument callTool(input) to callTool(registeredName, input): register a RunCommand-named tool with argvField, then let resolvePolicyIdentity remap it to Exec. No actual RunCommand implementation is needed before US-008. Non-boolean transport validation is pinned to the concrete string true case so the existing optional-null normalization is not inadvertently changed: packages/nax-agent/src/native/session/tool-input-validation.ts:65 treats optional null as absent, and handle-invalid-tool-call.ts:58-86 returns a repair result for invalid input before execution. Runtime and direct tool checks remain exact boolean true. All ACs observe outcomes, exception codes/messages, request/event payloads, audit records or spy calls; support runtime-option propagation can be exercised through the resulting runtime's Bash refusal/approval behavior without inventing a constructor-mocking seam. US-006 denial rendering follows runtime-calltool.ts:279-281 and the existing ASK_DENIED_REASON constant, not an invented human-denial message.\n\nAll 19 feature exclusions remain verbatim in top-level outOfScope, with nearby story boundaries echoed in descriptions; there are no story-local spec exclusion blocks to hoist. All explicitly recommended context files are retained, max five per story, and US-005 additionally reads the actual transport validator. US-006's context-only new test file is an upstream US-005 output, never its own output. Binding workdirs, eight IDs and every dependency edge are unchanged and reference existing stories. US-003, US-004 and US-006 use medium complexity after reassessing their standard additive plumbing and bounded existing-helper logic; US-005 retains complex for pre-policy early refusal plus audit/shadow ordering and signature constraints. All retain the mandatory security/session three-session-tdd override. No source or tests were executed or modified during PRD refinement.",
+  "outOfScope": [
+    "RunCommand and Exec are not declared for any session profile in this feature; `declaredToolsFor` is unchanged, so an interactive session does not see RunCommand until a later feature declares it. The RunCommand `unsandboxed` argument is exercised at the tool and support level here.",
+    "No tool-audit directory is plumbed into sessions; `buildSessionToolSupport` keeps the non-recording sink, so an unsandboxed run under `raw` leaves no durable session ledger row. Callers that pass `auditDir` to `buildCodingToolSupport` get the `reason: \"requested\"` record.",
+    "No approvals-cache link is added to the session ask chain; a `gated` session asks the human for every Bash command, as today.",
+    "No mutable profile or `bashApproval` on an open session; switching mode is the host's job (close and reopen on the same transcript).",
+    "`mcpServers` on `createAgentSession` stays rejected as reserved.",
+    "The ACP server (`packages/nax-agent-acp`) does not expose `allowUnsandboxedCommands`, `allowUnsandboxed` with `raw`, `BackendInfo.sandbox` or the `unsandboxed` approval field; its config and translate layers are unchanged.",
+    "`packages/nax` is unchanged: no nax config key, no `nax run` wiring, no CLI flag for the new options, and the Telegram and other interaction channels do not render `unsandboxed`.",
+    "`AskDecidedBy` gains no new value, and no approval event is emitted under `raw`.",
+    "The guard-denial ask path (`commandShadow.guard` in `callTool`) does not carry the `unsandboxed` flag; sessions configure no command shadow, so it is inert here.",
+    "`escalate` mode semantics are unchanged; `allowUnsandboxed` with `escalate` stays invalid.",
+    "The `.nax` protected-path refusals, the Claude settings file refusals and the raw-mode lexical screen (`screenRawBashCommand`) are unchanged.",
+    "`unsandboxed: true` does not bypass policy evaluation: deny rules, payload checks, containment, the lexer and grant evaluation run exactly as without the flag.",
+    "Launcher-level relaxations that read the session's sandbox state (`rawScreenOptionsFor`, `isTempConfined`) are not re-decided per call; they are inert in sessions and unchanged for nax run callers.",
+    "Remembered-approval keys in `packages/nax` do not include the `unsandboxed` flag; whether a remembered plain approval should cover an unsandboxed variant is a later decision.",
+    "`SandboxState` is reported once at open; a sandbox that becomes unavailable mid-session is not re-probed.",
+    "Sessions always use `DEFAULT_SANDBOX_CONFIG` (enabled), so the `disabled` sandbox state arises only for the `none` and `read` profiles; a config-disabled sandbox combined with `allowUnsandboxed` is not a session case.",
+    "No per-command unsandboxed path for `Write`, `Edit`, `Delete`, `Git` or `GitCommit`; those tools do not run through the launcher.",
+    "Session storage sharing with the ACP server (feature F2), the terminal UI (F3), the skills and plugin loader (F4) and MCP servers and subagents (F5) are separate features.",
+    "No dependency bumps; `@anthropic-ai/sandbox-runtime` stays at its current version."
+  ],
+  "routingProfile": "cross-agent"
+}

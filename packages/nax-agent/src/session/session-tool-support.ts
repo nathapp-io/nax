@@ -4,6 +4,7 @@
  * buildCodingToolSupport takes, picks the embedder default protected-paths
  * policy, and enforces the sandbox floor for "full".
  */
+import { unsandboxedToolOptions } from "#src/coding-tools/coding-tool-extras";
 import { resolveSessionSandbox } from "#src/coding-tools/coding-tool-sandbox";
 import { buildCodingToolSupport, type CodingToolSupport } from "#src/coding-tools/coding-tool-support";
 import { UNIVERSAL_CODING_TOOLS } from "#src/coding-tools/universal-coding-tools";
@@ -12,7 +13,7 @@ import type { BashApprovalMode } from "#src/config/bash-approval";
 import { DEFAULT_SANDBOX_CONFIG } from "#src/config/schemas-sandbox";
 import { credentialsConfig } from "#src/infra/credentials-config";
 import type { AskResolver } from "#src/permissions/index";
-import type { CommandLauncher } from "#src/sandbox/index";
+import type { CommandLauncher, SandboxState } from "#src/sandbox/index";
 import { EMPTY_OWNED_PATHS_POLICY } from "#src/tools/owned-paths";
 import type { ProtectedPathsPolicy } from "#src/tools/protected-paths";
 import type { CodingToolName, ToolGrant } from "#src/tools/types";
@@ -81,13 +82,33 @@ export interface SessionLauncherArgs {
   readonly profile: AgentSessionProfile;
   readonly root: string;
   readonly protectedPaths: ProtectedPathsPolicy;
+  /**
+   * The resolved mode. Since US-001 the floor itself no longer keys on it —
+   * `nativeProfileRules` has already validated which mode may pair with
+   * `allowUnsandboxed` — but it stays part of the call so the caller declares
+   * the session's posture in one place.
+   */
   readonly bashApproval: BashApprovalMode;
   readonly allowUnsandboxed: boolean;
 }
 
-/** The sandbox floor (spec 6.3): "ask", "full" and "review" need a usable sandbox unless gated + allowUnsandboxed. */
-export async function resolveSessionLauncher(args: SessionLauncherArgs): Promise<CommandLauncher | undefined> {
-  if (args.profile !== "full" && args.profile !== "ask" && args.profile !== "review") return undefined;
+/** What the floor decided: the launcher to run under (if any), and the state to report. */
+export interface ResolvedSessionLauncher {
+  readonly launcher: CommandLauncher | undefined;
+  readonly sandbox: SandboxState;
+}
+
+/**
+ * The sandbox floor (spec 6.3): "ask", "full" and "review" need a usable sandbox,
+ * unless the session explicitly allows running without one — under `gated` (every
+ * call still goes to the person) or under `raw` (the person's own standing choice).
+ * The resolved state rides back beside the launcher, so the session can report
+ * what its commands actually run under.
+ */
+export async function resolveSessionLauncher(args: SessionLauncherArgs): Promise<ResolvedSessionLauncher> {
+  if (args.profile !== "full" && args.profile !== "ask" && args.profile !== "review") {
+    return { launcher: undefined, sandbox: { kind: "disabled" } };
+  }
   const launcher = await resolveSessionSandbox({
     config: DEFAULT_SANDBOX_CONFIG,
     root: args.root,
@@ -95,11 +116,11 @@ export async function resolveSessionLauncher(args: SessionLauncherArgs): Promise
     protectedPaths: args.protectedPaths,
     ownedPaths: EMPTY_OWNED_PATHS_POLICY,
   });
-  if (launcher.state.kind === "available") return launcher;
-  if (args.bashApproval === "gated" && args.allowUnsandboxed) return undefined;
+  if (launcher.state.kind === "available") return { launcher, sandbox: launcher.state };
+  if (args.allowUnsandboxed) return { launcher: undefined, sandbox: launcher.state };
   const reason = launcher.state.kind === "unavailable" ? launcher.state.reason : "the sandbox is disabled";
   throw new AgentSessionError(
-    `Profile "${args.profile}" needs a usable sandbox (${reason}). Pass bashApproval "gated" with allowUnsandboxed: true to run without one.`,
+    `Profile "${args.profile}" needs a usable sandbox (${reason}). Pass allowUnsandboxed: true to run without one.`,
     "AGENT_SESSION_SANDBOX_UNAVAILABLE",
     { reason },
   );
@@ -114,6 +135,12 @@ export interface SessionToolSupportArgs {
   readonly launcher: CommandLauncher | undefined;
   readonly askResolver: AskResolver;
   readonly interceptor: CommandInterceptor | undefined;
+  /**
+   * US-003: offer Bash's per-call `unsandboxed` argument for this session
+   * (from `nativeProfileRules(...).allowUnsandboxedCommands`). Optional and
+   * defaulting to off, so every existing caller keeps today's tool surface.
+   */
+  readonly unsandboxedCommands?: boolean;
 }
 
 export interface SessionToolSupport {
@@ -139,6 +166,7 @@ export function buildSessionToolSupport(args: SessionToolSupportArgs): SessionTo
     ...(askRules.length > 0 ? { askRules } : {}),
     ...(args.interceptor !== undefined ? { interceptor: args.interceptor } : {}),
     ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
+    ...unsandboxedToolOptions(args),
   });
   // Unreachable while the scratchpad trio is always declared and granted; kept for the type.
   if (support === undefined) {

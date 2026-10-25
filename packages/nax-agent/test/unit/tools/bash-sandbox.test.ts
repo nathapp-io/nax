@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createCommandLauncher, DISABLED_SANDBOX_STATE } from "#src/sandbox/index";
+import type { BashToolOptions } from "#src/tools/bash";
 import { _bashToolDeps, createBashTool } from "#src/tools/index";
 import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir, withDepsRestore } from "#test/helpers/index";
 
@@ -23,6 +24,70 @@ describe("Bash through the launcher", () => {
     expect(disabled).toBe(plain);
     expect(plain).toContain("paths are NOT contained");
   });
+
+  // US-003: the same byte-identical rule for the new option, across every
+  // description variant rather than just `raw`. Off is indistinguishable from
+  // absent; on appends exactly one sentence and changes nothing else.
+  const UNSANDBOXED_SENTENCE =
+    'Set "unsandboxed": true with an "unsandboxedReason" only when the command needs the network, a local socket or a device the sandbox blocks.';
+  const descriptionCases: Array<{ label: string; make: () => BashToolOptions }> = [
+    { label: "gated without a launcher", make: () => ({ bashApproval: "gated", patterns: ["bun *"] }) },
+    {
+      label: "gated with a disabled launcher",
+      make: () => ({ bashApproval: "gated", launcher: createCommandLauncher({ state: DISABLED_SANDBOX_STATE }) }),
+    },
+    {
+      label: "gated with an available launcher",
+      make: () => ({
+        bashApproval: "gated",
+        patterns: ["bun *"],
+        launcher: createCommandLauncher({ state: available, backend: makeFakeSandboxBackend(), policyFor }),
+      }),
+    },
+    {
+      label: "gated with an unavailable launcher",
+      make: () => ({
+        bashApproval: "gated",
+        launcher: createCommandLauncher({ state: { kind: "unavailable", backend: "srt", reason: "no bwrap" } }),
+      }),
+    },
+    { label: "escalate with a reachable human", make: () => ({ bashApproval: "escalate", humanApproval: true }) },
+    { label: "raw without a launcher", make: () => ({ bashApproval: "raw" }) },
+    {
+      label: "raw with an available launcher",
+      make: () => ({
+        bashApproval: "raw",
+        launcher: createCommandLauncher({ state: available, backend: makeFakeSandboxBackend(), policyFor }),
+      }),
+    },
+    {
+      label: "raw with an unavailable launcher",
+      make: () => ({
+        bashApproval: "raw",
+        launcher: createCommandLauncher({ state: { kind: "unavailable", backend: "srt", reason: "no bwrap" } }),
+      }),
+    },
+  ];
+
+  test.each(descriptionCases)(
+    "US-003: unsandboxedCommands off leaves the description unchanged ($label)",
+    ({ make }) => {
+      expect(createBashTool({ ...make(), unsandboxedCommands: false }).description).toBe(
+        createBashTool(make()).description,
+      );
+    },
+  );
+
+  test.each(descriptionCases)(
+    "US-003: unsandboxedCommands on appends exactly the one sentence ($label)",
+    ({ make }) => {
+      const base = createBashTool(make()).description;
+      const withOption = createBashTool({ ...make(), unsandboxedCommands: true }).description;
+      expect(withOption.startsWith(base)).toBe(true);
+      // Either the base ended on a space (most variants do) or a separator was added.
+      expect([UNSANDBOXED_SENTENCE, ` ${UNSANDBOXED_SENTENCE}`]).toContain(withOption.slice(base.length));
+    },
+  );
 
   test("available: raw description drops the uncontained sentence and states the sandbox", () => {
     const tool = createBashTool({

@@ -130,6 +130,14 @@ export interface ToolScope {
    * tool declaring it must be granted explicitly, since no profile grants one.
    */
   readonly commandField?: string;
+  /**
+   * US-003: the input field by which a call asks to run OUTSIDE the OS sandbox
+   * (`Bash`'s `unsandboxed`). Declared unconditionally, so the runtime can read
+   * the field whether or not the session advertises it; whether the argument is
+   * OFFERED (schema + description) is the session's `unsandboxedCommands`
+   * option, and whether a call is PERMITTED is the runtime's decision.
+   */
+  readonly unsandboxedField?: string;
 }
 
 /**

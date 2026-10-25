@@ -64,6 +64,15 @@ function names(support: { tools: readonly { name: string }[] }): string[] {
   return support.tools.map((tool) => tool.name).sort();
 }
 
+/** A tool's `inputSchema.properties` keys, without casting to a Capitalised type. */
+function bashPropertyKeys(tool: { readonly inputSchema: Record<string, unknown> }): string[] {
+  const properties: unknown = tool.inputSchema.properties;
+  if (typeof properties !== "object" || properties === null) {
+    throw new Error("expected the Bash tool's inputSchema.properties to be an object");
+  }
+  return Object.keys(properties).sort();
+}
+
 describe("declaredToolsFor and grantsFor", () => {
   test("none is the scratchpad trio; read adds the read tools; full adds the write tools", () => {
     expect(declaredToolsFor("none", EMPTY)).toEqual(TRIO);
@@ -175,6 +184,24 @@ describe("buildSessionToolSupport", () => {
     const plain = await support.runtime.callTool("Read", { path: "creds" });
     expect(plain.kind).not.toBe("ok");
   });
+
+  /**
+   * US-003 AC-14: the session's `unsandboxedCommands` option reaches the Bash
+   * tool it advertises. Read off `tools`, which is what the prompt is built
+   * from -- an option the schema does not show the model does not exist.
+   */
+  test("unsandboxedCommands reaches the advertised Bash schema (and is absent without it)", async () => {
+    const on = buildSessionToolSupport(await args({ profile: "full", unsandboxedCommands: true }));
+    const bashOn = on.support.tools.find((tool) => tool.name === "Bash");
+    if (bashOn === undefined) throw new Error("full must advertise Bash");
+    expect(bashPropertyKeys(bashOn)).toContain("unsandboxed");
+
+    const off = buildSessionToolSupport(await args({ profile: "full" }));
+    const bashOff = off.support.tools.find((tool) => tool.name === "Bash");
+    if (bashOff === undefined) throw new Error("full must advertise Bash");
+    expect(bashPropertyKeys(bashOff)).not.toContain("unsandboxed");
+    expect(bashPropertyKeys(bashOff)).not.toContain("unsandboxedReason");
+  });
 });
 
 describe("resolveSessionLauncher", () => {
@@ -188,21 +215,40 @@ describe("resolveSessionLauncher", () => {
     allowUnsandboxed: false,
   };
 
-  test("none and read need no sandbox and never probe", async () => {
+  test("none and read need no sandbox, resolve a disabled state and never probe", async () => {
     let probed = 0;
     _sessionSandboxDeps.probe = async () => {
       probed += 1;
       return { available: true };
     };
-    expect(await resolveSessionLauncher({ ...launcherArgs, profile: "none" })).toBeUndefined();
-    expect(await resolveSessionLauncher({ ...launcherArgs, profile: "read" })).toBeUndefined();
+    expect(await resolveSessionLauncher({ ...launcherArgs, profile: "none" })).toEqual({
+      launcher: undefined,
+      sandbox: { kind: "disabled" },
+    });
+    expect(await resolveSessionLauncher({ ...launcherArgs, profile: "read" })).toEqual({
+      launcher: undefined,
+      sandbox: { kind: "disabled" },
+    });
     expect(probed).toBe(0);
   });
 
-  test("full with a usable sandbox returns an available launcher", async () => {
+  // AC-13: the read profile is the tool-less case — disabled, and the probe is never asked.
+  test("read resolves the disabled sandbox without calling the probe", async () => {
+    let probed = 0;
+    _sessionSandboxDeps.probe = async () => {
+      probed += 1;
+      return { available: true };
+    };
+    const result = await resolveSessionLauncher({ ...launcherArgs, profile: "read", bashApproval: "gated" });
+    expect(result).toEqual({ launcher: undefined, sandbox: { kind: "disabled" } });
+    expect(probed).toBe(0);
+  });
+
+  test("full with a usable sandbox returns an available launcher and its state", async () => {
     stubSessionSandboxDeps(_sessionSandboxDeps);
-    const launcher = await resolveSessionLauncher({ ...launcherArgs, profile: "full" });
-    expect(launcher?.state.kind).toBe("available");
+    const result = await resolveSessionLauncher({ ...launcherArgs, profile: "full" });
+    expect(result.launcher?.state.kind).toBe("available");
+    expect(result.sandbox.kind).toBe("available");
   });
 
   test("full without a sandbox fails with the probe's reason", async () => {
@@ -230,13 +276,69 @@ describe("resolveSessionLauncher", () => {
     }
     assertNaxError(caught);
     expect(caught.code).toBe("AGENT_SESSION_SANDBOX_UNAVAILABLE");
-    expect(await resolveSessionLauncher({ ...launcherArgs, profile: "none" })).toBeUndefined();
+    expect((await resolveSessionLauncher({ ...launcherArgs, profile: "none" })).launcher).toBeUndefined();
   });
 
-  test("gated with allowUnsandboxed runs without a launcher", async () => {
+  test("gated with allowUnsandboxed runs without a launcher and reports the unavailable state", async () => {
     stubSessionSandboxDeps(_sessionSandboxDeps);
     _sessionSandboxDeps.probe = async () => ({ available: false, reason: "none" });
-    expect(await resolveSessionLauncher({ ...launcherArgs, profile: "full", allowUnsandboxed: true })).toBeUndefined();
+    expect(await resolveSessionLauncher({ ...launcherArgs, profile: "full", allowUnsandboxed: true })).toEqual({
+      launcher: undefined,
+      sandbox: { kind: "unavailable", backend: "srt", reason: "none" },
+    });
+  });
+
+  // AC-9: raw plus the explicit fallback is the interactive host's "full" mode.
+  test('full, raw and allowUnsandboxed with no sandbox returns no launcher and the "srt missing" state', async () => {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    _sessionSandboxDeps.probe = async () => ({ available: false, reason: "srt missing" });
+    expect(
+      await resolveSessionLauncher({
+        profile: "full",
+        bashApproval: "raw",
+        allowUnsandboxed: true,
+        root: "/work",
+        protectedPaths: EMPTY,
+      }),
+    ).toEqual({
+      launcher: undefined,
+      sandbox: { kind: "unavailable", backend: "srt", reason: "srt missing" },
+    });
+  });
+
+  // AC-10: without the opt-in the floor still holds, and the refusal says how to opt in.
+  test("full, raw and no allowUnsandboxed still refuses, naming the fallback option", async () => {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    _sessionSandboxDeps.probe = async () => ({ available: false, reason: "srt missing" });
+    let caught: unknown;
+    try {
+      await resolveSessionLauncher({
+        profile: "full",
+        bashApproval: "raw",
+        allowUnsandboxed: false,
+        root: "/work",
+        protectedPaths: EMPTY,
+      });
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught);
+    expect(caught.code).toBe("AGENT_SESSION_SANDBOX_UNAVAILABLE");
+    expect(caught.message.endsWith("Pass allowUnsandboxed: true to run without one.")).toBe(true);
+  });
+
+  // AC-11 and AC-12: on a machine that has the sandbox, the opt-in changes nothing.
+  test("full, raw and allowUnsandboxed keep a defined launcher and an available state", async () => {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    const result = await resolveSessionLauncher({
+      profile: "full",
+      bashApproval: "raw",
+      allowUnsandboxed: true,
+      root: "/work",
+      protectedPaths: EMPTY,
+    });
+    expect(result.launcher).toBeDefined();
+    expect(result.sandbox.kind).toBe("available");
   });
 });
 
