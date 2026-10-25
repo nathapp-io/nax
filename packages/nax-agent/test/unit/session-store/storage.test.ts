@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import type { SessionMeta } from "#src/index";
@@ -66,6 +66,28 @@ describe("metadata (spec §5.1)", () => {
     expect(await store.readMeta("missing")).toBeNull();
     expect(await store.hasMeta("a")).toBe(true);
     expect(JSON.parse(await readFile(join(dir, "a.session.json"), "utf8"))).toEqual(meta("a"));
+  });
+
+  test("concurrent writes for one session all succeed with a complete final record and no temporary files", async () => {
+    const { store } = storage();
+    const records = Array.from({ length: 24 }, (_, index) =>
+      meta("a", { title: `${index}:${"x".repeat(index * 1000)}` }),
+    );
+    const results = await Promise.allSettled(records.map((record) => store.writeMeta(record)));
+    expect(results.every((result) => result.status === "fulfilled")).toBe(true);
+    const final = await store.readMeta("a");
+    expect(records.map((record) => JSON.stringify(record))).toContain(JSON.stringify(final));
+    expect(await readFile(join(dir, "a.session.json"), "utf8")).toBe(`${JSON.stringify(final, null, 2)}\n`);
+    expect(await readdir(dir)).toEqual(["a.session.json"]);
+  });
+
+  test("a failed metadata rename cleans up only its own temporary files", async () => {
+    const { store } = storage();
+    await mkdir(join(dir, "a.session.json"));
+    await writeFile(join(dir, "unrelated.tmp"), "keep");
+    await expect(store.writeMeta(meta("a"))).rejects.toBeDefined();
+    expect((await readdir(dir)).sort()).toEqual(["a.session.json", "unrelated.tmp"]);
+    expect(await readFile(join(dir, "unrelated.tmp"), "utf8")).toBe("keep");
   });
 
   test("unreadable JSON, a bad shape and an unknown schemaVersion throw SESSION_META_UNREADABLE and leave the file", async () => {

@@ -5,7 +5,7 @@
  * legacy locks remain pid-based. Listing scans the metadata files.
  * Files that cannot be read are never rewritten or deleted here.
  */
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
@@ -152,9 +152,16 @@ export function createSessionStorage(deps: SessionStorageDeps): SessionStorage {
     async writeMeta(meta) {
       await mkdir(deps.dir, { recursive: true });
       const path = metaPath(meta.sessionId);
-      const temp = `${path}.${deps.pid}.tmp`;
-      await writeFile(temp, `${JSON.stringify(meta, null, 2)}\n`);
-      await rename(temp, path);
+      // An exclusively created directory owns this write's temp file, even when
+      // another storage instance in the same process writes the same session.
+      const tempDir = await mkdtemp(`${path}.${deps.pid}.`);
+      try {
+        const temp = join(tempDir, "metadata.tmp");
+        await writeFile(temp, `${JSON.stringify(meta, null, 2)}\n`);
+        await rename(temp, path);
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
     },
     async hasMeta(sessionId) {
       try {
