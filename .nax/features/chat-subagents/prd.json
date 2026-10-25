@@ -3,7 +3,7 @@
   "feature": "chat-subagents",
   "branchName": "feat/chat-subagents",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T16:27:11.362Z",
+  "updatedAt": "2026-10-25T16:34:24.946Z",
   "userStories": [
     {
       "id": "US-001",
@@ -409,14 +409,17 @@
         "US-001",
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "One new runner mirrors the existing opener's options with an immediate-end skeleton; strict TDD is retained because profile, Bash approval and allowedTools configure an actual session's authority."
+        "reasoning": "One new runner mirrors the existing opener's options with an immediate-end skeleton; strict TDD is retained because profile, Bash approval and allowedTools configure an actual session's authority.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/open-chat-session.ts",
@@ -436,7 +439,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7ef43cd7e25fb461529ab27d04466732e6f0539c"
     },
     {
       "id": "US-008",
