@@ -22,6 +22,12 @@ export interface ProviderTool {
   readonly localName: string;
   readonly description: string;
   readonly inputSchema: JSONSchema;
+  /**
+   * The provider's own claim that the tool does not modify anything. Only a
+   * `discovered` provider sets it (an MCP server's `readOnlyHint`); it is
+   * trusted as stated and decides whether an ask-profile session asks first.
+   */
+  readonly readOnly?: boolean;
   run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult>;
 }
 

@@ -46,11 +46,29 @@ export interface AgentResource {
   readonly origin: ResourceOrigin;
 }
 
-/** Parsed and listed only; delivery is deferred to F5. */
+/** Typed connection specification retained from a catalog MCP entry. */
+export type McpServerSpec =
+  | {
+      readonly transport: "stdio";
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly env: Readonly<Record<string, string>>;
+    }
+  | {
+      readonly transport: "http" | "sse";
+      readonly url: string;
+      readonly headers: Readonly<Record<string, string>>;
+    };
+
+export type McpServerScope = "local" | "project" | "user" | "plugin";
+
+/** Parsed with its connection spec; connecting is done elsewhere. SSE is retained only so it can be rejected. */
 export interface McpServerResource {
   readonly kind: "mcp";
   readonly name: string;
   readonly transport: "stdio" | "http" | "sse";
+  readonly scope: McpServerScope;
+  readonly server: McpServerSpec;
   readonly path: string;
   readonly origin: ResourceOrigin;
 }

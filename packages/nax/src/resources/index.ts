@@ -1,16 +1,19 @@
 export { buildResourceCatalog, loadResourceCatalog } from "./catalog";
-export { _claudePathsDeps, claudeConfigDir } from "./claude-paths";
+export { _claudePathsDeps, claudeConfigDir, claudeJsonPath } from "./claude-paths";
 export { discoverClaudeCodePackages } from "./claude-sources";
 export { runCommandShellLines } from "./command-shell";
 export type { ResourceFrontmatterResult } from "./frontmatter";
 export { readResourceFrontmatter } from "./frontmatter";
 export { formatPluginsListing, formatSkillsListing } from "./listing";
+export { expandMcpValue, mcpServerId } from "./mcp-expand";
+export type { McpServerSource, MergedMcpServers } from "./mcp-merge";
+export { mergeCatalogMcpServers, resolveCatalogMcpConfig } from "./mcp-merge";
 export { naxPluginPackages } from "./nax-plugin-packages";
 export { parseAgentFile } from "./parse-agent";
 export { parseCommandFile } from "./parse-command";
 export type { HookParseResult } from "./parse-hooks";
 export { hooksFromSettings, parseHooksJson } from "./parse-hooks";
-export { parseMcpJson } from "./parse-mcp";
+export { parseMcpJson, parseMcpServers } from "./parse-mcp";
 export { SKILL_NAME_RE } from "./parse-shared";
 export { parseSkillFile } from "./parse-skill";
 export type { ResourceScanResult } from "./scan-dirs";
@@ -27,6 +30,8 @@ export type {
   CommandResource,
   HookResource,
   McpServerResource,
+  McpServerScope,
+  McpServerSpec,
   ResourceCatalog,
   ResourceDiagnostic,
   ResourceOrigin,

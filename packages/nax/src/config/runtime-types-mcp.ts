@@ -17,8 +17,12 @@ export type McpStage =
   | "*";
 
 export interface McpServerConfig {
-  /** Executable spawned over stdio. */
-  command: string;
+  /** Executable spawned over stdio. Exactly one of `command` and `url` is set. */
+  command?: string;
+  /** Streamable-HTTP endpoint. `args` and `env` are ignored for an HTTP server. */
+  url?: string;
+  /** Static headers for an HTTP server (the schema always fills it; optional here for typed literals). */
+  headers?: Record<string, string>;
   /** Repository hint; every {workdir} is replaced with the hop root. */
   instructions?: string;
   args: string[];

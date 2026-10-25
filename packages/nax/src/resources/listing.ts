@@ -47,7 +47,7 @@ export function formatSkillsListing(catalog: ResourceCatalog): string {
 
 function packageLines(pkg: ResourcePackage): string[] {
   return [
-    `${pkg.id}  skills ${pkg.skills.length}, commands ${pkg.commands.length}, agents ${pkg.agents.length} (not delivered yet), mcp ${pkg.mcpServers.length} (not delivered yet), hooks ${pkg.hooks.length} (not executed)`,
+    `${pkg.id}  skills ${pkg.skills.length}, commands ${pkg.commands.length}, agents ${pkg.agents.length} (not delivered yet), mcp ${pkg.mcpServers.length}, hooks ${pkg.hooks.length} (not executed)`,
     ...pkg.diagnostics.map(diagnosticLine),
   ];
 }

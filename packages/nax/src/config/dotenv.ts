@@ -97,6 +97,16 @@ export function parseDotenv(content: string): Record<string, string> {
   return result;
 }
 
+/** A literal subtree: copied as-is, minus the keys the merger refuses (SEC-09). */
+function copyLiteral(config: unknown): unknown {
+  if (config === null || typeof config !== "object" || Array.isArray(config)) return config;
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(config as Record<string, unknown>)) {
+    if (!DANGEROUS_MERGE_KEYS.has(key)) result[key] = value;
+  }
+  return result;
+}
+
 /**
  * Recursively walks a config object and replaces $VAR references with values
  * from the provided env map. Supports inline substitution, double-dollar
@@ -107,6 +117,10 @@ export function parseDotenv(content: string): Record<string, string> {
  *   so callers can report exactly where an unresolved `$VAR` was found.
  */
 export function resolveEnvVars(config: unknown, env: Record<string, string>, path: string[] = []): unknown {
+  // Configured MCP servers carry their url/headers literally: a `$` in a header
+  // value is a credential, not a reference, and expanding it would also let an
+  // ambient variable leak into a request. The secret scan still applies to them.
+  if (path.length === 2 && path[0] === "mcp" && path[1] === "servers") return copyLiteral(config);
   if (typeof config === "string") {
     return resolveString(config, env, path);
   }

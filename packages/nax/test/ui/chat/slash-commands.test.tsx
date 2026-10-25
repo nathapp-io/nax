@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
-import type { ChatHost, ChatHostState } from "@/chat";
+import type { ChatHost, ChatHostState, ChatMcpState } from "@/chat";
+import { formatMcpListing } from "@/chat";
 import { featureDir } from "@/config";
 import { buildChatFeatureMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing, type SkillResource } from "@/resources";
@@ -18,6 +19,7 @@ const COMMANDS = [
   "feature",
   "skills",
   "plugins",
+  "mcp",
   "quit",
 ];
 afterEach(() => {
@@ -159,6 +161,11 @@ describe("slash command routing", () => {
     expect(ui.host.resourceNotice).toBeUndefined();
     expect(ui.lastFrame()).toContain(COMMANDS.map((command) => `/${command}`).join("\n"));
   });
+  test("US-008 AC-21 help lists /mcp on the line after /plugins", async () => {
+    const ui = mount();
+    await ui.line("/help");
+    expect(ui.lastFrame()).toContain("/plugins\n/mcp\n");
+  });
   test("AC-17 closes and exits", async () => {
     const ui = mount();
     await ui.line("/quit");
@@ -249,6 +256,41 @@ describe("resource listings", () => {
       expect(ui.send).not.toHaveBeenCalled();
     },
   );
+});
+describe("mcp command", () => {
+  const mcp: ChatMcpState = {
+    servers: [{ id: "docs", source: "user", transport: "stdio", locked: true }],
+    diagnostics: [],
+    events: () => [],
+    withheld: () => [],
+  };
+  test("US-008 AC-19 shows the listing of host.mcp", async () => {
+    const { runSlashCommand } = await import("@/tui/chat/slash-commands");
+    const ui = mount();
+    const show = mock((_text: string) => {});
+    const outcome = await runSlashCommand(
+      { name: "mcp", args: [], rest: "" },
+      { host: Object.assign(ui.host, { mcp }), show },
+    );
+    expect(outcome).toBeUndefined();
+    expect(show).toHaveBeenCalledTimes(1);
+    expect(show.mock.calls[0]?.[0]).toBe(formatMcpListing(mcp));
+    expect(show.mock.calls[0]?.[0]).toContain("docs");
+  });
+  test("US-008 AC-20 shows (no MCP servers) when the host has no mcp", async () => {
+    const { runSlashCommand } = await import("@/tui/chat/slash-commands");
+    const ui = mount();
+    const show = mock((_text: string) => {});
+    await runSlashCommand({ name: "mcp", args: [], rest: "" }, { host: ui.host, show });
+    expect(show).toHaveBeenCalledWith("(no MCP servers)");
+  });
+  test("/mcp displays in the transcript without sending", async () => {
+    const ui = mount();
+    Object.assign(ui.host, { mcp });
+    await ui.line("/mcp");
+    expect(ui.lastFrame()).toContain("docs  user  stdio  not connected");
+    expect(ui.send).not.toHaveBeenCalled();
+  });
 });
 describe("feature command", () => {
   test("does not send a loaded feature after Ctrl-C closes the app", async () => {

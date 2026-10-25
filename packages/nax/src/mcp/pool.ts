@@ -46,6 +46,77 @@ export interface McpPool {
   close(): Promise<void>;
 }
 
+/** Shortest header-value token redacted on its own (shorter ones would mangle ordinary words). */
+const MIN_HEADER_TOKEN_LENGTH = 4;
+const REDACTED = "***";
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+/** A secret as it may appear in an error: raw, decoded, and the raw and decoded forms re-encoded. */
+function secretForms(raw: string): string[] {
+  if (raw === "") return [];
+  const decoded = safeDecode(raw);
+  return [raw, decoded, encodeURIComponent(raw), encodeURIComponent(decoded)];
+}
+
+function urlSecrets(rawUrl: string): string[] {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return [];
+  }
+  const queryValues = url.search
+    .slice(1)
+    .split("&")
+    .map((pair) => pair.slice(pair.indexOf("=") + 1));
+  const decodedValues = [...url.searchParams.values()];
+  return [url.username, url.password, ...queryValues, ...decodedValues, url.hash.slice(1)].flatMap(secretForms);
+}
+
+function headerSecrets(headers: Record<string, string>): string[] {
+  return Object.values(headers).flatMap((value) => {
+    const tokens = value.split(/\s+/).filter((token) => token.length >= MIN_HEADER_TOKEN_LENGTH);
+    return [value, ...tokens].flatMap(secretForms);
+  });
+}
+
+/**
+ * A url safe to print: scheme, host and path stay (the operator needs to know
+ * which endpoint), while credentials and the fragment are dropped and every
+ * query value becomes `***`. An unparseable url is not echoed at all.
+ */
+export function redactMcpUrl(rawUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return "(unparseable url)";
+  }
+  const query = [...url.searchParams.keys()].map((key) => `${encodeURIComponent(key)}=${REDACTED}`).join("&");
+  return `${url.protocol}//${url.host}${url.pathname}${query === "" ? "" : `?${query}`}`;
+}
+
+/**
+ * Error text with a server's secret parts replaced by `***`. The secrets are the
+ * url's username and password, every non-empty query value, the fragment, and
+ * each header value (plus its long whitespace-separated tokens), in raw, decoded
+ * and encoded forms. Redacted by part, never by matching the whole configured
+ * string: an error usually quotes a fragment of the url, not all of it.
+ */
+export function redactMcpReason(text: string, server: McpServerConfig): string {
+  const secrets = [...(server.url === undefined ? [] : urlSecrets(server.url)), ...headerSecrets(server.headers ?? {})];
+  // Longest first, so a secret that contains another is replaced whole.
+  const ordered = [...new Set(secrets.filter((secret) => secret !== ""))].sort((a, b) => b.length - a.length);
+  return ordered.reduce((out, secret) => out.replaceAll(secret, REDACTED), text);
+}
+
 interface PidRegistryLike {
   register(pid: number): Promise<void>;
   unregister(pid: number): Promise<void>;
@@ -100,6 +171,8 @@ export function createMcpPool(opts: {
           serverId,
           workdir,
           command: server.command,
+          url: server.url,
+          headers: server.headers,
           args: server.args,
           env: server.env,
           connectTimeoutMs: MCP_CONNECT_TIMEOUT_MS,
@@ -128,7 +201,7 @@ export function createMcpPool(opts: {
         // connect has rejected (and reaped its half-open transport) before removal.
         await registration;
         if (spawnedPid !== undefined) await opts.pidRegistry?.unregister(spawnedPid).catch(() => {});
-        const reason = error instanceof Error ? error.message : String(error);
+        const reason = redactMcpReason(error instanceof Error ? error.message : String(error), server);
         record({ kind: "connect-failed", serverId, workdir, at: new Date().toISOString(), reason, attempt });
         getSafeLogger()?.warn("mcp", `[pool] ${serverId} connect failed`, {
           storyId: opts.storyId,
@@ -205,7 +278,9 @@ export function createMcpPool(opts: {
           deadlineController.abort();
         }
       } catch (error) {
-        const content = `MCP server "${serverId}" is unavailable: ${String(error)}`;
+        const server = opts.servers[serverId];
+        const detail = server === undefined ? String(error) : redactMcpReason(String(error), server);
+        const content = `MCP server "${serverId}" is unavailable: ${detail}`;
         return { content, isError: true, bytesPreTruncation: Buffer.byteLength(content, "utf8") };
       }
     },

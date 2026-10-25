@@ -1,12 +1,22 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { join, resolve } from "node:path";
-import { makeLogger, makeNaxConfig, withTempDir } from "@test/helpers";
-import { createChatHost, createChatStorage } from "@/chat";
+import { assertDefined, makeLogger, makeNaxConfig, withTempDir } from "@test/helpers";
+import { _chatMcpDeps, type ChatMcp, createChatHost, createChatMcp, createChatStorage } from "@/chat";
 import { _chatCommandDeps, chatCommand } from "@/cli/chat";
 import { globalConfigDir } from "@/config";
 import { NaxError } from "@/errors";
+import type { McpPool } from "@/mcp";
 import { PluginRegistry } from "@/plugins";
 import { buildResourceCatalog, loadResourceCatalog } from "@/resources";
+
+function emptyMcp(overrides: Partial<ChatMcp> = {}): ChatMcp {
+  return {
+    state: { servers: [], diagnostics: [], events: () => [], withheld: () => [] },
+    providers: [],
+    close: async () => {},
+    ...overrides,
+  };
+}
 
 function fixture() {
   const config = makeNaxConfig({ models: { native: { balanced: "test/model" } } });
@@ -33,6 +43,10 @@ function fixture() {
     }),
     loadPlugins: mock(async (..._args: Parameters<typeof _chatCommandDeps.loadPlugins>) => new PluginRegistry([])),
     loadResourceCatalog: mock(async (..._args: Parameters<typeof loadResourceCatalog>) => buildResourceCatalog([])),
+    createChatMcp: mock(
+      async (..._args: Parameters<typeof _chatCommandDeps.createChatMcp>): Promise<ChatMcp> => emptyMcp(),
+    ),
+    env: { CLAUDE_CONFIG_DIR: "/nonexistent-claude" },
     initInteractionChain: async () => null,
     createChatStorage: () => storage,
     createChatHost: mock((_input: Parameters<typeof createChatHost>[0]) => host),
@@ -43,6 +57,11 @@ function fixture() {
   };
   return { deps, order };
 }
+
+const mcpOriginals = { ..._chatMcpDeps };
+afterEach(() => {
+  Object.assign(_chatMcpDeps, mcpOriginals);
+});
 
 describe("chatCommand resources and trust", () => {
   test.each([
@@ -104,18 +123,103 @@ describe("chatCommand resources and trust", () => {
       deps.loadPlugins.mockResolvedValue(registry);
       deps.findProjectDir = () => join(dir, ".nax");
       deps.loadResourceCatalog.mockImplementation(loadResourceCatalog);
-      const previous = process.env.CLAUDE_CONFIG_DIR;
-      process.env.CLAUDE_CONFIG_DIR = join(dir, "empty-claude");
-      try {
-        await chatCommand({ dir }, deps);
-        expect(deps.createChatHost.mock.calls[0]?.[0].resources?.catalog.findSkill("kit-skill")?.origin).toEqual({
-          kind: "nax-plugin",
-          plugin: "kit",
-        });
-      } finally {
-        if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
-        else process.env.CLAUDE_CONFIG_DIR = previous;
-      }
+      deps.env = { CLAUDE_CONFIG_DIR: join(dir, "empty-claude") };
+      await chatCommand({ dir }, deps);
+      expect(deps.createChatHost.mock.calls[0]?.[0].resources?.catalog.findSkill("kit-skill")?.origin).toEqual({
+        kind: "nax-plugin",
+        plugin: "kit",
+      });
     });
+  });
+});
+
+function dockerProvider(id: string): ChatMcp["providers"][number] {
+  return { id, kind: "discovered", stages: ["*"], tools: async () => [] };
+}
+
+describe("chatCommand MCP composition", () => {
+  test("AC-15 appends MCP providers after the skills provider", async () => {
+    const { deps } = fixture();
+    const mcp = emptyMcp({ providers: [dockerProvider("docs")] });
+    deps.createChatMcp.mockResolvedValue(mcp);
+    await chatCommand({}, deps);
+    const resources = deps.createChatHost.mock.calls[0]?.[0].resources;
+    expect(resources?.toolProviders.map((p) => p.id)).toEqual(["nax-skills", "docs"]);
+    expect(resources?.mcp).toBe(mcp.state);
+    expect(deps.createChatMcp.mock.calls[0]?.[0]).toMatchObject({ repoRoot: "/r", env: deps.env });
+  });
+  test("AC-16 real catalog and createChatMcp build the pool from a fixture .claude.json", async () => {
+    await withTempDir(async (dir) => {
+      const { deps } = fixture();
+      await Bun.write(
+        join(dir, "claude", ".claude.json"),
+        JSON.stringify({ mcpServers: { docs: { type: "stdio", command: "docs-mcp" } } }),
+      );
+      deps.env = { CLAUDE_CONFIG_DIR: join(dir, "claude") };
+      deps.findProjectDir = () => join(dir, ".nax");
+      deps.loadResourceCatalog.mockImplementation(loadResourceCatalog);
+      deps.createChatMcp.mockImplementation(createChatMcp);
+      const pool: McpPool = {
+        listTools: async () => [],
+        call: async () => ({ content: "", isError: false, bytesPreTruncation: 0 }),
+        events: () => [],
+        close: async () => {},
+      };
+      const createMcpPool = mock((_opts: Parameters<typeof _chatMcpDeps.createMcpPool>[0]) => pool);
+      _chatMcpDeps.createMcpPool = createMcpPool;
+      _chatMcpDeps.readLock = async () => ({ version: 1, servers: { docs: {} } });
+      await chatCommand({ dir }, deps);
+      const servers = createMcpPool.mock.calls[0]?.[0].servers;
+      expect(servers?.docs?.stages).toEqual(["*"]);
+      expect(servers?.docs?.command).toBe("docs-mcp");
+    });
+  });
+  test("AC-17 teardown closes MCP before the plugin registry", async () => {
+    const { deps } = fixture();
+    const order: string[] = [];
+    const registry = Object.assign(new PluginRegistry([]), {
+      teardownAll: mock(async () => {
+        order.push("registry");
+      }),
+    });
+    deps.loadPlugins.mockResolvedValue(registry);
+    deps.createChatMcp.mockResolvedValue(
+      emptyMcp({
+        close: async () => {
+          order.push("mcp");
+        },
+      }),
+    );
+    await chatCommand({}, deps);
+    await deps.createChatHost.mock.calls[0]?.[0].resources?.teardown();
+    expect(order).toEqual(["mcp", "registry"]);
+  });
+  test("AC-18 teardown still tears the registry down when the MCP close rejects", async () => {
+    const { deps } = fixture();
+    const registry = Object.assign(new PluginRegistry([]), { teardownAll: mock(async () => {}) });
+    deps.loadPlugins.mockResolvedValue(registry);
+    deps.createChatMcp.mockResolvedValue(
+      emptyMcp({
+        close: async () => {
+          throw new Error("pool close failed");
+        },
+      }),
+    );
+    await chatCommand({}, deps);
+    const resources = deps.createChatHost.mock.calls[0]?.[0].resources;
+    assertDefined(resources, "resources");
+    await resources.teardown().catch(() => {});
+    expect(registry.teardownAll).toHaveBeenCalledTimes(1);
+  });
+  test("AC-19/20/21 createChatMcp failure tears the registry down, reports and exits 1", async () => {
+    const { deps } = fixture();
+    const registry = Object.assign(new PluginRegistry([]), { teardownAll: mock(async () => {}) });
+    deps.loadPlugins.mockResolvedValue(registry);
+    deps.createChatMcp.mockRejectedValue(new Error("mcp compose failed"));
+    await chatCommand({}, deps);
+    expect(registry.teardownAll).toHaveBeenCalledTimes(1);
+    expect(deps.writeErr).toHaveBeenCalledWith("mcp compose failed");
+    expect(deps.setExitCode).toHaveBeenCalledWith(1);
+    expect(deps.createChatHost).not.toHaveBeenCalled();
   });
 });

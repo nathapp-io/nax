@@ -26,6 +26,12 @@ export interface McpLockFile {
   readonly version: 1;
   /** server id -> tool name -> input-schema hash */
   readonly servers: Record<string, Record<string, string>>;
+  /**
+   * server id -> tool names an operator vouches are read-only. A server's own
+   * `readOnlyHint` is untrusted; it takes effect only for a tool listed here.
+   * A malformed value reads as none.
+   */
+  readonly readOnly?: Record<string, string[]>;
 }
 
 /**
@@ -64,6 +70,53 @@ export function schemaHash(schema: unknown): string {
     .slice(0, 16);
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+/**
+ * The `readOnly` map when it is wholly `Record<string, string[]>`; anything else
+ * (a string, an array, one bad entry) is none. Fail closed: a read-only grant
+ * exists to skip an approval, so a file that is half wrong grants nothing.
+ */
+function wellFormedReadOnly(value: unknown): Record<string, string[]> | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value);
+  if (entries.length === 0 || !entries.every((entry) => isStringArray(entry[1]))) return undefined;
+  return value as Record<string, string[]>;
+}
+
+/** Tool names the lock lists as read-only for `serverId`; empty for a missing or malformed entry. */
+export function lockedReadOnlyTools(lock: McpLockFile | undefined, serverId: string): ReadonlySet<string> {
+  const map = wellFormedReadOnly(lock?.readOnly);
+  // Own property only: a server id such as `constructor` is a legal id and must not reach Object.prototype.
+  const names = map !== undefined && Object.hasOwn(map, serverId) ? map[serverId] : undefined;
+  return new Set(isStringArray(names) ? names : []);
+}
+
+/**
+ * The `readOnly` grants a refreshed lock may keep: a tool keeps its grant only
+ * when the previous lock listed it and it is still pinned to the same schema
+ * hash. A changed or vanished tool loses it, so a refresh never vouches for a
+ * surface nobody has looked at.
+ */
+export function carryReadOnlyGrants(
+  previous: McpLockFile | undefined,
+  next: Record<string, Record<string, string>>,
+): Record<string, string[]> | undefined {
+  const carried: Record<string, string[]> = {};
+  for (const [serverId, tools] of Object.entries(next)) {
+    const kept = [...lockedReadOnlyTools(previous, serverId)].filter((name) => {
+      // A malformed previous lock (`servers.docs: null`) has no pinned tools; it must not abort the refresh.
+      const before: unknown = previous?.servers[serverId];
+      if (before === null || typeof before !== "object") return false;
+      return Object.hasOwn(before, name) && (before as Record<string, string>)[name] === tools[name];
+    });
+    if (kept.length > 0) carried[serverId] = kept;
+  }
+  return Object.keys(carried).length === 0 ? undefined : carried;
+}
+
 /**
  * Parse a lock file. Missing and malformed both read as "nothing is pinned",
  * which withholds every tool. Failing closed is the point; a throw here would
@@ -73,7 +126,9 @@ async function parseLockFile(path: string): Promise<McpLockFile | undefined> {
   try {
     const parsed = JSON.parse(await readFile(path, "utf8")) as McpLockFile;
     if (parsed?.version !== 1 || typeof parsed.servers !== "object" || parsed.servers === null) return undefined;
-    return parsed;
+    const { readOnly: rawReadOnly, ...rest } = parsed;
+    const readOnly = wellFormedReadOnly(rawReadOnly);
+    return readOnly === undefined ? rest : { ...rest, readOnly };
   } catch {
     return undefined;
   }
@@ -81,6 +136,11 @@ async function parseLockFile(path: string): Promise<McpLockFile | undefined> {
 
 export async function readMcpLock(projectRoot: string): Promise<McpLockFile | undefined> {
   return parseLockFile(mcpLockPath(projectRoot));
+}
+
+/** Read a lock at an explicit path (the global lock's counterpart of `readMcpLock`). */
+export async function readMcpLockAt(path: string): Promise<McpLockFile | undefined> {
+  return parseLockFile(path);
 }
 
 /**
@@ -150,7 +210,18 @@ export async function writeMcpLockAt(path: string, lock: McpLockFile): Promise<v
       ]),
   );
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify({ version: 1, servers }, null, 2)}\n`);
+  const readOnly = wellFormedReadOnly(lock.readOnly);
+  const sortedReadOnly =
+    readOnly === undefined
+      ? {}
+      : {
+          readOnly: Object.fromEntries(
+            Object.entries(readOnly)
+              .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+              .map(([id, names]) => [id, [...names].sort()]),
+          ),
+        };
+  await writeFile(path, `${JSON.stringify({ version: 1, servers, ...sortedReadOnly }, null, 2)}\n`);
 }
 
 export async function writeMcpLock(projectRoot: string, lock: McpLockFile): Promise<void> {

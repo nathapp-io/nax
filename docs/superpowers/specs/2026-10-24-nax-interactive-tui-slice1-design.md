@@ -387,9 +387,10 @@ directory into sessions is left to F3 if the TUI wants a ledger.
 | F2 | `shared-session-storage` | nax-agent, nax-agent-acp | A5: ACP session storage (metadata, lock, listing) moved to an importable shared location; ACP server consumes it | none |
 | F3 | `nax-chat-shell` | nax | `nax` / `nax chat`, ink shell, modes and toggle (reopen), asks via events, resume, status line, cost ledger `chat`, rules + context prompt, `/feature` | F1, F2 |
 | F4 | `resource-catalog-and-skills` | nax-agent, nax | 4.4: `toolProviders` + `runCommand` seams, resource catalog (Claude Code + nax plugin `resources`), `skills` provider (chat; `nax run` opt-in), slash commands with `!` lines, trust gate in chat, `/skills`, `/plugins` | F3 |
-| F5 | `mcp-and-subagents` | nax-agent, nax | 4.5: catalog MCP entries through the existing MCP pool as `discovered` providers, `Agent` provider with nested sessions, `agent.modelAliases` | F4 |
+| F5a | `chat-mcp-servers` | nax-agent, nax | 4.5 MCP: catalog MCP entries (`.mcp.json`, plugin `.mcp.json`, `~/.claude.json` user and local scopes) merged into `McpConfig` and attached to chat through the existing pool, lock and trust check as `discovered` providers; HTTP transport in `McpServerConfig`; guarded asks for non-read-only MCP tools; `/mcp`; `nax mcp lock` covers catalog servers; `resources.mcpInRun` (default off) | F4 |
+| F5b | `chat-subagents` | nax-agent, nax | 4.5 subagents: `Agent` provider with nested sessions, tool allowlist, `agent.modelAliases`, `/agents` | F5a |
 
-Spec status: F1 #2691, F2 #2692, F3 #2695 merged; F4 spec drafted 2026-10-25; F5 queued.
+Spec status: F1 #2691, F2 #2692, F3 #2695, F4 #2698 merged; F5 split into F5a and F5b by the user 2026-10-25; F5a spec and PRD at `.nax/features/chat-mcp-servers/`; F5b queued.
 
 ## 6. Constraints
 
@@ -446,6 +447,7 @@ Spec status: F1 #2691, F2 #2692, F3 #2695 merged; F4 spec drafted 2026-10-25; F5
 | pi Agent Skills dirs not read; skills in `nax run` default off, configurable (`resources.skillsInRun`) | user | 2026-10-25 |
 | `nax chat` uses the all-or-nothing trust gate like Claude Code | user (Claude recommended) | 2026-10-25 |
 | F4 one feature; catalog parses all kinds, delivers skills + commands; command `!` lines run via Bash with approval; `resources` config block | user | 2026-10-25 |
+| F5 split into F5a `chat-mcp-servers` and F5b `chat-subagents`; catalog MCP servers go through the existing mcp-lock; `~/.claude.json` user and local scopes are read; catalog MCP is chat-only unless `resources.mcpInRun` | user | 2026-10-25 |
 
 ## 9. Builder check (2026-10-24)
 

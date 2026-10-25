@@ -34,7 +34,17 @@ const pkg: ResourcePackage = {
     path: `/sp/${name}.md`,
     origin,
   })),
-  mcpServers: [{ kind: "mcp", name: "server", transport: "stdio", path: "/sp/.mcp.json", origin }],
+  mcpServers: [
+    {
+      kind: "mcp",
+      name: "server",
+      transport: "stdio",
+      scope: "plugin",
+      server: { transport: "stdio", command: "x", args: [], env: {} },
+      path: "/sp/.mcp.json",
+      origin,
+    },
+  ],
   hooks: [{ kind: "hooks", events: ["Start", "Stop"], path: "/sp/hooks.json", origin }],
   diagnostics: [{ severity: "warn", path: "/sp/plugin.json", message: "plugin warning", origin }],
 };
@@ -75,7 +85,7 @@ describe("formatPluginsListing", () => {
         { name: "kit", provides: ["resources", "loop-handlers"] },
       ]),
     ).toBe(
-      "Claude Code plugins\nsp@m  skills 1, commands 0, agents 2 (not delivered yet), mcp 1 (not delivered yet), hooks 1 (not executed)\nwarn  /sp/plugin.json  plugin warning\n\nnax plugins\nkit  resources, loop-handlers",
+      "Claude Code plugins\nsp@m  skills 1, commands 0, agents 2 (not delivered yet), mcp 1, hooks 1 (not executed)\nwarn  /sp/plugin.json  plugin warning\n\nnax plugins\nkit  resources, loop-handlers",
     );
   });
   test("US-015 AC-6 non-Claude packages do not populate Claude section", () => {

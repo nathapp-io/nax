@@ -32,12 +32,14 @@ import type { LoadedHooksConfig } from "@/hooks";
 import type { InteractionChain } from "@/interaction";
 import { buildApprovalsSeal, initInteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
+import { resolveMcpLock } from "@/mcp";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { AgentGetFn } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD } from "@/prd";
 import { loadPRD } from "@/prd";
 import { detectProjectProfile } from "@/project";
+import { loadResourceCatalog, resolveCatalogMcpConfig } from "@/resources";
 import { createRuntime, type NaxRuntime } from "@/runtime";
 import { SessionManager, sweepFeatureTranscripts } from "@/session";
 import { discoverWorkspacePackages } from "@/test-runners";
@@ -79,7 +81,28 @@ export const _runSetupDeps = {
   // record ordering; the acquisition sequence itself is the implementer's work.
   acquireLock,
   acquireFeatureLock,
+  // chat-mcp-servers US-009: `resources.mcpInRun` merges the Claude Code catalog's
+  // MCP servers into the runtime config; `readMcpLock` gates them to the locked ones.
+  loadResourceCatalog,
+  readMcpLock: resolveMcpLock,
 };
+
+/**
+ * The config handed to `createRuntime`: unchanged unless `resources.mcpInRun`, in
+ * which case catalog MCP servers the lock lists join `config.mcp` (attached at every stage).
+ */
+async function runtimeConfigFor(config: NaxConfig, workdir: string): Promise<NaxConfig> {
+  if (config.resources?.mcpInRun !== true) return config;
+  const mcp = await resolveCatalogMcpConfig({
+    config,
+    repoRoot: workdir,
+    env: process.env,
+    load: _runSetupDeps.loadResourceCatalog,
+    lockedOnly: true,
+    readLock: _runSetupDeps.readMcpLock,
+  });
+  return { ...config, mcp };
+}
 
 export interface RunSetupOptions {
   prdPath: string;
@@ -234,7 +257,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // Passes through the existing sessionManager and options.agentManager (if any)
   // so callers that pre-create an AgentManager for credential validation continue
   // to work (e.g. run-precheck validates credentials before handing off the manager).
-  const runtime = _runSetupDeps.createRuntime(config, workdir, {
+  const runtime = _runSetupDeps.createRuntime(await runtimeConfigFor(config, workdir), workdir, {
     parentSignal: shutdownController.signal,
     sessionManager,
     agentManager: options.agentManager,

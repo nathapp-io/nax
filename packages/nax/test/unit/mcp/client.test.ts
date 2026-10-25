@@ -86,6 +86,33 @@ describe("connectMcpServer", () => {
     expect(calls[0]?.opts.signal).toBeInstanceOf(AbortSignal);
   });
 
+  test("AC-14: a url builds an http transport config with the headers", async () => {
+    const { calls } = fakeShared({});
+    await connectMcpServer({
+      serverId: "a",
+      workdir: "/w",
+      url: "https://h/mcp",
+      headers: { k: "v" },
+      args: [],
+      env: {},
+      connectTimeoutMs: 1000,
+    });
+    expect(calls[0]?.config).toEqual({ kind: "http", url: "https://h/mcp", headers: { k: "v" } });
+  });
+
+  test("AC-15: a command with no url builds the stdio config", async () => {
+    const { calls } = fakeShared({});
+    await connectMcpServer({
+      serverId: "a",
+      workdir: "/w",
+      command: "fake",
+      args: [],
+      env: {},
+      connectTimeoutMs: 1000,
+    });
+    expect(calls[0]?.config).toEqual({ kind: "stdio", command: "fake", args: [], env: {}, cwd: "/w" });
+  });
+
   test("maps the shared call result onto nax's vocabulary", async () => {
     fakeShared({ call: () => ({ text: "a", isError: false, bytesBeforeCap: 27 }) });
     const conn = await connect();

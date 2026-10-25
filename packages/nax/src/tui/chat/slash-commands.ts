@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { ChatHost } from "@/chat";
+import { type ChatHost, formatMcpListing } from "@/chat";
 import { featureDir } from "@/config";
 import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing } from "@/resources";
@@ -35,6 +35,7 @@ const COMMANDS = [
   "feature",
   "skills",
   "plugins",
+  "mcp",
   "quit",
 ];
 
@@ -102,6 +103,9 @@ export async function runSlashCommand(
       break;
     case "plugins":
       show(formatPluginsListing(host.catalog ?? buildResourceCatalog([]), host.naxPlugins ?? []));
+      break;
+    case "mcp":
+      show(formatMcpListing(host.mcp));
       break;
     case "mode":
       if (!arg) show(host.current().mode);

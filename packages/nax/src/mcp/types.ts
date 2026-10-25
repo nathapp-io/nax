@@ -11,6 +11,11 @@ export interface McpToolDescriptor {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: JSONSchema;
+  /**
+   * The server's own `readOnlyHint: true`, carried from the shared layer. Untrusted
+   * on its own: `createMcpProviders` honours it only when the lock also lists the tool.
+   */
+  readonly readOnly?: true;
 }
 
 export interface McpCallResult {

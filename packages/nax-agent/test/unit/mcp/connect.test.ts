@@ -67,6 +67,36 @@ describe("connectMcp", () => {
     await connection.close();
   });
 
+  test("AC-1: a readOnlyHint of true yields readOnly true", async () => {
+    const { connection } = await connectTo([{ name: "get", annotations: { readOnlyHint: true } }]);
+    expect(connection.tools[0]?.readOnly).toBe(true);
+    await connection.close();
+  });
+
+  test("AC-2: a readOnlyHint of false leaves no readOnly key", async () => {
+    const { connection } = await connectTo([{ name: "put", annotations: { readOnlyHint: false } }]);
+    expect(connection.tools[0]).toBeDefined();
+    expect(connection.tools[0]).not.toHaveProperty("readOnly");
+    await connection.close();
+  });
+
+  test("AC-3: a non-boolean readOnlyHint leaves no readOnly key", async () => {
+    const { connection } = await connectTo([{ name: "put", annotations: { readOnlyHint: "yes" } }]);
+    expect(connection.tools[0]).toBeDefined();
+    expect(connection.tools[0]).not.toHaveProperty("readOnly");
+    await connection.close();
+  });
+
+  test("AC-4: a tool with no annotations keeps the exact { name, description, inputSchema } shape", async () => {
+    const { connection } = await connectTo([{ name: "plain", description: "d" }]);
+    expect(connection.tools[0]).toStrictEqual({
+      name: "plain",
+      description: "d",
+      inputSchema: { type: "object", properties: {} },
+    });
+    await connection.close();
+  });
+
   test("skips listed tools without a string name", async () => {
     const { connection } = await connectTo([{ name: "" }, { name: "ok" }]);
     expect(connection.tools.map((t) => t.name)).toEqual(["ok"]);

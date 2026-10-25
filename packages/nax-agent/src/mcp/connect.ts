@@ -6,7 +6,8 @@
  * once the process is gone. A failed connect is closed the same way.
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCode, ListToolsResultSchema, McpError, ToolSchema } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
 import { McpCallError, McpConnectError } from "#src/mcp/errors";
 import { resultText } from "#src/mcp/result-text";
 import { waitForStdioExit } from "#src/mcp/stdio-close";
@@ -65,14 +66,42 @@ async function closeTransport(client: Client, handle: TransportHandle, graceMs: 
 function toolInfo(raw: unknown): McpToolInfo | undefined {
   if (!isRaw(raw) || typeof raw.name !== "string" || raw.name.length === 0) return undefined;
   const inputSchema: JSONSchema = isRaw(raw.inputSchema) ? { ...raw.inputSchema } : {};
-  return { name: raw.name, description: typeof raw.description === "string" ? raw.description : "", inputSchema };
+  const readOnly = isRaw(raw.annotations) && raw.annotations.readOnlyHint === true;
+  return {
+    name: raw.name,
+    description: typeof raw.description === "string" ? raw.description : "",
+    inputSchema,
+    ...(readOnly ? { readOnly: true as const } : {}),
+  };
+}
+
+/**
+ * The SDK's own tools/list schema, except that a tool's `annotations` are not
+ * type-checked: the SDK would reject the WHOLE page over one server's
+ * `readOnlyHint: "yes"`, which would cost the connection every tool. `toolInfo`
+ * reads the hint strictly (`=== true`), so a malformed one just means "not
+ * read-only" and every other field is still validated.
+ */
+const LenientListToolsSchema = ListToolsResultSchema.extend({
+  tools: z.array(ToolSchema.extend({ annotations: z.record(z.string(), z.unknown()).optional() })),
+});
+
+async function listPage(client: Client, cursor: string | undefined, signal: AbortSignal, timeout: number) {
+  const page = await client.request(
+    { method: "tools/list", ...(cursor !== undefined ? { params: { cursor } } : {}) },
+    LenientListToolsSchema,
+    { signal, timeout },
+  );
+  // What Client.listTools does after its own request: the SDK reads these caches in callTool.
+  client["cacheToolMetadata"](page.tools);
+  return page;
 }
 
 async function listAll(client: Client, signal: AbortSignal, timeout: number): Promise<McpToolInfo[]> {
   const tools: McpToolInfo[] = [];
   let cursor: string | undefined;
   do {
-    const page = await client.listTools(cursor !== undefined ? { cursor } : undefined, { signal, timeout });
+    const page = await listPage(client, cursor, signal, timeout);
     for (const raw of page.tools ?? []) {
       const info = toolInfo(raw);
       if (info !== undefined) tools.push(info);

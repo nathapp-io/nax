@@ -1,5 +1,5 @@
 import type { NaxConfig } from "../config";
-import { claudeConfigDir } from "./claude-paths";
+import { claudeConfigDir, claudeJsonPath } from "./claude-paths";
 import { discoverClaudeCodePackages } from "./claude-sources";
 import type { CommandResource, ResourceCatalog, ResourceDiagnostic, ResourcePackage, SkillResource } from "./types";
 
@@ -57,7 +57,7 @@ export async function loadResourceCatalog(options: {
   const { repoRoot, config, env, naxPluginPackages } = options;
   const packages =
     (config.resources?.claudeCode ?? true)
-      ? await discoverClaudeCodePackages({ repoRoot, claudeDir: claudeConfigDir(env) })
+      ? await discoverClaudeCodePackages({ repoRoot, claudeDir: claudeConfigDir(env), claudeJson: claudeJsonPath(env) })
       : [];
   return buildResourceCatalog([...packages, ...naxPluginPackages]);
 }

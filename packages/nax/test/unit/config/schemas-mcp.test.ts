@@ -23,6 +23,7 @@ describe("McpConfigSchema", () => {
       command: "x",
       args: [],
       env: {},
+      headers: {},
       stages: [],
       timeoutMs: 60_000,
       enabled: true,
@@ -51,6 +52,45 @@ describe("McpConfigSchema", () => {
 
   test("rejects an empty command", () => {
     expect(McpConfigSchema.safeParse({ servers: { a: { command: "" } } }).success).toBe(false);
+  });
+
+  describe("HTTP servers (US-002)", () => {
+    const EXACTLY_ONE = "set exactly one of command or url";
+    const messages = (input: unknown): string[] => {
+      const result = McpConfigSchema.safeParse(input);
+      return result.success ? [] : result.error.issues.map((issue) => issue.message);
+    };
+
+    test("AC-7: a url-only server parses with its url", () => {
+      expect(McpConfigSchema.parse({ servers: { a: { url: "https://h/mcp" } } }).servers.a?.url).toBe("https://h/mcp");
+    });
+
+    test("AC-8: headers default to {} for a url server", () => {
+      expect(McpConfigSchema.parse({ servers: { a: { url: "https://h/mcp" } } }).servers.a?.headers).toEqual({});
+    });
+
+    test("AC-9: configured headers are kept literally", () => {
+      const parsed = McpConfigSchema.parse({
+        servers: { a: { url: "https://h/mcp", headers: { Authorization: "Bearer t" } } },
+      });
+      expect(parsed.servers.a?.headers.Authorization).toBe("Bearer t");
+    });
+
+    test("AC-10: command together with url is rejected", () => {
+      expect(messages({ servers: { a: { command: "x", url: "https://h" } } })).toContain(EXACTLY_ONE);
+    });
+
+    test("AC-11: neither command nor url is rejected", () => {
+      expect(messages({ servers: { a: { args: ["x"] } } })).toContain(EXACTLY_ONE);
+    });
+
+    test("AC-12: a malformed url is rejected", () => {
+      expect(McpConfigSchema.safeParse({ servers: { a: { url: "not a url" } } }).success).toBe(false);
+    });
+
+    test("AC-13: a stdio server also gets headers {}", () => {
+      expect(McpConfigSchema.parse({ servers: { a: { command: "x" } } }).servers.a?.headers).toEqual({});
+    });
   });
 
   test("mounts on NaxConfigSchema and defaults to no servers", () => {

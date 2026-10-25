@@ -1,5 +1,12 @@
 import { afterAll, afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { BackendOpenContext, ToolProvider } from "@nathapp/nax-agent";
+import type {
+  AgentSessionProfile,
+  BackendOpenContext,
+  ProviderTool,
+  SessionEventBody,
+  ToolProvider,
+} from "@nathapp/nax-agent";
+import { _sessionSandboxDeps } from "#src/coding-tools/coding-tool-sandbox";
 import { getSafeLogger, setAgentLogger } from "#src/infra/agent-logger";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
@@ -9,7 +16,16 @@ import { createPendingAskTable } from "#src/session/pending-asks";
 import { createSessionAskPort } from "#src/session/session-ask-port";
 import type { OpenedBackend } from "#src/session/session-backend";
 import { MODEL } from "#test/helpers/agent-session";
-import { assertDefined, assertNaxError, cleanupTempDir, makeTempDir } from "#test/helpers/index";
+import {
+  assertDefined,
+  assertNaxError,
+  cleanupTempDir,
+  makeTempDir,
+  stubSessionSandboxDeps,
+  waitForCondition,
+  withDepsRestore,
+  withSessionSandboxSeam,
+} from "#test/helpers/index";
 
 const dirs: string[] = [];
 const openedBackends: OpenedBackend[] = [];
@@ -185,31 +201,25 @@ describe("nativeBackend tool providers", () => {
     }
   });
 
-  test("AC-10: discovered providers are rejected at construction with the providers path", () => {
-    let caught: unknown;
-    try {
-      nativeBackend({ model: MODEL, toolProviders: [provider({ kind: "discovered" })] });
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught).toBeInstanceOf(AgentSessionError);
-    assertNaxError(caught);
-    expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
-    expect(caught.context).toMatchObject({ path: "backend.toolProviders" });
+  test("AC-10: a discovered provider is accepted at construction", () => {
+    expect(() => nativeBackend({ model: MODEL, toolProviders: [provider({ kind: "discovered" })] })).not.toThrow();
   });
 
   test("AC-11: malformed providers are rejected by option validation", () => {
-    let caught: unknown;
-    try {
-      // Exercise the public JavaScript boundary with deliberately untyped options.
-      Reflect.apply(nativeBackend, undefined, [{ model: MODEL, toolProviders: [{ id: "x" }] }]);
-    } catch (error) {
-      caught = error;
+    for (const toolProviders of [[{ id: "x" }], [{ id: "x", kind: "other", stages: ["*"], tools: async () => [] }]]) {
+      let caught: unknown;
+      try {
+        // Exercise the public JavaScript boundary with deliberately untyped options.
+        Reflect.apply(nativeBackend, undefined, [{ model: MODEL, toolProviders }]);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(AgentSessionError);
+      assertNaxError(caught);
+      expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+      expect(caught.context).toMatchObject({ path: "backend.toolProviders" });
+      expect(caught.message).toContain("must be an array of tool providers with id, kind, stages and tools()");
     }
-    expect(caught).toBeInstanceOf(AgentSessionError);
-    assertNaxError(caught);
-    expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
-    expect(caught.context).toMatchObject({ path: "backend.toolProviders" });
   });
 
   test("AC-12: an embedder cannot shadow a provider tool", async () => {
@@ -229,5 +239,94 @@ describe("nativeBackend tool providers", () => {
         },
       ),
     ).rejects.toMatchObject({ code: "AGENT_SESSION_TOOL_NAME_RESERVED" });
+  });
+});
+
+describe("nativeBackend discovered providers under the ask profile", () => {
+  withDepsRestore(_sessionSandboxDeps);
+  withSessionSandboxSeam(_sessionSandboxDeps);
+
+  function acme(runs: { get: ReturnType<typeof mock>; put: ReturnType<typeof mock> }): ToolProvider {
+    const tool = (localName: string, run: ReturnType<typeof mock>, readOnly?: true): ProviderTool => ({
+      localName,
+      description: localName,
+      inputSchema: { type: "object" },
+      ...(readOnly === true ? { readOnly } : {}),
+      run: async (input) => run(input),
+    });
+    return {
+      id: "acme",
+      kind: "discovered",
+      stages: ["*"],
+      tools: async () => [tool("get", runs.get, true), tool("put", runs.put)],
+    };
+  }
+
+  /** Opens `providers` under `profile` with an ask port whose emit records every event. */
+  async function openWith(profile: AgentSessionProfile, providers: readonly ToolProvider[]) {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    const table = createPendingAskTable(30_000);
+    const events: SessionEventBody[] = [];
+    const opened = await open(
+      { model: MODEL, toolProviders: providers },
+      {
+        profile,
+        asks: createSessionAskPort({
+          table,
+          emit: (body) => events.push(body),
+          turn: () => ({ turnId: "t1", signal: IDLE }),
+        }),
+      },
+    );
+    const interact = (name: string) =>
+      opened.turnOpts().interactionHandler?.onInteraction({ kind: "coding-tool", name, input: {}, toolCallId: "c1" });
+    const approvals = () => events.filter((event) => event.type === "approval_requested");
+    return { opened, table, interact, approvals };
+  }
+
+  function runs() {
+    return {
+      get: mock(async (_input: Record<string, unknown>) => ({ content: "got" })),
+      put: mock(async (_input: Record<string, unknown>) => ({ content: "put" })),
+    };
+  }
+
+  test("AC-11: profile read advertises the discovered mutating tool", async () => {
+    const { opened } = await openWith("read", [acme(runs())]);
+    expect(names(opened)).toContain("acme__put");
+  });
+
+  test("AC-12/AC-13: ask asks for acme__put before running it", async () => {
+    const r = runs();
+    const { interact, approvals, table } = await openWith("ask", [acme(r)]);
+    const pending = interact("acme__put");
+    await waitForCondition(() => approvals().length > 0);
+    expect(approvals()).toMatchObject([{ type: "approval_requested", tool: "acme__put" }]);
+    expect(r.put).not.toHaveBeenCalled();
+    const [request] = approvals();
+    table.answer(request?.type === "approval_requested" ? request.requestId : "", { decision: "allow" });
+    expect(await pending).toEqual({ answer: "put" });
+    expect(r.put).toHaveBeenCalledTimes(1);
+  });
+
+  test("AC-14/AC-15: ask runs the readOnly acme__get without asking", async () => {
+    const r = runs();
+    const { interact, approvals } = await openWith("ask", [acme(r)]);
+    expect(await interact("acme__get")).toEqual({ answer: "got" });
+    expect(r.get).toHaveBeenCalledTimes(1);
+    expect(approvals()).toEqual([]);
+  });
+
+  test("AC-16: full never asks for acme__put", async () => {
+    const r = runs();
+    const { interact, approvals } = await openWith("full", [acme(r)]);
+    expect(await interact("acme__put")).toEqual({ answer: "put" });
+    expect(approvals()).toEqual([]);
+  });
+
+  test("AC-17: ask never asks for a static provider's tool", async () => {
+    const { interact, approvals } = await openWith("ask", [provider()]);
+    expect(await interact("skills__load")).toEqual({ answer: "loaded" });
+    expect(approvals()).toEqual([]);
   });
 });

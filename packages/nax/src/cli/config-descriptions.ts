@@ -425,7 +425,12 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   mcp: "External MCP servers the native agent may call tools on (client only; nax is not an MCP server)",
   "mcp.servers":
     "Map of server id to server block. The id is the tool-name namespace: a tool named search_graph on server codebase-memory is advertised as codebase-memory__search_graph",
-  "mcp.servers.<id>.command": "Executable to spawn for this stdio MCP server",
+  "mcp.servers.<id>.command":
+    "Executable to spawn for this MCP server (the stdio form; set exactly one of command or url)",
+  "mcp.servers.<id>.url":
+    "Streamable-HTTP endpoint of this MCP server (the HTTP form; set exactly one of command or url)",
+  "mcp.servers.<id>.headers":
+    "Static request headers sent to an HTTP MCP server, carried literally with no environment-variable expansion (default: {})",
   "mcp.servers.<id>.args": "Arguments passed to the command (default: [])",
   "mcp.servers.<id>.env": "Environment overlaid on the inherited environment for this server (default: {})",
   "mcp.servers.<id>.stages":
@@ -435,4 +440,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "mcp.servers.<id>.timeoutMs": "Per-call timeout in milliseconds (default: 60000)",
   "mcp.servers.<id>.enabled":
     "Kill switch. false means the server is not connected, not locked and contributes no tools (default: true)",
+
+  // Resources
+  "resources.mcpInRun":
+    "Attach MCP servers discovered from Claude Code (user, local, project .mcp.json, plugins) to nax run stages, only those pinned in the MCP lock; configured mcp.servers always win on an id clash. Ignored when resources.claudeCode is false (default: false)",
 };

@@ -6,7 +6,9 @@ import { globalConfigDir, PROJECT_NAX_DIR } from "@/config";
 import type { McpLockFile, ResolvedMcpLock } from "@/mcp/lock";
 import {
   applyLock,
+  carryReadOnlyGrants,
   globalMcpLockPath,
+  lockedReadOnlyTools,
   mcpLockPath,
   readMcpLock,
   resolveMcpLock,
@@ -93,6 +95,63 @@ describe("read/write", () => {
     const dir = await tempDir();
     await Bun.write(mcpLockPath(dir), "{ not json");
     expect(await readMcpLock(dir)).toBeUndefined();
+  });
+});
+
+describe("readOnly section", () => {
+  test("round-trips through write and read, sorted", async () => {
+    const dir = await tempDir();
+    await writeMcpLock(dir, { version: 1, servers: { docs: { a: "1" } }, readOnly: { docs: ["b", "a"] } });
+    expect((await readMcpLock(dir))?.readOnly).toEqual({ docs: ["a", "b"] });
+  });
+
+  test("a lock with no readOnly reads with no readOnly key", async () => {
+    const dir = await tempDir();
+    await writeMcpLock(dir, { version: 1, servers: { docs: { a: "1" } } });
+    expect(Object.keys((await readMcpLock(dir)) ?? {})).toEqual(["version", "servers"]);
+  });
+
+  test("a malformed readOnly is dropped on read", async () => {
+    const dir = await tempDir();
+    await Bun.write(mcpLockPath(dir), JSON.stringify({ version: 1, servers: {}, readOnly: "x" }));
+    expect((await readMcpLock(dir))?.readOnly).toBeUndefined();
+  });
+
+  test("F4: an inherited property name as server id reads as empty, not a throw", () => {
+    const lock = { version: 1 as const, servers: {}, readOnly: { docs: ["get"] } };
+    for (const id of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect([...lockedReadOnlyTools(lock, id)]).toEqual([]);
+    }
+  });
+
+  test("F1: carryReadOnlyGrants keeps a grant only for a tool still pinned to the same hash", () => {
+    const previous = {
+      version: 1 as const,
+      servers: { docs: { get: "h1", put: "h2", gone: "h3" } },
+      readOnly: { docs: ["get", "put", "gone"], old: ["x"] },
+    };
+    const next = { docs: { get: "h1", put: "CHANGED" }, fresh: { z: "h9" } };
+    expect(carryReadOnlyGrants(previous, next)).toEqual({ docs: ["get"] });
+  });
+
+  test("F1: carryReadOnlyGrants is undefined when nothing carries", () => {
+    expect(carryReadOnlyGrants(undefined, { docs: { get: "h" } })).toBeUndefined();
+    expect(
+      carryReadOnlyGrants({ version: 1, servers: { docs: { get: "h" } } }, { docs: { get: "h" } }),
+    ).toBeUndefined();
+  });
+
+  test("M1: carryReadOnlyGrants does not throw on a malformed previous lock with a null server entry", () => {
+    // JSON.parse yields the shape a hand-edited lock file would: servers.docs is null.
+    const previous: McpLockFile = JSON.parse('{"version":1,"servers":{"docs":null},"readOnly":{"docs":["get"]}}');
+    expect(carryReadOnlyGrants(previous, { docs: { get: "h" } })).toBeUndefined();
+  });
+
+  test("lockedReadOnlyTools reads a malformed or missing entry as empty", () => {
+    const lock = { version: 1 as const, servers: {}, readOnly: { docs: ["get"] } };
+    expect([...lockedReadOnlyTools(lock, "docs")]).toEqual(["get"]);
+    expect([...lockedReadOnlyTools(lock, "other")]).toEqual([]);
+    expect([...lockedReadOnlyTools(undefined, "docs")]).toEqual([]);
   });
 });
 
@@ -230,5 +289,13 @@ describe("writeMcpLockAt", () => {
     expect(await Bun.file(mcpLockPath(dir)).text()).toBe(
       `${JSON.stringify({ version: 1, servers: { a: { c: "3" }, z: { a: "1", b: "2" } } }, null, 2)}\n`,
     );
+  });
+
+  test("AC-9: serialises readOnly with server ids and tool names sorted", async () => {
+    const dir = await tempDir();
+    const path = join(dir, "mcp-lock.json");
+    await writeMcpLockAt(path, { version: 1, servers: { a: {} }, readOnly: { a: ["z", "b"] } });
+
+    expect(JSON.parse(await Bun.file(path).text()).readOnly.a).toEqual(["b", "z"]);
   });
 });

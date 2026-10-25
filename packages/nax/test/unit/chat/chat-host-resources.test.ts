@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { AgentSession, LoopHandlerSet, SessionMeta } from "@nathapp/nax-agent";
 import { makeLogger, makeNaxConfig } from "@test/helpers";
-import { type ChatResources, createChatHost, createChatStorage } from "@/chat";
+import { type ChatMcpState, type ChatResources, createChatHost, createChatStorage } from "@/chat";
 import { _openChatSessionDeps, type OpenChatSessionRequest, openChatSession } from "@/chat/open-chat-session";
 import { createRuleDeliveryHandlers } from "@/context/rules/rule-delivery";
 import { buildResourceCatalog, createSkillsProvider, type ResourcePackage } from "@/resources";
@@ -255,5 +255,44 @@ describe("createChatHost resources", () => {
       expect(call).toBeDefined();
       expect(call).not.toHaveProperty("toolProviders");
     }
+  });
+  test("AC-22 real opener passes a discovered MCP provider to the native backend", async () => {
+    const f = fixture();
+    const backend = mock((_options: Parameters<typeof _openChatSessionDeps.nativeBackend>[0]) => ({
+      kind: "native",
+      open: async () => {
+        throw new Error("unused");
+      },
+    }));
+    _openChatSessionDeps.nativeBackend = backend;
+    _openChatSessionDeps.createAgentSession = mock(async () => f.session);
+    _openChatSessionDeps.createFileTranscriptStore = () => ({
+      load: async () => null,
+      save: async () => {},
+      delete: async () => {},
+      retainFailed: async () => {},
+      markTurn: async () => {},
+    });
+    _openChatSessionDeps.resolveRuleSet = async () => ({
+      rules: [],
+      repoRulesTotal: 0,
+      repoRulesMatchedPaths: 0,
+      packageRulesCount: 0,
+    });
+    const docs = { id: "docs", kind: "discovered" as const, stages: ["*"], tools: async () => [] };
+    const resources: ChatResources = { ...f.resources, toolProviders: [...f.resources.toolProviders, docs] };
+    const host = createChatHost({ ...f.deps, resources });
+    hosts.push(host);
+    await host.start({ mode: "guarded", model: "test/model" });
+    const providers = backend.mock.calls[0]?.[0].toolProviders ?? [];
+    expect(providers.some((p) => p.kind === "discovered" && p.id === "docs")).toBe(true);
+  });
+  test("AC-23 host.mcp is the resources' MCP state", () => {
+    const f = fixture();
+    const mcp: ChatMcpState = { servers: [], diagnostics: [], events: () => [], withheld: () => [] };
+    const host = createChatHost({ ...f.deps, open: f.open, resources: { ...f.resources, mcp } });
+    hosts.push(host);
+    expect(host.mcp).toBe(mcp);
+    expect(f.build(false).mcp).toBeUndefined();
   });
 });

@@ -18,7 +18,7 @@ import type { ProviderTool, ToolProvider } from "@nathapp/nax-agent";
 import { validateProviderId } from "@nathapp/nax-agent";
 import type { McpConfig } from "@/config";
 import { getSafeLogger } from "@/logger";
-import { applyLock, MCP_LOCK_REFRESH_COMMAND, type McpLockFile, resolveMcpLock } from "./lock";
+import { applyLock, lockedReadOnlyTools, MCP_LOCK_REFRESH_COMMAND, type McpLockFile, resolveMcpLock } from "./lock";
 import type { McpPool } from "./pool";
 
 export interface McpWithheldEntry {
@@ -116,10 +116,14 @@ export function createMcpProviders(args: {
         const allowed = server.allowedTools;
         const selected = allowed === undefined ? admitted : admitted.filter((tool) => allowed.includes(tool.name));
 
+        // The hint is server-stated and untrusted: it counts only when the lock
+        // also lists the tool as read-only for this server.
+        const vouched = lockedReadOnlyTools(resolved, serverId);
         return selected.map((tool) => ({
           localName: tool.name,
           description: tool.description,
           inputSchema: tool.inputSchema,
+          ...(tool.readOnly === true && vouched.has(tool.name) ? { readOnly: true as const } : {}),
           run: async (input, ctx) => {
             const result = await args.pool.call(serverId, workdir, tool.name, input, {
               timeoutMs: server.timeoutMs,

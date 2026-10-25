@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { resolveProviderTools } from "@nathapp/nax-agent";
 import { assertDefined, withWarnSpy } from "@test/helpers";
 import type { McpServerConfig } from "@/config";
 import type { McpLockFile } from "@/mcp/lock";
@@ -223,5 +224,96 @@ describe("createMcpProviders", () => {
         readLock: async () => lock,
       }),
     ).toThrow(/provider id/);
+  });
+});
+
+describe("createMcpProviders — read-only hint (US-002)", () => {
+  const getSchema = { type: "object", properties: { id: { type: "string" } } };
+  const getHash = schemaHash(getSchema);
+  const putHash = schemaHash(schema);
+
+  const docsServer: McpServerConfig = { ...server, stages: ["run"] };
+
+  async function toolsFor(
+    live: McpToolDescriptor[],
+    docsLock: McpLockFile,
+  ): Promise<Awaited<ReturnType<ReturnType<typeof createMcpProviders>[number]["tools"]>>> {
+    const [provider] = createMcpProviders({
+      config: { servers: { docs: docsServer } },
+      pool: fakePool({ listTools: async () => live }),
+      projectRoot: "/proj",
+      readLock: async () => docsLock,
+    });
+    assertDefined(provider, "provider");
+    return provider.tools("/w");
+  }
+
+  const liveGet: McpToolDescriptor = { name: "get", description: "g", inputSchema: getSchema, readOnly: true };
+  const livePut: McpToolDescriptor = { name: "put", description: "p", inputSchema: schema };
+  const pinned = { get: getHash, put: putHash };
+
+  test("AC-1: a live hint vouched for by the lock yields readOnly true", async () => {
+    const tools = await toolsFor([liveGet], { version: 1, servers: { docs: pinned }, readOnly: { docs: ["get"] } });
+    expect(tools.find((t) => t.localName === "get")?.readOnly).toBe(true);
+  });
+
+  test("AC-2: a live hint the lock does not list carries no readOnly key", async () => {
+    const tools = await toolsFor([liveGet], { version: 1, servers: { docs: pinned } });
+    const get = tools.find((t) => t.localName === "get");
+    assertDefined(get, "get");
+    expect("readOnly" in get).toBe(false);
+  });
+
+  test("AC-3: a lock entry with no live hint carries no readOnly key", async () => {
+    const tools = await toolsFor([livePut], { version: 1, servers: { docs: pinned }, readOnly: { docs: ["put"] } });
+    const put = tools.find((t) => t.localName === "put");
+    assertDefined(put, "put");
+    expect("readOnly" in put).toBe(false);
+  });
+
+  test("AC-4: a malformed lock readOnly reads as none", async () => {
+    const malformed = JSON.parse('{"version":1,"servers":{},"readOnly":"x"}');
+    const lockFile: McpLockFile = { ...malformed, servers: { docs: pinned } };
+    const tools = await toolsFor([liveGet, livePut], lockFile);
+    expect(tools).toHaveLength(2);
+    expect(tools.some((t) => "readOnly" in t)).toBe(false);
+  });
+
+  test("AC-4: a readOnly map whose entry is not a list reads as none", async () => {
+    const malformed = JSON.parse('{"version":1,"servers":{},"readOnly":{"docs":"get"}}');
+    const tools = await toolsFor([liveGet], { ...malformed, servers: { docs: pinned } });
+    expect(tools.some((t) => "readOnly" in t)).toBe(false);
+  });
+
+  test("F4: a server id named constructor with no readOnly entry still yields its tools", async () => {
+    const [provider] = createMcpProviders({
+      config: { servers: { constructor: docsServer } },
+      pool: fakePool({ listTools: async () => [liveGet] }),
+      projectRoot: "/proj",
+      readLock: async () => ({ version: 1, servers: { constructor: pinned }, readOnly: { other: ["get"] } }),
+    });
+    assertDefined(provider, "provider");
+    const tools = await provider.tools("/w");
+    expect(tools.map((t) => t.localName)).toEqual(["get"]);
+    expect("readOnly" in (tools[0] ?? {})).toBe(false);
+  });
+
+  test("AC-5: a tool with no live hint carries no readOnly key", async () => {
+    const tools = await toolsFor([livePut], { version: 1, servers: { docs: pinned } });
+    const put = tools.find((t) => t.localName === "put");
+    assertDefined(put, "put");
+    expect("readOnly" in put).toBe(false);
+  });
+
+  test("AC-6: resolveProviderTools asks only for the tool that is not vouched read-only", async () => {
+    const providers = createMcpProviders({
+      config: { servers: { docs: docsServer } },
+      pool: fakePool({ listTools: async () => [liveGet, livePut] }),
+      projectRoot: "/proj",
+      readLock: async () => ({ version: 1, servers: { docs: pinned }, readOnly: { docs: ["get"] } }),
+    });
+    const resolved = await resolveProviderTools(providers, "run", "/w");
+    expect(resolved.tools.map((t) => t.name).sort()).toEqual(["docs__get", "docs__put"]);
+    expect(resolved.askTools).toEqual(["docs__put"]);
   });
 });

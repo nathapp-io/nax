@@ -18,7 +18,7 @@ import type { AgentSessionHostPorts, AgentSessionProfile } from "./agent-session
 
 export interface NativeBackendOptions {
   readonly model: string;
-  /** Static tool providers attached to this session's profile and stage. */
+  /** Static or discovered tool providers attached to this session's profile and stage. */
   readonly toolProviders?: readonly ToolProvider[];
   /** Repository instruction basename; defaults to AGENTS.md. */
   readonly instructionFileName?: string;
@@ -79,11 +79,11 @@ const OptionsSchema = z.strictObject({
           (provider) =>
             isRecord(provider) &&
             typeof provider.id === "string" &&
-            provider.kind === "static" &&
+            (provider.kind === "static" || provider.kind === "discovered") &&
             isStringArray(provider.stages) &&
             typeof provider.tools === "function",
         ),
-      "must be an array of static providers with id, stages and tools()",
+      "must be an array of tool providers with id, kind, stages and tools()",
     )
     .optional(),
   instructionFileName: z
