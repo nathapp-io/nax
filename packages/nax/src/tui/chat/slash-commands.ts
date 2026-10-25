@@ -71,6 +71,22 @@ interface CommandContext {
   show(text: string): void;
 }
 
+function formatHelp(host: ChatHost): string {
+  return [
+    ...COMMANDS.map((name) => `/${name}`),
+    ...(host.catalog?.commands ?? []).map((entry) => `/${entry.name} - ${entry.description ?? ""}`),
+    ...(host.catalog?.skills ?? []).map((entry) => `/${entry.name} - ${entry.description}`),
+  ].join("\n");
+}
+
+function catalogCommand(command: SlashCommand, { host, show }: CommandContext): SlashOutcome | undefined {
+  const resource = host.catalog?.findCommand(command.name);
+  if (resource) return { kind: "command", name: command.name, template: resource.template, rest: command.rest };
+  const skill = host.catalog?.findSkill(command.name);
+  if (skill) return { kind: "send", message: buildSkillInvocationMessage({ skill, args: command.rest }) };
+  show(`unknown command /${command.name}`);
+}
+
 /** Built-ins take precedence; catalog commands remain distinct from explicit skill turns. */
 export async function runSlashCommand(
   command: SlashCommand,
@@ -79,13 +95,7 @@ export async function runSlashCommand(
   const arg = command.args[0];
   switch (command.name) {
     case "help":
-      show(
-        [
-          ...COMMANDS.map((name) => `/${name}`),
-          ...(host.catalog?.commands ?? []).map((entry) => `/${entry.name} - ${entry.description ?? ""}`),
-          ...(host.catalog?.skills ?? []).map((entry) => `/${entry.name} - ${entry.description}`),
-        ].join("\n"),
-      );
+      show(formatHelp(host));
       break;
     case "skills":
       show(formatSkillsListing(host.catalog ?? buildResourceCatalog([])));
@@ -125,12 +135,7 @@ export async function runSlashCommand(
     case "quit":
       // ChatApp owns closing the terminal; never fall through to catalog lookup.
       break;
-    default: {
-      const resource = host.catalog?.findCommand(command.name);
-      if (resource) return { kind: "command", name: command.name, template: resource.template, rest: command.rest };
-      const skill = host.catalog?.findSkill(command.name);
-      if (skill) return { kind: "send", message: buildSkillInvocationMessage({ skill, args: command.rest }) };
-      show(`unknown command /${command.name}`);
-    }
+    default:
+      return catalogCommand(command, { host, show });
   }
 }
