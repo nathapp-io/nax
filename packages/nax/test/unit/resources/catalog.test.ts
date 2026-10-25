@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import type { CommandResource, ResourceOrigin, ResourcePackage, SkillResource } from "@/resources";
+import type { AgentResource, CommandResource, ResourceOrigin, ResourcePackage, SkillResource } from "@/resources";
 import * as resources from "@/resources";
 
 function skill(name: string, origin: ResourceOrigin): SkillResource {
@@ -26,6 +26,17 @@ function command(name: string, origin: ResourceOrigin): CommandResource {
     origin,
     template: name,
     path: `/fixture/${name}.md`,
+  };
+}
+function agent(name: string, origin: ResourceOrigin): AgentResource {
+  return {
+    kind: "agent",
+    name,
+    qualifiedName: "plugin" in origin ? `${origin.plugin}:${name}` : name,
+    origin,
+    description: name,
+    prompt: name,
+    path: `/fixture/agents/${name}.md`,
   };
 }
 function pkg(id: string, origin: ResourceOrigin, overrides: Partial<ResourcePackage> = {}): ResourcePackage {
@@ -56,6 +67,13 @@ const commandCatalog = () =>
   resources.buildResourceCatalog([
     pkg("claude-project", projectOrigin, { commands: [projectCommand] }),
     pkg("p@m", pluginOrigin, { commands: [pluginCommand] }),
+  ]);
+const projectAgent = agent("a", projectOrigin);
+const pluginAgent = agent("a", pluginOrigin);
+const agentCatalog = () =>
+  resources.buildResourceCatalog([
+    pkg("claude-project", projectOrigin, { agents: [projectAgent] }),
+    pkg("p@m", pluginOrigin, { agents: [pluginAgent] }),
   ]);
 
 describe("buildResourceCatalog", () => {
@@ -118,6 +136,39 @@ describe("buildResourceCatalog", () => {
   });
 });
 
+describe("buildResourceCatalog agents", () => {
+  test("US-002 AC-3 exposes every agent in package order", () => {
+    const a = agent("a", projectOrigin);
+    const b = agent("b", projectOrigin);
+    expect(resources.buildResourceCatalog([pkg("claude-project", projectOrigin, { agents: [a, b] })]).agents).toEqual([
+      a,
+      b,
+    ]);
+  });
+  test("US-002 AC-4 project agent short name wins", () => {
+    expect(agentCatalog().findAgent("a")).toBe(projectAgent);
+  });
+  test("US-002 AC-5 shadowed plugin agent is reachable by qualified name", () => {
+    expect(agentCatalog().findAgent("p:a")).toBe(pluginAgent);
+  });
+  test("US-002 AC-6 shadowed agent warns with winner and qualified alternative", () => {
+    expect(agentCatalog().diagnostics).toContainEqual({
+      severity: "warn",
+      path: pluginAgent.path,
+      origin: pluginOrigin,
+      message: "agent a from p@m is shadowed by claude-project; use p:a",
+    });
+  });
+  test("US-002 AC-7 shadowed agents stay in agents", () => {
+    expect(agentCatalog().agents).toHaveLength(2);
+  });
+  test("US-002 AC-8/9 an empty catalog has no agents", () => {
+    const catalog = resources.buildResourceCatalog([]);
+    expect(catalog.agents).toEqual([]);
+    expect(catalog.findAgent("x")).toBeUndefined();
+  });
+});
+
 describe("loadResourceCatalog", () => {
   let dir: string;
   let repoRoot: string;
@@ -149,6 +200,14 @@ describe("loadResourceCatalog", () => {
       origin: userOrigin,
       path: join(claudeDir, "skills/u/SKILL.md"),
     });
+  });
+  test("US-002 AC-13 loads a .claude/agents fixture with its prompt body", async () => {
+    await Bun.write(
+      join(repoRoot, ".claude/agents/reviewer.md"),
+      "---\nname: reviewer\ndescription: Reviews tests\n---\nCheck tests.\n",
+    );
+    const catalog = await load({ resources: { claudeCode: true, skillsInRun: false, mcpInRun: false } });
+    expect(catalog.findAgent("reviewer")?.prompt.startsWith("Check tests.")).toBe(true);
   });
   test("AC-11 disabled Claude discovery returns no skills or packages", async () => {
     const catalog = await load({ resources: { claudeCode: false, skillsInRun: false, mcpInRun: false } });
