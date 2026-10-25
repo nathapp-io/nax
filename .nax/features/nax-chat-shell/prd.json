@@ -3,7 +3,7 @@
   "feature": "nax-chat-shell",
   "branchName": "feat/nax-chat-shell",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T04:14:35.167Z",
+  "updatedAt": "2026-10-25T04:26:36.579Z",
   "userStories": [
     {
       "id": "US-001",
@@ -20,14 +20,17 @@
         "security"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Small additive backend/type change, but the session role controls rule delivery and requires security-isolated TDD."
+        "reasoning": "Small additive backend/type change, but the session role controls rule delivery and requires security-isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/session/native-backend.ts",
@@ -39,7 +42,11 @@
         "packages/nax-agent/test/unit/session/native-backend-role.test.ts"
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "afd241b764e2d758f4bc6a703a7d8cc365b054cb"
     },
     {
       "id": "US-002",
@@ -100,7 +107,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -144,7 +154,10 @@
         }
       ],
       "workdir": "packages/nax-agent-acp",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -188,7 +201,10 @@
         "packages/nax/test/unit/prompts/builders/chat-builder.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -234,7 +250,10 @@
         "packages/nax/test/unit/chat/chat-mode.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -298,7 +317,10 @@
         "packages/nax/test/unit/chat/open-chat-session.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -359,7 +381,10 @@
         "When a question event has answerable:false, pending() is unchanged and answer is not called."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -423,7 +448,10 @@
         "When a rejected chain.prompt contains an Error with message bad token, the warning's error value is bad token rather than the error object or stack."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-009",
@@ -487,7 +515,10 @@
         "When separate processes resume the same session with different startedAt values, both ledger files retain their own rows."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-010",
@@ -539,7 +570,10 @@
         "packages/nax/test/unit/chat/chat-host.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-011",
@@ -596,7 +630,10 @@
         "When mode switching fails and old settings are reopened, current().model and current().mode still report the old values."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-012",
@@ -655,7 +692,10 @@
         "packages/nax/test/ui/chat/chat-app.test.tsx"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-013",
@@ -706,7 +746,10 @@
         "packages/nax/test/ui/chat/chat-asks-keys.test.tsx"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-014",
@@ -766,7 +809,10 @@
         "packages/nax/test/ui/chat/slash-commands.test.tsx"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-015",
@@ -827,7 +873,10 @@
         "packages/nax/test/unit/cli/chat.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Goal and completion: F3 slice 1 adds a separate interactive native-agent front door: bare nax and nax chat, guarded by default, with a shared durable session, repository rules, approval prompts, delayed interaction-chain fallback, per-round chat cost rows, Ink transcript/input/status, slash commands and lifecycle cleanup. F1 agent-session-modes and F2 shared-session-storage are prerequisites already represented in the source; this is an enhancement, not a new agent implementation. Keep exactly US-001 through US-015 with the binding package workdirs and dependency DAG. No MCP codebase-memory tools are exposed in this host, so discovery used direct Read/Grep/Glob rather than graph navigation; citations below are from the current worktree, not assumed from the historical baseline. No commands or tests were executed during PRD drafting.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:13, :122 and :159 describe the coding standards, package graph and limits. Use strict TypeScript, named public exports, dependency seams for external operations, Bun-native nax I/O and Node-compatible nax-agent/ACP source. The supported nax-agent entry already exports transcript storage at packages/nax-agent/src/index.ts:107, shared session storage at :294, the facade factories at :313 and nativeBackend/NativeBackendOptions at :350. nax cannot import the ACP server; ACP can import nax-agent only through its public entry, not internal/deep paths. Therefore extract approval memory downward once and retain toolKind only for ACP presentation. nax-agent's own source uses #src aliases and explicit .ts suffixes for relative imports; nax uses @/ and its package barrels. Tests use bun:test; Ink tests belong under test/ui/chat. Shared fake timers are available in packages/test-kit/src/bun/fake-clock.ts. Implementation should show new regression tests failing against old behavior, use dependency fakes rather than patching globals, avoid billed/live providers and run package-scoped gates through the existing pipeline. Never run bare bun test, bun run nax, releases, or coverage inside a sandboxed nax session. Generated context files and canonical .nax context are not implementation outputs; this PRD file is the requested planning artifact only.\n\nUS-001: packages/nax-agent/src/session/native-backend-options.ts:18 defines the options, :67 uses z.strictObject and :113 validates while preserving the caller's object identity. Add the optional non-empty string to both the type and strict validator, or valid requests will be rejected. packages/nax-agent/src/session/native-backend.ts:113 constructs a role-less loopHandlerContext, reused in turnOpts at :126; conditionally spread role only when defined so absence remains absence, not role: undefined. nativeProfileRules at native-backend-options.ts:140 already accepts raw/gated, ask requires gated, and fallback validation exists. This is the sole new backend option; no change to workflow role registries. Existing native-backend/options tests and native-backend-compaction.test.ts demonstrate facade setup with scripted providers and shared agent-session helpers. Add native-backend-role.test.ts rather than an implementation stub in strict test-writer sessions.\n\nUS-002/003: packages/nax-agent-acp/src/server/permissions.ts:66-138 currently owns the exact nax#2553-hardened shell metacharacter regex, complete wrappers set, plain-word regex, masking marker, memoryKey and memoryApplies. Its broker uses them at :190-192; choice/round-trip behavior must remain unchanged. packages/nax-agent-acp/src/server/translate/tool-kind.ts:22-25 lists exactly Bash, RunCommand, Git and GitCommit as execute tools; the new local APPROVAL_EXECUTE_TOOLS must agree without a dependency from agent to ACP. Key construction intentionally permits npm test -- --watch as a key, while applying a remembered allow separately rejects flag/non-plain tail words and compound commands. Do not replace this two-stage behavior with a broad command prefix or new lexer. Wrapper basename checks are case-insensitive and include path forms. The existing memoryKey describe starts at packages/nax-agent-acp/test/unit/server/permissions.test.ts:46; move its cases to agent, remove only that describe/import, preserve broker regression cases including git status --short and remembered deny. Export functions and types from permissions/index.ts and the explicit root entry, then regenerate packages/nax-agent/api/nax-agent.api.txt. US-001's optional field does not add an exported name; US-002 does. The US-003 boundary parity assertion prevents future execute tools silently receiving a bare tool key.\n\nUS-004/005: packages/nax/src/prompts/builders/rules-index-builder.ts:29-31 already defines the automatic-delivery wording, :66 maps a resolved rule, :83 builds the index and omits it for empty entries. Reuse it, do not hand-build a second rules format or put prompt literals in chat/UI. packages/nax/src/context/rules/rule-delivery/index.ts:76 and :87 define read/write role lists, :104 constructs one handler set and :388 rejects absent/unlisted roles. Delivery is per sessionName, rule-file identity and compaction-aware, with cached repo/package resolution, fail-open behavior and a capped body injection. Add tui only to the two lists. Read nudges and refuse-once Write/Edit behavior must remain the existing algorithm, including package-specific rules; do not add tui to KNOWN_SESSION_ROLES. Chat modes are facade profiles full/ask plus raw/gated Bash, distinct from nax run's approve-all/approve-reads permission-resolution strings.\n\nUS-006: packages/nax-agent/src/session-store/storage.ts:44-57 exposes the existing metadata/lock/list port; :101 creates storage, :128 acquires a lock, :133 lists, :167 writes via exclusive temp-directory rename. readMeta preserves null versus SESSION_META_UNREADABLE and list logs/skips corrupt entries. Storage list is paginated at 50 (:32/:157) and sorted newest first by updatedAt or createdAt. packages/nax-agent/src/session-store/session-meta.ts:9 uses <globalConfigDir>/.agent-server/sessions, :13 defines schemaVersion 1 and :23 makes costUsd optional. Do not substitute nax's feature session keeper. The opener must use the caller's one storage, a file transcript store over storage.dir, injected UUID/time/env, validate stored mode before any lock (even explicit overrides cannot widen none/read), and release on every post-lock failure. packages/nax-agent-acp/src/server/open-session.ts:82-105 demonstrates the transcript-null create versus transcript-present resume branch and carryHistoryAcrossModels; it is read-only context, not an import. Forward catalog overrides, explicit compaction false, approval timeout, rule index and loop handler identity. Both modes deliberately allow missing-sandbox fallback and per-command unsandboxed escalation; only full never asks.\n\nUS-007/008: packages/nax-agent/src/session/agent-session-types.ts:102-153 defines approval/question/usage/end events with ISO at and turnId; answerable:false events are informational. :165 defines accepted/expired/cancelled/unknown answer status and :167 the facade lifecycle. The controller is the single session-bound arbitration point; remove pending state when answering so a TUI/chain race cannot answer twice. Full auto-allows answerable approvals but never auto-answers questions. Guarded memory is positive-only, uses both shared helper checks, never applies to unsandboxed requests and never stores Delete. Keep it across same-session mode/model reopens, reset across clear/different-session resume. packages/nax/src/interaction/types.ts:17 defines requests, including numeric createdAt and stage custom; packages/nax/src/interaction/chain.ts:124, :143 and :163 provide prompt/cancel/destroy. initInteractionChain at packages/nax/src/interaction/init.ts:49 skips only CLI in headless mode (:64), retaining Telegram/Webhook, and rethrows initialization failures. Do not use chain.applyFallback to turn a skip into approval; only approve/reject/abort map to explicit decisions here. Clear timers when pending disappears, cancel an already-issued prompt exactly once, ignore late replies, and log only errorMessage on prompt rejection. Questions never get fallback timers. Add chatAskFallbackMs to packages/nax/src/config/schemas-infra.ts:166-178, the outer literal default at packages/nax/src/config/schemas.ts:363-369, optional hand-written runtime defaults at packages/nax/src/config/runtime-types.ts:379-396 and FIELD_DESCRIPTIONS in src/cli/config-descriptions.ts. Preserve defaults.fallback undefined: the comment at schemas-infra.ts:171 explains the existing safety regression anchor. The host supplies 60000 for legacy hand-written fixtures without the new optional field.\n\nUS-009: packages/nax/src/runtime/cost-aggregator.ts:3 defines CostEvent, :145 requires durationMs, :406 creates the aggregator and :542 drains all accumulated rows by rewriting its runId file. Consequently use chat-<sessionId>-<process-start epoch> and preserve one ledger across turns/reopens, never recreate a draining aggregator per turn or overwrite a previous process's ledger. Schema constant is exported through packages/nax/src/runtime/middleware/index.ts:4 (currently value 8 in cost.ts:104); import it, never hardcode it. projectOutputDir is exported at packages/nax/src/runtime/index.ts:83 and implemented at paths.ts:19; getProjectKey at packages/nax/src/config/project-key.ts:24 uses configured name or repo basename. Map every usage round, including cache tokens and the exact/estimated distinction, duration from turn_start/prior usage, and persist session spend from turn_end totals rather than adding both usage and end costs. Compaction's summary can be included in turn_end totals without a separate usage event (packages/nax-agent/test/unit/session/native-backend-compaction.test.ts:79), so ledger rows and metadata spend have different source semantics; do not invent a second billing stream. Unicode title truncation is by code points, not UTF-16 units. A synchronous send rejection before the first event must not drain or update metadata.\n\nUS-010/011: build a headless composition root, not a SessionManager dispatch or an ACP server wrapper. Reuse the one handler set, controller, fallback, chain and ledger across reopen operations. packages/nax-agent-acp/src/server/registry-open.ts:37-99 is a reference for stored settings, interrupted notices and failure cleanup; no importing it. Guard current state transactionally: opening another session must succeed before closing/releasing the old; a mode/model switch closes only the facade, keeps ownership throughout, commits metadata only on success and restores old settings on failure. Storage lock classification at packages/nax-agent/src/session-store/session-lock.ts:83 prioritizes own over live; acquire creates a nonce at :152 and same-pid reacquisition can replace it. Switching therefore needs careful release ownership handoff: never release the newly active lock using a stale handle or create an unlocked window, and ensure failed reopens do not discard the old ownership. Do not redesign F2 locks. Resume-latest must skip unreadable/missing, unsupported or live-held entries in storage order, and handle a race between readLockHolder and acquireLock. Explicit resume must preserve exact CHAT_SESSION_* messages; only SESSION_LOCKED maps to CHAT_SESSION_LOCKED. Clear/different-id resume reset memory but retain fallback and chain. Keep ledger attribution aligned with active session/model during switches without losing previously recorded rows; the design fixes one ledger per host, so do not silently recreate a destructive same-name drain file. Models enumerate present native fast/balanced/powerful tiers, string as-is or ModelDef as provider/model, deduplicated.\n\nUS-012/013/014: build a separate packages/nax/src/tui/chat tree; the existing run App.tsx must remain unchanged. packages/nax/test/ui/tui-ctrl-key.test.tsx:25-58 shows ink-testing-library with act and the Ctrl-C versus plain c regression; packages/nax/src/tui/hooks/useKeyboard.ts:141-151 explains Ink's key.ctrl handling. Use useInput without a new dependency, render with exitOnCtrlC:false, route keys exclusively to input/question/approval/global controls so approval letters do not leak into the message and Ctrl-C does not become c. Preserve unsent multi-line text during running turns, append streaming deltas, correlate tool results by callId, cap detail at 60 characters and hide thought contents. Keep status synced after sends/reopens, display errors without exiting, show the unavailable-sandbox warning once at initial full launch and every transition into full. Queue Shift-Tab while busy and apply it only after completion; the two-second Ctrl-C window and quit's cancel-before-close order require deterministic tests. Slash lines never fall through as messages, except /feature deliberately sends its builder-produced payload after reading spec/optional PRD via featureDir. Preserve internal spacing in /feature message. The design requests parseSlashCommand rest, while its listed /mode full AC names only name and args; retain the required rest field and assert the named fields as a subset rather than deleting rest or forcing contradictory exact-object equality. Unknown commands, missing features, busy-command rejection and quit are local notices/control, not prompts to the model.\n\nUS-015: packages/nax/src/cli/status-dispatch.ts:151 provides register-on-Command with injectable action deps, and test/unit/cli/status-dispatch.test.ts:17-29 drives that surface. packages/nax/bin/nax.ts:129 creates the program, :141 defines a non-importable collectProfile, :1047 registers status, :1741 awaits parseAsync. Add only chat registration/import to the entry, keeping bootstrap/credentials and other commands intact. Bare invocation becomes the default command; excess arguments such as rnu must still fail without opening a session. TTY refusal is an intentional compatibility change for scripts formerly using bare nax for help; chat --help remains available non-interactively. Resolve repoRoot from findProjectDir parent or supplied dir, load requested profile overrides, derive balanced native model unless explicitly set, construct one storage, initialize the chain headless and degrade to terminal-only asks on init failure. Launch/resume must finish before rendering. The host resume signature takes only id; preserve plain-resume stored mode/model rather than injecting launch defaults, and if explicit CLI mode/model overrides need applying, use the host's settings-switch surface rather than changing its declared resume interface. SIGTERM/SIGHUP use injected signal registration and await close before exit; named handler cleanup avoids listener leaks. The entry smoke pattern is in packages/nax/test/unit/cli/trust.test.ts.\n\nMigration and risks: no persisted schema change or version bump; ACP and chat interoperate only through the same sessions directory and schema-1 metadata/transcripts/locks. Stored none/read sessions are refused, not promoted. Approval memory extraction must retain every broker invariant, wrapper and masking rule; a seemingly simpler key can grant destructive shell access. Full-mode unavailable-sandbox execution is explicitly opted into and must be visibly warned; the system prompt describes mode, not assumed sandbox state. Async races involve late chain replies, ask expiration, cancellation, close, lock ownership and rollback; tests should drive real temp storage with fake sessions/timers and check exact state/error outcomes, not just helper existence. All failure-table rows are represented in their owning stories below, including missing PRD fallback, SIGHUP cleanup, corrupt resume-latest skipping, no-chain terminal timeout behavior and state preservation on failed session replacement. Existing callers without loopHandlerRole must remain untouched, the ACP broker remains behavior-compatible, default interaction fallback semantics remain unchanged, and the run TUI is not modified. No release, no new npm dependency and no other feature arcs are part of this PRD.\n\nRefine-pass audit: re-enumerated all 223 explicit spec ACs in source order against their original story arrays: US-001 AC1-3; US-002 AC1-20; US-003 AC1-5; US-004 AC1-12; US-005 AC1-11; US-006 AC1-21; US-007 AC1-19; US-008 AC1-18; US-009 AC1-18; US-010 AC1-10; US-011 AC1-14; US-012 AC1-19; US-013 AC1-15; US-014 AC1-20; US-015 AC1-18. None is removed or moved to another story. In particular, preserve US-003's no-second-client-round-trip and execute-tool bare-key guard, US-005's as-it-does-for-wf-implementer anchor, US-007's cannot-remember/later-identical-ask clause, US-009's existing-title/unchanged-metadata anchors, US-010/011's matching-ask and handler-identity anchors, and US-015's real-entry smoke qualifier. No deprecated file-check tags occur in these source ACs. The parser AC preserves name/args as the asserted returned fields while retaining the design-required raw rest; the slash AC explicitly rejects sending the original command line, not /feature's separately built message. Every assertion is observable as output, state, call arguments, exception, logs or persisted rows. Negative paths already exist in all fifteen stories: US-001 invalid role; US-002 unsafe commands; US-003 remembered reject; US-004 absent rules/PRD; US-005 unsupported metadata modes; US-006 missing/corrupt metadata and failed open; US-007 unrememberable/unsandboxed asks; US-008 rejected prompt and invalid delay; US-009 send rejection; US-010 failed clear/start; US-011 locked/unusable resume and failed switch; US-012 errored/rejected turn; US-013 forbidden session-memory choice; US-014 missing feature/invalid mode/busy command; US-015 non-TTY/invalid mode/excess argument. All nineteen feature exclusions remain verbatim, including the US-003-only qualifier; there are no story-local exclusion blocks in the source to hoist. The binding fifteen-story workdirs and dependency lists remain unchanged and all references resolve to those IDs. Restored every spec-recommended context file within the five-file cap (notably workflow/brief.ts for US-006 and cli/config-descriptions.ts for US-008); no story-created path is its own context. Rechecked current source: workflow/brief.ts:84-100 is the rule-index composition precedent, schemas-infra.ts:171-178 preserves undefined defaults.fallback, runtime-types.ts:379-396 is the hand-written defaults type, session-lock.ts:83-96 classifies own/live/stale, and agent-session-types.ts:99-178 supplies the actual event/lifecycle shapes. Added explicit regression assertions for unchanged defaults.fallback and non-interception of existing status dispatch. Reduced US-009, US-014 and US-015 to medium complexity because they use existing sequential/event-mapping and command-registration patterns rather than new backend abstractions; retained strict three-session TDD where the security override covers roles, permissions or session lifecycle. Review was read-only against implementation source; no runtime validation command was available or executed.",
