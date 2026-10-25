@@ -15,6 +15,7 @@ import { projectOutputDir } from "@/runtime";
 import { createAgentsProvider } from "./agents-provider";
 import { type ChatAskController, createChatAskController } from "./ask-controller";
 import { type AskFallback, createAskFallback } from "./ask-fallback";
+import { type ChatAgentRow, listAgentRows } from "./chat-agents-listing";
 import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import { type ChatMode, chatModeOfMeta } from "./chat-mode";
 import { type ChatSessionHandle, openChatSession } from "./open-chat-session";
@@ -48,6 +49,8 @@ export interface ChatHost {
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   current(): ChatHostState;
+  /** One row per catalog agent in catalog order, resolved against the chat session's current model. */
+  agents?(): readonly ChatAgentRow[];
   start(input: { mode: ChatMode; model: string }): Promise<void>;
   clear(): Promise<void>;
   resume(input: { id?: string }): Promise<void>;
@@ -185,6 +188,13 @@ class NativeChatHost implements ChatHost {
       meta,
       ...(session.backend.sandbox === undefined ? {} : { sandbox: session.backend.sandbox }),
     };
+  }
+
+  agents(): readonly ChatAgentRow[] {
+    const agents = this.catalog?.agents ?? [];
+    if (agents.length === 0) return [];
+    // Read at listing time so an inherited model follows model switches.
+    return listAgentRows({ catalog: this.catalog, config: this.deps.config, parentModel: this.current().model });
   }
 
   private async withSessionOperation(operation: () => Promise<void>): Promise<void> {

@@ -107,6 +107,7 @@ export {
   buildCommandMessage,
   buildSkillInvocationMessage,
   buildSkillsInstructions,
+  cleanIndexDescription,
   MAX_SKILLS_INDEX_ENTRIES,
 } from "./builders/skills-builder";
 export { buildSourceRootsSection } from "./builders/source-roots-builder";
