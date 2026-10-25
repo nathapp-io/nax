@@ -94,12 +94,16 @@ provider, nested sessions, `agent.modelAliases`, `/agents`) follows it. It build
   tools locked as read-only). A lock whose `readOnly` is not an object of string arrays is
   read as having no `readOnly` entries. The lock stays `version: 1`; a lock written before
   this feature has no `readOnly` and so marks nothing read-only.
-- Connect-failure reasons are redacted before the pool records or logs them
-  (`redactMcpReason(reason, server)` in `src/mcp/pool.ts`): for a server with a `url`, every
-  occurrence of the configured url is replaced by its origin plus pathname (no userinfo,
-  query or fragment), and every non-empty `headers` value is replaced by `***`. The
-  `connect-failed` event's `reason`, the warn log's `error` field and `/mcp` all see the
-  redacted text.
+- Error text is redacted by its secret parts, not by matching the whole configured string
+  (`redactMcpReason(text, server)` in `src/mcp/pool.ts`). The secrets of a server are: the
+  url's username and password, every non-empty query value, and the fragment (parsed with
+  `new URL`), plus each non-empty `headers` value and each whitespace-separated token of it
+  that is at least 4 characters long. Each secret is replaced by `***` in its raw,
+  `decodeURIComponent` and `encodeURIComponent` forms, so an error that echoes the
+  normalized `href`, one query parameter, or only the token from `Bearer <token>` is still
+  covered. It applies to the `connect-failed` event's `reason`, the warn log's `error` field
+  (so `/mcp` sees it too), and the error-as-data `content` that `call()` returns to the model
+  when a server is unavailable or a call throws.
 - `McpServerSchema` (`packages/nax/src/config/schemas-mcp.ts`): `command` becomes optional;
   new `url: z.string().url().optional()` and `headers: z.record(z.string(), z.string()).default({})`.
   The object keeps `.strict()` and gains a refinement: exactly one of `command` and `url` is
@@ -442,7 +446,7 @@ names each target).
 | A catalog server with no lock entry | Not connected, not attached (chat and `mcpInRun`); `/mcp` shows `not locked (run nax mcp lock)`. |
 | A server marks a tool `readOnlyHint: true` that the lock does not list as read-only | The tool asks in guarded mode until `nax mcp lock` is re-run. |
 | A lock whose `readOnly` is malformed | Read as no read-only tools; every MCP tool asks in guarded mode. |
-| An HTTP server fails to connect with its url or a header value in the error | The recorded and logged reason has userinfo, query and header values removed. |
+| An HTTP server's connect or call error echoes a url secret or a header value | The recorded, logged and model-facing text has each url secret (userinfo, query values, fragment) and each header value or token replaced by `***`. |
 | A server whose id is `nax-skills` in chat | Not attached; `error` diagnostic `mcp server id nax-skills is reserved`. |
 
 ## Out of Scope
@@ -456,6 +460,7 @@ names each target).
 - Per-project enable or disable lists that Claude Code keeps in `~/.claude.json` (for example `disabledMcpServers`, `enabledMcpjsonServers`, `disabledMcpjsonServers` under `projects[<repo>]`) are not read; only `mcpServers` is.
 - Configured `mcp.servers` entries get no `${VAR}` expansion; an HTTP server configured there carries its headers literally, and the existing config secret scan still applies to them.
 - A global lock (`nax mcp lock --global`) approves catalog servers by id for every project on the machine, exactly as it does for configured servers; a different repo's server with the same id is treated as approved.
+- Secrets shorter than 4 characters inside a header value (individual tokens) are not redacted on their own; the full header value still is.
 - Configured `mcp.servers` entries (global or project `.nax/config.json`) are not gated on the lock at connect time; only their tools are, as today.
 - The interactive system prompt does not list MCP tools beyond what the tool list and each server's own instructions (the existing provider-instructions path) already carry.
 - A per-server enable or disable toggle inside chat is not added; `mcp.servers.<id>.enabled` and removing the catalog entry are the switches.
@@ -486,7 +491,7 @@ Workdir: packages/nax-agent. No dependencies.
 
 Workdir: packages/nax. Depends on US-001.
 
-- Add `McpToolDescriptor.readOnly` and `McpLockFile.readOnly`, and carry the hint into each `ProviderTool` in `createMcpProviders` only when the lock lists it; redact HTTP connect-failure reasons in the pool; make `command` optional and add `url` and `headers` to `McpServerSchema` / `McpServerConfig` with an exactly-one refinement; build an `http` transport in `connectMcpServer` and the pool; fix the lock command's hint; add the config descriptions (Design §Approach 2).
+- Add `McpToolDescriptor.readOnly` and `McpLockFile.readOnly`, and carry the hint into each `ProviderTool` in `createMcpProviders` only when the lock lists it; redact HTTP url secrets and header values in the pool's connect and call error text; make `command` optional and add `url` and `headers` to `McpServerSchema` / `McpServerConfig` with an exactly-one refinement; build an `http` transport in `connectMcpServer` and the pool; fix the lock command's hint; add the config descriptions (Design §Approach 2).
 
 ### US-003 — Catalog MCP entries keep their connection spec
 
@@ -711,9 +716,11 @@ None. New files plus barrel exports in `src/resources/index.ts` and `src/config/
 - [unit] A pool connection to an HTTP server whose connection `pid` is null records a `connected` event with `pid` null.
 - [unit] A pool connection to an HTTP server never calls the pid registry's `register`.
 - [unit] `runMcpLockCommand` for an enabled HTTP server that advertises no tools prints a hint containing the server's url.
-- [unit] A pool over HTTP server `a` with `url` `https://u:p@h/mcp?key=s3cret`, whose connect seam rejects with a message containing that url, records a `connect-failed` event whose `reason` does not include `s3cret`.
-- [unit] In that case the recorded `reason` does not include `u:p@`.
-- [unit] A pool over HTTP server `a` with `headers` `{ Authorization: "Bearer tok123" }`, whose connect seam rejects with a message containing `Bearer tok123`, records a `connect-failed` event whose `reason` does not include `tok123`.
+- [unit] A pool over HTTP server `a` with `url` `https://u:pw9@H/mcp?key=s3cret`, whose connect seam rejects with a message containing `new URL(url).href`, records a `connect-failed` event whose `reason` does not include `s3cret`.
+- [unit] A pool over that server whose connect seam rejects with the message `bad param key=s3cret` records a `connect-failed` event whose `reason` does not include `s3cret`.
+- [unit] A pool over that server whose connect seam rejects with a message containing `pw9` records a `connect-failed` event whose `reason` does not include `pw9`.
+- [unit] A pool over HTTP server `a` with `headers` `{ Authorization: "Bearer tok123" }`, whose connect seam rejects with the message `rejected tok123`, records a `connect-failed` event whose `reason` does not include `tok123`.
+- [unit] A pool over HTTP server `a` with `headers` `{ Authorization: "Bearer tok123" }` whose connection's `callTool` throws an error containing `tok123` returns `call()` content that does not include `tok123`.
 
 ### US-003 — Catalog MCP entries keep their connection spec
 
