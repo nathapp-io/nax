@@ -19,6 +19,7 @@ export {
   scanCommandsDir,
   scanSkillsDir,
 } from "./scan-dirs";
+export { _skillsProviderDeps, createSkillsProvider, MAX_SKILL_FILE_BYTES } from "./skills-provider";
 export type {
   AgentResource,
   CommandResource,
