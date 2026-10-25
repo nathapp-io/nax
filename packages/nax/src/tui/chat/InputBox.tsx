@@ -19,7 +19,7 @@ export function InputBox({ busy, active = true, onSubmit }: InputBoxProps): Reac
     (input, key) => {
       if (key.return) {
         if (key.meta) update(`${draft.current}\n`);
-        else if (!busy && draft.current.trim()) {
+        else if ((!busy || draft.current.startsWith("/")) && draft.current.trim()) {
           const message = draft.current;
           update("");
           onSubmit(message);

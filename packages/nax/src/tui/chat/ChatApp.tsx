@@ -5,6 +5,7 @@ import type { ChatHost } from "@/chat";
 import { AskPrompt } from "./AskPrompt";
 import { ChatStatusLine } from "./ChatStatusLine";
 import { InputBox } from "./InputBox";
+import { parseSlashCommand, runSlashCommand } from "./slash-commands";
 import { appendChatEvent, Transcript, type TranscriptEntry } from "./Transcript";
 import { useChatKeys } from "./useChatKeys";
 
@@ -19,7 +20,8 @@ export function ChatApp({ host }: ChatAppProps): ReactElement {
   const sending = useRef(false);
   const [, refresh] = useState(0);
   const update = useCallback(() => refresh((revision) => revision + 1), []);
-  const showError = (error: unknown) => setEntries((rows) => [...rows, { kind: "message", text: errorMessage(error) }]);
+  const show = (text: string) => setEntries((rows) => [...rows, { kind: "message", text }]);
+  const showError = (error: unknown) => show(errorMessage(error));
   const keys = useChatKeys({ host, running: sending, refresh: update, onError: showError });
   const ask = host.asks.pending()[0];
   useEffect(() => host.asks.onChange(update), [host, update]);
@@ -33,8 +35,26 @@ export function ChatApp({ host }: ChatAppProps): ReactElement {
     if (warn) setEntries((rows) => [...rows, { kind: "message", text: SANDBOX_WARNING }]);
   }, [warn]);
 
-  // Wait for send's metadata drain before reopening the session for a queued mode.
   async function submit(message: string): Promise<void> {
+    const command = parseSlashCommand(message);
+    if (!command) return sendTurn(message);
+    if (command.name === "quit") {
+      if (sending.current) host.cancel();
+      return keys.close();
+    }
+    if (sending.current) {
+      show("wait for the turn to finish (Ctrl-C to interrupt)");
+      return;
+    }
+    let featureMessage: string | undefined;
+    const ready = await keys.runControl(async () => {
+      featureMessage = await runSlashCommand(command, { host, show });
+    });
+    if (ready && featureMessage !== undefined) await sendTurn(featureMessage);
+  }
+
+  // Wait for send's metadata drain before reopening the session for a queued mode.
+  async function sendTurn(message: string): Promise<void> {
     if (sending.current) return;
     sending.current = true;
     setBusy(true);

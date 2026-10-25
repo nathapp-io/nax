@@ -15,6 +15,8 @@ interface ChatKeysOptions {
 export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions): {
   locked: boolean;
   finishTurn(): Promise<void>;
+  close(): Promise<void>;
+  runControl(task: () => Promise<void>): Promise<boolean>;
 } {
   const { exit } = useApp();
   const queued = useRef<ChatMode | undefined>(undefined);
@@ -24,14 +26,20 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
   const [locked, setLocked] = useState(false);
 
   async function switchMode(mode: ChatMode): Promise<void> {
+    await runControl(() => host.switchTo({ mode }));
+  }
+  async function runControl(action: () => Promise<void>): Promise<boolean> {
+    if (closing.current || switching.current) return false;
     setLocked(true);
     try {
-      const task = host.switchTo({ mode });
+      const task = action();
       switching.current = task;
       await task;
       refresh();
+      return !closing.current;
     } catch (error) {
       onError(error);
+      return false;
     } finally {
       switching.current = undefined;
       setLocked(closing.current);
@@ -74,6 +82,8 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
   });
   return {
     locked,
+    close,
+    runControl,
     async finishTurn() {
       interruptedAt.current = undefined;
       const mode = queued.current;
