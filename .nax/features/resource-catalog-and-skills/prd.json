@@ -3,7 +3,7 @@
   "feature": "resource-catalog-and-skills",
   "branchName": "feat/resource-catalog-and-skills",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T10:17:40.828Z",
+  "updatedAt": "2026-10-25T10:34:35.752Z",
   "userStories": [
     {
       "id": "US-001",
@@ -742,14 +742,17 @@
         "US-008",
         "US-010"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "CLI, host and opener compose existing trust/plugin/provider seams rather than inventing a backend; trust-before-import and session lifecycle wiring still require strict security isolation."
+        "reasoning": "CLI, host and opener compose existing trust/plugin/provider seams rather than inventing a backend; trust-before-import and session lifecycle wiring still require strict security isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/chat.ts",
@@ -778,7 +781,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9145bb54aa9b392ba34f5acc9f75ff18c91c5385"
     },
     {
       "id": "US-013",
