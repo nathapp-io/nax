@@ -3,7 +3,7 @@
   "feature": "chat-mcp-servers",
   "branchName": "feat/chat-mcp-servers",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T13:30:57.636Z",
+  "updatedAt": "2026-10-25T13:37:56.419Z",
   "userStories": [
     {
       "id": "US-001",
@@ -327,14 +327,17 @@
         "parsing"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Two deterministic string algorithms with explicit lexical rules and barrel exports; no side effects, credential lookup or access-control decisions."
+        "reasoning": "Two deterministic string algorithms with explicit lexical rules and barrel exports; no side effects, credential lookup or access-control decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas-mcp.ts",
@@ -354,7 +357,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "96068f86264314e852c2f5ca024b0ccf6a2ce2ac"
     },
     {
       "id": "US-006",
