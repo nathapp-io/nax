@@ -3,7 +3,7 @@ import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import type { ProviderTool, ToolProvider, ToolResult } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { buildSkillsInstructions } from "@/prompts";
+import { buildSkillsInstructions } from "@/prompts/builders/skills-builder";
 import type { ResourceCatalog, SkillResource } from "./types";
 
 export const MAX_SKILL_FILE_BYTES = 262_144;
