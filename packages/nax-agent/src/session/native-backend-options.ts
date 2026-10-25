@@ -12,11 +12,14 @@ import { parseNativeModel } from "#src/native/models";
 import { compactionSettingsSchema } from "#src/native/session/compaction-settings";
 import { isInstructionFileName } from "#src/native/session/instruction-file-name";
 import type { LoopHandlerSet } from "#src/native/session/loop-events/types";
+import type { ToolProvider } from "#src/tools/provider-types";
 import { AgentSessionError } from "./agent-session-errors.ts";
 import type { AgentSessionHostPorts, AgentSessionProfile } from "./agent-session-types.ts";
 
 export interface NativeBackendOptions {
   readonly model: string;
+  /** Static tool providers attached to this session's profile and stage. */
+  readonly toolProviders?: readonly ToolProvider[];
   /** Repository instruction basename; defaults to AGENTS.md. */
   readonly instructionFileName?: string;
   readonly credentials?: CredentialSource;
@@ -68,6 +71,21 @@ const isStringArray = (value: unknown): boolean =>
 
 const OptionsSchema = z.strictObject({
   model: z.string().min(1),
+  toolProviders: z
+    .custom(
+      (value) =>
+        Array.isArray(value) &&
+        value.every(
+          (provider) =>
+            isRecord(provider) &&
+            typeof provider.id === "string" &&
+            provider.kind === "static" &&
+            isStringArray(provider.stages) &&
+            typeof provider.tools === "function",
+        ),
+      "must be an array of static providers with id, stages and tools()",
+    )
+    .optional(),
   instructionFileName: z
     .string()
     .refine(

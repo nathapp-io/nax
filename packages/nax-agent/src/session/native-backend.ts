@@ -11,6 +11,7 @@ import { transcriptModelIdentity } from "#src/native/session/transcript-identity
 import type { TranscriptDoc } from "#src/native/session/transcript-types";
 import type { TurnRetryConfig } from "#src/native/session/turn-retry";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
+import { resolveProviderTools } from "#src/tools/provider-advertise";
 import { AgentSessionError } from "./agent-session-errors.ts";
 import {
   type NativeBackendOptions,
@@ -21,7 +22,12 @@ import {
 import { createSessionAskLink, createSessionAskResolver } from "./session-ask-link.ts";
 import type { BackendOpenContext, OpenedBackend, SessionBackend } from "./session-backend.ts";
 import { createSessionInteractionHandler, embedderToolDescriptor } from "./session-interaction.ts";
-import { buildSessionToolSupport, defaultProtectedPaths, resolveSessionLauncher } from "./session-tool-support.ts";
+import {
+  buildSessionToolSupport,
+  defaultProtectedPaths,
+  resolveSessionLauncher,
+  SESSION_STAGE,
+} from "./session-tool-support.ts";
 
 export const NATIVE_BACKEND_KIND = "native";
 
@@ -67,11 +73,25 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     bashApproval,
     allowUnsandboxed,
   });
+  const providerTools =
+    ctx.profile === "none" || raw.toolProviders === undefined
+      ? undefined
+      : await resolveProviderTools(raw.toolProviders, SESSION_STAGE, ctx.workdir);
+  for (const tool of ctx.tools) {
+    if (providerTools?.providerIdByTool.has(tool.name)) {
+      throw new AgentSessionError(
+        `Embedder tool "${tool.name}" conflicts with a provider tool`,
+        "AGENT_SESSION_TOOL_NAME_RESERVED",
+        { tool: tool.name },
+      );
+    }
+  }
   let callId: string | undefined;
   const { support, grants } = buildSessionToolSupport({
     profile: ctx.profile,
     root: ctx.workdir,
     sessionName: ctx.sessionId,
+    ...(providerTools !== undefined ? { providerTools } : {}),
     protectedPaths,
     bashApproval,
     launcher,
@@ -97,6 +117,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     workdir: ctx.workdir,
     instructionProtectedPaths: protectedPaths,
     instructionFileName: raw.instructionFileName,
+    ...(support.providerInstructions !== undefined ? { providerInstructions: support.providerInstructions } : {}),
     resolvedPermissions: { mode: "default", toolGrants: grants, bashApproval },
     modelDef: { provider: resolved.provider, model: raw.model },
     timeoutSeconds: ctx.turnTimeoutSeconds,
