@@ -3,7 +3,7 @@
   "feature": "resource-catalog-and-skills",
   "branchName": "feat/resource-catalog-and-skills",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T09:11:19.057Z",
+  "updatedAt": "2026-10-25T09:19:58.335Z",
   "userStories": [
     {
       "id": "US-001",
@@ -291,14 +291,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive leaf parsers and one scanner extension; metadata only, no new execution or permission surface."
+        "reasoning": "Additive leaf parsers and one scanner extension; metadata only, no new execution or permission surface.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/resources/types.ts",
@@ -320,7 +323,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "79c0ddded192704decc8d3e3aee8646fca4f9e12"
     },
     {
       "id": "US-006",
