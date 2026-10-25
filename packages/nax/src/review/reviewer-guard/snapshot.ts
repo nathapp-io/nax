@@ -12,6 +12,7 @@ import { join, resolve } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { activeKeepers } from "@/runstate/store";
 import { _snapshotDeps, git, gitRaw, symbolicHead } from "./deps";
+import { removeAddedPaths } from "./snapshot-additions";
 import { listIgnoreFiles, restoreIgnoreRules, type TreeEntry } from "./snapshot-ignore-rules";
 import {
   diffRefsLeft,
@@ -175,10 +176,12 @@ async function restoreTree(snap: RepoSnapshot, failures: string[]): Promise<Tree
     );
   } catch (err) {
     failures.push(`tree: ${errorMessage(err)}`);
-    const paths = [...entries]
-      .filter(([p, entry]) => entry.type !== "commit" && !isKeeperOwnedPath(snap.toplevel, p))
-      .map(([p]) => p);
-    return { paths, restored: await checkoutPaths(snap, paths, failures), fallback: "tracked-only" };
+    const skip = (p: string): boolean => isKeeperOwnedPath(snap.toplevel, p);
+    // Removals first, as on the normal path; then the snapshot paths go back (nax#2700).
+    const removed = await removeAddedPaths({ toplevel: snap.toplevel, entries, skip, remove: removePath }, failures);
+    const paths = [...entries].filter(([p, entry]) => entry.type !== "commit" && !skip(p)).map(([p]) => p);
+    const restored = await checkoutPaths(snap, paths, failures);
+    return { paths: [...paths, ...removed], restored, fallback: "tracked-only" };
   }
   const changed = [...new Set([...ruleChanges, ...diffed])];
   if (changed.length === 0) return { paths: [], restored: false };
