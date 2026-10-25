@@ -1,4 +1,10 @@
 export * from "./approval-audit.ts";
+export {
+  type ApprovalMemoryDecision,
+  type ApprovalMemoryRequest,
+  approvalMemoryApplies,
+  approvalMemoryKey,
+} from "./approval-memory.ts";
 export * from "./approvals-link.ts";
 export * from "./approvals-store.ts";
 export * from "./approvals-taint.ts";

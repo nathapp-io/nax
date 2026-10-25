@@ -179,6 +179,10 @@ export {
 export {
   type ApprovalAuditRow,
   type ApprovalEntry,
+  type ApprovalMemoryDecision,
+  type ApprovalMemoryRequest,
+  approvalMemoryApplies,
+  approvalMemoryKey,
   type ApprovalsFile,
   type ApprovalsFileRead,
   type ApprovalsFileState,
