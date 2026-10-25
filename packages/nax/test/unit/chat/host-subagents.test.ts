@@ -245,6 +245,37 @@ describe("chat host nested usage, spend and tool events", () => {
   });
 });
 
+describe("chat host overlapping sends", () => {
+  test("a busy-rejected send keeps the active send's nested spend", async () => {
+    const h = setup({ agents: [reviewer], nestedCostUsd: 0.4, chatCostUsd: 1, holdChat: true });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    const before = await spent(h);
+    const first = h.host.send("go", () => {});
+    await waitForCondition(() => h.nestedSessions[0]?.closeCalls === 1);
+    await expect(h.host.send("again", () => {})).rejects.toThrow();
+    h.releaseChat();
+    await first;
+    expect((await spent(h)) - before).toBeCloseTo(1.4);
+  });
+
+  test("a busy-rejected send keeps the active send's tool listener", async () => {
+    const lateCall = toolCallEvent("late");
+    const h = setup({
+      agents: [reviewer],
+      holdNested: true,
+      nestedLateEvents: [lateCall],
+    });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    const seen: SessionEvent[] = [];
+    const first = h.host.send("go", (event) => seen.push(event));
+    await waitForCondition(() => h.nestedSessions.length > 0);
+    await expect(h.host.send("again", () => {})).rejects.toThrow();
+    h.releaseNested();
+    await first;
+    expect(seen).toContainEqual(lateCall);
+  });
+});
+
 describe("chat host nested cancel and close", () => {
   test("AC-16 host.cancel() cancels the running nested session", async () => {
     const { h, sending } = await sendWithNested([]);

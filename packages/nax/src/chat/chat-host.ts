@@ -104,6 +104,7 @@ class NativeChatHost implements ChatHost {
   private readonly runs?: SubagentRuns;
   private readonly toolProviders?: readonly ToolProvider[];
   private turnListener?: (event: SessionEvent) => void;
+  private sending = false;
   private handle?: ChatSessionHandle;
   private ledger?: ChatLedger;
   private resumeNotice?: string;
@@ -358,6 +359,12 @@ class NativeChatHost implements ChatHost {
     const handle = this.requireHandle();
     const ledger = this.ledger;
     if (!ledger) throw new NaxError("[chat] ledger is not initialized", "CHAT_SESSION_NOT_OPEN", { stage: "chat" });
+    // Reject before touching the shared listener and nested-spend state: they belong to
+    // the active send until its metadata is persisted.
+    if (this.sending) {
+      throw new NaxError("[chat] a turn is already running", "CHAT_TURN_BUSY", { stage: "chat" });
+    }
+    this.sending = true;
     this.turnListener = onEvent;
     const runs = this.runs;
     let meta: SessionMeta;
@@ -374,6 +381,7 @@ class NativeChatHost implements ChatHost {
       });
     } finally {
       this.turnListener = undefined;
+      this.sending = false;
       // Nested spend of a send that threw is dropped, never added to the next send.
       runs?.takeCost();
     }
