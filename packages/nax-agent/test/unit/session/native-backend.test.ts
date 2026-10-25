@@ -308,23 +308,29 @@ describe("nativeBackend — allowedTools", () => {
       const interact = (name: string, input: Record<string, unknown>) =>
         opened.turnOpts().interactionHandler?.onInteraction({ kind: "coding-tool", name, input, toolCallId: "c1" });
       const approvals = () => events.filter((event) => event.type === "approval_requested");
-      return { interact, approvals };
+      return { interact, approvals, table };
     }
 
     test("AC-15: ask with [Edit] still puts an Edit to the person", async () => {
-      const { interact, approvals } = await interactive("ask", { allowedTools: ["Edit"] });
+      const { interact, approvals, table } = await interactive("ask", { allowedTools: ["Edit"] });
       const pending = interact("Edit", { path: "a.txt", old_string: "a", new_string: "b" });
       await waitForCondition(() => approvals().length > 0);
       expect(approvals()).toMatchObject([{ type: "approval_requested", tool: "Edit" }]);
-      void pending?.catch(() => {}); // left unanswered; closing the session settles it
+      // Closing the table settles the pending ask and clears its 30 s timer.
+      table.close();
+      await pending?.catch(() => {});
     });
 
     test("AC-16: ask + gated with [Bash] still puts a Bash command to the person", async () => {
-      const { interact, approvals } = await interactive("ask", { bashApproval: "gated", allowedTools: ["Bash"] });
+      const { interact, approvals, table } = await interactive("ask", {
+        bashApproval: "gated",
+        allowedTools: ["Bash"],
+      });
       const pending = interact("Bash", { command: "echo hi" });
       await waitForCondition(() => approvals().length > 0);
       expect(approvals()).toMatchObject([{ type: "approval_requested", tool: "Bash" }]);
-      void pending?.catch(() => {});
+      table.close();
+      await pending?.catch(() => {});
     });
 
     test("AC-17/AC-18: full with [Read] refuses a Write and never runs the Write tool", async () => {

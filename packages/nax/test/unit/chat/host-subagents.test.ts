@@ -315,4 +315,44 @@ describe("chat host nested cancel and close", () => {
     await sending;
     expect(h.nestedSessions[0]?.closeCalls).toBe(1);
   });
+
+  test("a send whose tool batch abandons the nested run waits for it, so its late spend and events stay out of the next send", async () => {
+    const lateCall = toolCallEvent("late");
+    const h = setup({
+      agents: [reviewer],
+      holdNested: true,
+      holdNestedPastCancel: true,
+      abandonToolOnAbort: true,
+      nestedLateEvents: [lateCall],
+      nestedCostUsd: 0.4,
+    });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    const firstSeen: SessionEvent[] = [];
+    let settled = false;
+    const first = h.host
+      .send("go", (event) => firstSeen.push(event))
+      .finally(() => {
+        settled = true;
+      });
+    await waitForCondition(() => h.nestedSessions.length > 0 && h.turnSignal() !== undefined);
+    h.abortTurn();
+    h.host.cancel();
+    await waitForCondition(() => h.toolResults.length > 0);
+    // The chat turn already stopped waiting for the tool; the nested turn is still running.
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(h.nestedSessions[0]?.closeCalls).toBe(0);
+    h.releaseNested();
+    await first;
+    expect(h.nestedSessions[0]?.closeCalls).toBe(1);
+
+    h.control.skipRun = true;
+    h.control.chatCostUsd = 1;
+    const nextSeen: SessionEvent[] = [];
+    const before = (await spent(h)) ?? 0;
+    await h.host.send("again", (event) => nextSeen.push(event));
+    expect((await spent(h)) - before).toBeCloseTo(1);
+    expect(nextSeen).not.toContainEqual(lateCall);
+    expect(firstSeen).toContainEqual(lateCall);
+  });
 });

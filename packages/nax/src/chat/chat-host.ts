@@ -390,10 +390,16 @@ class NativeChatHost implements ChatHost {
         ...(runs ? { extraCostUsd: () => runs.takeCost() } : {}),
       });
     } finally {
-      this.turnListener = undefined;
-      this.sending = false;
-      // Nested spend of a send that threw is dropped, never added to the next send.
-      runs?.takeCost();
+      try {
+        // A cancelled tool batch abandons its nested run without waiting for it: drain
+        // every run (a pending open included) before the listener and spend are released.
+        await runs?.settle();
+      } finally {
+        this.turnListener = undefined;
+        this.sending = false;
+        // Nested spend of a send that threw is dropped, never added to the next send.
+        runs?.takeCost();
+      }
     }
     if (this.handle === handle) this.handle = { ...handle, meta };
   }

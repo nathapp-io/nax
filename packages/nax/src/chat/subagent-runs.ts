@@ -47,6 +47,12 @@ export interface SubagentRuns {
   /** Spend of nested turns since the last call; resets to 0. */
   takeCost(): number;
   cancelAll(): void;
+  /**
+   * Cancel every run still in flight, including one whose session is still opening, and
+   * resolve once each has closed its session. A tool batch may abandon a run on abort, so
+   * the parent send waits here before it releases its listener and spend accounting.
+   */
+  settle(): Promise<void>;
   closeAll(): Promise<void>;
 }
 
@@ -66,6 +72,8 @@ interface NestedUsage {
 export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
   const owners = new Map<string, AgentSession>();
   const active = new Set<AgentSession>();
+  /** Every run in flight, from before its session opens until it has closed it. */
+  const inFlight = new Map<Promise<unknown>, { controller: AbortController; session?: AgentSession }>();
   let spentUsd = 0;
 
   function release(session: AgentSession): void {
@@ -101,7 +109,13 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
   }
 
   /** Usage rows and spend; only tool activity is shown in the chat transcript. */
-  function routeActivity(event: SessionEvent, nested: NestedUsage, current: SubagentRunsCurrent, model: string): void {
+  function routeActivity(
+    event: SessionEvent,
+    nested: NestedUsage,
+    current: SubagentRunsCurrent,
+    model: string,
+    listener: ((event: SessionEvent) => void) | undefined,
+  ): void {
     if (event.type === "turn_start") nested.previousAt = event.at;
     else if (event.type === "usage") {
       deps
@@ -109,11 +123,31 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
         ?.record({ ...event, sessionId: current.sessionId }, nested.previousAt ?? event.at, model, "subagent");
       nested.previousAt = event.at;
     } else if (event.type === "turn_end") spentUsd += event.costUsd;
-    else if (event.type === "tool_call" || event.type === "tool_result") deps.turnListener()?.(event);
+    else if (event.type === "tool_call" || event.type === "tool_result") listener?.(event);
   }
 
-  async function run(agent: AgentResource, task: string, signal?: AbortSignal): Promise<ToolResult> {
+  /** Run under a controller the host can abort, linked to the tool's own signal. */
+  function run(agent: AgentResource, task: string, signal?: AbortSignal): Promise<ToolResult> {
+    const entry: { controller: AbortController; session?: AgentSession } = { controller: new AbortController() };
+    const onParentAbort = () => entry.controller.abort();
+    if (signal?.aborted) onParentAbort();
+    else signal?.addEventListener("abort", onParentAbort, { once: true });
+    const promise = runNested(agent, task, entry).finally(() => {
+      signal?.removeEventListener("abort", onParentAbort);
+      inFlight.delete(promise);
+    });
+    inFlight.set(promise, entry);
+    return promise;
+  }
+
+  async function runNested(
+    agent: AgentResource,
+    task: string,
+    entry: { controller: AbortController; session?: AgentSession },
+  ): Promise<ToolResult> {
     const current = deps.current();
+    // Late nested tool events belong to the send that started this run, never a later one.
+    const listener = deps.turnListener();
     const { model } = resolveSubagentModel({
       ...(agent.model !== undefined ? { requested: agent.model } : {}),
       parentModel: current.model,
@@ -136,13 +170,14 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
         repoRoot: deps.repoRoot,
         config: deps.config,
         parentSessionId: current.sessionId,
-        ...(signal !== undefined ? { signal } : {}),
+        signal: entry.controller.signal,
         onSession: (session) => {
           nested = session;
+          entry.session = session;
           active.add(session);
         },
         onEvent: (event) => {
-          routeActivity(event, usage, current, model);
+          routeActivity(event, usage, current, model, listener);
           if (nested !== undefined) routeAsk(event, nested, agent);
         },
       });
@@ -151,7 +186,7 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
     }
   }
 
-  return {
+  const runs: SubagentRuns = {
     run,
     sessionFor: (requestId) => owners.get(requestId),
     takeCost() {
@@ -160,10 +195,20 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
       return taken;
     },
     cancelAll() {
-      for (const session of active) session.cancel();
+      for (const { controller, session } of inFlight.values()) {
+        // A run whose session is not open yet is cancelled through its signal; one with a
+        // session is cancelled on the session, whose turn then ends `cancelled`.
+        if (session === undefined) controller.abort();
+        else session.cancel();
+      }
+    },
+    async settle() {
+      runs.cancelAll();
+      await Promise.allSettled([...inFlight.keys()]);
     },
     async closeAll() {
       await Promise.all([...active].map((session) => session.close()));
     },
   };
+  return runs;
 }

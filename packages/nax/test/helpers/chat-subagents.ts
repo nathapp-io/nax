@@ -203,6 +203,13 @@ export interface SubagentHostOptions {
   readonly nestedLateEvents?: readonly SessionEvent[];
   /** Keep every nested session's `close()` pending until `releaseNestedClose()`. */
   readonly holdNestedClose?: boolean;
+  /**
+   * Like the real interaction handler: the chat turn stops waiting for the `run` tool when
+   * the turn's signal aborts and abandons the pending call.
+   */
+  readonly abandonToolOnAbort?: boolean;
+  /** A cancelled nested turn keeps running until `releaseNested()` instead of ending at once. */
+  readonly holdNestedPastCancel?: boolean;
 }
 
 /** Per-send script switches; a test may change them between sends. */
@@ -316,7 +323,19 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
         maxFileBytes: 1_000_000,
         signal: turn.signal,
       };
-      toolResults.push(await tool.run({ agent: runAgentName, task: "check it" }, ctx));
+      const pendingRun = tool.run({ agent: runAgentName, task: "check it" }, ctx);
+      toolResults.push(
+        options.abandonToolOnAbort
+          ? await Promise.race([
+              pendingRun,
+              new Promise<ToolResult>((resolve) =>
+                turn?.signal.addEventListener("abort", () => resolve({ isError: true, content: "abandoned" }), {
+                  once: true,
+                }),
+              ),
+            ])
+          : await pendingRun,
+      );
     }
     if (options.holdChat) await chatGate.promise;
     if (control.chatThrows) throw new Error("chat send failed");
@@ -325,7 +344,9 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
 
   async function* nestedTurn(): AsyncGenerator<SessionEvent> {
     for (const event of options.nestedEvents ?? []) yield event;
-    if (options.holdNested) await Promise.race([released.promise, cancelled.promise]);
+    if (options.holdNested) {
+      await Promise.race([released.promise, options.holdNestedPastCancel ? new Promise(() => {}) : cancelled.promise]);
+    }
     for (const event of options.nestedLateEvents ?? []) yield event;
     const end = turnEndEvent("nested done", control.nestedCostUsd);
     yield end.type === "turn_end" && options.nestedStatus === "cancelled" ? { ...end, status: "cancelled" } : end;
