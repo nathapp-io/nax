@@ -3,7 +3,7 @@
   "feature": "nax-chat-shell",
   "branchName": "feat/nax-chat-shell",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T06:21:10.375Z",
+  "updatedAt": "2026-10-25T06:35:22.194Z",
   "userStories": [
     {
       "id": "US-001",
@@ -837,14 +837,17 @@
       "dependencies": [
         "US-013"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A parser and dispatch table wire an existing host and prompt builder using standard cases; permission-mode changes and session replacement require strict security TDD."
+        "reasoning": "A parser and dispatch table wire an existing host and prompt builder using standard cases; permission-mode changes and session replacement require strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -860,7 +863,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5b564abd6d130d15a6e3de2b912a2b4a7a00192d"
     },
     {
       "id": "US-015",
