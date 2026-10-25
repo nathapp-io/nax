@@ -4,7 +4,7 @@
  * suite covers the parallel backend's contract only.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { type AgentSession, type BackendOpenContext, createAgentSession } from "@nathapp/nax-agent";
+import { type AgentSession, AgentSessionError, type BackendOpenContext, createAgentSession } from "@nathapp/nax-agent";
 import { _sessionSandboxDeps } from "#src/coding-tools/coding-tool-sandbox";
 import { _clientDeps } from "#src/native/client";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
@@ -99,6 +99,42 @@ async function ctx(extra: Partial<BackendOpenContext> = {}): Promise<BackendOpen
 }
 
 describe("nativeBackend", () => {
+  test("copies loopHandlerRole into every turn's context", async () => {
+    const options = { model: MODEL, loopHandlerRole: "tui" };
+    const context = await ctx();
+    const opened = await openBackend(nativeBackend(options), context);
+    for (let turn = 0; turn < 2; turn += 1) {
+      expect(opened.turnOpts().loopHandlerContext).toEqual({
+        sessionName: context.sessionId,
+        workdir: context.workdir,
+        model: MODEL,
+        provider: "openai",
+        role: "tui",
+      });
+    }
+  });
+
+  test("omits the role key when loopHandlerRole is unset", async () => {
+    const opened = await openBackend(nativeBackend({ model: MODEL }), await ctx());
+    const context = opened.turnOpts().loopHandlerContext;
+    expect(context).toBeDefined();
+    expect(context).not.toHaveProperty("role");
+  });
+
+  test("rejects an empty loopHandlerRole with a field-specific session error", () => {
+    const options = { model: MODEL, loopHandlerRole: "" };
+    let caught: unknown;
+    try {
+      nativeBackend(options);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(AgentSessionError);
+    assertNaxError(caught);
+    expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(caught.context).toMatchObject({ path: "backend.loopHandlerRole" });
+  });
+
   test("has kind native and opens with the read tool set", async () => {
     const backend = nativeBackend({ model: MODEL });
     expect(backend.kind).toBe(NATIVE_BACKEND_KIND);
