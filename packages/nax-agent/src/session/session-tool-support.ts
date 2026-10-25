@@ -144,6 +144,31 @@ export interface SessionToolSupportArgs {
    */
   readonly unsandboxedCommands?: boolean;
   readonly providerTools?: ResolvedProviderTools;
+  /**
+   * Narrow the profile's built-in tools to these names; the universal scratchpad
+   * tools are always kept. ABSENT keeps every profile tool. Never adds a tool.
+   * Provider tools are narrowed earlier, by `providerAdmits` at resolution.
+   */
+  readonly allowedTools?: readonly string[];
+}
+
+/**
+ * The `admits` predicate for `resolveProviderTools`: a tool `<id>__<local>` is
+ * admitted when `allowedTools` names it exactly or names `<id>__*`.
+ */
+export function providerAdmits(allowedTools: readonly string[]): (providerId: string, localName: string) => boolean {
+  const allowed = new Set(allowedTools);
+  return (providerId, localName) => allowed.has(`${providerId}__${localName}`) || allowed.has(`${providerId}__*`);
+}
+
+/** The profile's built-ins narrowed by `allowedTools`; the scratchpad trio always survives. */
+function narrowBuiltIns(
+  profileTools: readonly CodingToolName[],
+  allowedTools: readonly string[] | undefined,
+): readonly CodingToolName[] {
+  if (allowedTools === undefined) return profileTools;
+  const allowed = new Set<string>(allowedTools);
+  return profileTools.filter((tool) => UNIVERSAL_CODING_TOOLS.includes(tool) || allowed.has(tool));
 }
 
 export interface SessionToolSupport {
@@ -152,7 +177,7 @@ export interface SessionToolSupport {
 }
 
 export function buildSessionToolSupport(args: SessionToolSupportArgs): SessionToolSupport {
-  const profileTools = declaredToolsFor(args.profile, args.protectedPaths);
+  const profileTools = narrowBuiltIns(declaredToolsFor(args.profile, args.protectedPaths), args.allowedTools);
   // CodingToolName enumerates built-ins, but the runtime also accepts provider names.
   const declared = [
     ...new Set([...profileTools, ...(args.providerTools?.tools.map((tool) => tool.name) ?? [])]),

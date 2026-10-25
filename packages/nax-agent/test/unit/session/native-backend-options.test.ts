@@ -76,6 +76,28 @@ describe("parseNativeBackendOptions", () => {
   });
 });
 
+describe("parseNativeBackendOptions: allowedTools", () => {
+  test("accepts a string array (including empty) and keeps the caller's object", () => {
+    const input = { model: "openai/x", allowedTools: ["Read", "acme__*"] };
+    expect(parseNativeBackendOptions(input).raw).toBe<unknown>(input);
+    expect(parseNativeBackendOptions({ model: "openai/x", allowedTools: [] }).provider).toBe("openai");
+  });
+
+  test("rejects an empty entry, a non-string entry and a non-array, naming backend.allowedTools", () => {
+    for (const allowedTools of [[""], [1], "Read", null]) {
+      let caught: unknown;
+      try {
+        parseNativeBackendOptions({ model: "openai/x", allowedTools });
+      } catch (err) {
+        caught = err;
+      }
+      assertNaxError(caught);
+      expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+      expect(caught.message).toContain("backend.allowedTools");
+    }
+  });
+});
+
 describe("parseNativeBackendOptions: compaction", () => {
   function failure(compaction: unknown): { code: string | undefined; message: string; context: unknown } {
     try {

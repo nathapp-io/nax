@@ -3,8 +3,15 @@
  * (spec 5.2). The facade's own native assembly still exists until Task 5; this
  * suite covers the parallel backend's contract only.
  */
-import { afterEach, describe, expect, test } from "bun:test";
-import { type AgentSession, AgentSessionError, type BackendOpenContext, createAgentSession } from "@nathapp/nax-agent";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import {
+  type AgentSession,
+  AgentSessionError,
+  type AgentSessionProfile,
+  type BackendOpenContext,
+  createAgentSession,
+  type SessionEventBody,
+} from "@nathapp/nax-agent";
 import { _sessionSandboxDeps } from "#src/coding-tools/coding-tool-sandbox";
 import { _clientDeps } from "#src/native/client";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
@@ -14,6 +21,7 @@ import { NATIVE_BACKEND_KIND, nativeBackend } from "#src/session/native-backend"
 import { createPendingAskTable } from "#src/session/pending-asks";
 import { createSessionAskPort } from "#src/session/session-ask-port";
 import { DEFAULT_BASH_SHELL } from "#src/tools/index";
+import { writeTool } from "#src/tools/write";
 import {
   collect,
   eventsOf,
@@ -35,6 +43,7 @@ import {
   cleanupTempDir,
   makeTempDir,
   stubSessionSandboxDeps,
+  waitForCondition,
   withDepsRestore,
   withSessionSandboxSeam,
 } from "#test/helpers/index";
@@ -214,6 +223,134 @@ describe("nativeBackend", () => {
     } finally {
       _clientDeps.build = real;
     }
+  });
+});
+
+/** chat-subagents US-001: `allowedTools` narrows the declared tools; absent means today's behaviour. */
+describe("nativeBackend — allowedTools", () => {
+  withDepsRestore(_sessionSandboxDeps);
+  withSessionSandboxSeam(_sessionSandboxDeps);
+
+  const TRIO = ["ScratchpadList", "ScratchpadRead", "ScratchpadWrite"];
+
+  function invalidCode(options: unknown): unknown {
+    try {
+      // Exercise the public JavaScript boundary with deliberately untyped options.
+      Reflect.apply(nativeBackend, undefined, [options]);
+    } catch (err) {
+      expect(err).toBeInstanceOf(AgentSessionError);
+      assertNaxError(err);
+      return err.code;
+    }
+    return undefined;
+  }
+
+  /** Opens `profile` with `extra` backend options and returns the sorted declared tool names. */
+  async function declared(profile: AgentSessionProfile, extra: Partial<NativeOptions> = {}): Promise<string[]> {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    const opened = await openBackend(nativeBackend({ model: MODEL, ...extra }), await ctx({ profile }));
+    return (opened.turnOpts().codingTools ?? []).map((tool) => tool.name).sort();
+  }
+
+  test("AC-1: a string array is accepted and returns a backend", () => {
+    expect(nativeBackend({ model: MODEL, allowedTools: ["Read"] }).kind).toBe(NATIVE_BACKEND_KIND);
+  });
+
+  test("AC-2: an empty-string entry is AGENT_SESSION_INVALID_OPTIONS", () => {
+    expect(invalidCode({ model: MODEL, allowedTools: [""] })).toBe("AGENT_SESSION_INVALID_OPTIONS");
+  });
+
+  test("AC-3: a non-array value is AGENT_SESSION_INVALID_OPTIONS", () => {
+    expect(invalidCode({ model: MODEL, allowedTools: "Read" })).toBe("AGENT_SESSION_INVALID_OPTIONS");
+  });
+
+  test("AC-4: full without allowedTools declares every built-in and the scratchpad trio", async () => {
+    expect(await declared("full")).toEqual(
+      [...TRIO, "Read", "Glob", "Grep", "Git", "Write", "Edit", "Delete", "Bash"].sort(),
+    );
+  });
+
+  test("AC-5: full with [Read, Grep] declares exactly the trio plus Read and Grep", async () => {
+    expect(await declared("full", { allowedTools: ["Read", "Grep"] })).toEqual([...TRIO, "Grep", "Read"].sort());
+  });
+
+  test("AC-6: full with [] declares exactly the scratchpad trio", async () => {
+    expect(await declared("full", { allowedTools: [] })).toEqual(TRIO);
+  });
+
+  test("AC-7: read with [Read, Bash] declares no Bash tool", async () => {
+    const names = await declared("read", { allowedTools: ["Read", "Bash"] });
+    expect(names).not.toContain("Bash");
+    expect(names).toEqual([...TRIO, "Read"].sort());
+  });
+
+  test("AC-8: an entry naming nothing available is ignored", async () => {
+    expect(await declared("full", { allowedTools: ["Read", "NoSuchTool"] })).toEqual([...TRIO, "Read"].sort());
+  });
+
+  describe("coding-tool interactions", () => {
+    /** Opens `profile` with an ask port that records every event, and a handler for coding-tool calls. */
+    async function interactive(profile: AgentSessionProfile, options: Partial<NativeOptions>) {
+      stubSessionSandboxDeps(_sessionSandboxDeps);
+      const events: SessionEventBody[] = [];
+      const table = createPendingAskTable(30_000);
+      const opened = await openBackend(
+        nativeBackend({ model: MODEL, ...options }),
+        await ctx({
+          profile,
+          asks: createSessionAskPort({
+            table,
+            emit: (body) => events.push(body),
+            turn: () => ({ turnId: "t1", signal: IDLE }),
+          }),
+        }),
+      );
+      const interact = (name: string, input: Record<string, unknown>) =>
+        opened.turnOpts().interactionHandler?.onInteraction({ kind: "coding-tool", name, input, toolCallId: "c1" });
+      const approvals = () => events.filter((event) => event.type === "approval_requested");
+      return { interact, approvals };
+    }
+
+    test("AC-15: ask with [Edit] still puts an Edit to the person", async () => {
+      const { interact, approvals } = await interactive("ask", { allowedTools: ["Edit"] });
+      const pending = interact("Edit", { path: "a.txt", old_string: "a", new_string: "b" });
+      await waitForCondition(() => approvals().length > 0);
+      expect(approvals()).toMatchObject([{ type: "approval_requested", tool: "Edit" }]);
+      void pending?.catch(() => {}); // left unanswered; closing the session settles it
+    });
+
+    test("AC-16: ask + gated with [Bash] still puts a Bash command to the person", async () => {
+      const { interact, approvals } = await interactive("ask", { bashApproval: "gated", allowedTools: ["Bash"] });
+      const pending = interact("Bash", { command: "echo hi" });
+      await waitForCondition(() => approvals().length > 0);
+      expect(approvals()).toMatchObject([{ type: "approval_requested", tool: "Bash" }]);
+      void pending?.catch(() => {});
+    });
+
+    test("AC-17/AC-18: full with [Read] refuses a Write and never runs the Write tool", async () => {
+      const run = spyOn(writeTool, "run").mockResolvedValue({ content: "wrote" });
+      try {
+        const { interact } = await interactive("full", { allowedTools: ["Read"] });
+        const response = await interact("Write", { path: "a.txt", content: "x" });
+        // A refusal, not a result: the policy denies a tool the session never granted.
+        expect(response?.denied).toBeDefined();
+        expect(response?.answer).toContain("Denied");
+        expect(run).not.toHaveBeenCalled();
+      } finally {
+        run.mockRestore();
+      }
+    });
+
+    test("AC-18 control: without allowedTools the same Write does run the tool", async () => {
+      const run = spyOn(writeTool, "run").mockResolvedValue({ content: "wrote" });
+      try {
+        const { interact } = await interactive("full", {});
+        expect(await interact("Write", { path: "a.txt", content: "x" })).toEqual({ answer: "wrote" });
+        expect(run).toHaveBeenCalledTimes(1);
+      } finally {
+        run.mockRestore();
+      }
+    });
   });
 });
 
