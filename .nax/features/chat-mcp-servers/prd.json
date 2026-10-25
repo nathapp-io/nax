@@ -3,7 +3,7 @@
   "feature": "chat-mcp-servers",
   "branchName": "feat/chat-mcp-servers",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T12:48:39.428Z",
+  "updatedAt": "2026-10-25T13:14:57.976Z",
   "userStories": [
     {
       "id": "US-001",
@@ -113,14 +113,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Coordinates schema, client, pool and provider contracts with credential-bearing headers and read-only approval metadata crossing the lock boundary."
+        "reasoning": "Coordinates schema, client, pool and provider contracts with credential-bearing headers and read-only approval metadata crossing the lock boundary.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/mcp/types.ts",
@@ -144,7 +147,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fb45b2056cd743034a606d27417a735cc3c389c0"
     },
     {
       "id": "US-003",
