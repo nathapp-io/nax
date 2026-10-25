@@ -5,7 +5,13 @@
  */
 import { randomUUID } from "node:crypto";
 import type { Readable, Writable } from "node:stream";
-import { configureCredentials, createFileTranscriptStore, redactSecrets, setAgentLogger } from "@nathapp/nax-agent";
+import {
+  configureCredentials,
+  createFileTranscriptStore,
+  createSessionStorage,
+  redactSecrets,
+  setAgentLogger,
+} from "@nathapp/nax-agent";
 import { connectMcp } from "@nathapp/nax-agent/mcp";
 import { type AuthPorts, loadServerAuth, NAX_AGENT_AUTH } from "#src/server/auth";
 import { type CliCommand, type CliFlags, parseCli, USAGE } from "#src/server/cli";
@@ -25,7 +31,6 @@ import { catalogOverridesFrom, nativeOpenSession } from "#src/server/open-sessio
 import { type Env, resolveConfigDir, resolveServerOptions } from "#src/server/options";
 import { createSessionRegistry } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
-import { createSessionStorage } from "#src/server/storage";
 import { fsReadOldText } from "#src/server/translate/diff";
 import { packageVersion } from "#src/server/version";
 

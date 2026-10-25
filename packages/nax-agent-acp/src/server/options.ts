@@ -3,6 +3,7 @@
  * built-in default. Config dir: master plan M-5.
  */
 import { join } from "node:path";
+import { defaultSessionsDir } from "@nathapp/nax-agent";
 import type { CliFlags } from "#src/server/cli";
 import {
   BASH_APPROVALS,
@@ -135,7 +136,7 @@ export function resolveServerOptions(input: {
       from(flags.sessionsDir, "--sessions-dir"),
       from(env.NAX_AGENT_SESSIONS_DIR, "NAX_AGENT_SESSIONS_DIR"),
       from(file.agentServer.sessionsDir, "config.json agentServer.sessionsDir"),
-    )?.value ?? join(configDir, ".agent-server", "sessions");
+    )?.value ?? defaultSessionsDir(configDir);
   const defaultModel = firstSet(
     from(flags.model, "--model"),
     from(env.NAX_AGENT_MODEL, "NAX_AGENT_MODEL"),

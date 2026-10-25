@@ -142,6 +142,9 @@ type InterceptResult
 type InvalidToolCallDetail
 type JSONSchema
 LIKELY_SANDBOX_DENIAL
+LIST_PAGE_SIZE
+LOCK_HEARTBEAT_MS
+LOCK_STALE_MS
 type LaunchRequest
 type LaunchResult
 type LaunchSpec
@@ -222,6 +225,8 @@ type RuleContext
 type RuleResult
 SANDBOXED_ENV
 SCRATCHPAD_DIR
+SESSION_ID_PATTERN
+SESSION_META_MODES
 SPILL_DIR
 SYSTEMONE_MODEL_LABEL
 type SandboxBackend
@@ -240,8 +245,16 @@ type SessionEvent
 type SessionEventBase
 type SessionEventBody
 type SessionHandle
+type SessionListEntry
+type SessionListPage
+type SessionLockHolder
+type SessionLockHolderState
+type SessionMeta
+type SessionMetaMode
 type SessionModel
 type SessionSandbox
+type SessionStorage
+type SessionStorageDeps
 SessionTurnError
 type ShadowCall
 type ShadowTap
@@ -326,6 +339,7 @@ createFileTranscriptStore
 createMemoryTranscriptStore
 createNoOpToolAuditSink
 createRunCommandTool
+createSessionStorage
 createSrtBackend
 createStderrTail
 createSystemOneClient
@@ -334,6 +348,7 @@ createToolAuditSink
 createTurnDeadline
 credentialFilePath
 cutBufferToByteCap
+defaultSessionsDir
 defaultTempRoots
 deleteTool
 denialHintLine
@@ -395,6 +410,7 @@ prepareApprovalsStore
 priceCall
 probeSandbox
 probeSandboxOnce
+processAlive
 providerAttachesTo
 providersWithoutCredentials
 pruneRetainedTranscripts

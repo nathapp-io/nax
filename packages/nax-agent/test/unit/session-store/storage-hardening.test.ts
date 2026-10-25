@@ -4,9 +4,17 @@ import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
-import { _lockDeps } from "#src/server/session-lock";
-import { createSessionStorage, LOCK_HEARTBEAT_MS, LOCK_STALE_MS, type StorageDeps } from "#src/server/storage";
-import { recordingLogger } from "#test/helpers/recording-logger";
+import { NaxError } from "#src/infra/nax-error";
+import {
+  _lockDeps,
+  acquireSessionLock,
+  holderState,
+  LOCK_HEARTBEAT_MS,
+  LOCK_STALE_MS,
+  type SessionStorageDeps,
+} from "#src/session-store/session-lock";
+import { SessionLockGuardBusy, withSessionLockGuard } from "#src/session-store/session-lock-guard";
+import { makeLogger } from "#test/helpers/agent-logger";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -19,12 +27,12 @@ function setup() {
   let tick: () => void | Promise<void> = () => {};
   let interval = 0;
   let handle: ReturnType<typeof setInterval> | undefined;
-  const deps: StorageDeps = {
+  const deps: SessionStorageDeps = {
     dir,
     pid: 1000,
     now: () => new Date(now),
     isAlive: () => true,
-    logger: recordingLogger().logger,
+    logger: makeLogger(),
     setInterval: (fn, ms) => {
       tick = fn;
       interval = ms;
@@ -36,7 +44,7 @@ function setup() {
   return {
     deps,
     path,
-    store: createSessionStorage(deps),
+    acquire: (id = "a") => acquireSessionLock(join(dir, `${id}.lock`), deps, deps.isAlive ?? (() => true)),
     read: async () => JSON.parse(await readFile(path, "utf8")),
     advance: async () => {
       now += 30_000;
@@ -49,13 +57,13 @@ function setup() {
 
 test("unique nonces, atomic heartbeat, owned release and loss of ownership", async () => {
   const s = setup();
-  const release = await s.store.acquireLock("a");
+  const release = s.acquire("a");
   const first = await s.read();
   expect(first.nonce).toEqual(expect.any(String));
   expect(s.interval()).toBe(LOCK_HEARTBEAT_MS);
   await s.advance();
   expect((await s.read()).heartbeatAt).not.toBe(first.heartbeatAt);
-  const otherRelease = await s.store.acquireLock("b");
+  const otherRelease = s.acquire("b");
   const other = JSON.parse(await readFile(join(s.deps.dir, "b.lock"), "utf8"));
   expect(other.nonce).not.toBe(first.nonce);
   await writeFile(s.path, JSON.stringify({ ...first, nonce: "replacement" }));
@@ -67,7 +75,7 @@ test("unique nonces, atomic heartbeat, owned release and loss of ownership", asy
 
 test.each([false, true])("release retries contention and preserves a replacement: %s", async (replace) => {
   const s = setup();
-  const release = await s.store.acquireLock("a");
+  const release = s.acquire("a");
   const first = await s.read();
   const guard = `${s.path}.guard`;
   await mkdir(guard);
@@ -95,7 +103,7 @@ test.each([false, true])("release retries contention and preserves a replacement
 
 test("a terminal release error still stops the heartbeat", async () => {
   const s = setup();
-  const release = await s.store.acquireLock("a");
+  const release = s.acquire("a");
   const handle = s.timer();
   const originalRemove = _lockDeps.remove;
   const originalClear = globalThis.clearInterval;
@@ -130,9 +138,9 @@ test.each(["stale", "fresh", "own"])("handles %s live lock", async (kind) => {
       heartbeatAt: new Date(now - (kind === "stale" ? LOCK_STALE_MS + 1 : 0)).toISOString(),
     }),
   );
-  if (kind === "fresh") await expect(s.store.acquireLock("a")).rejects.toThrow("session in use");
+  if (kind === "fresh") expect(() => s.acquire("a")).toThrow("session in use");
   else {
-    const release = await s.store.acquireLock("a");
+    const release = s.acquire("a");
     expect((await s.read()).nonce).not.toBe("old");
     await release();
   }
@@ -144,8 +152,11 @@ test("distinct process identities racing a stale lock have one winner and one re
     s.path,
     JSON.stringify({ pid: 3000, startedAt: "x", nonce: "old", heartbeatAt: "2000-01-01T00:00:00Z" }),
   );
-  const second = createSessionStorage({ ...s.deps, pid: 2000 });
-  const results = await Promise.allSettled([s.store.acquireLock("a"), second.acquireLock("a")]);
+  const second = { ...s.deps, pid: 2000 };
+  const results = await Promise.allSettled([
+    Promise.resolve().then(() => s.acquire("a")),
+    Promise.resolve().then(() => acquireSessionLock(s.path, second, () => true)),
+  ]);
   expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
   expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
   for (const r of results) if (r.status === "fulfilled") await r.value();
@@ -153,7 +164,7 @@ test("distinct process identities racing a stale lock have one winner and one re
 
 test("heartbeat never recreates a missing lock", async () => {
   const s = setup();
-  const release = await s.store.acquireLock("a");
+  const release = s.acquire("a");
   await rm(s.path);
   await s.advance();
   await expect(readFile(s.path)).rejects.toMatchObject({ code: "ENOENT" });
@@ -173,7 +184,7 @@ test.each(["restore", "newer", "lost-rename"])("takeover protects a raced holder
     if (kind === "newer") writeFileSync(s.path, JSON.stringify({ ...winner, nonce: "newest" }));
   };
   try {
-    await expect(s.store.acquireLock("a")).rejects.toThrow("session in use");
+    expect(() => s.acquire("a")).toThrow("session in use");
     expect((await s.read()).nonce).toBe(kind === "newer" ? "newest" : "winner");
     if (kind === "newer") {
       const saved = (await readdir(s.deps.dir)).find((name) => name.endsWith(".stale"));
@@ -189,14 +200,18 @@ test.each(["heartbeat", "release"] as const)(
   "serializes a separate-process takeover at the %s mutation barrier",
   async (kind) => {
     const s = setup();
-    const release = await s.store.acquireLock("a");
+    const release = s.acquire("a");
     const originalRename = _lockDeps.rename;
     const originalRemove = _lockDeps.remove;
     const contend = () => {
-      const child = spawnSync(process.execPath, [join(import.meta.dir, "../../fixtures/lock-contender.ts"), s.path], {
-        encoding: "utf8",
-        timeout: 10_000,
-      });
+      const child = spawnSync(
+        process.execPath,
+        [join(import.meta.dir, "../../fixtures/session-store/lock-contender.ts"), s.path],
+        {
+          encoding: "utf8",
+          timeout: 10_000,
+        },
+      );
       expect(child.status).toBe(0);
       return JSON.parse(child.stdout);
     };
@@ -240,7 +255,7 @@ test("recovers a guard abandoned by a process that died in its critical section"
   const s = setup();
   const child = spawnSync(
     process.execPath,
-    [join(import.meta.dir, "../../fixtures/lock-contender.ts"), s.path, "crash-guard"],
+    [join(import.meta.dir, "../../fixtures/session-store/lock-contender.ts"), s.path, "crash-guard"],
     {
       encoding: "utf8",
       timeout: 10_000,
@@ -248,7 +263,7 @@ test("recovers a guard abandoned by a process that died in its critical section"
   );
   expect(child.status).toBe(0);
   expect((await readdir(`${s.path}.guard`)).length).toBe(1);
-  const release = await s.store.acquireLock("a");
+  const release = s.acquire("a");
   expect((await s.read()).pid).toBe(1000);
   await release();
   expect(await readdir(s.deps.dir)).toEqual([]);
@@ -266,10 +281,100 @@ test("creation links a fully written body, never an empty lock", async () => {
     original(from, to);
   };
   try {
-    const release = await s.store.acquireLock("a");
+    const release = s.acquire("a");
     expect(checked).toBe(true);
     await release();
   } finally {
     _lockDeps.link = original;
   }
+});
+
+const freshBody = {
+  pid: 4242,
+  startedAt: "2026-10-09T00:00:00.000Z",
+  nonce: "old",
+  heartbeatAt: "2026-10-09T00:00:00.000Z",
+};
+
+test("AC-1..4: fresh live refusal is neutral, identifies the holder and preserves bytes", async () => {
+  const s = setup();
+  const bytes = JSON.stringify(freshBody, null, 2);
+  await writeFile(s.path, bytes);
+  let refusal: unknown;
+  try {
+    s.acquire();
+  } catch (error) {
+    refusal = error;
+  }
+  expect(refusal).toBeInstanceOf(NaxError);
+  expect(refusal).toMatchObject({
+    code: "SESSION_LOCKED",
+    message: "session in use by pid 4242",
+    context: { stage: "session-store", pid: 4242 },
+  });
+  expect(await readFile(s.path, "utf8")).toBe(bytes);
+});
+
+test.each(["stale-heartbeat", "dead-pid"])("AC-5..9,11: %s takeover logs, owns and releases", async (kind) => {
+  const s = setup();
+  const logger = makeLogger();
+  const body = { ...freshBody, heartbeatAt: new Date(s.deps.now().getTime() - LOCK_STALE_MS - 1).toISOString() };
+  await writeFile(s.path, JSON.stringify(kind === "dead-pid" ? freshBody : body));
+  const release = acquireSessionLock(s.path, { ...s.deps, logger }, () => kind !== "dead-pid");
+  expect(typeof release).toBe("function");
+  expect((await s.read()).pid).toBe(1000);
+  expect(logger.calls).toContainEqual({
+    level: "info",
+    stage: "session",
+    message: "taking over a stale session lock",
+    data: { pid: 4242 },
+  });
+  await release();
+  await expect(readFile(s.path)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+test("AC-10: legacy live holder has no expiry", async () => {
+  const s = setup();
+  await writeFile(s.path, JSON.stringify({ pid: 4242, startedAt: "x" }));
+  expect(() => s.acquire()).toThrow(expect.objectContaining({ code: "SESSION_LOCKED" }));
+});
+
+test("AC-13..14: heartbeat uses the unchanged interval and advanced clock", async () => {
+  const s = setup();
+  const release = s.acquire();
+  try {
+    expect(LOCK_HEARTBEAT_MS).toBe(30000);
+    expect(s.interval()).toBe(LOCK_HEARTBEAT_MS);
+    await s.advance();
+    expect((await s.read()).heartbeatAt).toBe("2026-10-09T00:00:30.000Z");
+  } finally {
+    await release();
+  }
+});
+
+test("AC-15..17: guard contention remains distinguishable and neutral", () => {
+  const s = setup();
+  const busy = new SessionLockGuardBusy();
+  expect(busy).toBeInstanceOf(NaxError);
+  expect(busy).toMatchObject({ code: "SESSION_LOCKED", context: { stage: "session-store" } });
+  withSessionLockGuard(s.path, () => {
+    expect(() => s.acquire()).toThrow(SessionLockGuardBusy);
+    expect(() => s.acquire()).toThrow("session in use by another process");
+  });
+});
+
+test.each([
+  ["boundary", 4242, true, LOCK_STALE_MS, "live"],
+  ["own-dead", 1000, false, 0, "own"],
+  ["dead", 4242, false, 0, "stale"],
+  ["expired", 4242, true, LOCK_STALE_MS + 1, "stale"],
+] as const)("AC-18..20: holder predicate %s", (_name, pid, alive, age, state) => {
+  const s = setup();
+  expect(
+    holderState(
+      { ...freshBody, pid, heartbeatAt: new Date(s.deps.now().getTime() - age).toISOString() },
+      s.deps,
+      () => alive,
+    ),
+  ).toBe(state);
 });

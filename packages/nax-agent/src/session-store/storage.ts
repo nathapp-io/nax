@@ -5,35 +5,43 @@
  * legacy locks remain pid-based. Listing scans the metadata files.
  * Files that cannot be read are never rewritten or deleted here.
  */
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ListSessionsResponse, SessionInfo } from "@agentclientprotocol/sdk";
-import { type AgentLogger, NaxError } from "@nathapp/nax-agent";
-import { z } from "zod";
-import { invalidParams, messageOf } from "#src/server/errors";
-import { BASH_APPROVALS, MODES } from "#src/server/nax-config";
-import { acquireSessionLock } from "#src/server/session-lock";
+import { errorMessage } from "#src/infra/errors";
+import { NaxError } from "#src/infra/nax-error";
+import {
+  acquireSessionLock,
+  holderState,
+  readSessionLock,
+  type SessionLockHolderState,
+  type SessionStorageDeps,
+} from "./session-lock.ts";
+import { MetaSchema, type SessionMeta } from "./session-meta.ts";
 
-export { LOCK_HEARTBEAT_MS, LOCK_STALE_MS } from "#src/server/session-lock";
+export type { SessionLockHolderState, SessionStorageDeps } from "./session-lock.ts";
 
-export const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+export interface SessionLockHolder {
+  readonly pid: number;
+  readonly startedAt: string;
+  readonly heartbeatAt: string | null;
+  readonly state: SessionLockHolderState;
+}
+
+export { LOCK_HEARTBEAT_MS, LOCK_STALE_MS } from "./session-lock.ts";
+
 export const LIST_PAGE_SIZE = 50;
 const META_SUFFIX = ".session.json";
 
-const MetaSchema = z.object({
-  schemaVersion: z.literal(1),
-  sessionId: z.string().min(1),
-  cwd: z.string().min(1),
-  mode: z.enum(MODES),
-  model: z.string().min(1),
-  bashApproval: z.enum(BASH_APPROVALS),
-  title: z.string().nullable(),
-  createdAt: z.string(),
-  updatedAt: z.string().nullable(),
-  costUsd: z.number().optional(),
-});
-
-export type SessionMeta = Readonly<z.infer<typeof MetaSchema>>;
+export interface SessionListEntry {
+  readonly sessionId: string;
+  readonly cwd: string;
+  readonly title: string | null;
+  readonly updatedAt: string;
+}
+export interface SessionListPage {
+  sessions: SessionListEntry[];
+  nextCursor?: string;
+}
 
 export interface SessionStorage {
   readonly dir: string;
@@ -41,18 +49,11 @@ export interface SessionStorage {
   writeMeta(meta: SessionMeta): Promise<void>;
   hasMeta(sessionId: string): Promise<boolean>;
   removeMeta(sessionId: string): Promise<void>;
-  /** Resolves to the release function; refuses with invalid_request when another live process holds it. */
+  /** Resolves to the release function; refuses with SESSION_LOCKED when another live process holds it. */
   acquireLock(sessionId: string): Promise<() => Promise<void>>;
-  list(query: { readonly cwd?: string | null; readonly cursor?: string | null }): Promise<ListSessionsResponse>;
-}
-
-export interface StorageDeps {
-  readonly dir: string;
-  readonly pid: number;
-  readonly now: () => Date;
-  readonly logger: AgentLogger;
-  readonly setInterval?: (callback: () => void, ms: number) => ReturnType<typeof setInterval>;
-  readonly isAlive?: (pid: number) => boolean;
+  /** Unguarded, read-only snapshot; only acquireLock decides ownership. A concurrent rename may yield null. */
+  readLockHolder(sessionId: string): Promise<SessionLockHolder | null>;
+  list(query: { readonly cwd?: string | null; readonly cursor?: string | null }): Promise<SessionListPage>;
 }
 
 function codeOf(error: unknown): string | undefined {
@@ -73,7 +74,7 @@ export function processAlive(pid: number): boolean {
 
 function unreadable(sessionId: string, reason: string): NaxError {
   return new NaxError(`session metadata for "${sessionId}" is unreadable: ${reason}`, "SESSION_META_UNREADABLE", {
-    stage: "agent-server",
+    stage: "session-store",
     sessionId,
   });
 }
@@ -86,17 +87,18 @@ function decodeCursor(cursor: string | null | undefined): number {
   if (cursor === undefined || cursor === null || cursor === "") return 0;
   const text = Buffer.from(cursor, "base64").toString("utf8");
   const offset = Number(text);
-  if (!/^\d+$/.test(text) || !Number.isSafeInteger(offset)) throw invalidParams("invalid cursor");
+  if (!/^\d+$/.test(text) || !Number.isSafeInteger(offset))
+    throw new NaxError("invalid cursor", "SESSION_LIST_CURSOR_INVALID", { stage: "session-store" });
   return offset;
 }
 
 const sortKey = (meta: SessionMeta): string => meta.updatedAt ?? meta.createdAt;
 
-function infoOf(meta: SessionMeta): SessionInfo {
+function infoOf(meta: SessionMeta): SessionListEntry {
   return { sessionId: meta.sessionId, cwd: meta.cwd, title: meta.title, updatedAt: sortKey(meta) };
 }
 
-export function createSessionStorage(deps: StorageDeps): SessionStorage {
+export function createSessionStorage(deps: SessionStorageDeps): SessionStorage {
   const isAlive = deps.isAlive ?? processAlive;
   const metaPath = (id: string): string => join(deps.dir, `${id}${META_SUFFIX}`);
   const lockPath = (id: string): string => join(deps.dir, `${id}.lock`);
@@ -107,7 +109,7 @@ export function createSessionStorage(deps: StorageDeps): SessionStorage {
       text = await readFile(metaPath(sessionId), "utf8");
     } catch (error) {
       if (codeOf(error) === "ENOENT") return null;
-      throw unreadable(sessionId, messageOf(error));
+      throw unreadable(sessionId, errorMessage(error));
     }
     let json: unknown;
     try {
@@ -131,7 +133,7 @@ export function createSessionStorage(deps: StorageDeps): SessionStorage {
   async function list(query: {
     readonly cwd?: string | null;
     readonly cursor?: string | null;
-  }): Promise<ListSessionsResponse> {
+  }): Promise<SessionListPage> {
     const offset = decodeCursor(query.cursor);
     let names: string[];
     try {
@@ -146,7 +148,7 @@ export function createSessionStorage(deps: StorageDeps): SessionStorage {
         const meta = await readMeta(name.slice(0, -META_SUFFIX.length));
         if (meta !== null) metas.push(meta);
       } catch (error) {
-        deps.logger.warn("session", "skipping unreadable session metadata", { file: name, error: messageOf(error) });
+        deps.logger.warn("session", "skipping unreadable session metadata", { file: name, error: errorMessage(error) });
       }
     }
     const matching = metas
@@ -165,22 +167,40 @@ export function createSessionStorage(deps: StorageDeps): SessionStorage {
     async writeMeta(meta) {
       await mkdir(deps.dir, { recursive: true });
       const path = metaPath(meta.sessionId);
-      const temp = `${path}.${deps.pid}.tmp`;
-      await writeFile(temp, `${JSON.stringify(meta, null, 2)}\n`);
-      await rename(temp, path);
+      // An exclusively created directory owns this write's temp file, even when
+      // another storage instance in the same process writes the same session.
+      const tempDir = await mkdtemp(`${path}.${deps.pid}.`);
+      try {
+        const temp = join(tempDir, "metadata.tmp");
+        await writeFile(temp, `${JSON.stringify(meta, null, 2)}\n`);
+        await rename(temp, path);
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
     },
     async hasMeta(sessionId) {
       try {
         await stat(metaPath(sessionId));
         return true;
-      } catch {
-        return false;
+      } catch (error) {
+        if (codeOf(error) === "ENOENT") return false;
+        throw error;
       }
     },
     async removeMeta(sessionId) {
       await rm(metaPath(sessionId), { force: true });
     },
     acquireLock,
+    async readLockHolder(sessionId) {
+      const { body } = readSessionLock(lockPath(sessionId));
+      if (body === undefined) return null;
+      return {
+        pid: body.pid,
+        startedAt: body.startedAt,
+        heartbeatAt: body.heartbeatAt ?? null,
+        state: holderState(body, deps, isAlive),
+      };
+    },
     list,
   };
 }

@@ -15,7 +15,7 @@ import {
   RequestError,
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
-import { createMemoryTranscriptStore } from "@nathapp/nax-agent";
+import { createMemoryTranscriptStore, createSessionStorage } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { waitForCondition, withTimeout } from "@nathapp/nax-test-kit/bun/timeout";
 import { buildAgentApp } from "#src/server/connection";
@@ -23,7 +23,6 @@ import type { OpenSessionRequest } from "#src/server/open-session";
 import type { ServerOptions } from "#src/server/options";
 import { createSessionRegistry, type SessionRegistry } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
-import { createSessionStorage } from "#src/server/storage";
 import { type FakeAgentSession, fakeAgentSession, type Script, turnEnd } from "#test/helpers/fake-agent-session";
 import { recordingLogger } from "#test/helpers/recording-logger";
 

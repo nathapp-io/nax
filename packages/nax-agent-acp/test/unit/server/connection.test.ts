@@ -2,14 +2,13 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { PassThrough } from "node:stream";
 import { client, PROTOCOL_VERSION, RequestError } from "@agentclientprotocol/sdk";
-import { createMemoryTranscriptStore } from "@nathapp/nax-agent";
+import { createMemoryTranscriptStore, createSessionStorage, SESSION_ID_PATTERN } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { createServerAuth } from "#src/server/auth";
 import { initializeResponse } from "#src/server/capabilities";
 import { buildAgentApp, serveStdio } from "#src/server/connection";
 import { createSessionRegistry, type RegistryDeps } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
-import { createSessionStorage, SESSION_ID_PATTERN } from "#src/server/storage";
 import { recordingLogger } from "#test/helpers/recording-logger";
 
 let dir: string;

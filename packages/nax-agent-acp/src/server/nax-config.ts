@@ -10,6 +10,7 @@ import {
   type CredentialsConfig,
   type NativeBackendOptions,
   nativeBackend,
+  SESSION_META_MODES,
 } from "@nathapp/nax-agent";
 import { z } from "zod";
 
@@ -49,7 +50,7 @@ export interface LoadedNaxConfig {
   readonly warning?: string;
 }
 
-export const MODES = ["none", "read", "ask", "full"] as const;
+export const MODES = SESSION_META_MODES;
 /** The profiles an ACP server session may run; `review` is a client-side profile (nax#2500). */
 export type ServerMode = (typeof MODES)[number];
 export const BASH_APPROVALS = ["gated", "escalate", "raw"] as const;

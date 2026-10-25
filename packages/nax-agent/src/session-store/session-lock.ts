@@ -2,10 +2,20 @@
 import { randomUUID } from "node:crypto";
 import { linkSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
-import { RequestError } from "@agentclientprotocol/sdk";
 import { z } from "zod";
-import { withSessionLockGuard as guarded, SessionLockGuardBusy } from "#src/server/session-lock-guard";
-import type { StorageDeps } from "#src/server/storage";
+import type { AgentLogger } from "#src/infra/index";
+import { NaxError } from "#src/infra/nax-error";
+import { withSessionLockGuard as guarded, SessionLockGuardBusy } from "./session-lock-guard.ts";
+
+export interface SessionStorageDeps {
+  readonly dir: string;
+  readonly pid: number;
+  readonly now: () => Date;
+  readonly logger: AgentLogger;
+  readonly setInterval?: (callback: () => void, ms: number) => ReturnType<typeof setInterval>;
+  readonly isAlive?: (pid: number) => boolean;
+}
+export type SessionLockHolderState = "live" | "stale" | "own";
 
 export const LOCK_HEARTBEAT_MS = 30_000;
 export const LOCK_STALE_MS = 120_000;
@@ -39,14 +49,21 @@ function read(path: string): { text?: string; body?: Body } {
     return text === undefined ? {} : { text };
   }
 }
+
+// Internal shared reader: snapshots and mutation decisions accept the same lock bodies.
+export { read as readSessionLock };
+
 function same(a: ReturnType<typeof read>, b: ReturnType<typeof read>): boolean {
   if (a.body?.nonce !== undefined) return a.body.nonce === b.body?.nonce;
   if (a.body !== undefined)
     return b.body?.nonce === undefined && a.body.pid === b.body?.pid && a.body.startedAt === b.body.startedAt;
   return a.text === b.text;
 }
-const refused = (pid?: number) =>
-  RequestError.invalidRequest(undefined, `session in use by ${pid === undefined ? "another process" : `pid ${pid}`}`);
+const refused = (pid?: number): NaxError =>
+  new NaxError(`session in use by ${pid === undefined ? "another process" : `pid ${pid}`}`, "SESSION_LOCKED", {
+    stage: "session-store",
+    ...(pid !== undefined ? { pid } : {}),
+  });
 
 function create(path: string, body: Body): boolean {
   const temp = `${path}.${body.nonce}.tmp`;
@@ -62,15 +79,26 @@ function create(path: string, body: Body): boolean {
   }
 }
 
-function takeover(path: string, body: Body, deps: StorageDeps, isAlive: (pid: number) => boolean): void {
+/** Shared snapshot classification; ownership takes precedence over liveness. */
+export function holderState(
+  body: Body,
+  deps: SessionStorageDeps,
+  isAlive: (pid: number) => boolean,
+): SessionLockHolderState {
+  if (body.pid === deps.pid) return "own";
+  if (
+    isAlive(body.pid) &&
+    (body.heartbeatAt === undefined || deps.now().getTime() - Date.parse(body.heartbeatAt) <= LOCK_STALE_MS)
+  ) {
+    return "live";
+  }
+  return "stale";
+}
+
+function takeover(path: string, body: Body, deps: SessionStorageDeps, isAlive: (pid: number) => boolean): void {
   const old = read(path);
   const holder = old.body;
-  const fresh =
-    holder !== undefined &&
-    holder.pid !== deps.pid &&
-    isAlive(holder.pid) &&
-    (holder.heartbeatAt === undefined || deps.now().getTime() - Date.parse(holder.heartbeatAt) <= LOCK_STALE_MS);
-  if (fresh) throw refused(holder.pid);
+  if (holder !== undefined && holderState(holder, deps, isAlive) === "live") throw refused(holder.pid);
   const stale = `${path}.${body.nonce}.stale`;
   try {
     _lockDeps.rename(path, stale);
@@ -119,7 +147,7 @@ async function releaseOwnedLock(path: string, nonce: string): Promise<void> {
 
 export function acquireSessionLock(
   path: string,
-  deps: StorageDeps,
+  deps: SessionStorageDeps,
   isAlive: (pid: number) => boolean,
 ): () => Promise<void> {
   const stamp = deps.now().toISOString();

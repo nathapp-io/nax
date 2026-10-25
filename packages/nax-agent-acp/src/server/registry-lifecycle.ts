@@ -1,5 +1,5 @@
 /** Bounded registry shutdown and ownership cleanup. */
-import type { AgentLogger } from "@nathapp/nax-agent";
+import type { AgentLogger, SessionMeta } from "@nathapp/nax-agent";
 import { stripControl, stripInvisible } from "#src/client/text";
 import type { ClientPort } from "#src/server/client-port";
 import { messageOf } from "#src/server/errors";
@@ -7,7 +7,6 @@ import type { McpSessionTools } from "#src/server/mcp/session-tools";
 import type { OpenedSession } from "#src/server/open-session";
 import type { Entry, RegistryDeps } from "#src/server/registry";
 import { createServerSession, type ServerSession } from "#src/server/server-session";
-import type { SessionMeta } from "#src/server/storage";
 
 function waitAtMost(ms: number): { readonly done: Promise<"timeout">; cancel(): void } {
   let timer: ReturnType<typeof setTimeout> | undefined;

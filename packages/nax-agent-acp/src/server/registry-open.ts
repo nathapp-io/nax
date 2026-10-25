@@ -5,14 +5,13 @@
  * in. Load replays the stored transcript (and warns when the last turn was
  * interrupted); resume reopens without replay.
  */
-import type { AgentLogger, TranscriptStore } from "@nathapp/nax-agent";
+import type { AgentLogger, SessionMeta, SessionStorage, TranscriptStore } from "@nathapp/nax-agent";
 import type { ClientPort } from "#src/server/client-port";
 import { unknownSession } from "#src/server/errors";
 import type { OpenedSession } from "#src/server/open-session";
 import type { Entry, OpenInput, SessionState } from "#src/server/registry";
 import type { ServerSession } from "#src/server/server-session";
 import type { SessionSettings } from "#src/server/session-config";
-import type { SessionMeta, SessionStorage } from "#src/server/storage";
 import { announce } from "#src/server/translate/notice";
 import { replayTranscript } from "#src/server/translate/replay";
 

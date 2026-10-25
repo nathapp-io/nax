@@ -1,12 +1,12 @@
 /** Short interprocess mutex for lock-file mutations, never stolen from a live process. */
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
-import { RequestError } from "@agentclientprotocol/sdk";
+import { NaxError } from "#src/infra/nax-error";
 
 /** Distinguishes retryable mutex contention from mutation and filesystem failures. */
-export class SessionLockGuardBusy extends RequestError {
+export class SessionLockGuardBusy extends NaxError {
   constructor() {
-    super(-32600, "session in use by another process");
+    super("session in use by another process", "SESSION_LOCKED", { stage: "session-store" });
   }
 }
 

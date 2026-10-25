@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { RequestError } from "@agentclientprotocol/sdk";
-import type { TranscriptDoc } from "@nathapp/nax-agent";
+import { NaxError, type TranscriptDoc } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { createSessionRegistry, INTERRUPTED_NOTICE, NO_MODEL_MESSAGE } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
@@ -163,7 +163,12 @@ describe("load and resume (spec §5.3, §5.4)", () => {
     const s = setup(OPTIONS, { isAlive: (pid) => pid === 4242 });
     const id = await stored(s);
     await writeFile(join(dir, `${id}.lock`), JSON.stringify({ pid: 4242, startedAt: "x" }));
-    expect((await failure(s.registry.load(id, s.input()))).message).toContain("session in use by pid 4242");
+    const error = await s.registry.load(id, s.input()).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(NaxError);
+    expect(error).toMatchObject({
+      code: "SESSION_LOCKED",
+      message: expect.stringContaining("session in use by pid 4242"),
+    });
   });
 
   test("loading an already-open session replays from the store and keeps the open session", async () => {
