@@ -10,6 +10,7 @@ import { type AskFallback, createAskFallback } from "./ask-fallback";
 import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import { type ChatMode, chatModeOfMeta } from "./chat-mode";
 import { type ChatSessionHandle, openChatSession } from "./open-chat-session";
+import type { ChatResources } from "./resources";
 import { runChatTurn } from "./turn-runner";
 
 const DEFAULT_CHAT_ASK_FALLBACK_MS = 60_000;
@@ -32,6 +33,8 @@ export interface ChatSessionRow {
 /** Shared-session chat lifecycle, independent of the terminal shell. */
 export interface ChatHost {
   readonly repoRoot: string;
+  readonly catalog?: ChatResources["catalog"];
+  readonly naxPlugins?: ChatResources["naxPlugins"];
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   current(): ChatHostState;
@@ -47,6 +50,7 @@ export interface ChatHost {
 }
 
 export interface ChatHostDeps {
+  readonly resources?: ChatResources;
   readonly config: NaxConfig;
   readonly cwd: string;
   readonly repoRoot: string;
@@ -76,6 +80,8 @@ async function closeHandle(handle: ChatSessionHandle): Promise<void> {
 
 class NativeChatHost implements ChatHost {
   readonly repoRoot: string;
+  readonly catalog?: ChatResources["catalog"];
+  readonly naxPlugins?: ChatResources["naxPlugins"];
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   private readonly fallback: AskFallback;
@@ -90,15 +96,20 @@ class NativeChatHost implements ChatHost {
 
   constructor(private readonly deps: ChatHostDeps) {
     this.repoRoot = deps.repoRoot;
+    this.catalog = deps.resources?.catalog;
+    this.naxPlugins = deps.resources?.naxPlugins;
     this.models = nativeModels(deps.config);
     this.projectKey = getProjectKey(deps.config, deps.repoRoot);
     this.outputDir = projectOutputDir(this.projectKey, deps.config.outputDir);
     const rules = deps.config.context.rules;
-    this.loopHandlers = createRuleDeliveryHandlers({
-      repoRoot: deps.repoRoot,
-      overrideDir: rules?.overrideDir,
-      overrideMode: rules?.overrideMode,
-    });
+    this.loopHandlers = Object.freeze([
+      ...(deps.resources?.pluginHandlers ?? []),
+      ...createRuleDeliveryHandlers({
+        repoRoot: deps.repoRoot,
+        overrideDir: rules?.overrideDir,
+        overrideMode: rules?.overrideMode,
+      }),
+    ]);
     this.asks = createChatAskController({
       mode: "guarded",
       answer: (id, reply) => {
@@ -147,6 +158,7 @@ class NativeChatHost implements ChatHost {
       repoRoot: this.repoRoot,
       config: this.deps.config,
       loopHandlers: this.loopHandlers,
+      ...(this.deps.resources ? { toolProviders: this.deps.resources.toolProviders } : {}),
     });
     await this.replace(next);
     this.resumeNotice = undefined;
@@ -207,6 +219,7 @@ class NativeChatHost implements ChatHost {
           repoRoot: this.repoRoot,
           config: this.deps.config,
           loopHandlers: this.loopHandlers,
+          ...(this.deps.resources ? { toolProviders: this.deps.resources.toolProviders } : {}),
           resumeId: id,
         });
       } catch (error) {
@@ -243,6 +256,7 @@ class NativeChatHost implements ChatHost {
       repoRoot: this.repoRoot,
       config: this.deps.config,
       loopHandlers: this.loopHandlers,
+      ...(this.deps.resources ? { toolProviders: this.deps.resources.toolProviders } : {}),
     });
     return { ...next, release: previous.release };
   }
@@ -314,7 +328,11 @@ class NativeChatHost implements ChatHost {
     try {
       if (this.handle) await closeHandle(this.handle);
     } finally {
-      await this.deps.chain?.destroy();
+      try {
+        await this.deps.resources?.teardown();
+      } finally {
+        await this.deps.chain?.destroy();
+      }
     }
   }
 }

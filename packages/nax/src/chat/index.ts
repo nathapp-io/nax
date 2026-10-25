@@ -25,4 +25,5 @@ export {
   openChatSession,
   resolveChatSessionsDir,
 } from "./open-chat-session";
+export type { ChatResources } from "./resources";
 export { type RunChatTurnOptions, runChatTurn } from "./turn-runner";

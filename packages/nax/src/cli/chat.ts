@@ -1,12 +1,15 @@
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Command } from "commander";
 import type { Instance } from "ink";
-import { type ChatHost, createChatHost, createChatStorage } from "@/chat";
-import { findProjectDir, loadConfig, type NaxConfig } from "@/config";
+import { type ChatHost, type ChatResources, createChatHost, createChatStorage } from "@/chat";
+import { findProjectDir, globalConfigDir, loadConfig, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { type InteractionChain, initInteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
+import { loadPlugins, PluginRegistry } from "@/plugins";
+import { createSkillsProvider, loadResourceCatalog, naxPluginPackages } from "@/resources";
+import { ensureProjectTrusted, normalizeTrustPath, resolveTrustRoot } from "@/trust";
 import { renderChat } from "@/tui/chat";
 
 const SIGNAL_EXIT_CODES = { SIGTERM: 143, SIGHUP: 129 } as const;
@@ -23,6 +26,11 @@ export interface ChatCommandOptions {
 
 export const _chatCommandDeps = {
   stdinIsTTY: (): boolean => process.stdin.isTTY === true,
+  ensureTrusted: async (cwd: string): Promise<void> => {
+    await ensureProjectTrusted(await normalizeTrustPath(resolveTrustRoot(cwd)), { interactive: true });
+  },
+  loadPlugins,
+  loadResourceCatalog,
   loadConfig,
   findProjectDir,
   initInteractionChain,
@@ -113,13 +121,47 @@ async function runShell(host: ChatHost, deps: ChatCommandDeps): Promise<void> {
   }
 }
 
-async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps): Promise<void> {
-  // CLI bootstrap anchor: keep cwd (possibly a package) distinct from the discovered root.
-  const cwd = resolve(options.dir ?? process.cwd());
+async function chatResources(repoRoot: string, config: NaxConfig, deps: ChatCommandDeps): Promise<ChatResources> {
+  let registry: PluginRegistry;
+  try {
+    registry = await deps.loadPlugins(
+      join(globalConfigDir(), "plugins"),
+      join(repoRoot, ".nax", "plugins"),
+      config.plugins ?? [],
+      repoRoot,
+      config.disabledPlugins,
+    );
+  } catch (error) {
+    deps.writeErr(`nax plugins unavailable: ${errorMessage(error)}`);
+    registry = new PluginRegistry([]);
+  }
+  try {
+    const catalog = await deps.loadResourceCatalog({
+      repoRoot,
+      config,
+      env: process.env,
+      naxPluginPackages: await naxPluginPackages(registry.getResourceDirs()),
+    });
+    return {
+      catalog,
+      toolProviders: [createSkillsProvider(async () => catalog)],
+      pluginHandlers: registry.getLoopHandlers(),
+      naxPlugins: registry.plugins.map(({ name, provides }) => ({ name, provides })),
+      teardown: () => registry.teardownAll(),
+    };
+  } catch (error) {
+    await registry.teardownAll();
+    throw error;
+  }
+}
+
+async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, cwd: string): Promise<void> {
   const naxDir = deps.findProjectDir(cwd);
   const config = options.profile?.length
     ? await deps.loadConfig(naxDir ?? undefined, { profile: options.profile })
     : await deps.loadConfig(naxDir ?? undefined);
+  const repoRoot = naxDir ? dirname(naxDir) : cwd;
+  const resources = await chatResources(repoRoot, config, deps);
   const log = (stage: string, message: string): void => deps.writeErr(`[${stage}] ${message}`);
   const logger = getSafeLogger() ?? { warn: log, error: log, info: log, debug: log };
   const storage = deps.createChatStorage({ pid: process.pid, now: () => new Date(), logger });
@@ -129,14 +171,19 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps): 
     host = deps.createChatHost({
       config,
       cwd,
-      repoRoot: naxDir ? dirname(naxDir) : cwd,
+      repoRoot,
+      resources,
       storage,
       chain,
       now: () => new Date(),
       logger,
     });
   } catch (error) {
-    await chain?.destroy();
+    try {
+      await resources.teardown();
+    } finally {
+      await chain?.destroy();
+    }
     throw error;
   }
   try {
@@ -166,8 +213,24 @@ export async function chatCommand(
     deps.setExitCode(1);
     return;
   }
+  // CLI bootstrap anchor: trust the launch directory before any repository composition.
+  const cwd = resolve(options.dir ?? process.cwd());
   try {
-    await composeChat(options, deps);
+    await deps.ensureTrusted(cwd);
+  } catch (error) {
+    if (error instanceof NaxError && error.code === "PROJECT_UNTRUSTED") {
+      const root = error.context?.root ?? cwd;
+      deps.writeErr(`Project not trusted: ${root}`);
+      deps.writeErr(typeof error.context?.hint === "string" ? error.context.hint : `run: nax trust add ${root}`);
+      deps.setExitCode(2);
+    } else {
+      deps.writeErr(errorMessage(error));
+      deps.setExitCode(error instanceof NaxError && error.code === "TRUST_STORE_UNREADABLE" ? 2 : 1);
+    }
+    return;
+  }
+  try {
+    await composeChat(options, deps, cwd);
   } catch (error) {
     deps.writeErr(errorMessage(error));
     deps.setExitCode(1);

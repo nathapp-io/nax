@@ -5,6 +5,8 @@ import { Command } from "commander";
 import { createChatHost, createChatStorage } from "@/chat";
 import { registerStatusCommand } from "@/cli/status-dispatch";
 import { NaxError } from "@/errors";
+import { PluginRegistry } from "@/plugins";
+import { buildResourceCatalog } from "@/resources";
 
 async function fixture() {
   const api = await import("@/cli/chat");
@@ -32,6 +34,9 @@ async function fixture() {
   const deps = {
     ...api._chatCommandDeps,
     stdinIsTTY: () => true,
+    ensureTrusted: async () => {},
+    loadPlugins: async () => new PluginRegistry([]),
+    loadResourceCatalog: async () => buildResourceCatalog([]),
     loadConfig: mock(async (..._args: Parameters<typeof api._chatCommandDeps.loadConfig>) => config),
     findProjectDir: mock((_dir: string): string | null => "/repo/.nax"),
     initInteractionChain: mock(
