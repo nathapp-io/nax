@@ -346,6 +346,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "interaction.config": "Plugin-specific configuration",
   "interaction.defaults": "Default interaction settings",
   "interaction.defaults.timeout": "Default timeout in milliseconds",
+  "interaction.defaults.chatAskFallbackMs":
+    "Delay in milliseconds before offering a terminal approval to the interaction chain",
   "interaction.defaults.fallback": "Default fallback behavior: continue | skip | escalate | abort",
   "interaction.triggers": "Enable/disable built-in triggers",
 

@@ -6,6 +6,7 @@ export {
   type ChatPendingAsk,
   createChatAskController,
 } from "./ask-controller";
+export { _askFallbackDeps, type AskFallback, type AskFallbackOptions, createAskFallback } from "./ask-fallback";
 export {
   type ChatMode,
   type ChatSessionSettings,

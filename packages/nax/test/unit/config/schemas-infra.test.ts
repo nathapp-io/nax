@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
 import { AgentRoutingConfigSchema, AgentRoutingProfileSchema, NaxConfigSchema } from "@/config";
 import * as schemasInfra from "@/config/schemas-infra";
 import { InteractionConfigSchema } from "@/config/schemas-infra";
@@ -139,7 +140,21 @@ describe("InteractionConfigSchema — per-trigger fallback/timeout (SEC-3, BUG-4
     expect(result.data.defaults.fallback).toBeUndefined();
   });
 
-  test("a fully empty NaxConfig parse does not bake interaction.defaults.fallback either", () => {
+  test("AC-16: empty config defaults chat asks to 60000ms", () => {
+    expect(NaxConfigSchema.parse({}).interaction.defaults.chatAskFallbackMs).toBe(60_000);
+    expect(InteractionConfigSchema.parse({ defaults: {} }).defaults.chatAskFallbackMs).toBe(60_000);
+  });
+
+  test.each([500, 3_600_001, 1_000.5])("AC-17: rejects invalid chat ask delay %s", (chatAskFallbackMs) => {
+    expect(NaxConfigSchema.safeParse({ interaction: { defaults: { chatAskFallbackMs } } }).success).toBe(false);
+  });
+
+  test("AC-18: chat ask delay has a description", () => {
+    expect(FIELD_DESCRIPTIONS["interaction.defaults.chatAskFallbackMs"]).toEqual(expect.any(String));
+    expect(FIELD_DESCRIPTIONS["interaction.defaults.chatAskFallbackMs"]?.trim().length).toBeGreaterThan(0);
+  });
+
+  test("AC-20: a fully empty NaxConfig parse does not bake interaction.defaults.fallback either", () => {
     const parsed = NaxConfigSchema.parse({});
     expect(parsed.interaction.defaults.fallback).toBeUndefined();
   });
