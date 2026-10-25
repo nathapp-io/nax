@@ -60,6 +60,17 @@ beforeEach(() => {
       lastTurn: status === undefined ? undefined : { turnId: "prior", status },
       async *send() {
         yield {
+          type: "usage",
+          sessionId,
+          turnId: "t",
+          at: NOW.toISOString(),
+          metadata: {},
+          round: 1,
+          inputTokens: 10,
+          outputTokens: 2,
+          costUsd: 0.01,
+        };
+        yield {
           type: "turn_end",
           sessionId,
           turnId: "t",
@@ -130,7 +141,7 @@ function ask(id: string) {
     expiresAt: NOW.toISOString(),
   });
 }
-const start = () => host.start({ mode: "guarded", model: MODEL });
+const start = (): Promise<void> => host.start({ mode: "guarded", model: MODEL });
 
 describe("createChatHost resume and switch", () => {
   test("AC-1 latest uses storage order and preserves stored settings", async () => {
@@ -223,6 +234,39 @@ describe("createChatHost resume and switch", () => {
     expect(host.current().mode).toBe("guarded");
     expect(await storage.readLockHolder(id)).toMatchObject({ state: "own" });
     await host.send("still works", () => {});
+  });
+  test("F1 model switches attribute each usage row to the active model and retain prior rows", async () => {
+    await start();
+    const id = host.current().sessionId;
+    await host.send("first", () => {});
+    await host.switchTo({ model: "other/model" });
+    await host.send("second", () => {});
+    await host.switchTo({ model: MODEL });
+    await host.send("third", () => {});
+    const rows = (await Bun.file(join(dir, "output", "cost", `chat-${id}-${NOW.getTime()}.jsonl`)).text())
+      .trim()
+      .split("\n")
+      .map((row) => JSON.parse(row));
+    expect(rows.map((row) => row.model)).toEqual([MODEL, "other/model", MODEL]);
+    expect(rows.map((row) => row.runId)).toEqual(Array(3).fill(`chat-${id}-${NOW.getTime()}`));
+  });
+  test("F1 resume attributes usage to the active session and preserves rows when returning", async () => {
+    await start();
+    const id = host.current().sessionId;
+    await host.send("first", () => {});
+    const originalFile = join(dir, "output", "cost", `chat-${id}-${NOW.getTime()}.jsonl`);
+    const first = await Bun.file(originalFile).text();
+    await stored("other");
+    await host.resume({ id: "other" });
+    await host.send("second", () => {});
+    expect(await Bun.file(originalFile).text()).toBe(first);
+    const otherFile = join(dir, "output", "cost", `chat-other-${NOW.getTime()}.jsonl`);
+    const other = await Bun.file(otherFile).text();
+    expect(JSON.parse(other)).toMatchObject({ runId: `chat-other-${NOW.getTime()}`, model: MODEL, costUsd: 0.01 });
+    await host.resume({ id });
+    await host.send("third", () => {});
+    expect((await Bun.file(originalFile).text()).trim().split("\n")).toHaveLength(2);
+    expect(await Bun.file(otherFile).text()).toBe(other);
   });
   test("AC-14 two reopens reuse handler identity", async () => {
     await start();

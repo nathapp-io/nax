@@ -306,7 +306,9 @@ describe("createChatHost", () => {
     await host.clear();
     await send();
     const file = join(dir, "output", "cost", `chat-${id}-${NOW.getTime()}.jsonl`);
-    expect((await Bun.file(file).text()).trim().split("\n")).toHaveLength(2);
+    expect((await Bun.file(file).text()).trim().split("\n")).toHaveLength(1);
+    const nextFile = join(dir, "output", "cost", `chat-${host.current().sessionId}-${NOW.getTime()}.jsonl`);
+    expect((await Bun.file(nextFile).text()).trim().split("\n")).toHaveLength(1);
     expect(backendOptions[0]?.loopHandlers).toBe(backendOptions[1]?.loopHandlers);
     expect(_openChatSessionDeps.nativeBackend).toHaveBeenCalledTimes(2);
   });

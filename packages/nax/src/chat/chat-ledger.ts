@@ -6,7 +6,7 @@ import { COST_ROW_SCHEMA_VERSION } from "@/runtime/middleware";
 export type ChatUsageEvent = Extract<SessionEvent, { type: "usage" }>;
 
 export interface ChatLedger {
-  record(event: ChatUsageEvent, previousAt: string): void;
+  record(event: ChatUsageEvent, previousAt: string, model?: string): void;
   drain(): Promise<void>;
 }
 
@@ -18,12 +18,17 @@ export interface ChatLedgerOptions {
   readonly startedAt: Date;
 }
 
-/** One aggregator per process: a resumed session must not rewrite earlier rows. */
+/** One process ledger, retaining an aggregator per session so reopens never discard prior rows. */
 export function createChatLedger(options: ChatLedgerOptions): ChatLedger {
-  const runId = `chat-${options.sessionId}-${options.startedAt.getTime()}`;
-  const aggregator = new CostAggregator(runId, join(options.outputDir, "cost"));
+  const aggregators = new Map<string, CostAggregator>();
   return {
-    record(event, previousAt) {
+    record(event, previousAt, model = options.model) {
+      const runId = `chat-${event.sessionId}-${options.startedAt.getTime()}`;
+      let aggregator = aggregators.get(runId);
+      if (!aggregator) {
+        aggregator = new CostAggregator(runId, join(options.outputDir, "cost"));
+        aggregators.set(runId, aggregator);
+      }
       const exact = event.costSource !== "unpriced";
       aggregator.record({
         ts: Date.parse(event.at),
@@ -31,7 +36,7 @@ export function createChatLedger(options: ChatLedgerOptions): ChatLedger {
         projectKey: options.projectKey,
         schemaVersion: COST_ROW_SCHEMA_VERSION,
         agentName: "native",
-        model: options.model,
+        model,
         stage: "chat",
         sessionRole: "tui",
         turnId: event.turnId,
@@ -48,6 +53,8 @@ export function createChatLedger(options: ChatLedgerOptions): ChatLedger {
         estimatedCostUsd: exact ? 0 : event.costUsd,
       });
     },
-    drain: () => aggregator.drain(),
+    async drain() {
+      await Promise.all([...aggregators.values()].map((aggregator) => aggregator.drain()));
+    },
   };
 }

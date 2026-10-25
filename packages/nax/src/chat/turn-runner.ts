@@ -42,7 +42,7 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<SessionM
       asks.handle(event);
     }
     if (event.type === "usage") {
-      ledger.record(event, previousAt ?? event.at);
+      ledger.record(event, previousAt ?? event.at, handle.meta.model);
       previousAt = event.at;
     }
     onEvent(event);
