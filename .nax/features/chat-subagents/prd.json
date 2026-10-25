@@ -3,7 +3,7 @@
   "feature": "chat-subagents",
   "branchName": "feat/chat-subagents",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T17:02:02.571Z",
+  "updatedAt": "2026-10-25T17:18:12.378Z",
   "userStories": [
     {
       "id": "US-001",
@@ -619,14 +619,17 @@
       "dependencies": [
         "US-009"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Four existing modules extend optional accounting and connect per-send listeners and nested shutdown; cancellation and close ordering require strict session-lifecycle TDD, while the established ledger and runner avoid expert-level redesign."
+        "reasoning": "Four existing modules extend optional accounting and connect per-send listeners and nested shutdown; cancellation and close ordering require strict session-lifecycle TDD, while the established ledger and runner avoid expert-level redesign.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/chat-ledger.ts",
@@ -645,7 +648,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fa947fdd7f833faeb96714305594e510505ac32b"
     },
     {
       "id": "US-011",
