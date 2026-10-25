@@ -264,7 +264,7 @@ describe("chat shell", () => {
     const ui = mount();
     ui.type("\r");
     expect(ui.send).not.toHaveBeenCalled();
-    ui.type("\x03");
+    ui.type("\x01");
     ui.type("\t");
     ui.type("ab");
     ui.type("\x7f");
