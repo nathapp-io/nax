@@ -8,7 +8,7 @@ import { projectOutputDir } from "@/runtime";
 import { type ChatAskController, createChatAskController } from "./ask-controller";
 import { type AskFallback, createAskFallback } from "./ask-fallback";
 import { type ChatLedger, createChatLedger } from "./chat-ledger";
-import type { ChatMode } from "./chat-mode";
+import { type ChatMode, chatModeOfMeta } from "./chat-mode";
 import { type ChatSessionHandle, openChatSession } from "./open-chat-session";
 import { runChatTurn } from "./turn-runner";
 
@@ -29,7 +29,7 @@ export interface ChatSessionRow {
   readonly heldByPid?: number;
 }
 
-/** Resume, notice and transactional switches are added by US-011. */
+/** Shared-session chat lifecycle, independent of the terminal shell. */
 export interface ChatHost {
   readonly repoRoot: string;
   readonly models: readonly string[];
@@ -37,6 +37,9 @@ export interface ChatHost {
   current(): ChatHostState;
   start(input: { mode: ChatMode; model: string }): Promise<void>;
   clear(): Promise<void>;
+  resume(input: { id?: string }): Promise<void>;
+  notice(): string | undefined;
+  switchTo(input: { mode?: ChatMode; model?: string }): Promise<void>;
   send(message: string, onEvent: (event: SessionEvent) => void): Promise<void>;
   cancel(): void;
   listSessions(): Promise<readonly ChatSessionRow[]>;
@@ -81,6 +84,7 @@ class NativeChatHost implements ChatHost {
   private readonly outputDir: string;
   private handle?: ChatSessionHandle;
   private ledger?: ChatLedger;
+  private resumeNotice?: string;
   private closed = false;
   private closing?: Promise<void>;
 
@@ -140,6 +144,11 @@ class NativeChatHost implements ChatHost {
       config: this.deps.config,
       loopHandlers: this.loopHandlers,
     });
+    await this.replace(next);
+    this.resumeNotice = undefined;
+  }
+
+  private async replace(next: ChatSessionHandle): Promise<void> {
     // An open that completes after final teardown must not leak its new lock.
     if (this.closed) {
       await closeHandle(next);
@@ -155,8 +164,102 @@ class NativeChatHost implements ChatHost {
       startedAt: this.deps.now(),
     });
     this.asks.reset();
-    this.asks.setMode(input.mode);
+    this.asks.setMode(next.meta.mode === "full" ? "full" : "guarded");
     if (previous) await closeHandle(previous);
+  }
+
+  notice(): string | undefined {
+    return this.resumeNotice;
+  }
+
+  private async latestId(): Promise<string> {
+    let cursor: string | undefined;
+    do {
+      const page = await this.deps.storage.list({ cwd: this.deps.cwd, ...(cursor ? { cursor } : {}) });
+      for (const { sessionId } of page.sessions) {
+        try {
+          const meta = await this.deps.storage.readMeta(sessionId);
+          if (meta === null || meta.sessionId !== sessionId || chatModeOfMeta(meta.mode) === null) continue;
+          if ((await this.deps.storage.readLockHolder(sessionId))?.state !== "live") return sessionId;
+        } catch (error) {
+          if (!(error instanceof Error && "code" in error && error.code === "SESSION_META_UNREADABLE")) throw error;
+          this.deps.logger.warn("chat", "skipping unreadable session metadata", { sessionId, cause: error });
+        }
+      }
+      cursor = page.nextCursor;
+    } while (cursor !== undefined);
+    throw new NaxError(`no resumable session for ${this.deps.cwd}`, "CHAT_SESSION_NOT_FOUND", { stage: "chat" });
+  }
+
+  async resume(input: { id?: string }): Promise<void> {
+    this.assertOpen();
+    const id = input.id ?? (await this.latestId());
+    if (this.handle?.meta.sessionId !== id) {
+      let next: ChatSessionHandle;
+      try {
+        next = await (this.deps.open ?? openChatSession)({
+          storage: this.deps.storage,
+          cwd: this.deps.cwd,
+          repoRoot: this.repoRoot,
+          config: this.deps.config,
+          loopHandlers: this.loopHandlers,
+          resumeId: id,
+        });
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "SESSION_LOCKED") {
+          const holder = await this.deps.storage.readLockHolder(id);
+          throw new NaxError(`session ${id} is in use by pid ${holder?.pid}`, "CHAT_SESSION_LOCKED", {
+            stage: "chat",
+            sessionId: id,
+            cause: error,
+          });
+        }
+        throw error;
+      }
+      await this.replace(next);
+    }
+    this.resumeNotice =
+      this.requireHandle().session.lastTurn?.status === "interrupted"
+        ? "The last turn was interrupted. Send a message to continue it."
+        : undefined;
+  }
+
+  private async reopen(
+    input: { mode: ChatMode; model: string },
+    previous: ChatSessionHandle,
+  ): Promise<ChatSessionHandle> {
+    // The host already owns this id. Reopens must neither reacquire nor release that lock,
+    // including the opener's failure cleanup; the original release remains authoritative.
+    const storage: SessionStorage = { ...this.deps.storage, acquireLock: async () => async () => {} };
+    const next = await (this.deps.open ?? openChatSession)({
+      ...input,
+      storage,
+      resumeId: previous.meta.sessionId,
+      cwd: this.deps.cwd,
+      repoRoot: this.repoRoot,
+      config: this.deps.config,
+      loopHandlers: this.loopHandlers,
+    });
+    return { ...next, release: previous.release };
+  }
+
+  async switchTo(input: { mode?: ChatMode; model?: string }): Promise<void> {
+    const previous = this.requireHandle();
+    const from = this.current();
+    const target = { mode: input.mode ?? from.mode, model: input.model ?? from.model };
+    if (target.mode === from.mode && target.model === from.model) return;
+    await previous.session.close();
+    let next: ChatSessionHandle | undefined;
+    try {
+      next = await this.reopen(target, previous);
+      await this.deps.storage.writeMeta(next.meta);
+    } catch (error) {
+      if (next) await next.session.close();
+      this.handle = await this.reopen(from, previous);
+      throw error;
+    }
+    this.handle = next;
+    this.asks.setMode(target.mode);
   }
 
   async clear(): Promise<void> {
