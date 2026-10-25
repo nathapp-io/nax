@@ -1,0 +1,668 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-subagents",
+  "branchName": "feat/chat-subagents",
+  "createdAt": "2026-10-25T00:00:00.000Z",
+  "updatedAt": "2026-10-25T15:37:32.305Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "nax-agent: allowedTools narrows a session's declared tools",
+      "description": "**Goal** — Add opt-in narrowing of built-in and provider tool declarations to native sessions without widening profiles or altering default behavior.\n\n**Motivation** — The design rules that apply here: subagents are nested sessions in the same process, run under a mode equal to or narrower than the parent's, get the parent's tools intersected with the agent's list, take their own model through `agent.modelAliases` with `inherit` meaning the parent's model, and have depth 1.\n\n**Approach** — `NativeBackendOptions` gains `allowedTools?: readonly string[]`, validated by the options schema as an array of non-empty strings. Absent means today's behaviour exactly. Present, it narrows what the session declares, in this order:\n\n1. The profile's built-in tools (`declaredToolsFor(profile, protectedPaths)`) are kept only when their name is in `allowedTools`, except the universal scratchpad tools (`UNIVERSAL_CODING_TOOLS`: `ScratchpadWrite`, `ScratchpadRead`, `ScratchpadList`), which are always kept. `buildSessionToolSupport` does this from its new `allowedTools` argument.\n2. Provider tools are admitted through `resolveProviderTools`'s existing `admits` option, which `openNative` passes: a tool `<id>__<local>` is admitted when `allowedTools` contains that exact name or contains `<id>__*`.\n3. Grants and ask rules are computed from the narrowed built-in list, so a tool that is not declared is never granted, and the ask rules for a declared tool are unchanged.\n\nAn `allowedTools` entry naming nothing available is ignored. The narrowing never adds a tool. Embedder tools (`CreateAgentSessionOptions.tools`) are not filtered. The public API dump lists type names only, so it does not change.\n\n**Scope** — In: existing native-backend options/schema, backend wiring, session-tool-support filtering and existing session tests. Out: Claude Code name mapping (US-004), nested session creation (US-007), host/provider composition (US-009). Embedder tools (`CreateAgentSessionOptions.tools`) are not filtered by `allowedTools`.\n\n**Interface** —\n```ts\n// packages/nax-agent/src/session/native-backend-options.ts\nexport interface NativeBackendOptions {\n  // ...existing fields unchanged...\n  /** Narrow the declared tools to these names (built-in names, `<provider>__<tool>`, or `<provider>__*`); scratchpad tools are always kept. */\n  readonly allowedTools?: readonly string[];\n}\n\n// packages/nax-agent/src/session/session-tool-support.ts\nexport interface SessionToolSupportArgs {\n  // ...existing fields unchanged...\n  readonly allowedTools?: readonly string[];\n}\n```\n\nExtend existing native-backend-options, native-backend-providers, session-tool-support and interaction/profile test harnesses. Assert actual declarations and denied invocation, not just helper output, and show the narrowing regression failing before implementation.",
+      "acceptanceCriteria": [
+        "[unit] nativeBackend({ model, allowedTools: [\"Read\"] }) returns a backend without throwing.",
+        "[unit] nativeBackend({ model, allowedTools: [\"\"] }) throws AgentSessionError with code AGENT_SESSION_INVALID_OPTIONS.",
+        "[unit] nativeBackend({ model, allowedTools: \"Read\" }) throws AgentSessionError with code AGENT_SESSION_INVALID_OPTIONS.",
+        "[unit] Opening a native backend with profile full and no allowedTools declares Read, Glob, Grep, Git, Write, Edit, Delete, Bash and the scratchpad trio, as before this change.",
+        "[unit] Opening with profile full and allowedTools: [\"Read\", \"Grep\"] declares exactly the scratchpad trio plus Read and Grep.",
+        "[unit] Opening with profile full and allowedTools: [] declares exactly the scratchpad trio.",
+        "[unit] Opening with profile read and allowedTools: [\"Read\", \"Bash\"] declares no Bash tool.",
+        "[unit] Opening with profile full and allowedTools: [\"Read\", \"NoSuchTool\"] declares exactly the scratchpad trio plus Read.",
+        "[unit] Opening with profile full, a static provider acme with tools get and put, and allowedTools: [\"acme__get\"] declares acme__get.",
+        "[unit] Opening with profile full, provider acme with tools get and put, and allowedTools: [\"acme__get\"] does not declare acme__put.",
+        "[unit] Opening with profile full, provider acme with tools get and put, and allowedTools: [\"acme__*\"] declares both acme__get and acme__put.",
+        "[unit] Opening with profile full, provider acme with tools get and put, and allowedTools: [\"Read\"] declares no tool whose name starts with acme__.",
+        "[unit] Opening with profile full, provider acme with tools get and put, and no allowedTools declares both acme__get and acme__put.",
+        "[unit] buildSessionToolSupport with profile full and allowedTools: [\"Read\"] returns grants with no entry whose tool is Write.",
+        "[unit] Opening with profile ask and allowedTools: [\"Edit\"], a coding-tool interaction for Edit emits an approval_requested event whose tool is Edit.",
+        "[unit] Opening with profile ask, bashApproval: \"gated\" and allowedTools: [\"Bash\"], a coding-tool interaction for Bash emits an approval_requested event whose tool is Bash.",
+        "[unit] Opening with profile full and allowedTools: [\"Read\"], a coding-tool interaction for Write returns an error result.",
+        "[unit] Opening with profile full and allowedTools: [\"Read\"], a coding-tool interaction for Write does not invoke the Write tool's run."
+      ],
+      "tags": [
+        "feature",
+        "native-agent",
+        "security",
+        "tool-narrowing"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Three existing session modules add an option and reuse provider admission and profile filtering; strict TDD remains mandatory because declarations, grants and ask rules enforce access control."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/session/native-backend-options.ts",
+        "packages/nax-agent/src/session/native-backend.ts",
+        "packages/nax-agent/src/session/session-tool-support.ts",
+        "packages/nax-agent/src/tools/provider-advertise.ts"
+      ],
+      "suggestedCriteria": [
+        "Opening a native session with allowedTools: [] and an embedder tool Echo still declares Echo.",
+        "Opening with a discovered provider acme, profile ask and allowedTools: [\"acme__get\"] preserves the approval request for acme__get when its readOnly flag is false."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Catalog: agent prompts and agent lookup; /plugins wording",
+      "description": "**Goal** — Retain agent prompt bodies and make every catalog agent discoverable using existing precedence and qualified lookup.\n\n**Motivation** — Claude Code users keep reviewers, planners and researchers as agent files; today `/plugins` prints `agents N (not delivered yet)` and the chat model has no way to use them.\n\n**Approach** — `AgentResource` gains `prompt: string`: the agent file's body without frontmatter, read the way `parseSkillFile` reads `SkillResource.body`. `ResourceCatalog` gains `agents` (every loaded agent in package order, shadowed ones included) and `findAgent(name)`, built by the same `indexResources` precedence as skills and commands (project > user > plugin; a shadowed agent stays reachable as `<plugin>:<name>`; a shadow adds the existing warn diagnostic `<kind> <name> from <pkg> is shadowed by <winner>; use <qualifiedName>` with kind `agent`). `formatPluginsListing` stops printing `(not delivered yet)` after the agents count; the hooks `(not executed)` wording stays. The `parseAgentFile` doc comment stops saying the body is not retained.\n\n**Scope** — In: resource types, agent parser, catalog indexes, plugins listing, existing parser/listing fixtures and fixture-repository loading tests. Out: agent invocation (US-006/007), model/tool mapping (US-004), /agents formatting (US-011). Agents are not hot-reloaded; a changed agent file takes effect at the next `nax chat` start. Hooks stay parsed and listed as not executed.\n\n**Interface** — `AgentResource` gains `prompt: string`; `ResourceCatalog` gains `agents` and `findAgent(name)`.\n\nRequired existing test updates: the two whole-resource toEqual expectations in test/unit/resources/parse-agent.test.ts gain prompt equal to their fixture body; rename \"qualifies plugin agents without retaining executable body\" to \"qualifies plugin agents and retains the prompt body\". Every name, description, model and tools expectation is unchanged. The two agent literals in test/unit/resources/listing.test.ts gain prompt: \"\"; change only \"agents 2 (not delivered yet)\" to \"agents 2\" in the sp@m listing expectation. Extend existing catalog.test.ts for loadResourceCatalog over a real .claude/agents fixture. Preserve all other listing wording and resource discovery behavior.",
+      "acceptanceCriteria": [
+        "[unit] parseAgentFile(path, \"---\\nname: a\\ndescription: d\\n---\\nReview the diff.\\n\", origin) returns a resource whose prompt equals what parseSkillFile returns as body for a skill file with the same body text.",
+        "[unit] parseAgentFile for a file with frontmatter and an empty body returns a resource whose prompt is the empty string.",
+        "[unit] buildResourceCatalog([pkg]) for a package with agents a and b returns agents with both resources in package order.",
+        "[unit] buildResourceCatalog over a project package with agent a and a plugin package p@m with agent a returns findAgent(\"a\") equal to the project agent.",
+        "[unit] In that catalog, findAgent(\"p:a\") returns the plugin agent.",
+        "[unit] In that catalog, diagnostics contains a warn whose message is agent a from p@m is shadowed by claude-project; use p:a.",
+        "[unit] In that catalog, agents has length 2.",
+        "[unit] buildResourceCatalog([]) returns agents equal to [].",
+        "[unit] buildResourceCatalog([]) returns findAgent(\"x\") equal to undefined.",
+        "[unit] formatPluginsListing for a package with 2 agents prints agents 2, on that package line.",
+        "[unit] formatPluginsListing for a package with 2 agents prints no (not delivered yet) text.",
+        "[unit] formatPluginsListing for a package with 1 hooks entry still prints hooks 1 (not executed).",
+        "[integration] loadResourceCatalog over a fixture repo whose .claude/agents/reviewer.md has name reviewer and body \"Check tests.\" returns findAgent(\"reviewer\")?.prompt starting with \"Check tests.\"."
+      ],
+      "tags": [
+        "feature",
+        "resources",
+        "catalog"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Five existing modules extend a proven parser/index/listing pattern without introducing session or permission behavior."
+      },
+      "contextFiles": [
+        "packages/nax/src/resources/types.ts",
+        "packages/nax/src/resources/parse-agent.ts",
+        "packages/nax/src/resources/parse-skill.ts",
+        "packages/nax/src/resources/catalog.ts",
+        "packages/nax/src/resources/listing.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/resources/parse-agent.test.ts",
+          "reason": "the two cases that compare the whole parsed resource with toEqual (\"AC-1 returns required metadata and optional model\" and \"qualifies plugin agents without retaining executable body\") gain `prompt` equal to the fixture's body text in each expected resource; the second case is renamed \"qualifies plugin agents and retains the prompt body\" because the body is now retained; every name, description, model and tools expectation is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/resources/listing.test.ts",
+          "reason": "the fixture package's two agent literals (the `[\"a\", \"b\"].map(...)` objects with kind \"agent\") gain `prompt: \"\"` because `AgentResource.prompt` is required and the package test typecheck would fail without it; the expected /plugins text for package sp@m changes \"agents 2 (not delivered yet)\" to \"agents 2\"; the skills, commands, mcp and hooks wording is unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Config: agent.modelAliases",
+      "description": "**Goal** — Add validated Claude Code model aliases with backward-compatible empty defaults on both config parsing paths.\n\n**Motivation** — User ruling 2026-10-25: keep the `haiku`/`sonnet`/`opus` to `models.native` tier step, with an alias always winning.\n\n**Approach** — A new config map from a Claude Code model name to a nax model id, default `{}`. Each value must be a nax model id the way `parseNativeModel` reads one: a non-empty provider before the first `/`, a non-empty remainder after it, no whitespace, an optional `[effort]` suffix (`openrouter/z-ai/glm-5.3-flash[high]` is valid). Four places change: `AgentConfigSchema` (`schemas-infra.ts`), the explicit `agent` default literal in `NaxConfigSchema` (`schemas.ts`, which Zod returns unparsed, so it must carry `modelAliases: {}`), the hand-written `AgentConfig` interface (`runtime-types-agent.ts`, `modelAliases?: Readonly<Record<string, string>>`), and the config descriptions registry (`agent.modelAliases`).\n\n**Scope** — In: the four config surfaces and existing agent/config schema tests. Out: runtime alias precedence and native tier resolution (US-004), host application (US-009), listing resolved models (US-011). A per-agent model or tool override inside chat is not added; the agent file and `agent.modelAliases` are the switches.\n\n**Interface** — `modelAliases?: Readonly<Record<string, string>>`.\n\nValidate shape without resolving provider catalogs; accept model remainders containing additional slashes and optional effort suffixes. Include modelAliases in validation issue paths. Existing configs need no migration, and unrelated agent defaults must remain unchanged.",
+      "acceptanceCriteria": [
+        "[unit] NaxConfigSchema.parse({}) yields agent.modelAliases equal to {}.",
+        "[unit] NaxConfigSchema.parse({ agent: { protocol: \"native\" } }) yields agent.modelAliases equal to {}.",
+        "[unit] NaxConfigSchema.safeParse({ agent: { modelAliases: { sonnet: \"anthropic/claude-sonnet-5-5\" } } }) succeeds with that map.",
+        "[unit] NaxConfigSchema.safeParse({ agent: { modelAliases: { glm: \"openrouter/z-ai/glm-5.3-flash[high]\" } } }) succeeds.",
+        "[unit] NaxConfigSchema.safeParse({ agent: { modelAliases: { sonnet: \"claude-sonnet\" } } }) fails with an issue whose path includes modelAliases.",
+        "[unit] NaxConfigSchema.safeParse({ agent: { modelAliases: { sonnet: \"a/\" } } }) fails.",
+        "[unit] NaxConfigSchema.safeParse({ agent: { modelAliases: { sonnet: \"/m\" } } }) fails.",
+        "[unit] NaxConfigSchema.safeParse({ agent: { modelAliases: { sonnet: \"a b/c\" } } }) fails.",
+        "[unit] FIELD_DESCRIPTIONS[\"agent.modelAliases\"] returns a non-empty description string."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "models"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "An additive validated map spans four established config surfaces; the explicit Zod default is the primary compatibility risk."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-infra.ts",
+        "packages/nax/src/config/schemas.ts",
+        "packages/nax/src/config/runtime-types-agent.ts",
+        "packages/nax/src/cli/config-descriptions.ts",
+        "packages/nax-agent/src/native/models.ts"
+      ],
+      "suggestedCriteria": [
+        "NaxConfigSchema.safeParse({ agent: { modelAliases: { sonnet: \"a/m n\" } } }) fails with an issue whose path includes modelAliases."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Subagent model and tool resolution",
+      "description": "**Goal** — Implement pure model precedence and Claude Code tool-name translation for subagents.\n\n**Motivation** — User ruling 2026-10-25: keep the `haiku`/`sonnet`/`opus` to `models.native` tier step, with an alias always winning.\n\n**Approach** — `resolveSubagentModel` (new, `src/chat/subagent-model.ts`) takes `{ requested?: string; parentModel: string; aliases: Readonly<Record<string, string>>; tiers: NaxConfig[\"models\"][\"native\"] }` and returns `{ model: string; source: \"inherit\" | \"alias\" | \"tier\" | \"model\" | \"fallback\" }` as an ordered pipeline; the first step that answers wins:\n\n1. `requested` absent or `\"inherit\"` -> the parent's model, source `inherit`.\n2. `aliases[requested]` defined -> that value, source `alias`.\n3. `requested` is `haiku`, `sonnet` or `opus` and `tiers.fast`, `.balanced` or `.powerful` respectively is configured -> that tier's model (a string entry as is, an object entry as `provider/model`), source `tier`.\n4. `requested` contains `/` -> `requested` itself, source `model`.\n5. Otherwise -> the parent's model, source `fallback`.\n\n`mapSubagentTools` (new, `src/chat/subagent-tools.ts`) turns an agent's Claude Code `tools:` list into `allowedTools` for US-001, returning `{ allowedTools?: string[]; dropped: { name: string; reason: string }[] }`:\n\n| Agent `tools:` entry | `allowedTools` entry |\n|---|---|\n| `Read`, `Write`, `Edit`, `Bash`, `Glob`, `Grep`, `Git`, `Delete`, `GitCommit` | the same name |\n| `MultiEdit` | `Edit` |\n| `Skill` | `nax-skills__*` |\n| `mcp__<server>__<tool>` | `<server>__<tool>` |\n| `mcp__<server>` | `<server>__*` |\n| `Agent`, `Task` | dropped, reason `subagents cannot start subagents` |\n| `<Name>(<pattern>)`, for example `Bash(git diff:*)` | the bare `<Name>` mapped by the rows above; the pattern is not enforced |\n| anything else | dropped, reason `no nax equivalent` |\n\n`tools:` absent -> no `allowedTools` key (the agent inherits every tool the parent session offers, minus the agents provider). Entries are de-duplicated in first-seen order. A list whose entries are all dropped yields `allowedTools: []` (scratchpad tools only). Both functions are exported from `@/chat`.\n\n**Scope** — In: two pure helper modules, barrel exports and focused unit tests. Out: backend admission filtering (US-001), config validation (US-003), invoking the helpers from host runs (US-009), /agents display (US-011). A Claude Code tool pattern such as `Bash(git diff:*)` is not enforced; the entry grants the whole tool and the existing guarded asks still apply to every call. Claude Code plugin MCP tool names of the form `mcp__plugin_<plugin>_<server>__<tool>` are not translated to nax's `<plugin>-<server>` server ids; such an entry maps to `plugin_<plugin>_<server>__<tool>` and matches nothing.\n\n**Interface** — `resolveSubagentModel` takes `{ requested?: string; parentModel: string; aliases: Readonly<Record<string, string>>; tiers: NaxConfig[\"models\"][\"native\"] }` and returns `{ model: string; source: \"inherit\" | \"alias\" | \"tier\" | \"model\" | \"fallback\" }`; `mapSubagentTools` returns `{ allowedTools?: string[]; dropped: { name: string; reason: string }[] }`.\n\nThese helpers must be cost-blind and perform no session creation or provider discovery.",
+      "acceptanceCriteria": [
+        "[unit] resolveSubagentModel({ requested: undefined, parentModel: \"p/m\", aliases: {}, tiers: {} }) returns { model: \"p/m\", source: \"inherit\" }.",
+        "[unit] resolveSubagentModel with requested: \"inherit\" and parentModel: \"p/m\" returns { model: \"p/m\", source: \"inherit\" }.",
+        "[unit] resolveSubagentModel with requested: \"sonnet\" and aliases: { sonnet: \"a/s\" } returns { model: \"a/s\", source: \"alias\" }.",
+        "[unit] resolveSubagentModel with requested: \"sonnet\", aliases: { sonnet: \"a/s\" } and tiers: { balanced: \"b/t\" } returns { model: \"a/s\", source: \"alias\" }.",
+        "[unit] resolveSubagentModel with requested: \"haiku\", aliases: {} and tiers: { fast: \"f/m\" } returns { model: \"f/m\", source: \"tier\" }.",
+        "[unit] resolveSubagentModel with requested: \"opus\" and tiers: { powerful: { provider: \"x\", model: \"y\" } } returns { model: \"x/y\", source: \"tier\" }.",
+        "[unit] resolveSubagentModel with requested: \"opus\", tiers: {} and parentModel: \"p/m\" returns { model: \"p/m\", source: \"fallback\" }.",
+        "[unit] resolveSubagentModel with requested: \"openai/gpt-x\" and aliases: {} returns { model: \"openai/gpt-x\", source: \"model\" }.",
+        "[unit] resolveSubagentModel with requested: \"claude-opus-4\", aliases: {}, tiers: {} and parentModel: \"p/m\" returns { model: \"p/m\", source: \"fallback\" }.",
+        "[unit] mapSubagentTools(undefined) returns { dropped: [] } with no allowedTools key.",
+        "[unit] mapSubagentTools([\"Read\", \"Grep\", \"Bash\"]) returns { allowedTools: [\"Read\", \"Grep\", \"Bash\"], dropped: [] }.",
+        "[unit] mapSubagentTools([\"MultiEdit\", \"Edit\"]) returns allowedTools [\"Edit\"].",
+        "[unit] mapSubagentTools([\"Skill\"]) returns allowedTools [\"nax-skills__*\"].",
+        "[unit] mapSubagentTools([\"mcp__docs__search\", \"mcp__db\"]) returns allowedTools [\"docs__search\", \"db__*\"].",
+        "[unit] mapSubagentTools([\"Bash(git diff:*)\"]) returns allowedTools [\"Bash\"].",
+        "[unit] mapSubagentTools([\"Agent\", \"Task\"]) returns { allowedTools: [], dropped: [{ name: \"Agent\", reason: \"subagents cannot start subagents\" }, { name: \"Task\", reason: \"subagents cannot start subagents\" }] }.",
+        "[unit] mapSubagentTools([\"Read\", \"WebFetch\"]) returns { allowedTools: [\"Read\"], dropped: [{ name: \"WebFetch\", reason: \"no nax equivalent\" }] }.",
+        "[unit] Importing @/chat exposes resolveSubagentModel as a function that returns { model: \"p/m\", source: \"inherit\" } for { parentModel: \"p/m\", aliases: {}, tiers: {} }.",
+        "[unit] Importing @/chat exposes mapSubagentTools as a function that returns { dropped: [] } with no allowedTools key for undefined input."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "models",
+        "security",
+        "tool-mapping"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Pure ordered mappings are standard, but translated tool names determine a session's access-control surface, requiring strict security TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-model.ts",
+        "packages/nax/src/chat/index.ts",
+        "packages/nax/src/resources/types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/subagent-model.ts",
+        "packages/nax/src/chat/subagent-tools.ts",
+        "packages/nax/test/unit/chat/subagent-model.test.ts",
+        "packages/nax/test/unit/chat/subagent-tools.test.ts"
+      ],
+      "suggestedCriteria": [
+        "resolveSubagentModel with requested inherit and aliases: { inherit: \"a/s\" } returns the parent model with source inherit.",
+        "mapSubagentTools([]) returns { allowedTools: [], dropped: [] }.",
+        "mapSubagentTools([\"Read\", \"Write\", \"Edit\", \"Bash\", \"Glob\", \"Grep\", \"Git\", \"Delete\", \"GitCommit\"]) preserves those allowedTools in the same order."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Prompt builders for agents and subagents",
+      "description": "**Goal** — Build agent discovery and nested-session prompts while preserving existing chat and skills output exactly.\n\n**Motivation** — Claude Code users keep reviewers, planners and researchers as agent files; today `/plugins` prints `agents N (not delivered yet)` and the chat model has no way to use them.\n\n**Approach** — New `src/prompts/builders/agents-builder.ts`, exported from `src/prompts/index.ts`:\n\n- `buildAgentsInstructions(agents)`: a first line telling the model to call `nax-agents__run` with an agent name and a self-contained task, then one line `- <qualifiedName>: <description>` per agent. Descriptions are cleaned exactly like the skills index (whitespace runs collapsed to one space, control characters removed, truncated to 200 characters), and at most 150 agents are listed, then `- ... and <N> more`. The cleaning is shared by moving it into an exported helper `cleanIndexDescription(text)` in the skills builder, used by both.\n- `buildSubagentInstructions({ agent, mode, rulesIndex })`: the permission paragraph for `mode`, the rules index section (`buildRulesIndexSection`, as chat uses it), then the agent's `prompt` last. The permission sentences move out of `buildChatInstructions` into an exported `chatPermissionParagraph(mode)` in `chat-builder.ts`, which both builders call; `buildChatInstructions`' output is unchanged.\n\n**Scope** — In: shared pure prompt helpers, new agents builder, prompts exports, new builder tests and unchanged existing prompt regressions. Out: provider schemas/execution (US-006), session options/rule lookup (US-007), rule-delivery roles (US-008).\n\n**Interface** — `buildAgentsInstructions(agents)`; `buildSubagentInstructions({ agent, mode, rulesIndex })`; `cleanIndexDescription(text)`; `chatPermissionParagraph(mode)`.\n\nRetain the skills builder's exact cleaning order, including its second space collapse after control removal. Keep the complete existing buildChatInstructions output byte-identical in both modes; extract the permission sentences without adding agent instructions to normal chat. chatPermissionParagraph returns the mode's sentence, not the heading: buildChatInstructions retains its existing ## Permission mode heading and sandbox paragraph. Freeze regression expected strings from the current builders rather than computing expected values through the newly extracted helpers. The negative path is control-character removal from an advertised agent description, not an invented rejection of valid empty prompts. Read rules-index-builder for shownAutomatically composition. Existing skills-builder.test.ts and chat-builder.test.ts must stay green unchanged.",
+      "acceptanceCriteria": [
+        "[unit] cleanIndexDescription(\"a\\n\\n  b\\u0007c\") returns a bc.",
+        "[unit] cleanIndexDescription of a 300-character single-line text returns its first 200 characters.",
+        "[unit] buildSkillsInstructions([{ qualifiedName: \"fixture\", description: \"a\\n\\n  b\\u0007c\" }]) returns the same text as before this change: \"When a skill matches a task, call nax-skills__load with the skill name before acting on the task. Load the skill's references files with nax-skills__load and file.\\n- fixture: a bc\".",
+        "[unit] buildChatInstructions({ mode: \"guarded\", rulesIndex: [] }) returns the same text as before this change: \"You are an interactive coding agent working in this repository with the person.\\n\\n## Permission mode\\n\\nIn guarded mode, edits, deletes, commits and every shell command are put to the person before they run.\\n\\n## Commands outside the sandbox\\n\\nSet `unsandboxed: true` with an `unsandboxedReason` only when a command needs the network, the Docker socket, a local port or a device the sandbox blocks.\".",
+        "[unit] buildChatInstructions({ mode: \"full\", rulesIndex: [] }) returns the same text as before this change: \"You are an interactive coding agent working in this repository with the person.\\n\\n## Permission mode\\n\\nIn full mode, tools run without asking.\\n\\n## Commands outside the sandbox\\n\\nSet `unsandboxed: true` with an `unsandboxedReason` only when a command needs the network, the Docker socket, a local port or a device the sandbox blocks.\".",
+        "[unit] buildAgentsInstructions([{ qualifiedName: \"reviewer\", description: \"Reviews diffs\" }]) has a first line naming nax-agents__run.",
+        "[unit] That output contains the line - reviewer: Reviews diffs.",
+        "[unit] buildAgentsInstructions for an agent whose description is Line one\\nLine two contains the line - reviewer: Line one Line two.",
+        "[unit] buildAgentsInstructions over 151 agents lists 150 agent lines.",
+        "[unit] That output ends with the line - ... and 1 more.",
+        "[unit] buildSubagentInstructions({ agent, mode: \"guarded\", rulesIndex: [] }) returns text ending with the agent's prompt.",
+        "[unit] buildSubagentInstructions with mode: \"guarded\" contains chatPermissionParagraph(\"guarded\").",
+        "[unit] buildSubagentInstructions with mode: \"full\" contains chatPermissionParagraph(\"full\").",
+        "[unit] buildSubagentInstructions with one rules index entry contains that entry's rules index line.",
+        "[unit] Importing @/prompts exposes both buildAgentsInstructions and buildSubagentInstructions as callable functions.",
+        "[unit] buildAgentsInstructions([{ qualifiedName: \"reviewer\", description: \"a\\u0007b\" }]) returns text containing no U+0007 control character."
+      ],
+      "tags": [
+        "feature",
+        "prompts",
+        "chat",
+        "permissions"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure builders extract existing text-cleaning and permission sentences and compose a new index; they neither resolve permissions nor open sessions, so exact-output regression tests with simple TDD suffice."
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/skills-builder/index.ts",
+        "packages/nax/src/prompts/builders/chat-builder.ts",
+        "packages/nax/src/prompts/builders/rules-index-builder.ts",
+        "packages/nax/src/prompts/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/prompts/builders/agents-builder.ts",
+        "packages/nax/test/unit/prompts/builders/agents-builder.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "The nax-agents provider",
+      "description": "**Goal** — Expose validated named-agent invocation through a static tool provider and protect its namespace from MCP collisions.\n\n**Motivation** — Claude Code users keep reviewers, planners and researchers as agent files; today `/plugins` prints `agents N (not delivered yet)` and the chat model has no way to use them.\n\n**Approach** — `createAgentsProvider({ catalog, run })` (new, `src/chat/agents-provider.ts`) returns a `static` `ToolProvider` with id `nax-agents`, `stages: [\"*\"]`, and one tool `run` (the model sees `nax-agents__run`) whose input schema is `{ agent: string, task: string }`, both required, `additionalProperties: false`. Its `tools()` returns `[]` when the catalog has no agents. Its `instructions()` returns `buildAgentsInstructions(catalog.agents)`, or `undefined` with no agents. `run` validates its input (both strings, both non-empty after trimming), looks the agent up with `catalog.findAgent`, and calls the injected `run(agent, task, signal)` with `ToolRunContext.signal`, returning its `ToolResult`. The provider id is reserved: `createChatMcp` drops an MCP server whose id is `nax-agents` with the same reserved-id diagnostic it gives `nax-skills` today (the single `RESERVED_SERVER_ID` becomes a set of both ids).\n\n**Scope** — In: agents-provider, MCP reserved-id filtering and diagnostics, provider tests and prompt/catalog seams. Out: nested session lifecycle (US-007/008), host attachment and asks (US-009), usage/cost forwarding (US-010). Subagents in `nax run` are not supported; the agents provider attaches to `nax chat` only.\n\n**Interface** — `createAgentsProvider({ catalog, run })` returns a `ToolProvider`; injected `run(agent, task, signal)` returns its `ToolResult`.\n\nFailure results are exact: missing/non-string/trim-empty agent or task returns `{ isError: true, content: \"[chat] run requires agent: string and task: string\" }` without calling the runner. Unknown names return `unknown agent <name>; available: <up to 20 qualified names, comma-separated>`. Use catalog order for available names. Preserve the injected result unchanged and pass the context signal through. The US-002 -> US-006 seam uses a catalog built by buildResourceCatalog and proves the runner receives the parsed agent prompt, including qualified shadowed lookup. The US-005 -> US-006 seam checks provider instructions contain the catalog agent line. Keep the existing nax-skills reserved-id diagnostic unchanged.",
+      "acceptanceCriteria": [
+        "[unit] createAgentsProvider({ catalog, run }) returns a provider whose id is nax-agents.",
+        "[unit] That provider's kind is static.",
+        "[unit] That provider's stages is [\"*\"].",
+        "[unit] For a catalog with no agents, the provider's tools(\"/w\") resolves to [].",
+        "[unit] For a catalog with agent reviewer, the provider's tools(\"/w\") resolves to one tool whose localName is run.",
+        "[unit] That tool's inputSchema.required is [\"agent\", \"task\"].",
+        "[unit] That tool's inputSchema.additionalProperties is false.",
+        "[unit] The provider's instructions(\"/w\") for a catalog with agent reviewer (description Reviews diffs) resolves to text containing - reviewer: Reviews diffs.",
+        "[unit] The provider's instructions(\"/w\") for a catalog with no agents resolves to undefined.",
+        "[unit] Running the tool with { agent: \"reviewer\", task: \"check it\" } and a context whose signal is s calls the injected run once with the reviewer resource, \"check it\" and s.",
+        "[unit] Running the tool returns the injected run's result unchanged.",
+        "[unit] Running the tool with { agent: \"reviewer\" } returns isError: true with content [chat] run requires agent: string and task: string.",
+        "[unit] Running the tool with { agent: \"reviewer\" }, a missing agent, a non-string agent or task, or a trim-empty agent or task does not call the injected run, so invalid input cannot create a nested session.",
+        "[unit] Running the tool with { agent: 1, task: \"t\" } returns isError: true with content [chat] run requires agent: string and task: string.",
+        "[unit] Running the tool with { agent: \"reviewer\", task: \"  \" } returns isError: true with content [chat] run requires agent: string and task: string.",
+        "[unit] Running the tool with { agent: \"nobody\", task: \"t\" } over a catalog with agent reviewer returns isError: true with content unknown agent nobody; available: reviewer.",
+        "[unit] Running the tool with { agent: \"nobody\", task: \"t\" } over a catalog with 25 agents returns content listing exactly 20 qualified names after available: .",
+        "[unit] Running the tool with { agent: \"p:reviewer\", task: \"t\" } over a catalog where p:reviewer is a shadowed plugin agent calls the injected run with the plugin agent.",
+        "[integration] Through createAgentsProvider over a catalog built by buildResourceCatalog from a package whose agent reviewer has prompt \"Check tests.\", running the tool calls the injected run with an agent whose prompt is \"Check tests.\".",
+        "[unit] createChatMcp over a config whose mcp.servers has an enabled server nax-agents attaches no server nax-agents.",
+        "[unit] In that call, createChatMcp returns a diagnostic whose message is [resources] mcp server id nax-agents is reserved.",
+        "[unit] createChatMcp still returns a diagnostic [resources] mcp server id nax-skills is reserved for an enabled server nax-skills."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tools",
+        "security",
+        "mcp"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The skills-provider pattern supplies schema validation, catalog lookup and injected dispatch, plus a small reserved-id set change; this module does not create sessions or decide approvals, so focused provider tests use simple TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/resources/skills-provider.ts",
+        "packages/nax/src/chat/chat-mcp.ts",
+        "packages/nax/src/prompts/builders/agents-builder.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/agents-provider.ts",
+        "packages/nax/test/unit/chat/agents-provider.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "Nested session: options",
+      "description": "**Goal** — Create a memory-only native subagent session with parent-equivalent settings and a minimal create/send/close skeleton.\n\n**Motivation** — The design rules that apply here: subagents are nested sessions in the same process, run under a mode equal to or narrower than the parent's, get the parent's tools intersected with the agent's list, take their own model through `agent.modelAliases` with `inherit` meaning the parent's model, and have depth 1.\n\n**Approach** — `runSubagent(input, deps = _subagentSessionDeps)` (new, `src/chat/subagent-session.ts`) runs one task to completion.\n\nSession options (US-007): `createAgentSession` with `profile` from `chatSessionSettings(mode)`; `nativeBackend({ model, bashApproval (from the same settings), allowUnsandboxed: true, allowUnsandboxedCommands: true, carryHistoryAcrossModels: true, loopHandlers, loopHandlerRole: \"subagent\", toolProviders, allowedTools (only when given), catalogOverrides and compaction exactly as open-chat-session.ts passes them from config })`; `workdir: cwd`; `transcriptStore: createMemoryTranscriptStore()` (not persisted, not listed, not resumable); `metadata: { parentSessionId, subagent: agent.qualifiedName }`; `approvalTimeoutMs: config.execution.approvalTimeout`; `instructions: buildSubagentInstructions({ agent, mode, rulesIndex })` where the rules index comes from `resolveRuleSet` called the way `open-chat-session.ts` calls it. US-007 implements a minimal skeleton around these options: create the session, send the task, consume events to `turn_end`, close, and return `{ content: output }`; its tests use a stub session whose turn ends immediately.\n\n**Scope** — In: subagent-session module, dependency seams, rule-index lookup, session/backend option mirroring, failed-option-construction short-circuiting, preservation of explicit empty restrictions, and immediate-completion tests. Out: full status/error/cancellation behavior and rule-delivery role changes (US-008), model/tool resolution (US-004), ask/cost ownership (US-009/010). Nested sessions are not persisted: they use an in-memory transcript store, are not listed by `/sessions`, and cannot be resumed; a resumed chat session does not restore a subagent that was running when the process died. Narrowing a subagent's mode below the chat session's (for example a read-only profile for an agent whose tools are all read-only) is not done; the tool narrowing is the only narrowing.\n\n**Interface** —\n```ts\nexport interface RunSubagentInput {\n  readonly agent: AgentResource;\n  readonly task: string;\n  readonly mode: ChatMode;               // the chat session's mode at call time\n  readonly model: string;                // from resolveSubagentModel\n  readonly allowedTools?: readonly string[]; // from mapSubagentTools\n  readonly toolProviders: readonly ToolProvider[]; // the chat resources' providers, never the agents provider\n  readonly loopHandlers: LoopHandlerSet; // the chat host's handler set\n  readonly cwd: string;\n  readonly repoRoot: string;\n  readonly config: NaxConfig;\n  readonly parentSessionId: string;\n  readonly signal?: AbortSignal;\n  readonly onEvent: (event: SessionEvent) => void;\n  /** Called with the nested session once it is created, before its turn starts. */\n  readonly onSession?: (session: AgentSession) => void;\n}\n\nexport const _subagentSessionDeps = {\n  createAgentSession,\n  nativeBackend,\n  createMemoryTranscriptStore,\n  resolveRuleSet,\n};\n```\n\nThe US-001 -> US-007 seam stubs nativeBackend to capture allowedTools and proves it equals the supplied input, while absent allowedTools remains an absent key. The US-005 -> US-007 seam checks instructions end with the agent prompt. Call resolveRuleSet with repoRoot/packageDir equal to input repoRoot and configured override fields, then map through toRulesIndexEntry exactly like the opener. Use captured backend/session options and a turn_end-immediate stub, not actual LLM calls. The failed-option-construction negative test asserts only that createAgentSession is not reached; error-result formatting remains US-008's responsibility. Treat allowedTools: [] as an explicit restriction, not an absent value. Empty catalogOverrides must be omitted exactly as the existing opener does.",
+      "acceptanceCriteria": [
+        "[unit] runSubagent with mode: \"guarded\" calls _subagentSessionDeps.createAgentSession with profile ask.",
+        "[unit] runSubagent with mode: \"full\" calls createAgentSession with profile full.",
+        "[unit] runSubagent with mode: \"guarded\" calls _subagentSessionDeps.nativeBackend with bashApproval gated.",
+        "[unit] runSubagent with mode: \"full\" calls nativeBackend with bashApproval raw.",
+        "[unit] runSubagent calls nativeBackend with allowUnsandboxed true and allowUnsandboxedCommands true.",
+        "[unit] runSubagent calls nativeBackend with loopHandlerRole subagent.",
+        "[unit] runSubagent calls nativeBackend with loopHandlers identical to the input's loopHandlers.",
+        "[unit] runSubagent with model: \"a/s\" calls nativeBackend with model a/s.",
+        "[unit] runSubagent with allowedTools: [\"Read\"] calls nativeBackend with allowedTools [\"Read\"].",
+        "[unit] runSubagent with no allowedTools calls nativeBackend with options that have no allowedTools key.",
+        "[unit] runSubagent with toolProviders [skills, docs] calls nativeBackend with toolProviders equal to [skills, docs].",
+        "[unit] runSubagent with config.agent.native.catalogOverrides holding one override calls nativeBackend with that catalogOverrides array.",
+        "[unit] runSubagent with config.execution.compaction set calls nativeBackend with that compaction object.",
+        "[unit] runSubagent calls createAgentSession with a transcriptStore returned by _subagentSessionDeps.createMemoryTranscriptStore.",
+        "[unit] runSubagent with cwd: \"/repo\" calls createAgentSession with workdir /repo.",
+        "[unit] runSubagent with parentSessionId: \"chat-1\" and agent reviewer calls createAgentSession with metadata { parentSessionId: \"chat-1\", subagent: \"reviewer\" }.",
+        "[unit] runSubagent with config.execution.approvalTimeout 120000 calls createAgentSession with approvalTimeoutMs 120000.",
+        "[unit] runSubagent calls createAgentSession with instructions ending in the agent's prompt.",
+        "[unit] runSubagent with _subagentSessionDeps.resolveRuleSet returning one rule calls createAgentSession with instructions containing that rule's index line.",
+        "[unit] runSubagent calls _subagentSessionDeps.resolveRuleSet with repoRoot equal to the input's repoRoot."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "native-session",
+        "security"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One new runner mirrors the existing opener's options with an immediate-end skeleton; strict TDD is retained because profile, Bash approval and allowedTools configure an actual session's authority."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/open-chat-session.ts",
+        "packages/nax/src/chat/chat-mode.ts",
+        "packages/nax/src/prompts/builders/agents-builder.ts",
+        "packages/nax-agent/src/session/agent-session-types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/subagent-session.ts",
+        "packages/nax/test/unit/chat/subagent-session.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When runSubagent receives allowedTools: [], its nativeBackend call retains allowedTools: [] rather than omitting the restriction and inheriting all tools.",
+        "When config.agent.native.catalogOverrides is [], runSubagent calls nativeBackend with no catalogOverrides key, matching open-chat-session.ts's existing omission behavior."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-008",
+      "title": "Nested session: turn, result, failures and rule delivery",
+      "description": "**Goal** — Complete nested turn execution, terminal result mapping, cancellation, guaranteed cleanup and rule delivery for subagent sessions.\n\n**Motivation** — The design rules that apply here: subagents are nested sessions in the same process, run under a mode equal to or narrower than the parent's, get the parent's tools intersected with the agent's list, take their own model through `agent.modelAliases` with `inherit` meaning the parent's model, and have depth 1.\n\n**Approach** — Turn and result (US-008): rule delivery acts for the nested session (`\"subagent\"` joins `RULE_READ_ROLES` and `RULE_WRITE_ROLES` in `src/context/rules/rule-delivery/index.ts`); it sends `task` as the only message, passes every event to `onEvent` in order, and on `turn_end` returns: status `completed` -> `{ content: output }`, or `(the subagent returned no text)` when `output` is empty; any other status -> `{ isError: true, content: \"subagent <qualifiedName> <status>: <error.message, or the status when there is no error>\" }`. `signal` aborting calls the nested session's `cancel()`; a signal already aborted at the start returns `{ isError: true, content: \"subagent <qualifiedName> cancelled: cancelled\" }` without creating a session. The session is closed in every outcome. A throw from `createAgentSession` or `send` returns `{ isError: true, content: \"[chat] subagent <qualifiedName> failed: <message>\" }`.\n\n**Scope** — In: complete the US-007 runner, extend its tests, add subagent to both delivery role lists and extend existing rule-delivery tests. Out: changing session option semantics (US-007), ownership of asks (US-009), host listener/cost forwarding and host teardown (US-010). Background (non-blocking) subagents are not supported; a `nax-agents__run` call returns when the nested turn ends.\n\n**Interface** — Continue `runSubagent(input, deps = _subagentSessionDeps)` and the existing interface from US-007:\n```ts\nexport interface RunSubagentInput {\n  readonly agent: AgentResource;\n  readonly task: string;\n  readonly mode: ChatMode;               // the chat session's mode at call time\n  readonly model: string;                // from resolveSubagentModel\n  readonly allowedTools?: readonly string[]; // from mapSubagentTools\n  readonly toolProviders: readonly ToolProvider[]; // the chat resources' providers, never the agents provider\n  readonly loopHandlers: LoopHandlerSet; // the chat host's handler set\n  readonly cwd: string;\n  readonly repoRoot: string;\n  readonly config: NaxConfig;\n  readonly parentSessionId: string;\n  readonly signal?: AbortSignal;\n  readonly onEvent: (event: SessionEvent) => void;\n  /** Called with the nested session once it is created, before its turn starts. */\n  readonly onSession?: (session: AgentSession) => void;\n}\n\nexport const _subagentSessionDeps = {\n  createAgentSession,\n  nativeBackend,\n  createMemoryTranscriptStore,\n  resolveRuleSet,\n};\n```\n\nCall onSession after creation and before send starts so host routing can own synchronous asks. Final text comes from turn_end.output, not text_delta. Use finally-based cleanup and detach abort listeners on every completion; no session exists to close when creation itself fails. Preserve the existing tui delivery role and per-session rule-delivery state. A native send may throw synchronously or during iteration, and both are mapped to the specified ToolResult.",
+      "acceptanceCriteria": [
+        "[unit] runSubagent sends the task text as the nested session's only message.",
+        "[unit] runSubagent calls the input's onSession with the nested session before the turn starts.",
+        "[unit] runSubagent passes every nested event, in order, to its onEvent callback.",
+        "[unit] When the nested turn ends completed with output done, runSubagent returns { content: \"done\" }.",
+        "[unit] When the nested turn ends completed with empty output, runSubagent returns content (the subagent returned no text).",
+        "[unit] When the nested turn ends errored with error message boom, runSubagent returns isError: true with content subagent reviewer errored: boom.",
+        "[unit] When the nested turn ends cancelled with no error, runSubagent returns isError: true with content subagent reviewer cancelled: cancelled.",
+        "[unit] When the nested turn ends timed_out with no error, runSubagent returns isError: true with content subagent reviewer timed_out: timed_out.",
+        "[unit] Aborting the signal while the nested turn runs calls the nested session's cancel.",
+        "[unit] With a signal already aborted, runSubagent returns isError: true with content subagent reviewer cancelled: cancelled.",
+        "[unit] With a signal already aborted, runSubagent does not call createAgentSession.",
+        "[unit] runSubagent calls the nested session's close once after a completed turn.",
+        "[unit] RULE_READ_ROLES contains subagent.",
+        "[unit] RULE_WRITE_ROLES contains subagent.",
+        "[unit] Given an unseen fixture rule governing a Write's path, rule-delivery handlers with role subagent return a block outcome with isError: true and the same rule-delivery content as role tui in a fresh equivalent handler state, preserving existing tui first-Write behavior.",
+        "[unit] runSubagent calls the nested session's close once after an errored turn.",
+        "[unit] When the nested session's send throws Error(\"x\"), runSubagent returns isError: true with content [chat] subagent reviewer failed: x.",
+        "[unit] When the nested session's send throws, runSubagent calls close once.",
+        "[unit] When createAgentSession throws Error(\"bad model\"), runSubagent returns isError: true with content [chat] subagent reviewer failed: bad model.",
+        "[unit] When the nested turn ends interrupted with no error, runSubagent returns { isError: true, content: \"subagent reviewer interrupted: interrupted\" }.",
+        "[unit] After a cancelled, timed_out or interrupted nested turn, runSubagent closes the nested session exactly once."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "native-session",
+        "security",
+        "rules",
+        "cancellation"
+      ],
+      "dependencies": [
+        "US-007"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Session lifecycle and rule-role eligibility cross cancellation/error paths; strict session-security TDD is required."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/subagent-session.ts",
+        "packages/nax/src/context/rules/rule-delivery/index.ts",
+        "packages/nax-agent/src/session/agent-session-types.ts"
+      ],
+      "suggestedCriteria": [
+        "When the signal aborts while createAgentSession is pending, the session returned by creation is cancelled and closed before runSubagent resolves.",
+        "Aborting the signal after runSubagent has completed does not call cancel on the closed session."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-009",
+      "title": "Chat host: agents provider and nested asks",
+      "description": "**Goal** — Attach agents to every native chat open path and route nested approvals/questions to their owning session.\n\n**Motivation** — The design rules that apply here: subagents are nested sessions in the same process, run under a mode equal to or narrower than the parent's, get the parent's tools intersected with the agent's list, take their own model through `agent.modelAliases` with `inherit` meaning the parent's model, and have depth 1.\n\n**Approach** — A new `src/chat/subagent-runs.ts` keeps host-side state for running nested sessions so `chat-host.ts` stays small:\n\n`SubagentRunsDeps` gives it `current()` (the chat session's id, mode and model; called only inside `run`, never at construction, because it throws before a session is open), the catalog, `config`, `cwd`, `repoRoot`, the base `toolProviders`, the host's loop handlers, the ask controller, `ledger()` (a getter: the host creates its ledger lazily when the first session opens), and `turnListener()` (the running send's `onEvent` or `undefined`). `run` resolves the model and tools (US-004), calls `runSubagent`, and routes the nested events:\n\n- `approval_requested` and `question`: record `requestId -> nested session`, then hand the ask controller a copy whose `reason` (approval) or `text` (question) is prefixed `[agent <qualifiedName>] `. `approval_resolved` removes the record, and the nested session closing removes all of its records. Full mode's auto-allow and the per-session allow memory apply unchanged, because the controller does both.\n\nHost changes (US-009): `NativeChatHost` creates one `SubagentRuns` and, when `resources.catalog.agents` is non-empty, passes `[...resources.toolProviders, createAgentsProvider({ catalog, run: runs.run })]` at all three open sites (start, resume, reopen for a mode or model switch); with no agents it passes `resources.toolProviders` itself, the same array as today. The ask controller's `answer` closure answers on `runs.sessionFor(requestId)` when that is defined, otherwise on the chat session.\n\n**Scope** — In: SubagentRuns state/API and ask ownership, lazy host dependency getters, model/tool resolution on each run, provider composition at all three open paths, shared host seam harness, and nested ask integration. Out: implement usage/cost/tool forwarding and host cancel/close draining in US-010; implement listing in US-011. The interface includes those US-010 operations now so the next story can complete them without changing the abstraction. Subagent depth is 1: a nested session never receives the `nax-agents` provider, and an agent's `Agent` or `Task` tool entry is dropped. Claude Code agent frontmatter other than `name`, `description`, `model` and `tools` (for example `color`, `permissionMode`, `hooks`, `skills`) is ignored; a subagent always runs in the chat session's current mode.\n\n**Interface** —\n```ts\nexport interface SubagentRuns {\n  /** Run one agent task for the chat session; wires asks, usage, cost and tool events. */\n  run(agent: AgentResource, task: string, signal?: AbortSignal): Promise<ToolResult>;\n  /** The nested session that issued this request id, if one is still running. */\n  sessionFor(requestId: string): AgentSession | undefined;\n  /** Spend of nested turns since the last call; resets to 0. */\n  takeCost(): number;\n  cancelAll(): void;\n  closeAll(): Promise<void>;\n}\nexport function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns;\n```\n\nHost-level seam ACs (US-009, US-010) use one harness: `createChatHost` with no `open` override, a fixture catalog built by `buildResourceCatalog`, and `_openChatSessionDeps.createAgentSession` stubbed to return a scripted chat session. `_openChatSessionDeps.nativeBackend` is stubbed to capture its options. The scripted session's `send` finds the provider with id `nax-agents` in the captured `toolProviders`, calls its `tools(cwd)`, then calls the `run` tool with `{ agent, task }` and a context carrying the turn's `AbortSignal`, then ends its turn. The nested session is driven through `_subagentSessionDeps` stubs. Share this harness in test/helpers/chat-subagents.ts and use it from host-subagents.test.ts; pure coordinator ask cases belong in subagent-runs.test.ts. Restore every seam after each test.\n\nThe alias seam uses reviewer with model sonnet and agent.modelAliases: { sonnet: \"anthropic/claude-sonnet-5-5\" }, entering at host.send and asserting captured nested backend options. A sibling seam maps tools Read, WebFetch to [Read]. Existing chat-host-resources.test.ts's toBe(resources.toolProviders) must stay unchanged for empty catalogs. Register request ownership before controller.handle because full mode may answer synchronously. Remove all mappings in runner completion cleanup, and never capture a pre-open current state in the constructor.",
+      "acceptanceCriteria": [
+        "[integration] Through the host harness with a catalog holding agent reviewer, start({ mode: \"guarded\", model }) passes toolProviders whose last provider has id nax-agents.",
+        "[integration] Through the host harness with a catalog holding no agents, start passes toolProviders identical to resources.toolProviders.",
+        "[integration] Through the host harness with agent reviewer, resume({ id }) passes toolProviders whose last provider has id nax-agents.",
+        "[integration] Through the host harness with agent reviewer, switchTo({ mode: \"full\" }) reopens with toolProviders whose last provider has id nax-agents.",
+        "[integration] Through host.send on a guarded host harness whose scripted session runs agent reviewer (model: sonnet) with agent.modelAliases: { sonnet: \"anthropic/claude-sonnet-5-5\" }, the nested backend gets model anthropic/claude-sonnet-5-5.",
+        "[integration] In a send that runs agent reviewer with tools: Read, WebFetch, the nested backend gets allowedTools [\"Read\"].",
+        "[integration] In a send that runs agent reviewer, the nested backend's toolProviders contain no provider whose id is nax-agents.",
+        "[integration] In a send that runs agent reviewer on a guarded host, the nested session is created with profile ask.",
+        "[integration] After host.switchTo({ mode: \"full\" }), a send that runs agent reviewer creates the nested session with profile full.",
+        "[integration] In the host harness, aborting the AbortSignal the scripted session put on the tool's run context calls the nested session's cancel.",
+        "[unit] Through createSubagentRuns, when a nested session emits approval_requested with requestId n1 and reason edit file, the ask controller's pending() contains an ask with requestId n1 and reason [agent reviewer] edit file.",
+        "[unit] After that ask, sessionFor(\"n1\") returns the nested session.",
+        "[unit] Through the native host, resolving that ask with host.asks.resolve(\"n1\", \"allow_once\") calls the nested session's answer(\"n1\", { decision: \"allow\" }).",
+        "[unit] In that resolve, the chat session's answer is not called.",
+        "[unit] Through the native host, resolving a chat-session ask p1 while a nested session runs calls the chat session's answer(\"p1\", { decision: \"allow\" }).",
+        "[unit] Through createSubagentRuns, a nested question with requestId q1 and text which file? appears in pending() with text [agent reviewer] which file?.",
+        "[unit] Through the native host, host.asks.answerQuestion(\"q1\", \"a.ts\") calls the nested session's answer(\"q1\", { text: \"a.ts\" }).",
+        "[unit] Through the native host in full mode (the ask controller's answer closure is the host's sessionFor routing), a nested approval_requested with requestId n2 is answered on the nested session with { decision: \"allow\" }.",
+        "[unit] Through the native host in full mode, that ask does not appear in host.asks.pending().",
+        "[unit] After the nested session emits approval_resolved for n1, sessionFor(\"n1\") returns undefined.",
+        "[unit] After the nested session closes, sessionFor returns undefined for every request id it issued."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "security",
+        "asks",
+        "integration"
+      ],
+      "dependencies": [
+        "US-004",
+        "US-006",
+        "US-008"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A bounded coordinator integrates existing opener, provider and ask-controller contracts across three open paths; synchronous nested approval routing and depth enforcement justify complex scope and strict security TDD, not an architectural rewrite."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/chat/ask-controller.ts",
+        "packages/nax/src/chat/agents-provider.ts",
+        "packages/nax/src/chat/subagent-session.ts",
+        "packages/nax/src/chat/subagent-model.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/subagent-runs.ts",
+        "packages/nax/test/helpers/chat-subagents.ts",
+        "packages/nax/test/unit/chat/host-subagents.test.ts",
+        "packages/nax/test/unit/chat/subagent-runs.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Creating a chat host with an agent catalog before start does not throw CHAT_SESSION_NOT_OPEN.",
+        "After switching the chat model, a subsequent run of an agent with no model uses the new parent model.",
+        "After allow_session resolves a rememberable nested approval, a later matching nested approval is answered on its nested session without appearing in pending()."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-010",
+      "title": "Chat host: subagent spend and tool events",
+      "description": "**Goal** — Attribute nested usage/spend to chat, forward nested tool activity only, and coordinate nested cancellation and teardown.\n\n**Motivation** — The main nax roadmap (user ruling 2026-10-24) makes nax a full interactive coding agent.\n\n**Approach** — Complete the host-side state in `src/chat/subagent-runs.ts` so `chat-host.ts` stays small.\n\n`SubagentRunsDeps` gives it `current()` (the chat session's id, mode and model; called only inside `run`, never at construction, because it throws before a session is open), the catalog, `config`, `cwd`, `repoRoot`, the base `toolProviders`, the host's loop handlers, the ask controller, `ledger()` (a getter: the host creates its ledger lazily when the first session opens), and `turnListener()` (the running send's `onEvent` or `undefined`). `run` resolves the model and tools (US-004), calls `runSubagent`, and routes the nested events:\n\n- `usage`: `ledger.record({ ...event, sessionId: <chat session id> }, previousAt, model, \"subagent\")`, where `previousAt` is the nested turn's `turn_start.at` or the previous usage's `at`.\n- `turn_end`: its `costUsd` is added to the amount `takeCost()` returns.\n- `tool_call` and `tool_result`: passed to `turnListener()` when one is set.\n- Other nested events are not forwarded.\n\nLedger and cost (US-010): `ChatLedger.record` gains an optional fourth argument `role: \"tui\" | \"subagent\"` (default `tui`) written as the row's `sessionRole`. `RunChatTurnOptions` gains `extraCostUsd?: () => number`, read once after `turn_end`; `writeTurnMeta` adds it to `ended.costUsd`. `host.send` sets the turn listener for the send's duration and passes `extraCostUsd: () => runs.takeCost()`; in a `finally` it clears the listener and calls `runs.takeCost()` once more, so nested spend from a send that threw is dropped rather than added to the next send. `cancel()` also calls `runs.cancelAll()`; `close()` awaits `runs.closeAll()` before the chat session closes.\n\n**Scope** — In: complete nested usage, spend, event forwarding, cancelAll/closeAll; optional ledger/turn-runner extensions; host send/cancel/close wiring and existing shared host seam tests. Out: provider attachment/ask policy changes (US-009), /agents formatting (US-011). The transcript shows a subagent's tool calls and results only; its streamed text and thinking are not shown, and its final text appears as the `nax-agents__run` tool result.\n\n**Interface** —\n```ts\nexport interface SubagentRuns {\n  /** Run one agent task for the chat session; wires asks, usage, cost and tool events. */\n  run(agent: AgentResource, task: string, signal?: AbortSignal): Promise<ToolResult>;\n  /** The nested session that issued this request id, if one is still running. */\n  sessionFor(requestId: string): AgentSession | undefined;\n  /** Spend of nested turns since the last call; resets to 0. */\n  takeCost(): number;\n  cancelAll(): void;\n  closeAll(): Promise<void>;\n}\nexport function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns;\n```\n`ChatLedger.record(event, previousAt, model?, role?: \"tui\" | \"subagent\")`; `RunChatTurnOptions` gains `extraCostUsd?: () => number`.\n\nUse the US-009 shared host harness: createChatHost with no open override, real buildResourceCatalog fixture, captured _openChatSessionDeps.nativeBackend options, scripted parent send invoking the actual nax-agents provider run with its turn signal, and nested _subagentSessionDeps stubs. Enter at host.send to prove nested usage reaches the ledger and nested spend reaches host.current().meta.costUsd. Extend existing turn-runner.test.ts for row roles and optional extra cost; existing callers and expectations stay unchanged.\n\nOnly turn_end contributes to takeCost; usage rows must not also increment that accumulator. Track previousAt per nested invocation and use the prior usage timestamp after the first usage. Do not forward nested boundaries/text/thinking to the main transcript listener. Maintain host close idempotency and existing operation/lock/resource teardown ordering while awaiting all nested close completions before the parent closes. The chat /cost command already reads metadata and needs no separate accounting mechanism.",
+      "acceptanceCriteria": [
+        "[unit] createChatLedger(...).record(event, previousAt, model, \"subagent\") writes a cost row whose sessionRole is subagent.",
+        "[unit] createChatLedger(...).record(event, previousAt, model) writes a cost row whose sessionRole is tui.",
+        "[unit] Through createSubagentRuns, a nested usage event is recorded by the ledger with an event whose sessionId is the chat session's id.",
+        "[unit] In that record, the model argument is the agent's resolved model.",
+        "[unit] In that record, the role argument is subagent.",
+        "[unit] In that record, the previousAt argument is the nested turn_start event's at.",
+        "[unit] Through createSubagentRuns, after a nested turn_end with costUsd 0.4, takeCost() returns 0.4.",
+        "[unit] A second takeCost() call right after returns 0.",
+        "[unit] runChatTurn with extraCostUsd: () => 0.25 and a chat turn_end with costUsd 1 writes session metadata whose costUsd grows by 1.25.",
+        "[unit] runChatTurn with no extraCostUsd and a chat turn_end with costUsd 1 writes session metadata whose costUsd grows by 1.",
+        "[integration] Through the host harness, after a send in which the nested turn ends with costUsd 0.4 and the chat turn ends with costUsd 1, host.current().meta.costUsd grew by 1.4.",
+        "[integration] Through the host harness, a nested tool_call event is passed to that send's onEvent.",
+        "[integration] Through the host harness, a nested tool_result event is passed to that send's onEvent.",
+        "[integration] Through the host harness, a nested text_delta event is not passed to that send's onEvent.",
+        "[integration] Through the host harness, when the scripted chat session's send throws after a nested turn ended with costUsd 0.4, the next send whose chat turn ends with costUsd 1 grows host.current().meta.costUsd by 1, not 1.4.",
+        "[integration] Through the host harness, host.cancel() while a nested session runs calls that nested session's cancel.",
+        "[integration] Through the host harness, host.close() while a nested session runs resolves only after that nested session's close has resolved.",
+        "[integration] Through the host harness, when host.cancel() cancels a running subagent and its turn ends cancelled, that nested session is closed before the parent send settles."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "cost",
+        "events",
+        "security",
+        "lifecycle"
+      ],
+      "dependencies": [
+        "US-009"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Four existing modules extend optional accounting and connect per-send listeners and nested shutdown; cancellation and close ordering require strict session-lifecycle TDD, while the established ledger and runner avoid expert-level redesign."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/chat-ledger.ts",
+        "packages/nax/src/chat/turn-runner.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/chat/subagent-runs.ts",
+        "packages/nax/test/helpers/chat-subagents.ts"
+      ],
+      "suggestedCriteria": [
+        "When a nested turn emits two usage events, the second ledger record uses the first usage event's at as previousAt.",
+        "runChatTurn invokes extraCostUsd exactly once after observing turn_end.",
+        "Through the host harness, nested thinking_delta events are not passed to that send's onEvent.",
+        "Through the host harness, the parent session's close is not called until the running nested session's close has resolved."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-011",
+      "title": "/agents",
+      "description": "**Goal** — Expose catalog agents, resolved models and mapped/dropped tools through the native host and a built-in /agents command.\n\n**Motivation** — Claude Code users keep reviewers, planners and researchers as agent files; today `/plugins` prints `agents N (not delivered yet)` and the chat model has no way to use them.\n\n**Approach** — `ChatAgentRow` (in `src/chat/chat-agents-listing.ts`, exported from `@/chat`) is `{ name, description, model, modelSource, tools: readonly string[] | \"all\", dropped }`. `ChatHost.agents?(): readonly ChatAgentRow[]` returns one row per catalog agent in catalog order, resolved against the chat session's current model. `formatAgentsListing(rows)` prints one line per agent `<name>  <model> (<modelSource>)  tools <comma list, \"all\", or \"none\">  <description>` (description cleaned by `cleanIndexDescription`), then an indented line `  dropped: <name> (<reason>)` per dropped tool; with no rows it prints `(no agents)`. `/agents` is a built-in slash command between `/mcp` and `/quit`.\n\n**Scope** — In: listing row/formatter, native host agents(), chat barrel exports, slash-command routing/help order, empty optional-host fallback and focused formatter/host/UI seams. Out: model/tool resolver changes (US-004), provider/session execution (US-006 to US-009), cost accounting (US-010). A per-agent model or tool override inside chat is not added; the agent file and `agent.modelAliases` are the switches.\n\n**Interface** — `ChatAgentRow` is `{ name, description, model, modelSource, tools: readonly string[] | \"all\", dropped }`; `ChatHost.agents?(): readonly ChatAgentRow[]`; `formatAgentsListing(rows)`.\n\nUse resolveSubagentModel and mapSubagentTools rather than duplicating precedence or translations. An absent tools list is all; [] is none. Preserve shadowed resources using qualified names and catalog order. A host without agents() shows (no agents). The native host's current model must be read at listing time so inherited models follow switches; do not cache resolved rows at construction.\n\nRequired existing test update: packages/nax/test/ui/chat/slash-commands.test.tsx COMMANDS gains agents between mcp and quit; the contiguous /help expectation and parameterized AC-19 blocks /%s during turn then include /agents. Add the US-009 -> US-011 seam through runSlashCommand on a native host built by createChatHost with a fixture catalog agent, asserting show receives a line starting with the qualified agent name. Reuse the shared host harness rather than a mock agents() implementation for this integration seam.",
+      "acceptanceCriteria": [
+        "[unit] formatAgentsListing([]) returns (no agents).",
+        "[unit] formatAgentsListing for a row { name: \"reviewer\", description: \"Reviews diffs\", model: \"a/s\", modelSource: \"alias\", tools: [\"Read\"], dropped: [] } returns reviewer  a/s (alias)  tools Read  Reviews diffs.",
+        "[unit] formatAgentsListing for a row whose tools is \"all\" prints tools all.",
+        "[unit] formatAgentsListing for a row whose tools is [] prints tools none.",
+        "[unit] formatAgentsListing for a row with dropped: [{ name: \"WebFetch\", reason: \"no nax equivalent\" }] prints a following line \"  dropped: WebFetch (no nax equivalent)\".",
+        "[unit] formatAgentsListing for a row whose description is a\\nb prints a b on the agent's line.",
+        "[unit] The native host's agents() with no catalog agents returns [].",
+        "[unit] The native host's agents() for agent reviewer with model: sonnet and agent.modelAliases: { sonnet: \"a/s\" } returns a row with model a/s.",
+        "[unit] That row's modelSource is alias.",
+        "[unit] The native host's agents() for an agent with no model returns a row whose model is the chat session's current model and modelSource is inherit.",
+        "[unit] The native host's agents() for an agent with no tools returns a row whose tools is all.",
+        "[unit] The native host's agents() for agent p:reviewer shadowed by a project reviewer returns rows named reviewer and p:reviewer in catalog order.",
+        "[integration] runSlashCommand for /agents on a native host built by createChatHost with a fixture catalog agent reviewer calls show with text whose first line starts with reviewer.",
+        "[unit] runSlashCommand for /agents on a host without agents calls show with (no agents).",
+        "[unit] /help output lists /agents between /mcp and /quit.",
+        "[unit] /agents is blocked while a turn runs, like every other built-in slash command.",
+        "[unit] Given a row typed as ChatAgentRow imported from @/chat with name reviewer, description Reviews diffs, model a/s, modelSource alias, tools [\"Read\"] and dropped [], formatAgentsListing imported from @/chat returns \"reviewer  a/s (alias)  tools Read  Reviews diffs\".",
+        "[unit] The native host's agents() for an agent with an unknown model label returns the chat model with modelSource fallback.",
+        "[unit] The native host's agents() for an agent with tools [\"Read\", \"WebFetch\"] exposes dropped [{ name: \"WebFetch\", reason: \"no nax equivalent\" }]."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "listing"
+      ],
+      "dependencies": [
+        "US-009"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A read-only host projection, formatter and built-in slash route reuse existing resolution helpers; no session lifecycle or permission enforcement changes, so simple TDD with the native-host seam and existing UI regression is sufficient."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/chat/chat-mcp-listing.ts",
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/chat/subagent-model.ts",
+        "packages/nax/src/chat/subagent-tools.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/chat-agents-listing.ts",
+        "packages/nax/test/unit/chat/chat-agents-listing.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/slash-commands.test.tsx",
+          "reason": "the file's COMMANDS list (used by \"AC-16 help lists every command\" as one contiguous run, and by \"AC-19 blocks /%s during turn\") gains \"agents\" between \"mcp\" and \"quit\"; AC-19 then also covers /agents, which is blocked during a turn like every other built-in."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "This is an additive enhancement to the existing native chat/resource architecture, not a greenfield agent implementation. Navigation used direct reads and text search because codebase-memory MCP was unavailable. The eleven-story decomposition and dependency graph are binding. Build order: US-001/002/003 independently; US-004 after 003; US-005 after 002; US-006 after 002/005; US-007 after 001/005; US-008 after 007; US-009 after 004/006/008; US-010 and US-011 after 009. Only US-001 edits nax-agent; all other implementation edits belong to packages/nax. No nax-ai or ACP changes, release, dependency additions, or version bumps are required.\n\nArchitecture and repository constraints: docs/architecture/ARCHITECTURE.md:17 documents injectable _deps external-call seams and docs/architecture/ARCHITECTURE.md:92 identifies prompts as a dedicated composition subsystem. Keep prompt literals in prompts/builders and compose host orchestration through a new subagent-runs module rather than growing chat-host. nax-agent must remain Node-compatible and use #src imports or explicit .ts relative imports; nax consumes its supported session APIs through @nathapp/nax-agent and must not import nax-ai here. Existing chat mode resolution is authoritative: packages/nax/src/chat/chat-mode.ts:12 maps guarded to ask/gated and full to full/raw; nested sessions consume that same resolved mode, not a separate agent permission profile. Do not add local permission fallbacks or reinterpret agent frontmatter permissions. Session, access-control, tool narrowing, ask routing and lifecycle stories use strict three-session-tdd. Unit/integration tests use bun:test and restored dependency seams rather than global module replacement. Show regression tests failing against old behavior before implementation. Run package-scoped commands, never bare bun test; do not run coverage inside NAX_SANDBOXED=1. Existing gates belong to the pipeline, not acceptance criteria.\n\nUS-001 findings: packages/nax-agent/src/session/native-backend-options.ts:18 defines NativeBackendOptions, and :73 starts a strict options schema that currently rejects allowedTools. Validation preserves the caller object rather than using Zod copies, so add shape validation without breaking identity. packages/nax-agent/src/session/session-tool-support.ts:31 defines profile declarations with universal scratchpads, :44 derives grants, :54 derives asks, and :158 builds coding support from that list. Filter profile tools before grants/asks, always retaining UNIVERSAL_CODING_TOOLS; never widen a profile. packages/nax-agent/src/session/native-backend.ts:79 currently resolves providers without admission options and :95 builds session tool support. packages/nax-agent/src/tools/provider-advertise.ts:103 already accepts admits; its :136 admission check occurs before adaptation, grants and ask collection, and :149 suppresses instructions when no provider tools survive. Reuse that existing seam for exact <id>__<tool> and <id>__* matches. Do not filter embedder tools. Existing tests include native-backend-options.test.ts, native-backend-providers.test.ts, session-tool-support.test.ts, native-backend.test.ts, agent-session-ask-profile.test.ts and session-interaction.test.ts under packages/nax-agent/test/unit/session. native-backend-providers.test.ts:50 provides a real backend-opening harness with memory transcripts; use its pattern rather than asserting only an isolated filter. Adding an option changes no exported type names, so the API dump should not change.\n\nUS-002 findings: packages/nax/src/resources/types.ts:38 declares AgentResource without prompt, :91 declares ResourceCatalog without agents/findAgent, while ResourcePackage already has agents. packages/nax/src/resources/parse-agent.ts:17 parses frontmatter but discards parsed.body; parse-skill.ts:30 retains parsed.body directly and is the reference for body fidelity. packages/nax/src/resources/catalog.ts:7 indexes only SkillResource | CommandResource; :35 builds indexes preserving package order and collision diagnostics. Extend this generic union and existing precedence rather than inventing a parallel agent lookup. The loader at catalog.ts:49 already delegates discovery to Claude package discovery and appends nax plugin packages, so discovery itself needs no new mechanism. packages/nax/src/resources/listing.ts:50 prints the deferred agent marker alongside the hooks marker; remove only the former. Required fixture migration: packages/nax/test/unit/resources/parse-agent.test.ts:9 and :45 whole-resource expectations gain prompt equal to Instructions, with the latter test renamed to reflect retained body; every other metadata expectation stays unchanged. packages/nax/test/unit/resources/listing.test.ts:28 agent literals gain prompt: empty string and :84 listing expectation loses only the agents marker. Extend existing catalog.test.ts, whose loadResourceCatalog tests start at :121, for fixture-repository discovery. Catalog changes also affect resources/skills-provider.ts, chat/resources.ts, slash commands, CLI resource loading and runtime resource consumers; most obtain catalogs through buildResourceCatalog and need no behavior change. Search typed literal mocks before editing because required catalog fields and prompt can surface type errors.\n\nUS-003/004 findings: packages/nax/src/config/schemas-infra.ts:464 declares AgentConfigSchema; schemas.ts:378 supplies a complete explicit agent default that must separately receive modelAliases: {} because that default is returned without parsing the nested object. packages/nax/src/config/runtime-types-agent.ts:204 is the handwritten runtime interface; config-descriptions.ts:374 begins related agent descriptions. Update all four surfaces, keeping modelAliases optional in the handwritten interface and defaulting it in both Zod paths. packages/nax-agent/src/native/models.ts:44 strips effort then splits the first slash; the alias validator additionally must reject whitespace as explicitly required by this spec. It must accept extra slashes in the model remainder and an optional effort suffix without requiring a catalog lookup or importing nax-ai. packages/nax/src/config/schemas-model.ts:207 and :219 show native tier entries may be objects or strings; preserve strings, compose object provider/model, and let aliases beat haiku/sonnet/opus tier defaults. Pure model/tool helpers belong in new chat files and are exported via packages/nax/src/chat/index.ts:1. Existing config tests to extend include test/unit/config/agent-schema.test.ts, schemas-infra.test.ts and schemas.test.ts. No persisted-config migration is necessary; {} preserves existing behavior. Tool-pattern removal is normalization, not enforcement: the whole mapped tool is granted and guarded asks still apply. Unknown entries drop without ever adding capabilities. Undefined tools and [] must remain distinguishable.\n\nUS-005/006 findings: packages/nax/src/prompts/builders/skills-builder/index.ts:7 builds the skills index; :13 performs whitespace collapse, C0/C1 removal, a second space collapse and truncation. Extract exactly that sequence into cleanIndexDescription so existing skills output stays byte-identical. packages/nax/src/prompts/builders/chat-builder.ts:17 builds chat instructions and :18 chooses permission sentences; preserve existing output, including headings and sandbox paragraph, when extracting chatPermissionParagraph. Reuse rules-index-builder and export the new agents builders from prompts/index.ts. Existing prompt tests are test/unit/prompts/builders/skills-builder.test.ts and chat-builder.test.ts. packages/nax/src/resources/skills-provider.ts:78 demonstrates a static provider with strict JSON schema, namespaced tool adaptation, injected resource lookup, instructions and bounded available-name errors. Mirror its pattern without loading agent instructions into the parent prompt. packages/nax/src/chat/chat-mcp.ts:27 reserves only nax-skills; :63 constructs the diagnostic and :100 filters the reserved server. Replace the single id with a set and parameterize the existing diagnostic so nax-skills wording/path/severity remain intact and nax-agents cannot be shadowed. Extend test/unit/chat/chat-mcp.test.ts while adding provider tests.\n\nUS-007/008 findings: packages/nax/src/chat/open-chat-session.ts:123 builds existing session options. Its rule lookup uses repoRoot for both repoRoot and packageDir plus configured overrideDir/overrideMode; :137 forwards catalogOverrides only when nonempty and compaction only when present; :140 composes nativeBackend including unsandboxed flags, carryHistoryAcrossModels, handlers and role. Mirror those options for subagents but use a fresh createMemoryTranscriptStore and omit storage metadata/locks/persistence. packages/nax-agent/src/session/agent-session-types.ts:53 defines facade options, :83 enumerates all five end statuses, :155 defines SessionEvent, and :168 defines AgentSession. send returns an AsyncIterable and claims the turn synchronously before its first next; close is idempotent and cancels/waits for a running turn. Wire onSession before starting send, handle throws both at send invocation and while iterating, preserve event order, and close in finally without leaking abort listeners. Resolve abort-before-create without allocating a session, and account for an abort while asynchronous creation is in progress. Only turn_end.output is final output; do not derive it from text deltas. packages/nax/src/context/rules/rule-delivery/index.ts:76 and :88 list eligible roles, :394 gates delivery, and :149 stores delivered identities per session name. Add subagent to both role arrays while sharing the host handler set; existing per-session tracking gives independent delivery. Existing rule-delivery.test.ts tests use toContain(tui), so the additive role should not alter their assertions. Scope US-007 to options and an immediate-end stub skeleton; US-008 completes results/cancellation/errors and rule delivery without creating a second runner.\n\nUS-009/010 findings: packages/nax/src/chat/resources.ts:7 already groups catalog, base toolProviders, pluginHandlers and teardown. packages/nax/src/chat/chat-host.ts:84 owns NativeChatHost; :120 currently routes every answer to the chat session. The three resource provider sites are :185 (start), :257 (resume) and :294 (reopen, including rollback). Compose a static agents provider only when agents exist, otherwise preserve the exact original array reference. current() is unreadable until a handle exists, so pass lazy current/ledger/turnListener closures when creating SubagentRuns and resolve current only inside run. The ledger is initialized lazily at chat-host.ts:199. packages/nax/src/chat/ask-controller.ts:44 handles approval/question events, performs full-mode and remembered auto-answer synchronously at :56, and preserves per-session approval memory; register requestId ownership before handing it an event. Prefix display reason/text on copies, not original events, and route answers to their nested session without changing controller options. Remove ownership on approval_resolved and runner completion. Nested sessions receive base resource providers only; never the nax-agents provider, including when tools is absent, making depth 1 structural.\n\nThe required host seam harness enters createChatHost without an open override, builds a real catalog, stubs _openChatSessionDeps.createAgentSession with a scripted parent, and captures _openChatSessionDeps.nativeBackend options. During parent send, discover nax-agents in those captured providers, await tools(cwd), then invoke run with agent/task and the turn AbortSignal. Drive the nested session via _subagentSessionDeps. Share this harness between US-009 and US-010; extend it for the US-011 slash seam instead of bypassing provider composition or calling helpers directly. packages/nax/test/unit/chat/chat-host-resources.test.ts:120 anchors original provider-array identity, :143 tests close/teardown ordering, and :225 demonstrates real opener seams. Preserve these tests unchanged. Keep seam restoration and temp fixtures in shared helpers.\n\npackages/nax/src/chat/chat-ledger.ts:8 defines record(event, previousAt, model?) and :41 hardcodes sessionRole tui. Add the optional fourth role with tui default. Rewrite only the copied nested usage event sessionId to the parent id for the existing run-id grouping; record the resolved nested model and subagent role. Each nested invocation needs independent turn_start/previous usage timestamps so concurrent/nested calls do not share duration state. Accumulate turn_end spend separately from usage rows to avoid double-counting. packages/nax/src/chat/turn-runner.ts:9 defines options, :20 writes cumulative stored metadata, and :42 consumes a parent turn then drains the ledger. Read extraCostUsd once after a real turn_end, add it to that turn's cost, and keep calls without it unchanged. packages/nax/src/chat/chat-host.ts:327 wraps send; install and clear the event listener for exactly that send, and drain leftover nested cost in finally to prevent carryover after a throw. Only tool_call/tool_result reach the parent listener, not nested text, thinking, usage, asks, or turn boundaries. chat-host.ts:352 currently cancels only parent and :375 tears down parent before resources; extend to cancel nested work and await nested close before closing parent or MCP/resources. Preserve close idempotency, session-operation drains, lock ownership, rollback and teardown ordering. Existing test/unit/chat/turn-runner.test.ts:1 covers both ledger and runner using real temp storage and cost files. Extend it and host tests rather than changing default behavior.\n\nUS-011 findings: packages/nax/src/tui/chat/slash-commands.ts:26 holds the built-in order and :107 handles mcp; add agents between mcp and quit with optional-host fallback. /cost already reads host.current().meta.costUsd, so US-010 metadata accounting automatically includes nested spend. packages/nax/src/chat/chat-host.ts:34 defines optional resources on ChatHost; add optional agents() to avoid breaking existing UI hosts. Add chat-agents-listing.ts and exports in chat/index.ts, formatting all catalog agents in order and resolving current model at listing time. packages/nax/test/ui/chat/slash-commands.test.tsx:11 has a parallel COMMANDS fixture that must gain agents between mcp and quit; its host fixture at :51 omits optional APIs and must continue to work. Existing chat-mcp-listing.ts is the formatting reference. Build a native-host runSlashCommand seam with a real catalog in addition to pure formatter tests.\n\nRisk and migration summary: primary hazards are accidentally widening tool permissions, filtering after grants, losing universal scratchpads, allowing nested agents through inherited providers, misrouting synchronous full-mode auto-approvals, leaking sessions or AbortSignal listeners, persisting ephemeral subagents, deadlocking close, and charging nested spend twice or carrying failed-send spend into another send. Undefined allowedTools must preserve current backend behavior exactly; unknown tool names do not add tools; unknown model labels fall back visibly rather than fail. The API changes are additive except required prompt/catalog properties in internal resource literals, which need narrowly scoped fixture updates described above. Existing skills/chat prompt outputs, no-agent array identity, hooks wording, original reserved-id diagnostic, default tui cost rows, and existing metadata accumulation are explicit regression anchors. No database/transcript migration is needed: only parent metadata/cost rows persist and nested transcripts stay memory-only. Feature completion means a real host send can invoke a catalog agent through nax-agents__run, inherit current permissions, narrow declarations, resolve its model, route human asks, deliver rules, return final text, account usage/cost, clean up on failure/cancellation, and expose /agents. Keep .nax context/manual design-status updates and nax generate outside implementation stories; only this requested PRD artifact is written here.\n\nSecond-pass adversarial audit: enumerated all 190 explicit spec ACs against their original story and ordinal: US-001 18, US-002 13, US-003 9, US-004 19, US-005 15, US-006 22, US-007 20, US-008 19, US-009 21, US-010 17, US-011 17. None were dropped or moved. Exact regression anchors remain: US-001 as before this change; US-005 same text as before this change for skills and both chat modes; US-006 injected ToolResult unchanged and nax-skills still reserved; US-007 loopHandlers identity and absent allowedTools key; US-008 tui Write behavior; US-009 no-agent provider-array identity and the full-mode host-routing parenthetical; US-010 default tui rows and no-extra-cost behavior; US-011 turn blocking like every other built-in. No deprecated grep/file/verbatim AC tags exist. Public-export checks now exercise callable exports or a typed-row formatter consumer; prompt-regression ACs freeze literal expected output rather than comparing the new helper with itself. The rule-handler AC states the observable unseen-rule Write block and compares content against a fresh equivalent tui handler state.\n\nEvery story has a negative path: invalid options/undeclared Write (001), missing agent lookup and collisions (002), malformed aliases (003), unknown model/tool and Agent/Task dropping (004), control-character rejection from index output (005), malformed/unknown provider input and reserved MCP collision (006), backend-option-construction throw preventing creation plus explicit empty restriction preservation (007), throw/abort/non-completed status cleanup (008), cancellation and prevention of nested-provider/answer misrouting (009), failed-send accounting isolation and cancellation/close (010), unknown model/tool display, optional-host fallback and turn blocking (011). US-007's new option-construction failure AC asserts only that createAgentSession is not reached; it does not move error-result mapping out of US-008. All ten Failure Handling table rows have behavioral ACs, including interrupted results, no allocation for aborted/invalid requests, qualified fallback/drop display, and an actual host-cancel seam proving the nested session closes before send settles.\n\nAll sixteen feature-level exclusions remain verbatim in outOfScope, with nearest-story scope echoes intact. All spec-recommended context files are retained within the five-file limit. US-010's additional context is the shared harness created by upstream US-009; no story lists its own output as context. Binding IDs, workdirs and dependency arrays remain exactly unchanged; no invalid references or nonbinding dependency edges were found. Newly named tests/helpers are explicit planned outputs, not assumed existing APIs. Direct source re-reads confirm FIELD_DESCRIPTIONS at packages/nax/src/cli/config-descriptions.ts:8, existing prompt literals at prompts/builders/chat-builder.ts:18-27 and skills-builder/index.ts:8-23, omission of empty catalog overrides at chat/open-chat-session.ts:153, synchronous controller auto-answer at chat/ask-controller.ts:53-57, and first-Write rule blocking at context/rules/rule-delivery/index.ts:410-452.\n\nRouting was reduced to realistic module scope: US-001 and US-007 are medium, while US-009/010 are complex rather than expert because they integrate existing contracts rather than replace the architecture. Strict three-session-tdd remains on actual tool-authority mapping, session options/lifecycle and approval/role routing (001, 004, 007, 008, 009, 010). Pure prompt formatting (005), static provider validation/injected dispatch without session ownership (006), and read-only listing/slash wiring (011) use medium/tdd-simple. US-002/003 retain medium/tdd-simple. Final acceptance arrays contain 198 behavioral criteria, including retained failure-table criteria and three focused negative-path/failure-table additions from this audit; explicit empty-allowlist forwarding and omission of empty catalog overrides are kept in suggestedCriteria rather than promoted to mandatory spec ACs. No quality-gate criteria were added.",
+  "outOfScope": [
+    "Subagents in `nax run` are not supported; the agents provider attaches to `nax chat` only.",
+    "Subagent depth is 1: a nested session never receives the `nax-agents` provider, and an agent's `Agent` or `Task` tool entry is dropped.",
+    "Nested sessions are not persisted: they use an in-memory transcript store, are not listed by `/sessions`, and cannot be resumed; a resumed chat session does not restore a subagent that was running when the process died.",
+    "Claude Code agent frontmatter other than `name`, `description`, `model` and `tools` (for example `color`, `permissionMode`, `hooks`, `skills`) is ignored; a subagent always runs in the chat session's current mode.",
+    "Narrowing a subagent's mode below the chat session's (for example a read-only profile for an agent whose tools are all read-only) is not done; the tool narrowing is the only narrowing.",
+    "A Claude Code tool pattern such as `Bash(git diff:*)` is not enforced; the entry grants the whole tool and the existing guarded asks still apply to every call.",
+    "Embedder tools (`CreateAgentSessionOptions.tools`) are not filtered by `allowedTools`.",
+    "Claude Code plugin MCP tool names of the form `mcp__plugin_<plugin>_<server>__<tool>` are not translated to nax's `<plugin>-<server>` server ids; such an entry maps to `plugin_<plugin>_<server>__<tool>` and matches nothing.",
+    "The transcript shows a subagent's tool calls and results only; its streamed text and thinking are not shown, and its final text appears as the `nax-agents__run` tool result.",
+    "Background (non-blocking) subagents are not supported; a `nax-agents__run` call returns when the nested turn ends.",
+    "A per-agent model or tool override inside chat is not added; the agent file and `agent.modelAliases` are the switches.",
+    "Agents are not hot-reloaded; a changed agent file takes effect at the next `nax chat` start.",
+    "Hooks stay parsed and listed as not executed.",
+    "Updating `.nax/mono/packages/nax/context.md` and `.nax/mono/packages/nax-agent/context.md` for subagents and `allowedTools`, then running `nax generate`, is a manual step after merge; `.nax/` is read-only to the run.",
+    "The design doc §5.1 status line for F5b is updated by hand with this spec, not by a story.",
+    "No release and no version bump."
+  ],
+  "routingProfile": "native-claude-opus"
+}
