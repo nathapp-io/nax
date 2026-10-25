@@ -107,6 +107,73 @@ describe("createChatHost resources", () => {
     expect(f.events).toEqual(["close", "release", "teardown"]);
     expect(f.resources.teardown).toHaveBeenCalledTimes(1);
   });
+  test.each(["start", "clear", "resume", "switch"] as const)(
+    "AC-21 close drains a pending %s opener and late session cleanup before teardown",
+    async (operation) => {
+      const f = fixture();
+      const host = f.build();
+      await host.start({ mode: "guarded", model: "test/model" });
+      const entered = Promise.withResolvers<void>();
+      const opened = Promise.withResolvers<void>();
+      const cleanupEntered = Promise.withResolvers<void>();
+      const cleanupAllowed = Promise.withResolvers<void>();
+      const meta = host.current().meta;
+      f.open.mockImplementation(async (request) => {
+        entered.resolve();
+        await opened.promise;
+        return {
+          meta: { ...meta, mode: request.mode === "full" ? ("full" as const) : ("ask" as const) },
+          session: {
+            ...f.session,
+            close: async () => {
+              f.events.push("close:late");
+              cleanupEntered.resolve();
+              await cleanupAllowed.promise;
+            },
+          },
+          release: async () => {
+            f.events.push("release:late");
+          },
+        };
+      });
+      const pending =
+        operation === "clear"
+          ? host.clear()
+          : operation === "resume"
+            ? host.resume({ id: "another-id" })
+            : operation === "switch"
+              ? host.switchTo({ mode: "full" })
+              : host.start({ mode: "guarded", model: "test/model" });
+      // Observe rejection immediately: late replacement may reject once the host closes.
+      const settled = Promise.allSettled([pending]);
+      await entered.promise;
+      let closeResolved = false;
+      const closing = host.close().then(() => {
+        closeResolved = true;
+      });
+      try {
+        // A microtask checkpoint, not a timed wait, lets premature close complete.
+        for (let checkpoint = 0; checkpoint < 10; checkpoint++) await Promise.resolve();
+        expect(f.resources.teardown).not.toHaveBeenCalled();
+        expect(closeResolved).toBe(false);
+        opened.resolve();
+        await cleanupEntered.promise;
+        expect(f.resources.teardown).not.toHaveBeenCalled();
+        expect(closeResolved).toBe(false);
+      } finally {
+        opened.resolve();
+        cleanupAllowed.resolve();
+        await settled;
+        await closing;
+      }
+      expect(f.events.indexOf("close:late")).toBeLessThan(f.events.indexOf("teardown"));
+      const release = operation === "switch" ? "release" : "release:late";
+      expect(f.events.indexOf(release)).toBeGreaterThanOrEqual(0);
+      expect(f.events.indexOf(release)).toBeLessThan(f.events.indexOf("teardown"));
+      expect(f.resources.teardown).toHaveBeenCalledTimes(1);
+      expect(closeResolved).toBe(true);
+    },
+  );
   test("AC-22/23 no resources exposes no catalog and only rule handlers", async () => {
     const f = fixture();
     const host = f.build(false);

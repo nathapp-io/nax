@@ -93,6 +93,7 @@ class NativeChatHost implements ChatHost {
   private resumeNotice?: string;
   private closed = false;
   private closing?: Promise<void>;
+  private readonly sessionOperations = new Set<Promise<void>>();
 
   constructor(private readonly deps: ChatHostDeps) {
     this.repoRoot = deps.repoRoot;
@@ -149,7 +150,24 @@ class NativeChatHost implements ChatHost {
     };
   }
 
+  private async withSessionOperation(operation: () => Promise<void>): Promise<void> {
+    this.assertOpen();
+    // Register before invoking the operation, including its first asynchronous read/open.
+    const completed = Promise.withResolvers<void>();
+    this.sessionOperations.add(completed.promise);
+    try {
+      await operation();
+    } finally {
+      this.sessionOperations.delete(completed.promise);
+      completed.resolve();
+    }
+  }
+
   async start(input: { mode: ChatMode; model: string }): Promise<void> {
+    await this.withSessionOperation(() => this.startSession(input));
+  }
+
+  private async startSession(input: { mode: ChatMode; model: string }): Promise<void> {
     this.assertOpen();
     const next = await (this.deps.open ?? openChatSession)({
       ...input,
@@ -165,7 +183,7 @@ class NativeChatHost implements ChatHost {
   }
 
   private async replace(next: ChatSessionHandle): Promise<void> {
-    // An open that completes after final teardown must not leak its new lock.
+    // A late open must release its handle before the operation drain can finish.
     if (this.closed) {
       await closeHandle(next);
       this.assertOpen();
@@ -208,6 +226,10 @@ class NativeChatHost implements ChatHost {
   }
 
   async resume(input: { id?: string }): Promise<void> {
+    await this.withSessionOperation(() => this.resumeSession(input));
+  }
+
+  private async resumeSession(input: { id?: string }): Promise<void> {
     this.assertOpen();
     const id = input.id ?? (await this.latestId());
     if (this.handle?.meta.sessionId !== id) {
@@ -262,6 +284,10 @@ class NativeChatHost implements ChatHost {
   }
 
   async switchTo(input: { mode?: ChatMode; model?: string }): Promise<void> {
+    await this.withSessionOperation(() => this.switchSession(input));
+  }
+
+  private async switchSession(input: { mode?: ChatMode; model?: string }): Promise<void> {
     const previous = this.requireHandle();
     const from = this.current();
     const target = { mode: input.mode ?? from.mode, model: input.model ?? from.model };
@@ -325,6 +351,9 @@ class NativeChatHost implements ChatHost {
   }
 
   private async teardown(): Promise<void> {
+    // closed blocks new operations. Drain existing opens, replacements and rollback
+    // reopens (including late-handle cleanup) before releasing the final handle.
+    await Promise.all(this.sessionOperations);
     try {
       if (this.handle) await closeHandle(this.handle);
     } finally {
