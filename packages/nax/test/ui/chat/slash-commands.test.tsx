@@ -67,9 +67,11 @@ function mount() {
     });
   const line = async (text: string) => {
     type(text);
-    await act(async () => {
-      ui.stdin.write("\r");
-    });
+    await Promise.resolve(
+      act(async () => {
+        ui.stdin.write("\r");
+      }),
+    );
   };
   return { ...ui, host, send, line, type, finish: () => gate.resolve() };
 }
@@ -164,7 +166,7 @@ describe("slash command routing", () => {
     expect(ui.host.resume).not.toHaveBeenCalled();
     expect(ui.host.listSessions).not.toHaveBeenCalled();
     expect(ui.send).toHaveBeenCalledTimes(1);
-    await act(async () => ui.finish());
+    await Promise.resolve(act(async () => ui.finish()));
   });
   test("AC-20 cancels before close during turn", async () => {
     const ui = mount();
@@ -178,7 +180,7 @@ describe("slash command routing", () => {
     await ui.line("hello");
     await ui.line("/quit");
     expect(order).toEqual(["cancel", "close"]);
-    await act(async () => ui.finish());
+    await Promise.resolve(act(async () => ui.finish()));
   });
   test.each(["clear", "resume"] as const)("AC-23 shows rejected /%s without closing old session", async (name) => {
     const ui = mount();
@@ -192,7 +194,7 @@ describe("slash command routing", () => {
     expect(ui.host.close).not.toHaveBeenCalled();
     await ui.line("still open");
     expect(ui.send).toHaveBeenCalledWith("still open", expect.any(Function));
-    await act(async () => ui.finish());
+    await Promise.resolve(act(async () => ui.finish()));
   });
 });
 describe("feature command", () => {
@@ -205,9 +207,11 @@ describe("feature command", () => {
       const ui = mount();
       await ui.line("/feature auth");
       ui.type("\u0003");
-      await act(async () => {
-        gate.resolve("spec");
-      });
+      await Promise.resolve(
+        act(async () => {
+          gate.resolve("spec");
+        }),
+      );
       expect(ui.host.close).toHaveBeenCalledTimes(1);
       expect(ui.send).not.toHaveBeenCalled();
     } finally {
@@ -246,7 +250,7 @@ describe("feature command", () => {
           expect.any(Function),
         );
       }
-      await act(async () => ui.finish());
+      await Promise.resolve(act(async () => ui.finish()));
     } finally {
       _slashCommandDeps.readText = original;
     }
