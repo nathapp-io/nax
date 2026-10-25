@@ -1,3 +1,4 @@
+export { type AgentsProviderOptions, createAgentsProvider } from "./agents-provider";
 export {
   type AskChoice,
   type ChatApproval,

@@ -151,6 +151,25 @@ describe("createChatMcp", () => {
     expect(reserved?.severity).toBe("error");
     expect(reserved?.message).toBe("[resources] mcp server id nax-skills is reserved");
   });
+  test("AC-20/21 nax-agents is reserved: not attached, error diagnostic", async () => {
+    const f = install();
+    const chat = await createChatMcp(input({ "nax-agents": server() }));
+    expect(chat.providers.map((p) => p.id)).not.toContain("nax-agents");
+    expect(f.createMcpPool).not.toHaveBeenCalled();
+    expect(chat.state.servers).toEqual([]);
+    const reserved = chat.state.diagnostics.find((d) => d.message.includes("mcp server id nax-agents is reserved"));
+    expect(reserved?.severity).toBe("error");
+    expect(reserved?.message).toBe("[resources] mcp server id nax-agents is reserved");
+  });
+  test("AC-22 each reserved id gets its own diagnostic when both are configured", async () => {
+    install();
+    const chat = await createChatMcp(input({ "nax-skills": server(), "nax-agents": server() }));
+    expect(chat.state.diagnostics.map((d) => d.message)).toEqual([
+      "[resources] mcp server id nax-skills is reserved",
+      "[resources] mcp server id nax-agents is reserved",
+    ]);
+    expect(chat.state.diagnostics.map((d) => d.path)).toEqual(["mcp.servers.nax-skills", "mcp.servers.nax-agents"]);
+  });
   test("diagnostics: merge diagnostics, then only .mcp.json and .claude.json catalog diagnostics", async () => {
     install();
     const origin = { kind: "claude-project" } as const;
