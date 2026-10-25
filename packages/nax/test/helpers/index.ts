@@ -19,6 +19,21 @@ export { makeBotFixDeps, makeBotFixDraftEnv, makeBotFixEnv } from "./bot-fix";
 export { makeBotReviewDeps } from "./bot-review";
 export { makeMockCallContext } from "./call-context";
 export { type CallOpStubOptions, DEFAULT_AGENT_ENVELOPE, makeCallOp, makeScriptedCallOp } from "./call-op";
+export {
+  type AnswerRecord,
+  approvalRequestedEvent,
+  approvalResolvedEvent,
+  CHAT_MODEL,
+  makeAgentCatalog,
+  makeAgentResource,
+  makeScriptedSession,
+  makeSubagentHostHarness,
+  questionEvent,
+  type ScriptedSession,
+  type SubagentHostHarness,
+  type SubagentHostOptions,
+  turnEndEvent,
+} from "./chat-subagents";
 export { type CodexAcpEnvDeps, stubCodexAcpEnvDeps } from "./codex-acp-deps";
 export {
   GUARD_HIGH_ANSWER,
