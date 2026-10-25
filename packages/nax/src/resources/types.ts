@@ -70,6 +70,17 @@ export interface ResourceDiagnostic {
   readonly origin: ResourceOrigin;
 }
 
+export interface ResourceCatalog {
+  readonly packages: readonly ResourcePackage[];
+  /** Every loaded skill in package order, including shadowed resources. */
+  readonly skills: readonly SkillResource[];
+  readonly commands: readonly CommandResource[];
+  /** Package diagnostics plus name collisions. */
+  readonly diagnostics: readonly ResourceDiagnostic[];
+  findSkill(name: string): SkillResource | undefined;
+  findCommand(name: string): CommandResource | undefined;
+}
+
 export interface ResourcePackage {
   /** claude-project | claude-user | <name>@<marketplace> | nax:<name> */
   readonly id: string;

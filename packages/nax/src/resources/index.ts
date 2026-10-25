@@ -1,3 +1,4 @@
+export { buildResourceCatalog, loadResourceCatalog } from "./catalog";
 export { _claudePathsDeps, claudeConfigDir } from "./claude-paths";
 export { discoverClaudeCodePackages } from "./claude-sources";
 export type { ResourceFrontmatterResult } from "./frontmatter";
@@ -22,6 +23,7 @@ export type {
   CommandResource,
   HookResource,
   McpServerResource,
+  ResourceCatalog,
   ResourceDiagnostic,
   ResourceOrigin,
   ResourcePackage,
