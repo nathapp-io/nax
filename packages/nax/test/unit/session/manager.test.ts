@@ -386,14 +386,15 @@ describe("SessionManager.sweepOrphans()", () => {
     mgr.create({ role: "main", agent: "claude", workdir: "/p" });
     expect(mgr.sweepOrphans(1_000)).toBe(0);
 
-    _sessionManagerDeps.nowMs = origNowMs;
+    // Pin the clock so the "recent" session's age is exactly 0 ms against a 1 ms TTL
+    // (a real-clock read made this flaky: any >=2 ms of runtime evicted it).
     const mgr2 = new SessionManager();
-    _sessionManagerDeps.now = () => new Date(Date.now() - 10_000).toISOString();
+    _sessionManagerDeps.now = () => new Date(FAKE_NOW_MS - 10_000).toISOString();
     const oldSess = mgr2.create({ role: "main", agent: "claude", workdir: "/p" });
     mgr2.transition(oldSess.id, "RUNNING");
     mgr2.transition(oldSess.id, "COMPLETED");
 
-    _sessionManagerDeps.now = () => new Date().toISOString();
+    _sessionManagerDeps.now = () => new Date(FAKE_NOW_MS).toISOString();
     const newSess = mgr2.create({ role: "main", agent: "claude", workdir: "/p" });
     mgr2.transition(newSess.id, "RUNNING");
     mgr2.transition(newSess.id, "COMPLETED");
@@ -401,6 +402,7 @@ describe("SessionManager.sweepOrphans()", () => {
     expect(mgr2.sweepOrphans(1)).toBe(1);
     expect(mgr2.get(oldSess.id)).toBeNull();
     expect(mgr2.get(newSess.id)).not.toBeNull();
+    _sessionManagerDeps.nowMs = origNowMs;
   });
 
   test("sweeps a terminal session with an unparseable lastActivityAt instead of retaining it forever (BUG-43)", () => {
