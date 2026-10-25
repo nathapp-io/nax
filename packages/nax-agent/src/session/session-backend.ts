@@ -7,7 +7,7 @@
  */
 import type { TranscriptDoc, TranscriptStore } from "#src/native/session/transcript-types";
 import type { SandboxState } from "#src/sandbox/types";
-import type { AgentSessionProfile, ApprovalDecidedBy, EmbedderTool } from "./agent-session-types.ts";
+import type { AgentSessionProfile, ApprovalDecidedBy, CommandRunResult, EmbedderTool } from "./agent-session-types.ts";
 import type { AgentSessionAdapter, SendTurnOpts, SessionHandle } from "./session-types.ts";
 
 export interface BackendInfo {
@@ -91,6 +91,8 @@ export interface BackendOpenContext {
 }
 
 export interface OpenedBackend {
+  /** Absent on a backend that cannot run a host-side command (ACP). */
+  runCommand?(request: { command: string; callId: string; signal: AbortSignal }): Promise<CommandRunResult>;
   readonly adapter: AgentSessionAdapter;
   readonly handle: SessionHandle;
   readonly info: BackendInfo;

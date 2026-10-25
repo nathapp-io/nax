@@ -4,6 +4,7 @@
  * with built-in and embedder tools, the NativeSessionAdapter, loop handlers
  * and the resume model check.
  */
+import { errorMessage } from "#src/infra/errors";
 import { DEFAULT_SPIN_BREAKER_SETTINGS } from "#src/infra/spin-breaker/index";
 import { NATIVE_AGENT } from "#src/native/models";
 import { resolveCompaction } from "#src/native/session/compaction-settings";
@@ -141,6 +142,21 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
   return {
     adapter,
     handle,
+    runCommand: async ({ command, callId, signal }) => {
+      try {
+        const response = await interactionHandler.onInteraction({
+          kind: "coding-tool",
+          name: "Bash",
+          input: { command },
+          toolCallId: callId,
+          signal,
+        });
+        if (response === null) return { content: "Bash is not available in this session", isError: true };
+        return { content: response.answer, isError: response.denied !== undefined };
+      } catch (error) {
+        return { content: errorMessage(error), isError: true };
+      }
+    },
     info: { kind: NATIVE_BACKEND_KIND, capabilities: {}, sandbox },
     turnOpts: () => ({
       interactionHandler,
