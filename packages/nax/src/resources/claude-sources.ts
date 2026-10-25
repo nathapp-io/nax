@@ -79,7 +79,7 @@ async function scanPackage(options: {
     : options.settings === undefined
       ? {}
       : hooksFromSettings(hooksPath, options.settings, origin);
-  if (hooks.diagnostic) diagnostics.push(hooks.diagnostic);
+  if ("diagnostic" in hooks && hooks.diagnostic) diagnostics.push(hooks.diagnostic);
   return {
     id,
     root,
@@ -88,7 +88,7 @@ async function scanPackage(options: {
     commands: commands.resources,
     agents: agents.resources,
     mcpServers: mcp.resources,
-    hooks: hooks.resource ? [hooks.resource] : [],
+    hooks: "resource" in hooks && hooks.resource ? [hooks.resource] : [],
     diagnostics,
   };
 }
