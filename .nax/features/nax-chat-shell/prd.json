@@ -3,7 +3,7 @@
   "feature": "nax-chat-shell",
   "branchName": "feat/nax-chat-shell",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T05:21:18.073Z",
+  "updatedAt": "2026-10-25T05:30:11.169Z",
   "userStories": [
     {
       "id": "US-001",
@@ -516,14 +516,17 @@
         "US-006",
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Two sequential orchestration modules reuse CostAggregator and SessionStorage with explicit event mappings; session and approval routing retain the security-required strict TDD strategy."
+        "reasoning": "Two sequential orchestration modules reuse CostAggregator and SessionStorage with explicit event mappings; session and approval routing retain the security-required strict TDD strategy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/runtime/cost-aggregator.ts",
@@ -546,7 +549,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "be719e1cb0776e571a90eea196e0d94580de32d5"
     },
     {
       "id": "US-010",
