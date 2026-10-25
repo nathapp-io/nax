@@ -3,7 +3,7 @@
   "feature": "chat-mcp-servers",
   "branchName": "feat/chat-mcp-servers",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T13:14:57.976Z",
+  "updatedAt": "2026-10-25T13:22:35.912Z",
   "userStories": [
     {
       "id": "US-001",
@@ -183,14 +183,17 @@
         "parsing"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive discriminated resource shapes and pure validation in existing discovery/parser patterns; no connections or permission decisions."
+        "reasoning": "Additive discriminated resource shapes and pure validation in existing discovery/parser patterns; no connections or permission decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/resources/types.ts",
@@ -217,7 +220,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f5d0731b90bde8b4de6cd626603857d950ed93d8"
     },
     {
       "id": "US-004",
