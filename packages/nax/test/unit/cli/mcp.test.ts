@@ -34,10 +34,12 @@ function writeConfig(servers: Record<string, unknown>): void {
   writeFileSync(join(projectDir, ".nax", "config.json"), JSON.stringify({ name: "probe", mcp: { servers } }));
 }
 
+const NO_RETRY = { maxAttempts: 1, baseDelayMs: 0 };
+
 async function lockOutput(): Promise<string> {
   const log = spyOn(console, "log").mockImplementation(() => {});
   try {
-    await runMcpLockCommand(projectDir);
+    await runMcpLockCommand(projectDir, { retry: NO_RETRY });
     return log.mock.calls.map((call) => call.join(" ")).join("\n");
   } finally {
     log.mockRestore();
@@ -119,7 +121,7 @@ describe("runMcpLockCommand keeps readOnly grants (F1)", () => {
       writeFileSync(path, JSON.stringify(previousLock));
       const log = spyOn(console, "log").mockImplementation(() => {});
       try {
-        await runMcpLockCommand(projectDir, { global: true });
+        await runMcpLockCommand(projectDir, { global: true, retry: NO_RETRY });
       } finally {
         log.mockRestore();
       }

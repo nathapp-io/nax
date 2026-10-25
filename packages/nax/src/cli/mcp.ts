@@ -30,7 +30,10 @@ function serverTarget(server: McpServerConfig | undefined): string {
 // `loadConfig(startDir)` — NOT `loadConfigForWorkdir`, whose first argument is a
 // config FILE path (src/config/loader.ts:403), not a directory. Every other CLI
 // command loads this way (src/cli/setup.ts:31, src/cli/generate.ts:56).
-export async function runMcpLockCommand(workdir: string, opts?: { global?: boolean }): Promise<void> {
+export async function runMcpLockCommand(
+  workdir: string,
+  opts?: { global?: boolean; retry?: { maxAttempts: number; baseDelayMs: number } },
+): Promise<void> {
   const config = await loadConfig(workdir);
   const servers = config.mcp?.servers ?? {};
   const enabled = Object.entries(servers).filter(([, server]) => server.enabled);
@@ -43,7 +46,7 @@ export async function runMcpLockCommand(workdir: string, opts?: { global?: boole
   // keyed by server id alone; the project lock stays the per-project override.
   const target = opts?.global === true ? globalMcpLockPath() : mcpLockPath(workdir);
 
-  const pool = createMcpPool({ servers });
+  const pool = createMcpPool({ servers, retry: opts?.retry });
   try {
     const locked: Record<string, Record<string, string>> = {};
     for (const [id] of enabled) {
