@@ -63,7 +63,22 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
 
   function release(session: AgentSession): void {
     active.delete(session);
-    for (const [requestId, owner] of owners) if (owner === session) owners.delete(requestId);
+    for (const [requestId, owner] of [...owners]) {
+      if (owner !== session) continue;
+      owners.delete(requestId);
+      // A timed-out or cancelled native ask emits no resolution; without this the ask
+      // would stay pending and its answer would fall through to the chat session.
+      deps.asks.handle({
+        type: "approval_resolved",
+        sessionId: session.id,
+        turnId: "",
+        at: new Date().toISOString(),
+        metadata: {},
+        requestId,
+        decision: "deny",
+        decidedBy: "cancelled",
+      });
+    }
   }
 
   function routeAsk(event: SessionEvent, session: AgentSession, agent: AgentResource): void {

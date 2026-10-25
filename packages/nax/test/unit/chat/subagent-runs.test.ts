@@ -134,6 +134,23 @@ describe("createSubagentRuns", () => {
     expect(f.runs.sessionFor("q1")).toBeUndefined();
   });
 
+  test("completion removes the nested session's unresolved asks but keeps the parent's", async () => {
+    const answers: string[] = [];
+    const f = fixture([approvalRequestedEvent("n1", "edit file"), questionEvent("q1", "which file?")], (id) =>
+      answers.push(id),
+    );
+    f.asks.handle(approvalRequestedEvent("p1", "chat asks"));
+    const running = f.runs.run(reviewer, "check it");
+    await f.reached;
+    expect(f.asks.pending().map((ask) => ask.requestId)).toEqual(["p1", "n1", "q1"]);
+    f.finish();
+    await running;
+    expect(f.asks.pending().map((ask) => ask.requestId)).toEqual(["p1"]);
+    f.asks.answerQuestion("q1", "a.ts");
+    f.asks.resolve("n1", "allow_once");
+    expect(answers).toEqual([]);
+  });
+
   test("registers ownership before the ask controller can answer synchronously", async () => {
     const owners: (AgentSession | undefined)[] = [];
     let owner: (id: string) => AgentSession | undefined = () => undefined;
