@@ -7,7 +7,7 @@ type StdioConfig = Extract<McpTransportConfig, { kind: "stdio" }>;
 
 import type { McpServerConfig } from "@/config";
 import { _mcpClientDeps } from "@/mcp/client";
-import { createMcpPool, redactMcpReason } from "@/mcp/pool";
+import { createMcpPool, redactMcpReason, redactMcpUrl } from "@/mcp/pool";
 import { markTrusted } from "@/trust";
 
 const original = { ..._mcpClientDeps };
@@ -447,9 +447,38 @@ describe("redactMcpReason", () => {
     expect(redactMcpReason(text, server)).not.toMatch(/us%40r|us@r|p%20w|a%26b|frag|b\/c/);
   });
 
+  test("F2: redacts the percent-encoded form of a raw secret that already contains percent signs", () => {
+    const server = httpServer({ url: "https://h/mcp", headers: { Authorization: "Bearer tok%2F123" } }).a;
+    if (server === undefined) throw new Error("fixture");
+    const out = redactMcpReason("rejected tok%2F123 / tok/123 / tok%252F123", server);
+    expect(out).not.toMatch(/tok%2F123|tok\/123|tok%252F123/);
+  });
+
+  test("F2: redacts the encoded form of a url secret that contains percent signs", () => {
+    const server = httpServer({ url: "https://h/mcp?k=a%2Fb" }).a;
+    if (server === undefined) throw new Error("fixture");
+    expect(redactMcpReason("bad a%252Fb and a%2Fb and a/b", server)).not.toMatch(/a%252Fb|a%2Fb|a\/b/);
+  });
+
   test("leaves text alone for a server with nothing secret", () => {
     const server = httpServer({ url: "https://h/mcp" }).a;
     if (server === undefined) throw new Error("fixture");
     expect(redactMcpReason("connection refused", server)).toBe("connection refused");
+  });
+});
+
+describe("redactMcpUrl", () => {
+  test("F5: keeps the endpoint and hides credentials, query values and fragment", () => {
+    const out = redactMcpUrl("https://u:pw9@docs.example/mcp?key=s3cret&b=2#frag");
+    expect(out).toContain("docs.example/mcp");
+    expect(out).not.toMatch(/pw9|s3cret|frag|u:/);
+  });
+
+  test("F5: a url with nothing secret is unchanged", () => {
+    expect(redactMcpUrl("https://docs.example/mcp")).toBe("https://docs.example/mcp");
+  });
+
+  test("F5: an unparseable url is not echoed", () => {
+    expect(redactMcpUrl("not a url s3cret")).not.toContain("s3cret");
   });
 });

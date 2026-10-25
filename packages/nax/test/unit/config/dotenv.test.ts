@@ -96,3 +96,14 @@ describe("resolveEnvVars", () => {
     expect(result.safe).toBe("kept");
   });
 });
+
+describe("resolveEnvVars — mcp.servers entries stay literal (US-002)", () => {
+  const reference = "$" + "{HOME_X}";
+  test("a braced reference inside mcp.servers is not expanded, elsewhere it is", () => {
+    const out = resolveEnvVars(
+      { name: "$HOME_X", mcp: { servers: { a: { url: "https://h", headers: { X: reference } } } } },
+      { HOME_X: "/demo" },
+    );
+    expect(out).toEqual({ name: "/demo", mcp: { servers: { a: { url: "https://h", headers: { X: reference } } } } });
+  });
+});

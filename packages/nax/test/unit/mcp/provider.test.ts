@@ -285,6 +285,19 @@ describe("createMcpProviders — read-only hint (US-002)", () => {
     expect(tools.some((t) => "readOnly" in t)).toBe(false);
   });
 
+  test("F4: a server id named constructor with no readOnly entry still yields its tools", async () => {
+    const [provider] = createMcpProviders({
+      config: { servers: { constructor: docsServer } },
+      pool: fakePool({ listTools: async () => [liveGet] }),
+      projectRoot: "/proj",
+      readLock: async () => ({ version: 1, servers: { constructor: pinned }, readOnly: { other: ["get"] } }),
+    });
+    assertDefined(provider, "provider");
+    const tools = await provider.tools("/w");
+    expect(tools.map((t) => t.localName)).toEqual(["get"]);
+    expect("readOnly" in (tools[0] ?? {})).toBe(false);
+  });
+
   test("AC-5: a tool with no live hint carries no readOnly key", async () => {
     const tools = await toolsFor([livePut], { version: 1, servers: { docs: pinned } });
     const put = tools.find((t) => t.localName === "put");

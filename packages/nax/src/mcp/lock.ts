@@ -89,7 +89,30 @@ function wellFormedReadOnly(value: unknown): Record<string, string[]> | undefine
 /** Tool names the lock lists as read-only for `serverId`; empty for a missing or malformed entry. */
 export function lockedReadOnlyTools(lock: McpLockFile | undefined, serverId: string): ReadonlySet<string> {
   const map = wellFormedReadOnly(lock?.readOnly);
-  return new Set(map?.[serverId] ?? []);
+  // Own property only: a server id such as `constructor` is a legal id and must not reach Object.prototype.
+  const names = map !== undefined && Object.hasOwn(map, serverId) ? map[serverId] : undefined;
+  return new Set(isStringArray(names) ? names : []);
+}
+
+/**
+ * The `readOnly` grants a refreshed lock may keep: a tool keeps its grant only
+ * when the previous lock listed it and it is still pinned to the same schema
+ * hash. A changed or vanished tool loses it, so a refresh never vouches for a
+ * surface nobody has looked at.
+ */
+export function carryReadOnlyGrants(
+  previous: McpLockFile | undefined,
+  next: Record<string, Record<string, string>>,
+): Record<string, string[]> | undefined {
+  const carried: Record<string, string[]> = {};
+  for (const [serverId, tools] of Object.entries(next)) {
+    const kept = [...lockedReadOnlyTools(previous, serverId)].filter((name) => {
+      const before = previous?.servers[serverId];
+      return before !== undefined && Object.hasOwn(before, name) && before[name] === tools[name];
+    });
+    if (kept.length > 0) carried[serverId] = kept;
+  }
+  return Object.keys(carried).length === 0 ? undefined : carried;
 }
 
 /**
@@ -111,6 +134,11 @@ async function parseLockFile(path: string): Promise<McpLockFile | undefined> {
 
 export async function readMcpLock(projectRoot: string): Promise<McpLockFile | undefined> {
   return parseLockFile(mcpLockPath(projectRoot));
+}
+
+/** Read a lock at an explicit path (the global lock's counterpart of `readMcpLock`). */
+export async function readMcpLockAt(path: string): Promise<McpLockFile | undefined> {
+  return parseLockFile(path);
 }
 
 /**

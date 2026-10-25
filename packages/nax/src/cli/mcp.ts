@@ -10,11 +10,21 @@
 import { loadConfig, type McpServerConfig } from "@/config";
 // The BARREL, not `@/mcp/pool` — `check:alias-internals` forbids a value import
 // of `@/<dir>/<internal>` from `src/` once `src/<dir>/index.ts` exists.
-import { createMcpPool, globalMcpLockPath, mcpLockPath, schemaHash, writeMcpLock, writeMcpLockAt } from "@/mcp";
+import {
+  carryReadOnlyGrants,
+  createMcpPool,
+  globalMcpLockPath,
+  mcpLockPath,
+  readMcpLockAt,
+  redactMcpUrl,
+  schemaHash,
+  writeMcpLockAt,
+} from "@/mcp";
 
 /** What to tell the operator to check: the url of an HTTP server, the command of a stdio one. */
 function serverTarget(server: McpServerConfig | undefined): string {
-  return server?.url ?? server?.command ?? "(unconfigured)";
+  if (server?.url !== undefined) return redactMcpUrl(server.url);
+  return server?.command ?? "(unconfigured)";
 }
 
 // `loadConfig(startDir)` — NOT `loadConfigForWorkdir`, whose first argument is a
@@ -43,9 +53,12 @@ export async function runMcpLockCommand(workdir: string, opts?: { global?: boole
       if (tools.length === 0)
         console.log(`  (server advertised nothing - check \`${serverTarget(servers[id])}\` runs)`);
     }
-    const lock = { version: 1 as const, servers: locked };
-    if (opts?.global === true) await writeMcpLockAt(target, lock);
-    else await writeMcpLock(workdir, lock);
+    // Generating `readOnly` grants is not this command's job (US-009), but a refresh
+    // must not delete the ones an operator wrote: keep a grant while its tool is
+    // still pinned to the same schema.
+    const readOnly = carryReadOnlyGrants(await readMcpLockAt(target), locked);
+    const lock = { version: 1 as const, servers: locked, ...(readOnly === undefined ? {} : { readOnly }) };
+    await writeMcpLockAt(target, lock);
     console.log(`Wrote ${target}`);
   } finally {
     await pool.close();

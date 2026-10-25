@@ -58,11 +58,11 @@ function safeDecode(value: string): string {
   }
 }
 
-/** A secret as it may appear in an error: raw, decoded and re-encoded. */
+/** A secret as it may appear in an error: raw, decoded, and the raw and decoded forms re-encoded. */
 function secretForms(raw: string): string[] {
   if (raw === "") return [];
   const decoded = safeDecode(raw);
-  return [raw, decoded, encodeURIComponent(decoded)];
+  return [raw, decoded, encodeURIComponent(raw), encodeURIComponent(decoded)];
 }
 
 function urlSecrets(rawUrl: string): string[] {
@@ -85,6 +85,22 @@ function headerSecrets(headers: Record<string, string>): string[] {
     const tokens = value.split(/\s+/).filter((token) => token.length >= MIN_HEADER_TOKEN_LENGTH);
     return [value, ...tokens].flatMap(secretForms);
   });
+}
+
+/**
+ * A url safe to print: scheme, host and path stay (the operator needs to know
+ * which endpoint), while credentials and the fragment are dropped and every
+ * query value becomes `***`. An unparseable url is not echoed at all.
+ */
+export function redactMcpUrl(rawUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return "(unparseable url)";
+  }
+  const query = [...url.searchParams.keys()].map((key) => `${encodeURIComponent(key)}=${REDACTED}`).join("&");
+  return `${url.protocol}//${url.host}${url.pathname}${query === "" ? "" : `?${query}`}`;
 }
 
 /**
