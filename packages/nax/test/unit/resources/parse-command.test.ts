@@ -12,6 +12,12 @@ describe("parseCommandFile", () => {
       resource: { name: "commit", description: "Create a git commit", argumentHint: "[msg]", template: "Commit" },
     });
   });
+  test("ignores bracketed trailing YAML comments in an unquoted hint", () => {
+    expect(parseCommandFile(path, "---\nargument-hint: [msg] # optional [text]\n---\n", origin)).toHaveProperty(
+      "resource.argumentHint",
+      "[msg]",
+    );
+  });
   test("AC-8 preserves the whole template without frontmatter, including @file", () => {
     const text = "Commit @file\n$ARGUMENTS\n";
     expect(parseCommandFile(path, text, origin)).toEqual({

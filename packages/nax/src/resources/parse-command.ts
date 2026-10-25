@@ -9,7 +9,7 @@ function argumentHint(text: string, value: unknown): string | undefined {
   if (typeof value === "string") return value;
   if (!Array.isArray(value)) return undefined;
   const block = /^---\r?\n([\s\S]*?)^---(?:\r?\n|$)/m.exec(text)?.[1];
-  return block?.match(/^argument-hint:[ \t]*(\[[^\r\n]*\])[ \t]*(?:#.*)?$/m)?.[1];
+  return block?.match(/^argument-hint:[ \t]*(\[[^\r\n]*?\])[ \t]*(?:#.*)?$/m)?.[1];
 }
 
 export function parseCommandFile(

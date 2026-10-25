@@ -31,6 +31,31 @@ afterEach(() => {
 });
 
 describe("discoverClaudeCodePackages", () => {
+  test.each([
+    ["missing install", '{"version":2,"plugins":{}}', "plugin missing@m is enabled but not installed"],
+    ["malformed registry", "not JSON", "installed_plugins.json"],
+    ["missing registry", undefined, "Missing installed_plugins.json"],
+  ])("listings expose discovery diagnostics for %s", async (_name, contents, message) => {
+    await enable({ "missing@m": true });
+    if (contents !== undefined) await put(join(claudeDir, "plugins/installed_plugins.json"), contents);
+    const catalog = resources.buildResourceCatalog(await discover());
+    expect(catalog.packages).toHaveLength(2);
+    expect(resources.formatPluginsListing(catalog, [])).toContain(message);
+    expect(resources.formatSkillsListing(catalog)).toContain(message);
+  });
+  test("listings expose inaccessible installs and do not duplicate loaded-plugin diagnostics", async () => {
+    await enable({ "missing@m": true, "sp@m": true });
+    const record = await install();
+    await put(join(record.installPath, ".claude-plugin/plugin.json"), "invalid JSON");
+    await registry({ "missing@m": [{ scope: "user", installPath: join(dir, "absent") }], "sp@m": [record] });
+    const catalog = resources.buildResourceCatalog(await discover());
+    for (const listing of [resources.formatPluginsListing(catalog, []), resources.formatSkillsListing(catalog)]) {
+      expect(listing).toContain("Cannot access plugin missing@m installPath");
+    }
+    const warning = catalog.packages[2]?.diagnostics[0]?.message;
+    expect(warning).toBeDefined();
+    expect(resources.formatPluginsListing(catalog, []).split(warning ?? "unexpected")).toHaveLength(2);
+  });
   test("loads project hooks and agents and plugin agents, MCP and hooks", async () => {
     await put(join(repoRoot, ".claude/settings.json"), { hooks: { PreToolUse: [] } });
     await put(join(repoRoot, ".claude/agents/reviewer.md"), "---\nname: reviewer\ndescription: reviews\n---\n");
