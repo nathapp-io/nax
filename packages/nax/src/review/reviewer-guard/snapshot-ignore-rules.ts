@@ -44,12 +44,21 @@ export async function listIgnoreFiles(toplevel: string): Promise<Set<string>> {
     gitRaw(["ls-files", "-z", "-c", "-o", "--exclude-standard", "--", IGNORE_PATHSPEC], toplevel),
     gitRaw(["ls-files", "-z", "-o", "-i", "--exclude-standard", "--", IGNORE_PATHSPEC], toplevel),
   ]);
-  return new Set([...visible.split("\0"), ...hidden.split("\0")].filter((p) => p.length > 0));
+  return new Set([...visible.split("\0"), ...hidden.split("\0")].filter(isIgnoreFile));
+}
+
+/**
+ * git does not descend into a nested repository or worktree; `ls-files -o` reports the directory
+ * itself (`.nax-wt/bot-x/`) whatever the pathspec. Taken for a reviewer-added .gitignore, it was
+ * deleted recursively (nax#2681). Only a path whose basename is exactly `.gitignore` is one.
+ */
+function isIgnoreFile(p: string): boolean {
+  return !p.endsWith("/") && basename(p) === IGNORE_FILE;
 }
 
 async function listVisibleIgnoreFiles(toplevel: string): Promise<Set<string>> {
   const visible = await gitRaw(["ls-files", "-z", "-c", "-o", "--exclude-standard", "--", IGNORE_PATHSPEC], toplevel);
-  return new Set(visible.split("\0").filter((p) => p.length > 0));
+  return new Set(visible.split("\0").filter(isIgnoreFile));
 }
 
 async function currentShas(toplevel: string, paths: readonly string[]): Promise<Map<string, string>> {

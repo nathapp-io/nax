@@ -130,6 +130,23 @@ describe("checkStep", () => {
       expect(changed).not.toHaveBeenCalled();
     },
   );
+  // nax#2681: another process deleted the fix checkout mid-session.
+  test("a fix checkout that no longer exists is reported as missing, not just dirty", async () => {
+    bot._fixStepsDeps.runGit = async () => {
+      throw new Error("posix_spawn 'git' ENOENT");
+    };
+    bot._fixStepsDeps.worktreeExists = async () => false;
+    expect(await bot.checkStep(environment(items), state())).toMatchObject({
+      exit: "dirty",
+      patch: { outcome: "dirty", recoveryPath: "/worktree", checkoutMissing: true },
+    });
+  });
+  test("an existing dirty checkout is not marked missing", async () => {
+    bot._fixStepsDeps.runGit = async () => ({ exitCode: 0, stdout: " M src/a.ts\0", stderr: "" });
+    bot._fixStepsDeps.worktreeExists = async () => true;
+    const result = await bot.checkStep(environment(items), state());
+    expect(result.patch).toEqual({ outcome: "dirty", recoveryPath: "/worktree" });
+  });
   test("AC-9 compares committed worktree HEAD against the original PR head", async () => {
     const changedPaths = mock(async () => []);
     bot._fixStepsDeps.changedPaths = changedPaths;

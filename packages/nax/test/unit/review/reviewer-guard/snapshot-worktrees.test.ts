@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { restoreRepoSnapshot, takeRepoSnapshot } from "@/review/reviewer-guard";
@@ -90,6 +91,34 @@ describe("reviewer guard restore with sibling worktrees (nax#2500 R15)", () => {
     const report = await restoreRepoSnapshot(snap);
     expect(await git(a, "stash", "list")).toBe("");
     expect(report.stashLeft).toEqual([`missing ${sha}`]);
+  });
+
+  // nax#2681: another process (nax bot fix) adds a worktree inside the checkout mid-turn.
+  test("a worktree created under an ignored directory during the turn survives the restore", async () => {
+    const { a } = await twoWorktrees();
+    await writeFile(join(a, ".gitignore"), ".nax-wt/\n");
+    await git(a, "add", "-A");
+    await git(a, "commit", "-q", "-m", "ignore .nax-wt");
+    const snap = await takeRepoSnapshot(a);
+    await git(a, "worktree", "add", "-q", "--detach", join(a, ".nax-wt", "bot-x"), "HEAD");
+    await writeFile(join(a, ".nax-wt", "bot-x", "wip.txt"), "uncommitted\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(existsSync(join(a, ".nax-wt", "bot-x", "wip.txt"))).toBe(true);
+    expect(report.paths).toEqual([]);
+    expect(report.failures).toEqual([]);
+  });
+
+  // A registration is not proof of ownership: in a main checkout the reviewer can write
+  // .git/worktrees/ itself. The guard must not trust one to keep a file it did not know.
+  test("a forged worktree registration does not keep a reviewer-planted file", async () => {
+    const { a } = await twoWorktrees();
+    const snap = await takeRepoSnapshot(a);
+    await writeFile(join(a, "payload.ts"), "planted\n");
+    await mkdir(join(a, ".git", "worktrees", "forged"), { recursive: true });
+    await writeFile(join(a, ".git", "worktrees", "forged", "gitdir"), `${join(a, "payload.ts", "x", ".git")}\n`);
+    const report = await restoreRepoSnapshot(snap);
+    expect(existsSync(join(a, "payload.ts"))).toBe(false);
+    expect(report.paths).toContain("payload.ts");
   });
 
   test("refs/replace entries added during the turn are removed", async () => {
