@@ -1,4 +1,12 @@
 export {
+  type AskChoice,
+  type ChatApproval,
+  type ChatAskController,
+  type ChatAskControllerOptions,
+  type ChatPendingAsk,
+  createChatAskController,
+} from "./ask-controller";
+export {
   type ChatMode,
   type ChatSessionSettings,
   chatModeOfMeta,
