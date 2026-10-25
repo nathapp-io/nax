@@ -13,6 +13,7 @@ import {
   type SessionMeta,
   type SessionStorage,
   type SessionStorageDeps,
+  type ToolProvider,
 } from "@nathapp/nax-agent";
 import { globalConfigDir, type NaxConfig } from "@/config";
 import { resolveRuleSet } from "@/context/rules/rule-set";
@@ -33,6 +34,7 @@ export const _openChatSessionDeps = {
 };
 
 export interface OpenChatSessionRequest {
+  readonly toolProviders?: readonly ToolProvider[];
   readonly storage: SessionStorage;
   readonly cwd: string;
   readonly repoRoot: string;
@@ -145,6 +147,7 @@ async function sessionOptions(
       allowUnsandboxedCommands: true,
       carryHistoryAcrossModels: true,
       loopHandlers: request.loopHandlers,
+      ...(request.toolProviders !== undefined ? { toolProviders: request.toolProviders } : {}),
       loopHandlerRole: "tui",
       ...(catalogOverrides?.length ? { catalogOverrides } : {}),
       ...(compaction !== undefined ? { compaction } : {}),

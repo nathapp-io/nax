@@ -1,0 +1,1031 @@
+{
+  "project": "nax-monorepo",
+  "feature": "resource-catalog-and-skills",
+  "branchName": "feat/resource-catalog-and-skills",
+  "createdAt": "2026-10-25T00:00:00.000Z",
+  "updatedAt": "2026-10-25T11:02:01.131Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "nax-agent: tool providers on the native session",
+      "description": "**Goal** — Attach static ToolProviders to native sessions through the existing coding-tool runtime.\n\n**Motivation** — The chat session path is the only one that cannot take a provider.\n\n**Approach** — **1. nax-agent: `toolProviders` on `nativeBackend` (US-001).** `NativeBackendOptions` gains `toolProviders?: readonly ToolProvider[]`. `openNative` resolves them with the existing `resolveProviderTools(providers, SESSION_STAGE, ctx.workdir)` (skipped for profile `none`) and passes the result to `buildSessionToolSupport` as a new optional `providerTools` argument. `buildSessionToolSupport` then, mirroring what nax's `unionDeclaredTools` does for `nax run` (that helper lives in `packages/nax` and cannot be imported here, so the session path does the same union locally):\n\n- unions the provider tool names into `declared` before computing grants, so `buildCodingToolSupport`'s `runtime.advertised(declared)` advertises them;\n- passes `extraTools: providerTools.tools`, `providerIdByTool` and `providerInstructions: renderProviderInstructions(providerTools.instructions ?? [])` (when defined) to `buildCodingToolSupport`;\n- returns `grants` = the profile grants plus `providerTools.grants`.\n\n`openNative` uses `support.tools` as the coding tools exactly as today (no second append) and passes `support.providerInstructions` to `adapter.openSession` as its existing `providerInstructions` option (`OpenSessionOpts.providerInstructions`), which the native session folds into the system prompt. Rules:\n\n- Only `kind: \"static\"` providers are accepted in this feature; a `discovered` provider is refused at option validation with `AGENT_SESSION_INVALID_OPTIONS` and path `backend.toolProviders` (MCP delivery to sessions is F5).\n- Every profile but `none` attaches each provider whose `stages` contain `\"*\"` or `\"session\"`.\n- A provider whose `tools()` throws is skipped (the existing `failures` list); the session still opens.\n- An embedder tool and a provider tool may not share a name; the open refuses with `AGENT_SESSION_TOOL_NAME_RESERVED`.\n\n**Scope** — In: NativeBackendOptions/schema, openNative provider resolution, session support union/grants/instructions and interaction delivery. Out: US-002 runCommand; US-010 skills implementation; US-012 chat composition; discovered-provider/MCP delivery in F5. Preserve existing embedder descriptors alongside support.tools. With providers absent, existing native-backend.test.ts and session-tool-support.test.ts assertions remain true; the API snapshot lists names only and NativeBackendOptions is already on it.\n\n**Interface** — `readonly toolProviders?: readonly ToolProvider[]`; `providerTools?: ResolvedProviderTools`. NativeBackendOptions validation: each entry has a string `id`, `kind: \"static\"`, a `stages` string array and a `tools` function. `resolveProviderTools(providers, stage, workdir, options?)` -> `ResolvedProviderTools`; `renderProviderInstructions(entries)`; `buildCodingToolSupport(args)` receives declared, extraTools, providerIdByTool, providerInstructions and grants. Use public/local nax-agent modules, never import nax's union helper.",
+      "acceptanceCriteria": [
+        "[unit] Opening a session through nativeBackend({ model, toolProviders: [provider] }), where provider is static with id skills and one tool with localName load, yields turn options whose codingTools contain exactly one tool named skills__load.",
+        "[unit] With the same provider, the session's resolved permissions passed to the adapter's openSession include a grant for skills__load.",
+        "[unit] With the same provider, a coding-tool interaction for skills__load through the session's interaction handler runs the provider tool's run with the call's input.",
+        "[unit] With a provider whose instructions() returns use skills, the providerInstructions option passed to the adapter's openSession contains use skills.",
+        "[unit] Opening with toolProviders absent yields the same codingTools names as an open without the option for the same profile.",
+        "[unit] Opening with profile none and a static provider yields no skills__load in codingTools.",
+        "[unit] Opening with two providers where the first's tools() rejects yields codingTools containing the second provider's tool.",
+        "[unit] A provider with stages: [\"run\"] contributes no tool to a session.",
+        "[unit] A provider with stages: [\"session\"] contributes its tool to a session.",
+        "[unit] nativeBackend({ model, toolProviders: [{ ...provider, kind: \"discovered\" }] }) throws AgentSessionError with code AGENT_SESSION_INVALID_OPTIONS and context path backend.toolProviders.",
+        "[unit] nativeBackend({ model, toolProviders: [{ id: \"x\" }] }) throws AgentSessionError with code AGENT_SESSION_INVALID_OPTIONS.",
+        "[unit] Opening with an embedder tool named skills__load and the provider above refuses with AgentSessionError code AGENT_SESSION_TOOL_NAME_RESERVED."
+      ],
+      "tags": [
+        "feature",
+        "api",
+        "sessions",
+        "security",
+        "tool-providers"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module provider advertisement and grants affect session access control; strict security isolation is required.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/session/native-backend.ts",
+        "packages/nax-agent/src/session/native-backend-options.ts",
+        "packages/nax-agent/src/session/session-tool-support.ts",
+        "packages/nax-agent/src/coding-tools/coding-tool-support.ts",
+        "packages/nax/src/agents/coding-tool-support-resolve.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/session/native-backend-providers.test.ts"
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "11456ec57e493d3c70dec082b5953389ee2b097e"
+    },
+    {
+      "id": "US-002",
+      "title": "nax-agent: AgentSession.runCommand",
+      "description": "**Goal** — Execute user-initiated commands through a session's own Bash tool without a model turn.\n\n**Motivation** — One path, not two.\n\n**Approach** — **2. nax-agent: `AgentSession.runCommand` (US-002).** A user-initiated shell command that runs through the session's own Bash tool, the way Claude Code runs a command file's `` !`cmd` `` lines. Target:\n\n```ts\n// packages/nax-agent/src/session/agent-session-types.ts\nexport interface CommandRunResult {\n  /** The Bash tool's result text as the model would see it (capped by the tool runtime). */\n  readonly content: string;\n  readonly isError: boolean;\n}\n\nexport interface AgentSession {\n  // ...existing members unchanged...\n  /**\n   * Run one shell command through the session's Bash tool, outside any model\n   * turn. Optional on the interface so hand-written AgentSession fakes stay\n   * valid; the facade from createAgentSession always provides it.\n   */\n  runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>;\n}\n\n// packages/nax-agent/src/session/session-backend.ts\nexport interface OpenedBackend {\n  // ...existing members unchanged...\n  /** Absent on a backend that cannot run a host-side command (ACP). */\n  runCommand?(request: { command: string; callId: string; signal: AbortSignal }): Promise<CommandRunResult>;\n}\n```\n\n**Native half** (in `openNative`), over the interaction handler the turn uses:\n\n```ts\nrunCommand: async ({ command, callId, signal }) => {\n  try {\n    const response = await interactionHandler.onInteraction({\n      kind: \"coding-tool\", name: \"Bash\", input: { command }, toolCallId: callId, signal,\n    });\n    if (response === null) return { content: \"Bash is not available in this session\", isError: true };\n    return { content: response.answer, isError: response.denied !== undefined };\n  } catch (error) {\n    return { content: errorMessage(error), isError: true };\n  }\n},\n```\n\nSo the command takes exactly the path a model's Bash call takes (policy, the mode's `bashApproval`, the ask resolver, the sandbox launcher, the per-command `unsandboxed` rules); a denial and a tool error (`AGENT_SESSION_TOOL_ERROR`) both come back as `isError: true`. The content is the tool runtime's result, capped at its `DEFAULT_TOOL_MAX_BYTES` (40,000).\n\n**Facade half** (new file `packages/nax-agent/src/session/agent-session-command.ts`). `send()`'s `claimTurn` cannot be reused: it always runs a model turn (`turn_start`, `markTurn`, `adapter.sendTurn`). A separate claim path:\n\n1. Refuses with `AGENT_SESSION_CLOSED` when the session is closing or closed, `AGENT_SESSION_BUSY` when `active` is set, and `AGENT_SESSION_CAPABILITY_UNSUPPORTED` when the opened backend has no `runCommand`.\n2. Sets `active` to a claim with its own `AbortController` (so `cancel()` aborts it and `close()` awaits its `settled` promise); `active`'s type widens from `ClaimedTurn` to `Pick<ClaimedTurn, \"turnId\" | \"settled\" | \"cancel\">`, since a command has no `iterable` and sets the ask slot `slot.turn = { turnId, signal, emit }`, where `turnId` is a fresh id and `emit` wraps each body in the event envelope (`sessionId`, `turnId`, `at`, `metadata`) and calls `onEvent`; this is what lets `createSessionAskPort` raise `approval_requested` during the command.\n3. Applies the session's turn deadline to the abort signal.\n4. Emits `tool_call` (name `Bash`, input `{ command }`, `callId`), awaits `backend.runCommand`, emits `tool_result`, then clears `slot.turn` and `active` in a `finally`. Both events are built with the same redaction and preview-cap helpers `displayToolInput` and `toolResultPreview` in `src/native/session/turn-event-emitter.ts` that apply to a model's tool calls, so a command carrying a secret is redacted in events exactly as a model call would be. `src/session/turn-event.ts` defines the event contract, not these helper implementations.\n5. Never emits `turn_start`, `usage` or `turn_end`, never calls the model, and writes nothing to the transcript; the output reaches the model only through the message the caller sends next.\n\nA cancel or deadline while the command runs resolves `{ isError: true }` (the abort makes the Bash tool return its abandoned result); it does not reject.\n\n**Scope** — In: facade/native backend capability, claim lifecycle, events, ask routing slot, public type export and regenerated API snapshot retaining every existing line. Out: US-001 provider support; US-014 chat shell expansion; ACP implementation; transcript persistence and usage for commands. US-002 only: the turn-deadline and tool-error (`AGENT_SESSION_TOOL_ERROR`) paths of `runCommand` reuse the existing deadline and the existing `onInteraction` error mapping and get no dedicated AC; the cancel, deny and allow paths are pinned.\n\n**Interface** — The TypeScript contracts above are authoritative. Export CommandRunResult from src/index.ts and run bun run api:update from packages/nax-agent. Implementation navigation: the documented event contract is src/session/turn-event.ts; the existing masking functions to reuse are displayToolInput and toolResultPreview from src/native/session/turn-event-emitter.ts. A native full profile does not itself select raw approval: nativeProfileRules defaults to gated. Configure the successful echo fixture with bashApproval: \"raw\" or answer its ask, and use the existing sandbox/runtime seams so tests do not require a live model or bypass the interaction handler.",
+      "acceptanceCriteria": [
+        "[unit] A session from createAgentSession over nativeBackend has runCommand as a function.",
+        "[unit] On a native session with profile full, runCommand(\"echo hi\", onEvent) resolves with isError false.",
+        "[unit] That result's content contains hi.",
+        "[unit] During that call onEvent receives a tool_call event with name Bash and input { command: \"echo hi\" }.",
+        "[unit] During that call onEvent receives a tool_result event whose callId equals the tool_call event's.",
+        "[unit] onEvent receives no turn_start, usage or turn_end event during runCommand.",
+        "[unit] On a native session whose guard asks for the command, onEvent receives an approval_requested event during runCommand.",
+        "[unit] Answering that ask with session.answer(requestId, { decision: \"allow\" }) makes runCommand resolve with isError false.",
+        "[unit] Answering that ask with { decision: \"deny\" } makes runCommand resolve with isError true and not reject.",
+        "[unit] Calling runCommand while a send() turn is running rejects with AgentSessionError code AGENT_SESSION_BUSY.",
+        "[unit] Calling send() while a runCommand waits on an unanswered ask throws AgentSessionError code AGENT_SESSION_BUSY.",
+        "[unit] On a session whose backend's OpenedBackend has no runCommand, runCommand(\"ls\", onEvent) rejects with AgentSessionError code AGENT_SESSION_CAPABILITY_UNSUPPORTED.",
+        "[unit] After session.close(), runCommand(\"ls\", onEvent) rejects with AgentSessionError code AGENT_SESSION_CLOSED.",
+        "[unit] After a runCommand resolves, the transcript store's load for the session returns the same number of messages as before the call.",
+        "[unit] session.cancel() while a runCommand waits on an unanswered ask makes it resolve with isError true.",
+        "[unit] session.close() while a runCommand waits on an unanswered ask resolves only after runCommand has settled.",
+        "[unit] After a runCommand resolves, a following send(\"hi\") is accepted (the slot is released).",
+        "[unit] runCommand(\"echo $SECRET_TOKEN=abc123...\") with a value matching a redaction pattern emits a tool_call event whose input.command is redacted the way a model Bash call's is."
+      ],
+      "tags": [
+        "feature",
+        "api",
+        "sessions",
+        "security",
+        "bash"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "expert",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New concurrent session claim path crosses approval, cancellation, close, redaction and transcript boundaries; security-critical architectural change.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/session/agent-session.ts",
+        "packages/nax-agent/src/session/agent-session-turn.ts",
+        "packages/nax-agent/src/session/session-ask-port.ts",
+        "packages/nax-agent/src/session/session-interaction.ts",
+        "packages/nax-agent/src/session/session-backend.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/session/agent-session-command.ts",
+        "packages/nax-agent/test/unit/session/agent-session-run-command.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerated with bun run api:update so it gains type CommandRunResult; every existing line is kept."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "48c5c5d493ff139b36128cea8f86bd3116497ceb"
+    },
+    {
+      "id": "US-003",
+      "title": "Resources config, paths, types and frontmatter reader",
+      "description": "**Goal** — Introduce the resource contracts, defaulted config block, Claude config root and tolerant frontmatter parser.\n\n**Motivation** — Existing skills must work on day one.\n\n**Approach** — **3. Config (US-003).** New file `packages/nax/src/config/schemas-resources.ts`:\n\n```ts\nexport const ResourcesConfigSchema = z.object({\n  /** Read Claude Code skills, commands, agents, .mcp.json, hooks and enabled plugins. */\n  claudeCode: z.boolean().default(true),\n  /** Attach the skills provider to nax run stages as well as nax chat. */\n  skillsInRun: z.boolean().default(false),\n});\n```\n\nregistered in `NaxConfigSchema` as `resources: ResourcesConfigSchema.default(() => ResourcesConfigSchema.parse({}))`, layered global -> project like every block. The hand-written `NaxConfig` interface (`src/config/runtime-types.ts`) gains `resources?: ResourcesConfig` (optional, like `mcp`), and every reader uses `config.resources?.claudeCode ?? true` / `config.resources?.skillsInRun ?? false`, so a sparse test config without the block behaves as the defaults.\n\n**4. Paths (US-003).** `claudeConfigDir(env)` in `packages/nax/src/resources/claude-paths.ts` returns `env.CLAUDE_CONFIG_DIR` when set (Claude Code's own override) and otherwise `join(_claudePathsDeps.homedir(), \".claude\")`. Every Claude Code path below is under that directory or under the repo root; tests point `CLAUDE_CONFIG_DIR` at a fixture.\n\n**5. Frontmatter (US-003).** `readResourceFrontmatter(text)` in `packages/nax/src/resources/frontmatter.ts` returns `{ data: Record<string, unknown>; body: string } | { error: string }`. The block is the text between a leading `---` line and the next `---` line; no leading `---` means empty data and the whole text as body. It parses the block with `Bun.YAML.parse` (the `.nax/rules` parser `parseFrontmatter` is rules-specific and rejects unknown keys, so it is not reused). When that throws, it falls back to a line reader: each line `key: value` whose key matches `^[A-Za-z][A-Za-z0-9_-]*$` sets `data[key]` to the trimmed rest of the line (one surrounding pair of matching quotes removed; `true`/`false` become booleans), and other lines are ignored. Claude Code accepts frontmatter like `description: Use when X. Triggers: \"a\", \"b\"` that strict YAML rejects (23 of 310 installed `SKILL.md` files on 2026-10-25, all copies of `nax-finish`); the fallback keeps them loading. A block with no closing `---` is `{ error }`. An empty block, or YAML that parses to `null`, is empty data; YAML that parses to a non-object (a list or a scalar) is `{ error }`.\n\n**Interface** — Resource model, `packages/nax/src/resources/types.ts`:\n\n```ts\nexport type ResourceOrigin =\n  | { readonly kind: \"claude-project\" }\n  | { readonly kind: \"claude-user\" }\n  | { readonly kind: \"claude-plugin\"; readonly plugin: string; readonly marketplace: string }\n  | { readonly kind: \"nax-plugin\"; readonly plugin: string };\n\nexport interface SkillResource {\n  readonly kind: \"skill\";\n  readonly name: string;            // frontmatter name, else the directory name\n  readonly qualifiedName: string;   // \"<plugin>:<name>\" for plugin origins, else name\n  readonly description: string;\n  readonly body: string;            // SKILL.md without its frontmatter\n  readonly baseDir: string;         // absolute directory holding SKILL.md\n  readonly path: string;            // absolute SKILL.md path\n  readonly modelInvocable: boolean; // false when disable-model-invocation: true\n  readonly origin: ResourceOrigin;\n}\nexport interface CommandResource {\n  readonly kind: \"command\";\n  readonly name: string;            // file name without .md\n  readonly qualifiedName: string;\n  readonly description?: string;\n  readonly argumentHint?: string;\n  readonly template: string;        // body without frontmatter\n  readonly path: string;\n  readonly origin: ResourceOrigin;\n}\nexport interface AgentResource {    // parsed and listed only (delivered in F5)\n  readonly kind: \"agent\";\n  readonly name: string; readonly qualifiedName: string; readonly description: string;\n  readonly model?: string; readonly tools?: readonly string[];\n  readonly path: string; readonly origin: ResourceOrigin;\n}\nexport interface McpServerResource { // parsed and listed only (delivered in F5)\n  readonly kind: \"mcp\";\n  readonly name: string; readonly transport: \"stdio\" | \"http\" | \"sse\";\n  readonly path: string; readonly origin: ResourceOrigin;\n}\nexport interface HookResource {      // parsed and listed only, never executed\n  readonly kind: \"hooks\";\n  readonly events: readonly string[]; readonly path: string; readonly origin: ResourceOrigin;\n}\nexport interface ResourceDiagnostic {\n  readonly severity: \"warn\" | \"error\";\n  readonly path: string;\n  readonly message: string;\n  readonly origin: ResourceOrigin;\n}\nexport interface ResourcePackage {\n  readonly id: string;              // \"claude-project\" | \"claude-user\" | \"<name>@<marketplace>\" | \"nax:<name>\"\n  readonly origin: ResourceOrigin;\n  readonly root: string;\n  readonly skills: readonly SkillResource[];\n  readonly commands: readonly CommandResource[];\n  readonly agents: readonly AgentResource[];\n  readonly mcpServers: readonly McpServerResource[];\n  readonly hooks: readonly HookResource[];\n  readonly diagnostics: readonly ResourceDiagnostic[];\n}\n```\n\n**Scope** — In: types.ts, claude-paths.ts, frontmatter.ts, resources/index.ts, ResourcesConfigSchema and optional ResourcesConfig type wiring. Update the existing defaults.test.ts NAX_CONFIG_KEYS list with resources; every DEFAULT_CONFIG key is still listed and every listed key still exists. Out: US-004/US-005 resource parsers/scanners, US-006 discovery, US-007 catalog and downstream delivery; no per-package resource semantics or root-only key pin.",
+      "acceptanceCriteria": [
+        "[unit] NaxConfigSchema.parse({}).resources equals { claudeCode: true, skillsInRun: false }.",
+        "[unit] NaxConfigSchema.safeParse({ resources: { skillsInRun: \"yes\" } }) fails.",
+        "[unit] NaxConfigSchema.parse({ resources: { skillsInRun: true } }).resources.claudeCode is true.",
+        "[unit] claudeConfigDir({ CLAUDE_CONFIG_DIR: \"/x/claude\" }) returns /x/claude.",
+        "[unit] claudeConfigDir({}) with _claudePathsDeps.homedir returning /home/u returns /home/u/.claude.",
+        "[unit] readResourceFrontmatter(\"---\\nname: a\\ndescription: b\\n---\\nBody\") returns data name a.",
+        "[unit] The same call returns data description b.",
+        "[unit] The same call returns body Body.",
+        "[unit] readResourceFrontmatter(\"no frontmatter\") returns empty data and body no frontmatter.",
+        "[unit] readResourceFrontmatter on a block whose line is description: Use when X. Triggers: \"a\", \"b\" (rejected by strict YAML) returns data description Use when X. Triggers: \"a\", \"b\".",
+        "[unit] readResourceFrontmatter with the fallback reading disable-model-invocation: true returns data disable-model-invocation as the boolean true.",
+        "[unit] readResourceFrontmatter with the fallback reading name: \"quoted\" returns data name quoted.",
+        "[unit] readResourceFrontmatter(\"---\\nname: a\\n\") (no closing line) returns an error.",
+        "[unit] readResourceFrontmatter(\"---\\n---\\nBody\") returns empty data and body Body.",
+        "[unit] readResourceFrontmatter(\"---\\n- a\\n- b\\n---\\nBody\") (a YAML list) returns an error."
+      ],
+      "tags": [
+        "feature",
+        "resources",
+        "config",
+        "parsing"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive types, two config booleans, a path helper and a bounded frontmatter reader follow existing schema and leaf-function patterns; no session or permission logic changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas.ts",
+        "packages/nax/src/config/runtime-types.ts",
+        "packages/nax/src/config/schemas-mcp.ts",
+        "packages/nax/test/unit/config/defaults.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/config/schemas-resources.ts",
+        "packages/nax/src/resources/index.ts",
+        "packages/nax/src/resources/types.ts",
+        "packages/nax/src/resources/claude-paths.ts",
+        "packages/nax/src/resources/frontmatter.ts",
+        "packages/nax/test/unit/config/schemas-resources.test.ts",
+        "packages/nax/test/unit/resources/frontmatter.test.ts"
+      ],
+      "suggestedCriteria": [
+        "readResourceFrontmatter returns an error when a closed frontmatter block parses successfully as a scalar.",
+        "readResourceFrontmatter returns empty data when a closed frontmatter block parses as YAML null.",
+        "loadConfig resolves resources.claudeCode from a project override while retaining resources.skillsInRun from the global config when the project omits that field."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/config/defaults.test.ts",
+          "reason": "its hand-written NAX_CONFIG_KEYS list (the case \"every DEFAULT_CONFIG key is in NAX_CONFIG_KEYS\") gains \"resources\"; the invariant is that every DEFAULT_CONFIG key is still listed and every listed key still exists."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "efe65f543e696de28cf626bfef2ec0563503f6ab"
+    },
+    {
+      "id": "US-004",
+      "title": "Skill and command parsers and scanners",
+      "description": "**Goal** — Parse skills and command files and discover them with deterministic bounded scans.\n\n**Motivation** — Nothing in the repo reads a `SKILL.md` today.\n\n**Approach** — Each parser returns `{ resource } | { diagnostic }` and never throws:\n\n- `parseSkillFile(path, text, origin)`: `name` = frontmatter `name` or the parent directory name, matching `SKILL_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/`; `description` required (non-empty string); `disable-model-invocation: true` sets `modelInvocable: false`; other keys (`allowed-tools`, `license`, `model`) ignored.\n- `parseCommandFile(path, text, origin)`: `name` = file name without `.md`, same regex; `description` and `argument-hint` optional strings.\n\nAC precedence for command hints: the literal frontmatter line `argument-hint: [msg]` must produce `argumentHint: \"[msg]\"`, even though YAML can decode unquoted brackets as a sequence. Preserve this command hint's bracketed text rather than discarding it as a non-string; do not change the US-003 rule rejecting a top-level YAML-list frontmatter block.\n\nScanners in `scan-dirs.ts`: `scanSkillsDir(dir, origin)` reads `<dir>/*/SKILL.md` (one level; hidden directories skipped); `scanCommandsDir(dir, origin)` and `scanAgentsDir(dir, origin)` read `<dir>/*.md` (top level only). A missing directory yields nothing; an unreadable file yields an `error` diagnostic and the scan continues. Entries are read in name order (sorted), so the cap and every shadowing winner are deterministic. Each scan caps at `MAX_RESOURCE_FILES_PER_DIR = 500` and adds one `warn` diagnostic when it truncates. File reads and directory listing go through `_resourceFsDeps` so tests can make one read fail.\n\n**Scope** — In: parse-skill.ts, parse-command.ts and scan-dirs.ts implementing scanSkillsDir/scanCommandsDir; reuse US-003 frontmatter and origins, qualify plugin resources as <plugin>:<name>. Out: scanAgentsDir and other resource parsers belong to US-005; source packages belong to US-006; lookup/precedence belongs to US-007. The reference to scanAgentsDir above describes the shared scanner contract to be extended by US-005. Command files in subdirectories of `commands/` and `@file` references inside command templates are not supported; `@file` is sent literally. A skill's `allowed-tools` and `model` frontmatter are ignored; a skill runs with the session's tools and model.\n\n**Interface** — `parseSkillFile(path, text, origin)` -> `{ resource } | { diagnostic }`; `parseCommandFile(path, text, origin)` -> `{ resource } | { diagnostic }`; `scanSkillsDir(dir, origin)` and `scanCommandsDir(dir, origin)` collect resources plus diagnostics using the US-003 types. No resource parsing exception escapes.",
+      "acceptanceCriteria": [
+        "[unit] parseSkillFile on ---\\nname: brainstorming\\ndescription: Explore intent\\n---\\n# Body returns a resource matching { name: \"brainstorming\", description: \"Explore intent\", body: \"# Body\", modelInvocable: true }.",
+        "[unit] parseSkillFile on frontmatter description: d with no name, at path <dir>/my-skill/SKILL.md, returns a resource matching { name: \"my-skill\", baseDir: \"<dir>/my-skill\" }.",
+        "[unit] parseSkillFile with disable-model-invocation: true returns modelInvocable false.",
+        "[unit] parseSkillFile with no description, and with name: \"bad name!\", each returns exactly { diagnostic } with severity error and the file's path (one table-driven case).",
+        "[unit] parseSkillFile on a skill whose description contains Triggers: \"a\" unquoted returns a resource (not a diagnostic).",
+        "[unit] parseSkillFile returns qualifiedName superpowers:brainstorming for origin { kind: \"claude-plugin\", plugin: \"superpowers\", marketplace: \"m\" } and brainstorming for origin { kind: \"claude-user\" } (one table-driven case).",
+        "[unit] parseCommandFile on <dir>/commit.md with frontmatter description: Create a git commit and argument-hint: [msg] returns a resource matching { name: \"commit\", description: \"Create a git commit\", argumentHint: \"[msg]\" }.",
+        "[unit] parseCommandFile on a file with no frontmatter returns template equal to the whole text.",
+        "[unit] scanSkillsDir(dir) over a fixture with a/SKILL.md, b/SKILL.md and .hidden/SKILL.md returns skills a and b only.",
+        "[unit] scanSkillsDir on a directory that does not exist returns no resources and no diagnostics.",
+        "[unit] scanSkillsDir over a fixture with 501 skill directories returns the first 500 by name plus one warn diagnostic.",
+        "[unit] scanSkillsDir with _resourceFsDeps failing the read of b/SKILL.md returns skill a and one error diagnostic naming b/SKILL.md.",
+        "[unit] scanCommandsDir(dir) over a fixture with x.md, y.txt and sub/z.md returns command x only.",
+        "[unit] scanCommandsDir over a fixture with 501 command files returns the first 500 by name plus one warn diagnostic.",
+        "[unit] parseSkillFile on frontmatter with no closing --- returns an error diagnostic naming the file's path and no resource."
+      ],
+      "tags": [
+        "feature",
+        "resources",
+        "parsing",
+        "discovery"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three small leaf modules use established types and explicit bounded filesystem/parser behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/resources/types.ts",
+        "packages/nax/src/resources/frontmatter.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/resources/parse-skill.ts",
+        "packages/nax/src/resources/parse-command.ts",
+        "packages/nax/src/resources/scan-dirs.ts",
+        "packages/nax/test/unit/resources/parse-skill.test.ts",
+        "packages/nax/test/unit/resources/scan-dirs.test.ts"
+      ],
+      "suggestedCriteria": [
+        "parseCommandFile returns an error diagnostic naming its path when its filename without .md fails SKILL_NAME_RE.",
+        "scanCommandsDir returns the remaining valid commands and an error diagnostic when one command file read fails."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "58ba8fb6e7a4cae3bd662042be86456327ca869c"
+    },
+    {
+      "id": "US-005",
+      "title": "Agent, MCP and hooks resource parsers",
+      "description": "**Goal** — Parse deferred agent, MCP and hook metadata into catalog resources without delivering or executing it.\n\n**Motivation** — One path, not two.\n\n**Approach** — Each parser returns `{ resource } | { diagnostic }` and never throws:\n\n- `parseAgentFile(path, text, origin)`: `name` and `description` required; `model` optional string; `tools` a comma-separated string or a string list.\n- `parseMcpJson(path, text, origin)`: the `mcpServers` object; one resource per entry; `transport` is the entry's `type` when it is `http` or `sse`, else `stdio` when it has a string `command`; any other entry is a `warn` diagnostic and skipped. Text that is not JSON is one `error` diagnostic.\n- `parseHooksJson(path, text, origin)` (a plugin's `hooks/hooks.json`) and `hooksFromSettings(path, settings, origin)` (a `settings.json` `hooks` key): one `HookResource` listing the event names (the object's keys); no `hooks` key -> none.\n\nScanners in `scan-dirs.ts`: `scanSkillsDir(dir, origin)` reads `<dir>/*/SKILL.md` (one level; hidden directories skipped); `scanCommandsDir(dir, origin)` and `scanAgentsDir(dir, origin)` read `<dir>/*.md` (top level only). A missing directory yields nothing; an unreadable file yields an `error` diagnostic and the scan continues. Entries are read in name order (sorted), so the cap and every shadowing winner are deterministic. Each scan caps at `MAX_RESOURCE_FILES_PER_DIR = 500` and adds one `warn` diagnostic when it truncates. File reads and directory listing go through `_resourceFsDeps` so tests can make one read fail.\n\n**Scope** — In: parse-agent.ts, parse-mcp.ts, parse-hooks.ts and extending US-004 scan-dirs.ts with scanAgentsDir. Out: source-package discovery US-006 and catalog US-007; no subagent tool, MCP connection, hooks execution or user-level ~/.claude.json discovery. Preserve existing skill/command scanning.\n\n**Interface** — `parseAgentFile(path, text, origin)` returns one resource or diagnostic; `parseMcpJson(path, text, origin)` aggregates per-entry resources/diagnostics; `parseHooksJson(path, text, origin)` and `hooksFromSettings(path, settings, origin)` return optional hook resources/diagnostics; `scanAgentsDir(dir, origin)` returns agents and diagnostics using upstream types. JSON parsers must represent multiple results where the spec requires one resource per MCP entry.",
+      "acceptanceCriteria": [
+        "[unit] parseAgentFile on frontmatter name: code-reviewer, description: Reviews, model: sonnet returns name code-reviewer and model sonnet.",
+        "[unit] parseAgentFile with tools: Read, Grep returns tools [\"Read\", \"Grep\"].",
+        "[unit] parseAgentFile with tools given as a YAML list [Read, Grep] returns tools [\"Read\", \"Grep\"].",
+        "[unit] parseAgentFile with no description returns an error diagnostic and no resource.",
+        "[unit] parseMcpJson on {\"mcpServers\":{\"ctx\":{\"command\":\"npx\",\"args\":[\"x\"]}}} returns one resource with name ctx and transport stdio.",
+        "[unit] parseMcpJson(path, text, origin), with text {\"mcpServers\":{\"ctx\":{\"type\":\"http\",\"url\":\"https://h\"}}}, returns a resource with transport http for the ctx entry.",
+        "[unit] parseMcpJson(path, text, origin), with text {\"mcpServers\":{\"ctx\":{\"url\":\"https://h\"}}} whose ctx entry has no type and no command, returns a warn diagnostic and no resource for that entry.",
+        "[unit] parseMcpJson on text that is not JSON returns one error diagnostic and no resources.",
+        "[unit] parseHooksJson on {\"hooks\":{\"PreToolUse\":[],\"Stop\":[]}} returns one HookResource with events [\"PreToolUse\", \"Stop\"].",
+        "[unit] hooksFromSettings on a settings object with no hooks key returns no resource.",
+        "[unit] scanAgentsDir(dir) over a fixture with a.md and b.md returns agents a and b.",
+        "[unit] scanAgentsDir over a fixture with 501 agent files returns the first 500 by name plus one warn diagnostic."
+      ],
+      "tags": [
+        "feature",
+        "resources",
+        "parsing"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive leaf parsers and one scanner extension; metadata only, no new execution or permission surface.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/resources/types.ts",
+        "packages/nax/src/resources/frontmatter.ts",
+        "packages/nax/src/resources/scan-dirs.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/resources/parse-agent.ts",
+        "packages/nax/src/resources/parse-mcp.ts",
+        "packages/nax/src/resources/parse-hooks.ts",
+        "packages/nax/test/unit/resources/parse-agent-mcp-hooks.test.ts"
+      ],
+      "suggestedCriteria": [
+        "parseMcpJson returns transport sse for an entry whose type is sse.",
+        "parseAgentFile returns an error diagnostic when name is missing.",
+        "scanAgentsDir returns no resources or diagnostics when its directory is missing."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "79c0ddded192704decc8d3e3aee8646fca4f9e12"
+    },
+    {
+      "id": "US-006",
+      "title": "Discover Claude Code resource packages",
+      "description": "**Goal** — Discover project, user and enabled Claude Code plugin resources in precedence order.\n\n**Motivation** — The slice-1 acceptance test is brainstorming and spec-reviewing inside the nax TUI with the superpowers and nax-spec-kit skills the user already has installed as Claude Code plugins.\n\n**Approach** — **7. Claude Code sources (US-006).** `discoverClaudeCodePackages({ repoRoot, claudeDir })` returns packages in this order:\n\n1. `claude-project` (root `repoRoot`): `.claude/skills`, `.claude/commands`, `.claude/agents`, `<repoRoot>/.mcp.json`, `hooks` of `.claude/settings.json`.\n2. `claude-user` (root `claudeDir`): `skills`, `commands`, `agents`, `hooks` of `<claudeDir>/settings.json`. (User-level MCP servers live in `~/.claude.json`; F5.)\n3. One `claude-plugin` package per enabled plugin. The enabled set is the `enabledPlugins` object of `<claudeDir>/settings.json` overlaid by the one in `<repoRoot>/.claude/settings.json` (a project `false` disables a user `true`); keys with value `true` survive, in user-then-project insertion order. Each key `<name>@<marketplace>` is looked up in `<claudeDir>/plugins/installed_plugins.json` (`version: 2`, `plugins[key]` an array of install records). The record used is the first with `scope: \"user\"`, else the first with `scope: \"project\"` whose `projectPath` equals `repoRoot`. Its `installPath` is the package root. The plugin name is `.claude-plugin/plugin.json`'s `name` when that file exists and parses, else `<name>` from the key. The package reads `skills/`, `commands/`, `agents/`, `.mcp.json` and `hooks/hooks.json` under the root.\n\nReal layout observed 2026-10-25: `installed_plugins.json` `version: 2`, every record `scope: \"user\"`; superpowers 7.0.0 has `.claude-plugin/plugin.json` and `skills/`; commit-commands has no `.claude-plugin/` at all, only `commands/`.\n\n**Scope** — In: claude-sources.ts calling the actual upstream scanners/parsers; preserve origin-bearing diagnostics even when an enabled plugin cannot produce a package. Out: merging lookups US-007, nax plugins US-008 and tool delivery US-010. Only default component directories; do not honor custom plugin.json component paths, settings.local.json, enterprise settings, pi directories, ~/.claude.json or marketplace operations.\n\n**Interface** — `discoverClaudeCodePackages({ repoRoot, claudeDir })` -> ordered ResourcePackage[]. Failure rules: missing installed_plugins.json yields one warn when plugins are enabled; invalid JSON or version other than 2 yields one error and no plugin packages; an enabled plugin without a usable record yields warn `plugin <key> is enabled but not installed`; nonexistent installPath yields warn and skip; invalid settings JSON yields error and no hooks/enabled entries from that file while other resources continue loading. Use fixture trees and _resourceFsDeps rather than real user files.",
+      "acceptanceCriteria": [
+        "[unit] discoverClaudeCodePackages over a fixture repo with .claude/skills/p/SKILL.md returns a first package with id claude-project containing skill p.",
+        "[unit] Over a fixture claudeDir with skills/u/SKILL.md, the claude-user package contains skill u.",
+        "[unit] Over a fixture claudeDir with commands/c.md, the claude-user package contains command c.",
+        "[unit] A fixture repo .mcp.json with one server makes the claude-project package contain one mcpServers entry.",
+        "[unit] A claudeDir/settings.json hooks key with Stop makes the claude-user package contain a hook resource with event Stop.",
+        "[unit] With claudeDir/settings.json enabledPlugins {\"sp@m\": true} and an installed_plugins.json version 2 mapping sp@m to a scope: user record whose installPath holds .claude-plugin/plugin.json {\"name\":\"superpowers\"} and skills/brainstorming/SKILL.md, the result contains a package with id sp@m whose skill has qualifiedName superpowers:brainstorming.",
+        "[unit] An enabled plugin commit-commands@m whose install path has no .claude-plugin/plugin.json yields commands qualified commit-commands:<name>.",
+        "[unit] A project .claude/settings.json enabledPlugins {\"sp@m\": false} over a user true removes the sp@m package.",
+        "[unit] A project .claude/settings.json enabling pp@m adds that package after the user-enabled ones.",
+        "[unit] An install record with scope: project and projectPath equal to repoRoot is used when no scope: user record exists.",
+        "[unit] An install record with scope: project and a different projectPath is not used.",
+        "[unit] An enabled key with no record in installed_plugins.json yields a warn diagnostic containing is enabled but not installed and no package for it.",
+        "[unit] installed_plugins.json with version: 1 yields no plugin packages and one error diagnostic.",
+        "[unit] installed_plugins.json that is not JSON yields no plugin packages and one error diagnostic.",
+        "[unit] An installPath that does not exist yields a warn diagnostic and no package for it.",
+        "[unit] A claudeDir/settings.json that is not JSON yields an error diagnostic, no plugin packages and no hook resources from it, while the claude-user package still contains its skills.",
+        "[unit] A missing installed_plugins.json with one enabled plugin yields one warn diagnostic and no plugin packages."
+      ],
+      "tags": [
+        "feature",
+        "resources",
+        "claude-code",
+        "discovery"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Integrates multiple parsers, settings overlays and install-record formats with diagnostic recovery and deterministic ordering.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/resources/scan-dirs.ts",
+        "packages/nax/src/resources/parse-mcp.ts",
+        "packages/nax/src/resources/parse-hooks.ts",
+        "packages/nax/src/resources/claude-paths.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/resources/claude-sources.ts",
+        "packages/nax/test/unit/resources/claude-sources.test.ts"
+      ],
+      "suggestedCriteria": [
+        "discoverClaudeCodePackages chooses the first user install record over an otherwise matching project record when both exist.",
+        "discoverClaudeCodePackages loads valid project-enabled plugin entries even when user settings.json is malformed.",
+        "discoverClaudeCodePackages uses the enabled key's plugin name when plugin.json is present but cannot be parsed."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "140bb159f1453723eae26942b1f55e47d382543a"
+    },
+    {
+      "id": "US-007",
+      "title": "Build the unified resource catalog",
+      "description": "**Goal** — Merge ordered resource packages into one catalog with precedence, qualified lookup and collision diagnostics.\n\n**Motivation** — One path, not two.\n\n**Approach** — **8. The catalog (US-007).** `buildResourceCatalog(packages)` merges in package order; `loadResourceCatalog({ repoRoot, config, env, naxPluginPackages })` calls `discoverClaudeCodePackages({ repoRoot, claudeDir: claudeConfigDir(env) })` only when `config.resources?.claudeCode ?? true`, appends the nax plugin packages after the Claude Code plugin packages, and builds the catalog.\n\n```ts\nexport interface ResourceCatalog {\n  readonly packages: readonly ResourcePackage[];\n  readonly skills: readonly SkillResource[];      // every loaded skill, package order\n  readonly commands: readonly CommandResource[];\n  readonly diagnostics: readonly ResourceDiagnostic[]; // package diagnostics + collisions\n  findSkill(name: string): SkillResource | undefined;   // short or qualified name\n  findCommand(name: string): CommandResource | undefined;\n}\n```\n\nPrecedence for a short name: the first package in order wins (project, user, Claude Code plugins in enabled order, nax plugins). A later skill with the same short name stays reachable by its qualified name `<plugin>:<name>` and adds a `warn` diagnostic `skill <name> from <id> is shadowed by <winner id>; use <qualifiedName>`. Commands follow the same rule.\n\n**Scope** — In: catalog.ts and resources barrel exports, ordered complete resource lists, first-wins lookup and diagnostics aggregation. Out: source discovery details US-006, creating nax plugin packages US-008 and provider delivery US-010. No trust filter is added to the catalog; US-012 settles trust before loading.\n\n**Interface** — ResourceCatalog above; `buildResourceCatalog(packages)`; `loadResourceCatalog({ repoRoot, config, env, naxPluginPackages })`. Tests must exercise loadResourceCatalog with CLAUDE_CONFIG_DIR pointing to a real fixture so the discovery-to-catalog seam is covered.",
+      "acceptanceCriteria": [
+        "[unit] buildResourceCatalog([project, user]) with no shared names exposes every skill of both through catalog.skills, project first.",
+        "[unit] With a user skill x and a plugin p skill x, catalog.findSkill(\"x\") returns the user skill.",
+        "[unit] In the same catalog, catalog.findSkill(\"p:x\") returns the plugin skill.",
+        "[unit] In the same catalog, catalog.diagnostics contains a warn whose message contains is shadowed by and p:x.",
+        "[unit] With two Claude Code plugin packages in order a, b both defining skill s, findSkill(\"s\") returns a's.",
+        "[unit] A project command c wins findCommand(\"c\") over a plugin command c.",
+        "[unit] That plugin command stays reachable as findCommand(\"<plugin>:c\").",
+        "[unit] findSkill(\"missing\") returns undefined.",
+        "[unit] catalog.diagnostics contains every package diagnostic.",
+        "[unit] loadResourceCatalog({ repoRoot, config, env: { CLAUDE_CONFIG_DIR: fixture }, naxPluginPackages: [] }) with resources.claudeCode: true finds the fixture's user skill.",
+        "[unit] The same call with resources.claudeCode: false returns a catalog with no skills.",
+        "[unit] The same call with a config that has no resources key finds the fixture's user skill.",
+        "[unit] loadResourceCatalog with one nax plugin package containing skill n returns a catalog where findSkill(\"n\") has origin nax-plugin.",
+        "[unit] In that catalog, the nax plugin package comes after every Claude Code package in catalog.packages."
+      ],
+      "tags": [
+        "feature",
+        "resources",
+        "catalog"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Deterministic lookup and aggregation over upstream discovery use a clear small interface and standard maps.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/resources/claude-sources.ts",
+        "packages/nax/src/resources/claude-paths.ts",
+        "packages/nax/src/resources/types.ts",
+        "packages/nax/src/resources/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/resources/catalog.ts",
+        "packages/nax/test/unit/resources/catalog.test.ts"
+      ],
+      "suggestedCriteria": [
+        "buildResourceCatalog retains both winning and shadowed resources in catalog.skills and catalog.commands.",
+        "buildResourceCatalog emits a warn command-shadowing diagnostic naming the winner and qualified losing command.",
+        "loadResourceCatalog retains supplied nax plugin packages when resources.claudeCode is false."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3db0971a455c300f42c7814a0b0071f2da0d23cb"
+    },
+    {
+      "id": "US-008",
+      "title": "Add nax plugin resources extension",
+      "description": "**Goal** — Allow existing nax plugins to declare data-only skill, command and agent directories for the catalog.\n\n**Motivation** — A nax plugin today can contribute code (reviewers, reporters, loop handlers) but no instructions.\n\n**Approach** — **9. nax plugin `resources` extension (US-008).** `PluginType` and `VALID_PLUGIN_TYPES` (`src/plugins/validator.ts`) gain `\"resources\"`; `PluginExtensions.resources?: IResourceProvider`:\n\n```ts\nexport interface IResourceProvider {\n  /** Directories relative to the plugin module's directory. */\n  readonly skills?: string;\n  readonly commands?: string;\n  readonly agents?: string;\n}\n```\n\n`validatePlugin` checks each present field is a non-empty relative path with no `..` segment. `PluginRegistry.getResourceDirs()` returns, for each plugin providing `\"resources\"` whose source type is `global`, `project` or `config`, `{ plugin, skills?, commands?, agents? }` resolved to absolute paths against `dirname(getSource(plugin).path)`. `global` and `project` sources already record the absolute plugin file path; the loader changes the `config` source to record its `resolvedModule` (absolute for a `./` or `../` module, resolved against the project root, and unchanged for an npm package name) instead of the raw `entry.module`. A source path that is not absolute (an npm package) or a `builtin` source is skipped with a `warn` log naming the plugin. `naxPluginPackages(dirs)` in `packages/nax/src/resources/nax-plugin-packages.ts` scans them into one package per plugin, origin `nax-plugin`, id `nax:<plugin>`.\n\n**Scope** — In: PluginType, extension definition/type exports, validator case, getResourceDirs, config source-path recording, nax-plugin-packages.ts and resources barrel export. Every existing plugin validator case stays true; the existing suite has no closed-list assertion to weaken. Out: US-012 chat loading/loop-handler composition; nax plugin resources in runs; runtime code execution from resource files. Preserve loader trust assertions.\n\n**Interface** — IResourceProvider above, `PluginExtensions.resources?: IResourceProvider`, `PluginRegistry.getResourceDirs()` -> `{ plugin, skills?, commands?, agents? }[]`, `naxPluginPackages(dirs)` -> ResourcePackage[]. Relative-path validation refuses absolute, empty or any .. segment through the existing invalid-plugin behavior.",
+      "acceptanceCriteria": [
+        "[unit] validatePlugin accepts a plugin with provides: [\"resources\"] and extensions.resources: { skills: \"skills\" }.",
+        "[unit] validatePlugin refuses a plugin with provides: [\"resources\"] and no resources extension.",
+        "[unit] validatePlugin refuses extensions.resources: { skills: \"/abs/skills\" }.",
+        "[unit] validatePlugin refuses extensions.resources: { commands: \"../outside\" }.",
+        "[unit] validatePlugin refuses extensions.resources: { agents: \"\" }.",
+        "[unit] PluginRegistry.getResourceDirs() for a plugin kit loaded from /p/kit/index.ts with resources: { skills: \"skills\", commands: \"cmds\" } returns [{ plugin: \"kit\", skills: \"/p/kit/skills\", commands: \"/p/kit/cmds\" }].",
+        "[unit] getResourceDirs() returns [] when no plugin provides resources.",
+        "[unit] getResourceDirs() skips a plugin whose source type is builtin.",
+        "[unit] Through loadPlugins with configPlugins [{ module: \"./plugins/kit.ts\" }], project root /p and a fixture module providing resources: { skills: \"skills\" }, getResourceDirs() returns skills /p/plugins/skills.",
+        "[unit] getResourceDirs() skips a config plugin whose recorded source path is an npm package name.",
+        "[unit] naxPluginPackages([{ plugin: \"kit\", skills: fixtureSkills }]) returns one package with id nax:kit and origin { kind: \"nax-plugin\", plugin: \"kit\" }.",
+        "[unit] In that package, skill s has qualifiedName kit:s.",
+        "[unit] naxPluginPackages for a plugin whose skills directory does not exist returns a package with no skills and no diagnostics.",
+        "[unit] getResourceDirs() logs a warn naming each skipped plugin whose source is builtin or whose source path is not absolute."
+      ],
+      "tags": [
+        "feature",
+        "resources",
+        "plugins",
+        "security"
+      ],
+      "dependencies": [
+        "US-007"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Extends plugin validation and source resolution across loader/registry/catalog boundaries; plugin path confinement is security-sensitive.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/plugins/types.ts",
+        "packages/nax/src/plugins/extensions.ts",
+        "packages/nax/src/plugins/validator.ts",
+        "packages/nax/src/plugins/registry.ts",
+        "packages/nax/src/plugins/loader.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/resources/nax-plugin-packages.ts",
+        "packages/nax/test/unit/plugins/registry-resources.test.ts"
+      ],
+      "suggestedCriteria": [
+        "validatePlugin refuses resources paths containing an interior .. segment such as skills/../outside.",
+        "validatePlugin refuses a non-string present resources directory field.",
+        "getResourceDirs() resolves global and project resource paths relative to each source plugin module's directory."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "729e22e80a6cb200a9f78e96c08ec0107e6ba007"
+    },
+    {
+      "id": "US-009",
+      "title": "Skills and command prompt builders",
+      "description": "**Goal** — Centralize skills index, user skill invocation and command argument text assembly in prompt builders.\n\n**Motivation** — A declarative `resources` extension lets one nax plugin ship skills and commands the same way a Claude Code plugin does, with no new code-execution surface.\n\n**Approach** — **10. Prompt builders (US-009).** New `packages/nax/src/prompts/builders/skills-builder.ts`, exported from `src/prompts/index.ts` (the prompt-builder rule: every model-facing text assembly lives under `src/prompts/builders/`):\n\n- `buildSkillsInstructions(entries: readonly { qualifiedName: string; description: string }[])`: one paragraph telling the model to call `nax-skills__load` with a skill name before acting on a task a skill matches and to load a skill's `references` files with `file`; then one line per entry `- <qualifiedName>: <description>`, where the description has control characters removed, every whitespace run collapsed to one space, and is cut to 200 characters; at most `MAX_SKILLS_INDEX_ENTRIES = 150` lines, then `- ... and <n> more`.\n- `buildSkillInvocationMessage({ skill, args })`: a `<skill name=\"<qualifiedName>\" location=\"<path>\">` block holding the line `References are relative to <baseDir>; load them with nax-skills__load and file.` and the body, closed by `</skill>`, then the args after a blank line when non-empty.\n- `buildCommandMessage(template, rest)`: `$ARGUMENTS` -> the trimmed rest; `$1`..`$9` -> the whitespace-split args (missing -> empty); when the template has none of those placeholders and the rest is non-empty, `\\n\\nARGUMENTS: <rest>` is appended.\n\n**Scope** — In: skills-builder.ts and prompts barrel export with pure formatting/argument substitution. Out: provider/catalog loading US-010, slash routing US-013 and shell expansion US-014; command builders never execute shell lines. The control-character/whitespace rule must yield a b c for a newline/tab-delimited description with a bell, as pinned by AC: normalize whitespace separators (including newline and tab) to spaces before removing remaining non-whitespace control characters, so removing controls does not concatenate words. Command output token protection is not added: output later inserted by shell expansion is still subject to argument substitution.\n\n**Interface** — `buildSkillsInstructions(entries: readonly { qualifiedName: string; description: string }[])`; `buildSkillInvocationMessage({ skill, args })`; `buildCommandMessage(template, rest)`; each returns the model-facing string. Use SkillResource from US-003 and the existing forge-read builder/barrel conventions.",
+      "acceptanceCriteria": [
+        "[unit] buildSkillsInstructions imported from src/prompts is a function.",
+        "[unit] buildSkillsInstructions([{ qualifiedName: \"sp:b\", description: \"d\" }]) contains nax-skills__load.",
+        "[unit] The same call contains the line - sp:b: d.",
+        "[unit] buildSkillsInstructions with 151 entries returns 150 skill lines and a final line - ... and 1 more.",
+        "[unit] buildSkillsInstructions cuts a 300-character description to 200 characters.",
+        "[unit] buildSkillsInstructions with description a\\nb\\t\\tc\\u0007 renders - <name>: a b c.",
+        "[unit] buildSkillInvocationMessage({ skill, args: \"idea\" }) contains <skill name=\"<qualifiedName>\".",
+        "[unit] The same message contains References are relative to <baseDir>.",
+        "[unit] The same message contains the skill body.",
+        "[unit] In the same message, idea comes after </skill>.",
+        "[unit] buildSkillInvocationMessage({ skill, args: \"\" }) ends with </skill>.",
+        "[unit] buildCommandMessage(\"Fix $ARGUMENTS now\", \"  the bug \") returns Fix the bug now.",
+        "[unit] buildCommandMessage(\"$1 then $2\", \"a b c\") returns a then b.",
+        "[unit] When the third positional argument is missing, buildCommandMessage(\"$1-$3\", \"a\") returns \"a-\", substituting an empty string for the missing argument.",
+        "[unit] buildCommandMessage(\"Review\", \"this file\") returns Review\\n\\nARGUMENTS: this file.",
+        "[unit] buildCommandMessage(\"Review\", \"\") returns Review."
+      ],
+      "tags": [
+        "feature",
+        "prompts",
+        "resources"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure string builders with bounded formatting and explicit substitution rules follow existing prompt-builder conventions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/forge-read-builder.ts",
+        "packages/nax/src/prompts/index.ts",
+        "packages/nax/src/resources/types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/prompts/builders/skills-builder.ts",
+        "packages/nax/test/unit/prompts/builders/skills-builder.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6336eba41748dcad153625d36b5ae9fb21d37647"
+    },
+    {
+      "id": "US-010",
+      "title": "Deliver catalog skills through a static provider",
+      "description": "**Goal** — Expose skills and confined reference files through the reusable nax-skills provider.\n\n**Motivation** — A native implementer told by `AGENTS.md` to \"follow skill X\" has no way to load it (its Read is limited to the workdir, and the skill lives under the user's Claude config directory), and loops into no-work fix rounds.\n\n**Approach** — **11. The skills provider (US-010).** `createSkillsProvider(load: () => Promise<ResourceCatalog>)` in `packages/nax/src/resources/skills-provider.ts`, mirroring `packages/nax/src/forge-tools/provider.ts`:\n\n- `id: \"nax-skills\"` (the `nax-` prefix, like `nax-forge`, keeps it clear of an MCP server the user names `skills`), `kind: \"static\"`, `stages: [\"*\"]`; `load` is called once and memoised.\n- One tool, `localName: \"load\"` (advertised `nax-skills__load`). Input `{ name: string; file?: string }`.\n- Without `file`: returns `Base directory for this skill: <baseDir>`, a blank line, then the body.\n- With `file`: returns the text of `join(baseDir, file)` when `file` is relative, has no NUL byte, resolves (through `realpath`) inside the skill's real `baseDir`, names a regular file, and is at most `MAX_SKILL_FILE_BYTES = 262_144` bytes. This is how the model reads a skill's `references/*.md`, which its Read tool cannot reach outside the workdir.\n- A skill with `modelInvocable: false` refuses the body fetch (no `file`) but serves `file` reads, so a skill the user invoked by slash command can still read its references.\n- Errors (all `isError: true`, no throw): unknown name -> `unknown skill <name>; available: <up to 20 qualified names>`; a body fetch for a skill with `modelInvocable: false` -> `skill <name> can only be invoked by the user`; an absolute `file`, a NUL byte, or a path resolving outside -> `file <file> is outside skill <name>`; missing -> `skill <name> has no file <file>`; a directory -> `file <file> is not a regular file`; too large -> `file <file> exceeds 262144 bytes`.\n- `tools()` returns `[]` when the catalog has no skill at all, so the provider advertises nothing; `instructions()` returns `buildSkillsInstructions` over the model-invocable skills, or `undefined` when there are none.\n\n**Scope** — In: skills-provider.ts, resources barrel export, lazy memoized catalog and realpath-confined file loading with injectable fs dependencies; reuse US-009 builder for instructions. Out: session provider resolution US-001, runtime opt-in US-011 and chat wiring US-012; do not widen Read's workdir scope or interpret skill allowed-tools/model frontmatter.\n\n**Interface** — `createSkillsProvider(load: () => Promise<ResourceCatalog>)` -> ToolProvider; tool input `{ name: string; file?: string }` and results `{ content: string; isError?: boolean }` using the existing ProviderTool contract. Tests run the provider tool against a fixture catalog/body and reference files, and assert instructions() contains nax-skills__load to pin the catalog and builder seams. The existing ToolProvider contract takes `workdir` in `tools(workdir)` and `instructions(workdir)`; AC mentions of tools()/instructions() are shorthand for calls with a fixture workdir. Invoke the tool through `ProviderTool.run(input, ctx)` and assert the ToolResult.content, not a SkillResource return. The callback named load in createSkillsProvider is the catalog loader, distinct from the provider tool whose localName is load.",
+      "acceptanceCriteria": [
+        "[unit] createSkillsProvider(load) returns a provider matching { id: \"nax-skills\", kind: \"static\", stages: [\"*\"] }.",
+        "[unit] Its tools() over a catalog with one model-invocable skill returns one tool with localName load whose input schema requires name.",
+        "[unit] Its tools() over an empty catalog returns [].",
+        "[unit] Over a catalog with only modelInvocable: false skills, tools() returns the load tool.",
+        "[unit] Over a catalog with only modelInvocable: false skills, instructions() returns undefined.",
+        "[unit] Running load with { name, file: \"references/a.md\" } for a modelInvocable: false fixture skill returns that file's text.",
+        "[unit] load is called once across two tools() calls and one instructions() call.",
+        "[unit] Running load with { name: \"brainstorming\" } returns content equal to Base directory for this skill: <baseDir>, a blank line, then the skill body.",
+        "[unit] Running the load tool with { name: \"superpowers:brainstorming\" } resolves a ToolResult whose content is \"Base directory for this skill: <baseDir>\\n\\n<body>\" for that qualified skill, rather than returning a SkillResource object.",
+        "[unit] Running load with { name: \"nope\" } returns an error result whose content starts unknown skill nope; available:.",
+        "[unit] Running load with no file for a skill with modelInvocable: false returns { isError: true, content: \"skill <name> can only be invoked by the user\" }.",
+        "[unit] Running load with { name, file: \"references/a.md\" } for a fixture skill returns that file's text.",
+        "[unit] Running load with each of file = ../other/SKILL.md, an absolute path, a path containing a NUL byte, and a symlink inside the base directory pointing outside it returns an error result whose content contains is outside skill (one table-driven case).",
+        "[unit] Running load with file: \"missing.md\" returns { isError: true, content: \"skill <name> has no file missing.md\" }.",
+        "[unit] Running load with file: \"references\" (a directory) returns an error result whose content contains is not a regular file.",
+        "[unit] Running load with a file of 262145 bytes returns an error result whose content contains exceeds 262144 bytes.",
+        "[unit] instructions() returns text containing nax-skills__load and the line - superpowers:brainstorming: <description>."
+      ],
+      "tags": [
+        "feature",
+        "resources",
+        "tool-providers",
+        "security",
+        "filesystem"
+      ],
+      "dependencies": [
+        "US-007",
+        "US-009"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One static provider mirrors forge-tools and consumes existing catalog/builders; strict three-session TDD remains mandatory because realpath containment controls access outside the workdir.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/forge-tools/provider.ts",
+        "packages/nax/src/resources/catalog.ts",
+        "packages/nax/src/prompts/builders/skills-builder.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/resources/skills-provider.ts",
+        "packages/nax/test/unit/resources/skills-provider.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Running load with a regular file of exactly 262144 bytes returns its text without an error result.",
+        "Running load with an unknown name lists at most 20 available qualified names.",
+        "Concurrent tools() and instructions() calls invoke the catalog loader once.",
+        "Running load refuses a target in a sibling directory whose name merely starts with the skill base directory's name."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "bac6ebb4178f26a974a70c12a140f114fe1bc345"
+    },
+    {
+      "id": "US-011",
+      "title": "Opt in to skills delivery in nax run",
+      "description": "**Goal** — Add the lazy skills provider to run dispatch only when resources.skillsInRun is enabled.\n\n**Motivation** — A skills provider that works in `nax run` removes the cause, behind an opt-in.\n\n**Approach** — **12. `nax run` opt-in (US-011).** In `createRuntime` (`packages/nax/src/runtime/index.ts`), when `config.resources?.skillsInRun ?? false` is true, `toolProviders` gains `createSkillsProvider(() => loadResourceCatalog({ repoRoot: workdir, config, env: process.env, naxPluginPackages: [] }))` after the MCP providers. `createRuntime` stays synchronous because the catalog loads lazily; the call goes through a new `_runtimeResourceDeps = { loadResourceCatalog }` in `runtime/index.ts` so tests can observe it. Run stages receive it through `buildRunDispatchOptions(ctx, params)` (`src/operations/call-run-options.ts`, whose private `runtimeDispatchFields` puts `runtime.toolProviders` first in the returned `providers`) and attach it under the existing `providerScope` rules (`unrestricted` attaches all; `scoped` only what the stage's `Mcp(nax-skills:load)` rule admits; `safe` none). nax plugin resource packages are not added in `nax run` in this feature.\n\n**Scope** — In: runtime construction branch, _runtimeResourceDeps seam and actual runtime-to-run-dispatch wiring. Out: provider implementation US-010 and chat plugin catalog US-012. The skills provider in `nax run` does not include nax plugin resources; only `nax chat` loads nax plugins into the catalog. With resources.skillsInRun unset or false, runtime.toolProviders is exactly today's MCP providers, so every existing runtime assertion stays true. Do not hardcode new permission decisions or make createRuntime asynchronous.\n\n**Interface** — Existing `createRuntime(config, workdir)` remains synchronous; new `_runtimeResourceDeps = { loadResourceCatalog }`; `buildRunDispatchOptions(ctx: CallContext, params: RunDispatchOptionsParams)` returns providers starting with runtime.toolProviders. Test with a CallContext whose runtime is constructed by createRuntime, not a manually populated providers array.",
+      "acceptanceCriteria": [
+        "[unit] createRuntime(config, workdir) with resources.skillsInRun: true returns a runtime whose toolProviders contains a provider with id nax-skills.",
+        "[unit] In that runtime, the nax-skills provider comes after every MCP provider.",
+        "[unit] createRuntime with the default config returns toolProviders containing no provider with id nax-skills.",
+        "[unit] createRuntime with a config that has no resources key returns toolProviders containing no provider with id nax-skills.",
+        "[unit] createRuntime with resources.skillsInRun: true does not call _runtimeResourceDeps.loadResourceCatalog until the skills provider's tools() is first called.",
+        "[unit] buildRunDispatchOptions(ctx, params) with a CallContext whose runtime came from createRuntime with resources.skillsInRun: true returns providers that include one with id nax-skills."
+      ],
+      "tags": [
+        "feature",
+        "resources",
+        "runtime",
+        "security",
+        "permissions"
+      ],
+      "dependencies": [
+        "US-010"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Small additive runtime integration, but exposing a provider through stage-scoped permissions invokes the security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/runtime/index.ts",
+        "packages/nax/src/operations/call-run-options.ts",
+        "packages/nax/src/agents/coding-tool-support-resolve.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/runtime/runtime-skills-provider.test.ts"
+      ],
+      "suggestedCriteria": [
+        "An opted-in run using a safe permission profile advertises no nax-skills tools.",
+        "An opted-in scoped run advertises nax-skills__load only when its stage admits Mcp(nax-skills:load).",
+        "The run skills catalog loader receives an empty naxPluginPackages array when its provider is first resolved."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f62728e7d47cf76b907c3e4352027fecf6c205f8"
+    },
+    {
+      "id": "US-012",
+      "title": "Chat trust gate, plugins, catalog and providers",
+      "description": "**Goal** — Settle trust before composing chat and attach the shared catalog, skills provider and nax plugin handlers to every chat session.\n\n**Motivation** — The codebase already has the pieces: `ToolProvider` (namespacing, per-stage attachment, provider instructions #2517, tool audit) used by `nax run`; the MCP pool and lock; the trust store; and the `loopHandlers` plugin extension modelled on pi extensions (#2288).\n\n**Approach** — **13. Chat composition (US-012).** `chatCommand` (`packages/nax/src/cli/chat.ts`):\n\n1. After the existing TTY and mode checks, and before the `try` around `composeChat`, awaits `_chatCommandDeps.ensureTrusted(cwd)`, whose default is `ensureProjectTrusted(await normalizeTrustPath(resolveTrustRoot(cwd)), { interactive: true })` (the same steps `runTrustGate` takes, without its `process.exit`). A rejection with `NaxError` `PROJECT_UNTRUSTED` writes `Project not trusted: <root>` and the error's `context.hint` line to stderr and sets exit code 2; `TRUST_STORE_UNREADABLE` writes its message and sets exit code 2; any other rejection writes its message and sets exit code 1; nothing else runs in any of these cases.\n2. `composeChat` then awaits `_chatCommandDeps.loadPlugins(join(globalConfigDir(), \"plugins\"), join(repoRoot, \".nax\", \"plugins\"), config.plugins ?? [], repoRoot, config.disabledPlugins)`; a rejection writes `nax plugins unavailable: <message>` and continues with no plugins. Then `_chatCommandDeps.loadResourceCatalog({ repoRoot, config, env: process.env, naxPluginPackages: naxPluginPackages(registry.getResourceDirs()) })`.\n3. `createChatHost` gets a new optional `resources` dependency (`ChatResources`): `{ catalog, toolProviders: [createSkillsProvider(async () => catalog)], pluginHandlers: registry.getLoopHandlers(), naxPlugins: [{ name, provides }] per loaded plugin, teardown: () => registry.teardownAll() }`.\n4. `NativeChatHost` passes `toolProviders` through `openChatSession` (new optional request field) to `nativeBackend({ toolProviders })`, and opens every session with `loopHandlers` = the plugin handlers followed by the rule-delivery handlers (the order `configureRunRules` uses), one frozen array built once in the constructor. `host.close()` calls `teardown` once, after the session handle is released. The host exposes `catalog` and `naxPlugins` (both optional, undefined without `resources`).\n\n**Scope** — In: CLI trust/error handling, plugin failure fallback, resource composition, ChatResources exported from chat/index.ts, optional host dependency/exposure, provider forwarding across start/resume/reopen and idempotent plugin teardown after session release. Existing cli/chat.test.ts dependency fakes gain resolving ensureTrusted, empty registry loadPlugins and empty-catalog loadResourceCatalog; every existing case keeps its asserted behaviour. Out: slash routing US-013, runCommand US-014 and listings/one-shot hooks notice US-015. An untrusted project exits; no restricted mode or catalog trust filter.\n\n**Interface** — `ChatHostDeps` adds `readonly resources?: ChatResources`; `ChatResources` holds catalog, toolProviders, pluginHandlers, naxPlugins and teardown as above; `OpenChatSessionRequest` adds `readonly toolProviders?: readonly ToolProvider[]`; `ChatHost` adds optional catalog and naxPlugins. `_chatCommandDeps` adds ensureTrusted, loadPlugins and loadResourceCatalog. The US-001 seam is tested through createChatHost({ ..., resources }) WITHOUT an open override, then start(...), using _openChatSessionDeps.nativeBackend/createAgentSession/createFileTranscriptStore/resolveRuleSet stubs and fake storage to capture provider options. The US-008 seam is tested through chatCommand with a fixture resource directory and the real loadResourceCatalog, not a fake catalog.",
+      "acceptanceCriteria": [
+        "[unit] chatCommand with a fake ensureTrusted rejecting NaxError code PROJECT_UNTRUSTED with context.root /r and context.hint run: nax trust add /r writes Project not trusted: /r to stderr.",
+        "[unit] In the same case stderr also gets run: nax trust add /r.",
+        "[unit] In the same case exit code is 2.",
+        "[unit] In the same case neither loadPlugins nor createChatHost is called.",
+        "[unit] chatCommand with ensureTrusted rejecting TRUST_STORE_UNREADABLE writes the error message to stderr.",
+        "[unit] chatCommand with ensureTrusted rejecting TRUST_STORE_UNREADABLE sets exit code 2.",
+        "[unit] chatCommand with ensureTrusted rejecting a plain Error(\"x\") writes x to stderr.",
+        "[unit] chatCommand with ensureTrusted rejecting a plain Error(\"x\") sets exit code 1.",
+        "[unit] chatCommand with ensureTrusted rejecting a plain Error(\"x\") does not call loadConfig.",
+        "[unit] chatCommand calls ensureTrusted with the resolved cwd before loadConfig.",
+        "[unit] chatCommand with stdin not a TTY never calls ensureTrusted.",
+        "[unit] chatCommand calls loadPlugins with the plugins directory under globalConfigDir() and <repoRoot>/.nax/plugins.",
+        "[unit] When loadPlugins rejects with boom, stderr gets nax plugins unavailable: boom.",
+        "[unit] When loadPlugins rejects with boom, createChatHost is still called.",
+        "[unit] createChatHost receives resources.toolProviders containing a provider with id nax-skills.",
+        "[unit] With a fake loadPlugins whose registry's getResourceDirs() names a fixture skills directory with skill kit-skill, the real loadResourceCatalog and CLAUDE_CONFIG_DIR at an empty fixture, createChatHost receives resources.catalog where findSkill(\"kit-skill\") has origin nax-plugin.",
+        "[unit] Through createChatHost with resources whose pluginHandlers holds one entry and a fake opener, start(...) passes loopHandlers whose first entry is that plugin entry.",
+        "[unit] The same loopHandlers also contain the rule-delivery handlers after the plugin entry.",
+        "[unit] Through the same host, switchTo({ mode: \"full\" }) passes the same loopHandlers array object as the first open.",
+        "[unit] openChatSession with a request without toolProviders passes nativeBackend options with no toolProviders key.",
+        "[unit] host.close() calls resources.teardown exactly once, after the session handle's release.",
+        "[unit] A host built without resources has catalog undefined.",
+        "[unit] A host built without resources opens sessions with only the rule-delivery handlers.",
+        "[unit] Through createChatHost({ ..., resources }) built WITHOUT an open override and start(...), with _openChatSessionDeps.nativeBackend, createAgentSession, createFileTranscriptStore and resolveRuleSet stubbed and fake storage, captured nativeBackend options carry toolProviders equal to resources.toolProviders."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "resources",
+        "plugins",
+        "security",
+        "trust",
+        "sessions"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-008",
+        "US-010"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "CLI, host and opener compose existing trust/plugin/provider seams rather than inventing a backend; trust-before-import and session lifecycle wiring still require strict security isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/chat.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/chat/open-chat-session.ts",
+        "packages/nax/src/cli/trust-gate.ts",
+        "packages/nax/src/execution/lifecycle/run-setup-init.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/cli/chat-resources.test.ts",
+        "packages/nax/test/unit/chat/chat-host-resources.test.ts"
+      ],
+      "suggestedCriteria": [
+        "chatCommand with an invalid mode never calls ensureTrusted or loadConfig.",
+        "A resumed chat session receives the same resources.toolProviders and frozen handler array as a newly started session on that host.",
+        "A host built without resources exposes naxPlugins as undefined.",
+        "host.close() invokes resources.teardown even when session close or release fails, without invoking teardown twice on repeated close calls."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/cli/chat.test.ts",
+          "reason": "its _chatCommandDeps fakes gain ensureTrusted (resolving), loadPlugins (an empty registry) and loadResourceCatalog (an empty catalog) so the existing compose cases still reach createChatHost; the invariant is that every existing case keeps its asserted behaviour."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9145bb54aa9b392ba34f5acc9f75ff18c91c5385"
+    },
+    {
+      "id": "US-013",
+      "title": "Chat skill and command slash commands",
+      "description": "**Goal** — Resolve catalog skills and commands after built-ins and turn them into builder-produced chat messages.\n\n**Motivation** — Existing skills must work on day one.\n\n**Approach** — **14. Slash commands (US-013).** `runSlashCommand` resolves, in order: the built-in commands; then `host.catalog?.findCommand(name)`; then `host.catalog?.findSkill(name)`; else `unknown command /<name>`. Plugin resources answer to `/<plugin>:<name>` and, when not shadowed, `/<name>`. A skill returns `buildSkillInvocationMessage({ skill, args: rest })` as a `send` outcome (also for `modelInvocable: false` skills: the user invoked it); a command returns a `command` outcome that `ChatApp` turns into `buildCommandMessage(template, rest)` (after shell expansion, US-014). `/help` lists the built-ins, then each catalog command and skill as `/<name> - <description>`.\n\nTo make that decidable, `runSlashCommand` (US-013) returns a `SlashOutcome`: `{ kind: \"send\"; message }` for skills and `/feature`, `{ kind: \"command\"; name; template; rest }` for catalog commands, or `undefined` for local commands.\n\n**Scope** — In: SlashOutcome and runSlashCommand resolution, /feature outcome migration, ChatApp handling of send/command outcomes with buildCommandMessage, catalog-aware help. Existing slash-commands.test.tsx /feature cases read the message of a { kind: \"send\" } outcome; local commands still return undefined; every existing command keeps its behaviour and the built-in help list is unchanged for a host with no catalog at this story's boundary. US-015 independently adds /skills and /plugins to that list; preserve every pre-existing built-in in its original relative order when both stories are present. Out: actual command shell expansion US-014; /skills, /plugins and hooks notice US-015. Skills and /feature never become command outcomes; no interpretation of @file references.\n\n**Interface** — `SlashOutcome` is `{ kind: \"send\"; message } | { kind: \"command\"; name; template; rest }`; `runSlashCommand` returns Promise<SlashOutcome | undefined>. Use upstream buildSkillInvocationMessage/buildCommandMessage, not prompt text assembled in the UI. Drive ChatApp with a fixture host catalog to prove slash routing actually sends the builder text.",
+      "acceptanceCriteria": [
+        "[unit] Through ChatApp with a host whose catalog has skill brainstorming, typing /brainstorming idea plus Enter calls host.send once with a message containing the skill body and idea.",
+        "[unit] Typing /superpowers:brainstorming calls host.send with a message containing <skill name=\"superpowers:brainstorming\".",
+        "[unit] For a catalog skill with modelInvocable: false, typing /<name> still calls host.send with its body.",
+        "[unit] With a catalog command review whose template is Review $ARGUMENTS, typing /review x.ts calls host.send with Review x.ts.",
+        "[unit] runSlashCommand for /feature <name> with a fixture spec returns { kind: \"send\" } whose message is buildChatFeatureMessage's text.",
+        "[unit] With a catalog command and a catalog skill both named deploy, typing /deploy sends the command's message.",
+        "[unit] A catalog skill named mode does not shadow the built-in: typing /mode full calls host.switchTo({ mode: \"full\" }).",
+        "[unit] With that catalog skill named mode, typing /mode full never calls host.send.",
+        "[unit] Typing /nothing with no such catalog entry shows unknown command /nothing.",
+        "[unit] Typing /nothing with no such catalog entry never calls host.send.",
+        "[unit] /help with a catalog shows /brainstorming - <description> and /review - <description> after the built-ins.",
+        "[unit] runSlashCommand for /mode full returns undefined after calling host.switchTo({ mode: \"full\" }), preserving the existing local-command outcome rather than creating a send or command outcome."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "resources",
+        "slash-commands"
+      ],
+      "dependencies": [
+        "US-012"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive UI routing and a discriminated result type using existing host and builders; command execution belongs to the next story.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/test/ui/chat/slash-commands.test.tsx",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/prompts/builders/skills-builder.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/slash-resources.test.tsx"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/slash-commands.test.tsx",
+          "reason": "cases that read runSlashCommand's return for /feature (a builder-made string today) now read the message of a { kind: \"send\" } outcome, and local commands still return undefined; the invariant is that every existing command keeps its behaviour and the built-in help list is unchanged for a host with no catalog."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e4cadd0d8d9e3ef2b8bc48673ba3ed30d591aed2"
+    },
+    {
+      "id": "US-014",
+      "title": "Expand command shell lines through session runCommand",
+      "description": "**Goal** — Expand shell lines only in catalog command templates through the session Bash capability, keeping approvals and cancellation interactive.\n\n**Motivation** — One path, not two.\n\n**Approach** — **15. Command shell lines (US-014).** `ChatHost` gains optional `runCommand(command, onEvent)` over `session.runCommand`; it routes `approval_requested`, `approval_resolved` and `question` events to `asks.handle` through a helper `routeAskEvent` extracted from `runChatTurn` (`src/chat/turn-runner.ts`), which `runChatTurn` then also uses. `runCommandShellLines(text, run)` in `packages/nax/src/resources/command-shell.ts` finds each `` !`<cmd>` `` occurrence (`COMMAND_SHELL_RE = /!`([^`\\n]+)`/g`) in one pass, runs them in order with `run`, and builds the output by concatenating the literal segments and each result's `content` (no string-pattern replacement, so `$&` in output stays literal, and output is never re-scanned for shell lines). It returns `{ text } | { failed: { command, reason } }`, stopping at the first result with `isError: true` (reason = its first content line) or the first rejection (reason = the error message).\n\nShell lines are expanded ONLY for catalog commands, and only in the command's template before argument substitution: a skill body, a `/feature` spec, or anything the user typed as arguments is never scanned, so text that merely shows `` !`cmd` `` never runs it. To make that decidable, `runSlashCommand` (US-013) returns a `SlashOutcome`: `{ kind: \"send\"; message }` for skills and `/feature`, `{ kind: \"command\"; name; template; rest }` for catalog commands, or `undefined` for local commands. In `ChatApp`, `sendTurn` gains an optional `prepare: () => Promise<{ message } | { notice }>` that runs inside the existing `sending` window (after the `if (sending.current) return` guard sets `sending`, before `host.send`, with the one `finally` / `finishTurn`). For a command outcome, `prepare` runs `runCommandShellLines(template, (cmd) => host.runCommand(cmd, onEvent))` and then `buildCommandMessage(expanded, rest)`. Because it runs outside `keys.runControl` and inside `sending`, the ask prompt is active and Ctrl-C calls `host.cancel()` (which cancels the session's pending `runCommand`). On failure nothing is sent and the transcript shows `command /<name> not sent: !\\`<cmd>\\` failed: <reason>`. A host with no `runCommand` fails the expansion with reason `this session cannot run commands`. In `full` mode no ask is raised (the mode's `raw` approval).\n\n**Scope** — In: host capability forwarding and shared ask routing; command-shell.ts and resources export; ChatApp prepare window, failure notices, interactive asks and cancellation. Existing turn-runner.test.ts assertions stay unchanged: asks still reach asks.handle and usage still reaches the ledger. Out: backend/facade implementation US-002; slash name resolution US-013; listings US-015. Do not expand skills, /feature, user arguments or returned output; do not add ACP host-side commands, usage or command transcript persistence. Command output inserted by shell expansion is still subject to `$ARGUMENTS` / `$1`..`$9` substitution in `buildCommandMessage`; a command whose output contains those tokens is not protected.\n\n**Interface** — `ChatHost.runCommand?(command, onEvent)` delegates to optional `AgentSession.runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>`; `runCommandShellLines(text, run)` -> `{ text } | { failed: { command, reason } }`; `sendTurn` preparation returns `{ message } | { notice }`. Route ask events both to the controller and caller event callback without introducing model turns or ledger updates.",
+      "acceptanceCriteria": [
+        "[unit] host.runCommand(\"git status\", onEvent) over a fake session calls session.runCommand once with \"git status\" and returns its result.",
+        "[unit] An approval_requested event emitted during host.runCommand is added to host.asks' pending list.",
+        "[unit] runChatTurn over a fake session that emits approval_requested still calls asks.handle with that event.",
+        "[unit] runCommandShellLines(\"A !`ls` B !`pwd`\", run) calls run with ls then pwd, in that order.",
+        "[unit] The same call returns text A <ls output> B <pwd output>.",
+        "[unit] runCommandShellLines with text containing no shell line returns the text unchanged.",
+        "[unit] runCommandShellLines with text containing no shell line never calls run.",
+        "[unit] A run result whose content is $& !`rm x` is inserted literally.",
+        "[unit] For that result, run is not called with rm x.",
+        "[unit] When the first run resolves { isError: true, content: \"denied\\nmore\" }, runCommandShellLines does not call run again.",
+        "[unit] When the first run resolves { isError: true, content: \"denied\\nmore\" }, runCommandShellLines returns failed with command ls and reason denied.",
+        "[unit] When run rejects with Error(\"busy\"), runCommandShellLines returns failed with reason busy.",
+        "[unit] Through ChatApp with a catalog command status-cmd whose template is Status: !`git status` and a host whose runCommand resolves { isError: false, content: \"clean\" }, typing /status-cmd calls host.runCommand with git status and then host.send with Status: clean.",
+        "[unit] With host.runCommand resolving { isError: true, content: \"denied\" }, typing /status-cmd never calls host.send.",
+        "[unit] With host.runCommand resolving { isError: true, content: \"denied\" }, typing /status-cmd shows command /status-cmd not sent: !`git status` failed: denied.",
+        "[unit] Through ChatApp with a catalog skill whose body contains !`echo x`, typing /<skill> calls host.send with that literal text.",
+        "[unit] Through ChatApp with that catalog skill, typing /<skill> never calls host.runCommand.",
+        "[unit] Through ChatApp with a catalog command say whose template is Say $ARGUMENTS, typing /say !`rm x` never calls host.runCommand.",
+        "[unit] Through ChatApp with that catalog command say, typing /say !`rm x` sends Say !`rm x`.",
+        "[unit] With a host that has no runCommand, typing /status-cmd never calls host.send.",
+        "[unit] With a host that has no runCommand, typing /status-cmd shows a notice containing this session cannot run commands.",
+        "[unit] While host.runCommand is pending with an ask in host.asks, the rendered ask prompt is active: pressing a calls host.asks.resolve(requestId, \"allow_once\").",
+        "[unit] While host.runCommand is pending, Ctrl-C calls host.cancel() and does not close the app."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "resources",
+        "security",
+        "bash",
+        "sessions"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-013"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A shell-line expander, extracted ask router and ChatApp preparation window integrate the existing command capability; approval and cancellation behavior makes strict security isolation mandatory.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/turn-runner.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/useChatKeys.ts",
+        "packages/nax/test/ui/chat/chat-asks-keys.test.tsx",
+        "packages/nax/src/chat/chat-host.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/resources/command-shell.ts",
+        "packages/nax/test/unit/resources/command-shell.test.ts",
+        "packages/nax/test/unit/chat/chat-host-run-command.test.ts",
+        "packages/nax/test/ui/chat/chat-shell-lines.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "Typing /feature for a fixture spec containing !`echo x` sends the literal spec text without calling host.runCommand.",
+        "A second submission while command preparation is pending starts neither another command nor a model send.",
+        "A catalog command without shell occurrences can still be sent by a host that has no runCommand.",
+        "An approval_resolved or question event emitted during host.runCommand reaches asks.handle and the supplied onEvent callback."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/turn-runner.test.ts",
+          "reason": "no assertion changes; listed because runChatTurn now routes ask events through the extracted routeAskEvent, and every existing case (asks reach asks.handle, usage reaches the ledger) must stay true."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2fb4b96543a6d7ecab358b5b14edaab3c42cf050"
+    },
+    {
+      "id": "US-015",
+      "title": "Chat skills/plugins listings and one-shot hooks notice",
+      "description": "**Goal** — Show loaded resources, origins, diagnostics and deferred capabilities through local chat listings.\n\n**Motivation** — Existing skills must work on day one.\n\n**Approach** — **16. Listings (US-015).** In `packages/nax/src/resources/listing.ts`: `formatSkillsListing(catalog)` prints one line per catalog skill, `<qualifiedName>  <origin label>  <path>`, the label being `project`, `user`, `plugin <name>` or `nax-plugin <name>`, then each diagnostic whose path is a `SKILL.md`. `formatPluginsListing(catalog, naxPlugins)` prints `Claude Code plugins` (each `claude-plugin` package id with `skills N, commands N, agents N (not delivered yet), mcp N (not delivered yet), hooks N (not executed)`, then its diagnostics, or `(none)`) and `nax plugins` (each loaded nax plugin name and its `provides` joined by `, `, or `(none)`). `/skills` and `/plugins` are built-ins that show them. The host's new `resourceNotice()` returns `hooks declared by <n> package(s) are not executed by nax` on its first call when any package declares hooks, and `undefined` on every later call; `ChatApp` reads it once at mount and appends it, so it does not repeat on resume.\n\n**Scope** — In: listing.ts and resources export; optional host resourceNotice, mount-time notice, local /skills and /plugins built-ins and help entries. Drive ChatApp with a fixture host.catalog to prove listings do not send a model turn. Extend existing test/ui/chat/slash-commands.test.tsx for local listings/help and test/ui/chat/chat-app.test.tsx for the one-shot hooks notice across /resume; new formatting tests live in test/unit/resources/listing.test.ts. Update any exact built-in help list assertion in slash-commands.test.tsx to gain /skills and /plugins; every earlier built-in is still listed in order. Out: resource discovery US-006, composition US-012, catalog skill/command invocation US-013 and shell expansion US-014. Agents and MCP are only parsed/listed, not delivered; Claude Code hooks are parsed and listed, never executed.\n\n**Interface** — `formatSkillsListing(catalog)` -> string; `formatPluginsListing(catalog, naxPlugins)` -> string; `ChatHost.resourceNotice?(): string | undefined`. Keep the hooks notice separate from the existing resume notice and count packages with hooks, not hook events.",
+      "acceptanceCriteria": [
+        "[unit] formatSkillsListing(catalog) lists each skill as <qualifiedName>  <origin label>  <path>.",
+        "[unit] Its origin labels are project, user, plugin superpowers and nax-plugin kit for the four origins.",
+        "[unit] formatSkillsListing lists each SKILL.md diagnostic after the skill lines.",
+        "[unit] formatPluginsListing(catalog, naxPlugins) contains a Claude Code plugins section with the line sp@m  skills 1, commands 0, agents 2 (not delivered yet), mcp 1 (not delivered yet), hooks 1 (not executed) for a fixture package.",
+        "[unit] formatPluginsListing contains a nax plugins section listing kit  resources, loop-handlers for a fixture plugin.",
+        "[unit] formatPluginsListing with no Claude Code plugin packages shows (none) under Claude Code plugins.",
+        "[unit] Through ChatApp, typing /skills shows formatSkillsListing's text.",
+        "[unit] Through ChatApp, typing /skills never calls host.send.",
+        "[unit] Through ChatApp, typing /plugins shows formatPluginsListing's text.",
+        "[unit] Through ChatApp, typing /plugins never calls host.send.",
+        "[unit] A host whose catalog has two packages declaring hooks returns hooks declared by 2 package(s) are not executed by nax from its first resourceNotice() call.",
+        "[unit] That host returns undefined from its second resourceNotice() call.",
+        "[unit] Through ChatApp over that host, the hooks line appears once in the transcript after a /resume.",
+        "[unit] /help lists /skills and /plugins among the built-ins.",
+        "[unit] resourceNotice() returns undefined on every call when no package declares hooks.",
+        "[unit] Through ChatApp with a host that has no catalog or resourceNotice method, /help still lists /help, /mode, /model, /sessions, /resume, /clear, /cost, /feature and /quit in their existing relative order, alongside the added /skills and /plugins."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "resources",
+        "listings"
+      ],
+      "dependencies": [
+        "US-012"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure listing formatting plus local UI commands and a one-shot host notice; no session permission or execution behavior changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/test/ui/chat/slash-commands.test.tsx",
+        "packages/nax/test/ui/chat/chat-app.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/resources/listing.ts",
+        "packages/nax/test/unit/resources/listing.test.ts"
+      ],
+      "suggestedCriteria": [
+        "formatPluginsListing prints each Claude Code plugin package's diagnostics after its count line.",
+        "formatPluginsListing shows (none) under nax plugins when no nax plugins loaded.",
+        "formatSkillsListing excludes diagnostics whose paths do not identify SKILL.md."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/slash-commands.test.tsx",
+          "reason": "a case asserting the exact help built-in list, if present, gains /skills and /plugins; the invariant is that every earlier built-in is still listed in order."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "672b04dee3011356d1220d50c955755078b74db4"
+    }
+  ],
+  "analysis": "Repository exploration: codebase-memory MCP is unavailable in this host; direct reads and text search were used instead. This is an enhancement to the existing TypeScript Bun workspace, not a greenfield agent implementation. The binding fifteen-story structure and package scopes are preserved. F1/F2/F3 already supply the shared session, chat host and terminal shell. Only packages/nax-agent and packages/nax require implementation changes; do not change nax-ai or implement ACP commands.\n\nArchitecture and boundaries: sources -> ResourcePackage[] -> ResourceCatalog -> existing ToolProvider and chat delivery seams. packages/nax/src/resources does not exist in the inspected tree and is introduced by US-003. Claude project resources precede Claude user resources, enabled Claude plugins, then nax plugin resources. Discovery parses skills, commands, agents, MCP and hooks, but delivery is only skills and commands. No catalog trust filtering: settle project trust before loading config, plugins or catalog in chat. Preserve the all-or-nothing trust posture and existing per-session approvals. Root architecture guidance is docs/architecture/ARCHITECTURE.md:15 (module-specific standards), :106 (agent tool subsystems) and :168 (quick reference). Model-facing text must remain in prompts/builders; external fs, process and environment dependencies need injectable seams. nax uses Bun APIs; nax-agent shipped source is Node-compatible, uses #src imports and explicit .ts relative imports, and must never import nax helpers. Public nax-agent exports are named; test seams go only on ./internal.\n\nUS-001 impact: packages/nax-agent/src/session/native-backend-options.ts:18 defines NativeBackendOptions; :70 defines a strict Zod schema and :115 validates while retaining caller object identity. Add static provider validation here, with the exact backend.toolProviders path for discovered providers. packages/nax-agent/src/session/native-backend.ts:54 opens the backend, :72 builds session tool support, :86 constructs the interaction handler, :98 opens the adapter, and :116 builds codingTools from support.tools plus embedder descriptors. Keep the existing embedder append; provider tools must be included in support.tools exactly once, not appended again. packages/nax-agent/src/session/session-tool-support.ts:24 defines SESSION_STAGE; :30 declares profile tools; :143 builds support and currently derives grants only from profile declarations. Union provider names for advertisement but return profile grants plus provider grants without accidentally granting unrelated capabilities. packages/nax-agent/src/tools/provider-advertise.ts:94 already resolves stage matching, adaptation, grants, failures and instructions; :128 records provider ownership and :141 preserves tools when instructions fail. Reuse it rather than parallel tool plumbing. packages/nax/src/agents/coding-tool-support-resolve.ts:317 is the local union precedent, not an allowed nax-agent import. Regression coverage exists in nax-agent/test/unit/session/native-backend.test.ts, native-backend-options.test.ts, session-tool-support.test.ts and session-interaction.test.ts.\n\nUS-002 impact and concurrency: packages/nax-agent/src/session/agent-session.ts:69 stores active as ClaimedTurn; :99 send synchronously checks closed/busy; :126 answers asks; :130 cancels; :134 caches close; :139 aborts and awaits active.settled before adapter/backend cleanup. :191 binds asks to slot.turn. packages/nax-agent/src/session/agent-session-turn.ts:47 defines LiveTurn and :53 ClaimedTurn; :204 claims a model turn with an event channel and starts on first pull. Do not reuse claimTurn for commands: it marks transcript turns and calls the model (:173). Widen the active claim shape, reserve it before any command work can overlap send, populate the ask slot, use existing timer seams, and clear all state in finally. packages/nax-agent/src/session/session-backend.ts:93 defines OpenedBackend; add only an optional method so ACP and handwritten fakes remain compatible. packages/nax-agent/src/session/session-interaction.ts:163 runs coding tools with call ids, abort handling, denials and AGENT_SESSION_TOOL_ERROR; :200 selects embedder versus runtime execution. Native runCommand must use that interaction handler, not spawn, an alternate Bash runtime, or a model turn. Important navigation correction: src/session/turn-event.ts:1 documents the event contract, but actual reusable redaction/cap functions are displayToolInput and toolResultPreview in src/native/session/turn-event-emitter.ts:77 and :90. Reuse those for command events so inputs and previews have identical masking and byte limits. CommandRunResult content is the runtime result, not the display preview. Export the type from src/index.ts and regenerate api/nax-agent.api.txt, keeping existing names. Existing ask/profile/backend/deadline session suites are regression anchors. Cancellation and close must settle even when an ask is unanswered; no transcript, model usage, turn_start or turn_end is generated. The spec explicitly excludes dedicated US-002 deadline/tool-error ACs while requiring those paths to reuse existing behavior.\n\nUS-003 through US-007: packages/nax/src/config/schemas.ts:523 shows the MCP default factory pattern; add resources beside other top-level blocks. packages/nax/src/config/runtime-types.ts:513 is the handwritten interface and :563 is the optional MCP precedent. packages/nax/src/config/defaults.ts:11 derives DEFAULT_CONFIG from NaxConfigSchema.parse({}); do not duplicate defaults. packages/nax/src/config/loader.ts:266 starts from defaults and :556 validates merged config, so use existing global/project layering rather than special loader semantics. packages/nax/test/unit/config/defaults.test.ts contains a handwritten NAX_CONFIG_KEYS ratchet that needs resources without removing any prior key. All sparse-config readers use the explicit optional defaults. Introduce shared resource types and a resources barrel, dedicated tolerant frontmatter parsing (not the rules-specific parser), deterministic sorted bounded scanners, and origin-bearing diagnostics. Missing directories are silent; a failed file must not abort the remainder. YAML syntax failure falls back to the line parser, whereas a successfully parsed list/scalar remains invalid. CLAUDE_CONFIG_DIR and _claudePathsDeps.homedir isolate tests from the operator's installation. Discovery must reuse the upstream parsers against real temporary fixture trees, merge enabledPlugins with project false overrides, honor v2 install-record selection and default plugin directory layouts, and retain diagnostics even for skipped packages. The catalog must preserve loaded lists including shadowed resources, while lookup uses deterministic first-wins short and qualified maps. A shadowed unqualified project/user resource may lack a distinct qualifier; do not invent a new naming policy beyond the spec. Qualified plugin collisions likewise have no new resolution policy specified; keep deterministic package order and record any further hardening separately.\n\nUS-008: packages/nax/src/plugins/types.ts:38 defines PluginType and :116 PluginExtensions; extension types are re-exported from :14. packages/nax/src/plugins/validator.ts:21 lists valid types and :125 dispatches extension checks. packages/nax/src/plugins/registry.ts:117 owns plugins and sources, :170 exposes getSource, :306 memoizes frozen loop handlers, and :340 tears down plugins while containing individual errors. Add a data-only IResourceProvider, path validation and source-aware getResourceDirs. packages/nax/src/plugins/loader.ts:248 and :272 assert project trust before imports; preserve both backstops. :274 already computes resolvedModule, but :296 records raw entry.module; change only the recorded config path to resolvedModule. Builtin/nonabsolute/npm sources cannot safely resolve resource directories and are skipped with a named warn log. Existing validator, registry, registry-loop-handlers, loader-trust and index-exports suites cover adjacent contracts. The new extension does not dynamically execute resource files, honor arbitrary manifest paths, or load nax plugin resources into runs.\n\nUS-009 through US-011: packages/nax/src/forge-tools/provider.ts:44 implements a static ToolProvider and :57 supplies builder-made instructions, the reference for skills delivery. Create all skills/command text in prompts/builders/skills-builder.ts and export through prompts/index.ts. Provider catalog loading must memoize the in-flight result so tools() and instructions() do not independently scan. Reference access is a deliberate exception to workdir-only Read: validate relative/NUL constraints, realpath both root and target, check component containment rather than string-prefix containment, require a regular file and enforce 262144-byte maximum. No raw fs exceptions should escape a tool result. The 150-entry/200-character instruction index includes only model-invocable skills, while user-only skills retain reference-file access. packages/nax/src/runtime/index.ts:338 constructs runtime synchronously and :407 creates lazy MCP providers; append the lazy skills provider only when opted in, after MCP, via _runtimeResourceDeps.loadResourceCatalog. packages/nax/src/operations/call-run-options.ts:50 places runtime providers before call-local providers and :65 returns run options; do not add a second provider injection path. packages/nax/src/agents/coding-tool-support-resolve.ts:276 consumes providerScope, :279 resolves providers and :282 narrows tools for scoped rules. Reuse those existing unrestricted/scoped/safe rules instead of hardcoding a permission profile. Test the actual createRuntime -> buildRunDispatchOptions seam, not just construction. Defaults must leave every existing runtime provider assertion unchanged.\n\nUS-012: packages/nax/src/cli/chat.ts:24 exposes dependency seams; :113 composeChat resolves cwd independently of repoRoot and loads config; :126 creates the host; :155 chatCommand rejects non-TTY and invalid modes before composing. Insert ensureTrusted after those guards and before loadConfig; mirror packages/nax/src/cli/trust-gate.ts:46 normalization and :51 refusal mapping without process.exit. Distinguish root in the trust error from cwd and never load plugins on refusal. Compose plugins, registry resource packages, catalog, provider and loop handlers, with a graceful empty-registry fallback only for plugin loading errors. packages/nax/src/chat/chat-host.ts:32 defines ChatHost, :48 deps, :92 creates rule-delivery handlers once, :133 starts sessions, :190 resumes, :224 reopens for mode/model switches, :259 sends, and :308 tears down after release via closeHandle (:69). Carry providers across every open path, combine plugin handlers before rules into one frozen array once, and add resources teardown to the existing idempotent close lifecycle. packages/nax/src/chat/open-chat-session.ts:21 exposes the real opener seams, :33 defines OpenChatSessionRequest, :118 builds options, :132 calls nativeBackend and :155 opens under a storage lock. Absent providers must omit the key, not pass undefined. Test via a host with no open override and the stubbed _openChatSessionDeps to catch broken forwarding. Preserve reopen rollback and lock ownership. Update existing cli/chat.test.ts fakes (:38) with resolving trust, empty registry and empty catalog seams so they never touch the real operator environment. Existing chat-host, resume and open-chat-session tests remain regression anchors.\n\nUS-013 through US-015: packages/nax/src/tui/chat/slash-commands.ts:21 stores the existing built-ins, :24 parses name/rest, :31 builds /feature, and :58 returns a string only for /feature today. Add discriminated SlashOutcome without changing local outcomes, preserve built-in priority, prefer commands over skills, and only consult catalog after built-ins. Update existing slash-commands.test.tsx /feature assertions to read .message; later /skills and /plugins extend help without deleting/reordering earlier entries. packages/nax/src/tui/chat/ChatApp.tsx:16 owns transient transcript state, :21 sending ref, :28 ask subscription, :38 submits, :49 runs local control commands, :57 starts the sending window, and :68 has the single cleanup path. Shell expansion must run in that sending window but outside keys.runControl so approvals stay interactive and cancellation treats preparation as running work. packages/nax/src/tui/chat/useChatKeys.ts:29 locks control actions, :64 handles Ctrl-C, :82 queues mode switching until finishTurn. Do not accidentally mark expansion as a locked control action, parse shell lines from arguments/skills/specs, rescan output, or use string replacement semantics that expand $&. packages/nax/src/chat/turn-runner.ts:35 consumes send, :41 routes ask events, :44 records usage and :58 updates metadata; extract only ask routing for shared use, without ledger behavior changes. Host runCommand does not update metadata or ledger. resourceNotice must be a separate one-shot resource notice, not reset when resume changes the existing interrupted-turn notice. Existing UI chat-app, slash-commands, chat-asks-keys tests and unit turn-runner tests cover the affected surfaces; add the specified new fixture-driven suites for actual slash -> host.send and slash -> runCommand -> send seams. Listings must distinguish loaded origins, diagnostics and deferred agents/MCP versus never-executed hooks.\n\nExecution/migration: build US-001/US-002/US-003 independently; catalog chain US-004 -> US-005 -> US-006 -> US-007 -> US-008; builders US-009 after types; provider US-010 after catalog/builders; opt-in run US-011 after provider; chat US-012 after native provider seam/plugin resources/provider; slash US-013, shell US-014 after both command seam and slash, listings US-015 after chat. Optional fields preserve handwritten session/host fakes and sparse configs. No transcript schema migration, version bump or release is required. NativeBackendOptions is already a public name, so only the new CommandRunResult changes the names-only API snapshot. Add resources to the defaults key assertion and minimally update affected fake and /feature/help expectations without weakening prior invariants. Test fixtures use temporary Claude roots, real resource trees and injectable fs failures, never installed user plugins. Regression tests must be demonstrated failing against old behavior before implementation. Automatic package gates handle lint/typecheck/build; do not turn them into acceptance criteria or run bare bun test. Security-critical stories involving providers/permissions, sessions, trust, plugin path validation or reference containment use strict three-session-tdd; pure parsers/builders use ordinary TDD and non-security multi-module catalog work uses lite isolation. No tools are available here to execute tests or validate JSON through a shell; this drafting task writes only the requested PRD artifact. Design-doc changes and generated context updates are manual outside implementation stories; .nax is otherwise read-only to the implementation run.\n\nSecond-pass adversarial audit: enumerated all 206 explicit spec AC bullets in order within their original stories (US-001 through US-015 counts: 12, 18, 15, 14, 12, 17, 14, 13, 16, 16, 6, 16, 9, 16, 12). Every assertion and qualifying clause remains represented, including matching object shapes, table-driven cases, retained user skills after malformed settings, identical no-provider tools, same handler array identity, unchanged shell text, released-slot behavior and model-equivalent secret redaction. Compound bullets remain represented by their split assertions. Failure-table and cross-story seam assertions are retained in addition to those bullets; the US-002 dedicated deadline/tool-error AC exemption remains intact. All 20 feature-level out-of-scope items remain verbatim, and all binding ids, workdirs and dependency arrays are unchanged. Every critical spec-listed context file is present within the five-file cap, and no story lists one of its own new outputs as context.\n\nAudit corrections: packages/nax-agent/src/tools/provider-types.ts:20 defines ProviderTool.run(input, ctx) returning ToolResult, while :28 defines tools(workdir) and instructions(workdir); qualified skills loading must assert content, not return a SkillResource. MCP entry tests now explicitly wrap entries under mcpServers before parseMcpJson. The command argument-hint AC requires the literal [msg] string even when YAML interprets unquoted brackets as a sequence, so US-004 explicitly preserves that AC without weakening US-003's top-level-list rejection. US-009 explicitly retains newline/tab word separators before removing remaining control characters. The existing redaction helpers were re-read at native/session/turn-event-emitter.ts:77/:90 and the US-002 description now points there rather than to the event type-only module. US-013's unchanged no-catalog help behavior is scoped to that story's boundary so it cannot contradict US-015's additive built-ins.\n\nRegression/negative-path audit: each story has a directly observable negative or absence branch. US-009 explicitly tests missing positional arguments; US-015 explicitly tests absent hooks. Added narrow compatibility assertions for the pre-existing MCP schema default (schemas.ts:523), plugin loop-handler validation (validator.ts:41/:141), MCP provider ids/filter/order (mcp/provider.ts:57/:76), local slash undefined outcomes (slash-commands.ts:58), usage forwarding after ask-helper extraction (turn-runner.ts:44), and legacy help order with optional resource methods absent. UI listing/notice regression tests reuse the existing slash-commands.test.tsx and chat-app.test.tsx files rather than inventing a new UI harness. US-003 is medium/tdd-simple because its behavior is additive leaf parsing/config; US-010 is medium with strict security TDD for filesystem confinement; US-012 and US-014 are complex rather than expert because they integrate existing seams, retaining strict security TDD. No implementation sources were edited and no runtime test execution is claimed by this PRD audit.",
+  "outOfScope": [
+    "Subagents (`agents/*.md`), the `Agent` tool, `/agents` and `agent.modelAliases` are delivered in F5; this feature only parses and lists them.",
+    "MCP servers from `.mcp.json` and plugins are delivered in F5 through the existing MCP pool; this feature only parses and lists them, and `nativeBackend` refuses `discovered` providers until then.",
+    "User-level MCP servers in `~/.claude.json` are not read.",
+    "Claude Code hooks are parsed and listed, never executed.",
+    "pi's Agent Skills directories (`.agents/skills` and `~/.agents/skills`) and pi packages are not read (user ruling 2026-10-25).",
+    "Claude Code plugin manifests that declare custom component paths (`commands`, `agents`, `skills`, `hooks`, `mcpServers` fields in `plugin.json`) are not honoured; only the default directories are read.",
+    "Command files in subdirectories of `commands/` and `@file` references inside command templates are not supported; `@file` is sent literally.",
+    "`.claude/settings.local.json` and managed (enterprise) settings are not read.",
+    "Marketplace operations (install, update, enable) are not provided; nax reads what Claude Code installed.",
+    "The skills provider in `nax run` does not include nax plugin resources; only `nax chat` loads nax plugins into the catalog.",
+    "A skill's `allowed-tools` and `model` frontmatter are ignored; a skill runs with the session's tools and model.",
+    "The `resources` block is not added to the root-only key pins and has no per-package (`.nax/mono/<pkg>/config.json`) semantics; the catalog is built once per repository from the merged config.",
+    "A `restricted` chat mode for untrusted projects is not added; an untrusted chat exits.",
+    "`runCommand` output is not written to the transcript and costs nothing; there is no `usage` event for it.",
+    "US-002 only: the turn-deadline and tool-error (`AGENT_SESSION_TOOL_ERROR`) paths of `runCommand` reuse the existing deadline and the existing `onInteraction` error mapping and get no dedicated AC; the cancel, deny and allow paths are pinned.",
+    "Command output inserted by shell expansion is still subject to `$ARGUMENTS` / `$1`..`$9` substitution in `buildCommandMessage`; a command whose output contains those tokens is not protected.",
+    "The ACP backend does not implement `runCommand`; a command with shell lines cannot run over ACP.",
+    "The design doc `docs/superpowers/specs/2026-10-24-nax-interactive-tui-slice1-design.md` §4.4/§4.5 update to this architecture is committed by hand with the spec, not by a story.",
+    "Updating `.nax/mono/packages/nax/context.md` and `.nax/mono/packages/nax-agent/context.md` to describe `src/resources/`, `runCommand` and `toolProviders`, then running `nax generate`, is a manual step after merge; `.nax/` is read-only to the run.",
+    "No release and no version bump."
+  ],
+  "routingProfile": "native-codex"
+}

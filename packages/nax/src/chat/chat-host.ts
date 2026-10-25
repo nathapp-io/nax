@@ -1,4 +1,4 @@
-import type { SandboxState, SessionEvent, SessionMeta, SessionStorage } from "@nathapp/nax-agent";
+import type { CommandRunResult, SandboxState, SessionEvent, SessionMeta, SessionStorage } from "@nathapp/nax-agent";
 import { getProjectKey, type NaxConfig } from "@/config";
 import { createRuleDeliveryHandlers } from "@/context/rules/rule-delivery";
 import { NaxError } from "@/errors";
@@ -10,7 +10,8 @@ import { type AskFallback, createAskFallback } from "./ask-fallback";
 import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import { type ChatMode, chatModeOfMeta } from "./chat-mode";
 import { type ChatSessionHandle, openChatSession } from "./open-chat-session";
-import { runChatTurn } from "./turn-runner";
+import type { ChatResources } from "./resources";
+import { routeAskEvent, runChatTurn } from "./turn-runner";
 
 const DEFAULT_CHAT_ASK_FALLBACK_MS = 60_000;
 
@@ -32,6 +33,8 @@ export interface ChatSessionRow {
 /** Shared-session chat lifecycle, independent of the terminal shell. */
 export interface ChatHost {
   readonly repoRoot: string;
+  readonly catalog?: ChatResources["catalog"];
+  readonly naxPlugins?: ChatResources["naxPlugins"];
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   current(): ChatHostState;
@@ -39,14 +42,17 @@ export interface ChatHost {
   clear(): Promise<void>;
   resume(input: { id?: string }): Promise<void>;
   notice(): string | undefined;
+  resourceNotice?(): string | undefined;
   switchTo(input: { mode?: ChatMode; model?: string }): Promise<void>;
   send(message: string, onEvent: (event: SessionEvent) => void): Promise<void>;
+  runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>;
   cancel(): void;
   listSessions(): Promise<readonly ChatSessionRow[]>;
   close(): Promise<void>;
 }
 
 export interface ChatHostDeps {
+  readonly resources?: ChatResources;
   readonly config: NaxConfig;
   readonly cwd: string;
   readonly repoRoot: string;
@@ -76,6 +82,8 @@ async function closeHandle(handle: ChatSessionHandle): Promise<void> {
 
 class NativeChatHost implements ChatHost {
   readonly repoRoot: string;
+  readonly catalog?: ChatResources["catalog"];
+  readonly naxPlugins?: ChatResources["naxPlugins"];
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   private readonly fallback: AskFallback;
@@ -85,20 +93,27 @@ class NativeChatHost implements ChatHost {
   private handle?: ChatSessionHandle;
   private ledger?: ChatLedger;
   private resumeNotice?: string;
+  private resourceNoticeRead = false;
   private closed = false;
   private closing?: Promise<void>;
+  private readonly sessionOperations = new Set<Promise<void>>();
 
   constructor(private readonly deps: ChatHostDeps) {
     this.repoRoot = deps.repoRoot;
+    this.catalog = deps.resources?.catalog;
+    this.naxPlugins = deps.resources?.naxPlugins;
     this.models = nativeModels(deps.config);
     this.projectKey = getProjectKey(deps.config, deps.repoRoot);
     this.outputDir = projectOutputDir(this.projectKey, deps.config.outputDir);
     const rules = deps.config.context.rules;
-    this.loopHandlers = createRuleDeliveryHandlers({
-      repoRoot: deps.repoRoot,
-      overrideDir: rules?.overrideDir,
-      overrideMode: rules?.overrideMode,
-    });
+    this.loopHandlers = Object.freeze([
+      ...(deps.resources?.pluginHandlers ?? []),
+      ...createRuleDeliveryHandlers({
+        repoRoot: deps.repoRoot,
+        overrideDir: rules?.overrideDir,
+        overrideMode: rules?.overrideMode,
+      }),
+    ]);
     this.asks = createChatAskController({
       mode: "guarded",
       answer: (id, reply) => {
@@ -138,7 +153,24 @@ class NativeChatHost implements ChatHost {
     };
   }
 
+  private async withSessionOperation(operation: () => Promise<void>): Promise<void> {
+    this.assertOpen();
+    // Register before invoking the operation, including its first asynchronous read/open.
+    const completed = Promise.withResolvers<void>();
+    this.sessionOperations.add(completed.promise);
+    try {
+      await operation();
+    } finally {
+      this.sessionOperations.delete(completed.promise);
+      completed.resolve();
+    }
+  }
+
   async start(input: { mode: ChatMode; model: string }): Promise<void> {
+    await this.withSessionOperation(() => this.startSession(input));
+  }
+
+  private async startSession(input: { mode: ChatMode; model: string }): Promise<void> {
     this.assertOpen();
     const next = await (this.deps.open ?? openChatSession)({
       ...input,
@@ -147,13 +179,14 @@ class NativeChatHost implements ChatHost {
       repoRoot: this.repoRoot,
       config: this.deps.config,
       loopHandlers: this.loopHandlers,
+      ...(this.deps.resources ? { toolProviders: this.deps.resources.toolProviders } : {}),
     });
     await this.replace(next);
     this.resumeNotice = undefined;
   }
 
   private async replace(next: ChatSessionHandle): Promise<void> {
-    // An open that completes after final teardown must not leak its new lock.
+    // A late open must release its handle before the operation drain can finish.
     if (this.closed) {
       await closeHandle(next);
       this.assertOpen();
@@ -176,6 +209,13 @@ class NativeChatHost implements ChatHost {
     return this.resumeNotice;
   }
 
+  resourceNotice(): string | undefined {
+    if (this.resourceNoticeRead) return undefined;
+    this.resourceNoticeRead = true;
+    const count = this.catalog?.packages.filter((pkg) => pkg.hooks.length > 0).length ?? 0;
+    return count > 0 ? `hooks declared by ${count} package(s) are not executed by nax` : undefined;
+  }
+
   private async latestId(): Promise<string> {
     let cursor: string | undefined;
     do {
@@ -196,6 +236,10 @@ class NativeChatHost implements ChatHost {
   }
 
   async resume(input: { id?: string }): Promise<void> {
+    await this.withSessionOperation(() => this.resumeSession(input));
+  }
+
+  private async resumeSession(input: { id?: string }): Promise<void> {
     this.assertOpen();
     const id = input.id ?? (await this.latestId());
     if (this.handle?.meta.sessionId !== id) {
@@ -207,6 +251,7 @@ class NativeChatHost implements ChatHost {
           repoRoot: this.repoRoot,
           config: this.deps.config,
           loopHandlers: this.loopHandlers,
+          ...(this.deps.resources ? { toolProviders: this.deps.resources.toolProviders } : {}),
           resumeId: id,
         });
       } catch (error) {
@@ -243,11 +288,16 @@ class NativeChatHost implements ChatHost {
       repoRoot: this.repoRoot,
       config: this.deps.config,
       loopHandlers: this.loopHandlers,
+      ...(this.deps.resources ? { toolProviders: this.deps.resources.toolProviders } : {}),
     });
     return { ...next, release: previous.release };
   }
 
   async switchTo(input: { mode?: ChatMode; model?: string }): Promise<void> {
+    await this.withSessionOperation(() => this.switchSession(input));
+  }
+
+  private async switchSession(input: { mode?: ChatMode; model?: string }): Promise<void> {
     const previous = this.requireHandle();
     const from = this.current();
     const target = { mode: input.mode ?? from.mode, model: input.model ?? from.model };
@@ -287,6 +337,15 @@ class NativeChatHost implements ChatHost {
     if (this.handle === handle) this.handle = { ...handle, meta };
   }
 
+  async runCommand(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult> {
+    const { session } = this.requireHandle();
+    if (!session.runCommand) return { isError: true, content: "this session cannot run commands" };
+    return session.runCommand(command, (event) => {
+      routeAskEvent(event, this.asks);
+      onEvent(event);
+    });
+  }
+
   cancel(): void {
     this.requireHandle().session.cancel();
   }
@@ -311,10 +370,17 @@ class NativeChatHost implements ChatHost {
   }
 
   private async teardown(): Promise<void> {
+    // closed blocks new operations. Drain existing opens, replacements and rollback
+    // reopens (including late-handle cleanup) before releasing the final handle.
+    await Promise.all(this.sessionOperations);
     try {
       if (this.handle) await closeHandle(this.handle);
     } finally {
-      await this.deps.chain?.destroy();
+      try {
+        await this.deps.resources?.teardown();
+      } finally {
+        await this.deps.chain?.destroy();
+      }
     }
   }
 }

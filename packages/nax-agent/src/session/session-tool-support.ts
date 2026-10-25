@@ -16,6 +16,8 @@ import type { AskResolver } from "#src/permissions/index";
 import type { CommandLauncher, SandboxState } from "#src/sandbox/index";
 import { EMPTY_OWNED_PATHS_POLICY } from "#src/tools/owned-paths";
 import type { ProtectedPathsPolicy } from "#src/tools/protected-paths";
+import type { ResolvedProviderTools } from "#src/tools/provider-advertise";
+import { renderProviderInstructions } from "#src/tools/provider-instructions";
 import type { CodingToolName, ToolGrant } from "#src/tools/types";
 import { AgentSessionError } from "./agent-session-errors.ts";
 import type { AgentSessionProfile } from "./agent-session-types.ts";
@@ -141,6 +143,7 @@ export interface SessionToolSupportArgs {
    * defaulting to off, so every existing caller keeps today's tool surface.
    */
   readonly unsandboxedCommands?: boolean;
+  readonly providerTools?: ResolvedProviderTools;
 }
 
 export interface SessionToolSupport {
@@ -149,9 +152,14 @@ export interface SessionToolSupport {
 }
 
 export function buildSessionToolSupport(args: SessionToolSupportArgs): SessionToolSupport {
-  const declared = declaredToolsFor(args.profile, args.protectedPaths);
-  const grants = grantsFor(declared);
-  const askRules = askRulesFor(declared, args.bashApproval, args.profile);
+  const profileTools = declaredToolsFor(args.profile, args.protectedPaths);
+  // CodingToolName enumerates built-ins, but the runtime also accepts provider names.
+  const declared = [
+    ...new Set([...profileTools, ...(args.providerTools?.tools.map((tool) => tool.name) ?? [])]),
+  ] as readonly CodingToolName[];
+  const grants = [...grantsFor(profileTools), ...(args.providerTools?.grants ?? [])];
+  const askRules = askRulesFor(profileTools, args.bashApproval, args.profile);
+  const providerInstructions = renderProviderInstructions(args.providerTools?.instructions ?? []);
   const support = buildCodingToolSupport({
     root: args.root,
     commandCwd: args.root,
@@ -159,6 +167,13 @@ export function buildSessionToolSupport(args: SessionToolSupportArgs): SessionTo
     sessionName: args.sessionName,
     declared,
     grants,
+    ...(args.providerTools !== undefined
+      ? {
+          extraTools: args.providerTools.tools,
+          providerIdByTool: args.providerTools.providerIdByTool,
+        }
+      : {}),
+    ...(providerInstructions !== undefined ? { providerInstructions } : {}),
     bashApproval: args.bashApproval,
     protectedPaths: args.protectedPaths,
     ownedPaths: EMPTY_OWNED_PATHS_POLICY,

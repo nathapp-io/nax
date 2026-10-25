@@ -96,6 +96,12 @@ export {
 } from "./builders/rules-index-builder";
 // Setup prompt builder — LLM-driven nax init config generation.
 export { SetupPromptBuilder } from "./builders/setup-builder";
+export {
+  buildCommandMessage,
+  buildSkillInvocationMessage,
+  buildSkillsInstructions,
+  MAX_SKILLS_INDEX_ENTRIES,
+} from "./builders/skills-builder";
 export { buildSourceRootsSection } from "./builders/source-roots-builder";
 // Primary export — use TddPromptBuilder for all TDD execution prompts
 // Backwards-compatible alias — existing callsites continue to work without change.

@@ -83,3 +83,4 @@ export {
 } from "./schema-types";
 // Runtime types
 export type { AuthConfig } from "./schemas-auth";
+export type { ResourcesConfig } from "./schemas-resources";

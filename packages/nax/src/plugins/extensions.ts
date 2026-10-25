@@ -479,6 +479,13 @@ export interface IReporter {
   onEscalation?(event: EscalationEvent): Promise<void>;
 }
 
+/** Data-only directories relative to the plugin module's directory. */
+export interface IResourceProvider {
+  readonly skills?: string;
+  readonly commands?: string;
+  readonly agents?: string;
+}
+
 // ============================================================================
 // Loop Handler Extension
 // ============================================================================

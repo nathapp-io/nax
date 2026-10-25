@@ -323,6 +323,7 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "workflow",
   "bot",
   "mcp",
+  "resources",
   "reporters",
   "profile",
   "profileChain",

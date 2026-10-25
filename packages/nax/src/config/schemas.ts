@@ -58,6 +58,7 @@ import { McpConfigSchema } from "./schemas-mcp";
 import { ConfiguredModelSchema, ModelMapSchema } from "./schemas-model";
 import { validateProtocolGate } from "./schemas-protocol-gate";
 import { ReportersConfigSchema } from "./schemas-reporters";
+import { ResourcesConfigSchema } from "./schemas-resources";
 import {
   AdversarialReviewConfigSchema,
   FixReviewConfigSchema,
@@ -521,6 +522,7 @@ export const NaxConfigSchema = z
     // Derived, not hand-written — same reason as `context:` above: a literal
     // default here would shadow every inner `.default()` in McpConfigSchema.
     mcp: McpConfigSchema.default(() => McpConfigSchema.parse({})),
+    resources: ResourcesConfigSchema.default(() => ResourcesConfigSchema.parse({})),
     reporters: ReportersConfigSchema,
     profile: z.string().default("default"),
     profileChain: z.array(z.string()).default([]),

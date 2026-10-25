@@ -6,6 +6,7 @@
  */
 
 import { getLogger } from "../logger";
+import { validateResourceProvider } from "./resource-provider";
 import type { NaxPlugin, PluginType } from "./types";
 
 /**
@@ -28,6 +29,7 @@ const VALID_PLUGIN_TYPES: readonly PluginType[] = [
   "reporter",
   "post-run-action",
   "loop-handlers",
+  "resources",
 ] as const;
 
 /**
@@ -140,6 +142,8 @@ function validateExtension(pluginName: string, type: PluginType, extensions: Rec
       return validatePostRunAction(pluginName, extensions.postRunAction);
     case "loop-handlers":
       return validateLoopHandlers(pluginName, extensions.loopHandlers);
+    case "resources":
+      return validateResourceProvider(pluginName, extensions.resources);
     default:
       getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: unknown extension type '${type}'`);
       return false;

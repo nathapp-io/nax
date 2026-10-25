@@ -138,6 +138,8 @@ export {
   ThinkingLevelSchema,
   TierConfigSchema,
 } from "./schemas-model";
+export type { ResourcesConfig } from "./schemas-resources";
+export { ResourcesConfigSchema } from "./schemas-resources";
 export { AdversarialReviewConfigSchema, ReviewConfigSchema, SemanticReviewConfigSchema } from "./schemas-review";
 export { StoryRouterConfigSchema } from "./schemas-router";
 export {

@@ -4,6 +4,8 @@
  * with built-in and embedder tools, the NativeSessionAdapter, loop handlers
  * and the resume model check.
  */
+import { getLogger } from "#src/infra/agent-logger";
+import { errorMessage } from "#src/infra/errors";
 import { DEFAULT_SPIN_BREAKER_SETTINGS } from "#src/infra/spin-breaker/index";
 import { NATIVE_AGENT } from "#src/native/models";
 import { resolveCompaction } from "#src/native/session/compaction-settings";
@@ -11,6 +13,7 @@ import { transcriptModelIdentity } from "#src/native/session/transcript-identity
 import type { TranscriptDoc } from "#src/native/session/transcript-types";
 import type { TurnRetryConfig } from "#src/native/session/turn-retry";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
+import { resolveProviderTools } from "#src/tools/provider-advertise";
 import { AgentSessionError } from "./agent-session-errors.ts";
 import {
   type NativeBackendOptions,
@@ -21,7 +24,12 @@ import {
 import { createSessionAskLink, createSessionAskResolver } from "./session-ask-link.ts";
 import type { BackendOpenContext, OpenedBackend, SessionBackend } from "./session-backend.ts";
 import { createSessionInteractionHandler, embedderToolDescriptor } from "./session-interaction.ts";
-import { buildSessionToolSupport, defaultProtectedPaths, resolveSessionLauncher } from "./session-tool-support.ts";
+import {
+  buildSessionToolSupport,
+  defaultProtectedPaths,
+  resolveSessionLauncher,
+  SESSION_STAGE,
+} from "./session-tool-support.ts";
 
 export const NATIVE_BACKEND_KIND = "native";
 
@@ -67,11 +75,28 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     bashApproval,
     allowUnsandboxed,
   });
+  const providerTools =
+    ctx.profile === "none" || raw.toolProviders === undefined
+      ? undefined
+      : await resolveProviderTools(raw.toolProviders, SESSION_STAGE, ctx.workdir);
+  for (const failure of providerTools?.failures ?? []) {
+    getLogger().warn("session", "Tool provider skipped", { sessionId: ctx.sessionId, ...failure });
+  }
+  for (const tool of ctx.tools) {
+    if (providerTools?.providerIdByTool.has(tool.name)) {
+      throw new AgentSessionError(
+        `Embedder tool "${tool.name}" conflicts with a provider tool`,
+        "AGENT_SESSION_TOOL_NAME_RESERVED",
+        { tool: tool.name },
+      );
+    }
+  }
   let callId: string | undefined;
   const { support, grants } = buildSessionToolSupport({
     profile: ctx.profile,
     root: ctx.workdir,
     sessionName: ctx.sessionId,
+    ...(providerTools !== undefined ? { providerTools } : {}),
     protectedPaths,
     bashApproval,
     launcher,
@@ -97,6 +122,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     workdir: ctx.workdir,
     instructionProtectedPaths: protectedPaths,
     instructionFileName: raw.instructionFileName,
+    ...(support.providerInstructions !== undefined ? { providerInstructions: support.providerInstructions } : {}),
     resolvedPermissions: { mode: "default", toolGrants: grants, bashApproval },
     modelDef: { provider: resolved.provider, model: raw.model },
     timeoutSeconds: ctx.turnTimeoutSeconds,
@@ -120,6 +146,21 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
   return {
     adapter,
     handle,
+    runCommand: async ({ command, callId, signal }) => {
+      try {
+        const response = await interactionHandler.onInteraction({
+          kind: "coding-tool",
+          name: "Bash",
+          input: { command },
+          toolCallId: callId,
+          signal,
+        });
+        if (response === null) return { content: "Bash is not available in this session", isError: true };
+        return { content: response.answer, isError: response.denied !== undefined };
+      } catch (error) {
+        return { content: errorMessage(error), isError: true };
+      }
+    },
     info: { kind: NATIVE_BACKEND_KIND, capabilities: {}, sandbox },
     turnOpts: () => ({
       interactionHandler,

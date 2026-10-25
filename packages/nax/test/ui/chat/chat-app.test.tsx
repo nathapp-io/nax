@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { SessionEvent, SessionEventBody } from "@nathapp/nax-agent";
+import { makeLogger, makeNaxConfig } from "@test/helpers";
 import { Box } from "ink";
 import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
-import type { ChatHost, ChatHostState } from "@/chat";
+import { type ChatHost, type ChatHostState, createChatHost, createChatStorage } from "@/chat";
+import { buildResourceCatalog, type ResourcePackage } from "@/resources";
 import { _renderChatDeps, ChatApp, renderChat } from "@/tui/chat";
 
 const originalRender = _renderChatDeps.render;
@@ -98,6 +100,70 @@ const errored: SessionEventBody = {
 };
 
 describe("chat shell", () => {
+  test("US-015 AC-13 hooks notice appears once across real host resume", async () => {
+    const meta = fakeHost().host.current().meta;
+    const packages: ResourcePackage[] = ["one", "two"].map((id) => ({
+      id,
+      origin: { kind: "claude-project" },
+      root: `/${id}`,
+      skills: [],
+      commands: [],
+      agents: [],
+      mcpServers: [],
+      diagnostics: [],
+      hooks: [
+        { kind: "hooks", origin: { kind: "claude-project" }, path: `/${id}/hooks.json`, events: ["Start", "Stop"] },
+      ],
+    }));
+    const host = createChatHost({
+      config: makeNaxConfig(),
+      cwd: "/repo",
+      repoRoot: "/repo",
+      chain: null,
+      now: () => new Date(),
+      logger: makeLogger(),
+      storage: createChatStorage({ pid: process.pid, now: () => new Date(), logger: makeLogger() }),
+      resources: {
+        catalog: buildResourceCatalog(packages),
+        toolProviders: [],
+        pluginHandlers: [],
+        naxPlugins: [],
+        teardown: async () => {},
+      },
+      open: async () => ({
+        meta,
+        release: async () => {},
+        session: {
+          id: meta.sessionId,
+          backend: { kind: "native", capabilities: {} },
+          async *send() {},
+          answer: () => "unknown",
+          cancel() {},
+          close: async () => {},
+          lastTurn: { status: "interrupted", turnId: "t1" },
+        },
+      }),
+    });
+    try {
+      await host.start({ mode: "guarded", model: "test-model" });
+      const ui = render(<ChatApp host={host} />);
+      await Promise.resolve(act(async () => {}));
+      const notice = "hooks declared by 2 package(s) are not executed by nax";
+      expect(ui.lastFrame()?.split(notice)).toHaveLength(2);
+      act(() => {
+        ui.stdin.write("/resume other");
+      });
+      await Promise.resolve(
+        act(async () => {
+          ui.stdin.write("\r");
+        }),
+      );
+      expect(ui.lastFrame()?.split(notice)).toHaveLength(2);
+      expect(ui.lastFrame()).toContain("The last turn was interrupted.");
+    } finally {
+      await host.close();
+    }
+  });
   test("AC-1 renderChat renders with Ctrl-C exit disabled and unmounts", () => {
     const renderSpy = mock<typeof originalRender>((node) => {
       const ui = render(<Box flexDirection="column">{node}</Box>);

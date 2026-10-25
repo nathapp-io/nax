@@ -162,7 +162,15 @@ export type AnswerReply = { readonly decision: "allow" | "deny" } | { readonly t
 
 export type AnswerStatus = "accepted" | "expired" | "cancelled" | "unknown";
 
+export interface CommandRunResult {
+  /** The Bash tool's result text as the model would see it (capped by the tool runtime). */
+  readonly content: string;
+  readonly isError: boolean;
+}
+
 export interface AgentSession {
+  /** Run through the session's Bash tool without a model turn. The facade always provides this method. */
+  runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>;
   readonly id: string;
   /** The backend that opened this session (`kind` and its capability summary). */
   readonly backend: BackendInfo;

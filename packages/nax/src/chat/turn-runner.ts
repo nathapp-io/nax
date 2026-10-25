@@ -31,6 +31,13 @@ async function writeTurnMeta(options: RunChatTurnOptions, costUsd: number): Prom
   return meta;
 }
 
+/** Route interactive asks without treating command events as model turns or usage. */
+export function routeAskEvent(event: SessionEvent, asks: Pick<ChatAskController, "handle">): void {
+  if (event.type === "approval_requested" || event.type === "approval_resolved" || event.type === "question") {
+    asks.handle(event);
+  }
+}
+
 /** Consume one native turn; rejected sends must not flush or mutate shared state. */
 export async function runChatTurn(options: RunChatTurnOptions): Promise<SessionMeta> {
   const { handle, message, asks, ledger, onEvent } = options;
@@ -38,9 +45,7 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<SessionM
   let ended: Extract<SessionEvent, { type: "turn_end" }> | undefined;
   for await (const event of handle.session.send(message)) {
     if (event.type === "turn_start") previousAt = event.at;
-    if (event.type === "approval_requested" || event.type === "approval_resolved" || event.type === "question") {
-      asks.handle(event);
-    }
+    routeAskEvent(event, asks);
     if (event.type === "usage") {
       ledger.record(event, previousAt ?? event.at, handle.meta.model);
       previousAt = event.at;

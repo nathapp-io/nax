@@ -2,10 +2,12 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box } from "ink";
 import { type ReactElement, useCallback, useEffect, useRef, useState } from "react";
 import type { ChatHost } from "@/chat";
+import { buildCommandMessage } from "@/prompts";
+import { runCommandShellLines } from "@/resources";
 import { AskPrompt } from "./AskPrompt";
 import { ChatStatusLine } from "./ChatStatusLine";
 import { InputBox } from "./InputBox";
-import { parseSlashCommand, runSlashCommand } from "./slash-commands";
+import { parseSlashCommand, runSlashCommand, type SlashOutcome } from "./slash-commands";
 import { appendChatEvent, Transcript, type TranscriptEntry } from "./Transcript";
 import { useChatKeys } from "./useChatKeys";
 
@@ -25,6 +27,10 @@ export function ChatApp({ host }: ChatAppProps): ReactElement {
   const keys = useChatKeys({ host, running: sending, refresh: update, onError: showError });
   const ask = host.asks.pending()[0];
   useEffect(() => host.asks.onChange(update), [host, update]);
+  useEffect(() => {
+    const resourceNotice = host.resourceNotice?.();
+    if (resourceNotice) setEntries((rows) => [...rows, { kind: "message", text: resourceNotice }]);
+  }, [host]);
   const state = host.current();
   const notice = host.notice();
   const warn = state.mode === "full" && state.sandbox?.kind === "unavailable";
@@ -46,21 +52,46 @@ export function ChatApp({ host }: ChatAppProps): ReactElement {
       show("wait for the turn to finish (Ctrl-C to interrupt)");
       return;
     }
-    let featureMessage: string | undefined;
+    let outcome: SlashOutcome | undefined;
     const ready = await keys.runControl(async () => {
-      featureMessage = await runSlashCommand(command, { host, show });
+      outcome = await runSlashCommand(command, { host, show });
     });
-    if (ready && featureMessage !== undefined) await sendTurn(featureMessage);
+    if (ready && outcome !== undefined) {
+      if (outcome.kind === "send") await sendTurn(outcome.message);
+      else {
+        const { name, template, rest } = outcome;
+        await sendTurn(message, async () => {
+          const expanded = await runCommandShellLines(template, (cmd) =>
+            host.runCommand
+              ? host.runCommand(cmd, () => update())
+              : Promise.resolve({ isError: true, content: "this session cannot run commands" }),
+          );
+          if ("failed" in expanded) {
+            const { command, reason } = expanded.failed;
+            return { notice: `command /${name} not sent: !\`${command}\` failed: ${reason}` };
+          }
+          return { message: buildCommandMessage(expanded.text, rest) };
+        });
+      }
+    }
   }
 
   // Wait for send's metadata drain before reopening the session for a queued mode.
-  async function sendTurn(message: string): Promise<void> {
+  async function sendTurn(
+    message: string,
+    prepare?: () => Promise<{ message: string } | { notice: string }>,
+  ): Promise<void> {
     if (sending.current) return;
     sending.current = true;
     setBusy(true);
-    setEntries((rows) => [...rows, { kind: "message", text: `> ${message}` }]);
     try {
-      await host.send(message, (event) => setEntries((rows) => appendChatEvent(rows, event)));
+      const prepared = prepare ? await prepare() : { message };
+      if ("notice" in prepared) {
+        show(prepared.notice);
+        return;
+      }
+      setEntries((rows) => [...rows, { kind: "message", text: `> ${prepared.message}` }]);
+      await host.send(prepared.message, (event) => setEntries((rows) => appendChatEvent(rows, event)));
     } catch (error) {
       setEntries((rows) => [...rows, { kind: "message", text: errorMessage(error) }]);
     } finally {

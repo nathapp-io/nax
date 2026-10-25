@@ -4,6 +4,7 @@
  * Central registry for all loaded plugins with typed getters.
  */
 
+import { dirname, isAbsolute, resolve } from "node:path";
 import type { ExternalHandlerOf, LoopEvent, LoopHandlerEntry, LoopHandlerSet } from "@nathapp/nax-agent/internal";
 import { errorMessage, isThenable, LOOP_EVENTS } from "@nathapp/nax-agent/internal";
 import type { AgentAdapter } from "../agents/types";
@@ -19,6 +20,7 @@ import type {
   IReviewPlugin,
   LoopHandlerRegistrar,
   NaxPlugin,
+  PluginResourceDirs,
 } from "./types";
 
 /**
@@ -174,6 +176,31 @@ export class PluginRegistry {
    */
   getSource(pluginName: string): PluginSource | undefined {
     return this.sources.get(pluginName);
+  }
+
+  /** Resolve resource directories only for plugins with a known on-disk module. */
+  getResourceDirs(): PluginResourceDirs[] {
+    const dirs: PluginResourceDirs[] = [];
+    for (const plugin of this.plugins) {
+      if (!plugin.provides.includes("resources") || !plugin.extensions.resources) continue;
+      const source = this.getSource(plugin.name);
+      if (!source || source.type === "builtin" || !isAbsolute(source.path)) {
+        warnPluginRegistration(
+          plugin.name,
+          "resource directories skipped: source is builtin or has no absolute module path",
+        );
+        continue;
+      }
+      const root = dirname(source.path);
+      const { skills, commands, agents } = plugin.extensions.resources;
+      dirs.push({
+        plugin: plugin.name,
+        ...(skills === undefined ? {} : { skills: resolve(root, skills) }),
+        ...(commands === undefined ? {} : { commands: resolve(root, commands) }),
+        ...(agents === undefined ? {} : { agents: resolve(root, agents) }),
+      });
+    }
+    return dirs;
   }
 
   /**

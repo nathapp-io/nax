@@ -561,6 +561,8 @@ export interface NaxConfig {
   bot?: import("./runtime-types-bot").BotConfig;
   /** External MCP servers the native agent may call tools on (client only) */
   mcp?: import("./runtime-types-mcp").McpConfig;
+  /** Resource discovery and skills delivery settings; absent means schema defaults. */
+  resources?: import("./schemas-resources").ResourcesConfig;
   /** Hooks configuration (v0.10) */
   hooks?: RawHooksConfig;
   /** Interaction settings (v0.15.0) */
@@ -580,10 +582,7 @@ export interface NaxConfig {
   autoPr: import("./runtime-types-autopr").AutoPrConfig;
   /** Configuration profile name. For a multi-profile chain this is the composite, e.g. "a+b" (default: "default") */
   profile: string;
-  /**
-   * Ordered chain of profile names actually overlaid (later overrides earlier),
-   * excluding implicit "default" entries. Empty when no profile overlay applied.
-   */
+  /** Ordered profile overlays (later wins), excluding implicit "default"; empty when none applied. */
   profileChain?: string[];
 }
 export type {

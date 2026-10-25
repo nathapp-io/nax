@@ -293,7 +293,7 @@ export async function loadPlugins(
     }
     registerLoadedPlugin({
       plugin: validated,
-      source: { type: "config", path: entry.module },
+      source: { type: "config", path: resolvedModule },
     });
   }
 

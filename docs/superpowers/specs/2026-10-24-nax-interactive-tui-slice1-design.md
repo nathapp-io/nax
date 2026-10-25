@@ -284,63 +284,47 @@ read-only when unannotated is **false**) are `never` and everything else is
 subagent session is created with the parent's mode or narrower and its asks
 are forwarded to the parent TUI as asks. (Claude.)
 
-### 4.4 Skills loader
+### 4.4 Resource catalog (re-architected 2026-10-25; supersedes the first draft)
 
-- Discovery, in Claude Code's locations and format, nothing nax-specific
-  (user: existing skills must work; Claude: the list):
-  `<repo>/.claude/skills/*/SKILL.md`, `~/.claude/skills/*/SKILL.md`, and the
-  skills of every loaded Claude Code plugin (4.5). Frontmatter `name` and
-  `description` are read; the body is the instruction.
-- Each skill becomes one entry of a `Skill` embedder tool and one slash
-  command (`/<name>` or `/<plugin>:<name>`). Invoking either returns the
-  skill body as the tool result, prefixed with the skill's base directory, so
-  relative references (`references/*.md`, `builder-check-prompt.md`) resolve.
-  A slash command is sent as a user message that names the skill, and the
-  tool result carries the body; no user-role injection API is needed.
-  (Claude, after the builder check: this is also how Claude Code delivers a
-  skill.)
-- `/skills` lists what loaded and from where; a skill that fails to parse is
-  listed with its error and skipped, never fatal.
-- Precedence when two skills share a name: repo over user over plugin; the
-  loser stays reachable by its qualified name. (Claude.)
+User ruling 2026-10-25: one catalog over the seams nax already has, instead of
+chat-only embedder tools kept apart from nax's plugin system. Three layers, the
+same shape as pi's ResourceLoader:
 
-### 4.5 Claude Code plugin loader
+- **Sources.** `claude-project` (`<repo>/.claude/{skills,commands,agents}`,
+  `<repo>/.mcp.json`, `.claude/settings.json` hooks), `claude-user`
+  (`$CLAUDE_CONFIG_DIR` or `~/.claude`), `claude-plugin` (the `enabledPlugins` of
+  the user then project `settings.json`, resolved through
+  `~/.claude/plugins/installed_plugins.json` v2 `installPath`; `plugin.json`
+  optional), and `nax-plugin` (a new data-only `NaxPlugin` extension
+  `resources: { skills?, commands?, agents? }`). pi's Agent Skills directories
+  are NOT read (user).
+- **Catalog** (`packages/nax/src/resources/`): `ResourcePackage[]` merged with
+  precedence project > user > plugin; a shadowed name stays reachable as
+  `<plugin>:<name>`; every problem is a diagnostic, never fatal. It parses every
+  kind (skills, commands, agents, MCP entries, hooks) and F4 delivers skills and
+  commands only.
+- **Delivery through existing seams.** Skills are a `static` `ToolProvider`
+  `skills` (tool `skills__load`, index as provider instructions), the same
+  mechanism `nax run` uses for MCP and forge tools. The chat session takes it
+  through a new `nativeBackend({ toolProviders })`. `nax run` attaches it only
+  when `resources.skillsInRun` is true (default off, user). Commands and skills
+  are slash commands; a command's `` !`cmd` `` lines run through the session's
+  Bash tool under the mode's approvals (user) via a new `AgentSession.runCommand`.
+  nax plugin `loopHandlers` join the chat session (role `tui`).
+- **Trust.** `nax chat` calls the existing trust gate before loading anything,
+  all-or-nothing like Claude Code (user); the catalog has no trust filter.
 
-A Claude Code plugin is a directory with a `plugin.json` manifest and any of
-`skills/`, `commands/`, `agents/`, `.mcp.json`, `hooks/`. nax's own plugin
-system (`packages/nax/src/plugins/`) is unrelated and unchanged; the two are
-kept apart in code, and `/plugins` shows them in two sections.
+Spec: `.nax/features/resource-catalog-and-skills/spec.md` (F4).
 
-Discovery: the repo's `.claude/settings.json` and `~/.claude/settings.json`
-enabled-plugins lists, resolved against `~/.claude/plugins/` (installed
-plugins and marketplace cache) and repo-local plugin paths. (builder:
-verify the exact on-disk layout of the current Claude Code release and
-document the paths read.)
+### 4.5 MCP servers and subagents (F5, under the 4.4 catalog)
 
-Honoured in slice 1 (user: skills, MCP servers, subagents; subagent may
-specify a different model):
-
-- **Skills and commands**: as 4.4, prefixed `<plugin>:`.
-- **MCP servers**: each `.mcp.json` entry (plugin, repo, user) is connected
-  by the nax package through `@nathapp/nax-agent/mcp` and its tools are
-  registered as embedder tools under the server's namespace, with approval
-  per 4.3. `/mcp` lists servers, status and tool counts. A server that fails
-  to start is reported and skipped.
-- **Subagents**: each `agents/*.md` (plugin, `<repo>/.claude/agents/`,
-  `~/.claude/agents/`) becomes an entry of an `Agent` embedder tool. A
-  subagent runs as a nested nax-agent session in the same process with: the
-  parent's mode or narrower; the frontmatter `tools` allowlist intersected
-  with the parent's tool set; its own model when the frontmatter names one.
-  The nested transcript is stored under the parent's session so a resume can
-  show it. Depth limit 1 in slice 1. (Claude: depth and storage.)
-- **Model aliases**: plugin frontmatter uses Claude Code aliases (`sonnet`,
-  `opus`, `haiku`, `inherit`). nax maps them through `agent.modelAliases` in
-  config, defaulting to the matching Anthropic model in the nax-ai catalog;
-  `inherit` means the parent's model; an unmapped alias falls back to the
-  parent's model with a warning. (Claude.)
-
-Deferred (user): **hooks** are parsed and listed in `/plugins` as "not
-executed", with one notice at startup when any plugin declares them.
+- **MCP**: `.mcp.json` and plugin MCP entries from the catalog merge into the
+  existing `McpConfig` and reach sessions through the existing MCP pool, lock and
+  trust check as `discovered` providers. No second MCP client.
+- **Subagents**: catalog `agents/*.md` become an `Agent` tool provider; nested
+  session in the same process, mode equal or narrower, tools intersected with the
+  parent's, own model via `agent.modelAliases` (`inherit` = parent's). Depth 1.
+- **Hooks**: parsed and listed in `/plugins` as not executed (deferred, user).
 
 ### 4.6 Context the session carries
 
@@ -402,10 +386,10 @@ run is observable to the host only through the launcher; plumbing an audit
 directory into sessions is left to F3 if the TUI wants a ledger.
 | F2 | `shared-session-storage` | nax-agent, nax-agent-acp | A5: ACP session storage (metadata, lock, listing) moved to an importable shared location; ACP server consumes it | none |
 | F3 | `nax-chat-shell` | nax | `nax` / `nax chat`, ink shell, modes and toggle (reopen), asks via events, resume, status line, cost ledger `chat`, rules + context prompt, `/feature` | F1, F2 |
-| F4 | `skills-and-plugin-loader` | nax | SKILL.md discovery, Claude Code plugin manifests, `Skill` tool + slash commands, `/skills`, `/plugins`, hooks notice | F3 |
-| F5 | `mcp-and-subagents` | nax | `.mcp.json` servers via the MCP layer wrapped as embedder tools with mode-derived approval, `Agent` tool with nested sessions, `agent.modelAliases` | F4 |
+| F4 | `resource-catalog-and-skills` | nax-agent, nax | 4.4: `toolProviders` + `runCommand` seams, resource catalog (Claude Code + nax plugin `resources`), `skills` provider (chat; `nax run` opt-in), slash commands with `!` lines, trust gate in chat, `/skills`, `/plugins` | F3 |
+| F5 | `mcp-and-subagents` | nax-agent, nax | 4.5: catalog MCP entries through the existing MCP pool as `discovered` providers, `Agent` provider with nested sessions, `agent.modelAliases` | F4 |
 
-Spec status: F1 drafting started 2026-10-24; F2 to F5 queued.
+Spec status: F1 #2691, F2 #2692, F3 #2695 merged; F4 spec drafted 2026-10-25; F5 queued.
 
 ## 6. Constraints
 
@@ -458,6 +442,10 @@ Spec status: F1 drafting started 2026-10-24; F2 to F5 queued.
 | Claude alias → nax-ai model via `agent.modelAliases`; subagent depth 1; `/feature` in slice 1 | Claude | 2026-10-24 |
 | nax-agent API may change in slice 1 (section 5) | user | 2026-10-24 |
 | Design approved; proceed to spec-writing | user | 2026-10-24 |
+| Resource catalog over existing seams (ToolProvider, MCP pool, trust, plugin loopHandlers) replaces 4.4/4.5 "kept apart"; supersedes "Skill body delivered as the tool result" wording (now `skills__load`) and "MCP and Agent tools wrapped host-side" | user (architecture proposed by Claude) | 2026-10-25 |
+| pi Agent Skills dirs not read; skills in `nax run` default off, configurable (`resources.skillsInRun`) | user | 2026-10-25 |
+| `nax chat` uses the all-or-nothing trust gate like Claude Code | user (Claude recommended) | 2026-10-25 |
+| F4 one feature; catalog parses all kinds, delivers skills + commands; command `!` lines run via Bash with approval; `resources` config block | user | 2026-10-25 |
 
 ## 9. Builder check (2026-10-24)
 

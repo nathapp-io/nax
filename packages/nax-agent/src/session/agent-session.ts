@@ -8,6 +8,7 @@
  */
 import type { TranscriptDoc, TranscriptStore } from "#src/native/session/transcript-types";
 import type { SandboxState } from "#src/sandbox/types";
+import { claimCommand } from "./agent-session-command.ts";
 import { _agentSessionDeps } from "./agent-session-deps.ts";
 import { AgentSessionError } from "./agent-session-errors.ts";
 import { type ResolvedAgentSessionOptions, resolveAgentSessionOptions } from "./agent-session-options.ts";
@@ -17,6 +18,7 @@ import type {
   AgentSession,
   AnswerReply,
   AnswerStatus,
+  CommandRunResult,
   CreateAgentSessionOptions,
   SessionEvent,
   TurnEndStatus,
@@ -67,7 +69,7 @@ interface SessionParts {
 }
 
 class FacadeAgentSession implements AgentSession {
-  private active: ClaimedTurn | undefined;
+  private active: Pick<ClaimedTurn, "turnId" | "settled" | "cancel"> | undefined;
   private last: LastTurn | undefined;
   private closing: Promise<void> | undefined;
 
@@ -118,6 +120,42 @@ class FacadeAgentSession implements AgentSession {
     });
     this.active = turn;
     return turn.iterable;
+  }
+
+  async runCommand(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult> {
+    const code =
+      this.closing !== undefined
+        ? "AGENT_SESSION_CLOSED"
+        : this.active !== undefined
+          ? "AGENT_SESSION_BUSY"
+          : this.parts.opened.runCommand === undefined
+            ? "AGENT_SESSION_CAPABILITY_UNSUPPORTED"
+            : undefined;
+    const run = this.parts.opened.runCommand;
+    if (code !== undefined || run === undefined) {
+      throw new AgentSessionError(
+        `Session "${this.id}" cannot run a command`,
+        code ?? "AGENT_SESSION_CAPABILITY_UNSUPPORTED",
+        { sessionId: this.id },
+      );
+    }
+    const claim = claimCommand({
+      ctx: this.parts.ctx,
+      command,
+      onEvent,
+      run: (request) => run.call(this.parts.opened, request),
+      hooks: {
+        onStart: (live) => {
+          this.parts.slot.turn = live;
+        },
+        onSettle: () => {
+          this.parts.slot.turn = undefined;
+          this.active = undefined;
+        },
+      },
+    });
+    this.active = claim;
+    return claim.result;
   }
 
   answer(requestId: string, reply: AnswerReply): AnswerStatus {

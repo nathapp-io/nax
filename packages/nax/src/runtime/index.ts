@@ -113,6 +113,7 @@ import { createStoryFixHistory } from "../findings";
 import type { Logger } from "../logger";
 import { getLogger, getSafeLogger } from "../logger";
 import { buildMcpRollup, createMcpPool, createMcpProviders, writeMcpRollup } from "../mcp";
+import { loadResourceCatalog } from "../resources";
 import type { IReviewAuditor } from "../review/review-audit";
 import { createNoOpReviewAuditor, ReviewAuditor } from "../review/review-audit";
 import type { RoutingDecision } from "../routing/decision";
@@ -145,6 +146,7 @@ import { createPackageRegistry } from "./packages";
 import { curatorRollupPath, globalOutputDir, projectOutputDir } from "./paths";
 import type { IPromptAuditor } from "./prompt-auditor";
 import { createNoOpPromptAuditor, PromptAuditor } from "./prompt-auditor";
+import { withRunSkills } from "./run-tool-providers";
 import { createRunTurnHooks } from "./run-turn-hooks";
 import { createSessionRunHop } from "./session-run-hop";
 import type { IUsageAuditor } from "./usage-auditor";
@@ -277,7 +279,7 @@ export interface NaxRuntime {
   readonly mcpPool: import("../mcp").McpPool;
   /**
    * Tool providers advertised to every native dispatch this run. Built from
-   * `config.mcp`; empty when no server is configured or all are disabled.
+   * `config.mcp`, followed by skills when `resources.skillsInRun` is enabled.
    */
   readonly toolProviders: readonly import("@nathapp/nax-agent").ToolProvider[];
   /**
@@ -325,6 +327,9 @@ export const _runtimeLoggerDeps = { getSafeLogger };
 
 /** Injectable for tests: the afterTurn run-state repair (#2497). */
 export const _runtimeRunStateDeps = { repairRunState };
+
+/** Lazy resource discovery for opted-in run dispatches. */
+export const _runtimeResourceDeps = { loadResourceCatalog };
 
 function warnMissingPromptAuditIdentity(auditEnabled: boolean, workdir: string): void {
   if (!auditEnabled) return;
@@ -404,12 +409,17 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     pidRegistry,
   });
   const mcpWithheld: import("../mcp").McpWithheldEntry[] = [];
-  const toolProviders = createMcpProviders({
+  const mcpProviders = createMcpProviders({
     config: config.mcp,
     pool: mcpPool,
     projectRoot: workdir,
     onWithheld: (entry) => mcpWithheld.push(entry),
   });
+
+  const resourceOptions = { repoRoot: workdir, config, env: process.env, naxPluginPackages: [] };
+  const toolProviders = withRunSkills(mcpProviders, config, () =>
+    _runtimeResourceDeps.loadResourceCatalog(resourceOptions),
+  );
 
   const watchdogControllerRegistry = new Map<string, () => Promise<void>>();
 

@@ -324,6 +324,7 @@ export type {
   AnswerStatus,
   ApprovalDecidedBy,
   CostSource,
+  CommandRunResult,
   CreateAgentSessionOptions,
   EmbedderTool,
   EmbedderToolContext,
