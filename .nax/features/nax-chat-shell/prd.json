@@ -3,7 +3,7 @@
   "feature": "nax-chat-shell",
   "branchName": "feat/nax-chat-shell",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T04:46:00.153Z",
+  "updatedAt": "2026-10-25T05:03:05.116Z",
   "userStories": [
     {
       "id": "US-001",
@@ -312,14 +312,17 @@
         "US-004",
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Integrates durable metadata/locks, transcript resume, backend policy and rules; security-sensitive session ownership requires strict TDD."
+        "reasoning": "Integrates durable metadata/locks, transcript resume, backend policy and rules; security-sensitive session ownership requires strict TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/server/open-session.ts",
@@ -336,7 +339,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "741acdbe352b7f41a27415df34c376b374474cbc"
     },
     {
       "id": "US-007",
