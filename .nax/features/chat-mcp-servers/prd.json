@@ -3,7 +3,7 @@
   "feature": "chat-mcp-servers",
   "branchName": "feat/chat-mcp-servers",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T13:22:35.912Z",
+  "updatedAt": "2026-10-25T13:30:57.636Z",
   "userStories": [
     {
       "id": "US-001",
@@ -258,14 +258,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Existing optionalObject, filesystem seams and package-order discovery support the additional file and two scopes across four standard modules; medium complexity and simple TDD suffice because discovery neither connects nor decides permissions."
+        "reasoning": "Existing optionalObject, filesystem seams and package-order discovery support the additional file and two scopes across four standard modules; medium complexity and simple TDD suffice because discovery neither connects nor decides permissions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/resources/claude-sources.ts",
@@ -294,7 +297,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e50e90e091c795350412f2a8f410b12a4e75d2ee"
     },
     {
       "id": "US-005",
