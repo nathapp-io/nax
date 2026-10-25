@@ -1,7 +1,11 @@
 import { join } from "node:path";
 import type { ChatHost } from "@/chat";
 import { featureDir } from "@/config";
-import { buildChatFeatureMessage } from "@/prompts";
+import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts";
+
+export type SlashOutcome =
+  | { kind: "send"; message: string }
+  | { kind: "command"; name: string; template: string; rest: string };
 
 export interface SlashCommand {
   name: string;
@@ -54,15 +58,21 @@ interface CommandContext {
   show(text: string): void;
 }
 
-/** Local commands never send input. Only /feature returns a builder-produced turn. */
+/** Built-ins take precedence; catalog commands remain distinct from explicit skill turns. */
 export async function runSlashCommand(
   command: SlashCommand,
   { host, show }: CommandContext,
-): Promise<string | undefined> {
+): Promise<SlashOutcome | undefined> {
   const arg = command.args[0];
   switch (command.name) {
     case "help":
-      show(COMMANDS.map((name) => `/${name}`).join("\n"));
+      show(
+        [
+          ...COMMANDS.map((name) => `/${name}`),
+          ...(host.catalog?.commands ?? []).map((entry) => `/${entry.name} - ${entry.description ?? ""}`),
+          ...(host.catalog?.skills ?? []).map((entry) => `/${entry.name} - ${entry.description}`),
+        ].join("\n"),
+      );
       break;
     case "mode":
       if (!arg) show(host.current().mode);
@@ -89,9 +99,19 @@ export async function runSlashCommand(
     case "cost":
       show(`$${(host.current().meta.costUsd ?? 0).toFixed(2)}`);
       break;
-    case "feature":
-      return featureMessage(command, host, show);
-    default:
+    case "feature": {
+      const message = await featureMessage(command, host, show);
+      return message === undefined ? undefined : { kind: "send", message };
+    }
+    case "quit":
+      // ChatApp owns closing the terminal; never fall through to catalog lookup.
+      break;
+    default: {
+      const resource = host.catalog?.findCommand(command.name);
+      if (resource) return { kind: "command", name: command.name, template: resource.template, rest: command.rest };
+      const skill = host.catalog?.findSkill(command.name);
+      if (skill) return { kind: "send", message: buildSkillInvocationMessage({ skill, args: command.rest }) };
       show(`unknown command /${command.name}`);
+    }
   }
 }

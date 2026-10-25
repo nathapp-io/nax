@@ -2,10 +2,11 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box } from "ink";
 import { type ReactElement, useCallback, useEffect, useRef, useState } from "react";
 import type { ChatHost } from "@/chat";
+import { buildCommandMessage } from "@/prompts";
 import { AskPrompt } from "./AskPrompt";
 import { ChatStatusLine } from "./ChatStatusLine";
 import { InputBox } from "./InputBox";
-import { parseSlashCommand, runSlashCommand } from "./slash-commands";
+import { parseSlashCommand, runSlashCommand, type SlashOutcome } from "./slash-commands";
 import { appendChatEvent, Transcript, type TranscriptEntry } from "./Transcript";
 import { useChatKeys } from "./useChatKeys";
 
@@ -46,11 +47,13 @@ export function ChatApp({ host }: ChatAppProps): ReactElement {
       show("wait for the turn to finish (Ctrl-C to interrupt)");
       return;
     }
-    let featureMessage: string | undefined;
+    let outcome: SlashOutcome | undefined;
     const ready = await keys.runControl(async () => {
-      featureMessage = await runSlashCommand(command, { host, show });
+      outcome = await runSlashCommand(command, { host, show });
     });
-    if (ready && featureMessage !== undefined) await sendTurn(featureMessage);
+    if (ready && outcome !== undefined) {
+      await sendTurn(outcome.kind === "send" ? outcome.message : buildCommandMessage(outcome.template, outcome.rest));
+    }
   }
 
   // Wait for send's metadata drain before reopening the session for a queued mode.
