@@ -3,19 +3,23 @@ import type { SkillResource } from "@/resources";
 export const MAX_SKILLS_INDEX_ENTRIES = 150;
 const MAX_SKILL_DESCRIPTION_LENGTH = 200;
 
+/** One-line, bounded description for a skills or agents index entry. */
+export function cleanIndexDescription(text: string): string {
+  // Preserve whitespace separators before removing remaining C0/C1 controls.
+  return text
+    .replace(/\s+/g, " ")
+    .replace(/\p{Cc}/gu, "")
+    .replace(/ +/g, " ")
+    .slice(0, MAX_SKILL_DESCRIPTION_LENGTH);
+}
+
 /** Advertise available skills without inlining their bodies. */
 export function buildSkillsInstructions(entries: readonly { qualifiedName: string; description: string }[]): string {
   const lines = [
     "When a skill matches a task, call nax-skills__load with the skill name before acting on the task. Load the skill's references files with nax-skills__load and file.",
   ];
   for (const entry of entries.slice(0, MAX_SKILLS_INDEX_ENTRIES)) {
-    // Preserve whitespace separators before removing remaining C0/C1 controls.
-    const description = entry.description
-      .replace(/\s+/g, " ")
-      .replace(/\p{Cc}/gu, "")
-      .replace(/ +/g, " ")
-      .slice(0, MAX_SKILL_DESCRIPTION_LENGTH);
-    lines.push(`- ${entry.qualifiedName}: ${description}`);
+    lines.push(`- ${entry.qualifiedName}: ${cleanIndexDescription(entry.description)}`);
   }
   if (entries.length > MAX_SKILLS_INDEX_ENTRIES) {
     lines.push(`- ... and ${entries.length - MAX_SKILLS_INDEX_ENTRIES} more`);
