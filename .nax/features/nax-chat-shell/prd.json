@@ -3,7 +3,7 @@
   "feature": "nax-chat-shell",
   "branchName": "feat/nax-chat-shell",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T05:10:40.307Z",
+  "updatedAt": "2026-10-25T05:21:18.073Z",
   "userStories": [
     {
       "id": "US-001",
@@ -446,14 +446,17 @@
       "dependencies": [
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Concurrent timer/remote/TUI permission decisions with cancellation and late replies form a security-critical first-answer-wins path."
+        "reasoning": "Concurrent timer/remote/TUI permission decisions with cancellation and late replies form a security-critical first-answer-wins path.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/runtime-types.ts",
@@ -475,7 +478,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fbf20fc76819c24912c3b3c706ee9940ff4e0620"
     },
     {
       "id": "US-009",
