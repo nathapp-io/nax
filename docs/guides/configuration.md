@@ -321,7 +321,8 @@ An `openai` declaration is also rejected if the inherited provider settings
 disable `reasoning_effort`, which would silently suppress thinking controls.
 Omit it to keep the provider's existing format. It is per model, so different
 models behind one gateway can use different formats, independently of
-`openRouterRouting`.
+`openRouterRouting`. An explicit format uses the declared positive level names
+for effort fields, replacing the borrowed provider's level translations.
 
 For a self-hosted llama.cpp, vLLM or SGLang server running a Qwen reasoning model,
 use `qwen-chat-template` when the server honours

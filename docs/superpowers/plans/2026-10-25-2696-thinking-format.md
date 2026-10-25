@@ -34,4 +34,10 @@
 - Root `bun run test`: passed all workspace suites, including CLI unit/integration/UI. An earlier run hit seven executor-logging timeouts; the final run passed.
 - Root `bun run typecheck` and `bun run check:all`: passed. nax-ai build and nax-agent API snapshot: passed.
 - `packages/nax` coverage run: 27,536 passed, 45 skipped, zero failures; 96.40% lines and 94.28% functions. Per-file gate fails on unchanged `src/execution/pid-registry.ts` at 79.03% (80% required). No baseline was relaxed.
-- Independent review: no remaining findings after narrowing the enum and guarding suppressed OpenAI reasoning.
+- Initial independent review: no remaining findings after narrowing the enum and guarding suppressed OpenAI reasoning.
+- Follow-up review found two additional accepted-config defects: an off-only declaration omitted the disable signal, and explicit formats inherited provider-specific effort translations. Added wire regressions and observed three failures before fixing synthesis. Explicit formats now derive canonical positive-level mappings; explicit maps still win and omitted formats preserve inheritance.
+- Follow-up independent review reproduced both corrected payloads and found no remaining blockers, including in the coverage tests.
+- Added PID-registry tests for nonzero signal exits and spawn exceptions, checking TERM/KILL warnings and memory/disk cleanup. Standalone coverage rose to 82.37%, without production changes or a relaxed baseline.
+- Follow-up verification: all 594 nax-ai tests pass; nax-ai build, root typechecking and root check:all pass.
+
+- Follow-up full coverage gate: passed with 27,538 tests, 45 skipped and zero failures; 96.42% lines and 94.30% functions. Existing thresholds and baseline unchanged.

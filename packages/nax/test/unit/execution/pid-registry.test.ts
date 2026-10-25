@@ -3,11 +3,12 @@
  * PID Registry Tests
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeSpawn, makeTempDir, withDepsRestore } from "@test/helpers";
+import { cleanupTempDir, makeLogger, makeSpawn, makeTempDir, withDepsRestore } from "@test/helpers";
 import { _pidRegistryDeps, PidRegistry } from "@/execution";
+import * as loggerModule from "@/logger";
 
 // A fresh dir per test, under `$TMPDIR` — the only temp a confined run may
 // write (a literal `/tmp/...` is denied by the confined session's sandbox).
@@ -320,6 +321,40 @@ describe("PidRegistry", () => {
     expect(calls).not.toContainEqual(["kill", "-KILL", "172552"]);
     expect(calls).toContainEqual(["kill", "-KILL", "172469"]);
     expect(registry.getPids()).toEqual([]);
+  });
+
+  test.each([
+    ["nonzero exit", { exitCode: 1, stderr: "permission denied" }],
+    ["spawn error", { error: "permission denied" }],
+  ] as const)("killAll() reports %s for both signals and still clears the registry", async (failure, detail) => {
+    const logger = makeLogger();
+    const spy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
+    const registry = new PidRegistry(TEST_WORKDIR);
+    _pidRegistryDeps.spawn = makeSpawn(({ cmd }) => {
+      if (cmd[0] === "ps") {
+        return { stdout: cmd[1] === "-eo" ? "172446 1 Thu May 15 11:52:44 2026\n" : "1 Thu May 15 11:52:44 2026\n" };
+      }
+      if (cmd[0] === "kill" && cmd[1] !== "-0") {
+        if (failure === "spawn error") throw new Error("permission denied");
+        return { exitCode: 1, stderr: "permission denied\n" };
+      }
+      return {};
+    }).spawn;
+    _pidRegistryDeps.sleep = async () => {};
+    try {
+      await registry.register(172446);
+      await registry.killAll();
+      expect(
+        logger.calls.filter((call) => call.level === "warn").map((call) => ({ stage: call.stage, data: call.data })),
+      ).toEqual([
+        { stage: "pid-registry", data: { pid: 172446, signal: "TERM", ...detail } },
+        { stage: "pid-registry", data: { pid: 172446, signal: "KILL", ...detail } },
+      ]);
+      expect(registry.getPids()).toEqual([]);
+      expect(await Bun.file(PID_FILE).text()).toBe("");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test("multiple registries can coexist with different workdirs", async () => {

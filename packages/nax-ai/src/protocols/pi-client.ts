@@ -570,14 +570,17 @@ function isBetterTemplate(candidate: Model<Api>, best: Model<Api>): boolean {
  * `compat`) is inherited from the template `pickTemplate` selects, which is
  * now itself thinking-aware (issue #47) — so an inherited map is expected to
  * cover the override's declared levels whenever a compatible sibling exists.
- * Three cases, in priority order:
+ * Four cases, in priority order:
  *
  * 1. `model.thinkingLevelMap` is explicit: it always wins, over both the
  *    template's map and anything this function would derive.
- * 2. Otherwise, when the picked template covers every declared level
+ * 2. An explicit `thinkingFormat` uses the declared level names rather than
+ *    the template's provider/model-specific vocabulary (such as Groq's
+ *    "default" effort). That vocabulary need not suit the selected endpoint.
+ * 3. Otherwise, when the picked template covers every declared level
  *    (including "off"), its map is inherited as-is via `...template` below —
  *    it already translates each declared level correctly.
- * 3. Otherwise (no compatible sibling exists on this provider/api, so the
+ * 4. Otherwise (no compatible sibling exists on this provider/api, so the
  *    template is the best available by size alone), a map is derived from
  *    the override's own `thinkingLevels` rather than a size-picked stranger's
  *    — see `deriveThinkingLevelMap`.
@@ -612,7 +615,11 @@ function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
 
   const thinkingLevelMap =
     model.thinkingLevelMap ??
-    (isThinkingCompatible(template, model.thinkingLevels) ? undefined : deriveThinkingLevelMap(model, template));
+    (model.thinkingFormat !== undefined
+      ? deriveThinkingLevelMap(model, undefined)
+      : isThinkingCompatible(template, model.thinkingLevels)
+        ? undefined
+        : deriveThinkingLevelMap(model, template.thinkingLevelMap));
 
   return {
     ...template,
@@ -630,9 +637,11 @@ function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
     // inheriting a smaller sibling's value is a silent truncation.
     maxTokens: model.maxTokens ?? template.maxTokens,
     cost: toPiCost(model.pricing),
-    // pi's `reasoning` is the boolean form of our level list. "off" alone is
-    // no thinking support, which is exactly what `false` means here.
-    reasoning: model.thinkingLevels.some((level) => level !== "off"),
+    // Explicit formats also need the backend's reasoning branch for an
+    // off-only declaration: it emits the endpoint's disable-thinking signal.
+    reasoning:
+      model.thinkingLevels.some((level) => level !== "off") ||
+      (model.thinkingFormat !== undefined && model.thinkingLevels.includes("off")),
     // Merged onto the template's compat, never replacing it: `thinkingFormat`
     // and the rest of the provider's detected settings live in the same object
     // and are what translate a thinking level on the wire.
@@ -687,9 +696,10 @@ function copyTarget(target: PercentileTarget): PercentileTarget {
 
 /**
  * Builds a `thinkingLevelMap` from the override's own declared levels,
- * instead of inheriting a size-picked template's — used only when no
- * level-compatible template exists and the override states no map of its
- * own (case 3 above).
+ * instead of inheriting a size-picked template's. An explicit format passes
+ * no template map, so provider-specific translations cannot leak into the
+ * selected format. Otherwise this is used when no level-compatible template
+ * exists. An explicit override map always takes precedence (cases 2 and 4).
  *
  * A declared level maps to the template's value when that value is a string
  * (keeps the provider's own wire vocabulary for a level the template does
@@ -712,7 +722,7 @@ function copyTarget(target: PercentileTarget): PercentileTarget {
  * "off" entry, which is the same silent-extra-reasoning-cost defect issue #47
  * exists to close, just relocated to the "off" side. So: template value is a
  * string → that string; key absent → leave the key unset on the derived map
- * too (`Model.thinkingLevelMap.off` stays `undefined`), matching what case 2's
+ * too (`Model.thinkingLevelMap.off` stays `undefined`), matching what case 3's
  * `...template` inherit-as-is already does correctly; `null` → `null` only
  * when the override does not declare "off". A declared "off" over a `null`
  * template is left unset as well: the override's declaration is its contract,
@@ -722,9 +732,8 @@ function copyTarget(target: PercentileTarget): PercentileTarget {
  */
 function deriveThinkingLevelMap(
   model: ResolvedModel,
-  template: Model<Api>,
+  templateMap: Model<Api>["thinkingLevelMap"],
 ): Readonly<Partial<Record<ThinkingLevel, string | null>>> {
-  const templateMap = template.thinkingLevelMap;
   const map: Partial<Record<ThinkingLevel, string | null>> = {};
 
   const templateOff = templateMap?.off;

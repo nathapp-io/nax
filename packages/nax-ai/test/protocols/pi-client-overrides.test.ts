@@ -702,6 +702,37 @@ describe("thinkingFormat", () => {
     expect(payload).not.toHaveProperty("reasoning_effort");
   });
 
+  it.each([undefined, "off"] as const)(
+    "disables chat-template thinking for an off-only model with %s",
+    async (reasoning) => {
+      const offOnly = { ...LOCAL, thinkingLevels: ["off"] } as const;
+      const deps = createPiDeps({ providerOverrides: [{ provider: "together", models: [offOnly] }] });
+      const model = await deps.resolveModel(offOnly.id, "together");
+
+      await expect(wirePayload(model, reasoning)).resolves.toMatchObject({
+        chat_template_kwargs: { enable_thinking: false, preserve_thinking: true },
+      });
+    },
+  );
+
+  it("uses the declared format's effort vocabulary instead of a borrowed provider's mapping", async () => {
+    const local = { ...LOCAL, provider: "groq", thinkingFormat: "openai", thinkingLevels: ["off", "high"] } as const;
+    const deps = createPiDeps({
+      providerOverrides: [{ provider: "groq", baseUrl: "http://127.0.0.1:18080/v1", models: [local] }],
+    });
+    const model = await deps.resolveModel(local.id, "groq");
+
+    await expect(wirePayload(model, "high")).resolves.toMatchObject({ reasoning_effort: "high" });
+  });
+
+  it("keeps an explicit thinkingLevelMap when selecting a format", async () => {
+    const local = { ...LOCAL, thinkingFormat: "openai", thinkingLevelMap: { high: "medium" } } as const;
+    const deps = createPiDeps({ providerOverrides: [{ provider: "together", models: [local] }] });
+    const model = await deps.resolveModel(local.id, "together");
+
+    await expect(wirePayload(model, "high")).resolves.toMatchObject({ reasoning_effort: "medium" });
+  });
+
   it.each(["anthropic-messages", "openai-responses", "google-generative-ai"])(
     "rejects a thinkingFormat on %s in both catalogs",
     (protocol) => {
