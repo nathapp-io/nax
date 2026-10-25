@@ -219,10 +219,21 @@ describe("feature command", () => {
     }
   });
   test("AC-15 missing feature names its directory", async () => {
-    const ui = mount();
-    await ui.line("/feature missing");
-    expect(ui.lastFrame()).toContain(`no feature missing (looked in ${featureDir("/repo", "missing")})`);
-    expect(ui.send).not.toHaveBeenCalled();
+    const { _slashCommandDeps } = await import("@/tui/chat/slash-commands");
+    const original = _slashCommandDeps.readText;
+    const read = mock(async (_path: string) => undefined);
+    _slashCommandDeps.readText = read;
+    try {
+      const ui = mount();
+      await ui.line("/feature missing");
+      const dir = featureDir(ui.host.repoRoot, "missing");
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(read).toHaveBeenCalledWith(`${dir}/spec.md`);
+      expect(ui.lastFrame()).toContain(`no feature missing (looked in ${dir})`);
+      expect(ui.send).not.toHaveBeenCalled();
+    } finally {
+      _slashCommandDeps.readText = original;
+    }
   });
   test.each([
     ["AC-14", "spec text", '{"stories":[]}', "go  now"],
