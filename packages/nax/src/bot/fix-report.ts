@@ -1,4 +1,6 @@
 /** Repo-scoped post-push forge nodes; a separate review must grade the fixes. */
+import { homedir } from "node:os";
+import { basename, isAbsolute, relative, sep } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { resolveWorkflowConfig } from "@/config";
 import { NaxError } from "@/errors";
@@ -36,6 +38,7 @@ const MAX_FAILURE_LENGTH = 500;
 const MAX_ISSUE_LENGTH = 200;
 const OUT_OF_ITEM_FILES_SHOWN = 20;
 export const _fixReportDeps = {
+  homedir,
   replyToThread,
   resolveThread,
   editComment,
@@ -252,7 +255,38 @@ function baselineText(ci: BotFixState["ciOutcome"]): string {
   return `${head}; CI has no result for it (${ci ?? "unknown"}).`;
 }
 
-function outcomeText(state: BotFixState): string {
+/**
+ * The PR comment is public: a local absolute path exposes the username and directory layout
+ * (nax#2681). Show the checkout relative to the repo root, or only its directory name.
+ */
+function displayPath(path: string, repoRoot: string | undefined): string {
+  const rel = repoRoot ? relative(repoRoot, path) : "";
+  const inside = rel.length > 0 && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+  return inside ? rel : basename(path);
+}
+
+/** `prefix/x` -> `${bare}/x` and a bare `prefix` -> `bare`, only where `prefix` ends at a path boundary. */
+function replacePathPrefix(text: string, prefix: string, bare: string): string {
+  if (prefix.length <= 1) return text;
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Not followed by a name character: `/a/repo-old` and `/a/repo.bak` are other paths, `/a/repo.` is this one.
+  return text.replace(new RegExp(`${escaped}(?![\\w-]|\\.[\\w-])(/?)`, "g"), (_m, slash: string) =>
+    slash ? (bare === "." ? "" : `${bare}/`) : bare,
+  );
+}
+
+function stripLocalPaths(text: string, repoRoot: string | undefined): string {
+  return replacePathPrefix(replacePathPrefix(text, repoRoot ?? "", "."), _fixReportDeps.homedir(), "~");
+}
+
+function dirtyText(state: BotFixState, repoRoot: string | undefined): string {
+  if (state.checkoutMissing === true)
+    return "The fix checkout disappeared during the session (removed by another process); nothing pushed.";
+  const shown = state.recoveryPath === undefined ? "unknown" : displayPath(state.recoveryPath, repoRoot);
+  return `The fix tree is dirty or unreadable; nothing pushed. Recovery checkout retained at \`${safeCode(shown)}\`.`;
+}
+
+function outcomeText(state: BotFixState, repoRoot: string | undefined): string {
   switch (state.outcome) {
     case "cost-limit":
       if (state.costSpentUsd === undefined || state.costLimitUsd === undefined)
@@ -289,7 +323,7 @@ function outcomeText(state: BotFixState): string {
     case "baseline-red":
       return `Gates failed: ${(state.failingGates ?? []).join(", ")}. ${baselineText(state.ciOutcome)} Nothing pushed.`;
     case "dirty":
-      return `The fix tree is dirty or unreadable; nothing pushed. Recovery checkout retained at \`${safeCode(state.recoveryPath ?? "unknown")}\`.`;
+      return dirtyText(state, repoRoot);
     case "push-unknown":
       return "The push timed out; remote outcome is unknown. Check the remote before retrying.";
     case "push-rejected":
@@ -301,8 +335,9 @@ function outcomeText(state: BotFixState): string {
   }
 }
 
-export function renderFixSummary(state: BotFixState, details: readonly string[] = []): string {
-  const lines = [outcomeText(state), ...details];
+/** `repoRoot` keeps local absolute paths out of the public comment (nax#2681). */
+export function renderFixSummary(state: BotFixState, details: readonly string[] = [], repoRoot?: string): string {
+  const lines = [outcomeText(state, repoRoot), ...details];
   if (state.reusedFix)
     lines.push(
       `Reused the saved fix ${safeText(state.reusedFix.slice(0, SHORT_SHA_LENGTH), SHORT_SHA_LENGTH)}; no new fix session.`,
@@ -310,7 +345,8 @@ export function renderFixSummary(state: BotFixState, details: readonly string[] 
   if (state.repairMode !== undefined)
     lines.push(`Repair turn: ${state.repairMode}, round ${state.gateRepairRounds ?? 0}.`);
   if (state.repairSkippedForCost) lines.push("Repair turn skipped: cost limit reached.");
-  if (state.fixFailure !== undefined) lines.push(`Fix session: ${safeText(state.fixFailure, MAX_FAILURE_LENGTH)}`);
+  if (state.fixFailure !== undefined)
+    lines.push(`Fix session: ${safeText(stripLocalPaths(state.fixFailure, repoRoot), MAX_FAILURE_LENGTH)}`);
   // Why the PR is still a draft — a workflow PR, or a CI that is not green — or that it is ready.
   // The reason carries the CI wait's own detail, which is forge output: it is neutralised and
   // capped like the fix failure above, so a hostile or noisy detail cannot inject into the comment.
@@ -345,7 +381,7 @@ export async function reportStep(env: BotFixEnv, state: BotFixState): Promise<St
     lines.push("Run `git pull --rebase` in your main checkout to pick up the carried advisor ledger.");
   const outOfItem = outOfItemDetail(env, state);
   if (outOfItem !== undefined) lines.push(outOfItem);
-  const body = renderFixSummary(state, lines);
+  const body = renderFixSummary(state, lines, env.repoRoot);
   const own = env.own.find(({ key }) => key === "fix-summary");
   if (own) await _fixReportDeps.editComment(env.ref, own.comment, body, env.forge, env.repoRoot);
   else await _fixReportDeps.postPrComment(env.ref, body, env.forge, env.repoRoot);

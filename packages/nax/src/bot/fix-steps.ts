@@ -1,4 +1,5 @@
 /** Repo-scoped fix nodes: one session, then an independent committed-tree safety check. */
+import { lstat } from "node:fs/promises";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { type ConfiguredModel, DEFAULT_CONFIG, type NaxConfig } from "@/config";
 import type { CurrentUser, ForgeDeps, OwnComment, PrInfo, PrRef, PrThread } from "@/forge";
@@ -78,7 +79,10 @@ export interface BotFixState extends GraphState<BotFixStep> {
   readonly fixFailure?: string;
   readonly agreedCount?: number;
   readonly fixDirty?: boolean;
+  /** Absolute; local only. The PR comment renders it relative to the repo root (nax#2681). */
   readonly recoveryPath?: string;
+  /** The fix checkout no longer exists (another process removed it mid-session, nax#2681). */
+  readonly checkoutMissing?: boolean;
 }
 
 export interface BotFixEnv {
@@ -108,6 +112,15 @@ export const _fixStepsDeps = {
   readHeadCi,
   runGit: botGit,
   readHead,
+  worktreeExists: async (path: string): Promise<boolean> => {
+    try {
+      await lstat(path);
+      return true;
+    } catch {
+      // Absent or unreadable: either way there is no checkout to recover from.
+      return false;
+    }
+  },
 };
 
 export async function fixStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {
@@ -174,7 +187,15 @@ async function unsafeTree(env: BotFixEnv, state: BotFixState): Promise<StepResul
   }
   if (clean) return undefined;
   env.checkout.retain?.();
-  return { patch: { outcome: "dirty", recoveryPath: env.checkout.worktree }, exit: "dirty" };
+  const missing = !(await _fixStepsDeps.worktreeExists(env.checkout.worktree));
+  getLogger()?.warn("bot-fix", missing ? "Fix checkout disappeared" : "Fix tree dirty; checkout retained", {
+    pr: env.info.number,
+    worktree: env.checkout.worktree,
+  });
+  return {
+    patch: { outcome: "dirty", recoveryPath: env.checkout.worktree, ...(missing ? { checkoutMissing: true } : {}) },
+    exit: "dirty",
+  };
 }
 
 export async function checkStep(env: BotFixEnv, _state: BotFixState): Promise<StepResult<BotFixState>> {

@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { homedir } from "node:os";
+import { relative } from "node:path";
 import { type BotFixState, renderFixSummary } from "@/bot";
 import { BOT_FIX_GRAPH } from "@/bot/fix-run";
 import { parseNaxBotMarker } from "@/forge";
@@ -73,9 +75,83 @@ describe("renderFixSummary", () => {
     "/repo/.nax-wt/@alice#12",
     "/repo/.nax-wt/`[click](http://evil.example/x)`",
   ])("keeps hostile recovery path %s inside code spans", (path) => {
-    const body = renderFixSummary({ ...state, outcome: "dirty", recoveryPath: path });
-    expect(body).toContain(`\`${safeCode(path)}\``);
-    expect(safeCode(path)).not.toContain("`");
+    const body = renderFixSummary({ ...state, outcome: "dirty", recoveryPath: path }, [], "/repo");
+    const shown = relative("/repo", path);
+    expect(body).toContain(`\`${safeCode(shown)}\``);
+    expect(safeCode(shown)).not.toContain("`");
+  });
+  // nax#2681: the comment is public; the absolute path exposes the local username and layout.
+  test("renders the recovery checkout relative to the repo root, never absolute", () => {
+    const body = renderFixSummary(
+      { ...state, outcome: "dirty", recoveryPath: "/Users/me/src/app/.nax-wt/bot-pr-7-ab" },
+      [],
+      "/Users/me/src/app",
+    );
+    expect(body).toContain("`.nax-wt/bot-pr-7-ab`");
+    expect(body).not.toContain("/Users/me");
+  });
+  test("without a repo root, or outside it, only the checkout directory name is shown", () => {
+    const noRoot = renderFixSummary({ ...state, outcome: "dirty", recoveryPath: "/Users/me/app/.nax-wt/bot-1" });
+    const outside = renderFixSummary({ ...state, outcome: "dirty", recoveryPath: "/tmp/other/bot-2" }, [], "/Users/me");
+    expect(noRoot).toContain("`bot-1`");
+    expect(noRoot).not.toContain("/Users/me");
+    expect(outside).toContain("`bot-2`");
+    expect(outside).not.toContain("/tmp/other");
+  });
+  test("a checkout that disappeared says so and names no recovery path", () => {
+    const body = renderFixSummary(
+      { ...state, outcome: "dirty", recoveryPath: "/repo/.nax-wt/bot-1", checkoutMissing: true },
+      [],
+      "/repo",
+    );
+    expect(body).toContain("The fix checkout disappeared during the session");
+    expect(body).not.toContain("Recovery checkout retained");
+    expect(body).not.toContain(".nax-wt/bot-1");
+  });
+  test("the repo root is stripped from the fix failure text", () => {
+    const body = renderFixSummary(
+      { ...state, outcome: "dirty", fixFailure: "ENOENT: no such file '/Users/me/app/.nax-wt/bot-1/src'" },
+      [],
+      "/Users/me/app",
+    );
+    expect(body).toContain("'.nax-wt/bot-1/src'");
+    expect(body).not.toContain("/Users/me");
+  });
+  test("a sibling directory sharing the root's prefix is left intact", () => {
+    const body = renderFixSummary(
+      { ...state, outcome: "no-change", fixFailure: "see '/srv/app-old/x'" },
+      [],
+      "/srv/app",
+    );
+    expect(body).toContain("'/srv/app-old/x'");
+  });
+  test.each([
+    ["failed in /opt/repo.", "failed in ."],
+    ["see `/opt/repo`;", "see '.';"],
+    ["cd /opt/repo/src; ok", "cd src; ok"],
+    ["backup /opt/repo.bak/x", "backup /opt/repo.bak/x"],
+  ])("strips the root at any path boundary: %p", (failure, expected) => {
+    expect(renderFixSummary({ ...state, outcome: "no-change", fixFailure: failure }, [], "/opt/repo")).toContain(
+      `Fix session: ${expected}`,
+    );
+  });
+  test("the home directory is shown as ~ in the fix failure text", () => {
+    const body = renderFixSummary(
+      { ...state, outcome: "no-change", fixFailure: `ENOENT '${homedir()}/.nax/config.json'` },
+      [],
+      "/srv/app",
+    );
+    expect(body).toContain("'~/.nax/config.json'");
+    expect(body).not.toContain(homedir());
+  });
+  test("an empty repo root leaves the failure text unchanged", () => {
+    expect(renderFixSummary({ ...state, outcome: "no-change", fixFailure: "boom" }, [], "")).toContain(
+      "Fix session: boom",
+    );
+  });
+  test("a checkout directory whose name starts with .. is still shown relative to the root", () => {
+    const body = renderFixSummary({ ...state, outcome: "dirty", recoveryPath: "/repo/..wt/bot-1" }, [], "/repo");
+    expect(body).toContain("`..wt/bot-1`");
   });
   test("includes fix failure", () => {
     expect(renderFixSummary({ ...state, outcome: "no-change", fixFailure: "boom" })).toContain("Fix session: boom");
