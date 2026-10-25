@@ -1,6 +1,7 @@
 export { buildResourceCatalog, loadResourceCatalog } from "./catalog";
 export { _claudePathsDeps, claudeConfigDir } from "./claude-paths";
 export { discoverClaudeCodePackages } from "./claude-sources";
+export { runCommandShellLines } from "./command-shell";
 export type { ResourceFrontmatterResult } from "./frontmatter";
 export { readResourceFrontmatter } from "./frontmatter";
 export { naxPluginPackages } from "./nax-plugin-packages";

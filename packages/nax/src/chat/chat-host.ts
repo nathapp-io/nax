@@ -1,4 +1,4 @@
-import type { SandboxState, SessionEvent, SessionMeta, SessionStorage } from "@nathapp/nax-agent";
+import type { CommandRunResult, SandboxState, SessionEvent, SessionMeta, SessionStorage } from "@nathapp/nax-agent";
 import { getProjectKey, type NaxConfig } from "@/config";
 import { createRuleDeliveryHandlers } from "@/context/rules/rule-delivery";
 import { NaxError } from "@/errors";
@@ -11,7 +11,7 @@ import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import { type ChatMode, chatModeOfMeta } from "./chat-mode";
 import { type ChatSessionHandle, openChatSession } from "./open-chat-session";
 import type { ChatResources } from "./resources";
-import { runChatTurn } from "./turn-runner";
+import { routeAskEvent, runChatTurn } from "./turn-runner";
 
 const DEFAULT_CHAT_ASK_FALLBACK_MS = 60_000;
 
@@ -44,6 +44,7 @@ export interface ChatHost {
   notice(): string | undefined;
   switchTo(input: { mode?: ChatMode; model?: string }): Promise<void>;
   send(message: string, onEvent: (event: SessionEvent) => void): Promise<void>;
+  runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>;
   cancel(): void;
   listSessions(): Promise<readonly ChatSessionRow[]>;
   close(): Promise<void>;
@@ -325,6 +326,15 @@ class NativeChatHost implements ChatHost {
       now: this.deps.now().toISOString(),
     });
     if (this.handle === handle) this.handle = { ...handle, meta };
+  }
+
+  async runCommand(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult> {
+    const { session } = this.requireHandle();
+    if (!session.runCommand) return { isError: true, content: "this session cannot run commands" };
+    return session.runCommand(command, (event) => {
+      routeAskEvent(event, this.asks);
+      onEvent(event);
+    });
   }
 
   cancel(): void {

@@ -3,6 +3,7 @@ import { Box } from "ink";
 import { type ReactElement, useCallback, useEffect, useRef, useState } from "react";
 import type { ChatHost } from "@/chat";
 import { buildCommandMessage } from "@/prompts";
+import { runCommandShellLines } from "@/resources";
 import { AskPrompt } from "./AskPrompt";
 import { ChatStatusLine } from "./ChatStatusLine";
 import { InputBox } from "./InputBox";
@@ -52,18 +53,41 @@ export function ChatApp({ host }: ChatAppProps): ReactElement {
       outcome = await runSlashCommand(command, { host, show });
     });
     if (ready && outcome !== undefined) {
-      await sendTurn(outcome.kind === "send" ? outcome.message : buildCommandMessage(outcome.template, outcome.rest));
+      if (outcome.kind === "send") await sendTurn(outcome.message);
+      else {
+        const { name, template, rest } = outcome;
+        await sendTurn(message, async () => {
+          const expanded = await runCommandShellLines(template, (cmd) =>
+            host.runCommand
+              ? host.runCommand(cmd, () => update())
+              : Promise.resolve({ isError: true, content: "this session cannot run commands" }),
+          );
+          if ("failed" in expanded) {
+            const { command, reason } = expanded.failed;
+            return { notice: `command /${name} not sent: !\`${command}\` failed: ${reason}` };
+          }
+          return { message: buildCommandMessage(expanded.text, rest) };
+        });
+      }
     }
   }
 
   // Wait for send's metadata drain before reopening the session for a queued mode.
-  async function sendTurn(message: string): Promise<void> {
+  async function sendTurn(
+    message: string,
+    prepare?: () => Promise<{ message: string } | { notice: string }>,
+  ): Promise<void> {
     if (sending.current) return;
     sending.current = true;
     setBusy(true);
-    setEntries((rows) => [...rows, { kind: "message", text: `> ${message}` }]);
     try {
-      await host.send(message, (event) => setEntries((rows) => appendChatEvent(rows, event)));
+      const prepared = prepare ? await prepare() : { message };
+      if ("notice" in prepared) {
+        show(prepared.notice);
+        return;
+      }
+      setEntries((rows) => [...rows, { kind: "message", text: `> ${prepared.message}` }]);
+      await host.send(prepared.message, (event) => setEntries((rows) => appendChatEvent(rows, event)));
     } catch (error) {
       setEntries((rows) => [...rows, { kind: "message", text: errorMessage(error) }]);
     } finally {
