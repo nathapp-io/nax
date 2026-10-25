@@ -385,6 +385,8 @@ export interface InteractionConfig {
   defaults: {
     /** Default timeout in milliseconds (default: 600000 = 10 minutes) */
     timeout: number;
+    /** Delay before offering a terminal approval to the interaction chain (default: 60000). */
+    chatAskFallbackMs?: number;
     /**
      * Global fallback override. Undefined unless the operator explicitly set
      * it (BUG-48 / D-9) — a schema-level default here would make every

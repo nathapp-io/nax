@@ -1,0 +1,961 @@
+{
+  "project": "nax-monorepo",
+  "feature": "nax-chat-shell",
+  "branchName": "feat/nax-chat-shell",
+  "createdAt": "2026-10-25T00:00:00.000Z",
+  "updatedAt": "2026-10-25T06:47:00.085Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "nax-agent: a loop-handler role option",
+      "description": "**Goal** — Add the native facade's optional loop-handler role without changing existing callers.\n\n**Motivation** — The session must know the repo's rules.\n\n**Approach** — **Loop-handler role (US-001).** `NativeBackendOptions` gains `loopHandlerRole?: string`. When set, `openNative` adds `role` to the `loopHandlerContext` it builds; when unset the context has no `role` key. `parseNativeBackendOptions` accepts it as a non-empty string. `\"tui\"` is a loop-handler and cost-ledger role only; it is not added to `KNOWN_SESSION_ROLES` (`src/runtime/session-role.ts`), because chat never dispatches through `SessionManager`.\n\n`openNative` — Baseline:\n```typescript\nconst loopHandlerContext = { sessionName: ctx.sessionId, workdir: ctx.workdir, model: raw.model, provider: resolved.provider };\n```\nTarget: the same object plus `role: raw.loopHandlerRole` when `raw.loopHandlerRole !== undefined`.\n\n**Scope** — In: update native-backend-options.ts and native-backend.ts and add the role regression cases. Out: chat opener and rule-role allowlists belong to US-006 and US-005; no workflow role-registry extension. The API snapshot lists exported names only (NativeBackendOptions appears as one type line), so a new optional field changes no existing assertion.\n\n**Interface** — Target adds to `NativeBackendOptions`:\n```typescript\n/** Copied into every turn's loop-handler context as `role` (for example \"tui\"). */\nreadonly loopHandlerRole?: string;\n```",
+      "acceptanceCriteria": [
+        "[unit] Opening a session through nativeBackend({ model, loopHandlerRole: \"tui\" }) yields turn options whose loopHandlerContext.role is \"tui\".",
+        "[unit] Opening a session through nativeBackend({ model }) with no loopHandlerRole yields a loopHandlerContext with no role key.",
+        "[unit] nativeBackend({ model, loopHandlerRole: \"\" }) throws AgentSessionError with code AGENT_SESSION_INVALID_OPTIONS."
+      ],
+      "tags": [
+        "native-agent",
+        "rules",
+        "security"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Small additive backend/type change, but the session role controls rule delivery and requires security-isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/session/native-backend.ts",
+        "packages/nax-agent/src/session/native-backend-options.ts",
+        "packages/nax-agent/test/unit/session/native-backend.test.ts",
+        "packages/nax-agent/test/unit/session/native-backend-options.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/session/native-backend-role.test.ts"
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "afd241b764e2d758f4bc6a703a7d8cc365b054cb"
+    },
+    {
+      "id": "US-002",
+      "title": "nax-agent: the approval-memory helpers",
+      "description": "**Goal** — Extract the hardened approval-memory policy into nax-agent's public entry so multiple front doors share one policy.\n\n**Motivation** — \"Always allow\" must not fork.\n\n**Approach** — **Approval memory in nax-agent (US-002, US-003).** New `packages/nax-agent/src/permissions/approval-memory.ts` exports `approvalMemoryKey(request)` and `approvalMemoryApplies(request, decision)`, carrying `memoryKey` and `memoryApplies` unchanged (same wrappers list, plain-word rule, mask marker and shell metacharacters) except that the execute-tool test is a local set `APPROVAL_EXECUTE_TOOLS` = `Bash`, `RunCommand`, `Git`, `GitCommit` (the tools the ACP `toolKind` maps to `\"execute\"`). Both take `ApprovalMemoryRequest = { readonly tool: string; readonly command?: string }`, which an `approval_requested` event satisfies, and are exported from the package entry. The ACP server's `permissions.ts` then calls them and deletes its copies (`memoryKey`, `memoryApplies`, `WRAPPERS`, `PLAIN_WORD`, `MASK_MARKER`, `SHELL_METACHARACTERS`); `toolKind` stays in the ACP server for display.\n\nCreate `src/permissions/approval-memory.ts` with `approvalMemoryKey` and `approvalMemoryApplies` carrying the ACP logic; export both and the two types through `src/permissions/index.ts` and `src/index.ts`; port the ACP `memoryKey` cases. Regenerate the API snapshot with `bun run api:update` so it gains approvalMemoryKey, approvalMemoryApplies, type ApprovalMemoryRequest and type ApprovalMemoryDecision. Preserve wrapper basename/case handling, flag-second-word refusal, non-plain/masked key refusal, and the distinction between key construction and deciding whether an allow applies to a later command.\n\n**Scope** — In: shared pure policy, public/barrel exports, API snapshot and ported unit cases. Out: replacing ACP callers/removing their local helpers is US-003; terminal memory ownership is US-007.\n\n**Interface** —\n```typescript\nexport interface ApprovalMemoryRequest { readonly tool: string; readonly command?: string }\nexport type ApprovalMemoryDecision = \"allow\" | \"deny\";\nexport function approvalMemoryKey(request: ApprovalMemoryRequest): string | undefined;\nexport function approvalMemoryApplies(request: ApprovalMemoryRequest, decision: ApprovalMemoryDecision): boolean;\n```",
+      "acceptanceCriteria": [
+        "[unit] approvalMemoryKey imported from the package entry src/index.ts is a function.",
+        "[unit] approvalMemoryKey({ tool: \"Edit\" }) returns \"Edit\".",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"  git push origin main\" }) returns \"Bash:git push\".",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"npm test -- --watch\" }) returns \"Bash:npm test\".",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"ls\" }) returns \"Bash:ls\".",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"./scripts/build.sh\" }) returns \"Bash:./scripts/build.sh\".",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"rm -f x\" }) returns undefined.",
+        "[unit] approvalMemoryKey returns undefined for each wrapper first word: bash -c ls, sudo make install, /usr/bin/env ls.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"FOO=1 npm test\" }) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"git 'status'\" }) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"ls *.ts\" }) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"git $CMD\" }) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"echo [REDACTED:token]\" }) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\" }) (no command) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"RunCommand\", command: \"npm test\" }) returns \"RunCommand:npm test\".",
+        "[unit] approvalMemoryApplies({ tool: \"Bash\", command: \"git status\" }, \"allow\") returns true.",
+        "[unit] approvalMemoryApplies({ tool: \"Bash\", command: \"git status; rm -rf x\" }, \"allow\") returns false.",
+        "[unit] approvalMemoryApplies({ tool: \"Bash\", command: \"git push origin --force\" }, \"allow\") returns false.",
+        "[unit] approvalMemoryApplies({ tool: \"Bash\", command: \"git push origin --force\" }, \"deny\") returns true.",
+        "[unit] approvalMemoryApplies({ tool: \"Edit\" }, \"allow\") returns true."
+      ],
+      "tags": [
+        "permissions",
+        "security",
+        "public-api"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A bounded extraction with public exports, but security-sensitive remembered shell approvals demand strict test isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/server/permissions.ts",
+        "packages/nax-agent-acp/test/unit/server/permissions.test.ts",
+        "packages/nax-agent-acp/src/server/translate/tool-kind.ts",
+        "packages/nax-agent/src/permissions/index.ts",
+        "packages/nax-agent/src/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/permissions/approval-memory.ts",
+        "packages/nax-agent/test/unit/permissions/approval-memory.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerated with bun run api:update so it gains approvalMemoryKey, approvalMemoryApplies, type ApprovalMemoryRequest and type ApprovalMemoryDecision."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fd71650771b4a85319fcfb74b6f219ae751ce0d3"
+    },
+    {
+      "id": "US-003",
+      "title": "The ACP server uses the shared approval-memory helpers",
+      "description": "**Goal** — Make the ACP broker consume the public shared approval-memory policy without altering permission round trips.\n\n**Motivation** — The ACP server's per-session approval memory is security-sensitive.\n\n**Approach** — **Approval memory in nax-agent (US-002, US-003).** New `packages/nax-agent/src/permissions/approval-memory.ts` exports `approvalMemoryKey(request)` and `approvalMemoryApplies(request, decision)`, carrying `memoryKey` and `memoryApplies` unchanged (same wrappers list, plain-word rule, mask marker and shell metacharacters) except that the execute-tool test is a local set `APPROVAL_EXECUTE_TOOLS` = `Bash`, `RunCommand`, `Git`, `GitCommit` (the tools the ACP `toolKind` maps to `\"execute\"`). Both take `ApprovalMemoryRequest = { readonly tool: string; readonly command?: string }`, which an `approval_requested` event satisfies, and are exported from the package entry. The ACP server's `permissions.ts` then calls them and deletes its copies (`memoryKey`, `memoryApplies`, `WRAPPERS`, `PLAIN_WORD`, `MASK_MARKER`, `SHELL_METACHARACTERS`); `toolKind` stays in the ACP server for display.\n\n`src/server/permissions.ts` calls the helpers from `@nathapp/nax-agent` and deletes `memoryKey`, `memoryApplies` and their constants; the `memoryKey` describe block leaves `test/unit/server/permissions.test.ts`. Its cases now live in nax-agent's approval-memory.test.ts from US-002 while every createPermissionBroker case stays unchanged and passing. Verify removals using package typecheck/check:all as implementation validation, not behavioral ACs. Add the broker seam assertions and parity check across every execute tool.\n\n**Scope** — In: ACP imports/call sites, removal of the copied policy and migrated describe, preserved broker behavior. Out: shared-helper implementation/API snapshot is US-002; terminal asks are US-007. The ACP server's permission round trips, allow_always/reject_always options and broker behaviour are unchanged.\n\n**Interface** — Consume the US-002 declarations from the package entry:\n```typescript\nexport interface ApprovalMemoryRequest { readonly tool: string; readonly command?: string }\nexport type ApprovalMemoryDecision = \"allow\" | \"deny\";\nexport function approvalMemoryKey(request: ApprovalMemoryRequest): string | undefined;\nexport function approvalMemoryApplies(request: ApprovalMemoryRequest, decision: ApprovalMemoryDecision): boolean;\n```",
+      "acceptanceCriteria": [
+        "[unit] Through createPermissionBroker with a fake client that answers allow_always for an approval_requested with tool Bash and command git status, a second request for git status is answered allow with no second client permission request.",
+        "[unit] Through the same broker, a later request for git status --short produces a client permission request.",
+        "[unit] Through a broker whose client answered reject_always for git push origin main, a later request for git push origin --force is answered deny with no client permission request.",
+        "[unit] Importing src/server/permissions.ts yields a module with no memoryKey export.",
+        "[unit] For every tool name toolKind maps to \"execute\", approvalMemoryKey({ tool, command: \"npm test\" }) returns \"<tool>:npm test\", so a new execute tool cannot fall back to a bare tool-name key."
+      ],
+      "tags": [
+        "acp",
+        "permissions",
+        "security",
+        "refactor"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Security-critical broker integration must preserve existing allow/reject memory and round-trip behavior under strict TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/server/permissions.ts",
+        "packages/nax-agent-acp/test/unit/server/permissions.test.ts",
+        "packages/nax-agent-acp/src/server/translate/tool-kind.ts",
+        "packages/nax-agent/src/permissions/approval-memory.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent-acp/test/unit/server/permissions.test.ts",
+          "reason": "its describe block memoryKey (spec §4.3) imports memoryKey from src/server/permissions.ts, which this story deletes; the invariant is that block removed (its cases now live in nax-agent's approval-memory.test.ts from US-002) while every createPermissionBroker case stays unchanged and passing."
+        }
+      ],
+      "workdir": "packages/nax-agent-acp",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "aab2661f0f47c363baba76d38964600519bc2a6a"
+    },
+    {
+      "id": "US-004",
+      "title": "The chat prompt builder",
+      "description": "**Goal** — Add pure chat instruction and feature-message builders under the Prompt Builder Convention.\n\n**Motivation** — One agent for the whole loop.\n\n**Approach** — **Prompt (US-004).** New `packages/nax/src/prompts/builders/chat-builder.ts` (Prompt Builder Convention), exported from `src/prompts`:\n- `buildChatInstructions({ mode, rulesIndex })` -> the system prompt: one intro paragraph (an interactive coding agent working in this repository with the person), a `## Permission mode` section (full: tools run without asking; guarded: edits, deletes, commits and every shell command are put to the person), a `## Commands outside the sandbox` section (set `unsandboxed: true` with an `unsandboxedReason` only when a command needs the network, the Docker socket, a local port or a device the sandbox blocks), and `buildRulesIndexSection({ entries: rulesIndex, shownAutomatically: true })`.\n- `buildChatFeatureMessage({ feature, spec, prd?, message })` -> the user message `/feature` sends: a `## Feature <name>` block with the spec text and, when `prd` is given, the PRD JSON, each in a fenced block, then the person's message (which may be empty).\n\n**Scope** — In: new builder, pure output assertions and exports from src/prompts/index.ts. Out: loading rules and opening sessions is US-006; reading feature files and dispatching slash commands is US-014. The design's nax context fragments repo summary is not added; repository instructions already come from AGENTS.md.\n\n**Interface** —\n```typescript\nbuildChatInstructions({ mode, rulesIndex })\nbuildChatFeatureMessage({ feature, spec, prd?, message })\n```",
+      "acceptanceCriteria": [
+        "[unit] buildChatInstructions imported from src/prompts is a function.",
+        "[unit] buildChatInstructions({ mode: \"guarded\", rulesIndex: [] }) contains ## Permission mode.",
+        "[unit] buildChatInstructions({ mode: \"guarded\", rulesIndex: [] }) returns text stating that every shell command is put to the person before it runs.",
+        "[unit] buildChatInstructions({ mode: \"full\", rulesIndex: [] }) states that tools run without asking.",
+        "[unit] buildChatInstructions({ mode: \"guarded\", rulesIndex: [] }) contains ## Commands outside the sandbox.",
+        "[unit] The ## Commands outside the sandbox section returned by buildChatInstructions({ mode: \"guarded\", rulesIndex: [] }) names the arguments unsandboxed and unsandboxedReason.",
+        "[unit] With one rules index entry for rule id error-handling, buildChatInstructions contains ## Rules index and a line with `error-handling`.",
+        "[unit] Given one rulesIndex entry, buildChatInstructions returns a rules section saying each rule's full text is shown the first time a file it applies to is read, written or edited.",
+        "[unit] With rulesIndex: [], buildChatInstructions returns a prompt with no ## Rules index section.",
+        "[unit] buildChatFeatureMessage({ feature: \"auth\", spec: \"S\", prd: \"{}\", message: \"go\" }) starts with ## Feature auth.",
+        "[unit] buildChatFeatureMessage({ feature: \"auth\", spec: \"S\", prd: \"{}\", message: \"go\" }) returns the spec text S and the PRD text {} before the person's message go, which ends the message.",
+        "[unit] buildChatFeatureMessage({ feature: \"auth\", spec: \"S\", message: \"go\" }) with no prd has exactly one fenced block."
+      ],
+      "tags": [
+        "prompts",
+        "chat",
+        "rules"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure prompt formatting and existing-builder composition; no permission enforcement or lifecycle state.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/rules-index-builder.ts",
+        "packages/nax/src/prompts/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/prompts/builders/chat-builder.ts",
+        "packages/nax/test/unit/prompts/builders/chat-builder.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9e40bd8c866a203e02fa5d11dcecac93fc944a0d"
+    },
+    {
+      "id": "US-005",
+      "title": "Chat modes and the tui rule role",
+      "description": "**Goal** — Define chat's two permission mappings and enable existing on-demand rule delivery for tui.\n\n**Motivation** — The session must know the repo's rules.\n\n**Approach** — **Modes and the `tui` rule role (US-005).** `packages/nax/src/chat/chat-mode.ts`:\n\n| `ChatMode` | `profile` | `bashApproval` | `SessionMeta.mode` |\n|---|---|---|---|\n| `full` | `full` | `raw` | `full` |\n| `guarded` (default) | `ask` | `gated` | `ask` |\n\n`nextChatMode(\"guarded\")` is `\"full\"` and `nextChatMode(\"full\")` is `\"guarded\"`. `chatModeOfMeta(meta.mode)` maps `ask` to `guarded`, `full` to `full`, and `none` or `read` (sessions koda created) to `null`: such a session is refused, never widened. `RULE_READ_ROLES` and `RULE_WRITE_ROLES` gain `\"tui\"`.\n\n**Scope** — In: chat-mode.ts, initial chat/index.ts exports and adding tui to both rule lists; verify first-Write refusal and Read nudge through the existing handlers. Out: backend role propagation is US-001; session lock/open logic is US-006. `\"tui\"` is not added to KNOWN_SESSION_ROLES or the session role registry; chat never dispatches through SessionManager.\n\n**Interface** — Export from src/chat/index.ts:\n```typescript\nexport type ChatMode = \"full\" | \"guarded\";\nexport interface ChatSessionSettings { readonly profile: \"full\" | \"ask\"; readonly bashApproval: \"raw\" | \"gated\"; readonly metaMode: \"full\" | \"ask\" }\nexport function chatSessionSettings(mode: ChatMode): ChatSessionSettings;\nexport function nextChatMode(mode: ChatMode): ChatMode;\nexport function chatModeOfMeta(mode: SessionMeta[\"mode\"]): ChatMode | null;\n```",
+      "acceptanceCriteria": [
+        "[unit] chatSessionSettings(\"full\") returns { profile: \"full\", bashApproval: \"raw\", metaMode: \"full\" }.",
+        "[unit] chatSessionSettings(\"guarded\") returns { profile: \"ask\", bashApproval: \"gated\", metaMode: \"ask\" }.",
+        "[unit] nextChatMode(\"guarded\") returns \"full\".",
+        "[unit] nextChatMode(\"full\") returns \"guarded\".",
+        "[unit] chatModeOfMeta(\"ask\") returns \"guarded\".",
+        "[unit] chatModeOfMeta(\"full\") returns \"full\".",
+        "[unit] chatModeOfMeta(\"read\") returns null.",
+        "[unit] chatModeOfMeta(\"none\") returns null.",
+        "[unit] RULE_READ_ROLES contains \"tui\".",
+        "[unit] createRuleDeliveryHandlers with role tui in the loop context refuses a first Write to a file a rule covers, as it does for wf-implementer.",
+        "[unit] With role tui, a Read of a file a rule covers is nudged with that rule's text."
+      ],
+      "tags": [
+        "chat",
+        "permissions",
+        "rules",
+        "security"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Straightforward mappings and role additions, but access-control modes and role checks require security-isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/context/rules/rule-delivery/index.ts",
+        "packages/nax/test/unit/context/rules/rule-delivery.test.ts",
+        "packages/nax-agent/src/session-store/session-meta.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/chat-mode.ts",
+        "packages/nax/src/chat/index.ts",
+        "packages/nax/test/unit/chat/chat-mode.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e644d46e479418826c74f13689d350c334f07bd3"
+    },
+    {
+      "id": "US-006",
+      "title": "The chat session opener",
+      "description": "**Goal** — Open or resume a locked shared-store native chat session with mode-specific settings and repository rules.\n\n**Motivation** — koda must see the same sessions.\n\n**Approach** — **Opening a session (US-006).** `openChatSession(request, deps)` in `packages/nax/src/chat/open-chat-session.ts`. The request carries `storage`, `cwd`, `repoRoot`, `mode?`, `model?` (required for a new session, optional on a resume), `resumeId?`, `loopHandlers`, and `config` (the loaded `NaxConfig`). The same module exports `resolveChatSessionsDir(env)` (`env.NAX_AGENT_SESSIONS_DIR` when set, else `defaultSessionsDir(globalConfigDir())`) and `createChatStorage({ env, pid, now, logger })`, which returns `createSessionStorage({ dir: resolveChatSessionsDir(env), pid, now, logger })`; `chatCommand` builds the one storage the host and every open share. In order:\n1. Transcripts = `createFileTranscriptStore(storage.dir)`; `now` comes from `_openChatSessionDeps.now`.\n2. New session: id = `randomUUID()`, `acquireLock(id)`, then `writeMeta({ schemaVersion: 1, sessionId, cwd, mode, model, bashApproval, title: null, createdAt: now, updatedAt: null })`. Resume: `readMeta(id)` (null refuses `CHAT_SESSION_NOT_FOUND`; `SESSION_META_UNREADABLE` propagates), `chatModeOfMeta` (null refuses `CHAT_SESSION_MODE_UNSUPPORTED`), then `acquireLock(id)`. The request's `mode` and `model` override the stored ones only when the caller passes them (a switch); a plain resume uses the stored mode and model.\n3. Rules index: `resolveRuleSet({ repoRoot, packageDir: repoRoot, overrideDir, overrideMode })` (from `config.context.rules`) mapped with `toRulesIndexEntry`; instructions = `buildChatInstructions({ mode, rulesIndex })`. The index lists repo-level rules; package-scoped rules are still delivered on demand by the handlers.\n4. Backend = `nativeBackend({ model, bashApproval, allowUnsandboxed: true, allowUnsandboxedCommands: true, carryHistoryAcrossModels: true, loopHandlers: request.loopHandlers, loopHandlerRole: \"tui\", catalogOverrides?, compaction? })`, where `catalogOverrides` is `config.agent.native.catalogOverrides` when non-empty and `compaction` is `config.execution.compaction` when set. Both modes set `allowUnsandboxed: true` (full runs unsandboxed when the sandbox is unavailable; guarded asks before every Bash command, so an unwrapped command is still asked) and `allowUnsandboxedCommands: true` (F1's per-command escalation).\n5. `transcripts.load(id)`: null -> `createAgentSession`, else `resumeAgentSession(id, options)`, with `{ backend, sessionId, profile, workdir: cwd, instructions, transcriptStore, approvalTimeoutMs: config.execution.approvalTimeout }`.\n6. If any step after `acquireLock` throws, the lock is released and the error rethrown.\nReturns `ChatSessionHandle = { session, meta, release }`. The instructions describe the mode only; the sandbox state (`session.backend.sandbox`) is shown by the shell.\n\nCreate `_openChatSessionDeps` for createAgentSession, resumeAgentSession, nativeBackend, createSessionStorage, createFileTranscriptStore, resolveRuleSet, randomUUID, env and now. Missing metadata throws `NaxError` code `CHAT_SESSION_NOT_FOUND`, message `no session <id> in <dir>`; unsupported stored mode throws `CHAT_SESSION_MODE_UNSUPPORTED`, message `session <id> was created in mode <mode>; nax chat opens full or ask sessions only`. Both refuse before taking a lock, as does corrupt metadata.\n\nAll ACs drive `openChatSession` through `_openChatSessionDeps` fakes; the request's `storage` is a real `createSessionStorage` over a temp directory. Persist `chatSessionSettings(mode).metaMode`, not the UI name guarded, in SessionMeta.mode. SessionMeta timestamps are persisted as ISO strings; preserve the storage factory's now() -> Date contract.\n\n**Scope** — In: opener, storage-directory factory, dependency seam and exports through src/chat/index.ts. Out: latest-session selection, locked-session error translation and transactional host switches are US-010/011; Ink rendering is US-012. Sessions directory uses only NAX_AGENT_SESSIONS_DIR/global config dir, not ACP --sessions-dir or agentServer.sessionsDir. No durable chat tool-call audit directory and no RunCommand offering change.\n\n**Interface** —\n```typescript\nexport interface ChatSessionHandle { readonly session: AgentSession; readonly meta: SessionMeta; readonly release: () => Promise<void> }\nopenChatSession(request, deps)\nresolveChatSessionsDir(env)\ncreateChatStorage({ env, pid, now, logger })\n```",
+      "acceptanceCriteria": [
+        "[unit] Opening a new guarded session passes nativeBackend bashApproval: \"gated\".",
+        "[unit] Opening a new guarded session passes nativeBackend allowUnsandboxed: true.",
+        "[unit] Opening a new guarded session passes nativeBackend allowUnsandboxedCommands: true.",
+        "[unit] Opening a new guarded session passes nativeBackend loopHandlerRole: \"tui\".",
+        "[unit] With agent.native.catalogOverrides holding one entry, nativeBackend receives catalogOverrides with that entry.",
+        "[unit] With execution.compaction.enabled: false, nativeBackend receives compaction.enabled false.",
+        "[unit] Opening a new full session passes createAgentSession profile: \"full\".",
+        "[unit] Opening a new full session passes createAgentSession workdir equal to the request's cwd.",
+        "[unit] Opening a new full session passes createAgentSession approvalTimeoutMs equal to execution.approvalTimeout.",
+        "[unit] With a repo whose .nax/rules/ holds one rule error-handling, the instructions passed to createAgentSession contain `error-handling`.",
+        "[unit] A new session writes metadata whose sessionId is the injected randomUUID value.",
+        "[unit] A new session holds the lock: storage.readLockHolder(id) returns state \"own\".",
+        "[unit] Resuming an id whose transcript store has a document calls resumeAgentSession with that id and never createAgentSession.",
+        "[unit] Resuming an id with metadata but no transcript document calls createAgentSession with that sessionId.",
+        "[unit] Resuming with no mode or model in the request opens with the stored mode and model.",
+        "[unit] Resuming an id with no metadata rejects with NaxError code CHAT_SESSION_NOT_FOUND.",
+        "[unit] Resuming an id whose metadata mode is read rejects with code CHAT_SESSION_MODE_UNSUPPORTED.",
+        "[unit] Resuming an id whose metadata file holds invalid JSON rejects with code SESSION_META_UNREADABLE.",
+        "[unit] When createAgentSession throws after the lock was taken, openChatSession rejects with that error and readLockHolder(id) returns null.",
+        "[unit] resolveChatSessionsDir({ NAX_AGENT_SESSIONS_DIR: \"/tmp/s\" }) returns /tmp/s.",
+        "[unit] resolveChatSessionsDir({}) returns defaultSessionsDir(globalConfigDir()).",
+        "[unit] When resume metadata is missing, openChatSession rejects with message no session <id> in <dir> without acquiring the session lock.",
+        "[unit] When stored metadata mode is none or read, openChatSession rejects with message session <id> was created in mode <mode>; nax chat opens full or ask sessions only without acquiring the session lock.",
+        "[unit] When resume metadata is corrupt, openChatSession propagates SESSION_META_UNREADABLE without acquiring the session lock."
+      ],
+      "tags": [
+        "chat",
+        "sessions",
+        "native-agent",
+        "security"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-004",
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Integrates durable metadata/locks, transcript resume, backend policy and rules; security-sensitive session ownership requires strict TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/server/open-session.ts",
+        "packages/nax-agent/src/session-store/storage.ts",
+        "packages/nax/src/prompts/builders/chat-builder.ts",
+        "packages/nax/src/chat/chat-mode.ts",
+        "packages/nax/src/workflow/brief.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/open-chat-session.ts",
+        "packages/nax/test/unit/chat/open-chat-session.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "741acdbe352b7f41a27415df34c376b374474cbc"
+    },
+    {
+      "id": "US-007",
+      "title": "The ask controller",
+      "description": "**Goal** — Centralize terminal approval/question state and safe per-session positive approval memory.\n\n**Motivation** — \"Always allow\" must not fork.\n\n**Approach** — **Asks (US-007).** `createChatAskController({ mode, answer })` in `packages/nax/src/chat/ask-controller.ts`; `answer` is a function the host points at the current session (it follows the session across a switch). Events:\n- `approval_requested` with `answerable: false`: ignored (never answered, never pending).\n- full mode: `answer(requestId, { decision: \"allow\" })` at once.\n- guarded mode: a remembered `allow` stored under `approvalMemoryKey(event)` answers at once when `approvalMemoryApplies(event, \"allow\")` holds and the event is not `unsandboxed`; otherwise the ask joins `pending()`. The person resolves it with `resolve(requestId, \"allow_once\" | \"allow_session\" | \"deny\")`. `allow_session` stores `allow` under the key only when `canRemember(event)`: the key is defined, the event is not `unsandboxed`, and the tool is not `Delete`; otherwise it answers allow once. `deny` is never remembered.\n- `question` with `answerable !== false` joins `pending()` in both modes and is resolved with `answerQuestion(requestId, text)`.\n- `approval_resolved` removes its request from `pending()`.\n- `setMode(mode)` changes the mode for later events; `reset()` clears the memory and `pending()`. The host keeps the memory across a mode or model switch (same session) and calls `reset()` on `/clear` and on a resume of another session.\n- `onChange(listener)` notifies the shell and the fallback.\n\nExport it from src/chat/index.ts. The shared helpers must be consumed, not copied: a remembered allow for Bash npm test answers npm test but not npm test; rm -rf x.\n\n**Scope** — In: controller state/events, safe memory, answer/question dispatch and subscriptions. Out: delayed interaction-chain timers are US-008; session binding/reset during host replacement is US-010/011; rendering/key selection is US-013.\n\n**Interface** —\n```typescript\nexport type AskChoice = \"allow_once\" | \"allow_session\" | \"deny\";\ncreateChatAskController({ mode, answer })\n```\nThe controller exposes handle, pending, resolve, canRemember, answerQuestion, setMode, reset and onChange as described above.",
+      "acceptanceCriteria": [
+        "[unit] In full mode, an approval_requested event r1 calls answer(\"r1\", { decision: \"allow\" }) once.",
+        "[unit] In full mode, an approval_requested event with answerable: false calls no answer.",
+        "[unit] In guarded mode, an approval_requested event joins pending() and calls no answer.",
+        "[unit] resolve(\"r1\", \"allow_once\") calls answer(\"r1\", { decision: \"allow\" }).",
+        "[unit] resolve(\"r1\", \"deny\") calls answer(\"r1\", { decision: \"deny\" }).",
+        "[unit] After resolve(\"r1\", \"allow_session\") for tool Bash command npm test, a later request for npm test is answered allow without joining pending().",
+        "[unit] After resolve(\"r1\", \"allow_session\") for Bash npm test, a later request for npm test; rm -rf x joins pending().",
+        "[unit] After resolve(\"r1\", \"allow_session\") for Bash npm test, a later request for npm test with unsandboxed: true joins pending().",
+        "[unit] After resolve(\"r1\", \"deny\") for npm test, a later request for npm test joins pending().",
+        "[unit] canRemember returns false for a request whose command is rm -f x.",
+        "[unit] canRemember returns false for a request with unsandboxed: true.",
+        "[unit] canRemember returns false for a request whose tool is Delete.",
+        "[unit] resolve(\"r1\", \"allow_session\") on a request that cannot be remembered answers allow and stores nothing: a later identical request joins pending().",
+        "[unit] An approval_resolved event for r1 removes r1 from pending() without calling answer.",
+        "[unit] In full mode, a question event q1 joins pending().",
+        "[unit] answerQuestion(\"q1\", \"yes\") calls answer(\"q1\", { text: \"yes\" }) and removes q1 from pending().",
+        "[unit] After setMode(\"full\"), a new approval_requested event is answered allow at once.",
+        "[unit] After reset(), a request remembered before is put in pending() again.",
+        "[unit] Each change to pending() calls every onChange listener once."
+      ],
+      "tags": [
+        "chat",
+        "permissions",
+        "security",
+        "interaction"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New stateful approval/question controller with security-critical memory restrictions and answer arbitration.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/server/permissions.ts",
+        "packages/nax-agent/src/session/agent-session-types.ts",
+        "packages/nax-agent/src/permissions/approval-memory.ts",
+        "packages/nax/src/chat/chat-mode.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/ask-controller.ts",
+        "packages/nax/test/unit/chat/ask-controller.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When resolve is called twice for the same pending request, answer is called only for the first resolution.",
+        "When a question event has answerable:false, pending() is unchanged and answer is not called."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "97d3bd6be24e2fbdf37ea98e9c5d73af645fbeed"
+    },
+    {
+      "id": "US-008",
+      "title": "Offer unanswered asks to the interaction chain",
+      "description": "**Goal** — Offer pending terminal approvals to the configured interaction chain after a configurable delay without double answering.\n\n**Motivation** — One agent for the whole loop.\n\n**Approach** — **Interaction-chain fallback (US-008).** `createAskFallback({ controller, chain, delayMs, logger })` in `packages/nax/src/chat/ask-fallback.ts`, timers through `_askFallbackDeps.setTimeout` / `clearTimeout` (the `setTimeout` exception in `forbidden-patterns-source.md` applies: each handle is cleared when its ask leaves `pending()`; say so at the call site). For each pending approval (not questions) a timer of `delayMs` starts when it joins `pending()`. On expiry, when `chain` is non-null, it calls `chain.prompt(request)` with `{ id: \"chat-<requestId>\", type: \"confirm\", featureName: \"chat\", stage: \"custom\", summary, detail: \"<command>\\n<reason>\", fallback: \"skip\", createdAt }`, where `command` is the event's `command` as the session sent it (already masked) and is omitted when absent. Response mapping, applied only while the ask is still in `pending()`: `approve` -> `allow_once`; `reject` or `abort` -> `deny`; any other action (`skip`, which a chain timeout or `cancel()` produces, `choose`, `input`) is ignored and the ask stays in the TUI. A response for an ask no longer in `pending()` is ignored. If the ask leaves `pending()` first, its timer is cleared, or, when the chain prompt is already out, `chain.cancel(\"chat-<requestId>\")` is called once. A rejected `chain.prompt` logs warn `chat ask fallback failed` with `errorMessage(err)` only, and the ask stays in the TUI. `dispose()` clears every timer. `delayMs` is new config `interaction.defaults.chatAskFallbackMs` (int, 1000 to 3600000, default 60000).\n\n`InteractionConfigSchema.defaults` in src/config/schemas-infra.ts adds `chatAskFallbackMs: z.number().int().min(1000).max(3600000).default(60000)`; the literal interaction default object in src/config/schemas.ts gains `chatAskFallbackMs: 60000` beside timeout; the hand-written InteractionConfig type in src/config/runtime-types.ts gains optional `chatAskFallbackMs?: number` in defaults (optional so existing InteractionConfig fixtures still typecheck), and the host uses 60000 when absent; FIELD_DESCRIPTIONS in src/cli/config-descriptions.ts gains interaction.defaults.chatAskFallbackMs. Keep defaults.fallback undefined unless configured. No configured chain, or the headless CLI plugin, means no fallback; terminal asks wait until the session's own approval timeout.\n\nAll ACs inject `_askFallbackDeps` timers driven by the shared fake clock helper, and a fake chain.\n\n**Scope** — In: fallback lifecycle/timers, chain mapping, dependency seam and all four config surfaces, including preserving the existing undefined defaults.fallback when no override is configured. Out: chain construction/startup degradation is US-015; controller decisions are US-007; host composition is US-010. Questions are not offered to the interaction chain; only approvals are.\n\n**Interface** —\n```typescript\ncreateAskFallback({ controller, chain, delayMs, logger })\n```\nReturned fallback exposes dispose().",
+      "acceptanceCriteria": [
+        "[unit] A guarded ask pending for less than delayMs has not prompted the chain.",
+        "[unit] Once delayMs passes, the chain's prompt is called once with id chat-r1.",
+        "[unit] When delayMs expires for a pending approval, chain.prompt receives a request with type confirm, stage custom, featureName chat and fallback skip.",
+        "[unit] When delayMs expires for a pending approval with a command, chain.prompt receives detail containing that command as sent by the session and the approval's reason.",
+        "[unit] A chain response with action: \"approve\" resolves the ask allow_once.",
+        "[unit] A chain response with action: \"reject\" resolves the ask deny.",
+        "[unit] A chain response with action: \"skip\" leaves the ask in pending().",
+        "[unit] A chain response that arrives after the ask left pending() resolves nothing.",
+        "[unit] When the ask is resolved in the TUI before delayMs, the chain is never prompted.",
+        "[unit] When the ask is resolved in the TUI after the prompt went out, chain.cancel(\"chat-r1\") is called once.",
+        "[unit] When an approval_resolved event removes the ask after the prompt went out, chain.cancel(\"chat-r1\") is called once.",
+        "[unit] A rejected chain.prompt logs warn chat ask fallback failed with errorMessage(err) only and the ask stays in pending().",
+        "[unit] With chain null, no prompt is made and the ask stays in pending().",
+        "[unit] A pending question is never offered to the chain.",
+        "[unit] dispose() clears pending timers: advancing the clock past delayMs afterwards prompts nothing.",
+        "[unit] Parsing an empty config yields interaction.defaults.chatAskFallbackMs equal to 60000.",
+        "[unit] Parsing a config with interaction.defaults.chatAskFallbackMs: 500 fails validation.",
+        "[unit] FIELD_DESCRIPTIONS[\"interaction.defaults.chatAskFallbackMs\"] is a non-empty string.",
+        "[unit] With no interaction chain, an unanswered approval remains pending until the session's approval timeout resolves it; fallback sends no answer.",
+        "[unit] Parsing an empty config after adding chatAskFallbackMs leaves interaction.defaults.fallback undefined, preserving the existing per-trigger fallback behavior."
+      ],
+      "tags": [
+        "chat",
+        "interaction",
+        "telegram",
+        "security",
+        "config"
+      ],
+      "dependencies": [
+        "US-007"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Concurrent timer/remote/TUI permission decisions with cancellation and late replies form a security-critical first-answer-wins path.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/runtime-types.ts",
+        "packages/nax/src/interaction/types.ts",
+        "packages/nax/src/config/schemas-infra.ts",
+        "packages/nax/src/config/schemas.ts",
+        "packages/nax/src/cli/config-descriptions.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/ask-fallback.ts",
+        "packages/nax/test/unit/chat/ask-fallback.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the chain responds abort for a still-pending approval, the controller resolves it deny.",
+        "When the chain responds choose or input for a still-pending approval, the approval remains pending and no answer is sent.",
+        "When a rejected chain.prompt contains an Error with message bad token, the warning's error value is bad token rather than the error object or stack."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fbf20fc76819c24912c3b3c706ee9940ff4e0620"
+    },
+    {
+      "id": "US-009",
+      "title": "Turns, the chat cost ledger and metadata updates",
+      "description": "**Goal** — Run chat turns through the controller and durable cost ledger, then update shared session metadata.\n\n**Motivation** — koda must see the same sessions.\n\n**Approach** — **Turns and cost (US-009).** `runChatTurn({ handle, storage, message, asks, ledger, onEvent, now })` in `packages/nax/src/chat/turn-runner.ts` iterates `session.send(message)`, passes `approval_requested`, `approval_resolved` and `question` events to `asks.handle`, every `usage` event to `ledger.record`, and every event to `onEvent`. After `turn_end` it calls `ledger.drain()` and writes the metadata with `updatedAt: now`, `costUsd: previous + turn_end.costUsd`, and, when `title` is null, `title` = the first message with whitespace collapsed, cut to 80 code points; it returns the written `SessionMeta`. When `session.send` throws before any event (for example a turn already running), the error is rethrown and neither the ledger nor the metadata is touched.\n`createChatLedger({ sessionId, projectKey, model, outputDir, startedAt })` in `packages/nax/src/chat/chat-ledger.ts` wraps a `CostAggregator(runId, join(outputDir, \"cost\"))` with `runId = \"chat-<sessionId>-<startedAt epoch ms>\"` (one file per process, since `drain()` rewrites its whole file and a resumed session must not overwrite an earlier process's rows). `record(event, previousAt)` maps a `usage` event to a `CostEvent`: `ts` (epoch ms of `event.at`), `runId`, `projectKey`, `schemaVersion: COST_ROW_SCHEMA_VERSION` (from `@/runtime/middleware`), `agentName: \"native\"`, `model`, `stage: \"chat\"`, `sessionRole: \"tui\"`, `turnId`, `durationMs` = `event.at` minus `previousAt` (the turn's `turn_start` or previous `usage` event) in ms, `tokens` (input, output, cacheRead, cacheWrite), `costUsd`, and `confidence: \"exact\"` with `exactCostUsd = costUsd`, `estimatedCostUsd: 0` when `costSource` is `computed`, `reported` or absent (absent means computed), else (`unpriced`) `confidence: \"estimated\"` with `estimatedCostUsd = costUsd`, `exactCostUsd: 0`. `projectKey` is `getProjectKey(config, repoRoot)`; `outputDir` is `projectOutputDir(projectKey, config.outputDir)`.\n\nAll ACs drive `runChatTurn` over a fake `AgentSession` whose `send` yields scripted events, a real `createSessionStorage` over a temp directory passed as `storage` and a ledger whose `outputDir` is a temp directory. SessionMeta timestamps remain ISO strings, distinct from ledger epoch milliseconds.\n\n**Scope** — In: ledger wrapper, turn event routing, metadata/title/spend updates and src/chat/index.ts exports. Out: host reuse of ledger/current handle is US-010; transcript/status rendering is US-012; fallback timing is US-008. No budget enforcement beyond what config already applies; /cost reports spend only.\n\n**Interface** —\n```typescript\nrunChatTurn({ handle, storage, message, asks, ledger, onEvent, now })\ncreateChatLedger({ sessionId, projectKey, model, outputDir, startedAt })\n```\nThe ledger exposes record(event, previousAt) and drain(); runChatTurn returns the written SessionMeta.",
+      "acceptanceCriteria": [
+        "[unit] Every scripted event is passed to onEvent in order.",
+        "[unit] An approval_requested event is passed to asks.handle.",
+        "[unit] After a turn with one usage event (input 100, output 20, costUsd 0.01, costSource computed), <outputDir>/cost/chat-<sessionId>-<startedAt>.jsonl holds one row.",
+        "[unit] After runChatTurn processes one usage event, its persisted cost row has stage chat and sessionRole tui.",
+        "[unit] After runChatTurn processes one usage event, its persisted cost row has the session's model and runId chat-<sessionId>-<startedAt epoch ms>.",
+        "[unit] When runChatTurn processes a usage event with inputTokens 100 and outputTokens 20 and no cache counts, its persisted row has tokens { input: 100, output: 20 }.",
+        "[unit] When runChatTurn processes a usage event with costUsd 0.01 and costSource computed, its persisted row has confidence exact, exactCostUsd 0.01 and estimatedCostUsd 0.",
+        "[unit] With turn_start at 00:00:00.000Z and the usage event at 00:00:01.500Z, the row's durationMs is 1500.",
+        "[unit] A usage event with no costSource yields a row with confidence exact.",
+        "[unit] A usage event with costSource unpriced yields a row with confidence estimated.",
+        "[unit] Two turns in one process leave one ledger file holding both turns' rows.",
+        "[unit] After a turn ending with turn_end.costUsd 0.02 on a session whose metadata costUsd was 0.05, the metadata costUsd is 0.07.",
+        "[unit] After a turn, the metadata updatedAt equals the injected now.",
+        "[unit] After the first turn with message `  fix   the\nbug  `, the metadata title is fix the bug.",
+        "[unit] A first message of 100 characters yields a title of 80 code points.",
+        "[unit] A second turn does not change an existing title.",
+        "[unit] A turn ending errored still updates the metadata updatedAt.",
+        "[unit] When session.send throws before yielding, runChatTurn rejects with that error and the metadata updatedAt is unchanged.",
+        "[unit] When session.send throws before any event, runChatTurn leaves the ledger untouched."
+      ],
+      "tags": [
+        "chat",
+        "sessions",
+        "cost",
+        "events"
+      ],
+      "dependencies": [
+        "US-006",
+        "US-007"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Two sequential orchestration modules reuse CostAggregator and SessionStorage with explicit event mappings; session and approval routing retain the security-required strict TDD strategy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/runtime/cost-aggregator.ts",
+        "packages/nax/src/runtime/index.ts",
+        "packages/nax/src/runtime/middleware/index.ts",
+        "packages/nax/src/config/project-key.ts",
+        "packages/nax/src/chat/open-chat-session.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/chat-ledger.ts",
+        "packages/nax/src/chat/turn-runner.ts",
+        "packages/nax/test/unit/chat/turn-runner.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When two usage events occur 500 ms apart in one turn, the second cost row has durationMs 500.",
+        "When a usage event includes cacheRead and cacheWrite, the ledger row preserves both counts in tokens.",
+        "When separate processes resume the same session with different startedAt values, both ledger files retain their own rows."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "be719e1cb0776e571a90eea196e0d94580de32d5"
+    },
+    {
+      "id": "US-010",
+      "title": "The chat host",
+      "description": "**Goal** — Compose the native opener, rule handlers, asks, fallback, ledger and storage behind the headless ChatHost.\n\n**Motivation** — One agent for the whole loop.\n\n**Approach** — **The host (US-010 core, US-011 resume and switch).** `createChatHost(deps)` in `packages/nax/src/chat/chat-host.ts` is the composition root the shell drives. `deps`: `config`, `cwd`, `repoRoot`, `chain` (an `InteractionChain` or null), `open` (defaults to `openChatSession`), `storage`, `now`, `logger`. It creates one rule-delivery handler set (`createRuleDeliveryHandlers`) and one ledger per host and reuses them across reopens, one ask controller, and one fallback over the controller and `chain` with `config.interaction.defaults.chatAskFallbackMs`.\n- `send` runs `runChatTurn` on the current handle and stores the returned meta, so `current().meta.costUsd` is the session spend.\n- `listSessions` maps `storage.list({ cwd })` with `heldByPid` set when `readLockHolder` reports `live`.\n- `start`, `resume` and `clear` while a session is open open the new session first, then close the old one and release its lock; if the open fails, the old session stays open and current, and the error is rethrown. `clear()` and a resume of a different id call `asks.reset()`, so a remembered decision never crosses sessions. The fallback and the chain survive `clear` and `resume`.\n- `close()` is final: it disposes the fallback, closes the session, releases the lock and calls `chain.destroy()` when a chain is present.\n- `models` lists `models.native` `fast`, `balanced` and `powerful`, skipping absent tiers; a string entry is used as is, a `ModelDef` entry as `<provider>/<model>`.\n\nThe host uses 60000 for chatAskFallbackMs when the optional hand-written config field is absent. Derive projectKey with getProjectKey(config, repoRoot) and outputDir with projectOutputDir(projectKey, config.outputDir). Keep answer dynamically bound to the current session. Export the host surface through src/chat/index.ts.\n\nAll ACs build the host over `openChatSession` with `_openChatSessionDeps` fakes, a real storage over a temp directory, and a fake chain.\n\n**Scope** — In: composition, start/clear/send/cancel/current/models/repoRoot/listSessions/close and preserving old current session on failed replacement. Out: resume/latest/notice and transactional mode/model switches are US-011; the full interface below is the end-state contract, not a requirement to implement US-011 here. Ink is US-012 onward. No SessionManager dispatch or budget enforcement.\n\n**Interface** —\n```typescript\nexport interface ChatHost {\n  readonly repoRoot: string;\n  readonly models: readonly string[]; // models.native fast/balanced/powerful, deduplicated\n  readonly asks: ChatAskController;\n  current(): ChatHostState; // { sessionId, mode, model, meta, sandbox? }\n  notice(): string | undefined;\n  start(input: { mode: ChatMode; model: string }): Promise<void>;\n  clear(): Promise<void>; // new session, same mode and model\n  resume(input: { id?: string }): Promise<void>;\n  send(message: string, onEvent: (event: SessionEvent) => void): Promise<void>;\n  cancel(): void;\n  switchTo(input: { mode?: ChatMode; model?: string }): Promise<void>;\n  listSessions(): Promise<readonly ChatSessionRow[]>; // { sessionId, title, updatedAt, heldByPid? }\n  close(): Promise<void>;\n}\n```",
+      "acceptanceCriteria": [
+        "[unit] start({ mode: \"guarded\", model }) opens a session whose metadata mode is ask.",
+        "[unit] After send, current().meta.costUsd equals the cumulative costUsd persisted by runChatTurn for that turn.",
+        "[unit] Through send over a fake session that emits a guarded approval_requested and then waits, the fake chain's prompt is called once chatAskFallbackMs passes.",
+        "[unit] Through send, a usage event lands in <outputDir>/cost/ under a file named chat-<sessionId>-...jsonl.",
+        "[unit] listSessions() marks a session whose lock live pid 4242 holds with heldByPid 4242.",
+        "[unit] clear() opens a new session id with the same mode and model, and the old id's readLockHolder returns null.",
+        "[unit] After clear(), a decision remembered with allow_session before it no longer answers a matching ask.",
+        "[unit] After clear(), an unanswered guarded ask still reaches the fake chain's prompt once the delay passes.",
+        "[unit] When the open inside clear() throws, current().sessionId is still the old id and its lock is still \"own\".",
+        "[unit] close() makes readLockHolder(id) return null and calls the chain's destroy().",
+        "[unit] When start fails while a session is already open, the existing session remains open and current and the opening error is rethrown."
+      ],
+      "tags": [
+        "chat",
+        "sessions",
+        "composition",
+        "security"
+      ],
+      "dependencies": [
+        "US-006",
+        "US-007",
+        "US-008",
+        "US-009"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Stateful composition root integrates durable sessions, ownership, approval memory, remote fallback and cost accounting.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/server/registry-open.ts",
+        "packages/nax/src/interaction/init.ts",
+        "packages/nax/src/chat/open-chat-session.ts",
+        "packages/nax/src/chat/ask-fallback.ts",
+        "packages/nax/src/chat/turn-runner.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/test/unit/chat/chat-host.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "551167f4cdad268dc0604df7be68e4b392973d5c"
+    },
+    {
+      "id": "US-011",
+      "title": "The chat host: resume and switch",
+      "description": "**Goal** — Add shared-session resume and lock-preserving, rollback-safe mode/model switching to ChatHost.\n\n**Motivation** — koda must see the same sessions.\n\n**Approach** — **The host (US-010 core, US-011 resume and switch).** `createChatHost(deps)` in `packages/nax/src/chat/chat-host.ts` is the composition root the shell drives. `deps`: `config`, `cwd`, `repoRoot`, `chain` (an `InteractionChain` or null), `open` (defaults to `openChatSession`), `storage`, `now`, `logger`. It creates one rule-delivery handler set (`createRuleDeliveryHandlers`) and one ledger per host and reuses them across reopens, one ask controller, and one fallback over the controller and `chain` with `config.interaction.defaults.chatAskFallbackMs`.\n- `resume({})` walks `storage.list({ cwd })` in order and opens the first entry whose metadata reads, whose mode `chatModeOfMeta` accepts, and whose lock `readLockHolder` does not report `live`; none -> `CHAT_SESSION_NOT_FOUND` with message `no resumable session for <cwd>`. `resume({ id })` opens that id; when its `acquireLock` rejects with `SESSION_LOCKED`, the host reads `storage.readLockHolder(id)` and throws `CHAT_SESSION_LOCKED` with message `session <id> is in use by pid <pid>`.\n- After a resume whose `session.lastTurn?.status` is `interrupted`, `notice()` is `The last turn was interrupted. Send a message to continue it.`\n- `switchTo` between turns: `session.close()` (the lock is kept), then reopen the same id with the new settings, write the metadata's `mode`, `bashApproval` and `model`, and call `asks.setMode`. If the reopen throws, the old settings are reopened and the error is rethrown; the metadata keeps the old settings.\n- `start`, `resume` and `clear` while a session is open open the new session first, then close the old one and release its lock; if the open fails, the old session stays open and current, and the error is rethrown. `clear()` and a resume of a different id call `asks.reset()`, so a remembered decision never crosses sessions. The fallback and the chain survive `clear` and `resume`.\n\nExplicit corrupt metadata propagates SESSION_META_UNREADABLE without taking a lock; resume-latest skips unreadable entries. An explicit missing id produces CHAT_SESSION_NOT_FOUND with message no session <id> in <dir>; none/read modes are refused before locking with CHAT_SESSION_MODE_UNSUPPORTED and message session <id> was created in mode <mode>; nax chat opens full or ask sessions only. A plain resume preserves the stored model/mode. Same-session switches preserve history, handler identity and approval memory.\n\nAll ACs build the host over `openChatSession` with `_openChatSessionDeps` fakes and a real storage over a temp directory.\n\n**Scope** — In: resume, notice, switchTo, metadata commit/rollback and session-replacement failure behavior in the existing host. Out: core host creation is US-010; shell queueing Shift-Tab until turn_end is US-013. A resumed session does not show which mode each earlier turn ran under; metadata holds the current mode only. No new SIGKILL recovery.\n\n**Interface** —\n```typescript\nexport interface ChatHost {\n  readonly repoRoot: string;\n  readonly models: readonly string[]; // models.native fast/balanced/powerful, deduplicated\n  readonly asks: ChatAskController;\n  current(): ChatHostState; // { sessionId, mode, model, meta, sandbox? }\n  notice(): string | undefined;\n  start(input: { mode: ChatMode; model: string }): Promise<void>;\n  clear(): Promise<void>; // new session, same mode and model\n  resume(input: { id?: string }): Promise<void>;\n  send(message: string, onEvent: (event: SessionEvent) => void): Promise<void>;\n  cancel(): void;\n  switchTo(input: { mode?: ChatMode; model?: string }): Promise<void>;\n  listSessions(): Promise<readonly ChatSessionRow[]>; // { sessionId, title, updatedAt, heldByPid? }\n  close(): Promise<void>;\n}\n```",
+      "acceptanceCriteria": [
+        "[unit] resume({}) with two usable stored sessions for this cwd opens the one storage.list({ cwd }) returns first.",
+        "[unit] resume({}) skips a newer session whose mode is read and opens the next usable one.",
+        "[unit] resume({}) skips a newer session whose lock a live pid holds and opens the next usable one.",
+        "[unit] resume({}) with no usable session rejects with CHAT_SESSION_NOT_FOUND and message no resumable session for <cwd>.",
+        "[unit] resume({ id }) for a session whose lock live pid 4242 holds rejects with CHAT_SESSION_LOCKED and message session <id> is in use by pid 4242.",
+        "[unit] After a resume whose session reports lastTurn.status interrupted, notice() is The last turn was interrupted. Send a message to continue it.",
+        "[unit] After a resume whose last turn completed, notice() is undefined.",
+        "[unit] resume({ id: other }) while a session is open releases the old id's lock and makes a decision remembered before it no longer answer a matching ask.",
+        "[unit] switchTo({ mode: \"full\" }) calls close() on the current session, then opens the same session id with profile full.",
+        "[unit] After switchTo({ mode: \"full\" }) succeeds, the metadata mode is full, bashApproval is raw, and readLockHolder(id) is \"own\".",
+        "[unit] After switchTo({ mode: \"full\" }), a remembered allow_session decision from before the switch still answers a matching ask.",
+        "[unit] switchTo({ model: \"anthropic/claude-sonnet-5-5\" }) opens the same id with that model and writes it to the metadata.",
+        "[unit] When the reopen in switchTo({ mode: \"full\" }) throws, the host reopens the same id with profile ask, rethrows the error, and the metadata mode stays ask.",
+        "[unit] Two reopens reuse one rule-delivery handler set: the loopHandlers passed to both opens are the same object.",
+        "[unit] When the newest listed session's metadata is corrupt, resume({}) skips it and opens the next usable session.",
+        "[unit] When resume fails while a session is open, the existing session remains open and current with its lock retained and the error is rethrown."
+      ],
+      "tags": [
+        "chat",
+        "sessions",
+        "resume",
+        "security"
+      ],
+      "dependencies": [
+        "US-010"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Transactional reopens, lock ownership, stored permission modes and rollback paths are security-critical lifecycle logic.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/server/registry-open.ts",
+        "packages/nax-agent-acp/src/server/registry.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/chat/chat-mode.ts",
+        "packages/nax/src/chat/open-chat-session.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/chat-host-resume.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When switching full back to guarded in the same session, a previously remembered safe allow still answers a matching guarded approval without pending it.",
+        "When mode switching fails and old settings are reopened, current().model and current().mode still report the old values."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e8d43c621494b1723c2a3b567a8baf2d4c94a794"
+    },
+    {
+      "id": "US-012",
+      "title": "The Ink shell: transcript, input and status line",
+      "description": "**Goal** — Render the interactive chat transcript, multi-line input, status and notices independently of the run TUI.\n\n**Motivation** — Today nax has no interactive front door: every native session is a nax run story or the ACP server behind koda.\n\n**Approach** — **Shell (US-012, US-013, US-014).** `packages/nax/src/tui/chat/`, rendered with ink `render(..., { exitOnCtrlC: false })`:\n- `ChatApp.tsx` (root), `Transcript.tsx`: assistant text streamed from `text_delta`; one line per `tool_call`, `<tool> <detail>` where detail is `input.path` for Read, Write, Edit and Delete, `input.command` for Bash, and nothing otherwise, cut to 60 characters, marked `ok` or `error` by its `tool_result`; `thinking_delta` collapsed to one `thinking...` line.\n- `InputBox.tsx`: multi-line on `useInput`; Enter sends; Alt/Option-Enter inserts a newline. While a turn runs, Enter does not send and the text stays in the box.\n- `ChatStatusLine.tsx`: `<model> | <mode> | <session id first 8> | $<spend 2dp> | sandbox <on|off|unavailable>`; sandbox `available` -> `on`, `unavailable` -> `unavailable`, `disabled` or absent -> `off`.\n- Notices: the host's `notice()` after a resume; in full mode with the sandbox `unavailable`, `sandbox unavailable: commands run outside the sandbox` once at start and on each switch into full.\nNo new dependency: the input box is built on ink's `useInput`.\n\nA turn ending errored renders its error code and message but keeps the session open; a host.send rejection is rendered as a message without losing the shell. Subscribe to streamed events and update state/status after the host completes a turn. Tests use ink-testing-library under test/ui/chat over a fake host; typing hello plus Enter must drive host.send and streamed deltas must appear.\n\n**Scope** — In: ChatApp, Transcript, InputBox, ChatStatusLine and renderChat export. Out: ask UI/global keys are US-013 and slash dispatch is US-014; include their later wiring points without implementing those stories early. The run TUI (src/tui/App.tsx and its components) is unchanged. No input-component npm dependency.\n\n**Interface** —\n```typescript\nrenderChat(props)\n```\nExport from src/tui/chat/index.ts and drive ChatHost.send(message, onEvent), current() and notice().",
+      "acceptanceCriteria": [
+        "[unit] renderChat imported from src/tui/chat renders and unmounts without throwing.",
+        "[unit] Typing hello and pressing Enter calls host.send with hello.",
+        "[unit] Typing a, pressing Alt-Enter, typing b and pressing Enter calls host.send with a\nb.",
+        "[unit] While a turn runs, pressing Enter does not call host.send and the typed text stays in the input box.",
+        "[unit] Two text_delta events Hel and lo render Hello in the transcript.",
+        "[unit] A tool_call for Read with input.path src/a.ts followed by its tool_result with isError: false renders one line Read src/a.ts marked ok.",
+        "[unit] A tool_result with isError: true marks its line error.",
+        "[unit] A tool_call for Bash renders its input.command.",
+        "[unit] thinking_delta events render one thinking... line, not their text.",
+        "[unit] The status line shows the model and guarded for a new guarded session.",
+        "[unit] The status line shows the first 8 characters of the session id and $0.00.",
+        "[unit] The status line shows sandbox on when current().sandbox.kind is available.",
+        "[unit] The status line shows sandbox unavailable when the kind is unavailable.",
+        "[unit] The status line shows sandbox off when current().sandbox is absent.",
+        "[unit] A host whose notice() is the interrupted-turn text renders that text.",
+        "[unit] Starting in full mode with the sandbox unavailable renders sandbox unavailable: commands run outside the sandbox once.",
+        "[unit] A turn_end with status errored and error code X renders X and its message.",
+        "[unit] After a turn_end with status errored, typing next and pressing Enter calls host.send with next.",
+        "[unit] A rejected host.send renders the error's message."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "react",
+        "sessions"
+      ],
+      "dependencies": [
+        "US-011"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Multi-component streaming terminal UI integrates the session lifecycle and permission/sandbox state; session-security override applies.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/components/StatusBar.tsx",
+        "packages/nax/test/ui/tui-ctrl-key.test.tsx",
+        "packages/nax/src/chat/chat-host.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/Transcript.tsx",
+        "packages/nax/src/tui/chat/InputBox.tsx",
+        "packages/nax/src/tui/chat/ChatStatusLine.tsx",
+        "packages/nax/src/tui/chat/index.ts",
+        "packages/nax/test/ui/chat/chat-app.test.tsx"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0c32c619eb5c400b09a2276a81ebc1048f6e0b57"
+    },
+    {
+      "id": "US-013",
+      "title": "The Ink shell: ask prompt and keys",
+      "description": "**Goal** — Let the person answer approvals/questions, cycle modes and interrupt or exit safely from the chat shell.\n\n**Motivation** — The session must know the repo's rules.\n\n**Approach** — **Shell (US-012, US-013, US-014).** `packages/nax/src/tui/chat/`, rendered with ink `render(..., { exitOnCtrlC: false })`:\n- `AskPrompt.tsx` (US-013): tool, command, reason; an `unsandboxed` ask says `outside the sandbox`; keys `a` allow once, `s` allow for this session (shown only when `canRemember`), `d` deny; a question takes a typed answer submitted with Enter.\n- Keys (US-013): Shift-Tab cycles the mode (between turns at once; during a turn queued and applied after `turn_end`). Ctrl-C during a turn calls `host.cancel()`; a second Ctrl-C within 2 seconds, or one between turns, calls `host.close()` and exits.\n\nWire AskPrompt, the controller's pending/onChange state and these keys into the existing ChatApp. The full-mode unavailable-sandbox notice is shown on every switch into full: `sandbox unavailable: commands run outside the sandbox`. Keep approval/question input mutually exclusive with the message box; disabled session-memory options must neither display nor dispatch. A plain letter and Ctrl+letter are different key paths.\n\n**Scope** — In: AskPrompt and ChatApp approval/question/global keyboard wiring. Out: ask state and memory policy are US-007, switching/rollback is US-011, and slash handlers are US-014. No interaction-chain questions and no new dependency.\n\n**Interface** — Drive the existing host/controller methods:\n```typescript\nresolve(requestId, \"allow_once\" | \"allow_session\" | \"deny\")\nanswerQuestion(requestId, text)\nswitchTo(input: { mode?: ChatMode; model?: string }): Promise<void>;\ncancel(): void;\nclose(): Promise<void>;\n```",
+      "acceptanceCriteria": [
+        "[unit] A pending ask for Bash npm test renders the command and the reason.",
+        "[unit] Pressing a calls host.asks.resolve(requestId, \"allow_once\").",
+        "[unit] Pressing s on an ask for which host.asks.canRemember returns true calls resolve(requestId, \"allow_session\").",
+        "[unit] An ask for which host.asks.canRemember returns false does not show the s option, and pressing s resolves nothing.",
+        "[unit] Pressing d calls resolve(requestId, \"deny\").",
+        "[unit] An ask with unsandboxed: true renders outside the sandbox.",
+        "[unit] A pending question renders its text, and typing yes then Enter calls host.asks.answerQuestion(requestId, \"yes\").",
+        "[unit] Shift-Tab between turns calls host.switchTo({ mode: \"full\" }).",
+        "[unit] After Shift-Tab switches a guarded session between turns to full, the status line shows full.",
+        "[unit] Shift-Tab during a turn does not call switchTo before the turn_end event.",
+        "[unit] When Shift-Tab is pressed during a guarded turn, switchTo({ mode: \"full\" }) has been called once after that turn's turn_end.",
+        "[unit] Switching into full mode with the sandbox unavailable renders sandbox unavailable: commands run outside the sandbox.",
+        "[unit] Ctrl-C during a turn calls host.cancel() and does not call host.close().",
+        "[unit] A second Ctrl-C within 2 seconds calls host.close() and exits the app.",
+        "[unit] Ctrl-C between turns calls host.close() and exits the app."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "permissions",
+        "security"
+      ],
+      "dependencies": [
+        "US-012"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Interactive authorization plus queued mode changes, cancellation and timed exit require strict security TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/hooks/useKeyboard.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/chat/ask-controller.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/AskPrompt.tsx",
+        "packages/nax/test/ui/chat/chat-asks-keys.test.tsx"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6061869c69a2f504627f0fed34d7445f692f9dda"
+    },
+    {
+      "id": "US-014",
+      "title": "Slash commands",
+      "description": "**Goal** — Route chat slash commands to local host controls or feature-scoped prompts without leaking command lines to the model.\n\n**Motivation** — One agent for the whole loop.\n\n**Approach** — **Shell (US-012, US-013, US-014).** `packages/nax/src/tui/chat/`, rendered with ink `render(..., { exitOnCtrlC: false })`:\n- `slash-commands.ts` (US-014): a line starting with `/` is a command, never a message. During a turn only `/quit` runs (it cancels the turn, then quits); any other command renders `wait for the turn to finish (Ctrl-C to interrupt)`.\n\nCreate `src/tui/chat/slash-commands.ts` with `parseSlashCommand(text)` (returning `{ name, args, rest }`, where `rest` is the raw text after the command name) and the command handlers, wired into ChatApp. The listed parseSlashCommand('/mode full') AC names the name/args projection; retain rest as required by this interface and test the named fields without contradicting it.\n\nCommands: /help renders every command name; /mode shows current mode or validates full/guarded and calls host.switchTo; /model lists host.models or switches the explicit id; /sessions lists id/title and live holder pid; /resume abc calls host.resume({ id: 'abc' }); /clear starts a new same-mode/model session; /cost shows session spend to two decimals; /quit closes and exits, canceling first when busy; /unknown shows `unknown command /unknown`. Invalid /mode renders `unknown mode bogus; expected full or guarded` without switching. /feature <name> [message] loads spec.md and optional prd.json under featureDir(host.repoRoot, name), then sends buildChatFeatureMessage output. Preserve the person's internal spacing (go  now). If spec.md is missing, show `no feature <name> (looked in <dir>)` and send nothing. Missing prd.json is not a failure: send only the spec block plus the person's possibly empty message. Filesystem calls use an injectable dependency seam.\n\n**Scope** — In: parser, slash command behavior and ChatApp routing. Out: CLI registration is US-015; host session policy is US-010/011 and prompt construction is US-004. Dispatching nax plan/run/bot review/bot fix is slice 2; skills/plugins/MCP/agents commands remain deferred. /cost reports only and does not enforce a new budget.\n\n**Interface** —\n```typescript\nparseSlashCommand(text) // returns { name, args, rest }, or null for a non-command\nbuildChatFeatureMessage({ feature, spec, prd?, message })\n```",
+      "acceptanceCriteria": [
+        "[unit] parseSlashCommand(\"/mode full\") returns name: \"mode\" and args: [\"full\"].",
+        "[unit] parseSlashCommand(\"hello\") returns null.",
+        "[unit] /mode full calls host.switchTo({ mode: \"full\" }).",
+        "[unit] No original input line starting with / is passed to host.send, for any command in this section; /feature sends only the builder-produced feature message instead.",
+        "[unit] /mode with no argument renders the current mode.",
+        "[unit] /mode bogus renders unknown mode bogus; expected full or guarded and calls no switchTo.",
+        "[unit] /model anthropic/claude-sonnet-5-5 calls host.switchTo({ model: \"anthropic/claude-sonnet-5-5\" }).",
+        "[unit] /model with no argument renders every entry of host.models.",
+        "[unit] /sessions renders each row of host.listSessions() with its id and title.",
+        "[unit] /sessions renders in use by pid 4242 for a row whose heldByPid is 4242.",
+        "[unit] /resume abc calls host.resume({ id: \"abc\" }).",
+        "[unit] /clear calls host.clear().",
+        "[unit] /cost renders current().meta.costUsd as dollars to 2 decimals.",
+        "[unit] The single line /feature auth go  now calls host.send with the buildChatFeatureMessage output for feature auth, message go  now, and the spec.md and prd.json under featureDir(host.repoRoot, \"auth\").",
+        "[unit] /feature missing renders no feature missing (looked in <dir>).",
+        "[unit] /help renders every command name.",
+        "[unit] /quit calls host.close() and exits the app.",
+        "[unit] /unknown renders unknown command /unknown.",
+        "[unit] /clear during a turn renders wait for the turn to finish (Ctrl-C to interrupt) and calls no host.clear().",
+        "[unit] /quit during a turn calls host.cancel(), then host.close().",
+        "[unit] When /feature <name> has no spec.md, the missing-feature notice is shown and nothing is sent.",
+        "[unit] When /feature <name> has spec.md but no prd.json, host.send receives the feature message with the spec block only.",
+        "[unit] When host.clear or host.resume rejects from its slash command while a session is open, ChatApp renders the error message while the old session stays current and open."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "commands",
+        "sessions"
+      ],
+      "dependencies": [
+        "US-013"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A parser and dispatch table wire an existing host and prompt builder using standard cases; permission-mode changes and session replacement require strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/prompts/builders/chat-builder.ts",
+        "packages/nax/src/config/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/test/ui/chat/slash-commands.test.tsx"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5b564abd6d130d15a6e3de2b912a2b4a7a00192d"
+    },
+    {
+      "id": "US-015",
+      "title": "nax and nax chat",
+      "description": "**Goal** — Register chat as the explicit/default CLI front door and compose config, shared storage, interaction chain and shell safely.\n\n**Motivation** — Today nax has no interactive front door: every native session is a nax run story or the ACP server behind koda.\n\n**Approach** — **CLI entry (US-015).** `registerChatCommand(program, deps)` in `packages/nax/src/cli/chat.ts` registers `program.command(\"chat\", { isDefault: true })` with `--resume [id]`, `--mode <full|guarded>`, `--model <id>`, `--profile <name>` (repeatable; a collector defined in `chat.ts`, since `collectProfile` in `bin/nax.ts` is not importable) and `-d, --dir <path>`; its action calls `chatCommand(options, deps)`. `bin/nax.ts` only calls `registerChatCommand`.\n`chatCommand`: refuses when stdin is not a TTY; validates `--mode`; finds the project with `findProjectDir(dir)` (`repoRoot` = its parent, or `dir` when there is none); loads config with `loadConfig(naxDir, { profile })` when `profile` is non-empty; resolves the model (`--model`, else `models.native.balanced`, read as for `host.models`); builds the storage with `createChatStorage`; builds the chain with `initInteractionChain(config, true)` (headless, so a `cli` plugin yields null), and on a throw writes `interaction chain unavailable: <message>; asks stay in the terminal` to stderr and continues with no chain; builds the host with `createChatHost`, starts or resumes, registers `SIGTERM` and `SIGHUP` handlers (through `deps.onSignal`) that call `host.close()`, then calls `renderChat`. An unknown first argument (`nax rnu`) is an excess argument to the default command (commander 13 rejects excess arguments by default) and never opens a session.\n\nCreate `_chatCommandDeps` (stdinIsTTY, loadConfig, findProjectDir, initInteractionChain, createChatHost, renderChat, onSignal, writeErr, setExitCode). Non-TTY writes `nax chat needs an interactive terminal`, sets exit code 1 and opens no session. Invalid mode writes `unknown mode <value>; expected full or guarded`, exit 1. A locked-session resume writes its exact message and never renders. SIGTERM/SIGHUP close releases the lock before exit. A plain resume passes no launch-default settings that would overwrite its stored mode/model; explicit settings may be applied through the host's existing switch surface. Keep signal references removable and close resources on startup failure.\n\n**Scope** — In: CLI module, one bin registration, startup/error/signal wiring and commander/smoke assertions, including proving existing explicit status dispatch is not intercepted by the new default command. Out: slash parsing is US-014 and host/session lifecycle policy is US-010/011. No release/version bump, no new npm dependency, no ACP server imports and no agentServer.sessionsDir/--sessions-dir lookup.\n\n**Interface** —\n```typescript\nregisterChatCommand(program, deps)\nchatCommand(options, deps)\n```\n_chatCommandDeps is the injectable CLI seam; registerChatCommand is testable on a fresh commander Command with exitOverride().",
+      "acceptanceCriteria": [
+        "[unit] With stdinIsTTY returning false, chatCommand writes nax chat needs an interactive terminal and sets exit code 1.",
+        "[unit] chatCommand({ mode: \"full\" }) starts the host in mode full and calls renderChat with it.",
+        "[unit] chatCommand({}) starts the host in mode guarded.",
+        "[unit] chatCommand({ mode: \"auto\" }) writes unknown mode auto; expected full or guarded and sets exit code 1.",
+        "[unit] chatCommand({}) with config models.native.balanced openai/gpt-6 starts the host with model openai/gpt-6.",
+        "[unit] chatCommand({ model: \"anthropic/claude-sonnet-5-5\" }) starts the host with that model.",
+        "[unit] chatCommand({ resume: true }) calls host.resume({}).",
+        "[unit] chatCommand({ resume: \"abc\" }) calls host.resume({ id: \"abc\" }).",
+        "[unit] chatCommand({ profile: [\"fast\"] }) calls loadConfig with overrides { profile: [\"fast\"] }.",
+        "[unit] chatCommand({ dir: \"/repo\" }) builds the host with cwd /repo.",
+        "[unit] When host.resume rejects with CHAT_SESSION_LOCKED, chatCommand writes its message and calls no renderChat.",
+        "[unit] chatCommand builds the host with the chain initInteractionChain(config, true) returned.",
+        "[unit] When initInteractionChain throws bad token, chatCommand writes interaction chain unavailable: bad token; asks stay in the terminal and builds the host with chain null.",
+        "[unit] Invoking the handler chatCommand registered through onSignal for SIGTERM calls host.close().",
+        "[cli] Parsing [] (no subcommand) on a Command set up by registerChatCommand invokes the chat action.",
+        "[cli] Parsing [\"chat\", \"--mode\", \"full\"] invokes the chat action with mode full.",
+        "[cli] Parsing [\"rnu\"] throws a commander error and does not invoke the chat action.",
+        "[cli] Running bun bin/nax.ts chat --help (as test/unit/cli/trust.test.ts spawns the entry) exits 0 and prints --mode <full|guarded>, proving bin/nax.ts registers the chat command.",
+        "[unit] When stdin is not a TTY, chatCommand opens no session.",
+        "[unit] Invoking the handler registered through onSignal for SIGHUP calls host.close().",
+        "[unit] When SIGTERM or SIGHUP is received, host.close() releases the session lock before process exit.",
+        "[cli] When chat and status are registered on the same Command, parsing [\"status\"] invokes the existing status action without invoking the default chat action."
+      ],
+      "tags": [
+        "chat",
+        "cli",
+        "sessions",
+        "interaction",
+        "security"
+      ],
+      "dependencies": [
+        "US-014"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One command module follows the existing injectable registerStatusCommand pattern plus bin registration; session opening, permission-mode selection and lock cleanup keep strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/bin/nax.ts",
+        "packages/nax/bin/run-action.ts",
+        "packages/nax/src/cli/status-dispatch.ts",
+        "packages/nax/test/unit/cli/status-dispatch.test.ts",
+        "packages/nax/src/chat/chat-host.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/cli/chat.ts",
+        "packages/nax/test/unit/cli/chat.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "141e7e97e0d2a405dac0defdcfd4f60dd3e4fe06"
+    }
+  ],
+  "analysis": "Goal and completion: F3 slice 1 adds a separate interactive native-agent front door: bare nax and nax chat, guarded by default, with a shared durable session, repository rules, approval prompts, delayed interaction-chain fallback, per-round chat cost rows, Ink transcript/input/status, slash commands and lifecycle cleanup. F1 agent-session-modes and F2 shared-session-storage are prerequisites already represented in the source; this is an enhancement, not a new agent implementation. Keep exactly US-001 through US-015 with the binding package workdirs and dependency DAG. No MCP codebase-memory tools are exposed in this host, so discovery used direct Read/Grep/Glob rather than graph navigation; citations below are from the current worktree, not assumed from the historical baseline. No commands or tests were executed during PRD drafting.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:13, :122 and :159 describe the coding standards, package graph and limits. Use strict TypeScript, named public exports, dependency seams for external operations, Bun-native nax I/O and Node-compatible nax-agent/ACP source. The supported nax-agent entry already exports transcript storage at packages/nax-agent/src/index.ts:107, shared session storage at :294, the facade factories at :313 and nativeBackend/NativeBackendOptions at :350. nax cannot import the ACP server; ACP can import nax-agent only through its public entry, not internal/deep paths. Therefore extract approval memory downward once and retain toolKind only for ACP presentation. nax-agent's own source uses #src aliases and explicit .ts suffixes for relative imports; nax uses @/ and its package barrels. Tests use bun:test; Ink tests belong under test/ui/chat. Shared fake timers are available in packages/test-kit/src/bun/fake-clock.ts. Implementation should show new regression tests failing against old behavior, use dependency fakes rather than patching globals, avoid billed/live providers and run package-scoped gates through the existing pipeline. Never run bare bun test, bun run nax, releases, or coverage inside a sandboxed nax session. Generated context files and canonical .nax context are not implementation outputs; this PRD file is the requested planning artifact only.\n\nUS-001: packages/nax-agent/src/session/native-backend-options.ts:18 defines the options, :67 uses z.strictObject and :113 validates while preserving the caller's object identity. Add the optional non-empty string to both the type and strict validator, or valid requests will be rejected. packages/nax-agent/src/session/native-backend.ts:113 constructs a role-less loopHandlerContext, reused in turnOpts at :126; conditionally spread role only when defined so absence remains absence, not role: undefined. nativeProfileRules at native-backend-options.ts:140 already accepts raw/gated, ask requires gated, and fallback validation exists. This is the sole new backend option; no change to workflow role registries. Existing native-backend/options tests and native-backend-compaction.test.ts demonstrate facade setup with scripted providers and shared agent-session helpers. Add native-backend-role.test.ts rather than an implementation stub in strict test-writer sessions.\n\nUS-002/003: packages/nax-agent-acp/src/server/permissions.ts:66-138 currently owns the exact nax#2553-hardened shell metacharacter regex, complete wrappers set, plain-word regex, masking marker, memoryKey and memoryApplies. Its broker uses them at :190-192; choice/round-trip behavior must remain unchanged. packages/nax-agent-acp/src/server/translate/tool-kind.ts:22-25 lists exactly Bash, RunCommand, Git and GitCommit as execute tools; the new local APPROVAL_EXECUTE_TOOLS must agree without a dependency from agent to ACP. Key construction intentionally permits npm test -- --watch as a key, while applying a remembered allow separately rejects flag/non-plain tail words and compound commands. Do not replace this two-stage behavior with a broad command prefix or new lexer. Wrapper basename checks are case-insensitive and include path forms. The existing memoryKey describe starts at packages/nax-agent-acp/test/unit/server/permissions.test.ts:46; move its cases to agent, remove only that describe/import, preserve broker regression cases including git status --short and remembered deny. Export functions and types from permissions/index.ts and the explicit root entry, then regenerate packages/nax-agent/api/nax-agent.api.txt. US-001's optional field does not add an exported name; US-002 does. The US-003 boundary parity assertion prevents future execute tools silently receiving a bare tool key.\n\nUS-004/005: packages/nax/src/prompts/builders/rules-index-builder.ts:29-31 already defines the automatic-delivery wording, :66 maps a resolved rule, :83 builds the index and omits it for empty entries. Reuse it, do not hand-build a second rules format or put prompt literals in chat/UI. packages/nax/src/context/rules/rule-delivery/index.ts:76 and :87 define read/write role lists, :104 constructs one handler set and :388 rejects absent/unlisted roles. Delivery is per sessionName, rule-file identity and compaction-aware, with cached repo/package resolution, fail-open behavior and a capped body injection. Add tui only to the two lists. Read nudges and refuse-once Write/Edit behavior must remain the existing algorithm, including package-specific rules; do not add tui to KNOWN_SESSION_ROLES. Chat modes are facade profiles full/ask plus raw/gated Bash, distinct from nax run's approve-all/approve-reads permission-resolution strings.\n\nUS-006: packages/nax-agent/src/session-store/storage.ts:44-57 exposes the existing metadata/lock/list port; :101 creates storage, :128 acquires a lock, :133 lists, :167 writes via exclusive temp-directory rename. readMeta preserves null versus SESSION_META_UNREADABLE and list logs/skips corrupt entries. Storage list is paginated at 50 (:32/:157) and sorted newest first by updatedAt or createdAt. packages/nax-agent/src/session-store/session-meta.ts:9 uses <globalConfigDir>/.agent-server/sessions, :13 defines schemaVersion 1 and :23 makes costUsd optional. Do not substitute nax's feature session keeper. The opener must use the caller's one storage, a file transcript store over storage.dir, injected UUID/time/env, validate stored mode before any lock (even explicit overrides cannot widen none/read), and release on every post-lock failure. packages/nax-agent-acp/src/server/open-session.ts:82-105 demonstrates the transcript-null create versus transcript-present resume branch and carryHistoryAcrossModels; it is read-only context, not an import. Forward catalog overrides, explicit compaction false, approval timeout, rule index and loop handler identity. Both modes deliberately allow missing-sandbox fallback and per-command unsandboxed escalation; only full never asks.\n\nUS-007/008: packages/nax-agent/src/session/agent-session-types.ts:102-153 defines approval/question/usage/end events with ISO at and turnId; answerable:false events are informational. :165 defines accepted/expired/cancelled/unknown answer status and :167 the facade lifecycle. The controller is the single session-bound arbitration point; remove pending state when answering so a TUI/chain race cannot answer twice. Full auto-allows answerable approvals but never auto-answers questions. Guarded memory is positive-only, uses both shared helper checks, never applies to unsandboxed requests and never stores Delete. Keep it across same-session mode/model reopens, reset across clear/different-session resume. packages/nax/src/interaction/types.ts:17 defines requests, including numeric createdAt and stage custom; packages/nax/src/interaction/chain.ts:124, :143 and :163 provide prompt/cancel/destroy. initInteractionChain at packages/nax/src/interaction/init.ts:49 skips only CLI in headless mode (:64), retaining Telegram/Webhook, and rethrows initialization failures. Do not use chain.applyFallback to turn a skip into approval; only approve/reject/abort map to explicit decisions here. Clear timers when pending disappears, cancel an already-issued prompt exactly once, ignore late replies, and log only errorMessage on prompt rejection. Questions never get fallback timers. Add chatAskFallbackMs to packages/nax/src/config/schemas-infra.ts:166-178, the outer literal default at packages/nax/src/config/schemas.ts:363-369, optional hand-written runtime defaults at packages/nax/src/config/runtime-types.ts:379-396 and FIELD_DESCRIPTIONS in src/cli/config-descriptions.ts. Preserve defaults.fallback undefined: the comment at schemas-infra.ts:171 explains the existing safety regression anchor. The host supplies 60000 for legacy hand-written fixtures without the new optional field.\n\nUS-009: packages/nax/src/runtime/cost-aggregator.ts:3 defines CostEvent, :145 requires durationMs, :406 creates the aggregator and :542 drains all accumulated rows by rewriting its runId file. Consequently use chat-<sessionId>-<process-start epoch> and preserve one ledger across turns/reopens, never recreate a draining aggregator per turn or overwrite a previous process's ledger. Schema constant is exported through packages/nax/src/runtime/middleware/index.ts:4 (currently value 8 in cost.ts:104); import it, never hardcode it. projectOutputDir is exported at packages/nax/src/runtime/index.ts:83 and implemented at paths.ts:19; getProjectKey at packages/nax/src/config/project-key.ts:24 uses configured name or repo basename. Map every usage round, including cache tokens and the exact/estimated distinction, duration from turn_start/prior usage, and persist session spend from turn_end totals rather than adding both usage and end costs. Compaction's summary can be included in turn_end totals without a separate usage event (packages/nax-agent/test/unit/session/native-backend-compaction.test.ts:79), so ledger rows and metadata spend have different source semantics; do not invent a second billing stream. Unicode title truncation is by code points, not UTF-16 units. A synchronous send rejection before the first event must not drain or update metadata.\n\nUS-010/011: build a headless composition root, not a SessionManager dispatch or an ACP server wrapper. Reuse the one handler set, controller, fallback, chain and ledger across reopen operations. packages/nax-agent-acp/src/server/registry-open.ts:37-99 is a reference for stored settings, interrupted notices and failure cleanup; no importing it. Guard current state transactionally: opening another session must succeed before closing/releasing the old; a mode/model switch closes only the facade, keeps ownership throughout, commits metadata only on success and restores old settings on failure. Storage lock classification at packages/nax-agent/src/session-store/session-lock.ts:83 prioritizes own over live; acquire creates a nonce at :152 and same-pid reacquisition can replace it. Switching therefore needs careful release ownership handoff: never release the newly active lock using a stale handle or create an unlocked window, and ensure failed reopens do not discard the old ownership. Do not redesign F2 locks. Resume-latest must skip unreadable/missing, unsupported or live-held entries in storage order, and handle a race between readLockHolder and acquireLock. Explicit resume must preserve exact CHAT_SESSION_* messages; only SESSION_LOCKED maps to CHAT_SESSION_LOCKED. Clear/different-id resume reset memory but retain fallback and chain. Keep ledger attribution aligned with active session/model during switches without losing previously recorded rows; the design fixes one ledger per host, so do not silently recreate a destructive same-name drain file. Models enumerate present native fast/balanced/powerful tiers, string as-is or ModelDef as provider/model, deduplicated.\n\nUS-012/013/014: build a separate packages/nax/src/tui/chat tree; the existing run App.tsx must remain unchanged. packages/nax/test/ui/tui-ctrl-key.test.tsx:25-58 shows ink-testing-library with act and the Ctrl-C versus plain c regression; packages/nax/src/tui/hooks/useKeyboard.ts:141-151 explains Ink's key.ctrl handling. Use useInput without a new dependency, render with exitOnCtrlC:false, route keys exclusively to input/question/approval/global controls so approval letters do not leak into the message and Ctrl-C does not become c. Preserve unsent multi-line text during running turns, append streaming deltas, correlate tool results by callId, cap detail at 60 characters and hide thought contents. Keep status synced after sends/reopens, display errors without exiting, show the unavailable-sandbox warning once at initial full launch and every transition into full. Queue Shift-Tab while busy and apply it only after completion; the two-second Ctrl-C window and quit's cancel-before-close order require deterministic tests. Slash lines never fall through as messages, except /feature deliberately sends its builder-produced payload after reading spec/optional PRD via featureDir. Preserve internal spacing in /feature message. The design requests parseSlashCommand rest, while its listed /mode full AC names only name and args; retain the required rest field and assert the named fields as a subset rather than deleting rest or forcing contradictory exact-object equality. Unknown commands, missing features, busy-command rejection and quit are local notices/control, not prompts to the model.\n\nUS-015: packages/nax/src/cli/status-dispatch.ts:151 provides register-on-Command with injectable action deps, and test/unit/cli/status-dispatch.test.ts:17-29 drives that surface. packages/nax/bin/nax.ts:129 creates the program, :141 defines a non-importable collectProfile, :1047 registers status, :1741 awaits parseAsync. Add only chat registration/import to the entry, keeping bootstrap/credentials and other commands intact. Bare invocation becomes the default command; excess arguments such as rnu must still fail without opening a session. TTY refusal is an intentional compatibility change for scripts formerly using bare nax for help; chat --help remains available non-interactively. Resolve repoRoot from findProjectDir parent or supplied dir, load requested profile overrides, derive balanced native model unless explicitly set, construct one storage, initialize the chain headless and degrade to terminal-only asks on init failure. Launch/resume must finish before rendering. The host resume signature takes only id; preserve plain-resume stored mode/model rather than injecting launch defaults, and if explicit CLI mode/model overrides need applying, use the host's settings-switch surface rather than changing its declared resume interface. SIGTERM/SIGHUP use injected signal registration and await close before exit; named handler cleanup avoids listener leaks. The entry smoke pattern is in packages/nax/test/unit/cli/trust.test.ts.\n\nMigration and risks: no persisted schema change or version bump; ACP and chat interoperate only through the same sessions directory and schema-1 metadata/transcripts/locks. Stored none/read sessions are refused, not promoted. Approval memory extraction must retain every broker invariant, wrapper and masking rule; a seemingly simpler key can grant destructive shell access. Full-mode unavailable-sandbox execution is explicitly opted into and must be visibly warned; the system prompt describes mode, not assumed sandbox state. Async races involve late chain replies, ask expiration, cancellation, close, lock ownership and rollback; tests should drive real temp storage with fake sessions/timers and check exact state/error outcomes, not just helper existence. All failure-table rows are represented in their owning stories below, including missing PRD fallback, SIGHUP cleanup, corrupt resume-latest skipping, no-chain terminal timeout behavior and state preservation on failed session replacement. Existing callers without loopHandlerRole must remain untouched, the ACP broker remains behavior-compatible, default interaction fallback semantics remain unchanged, and the run TUI is not modified. No release, no new npm dependency and no other feature arcs are part of this PRD.\n\nRefine-pass audit: re-enumerated all 223 explicit spec ACs in source order against their original story arrays: US-001 AC1-3; US-002 AC1-20; US-003 AC1-5; US-004 AC1-12; US-005 AC1-11; US-006 AC1-21; US-007 AC1-19; US-008 AC1-18; US-009 AC1-18; US-010 AC1-10; US-011 AC1-14; US-012 AC1-19; US-013 AC1-15; US-014 AC1-20; US-015 AC1-18. None is removed or moved to another story. In particular, preserve US-003's no-second-client-round-trip and execute-tool bare-key guard, US-005's as-it-does-for-wf-implementer anchor, US-007's cannot-remember/later-identical-ask clause, US-009's existing-title/unchanged-metadata anchors, US-010/011's matching-ask and handler-identity anchors, and US-015's real-entry smoke qualifier. No deprecated file-check tags occur in these source ACs. The parser AC preserves name/args as the asserted returned fields while retaining the design-required raw rest; the slash AC explicitly rejects sending the original command line, not /feature's separately built message. Every assertion is observable as output, state, call arguments, exception, logs or persisted rows. Negative paths already exist in all fifteen stories: US-001 invalid role; US-002 unsafe commands; US-003 remembered reject; US-004 absent rules/PRD; US-005 unsupported metadata modes; US-006 missing/corrupt metadata and failed open; US-007 unrememberable/unsandboxed asks; US-008 rejected prompt and invalid delay; US-009 send rejection; US-010 failed clear/start; US-011 locked/unusable resume and failed switch; US-012 errored/rejected turn; US-013 forbidden session-memory choice; US-014 missing feature/invalid mode/busy command; US-015 non-TTY/invalid mode/excess argument. All nineteen feature exclusions remain verbatim, including the US-003-only qualifier; there are no story-local exclusion blocks in the source to hoist. The binding fifteen-story workdirs and dependency lists remain unchanged and all references resolve to those IDs. Restored every spec-recommended context file within the five-file cap (notably workflow/brief.ts for US-006 and cli/config-descriptions.ts for US-008); no story-created path is its own context. Rechecked current source: workflow/brief.ts:84-100 is the rule-index composition precedent, schemas-infra.ts:171-178 preserves undefined defaults.fallback, runtime-types.ts:379-396 is the hand-written defaults type, session-lock.ts:83-96 classifies own/live/stale, and agent-session-types.ts:99-178 supplies the actual event/lifecycle shapes. Added explicit regression assertions for unchanged defaults.fallback and non-interception of existing status dispatch. Reduced US-009, US-014 and US-015 to medium complexity because they use existing sequential/event-mapping and command-registration patterns rather than new backend abstractions; retained strict three-session TDD where the security override covers roles, permissions or session lifecycle. Review was read-only against implementation source; no runtime validation command was available or executed.",
+  "outOfScope": [
+    "Offering the RunCommand tool (and its `unsandboxed` argument) to chat sessions is deferred; it needs a `declaredToolsFor` change in nax-agent that also changes koda's ACP sessions. Chat escalates per command through Bash's `unsandboxed` argument.",
+    "Skills, Claude Code plugins, the `Skill` tool and `/skills` / `/plugins` are feature F4.",
+    "`.mcp.json` servers, subagents, the `Agent` tool, `/mcp`, `/agents` and `agent.modelAliases` are feature F5.",
+    "Claude Code hooks are not read or executed.",
+    "Dispatching `nax plan`, `nax run`, `nax bot review` or `nax bot fix` from the session is slice 2.",
+    "A durable tool-call audit directory for chat sessions is not added (`buildSessionToolSupport` passes no `auditDir`).",
+    "A resumed session does not show which mode each earlier turn ran under; the metadata holds the current mode only.",
+    "The design's `nax context` fragments repo summary is not added to the chat prompt: fragments are per-story run notes, and the native session already loads the repo's `AGENTS.md` (generated from `.nax/context.md`) as its repository instructions.",
+    "Questions (`question` events) are not offered to the interaction chain; only approvals are.",
+    "`context.rules.delivery: \"push\"` is not honoured by chat; chat always uses the index plus on-demand delivery.",
+    "The sessions directory honours `NAX_AGENT_SESSIONS_DIR` and the global config dir only; the ACP server's `--sessions-dir` flag and `agentServer.sessionsDir` config key are not read by chat, so koda shares chat's sessions only when it uses the same directory.",
+    "A process killed by SIGKILL leaves its lock; the existing heartbeat staleness (`LOCK_STALE_MS`) lets the next opener take it over. No new crash recovery.",
+    "`\"tui\"` is not added to `KNOWN_SESSION_ROLES` or the session role registry; chat never dispatches through `SessionManager`.",
+    "No budget enforcement beyond what config already applies; `/cost` reports spend only.",
+    "The run TUI (`src/tui/App.tsx` and its components) is unchanged.",
+    "US-003 only: the ACP server's permission round trips, `allow_always` / `reject_always` options and broker behaviour are unchanged, and its broker ACs pass before and after the move; the removal of the local helpers is checked by `bun run typecheck`.",
+    "No new npm dependency: the chat input box is built on ink's `useInput`, not an input-component package.",
+    "Updating `.nax/mono/packages/nax/context.md` and `.nax/mono/packages/nax-agent/context.md` to describe `src/chat/`, the `tui` role and `approval-memory.ts`, then running `nax generate`, is a manual step after merge; `.nax/` is read-only to the run.",
+    "No release and no version bump."
+  ],
+  "routingProfile": "native-claude"
+}

@@ -1,15 +1,29 @@
 import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 import type { RequestPermissionResponse } from "@agentclientprotocol/sdk";
-import type { AnswerReply } from "@nathapp/nax-agent";
-import {
-  type ApprovalEvent,
-  createPermissionBroker,
-  type Decision,
-  memoryKey,
-  PERMISSION_OPTIONS,
-} from "#src/server/permissions";
+import { type AnswerReply, approvalMemoryKey } from "@nathapp/nax-agent";
+import * as permissions from "#src/server/permissions";
+import { type ApprovalEvent, createPermissionBroker, type Decision, PERMISSION_OPTIONS } from "#src/server/permissions";
+import { toolKind } from "#src/server/translate/tool-kind";
 import { type FakePortOptions, fakePort, NEVER, select } from "#test/helpers/fake-client-port";
 import { recordingLogger } from "#test/helpers/recording-logger";
+
+describe("shared approval-memory integration", () => {
+  test("the broker module no longer exports memoryKey", () => {
+    expect(Object.keys(permissions)).not.toContain("memoryKey");
+  });
+
+  test("every display execute tool has a command-scoped shared memory key", async () => {
+    // Discover names from the display map so newly registered tools are tested too.
+    const source = await readFile(new URL("../../../src/server/translate/tool-kind.ts", import.meta.url), "utf8");
+    const tools = [...source.matchAll(/\[\s*["']([^"']+)["']\s*,\s*["']execute["']\s*,?\s*\]/g)];
+    expect(tools.length).toBeGreaterThan(0);
+    for (const [, tool = ""] of tools) {
+      expect(toolKind(tool)).toBe("execute");
+      expect(approvalMemoryKey({ tool, command: "npm test" })).toBe(`${tool}:npm test`);
+    }
+  });
+});
 
 const BASE = { sessionId: "s1", turnId: "t1", at: "2026-10-09T00:00:00.000Z", metadata: {} };
 
@@ -43,70 +57,6 @@ function setup(options: FakePortOptions = {}) {
   return { ...fake, answers, memory, lines, broker };
 }
 
-describe("memoryKey (spec §4.3)", () => {
-  test("the tool name for non-execute tools", () => {
-    expect(memoryKey(approval("r", "Edit"))).toBe("Edit");
-  });
-
-  test("execute tools: the command plus its subcommand when the second word is a plain word", () => {
-    expect(memoryKey(approval("r", "Bash", { command: "  git push origin main" }))).toBe("Bash:git push");
-    expect(memoryKey(approval("r", "Bash", { command: "git status" }))).toBe("Bash:git status");
-    expect(memoryKey(approval("r", "Bash", { command: "npm test -- --watch" }))).toBe("Bash:npm test");
-  });
-
-  test("execute tools: the bare command alone when there is no second word", () => {
-    expect(memoryKey(approval("r", "Bash", { command: "ls" }))).toBe("Bash:ls");
-  });
-
-  test("a second word that is a flag is never remembered (it must not widen to the bare command, #2553)", () => {
-    expect(memoryKey(approval("r", "Bash", { command: "rm -f x" }))).toBeUndefined();
-    expect(memoryKey(approval("r", "Bash", { command: "git -C repo status" }))).toBeUndefined();
-    expect(memoryKey(approval("r", "Bash", { command: "ls -la src" }))).toBeUndefined();
-  });
-
-  test("a second word that is not plain is never remembered (it must not widen to the bare command)", () => {
-    for (const command of ["git 'push' --force", 'git "status"', "git pu*h", "git $CMD"]) {
-      expect(memoryKey(approval("r", "Bash", { command }))).toBeUndefined();
-    }
-  });
-
-  test("a leading environment assignment is never remembered", () => {
-    expect(memoryKey(approval("r", "Bash", { command: "FOO=1 rm -rf build" }))).toBeUndefined();
-  });
-
-  test("a masked command is never remembered: its visible words are not the real command", () => {
-    expect(memoryKey(approval("r", "Bash", { command: "[REDACTED:github] rm -rf build" }))).toBeUndefined();
-    expect(memoryKey(approval("r", "Bash", { command: "curl -H [REDACTED:bearer] https://x" }))).toBeUndefined();
-  });
-
-  test("a wrapper or interpreter is never remembered: its first word says nothing about what runs", () => {
-    for (const command of [
-      "bash -c 'rm -rf ~'",
-      "env X=1 rm x",
-      "xargs rm",
-      "sudo ls",
-      "find . -delete",
-      "node -e 1",
-    ]) {
-      expect(memoryKey(approval("r", "Bash", { command }))).toBeUndefined();
-    }
-    expect(memoryKey(approval("r", "Bash", { command: "/usr/bin/env rm x" }))).toBeUndefined();
-  });
-
-  test("a first word that is not a plain name is never remembered (quotes, escapes, globs, case)", () => {
-    for (const command of ["'bash' -c x", '"sh" x', "b\\ash -c x", "ba*h -c x", "BASH -c x", "$(which sh) x"]) {
-      expect(memoryKey(approval("r", "Bash", { command }))).toBeUndefined();
-    }
-    expect(memoryKey(approval("r", "Bash", { command: "./scripts/build.sh" }))).toBe("Bash:./scripts/build.sh");
-    expect(memoryKey(approval("r", "Bash", { command: "./scripts/build.sh --fast" }))).toBeUndefined();
-  });
-
-  test("an execute tool with no command is never remembered (M-12)", () => {
-    expect(memoryKey(approval("r", "Bash"))).toBeUndefined();
-    expect(memoryKey(approval("r", "Bash", { command: "   " }))).toBeUndefined();
-  });
-});
-
 describe("createPermissionBroker failures never escape (final review I-2)", () => {
   test("an answer() that throws is logged and drain still resolves", async () => {
     const fake = fakePort();
@@ -126,6 +76,36 @@ describe("createPermissionBroker failures never escape (final review I-2)", () =
 });
 
 describe("createPermissionBroker", () => {
+  test("shared memory allows git status again but asks for git status --short", async () => {
+    const s = setup({ permission: async () => select("allow_always") });
+    s.broker.request(approval("r1", "Bash", { command: "git status" }), undefined);
+    await s.broker.drain();
+    s.broker.request(approval("r2", "Bash", { command: "git status" }), undefined);
+    await s.broker.drain();
+    expect(s.asks).toHaveLength(1);
+    expect(s.answers).toEqual([
+      { requestId: "r1", reply: { decision: "allow" } },
+      { requestId: "r2", reply: { decision: "allow" } },
+    ]);
+    s.broker.request(approval("r3", "Bash", { command: "git status --short" }), undefined);
+    await s.broker.drain();
+    expect(s.asks).toHaveLength(2);
+    expect(s.asks[1]?.toolCall.rawInput).toEqual({ command: "git status --short" });
+  });
+
+  test("shared memory rejects git push origin --force after rejecting git push origin main", async () => {
+    const s = setup({ permission: async () => select("reject_always") });
+    s.broker.request(approval("r1", "Bash", { command: "git push origin main" }), undefined);
+    await s.broker.drain();
+    s.broker.request(approval("r2", "Bash", { command: "git push origin --force" }), undefined);
+    await s.broker.drain();
+    expect(s.asks).toHaveLength(1);
+    expect(s.answers).toEqual([
+      { requestId: "r1", reply: { decision: "deny" } },
+      { requestId: "r2", reply: { decision: "deny" } },
+    ]);
+  });
+
   test("asks the client with the tool call and the four options, then answers", async () => {
     const s = setup();
     const toolCall = { toolCallId: "c1", title: "Edit a.ts", kind: "edit" as const, status: "pending" as const };

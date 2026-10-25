@@ -115,6 +115,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     workdir: ctx.workdir,
     model: raw.model,
     provider: resolved.provider,
+    ...(raw.loopHandlerRole !== undefined ? { role: raw.loopHandlerRole } : {}),
   };
   return {
     adapter,

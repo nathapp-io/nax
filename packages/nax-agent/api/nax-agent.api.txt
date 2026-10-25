@@ -43,6 +43,8 @@ type AnswerStatus
 type ApprovalAuditRow
 type ApprovalDecidedBy
 type ApprovalEntry
+type ApprovalMemoryDecision
+type ApprovalMemoryRequest
 type ApprovalRequest
 type ApprovalsFile
 type ApprovalsFileRead
@@ -312,6 +314,8 @@ appendApprovalAudit
 appendCommandSafetyRow
 applyModelTruncationPolicy
 approvalId
+approvalMemoryApplies
+approvalMemoryKey
 approvalsPath
 attachTurnSpend
 authImportOutcomeLabel
@@ -492,6 +496,8 @@ type AfterToolPayload
 type AgentLogger
 type ApprovalAuditRow
 type ApprovalEntry
+type ApprovalMemoryDecision
+type ApprovalMemoryRequest
 type ApprovalsFile
 type ApprovalsFileRead
 type ApprovalsFileState
@@ -795,6 +801,8 @@ appendApprovalAudit
 applyCompaction
 applyModelTruncationPolicy
 approvalId
+approvalMemoryApplies
+approvalMemoryKey
 approvalsPath
 authFields
 authImportOutcomeLabel

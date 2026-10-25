@@ -82,6 +82,43 @@ describe("createRuleDeliveryHandlers — the entries", () => {
 // Role scope
 // ─────────────────────────────────────────────────────────────────────────────
 
+describe("before_tool — tui role (chat US-005)", () => {
+  test("chat AC-9: tui belongs to both rule-delivery role lists", () => {
+    expect(RULE_READ_ROLES).toContain("tui");
+    expect(RULE_WRITE_ROLES).toContain("tui");
+  });
+
+  test("chat AC-10: a first tui Write is refused with the rule, then retry is allowed", async () => {
+    await withTempDir(async (repoRoot) => {
+      await seedRepo(repoRoot);
+      const set = handlersFor(repoRoot);
+      const ctx = handlerContext({ role: "tui", sessionName: "chat-write" });
+
+      const outcome = await callBeforeTool(set, write(A_PATH), ctx);
+
+      expect(outcome).toMatchObject({ kind: "block", isError: true });
+      expect(outcomeText(outcome)).toContain(RULE_R_BODY);
+      expect(outcomeText(outcome)).toContain("No files were changed. Review these rules and retry the tool call.");
+      expect(await callBeforeTool(set, write(A_PATH), ctx)).toEqual({ kind: "allow" });
+    });
+  });
+
+  test("chat AC-11: a tui Read is nudged with the governing rule once", async () => {
+    await withTempDir(async (repoRoot) => {
+      await seedRepo(repoRoot);
+      const set = handlersFor(repoRoot);
+      const ctx = handlerContext({ role: "tui", sessionName: "chat-read" });
+
+      const outcome = await callBeforeTool(set, read(A_PATH), ctx);
+
+      expect(outcome.kind).toBe("nudge");
+      expect(outcomeText(outcome)).toContain(`Rules that apply to ${A_PATH}:`);
+      expect(outcomeText(outcome)).toContain(RULE_R_BODY);
+      expect(await callBeforeTool(set, read(A_PATH), ctx)).toEqual({ kind: "allow" });
+    });
+  });
+});
+
 describe("before_tool — role scope", () => {
   test("AC-1: a wf-implementer Read of a governed file is nudged with the rule's body under its heading", async () => {
     await withTempDir(async (repoRoot) => {

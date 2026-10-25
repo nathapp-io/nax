@@ -367,6 +367,7 @@ export const NaxConfigSchema = z
       // InteractionConfigSchema.defaults.fallback in schemas-infra.ts.
       defaults: {
         timeout: 600000,
+        chatAskFallbackMs: 60000,
       },
       triggers: {
         "security-review": true,

@@ -22,6 +22,8 @@ export interface NativeBackendOptions {
   readonly credentials?: CredentialSource;
   readonly catalogOverrides?: NativeCatalogOverrides;
   readonly loopHandlers?: LoopHandlerSet;
+  /** Copied into every turn's loop-handler context as `role` (for example "tui"). */
+  readonly loopHandlerRole?: string;
   readonly hostPorts?: AgentSessionHostPorts;
   readonly bashApproval?: BashApprovalMode;
   readonly allowUnsandboxed?: boolean;
@@ -81,6 +83,7 @@ const OptionsSchema = z.strictObject({
     .optional(),
   catalogOverrides: z.array(z.custom(isRecord, "must be a catalog override object")).optional(),
   loopHandlers: z.array(z.custom(isRecord, "must be a loop handler entry")).optional(),
+  loopHandlerRole: z.string().min(1).optional(),
   hostPorts: z
     .strictObject({
       protectedPaths: z
