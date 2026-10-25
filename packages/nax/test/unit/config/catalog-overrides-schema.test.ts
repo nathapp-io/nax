@@ -286,3 +286,27 @@ describe("agent.native.catalogOverrides", () => {
     });
   });
 });
+
+describe("catalog model thinkingFormat (nax#2696)", () => {
+  test.each(["openai", "deepseek", "zai", "qwen", "qwen-chat-template"])(
+    "accepts the backend format %s",
+    (thinkingFormat) => {
+      const model = { ...VALID_OVERRIDE.models[0], thinkingFormat };
+      const config = parseNative({ catalogOverrides: [{ ...VALID_OVERRIDE, models: [model] }] });
+      expect(config.agent?.native?.catalogOverrides?.[0]?.models[0]?.thinkingFormat).toBe(thinkingFormat);
+    },
+  );
+
+  test.each(["chat-template", "ant-ling", "baseten", "unknown", "Qwen", "", null, 3])(
+    "rejects invalid thinkingFormat %j",
+    (thinkingFormat) => {
+      const model = { ...VALID_OVERRIDE.models[0], thinkingFormat };
+      expect(() => parseNative({ catalogOverrides: [{ ...VALID_OVERRIDE, models: [model] }] })).toThrow();
+    },
+  );
+
+  test("keeps thinkingFormat absent when undeclared", () => {
+    const config = parseNative({ catalogOverrides: [VALID_OVERRIDE] });
+    expect(config.agent?.native?.catalogOverrides?.[0]?.models[0]).not.toHaveProperty("thinkingFormat");
+  });
+});

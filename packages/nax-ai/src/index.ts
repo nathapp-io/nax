@@ -104,6 +104,7 @@ export type {
   ProviderOverride,
   ResolvedModel,
   ResolvedProvider,
+  ThinkingFormat,
 } from "./providers/types.ts";
 export type {
   CompleteOptions,

@@ -28,7 +28,11 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { createPiAuthResolver, toPiCredentialStore } from "../auth/pi-auth.ts";
 import type { AuthResolver } from "../auth/resolver.ts";
-import { assertOverrideModelProvider, assertOverrideModelRouting } from "../providers/override-model.ts";
+import {
+  assertOverrideModelProvider,
+  assertOverrideModelRouting,
+  assertOverrideModelThinkingFormat,
+} from "../providers/override-model.ts";
 import type {
   OpenRouterRouting,
   PercentileTarget,
@@ -594,6 +598,18 @@ function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
     );
   }
 
+  if (
+    model.thinkingFormat === "openai" &&
+    template.compat !== undefined &&
+    "supportsReasoningEffort" in template.compat &&
+    template.compat.supportsReasoningEffort === false
+  ) {
+    throw new Error(
+      `Model "${model.id}" declares thinkingFormat "openai" but its provider template disables reasoning_effort. ` +
+        `Choose a thinkingFormat supported by this endpoint or omit the declaration.`,
+    );
+  }
+
   const thinkingLevelMap =
     model.thinkingLevelMap ??
     (isThinkingCompatible(template, model.thinkingLevels) ? undefined : deriveThinkingLevelMap(model, template));
@@ -620,8 +636,16 @@ function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
     // Merged onto the template's compat, never replacing it: `thinkingFormat`
     // and the rest of the provider's detected settings live in the same object
     // and are what translate a thinking level on the wire.
-    ...(model.openRouterRouting !== undefined
-      ? { compat: { ...template.compat, openRouterRouting: toPiOpenRouterRouting(model.openRouterRouting) } }
+    ...(model.openRouterRouting !== undefined || model.thinkingFormat !== undefined
+      ? {
+          compat: {
+            ...template.compat,
+            ...(model.thinkingFormat !== undefined ? { thinkingFormat: model.thinkingFormat } : {}),
+            ...(model.openRouterRouting !== undefined
+              ? { openRouterRouting: toPiOpenRouterRouting(model.openRouterRouting) }
+              : {}),
+          },
+        }
       : {}),
     ...(thinkingLevelMap !== undefined ? { thinkingLevelMap } : {}),
   };
@@ -761,6 +785,7 @@ function applyOverrides(models: MutableModels, overrides: readonly ProviderOverr
       // provider field would then pick the wrong credentials at the wire.
       assertOverrideModelProvider(override.provider, model);
       assertOverrideModelRouting(model);
+      assertOverrideModelThinkingFormat(model);
       byId.set(model.id, synthesiseModel(base, model));
     }
     const synthesised = [...byId.values()];

@@ -116,6 +116,9 @@ export interface ResolvedProvider {
   readonly defaultProtocol: string;
 }
 
+/** Thinking wire formats selectable by a catalog override. */
+export type ThinkingFormat = "openai" | "qwen" | "qwen-chat-template" | "deepseek" | "zai";
+
 export interface ResolvedModel {
   readonly id: string;
   readonly provider: string;
@@ -172,6 +175,12 @@ export interface ResolvedModel {
    * construction rather than silently ignored (issue #43).
    */
   readonly openRouterRouting?: OpenRouterRouting;
+  /**
+   * Per-model thinking wire format (nax#2696). Only `openai-completions`
+   * implements these formats; other protocols are rejected at construction.
+   * Omit to inherit the provider template's format.
+   */
+  readonly thinkingFormat?: ThinkingFormat;
 }
 
 /**

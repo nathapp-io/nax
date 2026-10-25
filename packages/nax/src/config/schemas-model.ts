@@ -120,6 +120,8 @@ export const CatalogModelOverrideSchema = z
     // protocol-side check rejects both an empty declaration and routing on a
     // non-`openai-completions` protocol.
     openRouterRouting: OpenRouterRoutingSchema.optional(),
+    // nax#2696: a model declaration, never a provider-wide compat override.
+    thinkingFormat: z.enum(["openai", "qwen", "qwen-chat-template", "deepseek", "zai"]).optional(),
   })
   .strict();
 
