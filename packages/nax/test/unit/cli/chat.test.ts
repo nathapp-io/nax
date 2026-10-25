@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { createSessionStorage } from "@nathapp/nax-agent";
 import { makeInteractionChain, makeLogger, makeNaxConfig, withTempDir } from "@test/helpers";
 import { Command } from "commander";
-import { createChatHost, createChatStorage } from "@/chat";
+import { type ChatMcp, createChatHost, createChatStorage } from "@/chat";
 import { registerStatusCommand } from "@/cli/status-dispatch";
 import { NaxError } from "@/errors";
 import { PluginRegistry } from "@/plugins";
@@ -37,6 +37,12 @@ async function fixture() {
     ensureTrusted: async () => {},
     loadPlugins: async () => new PluginRegistry([]),
     loadResourceCatalog: async () => buildResourceCatalog([]),
+    createChatMcp: async (..._args: Parameters<typeof api._chatCommandDeps.createChatMcp>): Promise<ChatMcp> => ({
+      state: { servers: [], diagnostics: [], events: () => [], withheld: () => [] },
+      providers: [],
+      close: async () => {},
+    }),
+    env: { CLAUDE_CONFIG_DIR: "/nonexistent-claude" },
     loadConfig: mock(async (..._args: Parameters<typeof api._chatCommandDeps.loadConfig>) => config),
     findProjectDir: mock((_dir: string): string | null => "/repo/.nax"),
     initInteractionChain: mock(

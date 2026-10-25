@@ -2,7 +2,7 @@ import { dirname, join, resolve } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Command } from "commander";
 import type { Instance } from "ink";
-import { type ChatHost, type ChatResources, createChatHost, createChatStorage } from "@/chat";
+import { type ChatHost, type ChatResources, createChatHost, createChatMcp, createChatStorage } from "@/chat";
 import { findProjectDir, globalConfigDir, loadConfig, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { type InteractionChain, initInteractionChain } from "@/interaction";
@@ -31,6 +31,8 @@ export const _chatCommandDeps = {
   },
   loadPlugins,
   loadResourceCatalog,
+  createChatMcp,
+  env: process.env,
   loadConfig,
   findProjectDir,
   initInteractionChain,
@@ -139,15 +141,23 @@ async function chatResources(repoRoot: string, config: NaxConfig, deps: ChatComm
     const catalog = await deps.loadResourceCatalog({
       repoRoot,
       config,
-      env: process.env,
+      env: deps.env,
       naxPluginPackages: await naxPluginPackages(registry.getResourceDirs()),
     });
+    const mcp = await deps.createChatMcp({ config, catalog, repoRoot, env: deps.env });
     return {
       catalog,
-      toolProviders: [createSkillsProvider(async () => catalog)],
+      toolProviders: [createSkillsProvider(async () => catalog), ...mcp.providers],
       pluginHandlers: registry.getLoopHandlers(),
       naxPlugins: registry.plugins.map(({ name, provides }) => ({ name, provides })),
-      teardown: () => registry.teardownAll(),
+      mcp: mcp.state,
+      teardown: async () => {
+        try {
+          await mcp.close();
+        } finally {
+          await registry.teardownAll();
+        }
+      },
     };
   } catch (error) {
     await registry.teardownAll();

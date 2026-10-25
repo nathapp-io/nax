@@ -35,6 +35,7 @@ export interface ChatHost {
   readonly repoRoot: string;
   readonly catalog?: ChatResources["catalog"];
   readonly naxPlugins?: ChatResources["naxPlugins"];
+  readonly mcp?: ChatResources["mcp"];
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   current(): ChatHostState;
@@ -84,6 +85,7 @@ class NativeChatHost implements ChatHost {
   readonly repoRoot: string;
   readonly catalog?: ChatResources["catalog"];
   readonly naxPlugins?: ChatResources["naxPlugins"];
+  readonly mcp?: ChatResources["mcp"];
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   private readonly fallback: AskFallback;
@@ -102,6 +104,7 @@ class NativeChatHost implements ChatHost {
     this.repoRoot = deps.repoRoot;
     this.catalog = deps.resources?.catalog;
     this.naxPlugins = deps.resources?.naxPlugins;
+    this.mcp = deps.resources?.mcp;
     this.models = nativeModels(deps.config);
     this.projectKey = getProjectKey(deps.config, deps.repoRoot);
     this.outputDir = projectOutputDir(this.projectKey, deps.config.outputDir);
