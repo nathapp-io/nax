@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { credentialsFor, EMPTY_NAX_CONFIG, loadNaxConfig, type ReadTextFile } from "#src/server/nax-config";
+import { SESSION_META_MODES } from "@nathapp/nax-agent";
+import { credentialsFor, EMPTY_NAX_CONFIG, loadNaxConfig, MODES, type ReadTextFile } from "#src/server/nax-config";
 
 function reader(files: Readonly<Record<string, string>>): ReadTextFile {
   return async (path) => {
@@ -10,6 +11,10 @@ function reader(files: Readonly<Record<string, string>>): ReadTextFile {
 }
 
 const PATH = "/cfg/config.json";
+
+test("MODES reuses the shared metadata modes array", () => {
+  expect(MODES).toBe(SESSION_META_MODES);
+});
 
 describe("loadNaxConfig", () => {
   test("a missing file yields the defaults and no warning", async () => {

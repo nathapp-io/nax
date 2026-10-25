@@ -1,11 +1,15 @@
 /** A file-backed registry over fake S3 sessions, for registry tests (extracted from registry.test.ts). */
-import { createMemoryTranscriptStore, type TranscriptStore } from "@nathapp/nax-agent";
+import {
+  createMemoryTranscriptStore,
+  createSessionStorage,
+  type SessionStorage,
+  type TranscriptStore,
+} from "@nathapp/nax-agent";
 import type { ConnectSessionMcp } from "#src/server/mcp/connect";
 import type { OpenSessionRequest } from "#src/server/open-session";
 import type { ServerOptions } from "#src/server/options";
 import { createSessionRegistry, type ReloadedOptions } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
-import { createSessionStorage, type SessionStorage } from "#src/server/storage";
 import { type FakeAgentSession, fakeAgentSession, type Script, turnEnd } from "#test/helpers/fake-agent-session";
 import { ALL_FEATURES, fakePort } from "#test/helpers/fake-client-port";
 import { recordingLogger } from "#test/helpers/recording-logger";

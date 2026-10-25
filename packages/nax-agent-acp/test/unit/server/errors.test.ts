@@ -33,6 +33,25 @@ describe("error constructors (spec §7)", () => {
 });
 
 describe("toRequestError", () => {
+  test.each([
+    ["SESSION_LOCKED", "session in use by pid 4242", -32600, { stage: "session-store", pid: 4242 }],
+    ["SESSION_LIST_CURSOR_INVALID", "invalid cursor", -32602, { stage: "session-store" }],
+  ] as const)("maps %s without logging an expected refusal", (code, message, wireCode, context) => {
+    const { logger, lines } = recordingLogger();
+    const error = toRequestError(new NaxError(message, code, context), logger);
+    expect(error).toBeInstanceOf(RequestError);
+    expect(error.code).toBe(wireCode);
+    expect(error.message).toContain(message);
+    expect(lines.filter((line) => line.level === "error")).toEqual([]);
+  });
+
+  test("expected storage refusals never log errors", () => {
+    const { logger, lines } = recordingLogger();
+    for (const code of ["SESSION_LOCKED", "SESSION_LIST_CURSOR_INVALID"]) {
+      toRequestError(new NaxError("refused", code, { stage: "session-store" }), logger);
+    }
+    expect(lines.filter((line) => line.level === "error")).toEqual([]);
+  });
   test("passes a RequestError through unchanged", () => {
     const { logger } = recordingLogger();
     const original = RequestError.invalidParams(undefined, "x");

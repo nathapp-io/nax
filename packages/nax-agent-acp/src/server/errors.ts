@@ -60,6 +60,10 @@ export function toRequestError(error: unknown, logger: AgentLogger): RequestErro
   if (error instanceof NaxError && isAuthFailureCode(error.code)) {
     return authRequired(redactSecrets(error.message), { code: error.code });
   }
+  if (error instanceof NaxError) {
+    if (error.code === "SESSION_LOCKED") return RequestError.invalidRequest(undefined, error.message);
+    if (error.code === "SESSION_LIST_CURSOR_INVALID") return invalidParams(error.message);
+  }
   const message = redactSecrets(messageOf(error));
   logger.error("server", "request failed", {
     error: message,

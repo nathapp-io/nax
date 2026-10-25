@@ -12,6 +12,7 @@ import {
   type SessionConfigOption,
   type SessionModeState,
 } from "@agentclientprotocol/sdk";
+import type { SessionMeta, SessionStorage } from "@nathapp/nax-agent";
 import { type AgentLogger, type EmbedderTool, redactSecrets, type TranscriptStore } from "@nathapp/nax-agent";
 import type { ClientPort } from "#src/server/client-port";
 import { authRequired, invalidParams, messageOf, turnInProgress, unknownSession } from "#src/server/errors";
@@ -33,7 +34,6 @@ import {
   type SessionSettings,
   sameSettings,
 } from "#src/server/session-config";
-import type { SessionMeta, SessionStorage } from "#src/server/storage";
 import type { ReadOldText } from "#src/server/translate/diff";
 
 export const NO_MODEL_MESSAGE =
@@ -365,7 +365,13 @@ export function createSessionRegistry(deps: RegistryDeps): SessionRegistry {
     },
     load: (sessionId, input) => reopen(sessionId, input, true),
     resume: (sessionId, input) => reopen(sessionId, input, false),
-    list: (query) => deps.storage.list(query),
+    async list(query) {
+      const page = await deps.storage.list(query);
+      return {
+        sessions: page.sessions.map(({ sessionId, cwd, title, updatedAt }) => ({ sessionId, cwd, title, updatedAt })),
+        ...(page.nextCursor !== undefined ? { nextCursor: page.nextCursor } : {}),
+      };
+    },
     get: (sessionId) => entryOf(sessionId).server,
     find: (sessionId) => entries.get(sessionId)?.server,
     async close(sessionId) {

@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import {
   type AgentApp,
   type ClientCapabilities,
@@ -9,16 +11,16 @@ import {
   RequestError,
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
-import { createMemoryTranscriptStore, type TranscriptStore } from "@nathapp/nax-agent";
+import { createMemoryTranscriptStore, createSessionStorage, NaxError, type TranscriptStore } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
 import { buildAgentApp } from "#src/server/connection";
 import type { ServerOptions } from "#src/server/options";
 import { createSessionRegistry } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
-import { createSessionStorage } from "#src/server/storage";
 import { fakeAgentSession, type Script, turnEnd } from "#test/helpers/fake-agent-session";
 import { recordingLogger } from "#test/helpers/recording-logger";
+import { setupRegistry } from "#test/helpers/registry-setup";
 
 const OPTIONS: ServerOptions = {
   configDir: "/cfg",
@@ -101,6 +103,81 @@ async function connect<T>(
 }
 
 const codeOf = (error: unknown): number => (error instanceof RequestError ? error.code : 0);
+
+describe("shared storage over the SDK connection", () => {
+  async function withRegistry(work: (agent: ClientContext, setup: ReturnType<typeof setupRegistry>) => Promise<void>) {
+    const setup = setupRegistry(dir, OPTIONS, { isAlive: (pid) => pid === 4242 });
+    const { logger } = recordingLogger();
+    try {
+      await connect(buildAgentApp({ version: "9.9.9", registry: setup.registry, logger }), (agent) =>
+        work(agent, setup),
+      );
+    } finally {
+      await setup.registry.closeAll();
+    }
+  }
+
+  test("new -> list returns id and cwd alongside metadata written without an ACP create", async () => {
+    await withRegistry(async (agent, setup) => {
+      await setup.storage.writeMeta({
+        schemaVersion: 1,
+        sessionId: "external",
+        cwd: "/external",
+        mode: "ask",
+        model: "anthropic/claude-sonnet-5-5",
+        bashApproval: "gated",
+        title: null,
+        createdAt: "2026-10-09T00:00:00.000Z",
+        updatedAt: null,
+      });
+      const created = await agent.request("session/new", { cwd: "/w", mcpServers: [] });
+      const listed = await agent.request("session/list", {});
+      expect(listed.sessions).toContainEqual(expect.objectContaining({ sessionId: created.sessionId, cwd: "/w" }));
+      expect(listed.sessions).toContainEqual({
+        sessionId: "external",
+        cwd: "/external",
+        title: null,
+        updatedAt: "2026-10-09T00:00:00.000Z",
+      });
+    });
+  });
+
+  test.each(["session/load", "session/resume"] as const)(
+    "%s preserves a foreign legacy lock refusal",
+    async (method) => {
+      await withRegistry(async (agent, setup) => {
+        await setup.storage.writeMeta({
+          schemaVersion: 1,
+          sessionId: "locked",
+          cwd: "/w",
+          mode: "ask",
+          model: "anthropic/claude-sonnet-5-5",
+          bashApproval: "gated",
+          title: null,
+          createdAt: "2026-10-09T00:00:00.000Z",
+          updatedAt: null,
+        });
+        await writeFile(join(dir, "locked.lock"), JSON.stringify({ pid: 4242, startedAt: "x" }));
+        const error = await agent
+          .request(method, { sessionId: "locked", cwd: "/w", mcpServers: [] })
+          .catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(RequestError);
+        expect(error).toMatchObject({ code: -32600, message: expect.stringContaining("session in use by pid 4242") });
+      });
+    },
+  );
+
+  test("list preserves invalid cursor text and code at the single wire boundary", async () => {
+    await withRegistry(async (agent, setup) => {
+      const neutral = await setup.storage.list({ cursor: "bad" }).catch((e: unknown) => e);
+      expect(neutral).toBeInstanceOf(NaxError);
+      expect(neutral).toMatchObject({ code: "SESSION_LIST_CURSOR_INVALID" });
+      const error = await agent.request("session/list", { cursor: "bad" }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(RequestError);
+      expect(error).toMatchObject({ code: -32602, message: expect.stringContaining("invalid cursor") });
+    });
+  });
+});
 
 describe("persistence methods over a real SDK connection (S5-3)", () => {
   test("new -> prompt -> close -> list -> load replays the stored transcript", async () => {

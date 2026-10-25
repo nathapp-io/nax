@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { defaultSessionsDir } from "@nathapp/nax-agent";
 import type { CliFlags } from "#src/server/cli";
 import { EMPTY_NAX_CONFIG, type NaxConfigSubset } from "#src/server/nax-config";
 import { type Env, resolveConfigDir, resolveServerOptions } from "#src/server/options";
@@ -40,6 +41,11 @@ describe("resolveConfigDir", () => {
 });
 
 describe("resolveServerOptions", () => {
+  test("defaults sessionsDir to the shared directory under configDir", () => {
+    const result = resolveServerOptions({ flags: {}, env: {}, file: EMPTY_NAX_CONFIG, configDir: "/h/.nax" });
+    expect(ok(result).sessionsDir).toBe("/h/.nax/.agent-server/sessions");
+    expect(ok(result).sessionsDir).toBe(defaultSessionsDir("/h/.nax"));
+  });
   test("carries the file's compaction settings into the options, and none when the file has none", () => {
     const withIt = resolveServerOptions({
       flags: {},

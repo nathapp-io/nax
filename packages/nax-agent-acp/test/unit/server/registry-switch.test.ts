@@ -2,14 +2,18 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { RequestError } from "@agentclientprotocol/sdk";
-import { type AgentSession, createMemoryTranscriptStore } from "@nathapp/nax-agent";
+import {
+  type AgentSession,
+  createMemoryTranscriptStore,
+  createSessionStorage,
+  type SessionStorage,
+} from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { waitForCondition } from "@nathapp/nax-test-kit/bun/timeout";
 import type { OpenSessionRequest } from "#src/server/open-session";
 import type { ServerOptions } from "#src/server/options";
 import { createSessionRegistry, SHUTTING_DOWN } from "#src/server/registry";
 import { TURN_TIMEOUT_SECONDS } from "#src/server/server-session";
-import { createSessionStorage, type SessionStorage } from "#src/server/storage";
 import { fakeAgentSession } from "#test/helpers/fake-agent-session";
 import { ALL_FEATURES, fakePort } from "#test/helpers/fake-client-port";
 import { recordingLogger } from "#test/helpers/recording-logger";

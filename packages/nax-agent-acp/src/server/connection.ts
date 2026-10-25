@@ -7,12 +7,12 @@
 import { Readable, Writable } from "node:stream";
 import { type AgentApp, type AgentConnection, agent, ndJsonStream } from "@agentclientprotocol/sdk";
 import type { AgentLogger } from "@nathapp/nax-agent";
+import { SESSION_ID_PATTERN } from "@nathapp/nax-agent";
 import { NO_SERVER_AUTH, type ServerAuth } from "#src/server/auth";
 import { initializeResponse } from "#src/server/capabilities";
 import { type ClientFeatures, clientFeatures, clientPort, NO_CLIENT_FEATURES } from "#src/server/client-port";
 import { guard, invalidParams } from "#src/server/errors";
 import type { SessionRegistry } from "#src/server/registry";
-import { SESSION_ID_PATTERN } from "#src/server/storage";
 
 function validatedSessionId(sessionId: string): string {
   if (!SESSION_ID_PATTERN.test(sessionId)) throw invalidParams("invalid session id");
