@@ -3,7 +3,7 @@
   "feature": "nax-chat-shell",
   "branchName": "feat/nax-chat-shell",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T04:33:13.348Z",
+  "updatedAt": "2026-10-25T04:39:51.175Z",
   "userStories": [
     {
       "id": "US-001",
@@ -191,14 +191,17 @@
         "rules"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure prompt formatting and existing-builder composition; no permission enforcement or lifecycle state."
+        "reasoning": "Pure prompt formatting and existing-builder composition; no permission enforcement or lifecycle state.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/rules-index-builder.ts",
@@ -212,7 +215,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9e40bd8c866a203e02fa5d11dcecac93fc944a0d"
     },
     {
       "id": "US-005",
