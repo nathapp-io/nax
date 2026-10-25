@@ -12,6 +12,7 @@ import {
 import { _askFallbackDeps } from "@/chat/ask-fallback";
 import { createChatHost } from "@/chat/chat-host";
 import { _openChatSessionDeps } from "@/chat/open-chat-session";
+import { DEFAULT_CONFIG } from "@/config";
 import { NaxError } from "@/errors";
 
 const NOW = new Date("2026-10-01T00:00:00.000Z");
@@ -256,8 +257,11 @@ describe("createChatHost", () => {
     });
     expect(other.models).toEqual([MODEL, "other/model"]);
     await other.close();
-    const sparse = makeNaxConfig();
+    const defaultsBefore = structuredClone(DEFAULT_CONFIG);
+    // The config helper shares untouched nested defaults; isolate before deleting fields.
+    const sparse = structuredClone(makeNaxConfig());
     delete sparse.models.native;
+    expect(DEFAULT_CONFIG).toEqual(defaultsBefore);
     const empty = createChatHost({
       config: sparse,
       cwd: dir,
@@ -272,8 +276,10 @@ describe("createChatHost", () => {
   });
   test("default fallback delay is 60000 for a hand-written optional field", async () => {
     await host.close();
-    const config = makeNaxConfig({ outputDir: join(dir, "output") });
+    const defaultsBefore = structuredClone(DEFAULT_CONFIG);
+    const config = structuredClone(makeNaxConfig({ outputDir: join(dir, "output") }));
     if (config.interaction) delete config.interaction.defaults.chatAskFallbackMs;
+    expect(DEFAULT_CONFIG).toEqual(defaultsBefore);
     host = createChatHost({
       config,
       cwd: dir,
