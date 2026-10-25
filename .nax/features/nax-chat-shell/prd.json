@@ -3,7 +3,7 @@
   "feature": "nax-chat-shell",
   "branchName": "feat/nax-chat-shell",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T04:39:51.175Z",
+  "updatedAt": "2026-10-25T04:46:00.153Z",
   "userStories": [
     {
       "id": "US-001",
@@ -242,14 +242,17 @@
         "security"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Straightforward mappings and role additions, but access-control modes and role checks require security-isolated TDD."
+        "reasoning": "Straightforward mappings and role additions, but access-control modes and role checks require security-isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/context/rules/rule-delivery/index.ts",
@@ -265,7 +268,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e644d46e479418826c74f13689d350c334f07bd3"
     },
     {
       "id": "US-006",
