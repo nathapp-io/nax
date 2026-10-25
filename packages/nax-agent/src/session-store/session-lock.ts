@@ -49,6 +49,10 @@ function read(path: string): { text?: string; body?: Body } {
     return text === undefined ? {} : { text };
   }
 }
+
+// Internal shared reader: snapshots and mutation decisions accept the same lock bodies.
+export { read as readSessionLock };
+
 function same(a: ReturnType<typeof read>, b: ReturnType<typeof read>): boolean {
   if (a.body?.nonce !== undefined) return a.body.nonce === b.body?.nonce;
   if (a.body !== undefined)

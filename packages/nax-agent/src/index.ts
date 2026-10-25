@@ -303,6 +303,8 @@ export {
   type SessionMetaMode,
   type SessionListEntry,
   type SessionListPage,
+  type SessionLockHolder,
+  type SessionLockHolderState,
   type SessionStorage,
   type SessionStorageDeps,
 } from "#src/session-store/index";

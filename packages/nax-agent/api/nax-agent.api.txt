@@ -247,6 +247,8 @@ type SessionEventBody
 type SessionHandle
 type SessionListEntry
 type SessionListPage
+type SessionLockHolder
+type SessionLockHolderState
 type SessionMeta
 type SessionMetaMode
 type SessionModel

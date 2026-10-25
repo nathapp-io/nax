@@ -9,10 +9,23 @@ import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "
 import { join } from "node:path";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
-import { acquireSessionLock, type SessionStorageDeps } from "./session-lock.ts";
+import {
+  acquireSessionLock,
+  holderState,
+  readSessionLock,
+  type SessionLockHolderState,
+  type SessionStorageDeps,
+} from "./session-lock.ts";
 import { MetaSchema, type SessionMeta } from "./session-meta.ts";
 
-export type { SessionStorageDeps } from "./session-lock.ts";
+export type { SessionLockHolderState, SessionStorageDeps } from "./session-lock.ts";
+
+export interface SessionLockHolder {
+  readonly pid: number;
+  readonly startedAt: string;
+  readonly heartbeatAt: string | null;
+  readonly state: SessionLockHolderState;
+}
 
 export { LOCK_HEARTBEAT_MS, LOCK_STALE_MS } from "./session-lock.ts";
 
@@ -38,6 +51,8 @@ export interface SessionStorage {
   removeMeta(sessionId: string): Promise<void>;
   /** Resolves to the release function; refuses with SESSION_LOCKED when another live process holds it. */
   acquireLock(sessionId: string): Promise<() => Promise<void>>;
+  /** Unguarded, read-only snapshot; only acquireLock decides ownership. A concurrent rename may yield null. */
+  readLockHolder(sessionId: string): Promise<SessionLockHolder | null>;
   list(query: { readonly cwd?: string | null; readonly cursor?: string | null }): Promise<SessionListPage>;
 }
 
@@ -175,6 +190,16 @@ export function createSessionStorage(deps: SessionStorageDeps): SessionStorage {
       await rm(metaPath(sessionId), { force: true });
     },
     acquireLock,
+    async readLockHolder(sessionId) {
+      const { body } = readSessionLock(lockPath(sessionId));
+      if (body === undefined) return null;
+      return {
+        pid: body.pid,
+        startedAt: body.startedAt,
+        heartbeatAt: body.heartbeatAt ?? null,
+        state: holderState(body, deps, isAlive),
+      };
+    },
     list,
   };
 }
