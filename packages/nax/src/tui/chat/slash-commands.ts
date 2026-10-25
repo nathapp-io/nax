@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { ChatHost } from "@/chat";
 import { featureDir } from "@/config";
 import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts";
+import { buildResourceCatalog, formatPluginsListing, formatSkillsListing } from "@/resources";
 
 export type SlashOutcome =
   | { kind: "send"; message: string }
@@ -23,7 +24,19 @@ export const _slashCommandDeps = {
     }
   },
 };
-const COMMANDS = ["help", "mode", "model", "sessions", "resume", "clear", "cost", "feature", "quit"];
+const COMMANDS = [
+  "help",
+  "mode",
+  "model",
+  "sessions",
+  "resume",
+  "clear",
+  "cost",
+  "feature",
+  "skills",
+  "plugins",
+  "quit",
+];
 
 export function parseSlashCommand(text: string): SlashCommand | null {
   if (!text.startsWith("/")) return null;
@@ -73,6 +86,12 @@ export async function runSlashCommand(
           ...(host.catalog?.skills ?? []).map((entry) => `/${entry.name} - ${entry.description}`),
         ].join("\n"),
       );
+      break;
+    case "skills":
+      show(formatSkillsListing(host.catalog ?? buildResourceCatalog([])));
+      break;
+    case "plugins":
+      show(formatPluginsListing(host.catalog ?? buildResourceCatalog([]), host.naxPlugins ?? []));
       break;
     case "mode":
       if (!arg) show(host.current().mode);

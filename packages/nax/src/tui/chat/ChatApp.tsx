@@ -27,6 +27,10 @@ export function ChatApp({ host }: ChatAppProps): ReactElement {
   const keys = useChatKeys({ host, running: sending, refresh: update, onError: showError });
   const ask = host.asks.pending()[0];
   useEffect(() => host.asks.onChange(update), [host, update]);
+  useEffect(() => {
+    const resourceNotice = host.resourceNotice?.();
+    if (resourceNotice) setEntries((rows) => [...rows, { kind: "message", text: resourceNotice }]);
+  }, [host]);
   const state = host.current();
   const notice = host.notice();
   const warn = state.mode === "full" && state.sandbox?.kind === "unavailable";

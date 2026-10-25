@@ -42,6 +42,7 @@ export interface ChatHost {
   clear(): Promise<void>;
   resume(input: { id?: string }): Promise<void>;
   notice(): string | undefined;
+  resourceNotice?(): string | undefined;
   switchTo(input: { mode?: ChatMode; model?: string }): Promise<void>;
   send(message: string, onEvent: (event: SessionEvent) => void): Promise<void>;
   runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>;
@@ -92,6 +93,7 @@ class NativeChatHost implements ChatHost {
   private handle?: ChatSessionHandle;
   private ledger?: ChatLedger;
   private resumeNotice?: string;
+  private resourceNoticeRead = false;
   private closed = false;
   private closing?: Promise<void>;
   private readonly sessionOperations = new Set<Promise<void>>();
@@ -205,6 +207,13 @@ class NativeChatHost implements ChatHost {
 
   notice(): string | undefined {
     return this.resumeNotice;
+  }
+
+  resourceNotice(): string | undefined {
+    if (this.resourceNoticeRead) return undefined;
+    this.resourceNoticeRead = true;
+    const count = this.catalog?.packages.filter((pkg) => pkg.hooks.length > 0).length ?? 0;
+    return count > 0 ? `hooks declared by ${count} package(s) are not executed by nax` : undefined;
   }
 
   private async latestId(): Promise<string> {

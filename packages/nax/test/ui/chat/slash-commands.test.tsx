@@ -4,9 +4,22 @@ import { act } from "react";
 import type { ChatHost, ChatHostState } from "@/chat";
 import { featureDir } from "@/config";
 import { buildChatFeatureMessage } from "@/prompts";
+import { buildResourceCatalog, formatPluginsListing, formatSkillsListing, type SkillResource } from "@/resources";
 import { ChatApp } from "@/tui/chat";
 
-const COMMANDS = ["help", "mode", "model", "sessions", "resume", "clear", "cost", "feature", "quit"];
+const COMMANDS = [
+  "help",
+  "mode",
+  "model",
+  "sessions",
+  "resume",
+  "clear",
+  "cost",
+  "feature",
+  "skills",
+  "plugins",
+  "quit",
+];
 afterEach(() => {
   cleanup();
   mock.restore();
@@ -142,7 +155,9 @@ describe("slash command routing", () => {
   test("AC-16 help lists every command", async () => {
     const ui = mount();
     await ui.line("/help");
-    for (const command of COMMANDS) expect(ui.lastFrame()).toContain(`/${command}`);
+    expect(ui.host.catalog).toBeUndefined();
+    expect(ui.host.resourceNotice).toBeUndefined();
+    expect(ui.lastFrame()).toContain(COMMANDS.map((command) => `/${command}`).join("\n"));
   });
   test("AC-17 closes and exits", async () => {
     const ui = mount();
@@ -196,6 +211,44 @@ describe("slash command routing", () => {
     expect(ui.send).toHaveBeenCalledWith("still open", expect.any(Function));
     await Promise.resolve(act(async () => ui.finish()));
   });
+});
+describe("resource listings", () => {
+  test.each(["skills", "plugins"] as const)(
+    "US-015 AC-7/8/9/10 /%s displays local catalog without sending",
+    async (name) => {
+      const ui = mount();
+      const skill: SkillResource = {
+        kind: "skill",
+        name: "demo",
+        qualifiedName: "demo",
+        description: "",
+        body: "",
+        baseDir: "/s",
+        path: "/s/SKILL.md",
+        modelInvocable: true,
+        origin: { kind: "claude-project" },
+      };
+      const catalog = buildResourceCatalog([
+        {
+          id: "project",
+          origin: skill.origin,
+          root: "/s",
+          skills: [skill],
+          commands: [],
+          agents: [],
+          mcpServers: [],
+          hooks: [],
+          diagnostics: [],
+        },
+      ]);
+      const naxPlugins: NonNullable<ChatHost["naxPlugins"]> = [{ name: "kit", provides: ["resources"] }];
+      Object.assign(ui.host, { catalog, naxPlugins });
+      await ui.line(`/${name}`);
+      const expected = name === "skills" ? formatSkillsListing(catalog) : formatPluginsListing(catalog, naxPlugins);
+      expect(ui.lastFrame()).toContain(expected);
+      expect(ui.send).not.toHaveBeenCalled();
+    },
+  );
 });
 describe("feature command", () => {
   test("does not send a loaded feature after Ctrl-C closes the app", async () => {

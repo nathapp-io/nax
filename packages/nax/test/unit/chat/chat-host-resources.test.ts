@@ -4,7 +4,7 @@ import { makeLogger, makeNaxConfig } from "@test/helpers";
 import { type ChatResources, createChatHost, createChatStorage } from "@/chat";
 import { _openChatSessionDeps, type OpenChatSessionRequest, openChatSession } from "@/chat/open-chat-session";
 import { createRuleDeliveryHandlers } from "@/context/rules/rule-delivery";
-import { buildResourceCatalog, createSkillsProvider } from "@/resources";
+import { buildResourceCatalog, createSkillsProvider, type ResourcePackage } from "@/resources";
 
 const originals = { ..._openChatSessionDeps };
 const hosts: ReturnType<typeof createChatHost>[] = [];
@@ -12,7 +12,7 @@ afterEach(async () => {
   await Promise.all(hosts.splice(0).map((host) => host.close()));
   Object.assign(_openChatSessionDeps, originals);
 });
-function fixture() {
+function fixture(packages: readonly ResourcePackage[] = []) {
   const events: string[] = [];
   const meta: SessionMeta = {
     schemaVersion: 1,
@@ -39,7 +39,7 @@ function fixture() {
   const release = async () => {
     events.push("release");
   };
-  const catalog = buildResourceCatalog([]);
+  const catalog = buildResourceCatalog(packages);
   const pluginHandlers: LoopHandlerSet = [{ plugin: "kit", event: "before_turn", handler: async () => {} }];
   const resources: ChatResources = {
     catalog,
@@ -78,6 +78,41 @@ function fixture() {
 }
 
 describe("createChatHost resources", () => {
+  test("US-015 AC-11/12 counts hook packages rather than events and consumes notice once", () => {
+    const packages: ResourcePackage[] = ["one", "two", "empty"].map((id) => ({
+      id,
+      origin: { kind: "claude-project" },
+      root: `/${id}`,
+      skills: [],
+      commands: [],
+      agents: [],
+      mcpServers: [],
+      diagnostics: [],
+      hooks:
+        id === "empty"
+          ? []
+          : [
+              {
+                kind: "hooks",
+                origin: { kind: "claude-project" },
+                path: `/${id}/hooks.json`,
+                events: ["Start", "Stop"],
+              },
+            ],
+    }));
+    const host = fixture(packages).build();
+    expect(host.resourceNotice?.()).toBe("hooks declared by 2 package(s) are not executed by nax");
+    expect(host.resourceNotice?.()).toBeUndefined();
+    expect(host.resourceNotice?.()).toBeUndefined();
+  });
+  test("US-015 AC-15 returns no resource notice repeatedly without hooks or resources", () => {
+    const f = fixture();
+    for (const host of [f.build(), f.build(false)]) {
+      expect(typeof host.resourceNotice).toBe("function");
+      expect(host.resourceNotice?.()).toBeUndefined();
+      expect(host.resourceNotice?.()).toBeUndefined();
+    }
+  });
   test("AC-17/18/19 plugin-first frozen handlers persist across switch and resume", async () => {
     const f = fixture();
     const host = f.build();

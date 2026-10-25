@@ -4,6 +4,7 @@ export { discoverClaudeCodePackages } from "./claude-sources";
 export { runCommandShellLines } from "./command-shell";
 export type { ResourceFrontmatterResult } from "./frontmatter";
 export { readResourceFrontmatter } from "./frontmatter";
+export { formatPluginsListing, formatSkillsListing } from "./listing";
 export { naxPluginPackages } from "./nax-plugin-packages";
 export { parseAgentFile } from "./parse-agent";
 export { parseCommandFile } from "./parse-command";
