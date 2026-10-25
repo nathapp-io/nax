@@ -3,7 +3,7 @@
   "feature": "chat-mcp-servers",
   "branchName": "feat/chat-mcp-servers",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T14:00:43.687Z",
+  "updatedAt": "2026-10-25T14:08:49.574Z",
   "userStories": [
     {
       "id": "US-001",
@@ -564,14 +564,17 @@
       "dependencies": [
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Extends existing state and slash-command patterns with deterministic listing and keyed deduplication, without changing session permissions or connection policy."
+        "reasoning": "Extends existing state and slash-command patterns with deterministic listing and keyed deduplication, without changing session permissions or connection policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/chat-mcp.ts",
@@ -599,7 +602,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8d22b5059fa58a6234206452163c6a1df323195a"
     },
     {
       "id": "US-009",
