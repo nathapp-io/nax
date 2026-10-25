@@ -7,6 +7,7 @@ import {
   type SessionBackend,
   type SessionEvent,
   type ToolProvider,
+  type TurnEndStatus,
 } from "@nathapp/nax-agent";
 import { makeNaxConfig } from "@test/helpers";
 import type { ChatMode } from "@/chat/chat-mode";
@@ -33,17 +34,41 @@ const backend: SessionBackend = {
 };
 const store = createMemoryTranscriptStore();
 
-function turnEnd(output: string): SessionEvent {
-  return {
+function turnEnd(output: string, status: TurnEndStatus = "completed", error?: { code: string; message: string }) {
+  const event: SessionEvent = {
     sessionId: "s",
     turnId: "t",
     at: "2026-10-01T00:00:00.000Z",
     metadata: {},
     type: "turn_end",
-    status: "completed",
+    status,
     output,
     usage: { inputTokens: 0, outputTokens: 0 },
     costUsd: 0,
+    ...(error !== undefined ? { error } : {}),
+  };
+  return event;
+}
+
+function textDelta(text: string): SessionEvent {
+  return {
+    sessionId: "s",
+    turnId: "t",
+    at: "2026-10-01T00:00:00.000Z",
+    metadata: {},
+    type: "text_delta",
+    round: 1,
+    text,
+  };
+}
+
+/** A session whose turn ends with `event`. */
+function sessionEnding(event: SessionEvent): AgentSession {
+  return {
+    ...stub,
+    async *send() {
+      yield event;
+    },
   };
 }
 
@@ -267,19 +292,29 @@ describe("runSubagent session options", () => {
 });
 
 describe("runSubagent lifecycle", () => {
-  test("sends the task, returns the turn output and closes the session", async () => {
+  test("AC-1 AC-2 AC-3 sends the task only, announces the session first, forwards events in order", async () => {
+    const order: string[] = [];
     const send = mock(async function* (_message: string) {
+      order.push("send");
+      yield textDelta("a");
       yield turnEnd("the answer");
     });
     stub = { ...stub, send };
     const events: SessionEvent[] = [];
     const seen: AgentSession[] = [];
-    const result = await run({ onEvent: (e) => events.push(e), onSession: (s) => seen.push(s) });
+    const result = await run({
+      onEvent: (e) => events.push(e),
+      onSession: (s) => {
+        order.push("onSession");
+        seen.push(s);
+      },
+    });
     expect(result).toEqual({ content: "the answer" });
+    expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith("check it");
-    expect(events.map((e) => e.type)).toEqual(["turn_end"]);
+    expect(events.map((e) => e.type)).toEqual(["text_delta", "turn_end"]);
     expect(seen).toEqual([stub]);
-    expect(closed).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["onSession", "send"]);
   });
 
   test("does not reach createAgentSession when option construction fails", async () => {
@@ -288,5 +323,143 @@ describe("runSubagent lifecycle", () => {
     });
     await expect(run()).rejects.toThrow("bad options");
     expect(sessionCalls).toEqual([]);
+  });
+});
+
+describe("runSubagent terminal results", () => {
+  test("AC-4 AC-12 completed with output returns the content and closes once", async () => {
+    expect(await run()).toEqual({ content: "done" });
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  test("AC-5 completed with empty output returns the no-text placeholder", async () => {
+    stub = sessionEnding(turnEnd(""));
+    expect(await run()).toEqual({ content: "(the subagent returned no text)" });
+  });
+
+  test("AC-6 AC-16 errored returns the error message and closes once", async () => {
+    stub = sessionEnding(turnEnd("", "errored", { code: "X", message: "boom" }));
+    expect(await run()).toEqual({ isError: true, content: "subagent reviewer errored: boom" });
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  test.each<[string, TurnEndStatus]>([
+    ["AC-7", "cancelled"],
+    ["AC-8", "timed_out"],
+    ["AC-20", "interrupted"],
+  ])("%s %s with no error falls back to the status and AC-21 closes once", async (_ac, status) => {
+    stub = sessionEnding(turnEnd("", status));
+    expect(await run()).toEqual({ isError: true, content: `subagent reviewer ${status}: ${status}` });
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  test("a turn that ends without turn_end is reported as a failure", async () => {
+    stub = {
+      ...stub,
+      async *send() {
+        yield textDelta("partial");
+      },
+    };
+    const result = await run();
+    expect(result.isError).toBe(true);
+    expect(result.content).toStartWith("[chat] subagent reviewer failed:");
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("runSubagent cancellation", () => {
+  test("AC-9 aborting the signal during the turn calls the session's cancel", async () => {
+    const controller = new AbortController();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const cancel = mock(() => release());
+    stub = {
+      ...stub,
+      cancel,
+      async *send() {
+        controller.abort();
+        await gate;
+        yield turnEnd("", "cancelled");
+      },
+    };
+    const result = await run({ signal: controller.signal });
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ isError: true, content: "subagent reviewer cancelled: cancelled" });
+  });
+
+  test("AC-10 AC-11 an already-aborted signal returns cancelled without creating a session", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const result = await run({ signal: controller.signal });
+    expect(result).toEqual({ isError: true, content: "subagent reviewer cancelled: cancelled" });
+    expect(deps.createAgentSession).not.toHaveBeenCalled();
+  });
+
+  test("an abort that lands while the session is being created sends nothing and closes", async () => {
+    const controller = new AbortController();
+    const send = mock(async function* (_message: string) {
+      yield turnEnd("done");
+    });
+    stub = { ...stub, send };
+    deps.createAgentSession = mock(async () => {
+      controller.abort();
+      return stub;
+    });
+    const result = await run({ signal: controller.signal });
+    expect(result).toEqual({ isError: true, content: "subagent reviewer cancelled: cancelled" });
+    expect(send).not.toHaveBeenCalled();
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  test("detaches the abort listener after the turn", async () => {
+    const controller = new AbortController();
+    const cancel = mock(() => {});
+    stub = { ...stub, cancel };
+    await run({ signal: controller.signal });
+    controller.abort();
+    expect(cancel).not.toHaveBeenCalled();
+  });
+});
+
+describe("runSubagent failures", () => {
+  test("AC-17 AC-18 a send that throws on iteration is a failed result and closes once", async () => {
+    stub = {
+      ...stub,
+      // biome-ignore lint/correctness/useYield: the throw is the behaviour under test
+      async *send() {
+        throw new Error("x");
+      },
+    };
+    expect(await run()).toEqual({ isError: true, content: "[chat] subagent reviewer failed: x" });
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  test("AC-17 AC-18 a send that throws synchronously is a failed result and closes once", async () => {
+    stub = {
+      ...stub,
+      send() {
+        throw new Error("x");
+      },
+    };
+    expect(await run()).toEqual({ isError: true, content: "[chat] subagent reviewer failed: x" });
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  test("AC-19 a createAgentSession that throws is a failed result", async () => {
+    deps.createAgentSession = mock(async () => {
+      throw new Error("bad model");
+    });
+    expect(await run()).toEqual({ isError: true, content: "[chat] subagent reviewer failed: bad model" });
+    expect(closed).not.toHaveBeenCalled();
+  });
+
+  test("a close that throws does not replace the turn's result", async () => {
+    closed = mock(async () => {
+      throw new Error("close failed");
+    });
+    stub = { ...stub, close: closed };
+    expect(await run()).toEqual({ content: "done" });
   });
 });

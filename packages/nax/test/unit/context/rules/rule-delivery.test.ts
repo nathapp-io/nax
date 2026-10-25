@@ -119,6 +119,37 @@ describe("before_tool — tui role (chat US-005)", () => {
   });
 });
 
+describe("before_tool — subagent role (chat-subagents US-008)", () => {
+  test("AC-13: RULE_READ_ROLES contains subagent", () => {
+    expect(RULE_READ_ROLES).toContain("subagent");
+  });
+
+  test("AC-14: RULE_WRITE_ROLES contains subagent", () => {
+    expect(RULE_WRITE_ROLES).toContain("subagent");
+  });
+
+  test("AC-15: a first subagent Write is blocked with the same text as tui in a fresh handler state", async () => {
+    await withTempDir(async (repoRoot) => {
+      await seedRepo(repoRoot);
+      const subagent = await callBeforeTool(
+        handlersFor(repoRoot),
+        write(A_PATH),
+        handlerContext({ role: "subagent", sessionName: "sub-write" }),
+      );
+      const tui = await callBeforeTool(
+        handlersFor(repoRoot),
+        write(A_PATH),
+        handlerContext({ role: "tui", sessionName: "chat-write" }),
+      );
+
+      expect(subagent).toMatchObject({ kind: "block", isError: true });
+      expect(tui).toMatchObject({ kind: "block", isError: true });
+      expect(outcomeText(subagent)).toContain(RULE_R_BODY);
+      expect(outcomeText(subagent)).toBe(outcomeText(tui));
+    });
+  });
+});
+
 describe("before_tool — role scope", () => {
   test("AC-1: a wf-implementer Read of a governed file is nudged with the rule's body under its heading", async () => {
     await withTempDir(async (repoRoot) => {
