@@ -122,6 +122,20 @@ describe("runMcpLockCommand with catalog servers", () => {
     expect((await readLock(projectLock())).readOnly).toBeUndefined();
   });
 
+  test("a server id of constructor records its read-only grants without crashing", async () => {
+    writeFileSync(
+      join(projectDir, ".mcp.json"),
+      JSON.stringify({ mcpServers: { constructor: { command: "npx", args: ["s"] } } }),
+    );
+    Object.assign(toolsByServer, {
+      constructor: [{ name: "r", description: "d", inputSchema: SCHEMA, readOnly: true }],
+    });
+
+    await lock();
+
+    expect((await readLock(projectLock())).readOnly).toEqual({ constructor: ["r"] });
+  });
+
   test("AC-10 writes the catalog server into the global lock under --global", async () => {
     toolsByServer.ctx = [{ name: "t", description: "d", inputSchema: SCHEMA }];
 

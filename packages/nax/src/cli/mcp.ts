@@ -99,10 +99,15 @@ function mergeReadOnly(
   carried: Record<string, string[]> | undefined,
   hinted: Record<string, string[]>,
 ): Record<string, string[]> | undefined {
-  const merged: Record<string, string[]> = {};
+  // A Map, not a record: `constructor` is a legal server id and must not resolve to Object.prototype.
+  const merged = new Map<string, Set<string>>();
   for (const source of [carried ?? {}, hinted]) {
-    for (const [id, names] of Object.entries(source)) merged[id] = [...new Set([...(merged[id] ?? []), ...names])];
+    for (const [id, names] of Object.entries(source)) {
+      const seen = merged.get(id) ?? new Set<string>();
+      for (const name of names) seen.add(name);
+      merged.set(id, seen);
+    }
   }
-  for (const id of Object.keys(merged)) merged[id] = sortedNames(merged[id] ?? []);
-  return Object.keys(merged).length === 0 ? undefined : merged;
+  if (merged.size === 0) return undefined;
+  return Object.fromEntries([...merged].map(([id, names]) => [id, sortedNames([...names])]));
 }
