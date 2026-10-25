@@ -9,7 +9,8 @@ const originalDeps = { ..._resourceFsDeps };
 let dir: string;
 let repoRoot: string;
 let claudeDir: string;
-const discover = () => resources.discoverClaudeCodePackages({ repoRoot, claudeDir });
+let claudeJson: string;
+const discover = () => resources.discoverClaudeCodePackages({ repoRoot, claudeDir, claudeJson });
 const put = (path: string, data: unknown) => Bun.write(path, typeof data === "string" ? data : JSON.stringify(data));
 const enable = (entries: Record<string, boolean>) => put(join(claudeDir, "settings.json"), { enabledPlugins: entries });
 const registry = (plugins: Record<string, unknown>, version = 2) =>
@@ -24,6 +25,7 @@ beforeEach(() => {
   dir = makeTempDir();
   repoRoot = join(dir, "repo");
   claudeDir = join(dir, "claude");
+  claudeJson = join(dir, "fixture-missing/.claude.json");
 });
 afterEach(() => {
   Object.assign(_resourceFsDeps, originalDeps);
@@ -248,5 +250,113 @@ describe("discoverClaudeCodePackages", () => {
         },
       ],
     });
+  });
+});
+
+describe("discoverClaudeCodePackages .claude.json MCP scopes", () => {
+  const docs = { docs: { command: "npx", args: ["d"] } };
+  const mcpNames = (pkg: { mcpServers: readonly { name: string }[] } | undefined) => pkg?.mcpServers.map((m) => m.name);
+  const jsonDiagnostics = (packages: readonly { diagnostics: readonly { path: string }[] }[]) =>
+    packages.flatMap((p) => p.diagnostics).filter((d) => d.path === claudeJson);
+  beforeEach(() => {
+    claudeJson = join(dir, ".claude.json");
+  });
+
+  test("AC-3/4/5 top-level mcpServers become user-scope entries carrying the file path", async () => {
+    await put(claudeJson, { mcpServers: docs });
+    const user = (await discover())[1];
+    expect(user?.id).toBe("claude-user");
+    expect(mcpNames(user)).toContain("docs");
+    expect(user?.mcpServers[0]).toMatchObject({
+      name: "docs",
+      scope: "user",
+      path: claudeJson,
+      origin: { kind: "claude-user" },
+      server: { transport: "stdio", command: "npx", args: ["d"], env: {} },
+    });
+  });
+  test("AC-6/7/8 local entries precede repo .mcp.json entries in the project package", async () => {
+    await put(claudeJson, { projects: { [repoRoot]: { mcpServers: { local1: { command: "l" } } } } });
+    await put(join(repoRoot, ".mcp.json"), { mcpServers: { proj1: { command: "p" } } });
+    const project = (await discover())[0];
+    expect(mcpNames(project)).toEqual(["local1", "proj1"]);
+    expect(project?.mcpServers[0]).toMatchObject({
+      scope: "local",
+      origin: { kind: "claude-project" },
+      path: claudeJson,
+    });
+    expect(project?.mcpServers[1]).toMatchObject({ scope: "project" });
+  });
+  test("AC-9 a different projects key contributes nothing", async () => {
+    await put(claudeJson, { projects: { "/other/repo": { mcpServers: { local1: { command: "l" } } } } });
+    await put(join(repoRoot, ".mcp.json"), { mcpServers: { proj1: { command: "p" } } });
+    const packages = await discover();
+    expect(mcpNames(packages[0])).toEqual(["proj1"]);
+    expect(mcpNames(packages[1])).toEqual([]);
+  });
+  test("AC-10 a missing claudeJson adds no diagnostic", async () => {
+    const packages = await discover();
+    expect(jsonDiagnostics(packages)).toEqual([]);
+    expect(packages.flatMap((p) => p.diagnostics)).toEqual([]);
+  });
+  test.each([
+    ["[]", "AC-11 array"],
+    ["not JSON", "AC-20 unparseable"],
+  ])("a claudeJson that is not a JSON object (%s) adds one error to the user package", async (text) => {
+    await put(claudeJson, text);
+    const packages = await discover();
+    expect(packages[1]?.diagnostics).toEqual([
+      expect.objectContaining({ severity: "error", path: claudeJson, origin: { kind: "claude-user" } }),
+    ]);
+    expect(packages[0]?.diagnostics).toEqual([]);
+    expect(packages.flatMap((p) => p.mcpServers)).toEqual([]);
+  });
+  test("AC-12/13 a non-object top-level mcpServers adds one error and no entries", async () => {
+    await put(claudeJson, { mcpServers: "x" });
+    const packages = await discover();
+    expect(mcpNames(packages[1])).toEqual([]);
+    expect(packages[1]?.diagnostics).toEqual([expect.objectContaining({ severity: "error", path: claudeJson })]);
+  });
+  test("AC-16/17 a non-object projects adds one error and no entries", async () => {
+    await put(claudeJson, { projects: [{ mcpServers: docs }] });
+    const packages = await discover();
+    expect(packages.flatMap((p) => p.mcpServers)).toEqual([]);
+    expect(jsonDiagnostics(packages)).toEqual([expect.objectContaining({ severity: "error" })]);
+    expect(packages[1]?.diagnostics).toHaveLength(1);
+  });
+  test("AC-18/19 a non-object projects[repoRoot].mcpServers adds one error and no local entries", async () => {
+    await put(claudeJson, { projects: { [repoRoot]: { mcpServers: "x" } } });
+    await put(join(repoRoot, ".mcp.json"), { mcpServers: { proj1: { command: "p" } } });
+    const packages = await discover();
+    expect(mcpNames(packages[0])).toEqual(["proj1"]);
+    expect(jsonDiagnostics(packages)).toEqual([expect.objectContaining({ severity: "error" })]);
+  });
+  test("a project entry without mcpServers adds nothing; non-object project entry errors once", async () => {
+    await put(claudeJson, { projects: { [repoRoot]: { disabledMcpServers: ["x"] } } });
+    expect(jsonDiagnostics(await discover())).toEqual([]);
+    await put(claudeJson, { projects: { [repoRoot]: 5 } });
+    expect(jsonDiagnostics(await discover())).toHaveLength(1);
+  });
+  test("unsupported entries warn on the package that owns their scope", async () => {
+    await put(claudeJson, {
+      mcpServers: { bad: { type: "http" } },
+      projects: { [repoRoot]: { mcpServers: { bad2: { type: "http" } } } },
+    });
+    const packages = await discover();
+    expect(packages[1]?.diagnostics).toEqual([expect.objectContaining({ severity: "warn", path: claudeJson })]);
+    expect(packages[0]?.diagnostics).toEqual([
+      expect.objectContaining({ severity: "warn", origin: { kind: "claude-project" } }),
+    ]);
+  });
+  test("AC-14 loadResourceCatalog reads <CLAUDE_CONFIG_DIR>/.claude.json", async () => {
+    await put(join(claudeDir, ".claude.json"), { mcpServers: docs });
+    const catalog = await resources.loadResourceCatalog({
+      repoRoot,
+      config: { resources: undefined },
+      env: { CLAUDE_CONFIG_DIR: claudeDir },
+      naxPluginPackages: [],
+    });
+    const user = catalog.packages.find((p) => p.id === "claude-user");
+    expect(mcpNames(user)).toContain("docs");
   });
 });

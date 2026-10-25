@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { readClaudeJsonMcp } from "./claude-json";
 import { type HookParseResult, hooksFromSettings, parseHooksJson } from "./parse-hooks";
 import { parseMcpJson } from "./parse-mcp";
 import { isResourceObject, readResourceJson, resourceError } from "./parse-shared";
@@ -217,13 +218,20 @@ async function basePackage(root: string, origin: typeof PROJECT_ORIGIN | typeof 
 export async function discoverClaudeCodePackages(options: {
   repoRoot: string;
   claudeDir: string;
+  claudeJson: string;
 }): Promise<ResourcePackage[]> {
-  const { repoRoot, claudeDir } = options;
-  const [project, user] = await Promise.all([
+  const { repoRoot, claudeDir, claudeJson } = options;
+  const [project, user, json] = await Promise.all([
     basePackage(repoRoot, PROJECT_ORIGIN),
     basePackage(claudeDir, USER_ORIGIN),
+    readClaudeJsonMcp(claudeJson, repoRoot),
   ]);
-  const packages = [project.pkg, user.pkg];
+  user.diagnostics.push(...json.userDiagnostics);
+  project.diagnostics.push(...json.projectDiagnostics);
+  const packages: ResourcePackage[] = [
+    { ...project.pkg, mcpServers: [...json.local, ...project.pkg.mcpServers] },
+    { ...user.pkg, mcpServers: [...user.pkg.mcpServers, ...json.user] },
+  ];
   const userDiagnostics = user.diagnostics;
   const enabled = Object.entries({ ...enabledEntries(user.settings), ...enabledEntries(project.settings) })
     .filter(([, value]) => value === true)

@@ -1,5 +1,5 @@
 export { buildResourceCatalog, loadResourceCatalog } from "./catalog";
-export { _claudePathsDeps, claudeConfigDir } from "./claude-paths";
+export { _claudePathsDeps, claudeConfigDir, claudeJsonPath } from "./claude-paths";
 export { discoverClaudeCodePackages } from "./claude-sources";
 export { runCommandShellLines } from "./command-shell";
 export type { ResourceFrontmatterResult } from "./frontmatter";
