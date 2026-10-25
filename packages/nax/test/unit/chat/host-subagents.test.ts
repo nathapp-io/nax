@@ -327,6 +327,7 @@ describe("chat host nested cancel and close", () => {
       nestedCostUsd: 0.4,
     });
     await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    const beforeFirst = await spent(h);
     const firstSeen: SessionEvent[] = [];
     let settled = false;
     const first = h.host
@@ -345,6 +346,8 @@ describe("chat host nested cancel and close", () => {
     h.releaseNested();
     await first;
     expect(h.nestedSessions[0]?.closeCalls).toBe(1);
+    // The cancelled turn keeps the spend its abandoned nested run finished with late.
+    expect((await spent(h)) - beforeFirst).toBeCloseTo(0.4);
 
     h.control.skipRun = true;
     h.control.chatCostUsd = 1;

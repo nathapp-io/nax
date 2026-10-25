@@ -17,6 +17,12 @@ export interface RunChatTurnOptions {
   readonly now: string;
   /** Spend of nested sessions to add to this turn's metadata; read once, after `turn_end`. */
   readonly extraCostUsd?: () => number;
+  /**
+   * Resolves once every nested run of this turn has finished, abandoned ones included.
+   * Awaited after `turn_end` and before the ledger flush and the metadata write, so a
+   * late nested usage row and its spend still land on this turn.
+   */
+  readonly settleNested?: () => Promise<void>;
 }
 
 async function writeTurnMeta(options: RunChatTurnOptions, costUsd: number): Promise<SessionMeta> {
@@ -61,6 +67,7 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<SessionM
       sessionId: handle.meta.sessionId,
     });
   }
+  await options.settleNested?.();
   await ledger.drain();
   return writeTurnMeta(options, ended.costUsd);
 }

@@ -387,7 +387,7 @@ class NativeChatHost implements ChatHost {
         ledger,
         onEvent,
         now: this.deps.now().toISOString(),
-        ...(runs ? { extraCostUsd: () => runs.takeCost() } : {}),
+        ...(runs ? { extraCostUsd: () => runs.takeCost(), settleNested: () => runs.settle() } : {}),
       });
     } finally {
       try {
