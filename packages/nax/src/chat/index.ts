@@ -17,6 +17,7 @@ export {
   type ChatMcpState,
   createChatMcp,
 } from "./chat-mcp";
+export { formatMcpListing } from "./chat-mcp-listing";
 export {
   type ChatMode,
   type ChatSessionSettings,

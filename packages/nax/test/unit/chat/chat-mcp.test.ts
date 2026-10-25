@@ -183,6 +183,75 @@ describe("createChatMcp", () => {
     expect(chat.state.withheld()).toHaveLength(1);
     expect(chat.state.withheld()[0]).toMatchObject({ serverId: "docs", name: "t", reason: "absent-from-lock" });
   });
+  test("US-008 AC-1/2 withheld() holds the entry passed to onWithheld once per server and tool", async () => {
+    const f = install();
+    const createMcpProviders = mock((_opts: Parameters<typeof originals.createMcpProviders>[0]) => []);
+    _chatMcpDeps.createMcpProviders = createMcpProviders;
+    const chat = await createChatMcp(input({ docs: server() }));
+    const onWithheld = createMcpProviders.mock.calls[0]?.[0].onWithheld;
+    assertDefined(onWithheld, "onWithheld");
+    expect(createMcpProviders.mock.calls[0]?.[0].pool).toBe(f.pool);
+    const entry = { serverId: "docs", name: "t", reason: "absent-from-lock", lockSource: "project" } as const;
+    onWithheld(entry);
+    expect(chat.state.withheld()).toEqual([entry]);
+    onWithheld({ ...entry });
+    expect(chat.state.withheld()).toHaveLength(1);
+    onWithheld({ ...entry, name: "u" });
+    expect(chat.state.withheld()).toHaveLength(2);
+  });
+  test("US-008 AC-4 diagnostics include the merge diagnostic for a shadowed server", async () => {
+    install();
+    const chat = await createChatMcp(input({ ctx: server() }, projectCatalog("ctx")));
+    expect(chat.state.diagnostics.map((d) => d.message)).toContain(
+      "[resources] mcp server ctx from /r/.mcp.json is shadowed by config",
+    );
+  });
+  test("US-008 AC-5 a configured url server has an http config row", async () => {
+    install();
+    const chat = await createChatMcp(input({ remote: server({ command: undefined, url: "https://x.test/mcp" }) }));
+    expect(chat.state.servers).toEqual([{ id: "remote", source: "config", transport: "http", locked: true }]);
+  });
+  test("US-008 AC-6 a configured command server has a stdio row", async () => {
+    install();
+    const chat = await createChatMcp(input({ docs: server() }));
+    expect(chat.state.servers[0]?.transport).toBe("stdio");
+  });
+  test("US-008 AC-7 a plugin catalog server row carries the plugin name", async () => {
+    install();
+    _chatMcpDeps.readLock = async () => ({ version: 1, servers: { "chrome-server": {} } });
+    const origin = { kind: "claude-plugin", plugin: "chrome", marketplace: "m" } as const;
+    const entry: McpServerResource = {
+      kind: "mcp",
+      name: "server",
+      transport: "stdio",
+      scope: "plugin",
+      server: { transport: "stdio", command: "run", args: [], env: {} },
+      path: "/p/.mcp.json",
+      origin,
+    };
+    const catalog = buildResourceCatalog([
+      {
+        id: "chrome@m",
+        origin,
+        root: "/p",
+        skills: [],
+        commands: [],
+        agents: [],
+        mcpServers: [entry],
+        hooks: [],
+        diagnostics: [],
+      },
+    ]);
+    const chat = await createChatMcp(input({}, catalog));
+    expect(chat.state.servers[0]).toMatchObject({ id: "chrome-server", source: "plugin", plugin: "chrome" });
+  });
+  test("US-008 AC-8 state.events() returns the events of the pool from createMcpPool", async () => {
+    const f = install();
+    const events: ReturnType<McpPool["events"]> = [{ kind: "closed", serverId: "docs", workdir: "/w", at: "t" }];
+    f.pool.events = () => events;
+    const chat = await createChatMcp(input({ docs: server() }));
+    expect(chat.state.events()).toEqual(events);
+  });
   test("state.events() reads the pool's events live", async () => {
     const f = install();
     const events: ReturnType<McpPool["events"]> = [];
