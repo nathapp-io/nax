@@ -3,7 +3,7 @@
   "feature": "chat-subagents",
   "branchName": "feat/chat-subagents",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T15:58:39.238Z",
+  "updatedAt": "2026-10-25T16:06:21.900Z",
   "userStories": [
     {
       "id": "US-001",
@@ -147,14 +147,17 @@
         "models"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "An additive validated map spans four established config surfaces; the explicit Zod default is the primary compatibility risk."
+        "reasoning": "An additive validated map spans four established config surfaces; the explicit Zod default is the primary compatibility risk.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas-infra.ts",
@@ -170,7 +173,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "54cc8d7612ce58a77becc2b165efd894bb9edd8c"
     },
     {
       "id": "US-004",
