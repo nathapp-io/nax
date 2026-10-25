@@ -35,4 +35,11 @@ export {
   resolveChatSessionsDir,
 } from "./open-chat-session";
 export type { ChatResources } from "./resources";
+export {
+  type ResolvedSubagentModel,
+  type ResolveSubagentModelOptions,
+  resolveSubagentModel,
+  type SubagentModelSource,
+} from "./subagent-model";
+export { type DroppedSubagentTool, type MappedSubagentTools, mapSubagentTools } from "./subagent-tools";
 export { type RunChatTurnOptions, runChatTurn } from "./turn-runner";
