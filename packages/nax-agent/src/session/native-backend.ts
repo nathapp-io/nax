@@ -4,6 +4,7 @@
  * with built-in and embedder tools, the NativeSessionAdapter, loop handlers
  * and the resume model check.
  */
+import { getLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { DEFAULT_SPIN_BREAKER_SETTINGS } from "#src/infra/spin-breaker/index";
 import { NATIVE_AGENT } from "#src/native/models";
@@ -78,6 +79,9 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     ctx.profile === "none" || raw.toolProviders === undefined
       ? undefined
       : await resolveProviderTools(raw.toolProviders, SESSION_STAGE, ctx.workdir);
+  for (const failure of providerTools?.failures ?? []) {
+    getLogger().warn("session", "Tool provider skipped", { sessionId: ctx.sessionId, ...failure });
+  }
   for (const tool of ctx.tools) {
     if (providerTools?.providerIdByTool.has(tool.name)) {
       throw new AgentSessionError(

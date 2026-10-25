@@ -1,5 +1,6 @@
 import { afterAll, afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { BackendOpenContext, ToolProvider } from "@nathapp/nax-agent";
+import { getSafeLogger, setAgentLogger } from "#src/infra/agent-logger";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
 import { AgentSessionError } from "#src/session/agent-session-errors";
@@ -152,9 +153,21 @@ describe("nativeBackend tool providers", () => {
         throw new Error("offline");
       },
     });
-    const opened = await open({ model: MODEL, toolProviders: [broken, provider()] });
-    expect(names(opened)).toContain("skills__load");
-    expect(names(opened)).not.toContain("broken__load");
+    const previous = getSafeLogger();
+    const warn = mock(() => {});
+    setAgentLogger({ warn, info: () => {}, debug: () => {}, error: () => {} });
+    try {
+      const opened = await open({ model: MODEL, toolProviders: [broken, provider()] });
+      expect(names(opened)).toContain("skills__load");
+      expect(names(opened)).not.toContain("broken__load");
+      expect(warn).toHaveBeenCalledWith("session", "Tool provider skipped", {
+        sessionId: "providers",
+        providerId: "broken",
+        reason: "Error: offline",
+      });
+    } finally {
+      setAgentLogger(previous);
+    }
   });
 
   test.each([
