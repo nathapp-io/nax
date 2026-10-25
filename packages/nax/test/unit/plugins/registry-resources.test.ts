@@ -43,7 +43,7 @@ describe("getResourceDirs", () => {
     ["AC-8 builtin", { type: "builtin", path: "/p/index.ts" }],
     ["AC-10 npm", { type: "config", path: "@example/kit" }],
   ] satisfies [string, PluginSource][])("%s is skipped; AC-14 warns with plugin name", async (_label, source) => {
-    await withWarnSpy((warn) => {
+    await withWarnSpy(async (warn) => {
       expect(registry(source).getResourceDirs()).toEqual([]);
       expect(warn.mock.calls.some((call) => call[0] === "plugins" && call[1].includes("kit"))).toBe(true);
     });
@@ -74,7 +74,12 @@ describe("getResourceDirs", () => {
 
 describe("validatePlugin resources", () => {
   test("AC-1 accepts a resources provider", () => {
-    const plugin = candidate({ skills: "skills" });
+    const plugin: NaxPlugin = {
+      name: "kit",
+      version: "1.0.0",
+      provides: ["resources"],
+      extensions: { resources: { skills: "skills" } },
+    };
     expect(validatePlugin(plugin)).toBe(plugin);
   });
   test.each([
@@ -89,7 +94,7 @@ describe("validatePlugin resources", () => {
     ["non-string", { skills: 12 }, "resources.skills"],
     ["array extension", [], "resources extension"],
   ])("rejects %s with a resource-specific warning", async (_label, resources, field) => {
-    await withWarnSpy((warn) => {
+    await withWarnSpy(async (warn) => {
       expect(validatePlugin(candidate(resources))).toBeNull();
       expect(warn.mock.calls.some((call) => call[1].includes(String(field)))).toBe(true);
     });
