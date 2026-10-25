@@ -83,9 +83,23 @@ provider, nested sessions, `agent.modelAliases`, `/agents`) follows it. It build
 - `McpToolDescriptor` (`packages/nax/src/mcp/types.ts`) gains `readonly readOnly?: true`.
   `connectMcpServer` already returns the shared layer's tool objects unchanged, so the hint
   set by US-001 arrives with no mapping. `createMcpProviders` (`src/mcp/provider.ts`) maps
-  each admitted tool to a `ProviderTool` that carries `readOnly: true` when the descriptor
-  has it and no `readOnly` key otherwise. Without this mapping every MCP tool would land in
-  `askTools`.
+  each admitted tool to a `ProviderTool` that carries `readOnly: true` only when the
+  descriptor has `readOnly: true` AND the resolved lock lists the tool under
+  `readOnly[serverId]`; otherwise the tool has no `readOnly` key. The hint is server-stated
+  and untrusted, so it counts only after a human locked it: a hint that appears or flips
+  after locking makes the tool ask again until `nax mcp lock` is re-run (security review
+  2026-10-25). Without this mapping every MCP tool would land in `askTools`.
+- `McpLockFile` (`src/mcp/lock.ts`) gains
+  `readonly readOnly?: Readonly<Record<string, readonly string[]>>` (server id -> names of
+  tools locked as read-only). A lock whose `readOnly` is not an object of string arrays is
+  read as having no `readOnly` entries. The lock stays `version: 1`; a lock written before
+  this feature has no `readOnly` and so marks nothing read-only.
+- Connect-failure reasons are redacted before the pool records or logs them
+  (`redactMcpReason(reason, server)` in `src/mcp/pool.ts`): for a server with a `url`, every
+  occurrence of the configured url is replaced by its origin plus pathname (no userinfo,
+  query or fragment), and every non-empty `headers` value is replaced by `***`. The
+  `connect-failed` event's `reason`, the warn log's `error` field and `/mcp` all see the
+  redacted text.
 - `McpServerSchema` (`packages/nax/src/config/schemas-mcp.ts`): `command` becomes optional;
   new `url: z.string().url().optional()` and `headers: z.record(z.string(), z.string()).default({})`.
   The object keeps `.strict()` and gains a refinement: exactly one of `command` and `url` is
@@ -226,6 +240,8 @@ export interface ChatMcpServerRow {
   readonly source: McpServerSource;
   readonly plugin?: string;
   readonly transport: "stdio" | "http";
+  /** False for a catalog server the lock does not list; it is not connected. */
+  readonly locked: boolean;
 }
 
 export interface ChatMcpState {
@@ -255,13 +271,21 @@ export function createChatMcp(input: {
   readonly catalog: ResourceCatalog;
   readonly repoRoot: string;
   readonly env: Readonly<Record<string, string | undefined>>;
-}): ChatMcp;
+}): Promise<ChatMcp>;
 
 export function formatMcpListing(state: ChatMcpState | undefined): string;
 ```
 
-- `chat-mcp.ts` exports `_chatMcpDeps = { createMcpPool, createMcpProviders }`, the seam
+- `chat-mcp.ts` exports `_chatMcpDeps = { createMcpPool, createMcpProviders, readLock }`, the seam
   `createChatMcp` builds through.
+- `createChatMcp` is async (it reads the lock). Catalog servers (any source other than
+  `config`) whose id has no entry in the resolved lock (`_chatMcpDeps.readLock`, default
+  `resolveMcpLock(repoRoot)`) are neither passed to the pool nor attached: a repo- or
+  plugin-supplied server is never spawned or contacted, and its expanded `${VAR}` values never
+  leave the machine, until a human has run `nax mcp lock`, which is the explicit per-server
+  approval (security review 2026-10-25; Claude Code asks per project `.mcp.json` server for
+  the same reason). They still get a `state.servers` row with `locked: false`. Configured
+  `mcp.servers` entries are not gated (today's behaviour).
 - `createChatMcp` merges (Approach 4), keeps every enabled server, and sets each server's
   `stages` to `["*"]`: `stages` decides which `nax run` stages a server attaches to, and a
   chat session is not a pipeline stage. It builds the pool with
@@ -298,7 +322,8 @@ export function formatMcpListing(state: ChatMcpState | undefined): string;
   `<id>  <source label>  <transport>  <status>`, where the source label is `config`,
   `local`, `project`, `user` or `plugin <name>`; status is `connected, <n> tools` after the
   server's last `connected` event, `failed: <reason>` after a `connect-failed` event, and
-  `not connected` before any event. When the lock withheld any of that server's tools the
+  `not connected` before any event, and `not locked (run nax mcp lock)` for a row with
+  `locked: false`. When the lock withheld any of that server's tools the
   line ends `, <k> withheld (run nax mcp lock)`. Diagnostics follow, one per line, as
   `<severity>  <path>  <message>`. With no state or no servers it prints
   `(no MCP servers)`.
@@ -321,9 +346,16 @@ export function formatMcpListing(state: ChatMcpState | undefined): string;
 - `runMcpLockCommand(workdir, opts)` (`src/cli/mcp.ts`) gets a `_mcpLockCommandDeps` seam
   (`loadConfig`, `loadResourceCatalog`, `createMcpPool`, `env`) and locks every enabled
   server of `resolveCatalogMcpConfig(...)`, so catalog servers are pinned beside configured
-  ones, for both the project lock and `--global`. It loads the catalog with
+  ones, for both the project lock and `--global`. For each server it also records
+  `readOnly[id]` = the sorted names of the listed tools whose descriptor has `readOnly: true`
+  (omitted when none), and `writeMcpLockAt` serialises `readOnly` (servers and names
+  sorted) when present. It loads the catalog with
   `naxPluginPackages: []` and `env` from the seam (default `process.env`).
   `resolveCatalogMcpConfig` is exported from `src/resources/index.ts`.
+- `resolveCatalogMcpConfig` takes `lockedOnly?: boolean` and `readLock?` (default
+  `resolveMcpLock`); with `lockedOnly` true it drops every catalog server whose id the lock
+  does not list. `runMcpLockCommand` calls it without `lockedOnly` (it is the approval step);
+  `setupRun` calls it with `lockedOnly: true` and `readLock: _runSetupDeps.readMcpLock`.
 - `setupRun` (`src/execution/lifecycle/run-setup.ts`): when `config.resources?.mcpInRun` is
   `true`, the config passed to `createRuntime` is `{ ...config, mcp: await
   resolveCatalogMcpConfig(...) }`; otherwise `createRuntime` gets `config` unchanged. The
@@ -407,6 +439,10 @@ names each target).
 | `createChatMcp` throws at chat start | The plugin registry is torn down and the error reaches `chatCommand` (exit 1, message on stderr). |
 | `resources.claudeCode` false | `nax mcp lock` and the `nax run` opt-in see configured servers only. |
 | A tool the lock withholds again after a session reopen | `withheld()` lists it once. |
+| A catalog server with no lock entry | Not connected, not attached (chat and `mcpInRun`); `/mcp` shows `not locked (run nax mcp lock)`. |
+| A server marks a tool `readOnlyHint: true` that the lock does not list as read-only | The tool asks in guarded mode until `nax mcp lock` is re-run. |
+| A lock whose `readOnly` is malformed | Read as no read-only tools; every MCP tool asks in guarded mode. |
+| An HTTP server fails to connect with its url or a header value in the error | The recorded and logged reason has userinfo, query and header values removed. |
 | A server whose id is `nax-skills` in chat | Not attached; `error` diagnostic `mcp server id nax-skills is reserved`. |
 
 ## Out of Scope
@@ -419,7 +455,8 @@ names each target).
 - MCP resources, prompts and sampling are not supported; only tools.
 - Per-project enable or disable lists that Claude Code keeps in `~/.claude.json` (for example `disabledMcpServers`, `enabledMcpjsonServers`, `disabledMcpjsonServers` under `projects[<repo>]`) are not read; only `mcpServers` is.
 - Configured `mcp.servers` entries get no `${VAR}` expansion; an HTTP server configured there carries its headers literally, and the existing config secret scan still applies to them.
-- A server's `readOnlyHint` is trusted as the server states it and is not pinned by the lock; the lock pins input schemas only, so a server that flips the hint after locking changes whether guarded mode asks.
+- A global lock (`nax mcp lock --global`) approves catalog servers by id for every project on the machine, exactly as it does for configured servers; a different repo's server with the same id is treated as approved.
+- Configured `mcp.servers` entries (global or project `.nax/config.json`) are not gated on the lock at connect time; only their tools are, as today.
 - The interactive system prompt does not list MCP tools beyond what the tool list and each server's own instructions (the existing provider-instructions path) already carry.
 - A per-server enable or disable toggle inside chat is not added; `mcp.servers.<id>.enabled` and removing the catalog entry are the switches.
 - MCP servers are not hot-reloaded; a changed `.mcp.json` or `~/.claude.json` takes effect at the next `nax chat` start.
@@ -449,7 +486,7 @@ Workdir: packages/nax-agent. No dependencies.
 
 Workdir: packages/nax. Depends on US-001.
 
-- Add `McpToolDescriptor.readOnly` and carry it into each `ProviderTool` in `createMcpProviders`; make `command` optional and add `url` and `headers` to `McpServerSchema` / `McpServerConfig` with an exactly-one refinement; build an `http` transport in `connectMcpServer` and the pool; fix the lock command's hint; add the config descriptions (Design §Approach 2).
+- Add `McpToolDescriptor.readOnly` and `McpLockFile.readOnly`, and carry the hint into each `ProviderTool` in `createMcpProviders` only when the lock lists it; redact HTTP connect-failure reasons in the pool; make `command` optional and add `url` and `headers` to `McpServerSchema` / `McpServerConfig` with an exactly-one refinement; build an `http` transport in `connectMcpServer` and the pool; fix the lock command's hint; add the config descriptions (Design §Approach 2).
 
 ### US-003 — Catalog MCP entries keep their connection spec
 
@@ -479,7 +516,7 @@ Workdir: packages/nax. Depends on US-002, US-004, US-005.
 
 Workdir: packages/nax. Depends on US-001, US-006.
 
-- Create `src/chat/chat-mcp.ts` (`createChatMcp`, `_chatMcpDeps`, `CHAT_MCP_RETRY`, the state types, the reserved `nax-skills` id); add `_chatCommandDeps.createChatMcp` and `_chatCommandDeps.env`; wire it into `chatResources`; add `mcp` to `ChatResources` and `ChatHost`; export from `src/chat/index.ts` (Design §Approach 5).
+- Create `src/chat/chat-mcp.ts` (async `createChatMcp`, `_chatMcpDeps`, `CHAT_MCP_RETRY`, the state types, the reserved `nax-skills` id, no connection to a catalog server the lock does not list); add `_chatCommandDeps.createChatMcp` and `_chatCommandDeps.env`; wire it into `chatResources`; add `mcp` to `ChatResources` and `ChatHost`; export from `src/chat/index.ts` (Design §Approach 5).
 
 ### US-008 — Chat: `/mcp`
 
@@ -491,7 +528,7 @@ Workdir: packages/nax. Depends on US-007.
 
 Workdir: packages/nax. Depends on US-006.
 
-- Add `resources.mcpInRun` and `resolveCatalogMcpConfig`; lock catalog servers in `runMcpLockCommand` through `_mcpLockCommandDeps` (project lock and `--global`); merge catalog servers into the runtime config in `setupRun` when `mcpInRun` is true (Design §Approach 6).
+- Add `resources.mcpInRun` and `resolveCatalogMcpConfig` (with `lockedOnly`); lock catalog servers and record read-only tools in `runMcpLockCommand` through `_mcpLockCommandDeps` (project lock and `--global`); serialise `readOnly` in `writeMcpLockAt`; add `_runSetupDeps.readMcpLock`; merge catalog servers into the runtime config in `setupRun` when `mcpInRun` is true (Design §Approach 6).
 
 ### Context Files
 
@@ -608,7 +645,7 @@ None. New files plus barrel exports in `src/resources/index.ts`; no test pins th
 None. New files plus barrel exports in `src/resources/index.ts` and `src/config/index.ts`; no test pins either barrel's export list.
 
 **US-007**
-- `packages/nax/test/unit/cli/chat-resources.test.ts` — its _chatCommandDeps fakes gain createChatMcp returning a state with no servers, no diagnostics, empty events() and withheld(), no providers and a resolving close(), plus env pointing CLAUDE_CONFIG_DIR at an empty temp dir, so the existing case asserting toolProviders[0]?.id is nax-skills stays true.
+- `packages/nax/test/unit/cli/chat-resources.test.ts` — its _chatCommandDeps fakes gain createChatMcp resolving to a state with no servers, no diagnostics, empty events() and withheld(), no providers and a resolving close(), plus env pointing CLAUDE_CONFIG_DIR at an empty temp dir, so the existing case asserting toolProviders[0]?.id is nax-skills stays true.
 - `packages/nax/test/unit/cli/chat.test.ts` — its _chatCommandDeps fakes gain the same createChatMcp stub and env so every existing compose case still reaches createChatHost; the invariant is that every existing case keeps its asserted behaviour.
 
 **US-008**
@@ -627,9 +664,9 @@ None. New files plus barrel exports in `src/resources/index.ts` and `src/config/
 - US-002 -> US-006: `McpServerConfig` with `url` / `headers`; US-006 asserts a merged http entry passes `McpConfigSchema.safeParse`.
 - US-003, US-004 -> US-006: `McpServerResource.server` and `scope`; US-006 asserts, through `mergeCatalogMcpServers` over a catalog built by `buildResourceCatalog`, the merged command and source.
 - US-005 -> US-006: `expandMcpValue` and `mcpServerId`; US-006 asserts an expanded argument and a normalised id in the merged config.
-- US-006 -> US-007: `mergeCatalogMcpServers`; US-007 asserts, through `chatCommand` with `_chatCommandDeps.env` pointing `CLAUDE_CONFIG_DIR` at a fixture whose `.claude.json` holds one user-scope stdio server `docs`, the real `loadResourceCatalog` and the real `createChatMcp` with `_chatMcpDeps.createMcpPool` stubbed to capture its options, that the pool receives a server `docs` whose `stages` is `["*"]`.
+- US-006 -> US-007: `mergeCatalogMcpServers`; US-007 asserts, through `chatCommand` with `_chatCommandDeps.env` pointing `CLAUDE_CONFIG_DIR` at a fixture whose `.claude.json` holds one user-scope stdio server `docs`, the real `loadResourceCatalog` and the real `createChatMcp` with `_chatMcpDeps.readLock` returning a lock that lists `docs` and `_chatMcpDeps.createMcpPool` stubbed to capture its options, that the pool receives a server `docs` whose `stages` is `["*"]`.
 - US-007 -> US-008: `host.mcp`; US-008 asserts, through `runSlashCommand` for `/mcp` with a host whose `mcp` is a fixture state, that `show` receives that state's server line.
-- US-006 -> US-009: `mergeCatalogMcpServers`; US-009 asserts, through `runMcpLockCommand(workdir)` with `_mcpLockCommandDeps.createMcpPool` stubbed and a fixture `.mcp.json`, that the written lock contains the catalog server id, and, through `setupRun` with `resources.mcpInRun: true` and `_runSetupDeps.createRuntime` stubbed, that the config `createRuntime` receives contains the catalog server.
+- US-006 -> US-009: `mergeCatalogMcpServers`; US-009 asserts, through `runMcpLockCommand(workdir)` with `_mcpLockCommandDeps.createMcpPool` stubbed and a fixture `.mcp.json`, that the written lock contains the catalog server id, and, through `setupRun` with `resources.mcpInRun: true`, `_runSetupDeps.readMcpLock` returning a lock that lists the catalog server and `_runSetupDeps.createRuntime` stubbed, that the config `createRuntime` receives contains the catalog server.
 
 ## Acceptance Criteria
 
@@ -655,9 +692,12 @@ None. New files plus barrel exports in `src/resources/index.ts` and `src/config/
 
 ### US-002 — nax MCP layer: HTTP transport and the read-only hint
 
-- [unit] `createMcpProviders` over a fake pool whose `listTools` returns tool `get` with `readOnly: true` (locked) yields a provider whose `tools("/w")` result has `readOnly` `true` for `get`.
+- [unit] `createMcpProviders` for server `docs` over a fake pool whose `listTools` returns tool `get` with `readOnly: true`, and a lock that pins `get` and lists it under `readOnly.docs`, yields a provider whose `tools("/w")` result has `readOnly` `true` for `get`.
+- [unit] `createMcpProviders` for server `docs` whose tool `get` has `readOnly: true` but whose lock pins `get` with no `readOnly` entry yields a provider tool `get` with no `readOnly` key.
+- [unit] `createMcpProviders` for server `docs` whose lock lists `put` under `readOnly.docs` but whose live tool `put` has no `readOnly` yields a provider tool `put` with no `readOnly` key.
+- [unit] `createMcpProviders` with a lock whose `readOnly` is the string `"x"` yields provider tools with no `readOnly` key.
 - [unit] `createMcpProviders` over a fake pool whose tool `put` has no `readOnly` yields a provider tool with no `readOnly` key.
-- [unit] `resolveProviderTools` over that `createMcpProviders` provider (id `docs`, tools `get` read-only and `put`) returns `askTools` equal to `["docs__put"]`.
+- [unit] `resolveProviderTools` over that `createMcpProviders` provider (id `docs`, tools `get` read-only in both the live hint and the lock, and `put`) returns `askTools` equal to `["docs__put"]`.
 - [unit] `McpConfigSchema.parse({ servers: { a: { url: "https://h/mcp" } } }).servers.a.url` is `https://h/mcp`.
 - [unit] `McpConfigSchema.parse({ servers: { a: { url: "https://h/mcp" } } }).servers.a.headers` equals `{}`.
 - [unit] `McpConfigSchema.parse({ servers: { a: { url: "https://h/mcp", headers: { Authorization: "Bearer t" } } } }).servers.a.headers.Authorization` is `Bearer t`.
@@ -671,6 +711,9 @@ None. New files plus barrel exports in `src/resources/index.ts` and `src/config/
 - [unit] A pool connection to an HTTP server whose connection `pid` is null records a `connected` event with `pid` null.
 - [unit] A pool connection to an HTTP server never calls the pid registry's `register`.
 - [unit] `runMcpLockCommand` for an enabled HTTP server that advertises no tools prints a hint containing the server's url.
+- [unit] A pool over HTTP server `a` with `url` `https://u:p@h/mcp?key=s3cret`, whose connect seam rejects with a message containing that url, records a `connect-failed` event whose `reason` does not include `s3cret`.
+- [unit] In that case the recorded `reason` does not include `u:p@`.
+- [unit] A pool over HTTP server `a` with `headers` `{ Authorization: "Bearer tok123" }`, whose connect seam rejects with a message containing `Bearer tok123`, records a `connect-failed` event whose `reason` does not include `tok123`.
 
 ### US-003 — Catalog MCP entries keep their connection spec
 
@@ -758,10 +801,13 @@ None. New files plus barrel exports in `src/resources/index.ts` and `src/config/
 - [unit] `createChatMcp` with no enabled server returns `providers` equal to `[]`.
 - [unit] `createChatMcp` with no enabled server never calls `_chatMcpDeps.createMcpPool`.
 - [unit] `createChatMcp(...).close()` calls the pool's `close` once.
+- [unit] `createChatMcp` with a project catalog server `ctx` and `_chatMcpDeps.readLock` returning a lock with no `ctx` entry returns no provider with id `ctx`.
+- [unit] In that case the pool created through `_chatMcpDeps.createMcpPool` has no server `ctx`.
+- [unit] `createChatMcp` with configured server `docs` and `_chatMcpDeps.readLock` returning `undefined` returns a provider with id `docs`.
 - [unit] `createChatMcp` with a configured server `nax-skills` returns no provider with id `nax-skills`.
 - [unit] In that case `state.diagnostics` holds an `error` whose message contains `mcp server id nax-skills is reserved`.
 - [unit] `chatCommand` with a fake `createChatMcp` returning provider `docs` passes `createChatHost` resources whose `toolProviders` ids are `["nax-skills", "docs"]` in that order.
-- [unit] `chatCommand` with `_chatCommandDeps.env` pointing `CLAUDE_CONFIG_DIR` at a fixture whose `.claude.json` holds user stdio server `docs`, the real `loadResourceCatalog` and the real `createChatMcp` with `_chatMcpDeps.createMcpPool` stubbed, creates the pool with a server `docs` whose `stages` equals `["*"]`.
+- [unit] `chatCommand` with `_chatCommandDeps.env` pointing `CLAUDE_CONFIG_DIR` at a fixture whose `.claude.json` holds user stdio server `docs`, the real `loadResourceCatalog` and the real `createChatMcp` with `_chatMcpDeps.readLock` returning a lock that lists `docs` and `_chatMcpDeps.createMcpPool` stubbed, creates the pool with a server `docs` whose `stages` equals `["*"]`.
 - [unit] The chat resources' `teardown()` calls the MCP `close` before the plugin registry's `teardownAll`.
 - [unit] When the MCP `close` rejects, `teardown()` still calls the plugin registry's `teardownAll`.
 - [unit] When `createChatMcp` throws, `chatCommand` calls the plugin registry's `teardownAll`.
@@ -780,6 +826,8 @@ None. New files plus barrel exports in `src/resources/index.ts` and `src/config/
 - [unit] `createChatMcp` with a configured server `docs` that has a `command` returns a `state.servers` row whose `transport` is `stdio`.
 - [unit] `createChatMcp` with a plugin catalog server from plugin `chrome` returns a `state.servers` row whose `plugin` is `chrome`.
 - [unit] `createChatMcp(...).state.events()` returns the events of the pool created through `_chatMcpDeps.createMcpPool`.
+- [unit] `createChatMcp` with a project catalog server `ctx` that the lock does not list returns a `state.servers` row for `ctx` whose `locked` is `false`.
+- [unit] `formatMcpListing` for a row with `locked: false` prints a line ending `not locked (run nax mcp lock)`.
 - [unit] `formatMcpListing` for a state with server `docs` (source `user`, transport `stdio`) whose last pool event is `connected` with `toolCount` 3 prints the line `docs  user  stdio  connected, 3 tools`.
 - [unit] `formatMcpListing` for a server whose last event is `connect-failed` with reason `spawn ENOENT` prints a line ending `failed: spawn ENOENT`.
 - [unit] `formatMcpListing` for a server whose events are `connect-failed` then `connected` with `toolCount` 2 prints a line ending `connected, 2 tools`.
@@ -803,8 +851,11 @@ None. New files plus barrel exports in `src/resources/index.ts` and `src/config/
 - [unit] `resolveCatalogMcpConfig` with a catalog holding project server `ctx` returns a config whose `servers.ctx` is defined.
 - [unit] `resolveCatalogMcpConfig` logs each merge diagnostic at `warn` with stage `resources`.
 - [unit] `runMcpLockCommand(workdir)` with a fixture `.mcp.json` holding server `ctx`, no configured servers, `_mcpLockCommandDeps.env` pointing `CLAUDE_CONFIG_DIR` at an empty dir, and `_mcpLockCommandDeps.createMcpPool` returning a pool that lists tool `t` for `ctx`, writes a project lock whose `servers.ctx.t` equals `schemaHash` of `t`'s input schema.
+- [unit] `runMcpLockCommand(workdir)` for server `ctx` whose pool lists tool `r` with `readOnly: true` and tool `w` without writes a lock whose `readOnly.ctx` equals `["r"]`.
+- [unit] `writeMcpLockAt(path, { version: 1, servers: { a: {} }, readOnly: { a: ["z", "b"] } })` writes JSON whose `readOnly.a` is `["b", "z"]`.
 - [unit] `runMcpLockCommand(workdir, { global: true })` under the same fixtures and a temp global config dir writes a global lock whose `servers.ctx` is defined.
 - [unit] `runMcpLockCommand(workdir)` with configured server `a` and catalog server `ctx` lists tools for both `a` and `ctx` through the pool.
-- [unit] `setupRun` with `config.resources.mcpInRun` `true` and a catalog holding project server `ctx` (through `_runSetupDeps.loadResourceCatalog`) calls `_runSetupDeps.createRuntime` with a config whose `mcp.servers.ctx` is defined.
+- [unit] `setupRun` with `config.resources.mcpInRun` `true`, a catalog holding project server `ctx` (through `_runSetupDeps.loadResourceCatalog`) and `_runSetupDeps.readMcpLock` returning a lock that lists `ctx` calls `_runSetupDeps.createRuntime` with a config whose `mcp.servers.ctx` is defined.
+- [unit] `setupRun` with `config.resources.mcpInRun` `true`, the same catalog and `_runSetupDeps.readMcpLock` returning a lock with no `ctx` entry calls `_runSetupDeps.createRuntime` with a config that has no `mcp.servers.ctx`.
 - [unit] `setupRun` with `config.resources.mcpInRun` `false` calls `_runSetupDeps.createRuntime` with the same `config` object it was given.
 - [unit] `setupRun` with `config.resources.mcpInRun` `false` never calls `_runSetupDeps.loadResourceCatalog`.
