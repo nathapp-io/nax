@@ -20,7 +20,14 @@
  * ignored. A failed client request is a deny (M-13).
  */
 import type { PermissionOption, RequestPermissionResponse, ToolCallUpdate } from "@agentclientprotocol/sdk";
-import type { AgentLogger, AnswerReply, AnswerStatus, SessionEvent } from "@nathapp/nax-agent";
+import {
+  type AgentLogger,
+  type AnswerReply,
+  type AnswerStatus,
+  approvalMemoryApplies,
+  approvalMemoryKey,
+  type SessionEvent,
+} from "@nathapp/nax-agent";
 import { stripControl, stripInvisible } from "#src/client/text";
 import { type ClientPort, untilAborted } from "#src/server/client-port";
 import { messageOf } from "#src/server/errors";
@@ -61,81 +68,6 @@ interface Choice {
 }
 
 const DENY: Choice = { decision: "deny", remember: false };
-
-/** Chaining, pipes, substitution, subshells, redirection and line breaks. */
-const SHELL_METACHARACTERS = /[;&|`$()<>\n\r]/;
-
-/** First words that run another command or arbitrary code. */
-const WRAPPERS: ReadonlySet<string> = new Set([
-  "sh",
-  "bash",
-  "zsh",
-  "dash",
-  "ksh",
-  "fish",
-  "env",
-  "xargs",
-  "sudo",
-  "doas",
-  "su",
-  "command",
-  "builtin",
-  "eval",
-  "exec",
-  "source",
-  ".",
-  "nohup",
-  "time",
-  "timeout",
-  "nice",
-  "ionice",
-  "stdbuf",
-  "watch",
-  "find",
-  "node",
-  "bun",
-  "deno",
-  "npx",
-  "bunx",
-  "pnpx",
-  "python",
-  "python3",
-  "perl",
-  "ruby",
-  "php",
-  "uv",
-  "uvx",
-]);
-
-/** A plain command name or path: no quotes, escapes, globs or expansions the shell would rewrite. */
-const PLAIN_WORD = /^[A-Za-z0-9._/-]+$/;
-
-/** The masking prefix S3 puts in place of a secret in a shown command. */
-const MASK_MARKER = "[REDACTED";
-
-export function memoryKey(event: ApprovalEvent): string | undefined {
-  if (toolKind(event.tool) !== "execute") return event.tool;
-  const command = event.command ?? "";
-  if (command.includes(MASK_MARKER)) return undefined;
-  const [first = "", second] = command.trim().split(/\s+/);
-  if (!PLAIN_WORD.test(first)) return undefined;
-  const name = first.slice(first.lastIndexOf("/") + 1).toLowerCase();
-  if (name === "" || WRAPPERS.has(name)) return undefined;
-  if (second === undefined) return `${event.tool}:${first}`;
-  // A flag can change what the command does (`rm -f`, `git -C repo`): remembering the bare command would
-  // approve every later invocation of it, so a flag second word is never remembered (nax#2553).
-  if (second.startsWith("-")) return undefined;
-  return PLAIN_WORD.test(second) ? `${event.tool}:${first} ${second}` : undefined;
-}
-
-/** Whether a remembered decision may answer this request without asking. */
-function memoryApplies(event: ApprovalEvent, decision: Decision): boolean {
-  if (decision === "deny" || toolKind(event.tool) !== "execute") return true;
-  const command = event.command ?? "";
-  if (SHELL_METACHARACTERS.test(command)) return false;
-  const rest = command.trim().split(/\s+/).slice(2);
-  return rest.every((word) => PLAIN_WORD.test(word) && !word.startsWith("-"));
-}
 
 function choice(response: RequestPermissionResponse): Choice {
   const { outcome } = response;
@@ -187,9 +119,9 @@ export function createPermissionBroker(deps: PermissionBrokerDeps): PermissionBr
 
   return {
     request(event, toolCall) {
-      const key = memoryKey(event);
+      const key = approvalMemoryKey(event);
       const remembered = key === undefined ? undefined : deps.memory.get(key);
-      if (remembered !== undefined && memoryApplies(event, remembered)) {
+      if (remembered !== undefined && approvalMemoryApplies(event, remembered)) {
         deps.answer(event.requestId, { decision: remembered });
         return;
       }
