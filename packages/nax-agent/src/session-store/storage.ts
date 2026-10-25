@@ -182,8 +182,9 @@ export function createSessionStorage(deps: SessionStorageDeps): SessionStorage {
       try {
         await stat(metaPath(sessionId));
         return true;
-      } catch {
-        return false;
+      } catch (error) {
+        if (codeOf(error) === "ENOENT") return false;
+        throw error;
       }
     },
     async removeMeta(sessionId) {

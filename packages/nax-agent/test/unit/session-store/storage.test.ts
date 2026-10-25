@@ -68,6 +68,18 @@ describe("metadata (spec §5.1)", () => {
     expect(JSON.parse(await readFile(join(dir, "a.session.json"), "utf8"))).toEqual(meta("a"));
   });
 
+  test("hasMeta propagates stat failures other than a missing file", async () => {
+    const path = join(dir, "not-a-directory");
+    await writeFile(path, "file");
+    const store = createSessionStorage({
+      dir: path,
+      pid: 1000,
+      now: () => new Date("2026-10-09T00:00:00.000Z"),
+      logger: makeLogger(),
+    });
+    await expect(store.hasMeta("a")).rejects.toMatchObject({ code: "ENOTDIR" });
+  });
+
   test("concurrent writes for one session all succeed with a complete final record and no temporary files", async () => {
     const { store } = storage();
     const records = Array.from({ length: 24 }, (_, index) =>
