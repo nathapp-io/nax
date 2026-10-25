@@ -3,7 +3,7 @@
   "feature": "resource-catalog-and-skills",
   "branchName": "feat/resource-catalog-and-skills",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T09:37:36.014Z",
+  "updatedAt": "2026-10-25T09:47:28.898Z",
   "userStories": [
     {
       "id": "US-001",
@@ -483,14 +483,17 @@
       "dependencies": [
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Extends plugin validation and source resolution across loader/registry/catalog boundaries; plugin path confinement is security-sensitive."
+        "reasoning": "Extends plugin validation and source resolution across loader/registry/catalog boundaries; plugin path confinement is security-sensitive.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/plugins/types.ts",
@@ -512,7 +515,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "729e22e80a6cb200a9f78e96c08ec0107e6ba007"
     },
     {
       "id": "US-009",
