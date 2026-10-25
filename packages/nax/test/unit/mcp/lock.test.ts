@@ -7,6 +7,7 @@ import type { McpLockFile, ResolvedMcpLock } from "@/mcp/lock";
 import {
   applyLock,
   globalMcpLockPath,
+  lockedReadOnlyTools,
   mcpLockPath,
   readMcpLock,
   resolveMcpLock,
@@ -93,6 +94,33 @@ describe("read/write", () => {
     const dir = await tempDir();
     await Bun.write(mcpLockPath(dir), "{ not json");
     expect(await readMcpLock(dir)).toBeUndefined();
+  });
+});
+
+describe("readOnly section", () => {
+  test("round-trips through write and read, sorted", async () => {
+    const dir = await tempDir();
+    await writeMcpLock(dir, { version: 1, servers: { docs: { a: "1" } }, readOnly: { docs: ["b", "a"] } });
+    expect((await readMcpLock(dir))?.readOnly).toEqual({ docs: ["a", "b"] });
+  });
+
+  test("a lock with no readOnly reads with no readOnly key", async () => {
+    const dir = await tempDir();
+    await writeMcpLock(dir, { version: 1, servers: { docs: { a: "1" } } });
+    expect(Object.keys((await readMcpLock(dir)) ?? {})).toEqual(["version", "servers"]);
+  });
+
+  test("a malformed readOnly is dropped on read", async () => {
+    const dir = await tempDir();
+    await Bun.write(mcpLockPath(dir), JSON.stringify({ version: 1, servers: {}, readOnly: "x" }));
+    expect((await readMcpLock(dir))?.readOnly).toBeUndefined();
+  });
+
+  test("lockedReadOnlyTools reads a malformed or missing entry as empty", () => {
+    const lock = { version: 1 as const, servers: {}, readOnly: { docs: ["get"] } };
+    expect([...lockedReadOnlyTools(lock, "docs")]).toEqual(["get"]);
+    expect([...lockedReadOnlyTools(lock, "other")]).toEqual([]);
+    expect([...lockedReadOnlyTools(undefined, "docs")]).toEqual([]);
   });
 });
 

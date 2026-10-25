@@ -44,7 +44,12 @@ export const McpStageSchema = z.enum([
 
 export const McpServerSchema = z
   .object({
-    command: z.string().min(1),
+    /** stdio form: the executable to spawn. Exactly one of `command` and `url` is set. */
+    command: z.string().min(1).optional(),
+    /** HTTP form: a streamable-HTTP MCP endpoint. `args` and `env` are ignored for it. */
+    url: z.string().url().optional(),
+    /** Static request headers for an HTTP server; carried literally (no `${VAR}` expansion, no OAuth). */
+    headers: z.record(z.string(), z.string()).default({}),
     instructions: z.string().min(1).optional(),
     args: z.array(z.string()).default([]),
     env: z.record(z.string(), z.string()).default({}),
@@ -55,7 +60,10 @@ export const McpServerSchema = z
     /** Kill switch that needs no lock entry and invalidates no lock. */
     enabled: z.boolean().default(true),
   })
-  .strict();
+  .strict()
+  .refine((server) => (server.command === undefined) !== (server.url === undefined), {
+    message: "set exactly one of command or url",
+  });
 
 const McpServerIdSchema = z
   .string()

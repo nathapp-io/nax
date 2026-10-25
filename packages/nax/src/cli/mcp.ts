@@ -7,10 +7,15 @@
  * the lock pins a server's capability surface, which does not vary per worktree,
  * even though connections at runtime do (spec R7).
  */
-import { loadConfig } from "@/config";
+import { loadConfig, type McpServerConfig } from "@/config";
 // The BARREL, not `@/mcp/pool` — `check:alias-internals` forbids a value import
 // of `@/<dir>/<internal>` from `src/` once `src/<dir>/index.ts` exists.
 import { createMcpPool, globalMcpLockPath, mcpLockPath, schemaHash, writeMcpLock, writeMcpLockAt } from "@/mcp";
+
+/** What to tell the operator to check: the url of an HTTP server, the command of a stdio one. */
+function serverTarget(server: McpServerConfig | undefined): string {
+  return server?.url ?? server?.command ?? "(unconfigured)";
+}
 
 // `loadConfig(startDir)` — NOT `loadConfigForWorkdir`, whose first argument is a
 // config FILE path (src/config/loader.ts:403), not a directory. Every other CLI
@@ -35,7 +40,8 @@ export async function runMcpLockCommand(workdir: string, opts?: { global?: boole
       const tools = await pool.listTools(id, workdir);
       locked[id] = Object.fromEntries(tools.map((tool) => [tool.name, schemaHash(tool.inputSchema)]));
       console.log(`${id}: ${tools.length} tool(s) locked`);
-      if (tools.length === 0) console.log(`  (server advertised nothing - check \`${servers[id]?.command}\` runs)`);
+      if (tools.length === 0)
+        console.log(`  (server advertised nothing - check \`${serverTarget(servers[id])}\` runs)`);
     }
     const lock = { version: 1 as const, servers: locked };
     if (opts?.global === true) await writeMcpLockAt(target, lock);

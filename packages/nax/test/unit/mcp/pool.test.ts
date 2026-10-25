@@ -7,7 +7,7 @@ type StdioConfig = Extract<McpTransportConfig, { kind: "stdio" }>;
 
 import type { McpServerConfig } from "@/config";
 import { _mcpClientDeps } from "@/mcp/client";
-import { createMcpPool } from "@/mcp/pool";
+import { createMcpPool, redactMcpReason } from "@/mcp/pool";
 import { markTrusted } from "@/trust";
 
 const original = { ..._mcpClientDeps };
@@ -324,5 +324,132 @@ describe("US-007 MCP shutdown", () => {
       unregistered: [4242],
     });
     await pool.close();
+  });
+});
+
+/** HTTP fakes: the connect seam records configs, hands back a pid-less connection, or rejects. */
+function httpConnection(over: { callTool?: McpConnection["call"] } = {}): McpConnection {
+  return {
+    kind: "http",
+    pid: null,
+    tools: [{ name: "t", description: "d", inputSchema: { type: "object" } }],
+    call: over.callTool ?? (async () => ({ text: "ok", isError: false, bytesBeforeCap: 2 })),
+    onClose: () => {},
+    close: async () => {},
+  };
+}
+
+const HTTP_URL = "https://u:pw9@H/mcp?key=s3cret";
+
+function httpServer(over: Partial<McpServerConfig> = {}): Record<string, McpServerConfig> {
+  return { a: { url: HTTP_URL, args: [], env: {}, stages: ["*"], timeoutMs: 1000, enabled: true, ...over } };
+}
+
+function rejectingConnect(message: string): void {
+  Object.assign(_mcpClientDeps, {
+    connect: async (): Promise<McpConnection> => {
+      throw new Error(message);
+    },
+  });
+}
+
+async function failedReason(servers: Record<string, McpServerConfig>, message: string): Promise<string> {
+  rejectingConnect(message);
+  const pool = createMcpPool({ servers, retry: { maxAttempts: 1, baseDelayMs: 0 } });
+  await pool.listTools("a", "/w");
+  const failed = pool.events().find((event) => event.kind === "connect-failed");
+  await pool.close();
+  return failed?.kind === "connect-failed" ? failed.reason : "";
+}
+
+describe("createMcpPool — HTTP servers (US-002)", () => {
+  test("AC-16: the url is passed to the client connect seam", async () => {
+    const configs: McpTransportConfig[] = [];
+    Object.assign(_mcpClientDeps, {
+      connect: async (config: McpTransportConfig) => {
+        configs.push(config);
+        return httpConnection();
+      },
+    });
+    const pool = createMcpPool({ servers: httpServer({ url: "https://h/mcp", headers: { k: "v" } }) });
+    await pool.listTools("a", "/w");
+    await pool.close();
+    expect(configs).toEqual([{ kind: "http", url: "https://h/mcp", headers: { k: "v" } }]);
+  });
+
+  test("AC-17: a pid-less connection records a connected event with pid null", async () => {
+    Object.assign(_mcpClientDeps, { connect: async () => httpConnection() });
+    const pool = createMcpPool({ servers: httpServer({ url: "https://h/mcp" }) });
+    await pool.listTools("a", "/w");
+    await pool.close();
+    expect(pool.events()).toContainEqual(expect.objectContaining({ kind: "connected", pid: null, toolCount: 1 }));
+  });
+
+  test("AC-18: the pid registry's register is never called", async () => {
+    Object.assign(_mcpClientDeps, { connect: async () => httpConnection() });
+    const registered: number[] = [];
+    const pool = createMcpPool({
+      servers: httpServer({ url: "https://h/mcp" }),
+      pidRegistry: {
+        register: async (pid) => void registered.push(pid),
+        unregister: async () => {},
+      },
+    });
+    await pool.listTools("a", "/w");
+    await pool.close();
+    expect(registered).toEqual([]);
+  });
+
+  test("AC-20: a failure naming the url's href does not leak the query secret", async () => {
+    const reason = await failedReason(httpServer(), `cannot reach ${new URL(HTTP_URL).href}`);
+    expect(reason).not.toContain("s3cret");
+  });
+
+  test("AC-21: a failure naming only the query pair does not leak the query secret", async () => {
+    const reason = await failedReason(httpServer(), "bad param key=s3cret");
+    expect(reason).not.toContain("s3cret");
+  });
+
+  test("AC-22: a failure naming the url password does not leak it", async () => {
+    const reason = await failedReason(httpServer(), "auth failed for pw9");
+    expect(reason).not.toContain("pw9");
+  });
+
+  test("AC-23: a failure naming a header token does not leak it", async () => {
+    const servers = httpServer({ url: "https://h/mcp", headers: { Authorization: "Bearer tok123" } });
+    const reason = await failedReason(servers, "rejected tok123");
+    expect(reason).not.toContain("tok123");
+  });
+
+  test("AC-24: an error thrown by callTool does not leak the header token into call() content", async () => {
+    Object.assign(_mcpClientDeps, {
+      connect: async () =>
+        httpConnection({
+          callTool: async () => {
+            throw new Error("upstream rejected tok123");
+          },
+        }),
+    });
+    const servers = httpServer({ url: "https://h/mcp", headers: { Authorization: "Bearer tok123" } });
+    const pool = createMcpPool({ servers });
+    const result = await pool.call("a", "/w", "t", {}, { timeoutMs: 1000, maxBytes: 1000 });
+    await pool.close();
+    expect(result.isError).toBe(true);
+    expect(result.content).not.toContain("tok123");
+  });
+});
+
+describe("redactMcpReason", () => {
+  test("covers raw, decoded and encoded forms of every secret part", () => {
+    const server = httpServer({ url: "https://us%40r:p%20w@h/mcp?k=a%26b#frag%21", headers: { X: "a b/c" } }).a;
+    if (server === undefined) throw new Error("fixture");
+    const text = "us%40r us@r p%20w p w a%26b a&b frag%21 frag! a%20b%2Fc a b/c";
+    expect(redactMcpReason(text, server)).not.toMatch(/us%40r|us@r|p%20w|a%26b|frag|b\/c/);
+  });
+
+  test("leaves text alone for a server with nothing secret", () => {
+    const server = httpServer({ url: "https://h/mcp" }).a;
+    if (server === undefined) throw new Error("fixture");
+    expect(redactMcpReason("connection refused", server)).toBe("connection refused");
   });
 });

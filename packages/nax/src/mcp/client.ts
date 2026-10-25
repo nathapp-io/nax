@@ -34,23 +34,39 @@ function truncateToBytes(value: string, maxBytes: number): string {
   return out;
 }
 
+function transportConfig(args: {
+  serverId: string;
+  workdir: string;
+  command?: string;
+  url?: string;
+  headers?: Record<string, string>;
+  args: readonly string[];
+  env: Record<string, string>;
+}): McpTransportConfig {
+  if (args.url !== undefined) return { kind: "http", url: args.url, headers: args.headers ?? {} };
+  if (args.command === undefined) {
+    throw new NaxError(`MCP server "${args.serverId}" sets neither command nor url`, "MCP_CONNECT_FAILED", {
+      stage: "tools",
+    });
+  }
+  return { kind: "stdio", command: args.command, args: args.args, env: args.env, cwd: args.workdir };
+}
+
 export async function connectMcpServer(args: {
   serverId: string;
   workdir: string;
-  command: string;
+  /** stdio form. A server sets exactly one of `command` and `url`. */
+  command?: string;
+  /** Streamable-HTTP form; `args` and `env` are ignored when set. */
+  url?: string;
+  headers?: Record<string, string>;
   args: readonly string[];
   env: Record<string, string>;
   connectTimeoutMs: number;
   signal?: AbortSignal;
   onSpawn?: (pid: number) => void;
 }): Promise<McpConnection> {
-  const config: McpTransportConfig = {
-    kind: "stdio",
-    command: args.command,
-    args: args.args,
-    env: args.env,
-    cwd: args.workdir,
-  };
+  const config = transportConfig(args);
   const opts: ConnectMcpOptions = {
     signal: args.signal ?? new AbortController().signal,
     onSpawn: args.onSpawn,
