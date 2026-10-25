@@ -36,6 +36,12 @@ export {
   MAX_SETTLED_RULINGS,
 } from "./builders/bot-pr-review-builder";
 export { buildBotRulingReadPrompt } from "./builders/bot-ruling-builder";
+export {
+  buildChatFeatureMessage,
+  buildChatInstructions,
+  type ChatFeatureMessageInput,
+  type ChatInstructionsInput,
+} from "./builders/chat-builder";
 export type { DecomposePromptInput } from "./builders/decompose-builder";
 // Decompose prompt builder — prompt assembly for nax plan / decompose operations.
 export { buildDecomposePromptSync } from "./builders/decompose-builder";
