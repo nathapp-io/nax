@@ -3,7 +3,7 @@
   "feature": "chat-subagents",
   "branchName": "feat/chat-subagents",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T16:41:35.160Z",
+  "updatedAt": "2026-10-25T17:02:02.571Z",
   "userStories": [
     {
       "id": "US-001",
@@ -547,14 +547,17 @@
         "US-006",
         "US-008"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A bounded coordinator integrates existing opener, provider and ask-controller contracts across three open paths; synchronous nested approval routing and depth enforcement justify complex scope and strict security TDD, not an architectural rewrite."
+        "reasoning": "A bounded coordinator integrates existing opener, provider and ask-controller contracts across three open paths; synchronous nested approval routing and depth enforcement justify complex scope and strict security TDD, not an architectural rewrite.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/chat-host.ts",
@@ -578,7 +581,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "170887c0f5079327b45078d7dc89b3de3295128d"
     },
     {
       "id": "US-010",
