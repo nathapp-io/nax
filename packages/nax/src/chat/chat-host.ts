@@ -124,7 +124,11 @@ class NativeChatHost implements ChatHost {
   }
 
   current(): ChatHostState {
-    const { session, meta } = this.requireHandle();
+    // Ink stays mounted during teardown and an in-flight turn may still refresh.
+    // Keep the last handle readable; only operations require an open host.
+    const handle = this.handle;
+    if (!handle) throw new NaxError("[chat] no session is open", "CHAT_SESSION_NOT_OPEN", { stage: "chat" });
+    const { session, meta } = handle;
     return {
       sessionId: meta.sessionId,
       mode: meta.mode === "full" ? "full" : "guarded",
@@ -301,7 +305,7 @@ class NativeChatHost implements ChatHost {
     if (this.closing !== undefined) return this.closing;
     this.closed = true;
     this.fallback.dispose();
-    this.asks.reset();
+    // Leave asks intact while the shell is mounted; final close cannot reuse them.
     this.closing = this.teardown();
     return this.closing;
   }

@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import type { SessionEvent, SessionEventBody } from "@nathapp/nax-agent";
+import { type AgentSession, createSessionStorage, type SessionEvent, type SessionEventBody } from "@nathapp/nax-agent";
+import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
-import { type ChatHost, type ChatHostState, createChatAskController } from "@/chat";
+import { type ChatHost, type ChatHostState, createChatAskController, createChatHost } from "@/chat";
 import { ChatApp } from "@/tui/chat";
 import { _chatKeyDeps } from "@/tui/chat/useChatKeys";
 
@@ -106,6 +107,100 @@ function mount(sandbox?: ChatHostState["sandbox"]) {
 const flush = () => Promise.resolve(act(async () => {}));
 
 describe("chat asks and keys", () => {
+  test.each(["pending ask", "mid-turn"] as const)("quits cleanly with the real host: %s", async (scenario) => {
+    const dir = makeTempDir("chat-quit-");
+    const turn = Promise.withResolvers<void>();
+    const teardown = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    const session: AgentSession = {
+      id: "quit-session",
+      backend: { kind: "native", capabilities: {} },
+      lastTurn: undefined,
+      async *send() {
+        const base = { sessionId: "quit-session", turnId: "t1", at: new Date().toISOString(), metadata: {} };
+        yield { ...base, type: "turn_start" };
+        if (scenario === "pending ask") yield { ...base, ...approval };
+        started.resolve();
+        await turn.promise;
+        yield { ...base, ...end };
+      },
+      answer: () => "accepted",
+      cancel: () => turn.resolve(),
+      close: async () => {
+        turn.resolve();
+        await teardown.promise;
+      },
+    };
+    const release = mock(async () => {});
+    const host = createChatHost({
+      config: makeNaxConfig({ outputDir: dir }),
+      cwd: dir,
+      repoRoot: dir,
+      chain: null,
+      storage: createSessionStorage({ dir, pid: process.pid, now: () => new Date(), logger: makeLogger() }),
+      now: () => new Date(),
+      logger: makeLogger(),
+      open: async () => ({
+        session,
+        meta: {
+          schemaVersion: 1,
+          sessionId: session.id,
+          cwd: dir,
+          mode: "ask",
+          model: "model",
+          bashApproval: "gated",
+          title: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: null,
+        },
+        release,
+      }),
+    });
+    try {
+      await host.start({ mode: "guarded", model: "model" });
+      const ui = render(<ChatApp host={host} />);
+      act(() => {
+        ui.stdin.write("hello");
+      });
+      await Promise.resolve(
+        act(async () => {
+          ui.stdin.write("\r");
+          await started.promise;
+        }),
+      );
+      if (scenario === "pending ask") expect(ui.lastFrame()).toContain("Run the tests");
+      await Promise.resolve(
+        act(async () => {
+          if (scenario === "pending ask") {
+            ui.stdin.write("\x03");
+            ui.stdin.write("\x03");
+          } else {
+            ui.stdin.write("/quit");
+            ui.stdin.write("\r");
+          }
+        }),
+      );
+      // Teardown is deliberately blocked while ask/turn updates rerender the shell.
+      expect(ui.lastFrame()).toContain("model | guarded");
+      expect(ui.frames.join("\n")).not.toContain("CHAT_HOST_CLOSED");
+      expect(release).not.toHaveBeenCalled();
+      await Promise.resolve(
+        act(async () => {
+          teardown.resolve();
+          await host.close();
+        }),
+      );
+      await flush();
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(ui.stdin.listenerCount("readable")).toBe(0);
+    } finally {
+      turn.resolve();
+      teardown.resolve();
+      cleanup();
+      await host.close();
+      cleanupTempDir(dir);
+    }
+  });
   test("AC-1 renders Bash command and reason", () => {
     const ui = mount();
     ui.pending();

@@ -312,6 +312,44 @@ describe("createChatHost", () => {
     expect(backendOptions[0]?.loopHandlers).toBe(backendOptions[1]?.loopHandlers);
     expect(_openChatSessionDeps.nativeBackend).toHaveBeenCalledTimes(2);
   });
+  test("keeps state readable when quitting with a pending ask", async () => {
+    await start();
+    askOnSend = true;
+    await send();
+    const state = host.current();
+    const closed = Promise.withResolvers<void>();
+    const session = sessions[0];
+    if (!session) throw new Error("missing session");
+    session.close = mock(() => closed.promise);
+    const changed = mock(() => host.current());
+    const unsubscribe = host.asks.onChange(changed);
+    try {
+      const closing = host.close();
+      expect(changed).not.toHaveBeenCalled();
+      expect(host.asks.pending()).toHaveLength(1);
+      expect(host.current()).toEqual(state);
+      closed.resolve();
+      await closing;
+      expect(host.current()).toEqual(state);
+      await expect(send()).rejects.toMatchObject({ code: "CHAT_HOST_CLOSED" });
+    } finally {
+      unsubscribe();
+      closed.resolve();
+    }
+  });
+  test("keeps state readable for the final refresh when quitting mid-turn", async () => {
+    await start();
+    const { turn } = await waitingTurn();
+    const refreshed = turn.finally(() => {
+      expect(host.current()).toMatchObject({ sessionId: "session-1", model: MODEL });
+    });
+    host.cancel();
+    const closing = host.close();
+    await refreshed;
+    await closing;
+    expect(host.current().meta.costUsd).toBe(0.02);
+    expect(await storage.readLockHolder("session-1")).toBeNull();
+  });
   test("AC-10 close releases ownership, destroys chain and disposes timers once", async () => {
     await start();
     askOnSend = true;
