@@ -528,3 +528,50 @@ describe("AgentConfigSchema", () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe("AgentConfigSchema modelAliases", () => {
+  test("defaults to an empty map when agent is absent", () => {
+    expect(NaxConfigSchema.parse({}).agent?.modelAliases).toEqual({});
+  });
+
+  test("defaults to an empty map when agent is present without modelAliases", () => {
+    expect(NaxConfigSchema.parse({ agent: { protocol: "native" } }).agent?.modelAliases).toEqual({});
+  });
+
+  test("accepts a provider/model alias value", () => {
+    const modelAliases = { sonnet: "anthropic/claude-sonnet-5-5" };
+    const result = NaxConfigSchema.safeParse({ agent: { modelAliases } });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.agent?.modelAliases).toEqual(modelAliases);
+  });
+
+  test("accepts extra slashes in the model and an [effort] suffix", () => {
+    const modelAliases = { glm: "openrouter/z-ai/glm-5.3-flash[high]" };
+    const result = NaxConfigSchema.safeParse({ agent: { modelAliases } });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.agent?.modelAliases).toEqual(modelAliases);
+  });
+
+  test("rejects a value with no provider and reports a modelAliases path", () => {
+    const result = NaxConfigSchema.safeParse({ agent: { modelAliases: { sonnet: "claude-sonnet" } } });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.some((i) => i.path.includes("modelAliases"))).toBe(true);
+  });
+
+  test.each([
+    ["empty model after the slash", "a/"],
+    ["empty provider before the slash", "/m"],
+    ["whitespace in the provider", "a b/c"],
+    ["whitespace in the model", "a/b c"],
+    ["a bare effort suffix with no provider", "claude-opus-5[high]"],
+    ["an empty value", ""],
+  ])("rejects %s", (_label, value) => {
+    const result = NaxConfigSchema.safeParse({ agent: { modelAliases: { sonnet: value } } });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.some((i) => i.path.includes("modelAliases"))).toBe(true);
+  });
+});

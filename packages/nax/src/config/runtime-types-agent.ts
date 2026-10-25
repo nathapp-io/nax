@@ -208,6 +208,11 @@ export interface AgentConfig {
   default?: string;
   /** Max interaction turns when interactionBridge is active (default: 20) */
   maxInteractionTurns?: number;
+  /**
+   * Claude Code model name → nax model id (`provider/model[effort]`), default `{}`.
+   * An alias always wins over the `models.native` tier step.
+   */
+  modelAliases?: Readonly<Record<string, string>>;
   /** Prompt audit — write every ACP-bound prompt to a file for auditing. */
   promptAudit?: PromptAuditConfig;
   /** Usage audit — write every agent round trip's usage to a file for auditing (nax#2045). */

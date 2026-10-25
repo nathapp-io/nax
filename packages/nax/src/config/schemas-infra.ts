@@ -16,6 +16,7 @@ import {
   DEFAULT_AGENT_OPENCODE_ACP_CONFIG,
 } from "./schemas-acp-agents";
 import { ConfiguredModelSchema, ModelTierSchema, ProviderCatalogOverrideSchema } from "./schemas-model";
+import { ModelAliasesSchema } from "./schemas-model-alias";
 import { StoryRouterConfigSchema } from "./schemas-router";
 
 export const PlanConfigSchema = z.object({
@@ -468,6 +469,8 @@ export const AgentConfigSchema = z.object({
   protocol: z.enum(["acp", "native", "hybrid"]).default(DEFAULT_AGENT_PROTOCOL),
   default: z.string().trim().min(1, "agent.default must be non-empty").default(DEFAULT_AGENT_NAME),
   maxInteractionTurns: z.number().int().min(1).max(100).default(20),
+  // Claude Code model name -> nax model id; wins over the models.native tier step.
+  modelAliases: ModelAliasesSchema.default({}),
   promptAudit: PromptAuditConfigSchema.default({ enabled: false }),
   usageAudit: UsageAuditConfigSchema.default({ enabled: false }),
   transcriptAudit: TranscriptAuditConfigSchema.default({ enabled: false, maxRetained: 200 }),

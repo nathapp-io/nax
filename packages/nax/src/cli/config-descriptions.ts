@@ -372,6 +372,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   // Agent protocol
   agent: "Agent protocol configuration (ACP-003)",
   "agent.protocol": "Protocol for agent communication: 'acp' (default) | 'native' | 'hybrid'",
+  "agent.modelAliases":
+    'Map of a Claude Code model name to a nax model id, e.g. { sonnet: "anthropic/claude-sonnet-5-5", glm: "openrouter/z-ai/glm-5.3-flash[high]" }. Each value is "provider/model" with an optional [effort] suffix. An alias always wins over the models.native tier step. Default: {}.',
   "agent.acp": "ACP agent transport settings (claude, codex, cursor, opencode, gemini, pi)",
   "agent.native.instructionFileName":
     "Repository instruction filename (default: AGENTS.md). Custom Markdown basenames load without AGENTS/CLAUDE fallbacks.",

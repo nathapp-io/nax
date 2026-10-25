@@ -379,6 +379,7 @@ export const NaxConfigSchema = z
       protocol: DEFAULT_AGENT_PROTOCOL,
       default: DEFAULT_AGENT_NAME,
       maxInteractionTurns: 20,
+      modelAliases: {},
       promptAudit: { enabled: false },
       usageAudit: { enabled: false },
       transcriptAudit: { enabled: false, maxRetained: 200 },
