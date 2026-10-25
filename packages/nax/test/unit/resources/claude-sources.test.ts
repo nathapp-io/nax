@@ -69,7 +69,7 @@ describe("discoverClaudeCodePackages", () => {
     expect(packages[0]).toMatchObject({ agents: [{ name: "reviewer" }], hooks: [{ events: ["PreToolUse"] }] });
     expect(packages[2]).toMatchObject({
       agents: [{ qualifiedName: "superpowers:checker" }],
-      mcpServers: [{ name: "remote", transport: "http" }],
+      mcpServers: [{ name: "remote", transport: "http", scope: "plugin" }],
       hooks: [{ events: ["Stop"] }],
       diagnostics: [],
     });
@@ -149,7 +149,7 @@ describe("discoverClaudeCodePackages", () => {
   });
   test("AC-4 project MCP servers load", async () => {
     await put(join(repoRoot, ".mcp.json"), { mcpServers: { ctx: { command: "npx" } } });
-    expect((await discover())[0]?.mcpServers).toMatchObject([{ name: "ctx", transport: "stdio" }]);
+    expect((await discover())[0]?.mcpServers).toMatchObject([{ name: "ctx", transport: "stdio", scope: "project" }]);
   });
   test("AC-5 user hooks load", async () => {
     await put(join(claudeDir, "settings.json"), { hooks: { Stop: [] } });

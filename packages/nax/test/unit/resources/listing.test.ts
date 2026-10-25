@@ -34,7 +34,17 @@ const pkg: ResourcePackage = {
     path: `/sp/${name}.md`,
     origin,
   })),
-  mcpServers: [{ kind: "mcp", name: "server", transport: "stdio", path: "/sp/.mcp.json", origin }],
+  mcpServers: [
+    {
+      kind: "mcp",
+      name: "server",
+      transport: "stdio",
+      scope: "plugin",
+      server: { transport: "stdio", command: "x", args: [], env: {} },
+      path: "/sp/.mcp.json",
+      origin,
+    },
+  ],
   hooks: [{ kind: "hooks", events: ["Start", "Stop"], path: "/sp/hooks.json", origin }],
   diagnostics: [{ severity: "warn", path: "/sp/plugin.json", message: "plugin warning", origin }],
 };

@@ -68,7 +68,9 @@ async function scanPackage(options: {
   const mcpPath = join(root, ".mcp.json");
   const mcpText =
     origin.kind === "claude-user" ? undefined : await optionalText({ path: mcpPath, origin, diagnostics });
-  const mcp = mcpText === undefined ? { resources: [], diagnostics: [] } : parseMcpJson(mcpPath, mcpText, origin);
+  const mcpScope = options.plugin ? "plugin" : "project";
+  const mcp =
+    mcpText === undefined ? { resources: [], diagnostics: [] } : parseMcpJson(mcpPath, mcpText, origin, mcpScope);
   diagnostics.push(...mcp.diagnostics);
   const hooksPath = options.settingsPath ?? join(root, "hooks/hooks.json");
   const hooksText = options.plugin ? await optionalText({ path: hooksPath, origin, diagnostics }) : undefined;
