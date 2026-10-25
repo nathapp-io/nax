@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ToolRunContext } from "@nathapp/nax-agent";
 import { assertDefined } from "@test/helpers";
-import { runMcpLockCommand } from "@/cli/mcp";
+import { _mcpLockCommandDeps, runMcpLockCommand } from "@/cli/mcp";
 import type { McpServerConfig } from "@/config";
 import type { McpLockFile } from "@/mcp/lock";
 import { schemaHash } from "@/mcp/lock";
@@ -15,7 +15,12 @@ const FIXTURE = resolve(import.meta.dir, "../../fixtures/mcp/fake-server.ts");
 const dirs: string[] = [];
 const pools: { close(): Promise<void> }[] = [];
 
+// `runMcpLockCommand` also locks Claude Code's discovered servers; point discovery at an
+// empty dir so a developer's real ~/.claude and ~/.claude.json never reach these fixtures.
+const originalLockEnv = _mcpLockCommandDeps.env;
+
 afterEach(async () => {
+  _mcpLockCommandDeps.env = originalLockEnv;
   await Promise.allSettled(pools.splice(0).map((p) => p.close()));
   await Promise.allSettled(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
@@ -160,6 +165,7 @@ describe("real stdio MCP server", () => {
         mcp: { servers: { memory: { command: "bun", args: [FIXTURE], stages: ["*"] } } },
       }),
     );
+    _mcpLockCommandDeps.env = { CLAUDE_CONFIG_DIR: await tempDir() };
     await runMcpLockCommand(dir);
     const locked = JSON.parse(await Bun.file(join(dir, ".nax", "mcp-lock.json")).text());
     expect(Object.keys(locked.servers.memory)).toEqual(["echo"]);

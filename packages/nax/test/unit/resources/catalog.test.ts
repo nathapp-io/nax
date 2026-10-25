@@ -139,17 +139,19 @@ describe("loadResourceCatalog", () => {
   const naxOrigin = { kind: "nax-plugin", plugin: "native" } as const;
   const nax = pkg("nax:native", naxOrigin, { skills: [skill("n", naxOrigin)] });
   const load = (
-    config: { resources?: { claudeCode: boolean; skillsInRun: boolean } },
+    config: { resources?: { claudeCode: boolean; skillsInRun: boolean; mcpInRun: boolean } },
     naxPluginPackages: ResourcePackage[] = [],
   ) => resources.loadResourceCatalog({ repoRoot, config, env: { CLAUDE_CONFIG_DIR: claudeDir }, naxPluginPackages });
   test("AC-10 enabled Claude discovery loads the fixture user skill", async () => {
-    expect((await load({ resources: { claudeCode: true, skillsInRun: false } })).findSkill("u")).toMatchObject({
+    expect(
+      (await load({ resources: { claudeCode: true, skillsInRun: false, mcpInRun: false } })).findSkill("u"),
+    ).toMatchObject({
       origin: userOrigin,
       path: join(claudeDir, "skills/u/SKILL.md"),
     });
   });
   test("AC-11 disabled Claude discovery returns no skills or packages", async () => {
-    const catalog = await load({ resources: { claudeCode: false, skillsInRun: false } });
+    const catalog = await load({ resources: { claudeCode: false, skillsInRun: false, mcpInRun: false } });
     expect(catalog.skills).toEqual([]);
     expect(catalog.packages).toEqual([]);
   });

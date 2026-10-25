@@ -284,4 +284,12 @@ describe("writeMcpLockAt", () => {
       `${JSON.stringify({ version: 1, servers: { a: { c: "3" }, z: { a: "1", b: "2" } } }, null, 2)}\n`,
     );
   });
+
+  test("AC-9: serialises readOnly with server ids and tool names sorted", async () => {
+    const dir = await tempDir();
+    const path = join(dir, "mcp-lock.json");
+    await writeMcpLockAt(path, { version: 1, servers: { a: {} }, readOnly: { a: ["z", "b"] } });
+
+    expect(JSON.parse(await Bun.file(path).text()).readOnly.a).toEqual(["b", "z"]);
+  });
 });

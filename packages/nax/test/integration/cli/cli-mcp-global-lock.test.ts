@@ -9,13 +9,15 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { runMcpLockCommand } from "@/cli/mcp";
+import { _mcpLockCommandDeps, runMcpLockCommand } from "@/cli/mcp";
 
 const FIXTURE = resolve(import.meta.dir, "../../fixtures/mcp/fake-server.ts");
 
 let projectDir: string;
 let globalDir: string;
+let claudeDir: string;
 let previousGlobalDir: string | undefined;
+const originalLockEnv = _mcpLockCommandDeps.env;
 
 function writeProjectConfig(): void {
   mkdirSync(join(projectDir, ".nax"), { recursive: true });
@@ -31,12 +33,17 @@ function writeProjectConfig(): void {
 beforeEach(() => {
   projectDir = realpathSync(makeTempDir("nax-cli-mcp-lock-project-"));
   globalDir = realpathSync(makeTempDir("nax-cli-mcp-lock-global-"));
+  // Isolate Claude Code discovery from the developer's real ~/.claude and ~/.claude.json.
+  claudeDir = realpathSync(makeTempDir("nax-cli-mcp-lock-claude-"));
+  _mcpLockCommandDeps.env = { CLAUDE_CONFIG_DIR: claudeDir };
   previousGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
   process.env.NAX_GLOBAL_CONFIG_DIR = globalDir;
   writeProjectConfig();
 });
 
 afterEach(() => {
+  _mcpLockCommandDeps.env = originalLockEnv;
+  cleanupTempDir(claudeDir);
   if (previousGlobalDir === undefined) delete process.env.NAX_GLOBAL_CONFIG_DIR;
   else process.env.NAX_GLOBAL_CONFIG_DIR = previousGlobalDir;
   cleanupTempDir(projectDir);
@@ -73,7 +80,7 @@ async function runCli(args: string[]): Promise<CliResult> {
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, NAX_GLOBAL_CONFIG_DIR: globalDir },
+    env: { ...process.env, NAX_GLOBAL_CONFIG_DIR: globalDir, CLAUDE_CONFIG_DIR: claudeDir },
     signal: AbortSignal.timeout(30_000),
   });
   const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);

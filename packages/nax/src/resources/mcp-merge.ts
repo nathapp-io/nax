@@ -1,9 +1,14 @@
 /**
  * Merge catalog MCP resources into one ordinary `McpConfig`, so a single MCP
- * client serves both configured and discovered servers. Pure: no I/O, no logging;
- * every dropped or shadowed entry is reported as a `ResourceDiagnostic`.
+ * client serves both configured and discovered servers. `mergeCatalogMcpServers`
+ * is pure: no I/O, no logging; every dropped or shadowed entry is reported as a
+ * `ResourceDiagnostic`. `resolveCatalogMcpConfig` is the adapter around it that
+ * loads the catalog and logs those diagnostics.
  */
-import { MCP_DEFAULT_TIMEOUT_MS, type McpConfig, type McpServerConfig } from "@/config";
+import { MCP_DEFAULT_TIMEOUT_MS, type McpConfig, type McpServerConfig, type NaxConfig } from "@/config";
+import { getSafeLogger } from "@/logger";
+import { type McpLockFile, resolveMcpLock } from "@/mcp";
+import type { loadResourceCatalog } from "./catalog";
 import { expandMcpValue, mcpServerId } from "./mcp-expand";
 import type { McpServerResource, McpServerScope, ResourceCatalog, ResourceDiagnostic, ResourcePackage } from "./types";
 
@@ -158,4 +163,37 @@ export function mergeCatalogMcpServers(input: {
   }
 
   return { config: { servers: Object.fromEntries(servers) }, sources, diagnostics };
+}
+
+/**
+ * The MCP config a consumer should connect: `config.mcp` plus the catalog's servers.
+ * Unchanged (and the catalog never loaded) when Claude Code discovery is off.
+ * Each merge diagnostic is logged at `warn` under stage `resources`.
+ *
+ * With `lockedOnly`, a catalog server the MCP lock (project, else global) does not
+ * list is dropped: discovered servers are not operator-configured, so an unattended
+ * run attaches only the ones `nax mcp lock` has pinned. Configured servers are kept.
+ */
+export async function resolveCatalogMcpConfig(input: {
+  readonly config: NaxConfig;
+  readonly repoRoot: string;
+  readonly env: Env;
+  readonly load: typeof loadResourceCatalog;
+  readonly lockedOnly?: boolean;
+  readonly readLock?: (projectRoot: string) => Promise<McpLockFile | undefined>;
+}): Promise<McpConfig | undefined> {
+  const { config, repoRoot, env } = input;
+  if (config.resources?.claudeCode === false) return config.mcp;
+  const catalog = await input.load({ repoRoot, config, env, naxPluginPackages: [] });
+  const merged = mergeCatalogMcpServers({ mcp: config.mcp, catalog, env });
+  const logger = getSafeLogger();
+  for (const diagnostic of merged.diagnostics) {
+    logger?.warn("resources", diagnostic.message, { path: diagnostic.path, origin: diagnostic.origin });
+  }
+  if (input.lockedOnly !== true) return merged.config;
+  const lock = await (input.readLock ?? resolveMcpLock)(repoRoot);
+  const kept = Object.entries(merged.config.servers).filter(
+    ([id]) => merged.sources.get(id)?.source === "config" || (lock !== undefined && Object.hasOwn(lock.servers, id)),
+  );
+  return { servers: Object.fromEntries(kept) };
 }

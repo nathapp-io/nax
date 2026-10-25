@@ -440,4 +440,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "mcp.servers.<id>.timeoutMs": "Per-call timeout in milliseconds (default: 60000)",
   "mcp.servers.<id>.enabled":
     "Kill switch. false means the server is not connected, not locked and contributes no tools (default: true)",
+
+  // Resources
+  "resources.mcpInRun":
+    "Attach MCP servers discovered from Claude Code (user, local, project .mcp.json, plugins) to nax run stages, only those pinned in the MCP lock; configured mcp.servers always win on an id clash. Ignored when resources.claudeCode is false (default: false)",
 };

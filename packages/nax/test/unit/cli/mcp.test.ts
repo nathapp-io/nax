@@ -2,20 +2,27 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { runMcpLockCommand } from "@/cli/mcp";
+import { _mcpLockCommandDeps, runMcpLockCommand } from "@/cli/mcp";
 import { _mcpClientDeps } from "@/mcp/client";
 import { schemaHash } from "@/mcp/lock";
 
 const original = { ..._mcpClientDeps };
+const originalLockEnv = _mcpLockCommandDeps.env;
 let projectDir: string;
+let claudeDir: string;
 
 beforeEach(() => {
   projectDir = realpathSync(makeTempDir("nax-cli-mcp-"));
+  // Keep Claude Code discovery off the developer's real ~/.claude and ~/.claude.json.
+  claudeDir = realpathSync(makeTempDir("nax-cli-mcp-claude-"));
+  _mcpLockCommandDeps.env = { CLAUDE_CONFIG_DIR: claudeDir };
   mkdirSync(join(projectDir, ".nax"), { recursive: true });
 });
 
 afterEach(() => {
   Object.assign(_mcpClientDeps, original);
+  _mcpLockCommandDeps.env = originalLockEnv;
+  cleanupTempDir(claudeDir);
   cleanupTempDir(projectDir);
 });
 
