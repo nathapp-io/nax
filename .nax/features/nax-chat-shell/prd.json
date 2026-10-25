@@ -3,7 +3,7 @@
   "feature": "nax-chat-shell",
   "branchName": "feat/nax-chat-shell",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T06:10:20.629Z",
+  "updatedAt": "2026-10-25T06:21:10.375Z",
   "userStories": [
     {
       "id": "US-001",
@@ -771,14 +771,17 @@
       "dependencies": [
         "US-012"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Interactive authorization plus queued mode changes, cancellation and timed exit require strict security TDD."
+        "reasoning": "Interactive authorization plus queued mode changes, cancellation and timed exit require strict security TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/hooks/useKeyboard.ts",
@@ -793,7 +796,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6061869c69a2f504627f0fed34d7445f692f9dda"
     },
     {
       "id": "US-014",
