@@ -415,6 +415,20 @@ describe("toProviderOverrides", () => {
     // a current bug.
   });
 
+  test("carries a model's thinkingFormat without changing its siblings (nax#2696)", () => {
+    const mapped = toProviderOverrides([
+      {
+        ...override,
+        models: [
+          { ...override.models[0], thinkingFormat: "qwen-chat-template" },
+          { ...override.models[0], id: "default-format" },
+        ],
+      },
+    ]);
+    expect(mapped[0]?.models?.[0]).toMatchObject({ thinkingFormat: "qwen-chat-template" });
+    expect(mapped[0]?.models?.[1]).not.toHaveProperty("thinkingFormat");
+  });
+
   test("the config thinking levels mirror the nax-ai union exactly", () => {
     // THINKING_LEVELS is a Record<ThinkingLevel, true> over nax-ai's union, so
     // it fails to compile if nax-ai adds a level. This pins the config enum to

@@ -311,6 +311,47 @@ each has bitten someone:
 `headers` values are masked in `nax config` and `nax config profile show`; header
 names and `baseUrl` stay readable so a misrouted request is still diagnosable.
 
+**Selecting a thinking wire format (nax#2696).** A model entry may set
+`thinkingFormat` to select how its thinking levels are sent on
+`protocol: "openai-completions"`. Allowed values are `openai`, `qwen`,
+`qwen-chat-template`, `deepseek`, and `zai`, using the backend's existing formats.
+Unknown values fail config validation; declaring the field on another protocol
+fails client construction with the model id and protocol.
+An `openai` declaration is also rejected if the inherited provider settings
+disable `reasoning_effort`, which would silently suppress thinking controls.
+Omit it to keep the provider's existing format. It is per model, so different
+models behind one gateway can use different formats, independently of
+`openRouterRouting`. An explicit format uses the declared positive level names
+for effort fields, replacing the borrowed provider's level translations.
+
+For a self-hosted llama.cpp, vLLM or SGLang server running a Qwen reasoning model,
+use `qwen-chat-template` when the server honours
+`chat_template_kwargs.enable_thinking`. The borrowed provider still supplies
+transport and authentication; `thinkingFormat` selects the thinking fields:
+
+```json
+"catalogOverrides": [{
+  "provider": "together",
+  "baseUrl": "http://127.0.0.1:18080/v1",
+  "models": [{
+    "id": "local-qwen",
+    "protocol": "openai-completions",
+    "contextWindow": 262144,
+    "maxTokens": 32768,
+    "supportsTools": true,
+    "thinkingLevels": ["off", "low", "medium", "high"],
+    "thinkingFormat": "qwen-chat-template",
+    "pricing": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+  }]
+}]
+```
+
+With this format, `off` (or an unset thinking level) sends
+`chat_template_kwargs.enable_thinking: false`; a positive level sends `true`.
+The format toggles thinking rather than assigning a separate budget to each
+positive level. Other request compatibility settings remain inherited from the
+provider.
+
 **Pinning OpenRouter routing (nax#2191).** A model entry may declare an
 OpenRouter-compatible routing block — the same `provider` payload pi sends from
 its `openai-completions` adapter. Snake_case keys are the wire field names and

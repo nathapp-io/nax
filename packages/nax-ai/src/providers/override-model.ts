@@ -82,3 +82,13 @@ export function assertOverrideModelRouting(model: ResolvedModel): void {
     );
   }
 }
+
+/** Reject a thinking format declaration that this protocol cannot send. */
+export function assertOverrideModelThinkingFormat(model: ResolvedModel): void {
+  if (model.thinkingFormat === undefined || model.protocol === "openai-completions") return;
+  throw new Error(
+    `Model "${model.id}" declares thinkingFormat but its protocol is "${model.protocol}". Only ` +
+      `"openai-completions" implements thinking wire formats: either declare the model on ` +
+      `"openai-completions" or omit thinkingFormat.`,
+  );
+}

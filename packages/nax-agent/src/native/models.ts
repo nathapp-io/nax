@@ -137,6 +137,7 @@ export function toProviderOverrides(overrides: readonly ProviderCatalogOverride[
       // Omitted when the override declares none: nax-ai then falls back to the
       // template sibling's ceiling, which is the only honest value available.
       ...(model.maxTokens !== undefined ? { maxTokens: model.maxTokens } : {}),
+      ...(model.thinkingFormat !== undefined ? { thinkingFormat: model.thinkingFormat } : {}),
       supportsTools: model.supportsTools,
       thinkingLevels: model.thinkingLevels,
       // nax#2191: forwarded verbatim. nax-ai's `assertOverrideModelRouting`

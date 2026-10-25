@@ -85,6 +85,11 @@ export interface CatalogModelOverride {
    * `protocol: "openai-completions"` (nax-ai `assertOverrideModelRouting`).
    */
   openRouterRouting?: OpenRouterRouting;
+  /**
+   * Thinking wire format for an `openai-completions` model (nax#2696).
+   * Mirrored from nax-ai's ThinkingFormat; omit to inherit the provider's format.
+   */
+  thinkingFormat?: "openai" | "qwen" | "qwen-chat-template" | "deepseek" | "zai";
 }
 
 /** Provider-scoped catalog overrides — maps 1:1 onto nax-ai's `ProviderOverride[]`. */

@@ -86,7 +86,7 @@ function stubStream() {
  */
 async function wirePayload(
   model: Model<Api>,
-  reasoning: "off" | "low" | "high" | "max" | "xhigh",
+  reasoning: "off" | SimpleStreamOptions["reasoning"],
 ): Promise<Record<string, unknown> | undefined> {
   let captured: Record<string, unknown> | undefined;
   const events = openaiCompletionsStreamSimple(
@@ -662,5 +662,159 @@ describe("amending a bundled model (issue #43)", () => {
     const deps = createPiDeps({ providerOverrides: [{ provider: "openrouter", models: [phantom] }] });
 
     await expect(deps.resolveModel(phantom.id, "openrouter")).resolves.toMatchObject({ id: phantom.id });
+  });
+});
+
+/** Model declarations select an existing backend wire format (nax#2696). */
+describe("thinkingFormat", () => {
+  const LOCAL = {
+    ...PHANTOM_MODEL,
+    id: "local-qwen",
+    provider: "together",
+    protocol: "openai-completions",
+    thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+    thinkingFormat: "qwen-chat-template",
+  } as const satisfies ResolvedModel;
+
+  it.each([
+    [undefined, false],
+    ["off", false],
+    ["minimal", true],
+    ["low", true],
+    ["medium", true],
+    ["high", true],
+    ["xhigh", true],
+    ["max", true],
+  ] as const)("sends chat-template thinking for %s", async (reasoning, enabled) => {
+    const deps = createPiDeps({
+      providerOverrides: [
+        {
+          provider: "together",
+          baseUrl: "http://127.0.0.1:18080/v1",
+          models: [LOCAL],
+        },
+      ],
+    });
+    const model = await deps.resolveModel(LOCAL.id, "together");
+    const payload = await wirePayload(model, reasoning);
+    expect(payload).toMatchObject({ chat_template_kwargs: { enable_thinking: enabled, preserve_thinking: true } });
+    expect(payload).not.toHaveProperty("reasoning");
+    expect(payload).not.toHaveProperty("reasoning_effort");
+  });
+
+  it.each([undefined, "off"] as const)(
+    "disables chat-template thinking for an off-only model with %s",
+    async (reasoning) => {
+      const offOnly = { ...LOCAL, thinkingLevels: ["off"] } as const;
+      const deps = createPiDeps({ providerOverrides: [{ provider: "together", models: [offOnly] }] });
+      const model = await deps.resolveModel(offOnly.id, "together");
+
+      await expect(wirePayload(model, reasoning)).resolves.toMatchObject({
+        chat_template_kwargs: { enable_thinking: false, preserve_thinking: true },
+      });
+    },
+  );
+
+  it("uses the declared format's effort vocabulary instead of a borrowed provider's mapping", async () => {
+    const local = { ...LOCAL, provider: "groq", thinkingFormat: "openai", thinkingLevels: ["off", "high"] } as const;
+    const deps = createPiDeps({
+      providerOverrides: [{ provider: "groq", baseUrl: "http://127.0.0.1:18080/v1", models: [local] }],
+    });
+    const model = await deps.resolveModel(local.id, "groq");
+
+    await expect(wirePayload(model, "high")).resolves.toMatchObject({ reasoning_effort: "high" });
+  });
+
+  it("keeps an explicit thinkingLevelMap when selecting a format", async () => {
+    const local = { ...LOCAL, thinkingFormat: "openai", thinkingLevelMap: { high: "medium" } } as const;
+    const deps = createPiDeps({ providerOverrides: [{ provider: "together", models: [local] }] });
+    const model = await deps.resolveModel(local.id, "together");
+
+    await expect(wirePayload(model, "high")).resolves.toMatchObject({ reasoning_effort: "medium" });
+  });
+
+  it.each(["anthropic-messages", "openai-responses", "google-generative-ai"])(
+    "rejects a thinkingFormat on %s in both catalogs",
+    (protocol) => {
+      const unreachable = { ...LOCAL, protocol, provider: "openai" };
+      const overrides = [{ provider: "openai", models: [unreachable] }];
+      const error = new RegExp(`local-qwen.*thinkingFormat.*${protocol}`);
+      expect(() => normaliseCatalog([], overrides)).toThrow(error);
+      expect(() => createPiDeps({ providerOverrides: overrides })).toThrow(error);
+    },
+  );
+
+  it.each([
+    ["off", { reasoning: { enabled: false } }],
+    ["high", { reasoning: { enabled: true }, reasoning_effort: "high" }],
+  ] as const)("preserves the legacy Together body for %s when omitted", async (reasoning, fields) => {
+    const { thinkingFormat: _, ...legacy } = LOCAL;
+    const deps = createPiDeps({ providerOverrides: [{ provider: "together", models: [legacy] }] });
+    const model = await deps.resolveModel(LOCAL.id, "together");
+    const payload = await wirePayload(model, reasoning);
+    expect(payload).toMatchObject(fields);
+    expect(payload).not.toHaveProperty("chat_template_kwargs");
+    const prefix =
+      '{"model":"local-qwen","messages":[],"stream":true,"stream_options":{"include_usage":true},"max_tokens":384000,';
+    const suffix =
+      reasoning === "off"
+        ? '"reasoning":{"enabled":false}}'
+        : '"reasoning":{"enabled":true},"reasoning_effort":"high"}';
+    expect(JSON.stringify(payload)).toBe(prefix + suffix);
+  });
+
+  it.each([
+    ["qwen", "off", { enable_thinking: false }],
+    ["qwen", "high", { enable_thinking: true, reasoning_effort: "high" }],
+    ["deepseek", "off", { thinking: { type: "disabled" } }],
+    ["deepseek", "high", { thinking: { type: "enabled" }, reasoning_effort: "high" }],
+    ["zai", "off", { thinking: { type: "disabled" } }],
+    ["zai", "high", { thinking: { type: "enabled", clear_thinking: false }, reasoning_effort: "high" }],
+    ["openai", "high", { reasoning_effort: "high" }],
+  ] as const)("sends the declared %s format for %s", async (thinkingFormat, reasoning, fields) => {
+    const deps = createPiDeps({
+      providerOverrides: [{ provider: "together", models: [{ ...LOCAL, thinkingFormat }] }],
+    });
+    const model = await deps.resolveModel(LOCAL.id, "together");
+    const payload = await wirePayload(model, reasoning);
+    expect(payload).toMatchObject(fields);
+    expect(payload).not.toHaveProperty("reasoning");
+  });
+
+  it("rejects an OpenAI format when the inherited compat disables reasoning_effort", () => {
+    const incompatible = { ...LOCAL, provider: "ant-ling", thinkingFormat: "openai" } as const;
+    expect(() => createPiDeps({ providerOverrides: [{ provider: "ant-ling", models: [incompatible] }] })).toThrow(
+      /local-qwen.*thinkingFormat.*reasoning_effort/,
+    );
+  });
+
+  it("combines thinkingFormat with routing while keeping sibling models unchanged", async () => {
+    const { thinkingFormat: _, ...sibling } = LOCAL;
+    const deps = createPiDeps({
+      providerOverrides: [
+        {
+          provider: "together",
+          models: [
+            { ...LOCAL, openRouterRouting: { only: ["local-endpoint"] } },
+            { ...sibling, id: "default-format" },
+          ],
+        },
+      ],
+    });
+    const overridden = await deps.resolveModel(LOCAL.id, "together");
+    const control = await deps.resolveModel("default-format", "together");
+    const defaults = createPiDeps({ providerOverrides: [{ provider: "together", models: [sibling] }] });
+    const template = await defaults.resolveModel(LOCAL.id, "together");
+    expect(overridden.compat).toEqual({
+      ...template.compat,
+      thinkingFormat: "qwen-chat-template",
+      openRouterRouting: { only: ["local-endpoint"] },
+    });
+    expect(await wirePayload(overridden, "high")).toMatchObject({
+      chat_template_kwargs: { enable_thinking: true },
+      provider: { only: ["local-endpoint"] },
+    });
+    expect(await wirePayload(control, "high")).toMatchObject({ reasoning: { enabled: true } });
+    expect(await wirePayload(control, "high")).not.toHaveProperty("provider");
   });
 });
