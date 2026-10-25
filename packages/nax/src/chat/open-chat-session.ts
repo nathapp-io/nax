@@ -9,6 +9,7 @@ import {
   type LoopHandlerSet,
   nativeBackend,
   resumeAgentSession,
+  SESSION_ID_PATTERN,
   type SessionMeta,
   type SessionStorage,
   type SessionStorageDeps,
@@ -63,17 +64,29 @@ export function createChatStorage(options: ChatStorageOptions): SessionStorage {
   return _openChatSessionDeps.createSessionStorage({ dir: resolveChatSessionsDir(env), pid, now, logger });
 }
 
+/** Metadata must identify the same session as its filename before it can own a lock. */
+async function readResumeMeta(storage: SessionStorage, id: string): Promise<SessionMeta> {
+  const stored = await storage.readMeta(id);
+  if (stored === null) {
+    throw new NaxError(`no session ${id} in ${storage.dir}`, "CHAT_SESSION_NOT_FOUND", {
+      stage: "chat",
+      sessionId: id,
+    });
+  }
+  if (stored.sessionId !== id) {
+    throw new NaxError(`[chat] session metadata for ${id} has a mismatched sessionId`, "SESSION_META_UNREADABLE", {
+      stage: "chat",
+      sessionId: id,
+    });
+  }
+  return stored;
+}
+
 /** Validate stored modes before taking ownership, including on an explicit switch. */
 async function sessionMeta(request: OpenChatSessionRequest, deps: typeof _openChatSessionDeps): Promise<SessionMeta> {
   if (request.resumeId !== undefined) {
     const id = request.resumeId;
-    const stored = await request.storage.readMeta(id);
-    if (stored === null) {
-      throw new NaxError(`no session ${id} in ${request.storage.dir}`, "CHAT_SESSION_NOT_FOUND", {
-        stage: "chat",
-        sessionId: id,
-      });
-    }
+    const stored = await readResumeMeta(request.storage, id);
     const mode = chatModeOfMeta(stored.mode);
     if (mode === null) {
       throw new NaxError(
@@ -149,6 +162,9 @@ export async function openChatSession(
   request: OpenChatSessionRequest,
   deps = _openChatSessionDeps,
 ): Promise<ChatSessionHandle> {
+  if (request.resumeId !== undefined && !SESSION_ID_PATTERN.test(request.resumeId)) {
+    throw new NaxError("[chat] invalid session id", "CHAT_SESSION_ID_INVALID", { stage: "chat" });
+  }
   const transcripts = deps.createFileTranscriptStore(request.storage.dir);
   const meta = await sessionMeta(request, deps);
   const release = await request.storage.acquireLock(meta.sessionId);

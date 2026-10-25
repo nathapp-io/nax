@@ -217,6 +217,31 @@ describe("openChatSession", () => {
 });
 
 describe("openChatSession edge cases", () => {
+  test.each(["../outside", "nested/session", "nested\\session", "/absolute", "", ".", "..", "a".repeat(129)])(
+    "F1 rejects invalid resume id %j before storage access",
+    async (resumeId) => {
+      const read = spyOn(storage, "readMeta");
+      const acquire = spyOn(storage, "acquireLock");
+      await expect(open({ resumeId })).rejects.toMatchObject({ code: "CHAT_SESSION_ID_INVALID" });
+      expect(read).not.toHaveBeenCalled();
+      expect(acquire).not.toHaveBeenCalled();
+      expect(deps.createFileTranscriptStore).not.toHaveBeenCalled();
+    },
+  );
+  test.each(["other-session", "../outside"])(
+    "F1 rejects mismatched stored session id %j before locking",
+    async (sessionId) => {
+      await seed();
+      const stored = await storage.readMeta(ID);
+      await Bun.write(join(dir, `${ID}.session.json`), JSON.stringify({ ...stored, sessionId }));
+      const acquire = spyOn(storage, "acquireLock");
+      await expect(open({ resumeId: ID })).rejects.toMatchObject({ code: "SESSION_META_UNREADABLE" });
+      expect(acquire).not.toHaveBeenCalled();
+      expect(deps.nativeBackend).not.toHaveBeenCalled();
+      expect(deps.createAgentSession).not.toHaveBeenCalled();
+      expect(deps.resumeAgentSession).not.toHaveBeenCalled();
+    },
+  );
   test("explicit switches override mode and model without committing metadata", async () => {
     await seed();
     const handle = await open({ resumeId: ID, mode: "guarded", model: "anthropic/switched" });
