@@ -1,0 +1,641 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-mcp-servers",
+  "branchName": "feat/chat-mcp-servers",
+  "createdAt": "2026-10-25T00:00:00.000Z",
+  "updatedAt": "2026-10-25T12:23:45.281Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "nax-agent: MCP read-only hints, discovered providers and guarded asks",
+      "description": "**Goal** — Accept discovered session providers and ask before non-read-only discovered tool execution in ask-profile sessions.\n\n**Motivation** — The session API refuses MCP providers.\n\n**Approach** — **1. nax-agent: read-only hints, discovered providers, guarded asks (US-001).**\n\n- `McpToolInfo` (`packages/nax-agent/src/mcp/types.ts`) gains `readonly readOnly?: true`.\n  `toolInfo(raw)` in `src/mcp/connect.ts` sets `readOnly: true` exactly when\n  `raw.annotations` is an object whose `readOnlyHint` is the boolean `true`; in every other\n  case the property is absent (not `undefined`), so a tool with no annotations keeps today's\n  exact shape.\n- `ProviderTool` (`src/tools/provider-types.ts`) gains `readonly readOnly?: boolean`.\n  `sanitizeProviderTools` already spreads the tool, so the hint survives sanitisation.\n- `ResolvedProviderTools` (`src/tools/provider-advertise.ts`) gains\n  `readonly askTools?: readonly string[]`: the advertised (namespaced) names of tools that\n  came from a `discovered` provider and whose `readOnly` is not `true`, in advertise order.\n  Absent when the list would be empty. A `static` provider's tools never appear in it: their\n  schemas are authored in this repo, and the skills tool must not ask on every load.\n- `NativeBackendOptions.toolProviders` accepts `kind: \"discovered\"` as well as `\"static\"`;\n  the zod check becomes `provider.kind === \"static\" || provider.kind === \"discovered\"`, and\n  its message becomes `must be an array of tool providers with id, kind, stages and tools()`.\n  Sanitisation of discovered tools already happens inside `resolveProviderTools` by kind.\n- `buildSessionToolSupport` (`src/session/session-tool-support.ts`): when `args.profile` is\n  `\"ask\"`, the ask rules passed to `buildCodingToolSupport` are `askRulesFor(...)` followed by\n  one `{ tool: name, patterns: [\"*\"] }` per name in `args.providerTools?.askTools`. Every\n  other profile adds none, so `full` (chat full mode) never asks for an MCP tool.\n- The ask that results is an ordinary `approval_requested` event whose `tool` is the\n  namespaced name. `approvalMemoryKey` already returns the tool name for a non-execute tool,\n  so the chat's \"allow for this session\" remembers an MCP tool by name with no change.\n\n**Scope** — In: shared MCP metadata, provider advertisement, native option validation and session ask rules; update the existing native-backend-providers AC-10 to accept discovered providers while AC-11 keeps rejecting malformed options with AGENT_SESSION_INVALID_OPTIONS. Out: nax transport/config mapping (US-002), chat composition (US-007), and lock format changes. A server's `readOnlyHint` is trusted as the server states it and is not pinned by the lock; the lock pins input schemas only, so a server that flips the hint after locking changes whether guarded mode asks.\n\n**Interface** — Add `readonly readOnly?: true` to `McpToolInfo`, `readonly readOnly?: boolean` to `ProviderTool`, and `readonly askTools?: readonly string[]` to `ResolvedProviderTools`; keep `nativeBackend({ model, toolProviders: [provider] })`, `resolveProviderTools(providers, stage, workdir, options?)` and `buildSessionToolSupport(args)` as the existing entry points. Tests use coding-tool interactions and the normal ask port, not a special MCP approval path.",
+      "acceptanceCriteria": [
+        "[unit] connectMcp against an in-memory server that lists tool get with annotations: { readOnlyHint: true } yields connection.tools[0].readOnly equal to true.",
+        "[unit] connectMcp against a server that lists tool put with annotations: { readOnlyHint: false } yields connection.tools[0] with no readOnly key.",
+        "[unit] connectMcp against a server that lists tool put with annotations: { readOnlyHint: \"yes\" } yields connection.tools[0] with no readOnly key.",
+        "[unit] connectMcp against a server that lists a tool with no annotations yields a tool object equal to { name, description, inputSchema }.",
+        "[unit] sanitizeProviderTools(\"discovered\", [tool]) for a tool with readOnly: true returns a tool whose readOnly is true.",
+        "[unit] resolveProviderTools([provider], \"session\", workdir) for a discovered provider acme whose tools are get (readOnly: true) and put (no readOnly) returns askTools equal to [\"acme__put\"].",
+        "[unit] resolveProviderTools for a discovered provider whose only tool has readOnly: true returns a result with no askTools key.",
+        "[unit] resolveProviderTools for a static provider whose tool has no readOnly returns a result with no askTools key.",
+        "[unit] nativeBackend({ model, toolProviders: [provider] }) with a provider of kind: \"discovered\" returns a backend without throwing.",
+        "[unit] nativeBackend({ model, toolProviders: [{ id: \"x\", kind: \"other\", stages: [\"*\"], tools: async () => [] }] }) throws AgentSessionError with code AGENT_SESSION_INVALID_OPTIONS.",
+        "[unit] Opening a native backend with profile read and the discovered provider acme yields codingTools names containing acme__put.",
+        "[unit] Opening with profile ask, the discovered provider acme and an ask port whose emit records events and whose turn returns a turn id, a coding-tool interaction for acme__put emits an approval_requested event whose tool is acme__put.",
+        "[unit] In that ask-profile session, the acme__put tool's run has not been invoked when the approval_requested event is emitted.",
+        "[unit] In that ask-profile session, a coding-tool interaction for acme__get invokes get's run.",
+        "[unit] In that ask-profile session, a coding-tool interaction for acme__get emits no approval_requested event.",
+        "[unit] Opening with profile full and the discovered provider acme, a coding-tool interaction for acme__put emits no approval_requested event.",
+        "[unit] Opening with profile ask and a static provider skills with tool load, a coding-tool interaction for skills__load emits no approval_requested event."
+      ],
+      "tags": [
+        "feature",
+        "mcp",
+        "sessions",
+        "permissions",
+        "security"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Crosses shared transport metadata, provider advertisement and native session enforcement; access-control and session changes require strict test/implementation isolation."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/mcp/types.ts",
+        "packages/nax-agent/src/tools/provider-types.ts",
+        "packages/nax-agent/src/tools/provider-advertise.ts",
+        "packages/nax-agent/src/session/native-backend-options.ts",
+        "packages/nax-agent/src/session/session-tool-support.ts"
+      ],
+      "suggestedCriteria": [
+        "resolveProviderTools returns no askTools entry for a discovered tool rejected by options.admits.",
+        "resolveProviderTools returns non-read-only names from multiple discovered providers in the same order as its advertised tools.",
+        "connectMcp yields a tool with no readOnly key when annotations is null or an array.",
+        "After a user allows acme__put for the session, another acme__put call in that same session emits no additional approval_requested event."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/unit/session/native-backend-providers.test.ts",
+          "reason": "the case \"AC-10: discovered providers are rejected at construction with the providers path\" asserted that nativeBackend throws for kind \"discovered\"; it now asserts nativeBackend constructs without throwing for a discovered provider, and the malformed-provider case (AC-11) keeps asserting AGENT_SESSION_INVALID_OPTIONS."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "nax MCP layer: HTTP transport and read-only metadata",
+      "description": "**Goal** — Extend nax MCP configuration and connections to HTTP and carry shared read-only metadata into discovered provider tools.\n\n**Motivation** — One MCP client, not two.\n\n**Approach** — **2. HTTP transport and the read-only hint in nax's MCP layer (US-002).**\n\n- `McpToolDescriptor` (`packages/nax/src/mcp/types.ts`) gains `readonly readOnly?: true`.\n  `connectMcpServer` already returns the shared layer's tool objects unchanged, so the hint\n  set by US-001 arrives with no mapping. `createMcpProviders` (`src/mcp/provider.ts`) maps\n  each admitted tool to a `ProviderTool` that carries `readOnly: true` when the descriptor\n  has it and no `readOnly` key otherwise. Without this mapping every MCP tool would land in\n  `askTools`.\n- `McpServerSchema` (`packages/nax/src/config/schemas-mcp.ts`): `command` becomes optional;\n  new `url: z.string().url().optional()` and `headers: z.record(z.string(), z.string()).default({})`.\n  The object keeps `.strict()` and gains a refinement: exactly one of `command` and `url` is\n  set, with the message `set exactly one of command or url`.\n- `McpServerConfig` (`src/config/runtime-types-mcp.ts`): `command?: string`, `url?: string`,\n  `headers?: Record<string, string>` (optional in the interface so existing typed literals\n  still compile; the schema always fills it). `args` and `env` keep their defaults and are\n  ignored for an HTTP server.\n- `connectMcpServer` (`src/mcp/client.ts`) takes `command?`, `url?` and `headers?`; a `url`\n  builds `{ kind: \"http\", url, headers: headers ?? {} }`, otherwise today's stdio config.\n- `createMcpPool` (`src/mcp/pool.ts`) passes `url` and `headers` through. An HTTP connection\n  has `pid` null, so `onSpawn` never fires and the pid registry is untouched.\n- `nax mcp lock`'s empty-server hint names the url for an HTTP server instead of\n  `undefined`.\n- Config descriptions (`src/cli/config-descriptions.ts`) gain `mcp.servers.<id>.url` and\n  `mcp.servers.<id>.headers`, and `mcp.servers.<id>.command` says it is the stdio form.\n\n**Scope** — In: descriptor/provider hint propagation, schema/runtime types, client/pool transport forwarding, HTTP lock hint and descriptions. Update the full parsed-server default expectation in test/unit/config/schemas-mcp.test.ts to include headers {}; every rejection case (empty command, unknown stage, bad id, unknown key) keeps its verdict. Out: catalog conversion (US-003–006), chat pool lifecycle (US-007), catalog lock enumeration (US-009). OAuth for remote MCP servers is not supported; an HTTP server gets only its static `headers`. SSE MCP transport is not supported anywhere; an `sse` catalog entry is listed as a diagnostic and dropped. MCP resources, prompts and sampling are not supported; only tools. Configured `mcp.servers` entries get no `${VAR}` expansion; an HTTP server configured there carries its headers literally, and the existing config secret scan still applies to them.\n\n**Interface** — `McpToolDescriptor` gains `readonly readOnly?: true`; `McpServerConfig` gains `command?: string`, `url?: string`, `headers?: Record<string, string>`; `connectMcpServer(args)` accepts these optional transport fields with the existing serverId/workdir/args/env/connectTimeoutMs/signal/onSpawn fields. Preserve `createMcpProviders({ config, pool, projectRoot, storyId?, readLock?, onWithheld? }) -> readonly ToolProvider[]` of `kind: \"discovered\"`, including existing applyLock and allowedTools filtering. Prove the upstream seam by resolving a real createMcpProviders provider through resolveProviderTools and observing docs__put only in askTools.",
+      "acceptanceCriteria": [
+        "[unit] createMcpProviders over a fake pool whose listTools returns tool get with readOnly: true (locked) yields a provider whose tools(\"/w\") result has readOnly true for get.",
+        "[unit] createMcpProviders over a fake pool whose tool put has no readOnly yields a provider tool with no readOnly key.",
+        "[unit] resolveProviderTools over that createMcpProviders provider (id docs, tools get read-only and put) returns askTools equal to [\"docs__put\"].",
+        "[unit] McpConfigSchema.parse({ servers: { a: { url: \"https://h/mcp\" } } }).servers.a.url is https://h/mcp.",
+        "[unit] McpConfigSchema.parse({ servers: { a: { url: \"https://h/mcp\" } } }).servers.a.headers equals {}.",
+        "[unit] McpConfigSchema.parse({ servers: { a: { url: \"https://h/mcp\", headers: { Authorization: \"Bearer t\" } } } }).servers.a.headers.Authorization is Bearer t.",
+        "[unit] McpConfigSchema.safeParse({ servers: { a: { command: \"x\", url: \"https://h\" } } }) fails with an issue message set exactly one of command or url.",
+        "[unit] McpConfigSchema.safeParse({ servers: { a: { args: [\"x\"] } } }) fails with an issue message set exactly one of command or url.",
+        "[unit] McpConfigSchema.safeParse({ servers: { a: { url: \"not a url\" } } }).success is false.",
+        "[unit] McpConfigSchema.parse({ servers: { a: { command: \"x\" } } }).servers.a.headers equals {}.",
+        "[unit] connectMcpServer({ serverId: \"a\", workdir: \"/w\", url: \"https://h/mcp\", headers: { k: \"v\" }, args: [], env: {}, connectTimeoutMs }) calls _mcpClientDeps.connect with config { kind: \"http\", url: \"https://h/mcp\", headers: { k: \"v\" } }.",
+        "[unit] connectMcpServer with command: \"fake\" and no url calls _mcpClientDeps.connect with config { kind: \"stdio\", command: \"fake\", args: [], env: {}, cwd: \"/w\" }.",
+        "[unit] A pool over server a with url https://h/mcp connecting a passes url https://h/mcp to the client connect seam.",
+        "[unit] A pool connection to an HTTP server whose connection pid is null records a connected event with pid null.",
+        "[unit] A pool connection to an HTTP server never calls the pid registry's register.",
+        "[unit] runMcpLockCommand for an enabled HTTP server that advertises no tools prints a hint containing the server's url.",
+        "[unit] For a pool listing tool t absent from the resolved lock, the createMcpProviders provider's tools(workdir) result has no entry whose localName is t.",
+        "[unit] For a pool listing tool t whose input schema differs from its locked hash, the createMcpProviders provider's tools(workdir) result has no entry whose localName is t."
+      ],
+      "tags": [
+        "feature",
+        "mcp",
+        "http",
+        "security"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Coordinates schema, client, pool and provider contracts with credential-bearing headers and read-only approval metadata crossing the lock boundary."
+      },
+      "contextFiles": [
+        "packages/nax/src/mcp/types.ts",
+        "packages/nax/src/mcp/provider.ts",
+        "packages/nax/src/config/schemas-mcp.ts",
+        "packages/nax/src/mcp/client.ts",
+        "packages/nax/src/mcp/pool.ts"
+      ],
+      "suggestedCriteria": [
+        "connectMcpServer with url and no headers passes { kind: \"http\", url, headers: {} } to _mcpClientDeps.connect.",
+        "McpConfigSchema.safeParse rejects an HTTP server containing an unknown key while preserving strict config validation.",
+        "A pool over an HTTP server forwards its configured headers unchanged to connectMcpServer."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/config/schemas-mcp.test.ts",
+          "reason": "the default-shape case that parses a server with only command \"x\" and compares the full parsed server gains headers {} in its expected object; every rejection case (empty command, unknown stage, bad id, unknown key) keeps its verdict."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Preserve connection specifications in catalog MCP resources",
+      "description": "**Goal** — Retain typed MCP connection specifications and scopes when parsing project and plugin catalog entries.\n\n**Motivation** — The catalog parses MCP entries and drops the useful half.\n\n**Interface** — `McpServerResource` (`packages/nax/src/resources/types.ts`) target:\n\n```ts\nexport type McpServerSpec =\n  | {\n      readonly transport: \"stdio\";\n      readonly command: string;\n      readonly args: readonly string[];\n      readonly env: Readonly<Record<string, string>>;\n    }\n  | {\n      readonly transport: \"http\" | \"sse\";\n      readonly url: string;\n      readonly headers: Readonly<Record<string, string>>;\n    };\n\nexport type McpServerScope = \"local\" | \"project\" | \"user\" | \"plugin\";\n\nexport interface McpServerResource {\n  readonly kind: \"mcp\";\n  readonly name: string;\n  readonly transport: \"stdio\" | \"http\" | \"sse\";\n  readonly scope: McpServerScope;\n  readonly server: McpServerSpec;\n  readonly path: string;\n  readonly origin: ResourceOrigin;\n}\n```\n\n**Approach** — Parsing portion of **3. Catalog MCP entries keep their connection spec (US-003 parsing, US-004 discovery).**\n\n- `parseMcpJson(path, text, origin, scope)` (`src/resources/parse-mcp.ts`) gains the scope\n  parameter. Per entry: `type` `\"http\"` or `\"sse\"` needs a string `url` (headers default to\n  `{}`); otherwise a string `command` makes a stdio entry (`args` default `[]`, `env`\n  default `{}`). `args` that is not an array of strings, `env` or `headers` that is not an\n  object of strings, or an http/sse entry with no string `url` yields a `warn` diagnostic\n  `[resources] Unsupported MCP entry <name> in <path>` and no resource (today's message).\n- A new `parseMcpServers(path, servers, origin, scope)` holds the per-entry loop so that\n  `~/.claude.json` reuses it on an already-parsed object; `parseMcpJson` parses the text and\n  calls it.\n\nPass scope project or plugin from claude-sources.ts. Export parseMcpServers, McpServerSpec and McpServerScope from src/resources/index.ts in this story.\n\n**Scope** — In: resource types, shared per-entry parser, existing project/plugin scope assignment and typed fixture migrations. Every parseMcpJson call in test/unit/resources/parse-mcp.test.ts gains project scope and whole-resource expectations gain scope and server; stdio npx args [\"x\"] has env {}, HTTP https://h has headers {}, and the \"sse wins over command\" entry gains url https://s while preserving each transport outcome. The typed plugin MCP literal in test/unit/resources/listing.test.ts gains scope plugin and a stdio x/[]/{} server; its expected text is unchanged here. Out: ~/.claude.json discovery and /plugins wording (US-004), expansion (US-005), merge (US-006), network connections (US-002/007). MCP servers declared inside a Claude Code plugin's `plugin.json` (`mcpServers` field) are not read; only the plugin's `.mcp.json` is. SSE parsing retains metadata for later rejection; SSE MCP transport is not supported anywhere; an `sse` catalog entry is listed as a diagnostic and dropped.",
+      "acceptanceCriteria": [
+        "[unit] parseMcpJson(path, '{\"mcpServers\":{\"ctx\":{\"command\":\"npx\",\"args\":[\"x\"],\"env\":{\"K\":\"v\"}}}}', origin, \"project\") returns one resource whose server equals { transport: \"stdio\", command: \"npx\", args: [\"x\"], env: { K: \"v\" } }.",
+        "[unit] That resource's scope is project.",
+        "[unit] parseMcpJson for {\"mcpServers\":{\"ctx\":{\"command\":\"npx\"}}} returns a resource whose server.args equals [].",
+        "[unit] parseMcpJson for {\"mcpServers\":{\"ctx\":{\"command\":\"npx\"}}} returns a resource whose server.env equals {}.",
+        "[unit] parseMcpJson for {\"mcpServers\":{\"r\":{\"type\":\"http\",\"url\":\"https://h\",\"headers\":{\"A\":\"b\"}}}} returns a resource whose server equals { transport: \"http\", url: \"https://h\", headers: { A: \"b\" } }.",
+        "[unit] parseMcpJson for {\"mcpServers\":{\"r\":{\"type\":\"http\",\"url\":\"https://h\"}}} returns a resource whose server.headers equals {}.",
+        "[unit] parseMcpJson for {\"mcpServers\":{\"s\":{\"type\":\"sse\",\"url\":\"https://s\"}}} returns a resource whose transport is sse.",
+        "[unit] parseMcpJson for {\"mcpServers\":{\"r\":{\"type\":\"http\"}}} returns no resource.",
+        "[unit] parseMcpJson for {\"mcpServers\":{\"r\":{\"type\":\"http\"}}} returns one warn diagnostic containing Unsupported MCP entry r.",
+        "[unit] parseMcpJson for {\"mcpServers\":{\"c\":{\"command\":\"npx\",\"args\":\"x\"}}} returns one warn diagnostic containing Unsupported MCP entry c.",
+        "[unit] parseMcpJson for {\"mcpServers\":{\"c\":{\"command\":\"npx\",\"args\":\"x\"}}} returns no resource.",
+        "[unit] parseMcpJson for {\"mcpServers\":{\"c\":{\"command\":\"npx\",\"env\":{\"K\":1}}}} returns one warn diagnostic containing Unsupported MCP entry c.",
+        "[unit] parseMcpJson for {\"mcpServers\":{\"c\":{\"command\":\"npx\",\"env\":{\"K\":1}}}} returns no resource.",
+        "[unit] parseMcpServers(path, { ctx: { command: \"npx\" } }, origin, \"user\") returns one resource whose scope is user.",
+        "[unit] discoverClaudeCodePackages over a repo .mcp.json holding stdio server ctx returns a project package whose ctx entry has scope project.",
+        "[unit] An enabled plugin's .mcp.json entry is returned in that plugin package with scope plugin.",
+        "[unit] parseMcpJson at /repo/.mcp.json for an HTTP entry r with url https://h and headers { A: 1 } returns one warn diagnostic whose message is [resources] Unsupported MCP entry r in /repo/.mcp.json.",
+        "[unit] parseMcpJson for an HTTP entry r with url https://h and headers { A: 1 } returns no resource.",
+        "[unit] parseMcpJson for an sse entry s without a string url returns one warn diagnostic containing Unsupported MCP entry s.",
+        "[unit] parseMcpJson for an sse entry s without a string url returns no resource."
+      ],
+      "tags": [
+        "feature",
+        "mcp",
+        "resources",
+        "parsing"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive discriminated resource shapes and pure validation in existing discovery/parser patterns; no connections or permission decisions."
+      },
+      "contextFiles": [
+        "packages/nax/src/resources/types.ts",
+        "packages/nax/src/resources/parse-mcp.ts",
+        "packages/nax/src/resources/claude-sources.ts",
+        "packages/nax/test/unit/resources/parse-mcp.test.ts"
+      ],
+      "suggestedCriteria": [
+        "parseMcpServers returns valid sibling resources even when another entry has a non-string args element.",
+        "parseMcpJson returns no resource for an entry whose env is an array.",
+        "parseMcpJson retains literal ${CLAUDE_PLUGIN_ROOT} text in a plugin command until merge-time expansion."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/resources/parse-mcp.test.ts",
+          "reason": "every parseMcpJson call gains the scope argument \"project\"; the table cases compare whole resources with toEqual, so each expected resource gains scope \"project\" and its server spec (stdio case: transport stdio, command npx, args [\"x\"], env {}; http case: transport http, url https://h, headers {}); the case \"sse wins over command\" changes its entry to type sse with url https://s because an sse entry now needs a url; the invariant is that the transport each entry resolves to is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/resources/listing.test.ts",
+          "reason": "the fixture package's mcpServers literal is typed McpServerResource, so it gains scope \"plugin\" and server (transport stdio, command x, args [], env {}); no expected text changes in this story."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Discover Claude Code user and local MCP scopes",
+      "description": "**Goal** — Read Claude Code's .claude.json user/local MCP entries into the existing catalog and mark MCP delivery in /plugins wording.\n\n**Motivation** — Most of the user's servers live in `~/.claude.json`.\n\n**Approach** — Discovery portion of **3. Catalog MCP entries keep their connection spec (US-003 parsing, US-004 discovery).**\n\n- `claudeJsonPath(env)` (`src/resources/claude-paths.ts`): `<CLAUDE_CONFIG_DIR>/.claude.json`\n  when `CLAUDE_CONFIG_DIR` is set, otherwise `<homedir>/.claude.json`. This is Claude Code's\n  own location for the file.\n- `discoverClaudeCodePackages({ repoRoot, claudeDir, claudeJson })`\n  (`src/resources/claude-sources.ts`) reads `claudeJson` once. Its top-level `mcpServers`\n  become the user package's `mcpServers` with scope `user`. Its\n  `projects[repoRoot].mcpServers` (exact key match) come first in the project package's\n  `mcpServers` with scope `local`, followed by the repo `.mcp.json` entries with scope\n  `project`. A plugin's `.mcp.json` entries have scope `plugin`. Entries read from\n  `claudeJson` carry `path` equal to the `claudeJson` path; user-scope entries have origin\n  `claude-user` and local-scope entries origin `claude-project`. A missing file adds nothing\n  and no diagnostic; a file that does not parse as a JSON object adds one `error` diagnostic\n  to the user package; a `projects` or `mcpServers` value that is not an object adds one\n  `error` diagnostic and nothing from that value.\n- `loadResourceCatalog` passes `claudeJson: claudeJsonPath(env)`.\n- `src/resources/index.ts` exports `parseMcpServers`, `claudeJsonPath` and the types\n  `McpServerSpec` and `McpServerScope` (US-003, US-004).\n- `formatPluginsListing` prints `mcp N` without `(not delivered yet)`; agents keep it until\n  F5b.\n\n**Interface** — `claudeJsonPath(env)` and `discoverClaudeCodePackages({ repoRoot, claudeDir, claudeJson })` extend the existing resources API; reuse upstream `parseMcpServers(path, servers, origin, scope)` rather than reparsing per entry. loadResourceCatalog keeps its `{ repoRoot, config, env, naxPluginPackages }` options contract.\n\n**Scope** — In: path resolution, one file read, scope routing, diagnostics, loader forwarding and listing wording. Existing claude-sources.test.ts discover helper passes a missing fixture claudeJson path so every old expectation stays true. In listing.test.ts change only \"mcp 1 (not delivered yet)\" to \"mcp 1\" for sp@m; agents and hooks wording is unchanged. Out: typed parser implementation (US-003), merge precedence/expansion (US-005/006), connections (US-007) and run/lock opt-in (US-009). Per-project enable or disable lists that Claude Code keeps in `~/.claude.json` (for example `disabledMcpServers`, `enabledMcpjsonServers`, `disabledMcpjsonServers` under `projects[<repo>]`) are not read; only `mcpServers` is. Claude Code's per-server approval settings for project `.mcp.json` servers (`enableAllProjectMcpServers`, `enabledMcpjsonServers`, `disabledMcpjsonServers` in `settings.json` / `settings.local.json`) are not read; the nax trust gate plus the MCP lock replace them.",
+      "acceptanceCriteria": [
+        "[unit] claudeJsonPath({ CLAUDE_CONFIG_DIR: \"/c\" }) returns /c/.claude.json.",
+        "[unit] claudeJsonPath({}) with _claudePathsDeps.homedir returning /home/u returns /home/u/.claude.json.",
+        "[unit] discoverClaudeCodePackages with a claudeJson fixture whose top-level mcpServers holds stdio server docs returns a user package (id claude-user) whose mcpServers names include docs.",
+        "[unit] In that result the docs entry has scope user.",
+        "[unit] In that result the docs entry's path is the claudeJson path.",
+        "[unit] discoverClaudeCodePackages with a claudeJson fixture whose projects[<repoRoot>].mcpServers holds local1, and a repo .mcp.json holding proj1, returns a project package whose mcpServers names are [\"local1\", \"proj1\"] in that order.",
+        "[unit] In that result local1 has scope local.",
+        "[unit] In that result local1 has origin kind claude-project.",
+        "[unit] discoverClaudeCodePackages with a claudeJson fixture whose projects key is a different path returns a project package with no MCP entry from that path.",
+        "[unit] discoverClaudeCodePackages with claudeJson pointing at a missing file returns no diagnostic whose path is that file.",
+        "[unit] discoverClaudeCodePackages with a claudeJson file holding [] returns a user package with one error diagnostic whose path is the claudeJson path.",
+        "[unit] discoverClaudeCodePackages with a claudeJson file whose mcpServers is \"x\" returns a user package with no MCP entry.",
+        "[unit] discoverClaudeCodePackages with a claudeJson file whose mcpServers is \"x\" returns a user package with one error diagnostic whose path is the claudeJson path.",
+        "[unit] loadResourceCatalog({ repoRoot, config, env: { CLAUDE_CONFIG_DIR: dir }, naxPluginPackages: [] }) over a fixture dir/.claude.json with user server docs returns a catalog whose user package lists docs.",
+        "[unit] formatPluginsListing for a plugin package with one MCP entry returns a string containing a line with mcp 1, hooks, replacing the old mcp 1 (not delivered yet) wording while leaving agents and hooks wording unchanged.",
+        "[unit] discoverClaudeCodePackages with a claudeJson file whose projects is not an object returns a user package with one error diagnostic for that file.",
+        "[unit] discoverClaudeCodePackages with a claudeJson file whose projects is not an object returns no MCP entries from that projects value.",
+        "[unit] discoverClaudeCodePackages with a claudeJson file whose projects[repoRoot].mcpServers is not an object returns one error diagnostic for that value.",
+        "[unit] discoverClaudeCodePackages with a claudeJson file whose projects[repoRoot].mcpServers is not an object returns no local MCP entries from that value.",
+        "[unit] discoverClaudeCodePackages with an unparseable claudeJson file returns a user package with one error diagnostic whose path is that file."
+      ],
+      "tags": [
+        "feature",
+        "mcp",
+        "resources",
+        "claude-code"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Existing optionalObject, filesystem seams and package-order discovery support the additional file and two scopes across four standard modules; medium complexity and simple TDD suffice because discovery neither connects nor decides permissions."
+      },
+      "contextFiles": [
+        "packages/nax/src/resources/claude-sources.ts",
+        "packages/nax/src/resources/claude-paths.ts",
+        "packages/nax/src/resources/catalog.ts",
+        "packages/nax/src/resources/listing.ts",
+        "packages/nax/test/unit/resources/claude-sources.test.ts"
+      ],
+      "suggestedCriteria": [
+        "discoverClaudeCodePackages reads the claudeJson path once when it contains both user and local scopes.",
+        "discoverClaudeCodePackages preserves a valid user docs entry when projects is malformed.",
+        "discoverClaudeCodePackages preserves a valid local entry when top-level mcpServers is malformed.",
+        "discoverClaudeCodePackages assigns origin kind claude-user to user-scope MCP entries."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/resources/listing.test.ts",
+          "reason": "the expected /plugins text for package sp@m changes \"mcp 1 (not delivered yet)\" to \"mcp 1\"; agents and hooks wording is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/resources/claude-sources.test.ts",
+          "reason": "discoverClaudeCodePackages now requires claudeJson, so the file's discover helper passes a claudeJson path to a missing file inside the fixture; every existing expectation (which assumes no ~/.claude.json) stays true."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Normalize MCP server IDs and expand catalog variables",
+      "description": "**Goal** — Provide pure provider-safe ID normalization and shell-style catalog value expansion helpers.\n\n**Motivation** — One MCP client, not two.\n\n**Approach** — ID and expansion algorithms from **4. The merge (US-005 ids and expansion, US-006 merge).** New `packages/nax/src/resources/mcp-expand.ts` holds these helpers; export mcpServerId and expandMcpValue from src/resources/index.ts.\n\n- Id: the base is the entry `name`, or `<plugin>-<name>` for an entry whose origin is\n  `claude-plugin`. `mcpServerId(base)` lowercases it, replaces every run of characters\n  outside `[a-z0-9_-]` with `-`, replaces every run of two or more `_` with one `_`, and\n  strips leading characters that are not `[a-z0-9]`. An empty result drops the entry with\n  an `error` diagnostic `[resources] mcp server name <name> in <path> yields no usable id`.\n  Every nonempty result satisfies `MCP_SERVER_ID_RE` and contains no `__`; the helper returns an empty string when no usable id remains, as required by the !!! acceptance criterion.\n- Expansion (`expandMcpValue(value: string, vars: Readonly<Record<string, string | undefined>>):\n  { readonly value: string } | { readonly missing: string }` in\n  `src/resources/mcp-expand.ts`; `missing` names the first unset variable): every\n  `${NAME}` becomes `vars[NAME]` (an empty string is a value); every `${NAME:-default}`\n  becomes `vars[NAME]` when it is set and non-empty, otherwise `default` (shell `:-`\n  semantics; the default runs to the first `}` and may be empty, nesting is not supported,\n  and an unterminated `${` is copied literally). `NAME` matches `[A-Za-z_][A-Za-z0-9_]*`; any other text,\n  including a `$` not followed by `{`, is copied literally. `vars` is `input.env` plus, for a\n  `claude-plugin` entry, `CLAUDE_PLUGIN_ROOT` set to that package's `root` (overriding the\n  environment). It applies to `command`, each of `args`, each `env` value, `url` and each\n  `headers` value; keys are never expanded. A `${NAME}` with no value and no default drops\n  the entry with an `error` diagnostic\n  `[resources] mcp server <id>: ${NAME} is not set`.\n\n**Interface**\n```ts\nexport function expandMcpValue(\n  value: string,\n  vars: Readonly<Record<string, string | undefined>>,\n): { readonly value: string } | { readonly missing: string };\nexport function mcpServerId(base: string): string;\n```\n\n**Scope** — In: pure helpers in mcp-expand.ts, deterministic return values and resources barrel exports. Out: plugin prefix/root selection, iteration over connection fields, diagnostic creation and dropping entries belong to the merge consumer (US-006); schema transport support belongs to US-002. Only nonempty IDs must match MCP_SERVER_ID_RE; the explicit empty-result sentinel for !!! is authoritative and the merge drops it. Configured `mcp.servers` entries get no `${VAR}` expansion; an HTTP server configured there carries its headers literally, and the existing config secret scan still applies to them.",
+      "acceptanceCriteria": [
+        "[unit] expandMcpValue(\"${HOME}/bin\", { HOME: \"/h\" }) returns { value: \"/h/bin\" }.",
+        "[unit] expandMcpValue(\"${PORT:-8080}\", {}) returns { value: \"8080\" }.",
+        "[unit] expandMcpValue(\"${PORT:-8080}\", { PORT: \"9\" }) returns { value: \"9\" }.",
+        "[unit] expandMcpValue(\"${PORT:-8080}\", { PORT: \"\" }) returns { value: \"8080\" }.",
+        "[unit] expandMcpValue(\"${EMPTY}x\", { EMPTY: \"\" }) returns { value: \"x\" }.",
+        "[unit] expandMcpValue(\"$HOME and ${1X}\", {}) returns { value: \"$HOME and ${1X}\" }.",
+        "[unit] expandMcpValue(\"${A:-}x\", {}) returns { value: \"x\" }.",
+        "[unit] expandMcpValue(\"${MISSING}\", {}) returns { missing: \"MISSING\" }.",
+        "[unit] expandMcpValue(\"${A}-${B}\", { A: \"1\" }) returns { missing: \"B\" }.",
+        "[unit] mcpServerId(\"Codebase Memory.MCP\") returns codebase-memory-mcp.",
+        "[unit] mcpServerId(\"a__b\") returns a_b.",
+        "[unit] mcpServerId(\"--x\") returns x.",
+        "[unit] mcpServerId(\"!!!\") returns an empty string.",
+        "[unit] For every input in [\"Codebase Memory.MCP\", \"a__b\", \"--x\", \"chrome-devtools\"], the result of mcpServerId matches MCP_SERVER_ID_RE."
+      ],
+      "tags": [
+        "feature",
+        "mcp",
+        "resources",
+        "parsing"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two deterministic string algorithms with explicit lexical rules and barrel exports; no side effects, credential lookup or access-control decisions."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-mcp.ts",
+        "packages/nax/src/resources/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/resources/mcp-expand.ts",
+        "packages/nax/test/unit/resources/mcp-expand.test.ts"
+      ],
+      "suggestedCriteria": [
+        "expandMcpValue(\"before ${HOME\", {}) returns { value: \"before ${HOME\" }.",
+        "expandMcpValue(\"${A}-${B}\", {}) returns { missing: \"A\" }.",
+        "expandMcpValue(\"${A}\", { A: \"${B}\", B: \"value\" }) returns { value: \"${B}\" } without recursively expanding the replacement.",
+        "mcpServerId(\"___A___B\") returns a_b."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Merge catalog MCP resources into connectable configuration",
+      "description": "**Goal** — Convert ordered catalog MCP resources into ordinary McpConfig entries with deterministic IDs, expansion, precedence and diagnostics.\n\n**Motivation** — One MCP client, not two.\n\n**Approach** — **4. The merge (US-005 ids and expansion, US-006 merge).** New `packages/nax/src/resources/mcp-merge.ts`:\n\n**Interface**\n```ts\nexport type McpServerSource = \"config\" | McpServerScope;\n\nexport interface MergedMcpServers {\n  readonly config: McpConfig;\n  /** Server id -> where the entry came from; plugin entries also carry the plugin name. */\n  readonly sources: ReadonlyMap<string, { readonly source: McpServerSource; readonly plugin?: string }>;\n  readonly diagnostics: readonly ResourceDiagnostic[];\n}\n\nexport function mergeCatalogMcpServers(input: {\n  readonly mcp: McpConfig | undefined;\n  readonly catalog: ResourceCatalog;\n  readonly env: Readonly<Record<string, string | undefined>>;\n}): MergedMcpServers;\n```\n\n- Order: every `input.mcp.servers` entry first (source `config`, copied unchanged), then the\n  catalog's packages in package order (project, user, plugins) and each package's\n  `mcpServers` in order. The first entry to claim an id wins. A later catalog entry with\n  the same id is dropped with a `warn` diagnostic\n  `[resources] mcp server <id> from <path> is shadowed by <winner>`, where `<winner>` is\n  `config`, `local`, `project`, `user` or `plugin <name>`.\n- Configured `mcp.servers` entries are not expanded; only catalog entries are.\n- Id: the base is the entry `name`, or `<plugin>-<name>` for an entry whose origin is\n  `claude-plugin`. `mcpServerId(base)` lowercases it, replaces every run of characters\n  outside `[a-z0-9_-]` with `-`, replaces every run of two or more `_` with one `_`, and\n  strips leading characters that are not `[a-z0-9]`. An empty result drops the entry with\n  an `error` diagnostic `[resources] mcp server name <name> in <path> yields no usable id`.\n  Every kept entry's nonempty id satisfies `MCP_SERVER_ID_RE` and contains no `__`; empty normalization is the explicit drop case, not a regex-matching result.\n- Expansion (`expandMcpValue(value: string, vars: Readonly<Record<string, string | undefined>>):\n  { readonly value: string } | { readonly missing: string }` in\n  `src/resources/mcp-expand.ts`; `missing` names the first unset variable): every\n  `${NAME}` becomes `vars[NAME]` (an empty string is a value); every `${NAME:-default}`\n  becomes `vars[NAME]` when it is set and non-empty, otherwise `default` (shell `:-`\n  semantics; the default runs to the first `}` and may be empty, nesting is not supported,\n  and an unterminated `${` is copied literally). `NAME` matches `[A-Za-z_][A-Za-z0-9_]*`; any other text,\n  including a `$` not followed by `{`, is copied literally. `vars` is `input.env` plus, for a\n  `claude-plugin` entry, `CLAUDE_PLUGIN_ROOT` set to that package's `root` (overriding the\n  environment). It applies to `command`, each of `args`, each `env` value, `url` and each\n  `headers` value; keys are never expanded. A `${NAME}` with no value and no default drops\n  the entry with an `error` diagnostic\n  `[resources] mcp server <id>: ${NAME} is not set`.\n- An `sse` entry is dropped with a `warn` diagnostic\n  `[resources] mcp server <id>: transport sse is not supported`.\n- A kept catalog entry becomes `McpServerConfig` with `stages: [\"*\"]`,\n  `timeoutMs: MCP_DEFAULT_TIMEOUT_MS`, `enabled: true`, `headers: {}` for stdio, and\n  `args: []`, `env: {}` for http.\n- `MCP_DEFAULT_TIMEOUT_MS` and `MCP_SERVER_ID_RE` are added to the `@/config` barrel\n  (`src/config/index.ts`) so `src/resources` imports them without an internal path\n  (`check:alias-internals`). `mcpServerId` and `expandMcpValue` (US-005) and\n  `mergeCatalogMcpServers` with its types (US-006) are exported from `src/resources/index.ts`.\n\n**Scope** — In: pure merge, source map, origin-bearing diagnostics, value-field traversal and config/resources exports. Consume upstream mcp-expand.ts rather than reimplementing it. Nonempty IDs satisfy the regex; empty normalization is the documented drop sentinel. Build catalogs through buildResourceCatalog for parser/discovery seam assertions and prove HTTP output schema compatibility. Out: helper algorithms (US-005), discovery (US-003/004), chat reserved ID/enable filtering (US-007), async resolveCatalogMcpConfig and logging/run/lock integration (US-009). Configured `mcp.servers` entries get no `${VAR}` expansion; an HTTP server configured there carries its headers literally, and the existing config secret scan still applies to them. SSE MCP transport is not supported anywhere; an `sse` catalog entry is listed as a diagnostic and dropped.",
+      "acceptanceCriteria": [
+        "[unit] mergeCatalogMcpServers over a catalog built by buildResourceCatalog whose project package has stdio server ctx (command npx, args [\"${ROOT}/s\"]) with env: { ROOT: \"/r\" } returns config.servers.ctx.args equal to [\"/r/s\"].",
+        "[unit] In that result config.servers.ctx.stages equals [\"*\"].",
+        "[unit] In that result config.servers.ctx.timeoutMs equals MCP_DEFAULT_TIMEOUT_MS.",
+        "[unit] In that result sources.get(\"ctx\") equals { source: \"project\" }.",
+        "[unit] mergeCatalogMcpServers with mcp.servers.ctx configured as command: \"mine\" and a catalog server ctx keeps config.servers.ctx.command equal to mine.",
+        "[unit] In that case diagnostics contains one warn diagnostic whose message contains mcp server ctx and is shadowed by config.",
+        "[unit] mergeCatalogMcpServers with a configured server whose args contain ${HOME} keeps that argument literally.",
+        "[unit] mergeCatalogMcpServers with a local entry ctx and a project entry ctx in the same project package keeps the local entry's command.",
+        "[unit] A claude-plugin entry server from plugin chrome whose command is ${CLAUDE_PLUGIN_ROOT}/bin/run and package root /p merges as config.servers[\"chrome-server\"].command equal to /p/bin/run.",
+        "[unit] That plugin entry's sources.get(\"chrome-server\") equals { source: \"plugin\", plugin: \"chrome\" }.",
+        "[unit] A claude-plugin entry expands ${CLAUDE_PLUGIN_ROOT} to the package root even when env.CLAUDE_PLUGIN_ROOT is /elsewhere.",
+        "[unit] With plugin package a (entry b-c) before plugin package a-b (entry c), both mapping to id a-b-c, diagnostics holds a warn whose message contains is shadowed by plugin a.",
+        "[unit] An http catalog entry r with url https://h/${P} and headers { A: \"${T}\" } under env: { P: \"mcp\", T: \"tok\" } merges with config.servers.r.url equal to https://h/mcp.",
+        "[unit] In that result config.servers.r.headers.A is tok.",
+        "[unit] In that result McpConfigSchema.safeParse({ servers: { r: config.servers.r } }).success is true.",
+        "[unit] A catalog entry whose env value is ${NOPE} with NOPE unset is absent from config.servers.",
+        "[unit] In that case diagnostics holds an error whose message contains ${NOPE} is not set.",
+        "[unit] An sse catalog entry s is absent from config.servers.",
+        "[unit] For that sse entry diagnostics holds a warn whose message contains mcp server s: transport sse is not supported.",
+        "[unit] A catalog entry named !!! is absent from config.servers.",
+        "[unit] For that !!! entry diagnostics holds an error whose message contains yields no usable id.",
+        "[unit] mergeCatalogMcpServers with mcp undefined and an empty catalog returns config.servers equal to {}.",
+        "[unit] mergeCatalogMcpServers over a catalog built by buildResourceCatalog with a project ctx entry whose command is npx returns config.servers.ctx.command equal to npx.",
+        "[unit] mergeCatalogMcpServers over a catalog entry named Codebase Memory.MCP returns a server keyed codebase-memory-mcp."
+      ],
+      "tags": [
+        "feature",
+        "mcp",
+        "resources",
+        "config"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-004",
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New pure conversion abstraction coordinates ordered discovery, provider-safe identity, substitution, source provenance and two schema-compatible transports; expansion of credential-bearing HTTP headers warrants strict test/implementation isolation."
+      },
+      "contextFiles": [
+        "packages/nax/src/resources/types.ts",
+        "packages/nax/src/resources/catalog.ts",
+        "packages/nax/src/resources/mcp-expand.ts",
+        "packages/nax/src/config/index.ts",
+        "packages/nax/src/config/runtime-types-mcp.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/resources/mcp-merge.ts",
+        "packages/nax/test/unit/resources/mcp-merge.test.ts"
+      ],
+      "suggestedCriteria": [
+        "mergeCatalogMcpServers preserves a configured disabled ctx entry instead of replacing it with an enabled catalog ctx entry.",
+        "mergeCatalogMcpServers returns stdio catalog entries with headers equal to {}.",
+        "mergeCatalogMcpServers returns HTTP catalog entries with args [] and env {}.",
+        "mergeCatalogMcpServers leaves header and env keys containing ${NAME} unchanged while expanding their values.",
+        "mergeCatalogMcpServers does not mutate the input config, catalog or environment objects."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "Attach discovered MCP providers to chat and own their teardown",
+      "description": "**Goal** — Compose configured/catalog MCP servers into chat as discovered providers on one reusable, lazily connected pool.\n\n**Motivation** — Chat has no MCP at all.\n\n**Approach** — Provider/lifecycle portion of **5. Chat wiring (US-007) and `/mcp` (US-008).** New `packages/nax/src/chat/chat-mcp.ts`:\n\n**Interface**\n```ts\nexport interface ChatMcpServerRow {\n  readonly id: string;\n  readonly source: McpServerSource;\n  readonly plugin?: string;\n  readonly transport: \"stdio\" | \"http\";\n}\n\nexport interface ChatMcpState {\n  readonly servers: readonly ChatMcpServerRow[];\n  readonly diagnostics: readonly ResourceDiagnostic[];\n  /** Pool connection events, read live for /mcp. */\n  events(): readonly McpServerEvent[];\n  /** Tools the lock withheld so far, read live for /mcp. */\n  withheld(): readonly McpWithheldEntry[];\n}\n\nexport interface ChatMcp {\n  readonly state: ChatMcpState;\n  readonly providers: readonly ToolProvider[];\n  close(): Promise<void>;\n}\n\n/**\n * One attempt per server. Session open resolves providers one after another, so with the\n * run default (3 attempts, 2 s and 4 s backoff, 15 s connect deadline) each dead server\n * would hold the chat's start for up to ~51 s; with one attempt, up to 15 s each.\n */\nexport const CHAT_MCP_RETRY = { maxAttempts: 1, baseDelayMs: 0 } as const;\n\nexport function createChatMcp(input: {\n  readonly config: NaxConfig;\n  readonly catalog: ResourceCatalog;\n  readonly repoRoot: string;\n  readonly env: Readonly<Record<string, string | undefined>>;\n}): ChatMcp;\n\nexport function formatMcpListing(state: ChatMcpState | undefined): string;\n```\n\n- `chat-mcp.ts` exports `_chatMcpDeps = { createMcpPool, createMcpProviders }`, the seam\n  `createChatMcp` builds through.\n- `createChatMcp` merges (Approach 4), keeps every enabled server, and sets each server's\n  `stages` to `[\"*\"]`: `stages` decides which `nax run` stages a server attaches to, and a\n  chat session is not a pipeline stage. It builds the pool with\n  `createMcpPool({ servers, retry: CHAT_MCP_RETRY })` and the providers with\n  `createMcpProviders({ config: { servers }, pool, projectRoot: repoRoot, onWithheld })`,\n  where `onWithheld` records the entry keyed by `serverId` plus `name`, replacing an earlier\n  entry with the same key: `createMcpProviders` reports withheld tools on every `tools()`\n  call and the chat resolves providers again on every session reopen (mode switch, model\n  switch, `/clear`, resume), so `withheld()` returns each withheld tool once. `close()`\n  closes the pool. With no enabled server it builds no pool and returns no providers.\n- A server whose id is `nax-skills` (the skills provider's id) is not attached; `createChatMcp`\n  drops it with an `error` diagnostic `[resources] mcp server id nax-skills is reserved`.\n- `state.servers` has one row per attached server: `id`, `source` and `plugin` from the\n  merge's `sources`, and `transport` `http` when the server has a `url`, otherwise `stdio`.\n  `state.events()` returns the pool's `events()` (an empty list when no pool was built).\n- `state.diagnostics` is the merge diagnostics followed by the catalog diagnostics whose\n  `path` ends in `.mcp.json` or `.claude.json`; `/skills` and `/plugins` do not show\n  them for the project and user packages, so `/mcp` is where they are seen (a Claude Code\n  plugin's `.mcp.json` diagnostic shows in both `/plugins` and `/mcp`).\n- `_chatCommandDeps` gains `env` (default `process.env`); `chatResources` passes it to both\n  `loadResourceCatalog` and `createChatMcp`, so tests isolate the Claude config directory\n  without touching the process environment.\n- `chatResources` (`src/cli/chat.ts`) calls `deps.createChatMcp` after loading the catalog,\n  appends its providers after the skills provider, sets `ChatResources.mcp` to its state,\n  and makes `teardown` close the MCP pool and then tear down the plugin registry; a pool\n  close that rejects still lets the registry tear down. `createChatMcp` throwing tears the\n  registry down and rethrows, as a catalog failure does today.\n- `ChatResources` (`src/chat/resources.ts`) gains `readonly mcp?: ChatMcpState`; `ChatHost`\n  gains `readonly mcp?: ChatMcpState`, set from `deps.resources?.mcp`.\n- Connection is lazy, as in `nax run`: the pool connects a server the first time the\n  session resolves its tools, at session open. A mode switch reopens the session on the same\n  pool, whose memoised entries (including a failed one) are reused.\n\nExport createChatMcp, CHAT_MCP_RETRY, _chatMcpDeps and ChatMcp/ChatMcpState/ChatMcpServerRow from src/chat/index.ts here; US-008 supplies/exports formatMcpListing.\n\n**Scope** — In: chat MCP factory/state contract, skills-first provider composition, env injection, host state exposure, single-attempt pool ownership, reserved-ID diagnostic and ordered robust teardown. US-008 completes/verifies the live state details and formatting; keep the state usable here so this story composes independently. Update _chatCommandDeps fakes in test/unit/cli/chat-resources.test.ts and chat.test.ts with empty-state/no-provider/resolving-close createChatMcp and fixture env; preserve every existing compose assertion. Include both seams: real chatCommand + loadResourceCatalog + createChatMcp from fixture .claude.json to captured pool servers; real createChatHost without open override to captured _openChatSessionDeps.nativeBackend toolProviders. Out: agent ask-rule implementation (US-001), merge algorithms (US-006), slash command/listing behavior (US-008), run/catalog lock refresh (US-009). F5b `chat-subagents` delivers subagents, the `Agent` tool, `/agents` and `agent.modelAliases`; this feature leaves `/plugins` printing `agents N (not delivered yet)`. The interactive system prompt does not list MCP tools beyond what the tool list and each server's own instructions (the existing provider-instructions path) already carry. MCP servers are not hot-reloaded; a changed `.mcp.json` or `~/.claude.json` takes effect at the next `nax chat` start. A per-server enable or disable toggle inside chat is not added; `mcp.servers.<id>.enabled` and removing the catalog entry are the switches.",
+      "acceptanceCriteria": [
+        "[unit] createChatMcp with config.mcp.servers.docs (command docs-mcp, stages [\"run\"]) and an empty catalog creates a pool through _chatMcpDeps.createMcpPool whose servers.docs.stages equals [\"*\"].",
+        "[unit] That pool is created with retry equal to CHAT_MCP_RETRY.",
+        "[unit] CHAT_MCP_RETRY.maxAttempts is 1.",
+        "[unit] createChatMcp with config.mcp.servers.off having enabled: false returns no provider with id off.",
+        "[unit] createChatMcp with one enabled server docs returns one provider with id docs.",
+        "[unit] That provider's kind is discovered.",
+        "[unit] createChatMcp with no enabled server returns providers equal to [].",
+        "[unit] createChatMcp with no enabled server never calls _chatMcpDeps.createMcpPool.",
+        "[unit] createChatMcp(...).close() calls the pool's close once.",
+        "[unit] createChatMcp with a configured server nax-skills returns no provider with id nax-skills.",
+        "[unit] In that case state.diagnostics holds an error whose message contains mcp server id nax-skills is reserved.",
+        "[unit] chatCommand with a fake createChatMcp returning provider docs passes createChatHost resources whose toolProviders ids are [\"nax-skills\", \"docs\"] in that order.",
+        "[unit] chatCommand with _chatCommandDeps.env pointing CLAUDE_CONFIG_DIR at a fixture whose .claude.json holds user stdio server docs, the real loadResourceCatalog and the real createChatMcp with _chatMcpDeps.createMcpPool stubbed, creates the pool with a server docs whose stages equals [\"*\"].",
+        "[unit] The chat resources' teardown() calls the MCP close before the plugin registry's teardownAll.",
+        "[unit] When the MCP close rejects, teardown() still calls the plugin registry's teardownAll.",
+        "[unit] When createChatMcp throws, chatCommand calls the plugin registry's teardownAll.",
+        "[unit] When createChatMcp throws, chatCommand writes the error message to stderr.",
+        "[unit] When createChatMcp throws, chatCommand sets exit code 1.",
+        "[unit] createChatHost({ ..., resources }) built without an open override, after start({ mode: \"guarded\", model }) with _openChatSessionDeps.nativeBackend stubbed to capture its options, passes toolProviders containing a provider whose kind is discovered and id is the fixture server id.",
+        "[unit] A host created with resources.mcp set exposes the same object as host.mcp.",
+        "[unit] When a chat MCP server fails to connect, opening the chat session resolves without that server's tools.",
+        "[unit] When a chat MCP server fails to connect, the pool attempts that server's connection once."
+      ],
+      "tags": [
+        "feature",
+        "mcp",
+        "chat",
+        "sessions",
+        "security"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-006"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Connects resource discovery to session providers through the existing trust/lock boundary and owns failure-safe asynchronous teardown across chat and plugins."
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/chat.ts",
+        "packages/nax/src/chat/resources.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/mcp/provider.ts",
+        "packages/nax/src/resources/mcp-merge.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/chat-mcp.ts",
+        "packages/nax/test/unit/chat/chat-mcp.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Reopening a chat session on a mode switch reuses the same pool instead of constructing another pool.",
+        "Reopening a chat session after a failed server connection does not make another connection attempt for that server and workdir.",
+        "createChatMcp does not connect any server before a provider's tools are resolved.",
+        "createChatMcp leaves the original configured server's stages array unchanged."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/cli/chat-resources.test.ts",
+          "reason": "its _chatCommandDeps fakes gain createChatMcp returning a state with no servers, no diagnostics, empty events() and withheld(), no providers and a resolving close(), plus env pointing CLAUDE_CONFIG_DIR at an empty temp dir, so the existing case asserting toolProviders[0]?.id is nax-skills stays true."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/chat.test.ts",
+          "reason": "its _chatCommandDeps fakes gain the same createChatMcp stub and env so every existing compose case still reaches createChatHost; the invariant is that every existing case keeps its asserted behaviour."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-008",
+      "title": "Show live MCP provenance, connection status and withheld tools in /mcp",
+      "description": "**Goal** — Complete chat MCP observability and expose it through a built-in /mcp command.\n\n**Motivation** — The catalog parses MCP entries and drops the useful half.\n\n**Approach** — State/listing portion of **5. Chat wiring (US-007) and `/mcp` (US-008).** Extend upstream `packages/nax/src/chat/chat-mcp.ts`.\n\n- `createChatMcp` merges (Approach 4), keeps every enabled server, and sets each server's\n  `stages` to `[\"*\"]`: `stages` decides which `nax run` stages a server attaches to, and a\n  chat session is not a pipeline stage. It builds the pool with\n  `createMcpPool({ servers, retry: CHAT_MCP_RETRY })` and the providers with\n  `createMcpProviders({ config: { servers }, pool, projectRoot: repoRoot, onWithheld })`,\n  where `onWithheld` records the entry keyed by `serverId` plus `name`, replacing an earlier\n  entry with the same key: `createMcpProviders` reports withheld tools on every `tools()`\n  call and the chat resolves providers again on every session reopen (mode switch, model\n  switch, `/clear`, resume), so `withheld()` returns each withheld tool once. `close()`\n  closes the pool. With no enabled server it builds no pool and returns no providers.\n- `state.servers` has one row per attached server: `id`, `source` and `plugin` from the\n  merge's `sources`, and `transport` `http` when the server has a `url`, otherwise `stdio`.\n  `state.events()` returns the pool's `events()` (an empty list when no pool was built).\n- `state.diagnostics` is the merge diagnostics followed by the catalog diagnostics whose\n  `path` ends in `.mcp.json` or `.claude.json`; `/skills` and `/plugins` do not show\n  them for the project and user packages, so `/mcp` is where they are seen (a Claude Code\n  plugin's `.mcp.json` diagnostic shows in both `/plugins` and `/mcp`).\n- `src/chat/index.ts` exports `createChatMcp`, `formatMcpListing`, `CHAT_MCP_RETRY`,\n  `_chatMcpDeps` and the types `ChatMcp`, `ChatMcpState` and `ChatMcpServerRow`.\n- `/mcp` is a built-in slash command (after `/plugins` in the help list) that shows\n  `formatMcpListing(host.mcp)`. One line per server:\n  `<id>  <source label>  <transport>  <status>`, where the source label is `config`,\n  `local`, `project`, `user` or `plugin <name>`; status is `connected, <n> tools` after the\n  server's last `connected` event, `failed: <reason>` after a `connect-failed` event, and\n  `not connected` before any event. When the lock withheld any of that server's tools the\n  line ends `, <k> withheld (run nax mcp lock)`. Diagnostics follow, one per line, as\n  `<severity>  <path>  <message>`. With no state or no servers it prints\n  `(no MCP servers)`.\n- Connection is lazy, as in `nax run`: the pool connects a server the first time the\n  session resolves its tools, at session open. A mode switch reopens the session on the same\n  pool, whose memoised entries (including a failed one) are reused.\n\n**Interface**\n```ts\nexport interface ChatMcpServerRow {\n  readonly id: string;\n  readonly source: McpServerSource;\n  readonly plugin?: string;\n  readonly transport: \"stdio\" | \"http\";\n}\n\nexport interface ChatMcpState {\n  readonly servers: readonly ChatMcpServerRow[];\n  readonly diagnostics: readonly ResourceDiagnostic[];\n  /** Pool connection events, read live for /mcp. */\n  events(): readonly McpServerEvent[];\n  /** Tools the lock withheld so far, read live for /mcp. */\n  withheld(): readonly McpWithheldEntry[];\n}\n\nexport function formatMcpListing(state: ChatMcpState | undefined): string;\n```\n\n**Scope** — In: finish/verify upstream state rows, live event reads, deduplicated withholding, diagnostic selection/order, exact listing text and built-in dispatch/help. formatMcpListing returns its rendered string without printing; runSlashCommand receives a parsed SlashCommand object and passes that string to show. ChatMcpState.withheld() returns an array, not an individual entry. Preserve upstream pool/lifecycle wiring while filling state; do not create a second pool. The test/ui/chat/slash-commands.test.tsx COMMANDS list gains mcp between plugins and quit so AC-16 help and AC-19 turn blocking include it. Assert runSlashCommand invokes show using host.mcp, including absent state. Out: provider/session wiring and teardown (US-007), approval enforcement (US-001), lock refresh and run configuration (US-009). A per-server enable or disable toggle inside chat is not added; `mcp.servers.<id>.enabled` and removing the catalog entry are the switches. F5b `chat-subagents` delivers subagents, the `Agent` tool, `/agents` and `agent.modelAliases`; this feature leaves `/plugins` printing `agents N (not delivered yet)`.",
+      "acceptanceCriteria": [
+        "[unit] createChatMcp(...).state.withheld() returns an array containing the McpWithheldEntry passed to createMcpProviders' onWithheld for a tool the lock withheld.",
+        "[unit] When onWithheld is called twice for server docs and tool t (two tools() calls), state.withheld() has length 1.",
+        "[unit] createChatMcp(...).state.diagnostics contains a catalog diagnostic whose path ends in .claude.json.",
+        "[unit] createChatMcp(...).state.diagnostics contains a merge diagnostic for a shadowed server.",
+        "[unit] createChatMcp with a configured server remote that has a url returns a state.servers row { id: \"remote\", source: \"config\", transport: \"http\" }.",
+        "[unit] createChatMcp with a configured server docs that has a command returns a state.servers row whose transport is stdio.",
+        "[unit] createChatMcp with a plugin catalog server from plugin chrome returns a state.servers row whose plugin is chrome.",
+        "[unit] createChatMcp(...).state.events() returns the events of the pool created through _chatMcpDeps.createMcpPool.",
+        "[unit] formatMcpListing for a state with server docs (source user, transport stdio) whose last pool event is connected with toolCount 3 returns a string containing the line docs  user  stdio  connected, 3 tools.",
+        "[unit] formatMcpListing for a server whose last event is connect-failed with reason spawn ENOENT returns a string containing a server line ending failed: spawn ENOENT.",
+        "[unit] formatMcpListing for a server whose events are connect-failed then connected with toolCount 2 returns a string containing a server line ending connected, 2 tools.",
+        "[unit] formatMcpListing for a server with no pool event returns a string containing a server line ending not connected.",
+        "[unit] formatMcpListing for a connected server with two withheld tools returns a string containing a server line ending , 2 withheld (run nax mcp lock).",
+        "[unit] formatMcpListing for a plugin server from plugin chrome returns a string whose server line contains the source label plugin chrome.",
+        "[unit] formatMcpListing for a configured server returns a string whose server line contains the source label config.",
+        "[unit] formatMcpListing for a state with one warn diagnostic at /r/.mcp.json with message m returns a string containing the line warn  /r/.mcp.json  m.",
+        "[unit] formatMcpListing(undefined) returns (no MCP servers).",
+        "[unit] formatMcpListing for a state with no servers and no diagnostics returns (no MCP servers).",
+        "[unit] runSlashCommand({ name: \"mcp\", args: [], rest: \"\" }, { host, show }) for /mcp with a host whose mcp lists server docs calls show with text containing docs.",
+        "[unit] runSlashCommand({ name: \"mcp\", args: [], rest: \"\" }, { host, show }) for /mcp with a host that has no mcp calls show with (no MCP servers).",
+        "[unit] Typing /help in ChatApp shows /plugins followed on the next line by /mcp."
+      ],
+      "tags": [
+        "feature",
+        "mcp",
+        "chat",
+        "tui",
+        "observability"
+      ],
+      "dependencies": [
+        "US-007"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Extends existing state and slash-command patterns with deterministic listing and keyed deduplication, without changing session permissions or connection policy."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/chat-mcp.ts",
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/mcp/pool.ts",
+        "packages/nax/test/ui/chat/slash-commands.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/chat-mcp-listing.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When onWithheld reports the same server/tool key again with a changed reason, state.withheld() returns the newer entry.",
+        "When servers docs and other both withhold tool t, state.withheld() returns two entries.",
+        "formatMcpListing with no servers but an MCP diagnostic prints (no MCP servers) followed by the diagnostic line.",
+        "createChatMcp(...).state.diagnostics excludes unrelated SKILL.md diagnostics from the catalog.",
+        "When the user enters /mcp during an active turn, ChatApp displays the existing built-in-command blocking notice rather than running the command."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/slash-commands.test.tsx",
+          "reason": "the file's COMMANDS list (used by \"AC-16 help lists every command\" as one contiguous run, and by \"AC-19 blocks /%s during turn\") gains \"mcp\" between \"plugins\" and \"quit\"; AC-19 then also covers /mcp, which is blocked during a turn like every other built-in."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-009",
+      "title": "Lock catalog servers and opt them into nax run",
+      "description": "**Goal** — Include catalog MCP servers in project/global lock refresh and attach them to run runtimes only under resources.mcpInRun.\n\n**Motivation** — One MCP client, not two.\n\n**Approach** — **6. `nax mcp lock` and the `nax run` opt-in (US-009).**\n\n- `ResourcesConfigSchema` gains `mcpInRun: z.boolean().default(false)` with a config\n  description `resources.mcpInRun`.\n- New `resolveCatalogMcpConfig(input: { config: NaxConfig; repoRoot: string; env; load })`\n  in `src/resources/mcp-merge.ts` returns `config.mcp` unchanged when\n  `config.resources?.claudeCode === false`, and otherwise loads the catalog through `load`\n  with `{ repoRoot, config, env, naxPluginPackages: [] }` and returns\n  `mergeCatalogMcpServers({ mcp: config.mcp, catalog, env }).config`, logging each merge\n  diagnostic through the project logger at `warn` (stage `resources`). `load` has\n  `loadResourceCatalog`'s signature. `setupRun` calls it with `repoRoot` = its `workdir` and\n  `env` = `process.env`; `runMcpLockCommand` with its `workdir` and the seam's `env`.\n- `runMcpLockCommand(workdir, opts)` (`src/cli/mcp.ts`) gets a `_mcpLockCommandDeps` seam\n  (`loadConfig`, `loadResourceCatalog`, `createMcpPool`, `env`) and locks every enabled\n  server of `resolveCatalogMcpConfig(...)`, so catalog servers are pinned beside configured\n  ones, for both the project lock and `--global`. It loads the catalog with\n  `naxPluginPackages: []` and `env` from the seam (default `process.env`).\n  `resolveCatalogMcpConfig` is exported from `src/resources/index.ts`.\n- `setupRun` (`src/execution/lifecycle/run-setup.ts`): when `config.resources?.mcpInRun` is\n  `true`, the config passed to `createRuntime` is `{ ...config, mcp: await\n  resolveCatalogMcpConfig(...) }`; otherwise `createRuntime` gets `config` unchanged. The\n  merge loads through a new `_runSetupDeps.loadResourceCatalog`. Catalog servers then carry\n  `stages: [\"*\"]` and attach at every run stage.\n\n**Interface** — Preserve `runMcpLockCommand(workdir: string, opts?: { global?: boolean }): Promise<void>` and setupRun(options); add `_mcpLockCommandDeps = { loadConfig, loadResourceCatalog, createMcpPool, env: process.env }` and `_runSetupDeps.loadResourceCatalog`. `resolveCatalogMcpConfig(input: { config: NaxConfig; repoRoot: string; env; load })` is asynchronous, with env typed Readonly<Record<string, string | undefined>> and load typed to loadResourceCatalog's signature; it returns the optional config.mcp unchanged on the Claude-Code-disabled branch.\n\n**Scope** — In: resources default/schema/description, async merge-loader adapter, merge diagnostic logging, enabled catalog/config lock enumeration, and the conditional runtime config argument. Update schemas-resources.test.ts whole-object defaults to mcpInRun false; catalog.test.ts full resources helper type and AC-10/AC-11 literals gain mcpInRun false with asserted catalogs unchanged. Isolate every affected runMcpLockCommand integration fixture from the developer's real Claude config/plugins with a temp CLAUDE_CONFIG_DIR seam, restored after each case: test/integration/mcp/stdio-server.test.ts and test/integration/cli/cli-mcp-global-lock.test.ts keep their lock-content assertions unchanged. Test both real written lock hashes from fixture .mcp.json and the config observed at _runSetupDeps.createRuntime. Out: pure merge implementation (US-006), chat attachment/listing (US-007/008), HTTP transport/hint implementation (US-002), and adoption-rollup broadening. Catalog MCP servers do not attach to `nax run` unless `resources.mcpInRun` is true (user ruling 2026-10-25). With `resources.mcpInRun` true, the end-of-run MCP adoption rollup (`summarizeMcpAdoptionPhase`, which reads the run's original `config.mcp`) still covers configured servers only; catalog servers are attached but absent from `mcpAdoption` and its zero-adoption warning.",
+      "acceptanceCriteria": [
+        "[unit] NaxConfigSchema.parse({}).resources.mcpInRun is false.",
+        "[unit] NaxConfigSchema.safeParse({ resources: { mcpInRun: \"yes\" } }).success is false.",
+        "[unit] resolveCatalogMcpConfig with resources.claudeCode false never calls load.",
+        "[unit] resolveCatalogMcpConfig with resources.claudeCode false returns config.mcp.",
+        "[unit] resolveCatalogMcpConfig with a catalog holding project server ctx returns a config whose servers.ctx is defined.",
+        "[unit] resolveCatalogMcpConfig logs each merge diagnostic at warn with stage resources.",
+        "[unit] runMcpLockCommand(workdir) with a fixture .mcp.json holding server ctx, no configured servers, _mcpLockCommandDeps.env pointing CLAUDE_CONFIG_DIR at an empty dir, and _mcpLockCommandDeps.createMcpPool returning a pool that lists tool t for ctx, writes a project lock whose servers.ctx.t equals schemaHash of t's input schema.",
+        "[unit] runMcpLockCommand(workdir, { global: true }) under the same fixtures and a temp global config dir writes a global lock whose servers.ctx is defined.",
+        "[unit] runMcpLockCommand(workdir) with configured server a and catalog server ctx lists tools for both a and ctx through the pool.",
+        "[unit] setupRun with config.resources.mcpInRun true and a catalog holding project server ctx (through _runSetupDeps.loadResourceCatalog) calls _runSetupDeps.createRuntime with a config whose mcp.servers.ctx is defined.",
+        "[unit] setupRun with config.resources.mcpInRun false calls _runSetupDeps.createRuntime with the same config object it was given.",
+        "[unit] setupRun with config.resources.mcpInRun false never calls _runSetupDeps.loadResourceCatalog.",
+        "[unit] runMcpLockCommand with resources.claudeCode false sends only configured servers to _mcpLockCommandDeps.createMcpPool.",
+        "[unit] setupRun with resources.mcpInRun true and resources.claudeCode false passes createRuntime a config whose mcp contains only the originally configured servers."
+      ],
+      "tags": [
+        "feature",
+        "mcp",
+        "resources",
+        "config",
+        "security",
+        "runtime"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Integrates catalog discovery into capability pinning and run setup with project/global lock writes and a default-off execution boundary; strict isolation protects trust/access-control regressions."
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/mcp.ts",
+        "packages/nax/src/config/schemas-resources.ts",
+        "packages/nax/src/execution/lifecycle/run-setup.ts",
+        "packages/nax/src/resources/mcp-merge.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/cli/mcp-lock.test.ts",
+        "packages/nax/test/unit/execution/lifecycle/run-setup-mcp-in-run.test.ts"
+      ],
+      "suggestedCriteria": [
+        "resolveCatalogMcpConfig calls load with repoRoot, the caller's config/env and naxPluginPackages equal to [].",
+        "runMcpLockCommand excludes disabled catalog-shadowing configured entries from lock enumeration.",
+        "When pool.listTools rejects during runMcpLockCommand, the pool's close is still called.",
+        "setupRun with resources.mcpInRun true leaves the original config.mcp object unmodified."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/config/schemas-resources.test.ts",
+          "reason": "the cases \"AC-1 defaults to Claude Code on and run skills off\" and \"AC-3 defaults claudeCode on when skillsInRun is enabled\" compare the whole resources object with toEqual; each expected object gains mcpInRun false."
+        },
+        {
+          "path": "packages/nax/test/unit/resources/catalog.test.ts",
+          "reason": "its load helper's config parameter type is the full resources shape, so the helper type and both resources literals (cases AC-10 and AC-11) gain mcpInRun false; the asserted catalogs are unchanged."
+        },
+        {
+          "path": "packages/nax/test/integration/mcp/stdio-server.test.ts",
+          "reason": "the case that calls runMcpLockCommand(dir) now also loads the Claude Code catalog, so it points the lock command's env seam (or CLAUDE_CONFIG_DIR, restored after the case) at an empty temp dir; the asserted lock contents are unchanged and the developer's real ~/.claude.json and plugins are never connected."
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-mcp-global-lock.test.ts",
+          "reason": "every runMcpLockCommand case points the lock command's env seam (or CLAUDE_CONFIG_DIR, restored after each case) at an empty temp dir, for the same reason; the asserted global and project lock contents are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Refine-pass audit: all 149 acceptance criteria from the spec's nine Acceptance Criteria sections remain in their assigned stories; none was removed or reassigned. The PRD retains 170 assertions because four compound spec criteria were split into independently observable assertions and the remaining additions cover explicitly specified failure modes and cross-story seams. Ordinals below are one-based within each story; unless a split is stated, spec ordinal maps to the same PRD ordinal.\n\nSpec AC preservation ledger — US-001 (17/17): 1 true read-only hint; 2 false hint leaves no key; 3 nonboolean hint leaves no key; 4 absent annotations preserves the exact original object; 5 sanitization retains true; 6 discovered acme yields only acme__put in askTools; 7 read-only-only provider omits askTools; 8 static provider omits askTools; 9 discovered nativeBackend accepted; 10 other kind throws AGENT_SESSION_INVALID_OPTIONS; 11 read profile advertises put; 12 ask profile emits namespaced approval; 13 run not invoked at emission; 14 read-only get runs; 15 get emits no approval; 16 full put emits no approval; 17 static skills load emits no approval.\nUS-002 (16/16): 1 locked get keeps readOnly through createMcpProviders; 2 put has no readOnly key; 3 actual provider resolves docs__put only in askTools; 4 HTTP URL parses; 5 HTTP default headers {}; 6 Authorization header retained; 7 both command/url fails with exact message; 8 neither fails with exact message; 9 invalid URL fails; 10 stdio default headers {}; 11 shared HTTP transport config; 12 original stdio transport config; 13 pool forwards URL; 14 connected event pid null; 15 no HTTP pid registration; 16 empty HTTP server lock hint includes URL.\nUS-003 (14/14): 1 full stdio server spec; 2 project scope; 3 default args []; 4 default env {}; 5 full HTTP spec; 6 default headers {}; 7 SSE transport retained as metadata; 8 missing HTTP URL omits resource; 9 missing HTTP URL warns; 10 malformed args warns and omits resource -> PRD 10/11; 11 malformed env warns and omits resource -> PRD 12/13; 12 parseMcpServers user scope -> PRD 14; 13 repo discovery project scope -> PRD 15; 14 enabled plugin scope -> PRD 16.\nUS-004 (15/15): 1 overridden JSON path; 2 homedir JSON path; 3 user docs discovered in claude-user; 4 docs user scope; 5 docs path provenance; 6 local1 before proj1; 7 local scope; 8 claude-project origin; 9 exact repo key excludes another path; 10 missing file has no diagnostic; 11 array root gives one user error; 12 nonobject mcpServers gives no user entry; 13 same invalid value gives one error; 14 loader forwards fixture environment and discovers docs; 15 listing contains mcp 1, hooks. Criterion 15 now explicitly anchors unchanged agents/hooks wording as well as removal of the deferred MCP marker.\nUS-005 (14/14): 1 HOME substitution; 2 missing PORT default; 3 set PORT wins; 4 empty PORT uses default; 5 empty plain variable remains a value; 6 literal $HOME and invalid ${1X} preserved; 7 empty default; 8 missing variable result; 9 first unresolved B after set A; 10 name normalization; 11 double underscore collapse; 12 strip leading punctuation; 13 unusable name returns empty; 14 every listed usable ID matches MCP_SERVER_ID_RE.\nUS-006 (20/20): 1 expanded ROOT argument; 2 wildcard stages; 3 default timeout; 4 project source; 5 configured command wins; 6 shadow warning names config; 7 configured argument remains literal; 8 local wins over project; 9 plugin-prefixed ID and root-expanded command; 10 plugin source map; 11 package root overrides env; 12 normalized plugin collision warns with winning plugin; 13 expanded HTTP URL; 14 expanded header; 15 merged HTTP config schema-parses; 16 unset env variable drops entry; 17 missing-variable diagnostic; 18 SSE omission plus diagnostic -> PRD 18/19; 19 empty normalized ID omission plus diagnostic -> PRD 20/21; 20 undefined config plus empty catalog produces {} -> PRD 22. Additional PRD 23/24 retain the spec's command/source and normalized-ID integration seams.\nUS-007 (20/20): 1 configured run stages become wildcard for chat; 2 pool retry is CHAT_MCP_RETRY; 3 maxAttempts 1; 4 disabled server absent; 5 enabled docs provider; 6 discovered kind; 7 empty providers; 8 no pool for no enabled servers; 9 close forwards once; 10 reserved nax-skills omitted; 11 reserved-ID diagnostic; 12 skills-first command composition; 13 real command/catalog/merge fixture reaches pool with wildcard stages; 14 pool closes before plugin registry; 15 registry tears down despite close rejection; 16 registry tears down when factory throws; 17 factory error reaches stderr; 18 exit code 1; 19 default host open passes discovered fixture provider to nativeBackend; 20 host exposes identical mcp state.\nUS-008 (21/21): 1 withheld callback entry retained; 2 repeated server/tool reports yield one entry; 3 Claude JSON diagnostic; 4 merge diagnostic; 5 HTTP config row; 6 stdio config row; 7 plugin provenance; 8 live pool events; 9 exact connected line; 10 failed reason; 11 later connected event wins; 12 no-event status; 13 withholding count/lock hint; 14 plugin source label; 15 config source label; 16 exact diagnostic line; 17 absent-state marker; 18 empty-state marker; 19 slash command shows fixture state; 20 slash command with absent state shows marker; 21 help orders /plugins then /mcp. Corrections preserve the assertions while stating the actual interfaces: withheld() returns an array containing the entry, formatMcpListing returns text rather than writing stdout, and runSlashCommand takes a parsed SlashCommand object.\nUS-009 (12/12): 1 default mcpInRun false; 2 nonboolean rejected; 3 claudeCode false skips load; 4 disabled catalog returns original config.mcp; 5 merged ctx defined; 6 each merge diagnostic logged warn/resources; 7 real project lock pins catalog tool schema hash using fixture env/pool; 8 same fixture writes global lock; 9 configured and catalog servers both enumerated; 10 opt-in setup runtime receives catalog ctx through its loader seam; 11 false branch preserves config identity; 12 false branch skips catalog loader.\n\nQualifying clauses and regression anchors were retained: locked metadata in US-002; exact unannotated object shape and static-provider no-ask behavior in US-001; both diagnostic and omission outcomes for malformed parser entries; both omission/diagnostic outcomes for rejected merge entries; the configured-literal rule; the plugin-root environment override; the two tools() calls condition for deduplication; real loadResourceCatalog/createChatMcp and default host-open seams; the same project/global fixtures; and config identity on the disabled run path. There are no deprecated grep/file/verbatim-tagged criteria. Every assertion is observable through returned data, thrown error, captured event/call, logger, terminal show callback, or written lock file. ProviderTool output assertions now use localName, not a nonexistent name property.\n\nNegative-path audit: US-001 invalid kind and nonboolean hints; US-002 invalid transport combination/URL and lock withholding; US-003 malformed args/env/headers and missing URLs; US-004 missing/invalid JSON and invalid maps; US-005 unset variables and empty normalized ID; US-006 missing variables, collisions and SSE; US-007 disabled/reserved IDs and startup/teardown/connection failures; US-008 failed connection rendering and absent state; US-009 invalid mcpInRun and disabled catalog/run paths. All stories already had failure criteria, so no extra capability was invented to satisfy the negative-path requirement. The 17 failure-table rows map respectively to US-001 acceptance 9; US-001 2-4; US-002 7-8; US-003 8-13 and 17-20; US-004 10; US-004 11-13 and 16-20; US-006 20-21; US-006 5-6/8/12; US-006 16-17; US-006 18-19; US-007 21-22 plus US-008 10; US-002 17-18 plus US-008 13; US-007 15; US-007 16-18; US-009 3-4/13-14; US-008 1-2; US-007 10-11.\n\nRegression audit: existing static skills and exact unannotated shape remain anchored in US-001; stdio connection shape/defaults remain anchored in US-002; original stdio/HTTP transport selection remains anchored in US-003's full parsed specs while callers gain scope; US-004 proves the MCP placeholder is gone and agents/hooks text unchanged; US-005 preserves invalid/literal substitution text; US-006 keeps explicit config precedence and literal values; US-007 keeps skills first and existing CLI error handling; US-008 preserves /plugins in help and absent-state safety; US-009 preserves disabled-run config identity and schema-hash lock behavior.\n\nContext/dependency audit: every contextFiles list matches the corresponding spec Context Files list exactly, all at or below five paths. The upstream-only mcp-expand.ts, mcp-merge.ts and chat-mcp.ts contexts are supplied by declared predecessors; no story lists its own output as context. All expectedFiles match the spec Creates lists, and no unrelated helper/test path was introduced. All nine IDs, workdirs and dependency arrays remain exactly the Binding Story Structure, with no dangling references. Routing reassessment lowers US-004 to medium/tdd-simple because it extends existing optionalObject and filesystem seam patterns rather than introducing another discovery architecture. Session/permission, credential-bearing HTTP mapping/expansion and lock/trust integration retain strict TDD; pure string helpers, parser and listing use the lighter strategies.\n\nOut-of-scope audit: all 17 feature-level items remain verbatim, in original order: 1 F5b/subagents; 2 SSE transport; 3 OAuth; 4 Claude per-server approval settings; 5 plugin.json MCP declarations; 6 MCP resources/prompts/sampling; 7 Claude per-project enable/disable lists; 8 configured-entry expansion; 9 read-only hints unpinned by lock; 10 extra interactive prompt listing; 11 in-chat toggles; 12 hot reload; 13 default-off run attachment; 14 configured-only adoption rollup; 15 manual design-doc split update; 16 manual generated-context update/read-only .nax; 17 no release/version bump. No story-local deferral was hoisted. Adjacent stories echo relevant boundaries without excluding another story's in-scope implementation.\n\nGoal and completion: F5a adds configured and Claude Code catalog MCP tools to nax chat through the existing shared MCP connection layer, nax pool, schema lock and trust gate, with guarded approvals and a live /mcp listing. Completion includes catalog-aware project/global lock refresh and an explicitly opt-in run path; it does not include F5b. This is an enhancement to established TypeScript/Bun workspace code, not a second MCP implementation. Navigation note: codebase-memory MCP tools were unavailable in this planning host, so findings below use direct reads and text searches at the supplied repository root. No implementation or tests were executed during PRD drafting.\n\nArchitecture and package boundaries: packages/nax-agent owns Node-compatible transport, provider advertisement and session permission enforcement; packages/nax owns configuration, resource discovery, locks, pool lifetime, CLI, host and UI. The shared transport already supports stdio and HTTP (packages/nax-agent/src/mcp/types.ts:4), and connectMcp already suppresses onSpawn for HTTP (packages/nax-agent/src/mcp/connect.ts:118). Keep nax-agent free of Bun APIs, use #src/ imports or file-suffixed relative imports, and use its runtime slot for process work. nax consumes the shared MCP client through @nathapp/nax-agent/mcp (packages/nax/src/mcp/client.ts:12); no cross-package deep imports or imports into nax-ai are needed. Follow docs/architecture/ARCHITECTURE.md:15 for dependency-injection/error patterns and docs/architecture/ARCHITECTURE.md:174 for coding limits. New externals use injectable _deps; nax resources/config/chat consumers use directory barrels. Named exports and additive public type changes in nax-agent may require the existing API snapshot workflow; do not expose seams from the public root. No package versions or releases change.\n\nUS-001 impact: toolInfo currently constructs exactly name, description and inputSchema (packages/nax-agent/src/mcp/connect.ts:65); add readOnly only for an object annotation with boolean true. ProviderTool is the common extensibility contract (packages/nax-agent/src/tools/provider-types.ts:20). sanitizeProviderTools already preserves extra properties with ...tool (packages/nax-agent/src/tools/provider-sanitize.ts:65). resolveProviderTools sanitizes by kind, adapts names, applies admits, retains provider ownership/instructions and expands grants (packages/nax-agent/src/tools/provider-advertise.ts:87). Collect askTools only for actually advertised, non-read-only discovered tools, in advertisement order, and omit the property when empty. Native options currently require kind static (packages/nax-agent/src/session/native-backend-options.ts:82); only expand that predicate, retaining malformed-provider rejection. openNative already resolves non-none profile providers at SESSION_STAGE (packages/nax-agent/src/session/native-backend.ts:78), and buildSessionToolSupport currently uses only askRulesFor at packages/nax-agent/src/session/session-tool-support.ts:161. Append namespaced provider ask rules for ask profile only, rather than changing grants, built-in profiles or approval-memory semantics. approvalMemoryKey already keys non-execute approvals by name (packages/nax-agent/src/permissions/approval-memory.ts:68). This permission/session story requires three-session-tdd. Reuse the in-memory MCP helper from packages/nax-agent/test/unit/mcp/connect.test.ts:24 and extend its shared fixture support if annotations need plumbing. Existing provider-advertise, provider-sanitize and native-backend-providers tests cover adjacent behavior. In packages/nax-agent/test/unit/session/native-backend-providers.test.ts:188 change only AC-10's obsolete discovered rejection; AC-11 must still reject malformed options, and none-profile/stage/collision behavior remains unchanged. Regression tests must fail against the old implementation.\n\nUS-002 impact: nax descriptors mirror shared tool objects (packages/nax/src/mcp/types.ts:10); client listTools returns shared.tools directly (packages/nax/src/mcp/client.ts:72), but createMcpProviders constructs new provider tools and currently loses readOnly (packages/nax/src/mcp/provider.ts:121). Forward true conditionally, with no key otherwise, and test resolveProviderTools over a real createMcpProviders result. McpServerSchema is strict, has required command and defaults args/env/stages/timeout/enabled (packages/nax/src/config/schemas-mcp.ts:44); the runtime interface has command required and no HTTP fields (packages/nax/src/config/runtime-types-mcp.ts:19). Make the interface backward-compatible for existing literals, and add exactly-one command/url schema validation without weakening strictness, ID validation or existing stage defaults. connectMcpServer builds stdio only (packages/nax/src/mcp/client.ts:38); pool open forwards command/args/env and owns the connection deadline, retries and registration (packages/nax/src/mcp/pool.ts:80). Passing url/headers into that same client preserves HTTP null-pid semantics. Existing lock hint prints command only (packages/nax/src/cli/mcp.ts:38); HTTP hints must print the URL. Descriptions live at packages/nax/src/cli/config-descriptions.ts:426. Existing tests: test/unit/config/schemas-mcp.test.ts:20 pins the whole default object and must gain headers {}, with all unknown-key/stage/id/empty-command rejections unchanged; test/unit/mcp/client.test.ts, pool.test.ts, provider.test.ts, failure.test.ts and lock.test.ts cover the existing mechanisms. These transport/header and lock-boundary changes use strict TDD.\n\nUS-003/004 discovery: McpServerResource currently discards connection data (packages/nax/src/resources/types.ts:50). parseMcpJson determines only transport then emits metadata (packages/nax/src/resources/parse-mcp.ts:5); split its per-entry loop into parseMcpServers and preserve stdio command/args/env or HTTP/SSE url/headers plus scope. The current scanPackage reads root .mcp.json for project/plugin but not user (packages/nax/src/resources/claude-sources.ts:68); assign project/plugin scope there. discoverClaudeCodePackages currently returns project, user, enabled plugins in that precedence order and has only repoRoot/claudeDir inputs (packages/nax/src/resources/claude-sources.ts:215). Reuse optionalObject/optionalText and _resourceFsDeps rather than reading arbitrary files elsewhere; read claudeJson once, preserve valid sibling scopes on malformed values, attach user-scoped errors to the user package and local entries before repo .mcp.json. Local project lookup is exact projects[repoRoot], not normalized or prefix matching. Existing enabled plugin discovery and install selection must not change. claudeConfigDir currently defaults to ~/.claude (packages/nax/src/resources/claude-paths.ts:7); claudeJsonPath must separately default to ~/.claude.json, while CLAUDE_CONFIG_DIR points both functions at the overridden directory with their distinct layouts. loadResourceCatalog currently passes only claudeDir (packages/nax/src/resources/catalog.ts:51), and buildResourceCatalog preserves package order and aggregates diagnostics (packages/nax/src/resources/catalog.ts:35). The new JSON path must travel through the loader's env argument. formatPluginsListing's current MCP deferred marker is at packages/nax/src/resources/listing.ts:50; remove that marker only, leaving agents/hooks text alone. Tests: test/unit/resources/parse-mcp.test.ts:8 compares whole resource shapes; update every call to include project scope, supply sse URL and enrich expected specs while preserving transport outcomes. test/unit/resources/listing.test.ts has a typed plugin MCP literal to enrich in US-003 and wording expectation to adjust in US-004. test/unit/resources/claude-sources.test.ts:12 centralizes discover calls and should pass a missing fixture claudeJson to preserve existing isolation; new cases use explicit fixtures. test/unit/resources/catalog.test.ts covers loader behavior. No connections occur during parsing/discovery.\n\nUS-005/006 pure conversion: add mcp-expand.ts for lexical shell-style substitution and provider-safe ID normalization, then mcp-merge.ts for deterministic first-wins conversion. Existing MCP ID regex and timeout constants are packages/nax/src/config/schemas-mcp.ts:15 and :25; export them through packages/nax/src/config/index.ts so resources does not violate alias-internals. Existing config barrel already exports McpConfig/McpServerConfig at packages/nax/src/config/index.ts:69, but not these constants. Resource types and exports live in packages/nax/src/resources/types.ts:68 and packages/nax/src/resources/index.ts:25. No subprocesses, network calls, environment mutation or catalog mutation belong in these pure helpers. Config entries remain literally unchanged and win before catalog project/local/user/plugin order; disabled config entries still claim their IDs. Plugin IDs use origin.plugin, not marketplace-qualified package id; CLAUDE_PLUGIN_ROOT uses package.root and overrides the caller environment. Expand values but never keys; empty variables are values for ${NAME} but fall back for ${NAME:-default}. Do not recursively expand defaults or replacements. Drop unsupported SSE/missing-variable/empty-id catalog entries with origin-bearing diagnostics, without exposing expanded secrets in diagnostics. Catalog HTTP objects must schema-parse under US-002. Test new helpers with pure fixture packages and buildResourceCatalog, asserting command/source, normalized IDs, plugin roots and HTTP header substitution, including collisions across normalized plugin names. Migration is additive for consumers except the required resource shape and parser/discovery argument updates; there is no lock format migration. Stable normalized IDs deliberately become the identifiers in the existing lock.\n\nUS-007/008 chat composition: chatResources currently loads plugins, calls loadResourceCatalog with process.env, returns only the skills provider and registry teardown (packages/nax/src/cli/chat.ts:125). Introduce injectable env/createChatMcp and one chat-scoped pool shared across session opens. The helper normalizes enabled servers to wildcard stages, rejects reserved nax-skills and uses one connect attempt so dead servers do not incur the run's three-attempt retry budget. Existing pool entry promises, including failures, are cached per server/workdir (packages/nax/src/mcp/pool.ts:157); keep that implementation and lazy session-open tool resolution. assertTrusted precedes the retry loop (packages/nax/src/mcp/pool.ts:89). createMcpProviders already enforces resolveMcpLock/applyLock and allowedTools, reporting each withheld tool on every tools call (packages/nax/src/mcp/provider.ts:65 and :99); chat must not bypass or duplicate it. Deduplicate reports by (serverId,name) with replacement, not by tool name alone. ChatResources lacks mcp today (packages/nax/src/chat/resources.ts:6); NativeChatHost copies catalog/plugins in its constructor (packages/nax/src/chat/chat-host.ts:103), forwards resources.toolProviders on initial open, resume and switch (same file :182, :254, :291), and openChatSession passes providers into nativeBackend (packages/nax/src/chat/open-chat-session.ts:150). Add state exposure without changing session reopening or creating a second pool. Chat teardown must close MCP before registry in try/finally; synchronous createChatMcp errors must still trigger the existing registry cleanup and chat error/exit-code path. US-007 owns a usable state contract and wiring; US-008 completes and verifies live state aggregation and listing. The chat barrel is packages/nax/src/chat/index.ts:1. Slash commands are centralized in packages/nax/src/tui/chat/slash-commands.ts:26 and :91; /mcp must be a built-in after plugins in help, not a catalog invocation. Format latest connection state and withholding counts without restarting connections. Preserve diagnostics even when no servers survived: print the no-server marker followed by diagnostic lines. Tests: test/unit/cli/chat-resources.test.ts:22 composes _chatCommandDeps fakes; update that and test/unit/cli/chat.test.ts to isolate env and stub createChatMcp. Retain skills-first ordering. Add new chat-mcp.test.ts and chat-mcp-listing.test.ts, including the actual command->catalog->merge->pool seam and host->openChatSession->nativeBackend seam, not just mocked producer/consumer unit tests. test/ui/chat/slash-commands.test.tsx:10 pins the command list, :155 checks contiguous help, and :174 blocks built-ins during a turn; add mcp between plugins/quit so those invariants apply automatically.\n\nUS-009 run/lock integration: resources currently defines claudeCode=true and skillsInRun=false only (packages/nax/src/config/schemas-resources.ts:3); add mcpInRun=false and description. The existing runtime synchronously builds its pool/providers from config.mcp (packages/nax/src/runtime/index.ts:407) and adds skills separately (:420). Merge only the config argument at setupRun's existing createRuntime call (packages/nax/src/execution/lifecycle/run-setup.ts:237), using a new loader seam. Do not mutate options.config or change the false branch's object identity; do not globally alter runtime resource loading. Existing _runSetupDeps is at packages/nax/src/execution/lifecycle/run-setup.ts:68. resolveCatalogMcpConfig skips loading entirely when claudeCode=false and otherwise loads with no nax plugin packages, merges and warns each merge diagnostic at stage resources. runMcpLockCommand currently loads config directly and locks enabled configured servers into project or global paths (packages/nax/src/cli/mcp.ts:18); introduce a seam for config/catalog/pool/env and resolve the same catalog union before enumerating enabled servers. Existing schema hash and lock writes remain unchanged. Risks are accidental connections to developer ~/.claude.json and extra servers in old integration fixtures: isolate CLAUDE_CONFIG_DIR through seams in test/integration/mcp/stdio-server.test.ts and test/integration/cli/cli-mcp-global-lock.test.ts, restore seams after each test, and use temporary global nax directories for global lock assertions. Update full resources-shape snapshots in test/unit/config/schemas-resources.test.ts:6 and :14 and the full helper type/literals in test/unit/resources/catalog.test.ts. New tests exercise runMcpLockCommand writing actual catalog tool schema hashes to project/global locks and setupRun capturing the actual runtime config for true/false. Security-sensitive lock/trust paths use strict TDD. End-of-run adoption reporting still uses original config.mcp and must remain configured-only.\n\nExecution/migration plan: preserve exactly the nine declared IDs/workdirs/dependencies. US-001, US-003 and US-005 can start independently; US-002 follows the agent seam; US-004 follows parser types; US-006 unifies all conversion prerequisites; chat follows US-001/006, listing follows chat, lock/run follows US-006. Shared edits to resources/index.ts, config descriptions, listing fixtures and cli/mcp.ts should extend prior changes, not overwrite them. Existing stdio config and explicit run-stage behavior remain backward-compatible; new schema defaults change only full parsed-object snapshots (headers and mcpInRun). Required scope/server fields require typed resource fixtures and parser callers to migrate together. Catalog servers are initially withheld until nax mcp lock; project locks continue to override global locks, and trust still precedes connections. The server's read-only hint is advisory and unpinned, as explicitly ruled; do not reinterpret this as a lock schema change. Use package-scoped Bun tests with explicit paths/timeouts, never bare bun test or bun run nax. Pipeline gates are validation, not acceptance criteria; no test/coverage-only stories are introduced. Do not edit generated agent context, .nax rules/config or design docs as implementation work. The sole .nax output of this drafting task is this requested PRD artifact.",
+  "outOfScope": [
+    "F5b `chat-subagents` delivers subagents, the `Agent` tool, `/agents` and `agent.modelAliases`; this feature leaves `/plugins` printing `agents N (not delivered yet)`.",
+    "SSE MCP transport is not supported anywhere; an `sse` catalog entry is listed as a diagnostic and dropped.",
+    "OAuth for remote MCP servers is not supported; an HTTP server gets only its static `headers`.",
+    "Claude Code's per-server approval settings for project `.mcp.json` servers (`enableAllProjectMcpServers`, `enabledMcpjsonServers`, `disabledMcpjsonServers` in `settings.json` / `settings.local.json`) are not read; the nax trust gate plus the MCP lock replace them.",
+    "MCP servers declared inside a Claude Code plugin's `plugin.json` (`mcpServers` field) are not read; only the plugin's `.mcp.json` is.",
+    "MCP resources, prompts and sampling are not supported; only tools.",
+    "Per-project enable or disable lists that Claude Code keeps in `~/.claude.json` (for example `disabledMcpServers`, `enabledMcpjsonServers`, `disabledMcpjsonServers` under `projects[<repo>]`) are not read; only `mcpServers` is.",
+    "Configured `mcp.servers` entries get no `${VAR}` expansion; an HTTP server configured there carries its headers literally, and the existing config secret scan still applies to them.",
+    "A server's `readOnlyHint` is trusted as the server states it and is not pinned by the lock; the lock pins input schemas only, so a server that flips the hint after locking changes whether guarded mode asks.",
+    "The interactive system prompt does not list MCP tools beyond what the tool list and each server's own instructions (the existing provider-instructions path) already carry.",
+    "A per-server enable or disable toggle inside chat is not added; `mcp.servers.<id>.enabled` and removing the catalog entry are the switches.",
+    "MCP servers are not hot-reloaded; a changed `.mcp.json` or `~/.claude.json` takes effect at the next `nax chat` start.",
+    "Catalog MCP servers do not attach to `nax run` unless `resources.mcpInRun` is true (user ruling 2026-10-25).",
+    "With `resources.mcpInRun` true, the end-of-run MCP adoption rollup (`summarizeMcpAdoptionPhase`, which reads the run's original `config.mcp`) still covers configured servers only; catalog servers are attached but absent from `mcpAdoption` and its zero-adoption warning.",
+    "The design doc `docs/superpowers/specs/2026-10-24-nax-interactive-tui-slice1-design.md` §4.5/§5.1 update for the F5a/F5b split is committed by hand with this spec, not by a story.",
+    "Updating `.nax/mono/packages/nax/context.md` and `.nax/mono/packages/nax-agent/context.md` for chat MCP and `askTools`, then running `nax generate`, is a manual step after merge; `.nax/` is read-only to the run.",
+    "No release and no version bump."
+  ],
+  "routingProfile": "native-claude-opus"
+}
