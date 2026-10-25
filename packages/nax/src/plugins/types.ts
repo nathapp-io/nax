@@ -8,7 +8,14 @@
 import type { AgentAdapter } from "../agents/types";
 import type { IPromptOptimizer } from "../optimizer/types";
 import type { RoutingStrategy } from "../routing/router";
-import type { IContextProvider, ILoopHandlerProvider, IPostRunAction, IReporter, IReviewPlugin } from "./extensions";
+import type {
+  IContextProvider,
+  ILoopHandlerProvider,
+  IPostRunAction,
+  IReporter,
+  IResourceProvider,
+  IReviewPlugin,
+} from "./extensions";
 
 // Re-export extension types
 export type {
@@ -18,6 +25,7 @@ export type {
   ILoopHandlerProvider,
   IPostRunAction,
   IReporter,
+  IResourceProvider,
   IReviewPlugin,
   LoopHandlerRegistrar,
   PhaseCompleteEvent,
@@ -45,7 +53,8 @@ export type PluginType =
   | "context-provider"
   | "reporter"
   | "post-run-action"
-  | "loop-handlers";
+  | "loop-handlers"
+  | "resources";
 
 /**
  * A nax plugin module.
@@ -138,6 +147,17 @@ export interface PluginExtensions {
 
   /** Custom loop handlers (native session's in-process loop events) */
   loopHandlers?: ILoopHandlerProvider;
+
+  /** Data-only skill, command and agent directories */
+  resources?: IResourceProvider;
+}
+
+/** Absolute data-only resource directories contributed by one loaded plugin. */
+export interface PluginResourceDirs {
+  readonly plugin: string;
+  readonly skills?: string;
+  readonly commands?: string;
+  readonly agents?: string;
 }
 
 // ============================================================================

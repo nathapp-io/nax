@@ -3,6 +3,7 @@ export { _claudePathsDeps, claudeConfigDir } from "./claude-paths";
 export { discoverClaudeCodePackages } from "./claude-sources";
 export type { ResourceFrontmatterResult } from "./frontmatter";
 export { readResourceFrontmatter } from "./frontmatter";
+export { naxPluginPackages } from "./nax-plugin-packages";
 export { parseAgentFile } from "./parse-agent";
 export { parseCommandFile } from "./parse-command";
 export type { HookParseResult } from "./parse-hooks";
