@@ -3,7 +3,7 @@
   "feature": "chat-subagents",
   "branchName": "feat/chat-subagents",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T16:06:21.900Z",
+  "updatedAt": "2026-10-25T16:13:44.891Z",
   "userStories": [
     {
       "id": "US-001",
@@ -211,14 +211,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Pure ordered mappings are standard, but translated tool names determine a session's access-control surface, requiring strict security TDD."
+        "reasoning": "Pure ordered mappings are standard, but translated tool names determine a session's access-control surface, requiring strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas-model.ts",
@@ -240,7 +243,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "2c4665693e25beef72206e0911840afd8e20fd39"
     },
     {
       "id": "US-005",
