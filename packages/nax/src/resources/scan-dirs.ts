@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { parseAgentFile } from "./parse-agent";
@@ -14,6 +15,10 @@ export function scanAgentsDir(dir: string, origin: ResourceOrigin): Promise<Reso
 export const MAX_RESOURCE_FILES_PER_DIR = 500;
 
 export const _resourceFsDeps = {
+  // Bun.file has no directory metadata API; stat is used only for directory validation.
+  async isDirectory(path: string): Promise<boolean> {
+    return (await stat(path)).isDirectory();
+  },
   async listFiles(dir: string, pattern: string): Promise<string[]> {
     return Array.fromAsync(new Bun.Glob(pattern).scan({ cwd: dir, onlyFiles: true, dot: false }));
   },

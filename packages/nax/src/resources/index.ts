@@ -1,4 +1,5 @@
 export { _claudePathsDeps, claudeConfigDir } from "./claude-paths";
+export { discoverClaudeCodePackages } from "./claude-sources";
 export type { ResourceFrontmatterResult } from "./frontmatter";
 export { readResourceFrontmatter } from "./frontmatter";
 export { parseAgentFile } from "./parse-agent";
