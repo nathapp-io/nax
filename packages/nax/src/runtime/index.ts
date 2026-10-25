@@ -113,7 +113,7 @@ import { createStoryFixHistory } from "../findings";
 import type { Logger } from "../logger";
 import { getLogger, getSafeLogger } from "../logger";
 import { buildMcpRollup, createMcpPool, createMcpProviders, writeMcpRollup } from "../mcp";
-import { createSkillsProvider, loadResourceCatalog } from "../resources";
+import { loadResourceCatalog } from "../resources";
 import type { IReviewAuditor } from "../review/review-audit";
 import { createNoOpReviewAuditor, ReviewAuditor } from "../review/review-audit";
 import type { RoutingDecision } from "../routing/decision";
@@ -146,6 +146,7 @@ import { createPackageRegistry } from "./packages";
 import { curatorRollupPath, globalOutputDir, projectOutputDir } from "./paths";
 import type { IPromptAuditor } from "./prompt-auditor";
 import { createNoOpPromptAuditor, PromptAuditor } from "./prompt-auditor";
+import { withRunSkills } from "./run-tool-providers";
 import { createRunTurnHooks } from "./run-turn-hooks";
 import { createSessionRunHop } from "./session-run-hop";
 import type { IUsageAuditor } from "./usage-auditor";
@@ -408,17 +409,17 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     pidRegistry,
   });
   const mcpWithheld: import("../mcp").McpWithheldEntry[] = [];
-  let toolProviders = createMcpProviders({
+  const mcpProviders = createMcpProviders({
     config: config.mcp,
     pool: mcpPool,
     projectRoot: workdir,
     onWithheld: (entry) => mcpWithheld.push(entry),
   });
 
-  if (config.resources?.skillsInRun ?? false) {
-    const options = { repoRoot: workdir, config, env: process.env, naxPluginPackages: [] };
-    toolProviders = [...toolProviders, createSkillsProvider(() => _runtimeResourceDeps.loadResourceCatalog(options))];
-  }
+  const resourceOptions = { repoRoot: workdir, config, env: process.env, naxPluginPackages: [] };
+  const toolProviders = withRunSkills(mcpProviders, config, () =>
+    _runtimeResourceDeps.loadResourceCatalog(resourceOptions),
+  );
 
   const watchdogControllerRegistry = new Map<string, () => Promise<void>>();
 
