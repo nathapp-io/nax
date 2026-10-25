@@ -20,6 +20,8 @@ export interface FixtureTool {
   readonly name: string;
   readonly description?: string;
   readonly inputSchema?: Record<string, unknown>;
+  /** Listed verbatim as the tool's `annotations`; the key is absent when unset. Loosely typed so a test can send a malformed hint. */
+  readonly annotations?: Record<string, unknown>;
   readonly run?: (args: Record<string, unknown>, ctx: FixtureCtx) => Promise<CallToolResult>;
 }
 
@@ -48,6 +50,7 @@ export async function inMemoryServer(
       name: t.name,
       description: t.description ?? "",
       inputSchema: t.inputSchema ?? { type: "object", properties: {} },
+      ...(t.annotations !== undefined ? { annotations: t.annotations } : {}),
     }));
     const next = start + pageSize < tools.length ? String(start + pageSize) : undefined;
     return { tools: page, ...(next !== undefined ? { nextCursor: next } : {}) };

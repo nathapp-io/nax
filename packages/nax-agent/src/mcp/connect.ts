@@ -65,7 +65,13 @@ async function closeTransport(client: Client, handle: TransportHandle, graceMs: 
 function toolInfo(raw: unknown): McpToolInfo | undefined {
   if (!isRaw(raw) || typeof raw.name !== "string" || raw.name.length === 0) return undefined;
   const inputSchema: JSONSchema = isRaw(raw.inputSchema) ? { ...raw.inputSchema } : {};
-  return { name: raw.name, description: typeof raw.description === "string" ? raw.description : "", inputSchema };
+  const readOnly = isRaw(raw.annotations) && raw.annotations.readOnlyHint === true;
+  return {
+    name: raw.name,
+    description: typeof raw.description === "string" ? raw.description : "",
+    inputSchema,
+    ...(readOnly ? { readOnly: true as const } : {}),
+  };
 }
 
 async function listAll(client: Client, signal: AbortSignal, timeout: number): Promise<McpToolInfo[]> {

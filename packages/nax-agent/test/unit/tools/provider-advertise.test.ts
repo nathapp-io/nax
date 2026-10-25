@@ -70,6 +70,48 @@ describe("resolveProviderTools", () => {
     expect(tools.map((t) => t.name)).toEqual(["fake__kept"]);
   });
 
+  describe("askTools", () => {
+    const acme = (kind: ToolProvider["kind"], tools: readonly ProviderTool[]): ToolProvider =>
+      provider({ id: "acme", kind, stages: ["*"], tools: async () => tools });
+    const named = (localName: string, over: Partial<ProviderTool> = {}): ProviderTool => ({
+      ...probeTool(localName),
+      localName,
+      ...over,
+    });
+
+    test("AC-6: lists the namespaced discovered tools that are not readOnly, in advertise order", async () => {
+      const result = await resolveProviderTools(
+        [acme("discovered", [named("get", { readOnly: true }), named("put"), named("post", { readOnly: false })])],
+        "session",
+        "/w",
+      );
+      expect(result.askTools).toEqual(["acme__put", "acme__post"]);
+    });
+
+    test("AC-7: has no askTools key when every discovered tool is readOnly", async () => {
+      const result = await resolveProviderTools(
+        [acme("discovered", [named("get", { readOnly: true })])],
+        "session",
+        "/w",
+      );
+      expect(result.tools.map((t) => t.name)).toEqual(["acme__get"]);
+      expect("askTools" in result).toBe(false);
+    });
+
+    test("AC-8: has no askTools key for a static provider whose tool has no readOnly", async () => {
+      const result = await resolveProviderTools([acme("static", [named("load")])], "session", "/w");
+      expect(result.tools.map((t) => t.name)).toEqual(["acme__load"]);
+      expect("askTools" in result).toBe(false);
+    });
+
+    test("a tool withheld by admits is not an ask tool", async () => {
+      const result = await resolveProviderTools([acme("discovered", [named("put")])], "session", "/w", {
+        admits: () => false,
+      });
+      expect("askTools" in result).toBe(false);
+    });
+  });
+
   test("no providers yields empty skipped and withheld", async () => {
     expect(await resolveProviderTools([], "run", "/w/a")).toMatchObject({ skipped: [], withheld: [] });
   });

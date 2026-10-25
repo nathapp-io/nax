@@ -27,6 +27,11 @@ describe("sanitizeProviderTools", () => {
     expect(out.localName).toBe("t");
   });
 
+  test("AC-5: a discovered tool's readOnly hint survives sanitisation", () => {
+    const [out] = sanitizeProviderTools("discovered", [tool({ readOnly: true })]);
+    expect(out.readOnly).toBe(true);
+  });
+
   test("discovered control characters are stripped", () => {
     const [out] = sanitizeProviderTools("discovered", [tool({ description: "ab\u0001c" })]);
     expect(out.description).toBe("abc");

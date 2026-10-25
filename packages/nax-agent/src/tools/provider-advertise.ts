@@ -12,7 +12,7 @@ import { getSafeLogger } from "#src/infra/index";
 import { adaptProviderTool } from "./provider-adapt.ts";
 import { expandProviderGrants, type ProviderGrantEntry } from "./provider-grants.ts";
 import { sanitizeProviderTools } from "./provider-sanitize.ts";
-import { providerAttachesTo, type ToolProvider } from "./provider-types.ts";
+import { type ProviderTool, providerAttachesTo, type ToolProvider } from "./provider-types.ts";
 import type { CodingTool } from "./registry.ts";
 import type { ToolGrant } from "./types.ts";
 
@@ -61,6 +61,13 @@ export interface ResolvedProviderTools {
    * was silent" stay distinguishable rather than collapsing to `[]`.
    */
   readonly instructions?: readonly { providerId: string; text: string }[];
+  /**
+   * Advertised (namespaced) names of tools from a `discovered` provider whose
+   * `readOnly` is not `true`, in advertise order: the ones an ask-profile
+   * session puts to the person before running. A `static` provider's tools
+   * never appear (their schemas are authored in this repo). ABSENT when empty.
+   */
+  readonly askTools?: readonly string[];
 }
 
 /**
@@ -84,6 +91,16 @@ async function instructionsFor(provider: ToolProvider, workdir: string): Promise
   }
 }
 
+/** `{ [key]: list }` for a non-empty list, `{}` otherwise: the key is absent, never `[]`. */
+function whenNonEmpty<K extends string, T>(key: K, list: readonly T[]): { readonly [P in K]?: readonly T[] } {
+  return list.length > 0 ? ({ [key]: list } as { readonly [P in K]?: readonly T[] }) : {};
+}
+
+/** A discovered tool its server did not mark read-only; a static provider's tools never ask. */
+function asksBeforeRunning(provider: Pick<ToolProvider, "kind">, tool: Pick<ProviderTool, "readOnly">): boolean {
+  return provider.kind === "discovered" && tool.readOnly !== true;
+}
+
 export async function resolveProviderTools(
   providers: readonly ToolProvider[],
   stage: string,
@@ -104,6 +121,7 @@ export async function resolveProviderTools(
   const withheld: { providerId: string; localName: string; reason: "not-admitted" }[] = [];
   const providerIdByTool = new Map<string, string>();
   const instructions: { providerId: string; text: string }[] = [];
+  const askTools: string[] = [];
 
   for (const provider of providers) {
     if (!providerAttachesTo(provider, stage)) {
@@ -122,6 +140,7 @@ export async function resolveProviderTools(
         const adapted = adaptProviderTool(provider.id, tool);
         tools.push(adapted);
         providerIdByTool.set(adapted.name, provider.id);
+        if (asksBeforeRunning(provider, tool)) askTools.push(adapted.name);
         localNames.push(tool.localName);
       }
       entries.push({ providerId: provider.id, localNames });
@@ -145,7 +164,8 @@ export async function resolveProviderTools(
     withheld,
     providerIdByTool,
     entries,
-    ...(instructions.length > 0 ? { instructions } : {}),
+    ...whenNonEmpty("instructions", instructions),
+    ...whenNonEmpty("askTools", askTools),
   };
 }
 

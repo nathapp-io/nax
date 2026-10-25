@@ -15,6 +15,13 @@ export interface McpToolInfo {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: JSONSchema;
+  /**
+   * Present (as `true`) only when the server annotated the tool
+   * `readOnlyHint: true`. Absent in every other case, so an unannotated tool
+   * keeps its `{ name, description, inputSchema }` shape. Trusted as the server
+   * states it; the lock pins input schemas, not this hint.
+   */
+  readonly readOnly?: true;
 }
 
 export interface McpCallResult {

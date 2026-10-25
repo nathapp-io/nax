@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, jest, test } from "bun:test";
+import { afterEach, describe, expect, jest, spyOn, test } from "bun:test";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { connectMcp } from "#src/mcp/connect";
 import { McpCallError, McpConnectError } from "#src/mcp/errors";
 import { _mcpTransportDeps, type TransportHandle } from "#src/mcp/transport";
@@ -62,6 +63,47 @@ describe("connectMcp", () => {
     expect(connection.tools[0]).toEqual({
       name: "a",
       description: "tool a",
+      inputSchema: { type: "object", properties: {} },
+    });
+    await connection.close();
+  });
+
+  test("AC-1: a readOnlyHint of true yields readOnly true", async () => {
+    const { connection } = await connectTo([{ name: "get", annotations: { readOnlyHint: true } }]);
+    expect(connection.tools[0]?.readOnly).toBe(true);
+    await connection.close();
+  });
+
+  test("AC-2: a readOnlyHint of false leaves no readOnly key", async () => {
+    const { connection } = await connectTo([{ name: "put", annotations: { readOnlyHint: false } }]);
+    expect(connection.tools[0]).toBeDefined();
+    expect(connection.tools[0]).not.toHaveProperty("readOnly");
+    await connection.close();
+  });
+
+  test("AC-3: a non-boolean readOnlyHint leaves no readOnly key", async () => {
+    // The SDK's own tools/list schema rejects a string hint before connectMcp sees it, so the
+    // defensive branch is reached by answering listTools with the raw page the SDK would not accept.
+    const page = JSON.parse(
+      '{"tools":[{"name":"put","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":"yes"}}]}',
+    );
+    const listTools = spyOn(Client.prototype, "listTools").mockResolvedValue(page);
+    try {
+      const { connection } = await connectTo([{ name: "put" }]);
+      expect(listTools).toHaveBeenCalled();
+      expect(connection.tools[0]).toBeDefined();
+      expect(connection.tools[0]).not.toHaveProperty("readOnly");
+      await connection.close();
+    } finally {
+      listTools.mockRestore();
+    }
+  });
+
+  test("AC-4: a tool with no annotations keeps the exact { name, description, inputSchema } shape", async () => {
+    const { connection } = await connectTo([{ name: "plain", description: "d" }]);
+    expect(connection.tools[0]).toStrictEqual({
+      name: "plain",
+      description: "d",
       inputSchema: { type: "object", properties: {} },
     });
     await connection.close();

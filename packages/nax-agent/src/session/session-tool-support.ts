@@ -158,7 +158,14 @@ export function buildSessionToolSupport(args: SessionToolSupportArgs): SessionTo
     ...new Set([...profileTools, ...(args.providerTools?.tools.map((tool) => tool.name) ?? [])]),
   ] as readonly CodingToolName[];
   const grants = [...grantsFor(profileTools), ...(args.providerTools?.grants ?? [])];
-  const askRules = askRulesFor(profileTools, args.bashApproval, args.profile);
+  // Only the "ask" profile puts a discovered, non-read-only tool to the person; "full" never asks.
+  const askRules = [
+    ...askRulesFor(profileTools, args.bashApproval, args.profile),
+    ...(args.profile === "ask" ? (args.providerTools?.askTools ?? []) : []).map((tool) => ({
+      tool: tool as CodingToolName,
+      patterns: ["*"],
+    })),
+  ];
   const providerInstructions = renderProviderInstructions(args.providerTools?.instructions ?? []);
   const support = buildCodingToolSupport({
     root: args.root,
