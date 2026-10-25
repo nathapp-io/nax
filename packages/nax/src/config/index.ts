@@ -131,6 +131,7 @@ export {
   DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
   RoutingConfigSchema,
 } from "./schemas-infra";
+export { MCP_DEFAULT_TIMEOUT_MS, MCP_SERVER_ID_RE } from "./schemas-mcp";
 export {
   ConfiguredModelSchema,
   ModelTierSchema,

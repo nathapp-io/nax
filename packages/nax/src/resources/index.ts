@@ -6,6 +6,8 @@ export type { ResourceFrontmatterResult } from "./frontmatter";
 export { readResourceFrontmatter } from "./frontmatter";
 export { formatPluginsListing, formatSkillsListing } from "./listing";
 export { expandMcpValue, mcpServerId } from "./mcp-expand";
+export type { McpServerSource, MergedMcpServers } from "./mcp-merge";
+export { mergeCatalogMcpServers } from "./mcp-merge";
 export { naxPluginPackages } from "./nax-plugin-packages";
 export { parseAgentFile } from "./parse-agent";
 export { parseCommandFile } from "./parse-command";
