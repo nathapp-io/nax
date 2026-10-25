@@ -107,8 +107,10 @@ export function carryReadOnlyGrants(
   const carried: Record<string, string[]> = {};
   for (const [serverId, tools] of Object.entries(next)) {
     const kept = [...lockedReadOnlyTools(previous, serverId)].filter((name) => {
-      const before = previous?.servers[serverId];
-      return before !== undefined && Object.hasOwn(before, name) && before[name] === tools[name];
+      // A malformed previous lock (`servers.docs: null`) has no pinned tools; it must not abort the refresh.
+      const before: unknown = previous?.servers[serverId];
+      if (before === null || typeof before !== "object") return false;
+      return Object.hasOwn(before, name) && (before as Record<string, string>)[name] === tools[name];
     });
     if (kept.length > 0) carried[serverId] = kept;
   }

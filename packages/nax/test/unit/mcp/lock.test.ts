@@ -141,6 +141,12 @@ describe("readOnly section", () => {
     ).toBeUndefined();
   });
 
+  test("M1: carryReadOnlyGrants does not throw on a malformed previous lock with a null server entry", () => {
+    // JSON.parse yields the shape a hand-edited lock file would: servers.docs is null.
+    const previous: McpLockFile = JSON.parse('{"version":1,"servers":{"docs":null},"readOnly":{"docs":["get"]}}');
+    expect(carryReadOnlyGrants(previous, { docs: { get: "h" } })).toBeUndefined();
+  });
+
   test("lockedReadOnlyTools reads a malformed or missing entry as empty", () => {
     const lock = { version: 1 as const, servers: {}, readOnly: { docs: ["get"] } };
     expect([...lockedReadOnlyTools(lock, "docs")]).toEqual(["get"]);

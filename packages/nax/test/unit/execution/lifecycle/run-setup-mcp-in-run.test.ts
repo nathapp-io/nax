@@ -98,6 +98,9 @@ describe("setupRun → resources.mcpInRun", () => {
       // setupRun may fail at a later step; createRuntime is called before it.
       await setupRun(options).catch(() => {});
     });
+    // A rejection before createRuntime would leave `received` empty and make every
+    // "server is undefined" assertion pass vacuously.
+    expect(received).toHaveLength(1);
   }
 
   test("AC-12 attaches a locked catalog server to the runtime config at every stage", async () => {
