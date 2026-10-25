@@ -3,7 +3,7 @@
   "feature": "nax-chat-shell",
   "branchName": "feat/nax-chat-shell",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T05:59:48.898Z",
+  "updatedAt": "2026-10-25T06:10:20.629Z",
   "userStories": [
     {
       "id": "US-001",
@@ -709,14 +709,17 @@
       "dependencies": [
         "US-011"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Multi-component streaming terminal UI integrates the session lifecycle and permission/sandbox state; session-security override applies."
+        "reasoning": "Multi-component streaming terminal UI integrates the session lifecycle and permission/sandbox state; session-security override applies.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/components/StatusBar.tsx",
@@ -735,7 +738,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0c32c619eb5c400b09a2276a81ebc1048f6e0b57"
     },
     {
       "id": "US-013",
