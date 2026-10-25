@@ -7,6 +7,7 @@ export {
   createChatAskController,
 } from "./ask-controller";
 export { _askFallbackDeps, type AskFallback, type AskFallbackOptions, createAskFallback } from "./ask-fallback";
+export { type ChatHost, type ChatHostDeps, type ChatHostState, type ChatSessionRow, createChatHost } from "./chat-host";
 export { type ChatLedger, type ChatLedgerOptions, type ChatUsageEvent, createChatLedger } from "./chat-ledger";
 export {
   type ChatMode,
