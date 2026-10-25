@@ -3,7 +3,7 @@
   "feature": "chat-mcp-servers",
   "branchName": "feat/chat-mcp-servers",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T13:37:56.419Z",
+  "updatedAt": "2026-10-25T13:46:45.827Z",
   "userStories": [
     {
       "id": "US-001",
@@ -401,14 +401,17 @@
         "US-004",
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "New pure conversion abstraction coordinates ordered discovery, provider-safe identity, substitution, source provenance and two schema-compatible transports; expansion of credential-bearing HTTP headers warrants strict test/implementation isolation."
+        "reasoning": "New pure conversion abstraction coordinates ordered discovery, provider-safe identity, substitution, source provenance and two schema-compatible transports; expansion of credential-bearing HTTP headers warrants strict test/implementation isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/resources/types.ts",
@@ -432,7 +435,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "559ae0f4ba0d64835c71d616532d0b1aacf2f9a4"
     },
     {
       "id": "US-007",
