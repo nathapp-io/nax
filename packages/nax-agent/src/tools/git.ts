@@ -195,8 +195,16 @@ function buildGitRootArgv(input: Record<string, unknown>): string[] | { error: s
   return ["rev-parse", "--show-toplevel"];
 }
 
+/**
+ * `blame` rejects exclude pathspecs (exit 128). On `log` and `show` an exclude
+ * filters COMMITS, not just files: a commit that only touches `.nax/` is
+ * dropped, so `log HEAD -1` reported an older commit as HEAD and `show HEAD`
+ * printed nothing (#2693). Only `diff` and `status` list files.
+ */
+const GIT_EXCLUDE_EXEMPT_VERBS: readonly string[] = ["blame", "log", "show"];
+
 function defaultGitExcludes(subcommand: string, excludes: readonly string[]): readonly string[] {
-  return subcommand === "blame" ? [] : excludes;
+  return GIT_EXCLUDE_EXEMPT_VERBS.includes(subcommand) ? [] : excludes;
 }
 
 /**
@@ -324,8 +332,8 @@ export function buildGitArgv(
     // on this DEFAULT branch: a caller that names a path under .nax/ gets it --
     // the tool is read-only, and silently returning nothing for an explicitly
     // requested path would be a worse failure than the one being fixed.
-    // `blame` is exempt because git rejects exclude pathspecs on it and exits
-    // 128; do not "unify" it back in.
+    // `blame`, `log` and `show` are exempt (GIT_EXCLUDE_EXEMPT_VERBS); do not
+    // "unify" them back in.
     argv.push(...defaultGitExcludes(subcommand, defaultExcludes));
     return argv;
   }
