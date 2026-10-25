@@ -3,7 +3,7 @@
   "feature": "resource-catalog-and-skills",
   "branchName": "feat/resource-catalog-and-skills",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T08:49:18.377Z",
+  "updatedAt": "2026-10-25T09:00:04.445Z",
   "userStories": [
     {
       "id": "US-001",
@@ -156,14 +156,17 @@
         "parsing"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive types, two config booleans, a path helper and a bounded frontmatter reader follow existing schema and leaf-function patterns; no session or permission logic changes."
+        "reasoning": "Additive types, two config booleans, a path helper and a bounded frontmatter reader follow existing schema and leaf-function patterns; no session or permission logic changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas.ts",
@@ -195,7 +198,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "efe65f543e696de28cf626bfef2ec0563503f6ab"
     },
     {
       "id": "US-004",
