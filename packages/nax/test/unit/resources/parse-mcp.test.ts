@@ -6,15 +6,18 @@ const path = "/repo/.mcp.json";
 
 describe("parseMcpJson", () => {
   test.each([
-    ["AC-5", { command: "npx", args: ["x"] }, "stdio"],
-    ["AC-6", { type: "http", url: "https://h" }, "http"],
-    ["sse wins over command", { type: "sse", command: "unused" }, "sse"],
-  ])("%s parses transport", (_, entry, transport) => {
-    expect(resources.parseMcpJson(path, JSON.stringify({ mcpServers: { ctx: entry } }), origin)).toEqual({
-      resources: [{ kind: "mcp", name: "ctx", transport, path, origin }],
-      diagnostics: [],
-    });
-  });
+    { label: "AC-5", entry: { command: "npx", args: ["x"] }, transport: "stdio" },
+    { label: "AC-6", entry: { type: "http", url: "https://h" }, transport: "http" },
+    { label: "sse wins over command", entry: { type: "sse", command: "unused" }, transport: "sse" },
+  ] satisfies { label: string; entry: Record<string, unknown>; transport: resources.McpServerResource["transport"] }[])(
+    "$label parses transport",
+    ({ entry, transport }) => {
+      expect(resources.parseMcpJson(path, JSON.stringify({ mcpServers: { ctx: entry } }), origin)).toEqual({
+        resources: [{ kind: "mcp", name: "ctx", transport, path, origin }],
+        diagnostics: [],
+      });
+    },
+  );
   test("AC-7 skips invalid entries with warnings, preserving valid siblings", () => {
     const result = resources.parseMcpJson(
       path,
