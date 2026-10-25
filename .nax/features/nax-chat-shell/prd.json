@@ -3,7 +3,7 @@
   "feature": "nax-chat-shell",
   "branchName": "feat/nax-chat-shell",
   "createdAt": "2026-10-25T00:00:00.000Z",
-  "updatedAt": "2026-10-25T05:45:01.319Z",
+  "updatedAt": "2026-10-25T05:59:48.898Z",
   "userStories": [
     {
       "id": "US-001",
@@ -642,14 +642,17 @@
       "dependencies": [
         "US-010"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Transactional reopens, lock ownership, stored permission modes and rollback paths are security-critical lifecycle logic."
+        "reasoning": "Transactional reopens, lock ownership, stored permission modes and rollback paths are security-critical lifecycle logic.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/server/registry-open.ts",
@@ -669,7 +672,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e8d43c621494b1723c2a3b567a8baf2d4c94a794"
     },
     {
       "id": "US-012",
