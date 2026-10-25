@@ -1,9 +1,15 @@
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { parseAgentFile } from "./parse-agent";
 import { parseCommandFile } from "./parse-command";
 import { resourceError } from "./parse-shared";
 import { parseSkillFile } from "./parse-skill";
-import type { CommandResource, ResourceDiagnostic, ResourceOrigin, SkillResource } from "./types";
+import type { AgentResource, CommandResource, ResourceDiagnostic, ResourceOrigin, SkillResource } from "./types";
+
+/** Agent definitions are top-level markdown files, parsed for listing only. */
+export function scanAgentsDir(dir: string, origin: ResourceOrigin): Promise<ResourceScanResult<AgentResource>> {
+  return scanDir({ dir, origin, pattern: "*.md", parse: parseAgentFile });
+}
 
 export const MAX_RESOURCE_FILES_PER_DIR = 500;
 

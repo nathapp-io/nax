@@ -1,7 +1,43 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import * as resources from "@/resources";
 import { _resourceFsDeps, scanCommandsDir, scanSkillsDir } from "@/resources/scan-dirs";
+
+describe("scanAgentsDir", () => {
+  test("US-005 AC-11 scans a and b in name order, top level only", async () => {
+    for (const name of ["b", "a", "sub/c", ".hidden"]) {
+      await Bun.write(join(dir, `${name}.md`), `---\nname: ${name}\ndescription: d\n---\nBody`);
+    }
+    const result = await resources.scanAgentsDir(dir, origin);
+    expect(result.resources.map((entry) => entry.name)).toEqual(["a", "b"]);
+    expect(result.diagnostics).toEqual([]);
+  });
+  test("US-005 AC-12 caps at the first 500 sorted agent files", async () => {
+    const names = Array.from({ length: 501 }, (_, i) => `a${String(i).padStart(3, "0")}`);
+    await Promise.all(
+      names.toReversed().map((name) => Bun.write(join(dir, `${name}.md`), `---\nname: ${name}\ndescription: d\n---\n`)),
+    );
+    const result = await resources.scanAgentsDir(dir, origin);
+    expect(result.resources.map((entry) => entry.name)).toEqual(names.slice(0, 500));
+    expect(result.diagnostics).toEqual([{ severity: "warn", path: dir, origin, message: expect.any(String) }]);
+  });
+  test("missing directory yields nothing", async () => {
+    expect(await resources.scanAgentsDir(join(dir, "missing"), origin)).toEqual({ resources: [], diagnostics: [] });
+  });
+  test("failed reads report errors and continue", async () => {
+    await writeFiles(["a.md", "b.md"], "---\nname: b\ndescription: d\n---\n");
+    _resourceFsDeps.readFile = async (path) => {
+      if (path === join(dir, "a.md")) throw new Error("read denied");
+      return originalDeps.readFile(path);
+    };
+    const result = await resources.scanAgentsDir(dir, origin);
+    expect(result.resources.map((entry) => entry.name)).toEqual(["b"]);
+    expect(result.diagnostics).toEqual([
+      { severity: "error", path: join(dir, "a.md"), origin, message: expect.stringContaining("read denied") },
+    ]);
+  });
+});
 
 const origin = { kind: "claude-user" } as const;
 const skill = "---\ndescription: d\n---\nBody";
