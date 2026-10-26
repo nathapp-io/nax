@@ -46,8 +46,9 @@ import {
   workingLine,
 } from "./chat-status";
 import { layoutTranscript } from "./layout";
+import { resolveWidth, wrapText } from "./layout-lines";
 import { parseSlashCommand, runSlashCommand, type SlashCommand, type SlashOutcome } from "./slash-commands";
-import { StyledLineView } from "./styled-line";
+import { StyledLineView, sanitizeText } from "./styled-line";
 import { TranscriptViewport } from "./TranscriptViewport";
 import { type ChatTheme, resolveChatTheme } from "./theme";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
@@ -98,12 +99,14 @@ const LISTING_TITLES: ReadonlyMap<string, string> = new Map([
   ["cost", "Cost"],
 ]);
 
-/** The rows the legacy `AskPrompt` draws: the tool line, the reason and the key options. */
-const APPROVAL_ASK_ROWS = 3;
 /** The extra line an approval outside the sandbox adds. */
 const UNSANDBOXED_ASK_ROWS = 1;
-/** A question ask: the question line and its one-row input. */
-const QUESTION_ASK_ROWS = 2;
+/** The single row `InputBox` draws for a question ask. */
+const QUESTION_INPUT_ROWS = 1;
+/** What an approval's option row reads, assembled exactly as `AskPrompt` assembles it. */
+const ALLOW_ONCE = "a: allow once";
+const ALLOW_SESSION = " | s: allow for this session";
+const DENY = " | d: deny";
 
 interface TerminalSize {
   readonly columns: number;
@@ -148,14 +151,26 @@ function welcomeEntry(host: ChatHost): TranscriptEntry {
   };
 }
 
+/** The rows one of the ask card's own texts takes at the width the screen gives it. */
+function askTextRows(text: string, width: number): number {
+  return Math.max(1, wrapText(sanitizeText(text), resolveWidth(width)).length);
+}
+
 /**
- * The rows the bottom region claims while an ask is pending. `AskPrompt` draws its own
- * rows, so the screen reserves them here; US-023 replaces the card and takes over the
- * measurement with it.
+ * The rows the legacy `AskPrompt` draws for an ask, measured at the width the screen draws it
+ * at: its texts are one `<Text>` each in a full-width column, so each wraps exactly as
+ * `wrapText` says. US-023 replaces the card and takes the measurement with it.
  */
-function askRows(ask: ChatPendingAsk): number {
-  if (ask.type === "question") return QUESTION_ASK_ROWS;
-  return APPROVAL_ASK_ROWS + (ask.unsandboxed ? UNSANDBOXED_ASK_ROWS : 0);
+function askRows(ask: ChatPendingAsk, options: { width: number; canRemember: boolean }): number {
+  if (ask.type === "question") return askTextRows(ask.text, options.width) + QUESTION_INPUT_ROWS;
+  const command = ask.command === undefined ? ask.tool : `${ask.tool} ${ask.command}`;
+  const choices = `${ALLOW_ONCE}${options.canRemember ? ALLOW_SESSION : ""}${DENY}`;
+  return (
+    askTextRows(command, options.width) +
+    askTextRows(ask.reason, options.width) +
+    (ask.unsandboxed ? UNSANDBOXED_ASK_ROWS : 0) +
+    askTextRows(choices, options.width)
+  );
 }
 
 /**
@@ -372,7 +387,12 @@ export function ChatApp({
     hint: footerHint({ clearArmed, busy: busy || status.running, expanded }),
     glyphs: theme.glyphs,
   });
-  const bottomRows = ask ? askRows(ask) : inputRows(draft, { width: columns, busy });
+  const bottomRows = ask
+    ? askRows(ask, {
+        width: columns,
+        canRemember: ask.type === "approval_requested" && host.asks.canRemember(ask),
+      })
+    : inputRows(draft, { width: columns, busy });
   const viewportHeight = Math.max(
     MIN_VIEWPORT_ROWS,
     size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - bottomRows - FOOTER_ROWS,
@@ -395,14 +415,15 @@ export function ChatApp({
         </FixedRow>
       ) : null}
       {/*
-        The bottom region is clipped to the rows reserved above: a prompt row that turns out
-        wider than measured loses its tail rather than growing the frame, so the footer stays
-        on the screen's last row whatever the terminal and the draft do.
+        The input is clipped to the rows reserved above: a prompt row that ever measured short
+        loses its tail rather than growing the frame, so the footer stays on the screen's last
+        row whatever the terminal and the draft do. The legacy ask card is *not* clipped — it
+        draws its own rows, and a mis-measured card must lose a frame row, never its text.
       */}
-      <Box height={bottomRows} overflow="hidden">
-        {ask ? (
-          <AskPrompt key={ask.requestId} ask={ask} controller={host.asks} active={!keys.locked} />
-        ) : (
+      {ask ? (
+        <AskPrompt key={ask.requestId} ask={ask} controller={host.asks} active={!keys.locked} />
+      ) : (
+        <Box height={bottomRows} overflow="hidden">
           <ChatInput
             draft={draft}
             onDraftChange={setDraft}
@@ -415,8 +436,8 @@ export function ChatApp({
             busy={busy}
             onClearArmedChange={setClearArmed}
           />
-        )}
-      </Box>
+        </Box>
+      )}
       <Box flexDirection="row" justifyContent="space-between" width={columns} height={1} overflow="hidden">
         <StyledLineView line={footer.left} theme={theme} />
         <StyledLineView line={footer.right} theme={theme} />

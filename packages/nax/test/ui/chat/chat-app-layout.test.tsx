@@ -123,6 +123,11 @@ function mount(options: MountOptions = {}) {
     act(() => {
       fake.emit(body, metadata);
     });
+  /** Raise a pending ask on the host, the way the turn's event stream does. */
+  const ask = (body: SessionEventBody) =>
+    act(() => {
+      fake.host.asks.handle(fake.event(body));
+    });
   /**
    * Report a terminal size on the harness stream and redraw. `ink-testing-library`'s stdout
    * has a fixed `columns` of 100 and no `rows` until one is defined, so the screen sees the
@@ -145,7 +150,7 @@ function mount(options: MountOptions = {}) {
         fake.finish();
       }),
     );
-  return { ...fake, ...ui, rows, type, line, start, emit, resize, settle };
+  return { ...fake, ...ui, rows, type, line, start, emit, ask, resize, settle };
 }
 
 /** The one row of the frame matching `match`, or undefined when the frame has none. */
@@ -390,6 +395,29 @@ describe("ChatApp draft and theme robustness", () => {
     await ui.resize(40, 30);
     ui.type("alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu");
     expect(ui.rows()).toHaveLength(30);
+    // The input's bottom rule sits directly above the footer: no filler row from a mis-measure.
+    expect(ui.rows().at(-2)).toMatch(/^─+$/);
+  });
+
+  test("F1 a draft exactly as wide as the terminal keeps both of the input's rules", async () => {
+    const ui = await harness();
+    // 78 columns of text plus the `> ` marker fill the row; the cursor cell is the 81st
+    // column, so the row wraps — and the input must reserve that second row.
+    ui.type("w".repeat(78));
+    expect(ui.rows()).toHaveLength(30);
+    expect(ui.lastFrame()).toContain("w".repeat(78));
+    // The header's rule and the input's two rules all survive.
+    expect(ui.rows().filter((row) => /^─+$/.test(row))).toHaveLength(3);
+  });
+
+  test("F1 a draft taller than the input's window scrolls instead of growing the frame", async () => {
+    const ui = await harness();
+    ui.type("v".repeat(2400));
+    expect(ui.rows()).toHaveLength(30);
+    // The window follows the cursor, so the draft's newest columns are on screen.
+    expect(ui.lastFrame()).toContain("vvvv");
+    expect(ui.rows().at(-1)).toContain("⏵ guarded");
+    expect(ui.rows().filter((row) => /^─+$/.test(row))).toHaveLength(3);
   });
 
   test("F1 a narrow terminal keeps its rows with a draft many times its width", async () => {
@@ -433,5 +461,36 @@ describe("ChatApp draft and theme robustness", () => {
     expect(ui.rows()).toContain("✗ boom");
     expect(rowMatching(ui.rows(), /Thinking…/)).toBeUndefined();
     expect(ui.rows().at(-1)).toContain("shift+tab to cycle");
+  });
+});
+
+describe("ChatApp pending ask layout", () => {
+  const longAsk: SessionEventBody = {
+    type: "approval_requested",
+    requestId: "ask-1",
+    tool: "Bash",
+    command: "npm run build:production --with-a-very-long-flag",
+    summary: "build",
+    reason: "the release build has to verify the packaged artifact",
+    expiresAt: "later",
+  };
+
+  test("F4 a wrapped approval keeps its command suffix, reason and options", async () => {
+    const ui = mount();
+    await ui.resize(40, 30);
+    ui.ask(longAsk);
+    const frame = ui.lastFrame() ?? "";
+    expect(frame).toContain("long-flag");
+    expect(frame).toContain("packaged artifact");
+    expect(frame).toContain("a: allow once");
+    expect(frame).toContain("d: deny");
+  });
+
+  test("F4 a wrapped approval keeps the frame at the terminal's rows", async () => {
+    const ui = mount();
+    await ui.resize(40, 30);
+    ui.ask(longAsk);
+    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows().at(-1)).toContain("⏵ guarded");
   });
 });
