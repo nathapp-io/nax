@@ -1,9 +1,22 @@
 import { useApp, useInput } from "ink";
-import { type RefObject, useRef, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { type ChatHost, type ChatMode, nextChatMode } from "@/chat";
 
 const DOUBLE_INTERRUPT_MS = 2_000;
 export const _chatKeyDeps = { now: () => Date.now() };
+
+/** A pending timer's handle, held in a ref so any render path can clear it. */
+type TimerRef = { current: ReturnType<typeof setTimeout> | undefined };
+
+/**
+ * Clear a pending timer, if there is one. Every way an arm ends — `finishTurn`, unmount, a
+ * re-arm — goes through here, so a cleared arm can never redraw the footer later.
+ */
+function clearTimer(handle: TimerRef): void {
+  if (handle.current === undefined) return;
+  clearTimeout(handle.current);
+  handle.current = undefined;
+}
 
 interface ChatKeysOptions {
   host: ChatHost;
@@ -14,6 +27,12 @@ interface ChatKeysOptions {
 
 export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions): {
   locked: boolean;
+  /**
+   * True while a ctrl-c that cancelled a turn is still within the double-interrupt window:
+   * a second ctrl-c now quits, so the footer offers it. Read on the render the first ctrl-c's
+   * `refresh()` schedules, and again on the one its expiry schedules.
+   */
+  quitArmed(): boolean;
   finishTurn(): Promise<void>;
   close(): Promise<void>;
   runControl(task: () => Promise<void>): Promise<boolean>;
@@ -21,9 +40,33 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
   const { exit } = useApp();
   const queued = useRef<ChatMode | undefined>(undefined);
   const interruptedAt = useRef<number | undefined>(undefined);
+  /** The armed quit's expiry — a `setTimeout` handle, because it is cleared mid-flight. */
+  const quitExpiry = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const switching = useRef<Promise<void> | undefined>(undefined);
   const closing = useRef(false);
   const [locked, setLocked] = useState(false);
+
+  /**
+   * Arm the quit for `DOUBLE_INTERRUPT_MS` and redraw when it lapses, so the footer's hint
+   * disappears on its own — the window `quitArmed` reports is the one the ctrl-c handler
+   * closes on. `setInterval` could not be stopped by a cleanup before its next tick, which
+   * is why every timer in the chat screen is a `setTimeout` chain.
+   */
+  function armQuit(): void {
+    clearTimer(quitExpiry);
+    quitExpiry.current = setTimeout(() => {
+      quitExpiry.current = undefined;
+      refresh();
+    }, DOUBLE_INTERRUPT_MS);
+  }
+
+  // A pending expiry must not outlive the screen.
+  useEffect(() => () => clearTimer(quitExpiry), []);
+
+  function quitArmed(): boolean {
+    const armedAt = interruptedAt.current;
+    return armedAt !== undefined && _chatKeyDeps.now() - armedAt < DOUBLE_INTERRUPT_MS;
+  }
 
   async function switchMode(mode: ChatMode): Promise<void> {
     await runControl(() => host.switchTo({ mode }));
@@ -72,7 +115,9 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
         void close();
       } else {
         interruptedAt.current = now;
+        armQuit();
         host.cancel();
+        refresh();
       }
     } else if (key.shift && key.tab && !key.ctrl && !key.meta && !switching.current) {
       const mode = nextChatMode(queued.current ?? host.current().mode);
@@ -83,9 +128,11 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
   return {
     locked,
     close,
+    quitArmed,
     runControl,
     async finishTurn() {
       interruptedAt.current = undefined;
+      clearTimer(quitExpiry);
       const mode = queued.current;
       queued.current = undefined;
       if (mode !== undefined && !closing.current) await switchMode(mode);

@@ -39,6 +39,12 @@ export interface TranscriptViewportProps {
   readonly theme: ChatTheme;
   /** False while another surface — an ask card, a picker, the slash menu — owns the keys. */
   readonly active?: boolean;
+  /**
+   * Bumped by the owner when the window must return to the newest line — the user sent a
+   * message. The view cannot see the send itself, and a send while scrolled up would
+   * otherwise leave the user's own message below the fold, behind the unseen marker.
+   */
+  readonly followToken?: number;
 }
 
 /** What the reducer has seen so far: the state plus the inputs the next action is relative to. */
@@ -46,6 +52,7 @@ interface ViewportMemory {
   readonly state: ViewportState;
   readonly total: number;
   readonly height: number;
+  readonly token: number;
 }
 
 /** The window height as a whole number of rows, never below `MIN_VIEWPORT_ROWS`. */
@@ -75,7 +82,19 @@ function viewportAction(key: Key): ViewportAction | undefined {
  */
 function afterContent(memory: ViewportMemory, total: number, height: number): ViewportMemory {
   const state = reduceViewport(memory.state, { type: "content", total, height }, memory.total, memory.height);
-  return { state, total, height };
+  return { ...memory, state, total, height };
+}
+
+/**
+ * The memory the frame's props settle into. The content change is folded in first — so a line
+ * count that moved in the same frame as the token is accounted for — and then a bumped token
+ * returns the window to the newest line, which is the `end` action.
+ */
+function nextMemory(memory: ViewportMemory, total: number, height: number, token: number): ViewportMemory {
+  const content = memory.total === total && memory.height === height ? memory : afterContent(memory, total, height);
+  if (content.token === token) return content;
+  const state = reduceViewport(content.state, { type: "end" }, content.total, content.height);
+  return { ...content, state, token };
 }
 
 interface ViewportRowsProps {
@@ -130,22 +149,35 @@ function ViewportRows({ visible, rows, unseen, theme }: ViewportRowsProps): Reac
   );
 }
 
-export function TranscriptViewport({ lines, height, theme, active = true }: TranscriptViewportProps): ReactElement {
+export function TranscriptViewport({
+  lines,
+  height,
+  theme,
+  active = true,
+  followToken = 0,
+}: TranscriptViewportProps): ReactElement {
   const rows = viewRows(height);
   const total = lines.length;
-  const [memory, setMemory] = useState<ViewportMemory>({ state: INITIAL_VIEWPORT, total, height: rows });
-  // Content and height arrive as props, so a change is fed back in as a `content` action
-  // rather than re-derived here. Adjusting the state during render (instead of in an effect)
-  // keeps the frame that follows a change consistent with it — no stale paint in between.
-  if (memory.total !== total || memory.height !== rows) setMemory(afterContent(memory, total, rows));
+  const [memory, setMemory] = useState<ViewportMemory>({
+    state: INITIAL_VIEWPORT,
+    total,
+    height: rows,
+    token: followToken,
+  });
+  // Content, height and the follow token arrive as props, so a change is fed back in as the
+  // actions the reducer expects rather than re-derived here. Adjusting the state during
+  // render (instead of in an effect) keeps the frame that follows a change consistent with
+  // it — no stale paint in between.
+  if (memory.total !== total || memory.height !== rows || memory.token !== followToken) {
+    setMemory(nextMemory(memory, total, rows, followToken));
+  }
   useInput(
     (_input, key) => {
       const action = viewportAction(key);
       if (action === undefined) return;
       setMemory((previous) => ({
+        ...previous,
         state: reduceViewport(previous.state, action, previous.total, previous.height),
-        total: previous.total,
-        height: previous.height,
       }));
     },
     { isActive: active },

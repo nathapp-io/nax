@@ -22,11 +22,20 @@
  * chain of `WORKING_TICK_MS`, cleared with `clearTimeout` when the turn ends or the screen
  * unmounts; `setInterval` is not used because the effect's cleanup could not stop a tick
  * already queued.
+ *
+ * Keys have one owner each, and the first matching surface wins: an ask card owns escape,
+ * return and the arrows; the slash menu and the pickers (once mounted) own theirs; the input
+ * owns escaping an idle prompt and the typing keys; the viewport owns pageUp, pageDown,
+ * home, end and shift+arrow. The screen itself owns the two that apply in every state —
+ * ctrl+o toggles collapsed detail, and escape interrupts a running turn, but never while an
+ * ask card is up (the card owns escape, and it must not reach `host.cancel()`). ctrl-c and
+ * shift+tab stay with `useChatKeys`. A send bumps the viewport's follow token, so a message
+ * typed while scrolled up brings the screen back to the newest line.
  */
 
 import type { SessionEvent } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { Box, useStdout } from "ink";
+import { Box, useInput, useStdout } from "ink";
 import { type ReactElement, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import type { ChatHost, ChatMcpState } from "@/chat";
 import type { McpServerEvent } from "@/mcp";
@@ -81,6 +90,8 @@ const SANDBOX_WARNING = "sandbox unavailable: commands run outside the sandbox";
 const TURN_BUSY_NOTICE = "wait for the turn to finish (Ctrl-C to interrupt)";
 const QUIT = "quit";
 const CLEAR = "clear";
+/** ink reports ctrl+o as the letter `o` with the ctrl modifier, so the key is its `input`. */
+const CTRL_O = "o";
 /** The theme a caller that passes none gets; resolved once, since it is a pure constant. */
 const DEFAULT_THEME = resolveChatTheme({ env: {}, colorLevel: 0 });
 
@@ -151,11 +162,12 @@ function welcomeEntry(host: ChatHost): TranscriptEntry {
 }
 
 /**
- * The gesture the footer offers, in precedence order: an armed clear, then a running turn,
- * then expanded detail, then the idle hint. The quit hint joins ahead of all of them in
- * US-021, once `useChatKeys` can say a quit is armed.
+ * The gesture the footer offers, in precedence order: an armed quit, then an armed clear,
+ * then a running turn, then expanded detail, then the idle hint. Only one is ever shown, so
+ * the warning-coloured quit hint is never hidden behind something the screen is merely doing.
  */
-function footerHint(input: { clearArmed: boolean; busy: boolean; expanded: boolean }): FooterHint {
+function footerHint(input: { quitArmed: boolean; clearArmed: boolean; busy: boolean; expanded: boolean }): FooterHint {
+  if (input.quitArmed) return "quit";
   if (input.clearArmed) return "clear";
   if (input.busy) return "busy";
   if (input.expanded) return "expanded";
@@ -214,10 +226,11 @@ export function ChatApp({
   const [clearArmed, setClearArmed] = useState(false);
   const [answerDraft, setAnswerDraft] = useState<QuestionAnswer>(NO_ANSWER);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [expanded, setExpanded] = useState(false);
+  /** Bumped on every send, so the viewport returns to the newest line the user just added. */
+  const [followToken, setFollowToken] = useState(0);
   const sending = useRef(false);
   const [, refresh] = useState(0);
-  /** ctrl+o toggles this in US-021; until then the transcript is always collapsed. */
-  const expanded = false;
 
   const update = useCallback(() => refresh((revision) => revision + 1), []);
   const append = useCallback((entry: TranscriptEntry) => {
@@ -226,6 +239,23 @@ export function ChatApp({
   const showError = useCallback((error: unknown) => append({ kind: "error", text: errorMessage(error) }), [append]);
   const keys = useChatKeys({ host, running: sending, refresh: update, onError: showError });
   const ask = host.asks.pending()[0];
+  /** A turn is in flight from the send until its stream settles — the footer's busy rule. */
+  const turnRunning = busy || status.running;
+
+  /**
+   * The two keys the screen itself owns, in every state: ctrl+o toggles collapsed detail, and
+   * escape interrupts a running turn. Escape is claimed only when no ask card is up — the card
+   * owns it, and a card's escape must never reach `host.cancel()` — and only while a turn
+   * runs; on an idle screen the input owns it, where a first escape arms the clear.
+   */
+  useInput((input, key) => {
+    if (key.ctrl && input === CTRL_O) {
+      setExpanded((current) => !current);
+      return;
+    }
+    if (!key.escape || ask !== undefined || !turnRunning) return;
+    host.cancel();
+  });
 
   // A resized terminal re-draws at the new size; the listener is the screen's own, so a
   // stream that ink itself does not watch still re-measures.
@@ -342,6 +372,7 @@ export function ChatApp({
         return;
       }
       append({ kind: "user", text: prepared.message });
+      setFollowToken((token) => token + 1);
       await host.send(prepared.message, handleEvent);
     } catch (error) {
       append({ kind: "error", text: errorMessage(error) });
@@ -362,7 +393,7 @@ export function ChatApp({
   const footer = footerModel({
     state,
     status,
-    hint: footerHint({ clearArmed, busy: busy || status.running, expanded }),
+    hint: footerHint({ quitArmed: keys.quitArmed(), clearArmed, busy: turnRunning, expanded }),
     glyphs: theme.glyphs,
   });
   // The rows the bottom region may claim: everything the fixed regions and the viewport's
@@ -405,7 +436,13 @@ export function ChatApp({
           </FixedRow>
         ))}
       </Box>
-      <TranscriptViewport lines={lines} height={viewportHeight} theme={theme} active={!keys.locked} />
+      <TranscriptViewport
+        lines={lines}
+        height={viewportHeight}
+        theme={theme}
+        active={!keys.locked}
+        followToken={followToken}
+      />
       {working ? (
         <FixedRow>
           <StyledLineView line={working} theme={theme} />
