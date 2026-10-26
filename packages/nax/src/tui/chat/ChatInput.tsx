@@ -18,11 +18,13 @@
  * Keys: a printable chunk is inserted at the cursor (via the line editor, which also owns
  * backspace, the arrows, the word moves and the ctrl chords), return submits, up and down
  * walk the history — the bare arrows only, because a shifted arrow is the transcript
- * viewport's. `yieldNavigation` hands up, down, return, tab and escape back to the slash
- * menu drawn beneath the input while it is open, and the input publishes a `ChatInputHandle`
- * so the two keys the menu keeps for itself — completing a name and running one — go through
- * the same draft ref and the same clear-arm this component owns, instead of the owner
- * writing its state behind the editor's back.
+ * viewport's. `yieldNavigation` hands up, down, return, tab and escape back to the slash menu
+ * drawn beneath the input while it is open, and the owner may hand over a claim to read at key
+ * time instead of a flag, so a tab and the return after it — delivered before any re-render —
+ * end up in the right hands. The input publishes a `ChatInputHandle` so the two keys the menu
+ * keeps for itself — completing a name and running one — go through the same draft ref and the
+ * same clear-arm this component owns, instead of the owner writing its state behind the
+ * editor's back.
  */
 import { Box, type Key, Text, useInput, useStdout } from "ink";
 import { type ReactElement, type RefObject, useEffect, useRef } from "react";
@@ -83,8 +85,12 @@ export interface ChatInputProps {
   readonly busy?: boolean;
   /** Shown in place of the placeholder while the editor is empty. */
   readonly hint?: string;
-  /** The slash menu is open and owns up, down, return, tab and escape. */
-  readonly yieldNavigation?: boolean;
+  /**
+   * The slash menu is open and owns up, down, return, tab and escape. A boolean is the claim
+   * as of the last render; a function is read at key time, so a batch that completes a name
+   * and then returns hands that return to this editor rather than to the menu's stale row.
+   */
+  readonly yieldNavigation?: boolean | (() => boolean);
   /**
    * The owner's handle on the two things the slash menu does to a line. They must go through
    * the input, not the owner's state: the draft the next keypress reduces lives in a ref this
@@ -574,6 +580,14 @@ export function ChatInput({
     publish({ editor: atEnd(text), history: latest.current.history });
   };
 
+  /**
+   * Whether the slash menu owns a navigation key right now. The owner may hand over a claim
+   * to read instead of a flag, because the flag is the last render's: a tab and the return
+   * after it can arrive before any re-render, and after that tab the prompt is no longer a
+   * query, so the return is the editor's.
+   */
+  const yieldsNavigation = (): boolean => (typeof yieldNavigation === "function" ? yieldNavigation() : yieldNavigation);
+
   // The owner's handle is refreshed every render, so the callbacks it runs are this frame's:
   // a menu row completes and runs through the same draft ref and the same clear-arm that a
   // typed key and a typed return use.
@@ -581,7 +595,7 @@ export function ChatInput({
 
   useInput(
     (input, key) => {
-      if (yieldNavigation && ownsNavigation(key)) return;
+      if (ownsNavigation(key) && yieldsNavigation()) return;
       if (key.escape) {
         escapeKey();
         return;

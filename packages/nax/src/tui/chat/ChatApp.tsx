@@ -18,7 +18,9 @@
  * `error` entries for the host's own statements. It also owns the slash menu's state — the
  * query, the escape that put it away and what the two keys that complete a line write back
  * into the prompt — while the rows themselves are the model's (`slashMenuQueryState`), so
- * the rows it reserves under the input are the rows the menu draws.
+ * the rows it reserves under the input are the rows the menu draws. Those rows are capped by
+ * what the input's own frame leaves (`menuRowsFor`), so a short terminal shows a shorter menu
+ * window rather than a frame taller than the screen.
  *
  * Terminal size comes from `useStdout` (24 rows and 80 columns when the stream cannot say)
  * and is re-read on the stream's `resize` event. The working line's clock is a `setTimeout`
@@ -36,6 +38,13 @@
  * arms nothing). ctrl-c and shift+tab stay with `useChatKeys`. A send bumps the viewport's
  * follow token, so a message typed while scrolled up brings the screen back to the newest
  * line.
+ *
+ * The menu's ownership is `menuOwnsKeys`: the menu must be on screen and must still own the
+ * prompt as the newest key left it (`use-slash-menu-keys.ts`). Both the input and the menu ask
+ * it at key time rather than reading the render, so a batch that completes a name and then
+ * returns leaves that return with the prompt — while a `/quit` typed and returned before the
+ * menu it opens is ever mounted keeps its return, because a key yielded to a component that is
+ * not there is a key nobody handles.
  */
 
 import type { SessionEvent } from "@nathapp/nax-agent";
@@ -49,7 +58,7 @@ import { runCommandShellLines } from "@/resources";
 import { NAX_VERSION } from "@/version";
 import { AskCard, askCardLayout } from "./AskCard";
 import { askCardModel } from "./ask-card";
-import { bottomBlocked, bottomRowsFor, viewportActive } from "./bottom-region";
+import { bottomBlocked, bottomRowsFor, menuRowsFor, viewportActive } from "./bottom-region";
 import { ChatInput, type ChatInputHandle, EMPTY_DRAFT, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
 import {
   type FooterHint,
@@ -70,6 +79,7 @@ import { StyledLineView } from "./styled-line";
 import { TranscriptViewport } from "./TranscriptViewport";
 import { type ChatTheme, resolveChatTheme } from "./theme";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
+import { useSlashMenuKeys } from "./use-slash-menu-keys";
 import { useChatKeys } from "./useChatKeys";
 
 export interface ChatAppProps {
@@ -265,6 +275,18 @@ export function ChatApp({
   // fixed for its life, so the items are built once per host rather than on every tick.
   const menuItems = useMemo(() => slashMenuItems(host), [host]);
   /**
+   * The slash menu's claim on the navigation keys, read at key time. A terminal can deliver a
+   * tab, its argument and a return before React redraws, so both the input and the menu ask
+   * this instead of the render's `open`: after the tab the prompt is no longer a query, and
+   * that return submits `/resume <id>` rather than running the row the menu still shows.
+   */
+  const slashKeys = useSlashMenuKeys({
+    items: menuItems,
+    initialQuery: draft.editor.text,
+    initialDismissal: dismissedQuery,
+    blocked: bottomBlocked(ask, picker.model),
+  });
+  /**
    * The slash menu is open while the prompt holds a `/` query that matches something, while
    * no ask card owns the bottom of the screen (a card's keys are its own), and while no
    * escape has put this prompt's menu away. A dismissal lasts only until the text next
@@ -276,7 +298,20 @@ export function ChatApp({
     dismissed: dismissedQuery,
     blocked: bottomBlocked(ask, picker.model),
   });
-  if (menu.reopen) setDismissedQuery(undefined);
+  /**
+   * Whether the slash menu owns a navigation key, asked at key time by both the input and the
+   * menu. It takes both halves: the menu has to be on screen — a `/quit` typed and returned in
+   * one batch reaches the input before the menu it opens is mounted, and a key yielded to a
+   * component that is not there is a key nobody handles — and it has to still own the prompt as
+   * the newest key left it, so the return after a completion is the prompt's.
+   */
+  function menuOwnsKeys(): boolean {
+    return menu.open && slashKeys.ownsKeys();
+  }
+  if (menu.reopen) {
+    slashKeys.sawDismissal(undefined);
+    setDismissedQuery(undefined);
+  }
 
   /**
    * The two keys the screen itself owns, in every state: ctrl+o toggles collapsed detail, and
@@ -445,6 +480,16 @@ export function ChatApp({
     inputHandle.current?.submit(`/${name}`);
   }
 
+  /**
+   * Every edit the input publishes, and the only way the prompt reaches this screen. The
+   * menu's claim is told in the same call: the re-render that would show the new text has not
+   * happened yet, and the next key of this batch must be resolved against it.
+   */
+  function changeDraft(next: InputDraft): void {
+    slashKeys.sawPrompt(next.editor.text);
+    setDraft(next);
+  }
+
   const columns = size.columns;
   const lines = layoutTranscript(entries, { width: columns, theme, expanded });
   const header = headerLines({ state, version, cwd, home, width: columns, glyphs: theme.glyphs });
@@ -462,9 +507,12 @@ export function ChatApp({
     1,
     size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
   );
-  // The menu's rows are the bottom region's too: they are reserved before the input is
-  // measured, so an open menu shortens the viewport instead of pushing the footer off screen.
-  const inputBudget = Math.max(1, bottomBudget - INPUT_RULE_ROWS - menu.rows);
+  // The menu's rows are the bottom region's too, and they are capped by what the input's own
+  // frame leaves: they are reserved before the input is measured, so an open menu shortens the
+  // viewport instead of pushing the footer off screen, and a short terminal draws a shorter
+  // window rather than a frame taller than the screen.
+  const menuRows = menuRowsFor({ rows: menu.rows, budget: bottomBudget });
+  const inputBudget = Math.max(1, bottomBudget - INPUT_RULE_ROWS - menuRows);
   // The question card's draft is the screen's state: only then can the card's rows — the
   // answer box included — be measured before the frame is composed. It is the card's own
   // draft, keyed by the request it was typed for, so it never inherits the chat input's.
@@ -490,7 +538,7 @@ export function ChatApp({
   const bottomRows = bottomRowsFor({
     ask: cardRows,
     picker: picker.model,
-    input: inputBottomRows + menu.rows,
+    input: inputBottomRows + menuRows,
     budget: bottomBudget,
   });
   const viewportHeight = Math.max(
@@ -562,7 +610,7 @@ export function ChatApp({
         <Box height={bottomRows} overflow="hidden" flexDirection="column">
           <ChatInput
             draft={draft}
-            onDraftChange={setDraft}
+            onDraftChange={changeDraft}
             onSubmit={(message) => {
               setHint(undefined);
               void submit(message);
@@ -573,7 +621,7 @@ export function ChatApp({
             busy={busy}
             maxRows={inputBudget}
             hint={hint}
-            yieldNavigation={menu.open}
+            yieldNavigation={menuOwnsKeys}
             handle={inputHandle}
             onClearArmedChange={setClearArmed}
           />
@@ -583,9 +631,14 @@ export function ChatApp({
               width={columns}
               theme={theme}
               active={!keys.locked}
+              ownsKeys={menuOwnsKeys}
+              maxRows={menuRows}
               onComplete={completeCommand}
               onRun={runCommandLine}
-              onClose={() => setDismissedQuery(menu.query)}
+              onClose={() => {
+                slashKeys.sawDismissal(menu.query);
+                setDismissedQuery(menu.query);
+              }}
             />
           ) : null}
         </Box>

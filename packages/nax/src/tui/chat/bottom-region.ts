@@ -15,7 +15,14 @@
  * itself. Nothing here draws: it returns booleans and row counts.
  */
 import type { ChatPendingAsk } from "@/chat";
+import { INPUT_RULE_ROWS } from "./ChatInput";
 import { type PickerModel, pickerRows } from "./Picker";
+
+/** The rows the input claims whatever its draft: its two rules and one text row to type in. */
+const INPUT_MIN_ROWS = INPUT_RULE_ROWS + 1;
+
+/** The fewest rows the menu can be given: none, when the budget cannot spare any. */
+const NO_MENU_ROWS = 0;
 
 /**
  * True while a surface other than the input owns the bottom region. Either of them hides the
@@ -47,4 +54,14 @@ export function bottomRowsFor(input: {
   if (input.ask !== undefined) return Math.min(input.ask, input.budget);
   if (input.picker !== undefined) return Math.min(pickerRows(input.picker, input.budget), input.budget);
   return input.input;
+}
+
+/**
+ * The rows the slash menu may claim: what the bottom budget leaves once the input's own frame
+ * is reserved, and never more than the menu would draw anyway. The input is reserved first —
+ * a menu the user cannot see the prompt under is not a menu — so a short terminal shows fewer
+ * rows instead of a frame taller than the screen.
+ */
+export function menuRowsFor(input: { readonly rows: number; readonly budget: number }): number {
+  return Math.max(NO_MENU_ROWS, Math.min(input.rows, input.budget - INPUT_MIN_ROWS));
 }

@@ -5,10 +5,11 @@
  * Which items a query keeps, how many rows are drawn and which of them the window shows is
  * the model's (`slash-menu.ts`); this component draws them. The window is at most
  * `SLASH_MENU_MAX_ROWS` rows and follows the pointer, so a long catalogue — every built-in
- * plus a repository's own commands and skills — never pushes the footer off the screen.
- * `slashMenuRows` is what the screen measures to reserve the rows the menu occupies, so the
- * height it allocates is the height drawn: every row is one physical row, and a description
- * too wide for the terminal is cut rather than wrapped into rows nobody reserved.
+ * plus a repository's own commands and skills — never pushes the footer off the screen. The
+ * screen caps it further with the `maxRows` the short terminal can spare, and `slashMenuRows`
+ * is what it measures to reserve the rows the menu occupies, so the height it allocates is the
+ * height drawn: every row is one physical row, and a description too wide for the terminal is
+ * cut rather than wrapped into rows nobody reserved.
  *
  * The menu owns five keys while it is open: up and down move the pointer (no wrap), tab
  * writes the selected name into the input with the space its arguments follow, return runs
@@ -21,12 +22,21 @@
  * The pointer is placed by the query: a new query is a new list, so the pointer starts on its
  * first match. The newest pointer is kept in a ref as well as in the state, because two keys
  * delivered in one batch both run before the re-render that would show the first one's move —
- * and a return in that batch would otherwise run the row the menu no longer shows.
+ * and a return in that batch would otherwise run the row the menu no longer shows. The claim
+ * itself is read the same way, through `ownsKeys` (`use-slash-menu-keys.ts`): a tab that
+ * completes a name ends the menu's ownership of the prompt in the same batch, so the return
+ * after it is the input's and this handler stays out of its way.
  */
 import { Box, type Key, useInput } from "ink";
 import { type ReactElement, useRef, useState } from "react";
 import { resolveWidth, SPACE, styled } from "./layout-lines";
-import { type SlashMenuItem, type SlashMenuQueryState, type SlashMenuWindow, slashMenuWindow } from "./slash-menu";
+import {
+  SLASH_MENU_MAX_ROWS,
+  type SlashMenuItem,
+  type SlashMenuQueryState,
+  type SlashMenuWindow,
+  slashMenuWindow,
+} from "./slash-menu";
 import { displayWidth, type Span, type StyledLine, StyledLineView } from "./styled-line";
 import type { ChatTheme } from "./theme";
 import { cutSpans } from "./wrap";
@@ -57,6 +67,8 @@ export interface SlashMenuLayoutOptions {
   readonly theme: ChatTheme;
   /** The match the pointer is on, as the screen tracked it; clamped to the matches it has. */
   readonly selected?: number;
+  /** The most rows the screen has room for; absent means `SLASH_MENU_MAX_ROWS`. */
+  readonly maxRows?: number;
 }
 
 /** The rows the menu draws for one query, already windowed around the pointer. */
@@ -65,7 +77,7 @@ export interface SlashMenuLayout {
   readonly selected: number;
   /** The index of the first match drawn. */
   readonly first: number;
-  /** Every row the menu occupies — `lines.length`, and at most `SLASH_MENU_MAX_ROWS`. */
+  /** Every row the menu occupies — `lines.length`, at most `maxRows`. */
   readonly rows: number;
   readonly lines: readonly StyledLine[];
 }
@@ -76,7 +88,10 @@ const NO_WINDOW: SlashMenuWindow = { first: FIRST_MATCH, rows: 0 };
 /** The rows the menu draws at a given width: the window around the pointer, one row each. */
 export function slashMenuLayout(matches: readonly SlashMenuItem[], options: SlashMenuLayoutOptions): SlashMenuLayout {
   const selected = Math.min(Math.max(options.selected ?? FIRST_MATCH, FIRST_MATCH), matches.length - 1);
-  const drawn = matches.length === 0 ? NO_WINDOW : slashMenuWindow(matches.length, selected);
+  const drawn =
+    matches.length === 0
+      ? NO_WINDOW
+      : slashMenuWindow(matches.length, selected, options.maxRows ?? SLASH_MENU_MAX_ROWS);
   const width = resolveWidth(options.width);
   const lines = matches
     .slice(drawn.first, drawn.first + drawn.rows)
@@ -97,6 +112,14 @@ export interface SlashMenuProps {
   readonly theme: ChatTheme;
   /** False while another surface — an ask card, a picker — owns the keys. */
   readonly active?: boolean;
+  /**
+   * True while this menu owns the navigation keys, read at key time rather than at render
+   * time: a tab in one batch rewrites the prompt, and the return that follows in that same
+   * batch must be the prompt's — the menu is not open for the text the tab wrote.
+   */
+  readonly ownsKeys?: () => boolean;
+  /** The most rows the screen has room for; absent means `SLASH_MENU_MAX_ROWS`. */
+  readonly maxRows?: number;
   /** Tab: the name becomes the input's text, with the space its arguments follow. */
   readonly onComplete: (name: string) => void;
   /** Return: the screen runs exactly this name. */
@@ -119,6 +142,8 @@ export function SlashMenu({
   width,
   theme,
   active = true,
+  ownsKeys,
+  maxRows,
   onComplete,
   onRun,
   onClose,
@@ -149,6 +174,10 @@ export function SlashMenu({
   useInput(
     (_input, key) => {
       if (!ownsMenuKey(key)) return;
+      // The claim is the prompt's as the newest key left it: once a tab in this batch has
+      // rewritten the line — or an escape has put the menu away — the rest of the batch is
+      // the input's and this handler must not act on the row it no longer shows.
+      if (ownsKeys !== undefined && !ownsKeys()) return;
       if (key.escape) {
         onClose();
         return;
@@ -166,7 +195,7 @@ export function SlashMenu({
     { isActive: active },
   );
 
-  const layout = slashMenuLayout(matches, { width, theme, selected: pointer() });
+  const layout = slashMenuLayout(matches, { width, theme, selected: pointer(), maxRows });
   return (
     <Box flexDirection="column">
       {layout.lines.map((line, index) => (

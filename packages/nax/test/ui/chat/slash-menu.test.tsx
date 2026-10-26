@@ -14,6 +14,7 @@ import { act } from "react";
 import { type ChatHost, type ChatHostState, createChatAskController } from "@/chat";
 import { buildResourceCatalog, type ResourcePackage } from "@/resources";
 import { ChatApp } from "@/tui/chat";
+import { SLASH_MENU_MAX_ROWS } from "@/tui/chat/slash-menu";
 
 /** The keys the menu owns, as ink parses the sequences a terminal sends. */
 const ESCAPE = "\x1b";
@@ -457,6 +458,80 @@ describe("SlashMenu keys delivered in one batch", () => {
     ui.type("/re");
     ui.pressAll(TAB, "x");
     expect(ui.rows()).toContain("> /resume x");
+  });
+
+  test("F9 tab, its argument and return in one batch submit the completed line", async () => {
+    const ui = await screen();
+    ui.type("/re");
+    expect(ui.rows()).toContain(`❯ ${RESUME_ROW}`);
+    ui.pressAll(TAB, "abc", RETURN);
+    await ui.flush();
+    // The return belongs to the prompt once tab has rewritten it: /resume abc runs, and the
+    // argument-less picker the menu's stale selection would have opened never appears.
+    expect(ui.host.resume).toHaveBeenCalledWith({ id: "abc" });
+    expect(ui.lastFrame()).not.toContain("Resume a session");
+  });
+
+  test("F10 escape then return in one batch submit the prompt the escape kept", async () => {
+    const ui = await screen();
+    ui.type("/co");
+    expect(ui.rows()).toContain("❯ /cost  Show session cost");
+    ui.pressAll(ESCAPE, RETURN);
+    await ui.flush();
+    // The escape put the menu away, so the return is the prompt's: the line goes to the
+    // commands as typed rather than running the row the menu still had selected.
+    expect(ui.rows()).toContain("※ unknown command /co");
+    expect(ui.lastFrame()).not.toContain("Cost");
+  });
+
+  test("F14 a query typed and returned in one batch still runs the command", async () => {
+    const ui = await screen();
+    // The menu a `/` query opens is not mounted yet when the return that follows it in the
+    // same batch arrives: the key is the input's, and losing it would drop the line.
+    ui.pressAll("/cost", RETURN);
+    await ui.flush();
+    expect(ui.rows()).toContain("Cost");
+  });
+});
+
+describe("SlashMenu on a short terminal", () => {
+  /** An 80x12 terminal: what the fixed regions need, plus a viewport row and a little slack. */
+  const SHORT_ROWS = 12;
+
+  async function shortScreen() {
+    const ui = mount();
+    await ui.resize(80, SHORT_ROWS);
+    return ui;
+  }
+
+  test("F11 the open menu never pushes the frame past the terminal's rows", async () => {
+    const ui = await shortScreen();
+    ui.type("/");
+    const rows = ui.rows();
+    expect(rows).toHaveLength(SHORT_ROWS);
+    // The fixed regions are still the first and last rows, and the prompt is still drawn.
+    expect(rows[0]).toStartWith("✻ nax chat");
+    expect(rows.at(-1)).toContain("⏵ guarded");
+    expect(rows).toContain("> /");
+  });
+
+  test("F12 a short terminal shows fewer menu rows, not a taller frame", async () => {
+    const ui = await shortScreen();
+    ui.type("/");
+    const rows = ui.rows();
+    const drawn = rows.filter((row) => row.startsWith("❯ ") || /^ {2}\//.test(row));
+    expect(drawn.length).toBeLessThan(SLASH_MENU_MAX_ROWS);
+    expect(drawn.length).toBeGreaterThan(0);
+    expect(rows).toHaveLength(SHORT_ROWS);
+  });
+
+  test("F13 moving the pointer keeps the selection inside the shortened window", async () => {
+    const ui = await shortScreen();
+    ui.type("/");
+    for (let index = 0; index < 5; index++) ui.press(DOWN);
+    const rows = ui.rows();
+    expect(rows).toHaveLength(SHORT_ROWS);
+    expect(rows).toContain("❯ /clear  Clear the conversation");
   });
 });
 

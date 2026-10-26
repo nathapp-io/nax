@@ -86,9 +86,17 @@ export const SLASH_MENU_MAX_ROWS = 8;
 /** The first match's index, and where the pointer starts for every query. */
 const FIRST_MATCH = 0;
 
-/** The rows the menu occupies for a query keeping `count` matches. */
-export function slashMenuRows(count: number): number {
-  return Math.min(Math.max(count, FIRST_MATCH), SLASH_MENU_MAX_ROWS);
+/** The fewest rows the menu can draw: the screen can budget it away entirely. */
+const NO_ROWS = 0;
+
+/**
+ * The rows the menu occupies for a query keeping `count` matches: never more than
+ * `SLASH_MENU_MAX_ROWS`, and never more than the rows `maxRows` leaves it. The screen passes
+ * what the bottom region can spare on a short terminal, so the rows it reserves under the
+ * input are the rows drawn rather than a full menu the screen has no room for.
+ */
+export function slashMenuRows(count: number, maxRows: number = SLASH_MENU_MAX_ROWS): number {
+  return Math.min(Math.max(count, FIRST_MATCH), Math.max(NO_ROWS, maxRows));
 }
 
 /** The window the menu shows: its height, and the index of the first match drawn. */
@@ -99,10 +107,16 @@ export interface SlashMenuWindow {
 
 /**
  * The rows drawn, and the first of them: the pointer stays inside the window, so the window
- * is the last `rows` matches up to the pointer, and never past the last match there is.
+ * is the last `rows` matches up to the pointer, and never past the last match there is. A
+ * window of no rows draws nothing and starts at the first match.
  */
-export function slashMenuWindow(count: number, selected: number): SlashMenuWindow {
-  const rows = slashMenuRows(count);
+export function slashMenuWindow(
+  count: number,
+  selected: number,
+  maxRows: number = SLASH_MENU_MAX_ROWS,
+): SlashMenuWindow {
+  const rows = slashMenuRows(count, maxRows);
+  if (rows === NO_ROWS) return { first: FIRST_MATCH, rows };
   const furthest = Math.max(FIRST_MATCH, count - rows);
   return { first: Math.min(Math.max(selected - rows + 1, FIRST_MATCH), furthest), rows };
 }
@@ -115,7 +129,11 @@ export interface SlashMenuQueryState {
   readonly matches: readonly SlashMenuItem[] | null;
   /** True while the menu owns the keys and the rows under the input. */
   readonly open: boolean;
-  /** The rows the menu draws: at most `SLASH_MENU_MAX_ROWS`, none while it is closed. */
+  /**
+   * The rows the menu would draw: at most `SLASH_MENU_MAX_ROWS`, none while it is closed. The
+   * screen caps this by the room the bottom region can spare (`menuRowsFor`), so a short
+   * terminal draws a shorter window rather than a frame taller than the screen.
+   */
   readonly rows: number;
   /**
    * True when an escape's suppression no longer applies because the prompt has changed since,

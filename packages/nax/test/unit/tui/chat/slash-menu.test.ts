@@ -168,6 +168,25 @@ describe("slashMenuRows and slashMenuWindow", () => {
   ])("of %i matches with the pointer on %i the window starts at %i", (count, selected, first) => {
     expect(slashMenuWindow(count, selected)).toEqual({ first, rows: Math.min(count, SLASH_MENU_MAX_ROWS) });
   });
+
+  test.each([
+    [13, 4, 4],
+    [13, 1, 1],
+    [2, 4, 2],
+    [13, 0, 0],
+    [13, -3, 0],
+  ])("a %i-match query capped at %i rows reserves %i", (count, maxRows, expected) => {
+    expect(slashMenuRows(count, maxRows)).toBe(expected);
+  });
+
+  test("a capped window keeps the pointer on its last row", () => {
+    expect(slashMenuWindow(13, 5, 4)).toEqual({ first: 2, rows: 4 });
+    expect(slashMenuWindow(13, 1, 4)).toEqual({ first: 0, rows: 4 });
+  });
+
+  test("a capped window of no rows draws nothing", () => {
+    expect(slashMenuWindow(13, 5, 0)).toEqual({ first: 0, rows: 0 });
+  });
 });
 
 describe("slashMenuQueryState", () => {
