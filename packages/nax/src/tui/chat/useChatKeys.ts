@@ -33,6 +33,14 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
    * `refresh()` schedules, and again on the one its expiry schedules.
    */
   quitArmed(): boolean;
+  /**
+   * The synchronous control guard `runControl` applies: false once close has begun and while
+   * a control action is in flight. It reads refs, not state, so a key handler can ask before
+   * acting — a `locked` render can lag a keypress by one, and a teardown must never be handed
+   * a fresh `host.cancel()`: the host marks itself closed immediately, so the call would throw
+   * `CHAT_HOST_CLOSED` in the middle of a normal exit.
+   */
+  canControl(): boolean;
   finishTurn(): Promise<void>;
   close(): Promise<void>;
   runControl(task: () => Promise<void>): Promise<boolean>;
@@ -68,11 +76,16 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
     return armedAt !== undefined && _chatKeyDeps.now() - armedAt < DOUBLE_INTERRUPT_MS;
   }
 
+  /** The guard every control path shares; see the interface note on `canControl`. */
+  function canControl(): boolean {
+    return !closing.current && switching.current === undefined;
+  }
+
   async function switchMode(mode: ChatMode): Promise<void> {
     await runControl(() => host.switchTo({ mode }));
   }
   async function runControl(action: () => Promise<void>): Promise<boolean> {
-    if (closing.current || switching.current) return false;
+    if (!canControl()) return false;
     setLocked(true);
     try {
       const task = action();
@@ -129,6 +142,7 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
     locked,
     close,
     quitArmed,
+    canControl,
     runControl,
     async finishTurn() {
       interruptedAt.current = undefined;

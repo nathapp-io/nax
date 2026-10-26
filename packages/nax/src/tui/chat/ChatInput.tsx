@@ -17,8 +17,9 @@
  *
  * Keys: a printable chunk is inserted at the cursor (via the line editor, which also owns
  * backspace, the arrows, the word moves and the ctrl chords), return submits, up and down
- * walk the history. `yieldNavigation` hands up, down, return, tab and escape back to the
- * slash menu drawn beneath the input while it is open.
+ * walk the history — the bare arrows only, because a shifted arrow is the transcript
+ * viewport's. `yieldNavigation` hands up, down, return, tab and escape back to the slash
+ * menu drawn beneath the input while it is open.
  */
 import { Box, type Key, Text, useInput, useStdout } from "ink";
 import { type ReactElement, useEffect, useRef } from "react";
@@ -386,6 +387,18 @@ function ownsNavigation(key: Key): boolean {
   return key.return || key.upArrow || key.downArrow || key.tab || key.escape;
 }
 
+/**
+ * The history move a key asks for, or undefined when it asks for none. Only the bare arrows
+ * browse: a shifted arrow is the transcript viewport's key, and answering it here as well
+ * would replace a half-typed draft with a history entry while the transcript scrolled.
+ */
+function historyDirection(key: Key): "previous" | "next" | undefined {
+  if (key.shift) return undefined;
+  if (key.upArrow) return "previous";
+  if (key.downArrow) return "next";
+  return undefined;
+}
+
 /** An editor holding `text` with the cursor at its end — what recalling a history entry shows. */
 function atEnd(text: string): EditorState {
   return { text, cursor: Array.from(text).length };
@@ -539,14 +552,10 @@ export function ChatInput({
         return;
       }
       const current = latest.current;
-      if (key.upArrow) {
-        const previous = previousEntry(current);
-        if (previous !== undefined) publish(previous);
-        return;
-      }
-      if (key.downArrow) {
-        const next = nextEntry(current);
-        if (next !== undefined) publish(next);
+      const direction = historyDirection(key);
+      if (direction !== undefined) {
+        const browsed = direction === "previous" ? previousEntry(current) : nextEntry(current);
+        if (browsed !== undefined) publish(browsed);
         return;
       }
       const result = editLine(current.editor, { input, key });

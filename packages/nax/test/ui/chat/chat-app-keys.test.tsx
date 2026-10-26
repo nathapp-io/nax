@@ -25,6 +25,9 @@ const CTRL_C = "\x03";
 const CTRL_O = "\x0f";
 const RETURN = "\r";
 const LEFT = "\x1b[D";
+const UP = "\x1b[A";
+const SHIFT_UP = "\x1b[1;2A";
+const SHIFT_DOWN = "\x1b[1;2B";
 const PAGE_UP = "\x1b[5~";
 const END = "\x1b[F";
 
@@ -348,5 +351,66 @@ describe("ChatApp ctrl-c semantics", () => {
     ui.press(CTRL_C);
     await Promise.resolve(act(async () => {}));
     expect(ui.close).toHaveBeenCalledTimes(1);
+  });
+
+  test("F1 escape during teardown does not cancel the closed session again", async () => {
+    let now = 0;
+    _chatKeyDeps.now = () => now;
+    const ui = await started();
+    ui.emit({ type: "turn_start" });
+    const teardown = Promise.withResolvers<void>();
+    ui.close.mockImplementationOnce(() => teardown.promise);
+    ui.press(CTRL_C);
+    now = 1_000;
+    ui.press(CTRL_C);
+    // `close()` drains an in-flight control action before it closes the host.
+    await Promise.resolve(act(async () => {}));
+    expect(ui.close).toHaveBeenCalledTimes(1);
+    expect(ui.cancel).toHaveBeenCalledTimes(1);
+    // The host has marked itself closed and is draining: a late escape must not reach it.
+    ui.press(ESCAPE);
+    expect(ui.cancel).toHaveBeenCalledTimes(1);
+    await Promise.resolve(
+      act(async () => {
+        teardown.resolve();
+      }),
+    );
+  });
+});
+
+describe("ChatApp shifted arrows", () => {
+  /** How many tool cards the transcript of the scrolled case holds. */
+  const CARDS = 60;
+  const NEWEST_CARD = `cmd${CARDS}`;
+
+  /** A screen whose transcript holds a hundred-odd lines and whose draft is half typed. */
+  async function scrolledScreen() {
+    const ui = await started();
+    await ui.settle();
+    for (let index = 0; index < CARDS; index++) {
+      ui.emit({ type: "tool_call", callId: `c${index}`, name: "Bash", input: { command: `cmd${index + 1}` } });
+    }
+    ui.type("my draft");
+    return ui;
+  }
+
+  test("F2 shift+up scrolls the transcript and keeps the draft", async () => {
+    const ui = await scrolledScreen();
+    expect(ui.lastFrame()).toContain(NEWEST_CARD);
+    expect(ui.lastFrame()).toContain("> my draft");
+    ui.press(SHIFT_UP);
+    expect(ui.lastFrame()).not.toContain(NEWEST_CARD);
+    expect(ui.lastFrame()).toContain("> my draft");
+    await ui.submitTyped();
+    expect(ui.send).toHaveBeenLastCalledWith("my draft", expect.any(Function));
+  });
+
+  test("F2 shift+down keeps the draft and the bare arrows still browse history", async () => {
+    const ui = await scrolledScreen();
+    ui.press(SHIFT_DOWN);
+    expect(ui.lastFrame()).toContain("> my draft");
+    ui.press(UP);
+    await ui.submitTyped();
+    expect(ui.send).toHaveBeenLastCalledWith("hello", expect.any(Function));
   });
 });

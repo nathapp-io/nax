@@ -29,6 +29,8 @@ const SHIFT_RETURN = "\x1b\r";
 const ESCAPE = "\x1b";
 const UP = "\x1b[A";
 const DOWN = "\x1b[B";
+const SHIFT_UP = "\x1b[1;2A";
+const SHIFT_DOWN = "\x1b[1;2B";
 
 /** Full colour, so ink surrounds the inverse cursor cell with the SGR 7 / SGR 27 pair. */
 const FULL_COLOR = 3;
@@ -233,6 +235,18 @@ describe("ChatInput history", () => {
     expect(input.textRows()).toEqual(["> two"]);
     input.type(DOWN);
     expect(input.textRows()).toEqual(["> dra"]);
+  });
+
+  test("F2 a shifted arrow leaves the draft alone — the viewport owns it", () => {
+    const draft = { text: "my draft", cursor: 8 };
+    const input = mount({ initialDraft: { editor: draft, history: ["hello"] } });
+    input.type(SHIFT_UP);
+    input.type(SHIFT_DOWN);
+    expect(input.drafts).toHaveLength(0);
+    expect(input.textRows()).toEqual(["> my draft"]);
+    // The bare arrows would have browsed it, so the draft is genuinely untouched, not stale.
+    input.type(UP);
+    expect(input.textRows()).toEqual(["> hello"]);
   });
 });
 

@@ -245,15 +245,17 @@ export function ChatApp({
   /**
    * The two keys the screen itself owns, in every state: ctrl+o toggles collapsed detail, and
    * escape interrupts a running turn. Escape is claimed only when no ask card is up — the card
-   * owns it, and a card's escape must never reach `host.cancel()` — and only while a turn
-   * runs; on an idle screen the input owns it, where a first escape arms the clear.
+   * owns it, and a card's escape must never reach `host.cancel()` — only while a turn runs, and
+   * only while the hook's control guard is open: on an idle screen the input owns it (where a
+   * first escape arms the clear), and once close has begun the host is already closed, so a
+   * late escape would throw instead of letting teardown finish.
    */
   useInput((input, key) => {
     if (key.ctrl && input === CTRL_O) {
       setExpanded((current) => !current);
       return;
     }
-    if (!key.escape || ask !== undefined || !turnRunning) return;
+    if (!key.escape || ask !== undefined || !turnRunning || !keys.canControl()) return;
     host.cancel();
   });
 
