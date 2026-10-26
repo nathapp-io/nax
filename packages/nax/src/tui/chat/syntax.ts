@@ -57,8 +57,12 @@ const GRAMMARS: Readonly<Record<string, Parameters<typeof hljs.registerLanguage>
   yaml,
 };
 
-/** Short names the highlighter does not declare itself; everything else is its own alias table. */
-const EXTRA_ALIASES: Readonly<Record<string, string>> = { shell: "bash" };
+/**
+ * Short names the highlighter does not declare itself; everything else is its own alias
+ * table. A `Map`, not an object literal: these keys are the reply's own text, and a plain
+ * object would answer `constructor`, `toString` or `__proto__` from its prototype.
+ */
+const EXTRA_ALIASES: ReadonlyMap<string, string> = new Map([["shell", "bash"]]);
 
 const HLJS_CLASS_PREFIX = "hljs-";
 const SPACE = " ";
@@ -66,16 +70,16 @@ const LANGUAGE_SEPARATOR = /\s+/;
 const LINE_BREAK = "\n";
 const TRAILING_LINE_BREAK = /\n$/;
 
-/** Scope class (without the `hljs-` prefix) -> theme token. */
-const SCOPE_COLORS: Readonly<Record<string, ChatColorToken>> = {
-  keyword: "syntaxKeyword",
-  built_in: "syntaxKeyword",
-  string: "syntaxString",
-  comment: "syntaxComment",
-  number: "syntaxNumber",
-  literal: "syntaxNumber",
-  title: "syntaxTitle",
-};
+/** Scope class (without the `hljs-` prefix) -> theme token. A `Map` for the same reason. */
+const SCOPE_COLORS: ReadonlyMap<string, ChatColorToken> = new Map<string, ChatColorToken>([
+  ["keyword", "syntaxKeyword"],
+  ["built_in", "syntaxKeyword"],
+  ["string", "syntaxString"],
+  ["comment", "syntaxComment"],
+  ["number", "syntaxNumber"],
+  ["literal", "syntaxNumber"],
+  ["title", "syntaxTitle"],
+]);
 
 /** Every escape the highlighter emits, so its output can be read back as text. */
 const ENTITIES: Readonly<Record<string, string>> = {
@@ -93,16 +97,21 @@ const OUTPUT_TAG_PATTERN = /<span class="([^"]*)">|<\/span>|([^<]+)/g;
 
 for (const [name, grammar] of Object.entries(GRAMMARS)) hljs.registerLanguage(name, grammar);
 
-/** The language a fence declares — its first word, lower-cased; "" when it declares none. */
+/**
+ * The language a fence declares — its first word, lower-cased and made safe to draw. The info
+ * string is the reply's own text: it carries no trust, so it reaches `sanitizeText` here,
+ * before it is either resolved as a grammar or written as span text. One value does both, so
+ * the label and the grammar can never disagree.
+ */
 export function fenceLanguage(lang: string | undefined): string {
   if (lang === undefined) return "";
-  return lang.trim().split(LANGUAGE_SEPARATOR)[0].toLowerCase();
+  return sanitizeText(lang.trim().split(LANGUAGE_SEPARATOR)[0]).toLowerCase();
 }
 
 /** The registered grammar `name` resolves to, or undefined when the highlighter has none. */
 export function resolveCodeLanguage(name: string): string | undefined {
   if (name === "") return undefined;
-  const resolved = EXTRA_ALIASES[name] ?? name;
+  const resolved = EXTRA_ALIASES.get(name) ?? name;
   return hljs.getLanguage(resolved) === undefined ? undefined : resolved;
 }
 
@@ -124,7 +133,7 @@ function decodeEntities(text: string): string {
 function scopeColor(attribute: string): ChatColorToken | undefined {
   for (const name of attribute.split(SPACE)) {
     const scope = name.startsWith(HLJS_CLASS_PREFIX) ? name.slice(HLJS_CLASS_PREFIX.length) : name;
-    const color = SCOPE_COLORS[scope];
+    const color = SCOPE_COLORS.get(scope);
     if (color !== undefined) return color;
   }
   return undefined;
@@ -181,14 +190,15 @@ function highlightedLines(html: string): readonly (readonly Span[])[] {
 /**
  * The code lines of a fenced block, each as spans. A language the highlighter knows has
  * its tokens coloured by scope; no language, an unknown one, or a highlighter that throws
- * draws the lines plain.
+ * draws the lines plain. Language resolution is inside the same boundary as the highlight
+ * call: the fence's info string is the reply's own text, so nothing it can name may throw
+ * out of a render.
  */
 export function codeLines(code: string, language: string, highlight: HighlightFn): readonly (readonly Span[])[] {
   const body = code.replace(TRAILING_LINE_BREAK, "");
-  const grammar = resolveCodeLanguage(language);
-  if (grammar === undefined) return plainLines(body);
   try {
-    return highlightedLines(highlight(body, grammar));
+    const grammar = resolveCodeLanguage(language);
+    return grammar === undefined ? plainLines(body) : highlightedLines(highlight(body, grammar));
   } catch {
     // A failing highlighter must not cost the user the reply: draw the code as it arrived.
     return plainLines(body);

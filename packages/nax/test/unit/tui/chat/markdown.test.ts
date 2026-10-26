@@ -392,6 +392,25 @@ describe("renderMarkdown fenced code", () => {
     expect(lines).toHaveLength(1);
     expect(plainText(lines[0])).toBe("a b c");
   });
+
+  test("draws a fence whose language collides with Object.prototype as plain code (AC-10)", () => {
+    for (const language of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      const spans = codeSpansOf(codeLineOf("const x = 1;", language));
+      expect(spansText(spans)).toBe("const x = 1;");
+      for (const span of spans) expect(span.color).toBeUndefined();
+    }
+  });
+
+  test("strips escape sequences from the fence language label (AC-2)", () => {
+    const screenSwitch = "\u001b[?1049l";
+    const windowTitle = "\u001b]0;pwn\u0007";
+    const lines = render(`${FENCE}ts${screenSwitch}${windowTitle}\nconst x = 1;\n${FENCE}`);
+    expect(plainText(lines[0])).toBe(`${theme.glyphs.codeTop} ts`);
+    for (const line of lines) {
+      expect(plainText(line)).not.toContain("\u001b");
+      expect(plainText(line)).not.toContain("\u0007");
+    }
+  });
 });
 
 describe("renderMarkdown fenced code highlighting fallback", () => {
