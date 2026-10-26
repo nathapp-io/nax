@@ -49,7 +49,10 @@ const AGENT_RUN_TOOL = "nax-agents__run";
 const SKILL_LOAD_TOOL = "nax-skills__load";
 /** Tools whose argument is the file they touch. */
 const PATH_TOOLS: ReadonlySet<string> = new Set(["Read", "Write", "Edit", "Delete"]);
-const TITLES: Readonly<Record<string, string>> = { [AGENT_RUN_TOOL]: "Agent", [SKILL_LOAD_TOOL]: "Skill" };
+const TITLES: ReadonlyMap<string, string> = new Map([
+  [AGENT_RUN_TOOL, "Agent"],
+  [SKILL_LOAD_TOOL, "Skill"],
+]);
 const FAILED = "failed";
 
 function stringField(source: unknown, field: string): string | undefined {
@@ -70,10 +73,12 @@ function firstLine(value: string | undefined): string | undefined {
 
 /**
  * The card's title: the two provider tools get a plain name, everything else
- * keeps the name the session reported.
+ * keeps the name the session reported. The lookup is a `Map` so a tool named
+ * after an `Object` member (`constructor`, `toString`, `__proto__`) comes back
+ * as itself rather than as the inherited value.
  */
 export function toolTitle(name: string): string {
-  return TITLES[name] ?? name;
+  return TITLES.get(name) ?? name;
 }
 
 function grepArg(input: unknown): string | undefined {

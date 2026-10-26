@@ -54,12 +54,24 @@ const PATH_TOOLS: Array<[string, string]> = [
   ["Delete", "src/a.ts"],
 ];
 
+/** Names every plain object already has: a lookup must not answer for these. */
+const INHERITED_NAMES: Array<[string, string]> = [
+  ["constructor", "constructor"],
+  ["toString", "toString"],
+  ["__proto__", "__proto__"],
+  ["hasOwnProperty", "hasOwnProperty"],
+];
+
 describe("toolTitle", () => {
   test("names the nax-agents run tool Agent", () => {
     expect(toolTitle("nax-agents__run")).toBe("Agent");
   });
 
   test.each(TITLE_CASES)("maps %s to %s", (name, expected) => {
+    expect(toolTitle(name)).toBe(expected);
+  });
+
+  test.each(INHERITED_NAMES)("leaves the inherited object name %s unchanged", (name, expected) => {
     expect(toolTitle(name)).toBe(expected);
   });
 });
@@ -69,6 +81,10 @@ describe("toolCardModel identity", () => {
     const model = card({ name: "Read", input: { path: "src/a.ts" } });
     expect(model.title).toBe("Read");
     expect(model.arg).toBe("src/a.ts");
+  });
+
+  test.each(INHERITED_NAMES)("keeps the inherited object name %s as its title", (name, expected) => {
+    expect(card({ name }).title).toBe(expected);
   });
 
   test("is running with an empty summary while the call is in flight", () => {
