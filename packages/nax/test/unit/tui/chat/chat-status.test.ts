@@ -1,6 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import type { SessionEvent } from "@nathapp/nax-agent";
-import { formatTokens, IDLE_STATUS, reduceTurnStatus, shortModel, type TurnStatus } from "@/tui/chat/chat-status";
+import type { SandboxState, SessionEvent } from "@nathapp/nax-agent";
+import type { ChatHostState } from "@/chat";
+import {
+  type FooterHint,
+  footerModel,
+  formatTokens,
+  IDLE_STATUS,
+  reduceTurnStatus,
+  shortModel,
+  type TurnStatus,
+} from "@/tui/chat/chat-status";
+import { plainText } from "@/tui/chat/styled-line";
+import type { ChatColorToken } from "@/tui/chat/theme";
 
 const AT = "2026-10-26T00:00:00.000Z";
 const LATER = "2026-10-26T00:00:04.000Z";
@@ -245,5 +256,114 @@ describe("shortModel", () => {
     const model = "abcdefghijklmnopqrstuvwx";
     expect(model).toHaveLength(24);
     expect(shortModel(model)).toBe(model);
+  });
+});
+
+const FOOTER_COST_USD = 0.42;
+const CONTEXT_WINDOW = 200_000;
+
+const AVAILABLE_SANDBOX: SandboxState = { kind: "available", backend: "srt", network: "open" };
+
+/** The footer fixture: guarded, model `anthropic/m1`, a $0.42 session, sandbox available. */
+function chatState(overrides: Partial<ChatHostState> = {}): ChatHostState {
+  return {
+    sessionId: "abcdefgh-1234",
+    mode: "guarded",
+    model: "anthropic/m1",
+    meta: {
+      schemaVersion: 1,
+      sessionId: "abcdefgh-1234",
+      cwd: "/repo",
+      mode: "ask",
+      model: "anthropic/m1",
+      bashApproval: "gated",
+      title: null,
+      createdAt: "now",
+      updatedAt: null,
+      costUsd: FOOTER_COST_USD,
+    },
+    sandbox: AVAILABLE_SANDBOX,
+    ...overrides,
+  };
+}
+
+function footer(overrides: { state?: Partial<ChatHostState>; status?: TurnStatus; hint?: FooterHint } = {}) {
+  return footerModel({
+    state: chatState(overrides.state),
+    status: overrides.status ?? IDLE_STATUS,
+    hint: overrides.hint ?? "idle",
+  });
+}
+
+describe("footerModel left", () => {
+  test("gives the guarded mode, the idle hint and no sandbox suffix", () => {
+    expect(plainText(footer().left)).toBe("⏵ guarded · shift+tab to cycle");
+  });
+
+  test("starts with the full mode label, coloured danger", () => {
+    const { left } = footer({ state: { mode: "full" } });
+    expect(plainText(left).startsWith("⏵⏵ full")).toBe(true);
+    expect(left[0]).toEqual({ text: "⏵⏵ full", color: "danger" });
+  });
+
+  test("replaces the whole left side with the warning quit hint", () => {
+    const { left } = footer({ hint: "quit" });
+    expect(plainText(left)).toBe("press ctrl-c again to quit");
+    expect(left.every((span) => span.color === "warning")).toBe(true);
+  });
+
+  const HINT_CASES: Array<[FooterHint, string]> = [
+    ["clear", "esc again to clear"],
+    ["busy", "esc to interrupt"],
+    ["expanded", "ctrl+o to collapse"],
+  ];
+
+  test.each(HINT_CASES)("ends with the %s hint's text", (hint, text) => {
+    expect(plainText(footer({ hint }).left).endsWith(text)).toBe(true);
+  });
+
+  const SANDBOX_CASES: Array<[string, SandboxState | undefined, string, ChatColorToken]> = [
+    ["unavailable", { kind: "unavailable", backend: "srt", reason: "no bwrap" }, " · sandbox unavailable", "warning"],
+    ["absent", undefined, " · sandbox off", "muted"],
+    ["disabled", { kind: "disabled" }, " · sandbox off", "muted"],
+  ];
+
+  test.each(SANDBOX_CASES)("appends the suffix of a %s sandbox", (_name, sandbox, suffix, color) => {
+    const { left } = footer({ state: { sandbox } });
+    expect(plainText(left).endsWith(suffix)).toBe(true);
+    expect(left.find((span) => span.text === suffix)).toEqual({ text: suffix, color });
+  });
+});
+
+describe("footerModel right", () => {
+  test("gives the short model and the cost", () => {
+    expect(plainText(footer().right)).toBe("m1 · $0.42");
+  });
+
+  const CONTEXT_CASES: Array<[number, string, ChatColorToken]> = [
+    [36_000, "18% ctx", "muted"],
+    [140_000, "70% ctx", "muted"],
+    [150_000, "75% ctx", "warning"],
+    [180_000, "90% ctx", "warning"],
+    [190_000, "95% ctx", "danger"],
+  ];
+
+  test.each(CONTEXT_CASES)("shows %i context tokens as %s", (contextTokens, text, color) => {
+    const { right } = footer({
+      state: { contextWindow: CONTEXT_WINDOW },
+      status: { ...IDLE_STATUS, contextTokens },
+    });
+    expect(plainText(right)).toBe(`m1 · ${text} · $0.42`);
+    expect(right.find((span) => span.text.includes(text))?.color).toBe(color);
+  });
+
+  const NO_CONTEXT_CASES: Array<[string, Partial<ChatHostState>, TurnStatus]> = [
+    ["an unknown token count", { contextWindow: CONTEXT_WINDOW }, IDLE_STATUS],
+    ["an unknown context window", {}, { ...IDLE_STATUS, contextTokens: 36_000 }],
+    ["a zero context window", { contextWindow: 0 }, { ...IDLE_STATUS, contextTokens: 36_000 }],
+  ];
+
+  test.each(NO_CONTEXT_CASES)("shows no percentage for %s", (_name, state, status) => {
+    expect(plainText(footer({ state, status }).right)).toBe("m1 · $0.42");
   });
 });
