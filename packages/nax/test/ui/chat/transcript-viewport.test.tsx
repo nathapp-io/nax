@@ -34,10 +34,15 @@ function rowsOf(lastFrame: string | undefined): string[] {
   return (lastFrame ?? "").split("\n").map((row) => row.trim());
 }
 
-/** Mount the viewport with a height every test shares, and expose the harness verbs it needs. */
-function mount(lines: StyledLine[], active = true) {
+interface MountOptions {
+  readonly active?: boolean;
+  readonly height?: number;
+}
+
+/** Mount the viewport and expose the harness verbs the tests need. */
+function mount(lines: StyledLine[], { active = true, height = HEIGHT }: MountOptions = {}) {
   const show = (next: StyledLine[]) =>
-    render(<TranscriptViewport lines={next} height={HEIGHT} theme={THEME} active={active} />);
+    render(<TranscriptViewport lines={next} height={height} theme={THEME} active={active} />);
   const ui = show(lines);
   return {
     rows: () => rowsOf(ui.lastFrame()),
@@ -48,7 +53,7 @@ function mount(lines: StyledLine[], active = true) {
     update: (next: StyledLine[]) =>
       Promise.resolve(
         act(async () => {
-          ui.rerender(<TranscriptViewport lines={next} height={HEIGHT} theme={THEME} active={active} />);
+          ui.rerender(<TranscriptViewport lines={next} height={height} theme={THEME} active={active} />);
         }),
       ),
   };
@@ -107,7 +112,7 @@ describe("TranscriptViewport", () => {
   });
 
   test("AC-9 keys on an inactive viewport leave the frame unchanged", () => {
-    const view = mount(numbered(20), false);
+    const view = mount(numbered(20), { active: false });
     const frame = view.rows();
     for (const sequence of [PAGE_UP, SHIFT_UP, HOME, END, PAGE_DOWN, SHIFT_DOWN]) view.press(sequence);
     expect(view.rows()).toEqual(frame);
@@ -151,5 +156,20 @@ describe("TranscriptViewport", () => {
     await view.update(numbered(5));
     expect(view.rows()).toEqual(["line 1", "line 2", "line 3", "line 4", "line 5"]);
     expect(view.rows().some((row) => row.includes(UNSEEN))).toBe(false);
+  });
+
+  test("an empty transcript fills the window with blank rows", () => {
+    expect(mount([]).rows()).toEqual(["", "", "", "", ""]);
+  });
+
+  test("a one-row window shows only the newest line", () => {
+    const view = mount(numbered(20), { height: 1 });
+    expect(view.rows()).toEqual(["line 20"]);
+    view.press(SHIFT_UP);
+    expect(view.rows()).toEqual(["line 19"]);
+  });
+
+  test("a window height below one row still draws one row", () => {
+    expect(mount(numbered(20), { height: 0 }).rows()).toEqual(["line 20"]);
   });
 });
