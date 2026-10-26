@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T15:00:07.690Z",
+  "updatedAt": "2026-10-26T15:17:39.441Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1465,14 +1465,17 @@
         "commands"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure ordered matching and help formatting extend existing command metadata without changing control actions."
+        "reasoning": "Pure ordered matching and help formatting extend existing command metadata without changing control actions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/slash-commands.ts",
@@ -1493,7 +1496,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5a2bc002dba63cc01678506cc010224d51d0eb7b"
     },
     {
       "id": "US-025",
