@@ -72,8 +72,13 @@ function exitStatus(code: number | null, signal: NodeJS.Signals | null): number 
   return 128 + (signal !== null ? (osConstants.signals[signal] ?? 0) : 0);
 }
 
+/**
+ * `Readable.toWeb` is declared against `node:stream/web`'s `ReadableStream`, while
+ * `AgentSpawnResult` carries the global one. They are the same class at runtime and differ
+ * only in how their `getReader` overloads are written, so the bridge has to go via `unknown`.
+ */
 function toWeb(stream: Readable | null): ReadableStream<Uint8Array> {
-  return stream === null ? emptyStream() : (Readable.toWeb(stream) as ReadableStream<Uint8Array>);
+  return stream === null ? emptyStream() : (Readable.toWeb(stream) as unknown as ReadableStream<Uint8Array>);
 }
 
 export function nodeSpawn(cmd: readonly string[], opts: AgentSpawnOptions): AgentSpawnResult {
