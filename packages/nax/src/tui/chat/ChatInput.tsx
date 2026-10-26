@@ -123,18 +123,35 @@ function rowStarts(text: string): readonly number[] {
   return starts;
 }
 
-/** Split one row at a display column: text left of the cursor, the cell under it, the rest. */
+/**
+ * Splits text into user-perceived characters. A joined emoji — one that a zero-width joiner
+ * builds out of several code points, like the technologist sequence — is **one** cell on
+ * screen, so a cursor split has to treat it as one; `layout-lines.ts` and `wrap.ts` keep
+ * their own instance for the same reason.
+ */
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+function clusters(text: string): readonly string[] {
+  return Array.from(GRAPHEME_SEGMENTER.segment(text), (segment) => segment.segment);
+}
+
+/**
+ * Split one row at a display column: text left of the cursor, the cell under it, the rest.
+ * Widths are summed per grapheme cluster, which is how the row measures as a whole — summing
+ * code points would find a two-column joined emoji to be four columns wide and leave the
+ * cursor inside it.
+ */
 function splitAtCursor(displayed: string, column: number): { head: string; cell: string; tail: string } {
-  const chars = Array.from(displayed);
+  const cells = clusters(displayed);
   let head = "";
   let width = 0;
   let index = 0;
-  while (index < chars.length && width + displayWidth(chars[index]) <= column) {
-    head += chars[index];
-    width += displayWidth(chars[index]);
+  while (index < cells.length && width + displayWidth(cells[index]) <= column) {
+    head += cells[index];
+    width += displayWidth(cells[index]);
     index++;
   }
-  return { head, cell: chars[index] ?? CURSOR_CELL, tail: chars.slice(index + 1).join("") };
+  return { head, cell: cells[index] ?? CURSOR_CELL, tail: cells.slice(index + 1).join("") };
 }
 
 /**

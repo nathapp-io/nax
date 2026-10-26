@@ -382,6 +382,18 @@ describe("ChatInput cursor position", () => {
     const input = at("日本", 1);
     expect(input.cursorCell()).toBe("本");
   });
+
+  test("treats a joined emoji as one cell rather than its code points", () => {
+    // 👩 ZWJ 💻 draws as a single two-column cluster; the cursor after it is in front of b.
+    const input = at("👩\u200d💻b", 3);
+    expect(input.textRows()).toEqual(["> 👩\u200d💻b"]);
+    expect(input.cursorCell()).toBe("b");
+  });
+
+  test("ends a joined emoji row with the cursor after it", () => {
+    const input = at("👩\u200d💻", 3);
+    expect(input.cursorCell()).toBe(" ");
+  });
 });
 
 describe("ChatInput batching", () => {
