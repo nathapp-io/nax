@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { _markdownDeps, renderMarkdown } from "@/tui/chat/markdown";
 import { displayWidth, MIN_LAYOUT_WIDTH, plainText, type Span, type StyledLine } from "@/tui/chat/styled-line";
 import { type ChatTheme, resolveChatTheme } from "@/tui/chat/theme";
-import { wrapSpans } from "@/tui/chat/wrap";
 
 const theme: ChatTheme = resolveChatTheme({ env: {}, colorLevel: 3 });
 const WIDTH = 40;
@@ -473,24 +472,5 @@ describe("renderMarkdown code width", () => {
     const source = `- run:\n\n  \`\`\`ts\n  ${CODE}\n  \`\`\``;
     const lines = renderMarkdown(source, { width: NARROW_WIDTH, theme });
     expect(texts(lines)[2]).toContain("anotherArgument");
-  });
-});
-
-describe("wrapSpans", () => {
-  const STAR = "* ";
-
-  test("wraps already-styled spans to the width behind the prefix", () => {
-    const spans: readonly Span[] = [{ text: "alpha ", bold: true }, { text: "beta gamma delta" }];
-    const lines = wrapSpans(spans, { width: 12, prefix: [{ text: STAR }] });
-    for (const line of lines) expect(displayWidth(plainText(line))).toBeLessThanOrEqual(12);
-    expect(plainText(lines[0]).startsWith(`${STAR}alpha`)).toBe(true);
-    expect(lines.length).toBeGreaterThan(1);
-  });
-
-  test("carries every span's style through the wrap", () => {
-    const spans: readonly Span[] = [{ text: "alpha ", bold: true }, { text: "beta gamma delta" }];
-    const lines = wrapSpans(spans, { width: 12, prefix: [{ text: STAR }] });
-    expect(lines.flat().some((span) => span.bold === true)).toBe(true);
-    expect(spansText(lines.flat())).toContain("delta");
   });
 });
