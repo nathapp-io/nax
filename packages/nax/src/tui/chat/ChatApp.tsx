@@ -34,7 +34,7 @@ import { buildCommandMessage } from "@/prompts";
 import { runCommandShellLines } from "@/resources";
 import { NAX_VERSION } from "@/version";
 import { AskPrompt } from "./AskPrompt";
-import { ChatInput, EMPTY_DRAFT, type InputDraft, inputRows } from "./ChatInput";
+import { ChatInput, EMPTY_DRAFT, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
 import {
   type FooterHint,
   footerModel,
@@ -387,12 +387,18 @@ export function ChatApp({
     hint: footerHint({ clearArmed, busy: busy || status.running, expanded }),
     glyphs: theme.glyphs,
   });
+  // The text rows the screen can spare: everything the fixed regions and the viewport's
+  // minimum do not claim, once the input's own rules are paid for.
+  const inputBudget = Math.max(
+    1,
+    size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS - INPUT_RULE_ROWS,
+  );
   const bottomRows = ask
     ? askRows(ask, {
         width: columns,
         canRemember: ask.type === "approval_requested" && host.asks.canRemember(ask),
       })
-    : inputRows(draft, { width: columns, busy });
+    : inputRows(draft, { width: columns, busy, container: columns, maxRows: inputBudget });
   const viewportHeight = Math.max(
     MIN_VIEWPORT_ROWS,
     size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - bottomRows - FOOTER_ROWS,
@@ -434,6 +440,7 @@ export function ChatApp({
             theme={theme}
             active={!keys.locked}
             busy={busy}
+            maxRows={inputBudget}
             onClearArmedChange={setClearArmed}
           />
         </Box>

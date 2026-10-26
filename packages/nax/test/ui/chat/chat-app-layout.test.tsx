@@ -401,11 +401,13 @@ describe("ChatApp draft and theme robustness", () => {
 
   test("F1 a draft exactly as wide as the terminal keeps both of the input's rules", async () => {
     const ui = await harness();
-    // 78 columns of text plus the `> ` marker fill the row; the cursor cell is the 81st
-    // column, so the row wraps — and the input must reserve that second row.
+    // 78 columns of text fill the row behind the `> ` marker, so the cursor cell is the 81st
+    // column: the input reserves the wrapped row instead of losing a rule to it.
     ui.type("w".repeat(78));
     expect(ui.rows()).toHaveLength(30);
-    expect(ui.lastFrame()).toContain("w".repeat(78));
+    // The row holding the cursor reserves the cell, so the draft's last character wraps.
+    expect(ui.rows()).toContainEqual(expect.stringMatching(/^> w{77}$/));
+    expect(ui.rows()).toContain("  w");
     // The header's rule and the input's two rules all survive.
     expect(ui.rows().filter((row) => /^─+$/.test(row))).toHaveLength(3);
   });
@@ -418,6 +420,23 @@ describe("ChatApp draft and theme robustness", () => {
     expect(ui.lastFrame()).toContain("vvvv");
     expect(ui.rows().at(-1)).toContain("⏵ guarded");
     expect(ui.rows().filter((row) => /^─+$/.test(row))).toHaveLength(3);
+  });
+
+  test("F1 a draft of trailing spaces keeps both of the input's rules", async () => {
+    const ui = await harness();
+    // The spaces are content: the row is 205 columns wide and wraps into three, whether or
+    // not the characters at the wrap points are visible.
+    ui.type(`hello${" ".repeat(200)}`);
+    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows().filter((row) => /^─+$/.test(row))).toHaveLength(3);
+  });
+
+  test("F1 a tall draft on a short terminal keeps the frame at the terminal's rows", async () => {
+    const ui = mount();
+    await ui.resize(80, 12);
+    ui.type("v".repeat(2400));
+    expect(ui.rows()).toHaveLength(12);
+    expect(ui.rows().at(-1)).toContain("⏵ guarded");
   });
 
   test("F1 a narrow terminal keeps its rows with a draft many times its width", async () => {

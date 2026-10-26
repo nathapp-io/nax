@@ -394,6 +394,15 @@ describe("ChatInput cursor position", () => {
     const input = at("👩\u200d💻", 3);
     expect(input.cursorCell()).toBe(" ");
   });
+
+  test("F5 draws exactly one cursor in a draft taller than its window", () => {
+    // 2,400 characters at this width is 25 physical rows, so the input windows eight of
+    // them; the cursor sits on the second and must be the only inverted cell in the frame.
+    const input = at("v".repeat(2400), 100);
+    const inverseCells = input.rawFrame().split(INVERSE_ON).length - 1;
+    expect(inverseCells).toBe(1);
+    expect(input.cursorCell()).toBe("v");
+  });
 });
 
 describe("ChatInput batching", () => {

@@ -9,19 +9,20 @@
  *
  * The frame is two full-width rule lines with the editor between them: the first text row
  * behind the accent `> ` marker and every later row behind two spaces, the cell under the
- * cursor drawn in inverse. At most `MAX_TEXT_ROWS` rows are shown and the window follows
- * the cursor, so a ten-line prompt keeps the line being typed in view. Text rows are drawn
- * whole rather than cut to the rule width — the frame is decoration, and truncating a
- * prompt to it would hide what the user is about to send.
+ * cursor drawn in inverse. At most `MAX_TEXT_ROWS` rows are shown (or fewer when the screen
+ * has less room) and the window follows the cursor, so a ten-line prompt keeps the line being
+ * typed in view. The rows are the input's own: it wraps each source line to the columns it is
+ * drawn into and renders the pieces, so the height `inputRows` reports is the height on screen
+ * — nothing is left for the terminal to wrap, and no prompt text is ever cut away.
  *
  * Keys: a printable chunk is inserted at the cursor (via the line editor, which also owns
  * backspace, the arrows, the word moves and the ctrl chords), return submits, up and down
  * walk the history. `yieldNavigation` hands up, down, return, tab and escape back to the
  * slash menu drawn beneath the input while it is open.
  */
-import { Box, type Key, Text, useInput } from "ink";
+import { Box, type Key, Text, useInput, useStdout } from "ink";
 import { type ReactElement, useEffect, useRef } from "react";
-import { resolveWidth, wrapText } from "./layout-lines";
+import { resolveWidth } from "./layout-lines";
 import { cursorRow, type EditorState, EMPTY_EDITOR, editLine } from "./line-editor";
 import { displayWidth, type Span, sanitizeText } from "./styled-line";
 import type { ChatTheme } from "./theme";
@@ -81,6 +82,8 @@ export interface ChatInputProps {
   /** The slash menu is open and owns up, down, return, tab and escape. */
   readonly yieldNavigation?: boolean;
   readonly onClearArmedChange?: (armed: boolean) => void;
+  /** The most text rows the screen has room for; absent means the input's own cap. */
+  readonly maxRows?: number;
 }
 
 /** The prompt an empty, idle input offers when its owner has no hint. */
@@ -92,38 +95,82 @@ const CURSOR_CELL = " ";
 const SLASH = "/";
 const NEWLINE = "\n";
 
-/** The most text rows drawn before the window starts following the cursor. */
+/** The most text rows drawn at once, however much room the screen has. */
 const MAX_TEXT_ROWS = 8;
 
-/** The two full-width rule lines that frame the editor: one above it, one below. */
-const RULE_ROWS = 2;
+/** The two rule lines that frame the editor: one above it, one below. */
+export const INPUT_RULE_ROWS = 2;
 
 /** What the input needs to know about a frame to decide how many rows it draws. */
 export interface InputRowsOptions {
-  /** The columns the input is drawn into; a text row wider than this wraps. */
+  /** The columns the input is framed to; a text row wider than this wraps. */
   readonly width: number;
   /** True while a turn runs: an empty editor then draws its marker alone. */
   readonly busy?: boolean;
   /** Shown in place of the placeholder while the editor is empty. */
   readonly hint?: string;
+  /**
+   * The columns the input is actually drawn into. It is `width` inside the chat screen, but a
+   * host may frame a narrower input in a wider container — the rows wrap to the container,
+   * because that is what the terminal shows.
+   */
+  readonly container?: number;
+  /** The most text rows the screen has room for; absent means the input's own cap. */
+  readonly maxRows?: number;
 }
 
 /** Where a content row's text starts: behind the prompt marker, and past its indent after a wrap. */
 const TEXT_INDENT = displayWidth(PROMPT_MARKER);
 
-/** The columns a row's text occupies, the marker or its indent already deducted. */
-function textColumns(width: number): number {
+/** The columns a row's text occupies inside the frame, the marker already deducted. */
+function frameColumns(width: number): number {
   return Math.max(1, resolveWidth(width) - TEXT_INDENT);
 }
 
+/** The columns a row's text may fill: the frame's, or the container's when it is wider. */
+function layoutColumns(options: InputRowsOptions): number {
+  const container = options.container === undefined ? 0 : options.container - TEXT_INDENT;
+  return Math.max(1, frameColumns(options.width), container);
+}
+
+/** The most text rows this frame shows: the input's cap, or the screen's budget if smaller. */
+function textRowCap(options: InputRowsOptions): number {
+  return Math.max(1, Math.min(MAX_TEXT_ROWS, options.maxRows ?? MAX_TEXT_ROWS));
+}
+
+/** One literal space: the character a line prefers to break after. */
+const BREAK_CHARACTER = " ";
+
 /**
- * One source row split into the physical rows it draws: the repository's width engine — greedy
- * at word boundaries, cutting a word longer than the line — so a piece never measures wider
- * than the columns it was given, and the count is the count ink produces when it wraps the row
- * itself. An empty row is one empty piece.
+ * One source row split into the physical rows it fills. Every character is kept, spaces
+ * included — a prompt's whitespace is content, and dropping it would make the measured height
+ * disagree with what the terminal draws — and a line breaks after its last space where it has
+ * one, so words are not cut in half; a single word wider than the line is cut at the line.
+ * An empty row is one empty piece.
  */
-function piecesOf(text: string, columns: number): readonly string[] {
-  const pieces = wrapText(text, Math.max(1, columns));
+function splitRow(text: string, columns: number): readonly string[] {
+  const budget = Math.max(1, columns);
+  const cells = clusters(text);
+  const pieces: string[] = [];
+  let index = 0;
+  while (index < cells.length) {
+    let used = 0;
+    let end = index;
+    let lastSpace = -1;
+    while (end < cells.length) {
+      const width = displayWidth(cells[end]);
+      if (used + width > budget && end > index) break;
+      used += width;
+      end += 1;
+      if (cells[end - 1] === BREAK_CHARACTER) lastSpace = end;
+    }
+    // A line breaks at its last space only when the budget stopped it there; a row that fits
+    // whole stays whole.
+    const overflowing = end < cells.length;
+    const cut = overflowing && lastSpace > index ? lastSpace : end;
+    pieces.push(cells.slice(index, cut).join(""));
+    index = cut;
+  }
   return pieces.length === 0 ? [""] : pieces;
 }
 
@@ -131,7 +178,7 @@ function piecesOf(text: string, columns: number): readonly string[] {
 function emptyRows(options: InputRowsOptions): readonly TextRow[] {
   if (options.busy) return [{ text: "", marker: true }];
   const hint = sanitizeText(options.hint ?? PLACEHOLDER);
-  return piecesOf(hint, textColumns(options.width)).map((text, index) => ({
+  return splitRow(hint, layoutColumns(options)).map((text, index) => ({
     text,
     marker: index === 0,
     muted: true,
@@ -143,11 +190,13 @@ function emptyRows(options: InputRowsOptions): readonly TextRow[] {
  * empty, otherwise each source row wrapped at the columns left behind the prompt marker. The
  * row holding the cursor reserves one more column, because the inverse cursor cell is drawn
  * on top of it — without that column a draft that fills its row silently costs a rule line.
+ * The cursor belongs to exactly one piece: the one whose span contains its column, or the last
+ * one for the end-of-line cell.
  */
 function pieceRows(draft: InputDraft, options: InputRowsOptions): readonly TextRow[] {
   const { editor } = draft;
   if (editor.text === "") return emptyRows(options);
-  const columns = textColumns(options.width);
+  const columns = layoutColumns(options);
   const source = editor.text.split(NEWLINE);
   const { row: cursorRowIndex } = cursorRow(editor);
   const offset = editor.cursor - rowStarts(editor.text)[cursorRowIndex];
@@ -158,13 +207,16 @@ function pieceRows(draft: InputDraft, options: InputRowsOptions): readonly TextR
   for (const [index, line] of source.entries()) {
     const holdsCursor = index === cursorRowIndex;
     const budget = holdsCursor && cursorAtEnd ? Math.max(1, columns - 1) : columns;
-    const pieces = piecesOf(sanitizeText(line), budget);
+    const pieces = splitRow(sanitizeText(line), budget);
     let start = 0;
     for (const [pieceIndex, text] of pieces.entries()) {
       const width = displayWidth(text);
       const last = pieceIndex === pieces.length - 1;
-      const cursor =
-        holdsCursor && (cursorAt < start + width || last) ? Math.max(0, Math.min(cursorAt - start, width)) : undefined;
+      // A piece owns the cursor only from its first column up to the next piece's first one;
+      // the very last piece also owns the end-of-line cell past its text.
+      const holds =
+        holdsCursor && cursorAt >= start && (cursorAt < start + width || (last && cursorAt <= start + width));
+      const cursor = holds ? Math.max(0, Math.min(cursorAt - start, width)) : undefined;
       rows.push({
         text,
         marker: index === 0 && pieceIndex === 0,
@@ -177,55 +229,29 @@ function pieceRows(draft: InputDraft, options: InputRowsOptions): readonly TextR
 }
 
 /**
- * The rows ink draws when the draft fits the window: one whole row per source line (or the
- * placeholder), with the cursor cell on the line that holds the cursor. A row is drawn whole
- * — the frame is decoration, and cutting a prompt would hide what is about to be sent — so
- * `pieceRows` is what counts the rows it wraps into.
- */
-function wholeRows(draft: InputDraft, options: InputRowsOptions): readonly TextRow[] {
-  const { editor } = draft;
-  if (editor.text === "") {
-    if (options.busy) return [{ text: "", marker: true }];
-    return [{ text: sanitizeText(options.hint ?? PLACEHOLDER), marker: true, muted: true }];
-  }
-  const source = editor.text.split(NEWLINE);
-  const { row: cursorRowIndex } = cursorRow(editor);
-  const offset = editor.cursor - rowStarts(editor.text)[cursorRowIndex];
-  const window = visibleWindow(source, cursorRowIndex);
-  return window.rows.map((text, index) => {
-    const row = window.start + index;
-    return {
-      text,
-      marker: row === 0,
-      ...(row === cursorRowIndex ? { cursor: cursorColumn(source[cursorRowIndex], offset) } : {}),
-    };
-  });
-}
-
-/**
- * The window the input shows: every physical row while the draft fits `MAX_TEXT_ROWS`, and
+ * The rows the input shows: every physical row while the draft fits the frame's cap, and
  * otherwise that many rows around the cursor — so a draft taller than the screen scrolls
- * under the viewport instead of pushing the footer off it. Because the window is made of the
- * wrapped pieces, each drawn row is already narrower than the terminal and ink never re-wraps
- * one.
+ * under the viewport instead of pushing the footer off it. Each drawn row is already a piece
+ * of the wrapped text, so it is narrower than the container and ink never re-wraps one.
  */
 function visibleRows(draft: InputDraft, options: InputRowsOptions): readonly TextRow[] {
   const pieces = pieceRows(draft, options);
-  if (pieces.length <= MAX_TEXT_ROWS) return wholeRows(draft, options);
+  const cap = textRowCap(options);
+  if (pieces.length <= cap) return pieces;
   const holding = pieces.findIndex((row) => row.cursor !== undefined);
   const anchor = holding < 0 ? pieces.length - 1 : holding;
-  const start = Math.min(Math.max(anchor - MAX_TEXT_ROWS + 1, 0), pieces.length - MAX_TEXT_ROWS);
-  return pieces.slice(start, start + MAX_TEXT_ROWS);
+  const start = Math.min(Math.max(anchor - cap + 1, 0), pieces.length - cap);
+  return pieces.slice(start, start + cap);
 }
 
 /**
- * The rows the input draws for a draft: the two rules around at most `MAX_TEXT_ROWS` physical
- * text rows, counted after wrapping. The screen's owner reserves exactly this many rows for
- * the bottom region, so a draft wider or taller than the terminal scrolls under the viewport
- * instead of pushing the footer off the screen.
+ * The rows the input draws for a draft: the two rules around its text rows, counted after
+ * wrapping and windowing. The screen's owner reserves exactly this many rows for the bottom
+ * region, so a draft wider or taller than the terminal scrolls under the viewport instead of
+ * pushing the footer off the screen.
  */
 export function inputRows(draft: InputDraft, options: InputRowsOptions): number {
-  return RULE_ROWS + Math.min(pieceRows(draft, options).length, MAX_TEXT_ROWS);
+  return INPUT_RULE_ROWS + visibleRows(draft, options).length;
 }
 
 /** A run of text and how to draw it. The cursor adds `inverse`, which `Span` has no slot for. */
@@ -242,13 +268,10 @@ interface TextRow {
   readonly muted?: boolean;
 }
 
-interface FrameOptions {
+interface FrameOptions extends InputRowsOptions {
   readonly draft: InputDraft;
   readonly theme: ChatTheme;
-  readonly width: number;
   readonly active: boolean;
-  readonly busy: boolean;
-  readonly hint?: string;
 }
 
 /** One rule line: the theme's rule glyph, repeated to the laid-out width. */
@@ -323,17 +346,10 @@ function editorRow(row: TextRow): readonly Cell[] {
   return [marker, { text: head }, { text: cell, inverse: true }, { text: tail }];
 }
 
-/** The rows an editor of `rows` lines shows, the window sliding to keep the cursor's row. */
-function visibleWindow(rows: readonly string[], cursorRowIndex: number): { start: number; rows: readonly string[] } {
-  if (rows.length <= MAX_TEXT_ROWS) return { start: 0, rows };
-  const start = Math.min(Math.max(cursorRowIndex - MAX_TEXT_ROWS + 1, 0), rows.length - MAX_TEXT_ROWS);
-  return { start, rows: rows.slice(start, start + MAX_TEXT_ROWS) };
-}
-
 /**
- * The editor's text rows for this frame: the rows `inputRows` counted, drawn. A draft that
- * fits is drawn whole and ink wraps it; one that outgrows the window is drawn as the pieces
- * the window selected, so the rows the screen reserved are the rows on screen.
+ * The editor's text rows for this frame: the rows `inputRows` counted, drawn. Each row is one
+ * piece of the wrapped draft, so the rows the screen reserved are the rows on screen and ink
+ * has nothing left to wrap.
  */
 function textLines(options: FrameOptions): readonly (readonly Cell[])[] {
   return visibleRows(options.draft, options).map(editorRow);
@@ -427,8 +443,13 @@ export function ChatInput({
   hint,
   yieldNavigation = false,
   onClearArmedChange,
+  maxRows,
 }: ChatInputProps): ReactElement {
-  const frame: FrameOptions = { draft, theme, width, active, busy, hint };
+  // The rows wrap to the container the input is drawn into, which is the terminal's width
+  // rather than the frame's when a host frames a narrower prompt.
+  const { stdout } = useStdout();
+  const container = stdout.columns === undefined || stdout.columns <= 0 ? undefined : stdout.columns;
+  const frame: FrameOptions = { draft, theme, width, active, busy, hint, container, maxRows };
   /**
    * The newest draft, ahead of the owner's re-render. Two keys delivered in one batch both
    * run before the owner has re-rendered, so reducing the `draft` prop would make the
