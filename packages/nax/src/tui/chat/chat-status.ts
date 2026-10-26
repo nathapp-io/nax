@@ -12,7 +12,7 @@
  */
 import type { SessionEvent } from "@nathapp/nax-agent";
 import type { ChatHostState } from "@/chat";
-import { resolveWidth } from "./layout-lines";
+import { oneLine, resolveWidth } from "./layout-lines";
 import { displayWidth, type Span, type StyledLine, sanitizeText } from "./styled-line";
 import { type ChatColorToken, type ChatGlyphs, resolveChatTheme } from "./theme";
 import { toolTitle } from "./tool-card";
@@ -172,6 +172,16 @@ const COST_PREFIX = "$";
  */
 const GLYPHS = resolveChatTheme({ env: {}, colorLevel: 0 }).glyphs;
 
+/**
+ * Host text as one row: escape sequences and controls are stripped, then a line break
+ * becomes a space. The footer, a header line and the working line are one physical row
+ * each, so a cwd, a version, a model or a tool name carrying a newline must not add a row
+ * to the screen.
+ */
+function singleRow(text: string): string {
+  return oneLine(sanitizeText(text));
+}
+
 /** The mode's label without its glyph: the footer draws it, the header states it. */
 function modeLabel(mode: ChatHostState["mode"]): string {
   return mode === "full" ? "full" : "guarded";
@@ -229,8 +239,8 @@ function costSpan(state: ChatHostState): Span {
 }
 
 function rightLine(state: ChatHostState, status: TurnStatus): StyledLine {
-  // The model is the host's text, so it is sanitised before it is measured or drawn.
-  const model: Span = { text: shortModel(sanitizeText(state.model)) };
+  // The model is the host's text, so it is reduced to the footer's one row before it is measured or drawn.
+  const model: Span = { text: shortModel(singleRow(state.model)) };
   const context = contextSpan(state, status);
   return context === undefined ? [model, costSpan(state)] : [model, context, costSpan(state)];
 }
@@ -289,7 +299,7 @@ function workingVerb(status: TurnStatus, glyphs: ChatGlyphs): string {
     case "writing":
       return `Writing${trailing}`;
     case "tool": {
-      const title = status.toolName === undefined ? "" : toolTitle(sanitizeText(status.toolName));
+      const title = status.toolName === undefined ? "" : toolTitle(singleRow(status.toolName));
       return title === "" ? `Running${trailing}` : `Running ${title}${trailing}`;
     }
     case "approval":
@@ -391,14 +401,14 @@ function headerTitleLine(state: ChatHostState, version: string): StyledLine {
   const title: Span = { text: `${GLYPHS.thinking} ${HEADER_TITLE}`, color: "accent", bold: true };
   // The version sits one space after the product's name; the further facts are separated
   // from each other, so the line never reads as a list of four items.
-  const facts = ` v${sanitizeText(version)}${SEPARATOR}${shortModel(sanitizeText(state.model))}${SEPARATOR}${modeLabel(state.mode)}`;
+  const facts = ` v${singleRow(version)}${SEPARATOR}${shortModel(singleRow(state.model))}${SEPARATOR}${modeLabel(state.mode)}`;
   return [title, { text: facts, color: "muted" }];
 }
 
 /** The header's second line: where the session runs, and what it runs in. */
 function headerPathLine(state: ChatHostState, cwd: string, home: string, width: number): StyledLine {
   const budget = Math.max(1, width - HEADER_CWD_RESERVE);
-  const path = withHome(sanitizeText(cwd), sanitizeText(home));
+  const path = withHome(singleRow(cwd), singleRow(home));
   const shown = elideMiddle(path, budget, GLYPHS.ellipsis);
   return [
     { text: `${HEADER_INDENT}${shown}` },

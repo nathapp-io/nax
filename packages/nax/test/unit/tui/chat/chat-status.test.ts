@@ -344,6 +344,12 @@ describe("footerModel right", () => {
     expect(plainText(footer().right)).toBe("m1 · $0.42");
   });
 
+  test("flattens a model carrying a line break onto the footer's one row", () => {
+    const { right } = footer({ state: { model: "anthropic/m\n1" } });
+    expect(plainText(right)).toBe("m 1 · $0.42");
+    expect(plainText(right).includes("\n")).toBe(false);
+  });
+
   const CONTEXT_CASES: Array<[number, string, ChatColorToken]> = [
     [36_000, "18% ctx", "muted"],
     [140_000, "70% ctx", "muted"],
@@ -463,6 +469,12 @@ describe("workingLine", () => {
     expect(workingText(runningStatus({ phase: "tool", toolName: "Read" }), 0)).toContain("Running Read…");
   });
 
+  test("flattens a tool name carrying a line break onto the one row it has", () => {
+    const line = workingText(runningStatus({ phase: "tool", toolName: "Ba\nsh" }), 0);
+    expect(line).toBe(`${GLYPHS.spinner[0]} Running Ba sh… (0s · ↑ 0 ↓ 0 tokens · esc to interrupt)`);
+    expect(line.includes("\n")).toBe(false);
+  });
+
   test("counts a start that does not parse as no elapsed time", () => {
     expect(workingText(runningStatus({ startedAt: "now" }), 0)).toBe(
       `${GLYPHS.spinner[0]} Thinking… (0s · ↑ 0 ↓ 0 tokens · esc to interrupt)`,
@@ -552,6 +564,23 @@ describe("headerLines", () => {
 
   test("leaves the path alone when no home is known", () => {
     expect(headerText(1, { home: "" })).toBe("  /Users/u/repo · sandbox on");
+  });
+
+  test("flattens a cwd carrying a line break onto the one row the header gives it", () => {
+    const lines = header({ cwd: "/Users/u/re\npo" });
+    expect(lines).toHaveLength(3);
+    expect(plainText(lines[1])).toBe("  ~/re po · sandbox on");
+    expect(lines.some((line) => plainText(line).includes("\n"))).toBe(false);
+  });
+
+  test("flattens a home carrying a line break before it is matched", () => {
+    expect(headerText(1, { cwd: "/Users/ u/repo", home: "/Users/\nu" })).toBe("  ~/repo · sandbox on");
+  });
+
+  test("flattens a version and a model carrying a line break", () => {
+    const title = headerText(0, { version: "0.91.7\nx", state: { model: "anthropic/m\n1" } });
+    expect(title).toBe(`${GLYPHS.thinking} nax chat v0.91.7 x · m 1 · guarded`);
+    expect(title.includes("\n")).toBe(false);
   });
 
   const SANDBOX_CASES: Array<[string, SandboxState | undefined, string]> = [
