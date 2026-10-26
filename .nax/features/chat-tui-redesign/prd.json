@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T04:33:50.778Z",
+  "updatedAt": "2026-10-26T04:54:55.601Z",
   "userStories": [
     {
       "id": "US-001",
@@ -142,14 +142,17 @@
         "subagents"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module asynchronous session lifecycle enrichment and nested forwarding must preserve locks, rollback and accounting; session security override."
+        "reasoning": "Cross-module asynchronous session lifecycle enrichment and nested forwarding must preserve locks, rollback and accounting; session security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/agents/catalog/index.ts",
@@ -180,7 +183,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "85019fb8f319d2bd05cedc9bfd376045c0abf3f4"
     },
     {
       "id": "US-004",
