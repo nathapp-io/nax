@@ -21,7 +21,7 @@
  */
 import { Box, type Key, Text, useInput } from "ink";
 import { type ReactElement, useEffect, useRef } from "react";
-import { resolveWidth } from "./layout-lines";
+import { resolveWidth, wrapText } from "./layout-lines";
 import { cursorRow, type EditorState, EMPTY_EDITOR, editLine } from "./line-editor";
 import { displayWidth, type Span, sanitizeText } from "./styled-line";
 import type { ChatTheme } from "./theme";
@@ -98,19 +98,69 @@ const MAX_TEXT_ROWS = 8;
 /** The two full-width rule lines that frame the editor: one above it, one below. */
 const RULE_ROWS = 2;
 
+/** What the input needs to know about a frame to decide how many rows it draws. */
+export interface InputRowsOptions {
+  /** The columns the input is drawn into; a text row wider than this wraps. */
+  readonly width: number;
+  /** True while a turn runs: an empty editor then draws its marker alone. */
+  readonly busy?: boolean;
+  /** Shown in place of the placeholder while the editor is empty. */
+  readonly hint?: string;
+}
+
+/** Where a content row's text starts: behind the prompt marker, and past its indent after a wrap. */
+const TEXT_INDENT = displayWidth(PROMPT_MARKER);
+
+/** The columns a row's text occupies, the marker or its indent already deducted. */
+function textColumns(width: number): number {
+  return Math.max(1, resolveWidth(width) - TEXT_INDENT);
+}
+
 /**
- * The rows the input draws for a draft: the two rules around at most `MAX_TEXT_ROWS` text
- * rows, an empty editor being one. The screen's owner reserves exactly this many rows for
- * the bottom region, so the input and the viewport above it never disagree about the
- * height they were given — a one-row input region and a nine-row one both come from here.
+ * How many physical rows one drawn row's text takes. The input draws a row whole (the frame
+ * is decoration, and cutting a prompt would hide what is about to be sent), so ink wraps it at
+ * the container's width with the marker in front; `wrapText` is the repository's width engine
+ * — greedy at word boundaries, cutting a word longer than the line — so measuring the text
+ * against the columns left behind the marker counts the rows ink actually draws.
  */
-export function inputRows(draft: InputDraft): number {
-  const source = draft.editor.text === "" ? 1 : draft.editor.text.split(NEWLINE).length;
-  return RULE_ROWS + Math.min(source, MAX_TEXT_ROWS);
+function physicalRows(text: string, width: number): number {
+  return Math.max(1, wrapText(sanitizeText(text), textColumns(width)).length);
+}
+
+/**
+ * The text of each of the editor's visible rows, marker excluded: one per source line
+ * (empty → the placeholder or the owner's hint), in draw order.
+ */
+function drawnRows(draft: InputDraft, options: InputRowsOptions): readonly string[] {
+  const { editor } = draft;
+  if (editor.text === "") return [options.busy ? "" : (options.hint ?? PLACEHOLDER)];
+  const source = editor.text.split(NEWLINE);
+  const { row: cursorRowIndex } = cursorRow(editor);
+  return visibleWindow(source, cursorRowIndex).rows;
+}
+
+/**
+ * The rows the input draws for a draft: the two rules around its visible text rows, each
+ * counted in the physical rows it occupies at `width`. The screen's owner reserves exactly
+ * this many rows for the bottom region, so a draft wider than the terminal wraps into rows
+ * the viewport above has already given up instead of pushing the footer off the screen.
+ */
+export function inputRows(draft: InputDraft, options: InputRowsOptions): number {
+  const texts = drawnRows(draft, options);
+  return RULE_ROWS + texts.reduce((total, text) => total + physicalRows(text, options.width), 0);
 }
 
 /** A run of text and how to draw it. The cursor adds `inverse`, which `Span` has no slot for. */
 type Cell = Span & { readonly inverse?: boolean };
+
+/** One row of the editor as it is drawn: the marker or the indent, and the text behind it. */
+interface TextRow {
+  readonly text: string;
+  /** Draws the accent `> ` marker; every other row is indented past it. */
+  readonly marker: boolean;
+  /** Display column of the inverse cursor cell, on the one row that holds the cursor. */
+  readonly cursor?: number;
+}
 
 interface FrameOptions {
   readonly draft: InputDraft;
@@ -181,14 +231,14 @@ function cursorColumn(row: string, offset: number): number {
 }
 
 /**
- * One editor row: the marker on the editor's own first row and the indent on every later
- * one, the row's sanitised text, and the inverse cursor cell when this row holds the cursor.
+ * One drawn row: the marker on the editor's first row and the indent on every later one, the
+ * row's text, and the inverse cursor cell when this row holds the cursor.
  */
-function editorRow(text: string, index: number, cursorColumn: number | undefined): readonly Cell[] {
-  const marker: Cell = index === 0 ? { text: PROMPT_MARKER, color: "accent" } : { text: CONTINUATION };
-  const displayed = sanitizeText(text);
-  if (cursorColumn === undefined) return [marker, { text: displayed }];
-  const { head, cell, tail } = splitAtCursor(displayed, cursorColumn);
+function editorRow(row: TextRow): readonly Cell[] {
+  const marker: Cell = row.marker ? { text: PROMPT_MARKER, color: "accent" } : { text: CONTINUATION };
+  const displayed = sanitizeText(row.text);
+  if (row.cursor === undefined) return [marker, { text: displayed }];
+  const { head, cell, tail } = splitAtCursor(displayed, row.cursor);
   return [marker, { text: head }, { text: cell, inverse: true }, { text: tail }];
 }
 
@@ -206,7 +256,11 @@ function visibleWindow(rows: readonly string[], cursorRowIndex: number): { start
   return { start, rows: rows.slice(start, start + MAX_TEXT_ROWS) };
 }
 
-/** The editor's text rows for this frame. */
+/**
+ * The editor's text rows for this frame. A row is drawn whole — the frame is decoration, and
+ * cutting a prompt to it would hide what the user is about to send — so a row wider than the
+ * input narrows down to `inputRows` counting the physical rows ink wraps it into.
+ */
 function textLines(options: FrameOptions): readonly (readonly Cell[])[] {
   const { editor } = options.draft;
   if (editor.text === "") return [emptyRow(options)];
@@ -216,7 +270,11 @@ function textLines(options: FrameOptions): readonly (readonly Cell[])[] {
   const window = visibleWindow(source, cursorRowIndex);
   return window.rows.map((text, index) => {
     const row = window.start + index;
-    return editorRow(text, row, row === cursorRowIndex ? cursorColumn(source[cursorRowIndex], offset) : undefined);
+    return editorRow({
+      text,
+      marker: row === 0,
+      ...(row === cursorRowIndex ? { cursor: cursorColumn(source[cursorRowIndex], offset) } : {}),
+    });
   });
 }
 

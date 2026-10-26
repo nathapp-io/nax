@@ -165,10 +165,10 @@ const COST_DECIMALS = 2;
 const COST_PREFIX = "$";
 
 /**
- * Glyphs a model composes with when its API has no theme argument (the footer's
- * deliberately does not): the default Unicode set, taken from the theme SSOT rather than
- * spelled as literals, so a screen drawing the line with a resolved theme still owns the
- * glyph fallback.
+ * Glyphs a model composes with when its caller passes none: the default Unicode set, taken
+ * from the theme SSOT rather than spelled as literals. A screen that draws the line with a
+ * resolved theme passes that theme's glyphs in, so an ASCII or a differently-glyphed terminal
+ * reaches the header and the footer too — `StyledLineView` substitutes colours, not glyphs.
  */
 const GLYPHS = resolveChatTheme({ env: {}, colorLevel: 0 }).glyphs;
 
@@ -187,10 +187,10 @@ function modeLabel(mode: ChatHostState["mode"]): string {
   return mode === "full" ? "full" : "guarded";
 }
 
-function modeSpan(state: ChatHostState): Span {
+function modeSpan(state: ChatHostState, glyphs: ChatGlyphs): Span {
   const full = state.mode === "full";
   return {
-    text: `${full ? GLYPHS.modeFull : GLYPHS.modeGuarded} ${modeLabel(state.mode)}`,
+    text: `${full ? glyphs.modeFull : glyphs.modeGuarded} ${modeLabel(state.mode)}`,
     color: full ? "danger" : "muted",
   };
 }
@@ -208,10 +208,10 @@ function sandboxSpan(sandbox: ChatHostState["sandbox"]): Span | undefined {
   return { text: `${SEPARATOR}${SANDBOX_OFF}`, color: "muted" };
 }
 
-function leftLine(state: ChatHostState, hint: FooterHint): StyledLine {
+function leftLine(state: ChatHostState, hint: FooterHint, glyphs: ChatGlyphs): StyledLine {
   if (hint === "quit") return [hintSpan(hint)];
   const sandbox = sandboxSpan(state.sandbox);
-  const spans: Span[] = [modeSpan(state), { text: SEPARATOR, color: "muted" }, hintSpan(hint)];
+  const spans: Span[] = [modeSpan(state, glyphs), { text: SEPARATOR, color: "muted" }, hintSpan(hint)];
   return sandbox === undefined ? spans : [...spans, sandbox];
 }
 
@@ -248,13 +248,22 @@ function rightLine(state: ChatHostState, status: TurnStatus): StyledLine {
 /**
  * The one-line footer: what the screen is doing on the left, what it costs on the right.
  * The whole left side is the warning quit hint while that hint is showing, so mode and
- * sandbox never compete with a pending quit.
+ * sandbox never compete with a pending quit. `glyphs` defaults to the Unicode set so a caller
+ * that has no theme still composes; a screen passes its resolved theme's.
  */
-export function footerModel(input: { state: ChatHostState; status: TurnStatus; hint: FooterHint }): {
+export function footerModel(input: {
+  state: ChatHostState;
+  status: TurnStatus;
+  hint: FooterHint;
+  glyphs?: ChatGlyphs;
+}): {
   left: StyledLine;
   right: StyledLine;
 } {
-  return { left: leftLine(input.state, input.hint), right: rightLine(input.state, input.status) };
+  return {
+    left: leftLine(input.state, input.hint, input.glyphs ?? GLYPHS),
+    right: rightLine(input.state, input.status),
+  };
 }
 
 /** How often the screen redraws the working line while a turn runs. */
@@ -397,8 +406,8 @@ function elideMiddle(text: string, columns: number, ellipsis: string): string {
 }
 
 /** The header's first line: the product, then its version, the model and the mode. */
-function headerTitleLine(state: ChatHostState, version: string): StyledLine {
-  const title: Span = { text: `${GLYPHS.thinking} ${HEADER_TITLE}`, color: "accent", bold: true };
+function headerTitleLine(state: ChatHostState, version: string, glyphs: ChatGlyphs): StyledLine {
+  const title: Span = { text: `${glyphs.thinking} ${HEADER_TITLE}`, color: "accent", bold: true };
   // The version sits one space after the product's name; the further facts are separated
   // from each other, so the line never reads as a list of four items.
   const facts = ` v${singleRow(version)}${SEPARATOR}${shortModel(singleRow(state.model))}${SEPARATOR}${modeLabel(state.mode)}`;
@@ -406,10 +415,16 @@ function headerTitleLine(state: ChatHostState, version: string): StyledLine {
 }
 
 /** The header's second line: where the session runs, and what it runs in. */
-function headerPathLine(state: ChatHostState, cwd: string, home: string, width: number): StyledLine {
+function headerPathLine(
+  state: ChatHostState,
+  cwd: string,
+  home: string,
+  width: number,
+  glyphs: ChatGlyphs,
+): StyledLine {
   const budget = Math.max(1, width - HEADER_CWD_RESERVE);
   const path = withHome(singleRow(cwd), singleRow(home));
-  const shown = elideMiddle(path, budget, GLYPHS.ellipsis);
+  const shown = elideMiddle(path, budget, glyphs.ellipsis);
   return [
     { text: `${HEADER_INDENT}${shown}` },
     { text: `${SEPARATOR}${headerSandbox(state.sandbox)}`, color: "muted" },
@@ -417,14 +432,16 @@ function headerPathLine(state: ChatHostState, cwd: string, home: string, width: 
 }
 
 /** The header's third line: a rule the full width of the terminal, closing the header off. */
-function headerRuleLine(width: number): StyledLine {
-  return [{ text: GLYPHS.rule.repeat(width), color: "border" }];
+function headerRuleLine(width: number, glyphs: ChatGlyphs): StyledLine {
+  return [{ text: glyphs.rule.repeat(width), color: "border" }];
 }
 
 /**
  * The screen's fixed header: the product and the session's model and mode, where it runs,
  * and a rule the width of the terminal. `width` below `MIN_LAYOUT_WIDTH` is treated as
  * that minimum, and the path is elided in the middle to leave the sandbox suffix room.
+ * `glyphs` is the drawing theme's set; it defaults to the Unicode one so a caller without a
+ * theme still composes a complete header.
  */
 export function headerLines(input: {
   state: ChatHostState;
@@ -432,11 +449,13 @@ export function headerLines(input: {
   cwd: string;
   home: string;
   width: number;
+  glyphs?: ChatGlyphs;
 }): readonly StyledLine[] {
   const width = resolveWidth(input.width);
+  const glyphs = input.glyphs ?? GLYPHS;
   return [
-    headerTitleLine(input.state, input.version),
-    headerPathLine(input.state, input.cwd, input.home, width),
-    headerRuleLine(width),
+    headerTitleLine(input.state, input.version, glyphs),
+    headerPathLine(input.state, input.cwd, input.home, width, glyphs),
+    headerRuleLine(width, glyphs),
   ];
 }

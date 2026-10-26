@@ -171,6 +171,16 @@ function footerHint(input: { clearArmed: boolean; busy: boolean; expanded: boole
 }
 
 /**
+ * The status of a turn whose stream has settled. A `turn_end` already stopped it; a stream
+ * that ended without one (a rejection, or a runner that threw) leaves the status running, and
+ * carrying it forward would keep the working line and the busy footer alive for a turn that
+ * no longer exists. The token and context totals are kept — they are what the footer reports.
+ */
+function stopTurn(status: TurnStatus): TurnStatus {
+  return status.running ? { ...status, running: false } : status;
+}
+
+/**
  * Where a slash command's shown text goes: a listing entry per run for the commands that
  * list, one notice entry per statement for everything else.
  */
@@ -346,19 +356,23 @@ export function ChatApp({
       sending.current = false;
       await keys.finishTurn();
       setBusy(false);
+      // A stream that ends without `turn_end` — a rejection mid-turn is the usual way — still
+      // ends the turn: the working line and the busy footer must not outlive it.
+      setStatus(stopTurn);
     }
   }
 
   const columns = size.columns;
   const lines = layoutTranscript(entries, { width: columns, theme, expanded });
-  const header = headerLines({ state, version, cwd, home, width: columns });
+  const header = headerLines({ state, version, cwd, home, width: columns, glyphs: theme.glyphs });
   const working = workingLine(status, nowMs, theme.glyphs);
   const footer = footerModel({
     state,
     status,
     hint: footerHint({ clearArmed, busy: busy || status.running, expanded }),
+    glyphs: theme.glyphs,
   });
-  const bottomRows = ask ? askRows(ask) : inputRows(draft);
+  const bottomRows = ask ? askRows(ask) : inputRows(draft, { width: columns, busy });
   const viewportHeight = Math.max(
     MIN_VIEWPORT_ROWS,
     size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - bottomRows - FOOTER_ROWS,
@@ -380,22 +394,29 @@ export function ChatApp({
           <StyledLineView line={working} theme={theme} />
         </FixedRow>
       ) : null}
-      {ask ? (
-        <AskPrompt key={ask.requestId} ask={ask} controller={host.asks} active={!keys.locked} />
-      ) : (
-        <ChatInput
-          draft={draft}
-          onDraftChange={setDraft}
-          onSubmit={(message) => {
-            void submit(message);
-          }}
-          width={columns}
-          theme={theme}
-          active={!keys.locked}
-          busy={busy}
-          onClearArmedChange={setClearArmed}
-        />
-      )}
+      {/*
+        The bottom region is clipped to the rows reserved above: a prompt row that turns out
+        wider than measured loses its tail rather than growing the frame, so the footer stays
+        on the screen's last row whatever the terminal and the draft do.
+      */}
+      <Box height={bottomRows} overflow="hidden">
+        {ask ? (
+          <AskPrompt key={ask.requestId} ask={ask} controller={host.asks} active={!keys.locked} />
+        ) : (
+          <ChatInput
+            draft={draft}
+            onDraftChange={setDraft}
+            onSubmit={(message) => {
+              void submit(message);
+            }}
+            width={columns}
+            theme={theme}
+            active={!keys.locked}
+            busy={busy}
+            onClearArmedChange={setClearArmed}
+          />
+        )}
+      </Box>
       <Box flexDirection="row" justifyContent="space-between" width={columns} height={1} overflow="hidden">
         <StyledLineView line={footer.left} theme={theme} />
         <StyledLineView line={footer.right} theme={theme} />

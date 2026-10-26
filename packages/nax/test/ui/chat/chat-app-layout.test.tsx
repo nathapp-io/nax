@@ -4,7 +4,7 @@ import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
 import { type ChatHost, type ChatHostState, type ChatMcpState, createChatAskController } from "@/chat";
 import { buildResourceCatalog, type ResourcePackage } from "@/resources";
-import { ChatApp } from "@/tui/chat";
+import { ChatApp, type ChatTheme, resolveChatTheme } from "@/tui/chat";
 
 /**
  * The mounted screen, as the acceptance criteria observe it: the frame's rows, the events a
@@ -42,6 +42,8 @@ interface MountOptions {
   readonly mcp?: ChatMcpState;
   readonly catalog?: ChatHost["catalog"];
   readonly runCommand?: ChatHost["runCommand"];
+  /** The theme the screen draws with; absent means the screen's own colourless default. */
+  readonly theme?: ChatTheme;
 }
 
 function fakeHost(options: MountOptions = {}) {
@@ -80,6 +82,13 @@ function fakeHost(options: MountOptions = {}) {
     setState: (next: ChatHostState) => {
       state = next;
     },
+    event: (body: SessionEventBody, metadata: Readonly<Record<string, string>> = {}): SessionEvent => ({
+      sessionId: state.sessionId,
+      turnId: "t1",
+      at: "now",
+      metadata,
+      ...body,
+    }),
     emit: (body: SessionEventBody, metadata: Readonly<Record<string, string>> = {}) =>
       onEvent({ sessionId: state.sessionId, turnId: "t1", at: "now", metadata, ...body }),
     finish: () => gate.resolve(),
@@ -88,7 +97,7 @@ function fakeHost(options: MountOptions = {}) {
 
 function mount(options: MountOptions = {}) {
   const fake = fakeHost(options);
-  const ui = render(<ChatApp host={fake.host} />);
+  const ui = render(<ChatApp host={fake.host} {...(options.theme === undefined ? {} : { theme: options.theme })} />);
   const rows = () => (ui.lastFrame() ?? "").split("\n");
   const type = (text: string) =>
     act(() => {
@@ -364,5 +373,65 @@ describe("ChatApp degenerate terminals", () => {
     // The one row the viewport got is the newest transcript line.
     expect(ui.rows()).toContain("> hello");
     expect(ui.rows().at(-1)).toContain("⏵ guarded");
+  });
+});
+
+describe("ChatApp draft and theme robustness", () => {
+  test("F1 a draft wider than the terminal keeps the frame at the terminal's rows", async () => {
+    const ui = await harness();
+    ui.type("x".repeat(120));
+    expect(ui.rows()).toHaveLength(30);
+    // The wrapped draft is drawn, not clipped: the last text row carries its tail.
+    expect(ui.rows().at(-3)?.endsWith("xxx")).toBe(true);
+  });
+
+  test("F1 a draft that wraps at word boundaries keeps the frame at the terminal's rows", async () => {
+    const ui = mount();
+    await ui.resize(40, 30);
+    ui.type("alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu");
+    expect(ui.rows()).toHaveLength(30);
+  });
+
+  test("F1 a narrow terminal keeps its rows with a draft many times its width", async () => {
+    const ui = mount();
+    await ui.resize(28, 30);
+    ui.type("y".repeat(300));
+    expect(ui.rows()).toHaveLength(30);
+    // The window follows the cursor: the newest row is the tail of the draft.
+    expect(ui.rows().slice(0, -2)).toContainEqual(expect.stringContaining("y"));
+  });
+
+  test("F1 a long draft still submits what was typed", async () => {
+    const ui = await harness();
+    const draft = "z".repeat(200);
+    ui.type(draft);
+    await Promise.resolve(
+      act(async () => {
+        ui.stdin.write("\r");
+      }),
+    );
+    expect(ui.send).toHaveBeenCalledWith(draft, expect.any(Function));
+  });
+
+  test("F2 the ASCII theme's glyphs reach the header, the transcript and the footer", async () => {
+    const ui = await harness({ theme: resolveChatTheme({ env: { NAX_ASCII: "1" }, colorLevel: 0 }) });
+    const frame = ui.lastFrame() ?? "";
+    expect(frame).toContain("* nax chat");
+    expect(frame).toContain("> guarded");
+    expect(frame).not.toContain("✻");
+    expect(frame).not.toContain("⏵");
+    expect(frame).not.toContain("─");
+  });
+
+  test("F3 a send that rejects after turn_start stops the turn", async () => {
+    const ui = await harness();
+    ui.send.mockImplementationOnce(async (_message, listener) => {
+      listener(ui.event({ type: "turn_start" }));
+      throw new Error("boom");
+    });
+    await ui.start();
+    expect(ui.rows()).toContain("✗ boom");
+    expect(rowMatching(ui.rows(), /Thinking…/)).toBeUndefined();
+    expect(ui.rows().at(-1)).toContain("shift+tab to cycle");
   });
 });
