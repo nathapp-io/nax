@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T06:33:43.624Z",
+  "updatedAt": "2026-10-26T07:14:19.703Z",
   "userStories": [
     {
       "id": "US-001",
@@ -524,14 +524,17 @@
         "US-004",
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "New style-preserving column-aware layout abstraction integrates streamed transcript entries with markdown rendering."
+        "reasoning": "New style-preserving column-aware layout abstraction integrates streamed transcript entries with markdown rendering.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/transcript-model.ts",
@@ -550,7 +553,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "54f16561ee5b874325cda454cf8e7cbf1011eb08"
     },
     {
       "id": "US-010",
