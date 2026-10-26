@@ -5,7 +5,7 @@ import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
 import { type ChatHost, type ChatHostState, createChatHost, createChatStorage } from "@/chat";
 import { buildResourceCatalog, type ResourcePackage } from "@/resources";
-import { ChatApp } from "@/tui/chat";
+import { ChatApp, renderChat } from "@/tui/chat";
 
 afterEach(() => {
   cleanup();
@@ -97,6 +97,19 @@ const errored: SessionEventBody = {
 };
 
 describe("chat shell", () => {
+  test("AC-1 exports the full-screen renderer and React application from the chat barrel", () => {
+    expect(typeof renderChat).toBe("function");
+    expect(typeof ChatApp).toBe("function");
+    const ui = render(<ChatApp host={fakeHost().host} />);
+    expect(ui.lastFrame()).toContain("nax chat");
+  });
+  test("AC-1 removes the obsolete chat components", async () => {
+    const names = ["Transcript", "ChatStatusLine", "AskPrompt", "InputBox"];
+    const existing = await Promise.all(
+      names.map((name) => Bun.file(`${import.meta.dir}/../../../src/tui/chat/${name}.tsx`).exists()),
+    );
+    expect(existing).toEqual([false, false, false, false]);
+  });
   test("US-015 AC-13 hooks notice appears once across real host resume", async () => {
     const meta = fakeHost().host.current().meta;
     const packages: ResourcePackage[] = ["one", "two"].map((id) => ({
