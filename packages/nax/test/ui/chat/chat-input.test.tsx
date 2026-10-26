@@ -4,9 +4,13 @@
  * The harness mounts the input under a small owner that holds the `InputDraft`, exactly
  * as `ChatApp` does, so a submitted text reaches `history` the way it will in the screen
  * and a re-render can be observed. A colourless theme keeps every frame plain text, so a
- * row assertion is about the characters the terminal shows and nothing else.
+ * row assertion is about the characters the terminal shows and nothing else; the cursor
+ * tests raise chalk's level instead, because the inverse cell is the one part of a frame
+ * that carries no text of its own.
  */
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { makeFakeClock } from "@test/helpers";
+import chalk from "chalk";
 import { cleanup, render } from "ink-testing-library";
 import { act, type ReactElement, useState } from "react";
 import { _chatInputDeps, ChatInput, DOUBLE_ESCAPE_MS, EMPTY_DRAFT, type InputDraft } from "@/tui/chat/ChatInput";
@@ -26,10 +30,30 @@ const ESCAPE = "\x1b";
 const UP = "\x1b[A";
 const DOWN = "\x1b[B";
 
-const originalNow = _chatInputDeps.now;
+/** Full colour, so ink surrounds the inverse cursor cell with the SGR 7 / SGR 27 pair. */
+const FULL_COLOR = 3;
+/** The SGR pair ink writes around an inverse cell. */
+const INVERSE_ON = "\u001b[7m";
+const INVERSE_OFF = "\u001b[27m";
+
+/**
+ * The text an inverse cell covers, read out of the raw frame by locating the SGR pair —
+ * the one part of a frame that carries no characters of its own.
+ */
+function inverseCell(frame: string): string {
+  const start = frame.indexOf(INVERSE_ON);
+  if (start < 0) return "";
+  const from = start + INVERSE_ON.length;
+  const end = frame.indexOf(INVERSE_OFF, from);
+  return end < 0 ? "" : frame.slice(from, end);
+}
+
+const originalDeps = { ..._chatInputDeps };
+const originalChalkLevel = chalk.level;
 afterEach(() => {
   cleanup();
-  _chatInputDeps.now = originalNow;
+  Object.assign(_chatInputDeps, originalDeps);
+  chalk.level = originalChalkLevel;
 });
 
 interface MountOptions {
@@ -38,14 +62,17 @@ interface MountOptions {
   readonly hint?: string;
   readonly yieldNavigation?: boolean;
   readonly initialDraft?: InputDraft;
+  /** Render with colour forced on, so the inverse cursor cell is visible in the frame. */
+  readonly colored?: boolean;
 }
 
 /** Mount the input under an owner that keeps the draft, and expose the test verbs. */
 function mount(options: MountOptions = {}) {
-  const { active, busy, hint, yieldNavigation, initialDraft = EMPTY_DRAFT } = options;
+  const { active, busy, hint, yieldNavigation, initialDraft = EMPTY_DRAFT, colored = false } = options;
   const drafts: InputDraft[] = [];
   const onSubmit = mock((_text: string) => {});
   const onClearArmedChange = mock((_armed: boolean) => {});
+  if (colored) chalk.level = FULL_COLOR;
 
   function Owner(): ReactElement {
     const [draft, setDraft] = useState<InputDraft>(initialDraft);
@@ -70,20 +97,30 @@ function mount(options: MountOptions = {}) {
   }
 
   const ui = render(<Owner />);
+  /** The frame exactly as ink wrote it, escape codes included. */
+  const rawFrame = (): string => ui.lastFrame() ?? "";
   /** Every frame row, without the escape codes a style may add. */
   const rows = (): string[] =>
-    Bun.stripANSI(ui.lastFrame() ?? "")
+    Bun.stripANSI(rawFrame())
       .split("\n")
       .map((row) => row.trimEnd());
   /** The rows between the two rule lines — the editor's own text rows. */
   const textRows = (): string[] => rows().slice(1, -1);
+  /** The text the inverse cursor cell covers. */
+  const cursorCell = (): string => inverseCell(rawFrame());
   const type = (input: string): void => {
     act(() => {
       ui.stdin.write(input);
     });
   };
+  /** Several keypresses delivered before the owner can re-render — one React batch. */
+  const typeBatch = (...inputs: readonly string[]): void => {
+    act(() => {
+      for (const input of inputs) ui.stdin.write(input);
+    });
+  };
   const editor = (): EditorState => drafts.at(-1)?.editor ?? initialDraft.editor;
-  return { ui, drafts, onSubmit, onClearArmedChange, rows, textRows, type, editor };
+  return { ui, drafts, onSubmit, onClearArmedChange, rows, rawFrame, textRows, cursorCell, type, typeBatch, editor };
 }
 
 describe("ChatInput frame", () => {
@@ -218,15 +255,25 @@ describe("ChatInput rows", () => {
 });
 
 describe("ChatInput clear arm", () => {
-  /** A clock the test moves by hand, so the double-escape window is exact. */
-  function fixedClock(start: number) {
-    let current = start;
-    _chatInputDeps.now = () => current;
-    return { advance: (ms: number) => (current += ms) };
+  /** The input's whole clock: `now` for the window and the timers for its expiry. */
+  function fakeClock() {
+    const clock = makeFakeClock();
+    _chatInputDeps.now = clock.now;
+    _chatInputDeps.setTimeout = (callback, delayMs) => clock.setTimeout(callback, delayMs);
+    _chatInputDeps.clearTimeout = (handle) => clock.clearTimeout(Number(handle));
+    return clock;
+  }
+  /** Move the input's clock forward, letting any timer it passes fire inside React's scope. */
+  function advance(clock: ReturnType<typeof fakeClock>, ms: number): Promise<void> {
+    return Promise.resolve(
+      act(async () => {
+        await clock.advance(ms);
+      }),
+    );
   }
 
   test("AC-15 the first escape arms the clear and keeps the text", () => {
-    fixedClock(1000);
+    fakeClock();
     const input = mount();
     input.type("abc");
     input.type(ESCAPE);
@@ -234,37 +281,122 @@ describe("ChatInput clear arm", () => {
     expect(input.textRows()).toEqual(["> abc"]);
   });
 
-  test("AC-16 a second escape within the window empties the input", () => {
-    const clock = fixedClock(1000);
+  test("AC-16 a second escape within the window empties the input", async () => {
+    const clock = fakeClock();
     const input = mount();
     input.type("abc");
     input.type(ESCAPE);
-    clock.advance(DOUBLE_ESCAPE_MS);
+    await advance(clock, DOUBLE_ESCAPE_MS);
     input.type(ESCAPE);
     expect(input.editor()).toEqual(EMPTY_EDITOR);
   });
 
-  test("AC-17 the clearing escape reports the disarm", () => {
-    const clock = fixedClock(1000);
+  test("AC-17 the clearing escape reports the disarm", async () => {
+    const clock = fakeClock();
     const input = mount();
     input.type("abc");
     input.type(ESCAPE);
-    clock.advance(DOUBLE_ESCAPE_MS);
+    await advance(clock, DOUBLE_ESCAPE_MS);
     input.type(ESCAPE);
     expect(input.onClearArmedChange).toHaveBeenLastCalledWith(false);
   });
 
-  test("AC-18 a second escape past the window keeps the text", () => {
-    const clock = fixedClock(1000);
+  test("AC-18 a second escape past the window keeps the text", async () => {
+    const clock = fakeClock();
     const input = mount();
     input.type("abc");
     input.type(ESCAPE);
     const armed = [...input.onClearArmedChange.mock.calls];
-    clock.advance(DOUBLE_ESCAPE_MS + 1);
+    await advance(clock, DOUBLE_ESCAPE_MS + 1);
     input.type(ESCAPE);
     expect(armed).toEqual([[true]]);
     expect(input.textRows()).toEqual(["> abc"]);
-    expect(input.onClearArmedChange).not.toHaveBeenCalledWith(false);
+    expect(input.editor().text).toBe("abc");
+  });
+
+  test("reports the disarm when a submit clears the armed state", () => {
+    fakeClock();
+    const input = mount();
+    input.type("abc");
+    input.type(ESCAPE);
+    input.type(RETURN);
+    expect(input.onSubmit).toHaveBeenCalledWith("abc");
+    expect(input.onClearArmedChange.mock.calls).toEqual([[true], [false]]);
+  });
+
+  test("reports the disarm when the arm expires", async () => {
+    const clock = fakeClock();
+    const input = mount();
+    input.type("abc");
+    input.type(ESCAPE);
+    await advance(clock, DOUBLE_ESCAPE_MS + 1);
+    expect(input.onClearArmedChange.mock.calls).toEqual([[true], [false]]);
+    expect(input.editor().text).toBe("abc");
+    input.type(ESCAPE);
+    expect(input.onClearArmedChange).toHaveBeenLastCalledWith(true);
+  });
+
+  test("arms again rather than clearing after the window expired", async () => {
+    const clock = fakeClock();
+    const input = mount();
+    input.type("abc");
+    input.type(ESCAPE);
+    await advance(clock, DOUBLE_ESCAPE_MS + 1);
+    input.type(ESCAPE);
+    input.type(ESCAPE);
+    expect(input.editor()).toEqual(EMPTY_EDITOR);
+  });
+});
+
+describe("ChatInput cursor position", () => {
+  /** A cursor placed by the owner, drawn with colour on so the inverse cell is readable. */
+  function at(text: string, cursor: number) {
+    return mount({ colored: true, initialDraft: { editor: { text, cursor }, history: [] } });
+  }
+
+  test("sits after a double-width character rather than on it", () => {
+    const input = at("日", 1);
+    expect(input.textRows()).toEqual(["> 日"]);
+    expect(input.cursorCell()).toBe(" ");
+  });
+
+  test("sits before the character that follows an emoji", () => {
+    const input = at("a😀b", 2);
+    expect(input.textRows()).toEqual(["> a😀b"]);
+    expect(input.cursorCell()).toBe("b");
+  });
+
+  test("counts a tab as the two columns it is drawn as", () => {
+    const input = at("a\tb", 2);
+    expect(input.textRows()).toEqual(["> a  b"]);
+    expect(input.cursorCell()).toBe("b");
+  });
+
+  test("ignores a control byte it strips from the row", () => {
+    const input = at("a\u0007b", 2);
+    expect(input.textRows()).toEqual(["> ab"]);
+    expect(input.cursorCell()).toBe("b");
+  });
+
+  test("holds one cell inside a double-width character's neighbour", () => {
+    const input = at("日本", 1);
+    expect(input.cursorCell()).toBe("本");
+  });
+});
+
+describe("ChatInput batching", () => {
+  test("keeps every key of one batch, not just the last", () => {
+    const input = mount();
+    input.typeBatch("a", "b", "c");
+    expect(input.textRows()).toEqual(["> abc"]);
+    expect(input.editor()).toEqual({ text: "abc", cursor: 3 });
+  });
+
+  test("keeps a submit inside a batch and the text typed after it", () => {
+    const input = mount();
+    input.typeBatch("hi", RETURN, "x");
+    expect(input.onSubmit).toHaveBeenCalledWith("hi");
+    expect(input.textRows()).toEqual(["> x"]);
   });
 });
 

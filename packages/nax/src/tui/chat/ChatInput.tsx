@@ -20,7 +20,7 @@
  * slash menu drawn beneath the input while it is open.
  */
 import { Box, type Key, Text, useInput } from "ink";
-import { type ReactElement, useRef } from "react";
+import { type ReactElement, useEffect, useRef } from "react";
 import { resolveWidth } from "./layout-lines";
 import { cursorRow, type EditorState, EMPTY_EDITOR, editLine } from "./line-editor";
 import { displayWidth, type Span, sanitizeText } from "./styled-line";
@@ -48,13 +48,23 @@ export const EMPTY_DRAFT: InputDraft = { editor: EMPTY_EDITOR, history: [] };
 export const DOUBLE_ESCAPE_MS = 2000;
 
 /**
- * Injected seams. `now` times the clear-arm window, so a test can advance the clock
- * without waiting `DOUBLE_ESCAPE_MS` of real time.
+ * When the armed clear expires: one millisecond past the window, so an escape that lands
+ * exactly `DOUBLE_ESCAPE_MS` after the first one still clears the input (the window is
+ * inclusive) and only a later one is a fresh arm.
+ */
+const ARM_EXPIRY_MS = DOUBLE_ESCAPE_MS + 1;
+
+/**
+ * Injected seams. `now` times the clear-arm window and the timer expiry, so a test can
+ * move the clock instead of waiting `DOUBLE_ESCAPE_MS` of real time. The timer is a plain
+ * `setTimeout` rather than a sleep because its handle is cancelled mid-flight: by an early
+ * clear, by a re-arm, and by unmount.
  */
 export const _chatInputDeps = {
-  now(): number {
-    return Date.now();
-  },
+  now: (): number => Date.now(),
+  setTimeout: (callback: () => void, delayMs: number): ReturnType<typeof setTimeout> | number =>
+    globalThis.setTimeout(callback, delayMs),
+  clearTimeout: (handle: ReturnType<typeof setTimeout> | number): void => globalThis.clearTimeout(handle),
 };
 
 export interface ChatInputProps {
@@ -128,6 +138,18 @@ function splitAtCursor(displayed: string, column: number): { head: string; cell:
 }
 
 /**
+ * The cursor's column in **display** columns: the source row up to the cursor, sanitised the
+ * way the row is drawn, then measured. A code-point offset is not a column — a CJK
+ * character or an emoji is two columns wide, a tab is drawn as two spaces and a stripped
+ * control byte as none — so measuring the drawn prefix is the only way the inverse cell
+ * lands on the character the cursor is actually in front of.
+ */
+function cursorColumn(row: string, offset: number): number {
+  const prefix = Array.from(row).slice(0, Math.max(offset, 0)).join("");
+  return displayWidth(sanitizeText(prefix));
+}
+
+/**
  * One editor row: the marker on the editor's own first row and the indent on every later
  * one, the row's sanitised text, and the inverse cursor cell when this row holds the cursor.
  */
@@ -159,11 +181,12 @@ function textLines(options: FrameOptions): readonly (readonly Cell[])[] {
   if (editor.text === "") return [emptyRow(options)];
   const source = editor.text.split(NEWLINE);
   const { row: cursorRowIndex } = cursorRow(editor);
-  const cursorColumn = Math.max(0, editor.cursor - rowStarts(editor.text)[cursorRowIndex]);
+  const offset = editor.cursor - rowStarts(editor.text)[cursorRowIndex];
   const window = visibleWindow(source, cursorRowIndex);
-  return window.rows.map((text, offset) =>
-    editorRow(text, window.start + offset, window.start + offset === cursorRowIndex ? cursorColumn : undefined),
-  );
+  return window.rows.map((text, index) => {
+    const row = window.start + index;
+    return editorRow(text, row, row === cursorRowIndex ? cursorColumn(source[cursorRowIndex], offset) : undefined);
+  });
 }
 
 function cellProps(cell: Cell, theme: ChatTheme) {
@@ -256,35 +279,85 @@ export function ChatInput({
   onClearArmedChange,
 }: ChatInputProps): ReactElement {
   const frame: FrameOptions = { draft, theme, width, active, busy, hint };
+  /**
+   * The newest draft, ahead of the owner's re-render. Two keys delivered in one batch both
+   * run before the owner has re-rendered, so reducing the `draft` prop would make the
+   * second key discard the first one's edit; every handler reduces `latest` instead and
+   * writes it back before publishing.
+   */
+  const latest = useRef<InputDraft>(draft);
+  latest.current = draft;
   /** When the clear was armed, on `_chatInputDeps.now`'s clock; undefined while disarmed. */
   const armedAt = useRef<number | undefined>(undefined);
+  /** The armed clear's expiry — cancelled by an early clear, a re-arm and unmount. */
+  const armExpiry = useRef<ReturnType<typeof _chatInputDeps.setTimeout> | undefined>(undefined);
+  /** The owner's callback as of the latest render: an expiry fires long after it was armed. */
+  const notifyClearArmed = useRef(onClearArmedChange);
+  notifyClearArmed.current = onClearArmedChange;
+
+  /** Hand the owner the next draft and remember it for the next key in this batch. */
+  const publish = (next: InputDraft): void => {
+    latest.current = next;
+    onDraftChange(next);
+  };
+
+  /**
+   * Drop the armed clear and report the transition. Every way an arm ends — a clearing
+   * escape, a submit, the window elapsing — goes through here, so the owner's hint can
+   * never be left stale. Reporting only a change keeps a redundant escape from flapping it.
+   */
+  const disarm = (): void => {
+    if (armExpiry.current !== undefined) {
+      _chatInputDeps.clearTimeout(armExpiry.current);
+      armExpiry.current = undefined;
+    }
+    const wasArmed = armedAt.current !== undefined;
+    armedAt.current = undefined;
+    if (wasArmed) notifyClearArmed.current?.(false);
+  };
+
+  /** Arm a clear, or re-stamp an expired one: the owner hears only the first transition. */
+  const arm = (): void => {
+    const alreadyArmed = armedAt.current !== undefined;
+    if (armExpiry.current !== undefined) _chatInputDeps.clearTimeout(armExpiry.current);
+    armedAt.current = _chatInputDeps.now();
+    armExpiry.current = _chatInputDeps.setTimeout(disarm, ARM_EXPIRY_MS);
+    if (!alreadyArmed) notifyClearArmed.current?.(true);
+  };
+
+  // A pending expiry must not outlive the input; the owner keeps the draft and its arm state.
+  useEffect(() => {
+    return () => {
+      if (armExpiry.current === undefined) return;
+      _chatInputDeps.clearTimeout(armExpiry.current);
+      armExpiry.current = undefined;
+    };
+  }, []);
 
   /** Whitespace is not a message, and a running turn only accepts a slash command. */
   const submit = (text: string): void => {
+    const current = latest.current;
     if (text.trim() === "") return;
     if (busy && !text.startsWith(SLASH)) return;
-    armedAt.current = undefined;
-    onDraftChange({ editor: EMPTY_EDITOR, history: [...draft.history, text] });
+    disarm();
+    publish({ editor: EMPTY_EDITOR, history: [...current.history, text] });
     onSubmit(text);
   };
 
   /**
    * Escape arms a clear, and a second escape inside `DOUBLE_ESCAPE_MS` empties the input.
-   * A second escape later is the start of a fresh window rather than a clear: the arm is
-   * re-stamped without reporting again, so the owner hears about a state change only.
+   * Past the window the arm has expired (or is re-stamped), so the text survives.
    */
   const escapeKey = (): void => {
-    if (busy || draft.editor.text === "") return;
-    const now = _chatInputDeps.now();
+    const current = latest.current;
+    if (busy || current.editor.text === "") return;
     const armed = armedAt.current;
-    if (armed !== undefined && now - armed <= DOUBLE_ESCAPE_MS) {
-      armedAt.current = undefined;
-      onClearArmedChange?.(false);
-      onDraftChange({ editor: EMPTY_EDITOR, history: draft.history });
+    if (armed !== undefined && _chatInputDeps.now() - armed <= DOUBLE_ESCAPE_MS) {
+      disarm();
+      publish({ editor: EMPTY_EDITOR, history: current.history });
       return;
     }
-    armedAt.current = now;
-    if (armed === undefined) onClearArmedChange?.(true);
+    arm();
   };
 
   useInput(
@@ -294,19 +367,20 @@ export function ChatInput({
         escapeKey();
         return;
       }
+      const current = latest.current;
       if (key.upArrow) {
-        const previous = previousEntry(draft);
-        if (previous !== undefined) onDraftChange(previous);
+        const previous = previousEntry(current);
+        if (previous !== undefined) publish(previous);
         return;
       }
       if (key.downArrow) {
-        const next = nextEntry(draft);
-        if (next !== undefined) onDraftChange(next);
+        const next = nextEntry(current);
+        if (next !== undefined) publish(next);
         return;
       }
-      const result = editLine(draft.editor, { input, key });
+      const result = editLine(current.editor, { input, key });
       if (result.kind === "submit") submit(result.text);
-      else if (result.kind === "edit") onDraftChange(edited(draft, result.state));
+      else if (result.kind === "edit") publish(edited(current, result.state));
     },
     { isActive: active },
   );
