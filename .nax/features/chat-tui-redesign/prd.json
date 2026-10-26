@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T05:06:09.328Z",
+  "updatedAt": "2026-10-26T05:21:35.108Z",
   "userStories": [
     {
       "id": "US-001",
@@ -285,14 +285,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure additive presentation mapping over unknown tool input with explicit field rules."
+        "reasoning": "Pure additive presentation mapping over unknown tool input with explicit field rules.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/transcript-model.ts",
@@ -307,7 +310,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9c25dc1dcdb3888058e2ec88fe89ccda1401bc20"
     },
     {
       "id": "US-006",
