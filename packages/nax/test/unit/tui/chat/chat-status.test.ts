@@ -5,13 +5,17 @@ import {
   type FooterHint,
   footerModel,
   formatTokens,
+  headerLines,
   IDLE_STATUS,
   reduceTurnStatus,
   shortModel,
+  type TurnPhase,
   type TurnStatus,
+  WORKING_TICK_MS,
+  workingLine,
 } from "@/tui/chat/chat-status";
-import { plainText } from "@/tui/chat/styled-line";
-import type { ChatColorToken } from "@/tui/chat/theme";
+import { displayWidth, MIN_LAYOUT_WIDTH, plainText, type StyledLine } from "@/tui/chat/styled-line";
+import { type ChatColorToken, resolveChatTheme } from "@/tui/chat/theme";
 
 const AT = "2026-10-26T00:00:00.000Z";
 const LATER = "2026-10-26T00:00:04.000Z";
@@ -365,5 +369,227 @@ describe("footerModel right", () => {
 
   test.each(NO_CONTEXT_CASES)("shows no percentage for %s", (_name, state, status) => {
     expect(plainText(footer({ state, status }).right)).toBe("m1 · $0.42");
+  });
+});
+
+const THEME = resolveChatTheme({ env: {}, colorLevel: 0 });
+const GLYPHS = THEME.glyphs;
+const SPINNER_FRAME_MS = 120;
+const STARTED_AT_MS = Date.parse(AT);
+const TWELVE_SECONDS = 12_000;
+
+/** The spinner frame the working line shows after `elapsedMs` of a turn. */
+function frameAt(elapsedMs: number): string {
+  return GLYPHS.spinner[Math.floor(elapsedMs / SPINNER_FRAME_MS) % GLYPHS.spinner.length];
+}
+
+/** A status running since `AT`, which most working-line cases start from. */
+function runningStatus(overrides: Partial<TurnStatus> = {}): TurnStatus {
+  return { running: true, startedAt: AT, phase: "thinking", inputTokens: 0, outputTokens: 0, ...overrides };
+}
+
+/** Twelve seconds into an agent run that has spent 8.4k in and 1.2k out. */
+const AGENT_STATUS: TurnStatus = runningStatus({
+  phase: "tool",
+  toolName: "nax-agents__run",
+  inputTokens: 8_400,
+  outputTokens: 1_200,
+});
+
+/** The text a status draws at `elapsedMs` past its start. */
+function workingText(status: TurnStatus, elapsedMs: number): string {
+  return plainText(workingLine(status, STARTED_AT_MS + elapsedMs, GLYPHS) ?? []);
+}
+
+describe("workingLine", () => {
+  test("gives no line while no turn runs", () => {
+    expect(workingLine(IDLE_STATUS, 0, GLYPHS)).toBeUndefined();
+  });
+
+  test("spins a frame around the agent it runs, the seconds and the tokens", () => {
+    expect(workingText(AGENT_STATUS, TWELVE_SECONDS)).toBe(
+      `${frameAt(TWELVE_SECONDS)} Running Agent… (12s · ↑ 8.4k ↓ 1.2k tokens · esc to interrupt)`,
+    );
+  });
+
+  test("paints the frame and the verb accent and the measurement muted", () => {
+    const line = workingLine(AGENT_STATUS, STARTED_AT_MS + TWELVE_SECONDS, GLYPHS) ?? [];
+    expect(line.find((span) => span.text.includes("Running Agent"))?.color).toBe("accent");
+    expect(line.find((span) => span.text.includes("tokens"))?.color).toBe("muted");
+  });
+
+  test("shows the first frame at 0 ms elapsed", () => {
+    expect(workingLine(runningStatus(), STARTED_AT_MS, GLYPHS)?.[0]).toEqual({
+      text: `${GLYPHS.spinner[0]} `,
+      color: "accent",
+    });
+  });
+
+  test("shows the second frame at 120 ms elapsed", () => {
+    expect(workingLine(runningStatus(), STARTED_AT_MS + SPINNER_FRAME_MS, GLYPHS)?.[0]).toEqual({
+      text: `${GLYPHS.spinner[1]} `,
+      color: "accent",
+    });
+  });
+
+  test("wraps the frame around the set at the end of it", () => {
+    const wrapAt = SPINNER_FRAME_MS * GLYPHS.spinner.length;
+    expect(workingLine(runningStatus(), STARTED_AT_MS + wrapAt, GLYPHS)?.[0]).toEqual({
+      text: `${GLYPHS.spinner[0]} `,
+      color: "accent",
+    });
+  });
+
+  test("waits for approval in the approval phase", () => {
+    expect(workingText(runningStatus({ phase: "approval" }), 0)).toBe(
+      `${GLYPHS.spinner[0]} Waiting for approval… (0s · ↑ 0 ↓ 0 tokens · esc to interrupt)`,
+    );
+  });
+
+  const VERB_CASES: Array<[TurnPhase, string]> = [
+    ["thinking", "Thinking…"],
+    ["writing", "Writing…"],
+    ["compacting", "Compacting…"],
+    ["retrying", "Retrying…"],
+  ];
+
+  test.each(VERB_CASES)("states the %s phase as %s", (phase, verb) => {
+    expect(workingText(runningStatus({ phase }), 0)).toBe(
+      `${GLYPHS.spinner[0]} ${verb} (0s · ↑ 0 ↓ 0 tokens · esc to interrupt)`,
+    );
+  });
+
+  test("names a tool by its title, without the provider prefix", () => {
+    expect(workingText(runningStatus({ phase: "tool", toolName: "Read" }), 0)).toContain("Running Read…");
+  });
+
+  test("counts a start that does not parse as no elapsed time", () => {
+    expect(workingText(runningStatus({ startedAt: "now" }), 0)).toBe(
+      `${GLYPHS.spinner[0]} Thinking… (0s · ↑ 0 ↓ 0 tokens · esc to interrupt)`,
+    );
+  });
+
+  test("draws no frame when the glyph set has none", () => {
+    const bare = { ...GLYPHS, spinner: [] as readonly string[] };
+    const line = plainText(workingLine(runningStatus(), STARTED_AT_MS, bare) ?? []);
+    expect(line).toBe("Thinking… (0s · ↑ 0 ↓ 0 tokens · esc to interrupt)");
+  });
+
+  test("counts a missing start as no elapsed time", () => {
+    const running: TurnStatus = { running: true, phase: "thinking", inputTokens: 0, outputTokens: 0 };
+    const line = plainText(workingLine(running, STARTED_AT_MS, GLYPHS) ?? []);
+    expect(line).toBe(`${GLYPHS.spinner[0]} Thinking… (0s · ↑ 0 ↓ 0 tokens · esc to interrupt)`);
+  });
+
+  test("does not count a now before the start as negative time", () => {
+    expect(workingText(runningStatus(), -TWELVE_SECONDS)).toBe(
+      `${GLYPHS.spinner[0]} Thinking… (0s · ↑ 0 ↓ 0 tokens · esc to interrupt)`,
+    );
+  });
+
+  test("ticks the screen every 250 ms", () => {
+    expect(WORKING_TICK_MS).toBe(250);
+  });
+});
+
+const HEADER_WIDTH = 60;
+/** The columns a header path may take before the sandbox suffix needs the rest. */
+const HEADER_PATH_BUDGET = HEADER_WIDTH - 20;
+const HEADER_VERSION = "0.91.7";
+const HEADER_CWD = "/Users/u/repo";
+const HEADER_HOME = "/Users/u";
+
+function header(
+  options: { state?: Partial<ChatHostState>; version?: string; cwd?: string; home?: string; width?: number } = {},
+): readonly StyledLine[] {
+  return headerLines({
+    state: chatState(options.state),
+    version: options.version ?? HEADER_VERSION,
+    cwd: options.cwd ?? HEADER_CWD,
+    home: options.home ?? HEADER_HOME,
+    width: options.width ?? HEADER_WIDTH,
+  });
+}
+
+/** One of the header's three lines as text. */
+function headerText(index: number, options: Parameters<typeof header>[0] = {}): string {
+  return plainText(header(options)[index] ?? []);
+}
+
+describe("headerLines", () => {
+  test("gives three lines", () => {
+    expect(header()).toHaveLength(3);
+  });
+
+  test("names the product, its version, the model and the mode first", () => {
+    expect(headerText(0)).toBe(`${GLYPHS.thinking} nax chat v0.91.7 · m1 · guarded`);
+  });
+
+  test("draws the title accent and bold and the facts muted", () => {
+    const [title] = header();
+    expect(title?.[0]).toEqual({ text: `${GLYPHS.thinking} nax chat`, color: "accent", bold: true });
+    expect(title?.[1]).toEqual({ text: " v0.91.7 · m1 · guarded", color: "muted" });
+  });
+
+  test("names the full mode as full", () => {
+    expect(headerText(0, { state: { mode: "full" } })).toBe(`${GLYPHS.thinking} nax chat v0.91.7 · m1 · full`);
+  });
+
+  test("puts the shortened home path two columns in and the sandbox after it", () => {
+    const line = headerText(1);
+    expect(line.startsWith("  ~/repo")).toBe(true);
+    expect(line.endsWith("sandbox on")).toBe(true);
+    expect(line).toBe("  ~/repo · sandbox on");
+  });
+
+  test("leaves a path outside the home as it is", () => {
+    expect(headerText(1, { cwd: "/opt/repo" })).toBe("  /opt/repo · sandbox on");
+  });
+
+  test("shows the home itself as a tilde", () => {
+    expect(headerText(1, { cwd: HEADER_HOME })).toBe("  ~ · sandbox on");
+  });
+
+  test("leaves the path alone when no home is known", () => {
+    expect(headerText(1, { home: "" })).toBe("  /Users/u/repo · sandbox on");
+  });
+
+  const SANDBOX_CASES: Array<[string, SandboxState | undefined, string]> = [
+    ["available", AVAILABLE_SANDBOX, "sandbox on"],
+    ["disabled", { kind: "disabled" }, "sandbox off"],
+    ["absent", undefined, "sandbox off"],
+    ["unavailable", { kind: "unavailable", backend: "srt", reason: "no bwrap" }, "sandbox unavailable"],
+  ];
+
+  test.each(SANDBOX_CASES)("labels the %s sandbox at the end of the second line", (_name, sandbox, label) => {
+    const line = header({ state: { sandbox } })[1] ?? [];
+    expect(plainText(line).endsWith(label)).toBe(true);
+    expect(line.at(-1)).toEqual({ text: ` · ${label}`, color: "muted" });
+  });
+
+  test("draws a border rule as wide as the header", () => {
+    expect(headerText(2)).toBe(GLYPHS.rule.repeat(HEADER_WIDTH));
+    expect(header()[2]?.[0]?.color).toBe("border");
+  });
+
+  test("clamps a width under the minimum before drawing the rule", () => {
+    expect(headerText(2, { width: 4 })).toBe(GLYPHS.rule.repeat(MIN_LAYOUT_WIDTH));
+  });
+
+  test("elides a long path in the middle to the room the sandbox suffix leaves", () => {
+    const cwd = `/Users/u/${"x".repeat(60)}`;
+    const line = headerText(1, { cwd });
+    const shown = line.slice(2, line.indexOf(" · sandbox"));
+    expect(shown).toContain("…");
+    expect(displayWidth(shown)).toBeLessThanOrEqual(HEADER_PATH_BUDGET);
+    expect(shown.startsWith("~/")).toBe(true);
+    expect(shown.endsWith("x")).toBe(true);
+  });
+
+  test("keeps a path that just fits the budget whole", () => {
+    const cwd = `/Users/u/${"x".repeat(HEADER_PATH_BUDGET - 2)}`;
+    const shown = headerText(1, { cwd }).slice(2, headerText(1, { cwd }).indexOf(" · sandbox"));
+    expect(shown).toBe(cwd.replace(HEADER_HOME, "~"));
+    expect(displayWidth(shown)).toBe(HEADER_PATH_BUDGET);
   });
 });

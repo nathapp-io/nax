@@ -3,15 +3,19 @@
  * and how many tokens it has spent. `reduceTurnStatus` folds a session event stream into
  * it; `shortModel` and `formatTokens` are the display helpers the footer and the working
  * line share (US-016). `footerModel` composes the screen's one-line footer from a host
- * state, that status and the hint the screen is offering (US-017).
+ * state, that status and the hint the screen is offering (US-017). `workingLine` turns
+ * the same status into the animated line the screen redraws every `WORKING_TICK_MS`, and
+ * `headerLines` composes the three fixed rows above the transcript (US-018).
  *
  * Everything here is pure. A status the event does not change is returned as the same
  * object, so a component that compares by reference does no needless work.
  */
 import type { SessionEvent } from "@nathapp/nax-agent";
 import type { ChatHostState } from "@/chat";
-import { type Span, type StyledLine, sanitizeText } from "./styled-line";
-import { type ChatColorToken, resolveChatTheme } from "./theme";
+import { resolveWidth } from "./layout-lines";
+import { displayWidth, type Span, type StyledLine, sanitizeText } from "./styled-line";
+import { type ChatColorToken, type ChatGlyphs, resolveChatTheme } from "./theme";
+import { toolTitle } from "./tool-card";
 
 /** What the turn is doing. Only meaningful while `running`. */
 export type TurnPhase = "thinking" | "writing" | "tool" | "approval" | "compacting" | "retrying";
@@ -50,7 +54,8 @@ const TOKEN_SUFFIX = "k";
 const SHORT_MODEL_MAX = 24;
 const SHORT_MODEL_KEEP = 23;
 const ELLIPSIS = "…";
-const MODEL_PATH_SEPARATOR = "/";
+/** The separator in a model's provider-qualified name and in a path. */
+const PATH_SEPARATOR = "/";
 
 type EventOf<T extends SessionEvent["type"]> = Extract<SessionEvent, { type: T }>;
 
@@ -133,7 +138,7 @@ export function formatTokens(n: number): string {
 
 /** The model without its provider prefix, elided to 24 characters. */
 export function shortModel(model: string): string {
-  const short = model.slice(model.lastIndexOf(MODEL_PATH_SEPARATOR) + 1);
+  const short = model.slice(model.lastIndexOf(PATH_SEPARATOR) + 1);
   return short.length > SHORT_MODEL_MAX ? `${short.slice(0, SHORT_MODEL_KEEP)}${ELLIPSIS}` : short;
 }
 
@@ -167,10 +172,17 @@ const COST_PREFIX = "$";
  */
 const GLYPHS = resolveChatTheme({ env: {}, colorLevel: 0 }).glyphs;
 
+/** The mode's label without its glyph: the footer draws it, the header states it. */
+function modeLabel(mode: ChatHostState["mode"]): string {
+  return mode === "full" ? "full" : "guarded";
+}
+
 function modeSpan(state: ChatHostState): Span {
   const full = state.mode === "full";
-  const label = full ? "full" : "guarded";
-  return { text: `${full ? GLYPHS.modeFull : GLYPHS.modeGuarded} ${label}`, color: full ? "danger" : "muted" };
+  return {
+    text: `${full ? GLYPHS.modeFull : GLYPHS.modeGuarded} ${modeLabel(state.mode)}`,
+    color: full ? "danger" : "muted",
+  };
 }
 
 function hintSpan(hint: FooterHint): Span {
@@ -233,4 +245,188 @@ export function footerModel(input: { state: ChatHostState; status: TurnStatus; h
   right: StyledLine;
 } {
   return { left: leftLine(input.state, input.hint), right: rightLine(input.state, input.status) };
+}
+
+/** How often the screen redraws the working line while a turn runs. */
+export const WORKING_TICK_MS = 250;
+
+/** Milliseconds one spinner frame stands for. */
+const SPINNER_FRAME_MS = 120;
+const MILLIS_PER_SECOND = 1000;
+/** What the working line marks the turn's input and output tokens with. */
+const UP_ARROW = "↑";
+const DOWN_ARROW = "↓";
+
+/**
+ * The turn's elapsed milliseconds: `nowMs` past `startedAt`. A start that does not parse
+ * (fixtures use `"now"`) or is missing counts as none, and a `nowMs` before the start
+ * (a clock that moved back) counts as none rather than as negative time.
+ */
+function elapsedMs(status: TurnStatus, nowMs: number): number {
+  if (status.startedAt === undefined) return 0;
+  const start = Date.parse(status.startedAt);
+  if (!Number.isFinite(start) || !Number.isFinite(nowMs)) return 0;
+  return Math.max(0, nowMs - start);
+}
+
+/** The spinner frame showing at `elapsed`: one frame per `SPINNER_FRAME_MS`, wrapping. */
+function spinnerFrame(elapsed: number, glyphs: ChatGlyphs): string {
+  const frames = glyphs.spinner;
+  if (frames.length === 0) return "";
+  return frames[Math.floor(elapsed / SPINNER_FRAME_MS) % frames.length] ?? "";
+}
+
+/**
+ * What the turn is doing, as a verb with the theme's ellipsis. A tool phase names the tool
+ * by its card title, so `nax-agents__run` reads as `Agent`; a tool phase with no name can
+ * only say that it is running something.
+ */
+function workingVerb(status: TurnStatus, glyphs: ChatGlyphs): string {
+  const trailing = glyphs.ellipsis;
+  switch (status.phase) {
+    case "thinking":
+      return `Thinking${trailing}`;
+    case "writing":
+      return `Writing${trailing}`;
+    case "tool": {
+      const title = status.toolName === undefined ? "" : toolTitle(sanitizeText(status.toolName));
+      return title === "" ? `Running${trailing}` : `Running ${title}${trailing}`;
+    }
+    case "approval":
+      return `Waiting for approval${trailing}`;
+    case "compacting":
+      return `Compacting${trailing}`;
+    case "retrying":
+      return `Retrying${trailing}`;
+  }
+}
+
+/** The muted measurement behind the verb: the seconds, the tokens and the way out. */
+function workingDetail(status: TurnStatus, elapsed: number): string {
+  const seconds = Math.floor(elapsed / MILLIS_PER_SECOND);
+  const tokens = `${UP_ARROW} ${formatTokens(status.inputTokens)} ${DOWN_ARROW} ${formatTokens(status.outputTokens)} tokens`;
+  return ` (${seconds}s${SEPARATOR}${tokens}${SEPARATOR}${HINT_TEXT.busy})`;
+}
+
+/**
+ * The line the screen shows while a turn runs: a spinner frame and what the turn is doing,
+ * in the accent colour, then a muted measurement of the time and the tokens. Undefined
+ * when no turn runs, so the screen reserves no row for it.
+ */
+export function workingLine(status: TurnStatus, nowMs: number, glyphs: ChatGlyphs): StyledLine | undefined {
+  if (!status.running) return undefined;
+  const elapsed = elapsedMs(status, nowMs);
+  const frame = spinnerFrame(elapsed, glyphs);
+  return [
+    // A glyph set with no frames says nothing rather than leaving a stray column.
+    ...(frame === "" ? [] : [{ text: `${frame} `, color: "accent" as const }]),
+    { text: workingVerb(status, glyphs), color: "accent" },
+    { text: workingDetail(status, elapsed), color: "muted" },
+  ];
+}
+
+const HEADER_TITLE = "nax chat";
+/** Columns the sandbox suffix and its separator may need of the header's width. */
+const HEADER_CWD_RESERVE = 20;
+const HEADER_INDENT = "  ";
+const HOME = "~";
+const SANDBOX_ON = "sandbox on";
+
+/** How a sandbox reads in the header: `available` is on, `unavailable` says so, else off. */
+function headerSandbox(sandbox: ChatHostState["sandbox"]): string {
+  if (sandbox?.kind === "available") return SANDBOX_ON;
+  return sandbox?.kind === "unavailable" ? SANDBOX_UNAVAILABLE : SANDBOX_OFF;
+}
+
+/** A path with the user's home replaced by `~`; a path outside the home is left as it is. */
+function withHome(path: string, home: string): string {
+  const base = home.endsWith(PATH_SEPARATOR) ? home.slice(0, -PATH_SEPARATOR.length) : home;
+  if (base === "") return path;
+  if (path === base) return HOME;
+  return path.startsWith(`${base}${PATH_SEPARATOR}`) ? `${HOME}${path.slice(base.length)}` : path;
+}
+
+/** The longest prefix of `text` that fits `columns` display columns. */
+function headColumns(text: string, columns: number): string {
+  let taken = "";
+  let used = 0;
+  for (const point of text) {
+    const width = displayWidth(point);
+    if (used + width > columns) break;
+    taken += point;
+    used += width;
+  }
+  return taken;
+}
+
+/** The longest suffix of `text` that fits `columns` display columns. */
+function tailColumns(text: string, columns: number): string {
+  let taken = "";
+  let used = 0;
+  for (const point of Array.from(text).reverse()) {
+    const width = displayWidth(point);
+    if (used + width > columns) break;
+    taken = point + taken;
+    used += width;
+  }
+  return taken;
+}
+
+/**
+ * A text elided in the middle to at most `columns` display columns: the start and the end
+ * are kept and the gap between them becomes the ellipsis, so a deep path still shows where
+ * it begins and what it ends in. A negative or empty budget keeps the ellipsis alone.
+ */
+function elideMiddle(text: string, columns: number, ellipsis: string): string {
+  const limit = Math.max(1, columns);
+  if (displayWidth(text) <= limit) return text;
+  const room = limit - displayWidth(ellipsis);
+  if (room < 1) return headColumns(ellipsis, limit);
+  const head = headColumns(text, Math.ceil(room / 2));
+  return `${head}${ellipsis}${tailColumns(text, room - displayWidth(head))}`;
+}
+
+/** The header's first line: the product, then its version, the model and the mode. */
+function headerTitleLine(state: ChatHostState, version: string): StyledLine {
+  const title: Span = { text: `${GLYPHS.thinking} ${HEADER_TITLE}`, color: "accent", bold: true };
+  // The version sits one space after the product's name; the further facts are separated
+  // from each other, so the line never reads as a list of four items.
+  const facts = ` v${sanitizeText(version)}${SEPARATOR}${shortModel(sanitizeText(state.model))}${SEPARATOR}${modeLabel(state.mode)}`;
+  return [title, { text: facts, color: "muted" }];
+}
+
+/** The header's second line: where the session runs, and what it runs in. */
+function headerPathLine(state: ChatHostState, cwd: string, home: string, width: number): StyledLine {
+  const budget = Math.max(1, width - HEADER_CWD_RESERVE);
+  const path = withHome(sanitizeText(cwd), sanitizeText(home));
+  const shown = elideMiddle(path, budget, GLYPHS.ellipsis);
+  return [
+    { text: `${HEADER_INDENT}${shown}` },
+    { text: `${SEPARATOR}${headerSandbox(state.sandbox)}`, color: "muted" },
+  ];
+}
+
+/** The header's third line: a rule the full width of the terminal, closing the header off. */
+function headerRuleLine(width: number): StyledLine {
+  return [{ text: GLYPHS.rule.repeat(width), color: "border" }];
+}
+
+/**
+ * The screen's fixed header: the product and the session's model and mode, where it runs,
+ * and a rule the width of the terminal. `width` below `MIN_LAYOUT_WIDTH` is treated as
+ * that minimum, and the path is elided in the middle to leave the sandbox suffix room.
+ */
+export function headerLines(input: {
+  state: ChatHostState;
+  version: string;
+  cwd: string;
+  home: string;
+  width: number;
+}): readonly StyledLine[] {
+  const width = resolveWidth(input.width);
+  return [
+    headerTitleLine(input.state, input.version),
+    headerPathLine(input.state, input.cwd, input.home, width),
+    headerRuleLine(width),
+  ];
 }
