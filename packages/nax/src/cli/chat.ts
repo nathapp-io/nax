@@ -2,7 +2,14 @@ import { dirname, join, resolve } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Command } from "commander";
 import type { Instance } from "ink";
-import { type ChatHost, type ChatResources, createChatHost, createChatMcp, createChatStorage } from "@/chat";
+import {
+  type ChatHost,
+  type ChatHostState,
+  type ChatResources,
+  createChatHost,
+  createChatMcp,
+  createChatStorage,
+} from "@/chat";
 import { findProjectDir, globalConfigDir, loadConfig, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { type InteractionChain, initInteractionChain } from "@/interaction";
@@ -10,7 +17,7 @@ import { getSafeLogger } from "@/logger";
 import { loadPlugins, PluginRegistry } from "@/plugins";
 import { createSkillsProvider, loadResourceCatalog, naxPluginPackages } from "@/resources";
 import { ensureProjectTrusted, normalizeTrustPath, resolveTrustRoot } from "@/trust";
-import { renderChat } from "@/tui/chat";
+import { formatChatExitSummary, renderChat } from "@/tui/chat";
 
 const SIGNAL_EXIT_CODES = { SIGTERM: 143, SIGHUP: 129 } as const;
 type ChatSignal = keyof typeof SIGNAL_EXIT_CODES;
@@ -47,6 +54,10 @@ export const _chatCommandDeps = {
   },
   writeErr: (message: string): void => {
     process.stderr.write(`${message}\n`);
+  },
+  /** The normal screen's writer: the exit summary is printed here, after the alt screen is gone. */
+  writeOut: (message: string): void => {
+    process.stdout.write(`${message}\n`);
   },
   setExitCode: (code: number): void => {
     process.exitCode = code;
@@ -89,6 +100,21 @@ async function startHost(host: ChatHost, options: ChatCommandOptions, config: Na
   }
 }
 
+/**
+ * Print what the user is left with once the screen is gone. The host keeps the last session
+ * readable after `close`, so this runs after teardown; a host that never opened a session
+ * throws and has nothing to summarize, which must not disturb the run's exit code.
+ */
+function writeExitSummary(host: ChatHost, deps: ChatCommandDeps): void {
+  let state: ChatHostState;
+  try {
+    state = host.current();
+  } catch {
+    return;
+  }
+  deps.writeOut(formatChatExitSummary(state));
+}
+
 /** Own the terminal lifetime; signal shutdown awaits lock release before allowing exit. */
 async function runShell(host: ChatHost, deps: ChatCommandDeps): Promise<void> {
   let shell: ChatShell | undefined;
@@ -119,6 +145,7 @@ async function runShell(host: ChatHost, deps: ChatCommandDeps): Promise<void> {
     } finally {
       shell?.unmount();
       for (const remove of removers) remove();
+      writeExitSummary(host, deps);
     }
   }
 }

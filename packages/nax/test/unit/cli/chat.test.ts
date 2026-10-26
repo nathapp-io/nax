@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { createSessionStorage } from "@nathapp/nax-agent";
 import { makeInteractionChain, makeLogger, makeNaxConfig, withTempDir } from "@test/helpers";
 import { Command } from "commander";
-import { type ChatMcp, createChatHost, createChatStorage } from "@/chat";
+import { type ChatHostState, type ChatMcp, createChatHost, createChatStorage } from "@/chat";
 import { registerStatusCommand } from "@/cli/status-dispatch";
 import { NaxError } from "@/errors";
 import { PluginRegistry } from "@/plugins";
@@ -64,6 +64,7 @@ async function fixture() {
       };
     },
     writeErr: mock((_text: string) => {}),
+    writeOut: mock((_message: string) => {}),
     setExitCode: mock((_code: number) => {}),
   };
   return {
@@ -80,6 +81,25 @@ async function fixture() {
     },
   };
 }
+
+const EXIT_STATE: ChatHostState = {
+  sessionId: "abc123",
+  mode: "guarded",
+  model: "openai/gpt-6",
+  meta: {
+    schemaVersion: 1,
+    sessionId: "abc123",
+    cwd: "/repo",
+    mode: "ask",
+    model: "openai/gpt-6",
+    bashApproval: "gated",
+    title: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: null,
+    costUsd: 0.875,
+  },
+};
+const EXIT_SUMMARY = "✻ nax chat session abc123 · $0.88\n  resume with: nax chat --resume abc123";
 
 describe("chatCommand", () => {
   test("AC-1/19: non-TTY refuses before opening any session", async () => {
@@ -249,6 +269,47 @@ describe("chatCommand", () => {
         await running;
       }
     });
+  });
+  test("AC-8/9: a normal exit writes the summary once, after the shell unmounts", async () => {
+    const f = await fixture();
+    let unmountsAtWrite = -1;
+    f.host.current = () => EXIT_STATE;
+    f.deps.writeOut.mockImplementation(() => {
+      unmountsAtWrite = f.shell.unmount.mock.calls.length;
+    });
+    await f.chatCommand({}, f.deps);
+    expect(f.deps.writeOut).toHaveBeenCalledTimes(1);
+    expect(f.deps.writeOut).toHaveBeenCalledWith(EXIT_SUMMARY);
+    expect(unmountsAtWrite).toBe(1);
+  });
+  test("AC-10: a signal shutdown writes the summary once", async () => {
+    const f = await fixture();
+    f.stayOpen();
+    f.host.current = () => EXIT_STATE;
+    const running = f.chatCommand({}, f.deps);
+    await f.rendered.promise;
+    const handler = f.handlers.get("SIGTERM");
+    if (!handler) throw new Error("missing signal handler");
+    await handler();
+    await running;
+    expect(f.deps.writeOut).toHaveBeenCalledTimes(1);
+    expect(f.deps.writeOut).toHaveBeenCalledWith(EXIT_SUMMARY);
+  });
+  test("AC-11/12: an unreadable host state writes no summary and leaves the exit code alone", async () => {
+    const f = await fixture();
+    f.stayOpen();
+    f.host.current = () => {
+      throw new Error("no session is open");
+    };
+    const running = f.chatCommand({}, f.deps);
+    await f.rendered.promise;
+    const handler = f.handlers.get("SIGTERM");
+    if (!handler) throw new Error("missing signal handler");
+    await handler();
+    await running;
+    expect(f.deps.writeOut).not.toHaveBeenCalled();
+    expect(f.deps.setExitCode).toHaveBeenCalledTimes(1);
+    expect(f.deps.setExitCode).toHaveBeenCalledWith(143);
   });
   test("applies only explicit resume switches", async () => {
     const f = await fixture();

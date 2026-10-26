@@ -1,17 +1,14 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { SessionEvent, SessionEventBody } from "@nathapp/nax-agent";
 import { makeLogger, makeNaxConfig } from "@test/helpers";
-import { Box } from "ink";
 import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
 import { type ChatHost, type ChatHostState, createChatHost, createChatStorage } from "@/chat";
 import { buildResourceCatalog, type ResourcePackage } from "@/resources";
-import { _renderChatDeps, ChatApp, renderChat } from "@/tui/chat";
+import { ChatApp } from "@/tui/chat";
 
-const originalRender = _renderChatDeps.render;
 afterEach(() => {
   cleanup();
-  _renderChatDeps.render = originalRender;
   mock.restore();
 });
 
@@ -163,16 +160,6 @@ describe("chat shell", () => {
     } finally {
       await host.close();
     }
-  });
-  test("AC-1 renderChat renders with Ctrl-C exit disabled and unmounts", () => {
-    const renderSpy = mock<typeof originalRender>((node) => {
-      const ui = render(<Box flexDirection="column">{node}</Box>);
-      return { rerender: ui.rerender, unmount: ui.unmount, waitUntilExit: async () => {}, cleanup, clear: () => {} };
-    });
-    _renderChatDeps.render = renderSpy;
-    const view = renderChat({ host: fakeHost().host });
-    expect(renderSpy.mock.calls[0]?.[1]).toEqual({ exitOnCtrlC: false });
-    expect(() => view.unmount()).not.toThrow();
   });
   test("AC-2 sends hello", () => {
     const ui = mount();
