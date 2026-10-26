@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
-import { type AgentSession, createSessionStorage, type SessionStorage } from "@nathapp/nax-agent";
+import { type AgentSession, createSessionStorage, LIST_PAGE_SIZE, type SessionStorage } from "@nathapp/nax-agent";
 import {
   cleanupTempDir,
   makeFakeClock,
@@ -18,6 +18,12 @@ import { NaxError } from "@/errors";
 const NOW = new Date("2026-10-01T00:00:00.000Z");
 const MODEL = "anthropic/test";
 const DELAY = 1_234;
+/** Sessions the store holds past one page: `list()` hands them back `LIST_PAGE_SIZE` at a time. */
+const STORED_SESSIONS = LIST_PAGE_SIZE + 10;
+/** A session index well inside the store's second page. */
+const PAGE_TWO_INDEX = LIST_PAGE_SIZE + 5;
+/** One minute between two stored sessions, so the store's newest-first order is this file's order. */
+const MINUTE_MS = 60_000;
 const originals = { ..._openChatSessionDeps };
 const timers = { ..._askFallbackDeps };
 let dir: string;
@@ -141,6 +147,37 @@ async function waitingTurn() {
   return { turn };
 }
 
+/** The id the store sorts at `index`: index 0 is the newest session. */
+function storedId(index: number): string {
+  return `zz${String(index).padStart(3, "0")}-session`;
+}
+
+/** Fill the store newest-first, one session a minute going back from `NOW`. */
+async function storedSessions(count: number): Promise<void> {
+  for (let index = 0; index < count; index += 1) {
+    const updatedAt = new Date(NOW.getTime() - index * MINUTE_MS).toISOString();
+    await storage.writeMeta({
+      schemaVersion: 1,
+      sessionId: storedId(index),
+      cwd: dir,
+      mode: "ask",
+      model: MODEL,
+      bashApproval: "gated",
+      title: `title ${index}`,
+      createdAt: updatedAt,
+      updatedAt,
+    });
+  }
+}
+
+/** A second process's lock file: what the store reads as a live holder. */
+async function liveHold(session: string): Promise<void> {
+  await Bun.write(
+    join(storage.dir, `${session}.lock`),
+    JSON.stringify({ pid: 4242, startedAt: NOW.toISOString(), heartbeatAt: NOW.toISOString(), nonce: "other" }),
+  );
+}
+
 describe("createChatHost", () => {
   test("AC-1 start maps guarded to persisted ask mode", async () => {
     await start();
@@ -185,6 +222,29 @@ describe("createChatHost", () => {
     );
     expect(await storage.readLockHolder(id)).toMatchObject({ state: "live", pid: 4242 });
     expect(await host.listSessions()).toEqual([expect.objectContaining({ sessionId: id, heldByPid: 4242 })]);
+  });
+  test("AC-5a list follows the store's pages instead of stopping at the first", async () => {
+    await storedSessions(STORED_SESSIONS);
+    // The first page alone is short: the list is every page, or `/resume` cannot reach the rest.
+    const page = await storage.list({ cwd: dir });
+    expect(page.sessions).toHaveLength(LIST_PAGE_SIZE);
+    expect(page.nextCursor).toBeDefined();
+    const rows = await host.listSessions();
+    expect(rows).toHaveLength(STORED_SESSIONS);
+    expect(rows.map((row) => row.sessionId)).toEqual(
+      Array.from({ length: STORED_SESSIONS }, (_unused, index) => storedId(index)),
+    );
+  });
+  test("AC-5b list marks a live holder of a session past the first page", async () => {
+    await storedSessions(STORED_SESSIONS);
+    await liveHold(storedId(PAGE_TWO_INDEX));
+    const rows = await host.listSessions();
+    expect(rows[PAGE_TWO_INDEX]).toMatchObject({
+      sessionId: storedId(PAGE_TWO_INDEX),
+      title: `title ${PAGE_TWO_INDEX}`,
+      heldByPid: 4242,
+    });
+    expect(rows.filter((row) => row.heldByPid !== undefined)).toHaveLength(1);
   });
   test("AC-6 clear opens same settings under new id and releases old lock", async () => {
     await start();

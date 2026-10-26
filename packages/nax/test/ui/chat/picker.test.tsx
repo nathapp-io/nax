@@ -9,11 +9,26 @@
  * columns, and the gap before a row's detail — so an assertion about a row's label is
  * about what the user sees, never about a handler's internals.
  */
-import { afterEach, describe, expect, mock, test } from "bun:test";
-import type { SessionEvent, SessionEventBody } from "@nathapp/nax-agent";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { join } from "node:path";
+import {
+  createSessionStorage,
+  LIST_PAGE_SIZE,
+  type SessionEvent,
+  type SessionEventBody,
+  type SessionMeta,
+} from "@nathapp/nax-agent";
+import { assertDefined, cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir, waitForCondition } from "@test/helpers";
 import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
-import { type ChatHost, type ChatHostState, type ChatSessionRow, createChatAskController } from "@/chat";
+import {
+  type ChatHost,
+  type ChatHostDeps,
+  type ChatHostState,
+  type ChatSessionRow,
+  createChatAskController,
+} from "@/chat";
+import { createChatHost } from "@/chat/chat-host";
 import { ChatApp } from "@/tui/chat";
 import { _pickerDeps } from "@/tui/chat/Picker";
 
@@ -83,6 +98,12 @@ interface MountOptions {
   /** Absent: every host action succeeds at once. */
   readonly switchTo?: ChatHost["switchTo"];
   readonly resume?: ChatHost["resume"];
+  /**
+   * A host the case builds itself — a real one over a real session store. The fake below,
+   * and the mocks returned with it, are then created and unused: what the case observes is
+   * the host's own effects, not a call recorded here.
+   */
+  readonly host?: ChatHost;
 }
 
 /**
@@ -102,7 +123,7 @@ function mount(options: MountOptions = {}) {
     onEvent = listener;
     await gate.promise;
   });
-  const host: ChatHost = {
+  const fake: ChatHost = {
     repoRoot: "/repo",
     models: MODELS,
     asks: createChatAskController({ mode: "guarded", answer: () => {} }),
@@ -117,6 +138,7 @@ function mount(options: MountOptions = {}) {
     switchTo,
     listSessions,
   };
+  const host = options.host ?? fake;
   const ui = render(<ChatApp host={host} />);
   /** The frame's rows as the terminal shows them: no escape codes, no trailing blanks. */
   const rows = (): string[] =>
@@ -436,5 +458,115 @@ describe("Picker — failures and the keys it leaves alone", () => {
     await ui.settle();
     expect(ui.switchTo).toHaveBeenCalledWith({ mode: "full" });
     expect(ui.rows()).toContain("Switch model");
+  });
+});
+
+/** The store's pages, and a session index that is only reachable past the first of them. */
+const STORED_SESSIONS = LIST_PAGE_SIZE + 6;
+const PAGE_TWO_INDEX = LIST_PAGE_SIZE + 2;
+/** How long the store's pages may take to reach the frame, which is read off disk. */
+const SETTLE_MS = 5_000;
+/** One minute between two stored sessions: the store's newest-first order is this file's order. */
+const MINUTE_MS = 60_000;
+/** The instant every stored session is written and measured at. */
+const STORED_AT = Date.parse("2026-10-01T00:00:00.000Z");
+
+/** The id the store sorts at `index`, named so a frame can say which row it is showing. */
+function storedSessionId(index: number): string {
+  return `zz${String(index).padStart(3, "0")}-session`;
+}
+
+/** One stored session's metadata: newest first, no title, this file's model. */
+function storedMeta(storeDir: string, index: number): SessionMeta {
+  const updatedAt = new Date(STORED_AT - index * MINUTE_MS).toISOString();
+  return {
+    schemaVersion: 1,
+    sessionId: storedSessionId(index),
+    cwd: storeDir,
+    mode: "ask",
+    model: "test-model",
+    bashApproval: "gated",
+    title: `title ${index}`,
+    createdAt: updatedAt,
+    updatedAt,
+  };
+}
+
+describe("Picker — a session past the store's first page", () => {
+  let storeDir: string;
+  let host: ReturnType<typeof createChatHost> | undefined;
+  let screen: ReturnType<typeof mount> | undefined;
+  /** Every id an open was asked for: the resume the picker performed, and nothing else. */
+  const opened: (string | undefined)[] = [];
+
+  beforeEach(async () => {
+    opened.length = 0;
+    storeDir = makeTempDir("chat-picker-pages-");
+    const storage = createSessionStorage({
+      dir: join(storeDir, "sessions"),
+      pid: process.pid,
+      now: () => new Date(STORED_AT),
+      logger: makeLogger(),
+      isAlive: () => true,
+    });
+    for (let index = 0; index < STORED_SESSIONS; index += 1) await storage.writeMeta(storedMeta(storeDir, index));
+    /** The opener is the assertion's ear: the host's own resume, not a mock of the picker. */
+    const open: ChatHostDeps["open"] = async (request) => {
+      opened.push(request.resumeId);
+      const meta: SessionMeta = {
+        ...storedMeta(storeDir, 0),
+        sessionId: request.resumeId ?? "started-session",
+        title: null,
+        mode: "ask",
+      };
+      return {
+        meta,
+        release: async () => {},
+        session: {
+          id: meta.sessionId,
+          backend: { kind: "native", capabilities: {} },
+          async *send() {},
+          answer: () => "unknown",
+          cancel: () => {},
+          close: async () => {},
+          lastTurn: undefined,
+        },
+      };
+    };
+    host = createChatHost({
+      config: makeNaxConfig({ outputDir: join(storeDir, "output") }),
+      cwd: storeDir,
+      repoRoot: storeDir,
+      storage,
+      chain: null,
+      now: () => new Date(STORED_AT),
+      logger: makeLogger(),
+      open,
+    });
+    await host.start({ mode: "guarded", model: "test-model" });
+    screen = mount({ host });
+  });
+
+  afterEach(async () => {
+    await host?.close();
+    cleanupTempDir(storeDir);
+  });
+
+  test("a row on the store's second page can be chosen and resumed", async () => {
+    const ui = screen;
+    assertDefined(ui, "the mounted chat screen");
+    const target = `title ${PAGE_TWO_INDEX}`;
+    const pointerOn = (label: string): boolean => ui.rows().some((row) => row.startsWith(`${POINTER} ${label}`));
+    await ui.submit("/resume");
+    // The store is read off disk, a page at a time: the list is drawn when the read settles.
+    await waitForCondition(() => !ui.rows().join("\n").includes("loading…"), SETTLE_MS);
+    await ui.settle();
+    expect(ui.rows()).toContain("Resume a session");
+    // The row to choose is past the store's first page: a first page alone never reaches it.
+    for (let step = 0; step <= STORED_SESSIONS && !pointerOn(target); step += 1) ui.press(DOWN);
+    expect(pointerOn(target)).toBe(true);
+    ui.press(RETURN);
+    await ui.settle();
+    expect(opened).toContain(storedSessionId(PAGE_TWO_INDEX));
   });
 });

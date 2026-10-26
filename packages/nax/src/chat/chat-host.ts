@@ -2,6 +2,7 @@ import type {
   CommandRunResult,
   SandboxState,
   SessionEvent,
+  SessionListEntry,
   SessionMeta,
   SessionStorage,
   ToolProvider,
@@ -301,22 +302,35 @@ class NativeChatHost implements ChatHost {
     return count > 0 ? `hooks declared by ${count} package(s) are not executed by nax` : undefined;
   }
 
-  private async latestId(): Promise<string> {
+  /**
+   * Every session this cwd has, in the store's newest-first order — not just its first page.
+   * The store hands sessions back `LIST_PAGE_SIZE` at a time with a cursor, so a read that
+   * stopped at the first page would hide every session past the fiftieth from `/resume`: the
+   * picker's list is exactly this list, and an older free session is as resumable as a new
+   * one. Both readers below go through here, so neither can forget the cursor.
+   */
+  private async allSessions(): Promise<readonly SessionListEntry[]> {
+    const sessions: SessionListEntry[] = [];
     let cursor: string | undefined;
     do {
       const page = await this.deps.storage.list({ cwd: this.deps.cwd, ...(cursor ? { cursor } : {}) });
-      for (const { sessionId } of page.sessions) {
-        try {
-          const meta = await this.deps.storage.readMeta(sessionId);
-          if (meta === null || meta.sessionId !== sessionId || chatModeOfMeta(meta.mode) === null) continue;
-          if ((await this.deps.storage.readLockHolder(sessionId))?.state !== "live") return sessionId;
-        } catch (error) {
-          if (!(error instanceof Error && "code" in error && error.code === "SESSION_META_UNREADABLE")) throw error;
-          this.deps.logger.warn("chat", "skipping unreadable session metadata", { sessionId, cause: error });
-        }
-      }
+      sessions.push(...page.sessions);
       cursor = page.nextCursor;
     } while (cursor !== undefined);
+    return sessions;
+  }
+
+  private async latestId(): Promise<string> {
+    for (const { sessionId } of await this.allSessions()) {
+      try {
+        const meta = await this.deps.storage.readMeta(sessionId);
+        if (meta === null || meta.sessionId !== sessionId || chatModeOfMeta(meta.mode) === null) continue;
+        if ((await this.deps.storage.readLockHolder(sessionId))?.state !== "live") return sessionId;
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "SESSION_META_UNREADABLE")) throw error;
+        this.deps.logger.warn("chat", "skipping unreadable session metadata", { sessionId, cause: error });
+      }
+    }
     throw new NaxError(`no resumable session for ${this.deps.cwd}`, "CHAT_SESSION_NOT_FOUND", { stage: "chat" });
   }
 
@@ -464,7 +478,7 @@ class NativeChatHost implements ChatHost {
   }
 
   async listSessions(): Promise<readonly ChatSessionRow[]> {
-    const { sessions } = await this.deps.storage.list({ cwd: this.deps.cwd });
+    const sessions = await this.allSessions();
     return Promise.all(
       sessions.map(async ({ sessionId, title, updatedAt }) => {
         const holder = await this.deps.storage.readLockHolder(sessionId);
