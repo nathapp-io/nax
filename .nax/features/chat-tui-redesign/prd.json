@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T06:06:17.289Z",
+  "updatedAt": "2026-10-26T06:33:43.624Z",
   "userStories": [
     {
       "id": "US-001",
@@ -468,14 +468,17 @@
       "dependencies": [
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Highlighter integration must decode token classes into safe spans while handling streaming fences and thrown highlighting errors."
+        "reasoning": "Highlighter integration must decode token classes into safe spans while handling streaming fences and thrown highlighting errors.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/test/unit/tui/chat/markdown.test.ts",
@@ -486,7 +489,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ad3cc0c2d2886fe1d612203f979ea46ba1684a18"
     },
     {
       "id": "US-009",
