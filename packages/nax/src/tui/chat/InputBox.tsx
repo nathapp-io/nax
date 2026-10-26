@@ -11,9 +11,13 @@
  * left behind the `> ` marker (`> ` before the first row, two spaces before the rest), so ink
  * never re-wraps a row and no answer text is cut away. `maxRows` windows the box to its newest
  * rows, which is what a card on a short terminal asks for.
+ *
+ * Keys are reduced against the newest text the box published, not the `value` prop: a chunk
+ * of input — a paste, or a Return typed straight after the last character — is delivered
+ * before the owner re-renders, so the prop is one key behind.
  */
 import { Box, Text, useInput } from "ink";
-import type { ReactElement } from "react";
+import { type ReactElement, useRef } from "react";
 import { resolveWidth, wrappedSource } from "./layout-lines";
 import { displayWidth, sanitizeText } from "./styled-line";
 
@@ -65,15 +69,31 @@ export function InputBox({
   width,
   maxRows,
 }: InputBoxProps): ReactElement {
+  /**
+   * The newest text, ahead of the owner's re-render. Two keys delivered in one chunk — a
+   * paste, or a Return typed straight after the last character — both run before the owner
+   * has re-rendered, so editing the `value` prop would make the second key discard the
+   * first one's edit and submit the text from before the chunk. Every handler edits `latest`
+   * instead and writes it back before publishing.
+   */
+  const latest = useRef(value);
+  latest.current = value;
+  /** Hand the owner the next text and remember it for the next key in this batch. */
+  const publish = (next: string): void => {
+    latest.current = next;
+    onValueChange(next);
+  };
+
   useInput(
     (input, key) => {
+      const current = latest.current;
       if (key.return) {
-        if (key.meta) onValueChange(`${value}\n`);
-        else if ((!busy || value.startsWith("/")) && value.trim()) {
-          onValueChange("");
-          onSubmit(value);
+        if (key.meta) publish(`${current}\n`);
+        else if ((!busy || current.startsWith("/")) && current.trim()) {
+          publish("");
+          onSubmit(current);
         }
-      } else if (key.backspace || key.delete) onValueChange(Array.from(value).slice(0, -1).join(""));
+      } else if (key.backspace || key.delete) publish(Array.from(current).slice(0, -1).join(""));
       else if (
         !key.ctrl &&
         !key.meta &&
@@ -84,7 +104,7 @@ export function InputBox({
         !key.leftArrow &&
         !key.rightArrow
       ) {
-        onValueChange(value + input);
+        publish(current + input);
       }
     },
     { isActive: active },

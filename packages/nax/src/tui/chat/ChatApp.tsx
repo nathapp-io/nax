@@ -384,6 +384,7 @@ export function ChatApp({
           canRemember: ask.type === "approval_requested" && host.asks.canRemember(ask),
           answer,
           budget: bottomBudget,
+          theme,
         });
   const bottomRows =
     askCard === undefined
@@ -414,8 +415,9 @@ export function ChatApp({
         The bottom region is clipped to the rows reserved above: a row that ever measured short
         loses its tail rather than growing the frame, so the footer stays on the screen's last
         row whatever the terminal, the draft or an ask does. The ask card is measured by
-        `askPromptLayout`, whose own budget already drops the middle of an oversized card, so
-        the clipping only ever trims a card on a terminal too short for its answer box.
+        `askPromptLayout` — every row it draws, the wrapped elision label and the sandbox note
+        included — and its own budget already drops the middle of an oversized card, so the
+        clipping only ever trims a card on a terminal too short for its answer box.
       */}
       {ask !== undefined && askCard !== undefined ? (
         <Box height={bottomRows} overflow="hidden" flexDirection="column">
@@ -426,7 +428,6 @@ export function ChatApp({
             layout={askCard}
             answer={answer}
             onAnswerChange={(text) => setAnswerDraft({ requestId: ask.requestId, answer: text })}
-            theme={theme}
             width={columns}
             active={!keys.locked}
           />
