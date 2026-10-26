@@ -3,23 +3,19 @@
  * chat view draws: each entry's own lines, with one empty line between the entries that
  * produced any.
  *
- * Every decision here is a measurement in terminal columns (`displayWidth`), never in
- * code units, so a CJK message or an emoji never overflows the frame: a line wider than
- * the layout is wrapped at a word boundary with the entry's gutter kept on the
- * continuation, and a single word wider than the columns left to it is cut at that
- * boundary — inside the word when one cluster is itself wider than the line. A `width`
- * below `MIN_LAYOUT_WIDTH` is treated as that minimum, so a four-column terminal lays out
- * exactly as a ten-column one does.
+ * The columns engine every renderer shares — the width floor, the sanitised source lines,
+ * the word wrap and the indent-preserving prefix — lives in `layout-lines.ts`, so a narrow
+ * terminal lays a message, a card and a notice out by the same rules. The entries that
+ * carry the screen's own words rather than a message live beside it: `layout-status.ts`
+ * draws the welcome banner, a notice, a warning, an error and an interruption, and
+ * `layout-listing.ts` draws a titled listing. This module keeps the message and tool-card
+ * renderers, the dispatcher over the whole union, and the per-entry cache.
  *
  * A reply is rendered into the columns left behind its gutter, and the one line
  * `renderMarkdown` leaves wide on purpose — a fenced block's code line — is cut at the
  * layout's width (wrapping would invent line numbers the code's own indentation
  * contradicts). Every other line it leaves wide, a table's source text or raw HTML, is
  * wrapped instead, so a narrow layout never loses a reply's words.
- *
- * Every text that comes from the session, a tool, an MCP server or the host passes
- * through `sanitizeText` before it becomes span text — a reply, a tool's preview or a
- * thinking line carrying `\u001b[?1049l` cannot leave the alternate screen.
  *
  * A tool card is drawn from `toolCardModel`: header, result summary, an Edit's diff and,
  * while collapsed, the count of the lines ctrl+o would reveal. The model reports tones, not
@@ -32,16 +28,37 @@
  * a streaming reply re-lays out alone and the rest of a long transcript is not redrawn.
  * `_layoutDeps.layoutEntry` is the injected per-entry renderer, which is what makes that
  * observable.
- *
- * The dispatcher covers the whole `TranscriptEntry` union; the welcome, notice, warning,
- * error, listing and interrupted cases are filled in by US-011.
  */
+
+import {
+  EMPTY_LINE,
+  GUTTER,
+  GUTTER_WIDTH,
+  type LayoutContext,
+  line,
+  oneLine,
+  prefixedLine,
+  resolveWidth,
+  resultPrefix,
+  SOURCE_LINE_BREAK,
+  SPACE,
+  type SpanStyle,
+  styled,
+  textLines,
+  wrappedSource,
+  wrapText,
+} from "./layout-lines";
+import { listingLines } from "./layout-listing";
+import { interruptedLines, statusLines, welcomeLines } from "./layout-status";
 import { renderMarkdown } from "./markdown";
-import { displayWidth, MIN_LAYOUT_WIDTH, type Span, type StyledLine, sanitizeText } from "./styled-line";
+import { displayWidth, MIN_LAYOUT_WIDTH, type StyledLine, sanitizeText } from "./styled-line";
 import type { ChatColorToken, ChatTheme } from "./theme";
 import { type CardLine, type DiffLine, secondsBetween, type ToolCardModel, toolCardModel } from "./tool-card";
 import type { TranscriptEntry } from "./transcript-model";
-import { wrapSpans } from "./wrap";
+
+/** An empty line, re-exported so a view can pad a short screen the way the layout separates entries. */
+export { EMPTY_LINE } from "./layout-lines";
+export { type ListingTone, listingTone } from "./layout-listing";
 
 export interface LayoutOptions {
   /** The columns available to the transcript; below `MIN_LAYOUT_WIDTH` is treated as it. */
@@ -56,19 +73,6 @@ type ReplyEntry = Extract<TranscriptEntry, { kind: "reply" }>;
 type ThinkingEntry = Extract<TranscriptEntry, { kind: "thinking" }>;
 type ToolEntry = Extract<TranscriptEntry, { kind: "tool" }>;
 
-/** One entry's rendering context: the resolved width and how much detail to show. */
-interface LayoutContext {
-  readonly width: number;
-  readonly theme: ChatTheme;
-  readonly expanded: boolean;
-}
-
-/** An empty line: what separates two entries, and what a viewport pads a short screen with. */
-export const EMPTY_LINE: StyledLine = [];
-
-/** The columns a user message and a reply take before their content starts. */
-const GUTTER_WIDTH = 2;
-const GUTTER = " ".repeat(GUTTER_WIDTH);
 /**
  * The narrowest width a reply's markdown is rendered into. It is the layout's floor minus
  * the gutter, and is passed as `minWidth` so the renderer respects a content budget that
@@ -82,8 +86,6 @@ const THOUGHT_FOR = "Thought for";
 const SHOW_HINT = "(ctrl+o to show)";
 const HIDE_HINT = "(ctrl+o to hide)";
 const SECONDS_SUFFIX = "s";
-/** One column of space: a marker's separator, and the gap before a thinking hint. */
-const SPACE = " ";
 /** The colour a tool card's bullet takes, by the tone its model reported. */
 const BULLET_COLORS = {
   running: "muted",
@@ -94,166 +96,10 @@ const BULLET_COLORS = {
 const EXPAND_HINT = "lines (ctrl+o to expand)";
 /** Opens the count of the lines a collapsed card withholds. */
 const HIDDEN_LINE_MARK = "+";
-const TRAILING_NEWLINE = "\n";
-const SOURCE_LINE_BREAK = /\r\n|[\r\n]/;
-const WHITESPACE_TOKEN = /^\s+$/;
-const TOKEN_SEPARATOR = /(\s+)/;
-
-/** Splits text into user-perceived characters, so an emoji with a skin tone stays whole. */
-const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-
-/** A width below `MIN_LAYOUT_WIDTH` (or not a number at all) is treated as the minimum. */
-function resolveWidth(width: number): number {
-  const requested = Number.isFinite(width) ? Math.floor(width) : MIN_LAYOUT_WIDTH;
-  return Math.max(requested, MIN_LAYOUT_WIDTH);
-}
-
-function graphemes(text: string): readonly string[] {
-  return Array.from(GRAPHEME_SEGMENTER.segment(text), (segment) => segment.segment);
-}
-
-/** A span's style without its text. */
-type SpanStyle = Omit<Span, "text">;
-
-function styled(text: string, style: SpanStyle = {}): Span {
-  return { text, ...style };
-}
-
-/** A line from spans, dropping the empty ones so a line never carries a blank span. */
-function line(spans: readonly Span[]): StyledLine {
-  return spans.filter((span) => span.text !== "");
-}
-
-/** A line's width in terminal columns. */
-function lineWidth(spans: readonly Span[]): number {
-  return spans.reduce((total, span) => total + displayWidth(span.text), 0);
-}
-
-/**
- * The text's lines: sanitised, with the line break that ends a file's last line taken off.
- * An **empty** text has no lines; a text that is only that line break — `"\n"`, or one that
- * is left as `""` after it is taken off — is one blank source line, which the layout keeps.
- */
-function textLines(text: string): readonly string[] {
-  const body = sanitizeText(text);
-  if (body === "") return [];
-  const trimmed = body.endsWith(TRAILING_NEWLINE) ? body.slice(0, -TRAILING_NEWLINE.length) : body;
-  return trimmed.split(SOURCE_LINE_BREAK);
-}
-
-/** Split one cluster wider than a whole line into pieces, cutting between code points. */
-function cutCluster(cluster: string, columns: number): readonly string[] {
-  const pieces: string[] = [];
-  let current = "";
-  let used = 0;
-  for (const point of cluster) {
-    const width = displayWidth(point);
-    if (current !== "" && used + width > columns) {
-      pieces.push(current);
-      current = "";
-      used = 0;
-    }
-    current += point;
-    used += width;
-  }
-  if (current !== "") pieces.push(current);
-  return pieces;
-}
-
-/**
- * Cut one over-wide word into pieces no wider than `columns`. A cluster wider than the
- * whole line — an Indic conjunct can be one grapheme many columns wide — cannot fit
- * anywhere, so it is cut between code points: keeping the line inside the width wins over
- * keeping the cluster whole, exactly as `renderMarkdown` resolves the same case.
- */
-function cutWord(word: string, columns: number): readonly string[] {
-  const limit = Math.max(1, columns);
-  const pieces: string[] = [];
-  let current = "";
-  let used = 0;
-  const flush = () => {
-    if (current !== "") pieces.push(current);
-    current = "";
-    used = 0;
-  };
-  for (const glyph of graphemes(word)) {
-    const width = displayWidth(glyph);
-    if (width > limit) {
-      flush();
-      pieces.push(...cutCluster(glyph, limit));
-      continue;
-    }
-    if (used + width > limit) flush();
-    current += glyph;
-    used += width;
-  }
-  flush();
-  return pieces;
-}
-
-/**
- * Greedy word wrap over display columns. A word that does not fit opens a new line and
- * takes the spaces before it with it, the spaces *between* words on one line are kept as
- * they arrived, and a single word wider than the line is cut at the line's width so no
- * line overflows.
- */
-function wrapText(text: string, columns: number): readonly string[] {
-  const limit = Math.max(1, columns);
-  const lines: string[] = [];
-  let current = "";
-  let used = 0;
-  /** The spaces before the next word: kept when that word fits here, dropped when it does not. */
-  let pending = "";
-  let pendingWidth = 0;
-  const flush = () => {
-    if (current !== "") lines.push(current);
-    current = "";
-    used = 0;
-    pending = "";
-    pendingWidth = 0;
-  };
-  for (const token of text.split(TOKEN_SEPARATOR)) {
-    if (token === "") continue;
-    if (WHITESPACE_TOKEN.test(token)) {
-      // A line never starts with the spaces of a wrap point, so they are held, not written.
-      if (current !== "") {
-        pending = token;
-        pendingWidth = displayWidth(token);
-      }
-      continue;
-    }
-    const tokenWidth = displayWidth(token);
-    if (used + pendingWidth + tokenWidth <= limit) {
-      current += pending + token;
-      used += pendingWidth + tokenWidth;
-      pending = "";
-      pendingWidth = 0;
-      continue;
-    }
-    flush();
-    const pieces = cutWord(token, limit);
-    pieces.forEach((piece, index) => {
-      current = piece;
-      used = displayWidth(piece);
-      if (index < pieces.length - 1) flush();
-    });
-  }
-  flush();
-  return lines;
-}
 
 /** Muted italics: how the layout draws anything the model thought rather than said. */
 function thoughtLine(text: string): StyledLine {
   return line([{ text, color: "muted", italic: true }]);
-}
-
-/**
- * A source line's wrapped content. A blank or whitespace-only source line is one blank
- * line — it is the message's own formatting, not a wrap point — so it survives as one.
- */
-function wrappedSource(text: string, columns: number): readonly string[] {
-  const pieces = wrapText(text, columns);
-  return pieces.length === 0 ? [""] : pieces;
 }
 
 /**
@@ -276,17 +122,6 @@ function userLines(entry: UserEntry, context: LayoutContext): readonly StyledLin
     }
   }
   return lines;
-}
-
-/**
- * One line behind its prefix. A line that fits is drawn whole; a wider one is wrapped at
- * word boundaries with blank columns as wide as the prefix on every continuation, so a
- * narrow layout loses neither a card's output nor a reply's words.
- */
-function prefixedLine(spans: readonly Span[], prefix: readonly Span[], context: LayoutContext): readonly StyledLine[] {
-  const prefixed = line([...prefix, ...spans]);
-  if (lineWidth(prefixed) <= context.width) return [prefixed];
-  return wrapSpans(spans, { width: context.width, prefix });
 }
 
 /**
@@ -332,19 +167,9 @@ function thinkingLines(entry: ThinkingEntry, context: LayoutContext): readonly S
   return [...header, ...thought];
 }
 
-/** `  ⎿  ` — the gutter, the result glyph, and the two columns that follow it. */
-function resultPrefix(theme: ChatTheme): string {
-  return `${GUTTER}${theme.glyphs.result}${SPACE}${SPACE}`;
-}
-
 /** Where a card's later summary lines, its diff lines and its expand hint start. */
 function cardIndent(theme: ChatTheme): string {
   return SPACE.repeat(displayWidth(resultPrefix(theme)));
-}
-
-/** A text flattened to one row: a header or a diff line is one row by definition. */
-function oneLine(text: string): string {
-  return text.split(SOURCE_LINE_BREAK).join(SPACE);
 }
 
 /**
@@ -437,10 +262,7 @@ function toolLines(entry: ToolEntry, context: LayoutContext): readonly StyledLin
   ];
 }
 
-/**
- * One entry's lines. Every kind of the union is dispatched here; the kinds US-011 owns
- * draw nothing yet, so the whole union is present and none is forgotten.
- */
+/** One entry's lines, dispatched over every kind of the union. */
 function layoutEntry(entry: TranscriptEntry, context: LayoutContext): readonly StyledLine[] {
   switch (entry.kind) {
     case "user":
@@ -452,12 +274,15 @@ function layoutEntry(entry: TranscriptEntry, context: LayoutContext): readonly S
     case "tool":
       return toolLines(entry, context);
     case "welcome":
+      return welcomeLines(entry, context);
     case "notice":
     case "warning":
     case "error":
+      return statusLines(entry, context);
     case "listing":
+      return listingLines(entry, context);
     case "interrupted":
-      return [];
+      return interruptedLines(context);
   }
 }
 

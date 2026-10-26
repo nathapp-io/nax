@@ -549,3 +549,30 @@ describe("layoutTranscript: spacing and width", () => {
     expect(texts(tiny)).toEqual(texts(minimum));
   });
 });
+
+describe("layoutTranscript: status and listing entries beside a message", () => {
+  /** One entry of every kind US-011 added, so a message is laid out among them all. */
+  function statusRun(): readonly TranscriptEntry[] {
+    return [
+      { kind: "welcome", skills: 1, commands: 2, agents: 3, mcpServers: 4, mcpConnected: 5 },
+      { kind: "notice", text: "n" },
+      { kind: "warning", text: "w" },
+      { kind: "error", text: "e" },
+      { kind: "listing", title: "L", text: "a\nb" },
+      { kind: "interrupted" },
+    ];
+  }
+
+  test("keeps a user message laid out as the marker and its text", () => {
+    const lines = layout([...statusRun(), userEntry("hi")]);
+    expect(texts(lines).at(-1)).toBe("> hi");
+  });
+
+  test("draws every status entry it is given a line for", () => {
+    const drawn = texts(layout(statusRun()));
+    expect(drawn).toContain(`${theme.glyphs.notice} n`);
+    expect(drawn).toContain(`${theme.glyphs.warning} w`);
+    expect(drawn).toContain(`${theme.glyphs.error} e`);
+    expect(drawn).toContain(`  ${theme.glyphs.result}  Interrupted by user`);
+  });
+});
