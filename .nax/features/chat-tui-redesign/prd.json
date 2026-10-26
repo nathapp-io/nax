@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T14:23:21.201Z",
+  "updatedAt": "2026-10-26T15:00:07.690Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1398,14 +1398,17 @@
         "US-021",
         "US-022"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Approval input is an access-control path with remembered decisions and denial/cancellation separation; strict security override plus timed and controlled UI state."
+        "reasoning": "Approval input is an access-control path with remembered decisions and denial/cancellation separation; strict security override plus timed and controlled UI state.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ask-card.ts",
@@ -1431,7 +1434,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "671952b07d146a6cc2901e46fe459cfa4a24e526"
     },
     {
       "id": "US-024",
