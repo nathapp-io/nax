@@ -24,7 +24,8 @@ export const _slashCommandDeps = {
     }
   },
 };
-const COMMANDS = [
+/** The built-ins in the order `/help` and the slash menu list them. */
+export const COMMANDS = [
   "help",
   "mode",
   "model",
@@ -38,7 +39,26 @@ const COMMANDS = [
   "mcp",
   "agents",
   "quit",
-];
+] as const;
+
+export type SlashCommandName = (typeof COMMANDS)[number];
+
+/** What each built-in does: the help text and the slash menu's second column. */
+export const COMMAND_DESCRIPTIONS = {
+  help: "Show commands and skills",
+  mode: "Switch permission mode",
+  model: "Switch model",
+  sessions: "List saved sessions",
+  resume: "Resume a saved session",
+  clear: "Clear the conversation",
+  cost: "Show session cost",
+  feature: "Load a feature spec into the conversation",
+  skills: "List skills",
+  plugins: "List plugins and what they provide",
+  mcp: "List MCP servers",
+  agents: "List agents",
+  quit: "Quit nax chat",
+} satisfies Record<SlashCommandName, string>;
 
 export function parseSlashCommand(text: string): SlashCommand | null {
   if (!text.startsWith("/")) return null;
@@ -75,7 +95,7 @@ interface CommandContext {
 
 function formatHelp(host: ChatHost): string {
   return [
-    ...COMMANDS.map((name) => `/${name}`),
+    ...COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`),
     ...(host.catalog?.commands ?? []).map((entry) => `/${entry.name} - ${entry.description ?? ""}`),
     ...(host.catalog?.skills ?? []).map((entry) => `/${entry.name} - ${entry.description}`),
   ].join("\n");

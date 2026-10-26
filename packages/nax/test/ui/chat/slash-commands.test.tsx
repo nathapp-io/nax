@@ -8,22 +8,8 @@ import { featureDir } from "@/config";
 import { buildChatFeatureMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing, type SkillResource } from "@/resources";
 import { ChatApp } from "@/tui/chat";
+import { COMMAND_DESCRIPTIONS, COMMANDS } from "@/tui/chat/slash-commands";
 
-const COMMANDS = [
-  "help",
-  "mode",
-  "model",
-  "sessions",
-  "resume",
-  "clear",
-  "cost",
-  "feature",
-  "skills",
-  "plugins",
-  "mcp",
-  "agents",
-  "quit",
-];
 afterEach(() => {
   cleanup();
   mock.restore();
@@ -156,17 +142,17 @@ describe("slash command routing", () => {
     await ui.line("/cost");
     expect(ui.lastFrame()).toContain("$1.24\n");
   });
-  test("AC-16 help lists every command", async () => {
+  test("AC-16 US-024 AC-14 help lists every command with its description", async () => {
     const ui = mount();
     await ui.line("/help");
     expect(ui.host.catalog).toBeUndefined();
     expect(ui.host.resourceNotice).toBeUndefined();
-    expect(ui.lastFrame()).toContain(COMMANDS.map((command) => `/${command}`).join("\n"));
+    expect(ui.lastFrame()).toContain(COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`).join("\n"));
   });
-  test("US-008 AC-21 help lists /mcp on the line after /plugins", async () => {
+  test("US-008 AC-21 US-024 AC-14 help lists /mcp on the line after /plugins", async () => {
     const ui = mount();
     await ui.line("/help");
-    expect(ui.lastFrame()).toContain("/plugins\n/mcp\n");
+    expect(ui.lastFrame()).toContain("/plugins  List plugins and what they provide\n/mcp  List MCP servers");
   });
   test("AC-17 closes and exits", async () => {
     const ui = mount();
@@ -305,10 +291,41 @@ describe("agents command", () => {
     expect(show).toHaveBeenCalledWith("(no agents)");
   });
 
-  test("US-011 AC-15 help lists /agents between /mcp and /quit", async () => {
+  test("US-011 AC-15 US-024 AC-15 help lists /agents between /mcp and /quit", async () => {
     const ui = mount();
     await ui.line("/help");
-    expect(ui.lastFrame()).toContain("/mcp\n/agents\n/quit");
+    expect(ui.lastFrame()).toContain("/mcp  List MCP servers\n/agents  List agents\n/quit  Quit nax chat");
+  });
+
+  test("US-024 AC-16 help lists a catalog command with its hyphen description", async () => {
+    const ui = mount();
+    Object.assign(ui.host, {
+      catalog: buildResourceCatalog([
+        {
+          id: "claude-project",
+          origin: { kind: "claude-project" },
+          root: "/repo",
+          skills: [],
+          agents: [],
+          mcpServers: [],
+          hooks: [],
+          diagnostics: [],
+          commands: [
+            {
+              kind: "command",
+              name: "deploy",
+              qualifiedName: "deploy",
+              description: "Ship it",
+              template: "Deploy $ARGUMENTS",
+              path: "/repo/.claude/commands/deploy.md",
+              origin: { kind: "claude-project" },
+            },
+          ],
+        },
+      ]),
+    });
+    await ui.line("/help");
+    expect(ui.lastFrame()).toContain("/deploy - Ship it");
   });
 
   test("US-011 shows the listing of host.agents() in the transcript without sending", async () => {
