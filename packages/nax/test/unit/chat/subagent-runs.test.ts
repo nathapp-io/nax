@@ -3,6 +3,9 @@ import type { AgentSession, SessionEvent } from "@nathapp/nax-agent";
 import {
   approvalRequestedEvent,
   approvalResolvedEvent,
+  assertDefined,
+  forwardedToolCall,
+  forwardedToolResult,
   makeAgentCatalog,
   makeAgentResource,
   makeNaxConfig,
@@ -273,6 +276,15 @@ describe("createSubagentRuns usage, cost and tool events", () => {
     await f.reached;
     f.finish();
     await running;
-    expect(seen).toEqual([call, result]);
+    expect(seen.map((event) => event.type)).toEqual(["tool_call", "tool_result"]);
+    const forwardedCall = forwardedToolCall(seen, call.callId);
+    const forwardedResult = forwardedToolResult(seen, result.callId);
+    assertDefined(forwardedCall, "forwarded tool_call");
+    assertDefined(forwardedResult, "forwarded tool_result");
+    // The tags are additive: the tool-activity fields are the originating fixture's.
+    expect(forwardedCall.name).toBe(call.name);
+    expect(forwardedResult.isError).toBe(result.isError);
+    expect(forwardedCall.metadata).toEqual({ subagent: reviewer.qualifiedName, subagentTask: "check it" });
+    expect(forwardedResult.metadata).toEqual({ subagent: reviewer.qualifiedName, subagentTask: "check it" });
   });
 });

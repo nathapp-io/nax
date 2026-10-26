@@ -69,6 +69,18 @@ interface NestedUsage {
   previousAt?: string;
 }
 
+/**
+ * Tag forwarded tool activity with the agent and task that produced it (US-003),
+ * merged over the event's own metadata so nothing the nested session set is lost.
+ * Non-activity events pass through untouched; the turn listener only ever
+ * receives `tool_call` and `tool_result` today, and a future addition would be
+ * forwarded without a task tag rather than mislabelled as one.
+ */
+function taggedActivity(event: SessionEvent, agent: AgentResource, task: string): SessionEvent {
+  if (event.type !== "tool_call" && event.type !== "tool_result") return event;
+  return { ...event, metadata: { ...event.metadata, subagent: agent.qualifiedName, subagentTask: task } };
+}
+
 export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
   const owners = new Map<string, AgentSession>();
   const active = new Set<AgentSession>();
@@ -148,6 +160,8 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
     const current = deps.current();
     // Late nested tool events belong to the send that started this run, never a later one.
     const listener = deps.turnListener();
+    const forward =
+      listener === undefined ? undefined : (event: SessionEvent) => listener(taggedActivity(event, agent, task));
     const { model } = resolveSubagentModel({
       ...(agent.model !== undefined ? { requested: agent.model } : {}),
       parentModel: current.model,
@@ -177,7 +191,7 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
           active.add(session);
         },
         onEvent: (event) => {
-          routeActivity(event, usage, current, model, listener);
+          routeActivity(event, usage, current, model, forward);
           if (nested !== undefined) routeAsk(event, nested, agent);
         },
       });
