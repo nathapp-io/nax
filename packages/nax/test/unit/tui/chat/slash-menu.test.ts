@@ -7,7 +7,15 @@ import {
   type SkillResource,
 } from "@/resources";
 import { COMMAND_DESCRIPTIONS, COMMANDS } from "@/tui/chat/slash-commands";
-import { filterSlashMenu, type SlashMenuItem, slashMenuItems } from "@/tui/chat/slash-menu";
+import {
+  filterSlashMenu,
+  SLASH_MENU_MAX_ROWS,
+  type SlashMenuItem,
+  slashMenuItems,
+  slashMenuQueryState,
+  slashMenuRows,
+  slashMenuWindow,
+} from "@/tui/chat/slash-menu";
 
 const ORIGIN = { kind: "claude-project" } as const;
 
@@ -136,5 +144,58 @@ describe("filterSlashMenu", () => {
   test("AC-13 an exact skill name outranks the built-in it prefixes", () => {
     const withSkill = slashMenuItems({ catalog: makeCatalog([], [makeSkill("skill", "Review code")]) });
     expect(names(filterSlashMenu(withSkill, "/skill") ?? []).slice(0, 2)).toEqual(["skill", "skills"]);
+  });
+});
+
+describe("slashMenuRows and slashMenuWindow", () => {
+  test.each([
+    [13, SLASH_MENU_MAX_ROWS],
+    [SLASH_MENU_MAX_ROWS, SLASH_MENU_MAX_ROWS],
+    [3, 3],
+    [0, 0],
+  ])("a query keeping %i matches draws %i rows", (count, expected) => {
+    expect(slashMenuRows(count)).toBe(expected);
+  });
+
+  test.each([
+    [0, 0, 0],
+    [13, 0, 0],
+    [13, SLASH_MENU_MAX_ROWS - 1, 0],
+    [13, SLASH_MENU_MAX_ROWS, 1],
+    [13, 9, 2],
+    [13, 12, 5],
+    [3, 2, 0],
+  ])("of %i matches with the pointer on %i the window starts at %i", (count, selected, first) => {
+    expect(slashMenuWindow(count, selected)).toEqual({ first, rows: Math.min(count, SLASH_MENU_MAX_ROWS) });
+  });
+});
+
+describe("slashMenuQueryState", () => {
+  const items = slashMenuItems({ catalog: makeCatalog() });
+  const state = (input: { query: string; dismissed?: string; blocked?: boolean }) =>
+    slashMenuQueryState({ items, query: input.query, dismissed: input.dismissed, blocked: input.blocked ?? false });
+
+  test("a matching query opens the menu and reserves the rows it draws", () => {
+    expect(state({ query: "/" })).toMatchObject({ open: true, rows: SLASH_MENU_MAX_ROWS, reopen: false });
+  });
+
+  test("an empty prompt is not a menu query", () => {
+    expect(state({ query: "" })).toMatchObject({ open: false, rows: 0, matches: null });
+  });
+
+  test("a query that matches nothing draws no rows", () => {
+    expect(state({ query: "/zzz" })).toMatchObject({ open: false, rows: 0 });
+  });
+
+  test("an escape suppresses the query it closed at", () => {
+    expect(state({ query: "/re", dismissed: "/re" })).toMatchObject({ open: false, rows: 0, reopen: false });
+  });
+
+  test("a changed prompt lifts that suppression", () => {
+    expect(state({ query: "/res", dismissed: "/re" })).toMatchObject({ open: true, reopen: true });
+  });
+
+  test("another surface owning the bottom closes the menu", () => {
+    expect(state({ query: "/re", blocked: true })).toMatchObject({ open: false, rows: 0, matches: null });
   });
 });

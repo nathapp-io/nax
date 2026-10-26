@@ -384,6 +384,9 @@ function Row({ cells, theme }: { readonly cells: readonly Cell[]; readonly theme
 
 /** The keys the slash menu owns while it is open under the input. */
 function ownsNavigation(key: Key): boolean {
+  // A shifted key is never the menu's: shift+arrows scroll the transcript viewport, shift+tab
+  // cycles the permission mode and shift+return is a newline in the prompt.
+  if (key.shift) return false;
   return key.return || key.upArrow || key.downArrow || key.tab || key.escape;
 }
 

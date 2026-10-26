@@ -15,7 +15,10 @@
  * loses neither the typed text nor the history — and the entry sources the session does not
  * provide: the welcome banner at mount and after `/clear`, a `listing` for the commands
  * that list and a `notice` for every other command's text, and `notice` / `warning` /
- * `error` entries for the host's own statements.
+ * `error` entries for the host's own statements. It also owns the slash menu's state — the
+ * query, the escape that put it away and what the two keys that complete a line write back
+ * into the prompt — while the rows themselves are the model's (`slashMenuQueryState`), so
+ * the rows it reserves under the input are the rows the menu draws.
  *
  * Terminal size comes from `useStdout` (24 rows and 80 columns when the stream cannot say)
  * and is re-read on the stream's `resize` event. The working line's clock is a `setTimeout`
@@ -28,15 +31,17 @@
  * owns escaping an idle prompt and the typing keys; the viewport owns pageUp, pageDown,
  * home, end and shift+arrow. The screen itself owns the two that apply in every state —
  * ctrl+o toggles collapsed detail, and escape interrupts a running turn, but never while an
- * ask card is up (the card owns escape, and it must not reach `host.cancel()`). ctrl-c and
- * shift+tab stay with `useChatKeys`. A send bumps the viewport's follow token, so a message
- * typed while scrolled up brings the screen back to the newest line.
+ * ask card is up (the card owns escape, and it must not reach `host.cancel()`) and never
+ * while the slash menu is open (the menu's escape puts the menu away, keeps the text and
+ * arms nothing). ctrl-c and shift+tab stay with `useChatKeys`. A send bumps the viewport's
+ * follow token, so a message typed while scrolled up brings the screen back to the newest
+ * line.
  */
 
 import type { SessionEvent } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, useInput, useStdout } from "ink";
-import { type ReactElement, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactElement, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatHost, ChatMcpState } from "@/chat";
 import type { McpServerEvent } from "@/mcp";
 import { buildCommandMessage } from "@/prompts";
@@ -56,7 +61,10 @@ import {
   workingLine,
 } from "./chat-status";
 import { layoutTranscript } from "./layout";
+import { EMPTY_EDITOR } from "./line-editor";
+import { SlashMenu } from "./SlashMenu";
 import { parseSlashCommand, runSlashCommand, type SlashCommand, type SlashOutcome } from "./slash-commands";
+import { slashMenuItems, slashMenuQueryState } from "./slash-menu";
 import { StyledLineView } from "./styled-line";
 import { TranscriptViewport } from "./TranscriptViewport";
 import { type ChatTheme, resolveChatTheme } from "./theme";
@@ -232,6 +240,8 @@ export function ChatApp({
   const [hint, setHint] = useState<string | undefined>(undefined);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [expanded, setExpanded] = useState(false);
+  /** The query an escape put the slash menu away at; suppression ends when the text changes. */
+  const [dismissedQuery, setDismissedQuery] = useState<string | undefined>(undefined);
   /** Bumped on every send, so the viewport returns to the newest line the user just added. */
   const [followToken, setFollowToken] = useState(0);
   const sending = useRef(false);
@@ -246,11 +256,28 @@ export function ChatApp({
   const ask = host.asks.pending()[0];
   /** A turn is in flight from the send until its stream settles — the footer's busy rule. */
   const turnRunning = busy || status.running;
+  // The menu offers what the host's catalogue adds to the built-ins. A session's catalogue is
+  // fixed for its life, so the items are built once per host rather than on every tick.
+  const menuItems = useMemo(() => slashMenuItems(host), [host]);
+  /**
+   * The slash menu is open while the prompt holds a `/` query that matches something, while
+   * no ask card owns the bottom of the screen (a card's keys are its own), and while no
+   * escape has put this prompt's menu away. A dismissal lasts only until the text next
+   * changes, so the remembered query is dropped as soon as the prompt holds anything else.
+   */
+  const menu = slashMenuQueryState({
+    items: menuItems,
+    query: draft.editor.text,
+    dismissed: dismissedQuery,
+    blocked: ask !== undefined,
+  });
+  if (menu.reopen) setDismissedQuery(undefined);
 
   /**
    * The two keys the screen itself owns, in every state: ctrl+o toggles collapsed detail, and
    * escape interrupts a running turn. Escape is claimed only when no ask card is up — the card
-   * owns it, and a card's escape must never reach `host.cancel()` — only while a turn runs, and
+   * owns it, and a card's escape must never reach `host.cancel()` — only while no slash menu is
+   * open (the menu's escape puts the menu away and nothing else), only while a turn runs, and
    * only while the hook's control guard is open: on an idle screen the input owns it (where a
    * first escape arms the clear), and once close has begun the host is already closed, so a
    * late escape would throw instead of letting teardown finish.
@@ -260,7 +287,7 @@ export function ChatApp({
       setExpanded((current) => !current);
       return;
     }
-    if (!key.escape || ask !== undefined || !turnRunning || !keys.canControl()) return;
+    if (!key.escape || ask !== undefined || menu.open || !turnRunning || !keys.canControl()) return;
     host.cancel();
   });
 
@@ -393,6 +420,24 @@ export function ChatApp({
     }
   }
 
+  /**
+   * The menu's two actions write the same draft the input writes when it submits or is
+   * completed: tab leaves the selected name in the prompt with the space its arguments
+   * follow, and return sends exactly that name and empties the prompt, so the line joins the
+   * history a recalled submit does.
+   */
+  function completeCommand(name: string): void {
+    const text = `/${name} `;
+    setDraft((current) => ({ editor: { text, cursor: Array.from(text).length }, history: current.history }));
+  }
+
+  function runCommandLine(name: string): void {
+    const line = `/${name}`;
+    setHint(undefined);
+    setDraft((current) => ({ editor: EMPTY_EDITOR, history: [...current.history, line] }));
+    void submit(line);
+  }
+
   const columns = size.columns;
   const lines = layoutTranscript(entries, { width: columns, theme, expanded });
   const header = headerLines({ state, version, cwd, home, width: columns, glyphs: theme.glyphs });
@@ -410,7 +455,9 @@ export function ChatApp({
     1,
     size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
   );
-  const inputBudget = Math.max(1, bottomBudget - INPUT_RULE_ROWS);
+  // The menu's rows are the bottom region's too: they are reserved before the input is
+  // measured, so an open menu shortens the viewport instead of pushing the footer off screen.
+  const inputBudget = Math.max(1, bottomBudget - INPUT_RULE_ROWS - menu.rows);
   // The question card's draft is the screen's state: only then can the card's rows — the
   // answer box included — be measured before the frame is composed. It is the card's own
   // draft, keyed by the request it was typed for, so it never inherits the chat input's.
@@ -434,7 +481,7 @@ export function ChatApp({
         }).rows;
   const bottomRows =
     ask === undefined
-      ? inputRows(draft, { width: columns, busy, container: columns, maxRows: inputBudget })
+      ? inputRows(draft, { width: columns, busy, container: columns, maxRows: inputBudget }) + menu.rows
       : Math.min(cardRows, bottomBudget);
   const viewportHeight = Math.max(
     MIN_VIEWPORT_ROWS,
@@ -488,7 +535,7 @@ export function ChatApp({
           />
         </Box>
       ) : (
-        <Box height={bottomRows} overflow="hidden">
+        <Box height={bottomRows} overflow="hidden" flexDirection="column">
           <ChatInput
             draft={draft}
             onDraftChange={setDraft}
@@ -502,8 +549,20 @@ export function ChatApp({
             busy={busy}
             maxRows={inputBudget}
             hint={hint}
+            yieldNavigation={menu.open}
             onClearArmedChange={setClearArmed}
           />
+          {menu.open ? (
+            <SlashMenu
+              menu={menu}
+              width={columns}
+              theme={theme}
+              active={!keys.locked}
+              onComplete={completeCommand}
+              onRun={runCommandLine}
+              onClose={() => setDismissedQuery(menu.query)}
+            />
+          ) : null}
         </Box>
       )}
       <Box flexDirection="row" justifyContent="space-between" width={columns} height={1} overflow="hidden">
