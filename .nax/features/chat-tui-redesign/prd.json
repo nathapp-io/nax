@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T12:01:03.762Z",
+  "updatedAt": "2026-10-26T14:06:25.819Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1270,14 +1270,17 @@
       "dependencies": [
         "US-020"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Keyboard ownership interacts with approval denial, session cancellation/close and queued permission-mode control; strict security/session isolation."
+        "reasoning": "Keyboard ownership interacts with approval denial, session cancellation/close and queued permission-mode control; strict security/session isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -1296,7 +1299,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3f65aaf5dbe3e0b948395a5a9090d5c224e5b9ae"
     },
     {
       "id": "US-022",
