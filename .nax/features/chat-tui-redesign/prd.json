@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T05:21:35.108Z",
+  "updatedAt": "2026-10-26T05:32:43.011Z",
   "userStories": [
     {
       "id": "US-001",
@@ -349,14 +349,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Extends one pure model and its existing tests with bounded output and a specified prefix/suffix diff algorithm."
+        "reasoning": "Extends one pure model and its existing tests with bounded output and a specified prefix/suffix diff algorithm.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/test/unit/tui/chat/tool-card.test.ts",
@@ -369,7 +372,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7366a2eb55316d3b5db32d62692eff89fce78c0f"
     },
     {
       "id": "US-007",
