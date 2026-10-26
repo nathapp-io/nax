@@ -381,6 +381,23 @@ describe("renderMarkdown fenced code", () => {
     expect(plainText(lines[1])).toBe(`${theme.glyphs.codeSide} ${body}`);
   });
 
+  test("keeps the blank line a fence's body ends with", () => {
+    // The lexer has already dropped the newline before the closing fence, so the one blank
+    // line left in the body is the reply's own: trimming it would delete a line of its code.
+    const lines = render(`${FENCE}ts\nconst x = 1;\n\n${FENCE}`);
+    expect(texts(lines)).toHaveLength(4);
+    expect(plainText(lines[1])).toBe(`${theme.glyphs.codeSide} const x = 1;`);
+    expect(plainText(lines[2]).trim()).toBe(theme.glyphs.codeSide);
+    expect(plainText(lines[3])).toContain(theme.glyphs.codeBottom);
+  });
+
+  test("keeps both blank lines a fence's body ends with", () => {
+    const lines = render(`${FENCE}ts\nconst x = 1;\n\n\n${FENCE}`);
+    expect(texts(lines)).toHaveLength(5);
+    expect(plainText(lines[2]).trim()).toBe(theme.glyphs.codeSide);
+    expect(plainText(lines[3]).trim()).toBe(theme.glyphs.codeSide);
+  });
+
   test("renders an unclosed fence as code to the end of the text (AC-13)", () => {
     const lines = render(`${FENCE}ts\nconst a`);
     expect(lines).toHaveLength(3);

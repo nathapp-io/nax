@@ -68,7 +68,6 @@ const HLJS_CLASS_PREFIX = "hljs-";
 const SPACE = " ";
 const LANGUAGE_SEPARATOR = /\s+/;
 const LINE_BREAK = "\n";
-const TRAILING_LINE_BREAK = /\n$/;
 
 /** Scope class (without the `hljs-` prefix) -> theme token. A `Map` for the same reason. */
 const SCOPE_COLORS: ReadonlyMap<string, ChatColorToken> = new Map<string, ChatColorToken>([
@@ -193,14 +192,17 @@ function highlightedLines(html: string): readonly (readonly Span[])[] {
  * draws the lines plain. Language resolution is inside the same boundary as the highlight
  * call: the fence's info string is the reply's own text, so nothing it can name may throw
  * out of a render.
+ *
+ * The body is drawn exactly as the lexer handed it over: the lexer has already dropped the
+ * newline that precedes the closing fence, so a fence that ends with a blank line keeps that
+ * blank line here — trimming one more would silently delete a line of the user's code.
  */
 export function codeLines(code: string, language: string, highlight: HighlightFn): readonly (readonly Span[])[] {
-  const body = code.replace(TRAILING_LINE_BREAK, "");
   try {
     const grammar = resolveCodeLanguage(language);
-    return grammar === undefined ? plainLines(body) : highlightedLines(highlight(body, grammar));
+    return grammar === undefined ? plainLines(code) : highlightedLines(highlight(code, grammar));
   } catch {
     // A failing highlighter must not cost the user the reply: draw the code as it arrived.
-    return plainLines(body);
+    return plainLines(code);
   }
 }
