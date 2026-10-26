@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T04:54:55.601Z",
+  "updatedAt": "2026-10-26T05:06:09.328Z",
   "userStories": [
     {
       "id": "US-001",
@@ -221,14 +221,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Extends the existing appendChatEvent reducer pattern in one new pure module with specified immutable updates and nested call matching; no session or approval decisions change."
+        "reasoning": "Extends the existing appendChatEvent reducer pattern in one new pure module with specified immutable updates and nested call matching; no session or approval decisions change.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/Transcript.tsx",
@@ -248,7 +251,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7ffa2d4275c7ba00f54ef3cf7f97adc96eff285a"
     },
     {
       "id": "US-005",
