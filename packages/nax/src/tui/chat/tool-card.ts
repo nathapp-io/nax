@@ -238,8 +238,11 @@ function bashSummary(entry: ToolEntry, expanded: boolean): Capped<CardLine> {
   return capped(lines.map(plain), BASH_PREVIEW_LINES, expanded);
 }
 
-/** Whole seconds between two timestamps; a missing end or an unparseable pair counts as none. */
-function secondsBetween(startedAt: string, endedAt: string | undefined): number {
+/**
+ * Whole seconds between two timestamps; a missing end or an unparseable pair counts as
+ * none. Exported because `layout.ts` measures a thinking entry's duration the same way.
+ */
+export function secondsBetween(startedAt: string, endedAt: string | undefined): number {
   const start = Date.parse(startedAt);
   const end = endedAt === undefined ? start : Date.parse(endedAt);
   const seconds = Math.floor((end - start) / 1000);
