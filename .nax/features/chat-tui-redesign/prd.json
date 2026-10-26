@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T08:22:53.370Z",
+  "updatedAt": "2026-10-26T08:53:58.921Z",
   "userStories": [
     {
       "id": "US-001",
@@ -751,14 +751,17 @@
         "US-002",
         "US-012"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Thin Ink component delegates state transitions to an existing reducer and renders a fixed row window."
+        "reasoning": "Thin Ink component delegates state transitions to an existing reducer and renders a fixed row window.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/viewport.ts",
@@ -772,7 +775,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4c849128ac419f959c5a2db2c744153f0040c33f"
     },
     {
       "id": "US-014",
