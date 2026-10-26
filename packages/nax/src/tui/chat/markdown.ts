@@ -9,11 +9,14 @@
  * followed by a muted ` (<href>)`. Tables, raw HTML and anything else the lexer
  * produced but this model does not style fall back to their source text.
  *
- * Every width is measured with `displayWidth` (a width below `MIN_LAYOUT_WIDTH` is
- * treated as `MIN_LAYOUT_WIDTH`), and every text becomes span text only after
- * `sanitizeText`, so a reply carrying `\u001b[?1049l` cannot leave the alternate
- * screen. Malformed input never throws: the lexer decides what it tokenises and an
- * unlexable document falls back to its own source lines.
+ * Every width is measured with `displayWidth` and every wrap breaks between grapheme
+ * clusters, so an emoji with a skin tone or a zero-width joiner is never split (a
+ * `width` below `MIN_LAYOUT_WIDTH` is treated as `MIN_LAYOUT_WIDTH`, and a prefix — an
+ * indent, a marker, a quote glyph — is bounded to leave `MIN_CONTENT_WIDTH` columns of
+ * content). Every text becomes span text only after `sanitizeText`, so a reply carrying
+ * `\u001b[?1049l` cannot leave the alternate screen. Malformed input never throws: the
+ * lexer decides what it tokenises and an unlexable document falls back to its own
+ * source lines.
  */
 import { marked, type Token, type Tokens } from "marked";
 import { displayWidth, MIN_LAYOUT_WIDTH, type Span, type StyledLine, sanitizeText } from "./styled-line";
@@ -24,7 +27,7 @@ export interface RenderMarkdownOptions {
   readonly theme: ChatTheme;
 }
 
-/** A span's style without its text — carried per character while wrapping. */
+/** A span's style without its text — carried per glyph while wrapping. */
 type SpanStyle = Omit<Span, "text">;
 
 /** Every list level indents this many columns. */
@@ -36,9 +39,19 @@ const NEWLINE_RUN = /\n+/g;
 const SOURCE_LINE_BREAK = /\r\n|[\r\n]/;
 const TRAILING_NEWLINE = "\n";
 
-/** The characters of one line, each still carrying the style it was drawn with. */
-interface StyledChar {
-  readonly char: string;
+/**
+ * The narrowest column budget a prefix may leave for content. It exceeds the widest
+ * cluster a terminal draws (two columns), so a bounded prefix always leaves room for a
+ * whole grapheme and a wrap never has to split one.
+ */
+const MIN_CONTENT_WIDTH = 4;
+
+/** Splits text into user-perceived characters, so an emoji with a skin tone or a ZWJ stays whole. */
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** One grapheme cluster of a line, still carrying the style it was drawn with. */
+interface Glyph {
+  readonly glyph: string;
   readonly style: SpanStyle;
 }
 
@@ -56,6 +69,10 @@ interface BlockContext {
 function resolveWidth(width: number): number {
   const requested = Number.isFinite(width) ? Math.floor(width) : MIN_LAYOUT_WIDTH;
   return Math.max(requested, MIN_LAYOUT_WIDTH);
+}
+
+function graphemesOf(text: string): string[] {
+  return Array.from(GRAPHEME_SEGMENTER.segment(text), (part) => part.segment);
 }
 
 function styled(text: string, style: SpanStyle): Span {
@@ -102,8 +119,8 @@ function sourceLines(text: string): StyledLine[] {
   return body.split(SOURCE_LINE_BREAK).map((line) => [{ text: sanitizeText(line) }]);
 }
 
-function charsOf(spans: readonly Span[]): StyledChar[] {
-  const chars: StyledChar[] = [];
+function glyphsOf(spans: readonly Span[]): Glyph[] {
+  const glyphs: Glyph[] = [];
   for (const span of spans) {
     const style: SpanStyle = {
       color: span.color,
@@ -111,80 +128,82 @@ function charsOf(spans: readonly Span[]): StyledChar[] {
       bold: span.bold,
       italic: span.italic,
     };
-    for (const char of span.text) chars.push({ char, style });
+    for (const glyph of graphemesOf(span.text)) glyphs.push({ glyph, style });
   }
-  return chars;
+  return glyphs;
 }
 
-function spansOf(chars: readonly StyledChar[]): Span[] {
+function spansOf(glyphs: readonly Glyph[]): Span[] {
   const spans: Span[] = [];
-  for (const char of chars) {
+  for (const glyph of glyphs) {
     const last = spans.at(-1);
-    if (last !== undefined && sameStyle(last, char.style)) {
-      spans[spans.length - 1] = { ...last, text: last.text + char.char };
+    if (last !== undefined && sameStyle(last, glyph.style)) {
+      spans[spans.length - 1] = { ...last, text: last.text + glyph.glyph };
       continue;
     }
-    spans.push(styled(char.char, char.style));
+    spans.push(styled(glyph.glyph, glyph.style));
   }
   return spans;
 }
 
-function isSeparator(char: StyledChar): boolean {
-  return char.char === SPACE;
+function isSeparator(glyph: Glyph): boolean {
+  return glyph.glyph === SPACE;
 }
 
 /** One word with the separators that preceded it, kept styled so a wrap drops the right one. */
 interface Word {
-  readonly separator: readonly StyledChar[];
-  readonly chars: readonly StyledChar[];
+  readonly separator: readonly Glyph[];
+  readonly glyphs: readonly Glyph[];
 }
 
 /**
- * The line's characters grouped into words. Each word keeps the separators before it
- * with their own styles — a leading space inside a link's muted suffix must stay part
- * of that suffix, not move onto the span before it.
+ * The line's glyphs grouped into words. Each word keeps the separators before it with
+ * their own styles — a leading space inside a link's muted suffix must stay part of
+ * that suffix, not move onto the span before it.
  */
-function splitWords(chars: readonly StyledChar[]): Word[] {
+function splitWords(glyphs: readonly Glyph[]): Word[] {
   const words: Word[] = [];
-  let separator: StyledChar[] = [];
-  let word: StyledChar[] = [];
-  for (const char of chars) {
-    if (!isSeparator(char)) {
-      word.push(char);
+  let separator: Glyph[] = [];
+  let word: Glyph[] = [];
+  for (const glyph of glyphs) {
+    if (!isSeparator(glyph)) {
+      word.push(glyph);
       continue;
     }
     if (word.length > 0) {
-      words.push({ separator: words.length === 0 ? [] : separator, chars: word });
+      words.push({ separator: words.length === 0 ? [] : separator, glyphs: word });
       word = [];
       separator = [];
     }
-    separator.push(char);
+    separator.push(glyph);
   }
-  if (word.length > 0) words.push({ separator: words.length === 0 ? [] : separator, chars: word });
+  if (word.length > 0) words.push({ separator: words.length === 0 ? [] : separator, glyphs: word });
   return words;
 }
 
-function charsWidth(chars: readonly StyledChar[]): number {
-  return chars.reduce((total, char) => total + displayWidth(char.char), 0);
+function glyphsWidth(glyphs: readonly Glyph[]): number {
+  return glyphs.reduce((total, glyph) => total + displayWidth(glyph.glyph), 0);
 }
 
-/** One ended line of characters. */
-function flush(lines: StyledChar[][], current: StyledChar[]): StyledChar[] {
+/** One ended line of glyphs. */
+function flush(lines: Glyph[][], current: Glyph[]): Glyph[] {
   if (current.length > 0) lines.push(current);
   return [];
 }
 
 /**
- * Greedy word wrap: a word that does not fit starts a new line, and a single word
- * wider than the line is cut at the line's width so no line ever overflows.
+ * Greedy word wrap over grapheme clusters: a word that does not fit starts a new line,
+ * and a single word wider than the line is cut at the line's width so no line overflows.
+ * A cluster is never split — `MIN_CONTENT_WIDTH` guarantees the width always has room
+ * for the widest one a terminal draws.
  */
-function fill(chars: readonly StyledChar[], width: number): StyledChar[][] {
-  const lines: StyledChar[][] = [];
-  let current: StyledChar[] = [];
+function fill(glyphs: readonly Glyph[], width: number): Glyph[][] {
+  const lines: Glyph[][] = [];
+  let current: Glyph[] = [];
   let used = 0;
-  for (const word of splitWords(chars)) {
-    const gap = charsWidth(word.separator);
-    if (current.length > 0 && used + gap + charsWidth(word.chars) > width) {
+  for (const word of splitWords(glyphs)) {
+    const gap = glyphsWidth(word.separator);
+    if (current.length > 0 && used + gap + glyphsWidth(word.glyphs) > width) {
       current = flush(lines, current);
       used = 0;
     }
@@ -192,14 +211,14 @@ function fill(chars: readonly StyledChar[], width: number): StyledChar[][] {
       current.push(...word.separator);
       used += gap;
     }
-    for (const char of word.chars) {
-      const charWidth = displayWidth(char.char);
-      if (current.length > 0 && used + charWidth > width) {
+    for (const glyph of word.glyphs) {
+      const glyphWidth = displayWidth(glyph.glyph);
+      if (current.length > 0 && used + glyphWidth > width) {
         current = flush(lines, current);
         used = 0;
       }
-      current.push(char);
-      used += charWidth;
+      current.push(glyph);
+      used += glyphWidth;
     }
   }
   flush(lines, current);
@@ -207,15 +226,49 @@ function fill(chars: readonly StyledChar[], width: number): StyledChar[][] {
 }
 
 /**
+ * Keep at most `maxWidth` columns of `spans`, dropping from the left: a marker is the
+ * meaningful end of a prefix, and the indent before it is what may go.
+ */
+function clipPrefix(spans: readonly Span[], maxWidth: number): readonly Span[] {
+  const glyphs = glyphsOf(spans);
+  let kept = 0;
+  let start = glyphs.length;
+  while (start > 0) {
+    const glyphWidth = displayWidth(glyphs[start - 1].glyph);
+    if (kept + glyphWidth > maxWidth) break;
+    kept += glyphWidth;
+    start -= 1;
+  }
+  return spansOf(glyphs.slice(start));
+}
+
+/**
+ * Bound a prefix to leave at least `MIN_CONTENT_WIDTH` columns of content, so a deep
+ * indent or a long ordered marker can never squeeze — or overflow — the line.
+ */
+function boundPrefix(prefix: readonly Span[], width: number): readonly Span[] {
+  const budget = Math.max(0, width - MIN_CONTENT_WIDTH);
+  return spansWidth(prefix) <= budget ? prefix : clipPrefix(prefix, budget);
+}
+
+/**
  * Wrap `spans` to `width`, drawing `prefix` on the first line and blank columns of the
  * same width on every continuation line — the shape an indented item or a quote needs.
  */
 function wrap(spans: readonly Span[], width: number, prefix: readonly Span[] = []): StyledLine[] {
-  const prefixWidth = spansWidth(prefix);
+  const bounded = boundPrefix(prefix, width);
+  const prefixWidth = spansWidth(bounded);
   const continuation: Span[] = [{ text: SPACE.repeat(prefixWidth) }];
-  const lines = fill(charsOf(spans), Math.max(1, width - prefixWidth));
-  if (lines.length === 0) return prefix.length === 0 ? [] : [mergeSpans(prefix)];
-  return lines.map((line, index) => mergeSpans([...(index === 0 ? prefix : continuation), ...spansOf(line)]));
+  const lines = fill(glyphsOf(spans), width - prefixWidth);
+  if (lines.length === 0) return bounded.length === 0 ? [] : [mergeSpans(bounded)];
+  return lines.map((line, index) => mergeSpans([...(index === 0 ? bounded : continuation), ...spansOf(line)]));
+}
+
+/** Draw `prefix` on the first of `lines` and a blank indent of the same width on the rest. */
+function indentLines(lines: readonly StyledLine[], prefix: readonly Span[], width: number): StyledLine[] {
+  const bounded = boundPrefix(prefix, width);
+  const hanging = hangingSpans(bounded);
+  return lines.map((line, index) => mergeSpans([...(index === 0 ? bounded : hanging), ...line]));
 }
 
 function indentSpans(level: number): readonly Span[] {
@@ -283,10 +336,12 @@ function itemContent(child: Token, context: BlockContext): readonly Span[] | und
   return undefined;
 }
 
-/** A block child of a list item (a quote, a table, a fence) drawn indented under its marker. */
-function indentBlockLines(child: Token, prefix: readonly Span[], context: BlockContext): StyledLine[] {
-  const narrow: BlockContext = { ...context, width: Math.max(1, context.width - spansWidth(prefix)) };
-  return blockLines(child, narrow).map((line) => mergeSpans([...prefix, ...line]));
+/** A block child of a list item (a quote, a heading, a table) drawn under its marker. */
+function itemBlockLines(child: Token, prefix: readonly Span[], context: BlockContext): StyledLine[] {
+  const bounded = boundPrefix(prefix, context.width);
+  const narrow: BlockContext = { ...context, width: context.width - spansWidth(bounded) };
+  // The marker belongs to the item's first line only; the child's own lines never repeat it.
+  return indentLines(blockLines(child, narrow), bounded, context.width);
 }
 
 function itemLines(item: Tokens.ListItem, prefix: readonly Span[], context: BlockContext): StyledLine[] {
@@ -301,7 +356,7 @@ function itemLines(item: Tokens.ListItem, prefix: readonly Span[], context: Bloc
     const content = itemContent(child, context);
     lines.push(
       ...(content === undefined
-        ? indentBlockLines(child, childPrefix, context)
+        ? itemBlockLines(child, childPrefix, context)
         : wrap(content, context.width, childPrefix)),
     );
   }
@@ -318,10 +373,10 @@ function listLines(list: Tokens.List, context: BlockContext): StyledLine[] {
 }
 
 function blockquoteLines(blockquote: Tokens.Blockquote, context: BlockContext): StyledLine[] {
-  const prefix: readonly Span[] = [{ text: `${context.theme.glyphs.codeSide} `, color: "muted" }];
+  const prefix = boundPrefix([{ text: `${context.theme.glyphs.codeSide} `, color: "muted" }], context.width);
   const quoted: BlockContext = {
     ...context,
-    width: Math.max(1, context.width - spansWidth(prefix)),
+    width: context.width - spansWidth(prefix),
     italic: true,
   };
   const lines = blockquote.tokens.flatMap((child) => blockLines(child, quoted));

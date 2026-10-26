@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { renderMarkdown } from "@/tui/chat/markdown";
-import { MIN_LAYOUT_WIDTH, plainText, type Span, type StyledLine } from "@/tui/chat/styled-line";
+import { displayWidth, MIN_LAYOUT_WIDTH, plainText, type Span, type StyledLine } from "@/tui/chat/styled-line";
 import { type ChatTheme, resolveChatTheme } from "@/tui/chat/theme";
 
 const theme: ChatTheme = resolveChatTheme({ env: {}, colorLevel: 3 });
 const WIDTH = 40;
 const PARAGRAPH_WIDTH = 20;
 const RULE_WIDTH = 10;
+const NARROW_WIDTH = 10;
 
 const WORDS = [
   "aaaaa",
@@ -128,6 +129,22 @@ describe("renderMarkdown lists", () => {
     expect(lines).toHaveLength(2);
     expect(lines[1].startsWith("  - ")).toBe(true);
   });
+
+  test("draws a quoted block inside an item with the marker on its first line only (F2)", () => {
+    const lines = texts(render("- > one two three four five", NARROW_WIDTH));
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines[0].startsWith("- ")).toBe(true);
+    for (const line of lines.slice(1)) expect(line.startsWith("  ")).toBe(true);
+    for (const line of lines.slice(1)) expect(line.startsWith("  -")).toBe(false);
+  });
+
+  test("draws a wrapped heading inside an item with the marker on its first line only (F2)", () => {
+    const lines = texts(render("- # alpha beta gamma delta", NARROW_WIDTH));
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines[0].startsWith("- alpha")).toBe(true);
+    for (const line of lines.slice(1)) expect(line.startsWith("  ")).toBe(true);
+    for (const line of lines.slice(1)) expect(line.startsWith("  -")).toBe(false);
+  });
 });
 
 describe("renderMarkdown paragraphs", () => {
@@ -140,6 +157,41 @@ describe("renderMarkdown paragraphs", () => {
   test("wraps without losing, reordering or repeating a word (AC-13)", () => {
     const lines = texts(render(WORDS.join(" "), PARAGRAPH_WIDTH));
     expect(lines.join(" ")).toBe(WORDS.join(" "));
+  });
+
+  test("wraps between graphemes so a skin-toned emoji is never split (F1)", () => {
+    expect(texts(render("👍🏽👍🏽👍🏽", NARROW_WIDTH))).toEqual(["👍🏽👍🏽👍🏽"]);
+  });
+
+  test("measures a zero-width-joiner sequence as one grapheme (F1)", () => {
+    expect(texts(render("👨‍👩‍👧‍👦 ok", NARROW_WIDTH))).toEqual(["👨‍👩‍👧‍👦 ok"]);
+  });
+
+  test("keeps a whole emoji on the line it wraps onto (F1)", () => {
+    const lines = texts(render("aaaa 👍🏽👍🏽 bbbb", NARROW_WIDTH));
+    expect(lines).toEqual(["aaaa 👍🏽👍🏽", "bbbb"]);
+    for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(NARROW_WIDTH);
+  });
+});
+
+describe("renderMarkdown prefix budget", () => {
+  test("keeps a long ordered marker and wide text within the width (F3)", () => {
+    const lines = texts(render("999999999. 日本語", NARROW_WIDTH));
+    for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(NARROW_WIDTH);
+    expect(lines[0]).toContain("999.");
+    expect(lines.join("")).toContain("日本");
+  });
+
+  test("keeps a deeply nested list within the width (F3)", () => {
+    const lines = texts(render("- a\n  - b\n    - c\n      - d\n        - e", NARROW_WIDTH));
+    expect(lines.length).toBeGreaterThanOrEqual(5);
+    for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(NARROW_WIDTH);
+  });
+
+  test("keeps a deeply quoted block within the width (F3)", () => {
+    const lines = texts(render("> > > > > deep quoted text", NARROW_WIDTH));
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(NARROW_WIDTH);
   });
 });
 
