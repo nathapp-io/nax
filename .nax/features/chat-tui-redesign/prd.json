@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T07:48:23.564Z",
+  "updatedAt": "2026-10-26T08:11:20.928Z",
   "userStories": [
     {
       "id": "US-001",
@@ -648,14 +648,17 @@
       "dependencies": [
         "US-009"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Adds deterministic entry cases to the existing layout dispatcher, reusing sanitising/wrapping primitives."
+        "reasoning": "Adds deterministic entry cases to the existing layout dispatcher, reusing sanitising/wrapping primitives.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/layout.ts",
@@ -666,7 +669,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5a54e69c3f3a025bd79291843ff5ece4d7e6f38d"
     },
     {
       "id": "US-012",
