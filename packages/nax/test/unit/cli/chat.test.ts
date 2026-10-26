@@ -1,12 +1,16 @@
 import { describe, expect, mock, test } from "bun:test";
+import { homedir } from "node:os";
 import { createSessionStorage } from "@nathapp/nax-agent";
 import { makeInteractionChain, makeLogger, makeNaxConfig, withTempDir } from "@test/helpers";
+import chalk from "chalk";
 import { Command } from "commander";
 import { type ChatHostState, type ChatMcp, createChatHost, createChatStorage } from "@/chat";
 import { registerStatusCommand } from "@/cli/status-dispatch";
 import { NaxError } from "@/errors";
 import { PluginRegistry } from "@/plugins";
 import { buildResourceCatalog } from "@/resources";
+import { resolveChatTheme } from "@/tui/chat";
+import { NAX_VERSION } from "@/version";
 
 async function fixture() {
   const api = await import("@/cli/chat");
@@ -52,7 +56,7 @@ async function fixture() {
     ),
     createChatStorage: mock(() => storage),
     createChatHost: mock((_input: Parameters<typeof createChatHost>[0]) => host),
-    renderChat: mock((_props: { host: ReturnType<typeof createChatHost> }) => {
+    renderChat: mock((_props: Parameters<typeof api._chatCommandDeps.renderChat>[0]) => {
       rendered.resolve();
       return shell;
     }),
@@ -117,7 +121,7 @@ describe("chatCommand", () => {
     const f = await fixture();
     await f.chatCommand(mode === "full" ? { mode } : {}, f.deps);
     expect(f.host.start).toHaveBeenCalledWith({ mode, model: "openai/gpt-6" });
-    expect(f.deps.renderChat).toHaveBeenCalledWith({ host: f.host });
+    expect(f.deps.renderChat).toHaveBeenCalledWith(expect.objectContaining({ host: f.host }));
   });
   test("AC-4: rejects an invalid mode without constructing a host", async () => {
     const f = await fixture();
@@ -155,6 +159,19 @@ describe("chatCommand", () => {
     expect(f.deps.findProjectDir).toHaveBeenCalledWith("/repo/sub");
     expect(f.deps.createChatHost).toHaveBeenCalledWith(
       expect.objectContaining({ cwd: "/repo/sub", repoRoot: "/repo" }),
+    );
+  });
+  test("US-020 AC-6: renders the screen with the launch directory, build and terminal theme", async () => {
+    const f = await fixture();
+    await f.chatCommand({ dir: "/repo/sub" }, f.deps);
+    expect(f.deps.renderChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: f.host,
+        cwd: "/repo/sub",
+        version: NAX_VERSION,
+        home: homedir(),
+        theme: resolveChatTheme({ env: f.deps.env, colorLevel: chalk.level }),
+      }),
     );
   });
   test("AC-11: locked resume reports the exact message and never renders", async () => {

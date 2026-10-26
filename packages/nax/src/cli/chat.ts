@@ -1,5 +1,7 @@
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import chalk from "chalk";
 import type { Command } from "commander";
 import type { Instance } from "ink";
 import {
@@ -17,7 +19,8 @@ import { getSafeLogger } from "@/logger";
 import { loadPlugins, PluginRegistry } from "@/plugins";
 import { createSkillsProvider, loadResourceCatalog, naxPluginPackages } from "@/resources";
 import { ensureProjectTrusted, normalizeTrustPath, resolveTrustRoot } from "@/trust";
-import { formatChatExitSummary, renderChat } from "@/tui/chat";
+import { type ChatAppProps, formatChatExitSummary, renderChat, resolveChatTheme } from "@/tui/chat";
+import { NAX_VERSION } from "@/version";
 
 const SIGNAL_EXIT_CODES = { SIGTERM: 143, SIGHUP: 129 } as const;
 type ChatSignal = keyof typeof SIGNAL_EXIT_CODES;
@@ -45,7 +48,7 @@ export const _chatCommandDeps = {
   initInteractionChain,
   createChatStorage,
   createChatHost,
-  renderChat: (props: { host: ChatHost }): ChatShell => renderChat(props),
+  renderChat: (props: ChatAppProps): ChatShell => renderChat(props),
   onSignal: (signal: ChatSignal, handler: () => Promise<void>): (() => void) => {
     process.on(signal, handler);
     return () => {
@@ -115,8 +118,19 @@ function writeExitSummary(host: ChatHost, deps: ChatCommandDeps): void {
   deps.writeOut(formatChatExitSummary(state));
 }
 
+/** The props the screen draws with: the terminal's own theme, build, launch directory and home. */
+function screenProps(host: ChatHost, deps: ChatCommandDeps, cwd: string): ChatAppProps {
+  return {
+    host,
+    theme: resolveChatTheme({ env: deps.env, colorLevel: chalk.level }),
+    version: NAX_VERSION,
+    cwd,
+    home: homedir(),
+  };
+}
+
 /** Own the terminal lifetime; signal shutdown awaits lock release before allowing exit. */
-async function runShell(host: ChatHost, deps: ChatCommandDeps): Promise<void> {
+async function runShell(host: ChatHost, deps: ChatCommandDeps, cwd: string): Promise<void> {
   let shell: ChatShell | undefined;
   let closing: Promise<void> | undefined;
   let shutdown: Promise<void> | undefined;
@@ -136,7 +150,7 @@ async function runShell(host: ChatHost, deps: ChatCommandDeps): Promise<void> {
     })());
   try {
     for (const signal of ["SIGTERM", "SIGHUP"] as const) removers.push(deps.onSignal(signal, () => stop(signal)));
-    shell = deps.renderChat({ host });
+    shell = deps.renderChat(screenProps(host, deps, cwd));
     await shell.waitUntilExit();
     await shutdown;
   } finally {
@@ -233,7 +247,7 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
     }
     throw error;
   }
-  await runShell(host, deps);
+  await runShell(host, deps, cwd);
 }
 
 export async function chatCommand(

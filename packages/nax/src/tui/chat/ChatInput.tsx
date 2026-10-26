@@ -95,6 +95,20 @@ const NEWLINE = "\n";
 /** The most text rows drawn before the window starts following the cursor. */
 const MAX_TEXT_ROWS = 8;
 
+/** The two full-width rule lines that frame the editor: one above it, one below. */
+const RULE_ROWS = 2;
+
+/**
+ * The rows the input draws for a draft: the two rules around at most `MAX_TEXT_ROWS` text
+ * rows, an empty editor being one. The screen's owner reserves exactly this many rows for
+ * the bottom region, so the input and the viewport above it never disagree about the
+ * height they were given — a one-row input region and a nine-row one both come from here.
+ */
+export function inputRows(draft: InputDraft): number {
+  const source = draft.editor.text === "" ? 1 : draft.editor.text.split(NEWLINE).length;
+  return RULE_ROWS + Math.min(source, MAX_TEXT_ROWS);
+}
+
 /** A run of text and how to draw it. The cursor adds `inverse`, which `Span` has no slot for. */
 type Cell = Span & { readonly inverse?: boolean };
 

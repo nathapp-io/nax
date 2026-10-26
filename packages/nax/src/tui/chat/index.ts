@@ -6,6 +6,7 @@ import { ChatApp, type ChatAppProps } from "./ChatApp";
 export { ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN } from "./alt-screen";
 export { ChatApp, type ChatAppProps } from "./ChatApp";
 export { formatChatExitSummary } from "./exit-summary";
+export { type ChatTheme, resolveChatTheme } from "./theme";
 
 export const _renderChatDeps = {
   render,

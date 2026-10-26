@@ -181,7 +181,7 @@ describe("chat asks and keys", () => {
         }),
       );
       // Teardown is deliberately blocked while ask/turn updates rerender the shell.
-      expect(ui.lastFrame()).toContain("model | guarded");
+      expect(ui.lastFrame()).toContain("model · guarded");
       expect(ui.frames.join("\n")).not.toContain("CHAT_HOST_CLOSED");
       expect(release).not.toHaveBeenCalled();
       await Promise.resolve(
@@ -257,7 +257,7 @@ describe("chat asks and keys", () => {
     const ui = mount();
     ui.type("\x1b[Z");
     await flush();
-    expect(ui.lastFrame()).toContain("model | full");
+    expect(ui.lastFrame()).toContain("model · full");
   });
   test("AC-10 and AC-11 defer mode switch until turn_end", async () => {
     const ui = mount();
@@ -377,10 +377,10 @@ describe("chat asks and keys", () => {
     ui.type("\x1b[Z");
     await flush();
     expect(ui.lastFrame()).toContain("switch failed");
-    expect(ui.lastFrame()).toContain("model | guarded");
+    expect(ui.lastFrame()).toContain("model · guarded");
     ui.type("\x1b[Z");
     await flush();
-    expect(ui.lastFrame()).toContain("model | full");
+    expect(ui.lastFrame()).toContain("model · full");
   });
   test("surfaces failed close without exiting and permits retry", async () => {
     const ui = mount();
