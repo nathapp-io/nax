@@ -9,6 +9,8 @@ const asciiTheme: ChatTheme = resolveChatTheme({ env: { NAX_ASCII: "1" }, colorL
 
 const WIDTH = 40;
 const NARROW_WIDTH = 20;
+/** The columns a reply's line takes before its content: the bullet or the indent. */
+const GUTTER = 2;
 /** Below `MIN_LAYOUT_WIDTH`, so the layout must treat it as the minimum. */
 const TINY_WIDTH = 4;
 const MINIMUM_WIDTH = 10;
@@ -19,6 +21,8 @@ const AT_PLUS_6S = "2026-10-01T00:00:06.000Z";
 const THOUGHT = "weighing the ordering options";
 /** One "word" wider than the columns a user line leaves for its content. */
 const WIDE_TEXT = "日".repeat(30);
+/** One grapheme cluster wider than a whole narrow line, which can only be cut inside it. */
+const WIDE_CLUSTER = `${"क्".repeat(15)}क`;
 /** Twelve five-letter words: a reply that wraps at any narrow width. */
 const PARAGRAPH = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima";
 
@@ -65,6 +69,16 @@ function widths(lines: readonly StyledLine[]): readonly number[] {
   return lines.map((line) => displayWidth(plainText(line)));
 }
 
+/** The reply lines with their two-column gutter taken off, joined: what the reply still says. */
+function bodiesOf(lines: readonly StyledLine[]): string {
+  return lines.map((line) => plainText(line).slice(GUTTER)).join(" ");
+}
+
+/** The reply's characters with the gutter and every space removed: proof nothing was lost. */
+function squashed(lines: readonly StyledLine[]): string {
+  return bodiesOf(lines).replace(/\s+/g, "");
+}
+
 describe("layoutTranscript: user entries", () => {
   test("lays a one-line user message out as the marker and its text", () => {
     expect(texts(layout([userEntry("hi")]))).toEqual(["> hi"]);
@@ -88,6 +102,24 @@ describe("layoutTranscript: user entries", () => {
     const lines = layout([userEntry(WIDE_TEXT)], { width: NARROW_WIDTH });
     expect(lines.length).toBeGreaterThan(1);
     for (const width of widths(lines)) expect(width).toBeLessThanOrEqual(NARROW_WIDTH);
+  });
+
+  test("keeps a blank source line as a blank indented line", () => {
+    expect(texts(layout([userEntry("a\n\nb")]))).toEqual(["> a", "  ", "  b"]);
+  });
+
+  test("keeps a whitespace-only source line as a blank indented line", () => {
+    expect(texts(layout([userEntry("a\n   \nb")]))).toEqual(["> a", "  ", "  b"]);
+  });
+
+  test("keeps a leading blank source line", () => {
+    expect(texts(layout([userEntry("\na")]))).toEqual([">", "  a"]);
+  });
+
+  test("cuts a cluster wider than the columns left to it", () => {
+    const lines = layout([userEntry(WIDE_CLUSTER)], { width: MINIMUM_WIDTH });
+    for (const width of widths(lines)) expect(width).toBeLessThanOrEqual(MINIMUM_WIDTH);
+    expect(lines.map((line) => plainText(line).slice(GUTTER)).join("")).toBe(WIDE_CLUSTER);
   });
 });
 
@@ -123,7 +155,36 @@ describe("layoutTranscript: reply entries", () => {
   test("cuts a code line wider than the layout at the layout's width", () => {
     const code = "const value = someFunction(argument, anotherArgument);";
     const lines = layout([replyEntry(`\`\`\`ts\n${code}\n\`\`\``)], { width: NARROW_WIDTH });
+    // The frame above, the cut code line and the frame below: a code line is cut, never wrapped.
+    expect(texts(lines)).toHaveLength(3);
     for (const width of widths(lines)) expect(width).toBeLessThanOrEqual(NARROW_WIDTH);
+  });
+
+  test("keeps every word of a reply that wraps at width 10", () => {
+    const lines = layout([replyEntry("alpha beta gamma")], { width: MINIMUM_WIDTH });
+    for (const width of widths(lines)) expect(width).toBeLessThanOrEqual(MINIMUM_WIDTH);
+    expect(bodiesOf(lines)).toBe("alpha beta gamma");
+  });
+
+  test("keeps every word of a reply that wraps at width 11", () => {
+    const lines = layout([replyEntry("alpha beta gamma")], { width: MINIMUM_WIDTH + 1 });
+    for (const width of widths(lines)) expect(width).toBeLessThanOrEqual(MINIMUM_WIDTH + 1);
+    expect(bodiesOf(lines)).toBe("alpha beta gamma");
+  });
+
+  test("wraps a raw HTML fallback line instead of clipping it", () => {
+    const source = '<div class="wrapper">hello there friend</div>';
+    const lines = layout([replyEntry(source)], { width: NARROW_WIDTH });
+    for (const width of widths(lines)) expect(width).toBeLessThanOrEqual(NARROW_WIDTH);
+    expect(squashed(lines)).toBe(source.replace(/\s+/g, ""));
+  });
+
+  test("wraps a table's source line instead of clipping it", () => {
+    const header = "| alpha | bravo | charlie | delta |";
+    const source = `${header}\n| --- | --- | --- | --- |`;
+    const lines = layout([replyEntry(source)], { width: NARROW_WIDTH });
+    for (const width of widths(lines)) expect(width).toBeLessThanOrEqual(NARROW_WIDTH);
+    expect(squashed(lines)).toBe(source.replace(/\s+/g, ""));
   });
 });
 
@@ -154,6 +215,26 @@ describe("layoutTranscript: thinking entries", () => {
     const lines = layout([thinkingEntry({ text: "a\nb" })], { expanded: true });
     expect(plainText(lines[0]).endsWith("(ctrl+o to hide)")).toBe(true);
     expect(texts(lines).slice(1)).toEqual(["  a", "  b"]);
+  });
+
+  test("keeps a blank line of an expanded thinking text", () => {
+    const lines = layout([thinkingEntry({ text: "a\n\nb" })], { expanded: true });
+    expect(texts(lines).slice(1)).toEqual(["  a", "  ", "  b"]);
+  });
+
+  test("cuts a cluster wider than the columns left to it in an expanded thinking text", () => {
+    const entry = thinkingEntry({ text: WIDE_CLUSTER });
+    const width = MINIMUM_WIDTH;
+    const lines = layout([entry], { expanded: true, width });
+    for (const value of widths(lines)) expect(value).toBeLessThanOrEqual(width);
+    // The same entry with no thought is just its header, so the rest is the thought.
+    const headerLines = layout([thinkingEntry({ text: "" })], { expanded: true, width }).length;
+    expect(
+      lines
+        .slice(headerLines)
+        .map((line) => plainText(line).slice(GUTTER))
+        .join(""),
+    ).toBe(WIDE_CLUSTER);
   });
 });
 

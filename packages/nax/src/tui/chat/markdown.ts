@@ -15,12 +15,17 @@
  *
  * Every width is measured with `displayWidth` and every wrap breaks between grapheme
  * clusters, so an emoji with a skin tone or a zero-width joiner is never split (a
- * `width` below `MIN_LAYOUT_WIDTH` is treated as `MIN_LAYOUT_WIDTH`, and a prefix — an
- * indent, a marker, a quote glyph — is bounded to leave `MIN_CONTENT_WIDTH` columns of
- * content). Every text becomes span text only after `sanitizeText`, so a reply carrying
- * `\u001b[?1049l` cannot leave the alternate screen. Malformed input never throws: the
- * lexer decides what it tokenises and an unlexable document falls back to its own
- * source lines.
+ * `width` below the caller's floor — `MIN_LAYOUT_WIDTH` unless the caller states its own
+ * with `minWidth`, which is how `layout.ts` hands over the content budget behind a
+ * reply's gutter — is treated as that floor, and a prefix — an indent, a marker, a quote
+ * glyph — is bounded to leave `MIN_CONTENT_WIDTH` columns of content). Every text becomes
+ * span text only after `sanitizeText`, so a reply carrying `\u001b[?1049l` cannot leave
+ * the alternate screen. Malformed input never throws: the lexer decides what it
+ * tokenises and an unlexable document falls back to its own source lines.
+ *
+ * `wrapSpans` is the same wrap exposed for spans a caller already has: `layout.ts` uses it
+ * on a rendered line the model deliberately left wide — a table's source text, raw HTML —
+ * so a narrow layout wraps that line instead of cutting its text away.
  */
 import { marked, type Token, type Tokens } from "marked";
 import { displayWidth, MIN_LAYOUT_WIDTH, type Span, type StyledLine, sanitizeText } from "./styled-line";
@@ -30,6 +35,14 @@ import type { ChatTheme } from "./theme";
 export interface RenderMarkdownOptions {
   readonly width: number;
   readonly theme: ChatTheme;
+  /**
+   * The narrowest width this caller means. It defaults to `MIN_LAYOUT_WIDTH`, the floor a
+   * whole layout applies. A caller that hands over a *content budget* — `layout.ts` asks
+   * for the width left behind a reply's gutter, which is legitimately narrower than a
+   * layout — states its own floor here, so the content is wrapped to the budget it was
+   * given instead of overflowing it.
+   */
+  readonly minWidth?: number;
 }
 
 /**
@@ -84,10 +97,11 @@ interface BlockContext {
   readonly italic?: boolean;
 }
 
-/** A width below `MIN_LAYOUT_WIDTH` (or not a number at all) is treated as the minimum. */
-function resolveWidth(width: number): number {
-  const requested = Number.isFinite(width) ? Math.floor(width) : MIN_LAYOUT_WIDTH;
-  return Math.max(requested, MIN_LAYOUT_WIDTH);
+/** A width below the caller's floor (or not a number at all) is treated as that floor. */
+function resolveWidth(width: number, minimum: number): number {
+  const floor = Number.isFinite(minimum) ? Math.max(1, Math.floor(minimum)) : MIN_LAYOUT_WIDTH;
+  const requested = Number.isFinite(width) ? Math.floor(width) : floor;
+  return Math.max(requested, floor);
 }
 
 function styled(text: string, style: SpanStyle): Span {
@@ -358,6 +372,23 @@ function wrap(spans: readonly Span[], width: number, prefix: readonly Span[] = [
   return lines.map((line, index) => mergeSpans([...(index === 0 ? bounded : continuation), ...spansOf(line)]));
 }
 
+/**
+ * Wrap spans that are **already styled** to `width` columns, drawing `prefix` on the first
+ * line and blank columns of the same width on every continuation. Styles are carried
+ * through by cluster, so a bold word, a link's muted suffix or a highlighted code span
+ * survives the wrap intact.
+ *
+ * `layoutTranscript` uses this for a line `renderMarkdown` leaves wide on purpose — a
+ * table's source text, raw HTML — so that a narrow layout wraps it instead of cutting the
+ * text away. A fenced block's code line is the one line the layout still cuts.
+ */
+export function wrapSpans(
+  spans: readonly Span[],
+  options: { readonly width: number; readonly prefix?: readonly Span[] },
+): readonly StyledLine[] {
+  return wrap(spans, resolveWidth(options.width, MIN_LAYOUT_WIDTH), options.prefix);
+}
+
 /** Draw `prefix` on the first of `lines` and a blank indent of the same width on the rest. */
 function indentLines(lines: readonly StyledLine[], prefix: readonly Span[], width: number): StyledLine[] {
   const bounded = boundPrefix(prefix, width);
@@ -532,7 +563,7 @@ function blockLines(token: Token, context: BlockContext): StyledLine[] {
  */
 export function renderMarkdown(text: string, options: RenderMarkdownOptions): readonly StyledLine[] {
   const context: BlockContext = {
-    width: resolveWidth(options.width),
+    width: resolveWidth(options.width, options.minWidth ?? MIN_LAYOUT_WIDTH),
     theme: options.theme,
     level: 0,
   };

@@ -6,10 +6,16 @@
  * Every decision here is a measurement in terminal columns (`displayWidth`), never in
  * code units, so a CJK message or an emoji never overflows the frame: a line wider than
  * the layout is wrapped at a word boundary with the entry's gutter kept on the
- * continuation, a single word wider than the columns left to it is cut at that boundary,
- * and a line a model already produced (a reply's markdown, whose code lines are never
- * wrapped) is cut at the layout's width. A `width` below `MIN_LAYOUT_WIDTH` is treated as
- * that minimum, so a four-column terminal lays out exactly as a ten-column one does.
+ * continuation, and a single word wider than the columns left to it is cut at that
+ * boundary — inside the word when one cluster is itself wider than the line. A `width`
+ * below `MIN_LAYOUT_WIDTH` is treated as that minimum, so a four-column terminal lays out
+ * exactly as a ten-column one does.
+ *
+ * A reply is rendered into the columns left behind its gutter, and the one line
+ * `renderMarkdown` leaves wide on purpose — a fenced block's code line — is cut at the
+ * layout's width (wrapping would invent line numbers the code's own indentation
+ * contradicts). Every other line it leaves wide, a table's source text or raw HTML, is
+ * wrapped instead, so a narrow layout never loses a reply's words.
  *
  * Every text that comes from the session, a tool, an MCP server or the host passes
  * through `sanitizeText` before it becomes span text — a reply or a thinking line
@@ -18,7 +24,7 @@
  * The dispatcher covers the whole `TranscriptEntry` union; the welcome, tool, notice,
  * warning, error, listing and interrupted cases are filled in by US-010 and US-011.
  */
-import { renderMarkdown } from "./markdown";
+import { renderMarkdown, wrapSpans } from "./markdown";
 import { displayWidth, MIN_LAYOUT_WIDTH, type Span, type StyledLine, sanitizeText } from "./styled-line";
 import type { ChatTheme } from "./theme";
 import { secondsBetween } from "./tool-card";
@@ -49,6 +55,12 @@ export const EMPTY_LINE: StyledLine = [];
 /** The columns a user message and a reply take before their content starts. */
 const GUTTER_WIDTH = 2;
 const GUTTER = " ".repeat(GUTTER_WIDTH);
+/**
+ * The narrowest width a reply's markdown is rendered into. It is the layout's floor minus
+ * the gutter, and is passed as `minWidth` so the renderer respects a content budget that
+ * is legitimately narrower than a whole layout.
+ */
+const MIN_REPLY_WIDTH = MIN_LAYOUT_WIDTH - GUTTER_WIDTH;
 /** The marker that opens a user message; it is its own span so a view can colour it. */
 const USER_MARKER = ">";
 const USER_BAND = "userBand";
@@ -100,38 +112,53 @@ function textLines(text: string): readonly string[] {
   return trimmed === "" ? [] : trimmed.split(SOURCE_LINE_BREAK);
 }
 
-/** The longest run of whole clusters within `columns`, and the text it left behind. */
-function splitAtWidth(text: string, columns: number): { readonly head: string; readonly rest: string } {
-  let head = "";
+/** Split one cluster wider than a whole line into pieces, cutting between code points. */
+function cutCluster(cluster: string, columns: number): readonly string[] {
+  const pieces: string[] = [];
+  let current = "";
   let used = 0;
-  let offset = 0;
-  for (const glyph of graphemes(text)) {
-    const width = displayWidth(glyph);
-    if (used + width > columns) {
-      // A cluster wider than the whole line can never fit; it is taken alone rather
-      // than looping here for ever.
-      if (head === "") {
-        head = glyph;
-        offset += glyph.length;
-      }
-      break;
+  for (const point of cluster) {
+    const width = displayWidth(point);
+    if (current !== "" && used + width > columns) {
+      pieces.push(current);
+      current = "";
+      used = 0;
     }
-    head += glyph;
+    current += point;
     used += width;
-    offset += glyph.length;
   }
-  return { head, rest: text.slice(offset) };
+  if (current !== "") pieces.push(current);
+  return pieces;
 }
 
-/** Cut one over-wide word into pieces no wider than `columns`. */
+/**
+ * Cut one over-wide word into pieces no wider than `columns`. A cluster wider than the
+ * whole line — an Indic conjunct can be one grapheme many columns wide — cannot fit
+ * anywhere, so it is cut between code points: keeping the line inside the width wins over
+ * keeping the cluster whole, exactly as `renderMarkdown` resolves the same case.
+ */
 function cutWord(word: string, columns: number): readonly string[] {
+  const limit = Math.max(1, columns);
   const pieces: string[] = [];
-  let rest = word;
-  while (rest !== "") {
-    const { head, rest: tail } = splitAtWidth(rest, Math.max(1, columns));
-    pieces.push(head);
-    rest = tail;
+  let current = "";
+  let used = 0;
+  const flush = () => {
+    if (current !== "") pieces.push(current);
+    current = "";
+    used = 0;
+  };
+  for (const glyph of graphemes(word)) {
+    const width = displayWidth(glyph);
+    if (width > limit) {
+      flush();
+      pieces.push(...cutCluster(glyph, limit));
+      continue;
+    }
+    if (used + width > limit) flush();
+    current += glyph;
+    used += width;
   }
+  flush();
   return pieces;
 }
 
@@ -216,34 +243,67 @@ function thoughtLine(text: string): StyledLine {
 }
 
 /**
+ * A source line's wrapped content. A blank or whitespace-only source line is one blank
+ * line — it is the message's own formatting, not a wrap point — so it survives as one.
+ */
+function wrappedSource(text: string, columns: number): readonly string[] {
+  const pieces = wrapText(text, columns);
+  return pieces.length === 0 ? [""] : pieces;
+}
+
+/**
  * A user message: every source line behind the accent marker (its continuations, and
  * every later source line, behind two spaces), banded `userBand` across the whole width.
+ * A blank source line stays a blank indented line, so a two-paragraph message keeps its
+ * break.
  */
 function userLines(entry: UserEntry, context: LayoutContext): readonly StyledLine[] {
   const marker = styled(USER_MARKER, { color: "accent", background: USER_BAND });
   const gutter = styled(GUTTER, { background: USER_BAND });
   const lines: StyledLine[] = [];
   for (const source of textLines(entry.text)) {
-    for (const content of wrapText(source, context.width - GUTTER_WIDTH)) {
+    for (const content of wrappedSource(source, context.width - GUTTER_WIDTH)) {
       // The marker carries its own trailing space; every other line's gutter is the two
-      // spaces themselves, so the content starts at the same column either way.
-      const [prefix, text] = lines.length === 0 ? [marker, SPACE + content] : [gutter, content];
+      // spaces themselves, so the content starts at the same column either way. A blank
+      // line is drawn as its gutter alone, never with a trailing space.
+      const [prefix, text] = lines.length === 0 ? [marker, content === "" ? "" : SPACE + content] : [gutter, content];
       lines.push(line([prefix, styled(text, { background: USER_BAND })]));
     }
   }
   return lines;
 }
 
+/** A line `renderMarkdown` leaves wide on purpose: a fenced block's body, drawn after the codeSide glyph. */
+function isCodeLine(spans: readonly Span[], theme: ChatTheme): boolean {
+  const [first] = spans;
+  return first !== undefined && first.color === "muted" && first.text === `${theme.glyphs.codeSide} `;
+}
+
+/** One rendered reply line behind its gutter, wrapped when the renderer left it too wide. */
+function replyLine(spans: StyledLine, prefix: Span, context: LayoutContext): readonly StyledLine[] {
+  const prefixed = line([prefix, ...spans]);
+  if (lineWidth(prefixed) <= context.width) return [prefixed];
+  // A code line is the one line markdown never wraps, and the layout cuts it at the width
+  // (US-008). Anything else it left wide — a table's source text, raw HTML — is prose:
+  // wrap it rather than lose it.
+  if (isCodeLine(spans, context.theme)) return [cutLine(prefixed, context.width)];
+  return wrapSpans(spans, { width: context.width, prefix: [prefix] });
+}
+
 /**
- * A reply: its markdown rendered two columns narrower than the layout, the first line
- * behind the bullet glyph and the rest behind two spaces. A line the renderer left wide
- * (a code line is never wrapped) is cut at the layout's width.
+ * A reply: its markdown rendered into the columns left behind the gutter, the first line
+ * behind the bullet glyph and the rest behind two spaces. A line the renderer left wide is
+ * cut only when it is a code line; every other one is wrapped, so no reply loses words.
  */
 function replyLines(entry: ReplyEntry, context: LayoutContext): readonly StyledLine[] {
-  const rendered = renderMarkdown(entry.text, { width: context.width - GUTTER_WIDTH, theme: context.theme });
+  const rendered = renderMarkdown(entry.text, {
+    width: context.width - GUTTER_WIDTH,
+    theme: context.theme,
+    minWidth: MIN_REPLY_WIDTH,
+  });
   const marker = styled(`${context.theme.glyphs.bullet}${SPACE}`);
   const gutter = styled(GUTTER);
-  return rendered.map((spans, index) => cutLine([index === 0 ? marker : gutter, ...spans], context.width));
+  return rendered.flatMap((spans, index) => replyLine(spans, index === 0 ? marker : gutter, context));
 }
 
 /** `✻ Thought for 6s (ctrl+o to show)` — how a finished thinking block describes itself. */
@@ -265,7 +325,7 @@ function thinkingLines(entry: ThinkingEntry, context: LayoutContext): readonly S
   const header = thoughtHeader(entry, context);
   if (!context.expanded) return header;
   const thought = textLines(entry.text).flatMap((source) =>
-    wrapText(source, context.width - GUTTER_WIDTH).map((content) => thoughtLine(GUTTER + content)),
+    wrappedSource(source, context.width - GUTTER_WIDTH).map((content) => thoughtLine(GUTTER + content)),
   );
   return [...header, ...thought];
 }

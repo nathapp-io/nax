@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { _markdownDeps, renderMarkdown } from "@/tui/chat/markdown";
+import { _markdownDeps, renderMarkdown, wrapSpans } from "@/tui/chat/markdown";
 import { displayWidth, MIN_LAYOUT_WIDTH, plainText, type Span, type StyledLine } from "@/tui/chat/styled-line";
 import { type ChatTheme, resolveChatTheme } from "@/tui/chat/theme";
 
@@ -435,5 +435,36 @@ describe("renderMarkdown fenced code highlighting fallback", () => {
     const spans = codeSpansOf(codeLineOf("const x = 1;"));
     expect(spansText(spans)).toBe("const x = 1;");
     for (const span of spans) expect(span.color).toBeUndefined();
+  });
+});
+
+describe("renderMarkdown content budget", () => {
+  test("wraps to a width below the minimum when the caller states its own floor", () => {
+    const lines = renderMarkdown("alpha beta gamma", { width: 8, theme, minWidth: 1 });
+    expect(texts(lines)).toEqual(["alpha", "beta", "gamma"]);
+  });
+
+  test("keeps the minimum floor when the caller states none", () => {
+    const lines = renderMarkdown("alpha beta gamma", { width: 8, theme });
+    expect(texts(lines)).toEqual(texts(renderMarkdown("alpha beta gamma", { width: MIN_LAYOUT_WIDTH, theme })));
+  });
+});
+
+describe("wrapSpans", () => {
+  const STAR = "* ";
+
+  test("wraps already-styled spans to the width behind the prefix", () => {
+    const spans: readonly Span[] = [{ text: "alpha ", bold: true }, { text: "beta gamma delta" }];
+    const lines = wrapSpans(spans, { width: 12, prefix: [{ text: STAR }] });
+    for (const line of lines) expect(displayWidth(plainText(line))).toBeLessThanOrEqual(12);
+    expect(plainText(lines[0]).startsWith(`${STAR}alpha`)).toBe(true);
+    expect(lines.length).toBeGreaterThan(1);
+  });
+
+  test("carries every span's style through the wrap", () => {
+    const spans: readonly Span[] = [{ text: "alpha ", bold: true }, { text: "beta gamma delta" }];
+    const lines = wrapSpans(spans, { width: 12, prefix: [{ text: STAR }] });
+    expect(lines.flat().some((span) => span.bold === true)).toBe(true);
+    expect(spansText(lines.flat())).toContain("delta");
   });
 });
