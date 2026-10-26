@@ -2,14 +2,17 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { restoreRepoSnapshot, takeRepoSnapshot } from "@/review/reviewer-guard";
 import { _snapshotDeps } from "@/review/reviewer-guard/snapshot";
+import { RunStateKeeper, registerKeeper, runStateWrite, unregisterKeeper } from "@/runstate/store";
 
 const deps = { ..._snapshotDeps };
+const keepers: RunStateKeeper[] = [];
 const dirs: string[] = [];
 afterEach(async () => {
   Object.assign(_snapshotDeps, deps);
+  for (const keeper of keepers.splice(0)) unregisterKeeper(keeper);
   await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
@@ -176,5 +179,111 @@ describe("reviewer guard tracked-only fallback (nax#2700)", () => {
     const report = await restoreRepoSnapshot(snap);
     expect(report.fallback).toBe("tracked-only");
     expect(existsSync(join(d, "nest", "n.txt"))).toBe(true);
+  });
+
+  // The real index is reviewer-writable as raw bytes, so a listed path is not trusted to be a path git
+  // would ever write: one that leaves the checkout, enters .git, or sits under a snapshot gitlink is refused.
+  test("forged index paths outside the checkout, in .git or under a snapshot gitlink are refused", async () => {
+    const d = await repo();
+    await mkdir(join(d, "nest"), { recursive: true });
+    await git(join(d, "nest"), "init", "-q", "-b", "main");
+    await writeFile(join(d, "nest", "n.txt"), "n\n");
+    await git(join(d, "nest"), "add", "-A");
+    await git(join(d, "nest"), "commit", "-q", "-m", "nest seed");
+    const victim = `${d}-victim.txt`;
+    dirs.push(victim);
+    await writeFile(victim, "keep me\n");
+    const snap = await takeRepoSnapshot(d);
+    const forged = [`../${basename(victim)}`, ".git/HEAD", ".GIT/config", "nest/n.txt", "a/./b", ""].join("\0");
+    _snapshotDeps.snapshotWorkingTree = async () => {
+      throw new Error("comparison failed");
+    };
+    _snapshotDeps.git = async (args, cwd) =>
+      args[0] === "ls-files" && args.includes("-c") ? { exitCode: 0, stdout: forged, stderr: "" } : deps.git(args, cwd);
+    const report = await restoreRepoSnapshot(snap);
+    expect(await readFile(victim, "utf8")).toBe("keep me\n");
+    expect(existsSync(join(d, ".git", "HEAD"))).toBe(true);
+    expect(existsSync(join(d, "nest", "n.txt"))).toBe(true);
+    for (const p of [`../${basename(victim)}`, ".git/HEAD", ".GIT/config", "nest/n.txt", "a/./b"]) {
+      expect(report.failures.some((f) => f.startsWith(`remove ${p}:`))).toBe(true);
+    }
+  });
+
+  test("live keeper state inside a planted nested repo is kept; the planted files go", async () => {
+    const d = await repo();
+    const snap = await takeRepoSnapshot(d);
+    await git(d, "init", "-q", "pkgx");
+    await writeFile(join(d, "pkgx", "payload.ts"), "planted\n");
+    await mkdir(join(d, "pkgx", ".nax", "features", "f"), { recursive: true });
+    const keeper = new RunStateKeeper("test", "f");
+    keepers.push(keeper);
+    registerKeeper(keeper);
+    const held = join(d, "pkgx", ".nax", "features", "f", "prd.json");
+    await runStateWrite(held, { content: "live state" }, () => writeFile(held, "live state"));
+    const report = await restoreRepoSnapshot(snap);
+    expect(report.fallback).toBe("tracked-only");
+    expect(await readFile(held, "utf8")).toBe("live state");
+    expect(existsSync(join(d, "pkgx", "payload.ts"))).toBe(false);
+    expect(existsSync(join(d, "pkgx", ".git"))).toBe(false);
+  });
+
+  test("an ignored file the user force-staged before the turn is kept", async () => {
+    const d = await repo();
+    await mkdir(join(d, "ignored"), { recursive: true });
+    await writeFile(join(d, "ignored", "forced.txt"), "user work\n");
+    await git(d, "add", "-f", "ignored/forced.txt");
+    const snap = await takeRepoSnapshot(d);
+    _snapshotDeps.snapshotWorkingTree = async () => {
+      throw new Error("comparison failed");
+    };
+    const report = await restoreRepoSnapshot(snap);
+    expect(report.fallback).toBe("tracked-only");
+    expect(await readFile(join(d, "ignored", "forced.txt"), "utf8")).toBe("user work\n");
+    expect(await git(d, "ls-files", "ignored/forced.txt")).toBe("ignored/forced.txt");
+  });
+
+  test("a .gitignore planted inside a planted nested repo cannot hide its payload", async () => {
+    const d = await repo();
+    const snap = await takeRepoSnapshot(d);
+    await git(d, "init", "-q", "planted");
+    await writeFile(join(d, "planted", ".gitignore"), "*\n");
+    await writeFile(join(d, "planted", "payload.ts"), "planted\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(report.fallback).toBe("tracked-only");
+    expect(existsSync(join(d, "planted"))).toBe(false);
+  });
+
+  test("keeper state under a planted nested repo is kept; its planted .gitignore and payload go", async () => {
+    const d = await repo();
+    const snap = await takeRepoSnapshot(d);
+    await git(d, "init", "-q", "pkgx");
+    await writeFile(join(d, "pkgx", ".gitignore"), "*\n");
+    await writeFile(join(d, "pkgx", "payload.ts"), "planted\n");
+    await mkdir(join(d, "pkgx", ".nax", "features", "f"), { recursive: true });
+    const keeper = new RunStateKeeper("test", "f");
+    keepers.push(keeper);
+    registerKeeper(keeper);
+    const held = join(d, "pkgx", ".nax", "features", "f", "prd.json");
+    await runStateWrite(held, { content: "live state" }, () => writeFile(held, "live state"));
+    const report = await restoreRepoSnapshot(snap);
+    expect(report.fallback).toBe("tracked-only");
+    expect(await readFile(held, "utf8")).toBe("live state");
+    expect(existsSync(join(d, "pkgx", "payload.ts"))).toBe(false);
+    expect(existsSync(join(d, "pkgx", ".gitignore"))).toBe(false);
+  });
+
+  // The snapshot index also holds paths absent from disk (staged, then deleted). Only an ignored one,
+  // the force-staged case, is the snapshot's; a reviewer recreating the other kind is removed.
+  test("a file recreated at a staged-then-deleted path is removed", async () => {
+    const d = await repo();
+    await writeFile(join(d, "foo.ts"), "user\n");
+    await git(d, "add", "foo.ts");
+    await rm(join(d, "foo.ts"));
+    const snap = await takeRepoSnapshot(d);
+    await writeFile(join(d, "foo.ts"), "planted\n");
+    await git(d, "init", "-q", "planted");
+    const report = await restoreRepoSnapshot(snap);
+    expect(report.fallback).toBe("tracked-only");
+    expect(existsSync(join(d, "foo.ts"))).toBe(false);
   });
 });

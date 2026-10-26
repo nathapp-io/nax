@@ -68,6 +68,12 @@ export function isKeeperOwnedPath(toplevel: string, rel: string): boolean {
   return activeKeepers().some((keeper) => keeper.get(join(toplevel, rel)) !== undefined);
 }
 
+/** True when the #2497 keeper owns any path under this repo-relative `dir/`. */
+function isKeeperOwnedUnder(toplevel: string, dir: string): boolean {
+  const prefix = `${join(toplevel, dir.replace(/\/$/, ""))}/`;
+  return activeKeepers().some((keeper) => keeper.files().some((f) => f.path.startsWith(prefix)));
+}
+
 export async function takeRepoSnapshot(workdir: string): Promise<RepoSnapshot> {
   const toplevel = await git(["rev-parse", "--show-toplevel"], workdir);
   const [tree, indexTree, head, symbolic, refs, replaceRefs, stashes, ignoreFiles] = await Promise.all([
@@ -178,7 +184,18 @@ async function restoreTree(snap: RepoSnapshot, failures: string[]): Promise<Tree
     failures.push(`tree: ${errorMessage(err)}`);
     const skip = (p: string): boolean => isKeeperOwnedPath(snap.toplevel, p);
     // Removals first, as on the normal path; then the snapshot paths go back (nax#2700).
-    const removed = await removeAddedPaths({ toplevel: snap.toplevel, entries, skip, remove: removePath }, failures);
+    const removed = await removeAddedPaths(
+      {
+        toplevel: snap.toplevel,
+        entries,
+        indexTree: snap.indexTree,
+        ignoreFiles: snap.ignoreFiles,
+        skip,
+        keptUnder: (dir) => isKeeperOwnedUnder(snap.toplevel, dir),
+        remove: removePath,
+      },
+      failures,
+    );
     const paths = [...entries].filter(([p, entry]) => entry.type !== "commit" && !skip(p)).map(([p]) => p);
     const restored = await checkoutPaths(snap, paths, failures);
     return { paths: [...paths, ...removed], restored, fallback: "tracked-only" };
