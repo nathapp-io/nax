@@ -19,7 +19,10 @@
  * backspace, the arrows, the word moves and the ctrl chords), return submits, up and down
  * walk the history — the bare arrows only, because a shifted arrow is the transcript
  * viewport's. `yieldNavigation` hands up, down, return, tab and escape back to the slash
- * menu drawn beneath the input while it is open.
+ * menu drawn beneath the input while it is open, and the input publishes a `ChatInputHandle`
+ * so the two keys the menu keeps for itself — completing a name and running one — go through
+ * the same draft ref and the same clear-arm this component owns, instead of the owner
+ * writing its state behind the editor's back.
  */
 import { Box, type Key, Text, useInput, useStdout } from "ink";
 import { type ReactElement, type RefObject, useEffect, useRef } from "react";
