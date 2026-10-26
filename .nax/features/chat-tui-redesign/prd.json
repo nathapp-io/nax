@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T16:09:51.091Z",
+  "updatedAt": "2026-10-26T16:24:39.282Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1590,14 +1590,17 @@
         "sessions"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Outcome routing changes when permission-mode switches and session resumes occur; strict access-control/session override despite a bounded implementation."
+        "reasoning": "Outcome routing changes when permission-mode switches and session resumes occur; strict access-control/session override despite a bounded implementation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -1619,7 +1622,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5c71795b67fbe7dc2326573aaf07c26e0f47528f"
     },
     {
       "id": "US-027",
