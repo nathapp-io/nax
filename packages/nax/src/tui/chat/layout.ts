@@ -342,14 +342,39 @@ function cardIndent(theme: ChatTheme): string {
   return SPACE.repeat(displayWidth(resultPrefix(theme)));
 }
 
+/** A text flattened to one row: a header or a diff line is one row by definition. */
+function oneLine(text: string): string {
+  return text.split(SOURCE_LINE_BREAK).join(SPACE);
+}
+
+/**
+ * One card line's rows: its text split at its own line breaks, the first physical line
+ * behind `head` and every later one behind `rest`. A summary that interpolates a path
+ * carrying a newline would otherwise draw a terminal row with no card indent at all, which
+ * the row-based viewport would count as nothing.
+ */
+function cardRows(
+  text: string,
+  prefixes: { readonly head: string; readonly rest: string },
+  style: SpanStyle,
+  context: LayoutContext,
+): readonly StyledLine[] {
+  return sanitizeText(text)
+    .split(SOURCE_LINE_BREAK)
+    .flatMap((physical, index) =>
+      prefixedLine([styled(physical, style)], [styled(index === 0 ? prefixes.head : prefixes.rest, style)], context),
+    );
+}
+
 /**
  * The card's header: the bullet in its tone's colour, then a space, the title, and the
- * argument in bold parentheses — the title alone when the call carries no argument.
+ * argument in bold parentheses — the title alone when the call carries no argument. Both
+ * are single-row data, so a line break in either is flattened rather than given a row.
  */
 function toolHeader(model: ToolCardModel, context: LayoutContext): readonly StyledLine[] {
   const bullet = styled(context.theme.glyphs.bullet, { color: BULLET_COLORS[model.tone] });
-  const argument = model.arg === undefined ? [] : [styled(`(${sanitizeText(model.arg)})`, { bold: true })];
-  return prefixedLine([styled(sanitizeText(model.title)), ...argument], [bullet, styled(SPACE)], context);
+  const argument = model.arg === undefined ? [] : [styled(`(${oneLine(sanitizeText(model.arg))})`, { bold: true })];
+  return prefixedLine([styled(oneLine(sanitizeText(model.title))), ...argument], [bullet, styled(SPACE)], context);
 }
 
 /** The colour a summary line takes; a plain line keeps the terminal's own. */
@@ -357,13 +382,13 @@ function summaryColor(tone: CardLine["tone"]): ChatColorToken | undefined {
   return tone === "plain" ? undefined : tone;
 }
 
-/** The result summary: the glyph opens the first line, five blank columns the rest. */
+/** The result summary: the glyph opens the first row, five blank columns every other. */
 function toolSummaryLines(model: ToolCardModel, context: LayoutContext): readonly StyledLine[] {
-  return model.summary.flatMap((line, index) => {
-    const style: SpanStyle = { color: summaryColor(line.tone) };
-    const prefix = index === 0 ? resultPrefix(context.theme) : cardIndent(context.theme);
-    return prefixedLine([styled(sanitizeText(line.text), style)], [styled(prefix, style)], context);
-  });
+  const head = resultPrefix(context.theme);
+  const rest = cardIndent(context.theme);
+  return model.summary.flatMap((line, index) =>
+    cardRows(line.text, { head: index === 0 ? head : rest, rest }, { color: summaryColor(line.tone) }, context),
+  );
 }
 
 /**
@@ -384,16 +409,17 @@ function toolDiffLines(model: ToolCardModel, context: LayoutContext): readonly S
   const indent = cardIndent(context.theme);
   return model.diff.flatMap((line) => {
     const style = diffStyle(line.sign, context.theme);
-    return prefixedLine([styled(`${line.sign}${sanitizeText(line.text)}`, style)], [styled(indent, style)], context);
+    const text = `${line.sign}${oneLine(sanitizeText(line.text))}`;
+    return prefixedLine([styled(text, style)], [styled(indent, style)], context);
   });
 }
 
-/** The last line of a collapsed card: how many lines ctrl+o would reveal. */
+/** The last row of a collapsed card: how many lines ctrl+o would reveal. */
 function toolHiddenLine(model: ToolCardModel, context: LayoutContext): readonly StyledLine[] {
   if (model.hiddenLines === 0) return [];
   const label = `${context.theme.glyphs.ellipsis} ${HIDDEN_LINE_MARK}${model.hiddenLines} ${EXPAND_HINT}`;
-  const muted: SpanStyle = { color: "muted" };
-  return prefixedLine([styled(label, muted)], [styled(cardIndent(context.theme), muted)], context);
+  const indent = cardIndent(context.theme);
+  return cardRows(label, { head: indent, rest: indent }, { color: "muted" }, context);
 }
 
 /**
@@ -444,8 +470,6 @@ export const _layoutDeps = {
   layoutEntry,
 };
 
-/** How many widths one entry's lines are kept for: a resize there and back stays cached. */
-const MAX_LAYOUT_VARIANTS = 4;
 /** The separator between the two numbers of a variant key; no width or flag can hold it. */
 const VARIANT_KEY_SEPARATOR = ":";
 
@@ -475,16 +499,13 @@ function variantsFor(entry: TranscriptEntry, theme: ChatTheme): Map<string, read
   return variants;
 }
 
-/** Make room for one more variant by dropping the one stored longest ago. */
-function evictOldest(variants: Map<string, readonly StyledLine[]>): void {
-  const oldest = variants.keys().next();
-  if (!oldest.done) variants.delete(oldest.value);
-}
-
 /**
- * One entry's lines for this context, computed once per `(width, expanded)` pair. A theme
- * is resolved once per chat session, so a different theme object means the cached lines
- * were drawn with the colours and glyphs of another one and cannot be reused.
+ * One entry's lines for this context, computed once per `(width, expanded)` pair and kept
+ * for as long as the entry object lives: a later call with the same entry, width and
+ * expansion always reuses them, however many widths were laid out in between. Retention is
+ * bounded by the entry — the `WeakMap` key — so the whole cache dies with the transcript.
+ * A theme is resolved once per chat session, so a different theme object means the cached
+ * lines were drawn with another one's colours and glyphs and cannot be reused.
  */
 function cachedLines(entry: TranscriptEntry, context: LayoutContext): readonly StyledLine[] {
   const variants = variantsFor(entry, context.theme);
@@ -492,7 +513,6 @@ function cachedLines(entry: TranscriptEntry, context: LayoutContext): readonly S
   const cached = variants.get(key);
   if (cached !== undefined) return cached;
   const lines = _layoutDeps.layoutEntry(entry, context);
-  if (variants.size >= MAX_LAYOUT_VARIANTS) evictOldest(variants);
   variants.set(key, lines);
   return lines;
 }

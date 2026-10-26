@@ -412,6 +412,15 @@ describe("layoutTranscript: tool card summary", () => {
     const lines = texts(layout([bashEntry()], { expanded: true }));
     expect(lines.at(-1)).toBe(`${CARD_INDENT}l5`);
   });
+
+  test("gives a summary carrying a line break one indented row per line", () => {
+    const entry = okEntry({ name: "Write", input: { path: "a\nb.ts", content: "1\n2" } });
+    expect(texts(layout([entry]))).toEqual([
+      `${theme.glyphs.bullet} Write(a b.ts)`,
+      `  ${theme.glyphs.result}  Wrote 2 lines to a`,
+      `${CARD_INDENT}b.ts`,
+    ]);
+  });
 });
 
 describe("layoutTranscript: tool card diff", () => {
@@ -515,12 +524,12 @@ describe("layoutTranscript: per-entry cache", () => {
     expect(recomputed).toEqual([...entries]);
   });
 
-  test("keeps only the four most recent widths of one entry", () => {
+  test("reuses a width it laid an entry out at before other widths intervened", () => {
     const [entry] = pair();
-    for (const width of [12, 14, 16, 18, 20]) layout([entry], { width });
+    for (const width of [20, 21, 22, 23, 24]) layout([entry], { width });
     recomputed = [];
-    layout([entry], { width: 12 });
-    expect(recomputed).toEqual([entry]);
+    layout([entry], { width: 20 });
+    expect(recomputed).toHaveLength(0);
   });
 });
 
