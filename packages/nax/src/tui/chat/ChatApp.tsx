@@ -28,12 +28,12 @@ import type { SessionEvent } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, useStdout } from "ink";
 import { type ReactElement, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import type { ChatHost, ChatMcpState, ChatPendingAsk } from "@/chat";
+import type { ChatHost, ChatMcpState } from "@/chat";
 import type { McpServerEvent } from "@/mcp";
 import { buildCommandMessage } from "@/prompts";
 import { runCommandShellLines } from "@/resources";
 import { NAX_VERSION } from "@/version";
-import { AskPrompt } from "./AskPrompt";
+import { AskPrompt, askPromptLayout } from "./AskPrompt";
 import { ChatInput, EMPTY_DRAFT, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
 import {
   type FooterHint,
@@ -46,9 +46,8 @@ import {
   workingLine,
 } from "./chat-status";
 import { layoutTranscript } from "./layout";
-import { resolveWidth, wrapText } from "./layout-lines";
 import { parseSlashCommand, runSlashCommand, type SlashCommand, type SlashOutcome } from "./slash-commands";
-import { StyledLineView, sanitizeText } from "./styled-line";
+import { StyledLineView } from "./styled-line";
 import { TranscriptViewport } from "./TranscriptViewport";
 import { type ChatTheme, resolveChatTheme } from "./theme";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
@@ -99,14 +98,14 @@ const LISTING_TITLES: ReadonlyMap<string, string> = new Map([
   ["cost", "Cost"],
 ]);
 
-/** The extra line an approval outside the sandbox adds. */
-const UNSANDBOXED_ASK_ROWS = 1;
-/** The single row `InputBox` draws for a question ask. */
-const QUESTION_INPUT_ROWS = 1;
-/** What an approval's option row reads, assembled exactly as `AskPrompt` assembles it. */
-const ALLOW_ONCE = "a: allow once";
-const ALLOW_SESSION = " | s: allow for this session";
-const DENY = " | d: deny";
+/** A question card's answer and the request it was typed for: a new request starts empty. */
+interface QuestionAnswer {
+  readonly requestId: string;
+  readonly answer: string;
+}
+
+/** No question answered yet — the state a fresh screen opens on. */
+const NO_ANSWER: QuestionAnswer = { requestId: "", answer: "" };
 
 interface TerminalSize {
   readonly columns: number;
@@ -149,28 +148,6 @@ function welcomeEntry(host: ChatHost): TranscriptEntry {
     mcpServers: servers.length,
     mcpConnected: servers.filter((server) => lastServerEvent(events, server.id)?.kind === "connected").length,
   };
-}
-
-/** The rows one of the ask card's own texts takes at the width the screen gives it. */
-function askTextRows(text: string, width: number): number {
-  return Math.max(1, wrapText(sanitizeText(text), resolveWidth(width)).length);
-}
-
-/**
- * The rows the legacy `AskPrompt` draws for an ask, measured at the width the screen draws it
- * at: its texts are one `<Text>` each in a full-width column, so each wraps exactly as
- * `wrapText` says. US-023 replaces the card and takes the measurement with it.
- */
-function askRows(ask: ChatPendingAsk, options: { width: number; canRemember: boolean }): number {
-  if (ask.type === "question") return askTextRows(ask.text, options.width) + QUESTION_INPUT_ROWS;
-  const command = ask.command === undefined ? ask.tool : `${ask.tool} ${ask.command}`;
-  const choices = `${ALLOW_ONCE}${options.canRemember ? ALLOW_SESSION : ""}${DENY}`;
-  return (
-    askTextRows(command, options.width) +
-    askTextRows(ask.reason, options.width) +
-    (ask.unsandboxed ? UNSANDBOXED_ASK_ROWS : 0) +
-    askTextRows(choices, options.width)
-  );
 }
 
 /**
@@ -235,6 +212,7 @@ export function ChatApp({
   const [draft, setDraft] = useState<InputDraft>(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
   const [clearArmed, setClearArmed] = useState(false);
+  const [answerDraft, setAnswerDraft] = useState<QuestionAnswer>(NO_ANSWER);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const sending = useRef(false);
   const [, refresh] = useState(0);
@@ -387,18 +365,30 @@ export function ChatApp({
     hint: footerHint({ clearArmed, busy: busy || status.running, expanded }),
     glyphs: theme.glyphs,
   });
-  // The text rows the screen can spare: everything the fixed regions and the viewport's
-  // minimum do not claim, once the input's own rules are paid for.
-  const inputBudget = Math.max(
+  // The rows the bottom region may claim: everything the fixed regions and the viewport's
+  // minimum do not. Both the input and the ask card are measured against it, so whatever they
+  // wrap to, the footer stays on the screen's last row.
+  const bottomBudget = Math.max(
     1,
-    size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS - INPUT_RULE_ROWS,
+    size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
   );
-  const bottomRows = ask
-    ? askRows(ask, {
-        width: columns,
-        canRemember: ask.type === "approval_requested" && host.asks.canRemember(ask),
-      })
-    : inputRows(draft, { width: columns, busy, container: columns, maxRows: inputBudget });
+  const inputBudget = Math.max(1, bottomBudget - INPUT_RULE_ROWS);
+  // The question card's answer is the screen's state: only then can the card's rows — the
+  // answer box included — be measured before the frame is composed.
+  const answer = ask?.type === "question" && ask.requestId === answerDraft.requestId ? answerDraft.answer : "";
+  const askCard =
+    ask === undefined
+      ? undefined
+      : askPromptLayout(ask, {
+          width: columns,
+          canRemember: ask.type === "approval_requested" && host.asks.canRemember(ask),
+          answer,
+          budget: bottomBudget,
+        });
+  const bottomRows =
+    askCard === undefined
+      ? inputRows(draft, { width: columns, busy, container: columns, maxRows: inputBudget })
+      : Math.min(askCard.rows, bottomBudget);
   const viewportHeight = Math.max(
     MIN_VIEWPORT_ROWS,
     size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - bottomRows - FOOTER_ROWS,
@@ -421,13 +411,26 @@ export function ChatApp({
         </FixedRow>
       ) : null}
       {/*
-        The input is clipped to the rows reserved above: a prompt row that ever measured short
+        The bottom region is clipped to the rows reserved above: a row that ever measured short
         loses its tail rather than growing the frame, so the footer stays on the screen's last
-        row whatever the terminal and the draft do. The legacy ask card is *not* clipped — it
-        draws its own rows, and a mis-measured card must lose a frame row, never its text.
+        row whatever the terminal, the draft or an ask does. The ask card is measured by
+        `askPromptLayout`, whose own budget already drops the middle of an oversized card, so
+        the clipping only ever trims a card on a terminal too short for its answer box.
       */}
-      {ask ? (
-        <AskPrompt key={ask.requestId} ask={ask} controller={host.asks} active={!keys.locked} />
+      {ask !== undefined && askCard !== undefined ? (
+        <Box height={bottomRows} overflow="hidden" flexDirection="column">
+          <AskPrompt
+            key={ask.requestId}
+            ask={ask}
+            controller={host.asks}
+            layout={askCard}
+            answer={answer}
+            onAnswerChange={(text) => setAnswerDraft({ requestId: ask.requestId, answer: text })}
+            theme={theme}
+            width={columns}
+            active={!keys.locked}
+          />
+        </Box>
       ) : (
         <Box height={bottomRows} overflow="hidden">
           <ChatInput

@@ -512,4 +512,94 @@ describe("ChatApp pending ask layout", () => {
     expect(ui.rows()).toHaveLength(30);
     expect(ui.rows().at(-1)).toContain("⏵ guarded");
   });
+
+  const screenSwitch = "\u001b[?1049l";
+  const windowTitle = "\u001b]0;pwn\u0007";
+
+  test("F5 an approval's command cannot leave the alternate screen", async () => {
+    const ui = await harness();
+    ui.ask({ ...longAsk, command: `npm test${screenSwitch}` });
+    const frame = ui.lastFrame() ?? "";
+    expect(frame).toContain("npm test");
+    expect(frame).not.toContain(screenSwitch);
+    expect(frame).not.toContain("[?1049l");
+    expect(ui.rows()).toHaveLength(30);
+  });
+
+  test("F5 an approval's reason cannot leave the alternate screen", async () => {
+    const ui = await harness();
+    ui.ask({ ...longAsk, reason: `Run the tests${windowTitle}${screenSwitch}` });
+    const frame = ui.lastFrame() ?? "";
+    expect(frame).toContain("Run the tests");
+    expect(frame).not.toContain(windowTitle);
+    expect(frame).not.toContain(screenSwitch);
+  });
+
+  test("F5 a question's text cannot leave the alternate screen", async () => {
+    const ui = await harness();
+    ui.ask({ type: "question", requestId: "q1", text: `Proceed?${screenSwitch}`, expiresAt: "later" });
+    const frame = ui.lastFrame() ?? "";
+    expect(frame).toContain("Proceed?");
+    expect(frame).not.toContain(screenSwitch);
+    expect(ui.rows()).toHaveLength(30);
+  });
+
+  test("F5 a typed answer cannot leave the alternate screen", async () => {
+    const ui = await harness();
+    ui.ask({ type: "question", requestId: "q1", text: "Proceed?", expiresAt: "later" });
+    ui.type(`done${screenSwitch}`);
+    const frame = ui.lastFrame() ?? "";
+    expect(frame).toContain("done");
+    expect(frame).not.toContain(screenSwitch);
+    expect(ui.rows()).toHaveLength(30);
+  });
+
+  test("F6 an approval keeps a two-line command on its own rows", () => {
+    const ui = mount();
+    ui.ask({ ...longAsk, command: "npm test\nbun test --watch", reason: "Run the tests" });
+    const rows = ui.rows();
+    expect(rows).toHaveLength(24);
+    expect(rows).toContain("Bash npm test");
+    expect(rows).toContain("bun test --watch");
+    expect(rows).toContain("a: allow once | s: allow for this session | d: deny");
+    expect(rows.at(-1)).toContain("⏵ guarded");
+  });
+
+  test("F6 a multi-row question answer keeps the frame at the terminal's rows", async () => {
+    const ui = await harness();
+    ui.ask({ type: "question", requestId: "q1", text: "Proceed?", expiresAt: "later" });
+    expect(ui.rows()).toHaveLength(30);
+    ui.type("one\ntwo\nthree");
+    const rows = ui.rows();
+    expect(rows).toHaveLength(30);
+    expect(rows).toContain("> one");
+    expect(rows).toContain("  two");
+    expect(rows).toContain("  three");
+    expect(rows.filter((row) => /^─+$/.test(row))).toHaveLength(1);
+    expect(rows.at(-1)).toContain("⏵ guarded");
+  });
+
+  test("F6 a question answer longer than the width wraps without growing the frame", async () => {
+    const ui = mount();
+    await ui.resize(40, 30);
+    ui.ask({ type: "question", requestId: "q1", text: "Proceed?", expiresAt: "later" });
+    ui.type("y".repeat(200));
+    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows().at(-1)).toContain("⏵ guarded");
+  });
+
+  test("F6 an oversized ask is windowed, keeping its answer box and the frame's rows", async () => {
+    const ui = await harness();
+    const text = Array.from({ length: 60 }, (_, index) => `line ${index}`).join("\n");
+    ui.ask({ type: "question", requestId: "q1", text, expiresAt: "later" });
+    const rows = ui.rows();
+    expect(rows).toHaveLength(30);
+    // The header's three rows, the one-row viewport, then the card: its head is kept from the
+    // top, and the elision row names what did not fit above the answer box.
+    expect(rows[4]).toBe("line 0");
+    expect(rowMatching(rows, /^… \d+ more lines$/)).toBeDefined();
+    // The answer box is the one row a short screen must never drop.
+    expect(rows.at(-2)).toStartWith(">");
+    expect(rows.at(-1)).toContain("⏵ guarded");
+  });
 });
