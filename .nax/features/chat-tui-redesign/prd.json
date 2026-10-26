@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T08:11:20.928Z",
+  "updatedAt": "2026-10-26T08:22:53.370Z",
   "userStories": [
     {
       "id": "US-001",
@@ -703,14 +703,17 @@
         "reducer"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Self-contained deterministic reducer with explicit scrolling, resize and growth arithmetic."
+        "reasoning": "Self-contained deterministic reducer with explicit scrolling, resize and growth arithmetic.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "expectedFiles": [
         "packages/nax/src/tui/chat/viewport.ts",
@@ -720,7 +723,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6ce0a3b14abb50ac0e7b2b66072d7867cb2f9a30"
     },
     {
       "id": "US-013",
