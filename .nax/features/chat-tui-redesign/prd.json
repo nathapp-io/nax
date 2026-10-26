@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T15:17:39.441Z",
+  "updatedAt": "2026-10-26T16:09:51.091Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1533,14 +1533,17 @@
         "US-021",
         "US-024"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Menu/input selection and keyboard ownership must coordinate with async command routing, asks and viewport sizing without changing command semantics."
+        "reasoning": "Menu/input selection and keyboard ownership must coordinate with async command routing, asks and viewport sizing without changing command semantics.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/slash-menu.ts",
@@ -1556,7 +1559,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ced13aae47fd4be1f7b7feb64efccce9a83fd320"
     },
     {
       "id": "US-026",
