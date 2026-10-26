@@ -414,13 +414,16 @@ describe("US-007 defensive restore", () => {
       };
       const report = await restoreRepoSnapshot(snap);
       expect(await readFile(join(d, "a.txt"), "utf8")).toBe("a\n");
-      expect(report).toMatchObject({ fallback: "tracked-only", paths: [".gitignore", "a.txt", "pkg/b.txt"] });
+      expect(report).toMatchObject({
+        fallback: "tracked-only",
+        paths: [".gitignore", "a.txt", "pkg/b.txt", "new.txt"],
+      });
       expect(report.failures).toContain("tree: snapshot comparison failed");
       expect(checkouts).toContain(":(top,literal)a.txt");
       expect(checkouts).not.toContain(`:(top,literal)${held}`);
       expect(checkouts).not.toContain(":(top,literal)nest");
       expect(await readFile(join(d, held), "utf8")).toBe("live state");
-      expect(existsSync(join(d, "new.txt"))).toBe(true);
+      expect(existsSync(join(d, "new.txt"))).toBe(false);
       expect(isKeeperOwnedPath(d, held)).toBe(true);
     },
   );
