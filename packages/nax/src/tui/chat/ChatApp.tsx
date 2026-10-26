@@ -27,7 +27,7 @@
  * already queued.
  *
  * Keys have one owner each, and the first matching surface wins: an ask card owns escape,
- * return and the arrows; the slash menu and the pickers (once mounted) own theirs; the input
+ * return and the arrows; the picker and the slash menu own theirs; the input
  * owns escaping an idle prompt and the typing keys; the viewport owns pageUp, pageDown,
  * home, end and shift+arrow. The screen itself owns the two that apply in every state —
  * ctrl+o toggles collapsed detail, and escape interrupts a running turn, but never while an
@@ -49,6 +49,7 @@ import { runCommandShellLines } from "@/resources";
 import { NAX_VERSION } from "@/version";
 import { AskCard, askCardLayout } from "./AskCard";
 import { askCardModel } from "./ask-card";
+import { bottomBlocked, bottomRowsFor, viewportActive } from "./bottom-region";
 import { ChatInput, type ChatInputHandle, EMPTY_DRAFT, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
 import {
   type FooterHint,
@@ -61,6 +62,7 @@ import {
   workingLine,
 } from "./chat-status";
 import { layoutTranscript } from "./layout";
+import { Picker, useChatPicker } from "./Picker";
 import { SlashMenu } from "./SlashMenu";
 import { parseSlashCommand, runSlashCommand, type SlashCommand, type SlashOutcome } from "./slash-commands";
 import { slashMenuItems, slashMenuQueryState } from "./slash-menu";
@@ -254,6 +256,8 @@ export function ChatApp({
   }, []);
   const showError = useCallback((error: unknown) => append({ kind: "error", text: errorMessage(error) }), [append]);
   const keys = useChatKeys({ host, running: sending, refresh: update, onError: showError });
+  /** The picker a `picker` outcome opens (US-027): the list, and what its keys do. */
+  const picker = useChatPicker({ host, runControl: keys.runControl, onError: showError });
   const ask = host.asks.pending()[0];
   /** A turn is in flight from the send until its stream settles — the footer's busy rule. */
   const turnRunning = busy || status.running;
@@ -270,25 +274,27 @@ export function ChatApp({
     items: menuItems,
     query: draft.editor.text,
     dismissed: dismissedQuery,
-    blocked: ask !== undefined,
+    blocked: bottomBlocked(ask, picker.model),
   });
   if (menu.reopen) setDismissedQuery(undefined);
 
   /**
    * The two keys the screen itself owns, in every state: ctrl+o toggles collapsed detail, and
    * escape interrupts a running turn. Escape is claimed only when no ask card is up — the card
-   * owns it, and a card's escape must never reach `host.cancel()` — only while no slash menu is
-   * open (the menu's escape puts the menu away and nothing else), only while a turn runs, and
-   * only while the hook's control guard is open: on an idle screen the input owns it (where a
-   * first escape arms the clear), and once close has begun the host is already closed, so a
-   * late escape would throw instead of letting teardown finish.
+   * owns it, and a card's escape must never reach `host.cancel()` — only while no picker is
+   * shown (a picker's escape cancels the list), only while no slash menu is open (the menu's
+   * escape puts the menu away and nothing else), only while a turn runs, and only while the
+   * hook's control guard is open: on an idle screen the input owns it (where a first escape
+   * arms the clear), and once close has begun the host is already closed, so a late escape
+   * would throw instead of letting teardown finish.
    */
   useInput((input, key) => {
     if (key.ctrl && input === CTRL_O) {
       setExpanded((current) => !current);
       return;
     }
-    if (!key.escape || ask !== undefined || menu.open || !turnRunning || !keys.canControl()) return;
+    if (!key.escape || ask !== undefined || picker.model !== undefined || menu.open) return;
+    if (!turnRunning || !keys.canControl()) return;
     host.cancel();
   });
 
@@ -356,8 +362,7 @@ export function ChatApp({
       return;
     }
     if (outcome.kind === "picker") {
-      // US-027 mounts the picker this outcome asks for; until then the command's text is not
-      // shown and nothing is sent, so an argument-less /model, /resume or /mode is a no-op.
+      picker.open(outcome.picker);
       return;
     }
     if (outcome.kind === "send") {
@@ -473,7 +478,7 @@ export function ChatApp({
         });
   const cardRows =
     ask === undefined || askModel === undefined
-      ? 0
+      ? undefined
       : askCardLayout(askModel, {
           width: columns,
           budget: bottomBudget,
@@ -481,10 +486,13 @@ export function ChatApp({
           answer,
           expiresAt: ask.expiresAt,
         }).rows;
-  const bottomRows =
-    ask === undefined
-      ? inputRows(draft, { width: columns, busy, container: columns, maxRows: inputBudget }) + menu.rows
-      : Math.min(cardRows, bottomBudget);
+  const inputBottomRows = inputRows(draft, { width: columns, busy, container: columns, maxRows: inputBudget });
+  const bottomRows = bottomRowsFor({
+    ask: cardRows,
+    picker: picker.model,
+    input: inputBottomRows + menu.rows,
+    budget: bottomBudget,
+  });
   const viewportHeight = Math.max(
     MIN_VIEWPORT_ROWS,
     size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - bottomRows - FOOTER_ROWS,
@@ -504,7 +512,7 @@ export function ChatApp({
         lines={lines}
         height={viewportHeight}
         theme={theme}
-        active={!keys.locked}
+        active={viewportActive(keys.locked, picker.model)}
         followToken={followToken}
       />
       {working ? (
@@ -518,7 +526,9 @@ export function ChatApp({
         row whatever the terminal, the draft or an ask does. The ask card is measured by
         `askCardLayout` — every row it draws, the wrapped elision label and the countdown
         included — and its own budget already drops the middle of an oversized card, so the
-        clipping only ever trims a card on a terminal too short for its answer box.
+        clipping only ever trims a card on a terminal too short for its answer box. A picker
+        replaces the input entirely, its frame and rows measured by `pickerRows`; a card that
+        arrives while one is open takes the region back, because its question comes first.
       */}
       {ask !== undefined && askModel !== undefined ? (
         <Box height={bottomRows} overflow="hidden" flexDirection="column">
@@ -534,6 +544,18 @@ export function ChatApp({
             onAnswerChange={(next) => setAnswerDraft({ requestId: ask.requestId, draft: next })}
             onDeclined={() => setHint(TELL_NAX_HINT)}
             active={!keys.locked}
+          />
+        </Box>
+      ) : picker.model !== undefined ? (
+        <Box height={bottomRows} overflow="hidden" flexDirection="column">
+          <Picker
+            model={picker.model}
+            width={columns}
+            theme={theme}
+            budget={bottomBudget}
+            active={!keys.locked}
+            onChoose={picker.choose}
+            onCancel={picker.cancel}
           />
         </Box>
       ) : (
