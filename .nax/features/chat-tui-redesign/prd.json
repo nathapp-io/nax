@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T10:18:06.815Z",
+  "updatedAt": "2026-10-26T10:37:33.012Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1099,14 +1099,17 @@
         "lifecycle"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module signal/exit/unmount races touch session shutdown and lock-release ordering; session-lifecycle security override."
+        "reasoning": "Cross-module signal/exit/unmount races touch session shutdown and lock-release ordering; session-lifecycle security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/index.ts",
@@ -1139,7 +1142,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "68b49dc38739103591331a1e3d21ace9ab83537f"
     },
     {
       "id": "US-020",
