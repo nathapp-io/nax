@@ -149,6 +149,31 @@ export async function lookupPricing(provider: string, model: string): Promise<Pr
 }
 
 /**
+ * Look up a model's context window by `(provider, model)`.
+ *
+ * Same fail-open contract as `lookupPricing` (US-003 AC-1..AC-4): `undefined`
+ * on a catalog miss, on a load failure, and on any thrown error from
+ * `catalog.model()`. It shares `loadCatalog`, so a context-window read beside a
+ * pricing read costs one load under the same `_catalogDeps.loadProviders`
+ * reference.
+ *
+ * The value is the catalog's own number. A per-model `contextWindow` override
+ * from `config.models` is deliberately not applied — the chat footer shows the
+ * catalog figure (spec US-003, Out of Scope).
+ */
+export async function lookupContextWindow(provider: string, model: string): Promise<number | undefined> {
+  const catalog = await loadCatalog(_catalogDeps.loadProviders);
+  if (catalog === null) return undefined;
+  try {
+    return catalog.model(provider, model)?.contextWindow;
+  } catch {
+    // Fail-open per AC-4: a misbehaving `catalog.model()` is reported as an
+    // unknown context window, never as a rejected lookup.
+    return undefined;
+  }
+}
+
+/**
  * Whether the catalog's most recent load attempt for the current
  * `_catalogDeps.loadProviders` reference failed (returned `null` from
  * `loadCatalog`). Lets callers distinguish a load failure from a normal
