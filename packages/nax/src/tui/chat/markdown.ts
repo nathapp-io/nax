@@ -13,24 +13,32 @@
  * raw HTML and anything else the lexer produced but this model does not style fall back
  * to their source text.
  *
- * Every width is measured with `displayWidth` and every wrap breaks between grapheme
- * clusters, so an emoji with a skin tone or a zero-width joiner is never split (a
- * `width` below the caller's floor — `MIN_LAYOUT_WIDTH` unless the caller states its own
- * with `minWidth`, which is how `layout.ts` hands over the content budget behind a
- * reply's gutter — is treated as that floor, and a prefix — an indent, a marker, a quote
- * glyph — is bounded to leave `MIN_CONTENT_WIDTH` columns of content). Every text becomes
- * span text only after `sanitizeText`, so a reply carrying `\u001b[?1049l` cannot leave
- * the alternate screen. Malformed input never throws: the lexer decides what it
- * tokenises and an unlexable document falls back to its own source lines.
- *
- * `wrapSpans` is the same wrap exposed for spans a caller already has: `layout.ts` uses it
- * on a rendered line the model deliberately left wide — a table's source text, raw HTML —
- * so a narrow layout wraps that line instead of cutting its text away.
+ * Every width is measured in terminal columns and every wrap breaks between grapheme
+ * clusters (`wrap.ts` owns that engine: cluster segmentation, word grouping, wrapping,
+ * cutting and prefix bounding), so an emoji with a skin tone or a zero-width joiner is
+ * never split. A `width` below the caller's floor — `MIN_LAYOUT_WIDTH` unless the caller
+ * states its own with `minWidth`, which is how `layout.ts` hands over the content budget
+ * behind a reply's gutter — is treated as that floor. Every text becomes span text only
+ * after `sanitizeText`, so a reply carrying `\u001b[?1049l` cannot leave the alternate
+ * screen. Malformed input never throws: the lexer decides what it tokenises and an
+ * unlexable document falls back to its own source lines.
  */
 import { marked, type Token, type Tokens } from "marked";
-import { displayWidth, MIN_LAYOUT_WIDTH, type Span, type StyledLine, sanitizeText } from "./styled-line";
+import { MIN_LAYOUT_WIDTH, type Span, type StyledLine, sanitizeText } from "./styled-line";
 import { codeLines, fenceLanguage, highlightToHtml } from "./syntax";
 import type { ChatTheme } from "./theme";
+import {
+  boundPrefix,
+  cutSpans,
+  hangingSpans,
+  mergeSpans,
+  resolveWidth,
+  SPACE,
+  type SpanStyle,
+  spansWidth,
+  styled,
+  wrap,
+} from "./wrap";
 
 export interface RenderMarkdownOptions {
   readonly width: number;
@@ -43,6 +51,13 @@ export interface RenderMarkdownOptions {
    * given instead of overflowing it.
    */
   readonly minWidth?: number;
+  /**
+   * Cut a code line wider than `width` at `width` instead of leaving it over-wide. A code
+   * line is never wrapped (its own indentation is what makes it readable), so a caller
+   * whose frame is exactly `width` — `layout.ts` — asks for the cut here. The default
+   * leaves code whole, which is what a caller measuring the document itself wants.
+   */
+  readonly cutCode?: boolean;
 }
 
 /**
@@ -53,39 +68,13 @@ export const _markdownDeps = {
   highlight: highlightToHtml,
 };
 
-/** A span's style without its text — carried per glyph while wrapping. */
-type SpanStyle = Omit<Span, "text">;
-
 /** Every list level indents this many columns. */
 const LIST_INDENT = "  ";
 const UNORDERED_MARKER = "- ";
 const NUMBER_SEPARATOR = ". ";
-const SPACE = " ";
 const NEWLINE_RUN = /\n+/g;
 const SOURCE_LINE_BREAK = /\r\n|[\r\n]/;
 const TRAILING_NEWLINE = "\n";
-
-/**
- * The narrowest column budget a prefix may leave for content. It exceeds the widest
- * cluster a terminal draws (two columns), so a bounded prefix always leaves room for a
- * whole grapheme and a wrap never has to split one.
- */
-const MIN_CONTENT_WIDTH = 4;
-
-/** Splits text into user-perceived characters, so an emoji with a skin tone or a ZWJ stays whole. */
-const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-
-/** One styled run of a grapheme — a modifier or a ZWJ join may cross a span boundary. */
-interface GlyphPart {
-  readonly text: string;
-  readonly style: SpanStyle;
-}
-
-/** One grapheme cluster of a line as the styled fragments it is drawn from. Indivisible. */
-interface Glyph {
-  readonly glyph: string;
-  readonly parts: readonly GlyphPart[];
-}
 
 /** One block token's rendering context: the width left to it and how deeply it nests. */
 interface BlockContext {
@@ -95,45 +84,8 @@ interface BlockContext {
   readonly level: number;
   /** Set inside a blockquote, where every span is italic. */
   readonly italic?: boolean;
-}
-
-/** A width below the caller's floor (or not a number at all) is treated as that floor. */
-function resolveWidth(width: number, minimum: number): number {
-  const floor = Number.isFinite(minimum) ? Math.max(1, Math.floor(minimum)) : MIN_LAYOUT_WIDTH;
-  const requested = Number.isFinite(width) ? Math.floor(width) : floor;
-  return Math.max(requested, floor);
-}
-
-function styled(text: string, style: SpanStyle): Span {
-  return { text, ...style };
-}
-
-function sameStyle(left: SpanStyle, right: SpanStyle): boolean {
-  return (
-    left.color === right.color &&
-    left.background === right.background &&
-    Boolean(left.bold) === Boolean(right.bold) &&
-    Boolean(left.italic) === Boolean(right.italic)
-  );
-}
-
-/** Drop empty spans and merge neighbours that share a style, so a line has one span per run. */
-function mergeSpans(spans: readonly Span[]): StyledLine {
-  const merged: Span[] = [];
-  for (const span of spans) {
-    if (span.text === "") continue;
-    const last = merged.at(-1);
-    if (last !== undefined && sameStyle(last, span)) {
-      merged[merged.length - 1] = { ...last, text: last.text + span.text };
-      continue;
-    }
-    merged.push(span);
-  }
-  return merged;
-}
-
-function spansWidth(spans: readonly Span[]): number {
-  return spans.reduce((total, span) => total + displayWidth(span.text), 0);
+  /** Set when the caller asked for a code line wider than `width` to be cut at it. */
+  readonly cutCode?: boolean;
 }
 
 /** Text that becomes span text: escapes stripped, then a line break folded to a space. */
@@ -148,247 +100,6 @@ function sourceLines(text: string): StyledLine[] {
   return body.split(SOURCE_LINE_BREAK).map((line) => [{ text: sanitizeText(line) }]);
 }
 
-function styleOf(span: Span): SpanStyle {
-  return {
-    color: span.color,
-    background: span.background,
-    bold: span.bold,
-    italic: span.italic,
-  };
-}
-
-/** The styled fragments of `combined` between two UTF-16 offsets, in span order. */
-function fragmentsBetween(
-  parts: readonly GlyphPart[],
-  offsets: readonly number[],
-  start: number,
-  end: number,
-): GlyphPart[] {
-  const fragments: GlyphPart[] = [];
-  for (let index = 0; index < parts.length; index += 1) {
-    const partStart = offsets[index];
-    const partEnd = partStart + parts[index].text.length;
-    if (partEnd <= start || partStart >= end) continue;
-    const from = Math.max(start, partStart) - partStart;
-    const to = Math.min(end, partEnd) - partStart;
-    fragments.push({ text: parts[index].text.slice(from, to), style: parts[index].style });
-  }
-  return fragments;
-}
-
-/**
- * Segment the spans' text **as one string** and then attach the style fragments: a skin-tone
- * modifier or a ZWJ join can sit in a different span from the base character it belongs to,
- * so segmenting each span on its own would tear the cluster apart.
- */
-function glyphsOf(spans: readonly Span[]): Glyph[] {
-  const parts: GlyphPart[] = spans
-    .filter((span) => span.text !== "")
-    .map((span) => ({ text: span.text, style: styleOf(span) }));
-  const offsets: number[] = [];
-  let combined = "";
-  for (const part of parts) {
-    offsets.push(combined.length);
-    combined += part.text;
-  }
-  if (combined === "") return [];
-  return Array.from(GRAPHEME_SEGMENTER.segment(combined), (segment) => ({
-    glyph: segment.segment,
-    parts: fragmentsBetween(parts, offsets, segment.index, segment.index + segment.segment.length),
-  }));
-}
-
-function glyphWidth(glyph: Glyph): number {
-  return displayWidth(glyph.glyph);
-}
-
-function spansOf(glyphs: readonly Glyph[]): readonly Span[] {
-  return mergeSpans(glyphs.flatMap((glyph) => glyph.parts.map((part) => styled(part.text, part.style))));
-}
-
-function isSeparator(glyph: Glyph): boolean {
-  return glyph.glyph === SPACE;
-}
-
-/** One word with the separators that preceded it, kept styled so a wrap drops the right one. */
-interface Word {
-  readonly separator: readonly Glyph[];
-  readonly glyphs: readonly Glyph[];
-}
-
-/**
- * The line's glyphs grouped into words. Each word keeps the separators before it with
- * their own styles — a leading space inside a link's muted suffix must stay part of
- * that suffix, not move onto the span before it.
- */
-function splitWords(glyphs: readonly Glyph[]): Word[] {
-  const words: Word[] = [];
-  let separator: Glyph[] = [];
-  let word: Glyph[] = [];
-  for (const glyph of glyphs) {
-    if (!isSeparator(glyph)) {
-      word.push(glyph);
-      continue;
-    }
-    if (word.length > 0) {
-      words.push({ separator: words.length === 0 ? [] : separator, glyphs: word });
-      word = [];
-      separator = [];
-    }
-    separator.push(glyph);
-  }
-  if (word.length > 0) words.push({ separator: words.length === 0 ? [] : separator, glyphs: word });
-  return words;
-}
-
-function glyphsWidth(glyphs: readonly Glyph[]): number {
-  return glyphs.reduce((total, glyph) => total + glyphWidth(glyph), 0);
-}
-
-/** One ended line of glyphs. */
-function flush(lines: Glyph[][], current: Glyph[]): Glyph[] {
-  if (current.length > 0) lines.push(current);
-  return [];
-}
-
-/**
- * Cut one cluster into pieces no wider than `width`, splitting between code points. This is
- * the fallback for a cluster that cannot fit at all (a long Indic conjunct, for instance, is
- * one grapheme many columns wide): the cluster is no longer intact either way, so keeping the
- * line inside the width wins over keeping it whole.
- */
-function splitGlyph(glyph: Glyph, width: number): Glyph[] {
-  const pieces: Glyph[] = [];
-  let fragments: GlyphPart[] = [];
-  let text = "";
-  let used = 0;
-  const endPiece = () => {
-    if (text === "") return;
-    pieces.push({ glyph: text, parts: fragments });
-    fragments = [];
-    text = "";
-    used = 0;
-  };
-  for (const part of glyph.parts) {
-    let run = "";
-    const keepRun = () => {
-      if (run !== "") fragments.push({ text: run, style: part.style });
-      run = "";
-    };
-    for (const point of part.text) {
-      const pointWidth = displayWidth(point);
-      if (text !== "" && used + pointWidth > width) {
-        keepRun();
-        endPiece();
-      }
-      run += point;
-      text += point;
-      used += pointWidth;
-    }
-    keepRun();
-  }
-  endPiece();
-  return pieces;
-}
-
-/** One cluster, or the pieces it must occupy when it is wider than the whole line. */
-function glyphPieces(glyph: Glyph, width: number): readonly Glyph[] {
-  return glyphWidth(glyph) > width ? splitGlyph(glyph, width) : [glyph];
-}
-
-/**
- * Greedy word wrap over grapheme clusters: a word that does not fit starts a new line,
- * and a single word wider than the line is cut at the line's width so no line overflows.
- * A cluster is never split when it fits — `MIN_CONTENT_WIDTH` guarantees room for the
- * widest one a terminal draws — and a cluster wider than the whole line falls back to
- * `splitGlyph`.
- */
-function fill(glyphs: readonly Glyph[], width: number): Glyph[][] {
-  const lines: Glyph[][] = [];
-  let current: Glyph[] = [];
-  let used = 0;
-  for (const word of splitWords(glyphs)) {
-    const gap = glyphsWidth(word.separator);
-    if (current.length > 0 && used + gap + glyphsWidth(word.glyphs) > width) {
-      current = flush(lines, current);
-      used = 0;
-    }
-    if (current.length > 0) {
-      current.push(...word.separator);
-      used += gap;
-    }
-    for (const glyph of word.glyphs) {
-      for (const piece of glyphPieces(glyph, width)) {
-        const pieceWidth = glyphWidth(piece);
-        if (current.length > 0 && used + pieceWidth > width) {
-          current = flush(lines, current);
-          used = 0;
-        }
-        current.push(piece);
-        used += pieceWidth;
-      }
-    }
-  }
-  flush(lines, current);
-  return lines;
-}
-
-/**
- * Keep at most `maxWidth` columns of `spans`, dropping from the left: a marker is the
- * meaningful end of a prefix, and the indent before it is what may go.
- */
-function clipPrefix(spans: readonly Span[], maxWidth: number): readonly Span[] {
-  const glyphs = glyphsOf(spans);
-  let kept = 0;
-  let start = glyphs.length;
-  while (start > 0) {
-    const width = glyphWidth(glyphs[start - 1]);
-    if (kept + width > maxWidth) break;
-    kept += width;
-    start -= 1;
-  }
-  return spansOf(glyphs.slice(start));
-}
-
-/**
- * Bound a prefix to leave at least `MIN_CONTENT_WIDTH` columns of content, so a deep
- * indent or a long ordered marker can never squeeze — or overflow — the line.
- */
-function boundPrefix(prefix: readonly Span[], width: number): readonly Span[] {
-  const budget = Math.max(0, width - MIN_CONTENT_WIDTH);
-  return spansWidth(prefix) <= budget ? prefix : clipPrefix(prefix, budget);
-}
-
-/**
- * Wrap `spans` to `width`, drawing `prefix` on the first line and blank columns of the
- * same width on every continuation line — the shape an indented item or a quote needs.
- */
-function wrap(spans: readonly Span[], width: number, prefix: readonly Span[] = []): StyledLine[] {
-  const bounded = boundPrefix(prefix, width);
-  const prefixWidth = spansWidth(bounded);
-  const continuation: Span[] = [{ text: SPACE.repeat(prefixWidth) }];
-  const lines = fill(glyphsOf(spans), width - prefixWidth);
-  if (lines.length === 0) return bounded.length === 0 ? [] : [mergeSpans(bounded)];
-  return lines.map((line, index) => mergeSpans([...(index === 0 ? bounded : continuation), ...spansOf(line)]));
-}
-
-/**
- * Wrap spans that are **already styled** to `width` columns, drawing `prefix` on the first
- * line and blank columns of the same width on every continuation. Styles are carried
- * through by cluster, so a bold word, a link's muted suffix or a highlighted code span
- * survives the wrap intact.
- *
- * `layoutTranscript` uses this for a line `renderMarkdown` leaves wide on purpose — a
- * table's source text, raw HTML — so that a narrow layout wraps it instead of cutting the
- * text away. A fenced block's code line is the one line the layout still cuts.
- */
-export function wrapSpans(
-  spans: readonly Span[],
-  options: { readonly width: number; readonly prefix?: readonly Span[] },
-): readonly StyledLine[] {
-  return wrap(spans, resolveWidth(options.width, MIN_LAYOUT_WIDTH), options.prefix);
-}
-
 /** Draw `prefix` on the first of `lines` and a blank indent of the same width on the rest. */
 function indentLines(lines: readonly StyledLine[], prefix: readonly Span[], width: number): StyledLine[] {
   const bounded = boundPrefix(prefix, width);
@@ -398,11 +109,6 @@ function indentLines(lines: readonly StyledLine[], prefix: readonly Span[], widt
 
 function indentSpans(level: number): readonly Span[] {
   return level <= 0 ? [] : [{ text: LIST_INDENT.repeat(level) }];
-}
-
-/** Blank columns as wide as `prefix` — where a continuation line of an indented block starts. */
-function hangingSpans(prefix: readonly Span[]): readonly Span[] {
-  return [{ text: SPACE.repeat(spansWidth(prefix)) }];
 }
 
 function baseStyle(context: BlockContext): SpanStyle {
@@ -515,20 +221,23 @@ function ruleLine(context: BlockContext): StyledLine[] {
 /**
  * A fenced block: a muted `codeTop` line naming the language, one line per code line behind
  * a muted `codeSide` glyph and a space, then a muted `codeBottom` line. Code lines are never
- * wrapped and never truncated — the layout boundary is where a line too wide for the frame
- * gets cut (US-009/010), not here, because a wrap would invent line numbers that the code's
- * own indentation contradicts.
+ * wrapped — the code's own indentation is what makes it readable, and a wrap would invent
+ * line numbers that indentation contradicts. A caller that asks for `cutCode` gets every
+ * line of the block cut at the width this block has here, which is the width left after the
+ * enclosing list indent or quote glyph; without it the lines stay whole and the caller
+ * decides what to do with an over-wide one.
  */
 function codeBlockLines(code: Tokens.Code, context: BlockContext): StyledLine[] {
   const { glyphs } = context.theme;
   const language = fenceLanguage(code.lang);
   const side: Span = { text: `${glyphs.codeSide} `, color: "muted" };
   const body = codeLines(code.text, language, _markdownDeps.highlight).map((spans) => mergeSpans([side, ...spans]));
-  return [
-    [{ text: language === "" ? glyphs.codeTop : `${glyphs.codeTop} ${language}`, color: "muted" }],
+  const lines: StyledLine[] = [
+    [styled(language === "" ? glyphs.codeTop : `${glyphs.codeTop} ${language}`, { color: "muted" })],
     ...body,
-    [{ text: glyphs.codeBottom, color: "muted" }],
+    [styled(glyphs.codeBottom, { color: "muted" })],
   ];
+  return context.cutCode === true ? lines.map((line) => cutSpans(line, context.width)) : lines;
 }
 
 function blockLines(token: Token, context: BlockContext): StyledLine[] {
@@ -566,6 +275,7 @@ export function renderMarkdown(text: string, options: RenderMarkdownOptions): re
     width: resolveWidth(options.width, options.minWidth ?? MIN_LAYOUT_WIDTH),
     theme: options.theme,
     level: 0,
+    cutCode: options.cutCode,
   };
   let tokens: readonly Token[];
   try {

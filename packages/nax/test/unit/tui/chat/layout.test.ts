@@ -116,6 +116,10 @@ describe("layoutTranscript: user entries", () => {
     expect(texts(layout([userEntry("\na")]))).toEqual([">", "  a"]);
   });
 
+  test("lays a newline-only message out as one blank line", () => {
+    expect(texts(layout([userEntry("\n")]))).toEqual([">"]);
+  });
+
   test("cuts a cluster wider than the columns left to it", () => {
     const lines = layout([userEntry(WIDE_CLUSTER)], { width: MINIMUM_WIDTH });
     for (const width of widths(lines)) expect(width).toBeLessThanOrEqual(MINIMUM_WIDTH);
@@ -186,6 +190,40 @@ describe("layoutTranscript: reply entries", () => {
     for (const width of widths(lines)) expect(width).toBeLessThanOrEqual(NARROW_WIDTH);
     expect(squashed(lines)).toBe(source.replace(/\s+/g, ""));
   });
+
+  test("wraps quoted fallback content instead of cutting it", () => {
+    const html = '<div class="wrapper">hello there friend</div>';
+    const lines = layout([replyEntry(`> ${html}`)], { width: MINIMUM_WIDTH });
+    for (const width of widths(lines)) expect(width).toBeLessThanOrEqual(MINIMUM_WIDTH);
+    // The quote glyph is the reply's own decoration; every character of the HTML survives.
+    const text = squashed(lines).split(theme.glyphs.codeSide).join("");
+    expect(text).toBe(html.replace(/\s+/g, ""));
+  });
+
+  test("keeps a code line nested in a list to one line", () => {
+    const shortCode = "const x = 1;";
+    const longCode = "const value = someFunction(argument, anotherArgument);";
+    const list = (code: string): string => `- run:\n\n  \`\`\`ts\n  ${code}\n  \`\`\``;
+    const short = texts(layout([replyEntry(list(shortCode))], { width: NARROW_WIDTH }));
+    const long = texts(layout([replyEntry(list(longCode))], { width: NARROW_WIDTH }));
+    // A code line is cut, never wrapped: the long one takes no more lines than the short one.
+    expect(long).toHaveLength(short.length);
+    for (const width of widths(layout([replyEntry(list(longCode))], { width: NARROW_WIDTH }))) {
+      expect(width).toBeLessThanOrEqual(NARROW_WIDTH);
+    }
+  });
+
+  test("keeps a code line nested in a blockquote to one line", () => {
+    const shortCode = "const x = 1;";
+    const longCode = "const value = someFunction(argument, anotherArgument);";
+    const quote = (code: string): string => `> \`\`\`ts\n> ${code}\n> \`\`\``;
+    const short = texts(layout([replyEntry(quote(shortCode))], { width: NARROW_WIDTH }));
+    const long = texts(layout([replyEntry(quote(longCode))], { width: NARROW_WIDTH }));
+    expect(long).toHaveLength(short.length);
+    for (const width of widths(layout([replyEntry(quote(longCode))], { width: NARROW_WIDTH }))) {
+      expect(width).toBeLessThanOrEqual(NARROW_WIDTH);
+    }
+  });
 });
 
 describe("layoutTranscript: thinking entries", () => {
@@ -220,6 +258,11 @@ describe("layoutTranscript: thinking entries", () => {
   test("keeps a blank line of an expanded thinking text", () => {
     const lines = layout([thinkingEntry({ text: "a\n\nb" })], { expanded: true });
     expect(texts(lines).slice(1)).toEqual(["  a", "  ", "  b"]);
+  });
+
+  test("keeps a newline-only expanded thinking text as a blank body line", () => {
+    const lines = layout([thinkingEntry({ text: "\n" })], { expanded: true });
+    expect(texts(lines)).toEqual(["✻ Thought for 6s (ctrl+o to hide)", "  "]);
   });
 
   test("cuts a cluster wider than the columns left to it in an expanded thinking text", () => {

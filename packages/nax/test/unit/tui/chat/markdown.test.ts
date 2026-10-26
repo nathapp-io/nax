@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { _markdownDeps, renderMarkdown, wrapSpans } from "@/tui/chat/markdown";
+import { _markdownDeps, renderMarkdown } from "@/tui/chat/markdown";
 import { displayWidth, MIN_LAYOUT_WIDTH, plainText, type Span, type StyledLine } from "@/tui/chat/styled-line";
 import { type ChatTheme, resolveChatTheme } from "@/tui/chat/theme";
+import { wrapSpans } from "@/tui/chat/wrap";
 
 const theme: ChatTheme = resolveChatTheme({ env: {}, colorLevel: 3 });
 const WIDTH = 40;
@@ -447,6 +448,31 @@ describe("renderMarkdown content budget", () => {
   test("keeps the minimum floor when the caller states none", () => {
     const lines = renderMarkdown("alpha beta gamma", { width: 8, theme });
     expect(texts(lines)).toEqual(texts(renderMarkdown("alpha beta gamma", { width: MIN_LAYOUT_WIDTH, theme })));
+  });
+});
+
+describe("renderMarkdown code width", () => {
+  const CODE = "const value = someFunction(argument, anotherArgument);";
+
+  test("cuts an over-wide code line only when the caller asks for it", () => {
+    const whole = renderMarkdown(fence(CODE), { width: NARROW_WIDTH, theme });
+    const cut = renderMarkdown(fence(CODE), { width: NARROW_WIDTH, theme, cutCode: true });
+    expect(texts(whole)[1]).toContain("anotherArgument");
+    expect(texts(cut)[1]).not.toContain("anotherArgument");
+    expect(displayWidth(plainText(cut[1]))).toBeLessThanOrEqual(NARROW_WIDTH);
+  });
+
+  test("cuts a code line nested in a list to the width it has there", () => {
+    const source = `- run:\n\n  \`\`\`ts\n  ${CODE}\n  \`\`\``;
+    const lines = renderMarkdown(source, { width: NARROW_WIDTH, theme, cutCode: true });
+    for (const line of lines) expect(displayWidth(plainText(line))).toBeLessThanOrEqual(NARROW_WIDTH);
+    expect(texts(lines)).toHaveLength(4);
+  });
+
+  test("keeps a nested code line whole when no cut is asked for", () => {
+    const source = `- run:\n\n  \`\`\`ts\n  ${CODE}\n  \`\`\``;
+    const lines = renderMarkdown(source, { width: NARROW_WIDTH, theme });
+    expect(texts(lines)[2]).toContain("anotherArgument");
   });
 });
 

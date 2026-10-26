@@ -24,11 +24,12 @@
  * The dispatcher covers the whole `TranscriptEntry` union; the welcome, tool, notice,
  * warning, error, listing and interrupted cases are filled in by US-010 and US-011.
  */
-import { renderMarkdown, wrapSpans } from "./markdown";
+import { renderMarkdown } from "./markdown";
 import { displayWidth, MIN_LAYOUT_WIDTH, type Span, type StyledLine, sanitizeText } from "./styled-line";
 import type { ChatTheme } from "./theme";
 import { secondsBetween } from "./tool-card";
 import type { TranscriptEntry } from "./transcript-model";
+import { wrapSpans } from "./wrap";
 
 export interface LayoutOptions {
   /** The columns available to the transcript; below `MIN_LAYOUT_WIDTH` is treated as it. */
@@ -105,11 +106,16 @@ function lineWidth(spans: readonly Span[]): number {
   return spans.reduce((total, span) => total + displayWidth(span.text), 0);
 }
 
-/** The text's lines: sanitised, with the line break that ends a file's last line taken off. */
+/**
+ * The text's lines: sanitised, with the line break that ends a file's last line taken off.
+ * An **empty** text has no lines; a text that is only that line break — `"\n"`, or one that
+ * is left as `""` after it is taken off — is one blank source line, which the layout keeps.
+ */
 function textLines(text: string): readonly string[] {
   const body = sanitizeText(text);
+  if (body === "") return [];
   const trimmed = body.endsWith(TRAILING_NEWLINE) ? body.slice(0, -TRAILING_NEWLINE.length) : body;
-  return trimmed === "" ? [] : trimmed.split(SOURCE_LINE_BREAK);
+  return trimmed.split(SOURCE_LINE_BREAK);
 }
 
 /** Split one cluster wider than a whole line into pieces, cutting between code points. */
@@ -213,30 +219,6 @@ function wrapText(text: string, columns: number): readonly string[] {
   return lines;
 }
 
-/** Keep at most `columns` columns of `spans`, dropping whole clusters from the right. */
-function cutLine(spans: readonly Span[], columns: number): StyledLine {
-  if (lineWidth(spans) <= columns) return line(spans);
-  const kept: Span[] = [];
-  let used = 0;
-  let full = false;
-  for (const span of spans) {
-    let text = "";
-    for (const glyph of graphemes(span.text)) {
-      const width = displayWidth(glyph);
-      if (used + width > columns) {
-        // Nothing after the cut is drawn: the next span's text is not this line's tail.
-        full = true;
-        break;
-      }
-      text += glyph;
-      used += width;
-    }
-    if (text !== "") kept.push({ ...span, text });
-    if (full) break;
-  }
-  return line(kept);
-}
-
 /** Muted italics: how the layout draws anything the model thought rather than said. */
 function thoughtLine(text: string): StyledLine {
   return line([{ text, color: "muted", italic: true }]);
@@ -273,33 +255,29 @@ function userLines(entry: UserEntry, context: LayoutContext): readonly StyledLin
   return lines;
 }
 
-/** A line `renderMarkdown` leaves wide on purpose: a fenced block's body, drawn after the codeSide glyph. */
-function isCodeLine(spans: readonly Span[], theme: ChatTheme): boolean {
-  const [first] = spans;
-  return first !== undefined && first.color === "muted" && first.text === `${theme.glyphs.codeSide} `;
-}
-
-/** One rendered reply line behind its gutter, wrapped when the renderer left it too wide. */
+/**
+ * One rendered reply line behind its gutter. A line `renderMarkdown` leaves wide is prose it
+ * does not wrap — a table's source text, raw HTML, a quote — so it is wrapped rather than
+ * lost; a code line never reaches here, because the renderer is asked to cut those to the
+ * columns it was given (`cutCode`), wherever the fence is nested.
+ */
 function replyLine(spans: StyledLine, prefix: Span, context: LayoutContext): readonly StyledLine[] {
   const prefixed = line([prefix, ...spans]);
   if (lineWidth(prefixed) <= context.width) return [prefixed];
-  // A code line is the one line markdown never wraps, and the layout cuts it at the width
-  // (US-008). Anything else it left wide — a table's source text, raw HTML — is prose:
-  // wrap it rather than lose it.
-  if (isCodeLine(spans, context.theme)) return [cutLine(prefixed, context.width)];
   return wrapSpans(spans, { width: context.width, prefix: [prefix] });
 }
 
 /**
  * A reply: its markdown rendered into the columns left behind the gutter, the first line
- * behind the bullet glyph and the rest behind two spaces. A line the renderer left wide is
- * cut only when it is a code line; every other one is wrapped, so no reply loses words.
+ * behind the bullet glyph and the rest behind two spaces, with code lines cut — never
+ * wrapped — by the renderer at the width the block actually has.
  */
 function replyLines(entry: ReplyEntry, context: LayoutContext): readonly StyledLine[] {
   const rendered = renderMarkdown(entry.text, {
     width: context.width - GUTTER_WIDTH,
     theme: context.theme,
     minWidth: MIN_REPLY_WIDTH,
+    cutCode: true,
   });
   const marker = styled(`${context.theme.glyphs.bullet}${SPACE}`);
   const gutter = styled(GUTTER);
