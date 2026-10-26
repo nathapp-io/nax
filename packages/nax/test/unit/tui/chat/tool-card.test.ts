@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   type CardLine,
   CHILD_PREVIEW_LINES,
+  DIFF_PREVIEW_LINES,
+  diffLines,
   TOOL_ARG_LIMIT,
   type ToolCardModel,
   toolCardModel,
@@ -34,6 +36,35 @@ function card(overrides: Partial<ToolEntry> = {}): ToolCardModel {
 
 function child(callId: string, name: string, input: unknown): ToolChild {
   return { callId, name, input, status: "running" };
+}
+
+/** An entry whose call has finished: the only status that carries a result summary. */
+function okCard(overrides: Partial<ToolEntry> = {}, expanded = false): ToolCardModel {
+  return toolCardModel(toolEntry({ status: "ok", ...overrides }), { expanded });
+}
+
+/** Five result lines: a collapsed card keeps the first `BASH_PREVIEW_LINES` of them. */
+const FIVE_LINES = "l1\nl2\nl3\nl4\nl5";
+
+/** `AT` plus 38 seconds, so an agent's duration is a whole number of seconds. */
+const AT_PLUS_38S = "2026-10-01T00:00:38.000Z";
+
+/** Ten removed and ten added lines: no common prefix or suffix, so a 20-line diff. */
+const TEN_OLD_LINES = Array.from({ length: 10 }, (_, n) => `old${n}`).join("\n");
+const TEN_NEW_LINES = Array.from({ length: 10 }, (_, n) => `new${n}`).join("\n");
+
+/** `bytes` ASCII characters spread over `lines` lines, so the preview cap is reached exactly. */
+function previewOfSize(bytes: number, lines: number): string {
+  const chars = bytes - (lines - 1);
+  const perLine = Math.floor(chars / lines);
+  const rows = Array.from({ length: lines - 1 }, () => "x".repeat(perLine));
+  rows.push("x".repeat(chars - perLine * (lines - 1)));
+  return rows.join("\n");
+}
+
+/** One agent run's two finished children, in the order the card lists them. */
+function twoChildren(): readonly ToolChild[] {
+  return [child("c1", "Read", { path: "a.ts" }), child("c2", "Bash", { command: "ls" })];
 }
 
 /** Five children of one agent run: the preview keeps the last three, so two are counted. */
@@ -241,5 +272,196 @@ describe("toolCardModel running agent summary", () => {
     const tones: Array<CardLine["tone"]> = model.summary.map((line) => line.tone);
     expect(tones).toHaveLength(CHILD_PREVIEW_LINES + 1);
     expect(tones.every((tone) => tone === "muted")).toBe(true);
+  });
+});
+
+describe("diffLines", () => {
+  test("keeps the common first and last lines as context around the change", () => {
+    expect(diffLines("a\nb\nz", "a\nc\nz")).toEqual([
+      { sign: " ", text: "a" },
+      { sign: "-", text: "b" },
+      { sign: "+", text: "c" },
+      { sign: " ", text: "z" },
+    ]);
+  });
+
+  test("adds a line the old text does not have", () => {
+    expect(diffLines("a", "a\nb")).toEqual([
+      { sign: " ", text: "a" },
+      { sign: "+", text: "b" },
+    ]);
+  });
+
+  test("takes the common suffix only from what the common prefix left", () => {
+    expect(diffLines("a\na", "a")).toEqual([
+      { sign: " ", text: "a" },
+      { sign: "-", text: "a" },
+    ]);
+  });
+
+  test("returns no lines for two empty texts", () => {
+    expect(diffLines("", "")).toEqual([]);
+  });
+
+  test("does not treat a trailing newline as an empty line", () => {
+    expect(diffLines("a\n", "a\n")).toEqual([{ sign: " ", text: "a" }]);
+  });
+});
+
+describe("toolCardModel ok summary", () => {
+  test("counts an Edit's new and replaced lines against the path", () => {
+    const input = { path: "x.ts", old_string: "a\nb", new_string: "a\nc\nd" };
+    expect(okCard({ name: "Edit", input }).summary.map((line) => line.text)).toEqual(["Updated x.ts (+3 -2)"]);
+  });
+
+  test("carries the Edit diff of the replaced text", () => {
+    const input = { path: "x.ts", old_string: "a\nb", new_string: "a\nc\nd" };
+    const model = okCard({ name: "Edit", input });
+    expect(model.diff).toEqual(diffLines("a\nb", "a\nc\nd"));
+    expect(model.diff.length).toBeGreaterThan(0);
+  });
+
+  test("tones an ok summary muted", () => {
+    const input = { path: "x.ts", old_string: "a", new_string: "b" };
+    expect(okCard({ name: "Edit", input }).summary.map((line) => line.tone)).toEqual(["muted"]);
+  });
+
+  test("counts a Write's content lines without the trailing newline", () => {
+    const model = okCard({ name: "Write", input: { path: "y.ts", content: "1\n2\n3\n" } });
+    expect(model.summary.map((line) => line.text)).toEqual(["Wrote 3 lines to y.ts"]);
+  });
+
+  test("shows no diff for a Write", () => {
+    expect(okCard({ name: "Write", input: { path: "y.ts", content: "1\n2\n3\n" } }).diff).toEqual([]);
+  });
+
+  test("counts a Read's preview lines", () => {
+    const model = okCard({ name: "Read", input: { path: "a.ts" }, preview: "a\nb" });
+    expect(model.summary.map((line) => line.text)).toEqual(["Read 2 lines"]);
+  });
+
+  test("marks a Read whose preview reached the byte cap", () => {
+    const preview = previewOfSize(4096, 50);
+    expect(preview).toHaveLength(4096);
+    const model = okCard({ name: "Read", input: { path: "a.ts" }, preview });
+    expect(model.summary.map((line) => line.text)).toEqual(["Read 50+ lines"]);
+  });
+
+  test("does not mark a Read whose preview stayed under the byte cap", () => {
+    const preview = previewOfSize(4095, 50);
+    const model = okCard({ name: "Read", input: { path: "a.ts" }, preview });
+    expect(model.summary.map((line) => line.text)).toEqual(["Read 50 lines"]);
+  });
+
+  test("shows the first three lines of a Bash result while collapsed", () => {
+    const model = okCard({ name: "Bash", input: { command: "ls" }, preview: FIVE_LINES });
+    expect(model.summary).toEqual([
+      { text: "l1", tone: "plain" },
+      { text: "l2", tone: "plain" },
+      { text: "l3", tone: "plain" },
+    ]);
+  });
+
+  test("counts the Bash lines the collapse withholds", () => {
+    expect(okCard({ name: "Bash", input: { command: "ls" }, preview: FIVE_LINES }).hiddenLines).toBe(2);
+  });
+
+  test("shows every Bash line when expanded", () => {
+    const model = okCard({ name: "Bash", input: { command: "ls" }, preview: FIVE_LINES }, true);
+    expect(model.summary.map((line) => line.text)).toEqual(["l1", "l2", "l3", "l4", "l5"]);
+    expect(model.hiddenLines).toBe(0);
+  });
+
+  test("says Done for a Bash result with no output", () => {
+    expect(okCard({ name: "Bash", input: { command: "true" }, preview: "" }).summary).toEqual([
+      { text: "Done", tone: "muted" },
+    ]);
+  });
+
+  test("summarises a finished agent run with its tool count and duration", () => {
+    const model = okCard({
+      name: "nax-agents__run",
+      input: { agent: "explorer", task: "find x" },
+      children: twoChildren(),
+      startedAt: AT,
+      endedAt: AT_PLUS_38S,
+    });
+    expect(model.summary.map((line) => line.text)).toEqual(["Done (2 tool uses · 38s)"]);
+  });
+
+  test("counts an unparseable duration as no time", () => {
+    const model = okCard({
+      name: "nax-agents__run",
+      input: { agent: "explorer", task: "find x" },
+      children: [],
+      startedAt: "now",
+      endedAt: "now",
+    });
+    expect(model.summary.map((line) => line.text)).toEqual(["Done (0 tool uses · 0s)"]);
+  });
+
+  test("lists every child under an expanded agent run", () => {
+    const model = okCard(
+      {
+        name: "nax-agents__run",
+        input: { agent: "explorer", task: "find x" },
+        children: twoChildren(),
+        startedAt: AT,
+        endedAt: AT_PLUS_38S,
+      },
+      true,
+    );
+    expect(model.summary.map((line) => line.text)).toEqual(["Done (2 tool uses · 38s)", "Read(a.ts)", "Bash(ls)"]);
+  });
+
+  test("lists no child under a collapsed agent run", () => {
+    const model = okCard({
+      name: "nax-agents__run",
+      input: { agent: "explorer", task: "find x" },
+      children: twoChildren(),
+      startedAt: AT,
+      endedAt: AT_PLUS_38S,
+    });
+    expect(model.summary).toHaveLength(1);
+    expect(model.hiddenLines).toBe(2);
+  });
+
+  test("shows the first non-empty preview line of any other tool", () => {
+    const model = okCard({ name: "Glob", input: { pattern: "src/**/*.ts" }, preview: "3 files\na\nb" });
+    expect(model.summary).toEqual([{ text: "3 files", tone: "muted" }]);
+  });
+
+  test("says Done for a tool whose preview is empty", () => {
+    const model = okCard({ name: "Glob", input: { pattern: "src/**/*.ts" }, preview: "" });
+    expect(model.summary).toEqual([{ text: "Done", tone: "muted" }]);
+  });
+});
+
+describe("toolCardModel ok collapsing", () => {
+  const wideEdit = { path: "z.ts", old_string: TEN_OLD_LINES, new_string: TEN_NEW_LINES };
+
+  test("keeps twelve diff lines of a twenty-line Edit while collapsed", () => {
+    expect(okCard({ name: "Edit", input: wideEdit }).diff).toHaveLength(DIFF_PREVIEW_LINES);
+  });
+
+  test("counts the diff lines the collapse withholds", () => {
+    expect(okCard({ name: "Edit", input: wideEdit }).hiddenLines).toBe(8);
+  });
+
+  test("shows the whole diff when expanded", () => {
+    const model = okCard({ name: "Edit", input: wideEdit }, true);
+    expect(model.diff).toHaveLength(20);
+    expect(model.hiddenLines).toBe(0);
+  });
+
+  test("withholds nothing when the whole diff fits", () => {
+    const input = { path: "x.ts", old_string: "a\nb", new_string: "a\nc\nd" };
+    expect(okCard({ name: "Edit", input }).hiddenLines).toBe(0);
+  });
+
+  test("has no diff while the Edit is still running", () => {
+    const model = card({ name: "Edit", input: { path: "z.ts", old_string: "a", new_string: "b" } });
+    expect(model.diff).toEqual([]);
+    expect(model.hiddenLines).toBe(0);
   });
 });
