@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T08:53:58.921Z",
+  "updatedAt": "2026-10-26T09:05:09.827Z",
   "userStories": [
     {
       "id": "US-001",
@@ -812,14 +812,17 @@
         "reducer"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Self-contained pure editing algorithm with specified Unicode, word and multiline key semantics."
+        "reasoning": "Self-contained pure editing algorithm with specified Unicode, word and multiline key semantics.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/InputBox.tsx"
@@ -832,7 +835,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "28e41a73b31b8ace6787849bdbaca429f6433ef4"
     },
     {
       "id": "US-015",
