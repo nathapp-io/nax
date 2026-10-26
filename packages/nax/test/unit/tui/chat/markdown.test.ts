@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { renderMarkdown } from "@/tui/chat/markdown";
+import { afterEach, describe, expect, test } from "bun:test";
+import { _markdownDeps, renderMarkdown } from "@/tui/chat/markdown";
 import { displayWidth, MIN_LAYOUT_WIDTH, plainText, type Span, type StyledLine } from "@/tui/chat/styled-line";
 import { type ChatTheme, resolveChatTheme } from "@/tui/chat/theme";
 
@@ -55,6 +55,37 @@ function firstSpanStartingWith(line: StyledLine, prefix: string): Span {
     throw new Error(`no span starting ${JSON.stringify(prefix)} in line ${JSON.stringify(plainText(line))}`);
   }
   return span;
+}
+
+const FENCE = "```";
+
+/** One fenced block around `code`, with `language` written after the opening fence. */
+function fence(code: string, language: string = "ts"): string {
+  return `${FENCE}${language}\n${code}\n${FENCE}`;
+}
+
+/** The lines of a one-line fenced block: the top frame, the code line, the bottom frame. */
+function fencedLines(code: string, language: string = "ts"): readonly StyledLine[] {
+  return render(fence(code, language));
+}
+
+/** The one code line of a one-line fenced block, framed above and below. */
+function codeLineOf(code: string, language: string = "ts"): StyledLine {
+  const lines = fencedLines(code, language);
+  expect(lines).toHaveLength(3);
+  return lines[1];
+}
+
+/** Everything on a code line after its muted side glyph, checking that prefix is where it belongs. */
+function codeSpansOf(line: StyledLine): readonly Span[] {
+  expect(line.length).toBeGreaterThan(0);
+  expect(line[0].color).toBe("muted");
+  expect(line[0].text).toBe(`${theme.glyphs.codeSide} `);
+  return line.slice(1);
+}
+
+function spansText(spans: readonly Span[]): string {
+  return spans.map((span) => span.text).join("");
 }
 
 describe("renderMarkdown headings", () => {
@@ -284,5 +315,106 @@ describe("renderMarkdown invariants", () => {
 
   test("strips escape sequences from rendered text", () => {
     expect(texts(render("a\u001b[?1049lb"))).toEqual(["ab"]);
+  });
+});
+
+describe("renderMarkdown fenced code", () => {
+  test("renders a fenced block as a top frame, one code line and a bottom frame (AC-1)", () => {
+    expect(texts(fencedLines("const x = 1;"))).toHaveLength(3);
+  });
+
+  test("draws the language on the muted top frame line (AC-2)", () => {
+    const top = fencedLines("const x = 1;")[0];
+    expect(plainText(top)).toContain(theme.glyphs.codeTop);
+    expect(plainText(top)).toContain("ts");
+    expect(top.length).toBeGreaterThan(0);
+    for (const span of top) expect(span.color).toBe("muted");
+  });
+
+  test("prefixes the code with the side glyph and a space (AC-3)", () => {
+    expect(plainText(fencedLines("const x = 1;")[1])).toBe(`${theme.glyphs.codeSide} const x = 1;`);
+  });
+
+  test("closes the block with a muted bottom frame line (AC-4)", () => {
+    const bottom = fencedLines("const x = 1;")[2];
+    expect(plainText(bottom)).toContain(theme.glyphs.codeBottom);
+    expect(bottom.length).toBeGreaterThan(0);
+    for (const span of bottom) expect(span.color).toBe("muted");
+  });
+
+  test("colours a keyword span syntaxKeyword (AC-5)", () => {
+    expect(spanWith(codeLineOf("const x = 1;"), "const").color).toBe("syntaxKeyword");
+  });
+
+  test("colours a number span syntaxNumber (AC-6)", () => {
+    expect(spanWith(codeLineOf("const x = 1;"), "1").color).toBe("syntaxNumber");
+  });
+
+  test("colours a string span syntaxString (AC-7)", () => {
+    expect(spanWith(codeLineOf('const s = "q";'), '"q"').color).toBe("syntaxString");
+  });
+
+  test("colours a comment span syntaxComment (AC-8)", () => {
+    expect(spanWith(codeLineOf("// note"), "// note").color).toBe("syntaxComment");
+  });
+
+  test("colours a function title span syntaxTitle (AC-9)", () => {
+    expect(spanWith(codeLineOf("function run() {}"), "run").color).toBe("syntaxTitle");
+  });
+
+  test("draws a fence with an unknown language as plain code (AC-10)", () => {
+    const spans = codeSpansOf(codeLineOf("const x = 1;", "nosuchlang"));
+    expect(spansText(spans)).toBe("const x = 1;");
+    for (const span of spans) expect(span.color).toBeUndefined();
+  });
+
+  test("draws a fence with no language as plain code (AC-11)", () => {
+    const spans = codeSpansOf(codeLineOf("const x = 1;", ""));
+    expect(spansText(spans)).toBe("const x = 1;");
+    for (const span of spans) expect(span.color).toBeUndefined();
+  });
+
+  test("does not wrap a code line longer than the width (AC-12)", () => {
+    const body = "a".repeat(80);
+    const lines = render(fence(body), WIDTH);
+    expect(lines).toHaveLength(3);
+    expect(plainText(lines[1])).toBe(`${theme.glyphs.codeSide} ${body}`);
+  });
+
+  test("renders an unclosed fence as code to the end of the text (AC-13)", () => {
+    const lines = render(`${FENCE}ts\nconst a`);
+    expect(lines).toHaveLength(3);
+    expect(plainText(lines[1])).toBe(`${theme.glyphs.codeSide} const a`);
+  });
+
+  test("keeps inline markdown rendering after fenced-code support (AC-16)", () => {
+    const lines = renderMarkdown("a **b** c", { width: WIDTH, theme });
+    expect(lines).toHaveLength(1);
+    expect(plainText(lines[0])).toBe("a b c");
+  });
+});
+
+describe("renderMarkdown fenced code highlighting fallback", () => {
+  const highlight = _markdownDeps.highlight;
+
+  afterEach(() => {
+    _markdownDeps.highlight = highlight;
+  });
+
+  test("renders a fence whose highlighter throws without throwing itself (AC-14)", () => {
+    _markdownDeps.highlight = () => {
+      throw new Error("highlighter failed");
+    };
+    expect(() => render(fence("const x = 1;"))).not.toThrow();
+    expect(texts(render(fence("const x = 1;")))).toHaveLength(3);
+  });
+
+  test("draws the code plain when the highlighter throws (AC-15)", () => {
+    _markdownDeps.highlight = () => {
+      throw new Error("highlighter failed");
+    };
+    const spans = codeSpansOf(codeLineOf("const x = 1;"));
+    expect(spansText(spans)).toBe("const x = 1;");
+    for (const span of spans) expect(span.color).toBeUndefined();
   });
 });

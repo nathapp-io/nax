@@ -6,8 +6,12 @@
  * token into `StyledLine`s: headings are bold, `**strong**` bold, `*em*` italic,
  * inline code `accent`, lists get a marker (ordered numbers `accent`), blockquotes
  * a muted `codeSide` prefix, a rule one line of `rule` glyphs, and a link its text
- * followed by a muted ` (<href>)`. Tables, raw HTML and anything else the lexer
- * produced but this model does not style fall back to their source text.
+ * followed by a muted ` (<href>)`. A fence is framed by a muted `codeTop` line naming
+ * its language and a muted `codeBottom` line, with a muted `codeSide` glyph and a space
+ * before each code line — highlighted by scope when the language is one `syntax.ts`
+ * registered, plain when it is not, and plain again if the highlighter fails. Tables,
+ * raw HTML and anything else the lexer produced but this model does not style fall back
+ * to their source text.
  *
  * Every width is measured with `displayWidth` and every wrap breaks between grapheme
  * clusters, so an emoji with a skin tone or a zero-width joiner is never split (a
@@ -20,12 +24,21 @@
  */
 import { marked, type Token, type Tokens } from "marked";
 import { displayWidth, MIN_LAYOUT_WIDTH, type Span, type StyledLine, sanitizeText } from "./styled-line";
+import { codeLines, fenceLanguage, highlightToHtml } from "./syntax";
 import type { ChatTheme } from "./theme";
 
 export interface RenderMarkdownOptions {
   readonly width: number;
   readonly theme: ChatTheme;
 }
+
+/**
+ * Injected seams. The highlighter is one so a test can make it fail and prove a fenced
+ * block still renders — a live reply must never be lost to a grammar bug.
+ */
+export const _markdownDeps = {
+  highlight: highlightToHtml,
+};
 
 /** A span's style without its text — carried per glyph while wrapping. */
 type SpanStyle = Omit<Span, "text">;
@@ -468,6 +481,25 @@ function ruleLine(context: BlockContext): StyledLine[] {
   return [[{ text: context.theme.glyphs.rule.repeat(context.width), color: "muted" }]];
 }
 
+/**
+ * A fenced block: a muted `codeTop` line naming the language, one line per code line behind
+ * a muted `codeSide` glyph and a space, then a muted `codeBottom` line. Code lines are never
+ * wrapped and never truncated — the layout boundary is where a line too wide for the frame
+ * gets cut (US-009/010), not here, because a wrap would invent line numbers that the code's
+ * own indentation contradicts.
+ */
+function codeBlockLines(code: Tokens.Code, context: BlockContext): StyledLine[] {
+  const { glyphs } = context.theme;
+  const language = fenceLanguage(code.lang);
+  const side: Span = { text: `${glyphs.codeSide} `, color: "muted" };
+  const body = codeLines(code.text, language, _markdownDeps.highlight).map((spans) => mergeSpans([side, ...spans]));
+  return [
+    [{ text: language === "" ? glyphs.codeTop : `${glyphs.codeTop} ${language}`, color: "muted" }],
+    ...body,
+    [{ text: glyphs.codeBottom, color: "muted" }],
+  ];
+}
+
 function blockLines(token: Token, context: BlockContext): StyledLine[] {
   switch (token.type) {
     case "heading":
@@ -487,7 +519,7 @@ function blockLines(token: Token, context: BlockContext): StyledLine[] {
       // would repeat the URL as content.
       return [];
     case "code":
-      return sourceLines((token as Tokens.Code).text);
+      return codeBlockLines(token as Tokens.Code, context);
     default:
       // Tables, raw HTML and any token this model does not style keep their source text.
       return sourceLines(token.raw);
