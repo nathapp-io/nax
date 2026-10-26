@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T07:14:19.703Z",
+  "updatedAt": "2026-10-26T07:48:23.564Z",
   "userStories": [
     {
       "id": "US-001",
@@ -588,14 +588,17 @@
         "US-008",
         "US-009"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Extends the existing layout dispatcher using upstream card/markdown models and a standard identity-keyed cache; bounded changes stay in layout.ts and its tests."
+        "reasoning": "Extends the existing layout dispatcher using upstream card/markdown models and a standard identity-keyed cache; bounded changes stay in layout.ts and its tests.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/test/unit/tui/chat/layout.test.ts",
@@ -611,7 +614,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "dbeaba6513edb65bc6bb904fba568f6e038f1362"
     },
     {
       "id": "US-011",
