@@ -355,6 +355,11 @@ export function ChatApp({
       if (command.name === CLEAR) setEntries([welcomeEntry(host)]);
       return;
     }
+    if (outcome.kind === "picker") {
+      // US-027 mounts the picker this outcome asks for; until then the command's text is not
+      // shown and nothing is sent, so an argument-less /model, /resume or /mode is a no-op.
+      return;
+    }
     if (outcome.kind === "send") {
       await sendTurn(outcome.message);
       return;

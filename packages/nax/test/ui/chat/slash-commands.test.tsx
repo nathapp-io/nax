@@ -100,10 +100,15 @@ describe("slash command routing", () => {
     await ui.line(`/${command}`);
     expect(ui.send).not.toHaveBeenCalled();
   });
-  test("AC-5 reports current mode in transcript", async () => {
+  test("US-026 AC-5 /mode with no argument asks for the mode picker and shows nothing", async () => {
+    const { runSlashCommand } = await import("@/tui/chat/slash-commands");
     const ui = mount();
-    await ui.line("/mode");
-    expect(ui.lastFrame()).toContain("guarded\n");
+    const show = mock((_text: string) => {});
+    expect(await runSlashCommand({ name: "mode", args: [], rest: "" }, { host: ui.host, show })).toEqual({
+      kind: "picker",
+      picker: "mode",
+    });
+    expect(show).not.toHaveBeenCalled();
   });
   test("AC-6 rejects an invalid mode", async () => {
     const ui = mount();
@@ -111,15 +116,21 @@ describe("slash command routing", () => {
     expect(ui.lastFrame()).toContain("unknown mode bogus; expected full or guarded");
     expect(ui.host.switchTo).not.toHaveBeenCalled();
   });
-  test("AC-7 switches explicit model", async () => {
+  test("AC-7 US-026 AC-7 switches explicit model", async () => {
     const ui = mount();
     await ui.line("/model anthropic/claude-sonnet-5-5");
     expect(ui.host.switchTo).toHaveBeenCalledWith({ model: "anthropic/claude-sonnet-5-5" });
   });
-  test("AC-8 lists all configured models", async () => {
+  test("US-026 AC-1 AC-2 /model with no argument asks for the model picker and shows and switches nothing", async () => {
+    const { runSlashCommand } = await import("@/tui/chat/slash-commands");
     const ui = mount();
-    await ui.line("/model");
-    for (const model of ui.host.models) expect(ui.lastFrame()).toContain(model);
+    const show = mock((_text: string) => {});
+    expect(await runSlashCommand({ name: "model", args: [], rest: "" }, { host: ui.host, show })).toEqual({
+      kind: "picker",
+      picker: "model",
+    });
+    expect(show).not.toHaveBeenCalled();
+    expect(ui.host.switchTo).not.toHaveBeenCalled();
   });
   test("AC-9 AC-10 lists session ids, titles and live holders", async () => {
     const ui = mount();
@@ -127,10 +138,29 @@ describe("slash command routing", () => {
     for (const text of ["abc", "first title", "def", "second title", "in use by pid 4242"])
       expect(ui.lastFrame()).toContain(text);
   });
-  test("AC-11 resumes explicit id", async () => {
+  test("AC-11 US-026 AC-6 resumes explicit id", async () => {
     const ui = mount();
     await ui.line("/resume abc");
     expect(ui.host.resume).toHaveBeenCalledWith({ id: "abc" });
+  });
+  test("US-026 AC-3 AC-4 /resume with no argument asks for the resume picker and resumes nothing", async () => {
+    const { runSlashCommand } = await import("@/tui/chat/slash-commands");
+    const ui = mount();
+    const show = mock((_text: string) => {});
+    expect(await runSlashCommand({ name: "resume", args: [], rest: "" }, { host: ui.host, show })).toEqual({
+      kind: "picker",
+      picker: "resume",
+    });
+    expect(ui.host.resume).not.toHaveBeenCalled();
+  });
+  test("US-026 AC-8 /model with no argument sends nothing and is not an unknown command", async () => {
+    const ui = mount();
+    await ui.line("/model");
+    expect(ui.send).not.toHaveBeenCalled();
+    expect(ui.host.switchTo).not.toHaveBeenCalled();
+    expect(ui.lastFrame()).not.toContain("unknown command");
+    // The picker outcome is dropped, not misread as a command outcome: no error row appears.
+    expect(ui.lastFrame()).not.toContain("✗");
   });
   test("AC-12 clears session", async () => {
     const ui = mount();
