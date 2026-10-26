@@ -23,6 +23,7 @@ const UP = "\x1b[A";
 const DOWN = "\x1b[B";
 const SHIFT_UP = "\x1b[1;2A";
 const PAGE_UP = "\x1b[5~";
+const CTRL_U = "\x15";
 
 /** What the footer offers when the input's clear is armed. */
 const CLEAR_HINT = "esc again to clear";
@@ -139,6 +140,12 @@ function mount(options: { readonly catalog?: ChatHost["catalog"] } = {}) {
       ui.stdin.write(sequence);
     });
   };
+  /** Several keypresses delivered before the owner can re-render — one React batch. */
+  const pressAll = (...sequences: readonly string[]): void => {
+    act(() => {
+      for (const sequence of sequences) ui.stdin.write(sequence);
+    });
+  };
   /** One keypress per frame, the way a terminal delivers typing. */
   const type = (text: string): void => {
     for (const char of text) press(char);
@@ -173,6 +180,14 @@ function mount(options: { readonly catalog?: ChatHost["catalog"] } = {}) {
       }),
     );
   };
+  /** Drain the microtasks an async command path runs before the next frame is read. */
+  const flush = async (): Promise<void> => {
+    await Promise.resolve(
+      act(async () => {
+        await Promise.resolve();
+      }),
+    );
+  };
   const emit = (body: SessionEventBody): void => {
     act(() => {
       onEvent({ sessionId: STATE.sessionId, turnId: "t1", at: "now", metadata: {}, ...body });
@@ -192,7 +207,24 @@ function mount(options: { readonly catalog?: ChatHost["catalog"] } = {}) {
       }),
     );
   };
-  return { ui, host, send, rows, lastFrame, footer, press, type, submit, submitTyped, settle, emit, ask, resize };
+  return {
+    ui,
+    host,
+    send,
+    rows,
+    lastFrame,
+    footer,
+    press,
+    pressAll,
+    type,
+    submit,
+    submitTyped,
+    settle,
+    flush,
+    emit,
+    ask,
+    resize,
+  };
 }
 
 /** A screen on an 80x30 terminal — the size every case here is drawn at. */
@@ -398,5 +430,50 @@ describe("SlashMenu ranking and key ownership", () => {
     ui.type("/re");
     ui.press(ESCAPE);
     expect(ui.host.cancel).not.toHaveBeenCalled();
+  });
+});
+
+describe("SlashMenu keys delivered in one batch", () => {
+  test("F5 two downArrows in one batch move the pointer twice", async () => {
+    const ui = await screen();
+    ui.type("/");
+    ui.pressAll(DOWN, DOWN);
+    // The third match, not the second: a handler that reads the last render's pointer moves once.
+    expect(ui.rows()).toContain("❯ /model  Switch model");
+  });
+
+  test("F6 downArrow then return in one batch run the row the pointer moved to", async () => {
+    const ui = await screen();
+    ui.type("/re");
+    expect(ui.rows()).toContain(`❯ ${RESUME_ROW}`);
+    ui.pressAll(DOWN, RETURN);
+    await ui.flush();
+    expect(ui.host.resume).not.toHaveBeenCalled();
+    expect(ui.lastFrame()).toContain("usage: /feature <name> [message]");
+  });
+
+  test("F7 tab and the next character in one batch keep the completion", async () => {
+    const ui = await screen();
+    ui.type("/re");
+    ui.pressAll(TAB, "x");
+    expect(ui.rows()).toContain("> /resume x");
+  });
+});
+
+describe("SlashMenu submission bookkeeping", () => {
+  test("F8 a clear armed before a menu run does not survive it", async () => {
+    const ui = await screen();
+    ui.type("draft");
+    ui.press(ESCAPE);
+    expect(ui.footer()).toContain(CLEAR_HINT);
+    // Empty the prompt so a slash query can be typed, then run one from the menu.
+    ui.press(CTRL_U);
+    ui.type("/co");
+    await ui.submitTyped();
+    ui.type("new");
+    expect(ui.footer()).not.toContain(CLEAR_HINT);
+    // One escape arms a fresh clear; it must not delete the draft the arm predates.
+    ui.press(ESCAPE);
+    expect(ui.rows()).toContain("> new");
   });
 });

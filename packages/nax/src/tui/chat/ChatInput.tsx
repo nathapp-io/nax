@@ -22,7 +22,7 @@
  * menu drawn beneath the input while it is open.
  */
 import { Box, type Key, Text, useInput, useStdout } from "ink";
-import { type ReactElement, useEffect, useRef } from "react";
+import { type ReactElement, type RefObject, useEffect, useRef } from "react";
 import { resolveWidth } from "./layout-lines";
 import { cursorRow, type EditorState, EMPTY_EDITOR, editLine } from "./line-editor";
 import { displayWidth, type Span, sanitizeText } from "./styled-line";
@@ -82,9 +82,27 @@ export interface ChatInputProps {
   readonly hint?: string;
   /** The slash menu is open and owns up, down, return, tab and escape. */
   readonly yieldNavigation?: boolean;
+  /**
+   * The owner's handle on the two things the slash menu does to a line. They must go through
+   * the input, not the owner's state: the draft the next keypress reduces lives in a ref this
+   * component owns, and the clear-arm timer does too.
+   */
+  readonly handle?: RefObject<ChatInputHandle | undefined>;
   readonly onClearArmedChange?: (armed: boolean) => void;
   /** The most text rows the screen has room for; absent means the input's own cap. */
   readonly maxRows?: number;
+}
+
+/**
+ * What the owner may ask the input to do for a line the slash menu produced. The menu's tab
+ * and return bypass the editor, so they would otherwise skip its bookkeeping — the draft ref
+ * a keypress in the same batch reduces, and the clear-arm a submit disarms.
+ */
+export interface ChatInputHandle {
+  /** Write a completed line into the prompt, cursor after it — what tab does. */
+  complete(text: string): void;
+  /** Submit a line exactly as return does: disarm the clear, empty the prompt, keep the history. */
+  submit(text: string): void;
 }
 
 /** The prompt an empty, idle input offers when its owner has no hint. */
@@ -458,6 +476,7 @@ export function ChatInput({
   busy = false,
   hint,
   yieldNavigation = false,
+  handle,
   onClearArmedChange,
   maxRows,
 }: ChatInputProps): ReactElement {
@@ -546,6 +565,16 @@ export function ChatInput({
     }
     arm();
   };
+
+  /** Write a line into the prompt with the cursor at its end — a completion, not a submit. */
+  const complete = (text: string): void => {
+    publish({ editor: atEnd(text), history: latest.current.history });
+  };
+
+  // The owner's handle is refreshed every render, so the callbacks it runs are this frame's:
+  // a menu row completes and runs through the same draft ref and the same clear-arm that a
+  // typed key and a typed return use.
+  if (handle !== undefined) handle.current = { complete, submit };
 
   useInput(
     (input, key) => {

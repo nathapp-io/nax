@@ -128,11 +128,20 @@ export function SlashMenu({
   /** The newest pointer, ahead of the re-render two keys in one batch would share. */
   const latest = useRef<MenuSelection>(selection);
   if (latest.current.query !== menu.query) latest.current = { query: menu.query, index: FIRST_MATCH };
-  const selected = Math.min(Math.max(latest.current.index, FIRST_MATCH), matches.length - 1);
+  /**
+   * The pointer as the last key left it, clamped to the matches on screen now. Every handler
+   * reads this rather than the render's `selected`: two keys delivered in one batch both run
+   * before the re-render, so a return in that batch would otherwise run the row the pointer
+   * has already moved off.
+   */
+  const pointer = (): number => Math.min(Math.max(latest.current.index, FIRST_MATCH), matches.length - 1);
 
-  /** Move the pointer to `next` — the caller clamps it — and publish the move. */
-  const pick = (next: number): void => {
-    const value: MenuSelection = { query: menu.query, index: next };
+  /** Move the pointer `delta` rows from where the last key left it, never past either end. */
+  const move = (delta: number): void => {
+    const value: MenuSelection = {
+      query: menu.query,
+      index: Math.min(Math.max(pointer() + delta, FIRST_MATCH), matches.length - 1),
+    };
     latest.current = value;
     setSelection(value);
   };
@@ -147,17 +156,17 @@ export function SlashMenu({
       // A shifted key is another surface's: shift+arrows scroll the viewport, shift+tab
       // cycles the mode, shift+return is a newline in the prompt.
       if (key.shift || key.ctrl || key.meta) return;
-      const item = matches[selected];
+      const item = matches[pointer()];
       if (item === undefined) return;
       if (key.tab) onComplete(item.name);
       else if (key.return) onRun(item.name);
-      else if (key.upArrow) pick(Math.max(selected - 1, FIRST_MATCH));
-      else if (key.downArrow) pick(Math.min(selected + 1, matches.length - 1));
+      else if (key.upArrow) move(-1);
+      else if (key.downArrow) move(1);
     },
     { isActive: active },
   );
 
-  const layout = slashMenuLayout(matches, { width, theme, selected });
+  const layout = slashMenuLayout(matches, { width, theme, selected: pointer() });
   return (
     <Box flexDirection="column">
       {layout.lines.map((line, index) => (

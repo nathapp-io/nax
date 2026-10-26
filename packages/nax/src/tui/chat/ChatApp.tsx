@@ -49,7 +49,7 @@ import { runCommandShellLines } from "@/resources";
 import { NAX_VERSION } from "@/version";
 import { AskCard, askCardLayout } from "./AskCard";
 import { askCardModel } from "./ask-card";
-import { ChatInput, EMPTY_DRAFT, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
+import { ChatInput, type ChatInputHandle, EMPTY_DRAFT, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
 import {
   type FooterHint,
   footerModel,
@@ -61,7 +61,6 @@ import {
   workingLine,
 } from "./chat-status";
 import { layoutTranscript } from "./layout";
-import { EMPTY_EDITOR } from "./line-editor";
 import { SlashMenu } from "./SlashMenu";
 import { parseSlashCommand, runSlashCommand, type SlashCommand, type SlashOutcome } from "./slash-commands";
 import { slashMenuItems, slashMenuQueryState } from "./slash-menu";
@@ -244,6 +243,8 @@ export function ChatApp({
   const [dismissedQuery, setDismissedQuery] = useState<string | undefined>(undefined);
   /** Bumped on every send, so the viewport returns to the newest line the user just added. */
   const [followToken, setFollowToken] = useState(0);
+  /** The input's handle: the draft ref and the clear-arm the menu's two actions share. */
+  const inputHandle = useRef<ChatInputHandle | undefined>(undefined);
   const sending = useRef(false);
   const [, refresh] = useState(0);
 
@@ -421,21 +422,17 @@ export function ChatApp({
   }
 
   /**
-   * The menu's two actions write the same draft the input writes when it submits or is
-   * completed: tab leaves the selected name in the prompt with the space its arguments
-   * follow, and return sends exactly that name and empties the prompt, so the line joins the
-   * history a recalled submit does.
+   * The menu's two actions go through the input's own bookkeeping: `complete` writes the
+   * same draft ref the next keystroke in a batch reduces, and `submit` disarms the clear and
+   * empties the prompt exactly as a typed return does. The menu is only ever drawn beside the
+   * input — an ask card hides it — so the handle is set whenever a menu key can run.
    */
   function completeCommand(name: string): void {
-    const text = `/${name} `;
-    setDraft((current) => ({ editor: { text, cursor: Array.from(text).length }, history: current.history }));
+    inputHandle.current?.complete(`/${name} `);
   }
 
   function runCommandLine(name: string): void {
-    const line = `/${name}`;
-    setHint(undefined);
-    setDraft((current) => ({ editor: EMPTY_EDITOR, history: [...current.history, line] }));
-    void submit(line);
+    inputHandle.current?.submit(`/${name}`);
   }
 
   const columns = size.columns;
@@ -550,6 +547,7 @@ export function ChatApp({
             maxRows={inputBudget}
             hint={hint}
             yieldNavigation={menu.open}
+            handle={inputHandle}
             onClearArmedChange={setClearArmed}
           />
           {menu.open ? (
