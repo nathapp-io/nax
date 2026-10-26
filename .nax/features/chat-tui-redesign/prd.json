@@ -1,0 +1,1567 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-tui-redesign",
+  "branchName": "feat/chat-tui-redesign",
+  "createdAt": "2026-10-26T00:00:00.000Z",
+  "updatedAt": "2026-10-26T04:01:59.659Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Theme tokens and glyphs",
+      "description": "**Goal** — Add the environment-resolved chat theme without changing the current screen.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `theme.ts` resolves one `ChatTheme` from the environment and the chalk colour level.\n\nColour table (levels 2 and 3 use the hex value; level 1 uses the named colour; level 0, `NO_COLOR` set to any non-empty value, or `TERM=dumb` gives every token `undefined` and `color: false`):\n\n| Token | Dark | Light | 16-colour |\n|---|---|---|---|\n| accent | `#2bb5a3` | `#0f7f71` | `cyan` |\n| muted | `#7d8f8c` | `#6b7b78` | `gray` |\n| success | `#4cc38a` | `#1f8a55` | `green` |\n| warning | `#e5b84a` | `#9a6b00` | `yellow` |\n| danger | `#f0625b` | `#c23a33` | `red` |\n| diffAdd | `#12352a` | `#d7f2e3` | undefined |\n| diffRemove | `#3d1a1c` | `#fadcdb` | undefined |\n| userBand | `#17221f` | `#eaf1ef` | undefined |\n| border | `#2a3a37` | `#c7d3d0` | `gray` |\n| borderFocus | `#2bb5a3` | `#0f7f71` | `cyan` |\n| syntaxKeyword | `#d19af2` | `#8a3fbf` | `magenta` |\n| syntaxString | `#9ccc8a` | `#2f7d32` | `green` |\n| syntaxComment | `#6f817e` | `#7a8a87` | `gray` |\n| syntaxNumber | `#e5a46c` | `#a65a14` | `yellow` |\n| syntaxTitle | `#7cc4f0` | `#1f6fae` | `blue` |\n\n`background` is `\"light\"` when `COLORFGBG` is set and its last `;`-separated field is `7` or `15`; otherwise `\"dark\"`. Glyphs are the Unicode set (`⏺ ⎿ ❯ ⏵ ⏵⏵ ※ ⚠ ✗ ✻ … ─ ┌ │ └`, spinner `· ✢ ✳ ✶ ✻ ✽`) unless `NAX_ASCII` is `\"1\"` or the first non-empty of `LC_ALL`, `LC_CTYPE`, `LANG` does not match `/utf-?8/i`; then the ASCII set (`* | > > >> - ! x * ... - + | +`, spinner `- \\ | /`). With no locale variable set, the Unicode set is used.\n\n**Scope** — In: new theme module and unit tests. Out: styled-line rendering (US-002), CLI environment wiring (US-020), changing the run TUI.\n\n**Interface** —\n```ts\nexport type ChatColorToken =\n  | \"accent\" | \"muted\" | \"success\" | \"warning\" | \"danger\"\n  | \"diffAdd\" | \"diffRemove\" | \"userBand\" | \"border\" | \"borderFocus\"\n  | \"syntaxKeyword\" | \"syntaxString\" | \"syntaxComment\" | \"syntaxNumber\" | \"syntaxTitle\";\nexport interface ChatGlyphs {\n  readonly bullet: string; readonly result: string; readonly pointer: string;\n  readonly modeGuarded: string; readonly modeFull: string; readonly notice: string;\n  readonly warning: string; readonly error: string; readonly thinking: string;\n  readonly ellipsis: string; readonly rule: string;\n  readonly codeTop: string; readonly codeSide: string; readonly codeBottom: string;\n  readonly spinner: readonly string[];\n}\nexport interface ChatTheme {\n  readonly color: boolean;\n  readonly background: \"dark\" | \"light\";\n  /** Ink colour strings; undefined = terminal default (and no background for bg tokens). */\n  readonly colors: Readonly<Record<ChatColorToken, string | undefined>>;\n  readonly glyphs: ChatGlyphs;\n}\nexport function resolveChatTheme(input: {\n  env: Readonly<Record<string, string | undefined>>;\n  colorLevel: 0 | 1 | 2 | 3;\n}): ChatTheme;\n```",
+      "acceptanceCriteria": [
+        "[unit] resolveChatTheme({ env: {}, colorLevel: 3 }) returns color: true and background: \"dark\".",
+        "[unit] resolveChatTheme({ env: {}, colorLevel: 3 }) returns colors.accent equal to #2bb5a3.",
+        "[unit] resolveChatTheme({ env: { COLORFGBG: \"0;15\" }, colorLevel: 3 }) returns background: \"light\" and colors.accent equal to #0f7f71.",
+        "[unit] resolveChatTheme({ env: { COLORFGBG: \"15;0\" }, colorLevel: 3 }) returns background: \"dark\".",
+        "[unit] resolveChatTheme({ env: {}, colorLevel: 1 }) returns colors.accent equal to cyan.",
+        "[unit] resolveChatTheme({ env: {}, colorLevel: 1 }) returns colors.diffAdd, colors.diffRemove and colors.userBand all undefined.",
+        "[unit] resolveChatTheme({ env: {}, colorLevel: 0 }) returns color: false and every entry of colors undefined.",
+        "[unit] resolveChatTheme({ env: { NO_COLOR: \"1\" }, colorLevel: 3 }) returns color: false and every entry of colors undefined.",
+        "[unit] resolveChatTheme({ env: { NO_COLOR: \"\" }, colorLevel: 3 }) returns color: true.",
+        "[unit] resolveChatTheme({ env: { TERM: \"dumb\" }, colorLevel: 3 }) returns color: false.",
+        "[unit] resolveChatTheme({ env: {}, colorLevel: 3 }) returns glyphs.bullet equal to ⏺ and glyphs.result equal to ⎿.",
+        "[unit] resolveChatTheme({ env: { NAX_ASCII: \"1\" }, colorLevel: 3 }) returns glyphs.bullet equal to * and glyphs.spinner equal to [\"-\", \"\\\\\", \"|\", \"/\"].",
+        "[unit] resolveChatTheme({ env: { LANG: \"C\" }, colorLevel: 3 }) returns glyphs.bullet equal to *.",
+        "[unit] resolveChatTheme({ env: { LC_ALL: \"en_US.UTF-8\", LANG: \"C\" }, colorLevel: 3 }) returns glyphs.bullet equal to ⏺."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "theme"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure additive theme resolution with explicit environment precedence and fallback tables."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatStatusLine.tsx",
+        "packages/nax/src/tui/components/StatusBar.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/theme.ts",
+        "packages/nax/test/unit/tui/chat/theme.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Styled lines, display width and sanitising",
+      "description": "**Goal** — Add the shared styled-line primitive and safe display text utilities.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `styled-line.tsx` defines the one rendering primitive every model produces: a `StyledLine` is an array of `Span`s; `StyledLineView` renders one line with the theme's colours.\n\nEvery width, wrap and truncation in the models below is measured with `displayWidth`, and a `width` below `MIN_LAYOUT_WIDTH` is treated as `MIN_LAYOUT_WIDTH`. Every text that comes from the session, a tool, an MCP server or the host (reply, thinking, preview, tool input, notices, listings) passes through `sanitizeText` before it becomes span text, so a tool preview containing `\\u001b[?1049l` cannot leave the alternate screen.\n\n**Scope** — In: span rendering, plain text extraction, Bun display-column measurement and control-sequence sanitising. Out: markdown (US-007/008), transcript layout (US-009..011), mounting in ChatApp (US-020).\n\n**Interface** —\n```ts\nexport interface Span {\n  readonly text: string;\n  readonly color?: ChatColorToken;\n  readonly background?: ChatColorToken;\n  readonly bold?: boolean;\n  readonly italic?: boolean;\n}\nexport type StyledLine = readonly Span[];\nexport function plainText(line: StyledLine): string;\n/** Terminal display columns (Bun.stringWidth): CJK and emoji count 2. */\nexport function displayWidth(text: string): number;\n/** Strips ANSI/OSC escape sequences, C0 controls except \"\\n\", and DEL (0x7f); a tab becomes two spaces. */\nexport function sanitizeText(text: string): string;\nexport const MIN_LAYOUT_WIDTH = 10;\n```\n`StyledLineView` renders one line with the theme's colours.",
+      "acceptanceCriteria": [
+        "[unit] plainText([{ text: \"a\" }, { text: \"b\", bold: true }]) returns ab.",
+        "[unit] Rendering StyledLineView with the line [{ text: \"hi\", color: \"accent\" }] and a colorLevel: 0 theme produces the frame text hi.",
+        "[unit] Rendering StyledLineView with the line [{ text: \"x\", background: \"userBand\" }] and a theme whose userBand is undefined produces the frame text x without throwing.",
+        "[unit] displayWidth(\"ab\") returns 2.",
+        "[unit] displayWidth(\"日本\") returns 4.",
+        "[unit] sanitizeText(\"a\\u001b[31mb\\u001b[0m\") returns ab.",
+        "[unit] sanitizeText(\"x\\u001b[?1049ly\") returns xy.",
+        "[unit] sanitizeText(\"a\\u001b]0;title\\u0007b\") returns ab.",
+        "[unit] sanitizeText(\"a\\tb\") returns \"a  b\".",
+        "[unit] sanitizeText(\"a\\rb\\u0007c\\u007f\") returns abc.",
+        "[unit] sanitizeText(\"a\\nb\") returns \"a\\nb\"."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "terminal-safety"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive primitive with Unicode width and terminal-injection sanitising; no permission or session policy changes."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/theme.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/styled-line.tsx",
+        "packages/nax/test/ui/chat/styled-line.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "sanitizeText removes an OSC sequence terminated with ESC-backslash without leaving control bytes or its title in the returned text.",
+        "displayWidth(\"😀\") returns 2."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Host: context window and subagent event tags",
+      "description": "**Goal** — Enrich host state with catalog context-window data and forwarded nested tool events with parent attribution.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `@/agents/catalog` gains `lookupContextWindow(provider, model)` beside `lookupPricing`, same fail-open contract (undefined on miss, load failure or throw). `ChatHostState` gains `contextWindow?: number`, resolved for the session model (`\"<provider>/<model>\"`, split at the first `/`; a model string without `/` gets no lookup and no `contextWindow`) when `start`, `resume` and `switchTo` complete, cached per model string; the host calls it through the exported `_chatHostDeps.lookupContextWindow` (default: the catalog function; `export const _chatHostDeps = { lookupContextWindow }` is a new object in `chat-host.ts`, distinct from the `ChatHostDeps` interface). Forwarded subagent `tool_call` / `tool_result` events (`subagent-runs.ts` `routeActivity`) gain `metadata.subagent = agent.qualifiedName` and `metadata.subagentTask = task`, merged over the event's own metadata.\n\nUpdate host-subagents.test.ts forwarding/spend/late-call assertions to find events by type and callId, assert fixture name/isError plus subagent/subagentTask; the negative lateCall check must assert no forwarded event has that callId. The spend, ledger and text-delta assertions are unchanged. In subagent-runs.test.ts replace toEqual([call,result]) with checks of type/callId/name or isError plus qualified-name/task tags; only those two event types are forwarded, unchanged.\n\n**Scope** — In: catalog lookup, additive host context field/cache/seam, forwarded metadata and affected regression tests. Out: transcript nesting (US-004), context footer (US-017), changes to session/mode/approval or subagent accounting. A per-model `contextWindow` override from config (`models` entries) is not applied to the footer; the catalog value is used.\n\n**Interface** — `lookupContextWindow(provider, model)`; `readonly contextWindow?: number`; `export const _chatHostDeps = { lookupContextWindow }`. Keep ChatHostDeps distinct and preserve the existing ChatHost API.",
+      "acceptanceCriteria": [
+        "[unit] With _catalogDeps.loadProviders resolving provider data that _catalogDeps.normalise turns into a catalog whose model anthropic/m1 has contextWindow: 200000, lookupContextWindow(\"anthropic\", \"m1\") resolves to 200000.",
+        "[unit] With that catalog, lookupContextWindow(\"anthropic\", \"missing\") resolves to undefined.",
+        "[unit] With _catalogDeps.loadProviders rejecting, lookupContextWindow(\"anthropic\", \"m1\") resolves to undefined.",
+        "[unit] With a catalog whose model() throws, lookupContextWindow(\"anthropic\", \"m1\") resolves to undefined.",
+        "[unit] A chat host built by createChatHost with _chatHostDeps.lookupContextWindow stubbed to return 200000, after start({ mode: \"guarded\", model: \"anthropic/m1\" }), returns current().contextWindow equal to 200000.",
+        "[unit] That host's stub was called with (\"anthropic\", \"m1\").",
+        "[unit] With the stub returning undefined for anthropic/m2, current().contextWindow is undefined after switchTo({ model: \"anthropic/m2\" }).",
+        "[unit] With the stub rejecting, start resolves and current().contextWindow is undefined.",
+        "[unit] start on anthropic/m1 followed by switchTo({ mode: \"full\" }) on the same model calls the stub once.",
+        "[unit] start on the model string test-model (no /) does not call the stub and leaves current().contextWindow undefined.",
+        "[unit] Through the host-subagents harness, a host.send whose scripted chat turn runs nax-agents__run with task scan and whose nested session emits a tool_call named Read delivers to the turn listener a tool_call event with metadata.subagentTask equal to scan.",
+        "[unit] In that run, the delivered nested tool_call event has metadata.subagent equal to the agent's qualified name.",
+        "[unit] In that run, the delivered nested tool_result event has metadata.subagentTask equal to scan.",
+        "[unit] In that run, a nested event whose own metadata has key k with value v is delivered with metadata.k equal to v.",
+        "When host.send forwards a nested tool_call or tool_result with the new subagent tags, its type, callId and name (for a call) or isError (for a result) remain equal to the originating fixture's fields, preserving existing tool-activity data.",
+        "When host.send completes a chat turn costing $1.00 with a nested run costing $0.40, the persisted session cost increases by $1.40, unchanged by adding forwarded-event metadata."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "host",
+        "sessions",
+        "subagents"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module asynchronous session lifecycle enrichment and nested forwarding must preserve locks, rollback and accounting; session security override."
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/catalog/index.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/chat/subagent-runs.ts",
+        "packages/nax/test/unit/chat/host-subagents.test.ts",
+        "packages/nax/test/unit/chat/subagent-runs.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/agents/catalog/context-window.test.ts",
+        "packages/nax/test/unit/chat/chat-host-context-window.test.ts"
+      ],
+      "suggestedCriteria": [
+        "After resume({ id }) opens a session whose model is anthropic/m1, current().contextWindow equals that model's cached catalog context window.",
+        "Starting anthropic/team/model calls lookupContextWindow with provider anthropic and model team/model."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/host-subagents.test.ts",
+          "reason": "the `toContainEqual(call)`, `toContainEqual(result)` and `toContainEqual(lateCall)` assertions on events forwarded through `host.send` (the forwarding, spend and late-call cases) change to find the forwarded event by `type` and `callId` and assert its `name` (or `isError`) equals the fixture's and its metadata carries `subagent` and `subagentTask`; the `not.toContainEqual(lateCall)` assertion changes the same way to assert no forwarded event has the late call's `callId`; the spend, ledger and text-delta assertions are unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/subagent-runs.test.ts",
+          "reason": "\"forwards only tool_call and tool_result to the turn listener\" asserts `toEqual([call, result])` on the forwarded events; with the new metadata tags it changes to assert the forwarded events' `type`, `callId` and `name` (or `isError`) equal those of `call` and `result`, and that each forwarded event's metadata carries `subagent` equal to the agent's qualified name and `subagentTask` equal to `check it`; that only those two event types are forwarded is unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Transcript model",
+      "description": "**Goal** — Add the immutable event-to-transcript reducer beside the legacy transcript.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `transcript-model.ts` holds the entry union and a pure reducer `reduceTranscript(entries, event)`. Entries are immutable; an update returns a new object for the changed entry only, so unchanged entries keep their identity (the layout cache in US-010 depends on this).\n\nReducer rules: `text_delta` appends to the last entry when it is a `reply` of the same turn, else adds a `reply`. `thinking_delta` appends to the open (no `endedAt`) `thinking` entry of its turn, else adds one with `startedAt = event.at`. Any `text_delta`, `tool_call` or `turn_end` of a turn sets `endedAt = event.at` on that turn's open thinking entry. A `tool_call` whose `metadata.subagentTask` is set becomes a `ToolChild` of the most recent running `nax-agents__run` entry whose `input.task` equals it; with no such parent it is added as a top-level tool entry. `tool_result` updates the matching entry (or child) by `turnId` + `callId` (child: by `callId` within the parent) to `ok`/`error`, and on a top-level entry also sets `preview` and `endedAt`. `turn_end` with status `errored` and an `error` adds an `error` entry `\"<code>: <message>\"`; with status `cancelled` it adds `interrupted`. `compaction` adds the notice `conversation compacted`. Every other event returns the input array unchanged (same reference).\n\n**Scope** — In: new immutable model/reducer and unit tests. Out: replacing Transcript.tsx/appendChatEvent (US-020/028), tool formatting (US-005/006), rendering (US-009..011).\n\n**Interface** —\n```ts\nexport interface ToolChild {\n  readonly callId: string; readonly name: string; readonly input: unknown;\n  readonly status: \"running\" | \"ok\" | \"error\";\n}\nexport type TranscriptEntry =\n  | { kind: \"welcome\"; skills: number; commands: number; agents: number; mcpServers: number; mcpConnected: number }\n  | { kind: \"user\"; text: string }\n  | { kind: \"reply\"; turnId: string; text: string }\n  | { kind: \"thinking\"; turnId: string; text: string; startedAt: string; endedAt?: string }\n  | { kind: \"tool\"; turnId: string; callId: string; name: string; input: unknown;\n      startedAt: string; status: \"running\" | \"ok\" | \"error\"; preview?: string;\n      endedAt?: string; children: readonly ToolChild[] }\n  | { kind: \"notice\"; text: string }\n  | { kind: \"warning\"; text: string }\n  | { kind: \"error\"; text: string }\n  | { kind: \"listing\"; title: string; text: string }\n  | { kind: \"interrupted\" };\nexport function reduceTranscript(entries: readonly TranscriptEntry[], event: SessionEvent): readonly TranscriptEntry[];\n```",
+      "acceptanceCriteria": [
+        "[unit] reduceTranscript over a text_delta of turn t1 with text Hel and then one with lo yields one entry { kind: \"reply\", turnId: \"t1\", text: \"Hello\" }.",
+        "[unit] A text_delta of turn t2 after a reply of turn t1 adds a second reply entry.",
+        "[unit] A text_delta of turn t1 after a tool entry of turn t1 adds a new reply entry.",
+        "[unit] Two thinking_delta events of turn t1 with texts a and b yield one thinking entry with text ab.",
+        "[unit] That thinking entry's startedAt equals the first event's at.",
+        "[unit] A tool_call of turn t1 after an open thinking entry of t1 sets that entry's endedAt to the tool_call event's at.",
+        "[unit] A turn_end of turn t1 sets endedAt on that turn's open thinking entry.",
+        "[unit] A tool_call with callId: \"c1\", name: \"Read\" and input: { path: \"a.ts\" } adds a tool entry with status: \"running\" and empty children.",
+        "[unit] That tool entry's startedAt equals the event's at.",
+        "[unit] A tool_result with callId: \"c1\", isError: false and preview: \"x\" on turn t1 sets that entry's status to ok and preview to x.",
+        "[unit] That tool_result sets the entry's endedAt to the event's at.",
+        "[unit] A tool_result with isError: true sets the matching entry's status to error.",
+        "[unit] A tool_result whose callId matches no entry returns the input array (same reference).",
+        "[unit] After a running nax-agents__run entry with input.task scan, a tool_call named Read with metadata.subagentTask: \"scan\" adds no top-level entry.",
+        "[unit] That call is appended to the agent entry's children as a ToolChild named Read with status running.",
+        "[unit] A tool_result with metadata.subagentTask: \"scan\" and that child's callId sets the child's status to ok.",
+        "[unit] A tool_call with metadata.subagentTask: \"other\" and no running nax-agents__run entry with that task is added as a top-level tool entry.",
+        "[unit] A turn_end with status errored and error { code: \"X\", message: \"broke\" } adds { kind: \"error\", text: \"X: broke\" }.",
+        "[unit] A turn_end with status cancelled adds { kind: \"interrupted\" }.",
+        "[unit] A compaction event adds { kind: \"notice\", text: \"conversation compacted\" }.",
+        "[unit] Appending a text_delta to the last reply leaves every earlier entry object identical (same reference) in the result."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "reducer"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Extends the existing appendChatEvent reducer pattern in one new pure module with specified immutable updates and nested call matching; no session or approval decisions change."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/Transcript.tsx",
+        "packages/nax-agent/src/session/agent-session-types.ts",
+        "packages/nax/src/chat/agents-provider.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/transcript-model.ts",
+        "packages/nax/test/unit/tui/chat/transcript-model.test.ts"
+      ],
+      "suggestedCriteria": [
+        "A text_delta closes its turn's open thinking entry at the event timestamp.",
+        "A usage event returns the original transcript array by reference.",
+        "When two running Agent entries share a task, a tagged tool_call is appended to the most recent one's children."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Tool card identity: title, argument, tone, running and error",
+      "description": "**Goal** — Add a pure tool-card model for identity and running/error states.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `tool-card.ts`, pure:\n- `toolTitle`: `nax-agents__run` -> `Agent`, `nax-skills__load` -> `Skill`, any other name unchanged.\n- `arg`: Read/Write/Edit/Delete -> `input.path`; Bash -> first line of `input.command`; Grep -> `\"<pattern>\"` plus `, <path>` when `input.path` is a string; Glob -> `input.pattern`; Git -> `input.subcommand`; Agent -> `<agent>: <task>`; Skill -> `input.name`; any other tool, or a missing/non-string field -> undefined. Longer than `TOOL_ARG_LIMIT` characters -> the first `TOOL_ARG_LIMIT` characters plus the theme-independent `…`. Line breaks in the value become spaces.\n- `tone`: `running` while running, `success` on ok, `danger` on error.\n- `summary` while running: empty, except Agent, whose summary is its children as muted `Title(arg)` lines, the last `CHILD_PREVIEW_LINES` only, preceded by a muted `+N more tool uses` line when more exist.\n- `summary` on error: the first non-empty preview line, tone `danger` (`\"failed\"` when the preview is empty or absent).\n\n**Scope** — In: toolTitle, argument derivation/truncation, tone, running/error summaries, shared model types/constants and tests. Out: ok summaries/diffLines/collapse behavior (US-006), styled layout (US-010). Subagent tokens are not shown on the Agent card; only tool-use count and duration, because nested usage is not forwarded to the transcript.\n\n**Interface** —\n```ts\nexport interface CardLine { readonly text: string; readonly tone: \"plain\" | \"muted\" | \"danger\" }\nexport interface DiffLine { readonly sign: \"-\" | \"+\" | \" \"; readonly text: string }\nexport interface ToolCardModel {\n  readonly title: string;\n  readonly arg?: string;\n  readonly tone: \"running\" | \"success\" | \"danger\";\n  readonly summary: readonly CardLine[];\n  readonly diff: readonly DiffLine[];\n  /** Lines withheld while collapsed; 0 when expanded or nothing is withheld. */\n  readonly hiddenLines: number;\n}\nexport const TOOL_ARG_LIMIT = 60;\nexport const BASH_PREVIEW_LINES = 3;\nexport const DIFF_PREVIEW_LINES = 12;\nexport const CHILD_PREVIEW_LINES = 3;\nexport function toolTitle(name: string): string;\nexport function toolCardModel(entry: Extract<TranscriptEntry, { kind: \"tool\" }>, options: { expanded: boolean }): ToolCardModel;\n```\nLeave the legacy Transcript renderer and appendChatEvent unchanged.",
+      "acceptanceCriteria": [
+        "[unit] toolTitle(\"nax-agents__run\") returns Agent.",
+        "[unit] toolTitle(\"nax-skills__load\") returns Skill, and toolTitle(\"Read\") returns Read.",
+        "[unit] toolCardModel of a running Read entry with input { path: \"src/a.ts\" } returns title: \"Read\" and arg: \"src/a.ts\".",
+        "[unit] That model has tone: \"running\" and an empty summary.",
+        "[unit] For a Bash entry with input { command: \"bun test\\nexit\" }, arg is bun test.",
+        "[unit] For a Grep entry with input { pattern: \"foo\", path: \"src\" }, toolCardModel returns arg equal to `\"foo\", src` (the quotes around foo are literal characters).",
+        "[unit] For a Grep entry with input { pattern: \"foo\" }, toolCardModel returns arg equal to `\"foo\"` (including the two literal quote characters).",
+        "[unit] For a Git entry with input { subcommand: \"log\" }, arg is log.",
+        "[unit] For a nax-agents__run entry with input { agent: \"explorer\", task: \"find x\" }, arg is explorer: find x.",
+        "[unit] For a nax-skills__load entry with input { name: \"review\" }, arg is review.",
+        "[unit] For a Read entry whose path is 70 characters, arg is its first 60 characters followed by ….",
+        "[unit] For an entry named acme__get, arg is undefined.",
+        "[unit] An ok entry has tone: \"success\" and an error entry tone: \"danger\".",
+        "[unit] An error entry with preview \"\\n  boom\\nmore\" returns summary [{ text: \"boom\", tone: \"danger\" }].",
+        "[unit] An error entry with no preview returns summary [{ text: \"failed\", tone: \"danger\" }].",
+        "[unit] A running nax-agents__run entry with five Read children returns four summary lines: +2 more tool uses and then three lines starting Read(.",
+        "[unit] Every summary line of that running agent entry has tone muted."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "tools"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure additive presentation mapping over unknown tool input with explicit field rules."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/transcript-model.ts",
+        "packages/nax/src/resources/skills-provider.ts",
+        "packages/nax/src/tui/chat/Transcript.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/tool-card.ts",
+        "packages/nax/test/unit/tui/chat/tool-card.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Tool card results and collapsing",
+      "description": "**Goal** — Extend tool cards with successful-result summaries, Edit diffs and collapse limits.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** —\n- `summary` on ok: Edit -> `Updated <path> (+a -r)` where a and r are the line counts of `new_string` and `old_string`; Write -> `Wrote <n> lines to <path>` (n = line count of `input.content`, a trailing newline not counted); Read -> `Read <k> lines` (k = preview line count) with `+` after k when the preview is at least 4096 bytes (UTF-8) long (the nax-agent preview cap); Bash -> the preview lines, the first `BASH_PREVIEW_LINES` while collapsed with the rest counted in `hiddenLines`; Agent -> `Done (<n> tool uses · <s>s)` (n = children, s = whole seconds from `startedAt` to `endedAt`); any other tool -> its first non-empty preview line, or `Done` for an empty preview. Ok summaries are muted except Bash preview lines, which are plain.\n- Line counts: a string's line count is the number of `\\n`-separated lines after one trailing `\\n` is removed; an empty string has 0 lines.\n- `diff`: only an ok Edit has one: `diffLines(old_string, new_string)`, the first `DIFF_PREVIEW_LINES` lines while collapsed (rest in `hiddenLines`).\n- `diffLines`: lines common to the start of both texts and lines common to the end become `\" \"` lines; the remaining old lines become `\"-\"` lines followed by the remaining new lines as `\"+\"` lines.\n- Expanded: no line limits; an ok Agent also lists every child after its summary.\n\nAn ok Bash with an empty preview returns Done. Durations and countdowns from timestamps that do not parse (fixtures use `at: \"now\"`) count as 0 seconds.\n\n**Scope** — In: extend tool-card.ts and the test file created by US-005. Out: layout/cache (US-010). Line numbers in Edit diffs are not shown; the Edit tool's input carries no start line. A Write approval or tool card does not show the written content as a diff. Subagent tokens are not shown on the Agent card; only tool-use count and duration, because nested usage is not forwarded to the transcript.\n\n**Interface** —\n```ts\nexport function diffLines(oldText: string, newText: string): readonly DiffLine[];\nexport function toolCardModel(entry: Extract<TranscriptEntry, { kind: \"tool\" }>, options: { expanded: boolean }): ToolCardModel;\n```\nPreserve the US-005 model contract and limit constants: TOOL_ARG_LIMIT=60, BASH_PREVIEW_LINES=3, DIFF_PREVIEW_LINES=12, CHILD_PREVIEW_LINES=3.",
+      "acceptanceCriteria": [
+        "[unit] An ok Edit entry with old_string \"a\\nb\", new_string \"a\\nc\\nd\" and path x.ts returns summary text Updated x.ts (+3 -2).",
+        "[unit] That model's diff equals diffLines(\"a\\nb\", \"a\\nc\\nd\").",
+        "[unit] An ok Write entry with content \"1\\n2\\n3\\n\" and path y.ts returns summary text Wrote 3 lines to y.ts.",
+        "[unit] An ok Read entry with a two-line preview returns summary text Read 2 lines.",
+        "[unit] An ok Read entry with a preview of 4096 ASCII characters across 50 lines returns summary text Read 50+ lines.",
+        "[unit] An ok Bash entry with a five-line preview, collapsed, returns the first three lines as summary lines with tone plain.",
+        "[unit] That collapsed model has hiddenLines: 2.",
+        "[unit] The same entry with expanded: true returns all five lines and hiddenLines: 0.",
+        "[unit] An ok nax-agents__run entry with two children and startedAt / endedAt 38 seconds apart returns summary text Done (2 tool uses · 38s).",
+        "[unit] That entry with expanded: true lists both children after the summary line.",
+        "[unit] An ok entry named Glob with preview \"3 files\\na\\nb\" returns summary text 3 files with tone muted.",
+        "[unit] An ok entry named Glob with an empty preview returns summary text Done.",
+        "[unit] An ok Edit entry whose diff has 20 lines, collapsed, returns 12 diff lines.",
+        "[unit] That collapsed Edit model has hiddenLines: 8.",
+        "[unit] The same Edit entry with expanded: true returns 20 diff lines.",
+        "[unit] A running Edit entry returns an empty diff.",
+        "[unit] diffLines(\"a\\nb\\nz\", \"a\\nc\\nz\") returns { sign: \" \", text: \"a\" }, { sign: \"-\", text: \"b\" }, { sign: \"+\", text: \"c\" }, { sign: \" \", text: \"z\" } in that order.",
+        "[unit] diffLines(\"a\", \"a\\nb\") returns { sign: \" \", text: \"a\" } and { sign: \"+\", text: \"b\" }.",
+        "[unit] diffLines(\"a\\na\", \"a\") returns { sign: \" \", text: \"a\" } and { sign: \"-\", text: \"a\" } (the common suffix is taken only from what remains after the common prefix).",
+        "[unit] An ok Bash entry with an empty preview returns summary text Done.",
+        "For the existing running Read entry with input { path: \"src/a.ts\" }, toolCardModel still returns arg: \"src/a.ts\", preserving argument derivation while adding successful-result summaries."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "tools",
+        "diff"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Extends one pure model and its existing tests with bounded output and a specified prefix/suffix diff algorithm."
+      },
+      "contextFiles": [
+        "packages/nax/test/unit/tui/chat/tool-card.test.ts",
+        "packages/nax/src/tui/chat/tool-card.ts",
+        "packages/nax-agent/src/tools/edit.ts",
+        "packages/nax-agent/src/tools/write.ts",
+        "packages/nax-agent/src/native/session/turn-event-emitter.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "Markdown: inline styles and blocks",
+      "description": "**Goal** — Add markdown-to-styled-lines rendering for inline syntax and non-code blocks.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `markdown.ts`: `renderMarkdown(text, { width, theme }): readonly StyledLine[]`. Parsing uses a maintained markdown lexer and highlighting a maintained highlighter (proposal: the `marked` lexer and the `highlight.js` core build with a registered language set; both are added to `packages/nax/package.json` before the run, see Out of Scope; registered languages: typescript, javascript, json, bash, python, go, rust, yaml, diff, markdown, sql, css, xml, with aliases ts, js, sh, zsh, shell, py, yml, html).\n\nRendering: headings bold (no `#`); paragraphs word-wrapped to `width`; `**strong**` bold; `*em*` italic; inline code in `accent`; unordered items `- ` (ordered `1. ` in `accent`), nested lists indented two columns per level; blockquotes prefixed by a muted `codeSide` glyph and a space, italic; a horizontal rule is a muted line of the `rule` glyph `width` long; a link renders its text followed by a muted ` (<href>)`;\n\nTables and raw HTML render as their source text. Malformed markdown (unclosed emphasis, stray fences): Rendered as the lexer tokenises it; never throws.\n\nEvery width, wrap and truncation in the models below is measured with `displayWidth`, and a `width` below `MIN_LAYOUT_WIDTH` is treated as `MIN_LAYOUT_WIDTH`. Every text that comes from the session, a tool, an MCP server or the host (reply, thinking, preview, tool input, notices, listings) passes through `sanitizeText` before it becomes span text, so a tool preview containing `\\u001b[?1049l` cannot leave the alternate screen.\n\n**Scope** — In: maintained-lexer inline/block rendering, safe styled text and tests. Out: fenced code and highlighter integration (US-008), transcript indentation/layout (US-009). Adding the markdown lexer and highlighter packages (`marked`, `highlight.js`) to `packages/nax/package.json` and `bun.lock` is done on the feature branch before `nax run`; no story installs packages. Markdown tables are not formatted as aligned columns; they render as their source text.\n\n**Interface** — `renderMarkdown(text, { width, theme }): readonly StyledLine[]`.",
+      "acceptanceCriteria": [
+        "[unit] renderMarkdown(\"# Title\", { width: 40, theme }) returns one line whose plain text is Title.",
+        "[unit] That line's span is bold.",
+        "[unit] renderMarkdown(\"a **b** c\", …) returns one line whose plain text is a b c.",
+        "[unit] In that line the b span is bold and the a-space span is not.",
+        "[unit] renderMarkdown(\"a *b*\", …) returns a line whose b span is italic.",
+        "[unit] renderMarkdown(\"use `x`\", …) returns a line whose plain text is use x.",
+        "[unit] In that line the x span has color accent.",
+        "[unit] renderMarkdown(\"- one\\n- two\", …) returns two lines with plain texts - one and - two.",
+        "[unit] renderMarkdown(\"1. one\\n2. two\", …) returns lines starting 1. and 2., each followed by a space.",
+        "[unit] In those lines the number spans have color accent.",
+        "[unit] An item nested under - a renders with plain text starting with two spaces and - .",
+        "[unit] A paragraph of twelve five-letter words rendered at width 20 returns lines each at most 20 characters long.",
+        "[unit] That paragraph's lines, joined with spaces, equal the original words in order.",
+        "[unit] renderMarkdown(\"> quoted\", …) returns a line whose plain text starts with the theme's codeSide glyph.",
+        "[unit] In that line the quoted span is italic.",
+        "[unit] renderMarkdown(\"[nax](https://x.y)\", …) returns a line whose plain text is nax (https://x.y).",
+        "[unit] In that line the \" (https://x.y)\" span has color muted.",
+        "[unit] renderMarkdown(\"---\", { width: 10, theme }) returns one line of ten rule glyphs with color muted.",
+        "[unit] renderMarkdown(\"**unclosed\", …) returns without throwing and its plain text contains unclosed.",
+        "When renderMarkdown receives malformed markdown with unclosed emphasis or stray fences, it renders the lexer-tokenised source without throwing."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "markdown"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New lexer-to-span abstraction must preserve inline styling through recursive blocks, nested lists and column-aware wrapping."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/theme.ts",
+        "packages/nax/src/tui/chat/styled-line.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/markdown.ts",
+        "packages/nax/test/unit/tui/chat/markdown.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-008",
+      "title": "Markdown: fenced code and highlighting",
+      "description": "**Goal** — Extend markdown rendering with framed fenced blocks and fail-open syntax highlighting.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — Parsing uses a maintained markdown lexer and highlighting a maintained highlighter (proposal: the `marked` lexer and the `highlight.js` core build with a registered language set; both are added to `packages/nax/package.json` before the run, see Out of Scope; registered languages: typescript, javascript, json, bash, python, go, rust, yaml, diff, markdown, sql, css, xml, with aliases ts, js, sh, zsh, shell, py, yml, html).\n\nfenced code renders a muted `codeTop` line with the language name, each code line prefixed by a muted `codeSide` and a space, then a muted `codeBottom` line; code lines are not wrapped. A fence with a known language colours tokens by class: keywords and built-ins `syntaxKeyword`, strings `syntaxString`, comments `syntaxComment`, numbers and literals `syntaxNumber`, function and class titles `syntaxTitle`. Unknown or missing language: plain code lines. Tables and raw HTML render as their source text. An unclosed fence (mid-stream) renders as code to the end of the text. The highlighter call goes through the exported `_markdownDeps.highlight` so a test can make it throw.\n\nHighlighter throws for a fence: That fence renders as plain code lines. Apply sanitizeText before span text. Preserve unwrapped long code here; US-009/010 truncate at the layout boundary.\n\n**Scope** — In: fenced blocks, registered languages/aliases, class-to-color conversion and injectable highlighting fallback; extend the US-007 markdown test file. Out: transcript wrapping/cache (US-009/010). Adding the markdown lexer and highlighter packages (`marked`, `highlight.js`) to `packages/nax/package.json` and `bun.lock` is done on the feature branch before `nax run`; no story installs packages. Markdown tables are not formatted as aligned columns; they render as their source text.\n\n**Interface** — `renderMarkdown(text, { width, theme }): readonly StyledLine[]`; exported `_markdownDeps.highlight`.",
+      "acceptanceCriteria": [
+        "[unit] A fenced block with language ts and body const x = 1; returns three lines.",
+        "[unit] The first of them is a muted line containing the codeTop glyph and ts.",
+        "[unit] The second has plain text equal to the codeSide glyph, a space and const x = 1;.",
+        "[unit] The third is a muted line containing the codeBottom glyph.",
+        "[unit] In that code line the span const has color syntaxKeyword.",
+        "[unit] In that code line the span 1 has color syntaxNumber.",
+        "[unit] A fenced ts block with body const s = \"q\"; gives the span \"q\" color syntaxString.",
+        "[unit] A fenced ts block with body // note gives the comment span color syntaxComment.",
+        "[unit] A fenced ts block with body function run() {} gives the span run color syntaxTitle.",
+        "[unit] A fenced block with language nosuchlang renders its code line text after the side glyph as spans with no color.",
+        "[unit] A fenced block with no language renders its code line text as spans with no color.",
+        "[unit] A code line of 80 characters rendered at width 40 is returned as one line.",
+        "[unit] renderMarkdown(\"```ts\\nconst a\", …) (unclosed fence) returns a code line whose plain text ends with const a.",
+        "[unit] With _markdownDeps.highlight stubbed to throw, a fenced ts block renders its code line without throwing.",
+        "[unit] In that case the code line's spans after the side glyph have no color.",
+        "After fenced-code support is added, renderMarkdown(\"a **b** c\", { width: 40, theme }) still returns [line] with plainText(line) equal to \"a b c\", preserving inline markdown rendering."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "markdown",
+        "highlighting"
+      ],
+      "dependencies": [
+        "US-007"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Highlighter integration must decode token classes into safe spans while handling streaming fences and thrown highlighting errors."
+      },
+      "contextFiles": [
+        "packages/nax/test/unit/tui/chat/markdown.test.ts",
+        "packages/nax/src/tui/chat/markdown.ts",
+        "packages/nax/src/tui/chat/theme.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-009",
+      "title": "Layout: message entries",
+      "description": "**Goal** — Add pure transcript layout for user messages, markdown replies and collapsible completed thinking.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `layout.ts`: `layoutTranscript(entries, { width, theme, expanded }): readonly StyledLine[]`, the concatenation of each entry's lines with one empty line between entries. Per entry:\n- `user`: each line of the text prefixed by `> ` (accent) the first and two spaces the rest, every span with background `userBand`.\n- `reply`: `renderMarkdown` at `width - 2`, the first line prefixed by the bullet glyph and a space, the rest by two spaces.\n- `thinking` without `endedAt`: no lines. With `endedAt`, collapsed: one muted italic line `✻ Thought for <s>s (ctrl+o to show)`; expanded: that line with `(ctrl+o to hide)` and then the thinking text, muted italic, indented two columns.\n- Lines longer than `width` are wrapped at word boundaries, continuation lines keeping the entry's indent; a single word longer than the available width is cut at that width; a code line longer than `width` is cut at `width`.\n- Durations and countdowns from timestamps that do not parse (fixtures use `at: \"now\"`) count as 0 seconds.\n\nEvery width, wrap and truncation in the models below is measured with `displayWidth`, and a `width` below `MIN_LAYOUT_WIDTH` is treated as `MIN_LAYOUT_WIDTH`. Every text that comes from the session, a tool, an MCP server or the host (reply, thinking, preview, tool input, notices, listings) passes through `sanitizeText` before it becomes span text, so a tool preview containing `\\u001b[?1049l` cannot leave the alternate screen.\n\n**Scope** — In: new layout.ts, message entries, separators, indentation, display-column fitting and tests. Out: tool cards/cache (US-010), welcome/status/listings (US-011), mounting in ChatApp (US-020). Design this entry dispatcher for the full TranscriptEntry union without replacing legacy UI yet.\n\n**Interface** — `layoutTranscript(entries, { width, theme, expanded }): readonly StyledLine[]`.",
+      "acceptanceCriteria": [
+        "[unit] A user entry with text hi lays out as one line whose plain text is > hi.",
+        "[unit] In that line the > span has color accent and every span has background userBand.",
+        "[unit] A user entry with text \"a\\nb\" lays out as lines > a and two-spaces b.",
+        "[unit] A reply entry with text done lays out as one line whose plain text is the bullet glyph, a space and done.",
+        "[unit] A reply whose markdown renders three lines lays out with its second and third lines starting with two spaces.",
+        "[unit] A thinking entry without endedAt lays out as zero lines.",
+        "[unit] A thinking entry with startedAt and endedAt 6 seconds apart lays out, collapsed, as one line ✻ Thought for 6s (ctrl+o to show).",
+        "[unit] That line is muted and italic, and the layout does not include the thinking text.",
+        "[unit] The same entry with expanded: true lays out a first line ending (ctrl+o to hide) followed by its text indented two columns.",
+        "[unit] Two entries lay out with exactly one empty line between their lines.",
+        "[unit] A reply line wider than width wraps so no line is longer than width.",
+        "[unit] Every continuation line of that wrapped reply starts with two spaces.",
+        "[unit] With ASCII glyphs, a reply entry's first line starts with * followed by a space.",
+        "[unit] A user entry of thirty 日 characters laid out at width 20 gives lines whose displayWidth is at most 20.",
+        "[unit] layoutTranscript at width 4 lays out a reply entry hello world without throwing, as at width 10."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "layout"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-004",
+        "US-007"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New style-preserving column-aware layout abstraction integrates streamed transcript entries with markdown rendering."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/transcript-model.ts",
+        "packages/nax/src/tui/chat/markdown.ts",
+        "packages/nax/src/tui/chat/styled-line.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/layout.ts",
+        "packages/nax/test/unit/tui/chat/layout.test.ts"
+      ],
+      "suggestedCriteria": [
+        "A completed thinking entry with startedAt and endedAt equal to now renders Thought for 0s.",
+        "A reply containing terminal escape sequences produces no escape character in any returned span text."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-010",
+      "title": "Layout: tool cards, listings and the cache",
+      "description": "**Goal** — Extend transcript layout with tool-card rendering and identity-based per-entry caching.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `layout.ts`: `layoutTranscript(entries, { width, theme, expanded }): readonly StyledLine[]`, the concatenation of each entry's lines with one empty line between entries.\n- `tool`: the line `<bullet> <title>(<arg>)` (`<title>` alone when `arg` is undefined), the bullet coloured `muted`/`success`/`danger` by tone and the arg bold; then the summary lines, the first prefixed `  ⎿  ` (result glyph) and the rest five spaces, coloured by tone; then the diff lines prefixed five spaces, `-` lines with background `diffRemove`, `+` lines with background `diffAdd` (on a theme whose backgrounds are undefined, `-` lines are coloured `danger` and `+` lines `success`); then, when `hiddenLines > 0`, a muted line `     … +<n> lines (ctrl+o to expand)`.\n- Lines longer than `width` are wrapped at word boundaries, continuation lines keeping the entry's indent; a single word longer than the available width is cut at that width; a code line longer than `width` is cut at `width`.\n- Durations and countdowns from timestamps that do not parse (fixtures use `at: \"now\"`) count as 0 seconds.\n- Caching: the lines of one entry object are computed once per `(width, expanded)` pair; a later call with the same entry object, width and expanded reuses them (`_layoutDeps.layoutEntry` is the injectable per-entry function).\n\nEvery width, wrap and truncation in the models below is measured with `displayWidth`, and a `width` below `MIN_LAYOUT_WIDTH` is treated as `MIN_LAYOUT_WIDTH`. Every text that comes from the session, a tool, an MCP server or the host (reply, thinking, preview, tool input, notices, listings) passes through `sanitizeText` before it becomes span text, so a tool preview containing `\\u001b[?1049l` cannot leave the alternate screen.\n\n**Scope** — In: tool-card layout, plain/highlighted code truncation at layout width and the per-entry cache, including caching listing entries when supplied; extend the layout test file from US-009 and preserve its message rendering. Out: defining listing-specific rows and tones (US-011), reducer changes (US-004), keyboard expansion (US-021), Write diffs and Edit line numbers.\n\n**Interface** — `layoutTranscript(entries, { width, theme, expanded }): readonly StyledLine[]`; `_layoutDeps.layoutEntry` is the injectable per-entry function. Cache unchanged entries across calls after reduceTranscript changes only the last reply.",
+      "acceptanceCriteria": [
+        "[unit] An ok Read tool entry lays out a first line ⏺ Read(src/a.ts) whose bullet span has color success.",
+        "[unit] That card's second line starts \"  ⎿  Read\".",
+        "[unit] An error tool entry's first-line bullet span has color danger.",
+        "[unit] A tool entry whose model has no arg lays out its first line as the bullet, a space and the title, with no parentheses.",
+        "[unit] A card's second and later summary lines start with five spaces.",
+        "[unit] An ok Edit entry lays out its - diff lines with background diffRemove.",
+        "[unit] It lays out its + diff lines with background diffAdd.",
+        "[unit] With a theme whose diffAdd and diffRemove are undefined, the - lines have color danger and the + lines color success.",
+        "[unit] A collapsed card with hiddenLines: 2 lays out a final muted line \"     … +2 lines (ctrl+o to expand)\".",
+        "[unit] An ok Bash entry whose preview is \"a\\u001b[?1049lb\" lays out a summary line whose plain text contains ab and no escape character.",
+        "[unit] Calling layoutTranscript twice with the same entry objects, width and expanded calls _layoutDeps.layoutEntry once per entry in total.",
+        "[unit] Calling it again with a different width calls _layoutDeps.layoutEntry again for each entry.",
+        "[unit] Calling it with the same width and the other expanded value calls _layoutDeps.layoutEntry again for each entry.",
+        "[unit] After reduceTranscript appends to the last reply, the next layoutTranscript call calls _layoutDeps.layoutEntry for that entry only.",
+        "After tool-card layout and caching are added, layoutTranscript for a reply entry with text done still yields a line whose plainText is the theme's bullet glyph followed by a space and done, preserving existing reply layout."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "layout",
+        "performance"
+      ],
+      "dependencies": [
+        "US-006",
+        "US-008",
+        "US-009"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Extends the existing layout dispatcher using upstream card/markdown models and a standard identity-keyed cache; bounded changes stay in layout.ts and its tests."
+      },
+      "contextFiles": [
+        "packages/nax/test/unit/tui/chat/layout.test.ts",
+        "packages/nax/src/tui/chat/layout.ts",
+        "packages/nax/src/tui/chat/tool-card.ts",
+        "packages/nax/src/chat/chat-mcp-listing.ts"
+      ],
+      "suggestedCriteria": [
+        "A fenced code line longer than the layout width is cut to that display width without creating a continuation row.",
+        "Laying out the same entry with an ASCII theme after a Unicode theme returns ASCII glyphs rather than cached Unicode glyphs."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-011",
+      "title": "Layout: status and listing entries",
+      "description": "**Goal** — Extend transcript layout with welcome, notices, warnings, errors, interruptions and titled listings.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — Per entry:\n- `welcome` (counts from `host.catalog` skills, commands and agents lengths, `host.mcp.servers.length`, and connected = servers whose last `host.mcp.events()` entry for their id has kind `connected`; 0 when absent): `✻ nax chat` (thinking glyph + text, accent, bold), an empty line, a muted counts line `skills <s> · commands <c> · mcp <m> (<k> connected) · agents <a>`, and a muted tips line `/feature <name> loads a spec · /resume picks a session · /help lists commands`.\n- `notice`: `※ <text>` muted; `warning`: `⚠ <text>` warning; `error`: `✗ <text>` danger; `interrupted`: `  ⎿  Interrupted by user` muted.\n- `listing`: the title bold, then each text line, coloured by `listingTone(line)`: a line containing `not locked` or `not connected` -> `warning`; containing `failed` -> `danger`; containing `connected` -> `success`; else plain.\n- Lines longer than `width` are wrapped at word boundaries, continuation lines keeping the entry's indent; a single word longer than the available width is cut at that width; a code line longer than `width` is cut at `width`.\n\nSanitize every host/listing/status string before span text; measure widths with displayWidth and clamp below MIN_LAYOUT_WIDTH. Empty listing text renders only the title.\n\n**Scope** — In: welcome/status/listing cases and listingTone; extend the US-009 layout tests. Out: collecting actual host counts and command outputs in ChatApp (US-020), tool-card cache implementation (US-010), changing MCP connection behavior.\n\n**Interface** — `layoutTranscript(entries, { width, theme, expanded }): readonly StyledLine[]`; `listingTone(line)` returns warning, danger, success or plain according to the ordered checks above.",
+      "acceptanceCriteria": [
+        "[unit] A notice entry x lays out as the line ※ x with color muted.",
+        "[unit] A warning entry y lays out as ⚠ y with color warning.",
+        "[unit] An error entry z lays out as ✗ z with color danger.",
+        "[unit] An interrupted entry lays out as the muted line \"  ⎿  Interrupted by user\".",
+        "[unit] A welcome entry with skills 42, commands 9, mcpServers 3, mcpConnected 2 and agents 4 lays out a line containing skills 42 · commands 9 · mcp 3 (2 connected) · agents 4.",
+        "[unit] That welcome layout's first line has plain text ✻ nax chat and is bold.",
+        "[unit] A listing entry with title MCP servers lays out the title as a bold first line.",
+        "[unit] Each text line of a listing follows the title in order.",
+        "[unit] listingTone(\"a  not locked (run nax mcp lock)\") returns warning.",
+        "[unit] listingTone(\"b  not connected\") returns warning.",
+        "[unit] listingTone(\"c  failed: x\") returns danger.",
+        "[unit] listingTone(\"d  connected, 3 tools\") returns success.",
+        "[unit] listingTone(\"e\") returns plain.",
+        "[unit] A listing line x  connected, 3 tools lays out with color success.",
+        "[unit] A notice entry whose text is \"a\\u001b[31mb\" lays out the line ※ ab.",
+        "[unit] A listing entry with an empty text lays out only its title line.",
+        "After welcome/status/listing cases are added, layoutTranscript for a user entry with text hi still yields a line with plainText equal to > hi, preserving existing message layout."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "layout"
+      ],
+      "dependencies": [
+        "US-009"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Adds deterministic entry cases to the existing layout dispatcher, reusing sanitising/wrapping primitives."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/layout.ts",
+        "packages/nax/test/unit/tui/chat/layout.test.ts",
+        "packages/nax/src/chat/chat-mcp-listing.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-012",
+      "title": "Viewport reducer",
+      "description": "**Goal** — Add the pure bottom-relative scrolling and follow/unseen state machine.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `viewport.ts`, pure:\n\n`offset` counts lines between the bottom of the view and the last line. The reducer's `total` and `height` arguments are the values before the action; a `content` action carries the new ones. Growth (`action.total - total` when positive) while following keeps `offset` 0; while not following it adds the growth to both `offset` and `unseen`. After every action `offset` is re-clamped against the new total and height; a shrink (for example after `/clear`) never makes `unseen` grow. `pageUp`/`pageDown` move by `height - 1`, `lineUp`/`lineDown` by 1; `offset` is clamped to `[0, max(0, total - height)]`; any move to `offset > 0` sets `follow: false`; reaching `offset 0` sets `follow: true, unseen: 0`. `home` goes to the top, `end` to `INITIAL_VIEWPORT`.\n\n**Scope** — In: pure scrolling reducer/range helpers and unit tests. Out: Ink rendering/keys (US-013), mounting and routing keys in ChatApp (US-020/021). Mouse support (wheel scrolling, click to select) is not added; the screen does not capture the mouse. Searching the transcript and copying from scrolled-off output inside the app are not added; native terminal selection works on what is on screen.\n\n**Interface** —\n```ts\nexport interface ViewportState { readonly offset: number; readonly follow: boolean; readonly unseen: number }\nexport type ViewportAction =\n  | { type: \"content\"; total: number; height: number }\n  | { type: \"pageUp\" } | { type: \"pageDown\" } | { type: \"lineUp\" } | { type: \"lineDown\" }\n  | { type: \"home\" } | { type: \"end\" };\nexport const INITIAL_VIEWPORT: ViewportState; // { offset: 0, follow: true, unseen: 0 }\nexport function reduceViewport(state: ViewportState, action: ViewportAction, total: number, height: number): ViewportState;\nexport function visibleRange(total: number, height: number, offset: number): { start: number; end: number };\n```",
+      "acceptanceCriteria": [
+        "[unit] reduceViewport(INITIAL_VIEWPORT, { type: \"content\", total: 100, height: 10 }, 100, 10) returns { offset: 0, follow: true, unseen: 0 }.",
+        "[unit] From { offset: 0, follow: true, unseen: 0 } with total 100 and height 10, pageUp returns offset: 9.",
+        "[unit] That pageUp returns follow: false.",
+        "[unit] From { offset: 9, follow: false, unseen: 0 }, a content action growing total from 100 to 105 returns offset: 14.",
+        "[unit] That content action returns unseen: 5.",
+        "[unit] From { offset: 0, follow: true, unseen: 0 }, a content action growing total from 100 to 105 returns offset: 0.",
+        "[unit] From { offset: 9, follow: false, unseen: 5 } with total 100 and height 10, pageDown returns { offset: 0, follow: true, unseen: 0 }.",
+        "[unit] lineUp from offset 0 with total 100 and height 10 returns offset: 1.",
+        "[unit] lineDown from offset 1 returns offset: 0 and follow: true.",
+        "[unit] pageUp repeated 20 times with total 100 and height 10 returns offset: 90.",
+        "[unit] With total 5 and height 10, pageUp returns offset: 0 and follow: true.",
+        "[unit] home with total 100 and height 10 returns offset: 90 and follow: false.",
+        "[unit] end from any state returns INITIAL_VIEWPORT's values.",
+        "[unit] visibleRange(100, 10, 0) returns { start: 90, end: 100 }.",
+        "[unit] visibleRange(100, 10, 9) returns { start: 81, end: 91 }.",
+        "[unit] visibleRange(5, 10, 0) returns { start: 0, end: 5 }.",
+        "[unit] From { offset: 50, follow: false, unseen: 3 } with total 100 and height 10, a content action with total 20 and height 10 returns offset: 10 and unseen: 3.",
+        "[unit] From { offset: 90, follow: false, unseen: 0 } with total 100 and height 10, a content action with total 100 and height 30 returns offset: 70."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "viewport",
+        "reducer"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Self-contained deterministic reducer with explicit scrolling, resize and growth arithmetic."
+      },
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/viewport.ts",
+        "packages/nax/test/unit/tui/chat/viewport.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-013",
+      "title": "Transcript viewport component",
+      "description": "**Goal** — Add the Ink transcript viewport over the pure scrolling reducer.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `TranscriptViewport` renders `height` rows: the visible lines, padded with empty rows at the top while `total < height`, and while `unseen > 0` the last row is replaced by the muted line `↓ <unseen> new lines (End)`. Keys, while its `active` prop is true: pageUp, pageDown, shift+upArrow (lineUp), shift+downArrow (lineDown), home, end.\n\n`offset` counts lines between the bottom of the view and the last line. The reducer's `total` and `height` arguments are the values before the action; a `content` action carries the new ones. Growth (`action.total - total` when positive) while following keeps `offset` 0; while not following it adds the growth to both `offset` and `unseen`. After every action `offset` is re-clamped against the new total and height; a shrink (for example after `/clear`) never makes `unseen` grow.\n\nRender rows through StyledLineView and the supplied theme; wire content/height changes to reduceViewport rather than duplicating the arithmetic.\n\n**Scope** — In: standalone viewport component, active keyboard navigation, unseen indicator and Ink tests. Out: ChatApp height/key ownership wiring (US-020/021). Mouse support (wheel scrolling, click to select) is not added; the screen does not capture the mouse. Searching the transcript and copying from scrolled-off output inside the app are not added; native terminal selection works on what is on screen.\n\n**Interface** — `TranscriptViewport` in `TranscriptViewport.tsx` consumes styled lines, height, theme and an `active` prop; use the US-012 `reduceViewport`/`visibleRange`/`INITIAL_VIEWPORT` contract.",
+      "acceptanceCriteria": [
+        "[unit] Rendering TranscriptViewport with 3 lines and height 5 shows 5 rows, the 3 lines in the last 3 rows.",
+        "[unit] Rendering it with 20 numbered lines and height 5 shows lines 16 to 20.",
+        "[unit] After a pageUp key on an active viewport with 20 lines and height 5, line 20 is not in the frame.",
+        "[unit] After that pageUp, line 16 is in the frame.",
+        "[unit] After that pageUp and 3 more lines arriving, the last row reads ↓ 3 new lines (End).",
+        "[unit] After an end key, line 23 is in the frame and no row contains new lines.",
+        "[unit] A shift+upArrow key on an active viewport with 20 lines and height 5 shows lines 15 to 19.",
+        "[unit] A home key shows lines 1 to 5.",
+        "[unit] Keys on a viewport whose active prop is false leave the frame unchanged."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "viewport"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-012"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Thin Ink component delegates state transitions to an existing reducer and renders a fixed row window."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/viewport.ts",
+        "packages/nax/src/tui/chat/styled-line.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/TranscriptViewport.tsx",
+        "packages/nax/test/ui/chat/transcript-viewport.test.tsx"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-014",
+      "title": "Line editor",
+      "description": "**Goal** — Add the pure code-point-indexed multiline editor reducer.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `line-editor.ts`, a pure reducer over `{ text: string; cursor: number }` (cursor = code-point index into `text`):\n\nKeys: printable input inserts at the cursor (a multi-character chunk, a paste, is inserted whole, `\\r\\n` and `\\r` normalised to `\\n`); backspace and `key.delete` both delete before the cursor (ink 6.7 reports the Backspace key's `\\u007f` as `delete` and cannot tell it from forward-delete); left/right move one code point; ctrl+a / ctrl+e move to the start / end of the current line; meta+left / meta+right move to the previous / next word boundary; ctrl+u deletes from the line start to the cursor; ctrl+k deletes from the cursor to the line end; ctrl+w deletes the word before the cursor; return with meta or shift inserts `\\n`; return when the character before the cursor is `\\` replaces that `\\` with `\\n`; any other return is `submit` with the text (not trimmed); ctrl, escape, tab, up and down are `ignored` (the input component owns them).\n\n**Scope** — In: pure editor state/result types, transformations and cursorRow tests. Out: input component/history/busy/clear-arm behavior (US-015), key ownership integration (US-021). Forward delete (deleting the character under the cursor) is not supported; ink 6.7 reports the Backspace key's `\\u007f` and the forward-delete key as the same `delete` key, and both delete before the cursor. Prompt history is not persisted across processes.\n\n**Interface** —\n```ts\nexport interface EditorState { readonly text: string; readonly cursor: number }\nexport const EMPTY_EDITOR: EditorState;\nexport type EditorKey = { input: string; key: Pick<Key, \"return\" | \"backspace\" | \"delete\" | \"leftArrow\" | \"rightArrow\" | \"ctrl\" | \"meta\" | \"shift\" | \"escape\" | \"tab\" | \"upArrow\" | \"downArrow\"> };\nexport type EditorResult = { kind: \"edit\"; state: EditorState } | { kind: \"submit\"; text: string } | { kind: \"ignored\" };\nexport function editLine(state: EditorState, input: EditorKey): EditorResult;\nexport function cursorRow(state: EditorState): { row: number; rows: number };\n```",
+      "acceptanceCriteria": [
+        "[unit] editLine from EMPTY_EDITOR with input a and then b gives { text: \"ab\", cursor: 2 }.",
+        "[unit] From { text: \"ab\", cursor: 2 }, leftArrow then input X gives { text: \"aXb\", cursor: 2 }.",
+        "[unit] From { text: \"ab\", cursor: 1 }, backspace gives { text: \"b\", cursor: 0 }.",
+        "[unit] From { text: \"ab\", cursor: 1 }, key.delete (what ink reports for the Backspace key's \\u007f) gives { text: \"b\", cursor: 0 }.",
+        "[unit] Backspace at cursor 0 returns the state unchanged.",
+        "[unit] From { text: \"a😀b\", cursor: 2 }, backspace gives { text: \"ab\", cursor: 1 }.",
+        "[unit] From { text: \"one\\ntwo\", cursor: 6 }, ctrl+a gives cursor 4.",
+        "[unit] From { text: \"one\\ntwo\", cursor: 4 }, ctrl+e gives cursor 7.",
+        "[unit] From { text: \"foo bar baz\", cursor: 11 }, meta+leftArrow gives cursor 8.",
+        "[unit] From { text: \"foo bar baz\", cursor: 0 }, meta+rightArrow gives cursor 3.",
+        "[unit] From { text: \"foo bar\", cursor: 7 }, ctrl+w gives { text: \"foo \", cursor: 4 }.",
+        "[unit] From { text: \"ab\\ncd\", cursor: 4 }, ctrl+u gives { text: \"ab\\nd\", cursor: 3 }.",
+        "[unit] From { text: \"ab\\ncd\", cursor: 1 }, ctrl+k gives { text: \"a\\ncd\", cursor: 1 }.",
+        "[unit] A pasted chunk \"x\\r\\ny\\rz\" at cursor 0 gives { text: \"x\\ny\\nz\", cursor: 5 }.",
+        "[unit] Return with meta: true on { text: \"a\", cursor: 1 } gives { text: \"a\\n\", cursor: 2 }.",
+        "[unit] Return with shift: true on { text: \"a\", cursor: 1 } gives { text: \"a\\n\", cursor: 2 }.",
+        "[unit] Return on { text: \"a\\\\\", cursor: 2 } gives { text: \"a\\n\", cursor: 2 }.",
+        "[unit] Return on { text: \" hi \", cursor: 4 } returns { kind: \"submit\", text: \" hi \" }.",
+        "[unit] upArrow, downArrow, tab and escape each return { kind: \"ignored\" }.",
+        "[unit] ctrl+x returns { kind: \"ignored\" }.",
+        "[unit] cursorRow({ text: \"a\\nb\\nc\", cursor: 3 }) returns { row: 1, rows: 3 }."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "editor",
+        "reducer"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Self-contained pure editing algorithm with specified Unicode, word and multiline key semantics."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/InputBox.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/line-editor.ts",
+        "packages/nax/test/unit/tui/chat/line-editor.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-015",
+      "title": "Chat input",
+      "description": "**Goal** — Add the controlled framed chat input with cursor, multiline draft, in-memory history and clear arming.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `ChatInput` is controlled: its owner keeps an `InputDraft` (`{ editor: EditorState; history: readonly string[]; browse?: { index: number; saved: EditorState } }`, with `EMPTY_DRAFT`, both exported from `ChatInput.tsx`) and passes `draft` and `onDraftChange`, so unmounting the input while an ask card or a picker is shown loses neither the text nor the history. `ChatInput.tsx` also exports `DOUBLE_ESCAPE_MS` and `_chatInputDeps`. Props: `{ draft: InputDraft; onDraftChange(d: InputDraft): void; onSubmit(text: string): void; width: number; theme: ChatTheme; active?: boolean; busy?: boolean; hint?: string; yieldNavigation?: boolean; onClearArmedChange?(armed: boolean): void }`. With `yieldNavigation` true (the slash menu is open) it ignores up, down, return, tab and escape so the menu owns them. It renders the editor between two full-width rule lines (the `rule` glyph repeated `width` times, coloured `borderFocus` while active, `border` otherwise), the first text row prefixed `> ` (accent), further rows by two spaces, the cursor cell shown in inverse. At most 8 text rows are shown; with more, the 8-row window follows the cursor row. Empty and idle: a muted placeholder `Try \"explain how nax run picks a model\" · / for commands` (or the `hint` prop when given). History: submitted texts are kept in memory for the component's life; up on the first row recalls the previous entry, down on the last row the next, and moving past the newest restores the draft that was there before browsing. Busy: return submits only when the text starts with `/` (today's rule); otherwise the text stays. Escape on a non-empty idle input arms a clear: a second escape within `DOUBLE_ESCAPE_MS` (2000, timed by the exported `_chatInputDeps.now`) empties it; the component reports the armed state through `onClearArmedChange(armed)`.\n\nReturn on whitespace-only input does not submit. Submission empties the editor and retains history in the controlled draft. Use the line-editor reducer; render sanitized text and measure any fitting in display columns with width clamped to MIN_LAYOUT_WIDTH. Preserve the complete placeholder text in the width-20 standalone fixture, as required by its AC, rather than truncating that placeholder to the rule width. Every timer in this feature is a setTimeout chain cleared with clearTimeout on unmount, documented at the call site; setInterval is not used.\n\n**Scope** — In: standalone controlled input and UI tests. Out: owning the ChatApp draft (US-020), ask input composition (US-023), slash-menu selection (US-025). Forward delete (deleting the character under the cursor) is not supported; ink 6.7 reports the Backspace key's `\\u007f` and the forward-delete key as the same `delete` key, and both delete before the cursor. Prompt history is not persisted across processes. `@` file mentions and image paste are not added. InputBox keeps serving AskPrompt until US-023.\n\n**Interface** — `InputDraft` = `{ editor: EditorState; history: readonly string[]; browse?: { index: number; saved: EditorState } }`; exported `EMPTY_DRAFT`, `DOUBLE_ESCAPE_MS` = 2000, `_chatInputDeps.now`; props `{ draft: InputDraft; onDraftChange(d: InputDraft): void; onSubmit(text: string): void; width: number; theme: ChatTheme; active?: boolean; busy?: boolean; hint?: string; yieldNavigation?: boolean; onClearArmedChange?(armed: boolean): void }`.",
+      "acceptanceCriteria": [
+        "[unit] Rendering ChatInput with width 20, active, empty and idle shows a first and last row of 20 rule glyphs.",
+        "[unit] Its middle row starts > followed by a space and the placeholder Try \"explain how nax run picks a model\" · / for commands.",
+        "[unit] Rendering it with hint tell nax what to do instead shows that hint instead of the placeholder.",
+        "[unit] Typing hello then return calls onSubmit with hello.",
+        "[unit] After that submit the input is empty.",
+        "[unit] Return on an input of only spaces does not call onSubmit.",
+        "[unit] With busy true, typing hello then return does not call onSubmit and the frame still shows hello.",
+        "[unit] With busy true, typing /cost then return calls onSubmit with /cost.",
+        "[unit] After submitting one then two, upArrow on an empty input shows two.",
+        "[unit] A second upArrow shows one.",
+        "[unit] After that, downArrow twice shows an empty input.",
+        "[unit] Typing dra, upArrow, then downArrow shows dra.",
+        "[unit] An input of 10 lines shows 8 text rows, and the cursor's row is one of them.",
+        "[unit] The second text row of a two-line input starts with two spaces.",
+        "[unit] Escape on a non-empty idle input calls onClearArmedChange(true) and keeps the text.",
+        "[unit] A second escape within 2000 ms of _chatInputDeps.now empties the input.",
+        "[unit] That second escape calls onClearArmedChange(false).",
+        "[unit] A second escape 2001 ms later keeps the text.",
+        "[unit] Keys while active is false change nothing.",
+        "[unit] With yieldNavigation true, return does not call onSubmit and upArrow does not recall history."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "input"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-014"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Controlled editing/history, cursor-window rendering and timed clear arming introduce interacting UI state transitions."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/line-editor.ts",
+        "packages/nax/src/tui/chat/InputBox.tsx",
+        "packages/nax/src/tui/chat/theme.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/ChatInput.tsx",
+        "packages/nax/test/ui/chat/chat-input.test.tsx"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-016",
+      "title": "Turn status",
+      "description": "**Goal** — Add a pure turn-status reducer and model/token display helpers.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `chat-status.ts`, pure:\n- `reduceTurnStatus`: `turn_start` -> running, `startedAt = at`, phase `thinking`, token sums 0, `contextTokens` kept; `thinking_delta` -> `thinking`; `text_delta` -> `writing`; `tool_call` -> `tool` with `toolName`; `tool_result` -> `thinking`; `approval_requested` without `answerable: false` -> `approval`; `approval_resolved` -> `thinking`; `compaction` -> `compacting`; `stream_reset` -> `retrying`; `usage` adds `inputTokens`/`outputTokens` and sets `contextTokens`; `turn_end` -> not running. Events whose `metadata.subagentTask` is set leave the status unchanged.\n- `formatTokens`: below 1000 the integer; else one decimal and `k` (`1234` -> `1.2k`).\n- `shortModel`: the text after the last `/`; longer than 24 characters -> 23 characters and `…`.\n\n**Scope** — In: TurnStatus/TurnPhase/IDLE_STATUS/reducer/helpers and unit tests. Out: footer (US-017), working line/header/tick constant (US-018), lifecycle/timer mounting (US-020/021). These token values are usage counters, not credentials.\n\n**Interface** —\n```ts\nexport type TurnPhase = \"thinking\" | \"writing\" | \"tool\" | \"approval\" | \"compacting\" | \"retrying\";\nexport interface TurnStatus {\n  readonly running: boolean; readonly startedAt?: string; readonly phase: TurnPhase;\n  readonly toolName?: string; readonly inputTokens: number; readonly outputTokens: number;\n  /** input + cacheRead + cacheWrite of the latest usage event; survives turn_end. */\n  readonly contextTokens?: number;\n}\nexport const IDLE_STATUS: TurnStatus;\nexport function reduceTurnStatus(status: TurnStatus, event: SessionEvent): TurnStatus;\nexport function shortModel(model: string): string;\nexport function formatTokens(n: number): string;\n```",
+      "acceptanceCriteria": [
+        "[unit] reduceTurnStatus(IDLE_STATUS, turn_start at 2026-10-26T00:00:00Z) returns running: true, phase: \"thinking\" and that startedAt.",
+        "[unit] That turn_start resets inputTokens and outputTokens to 0.",
+        "[unit] A text_delta sets phase: \"writing\".",
+        "[unit] A tool_call named Bash sets phase: \"tool\" and toolName: \"Bash\".",
+        "[unit] A tool_result sets phase: \"thinking\".",
+        "[unit] An approval_requested without answerable sets phase: \"approval\".",
+        "[unit] An approval_requested with answerable: false leaves the phase unchanged.",
+        "[unit] An approval_resolved sets phase: \"thinking\".",
+        "[unit] A compaction sets phase: \"compacting\".",
+        "[unit] A stream_reset sets phase: \"retrying\".",
+        "[unit] Two usage events with input 100 and 200 and output 10 and 20 give inputTokens: 300 and outputTokens: 30.",
+        "[unit] A usage event with input 100, cacheRead 50 and cacheWrite 5 sets contextTokens: 155.",
+        "[unit] A turn_end sets running: false.",
+        "[unit] That turn_end keeps contextTokens.",
+        "[unit] A tool_call with metadata.subagentTask set returns the status unchanged.",
+        "[unit] formatTokens(999) returns 999.",
+        "[unit] formatTokens(1234) returns 1.2k.",
+        "[unit] shortModel(\"anthropic/claude-sonnet-5-5\") returns claude-sonnet-5-5.",
+        "[unit] shortModel of a 30-character name without / returns its first 23 characters followed by …."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "status",
+        "reducer"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure presentation reducer over existing events with explicit phase/token accumulation semantics; no session or access decisions."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/session/agent-session-types.ts",
+        "packages/nax/src/tui/chat/ChatStatusLine.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/test/unit/tui/chat/chat-status.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-017",
+      "title": "Footer",
+      "description": "**Goal** — Add the themed footer model with mode/hints, sandbox state, model, context percentage and cost.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `footerModel` left: guarded -> `⏵ guarded` muted; full -> `⏵⏵ full` danger; then a muted ` · ` and the hint text: `quit` -> `press ctrl-c again to quit` (warning; it replaces the whole left side, mode and sandbox suffix included); `clear` -> `esc again to clear`; `busy` -> `esc to interrupt`; `expanded` -> `ctrl+o to collapse`; `idle` -> `shift+tab to cycle`. Then ` · sandbox unavailable` (warning) when `state.sandbox.kind` is `unavailable`, ` · sandbox off` (muted) when `sandbox` is absent or its kind is `disabled`, nothing when `available`. Right: `shortModel(state.model)`, then ` · <p>% ctx` when both `state.contextWindow` and `status.contextTokens` are known (p = rounded percentage; `warning` above 70, `danger` above 90, else muted; a `contextWindow` of 0 or less counts as unknown), then ` · $<cost to 2 decimals>` from `state.meta.costUsd ?? 0`, muted.\n\nThe clear/busy/expanded hint-ending assertions reuse the sandbox-available fixture; for absent, disabled or unavailable sandbox state the specified sandbox suffix follows the hint unless hint is quit. Use theme glyphs for mode labels at composition time; sanitize host text before spans.\n\n**Scope** — In: footerModel/FooterHint and cases in US-016's test file. Out: host lookup (US-003), footer rendering/precedence (US-020/021), changes to permission-mode behavior. A per-model `contextWindow` override from config (`models` entries) is not applied to the footer; the catalog value is used.\n\n**Interface** —\n```ts\nexport type FooterHint = \"quit\" | \"clear\" | \"busy\" | \"expanded\" | \"idle\";\nexport function footerModel(input: { state: ChatHostState; status: TurnStatus; hint: FooterHint }): { left: StyledLine; right: StyledLine };\n```\nThe footer API deliberately has no theme argument; keep its specified signature and ensure the screen's rendering honors resolved glyph fallbacks.",
+      "acceptanceCriteria": [
+        "[unit] footerModel for mode guarded, hint idle, sandbox available, model anthropic/m1, cost 0.42 and no context window gives the left plain text ⏵ guarded · shift+tab to cycle.",
+        "[unit] It gives the right plain text m1 · $0.42.",
+        "[unit] For mode full the left plain text starts ⏵⏵ full, and that span has color danger.",
+        "[unit] Hint quit gives the left plain text press ctrl-c again to quit with color warning.",
+        "[unit] With the same sandbox-available footer fixture, hint clear gives a left plain text ending esc again to clear.",
+        "[unit] With the same sandbox-available footer fixture, hint busy gives a left plain text ending esc to interrupt.",
+        "[unit] With the same sandbox-available footer fixture, hint expanded gives a left plain text ending ctrl+o to collapse.",
+        "[unit] Sandbox unavailable appends · sandbox unavailable with a leading space and color warning.",
+        "[unit] An absent sandbox appends · sandbox off with a leading space.",
+        "[unit] A sandbox of kind disabled appends · sandbox off with a leading space.",
+        "[unit] contextWindow 200000 and contextTokens 36000 put 18% ctx in the right text with color muted.",
+        "[unit] 150000 context tokens give 75% ctx with color warning.",
+        "[unit] 190000 context tokens give 95% ctx with color danger.",
+        "[unit] With contextTokens undefined, the right text contains no ctx.",
+        "[unit] With contextWindow undefined and contextTokens 36000, the right text contains no ctx.",
+        "[unit] With contextWindow 0 and contextTokens 36000, the right text contains no ctx."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "footer"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-003",
+        "US-016"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure display mapping with threshold colors and hint precedence; no permission or session mutations."
+      },
+      "contextFiles": [
+        "packages/nax/test/unit/tui/chat/chat-status.test.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/tui/chat/chat-status.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-018",
+      "title": "Working line and header",
+      "description": "**Goal** — Add pure header and animated-working-line models and the composition tick constant.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** —\n- `workingLine`: undefined when not running; else the spinner frame `glyphs.spinner[floor(elapsedMs / 120) % length]` (accent), a space, the verb (accent): `Thinking…`, `Writing…`, `Running <toolTitle(toolName)>…`, `Waiting for approval…`, `Compacting…`, `Retrying…`, then muted ` (<s>s · ↑ <in> ↓ <out> tokens · esc to interrupt)`.\n- `headerLines`: line 1 `✻ nax chat` (accent, bold) then muted ` v<version> · <shortModel> · <mode>`; line 2 two spaces, the cwd with the `home` prefix replaced by `~` (elided in the middle with `…` to fit `width - 20`), then muted ` · sandbox <on|off|unavailable>` (`available` -> on; `disabled` or absent -> off); line 3 a `border` rule `width` long.\n\nDurations and countdowns from timestamps that do not parse (fixtures use `at: \"now\"`) count as 0 seconds. The working line is re-rendered every `WORKING_TICK_MS` = 250, exported from `chat-status.ts`, through a cancellable timer. All text from the host is sanitized before spans; widths use displayWidth and widths below MIN_LAYOUT_WIDTH are clamped.\n\n**Scope** — In: workingLine/headerLines/WORKING_TICK_MS and cases in the existing chat-status tests. Out: actual timers, resize subscription and ChatApp composition (US-020), mode switching (existing host).\n\n**Interface** —\n```ts\nexport function workingLine(status: TurnStatus, nowMs: number, glyphs: ChatGlyphs): StyledLine | undefined;\nexport function headerLines(input: { state: ChatHostState; version: string; cwd: string; home: string; width: number }): readonly StyledLine[];\n```\n`WORKING_TICK_MS` = 250. Preserve the headerLines signature; theme-driven glyph rendering is integrated by the screen without changing this API.",
+      "acceptanceCriteria": [
+        "[unit] workingLine(IDLE_STATUS, 0, glyphs) returns undefined.",
+        "[unit] For a running status in phase tool with toolName: \"nax-agents__run\", started 12 s before nowMs, with 8400 input and 1200 output tokens, the plain text is the spinner frame, a space and Running Agent… (12s · ↑ 8.4k ↓ 1.2k tokens · esc to interrupt).",
+        "[unit] The spinner frame at 0 ms elapsed is glyphs.spinner[0] and at 120 ms is glyphs.spinner[1].",
+        "[unit] Phase approval gives the verb Waiting for approval….",
+        "[unit] A running status whose startedAt is now (unparsable) gives 0s and the first spinner frame.",
+        "[unit] headerLines with version 0.91.7, model a/m1, mode guarded, cwd /Users/u/repo, home /Users/u, sandbox available and width 60 returns a first line with plain text ✻ nax chat v0.91.7 · m1 · guarded.",
+        "[unit] Its second line starts with two spaces and ~/repo and ends sandbox on.",
+        "[unit] Its third line is 60 rule glyphs.",
+        "[unit] With a sandbox of kind disabled, the second line ends sandbox off.",
+        "[unit] A cwd longer than width - 20 is shown with a … in the middle and at most width - 20 characters."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "status",
+        "header"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-005",
+        "US-016"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure timestamp/path formatting and themed spinner frames build on existing status and title helpers."
+      },
+      "contextFiles": [
+        "packages/nax/test/unit/tui/chat/chat-status.test.ts",
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/src/tui/chat/tool-card.ts",
+        "packages/nax/src/version.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-019",
+      "title": "Alternate screen and exit summary",
+      "description": "**Goal** — Own alternate-screen lifetime and print the final session summary only after restoring the normal screen.\n\n**Motivation** — The user (2026-10-26) on the current screen: \"is really pure text ... make it look like Claude Code or codex\", and, after a probe proved both run full screen, \"it should keep full same to claude code and codex\".\n\n**Approach** — `ENTER_ALT_SCREEN` and `LEAVE_ALT_SCREEN` live in `tui/chat/alt-screen.ts` and `formatChatExitSummary(state)` in `tui/chat/exit-summary.ts`, all exported from `@/tui/chat`. `renderChat` writes `ENTER_ALT_SCREEN` (`\\u001b[?1049h\\u001b[H`) through `_renderChatDeps.write` before rendering and `LEAVE_ALT_SCREEN` (`\\u001b[?1049l`) exactly once when the returned instance is unmounted or the process emits `exit` (`_renderChatDeps.onExit` registers the guard; the returned remover is called after the first restore). After the shell exits on any path (`waitUntilExit` resolved, or the signal handler finished) and the shell is unmounted, `runShell` in `cli/chat.ts` reads `host.current()` (still readable after `close`) and writes `formatChatExitSummary(state)` once through `deps.writeOut`:\n\n```\n✻ nax chat session <sessionId> · $<cost to 2 decimals>\n  resume with: nax chat --resume <sessionId>\n```\n\nA `current()` that throws means no summary.\n\n`ChatCommandDeps` gains `writeOut(message: string): void` (default writes `message + \"\\n\"` to stdout). Preserve exitOnCtrlC:false, shutdown close-before-unmount, signal exit codes 143 and 129, idempotent host close and existing render-options assertions. Process exits without unmount (uncaught error): The `exit` guard writes `LEAVE_ALT_SCREEN`.\n\nMigrate chat-app.test.tsx's renderChat test to stub/restore _renderChatDeps.write and _renderChatDeps.onExit so neither real escape output nor listeners leak. In CLI chat.test.ts and chat-resources.test.ts, deps including spreads of _chatCommandDeps add writeOut: mock(() => {}) and capture summaries; shutdown ordering/resource assertions remain unchanged.\n\n**Scope** — In: alt-screen constants, exit-summary formatter, renderer guard and CLI writer/shutdown integration with their tests. Out: full-screen ChatApp layout/extra render props (US-020), changing session lifecycle/lock semantics, run TUI changes, release/version bumps.\n\n**Interface** — `ENTER_ALT_SCREEN`, `LEAVE_ALT_SCREEN`, `formatChatExitSummary(state)`, `_renderChatDeps.write`, `_renderChatDeps.onExit` (registers a handler and returns its remover); `writeOut(message: string): void` in ChatCommandDeps. renderChat continues returning an Ink Instance with guarded unmount.",
+      "acceptanceCriteria": [
+        "[unit] renderChat(props) with _renderChatDeps.write and _renderChatDeps.render stubbed writes \\u001b[?1049h\\u001b[H before calling render.",
+        "[unit] Unmounting the returned instance writes \\u001b[?1049l.",
+        "[unit] Unmounting it twice writes \\u001b[?1049l once in total.",
+        "[unit] Invoking the handler registered through _renderChatDeps.onExit writes \\u001b[?1049l.",
+        "[unit] After that handler ran, unmounting writes nothing more.",
+        "[unit] After the first restore, the remover returned by _renderChatDeps.onExit has been called.",
+        "[unit] formatChatExitSummary for session abc123 and cost 0.875 returns ✻ nax chat session abc123 · $0.88 followed on the next line by two spaces and resume with: nax chat --resume abc123.",
+        "[unit] chatCommand with stubbed deps whose shell exits normally calls writeOut once with the summary built from host.current().",
+        "[unit] In that run, writeOut is called after the shell's unmount.",
+        "[unit] When the SIGTERM handler runs, writeOut is called once with the summary.",
+        "[unit] When host.current() throws at exit, writeOut is not called.",
+        "[unit] In that case the exit code is the one the run would set without the summary.",
+        "renderChat still passes { exitOnCtrlC: false } to _renderChatDeps.render, preserving explicit chat-owned Ctrl-C shutdown.",
+        "When the SIGTERM or SIGHUP handler shuts down chat, host.close() completes before the shell is unmounted, preserving lock-release-before-unmount ordering."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "cli",
+        "sessions",
+        "lifecycle"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module signal/exit/unmount races touch session shutdown and lock-release ordering; session-lifecycle security override."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/index.ts",
+        "packages/nax/src/cli/chat.ts",
+        "packages/nax/test/unit/cli/chat.test.ts",
+        "packages/nax/test/ui/chat/chat-app.test.tsx",
+        "packages/nax/test/unit/cli/chat-resources.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/alt-screen.ts",
+        "packages/nax/src/tui/chat/exit-summary.ts",
+        "packages/nax/test/ui/chat/index.test.tsx",
+        "packages/nax/test/unit/tui/chat/exit-summary.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/chat-app.test.tsx",
+          "reason": "\"AC-1 renderChat renders with Ctrl-C exit disabled and unmounts\" stubs `_renderChatDeps.write` and `_renderChatDeps.onExit` (restoring them after the test) so no escape sequence reaches the real stdout and no process `exit` listener is left behind; its render-options and unmount assertions are unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/chat.test.ts",
+          "reason": "the deps objects built for the composed-chat cases (including those that spread `_chatCommandDeps`) set `writeOut: mock(() => {})` so the summary is captured instead of printed and the deps still satisfy `ChatCommandDeps`; the shutdown-order assertions (close before unmount, signal exit codes 143 and 129) are unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/chat-resources.test.ts",
+          "reason": "the deps objects that spread `_chatCommandDeps` set `writeOut: mock(() => {})` so the summary is not printed to the test output; every resource assertion is unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-020",
+      "title": "Full-screen ChatApp: layout and transcript",
+      "description": "**Goal** — Replace the inline chat presentation with the full-screen header/viewport/working/input/footer composition.\n\n**Motivation** — The user (2026-10-26) on the current screen: \"is really pure text ... make it look like Claude Code or codex\", and, after a probe proved both run full screen, \"it should keep full same to claude code and codex\".\n\n**Approach** — `ChatAppProps` becomes `{ host; theme?: ChatTheme; version?: string; cwd?: string; home?: string }`; absent values default to `resolveChatTheme({ env: {}, colorLevel: 0 })`, `NAX_VERSION`, `host.repoRoot` and `\"\"`. `chatCommand` passes `resolveChatTheme({ env: process.env, colorLevel: chalk.level })`, `NAX_VERSION`, the launch `cwd` and `homedir()` through `renderChat` (`_chatCommandDeps.renderChat` receives them). `ChatApp` owns the `InputDraft`. `ChatApp` renders a root column `rows` tall and `columns` wide (from `useStdout().stdout`; 24 and 80 when undefined; re-rendered on the stream's `resize` event): `headerLines` (3 rows), `TranscriptViewport` (all remaining rows), the working line (1 row, only while a turn runs; re-rendered every `WORKING_TICK_MS` = 250, exported from `chat-status.ts`, through a cancellable timer), the bottom region (one of: the ask card, a picker, or `ChatInput` with the slash menu under it), and the footer (1 row). Viewport height = `rows - 3 - workingRows - bottomRows - 1`, never below 1. Entries: the welcome entry at mount and after `/clear`; `user` entries for sent messages; `reduceTranscript` for session events; `notice`, `warning` and `error` entries replace today's `message` rows (resource notice, host notice -> notice; sandbox warning -> warning; thrown errors -> error). Text a slash command passes to `show` becomes a `listing` entry for `/help`, `/skills`, `/plugins`, `/mcp`, `/agents`, `/sessions` and `/cost` (titles `Commands`, `Skills`, `Plugins`, `MCP servers`, `Agents`, `Sessions`, `Cost`; one entry per command run, the `/sessions` rows joined with newlines) and a `notice` entry for every other command.\n\nThe footer hint precedence is quit, clear, busy, expanded, idle. Mode cycling, ctrl-c and the busy rules are unchanged. State and handlers may move into hooks (`use-chat-transcript.ts` and the like) to keep `ChatApp.tsx` under the 600-line source limit. Every timer in this feature (working-line tick, countdown, quit arm) is a `setTimeout` chain cleared with `clearTimeout` on unmount, documented at the call site; `setInterval` is not used.\n\nWelcome counts come from host.catalog skills/commands/agents lengths, host.mcp.servers.length and servers whose last host.mcp.events() entry for their id is connected, defaulting to zero. Preserve command-shell preparation/notice behavior and finishTurn after metadata drain. Keep the legacy AskPrompt mounted until US-023; pickers/menu arrive in US-025/027, but reserve dynamic bottom-region sizing. Theme glyph and color fallbacks must reach every rendered region. Sanitize all host/session/tool strings before span text and measure wrapping/truncation with displayWidth. A terminal smaller than fixed regions never throws; the viewport remains at least 1 row.\n\nMigration: in test/unit/cli/chat.test.ts widen renderChat fixture parameter types and change toHaveBeenCalledWith({host}) to expect.objectContaining({host}); preserve start/mode/model assertions. In chat-app.test.tsx replace pipe-status/id8 assertions with footer guarded/model/cost; tool rows become ⏺ Read(src/a.ts) once, an ok ⎿ result and error preview; Bash becomes Bash(bun run build). Thinking scripts add turn_end and expect Thought for once while secret remains absent. Read/Write/Edit/Delete truncation still asserts first-space plus 54 x characters and … with no 55-x run; Bash gets its own first-line-only Bash(first) case. Preserve notices, warning counts, errors, drafts, backspace and cost assertions. In chat-asks-keys.test.tsx mode assertions move to header model · guarded/full; all ask/ctrl-c/shift-tab/close assertions stay.\n\n**Scope** — In: ChatApp composition, CLI render props, transcript/status reducers, owned draft, counts/listings, resize/tick and mounted-app seams. Out: new key behavior/quit-arm (US-021), replacing asks (US-023), menu (US-025), picker (US-027), legacy file deletion (US-028), session/approval/skill/MCP/subagent behavior changes.\n\n**Interface** — `ChatAppProps` = `{ host; theme?: ChatTheme; version?: string; cwd?: string; home?: string }`; `_chatCommandDeps.renderChat` receives these props. Consume `layoutTranscript`, `reduceTranscript`, `reduceTurnStatus`, `headerLines`, `workingLine`, `footerModel`, `TranscriptViewport`, `ChatInput` through their upstream contracts. UI seams mount ChatApp with the typed fake ChatHost; scripted host.send events prove markdown, Edit, nested tool and context data reach the visible frame.",
+      "acceptanceCriteria": [
+        "[unit] Mounting ChatApp with stdout rows 30 and columns 80 renders a frame of 30 rows.",
+        "[unit] The frame's first row starts ✻ nax chat.",
+        "[unit] The frame's last row contains ⏵ guarded.",
+        "[unit] With stdout rows undefined the frame has 24 rows.",
+        "[unit] With stdout rows 5, mounting does not throw and the frame contains the footer's ⏵ guarded.",
+        "[unit] chatCommand with stubbed deps calls renderChat with props whose cwd is the launch directory and whose version is NAX_VERSION.",
+        "[unit] At mount, for a host without a catalog or MCP, the transcript shows the line containing skills 0 · commands 0 · mcp 0 (0 connected) · agents 0.",
+        "[unit] Sending hello adds a transcript line > hello.",
+        "[unit] A scripted reply **done** renders a row whose text is the bullet glyph, a space and done.",
+        "[unit] A scripted fenced ts block renders a row containing the codeSide glyph.",
+        "[unit] A scripted ok Edit call on x.ts renders a row containing Updated x.ts.",
+        "[unit] While a scripted turn is running, a row shows Thinking….",
+        "[unit] While it is running, the footer contains esc to interrupt.",
+        "[unit] After the turn ends, no row contains Thinking….",
+        "[unit] With current() returning contextWindow: 200000 and a scripted usage of 36000 input tokens, the footer shows 18% ctx.",
+        "[unit] A scripted nax-agents__run call with task scan followed by a nested Read call tagged subagentTask: \"scan\" renders a row starting with spaces and Read( below the row containing ⏺ Agent(.",
+        "[unit] Entering full mode with the sandbox unavailable renders ⚠ sandbox unavailable: commands run outside the sandbox.",
+        "[unit] A send that rejects with boom renders ✗ boom.",
+        "[unit] /mcp renders a bold MCP servers row above the listing text.",
+        "[unit] /cost for cost 1.235 renders a Cost row followed by a row $1.24.",
+        "[unit] /mode bogus renders the row ※ unknown mode bogus; expected full or guarded.",
+        "[unit] /clear shows the welcome counts line again and no earlier transcript row.",
+        "When the terminal is smaller than the fixed regions, ChatApp allocates a TranscriptViewport height of at least 1.",
+        "When a catalog command template containing !`git status` receives { isError: true, content: \"denied\" } from host.runCommand, ChatApp does not call host.send for that invocation, preserving existing failed-expansion suppression."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "integration",
+        "sessions"
+      ],
+      "dependencies": [
+        "US-010",
+        "US-011",
+        "US-013",
+        "US-015",
+        "US-017",
+        "US-018",
+        "US-019"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Composes upstream tested Ink models/components rather than inventing a terminal framework; asynchronous send/finishTurn and permission-control integration still justify strict session/security TDD while resize and timers make the composition cross-module."
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/chat.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/TranscriptViewport.tsx",
+        "packages/nax/src/tui/chat/ChatInput.tsx",
+        "packages/nax/src/tui/chat/chat-status.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/chat-app-layout.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "A /sessions command that invokes show for multiple sessions adds one Sessions listing with those rows in order.",
+        "After ChatApp unmounts during a running turn, its working-line timer produces no further frame updates.",
+        "Mounting ChatApp with an ASCII theme renders ASCII rules and message glyphs across header, transcript and footer."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/cli/chat.test.ts",
+          "reason": "the assertion `toHaveBeenCalledWith({ host: f.host })` on `deps.renderChat` changes to `toHaveBeenCalledWith(expect.objectContaining({ host: f.host }))`, and the fixture's `renderChat` mock parameter type widens from `{ host }` to the props `renderChat` now receives; the start, mode and model assertions are unchanged."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/chat-app.test.tsx",
+          "reason": "the status-line assertions `toContain(\"test-model | guarded\")` and `toContain(\"abcdefgh | $0.00\")` change to the footer: the frame contains `⏵ guarded`, `test-model` and `$0.00`; the session id is no longer asserted because the footer does not show it. The tool-row assertions \"Read src/a.ts [ok]\" and `[error]` change to the card line \"⏺ Read(src/a.ts)\" once, the ok case showing a line starting `⎿` and the error case showing the error preview's first line. \"shows Bash command\" changes `toContain(\"Bash bun run build\")` to `toContain(\"Bash(bun run build)\")`. The thinking test changes from `thinking...` appearing once to `Thought for` appearing once, and its scripted events gain a `turn_end` after the `thinking_delta` so the thinking entry ends; the assertion that the thinking text `secret` is not shown is unchanged. The 60-character truncation `test.each` keeps Read, Write, Edit and Delete and changes its expectation to the card label: the tool name, `(`, `first ` and 54 `x` characters, then `…`, with the frame still not containing 55 `x` characters; Bash leaves that `test.each` and gets its own case asserting `Bash(first)` because a Bash card shows only the command's first line. Every notice, warning-count, error-text, draft, backspace and cost assertion is unchanged."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/chat-asks-keys.test.tsx",
+          "reason": "the four status assertions `toContain(\"model | guarded\")` and `toContain(\"model | full\")` change to the header's `model · guarded` and `model · full` (the header always shows the mode; the footer hides it while the quit hint shows); the ask, ctrl-c, shift-tab and close assertions are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-021",
+      "title": "Full-screen ChatApp: keys",
+      "description": "**Goal** — Add escape interruption, transcript expansion/navigation and a live double-interrupt quit hint without changing existing control semantics.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — Keys added: escape while a turn runs calls `host.cancel()` (ctrl-c is unchanged); ctrl+o toggles `expanded`; pageUp, pageDown, shift+up/down, home and end go to the viewport whenever no picker is open. `useChatKeys` gains `quitArmed(): boolean`, true while a ctrl-c that cancelled a turn is less than `DOUBLE_INTERRUPT_MS` old by `_chatKeyDeps.now()`, which the footer reads as the `quit` hint; the first ctrl-c calls `refresh()` and arms a cancellable timer of `DOUBLE_INTERRUPT_MS` that calls `refresh()` again; `finishTurn` disarms it. Every timer in this feature (working-line tick, countdown, quit arm) is a `setTimeout` chain cleared with `clearTimeout` on unmount, documented at the call site; `setInterval` is not used. The footer hint precedence is quit, clear, busy, expanded, idle. Mode cycling, ctrl-c and the busy rules are unchanged. State and handlers may move into hooks (`use-chat-transcript.ts` and the like) to keep `ChatApp.tsx` under the 600-line source limit.\n\nKey ownership (one owner per key and state; the first matching column wins):\n\n| Key | Ask card shown | Picker shown | Slash menu open | Otherwise |\n|---|---|---|---|---|\n| escape | the card (No) | the picker (cancel) | the menu (close) | turn running: `host.cancel()`; idle: the input's clear-arm |\n| return | the card (choose) | the picker (choose) | the menu (run selected) | the input |\n| up / down | the card (move) | the picker (move) | the menu (move) | the input (history) |\n| tab | nothing | nothing | the menu (complete) | nothing |\n| pageUp, pageDown, home, end, shift+up / down | the viewport | nothing | the viewport | the viewport |\n| ctrl+o | toggle expanded in every state | | | |\n| ctrl-c, shift+tab | `useChatKeys`, unchanged, in every state | | | |\n\nWhile an ask card is shown, escape never reaches `host.cancel()`. Sending a message after a pageUp shows the newest line. Wire keys into the mounted ChatApp/TranscriptViewport/ChatInput seam rather than isolated helper tests alone. Preserve existing ctrl-c/shift-tab/ask-letter tests.\n\n**Scope** — In: ChatApp key routing, useChatKeys.quitArmed/timer, footer hint precedence, viewport follow reset and mounted UI seams. Out: ask-card implementation (US-023), slash-menu implementation (US-025), pickers (US-027), changing mode cycling or session cancellation/close semantics.\n\n**Interface** — `useChatKeys` adds `quitArmed(): boolean` to existing `locked`, `finishTurn`, `close`, `runControl`; use `_chatKeyDeps.now()` and `DOUBLE_INTERRUPT_MS` (2000). Preserve the existing host control API.",
+      "acceptanceCriteria": [
+        "[unit] Escape while a scripted turn runs calls host.cancel once.",
+        "[unit] That escape does not call host.close.",
+        "[unit] Escape while no turn runs does not call host.cancel.",
+        "[unit] Escape while an ask is pending does not call host.cancel.",
+        "[unit] After a scripted Bash result of five lines, the frame contains +2 lines (ctrl+o to expand).",
+        "[unit] After ctrl+o, the frame contains all five lines.",
+        "[unit] After ctrl+o, the footer contains ctrl+o to collapse.",
+        "[unit] A second ctrl+o shows +2 lines (ctrl+o to expand) again.",
+        "[unit] With 100 transcript lines, a pageUp key leaves the newest line out of the frame.",
+        "[unit] After that pageUp, an end key brings the newest line back.",
+        "[unit] Sending a message after a pageUp shows the newest line.",
+        "[unit] An escape on a non-empty idle input makes the footer show esc again to clear.",
+        "[unit] One ctrl-c during a turn makes the footer show press ctrl-c again to quit.",
+        "[unit] Typing ab, leftArrow, X, return calls host.send with aXb.",
+        "[unit] A stdout resize event to columns 60 re-renders the header rule 60 glyphs long.",
+        "Given a running turn with no previous interrupt, the first Ctrl-C still calls host.cancel exactly once, preserving the existing interruption action while adding the footer's quit-arm hint.",
+        "When a second Ctrl-C arrives within DOUBLE_INTERRUPT_MS while that cancelled turn is still running, host.close is called, preserving the existing double-interrupt quit behavior."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "keyboard",
+        "sessions"
+      ],
+      "dependencies": [
+        "US-020"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Keyboard ownership interacts with approval denial, session cancellation/close and queued permission-mode control; strict security/session isolation."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/useChatKeys.ts",
+        "packages/nax/test/ui/chat/chat-asks-keys.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/chat-app-keys.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "After DOUBLE_INTERRUPT_MS elapses without another ctrl-c, the footer no longer shows press ctrl-c again to quit.",
+        "finishTurn makes quitArmed() return false after an interrupt.",
+        "With a picker open, pageUp does not change the transcript viewport."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-022",
+      "title": "Ask card model",
+      "description": "**Goal** — Add the pure approval-card model for titles, attribution, options, border tone and Edit diffs.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `ask-card.ts` (pure) and `AskCard.tsx` replace `AskPrompt.tsx`. Approval card: a frame (`warning` border; `danger` when `unsandboxed`), a title, an empty line, the `command` (bold, when present) and the `summary` (muted) indented three columns, the `reason` line, then for Edit the diff of the call (looked up by `callId` in the transcript's tool entries) as in the tool card, then the question and the options, then the countdown. A Write approval or tool card does not show the written content as a diff.\n- Title: Bash -> `Bash command`, Edit -> `Edit file`, Write -> `Write file`, Delete -> `Delete file`, a name starting `nax-agents__` -> `Agent`, any other name containing `__` -> `MCP tool <name>`, else the name; plus ` · outside the sandbox` when `unsandboxed`. A reason starting `[agent <name>] ` has that prefix removed from the reason and shown as a muted tag after the title.\n- Options: `1. Yes`, `2. Yes, and don't ask again for this in this session` (only when `controller.canRemember(ask)`), and the last `<n>. No, tell nax what to do instead (esc)`. Up/down move the selection, return chooses it, a number key chooses that option, escape chooses No; `a`, `s` (when remembering is allowed) and `d` keep resolving `allow_once`, `allow_session` and `deny`. Ctrl or meta letters do nothing (today's rule).\n- Choosing No resolves `deny` and sets the input's hint to `tell nax what to do instead` until the next submit.\n- Countdown: muted `expires in m:ss` from `expiresAt` minus now, re-rendered each second through a cancellable timer (`_askCardDeps.now`), `warning` below 60 s.\n- Question card: title `nax asks`, the question text, then a `ChatInput` inside the frame with its own `InputDraft`, starting from `EMPTY_DRAFT` for each `requestId` (never the chat input's draft); submit calls `controller.answerQuestion(requestId, text)`.\n\nThis story produces the pure model only; component actions/timers above are US-023's boundary. Reuse diffLines from tool-card.ts. Sanitize tool/host reason/summary/command/title/diff strings before they become span text downstream; do not reimplement canRemember policy.\n\n**Scope** — In: askCardModel and unit tests. Out: mounting/keyboard/countdown/answer actions (US-023), changing controller policy or approvals. A Write approval or tool card does not show the written content as a diff. Line numbers in Edit diffs are not shown; the Edit tool's input carries no start line.\n\n**Interface** — `askCardModel` in `ask-card.ts` consumes an approval ask, remembering eligibility and transcript tool entries; returns the title, optional tag, stripped reason, border tone, ordered options and diff. No exact TypeScript declaration is prescribed by the spec; keep the model pure and typed.",
+      "acceptanceCriteria": [
+        "[unit] askCardModel for a Bash ask with command npm test, summary Run the tests and remembering allowed returns title Bash command.",
+        "[unit] It returns options Yes, Yes, and don't ask again for this in this session and No, tell nax what to do instead (esc) in that order.",
+        "[unit] With remembering not allowed, the options are Yes and No, tell nax what to do instead (esc).",
+        "[unit] An unsandboxed ask returns the title Bash command · outside the sandbox.",
+        "[unit] An unsandboxed ask returns border tone danger; an ordinary ask returns warning.",
+        "[unit] Tool Edit gives title Edit file.",
+        "[unit] Tool Write gives title Write file, and tool Delete gives Delete file.",
+        "[unit] Tool nax-agents__run gives title Agent.",
+        "[unit] Tool acme__put gives title MCP tool acme__put.",
+        "[unit] Tool Grep gives title Grep.",
+        "[unit] A reason [agent reviewer] needs to run returns reason needs to run.",
+        "[unit] That ask returns tag [agent reviewer].",
+        "[unit] A reason without the agent prefix returns no tag.",
+        "[unit] An Edit ask whose callId matches a transcript tool entry with old_string a and new_string b returns diff lines { sign: \"-\", text: \"a\" } and { sign: \"+\", text: \"b\" }.",
+        "[unit] An Edit ask with no matching tool entry returns an empty diff.",
+        "[unit] A Bash ask returns an empty diff."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "approvals",
+        "security"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Pure model is bounded but defines security-sensitive approval choices, remembered eligibility display and unsandboxed risk presentation."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/ask-controller.ts",
+        "packages/nax/src/tui/chat/AskPrompt.tsx",
+        "packages/nax/src/tui/chat/tool-card.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/ask-card.ts",
+        "packages/nax/test/unit/tui/chat/ask-card.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-023",
+      "title": "Ask card component",
+      "description": "**Goal** — Replace AskPrompt with framed approval/question cards while preserving approval policy and the main chat draft.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `ask-card.ts` (pure) and `AskCard.tsx` replace `AskPrompt.tsx`. Approval card: a frame (`warning` border; `danger` when `unsandboxed`), a title, an empty line, the `command` (bold, when present) and the `summary` (muted) indented three columns, the `reason` line, then for Edit the diff of the call (looked up by `callId` in the transcript's tool entries) as in the tool card, then the question and the options, then the countdown. A Write approval or tool card does not show the written content as a diff.\n- Title: Bash -> `Bash command`, Edit -> `Edit file`, Write -> `Write file`, Delete -> `Delete file`, a name starting `nax-agents__` -> `Agent`, any other name containing `__` -> `MCP tool <name>`, else the name; plus ` · outside the sandbox` when `unsandboxed`. A reason starting `[agent <name>] ` has that prefix removed from the reason and shown as a muted tag after the title.\n- Options: `1. Yes`, `2. Yes, and don't ask again for this in this session` (only when `controller.canRemember(ask)`), and the last `<n>. No, tell nax what to do instead (esc)`. Up/down move the selection, return chooses it, a number key chooses that option, escape chooses No; `a`, `s` (when remembering is allowed) and `d` keep resolving `allow_once`, `allow_session` and `deny`. Ctrl or meta letters do nothing (today's rule).\n- Choosing No resolves `deny` and sets the input's hint to `tell nax what to do instead` until the next submit.\n- Countdown: muted `expires in m:ss` from `expiresAt` minus now, re-rendered each second through a cancellable timer (`_askCardDeps.now`), `warning` below 60 s.\n- Question card: title `nax asks`, the question text, then a `ChatInput` inside the frame with its own `InputDraft`, starting from `EMPTY_DRAFT` for each `requestId` (never the chat input's draft); submit calls `controller.answerQuestion(requestId, text)`.\n\nEvery timer in this feature (working-line tick, countdown, quit arm) is a `setTimeout` chain cleared with `clearTimeout` on unmount, documented at the call site; `setInterval` is not used. Durations and countdowns from timestamps that do not parse (fixtures use `at: \"now\"`) count as 0 seconds. While an ask card is shown, escape never reaches `host.cancel()`. Ask cards own escape, return and unmodified up/down, while page/home/end/shift-arrows remain with viewport; ctrl+o and existing useChatKeys ctrl-c/shift-tab remain global.\n\nMount AskCard in ChatApp in place of AskPrompt; ChatApp continues owning InputDraft so both typed text and history survive. Use askCardModel and controller.canRemember/resolve/answerQuestion. In chat-asks-keys.test.tsx change the s-option label assertion to Yes, and don't ask again for this in this session; outside the sandbox stays visible in the title; every a/s/d/ctrl-letter resolve assertion remains unchanged. Prove the model/component seam through mounted ChatApp pending Bash asks, not just the standalone card.\n\n**Scope** — In: AskCard/_askCardDeps, countdown, keyboard choices, question-local input, ChatApp hint/draft integration and tests. Out: changing controller/host approval behavior, deleting legacy files (US-028), slash menus/pickers (US-025/027). A Write approval or tool card does not show the written content as a diff. Line numbers in Edit diffs are not shown; the Edit tool's input carries no start line.\n\n**Interface** — `AskCard` in `AskCard.tsx` with exported `_askCardDeps.now`; existing controller calls `resolve(requestId, choice)`, `canRemember(ask)`, `answerQuestion(requestId, text)`; question InputDraft starts at EMPTY_DRAFT per requestId.",
+      "acceptanceCriteria": [
+        "[unit] Rendering AskCard for a Bash ask shows ❯ 1. Yes.",
+        "[unit] downArrow then return resolves allow_session when remembering is allowed.",
+        "[unit] Key 1 resolves allow_once.",
+        "[unit] Escape resolves deny.",
+        "[unit] Key a resolves allow_once and key d resolves deny.",
+        "[unit] Key s resolves allow_session when remembering is allowed.",
+        "[unit] Key s resolves nothing when remembering is not allowed.",
+        "[unit] Ctrl+a resolves nothing.",
+        "[unit] With _askCardDeps.now 9 min 41 s before expiresAt, the card shows expires in 9:41.",
+        "[unit] With 48 s left, it shows expires in 0:48 with color warning.",
+        "[unit] One second later on the fake clock, it shows expires in 0:47.",
+        "[unit] A question ask renders the title nax asks.",
+        "[unit] Typing yes then return in the question card calls answerQuestion with its requestId and yes.",
+        "[unit] In ChatApp, with draft typed in the chat input, a question card's input starts empty.",
+        "[unit] After answering that question, return in the chat input sends draft.",
+        "[unit] In ChatApp, a pending Bash approval shows the card title Bash command.",
+        "[unit] In ChatApp, choosing No shows the input with the hint tell nax what to do instead.",
+        "[unit] After the next submit, that hint is gone.",
+        "[unit] In ChatApp, a draft draft typed before a pending ask appears in the input after the ask resolves, and return sends draft.",
+        "[unit] In ChatApp, escape while an approval is pending during a running turn resolves deny and does not call host.cancel."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "approvals",
+        "security"
+      ],
+      "dependencies": [
+        "US-015",
+        "US-021",
+        "US-022"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Approval input is an access-control path with remembered decisions and denial/cancellation separation; strict security override plus timed and controlled UI state."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ask-card.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/test/ui/chat/chat-asks-keys.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/AskCard.tsx",
+        "packages/nax/test/ui/chat/ask-card.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "Meta+a resolves no approval choice.",
+        "When a question requestId changes, the new question card starts with an empty editor rather than the preceding question's draft.",
+        "After an AskCard unmounts, advancing its fake clock causes no further countdown updates."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/chat-asks-keys.test.tsx",
+          "reason": "the ask tests render through `ChatApp` with `AskCard` mounted instead of `AskPrompt`; the label assertions `toContain(\"s: allow for this session\")` (present when remembering is allowed, absent when not) change to the option text `Yes, and don't ask again for this in this session`; `toContain(\"outside the sandbox\")` is unchanged (now in the card title); every `resolve` call assertion for `a`, `s`, `d` and ctrl-letter keys is unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-024",
+      "title": "Slash menu model and help descriptions",
+      "description": "**Goal** — Add shared command descriptions, descriptive help and ranked slash-menu items.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `slash-menu.ts` and `SlashMenu.tsx`. `COMMAND_DESCRIPTIONS` (in `slash-commands.ts`) gives every built-in a description: help `Show commands and skills`, mode `Switch permission mode`, model `Switch model`, sessions `List saved sessions`, resume `Resume a saved session`, clear `Clear the conversation`, cost `Show session cost`, feature `Load a feature spec into the conversation`, skills `List skills`, plugins `List plugins and what they provide`, mcp `List MCP servers`, agents `List agents`, quit `Quit nax chat`. Items: built-ins (in `COMMANDS` order), then catalog commands (`(command) <description>`), then skills (`(skill) <description>`). The menu is open while the input text starts with `/`, has no whitespace, and has not been closed with escape since its last change. The query is the text after `/`; matches (case-insensitive) are an item whose name equals the query first, then names starting with it, then names containing it elsewhere, each group keeping item order. Up/down move the selection (no wrap), tab replaces the input with `/<name> `, return submits `/<name>`, escape closes it. At most 8 rows; the window follows the selection. No match: the menu is not shown. `/help` lists `/<name>  <description>` for each built-in, then catalog commands and skills as today.\n\nThis story adds the pure model/help changes; selection and mounting are US-025. Export COMMANDS in its existing order: help, mode, model, sessions, resume, clear, cost, feature, skills, plugins, mcp, agents, quit. filterSlashMenu returns null for non-menu input, an empty array for an unmatched slash query, and all ordered items for /. Sanitize catalog strings before they become display spans.\n\nMigration: slash-commands.test.tsx's three help assertions become /<name>  <description> lines in COMMANDS order. /plugins  List plugins and what they provide is directly above /mcp  List MCP servers; /mcp,/agents,/quit remain consecutive. Every other routing assertion is unchanged. Catalog command help retains /deploy - Ship it rather than the menu's (command) prefix.\n\n**Scope** — In: exported COMMANDS/COMMAND_DESCRIPTIONS, formatHelp changes, slashMenuItems/filterSlashMenu and unit tests. Out: SlashMenu component/navigation/mounting (US-025), picker outcomes (US-026), changes to actual command/skill routing or behavior.\n\n**Interface** — `COMMANDS`, `COMMAND_DESCRIPTIONS` exported from slash-commands.ts; `slashMenuItems` and `filterSlashMenu` in slash-menu.ts, with filterSlashMenu(items, input) returning null or an ordered item array.",
+      "acceptanceCriteria": [
+        "[unit] COMMAND_DESCRIPTIONS has a non-empty description for every name in COMMANDS.",
+        "[unit] slashMenuItems for a host whose catalog has command deploy (description Ship it) and skill review (description Review code) returns the built-ins first, in COMMANDS order.",
+        "[unit] After the built-ins it returns deploy with description (command) Ship it.",
+        "[unit] Last it returns review with description (skill) Review code.",
+        "[unit] slashMenuItems for a host without a catalog returns only the built-ins.",
+        "[unit] filterSlashMenu(items, \"/re\") returns names starting with re first, in item order.",
+        "[unit] It then returns names containing re elsewhere, in item order.",
+        "[unit] filterSlashMenu(items, \"/RE\") returns the same list as /re.",
+        "[unit] filterSlashMenu(items, \"/\") returns every item.",
+        "[unit] filterSlashMenu(items, \"/mode full\") returns null.",
+        "[unit] filterSlashMenu(items, \"hello\") returns null.",
+        "[unit] filterSlashMenu(items, \"/zzz\") returns an empty list.",
+        "[unit] With the built-in skills and a catalog skill skill, filterSlashMenu(items, \"/skill\") returns skill first and skills second.",
+        "[unit] runSlashCommand for /help calls show with text containing the line /plugins  List plugins and what they provide directly above /mcp  List MCP servers.",
+        "[unit] That text contains /quit  Quit nax chat on the line after /agents  List agents.",
+        "[unit] For a host whose catalog has command deploy, that text contains /deploy - Ship it."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "commands"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure ordered matching and help formatting extend existing command metadata without changing control actions."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/resources/catalog.ts",
+        "packages/nax/test/ui/chat/slash-commands.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/slash-menu.ts",
+        "packages/nax/test/unit/tui/chat/slash-menu.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/slash-commands.test.tsx",
+          "reason": "the three help assertions (that the frame contains every name in COMMANDS, each prefixed with a slash and joined by newlines), \"toContain('/plugins\\n/mcp\\n')\" and \"toContain('/mcp\\n/agents\\n/quit')\" change to the same command order rendered as \"/<name>  <description>\" lines: every built-in's line in `COMMANDS` order, \"/plugins  List plugins and what they provide\" directly above \"/mcp  List MCP servers\", and the \"/mcp\", \"/agents\", \"/quit\" lines consecutive; every other routing assertion is unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-025",
+      "title": "Slash menu component",
+      "description": "**Goal** — Mount a filtered slash-command menu below the controlled input with exclusive navigation ownership.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `slash-menu.ts` and `SlashMenu.tsx`. `COMMAND_DESCRIPTIONS` (in `slash-commands.ts`) gives every built-in a description: help `Show commands and skills`, mode `Switch permission mode`, model `Switch model`, sessions `List saved sessions`, resume `Resume a saved session`, clear `Clear the conversation`, cost `Show session cost`, feature `Load a feature spec into the conversation`, skills `List skills`, plugins `List plugins and what they provide`, mcp `List MCP servers`, agents `List agents`, quit `Quit nax chat`. Items: built-ins (in `COMMANDS` order), then catalog commands (`(command) <description>`), then skills (`(skill) <description>`). The menu is open while the input text starts with `/`, has no whitespace, and has not been closed with escape since its last change. The query is the text after `/`; matches (case-insensitive) are an item whose name equals the query first, then names starting with it, then names containing it elsewhere, each group keeping item order. Up/down move the selection (no wrap), tab replaces the input with `/<name> `, return submits `/<name>`, escape closes it. At most 8 rows; the window follows the selection. No match: the menu is not shown. `/help` lists `/<name>  <description>` for each built-in, then catalog commands and skills as today.\n\nCreate SlashMenu and mount it under ChatInput in ChatApp, passing yieldNavigation while open. Ask card/picker take precedence over slash menu for escape/return/up/down; menu owns tab/escape/return/up/down while open; pageUp/pageDown/home/end/shift-arrows still belong to viewport, ctrl+o still toggles expansion and useChatKeys retains ctrl-c/shift-tab globally. Escape closes the menu without arming input clear or interrupting a turn. Menu suppression lasts only until the input text next changes. Account for the visible menu rows in bottomRows/viewport height. Use theme pointer, colors and display-column/sanitising primitives.\n\nThe menu ranks an item whose name equals the typed query first, so return on a fully typed name (for example `/skill` with the built-in `skills` also matching) runs exactly that name, and existing slash tests that submit full lines (`chat-shell-lines.test.tsx`, `slash-commands.test.tsx`, `slash-resources.test.tsx`) keep sending what they typed. Prove slashMenuItems/filterSlashMenu through mounted ChatApp, typing / and selecting commands, not just a standalone menu.\n\n**Scope** — In: SlashMenu, ChatApp visibility/selection/completion integration, yieldNavigation and mounted tests. Out: model/help changes (US-024), picker implementation (US-027), changes to command/skill execution semantics.\n\n**Interface** — `SlashMenu` in `SlashMenu.tsx`; consume `slashMenuItems`, `filterSlashMenu`, and controlled `ChatInput`/`InputDraft` with `yieldNavigation` true while open.",
+      "acceptanceCriteria": [
+        "[unit] Typing / in ChatApp shows the menu with /help and Show commands and skills under the input.",
+        "[unit] Typing /re shows ❯ on the first match.",
+        "[unit] downArrow moves ❯ to the second match.",
+        "[unit] downArrow on the last match leaves ❯ there.",
+        "[unit] Tab with /resume selected replaces the input text with /resume followed by a space.",
+        "[unit] After that tab, the menu is closed.",
+        "[unit] Return with /cost selected after typing /co runs /cost and does not call host.send.",
+        "[unit] Escape closes the menu and keeps the input text /re.",
+        "[unit] Typing s after that escape opens the menu again.",
+        "[unit] With 13 matches, the menu shows 8 rows.",
+        "[unit] After 9 downArrow presses with 13 matches, the selected row is in the frame.",
+        "[unit] Typing /zzz shows no menu rows.",
+        "[unit] Typing /mode full shows no menu rows.",
+        "[unit] While a pending ask is shown, typing does not open the menu.",
+        "[unit] With a catalog skill named skill, typing /skill then return sends the skill invocation message for skill and does not run /skills.",
+        "[unit] Escape with the menu open does not make the footer show esc again to clear.",
+        "[unit] pageUp with the menu open scrolls the transcript viewport."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "commands",
+        "keyboard"
+      ],
+      "dependencies": [
+        "US-015",
+        "US-021",
+        "US-024"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Menu/input selection and keyboard ownership must coordinate with async command routing, asks and viewport sizing without changing command semantics."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/slash-menu.ts",
+        "packages/nax/test/ui/chat/chat-shell-lines.test.tsx",
+        "packages/nax/src/tui/chat/ChatInput.tsx",
+        "packages/nax/src/tui/chat/ChatApp.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/SlashMenu.tsx",
+        "packages/nax/test/ui/chat/slash-menu.test.tsx"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-026",
+      "title": "Picker outcome and relative time",
+      "description": "**Goal** — Add typed no-argument picker outcomes and pure relative-time formatting while safely narrowing ChatApp dispatch.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `SlashOutcome` gains `{ kind: \"picker\"; picker: \"model\" | \"resume\" | \"mode\" }`, returned by `/model`, `/resume` and `/mode` with no argument (today they list models, resume the latest session, and print the mode).\n\n`relativeTime(iso, nowMs)` in `relative-time.ts`: under 60 s `just now`, under 60 min `<m> min ago`, under 24 h `<h> h ago`, under 48 h `yesterday`, else `<Mon> <D>` (UTC); a null or unparsable `updatedAt` gives an empty string.\n\nAdd the picker SlashOutcome for /model,/resume,/mode with no argument, narrow ChatApp's outcome handling so a picker outcome is ignored until US-027 opens the picker, and create relativeTime. Preserve send and command-template outcomes and explicit-argument /mode full,/model <id>,/resume abc. This story is intentionally safe against the old and rebuilt ChatApp because it has no composition dependency.\n\nMigration: slash-commands.test.tsx's AC-5 current-mode transcript test changes to runSlashCommand for /mode with no argument returning {kind:picker,picker:mode} with show not called; AC-8 configured-model listing test changes to {kind:picker,picker:model}. Explicit-argument routing assertions are unchanged.\n\n**Scope** — In: new outcome variant, no-argument command branches, exhaustive ChatApp narrowing and relative-time helper/tests. Out: mounting pickers and choices (US-027), changing CLI --resume behavior or explicit-argument host controls.\n\n**Interface** — `{ kind: \"picker\"; picker: \"model\" | \"resume\" | \"mode\" }` extends `SlashOutcome`; `relativeTime(iso, nowMs)` returns a string and accepts null/unparsable updatedAt.",
+      "acceptanceCriteria": [
+        "[unit] runSlashCommand for /model with no argument returns { kind: \"picker\", picker: \"model\" }.",
+        "[unit] That call invokes neither show nor host.switchTo.",
+        "[unit] /resume with no argument returns { kind: \"picker\", picker: \"resume\" }.",
+        "[unit] That call does not invoke host.resume.",
+        "[unit] /mode with no argument returns { kind: \"picker\", picker: \"mode\" }.",
+        "[unit] /resume abc still calls host.resume({ id: \"abc\" }).",
+        "[unit] /model a/b still calls host.switchTo({ model: \"a/b\" }).",
+        "[unit] In ChatApp, submitting /model with no argument calls neither host.send nor host.switchTo, and no row contains unknown command.",
+        "[unit] relativeTime for 30 s before now returns just now.",
+        "[unit] It returns 5 min ago for 5 minutes before now.",
+        "[unit] It returns 3 h ago for 3 hours before now.",
+        "[unit] It returns yesterday for 30 hours before now.",
+        "[unit] It returns Oct 20 for 2026-10-20T10:00:00Z seen at 2026-10-26T10:00:00Z.",
+        "[unit] It returns an empty string for a null updatedAt.",
+        "[unit] It returns an empty string for not-a-date."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "commands",
+        "sessions"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Outcome routing changes when permission-mode switches and session resumes occur; strict access-control/session override despite a bounded implementation."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/test/ui/chat/slash-commands.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/relative-time.ts",
+        "packages/nax/test/unit/tui/chat/relative-time.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/slash-commands.test.tsx",
+          "reason": "\"AC-5 reports current mode in transcript\" (\"/mode\" alone, expects `guarded\\n` in the frame) changes to call `runSlashCommand` for \"/mode\" with no argument and assert the outcome `{ kind: \"picker\", picker: \"mode\" }` with `show` not called; \"AC-8 lists all configured models\" (\"/model\" alone) changes the same way to the outcome `{ kind: \"picker\", picker: \"model\" }`; the explicit-argument \"/mode full\", \"/model <id>\" and \"/resume abc\" assertions are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-027",
+      "title": "Picker component",
+      "description": "**Goal** — Mount model, mode and resume pickers with asynchronous session rows and controlled host actions.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — `SlashOutcome` gains `{ kind: \"picker\"; picker: \"model\" | \"resume\" | \"mode\" }`, returned by `/model`, `/resume` and `/mode` with no argument (today they list models, resume the latest session, and print the mode). `Picker.tsx` replaces the input while open: a framed titled list (`Switch model`, `Resume a session`, `Permission mode`), the current choice marked `(current)`, up/down to move, return to choose, escape to cancel. Model rows are `host.models`; return calls `host.switchTo({ model })`. Mode rows are `guarded  asks before risky actions` and `full  never asks; runs outside the sandbox when it is unavailable`; return calls `host.switchTo({ mode })`. Resume rows come from `host.listSessions()` (a muted `loading…` row until it resolves; `no saved sessions` when empty): title (or `untitled <id8>`), `relativeTime(updatedAt, now)`, and `in use (pid <n>)` (warning) when `heldByPid` is set; return on an in-use row adds the warning `session <id> is in use by pid <n>` and keeps the picker open, otherwise calls `host.resume({ id })`. Choices run through `useChatKeys.runControl`. `relativeTime(iso, nowMs)` in `relative-time.ts`: under 60 s `just now`, under 60 min `<m> min ago`, under 24 h `<h> h ago`, under 48 h `yesterday`, else `<Mon> <D>` (UTC); a null or unparsable `updatedAt` gives an empty string.\n\n`listSessions()` rejects in the resume picker: The picker closes and an `error` entry shows the message. `switchTo` / `resume` from a picker rejects: An `error` entry shows the message; the input returns.\n\nOpen Picker from ChatApp on a picker outcome. Main InputDraft stays owned by ChatApp across replacement; pending ask has higher key precedence. Picker owns escape/return/unmodified up/down and blocks viewport page/home/end/shift-arrows while shown. ctrl+o toggles expansion and useChatKeys ctrl-c/shift-tab stay global in every state. Count the picker frame/rows as bottomRows so the viewport height stays at least one. Render through theme/sanitised display text; authoritative session lock handling stays in host.resume. Prove outcome/relative-time seams through mounted ChatApp by invoking /resume.\n\n**Scope** — In: Picker.tsx, ChatApp opening/closing/choice integration, runControl actions, loading/error/held-row presentation and mounted tests. Out: picker outcome/time algorithm (US-026), changes to session locking or permission policy, deleting legacy components (US-028).\n\n**Interface** — `Picker` in `Picker.tsx`; existing `host.models`, `host.current()`, `host.listSessions(): Promise<readonly ChatSessionRow[]>`, `host.switchTo({model})`, `host.switchTo({mode})`, `host.resume({id})`, `useChatKeys.runControl`, and `relativeTime(iso, nowMs)`.",
+      "acceptanceCriteria": [
+        "[unit] In ChatApp, /model shows the picker titled Switch model with a row for each of host.models.",
+        "[unit] The current model's row shows (current).",
+        "[unit] In the model picker with the first host.models row initially selected, downArrow then return calls host.switchTo({ model: host.models[1] }), selecting the second model.",
+        "[unit] After that choice the picker is closed and the input is shown.",
+        "[unit] Escape closes the picker without calling switchTo.",
+        "[unit] /mode shows the picker titled Permission mode with rows starting guarded and full.",
+        "[unit] In that picker, the guarded row shows (current).",
+        "[unit] Choosing full calls host.switchTo({ mode: \"full\" }).",
+        "[unit] /resume shows loading… until listSessions resolves.",
+        "[unit] After it resolves, each session row shows its title and its relative time.",
+        "[unit] A ChatSessionRow with title: null and sessionId: \"abcdef1234\" shows untitled abcdef12.",
+        "[unit] A row with heldByPid: 4242 shows in use (pid 4242).",
+        "[unit] Return on a resume row with sessionId: \"abcdef1234\" and heldByPid: 4242 adds the warning row ⚠ session abcdef1234 is in use by pid 4242.",
+        "[unit] After that return the picker is still open and host.resume was not called.",
+        "[unit] Return on a free ChatSessionRow calls host.resume({ id: row.sessionId }), using that selected row's id.",
+        "[unit] listSessions resolving to no rows shows no saved sessions.",
+        "[unit] listSessions rejecting with disk closes the picker and renders ✗ disk.",
+        "[unit] host.switchTo rejecting with nope from the model picker renders ✗ nope.",
+        "[unit] After that rejection the input is shown again.",
+        "[unit] host.resume rejecting with locked from the resume picker renders ✗ locked.",
+        "When host.resume rejects after a resume-picker choice, the picker closes and the main ChatInput is shown again."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "pickers",
+        "sessions",
+        "security"
+      ],
+      "dependencies": [
+        "US-015",
+        "US-021",
+        "US-026"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Async picker choices invoke permission-mode switching and session resumes with locking/error semantics; strict security/session override."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/relative-time.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/useChatKeys.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/Picker.tsx",
+        "packages/nax/test/ui/chat/picker.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "When a resume picker is cancelled before listSessions resolves, the late result does not reopen it.",
+        "After cancelling a picker, the chat input restores the draft text and history it held before the picker opened.",
+        "After a picker choice finishes, keys.runControl releases the input lock."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-028",
+      "title": "Remove the old chat components",
+      "description": "**Goal** — Remove the unused legacy chat presentation after every replacement is mounted.\n\n**Motivation** — The slice 1 acceptance test (brainstorm and spec-review the slice 2 design inside `nax chat`) waits on this redesign.\n\n**Approach** — Delete `Transcript.tsx`, `ChatStatusLine.tsx` and `AskPrompt.tsx`, and `InputBox.tsx` if nothing imports it; the build/static gate verifies the removal.\n\nDelete packages/nax/src/tui/chat/Transcript.tsx, ChatStatusLine.tsx and AskPrompt.tsx, and InputBox.tsx when no module imports it. Verification: `bun run typecheck` and `bun run lint` in `packages/nax`; the removal is verified by the build/static gate. The deleted components have no direct test imports; tests reach them only through ChatApp, already moved by US-020 and US-023.\n\n**Scope** — In: deletion of the obsolete components and their unused exports/imports if any remain. Out: new runtime behavior, source redesign already delivered by upstream stories, new test files, changes to run TUI or package releases.\n\n**Interface** — No new interface; retain the new `@/tui/chat` exports and ChatApp composition. The single acceptance criterion is a runtime import of the barrel; the removal itself is verified by `bun run typecheck` and `bun run lint`.",
+      "acceptanceCriteria": [
+        "Importing `@/tui/chat` after the deletions succeeds, and `renderChat` and `ChatApp` from it are usable as a function and a React component."
+      ],
+      "tags": [
+        "chat-tui-redesign",
+        "tui",
+        "cleanup"
+      ],
+      "dependencies": [
+        "US-020",
+        "US-021",
+        "US-023",
+        "US-025",
+        "US-027"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "no-test",
+        "reasoning": "Removes unused legacy components without changing the new screen's behavior.",
+        "noTestJustification": "Deletion-only structural cleanup after all runtime consumers have migrated; the negative file-content AC is reviewed statically and adds no runtime behavior or new test file. Existing package typecheck/lint/build-static gates verify removal."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/index.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Repository exploration used direct reads and text search because the codebase-memory MCP is not exposed in this session. This is an enhancement of an existing Bun/TypeScript React/Ink chat, not greenfield. All 28 implementation stories are scoped to packages/nax; nax-agent source is read-only contract context. The exact binding dependency graph is retained even where stories independently modify shared files; serialize conflicting edits to slash-commands.ts, ChatApp.tsx, layout.ts, tool-card.ts, markdown.ts and chat-status.ts without adding dependencies.\n\nCurrent composition: packages/nax/src/tui/chat/ChatApp.tsx:7-12 imports all four legacy components, appendChatEvent and useChatKeys; :19-47 owns transcript/busy state, ask subscriptions and notices; :49-83 routes slash commands, skills and shell-expanded command templates; :86-103 drains host.send before finishTurn, including queued mode changes; :104-118 renders the old column. Preserve command preparation, failure notices, resource notices, one warning per transition, busy rejection and metadata-drain ordering while replacing presentation. packages/nax/src/tui/chat/Transcript.tsx:5-9 has only message/text/thinking/tool entries, :24-51 merges deltas/results and :54-69 renders every row as Text. Thinking text is currently deliberately hidden. InputBox.tsx:11-44 owns an uncontrolled append/backspace draft and accepts only slash submissions while busy; AskPrompt.tsx:13-43 owns a/s/d approvals and a separate InputBox for questions. ChatStatusLine.tsx:6-12 shows the model/mode/id8/cost/sandbox string. Text search found legacy presentation imports only in ChatApp and InputBox imported additionally in AskPrompt, so removal can wait until the planned composition/ask cutovers. Do not remove legacy files or appendChatEvent early.\n\nHost and contract: packages/nax/src/chat/chat-host.ts:27-33 defines ChatHostState, :43-65 the UI-facing ChatHost ports, :67-78 the existing ChatHostDeps interface, :178-192 keeps current() readable after close, :213-250 starts/replaces handles, :282-319 resumes, :340-360 switches with rollback/reused locks, :368-412 drains send/nested runs and persists metadata, :438-462 closes operations/resources. Add the distinct exported _chatHostDeps object, not a field in ChatHostDeps. Resolve context windows asynchronously on completed start/resume/switch, split provider/model at the first slash, cache misses as well as values per model string, catch seam rejection, and never let catalog enrichment perturb locking, rollback, close, cost or session semantics. packages/nax/src/agents/catalog/index.ts:74-82 exposes injectable loader/normaliser; :98-124 deduplicates and caches catalog loads by loader function reference; :138-154 implements fail-open lookupPricing. Mirror that boundary for lookupContextWindow; only agents/catalog may import nax-ai in nax. ContextWindow comes from the catalog, not config overrides. packages/nax-agent/src/session/agent-session-types.ts:90-158 defines SessionEventBase and the event union (metadata is Readonly<Record<string,string>>, timestamps are strings, tool input unknown, tool_result preview string, usage includes cache counters). Import SessionEvent through @nathapp/nax-agent, never a deep cross-package import.\n\nSubagents: packages/nax/src/chat/subagent-runs.ts:112-132 routes activity; :151-187 captures the originating turn listener and calls routeActivity inside runNested. It currently forwards tool events unchanged while keeping nested usage in the ledger and cost accumulator. Pass agent/task into forwarding and merge metadata over the existing metadata; do not forward nested text/usage, rewrite nested identity, alter late-event draining or change accounting. Update exact-object expectations in test/unit/chat/subagent-runs.test.ts:265-276 and host-subagents.test.ts:230-231, :275, :358-359 to match forwarded type/callId/name or isError plus tags, retaining the negative late-call assertion and every spend/ledger/text assertion. Nested turns have their own turnId: match children by callId within the selected task parent, not by the parent's turnId.\n\nApprovals/security: packages/nax/src/chat/ask-controller.ts:14-23 is the existing controller contract, :43-63 excludes unanswerable asks and implements full/remembered decisions, :70-82 controls remembering and resolves choices, :85-104 handles question answers/mode/reset/subscriptions. The screen must consume controller.canRemember and controller.resolve/answerQuestion, never recreate approval policy. The new cards are presentation only. Guard against ctrl/meta approval letters, ensure escape on a card denies rather than cancelling a turn, and retain draft/history across replacement by asks/pickers; question drafts are separate and reset by requestId. Permission, mode and session-lifecycle stories use strict three-session TDD. Tokens in turn-status are usage counts, not credentials.\n\nCLI/lifetime: packages/nax/src/tui/chat/index.ts:5-9 currently exports ChatApp and delegates render with exitOnCtrlC:false. packages/nax/src/cli/chat.ts:26-53 defines injectable CLI deps; :81-96 starts/resumes the host; :99-131 runShell owns signal handlers, idempotent close, close-before-unmount and signal exit codes; :174-220 composes trusted resources then runs the shell; :224-257 preserves TTY/trust/error handling. Enter alternate screen before Ink render, restore exactly once across unmount/exit, remove the named process exit handler after restore, and print at most one exit summary after unmount even when signal shutdown and finally both run. Read current() after close (supported by host), suppress summary if it throws without changing exit code. Keep SIGTERM=143/SIGHUP=129 and lock-release-before-unmount semantics. Add writeOut with a newline-appending default; stub write/onExit and writeOut in affected tests so control sequences/listeners/output do not leak. Extend CLI render props with resolved real environment/chalk theme, NAX_VERSION, launch cwd and home; direct ChatApp defaults deliberately use an empty environment and no colors.\n\nSlash behavior: packages/nax/src/tui/chat/slash-commands.ts:7-9 currently has send|command outcomes, :26-40 private COMMANDS order, :75-80 plain help, :84-89 catalog command-before-skill lookup, :92-149 built-ins. Export order and descriptions; preserve explicit-argument routing, command templates and skill invocation messages. No-argument /model,/resume,/mode become picker outcomes, with an exhaustive/narrowed ChatApp branch in US-026 before the picker exists. US-020 must buffer multiple show calls into one titled listing, especially /sessions; non-listing command output remains notices. Exact-match-first slash ranking prevents /skill from accidentally invoking /skills. Resume selection uses runControl and still relies on the host for authoritative lock acquisition; heldByPid is a display/preselection warning, not a replacement for locking. packages/nax/src/resources/catalog.ts:40-55 preserves ordered command/skill/agent arrays and precedence. packages/nax/src/chat/chat-mcp-listing.ts:13-29 explains status text and warning-before-connected tone matching; welcome connected counts use the spec's latest event per server, not this formatter's last non-closed outcome.\n\nArchitecture: implement pure theme/styled text/reducers/card/markdown/layout/status/time/menu models under src/tui/chat plus thin Ink components. All untrusted session, host, tool and MCP strings must be sanitised before span text; OSC/ANSI including alternate-screen control bytes cannot pass through. Use Bun.stringWidth for every layout width, wrap and truncation, clamp layout widths to MIN_LAYOUT_WIDTH=10, preserve style through wrapping and indents, truncate overlong code only at the layout stage (renderMarkdown returns a long code line unwrapped). TOOL_ARG_LIMIT and shortModel retain their explicitly specified character counts, while final line fitting uses display columns. Per-entry identity preservation enables the injectable layout cache; isolate cache by theme as needed so glyph/color fallback cannot leak between themes while retaining once-per-entry/(width,expanded) behavior for a stable theme. Markdown lexer/highlighter are maintained libraries, not hand-written markdown parsing; known languages/aliases use the core build and highlighting exceptions fall back to plain code. Raw HTML/tables are source text, not terminal markup. Durations with unparsable fixture timestamps are zero. The layout must emit only visible lines with one separator between rendered entries; active thinking has no transcript rows. The full-screen root uses stream rows/columns, listens for resize, allocates dynamic bottom-region height and at least one viewport row; on a terminal smaller than fixed regions, preserve a rendered footer and no throw rather than forcing a negative height (the spec does not require an exact five-row frame). ChatApp may delegate to hooks to stay below the 600-line hard limit. Every introduced timer uses a documented setTimeout chain cancelled with clearTimeout on unmount; no setInterval, no uncancellable sleeps. One owner per key/state avoids multiple Ink handlers acting on a single escape/return/arrow event.\n\nMigration and verification: US-001..019 add modules beside the legacy presentation, with only US-003 additive host metadata and US-019 alternate-screen behavior exposed; US-024 and US-026 have their explicitly specified command-output migrations. US-020/021 compose layout/keys; US-023 replaces asks; US-025 adds menu; US-027 mounts pickers; US-028 removes legacy modules after consumers move. Binding dependencies remain exact even where prose numbering labels differ (layout is Design 6, not US-007). Existing regression coverage is packages/nax/test/ui/chat/chat-app.test.tsx:17-92 (typed fake host, scripted events and Ink harness), chat-asks-keys.test.tsx, chat-shell-lines.test.tsx, slash-commands.test.tsx, slash-resources.test.tsx, and test/unit/cli/chat.test.ts:31-59,:100,:169-196 plus chat-resources.test.ts. Preserve all existing behavior assertions except the spec's explicit presentation substitutions: footer instead of pipe-status/id8; card labels/result previews instead of [ok]/[error]; Thought for after an explicit turn_end; Bash first-line argument truncation; descriptive help; picker outcome assertions. renderChat call matching widens to objectContaining and fixture prop types widen. UI seams must enter at mounted ChatApp over the typed fake host, replay SessionEvents, set stdout rows/columns (Ink testing stdout defaults columns=100 and rows absent), emit resize and use fake clocks/injectable seams. Host seam tests must enter through host.send. New tests live in the specified unit/ui mirroring directories and extended models reuse predecessor test files. US-028 is deletion-only with no behavioral AC, verified by package typecheck/lint and no new test file. Read docs/architecture/ARCHITECTURE.md:13-40,:170-188 and applicable canonical .nax/rules before implementation; use existing _deps/helpers rather than global monkeypatches. Run targeted tests with explicit paths from packages/nax, never bare bun test or bun run nax; pipeline handles gates and do not run coverage inside NAX_SANDBOXED=1.\n\nPrerequisite identified in the actual checkout: packages/nax/package.json:91-104 has chalk/Ink/React but no marked or highlight.js. Per the feature exclusions, a maintainer must add both packages and bun.lock on the branch before executing the feature; no story installs them and no version/release is requested. All .nax content remains read-only during implementation; this requested PRD artifact is the only planning output written here. No source or tests were changed or executed while drafting. Failure-table coverage is mapped to US-003 (catalog failure), US-007 (malformed markdown), US-008 (highlighter fallback), US-027 (listing/switch/resume failures), US-019 (exit current failure/exit guard), US-020 (undersized terminal).\n\nRefine-pass adversarial audit: re-read spec.md's Context Files, Modifies, Failure Handling, Out of Scope and complete Acceptance Criteria sections, compared them with every draft story, and re-read the actual ChatApp/slash-command/control/shutdown and command-shell/subagent regression seams. Manual enumeration finds 442 original spec AC bullets. For each story below, spec ordinal 1 through N remains acceptanceCriteria ordinal 1 through N in that same story: US-001 N=14; US-002 N=11; US-003 N=14; US-004 N=21; US-005 N=17; US-006 N=20; US-007 N=19; US-008 N=15; US-009 N=15; US-010 N=14; US-011 N=16; US-012 N=18; US-013 N=9; US-014 N=21; US-015 N=20; US-016 N=19; US-017 N=16; US-018 N=10; US-019 N=12; US-020 N=22; US-021 N=15; US-022 N=16; US-023 N=20; US-024 N=16; US-025 N=17; US-026 N=15; US-027 N=20; US-028 N=0. Existing extra failure-table assertions are retained; audit additions are appended, not substituted for spec ACs. Regression qualifiers retained include same-reference unmatched results/earlier entries (US-004), non-overlapping common-prefix/suffix behavior (US-006), unclosed-fence fallback (US-008), width-4 equivalence to width-10 (US-009), active=false inertness (US-013/015), the Ink delete-key parenthetical and unchanged boundary state (US-014), preserved contextTokens (US-016), exit-code preservation when summary lookup throws (US-019), remember-eligibility guards (US-022/023), and explicit-argument resume/model behavior (US-026). No original AC is moved to suggestedCriteria.\n\nSemantic corrections in this pass: US-003's catalog fixture now follows CatalogDeps.loadProviders -> normalise -> Catalog rather than pretending loadProviders returns a Catalog (agents/catalog/index.ts:74-82). US-005's Grep expectations specify actual literal quote characters instead of ambiguous doubly-escaped string notation. US-017's hint-ending assertions explicitly reuse the initial sandbox-available fixture so they do not contradict the sandbox suffix rules. US-027 now asserts switchTo({ model: host.models[1] }) rather than a raw model string and resumes with { id: row.sessionId }, matching chat-host.ts:35-40 and :57-61; a held-row warning substitutes a concrete sessionId instead of asserting the literal placeholder <id>. Both switch and resume failure paths explicitly return the main input. US-015's description no longer implies truncating the full placeholder in the required width-20 standalone fixture. The cache cross-reference now points to US-010, and US-010's scope distinguishes caching listing entries from US-011's listing-specific formatting.\n\nNegative-path inventory: US-001 color/locale fallbacks; US-002 escape/control sanitising and undefined background; US-003 lookup/load/seam failures; US-004 unmatched tool_result; US-005 error/absent-preview summaries; US-006 empty Bash preview/running Edit; US-007 malformed input; US-008 throwing/unknown-language highlighter; US-009 undersized width; US-010 hostile Bash preview and missing diff backgrounds; US-011 empty listing/adversarial notice; US-012 short content/shrink clamping; US-013 inactive keys; US-014 cursor-zero deletion/ignored keys; US-015 busy, whitespace and expired clear arm; US-016 unanswerable approval/tagged-event no-op; US-017 absent/zero context window; US-018 unparsable timestamp; US-019 failing current()/exit without unmount; US-020 rejected send/undersized terminal/failed command expansion; US-021 idle or ask-owned escape does not cancel; US-022 no matching Edit call; US-023 forbidden remembering/ctrl-letter and denial paths; US-024 non-slash/unmatched input; US-025 no matches or ask-owned typing; US-026 invalid updatedAt; US-027 locked rows and rejected host operations. US-028 originally has no AC by design; to satisfy this refine request's every-story negative-path check without adding runtime scope, its sole added AC is a reviewable file-content assertion of no remaining imports/re-exports resolving to deleted modules. It remains no-test deletion-only cleanup.\n\nRegression additions anchor unchanged forwarded tool fields and $1.00+$0.40=$1.40 persisted spend (test/unit/chat/host-subagents.test.ts:215-232); running Read arguments after tool-result support; existing inline markdown and user/reply layouts after renderer extensions; exitOnCtrlC:false and close-before-unmount after screen restoration; failed command-template expansion never reaching host.send (test/ui/chat/chat-shell-lines.test.tsx:119-127); and existing first/second Ctrl-C cancellation/quit actions (useChatKeys.ts:63-79). These add explicit compatibility proof instead of weakening old tests. Routing is reduced to medium/tdd-simple for US-004 and US-010, which extend existing pure reducer/dispatcher patterns, and from expert to complex for US-020, which composes upstream pieces; strict security/session TDD remains where control/approval/lifecycle paths warrant it. All 28 ids/workdirs and the exact binding dependency arrays remain unchanged. Every spec-recommended context file is present (US-003 and US-019 additionally include existing affected regressions), no contextFiles list exceeds five, and no story's own created file is in its contextFiles. All 15 feature-level exclusions remain verbatim at the top level; nearby Scope exclusions echo the relevant boundaries rather than accidentally excluding other stories' implementation. This was a read/edit audit, not a claim that tests or a machine JSON/schema validator were executed.",
+  "outOfScope": [
+    "Forward delete (deleting the character under the cursor) is not supported; ink 6.7 reports the Backspace key's `\\x7f` and the forward-delete key as the same `delete` key, and both delete before the cursor.",
+    "Adding the markdown lexer and highlighter packages (`marked`, `highlight.js`) to `packages/nax/package.json` and `bun.lock` is done on the feature branch before `nax run`; no story installs packages.",
+    "Mouse support (wheel scrolling, click to select) is not added; the screen does not capture the mouse.",
+    "Searching the transcript and copying from scrolled-off output inside the app are not added; native terminal selection works on what is on screen.",
+    "`@` file mentions and image paste are not added.",
+    "Prompt history is not persisted across processes.",
+    "Line numbers in Edit diffs are not shown; the Edit tool's input carries no start line.",
+    "A per-model `contextWindow` override from config (`models` entries) is not applied to the footer; the catalog value is used.",
+    "Subagent tokens are not shown on the Agent card; only tool-use count and duration, because nested usage is not forwarded to the transcript.",
+    "Markdown tables are not formatted as aligned columns; they render as their source text.",
+    "A Write approval or tool card does not show the written content as a diff.",
+    "The run TUI (`nax run`), koda and the ACP server are not changed.",
+    "No change to session, mode, approval, skill, MCP or subagent behaviour; only presentation and the two host additions.",
+    "Updating `.nax/mono/packages/nax/context.md` for the new TUI modules and running `nax generate` is a manual step after merge; `.nax/` is read-only to the run.",
+    "No release and no version bump."
+  ],
+  "routingProfile": "native-codex-ds"
+}
