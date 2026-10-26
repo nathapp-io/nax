@@ -172,6 +172,18 @@ describe("renderMarkdown paragraphs", () => {
     expect(lines).toEqual(["aaaa 👍🏽👍🏽", "bbbb"]);
     for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(NARROW_WIDTH);
   });
+
+  test("keeps a grapheme whole when a style boundary splits it across spans (F1)", () => {
+    const lines = render("aaaaaaaa`👍`🏽", NARROW_WIDTH);
+    expect(texts(lines)).toEqual(["aaaaaaaa👍🏽"]);
+    expect(displayWidth(plainText(lines[0]))).toBe(NARROW_WIDTH);
+  });
+
+  test("keeps each style fragment of a cross-span grapheme (F1)", () => {
+    const line = onlyLine("aaaaaaaa`👍`🏽", NARROW_WIDTH);
+    expect(spanWith(line, "👍").color).toBe("accent");
+    expect(spanWith(line, "🏽").color).toBeUndefined();
+  });
 });
 
 describe("renderMarkdown prefix budget", () => {
@@ -191,6 +203,18 @@ describe("renderMarkdown prefix budget", () => {
   test("keeps a deeply quoted block within the width (F3)", () => {
     const lines = texts(render("> > > > > deep quoted text", NARROW_WIDTH));
     expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(NARROW_WIDTH);
+  });
+
+  test("cuts a cluster wider than the content budget so no line overflows (F3)", () => {
+    const source = `${"क्".repeat(12)}क`;
+    const lines = texts(render(source, NARROW_WIDTH));
+    for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(NARROW_WIDTH);
+    expect(lines.join("")).toBe(source);
+  });
+
+  test("keeps such a cluster within the width after a long ordered marker (F3)", () => {
+    const lines = texts(render(`999999999. ${"क्".repeat(12)}क`, NARROW_WIDTH));
     for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(NARROW_WIDTH);
   });
 });
