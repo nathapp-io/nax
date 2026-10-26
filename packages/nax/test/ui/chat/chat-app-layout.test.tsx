@@ -501,8 +501,8 @@ describe("ChatApp pending ask layout", () => {
     const frame = ui.lastFrame() ?? "";
     expect(frame).toContain("long-flag");
     expect(frame).toContain("packaged artifact");
-    expect(frame).toContain("a: allow once");
-    expect(frame).toContain("d: deny");
+    expect(frame).toContain("1. Yes");
+    expect(frame).toContain("No, tell nax what to do instead");
   });
 
   test("F4 a wrapped approval keeps the frame at the terminal's rows", async () => {
@@ -559,9 +559,11 @@ describe("ChatApp pending ask layout", () => {
     ui.ask({ ...longAsk, command: "npm test\nbun test --watch", reason: "Run the tests" });
     const rows = ui.rows();
     expect(rows).toHaveLength(24);
-    expect(rows).toContain("Bash npm test");
-    expect(rows).toContain("bun test --watch");
-    expect(rows).toContain("a: allow once | s: allow for this session | d: deny");
+    expect(rows).toContain("Bash command");
+    expect(rows).toContain("   npm test");
+    expect(rows).toContain("   bun test --watch");
+    expect(rows).toContain("❯ 1. Yes");
+    expect(rows).toContain("  2. Yes, and don't ask again for this in this session");
     expect(rows.at(-1)).toContain("⏵ guarded");
   });
 
@@ -575,7 +577,8 @@ describe("ChatApp pending ask layout", () => {
     expect(rows).toContain("> one");
     expect(rows).toContain("  two");
     expect(rows).toContain("  three");
-    expect(rows.filter((row) => /^─+$/.test(row))).toHaveLength(1);
+    // The header's rule, the card's own two, and the two the answer's input is framed by.
+    expect(rows.filter((row) => /^─+$/.test(row))).toHaveLength(5);
     expect(rows.at(-1)).toContain("⏵ guarded");
   });
 
@@ -594,12 +597,13 @@ describe("ChatApp pending ask layout", () => {
     ui.ask({ type: "question", requestId: "q1", text, expiresAt: "later" });
     const rows = ui.rows();
     expect(rows).toHaveLength(30);
-    // The header's three rows, the one-row viewport, then the card: its head is kept from the
-    // top, and the elision row names what did not fit above the answer box.
-    expect(rows[4]).toBe("line 0");
+    // The card's head is kept from the top — its title and the question's first lines — and
+    // the elision row names what did not fit above the answer box.
+    expect(rows).toContain("nax asks");
+    expect(rows).toContain("line 0");
     expect(rowMatching(rows, /^… \d+ more lines$/)).toBeDefined();
-    // The answer box is the one row a short screen must never drop.
-    expect(rows.at(-2)).toStartWith(">");
+    // The answer box is the one thing a short screen must never drop.
+    expect(rows.some((row) => row.startsWith("> "))).toBe(true);
     expect(rows.at(-1)).toContain("⏵ guarded");
   });
 });

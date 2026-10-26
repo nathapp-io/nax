@@ -42,7 +42,8 @@ import type { McpServerEvent } from "@/mcp";
 import { buildCommandMessage } from "@/prompts";
 import { runCommandShellLines } from "@/resources";
 import { NAX_VERSION } from "@/version";
-import { AskPrompt, askPromptLayout } from "./AskPrompt";
+import { AskCard, askCardLayout } from "./AskCard";
+import { askCardModel } from "./ask-card";
 import { ChatInput, EMPTY_DRAFT, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
 import {
   type FooterHint,
@@ -90,6 +91,8 @@ const SANDBOX_WARNING = "sandbox unavailable: commands run outside the sandbox";
 const TURN_BUSY_NOTICE = "wait for the turn to finish (Ctrl-C to interrupt)";
 const QUIT = "quit";
 const CLEAR = "clear";
+/** What the input offers after a declined ask, until the next submit says what to do instead. */
+const TELL_NAX_HINT = "tell nax what to do instead";
 /** ink reports ctrl+o as the letter `o` with the ctrl modifier, so the key is its `input`. */
 const CTRL_O = "o";
 /** The theme a caller that passes none gets; resolved once, since it is a pure constant. */
@@ -109,14 +112,14 @@ const LISTING_TITLES: ReadonlyMap<string, string> = new Map([
   ["cost", "Cost"],
 ]);
 
-/** A question card's answer and the request it was typed for: a new request starts empty. */
+/** A question card's draft and the request it was typed for: a new request starts empty. */
 interface QuestionAnswer {
   readonly requestId: string;
-  readonly answer: string;
+  readonly draft: InputDraft;
 }
 
 /** No question answered yet — the state a fresh screen opens on. */
-const NO_ANSWER: QuestionAnswer = { requestId: "", answer: "" };
+const NO_ANSWER: QuestionAnswer = { requestId: "", draft: EMPTY_DRAFT };
 
 interface TerminalSize {
   readonly columns: number;
@@ -225,6 +228,8 @@ export function ChatApp({
   const [busy, setBusy] = useState(false);
   const [clearArmed, setClearArmed] = useState(false);
   const [answerDraft, setAnswerDraft] = useState<QuestionAnswer>(NO_ANSWER);
+  /** What an empty input offers instead of its placeholder: a declined ask's instruction. */
+  const [hint, setHint] = useState<string | undefined>(undefined);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [expanded, setExpanded] = useState(false);
   /** Bumped on every send, so the viewport returns to the newest line the user just added. */
@@ -406,23 +411,31 @@ export function ChatApp({
     size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
   );
   const inputBudget = Math.max(1, bottomBudget - INPUT_RULE_ROWS);
-  // The question card's answer is the screen's state: only then can the card's rows — the
-  // answer box included — be measured before the frame is composed.
-  const answer = ask?.type === "question" && ask.requestId === answerDraft.requestId ? answerDraft.answer : "";
-  const askCard =
+  // The question card's draft is the screen's state: only then can the card's rows — the
+  // answer box included — be measured before the frame is composed. It is the card's own
+  // draft, keyed by the request it was typed for, so it never inherits the chat input's.
+  const answer = ask?.type === "question" && ask.requestId === answerDraft.requestId ? answerDraft.draft : EMPTY_DRAFT;
+  const askModel =
     ask === undefined
       ? undefined
-      : askPromptLayout(ask, {
-          width: columns,
+      : askCardModel(ask, {
           canRemember: ask.type === "approval_requested" && host.asks.canRemember(ask),
-          answer,
+          entries,
+        });
+  const cardRows =
+    ask === undefined || askModel === undefined
+      ? 0
+      : askCardLayout(askModel, {
+          width: columns,
           budget: bottomBudget,
           theme,
-        });
+          answer,
+          expiresAt: ask.expiresAt,
+        }).rows;
   const bottomRows =
-    askCard === undefined
+    ask === undefined
       ? inputRows(draft, { width: columns, busy, container: columns, maxRows: inputBudget })
-      : Math.min(askCard.rows, bottomBudget);
+      : Math.min(cardRows, bottomBudget);
   const viewportHeight = Math.max(
     MIN_VIEWPORT_ROWS,
     size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - bottomRows - FOOTER_ROWS,
@@ -454,20 +467,23 @@ export function ChatApp({
         The bottom region is clipped to the rows reserved above: a row that ever measured short
         loses its tail rather than growing the frame, so the footer stays on the screen's last
         row whatever the terminal, the draft or an ask does. The ask card is measured by
-        `askPromptLayout` — every row it draws, the wrapped elision label and the sandbox note
+        `askCardLayout` — every row it draws, the wrapped elision label and the countdown
         included — and its own budget already drops the middle of an oversized card, so the
         clipping only ever trims a card on a terminal too short for its answer box.
       */}
-      {ask !== undefined && askCard !== undefined ? (
+      {ask !== undefined && askModel !== undefined ? (
         <Box height={bottomRows} overflow="hidden" flexDirection="column">
-          <AskPrompt
+          <AskCard
             key={ask.requestId}
             ask={ask}
+            model={askModel}
             controller={host.asks}
-            layout={askCard}
-            answer={answer}
-            onAnswerChange={(text) => setAnswerDraft({ requestId: ask.requestId, answer: text })}
             width={columns}
+            budget={bottomRows}
+            theme={theme}
+            answer={answer}
+            onAnswerChange={(next) => setAnswerDraft({ requestId: ask.requestId, draft: next })}
+            onDeclined={() => setHint(TELL_NAX_HINT)}
             active={!keys.locked}
           />
         </Box>
@@ -477,6 +493,7 @@ export function ChatApp({
             draft={draft}
             onDraftChange={setDraft}
             onSubmit={(message) => {
+              setHint(undefined);
               void submit(message);
             }}
             width={columns}
@@ -484,6 +501,7 @@ export function ChatApp({
             active={!keys.locked}
             busy={busy}
             maxRows={inputBudget}
+            hint={hint}
             onClearArmedChange={setClearArmed}
           />
         </Box>

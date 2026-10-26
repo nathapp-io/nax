@@ -215,7 +215,7 @@ describe("chat asks and keys", () => {
   ] as const)("%s resolves approval", (_ac, key, choice) => {
     const ui = mount();
     ui.pending();
-    if (key === "s") expect(ui.lastFrame()).toContain("s: allow for this session");
+    if (key === "s") expect(ui.lastFrame()).toContain("Yes, and don't ask again for this in this session");
     ui.type(key);
     expect(ui.resolve).toHaveBeenCalledWith("ask-1", choice);
     expect(ui.lastFrame()).not.toContain("Run the tests");
@@ -226,7 +226,7 @@ describe("chat asks and keys", () => {
     const ui = mount();
     ui.pending({ ...approval, unsandboxed: true });
     expect(ui.lastFrame()).toContain("npm test");
-    expect(ui.lastFrame()).not.toContain("s: allow for this session");
+    expect(ui.lastFrame()).not.toContain("Yes, and don't ask again for this in this session");
     ui.type("s");
     expect(ui.resolve).not.toHaveBeenCalled();
     ui.type("a");
