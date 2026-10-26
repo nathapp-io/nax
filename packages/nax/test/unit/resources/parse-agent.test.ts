@@ -16,6 +16,7 @@ describe("parseAgentFile", () => {
         qualifiedName: "code-reviewer",
         description: "Reviews",
         model: "sonnet",
+        prompt: "Instructions",
         path,
         origin,
       },
@@ -43,7 +44,7 @@ describe("parseAgentFile", () => {
       diagnostic: { severity: "error", path, origin, message: expect.any(String) },
     });
   });
-  test("qualifies plugin agents without retaining executable body", () => {
+  test("qualifies plugin agents and retains the prompt body", () => {
     expect(
       resources.parseAgentFile(path, agent("name: a\ndescription: d"), { kind: "nax-plugin", plugin: "p" }),
     ).toEqual({
@@ -52,9 +53,22 @@ describe("parseAgentFile", () => {
         name: "a",
         qualifiedName: "p:a",
         description: "d",
+        prompt: "Instructions",
         path,
         origin: { kind: "nax-plugin", plugin: "p" },
       },
     });
+  });
+  test("US-002 AC-1 prompt equals the body parseSkillFile retains for the same text", () => {
+    const text = "---\nname: a\ndescription: d\n---\nReview the diff.\n";
+    const agentResult = resources.parseAgentFile(path, text, origin);
+    const skillResult = resources.parseSkillFile("/skills/a/SKILL.md", text, origin);
+    if (!("resource" in agentResult) || !("resource" in skillResult)) throw new Error("expected resources");
+    expect(agentResult.resource.prompt).toBe(skillResult.resource.body);
+    expect(agentResult.resource.prompt).toBe("Review the diff.\n");
+  });
+  test("US-002 AC-2 empty body yields an empty prompt", () => {
+    const result = resources.parseAgentFile(path, "---\nname: a\ndescription: d\n---\n", origin);
+    expect(result).toMatchObject({ resource: { prompt: "" } });
   });
 });

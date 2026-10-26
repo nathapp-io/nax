@@ -31,6 +31,7 @@ const pkg: ResourcePackage = {
     name,
     qualifiedName: name,
     description: "",
+    prompt: "",
     path: `/sp/${name}.md`,
     origin,
   })),
@@ -85,7 +86,7 @@ describe("formatPluginsListing", () => {
         { name: "kit", provides: ["resources", "loop-handlers"] },
       ]),
     ).toBe(
-      "Claude Code plugins\nsp@m  skills 1, commands 0, agents 2 (not delivered yet), mcp 1, hooks 1 (not executed)\nwarn  /sp/plugin.json  plugin warning\n\nnax plugins\nkit  resources, loop-handlers",
+      "Claude Code plugins\nsp@m  skills 1, commands 0, agents 2, mcp 1, hooks 1 (not executed)\nwarn  /sp/plugin.json  plugin warning\n\nnax plugins\nkit  resources, loop-handlers",
     );
   });
   test("US-015 AC-6 non-Claude packages do not populate Claude section", () => {
@@ -95,5 +96,16 @@ describe("formatPluginsListing", () => {
         [],
       ),
     ).toBe("Claude Code plugins\n(none)\n\nnax plugins\n(none)");
+  });
+  test("US-002 AC-10/11 agents count carries no not-delivered wording", () => {
+    const line = resources
+      .formatPluginsListing(buildResourceCatalog([pkg]), [])
+      .split("\n")
+      .find((l) => l.startsWith("sp@m"));
+    expect(line).toContain("agents 2,");
+    expect(line).not.toContain("(not delivered yet)");
+  });
+  test("US-002 AC-12 hooks stay listed as not executed", () => {
+    expect(resources.formatPluginsListing(buildResourceCatalog([pkg]), [])).toContain("hooks 1 (not executed)");
   });
 });

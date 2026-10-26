@@ -1,16 +1,26 @@
-import type { CommandRunResult, SandboxState, SessionEvent, SessionMeta, SessionStorage } from "@nathapp/nax-agent";
+import type {
+  CommandRunResult,
+  SandboxState,
+  SessionEvent,
+  SessionMeta,
+  SessionStorage,
+  ToolProvider,
+} from "@nathapp/nax-agent";
 import { getProjectKey, type NaxConfig } from "@/config";
 import { createRuleDeliveryHandlers } from "@/context/rules/rule-delivery";
 import { NaxError } from "@/errors";
 import type { InteractionChain } from "@/interaction";
 import type { Logger } from "@/logger";
 import { projectOutputDir } from "@/runtime";
+import { createAgentsProvider } from "./agents-provider";
 import { type ChatAskController, createChatAskController } from "./ask-controller";
 import { type AskFallback, createAskFallback } from "./ask-fallback";
+import { type ChatAgentRow, listAgentRows } from "./chat-agents-listing";
 import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import { type ChatMode, chatModeOfMeta } from "./chat-mode";
 import { type ChatSessionHandle, openChatSession } from "./open-chat-session";
 import type { ChatResources } from "./resources";
+import { createSubagentRuns, type SubagentRuns } from "./subagent-runs";
 import { routeAskEvent, runChatTurn } from "./turn-runner";
 
 const DEFAULT_CHAT_ASK_FALLBACK_MS = 60_000;
@@ -39,6 +49,8 @@ export interface ChatHost {
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   current(): ChatHostState;
+  /** One row per catalog agent in catalog order, resolved against the chat session's current model. */
+  agents?(): readonly ChatAgentRow[];
   start(input: { mode: ChatMode; model: string }): Promise<void>;
   clear(): Promise<void>;
   resume(input: { id?: string }): Promise<void>;
@@ -92,6 +104,10 @@ class NativeChatHost implements ChatHost {
   private readonly loopHandlers: ReturnType<typeof createRuleDeliveryHandlers>;
   private readonly projectKey: string;
   private readonly outputDir: string;
+  private readonly runs?: SubagentRuns;
+  private readonly toolProviders?: readonly ToolProvider[];
+  private turnListener?: (event: SessionEvent) => void;
+  private sending = false;
   private handle?: ChatSessionHandle;
   private ledger?: ChatLedger;
   private resumeNotice?: string;
@@ -120,9 +136,27 @@ class NativeChatHost implements ChatHost {
     this.asks = createChatAskController({
       mode: "guarded",
       answer: (id, reply) => {
-        this.requireHandle().session.answer(id, reply);
+        (this.runs?.sessionFor(id) ?? this.requireHandle().session).answer(id, reply);
       },
     });
+    const resources = deps.resources;
+    if (resources) {
+      this.runs = createSubagentRuns({
+        current: () => this.current(),
+        catalog: resources.catalog,
+        config: deps.config,
+        cwd: deps.cwd,
+        repoRoot: deps.repoRoot,
+        toolProviders: resources.toolProviders,
+        loopHandlers: this.loopHandlers,
+        asks: this.asks,
+        ledger: () => this.ledger,
+        turnListener: () => this.turnListener,
+      });
+      this.toolProviders = resources.catalog.agents.length
+        ? [...resources.toolProviders, createAgentsProvider({ catalog: resources.catalog, run: this.runs.run })]
+        : resources.toolProviders;
+    }
     this.fallback = createAskFallback({
       controller: this.asks,
       chain: deps.chain,
@@ -156,6 +190,13 @@ class NativeChatHost implements ChatHost {
     };
   }
 
+  agents(): readonly ChatAgentRow[] {
+    const agents = this.catalog?.agents ?? [];
+    if (agents.length === 0) return [];
+    // Read at listing time so an inherited model follows model switches.
+    return listAgentRows({ catalog: this.catalog, config: this.deps.config, parentModel: this.current().model });
+  }
+
   private async withSessionOperation(operation: () => Promise<void>): Promise<void> {
     this.assertOpen();
     // Register before invoking the operation, including its first asynchronous read/open.
@@ -182,7 +223,7 @@ class NativeChatHost implements ChatHost {
       repoRoot: this.repoRoot,
       config: this.deps.config,
       loopHandlers: this.loopHandlers,
-      ...(this.deps.resources ? { toolProviders: this.deps.resources.toolProviders } : {}),
+      ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
     });
     await this.replace(next);
     this.resumeNotice = undefined;
@@ -254,7 +295,7 @@ class NativeChatHost implements ChatHost {
           repoRoot: this.repoRoot,
           config: this.deps.config,
           loopHandlers: this.loopHandlers,
-          ...(this.deps.resources ? { toolProviders: this.deps.resources.toolProviders } : {}),
+          ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
           resumeId: id,
         });
       } catch (error) {
@@ -291,7 +332,7 @@ class NativeChatHost implements ChatHost {
       repoRoot: this.repoRoot,
       config: this.deps.config,
       loopHandlers: this.loopHandlers,
-      ...(this.deps.resources ? { toolProviders: this.deps.resources.toolProviders } : {}),
+      ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
     });
     return { ...next, release: previous.release };
   }
@@ -328,15 +369,38 @@ class NativeChatHost implements ChatHost {
     const handle = this.requireHandle();
     const ledger = this.ledger;
     if (!ledger) throw new NaxError("[chat] ledger is not initialized", "CHAT_SESSION_NOT_OPEN", { stage: "chat" });
-    const meta = await runChatTurn({
-      handle,
-      storage: this.deps.storage,
-      message,
-      asks: this.asks,
-      ledger,
-      onEvent,
-      now: this.deps.now().toISOString(),
-    });
+    // Reject before touching the shared listener and nested-spend state: they belong to
+    // the active send until its metadata is persisted.
+    if (this.sending) {
+      throw new NaxError("[chat] a turn is already running", "CHAT_TURN_BUSY", { stage: "chat" });
+    }
+    this.sending = true;
+    this.turnListener = onEvent;
+    const runs = this.runs;
+    let meta: SessionMeta;
+    try {
+      meta = await runChatTurn({
+        handle,
+        storage: this.deps.storage,
+        message,
+        asks: this.asks,
+        ledger,
+        onEvent,
+        now: this.deps.now().toISOString(),
+        ...(runs ? { extraCostUsd: () => runs.takeCost(), settleNested: () => runs.settle() } : {}),
+      });
+    } finally {
+      try {
+        // A cancelled tool batch abandons its nested run without waiting for it: drain
+        // every run (a pending open included) before the listener and spend are released.
+        await runs?.settle();
+      } finally {
+        this.turnListener = undefined;
+        this.sending = false;
+        // Nested spend of a send that threw is dropped, never added to the next send.
+        runs?.takeCost();
+      }
+    }
     if (this.handle === handle) this.handle = { ...handle, meta };
   }
 
@@ -350,7 +414,9 @@ class NativeChatHost implements ChatHost {
   }
 
   cancel(): void {
-    this.requireHandle().session.cancel();
+    const { session } = this.requireHandle();
+    session.cancel();
+    this.runs?.cancelAll();
   }
 
   async listSessions(): Promise<readonly ChatSessionRow[]> {
@@ -376,6 +442,14 @@ class NativeChatHost implements ChatHost {
     // closed blocks new operations. Drain existing opens, replacements and rollback
     // reopens (including late-handle cleanup) before releasing the final handle.
     await Promise.all(this.sessionOperations);
+    try {
+      await this.runs?.closeAll();
+    } finally {
+      await this.closeSessionAndResources();
+    }
+  }
+
+  private async closeSessionAndResources(): Promise<void> {
     try {
       if (this.handle) await closeHandle(this.handle);
     } finally {

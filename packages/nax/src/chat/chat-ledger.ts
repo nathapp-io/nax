@@ -5,8 +5,11 @@ import { COST_ROW_SCHEMA_VERSION } from "@/runtime/middleware";
 
 export type ChatUsageEvent = Extract<SessionEvent, { type: "usage" }>;
 
+export type ChatLedgerRole = "tui" | "subagent";
+
 export interface ChatLedger {
-  record(event: ChatUsageEvent, previousAt: string, model?: string): void;
+  /** `role` is the row's `sessionRole`; the chat session's own usage is `tui` (the default). */
+  record(event: ChatUsageEvent, previousAt: string, model?: string, role?: ChatLedgerRole): void;
   drain(): Promise<void>;
 }
 
@@ -22,7 +25,7 @@ export interface ChatLedgerOptions {
 export function createChatLedger(options: ChatLedgerOptions): ChatLedger {
   const aggregators = new Map<string, CostAggregator>();
   return {
-    record(event, previousAt, model = options.model) {
+    record(event, previousAt, model = options.model, role = "tui") {
       const runId = `chat-${event.sessionId}-${options.startedAt.getTime()}`;
       let aggregator = aggregators.get(runId);
       if (!aggregator) {
@@ -38,7 +41,7 @@ export function createChatLedger(options: ChatLedgerOptions): ChatLedger {
         agentName: "native",
         model,
         stage: "chat",
-        sessionRole: "tui",
+        sessionRole: role,
         turnId: event.turnId,
         durationMs: Date.parse(event.at) - Date.parse(previousAt),
         tokens: {

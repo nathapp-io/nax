@@ -34,7 +34,7 @@ export interface CommandResource {
   readonly origin: ResourceOrigin;
 }
 
-/** Parsed and listed only; delivery is deferred to F5. */
+/** Parsed with its prompt body; invocation is wired elsewhere. */
 export interface AgentResource {
   readonly kind: "agent";
   readonly name: string;
@@ -42,6 +42,8 @@ export interface AgentResource {
   readonly description: string;
   readonly model?: string;
   readonly tools?: readonly string[];
+  /** The agent file's body without frontmatter. */
+  readonly prompt: string;
   readonly path: string;
   readonly origin: ResourceOrigin;
 }
@@ -93,10 +95,13 @@ export interface ResourceCatalog {
   /** Every loaded skill in package order, including shadowed resources. */
   readonly skills: readonly SkillResource[];
   readonly commands: readonly CommandResource[];
+  /** Every loaded agent in package order, including shadowed resources. */
+  readonly agents: readonly AgentResource[];
   /** Package diagnostics plus name collisions. */
   readonly diagnostics: readonly ResourceDiagnostic[];
   findSkill(name: string): SkillResource | undefined;
   findCommand(name: string): CommandResource | undefined;
+  findAgent(name: string): AgentResource | undefined;
 }
 
 export interface ResourcePackage {

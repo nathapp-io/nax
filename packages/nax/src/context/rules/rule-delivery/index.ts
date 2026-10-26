@@ -75,6 +75,8 @@ export const MAX_RULE_INJECTION_BYTES = 16_384;
 /** Roles whose Reads may be nudged. */
 export const RULE_READ_ROLES: readonly string[] = Object.freeze([
   "tui",
+  /** chat-subagents US-008: a nested subagent session reads under the chat's rules. */
+  "subagent",
   "wf-implementer",
   "wf-branch-fix",
   /** US-001: a repair pass edits the same tree under the same rules as the branch fix. */
@@ -87,6 +89,7 @@ export const RULE_READ_ROLES: readonly string[] = Object.freeze([
 /** Roles whose Writes and Edits may be refused once. */
 export const RULE_WRITE_ROLES: readonly string[] = Object.freeze([
   "tui",
+  "subagent",
   "wf-implementer",
   "wf-branch-fix",
   "wf-repair",

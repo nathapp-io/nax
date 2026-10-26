@@ -242,6 +242,61 @@ describe("nativeBackend tool providers", () => {
   });
 });
 
+describe("nativeBackend allowedTools with a static provider (chat-subagents US-001)", () => {
+  withDepsRestore(_sessionSandboxDeps);
+  withSessionSandboxSeam(_sessionSandboxDeps);
+
+  function acmeStatic(): ToolProvider {
+    const tool = (localName: string): ProviderTool => ({
+      localName,
+      description: localName,
+      inputSchema: { type: "object" },
+      run: async () => ({ content: localName }),
+    });
+    return { id: "acme", kind: "static", stages: ["*"], tools: async () => [tool("get"), tool("put")] };
+  }
+
+  async function acmeNames(allowedTools?: readonly string[]): Promise<readonly string[]> {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    const opened = await open(
+      { model: MODEL, toolProviders: [acmeStatic()], ...(allowedTools !== undefined ? { allowedTools } : {}) },
+      { profile: "full" },
+    );
+    return names(opened);
+  }
+
+  test("AC-9/AC-10: an exact name admits that tool and withholds its sibling", async () => {
+    const declared = await acmeNames(["acme__get"]);
+    expect(declared).toContain("acme__get");
+    expect(declared).not.toContain("acme__put");
+  });
+
+  test("AC-11: <provider>__* admits every tool of the provider", async () => {
+    const declared = await acmeNames(["acme__*"]);
+    expect(declared).toContain("acme__get");
+    expect(declared).toContain("acme__put");
+  });
+
+  test("AC-12: an allow-list naming only built-ins declares no provider tool", async () => {
+    const declared = await acmeNames(["Read"]);
+    expect(declared.filter((name) => name.startsWith("acme__"))).toEqual([]);
+  });
+
+  test("AC-13: without allowedTools both provider tools are declared", async () => {
+    const declared = await acmeNames();
+    expect(declared).toContain("acme__get");
+    expect(declared).toContain("acme__put");
+  });
+
+  test("a provider tool that is not admitted is not granted either", async () => {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    await open({ model: MODEL, toolProviders: [acmeStatic()], allowedTools: ["acme__get"] }, { profile: "full" });
+    const grants = openSession.mock.calls.at(-1)?.[1].resolvedPermissions.toolGrants ?? [];
+    expect(grants.map((grant) => grant.tool)).toContain("acme__get");
+    expect(grants.map((grant) => grant.tool)).not.toContain("acme__put");
+  });
+});
+
 describe("nativeBackend discovered providers under the ask profile", () => {
   withDepsRestore(_sessionSandboxDeps);
   withSessionSandboxSeam(_sessionSandboxDeps);

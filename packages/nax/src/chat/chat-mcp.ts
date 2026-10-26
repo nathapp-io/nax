@@ -23,8 +23,8 @@ import {
 /** One attempt per server: session open resolves providers one after another, so retries would stall the start. */
 export const CHAT_MCP_RETRY = { maxAttempts: 1, baseDelayMs: 0 } as const;
 
-/** The skills provider's id; an MCP server may not shadow it. */
-const RESERVED_SERVER_ID = "nax-skills";
+/** The skills and agents providers' ids; an MCP server may not shadow either. */
+const RESERVED_SERVER_IDS: ReadonlySet<string> = new Set(["nax-skills", "nax-agents"]);
 
 export interface ChatMcpServerRow {
   readonly id: string;
@@ -60,13 +60,13 @@ type Env = Readonly<Record<string, string | undefined>>;
 
 const CATALOG_DIAGNOSTIC_SUFFIXES = [".mcp.json", ".claude.json"] as const;
 
-function reservedDiagnostic(): ResourceDiagnostic {
+function reservedDiagnostic(id: string): ResourceDiagnostic {
   return {
     severity: "error",
     // No file owns this finding; name the configuration surface instead.
-    path: `mcp.servers.${RESERVED_SERVER_ID}`,
+    path: `mcp.servers.${id}`,
     origin: { kind: "claude-project" },
-    message: `[resources] mcp server id ${RESERVED_SERVER_ID} is reserved`,
+    message: `[resources] mcp server id ${id} is reserved`,
   };
 }
 
@@ -93,8 +93,8 @@ export async function createChatMcp(input: {
 
   for (const [id, server] of Object.entries(merged.config.servers)) {
     if (!server.enabled) continue;
-    if (id === RESERVED_SERVER_ID) {
-      diagnostics.push(reservedDiagnostic());
+    if (RESERVED_SERVER_IDS.has(id)) {
+      diagnostics.push(reservedDiagnostic(id));
       continue;
     }
     const origin = merged.sources.get(id) ?? { source: "config" as const };

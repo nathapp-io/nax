@@ -105,6 +105,13 @@ describe("FIELD_DESCRIPTIONS agent.usageAudit (#2045)", () => {
   });
 });
 
+describe("FIELD_DESCRIPTIONS agent.modelAliases", () => {
+  test("has a non-empty description", () => {
+    expect(typeof FIELD_DESCRIPTIONS["agent.modelAliases"]).toBe("string");
+    expect(FIELD_DESCRIPTIONS["agent.modelAliases"].trim().length).toBeGreaterThan(0);
+  });
+});
+
 describe("FIELD_DESCRIPTIONS agent.transcriptAudit (#2453)", () => {
   const KEYS = [
     "agent.transcriptAudit",

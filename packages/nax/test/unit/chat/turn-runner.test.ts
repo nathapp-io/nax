@@ -22,7 +22,7 @@ const START = "2026-10-01T00:00:00.000Z";
 const NOW = "2026-10-01T00:01:00.000Z";
 const base = { sessionId: ID, turnId: "turn-1", at: START, metadata: {} };
 const start: SessionEvent = { ...base, type: "turn_start" };
-const usage: SessionEvent = {
+const usageEvent: Extract<SessionEvent, { type: "usage" }> = {
   ...base,
   at: "2026-10-01T00:00:01.500Z",
   type: "usage",
@@ -32,6 +32,7 @@ const usage: SessionEvent = {
   costUsd: 0.01,
   costSource: "computed",
 };
+const usage: SessionEvent = usageEvent;
 const end: SessionEvent = {
   ...base,
   type: "turn_end",
@@ -88,7 +89,9 @@ afterEach(() => cleanupTempDir(dir));
 function ledger(startedAt = new Date(START)) {
   return createChatLedger({ sessionId: ID, projectKey: "test-project", model: MODEL, outputDir: dir, startedAt });
 }
-function run(options: { message?: string; costLedger?: ReturnType<typeof createChatLedger> } = {}) {
+function run(
+  options: { message?: string; costLedger?: ReturnType<typeof createChatLedger>; extraCostUsd?: () => number } = {},
+) {
   const asks = { handle: mock((_event: SessionEvent) => {}) };
   const onEvent = mock((_event: SessionEvent) => {});
   const costLedger = options.costLedger ?? ledger();
@@ -100,6 +103,7 @@ function run(options: { message?: string; costLedger?: ReturnType<typeof createC
     ledger: costLedger,
     onEvent,
     now: NOW,
+    ...(options.extraCostUsd ? { extraCostUsd: options.extraCostUsd } : {}),
   });
   return { result, asks, onEvent };
 }
@@ -239,6 +243,35 @@ describe("runChatTurn", () => {
     const before = await storage.readMeta(ID);
     await expect(run().result).rejects.toBe(sendError);
     expect(await storage.readMeta(ID)).toEqual(before);
+  });
+  test("AC-1 a ledger record with role subagent writes sessionRole subagent", async () => {
+    const costLedger = ledger();
+    costLedger.record(usageEvent, START, MODEL, "subagent");
+    await costLedger.drain();
+    const persisted = await rows();
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]?.sessionRole).toBe("subagent");
+  });
+  test("AC-2 a ledger record without a role writes sessionRole tui", async () => {
+    const costLedger = ledger();
+    costLedger.record(usageEvent, START, MODEL);
+    await costLedger.drain();
+    const persisted = await rows();
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]?.sessionRole).toBe("tui");
+  });
+  test("AC-9 extraCostUsd is added to the turn_end spend in metadata", async () => {
+    events = [start, { ...end, costUsd: 1 }];
+    const before = (await storage.readMeta(ID))?.costUsd ?? 0;
+    const written = await run({ extraCostUsd: () => 0.25 }).result;
+    expect(written.costUsd).toBeCloseTo(before + 1.25);
+    expect((await storage.readMeta(ID))?.costUsd).toBeCloseTo(before + 1.25);
+  });
+  test("AC-10 without extraCostUsd only the turn_end spend is added", async () => {
+    events = [start, { ...end, costUsd: 1 }];
+    const before = (await storage.readMeta(ID))?.costUsd ?? 0;
+    const written = await run().result;
+    expect(written.costUsd).toBeCloseTo(before + 1);
   });
   test("AC-19 send throwing before events never records or drains ledger", async () => {
     sendError = new Error("turn already running");

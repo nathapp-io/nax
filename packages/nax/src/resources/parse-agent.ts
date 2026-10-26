@@ -13,7 +13,7 @@ function parseTools(value: unknown): string[] | undefined {
   return undefined;
 }
 
-/** Metadata only: agent instructions are neither delivered nor executed. */
+/** Metadata plus the prompt body (the file without its frontmatter), read as parseSkillFile reads a skill body. */
 export function parseAgentFile(
   path: string,
   text: string,
@@ -39,6 +39,7 @@ export function parseAgentFile(
         name,
         qualifiedName: qualifyResourceName(name, origin),
         description,
+        prompt: parsed.body,
         path,
         origin,
         ...(model !== undefined ? { model } : {}),

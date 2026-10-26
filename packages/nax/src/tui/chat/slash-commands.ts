@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { type ChatHost, formatMcpListing } from "@/chat";
+import { type ChatHost, formatAgentsListing, formatMcpListing } from "@/chat";
 import { featureDir } from "@/config";
 import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing } from "@/resources";
@@ -36,6 +36,7 @@ const COMMANDS = [
   "skills",
   "plugins",
   "mcp",
+  "agents",
   "quit",
 ];
 
@@ -106,6 +107,9 @@ export async function runSlashCommand(
       break;
     case "mcp":
       show(formatMcpListing(host.mcp));
+      break;
+    case "agents":
+      show(formatAgentsListing(host.agents?.() ?? []));
       break;
     case "mode":
       if (!arg) show(host.current().mode);

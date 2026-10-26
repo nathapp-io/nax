@@ -30,6 +30,8 @@ export interface NativeBackendOptions {
   readonly hostPorts?: AgentSessionHostPorts;
   readonly bashApproval?: BashApprovalMode;
   readonly allowUnsandboxed?: boolean;
+  /** Narrow the declared tools to these names (built-in names, `<provider>__<tool>`, or `<provider>__*`); scratchpad tools are always kept. */
+  readonly allowedTools?: readonly string[];
   /**
    * US-001: offer the Bash/Exec tools' `unsandboxed` argument, so a model can ask
    * for one command to run outside the OS sandbox. Refused by the tool-less
@@ -116,6 +118,7 @@ const OptionsSchema = z.strictObject({
     .optional(),
   bashApproval: z.enum(["raw", "gated", "escalate"]).optional(),
   allowUnsandboxed: z.boolean().optional(),
+  allowedTools: z.array(z.string().min(1)).optional(),
   allowUnsandboxedCommands: z.boolean().optional(),
   carryHistoryAcrossModels: z.boolean().optional(),
   compaction: compactionSettingsSchema.optional(),

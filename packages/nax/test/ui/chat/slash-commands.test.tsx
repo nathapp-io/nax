@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { CHAT_MODEL, makeAgentResource, makeSubagentHostHarness } from "@test/helpers";
 import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
 import type { ChatHost, ChatHostState, ChatMcpState } from "@/chat";
@@ -20,6 +21,7 @@ const COMMANDS = [
   "skills",
   "plugins",
   "mcp",
+  "agents",
   "quit",
 ];
 afterEach(() => {
@@ -290,6 +292,49 @@ describe("mcp command", () => {
     await ui.line("/mcp");
     expect(ui.lastFrame()).toContain("docs  user  stdio  not connected");
     expect(ui.send).not.toHaveBeenCalled();
+  });
+});
+describe("agents command", () => {
+  test("US-011 AC-14 shows (no agents) when the host has no agents()", async () => {
+    const { runSlashCommand } = await import("@/tui/chat/slash-commands");
+    const ui = mount();
+    const show = mock((_text: string) => {});
+    expect(ui.host.agents).toBeUndefined();
+    await runSlashCommand({ name: "agents", args: [], rest: "" }, { host: ui.host, show });
+    expect(show).toHaveBeenCalledTimes(1);
+    expect(show).toHaveBeenCalledWith("(no agents)");
+  });
+
+  test("US-011 AC-15 help lists /agents between /mcp and /quit", async () => {
+    const ui = mount();
+    await ui.line("/help");
+    expect(ui.lastFrame()).toContain("/mcp\n/agents\n/quit");
+  });
+
+  test("US-011 shows the listing of host.agents() in the transcript without sending", async () => {
+    const ui = mount();
+    ui.host.agents = () => [
+      { name: "reviewer", description: "Reviews diffs", model: "a/s", modelSource: "alias", tools: "all", dropped: [] },
+    ];
+    await ui.line("/agents");
+    expect(ui.lastFrame()).toContain("reviewer  a/s (alias)  tools all  Reviews diffs");
+    expect(ui.send).not.toHaveBeenCalled();
+  });
+
+  test("US-011 AC-13 a native host built by createChatHost lists its catalog agent first-line-first", async () => {
+    const { runSlashCommand } = await import("@/tui/chat/slash-commands");
+    const harness = makeSubagentHostHarness({ agents: [makeAgentResource({ name: "reviewer" })] });
+    try {
+      await harness.host.start({ mode: "guarded", model: CHAT_MODEL });
+      const show = mock((_text: string) => {});
+      await runSlashCommand({ name: "agents", args: [], rest: "" }, { host: harness.host, show });
+      expect(show).toHaveBeenCalledTimes(1);
+      const text = show.mock.calls[0]?.[0] ?? "";
+      expect(text.split("\n")[0]?.startsWith("reviewer")).toBe(true);
+      expect(text).toContain(`${CHAT_MODEL} (inherit)`);
+    } finally {
+      await harness.dispose();
+    }
   });
 });
 describe("feature command", () => {

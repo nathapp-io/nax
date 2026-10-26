@@ -1,10 +1,17 @@
 import type { NaxConfig } from "../config";
 import { claudeConfigDir, claudeJsonPath } from "./claude-paths";
 import { discoverClaudeCodePackages } from "./claude-sources";
-import type { CommandResource, ResourceCatalog, ResourceDiagnostic, ResourcePackage, SkillResource } from "./types";
+import type {
+  AgentResource,
+  CommandResource,
+  ResourceCatalog,
+  ResourceDiagnostic,
+  ResourcePackage,
+  SkillResource,
+} from "./types";
 
 /** Index both names without allowing a later package to replace either winner. */
-function indexResources<T extends SkillResource | CommandResource>(
+function indexResources<T extends SkillResource | CommandResource | AgentResource>(
   packages: readonly ResourcePackage[],
   select: (pkg: ResourcePackage) => readonly T[],
   diagnostics: ResourceDiagnostic[],
@@ -37,13 +44,16 @@ export function buildResourceCatalog(packages: readonly ResourcePackage[]): Reso
   const diagnostics = ordered.flatMap((pkg) => pkg.diagnostics);
   const skills = indexResources(ordered, (pkg) => pkg.skills, diagnostics);
   const commands = indexResources(ordered, (pkg) => pkg.commands, diagnostics);
+  const agents = indexResources(ordered, (pkg) => pkg.agents, diagnostics);
   return {
     packages: ordered,
     skills: ordered.flatMap((pkg) => pkg.skills),
     commands: ordered.flatMap((pkg) => pkg.commands),
+    agents: ordered.flatMap((pkg) => pkg.agents),
     diagnostics,
     findSkill: (name) => skills.get(name),
     findCommand: (name) => commands.get(name),
+    findAgent: (name) => agents.get(name),
   };
 }
 

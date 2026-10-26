@@ -13,15 +13,18 @@ export interface ChatFeatureMessageInput {
   readonly message: string;
 }
 
+/** The sentence describing what a permission mode means; no heading. */
+export function chatPermissionParagraph(mode: ChatInstructionsInput["mode"]): string {
+  return mode === "full"
+    ? "In full mode, tools run without asking."
+    : "In guarded mode, edits, deletes, commits and every shell command are put to the person before they run.";
+}
+
 /** Pure system instructions; repository instructions are loaded separately from AGENTS.md. */
 export function buildChatInstructions(input: ChatInstructionsInput): string {
-  const permission =
-    input.mode === "full"
-      ? "In full mode, tools run without asking."
-      : "In guarded mode, edits, deletes, commits and every shell command are put to the person before they run.";
   const sections = [
     "You are an interactive coding agent working in this repository with the person.",
-    `## Permission mode\n\n${permission}`,
+    `## Permission mode\n\n${chatPermissionParagraph(input.mode)}`,
     "## Commands outside the sandbox\n\nSet `unsandboxed: true` with an `unsandboxedReason` only when a command needs the network, the Docker socket, a local port or a device the sandbox blocks.",
   ];
   const rules = buildRulesIndexSection({ entries: input.rulesIndex, shownAutomatically: true });

@@ -173,6 +173,21 @@ describe("buildSessionToolSupport", () => {
     expect(outcome.kind).toBe("denied");
   });
 
+  test("AC-14: allowedTools narrows the grants, so no Write grant is issued", async () => {
+    const narrowed = buildSessionToolSupport(await args({ profile: "full", allowedTools: ["Read"] }));
+    const granted = narrowed.grants.map((grant) => grant.tool);
+    expect(granted).not.toContain("Write");
+    expect(granted.slice().sort()).toEqual(["Read", ...TRIO].sort());
+    expect(names(narrowed.support)).toEqual(["Read", ...TRIO].sort());
+  });
+
+  test("allowedTools leaves the ask rules of a declared tool unchanged and drops those of an undeclared one", async () => {
+    const withBash = buildSessionToolSupport(await args({ profile: "full", allowedTools: ["Bash"] }));
+    expect(names(withBash.support)).toEqual(["Bash", ...TRIO].sort());
+    const without = buildSessionToolSupport(await args({ profile: "full", allowedTools: ["Read"] }));
+    expect(names(without.support)).not.toContain("Bash");
+  });
+
   test("Read refuses the credential directory", async () => {
     const base = await args({ profile: "read" });
     const credentialDir = join(base.root, "creds");

@@ -27,6 +27,7 @@ import { createSessionInteractionHandler, embedderToolDescriptor } from "./sessi
 import {
   buildSessionToolSupport,
   defaultProtectedPaths,
+  providerAdmits,
   resolveSessionLauncher,
   SESSION_STAGE,
 } from "./session-tool-support.ts";
@@ -78,7 +79,12 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
   const providerTools =
     ctx.profile === "none" || raw.toolProviders === undefined
       ? undefined
-      : await resolveProviderTools(raw.toolProviders, SESSION_STAGE, ctx.workdir);
+      : await resolveProviderTools(
+          raw.toolProviders,
+          SESSION_STAGE,
+          ctx.workdir,
+          raw.allowedTools !== undefined ? { admits: providerAdmits(raw.allowedTools) } : undefined,
+        );
   for (const failure of providerTools?.failures ?? []) {
     getLogger().warn("session", "Tool provider skipped", { sessionId: ctx.sessionId, ...failure });
   }
@@ -97,6 +103,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     root: ctx.workdir,
     sessionName: ctx.sessionId,
     ...(providerTools !== undefined ? { providerTools } : {}),
+    ...(raw.allowedTools !== undefined ? { allowedTools: raw.allowedTools } : {}),
     protectedPaths,
     bashApproval,
     launcher,

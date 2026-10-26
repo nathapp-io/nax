@@ -1,3 +1,4 @@
+export { type AgentsProviderOptions, createAgentsProvider } from "./agents-provider";
 export {
   type AskChoice,
   type ChatApproval,
@@ -7,6 +8,7 @@ export {
   createChatAskController,
 } from "./ask-controller";
 export { _askFallbackDeps, type AskFallback, type AskFallbackOptions, createAskFallback } from "./ask-fallback";
+export { type ChatAgentRow, formatAgentsListing } from "./chat-agents-listing";
 export { type ChatHost, type ChatHostDeps, type ChatHostState, type ChatSessionRow, createChatHost } from "./chat-host";
 export { type ChatLedger, type ChatLedgerOptions, type ChatUsageEvent, createChatLedger } from "./chat-ledger";
 export {
@@ -35,4 +37,11 @@ export {
   resolveChatSessionsDir,
 } from "./open-chat-session";
 export type { ChatResources } from "./resources";
+export {
+  type ResolvedSubagentModel,
+  type ResolveSubagentModelOptions,
+  resolveSubagentModel,
+  type SubagentModelSource,
+} from "./subagent-model";
+export { type DroppedSubagentTool, type MappedSubagentTools, mapSubagentTools } from "./subagent-tools";
 export { type RunChatTurnOptions, runChatTurn } from "./turn-runner";
