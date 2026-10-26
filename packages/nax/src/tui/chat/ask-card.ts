@@ -21,9 +21,6 @@ import type { TranscriptEntry } from "./transcript-model";
 /** What the frame's border says about the ask: a caution, or a refusal waiting to happen. */
 export type AskBorder = "warning" | "danger";
 
-/** One tool call in the transcript; the only entry kind an approval's diff can come from. */
-type ToolEntry = Extract<TranscriptEntry, { kind: "tool" }>;
-
 /** One option the card offers, numbered as the card numbers it. */
 export interface AskOption {
   /** 1-based position in the list, as the card draws it. */
@@ -109,17 +106,33 @@ function stringField(source: unknown, field: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-/** The call the ask names, as the transcript recorded it — the only entry its diff can come from. */
-function recordedCall(entries: readonly TranscriptEntry[], callId: string | undefined): ToolEntry | undefined {
+/** The input an ask's call carried, wherever the transcript recorded it. */
+interface RecordedCall {
+  readonly input: unknown;
+}
+
+/**
+ * The call the ask names: a top-level entry, or a subagent call the reducer nested under the
+ * agent card that ran it. A subagent's approval names its own child call, so searching only
+ * the top-level entries would leave every attributed Edit approval without its diff.
+ */
+function recordedCall(entries: readonly TranscriptEntry[], callId: string | undefined): RecordedCall | undefined {
   if (callId === undefined) return undefined;
-  return entries.find((entry): entry is ToolEntry => entry.kind === "tool" && entry.callId === callId);
+  for (const entry of entries) {
+    if (entry.kind !== "tool") continue;
+    if (entry.callId === callId) return { input: entry.input };
+    const child = entry.children.find((item) => item.callId === callId);
+    if (child !== undefined) return { input: child.input };
+  }
+  return undefined;
 }
 
 /**
  * The diff of an Edit approval: the replacement the recorded call carried, read the way the
  * tool card reads it. Only an Edit has one — a Write approval would show what it is about to
  * write, not the file it replaces — and an ask with no recorded call, or a call missing
- * either side of the replacement, has none either.
+ * either side of the replacement, has none either. The call may be one a subagent made, so
+ * it is looked up among the nested calls as well as the top-level ones.
  */
 function askDiff(tool: string, ask: ChatApproval, entries: readonly TranscriptEntry[]): readonly DiffLine[] {
   if (tool !== DIFF_TOOL) return [];

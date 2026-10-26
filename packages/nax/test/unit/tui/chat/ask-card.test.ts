@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { SessionEvent } from "@nathapp/nax-agent";
 import type { ChatApproval, ChatPendingAsk } from "@/chat";
 import {
   ASK_NO,
@@ -10,7 +11,7 @@ import {
   type AskCardQuestion,
   askCardModel,
 } from "@/tui/chat/ask-card";
-import type { TranscriptEntry } from "@/tui/chat/transcript-model";
+import { reduceTranscript, type TranscriptEntry } from "@/tui/chat/transcript-model";
 
 /** An ISO instant; the model reads no clock, so any fixed value does. */
 const AT = "2026-10-01T00:00:00.000Z";
@@ -74,6 +75,30 @@ function toolEntry(callId: string, name: string, input: unknown): TranscriptEntr
 
 /** The one recorded Edit call the approval tests name: `a` replaced by `b`. */
 const REPLACEMENT = toolEntry("c1", "Edit", { path: "x.ts", old_string: "a", new_string: "b" });
+
+/** One session event as the reducer takes it; a subagent's call carries the host's task tag. */
+function toolCall(callId: string, name: string, input: unknown, subagentTask?: string): SessionEvent {
+  return {
+    type: "tool_call",
+    sessionId: "s1",
+    turnId: "t1",
+    at: AT,
+    metadata: subagentTask === undefined ? {} : { subagentTask },
+    callId,
+    name,
+    input,
+  };
+}
+
+/**
+ * A transcript in which a subagent made the Edit call: the reducer keeps a nested call under
+ * the agent card that ran it rather than beside it, which is the shape an attributed ask sees.
+ */
+function subagentEdit(): readonly TranscriptEntry[] {
+  const task = "fix x";
+  const withAgent = reduceTranscript([], toolCall("p1", "nax-agents__run", { agent: "explorer", task }));
+  return reduceTranscript(withAgent, toolCall("c9", "Edit", { path: "x.ts", old_string: "a", new_string: "b" }, task));
+}
 
 describe("askCardModel", () => {
   test("titles a Bash ask by what it does", () => {
@@ -158,6 +183,17 @@ describe("askCardModel attribution", () => {
 describe("askCardModel diff", () => {
   test("diffs an Edit approval against the call its callId names", () => {
     const card = approvalCard({ tool: "Edit", callId: "c1", command: undefined }, { entries: [REPLACEMENT] });
+    expect(card.diff).toEqual([
+      { sign: "-", text: "a" },
+      { sign: "+", text: "b" },
+    ]);
+  });
+
+  test("diffs an Edit approval against a subagent call the transcript nested", () => {
+    const entries = subagentEdit();
+    const agent = entries[0];
+    expect(agent.kind === "tool" && agent.children.map((child) => child.callId)).toEqual(["c9"]);
+    const card = approvalCard({ tool: "Edit", callId: "c9", command: undefined }, { entries });
     expect(card.diff).toEqual([
       { sign: "-", text: "a" },
       { sign: "+", text: "b" },
