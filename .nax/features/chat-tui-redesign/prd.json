@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T04:01:59.659Z",
+  "updatedAt": "2026-10-26T04:25:10.773Z",
   "userStories": [
     {
       "id": "US-001",
@@ -31,14 +31,17 @@
         "theme"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure additive theme resolution with explicit environment precedence and fallback tables."
+        "reasoning": "Pure additive theme resolution with explicit environment precedence and fallback tables.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatStatusLine.tsx",
@@ -49,7 +52,11 @@
         "packages/nax/test/unit/tui/chat/theme.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d8e114607f3ec45c5c6a8b3b02fb1a8703b28471"
     },
     {
       "id": "US-002",
@@ -97,7 +104,10 @@
         "displayWidth(\"😀\") returns 2."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -163,7 +173,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -224,7 +237,10 @@
         "When two running Agent entries share a task, a tagged tool_call is appended to the most recent one's children."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -276,7 +292,10 @@
         "packages/nax/test/unit/tui/chat/tool-card.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -331,7 +350,10 @@
         "packages/nax-agent/src/native/session/turn-event-emitter.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -386,7 +408,10 @@
         "packages/nax/test/unit/tui/chat/markdown.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -434,7 +459,10 @@
         "packages/nax/src/tui/chat/theme.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-009",
@@ -491,7 +519,10 @@
         "A reply containing terminal escape sequences produces no escape character in any returned span text."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-010",
@@ -545,7 +576,10 @@
         "Laying out the same entry with an ASCII theme after a Unicode theme returns ASCII glyphs rather than cached Unicode glyphs."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-011",
@@ -593,7 +627,10 @@
         "packages/nax/src/chat/chat-mcp-listing.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-012",
@@ -640,7 +677,10 @@
         "packages/nax/test/unit/tui/chat/viewport.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-013",
@@ -685,7 +725,10 @@
         "packages/nax/test/ui/chat/transcript-viewport.test.tsx"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-014",
@@ -738,7 +781,10 @@
         "packages/nax/test/unit/tui/chat/line-editor.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-015",
@@ -795,7 +841,10 @@
         "packages/nax/test/ui/chat/chat-input.test.tsx"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-016",
@@ -847,7 +896,10 @@
         "packages/nax/test/unit/tui/chat/chat-status.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-017",
@@ -897,7 +949,10 @@
         "packages/nax/src/tui/chat/chat-status.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-018",
@@ -943,7 +998,10 @@
         "packages/nax/src/version.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-019",
@@ -1010,7 +1068,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-020",
@@ -1096,7 +1157,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-021",
@@ -1153,7 +1217,10 @@
         "With a picker open, pageUp does not change the transcript viewport."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-022",
@@ -1205,7 +1272,10 @@
         "packages/nax/test/unit/tui/chat/ask-card.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-023",
@@ -1274,7 +1344,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-024",
@@ -1329,7 +1402,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-025",
@@ -1385,7 +1461,10 @@
         "packages/nax/test/ui/chat/slash-menu.test.tsx"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-026",
@@ -1441,7 +1520,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-027",
@@ -1506,7 +1588,10 @@
         "After a picker choice finishes, keys.runControl releases the input lock."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-028",
@@ -1542,7 +1627,10 @@
         "packages/nax/src/tui/chat/index.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Repository exploration used direct reads and text search because the codebase-memory MCP is not exposed in this session. This is an enhancement of an existing Bun/TypeScript React/Ink chat, not greenfield. All 28 implementation stories are scoped to packages/nax; nax-agent source is read-only contract context. The exact binding dependency graph is retained even where stories independently modify shared files; serialize conflicting edits to slash-commands.ts, ChatApp.tsx, layout.ts, tool-card.ts, markdown.ts and chat-status.ts without adding dependencies.\n\nCurrent composition: packages/nax/src/tui/chat/ChatApp.tsx:7-12 imports all four legacy components, appendChatEvent and useChatKeys; :19-47 owns transcript/busy state, ask subscriptions and notices; :49-83 routes slash commands, skills and shell-expanded command templates; :86-103 drains host.send before finishTurn, including queued mode changes; :104-118 renders the old column. Preserve command preparation, failure notices, resource notices, one warning per transition, busy rejection and metadata-drain ordering while replacing presentation. packages/nax/src/tui/chat/Transcript.tsx:5-9 has only message/text/thinking/tool entries, :24-51 merges deltas/results and :54-69 renders every row as Text. Thinking text is currently deliberately hidden. InputBox.tsx:11-44 owns an uncontrolled append/backspace draft and accepts only slash submissions while busy; AskPrompt.tsx:13-43 owns a/s/d approvals and a separate InputBox for questions. ChatStatusLine.tsx:6-12 shows the model/mode/id8/cost/sandbox string. Text search found legacy presentation imports only in ChatApp and InputBox imported additionally in AskPrompt, so removal can wait until the planned composition/ask cutovers. Do not remove legacy files or appendChatEvent early.\n\nHost and contract: packages/nax/src/chat/chat-host.ts:27-33 defines ChatHostState, :43-65 the UI-facing ChatHost ports, :67-78 the existing ChatHostDeps interface, :178-192 keeps current() readable after close, :213-250 starts/replaces handles, :282-319 resumes, :340-360 switches with rollback/reused locks, :368-412 drains send/nested runs and persists metadata, :438-462 closes operations/resources. Add the distinct exported _chatHostDeps object, not a field in ChatHostDeps. Resolve context windows asynchronously on completed start/resume/switch, split provider/model at the first slash, cache misses as well as values per model string, catch seam rejection, and never let catalog enrichment perturb locking, rollback, close, cost or session semantics. packages/nax/src/agents/catalog/index.ts:74-82 exposes injectable loader/normaliser; :98-124 deduplicates and caches catalog loads by loader function reference; :138-154 implements fail-open lookupPricing. Mirror that boundary for lookupContextWindow; only agents/catalog may import nax-ai in nax. ContextWindow comes from the catalog, not config overrides. packages/nax-agent/src/session/agent-session-types.ts:90-158 defines SessionEventBase and the event union (metadata is Readonly<Record<string,string>>, timestamps are strings, tool input unknown, tool_result preview string, usage includes cache counters). Import SessionEvent through @nathapp/nax-agent, never a deep cross-package import.\n\nSubagents: packages/nax/src/chat/subagent-runs.ts:112-132 routes activity; :151-187 captures the originating turn listener and calls routeActivity inside runNested. It currently forwards tool events unchanged while keeping nested usage in the ledger and cost accumulator. Pass agent/task into forwarding and merge metadata over the existing metadata; do not forward nested text/usage, rewrite nested identity, alter late-event draining or change accounting. Update exact-object expectations in test/unit/chat/subagent-runs.test.ts:265-276 and host-subagents.test.ts:230-231, :275, :358-359 to match forwarded type/callId/name or isError plus tags, retaining the negative late-call assertion and every spend/ledger/text assertion. Nested turns have their own turnId: match children by callId within the selected task parent, not by the parent's turnId.\n\nApprovals/security: packages/nax/src/chat/ask-controller.ts:14-23 is the existing controller contract, :43-63 excludes unanswerable asks and implements full/remembered decisions, :70-82 controls remembering and resolves choices, :85-104 handles question answers/mode/reset/subscriptions. The screen must consume controller.canRemember and controller.resolve/answerQuestion, never recreate approval policy. The new cards are presentation only. Guard against ctrl/meta approval letters, ensure escape on a card denies rather than cancelling a turn, and retain draft/history across replacement by asks/pickers; question drafts are separate and reset by requestId. Permission, mode and session-lifecycle stories use strict three-session TDD. Tokens in turn-status are usage counts, not credentials.\n\nCLI/lifetime: packages/nax/src/tui/chat/index.ts:5-9 currently exports ChatApp and delegates render with exitOnCtrlC:false. packages/nax/src/cli/chat.ts:26-53 defines injectable CLI deps; :81-96 starts/resumes the host; :99-131 runShell owns signal handlers, idempotent close, close-before-unmount and signal exit codes; :174-220 composes trusted resources then runs the shell; :224-257 preserves TTY/trust/error handling. Enter alternate screen before Ink render, restore exactly once across unmount/exit, remove the named process exit handler after restore, and print at most one exit summary after unmount even when signal shutdown and finally both run. Read current() after close (supported by host), suppress summary if it throws without changing exit code. Keep SIGTERM=143/SIGHUP=129 and lock-release-before-unmount semantics. Add writeOut with a newline-appending default; stub write/onExit and writeOut in affected tests so control sequences/listeners/output do not leak. Extend CLI render props with resolved real environment/chalk theme, NAX_VERSION, launch cwd and home; direct ChatApp defaults deliberately use an empty environment and no colors.\n\nSlash behavior: packages/nax/src/tui/chat/slash-commands.ts:7-9 currently has send|command outcomes, :26-40 private COMMANDS order, :75-80 plain help, :84-89 catalog command-before-skill lookup, :92-149 built-ins. Export order and descriptions; preserve explicit-argument routing, command templates and skill invocation messages. No-argument /model,/resume,/mode become picker outcomes, with an exhaustive/narrowed ChatApp branch in US-026 before the picker exists. US-020 must buffer multiple show calls into one titled listing, especially /sessions; non-listing command output remains notices. Exact-match-first slash ranking prevents /skill from accidentally invoking /skills. Resume selection uses runControl and still relies on the host for authoritative lock acquisition; heldByPid is a display/preselection warning, not a replacement for locking. packages/nax/src/resources/catalog.ts:40-55 preserves ordered command/skill/agent arrays and precedence. packages/nax/src/chat/chat-mcp-listing.ts:13-29 explains status text and warning-before-connected tone matching; welcome connected counts use the spec's latest event per server, not this formatter's last non-closed outcome.\n\nArchitecture: implement pure theme/styled text/reducers/card/markdown/layout/status/time/menu models under src/tui/chat plus thin Ink components. All untrusted session, host, tool and MCP strings must be sanitised before span text; OSC/ANSI including alternate-screen control bytes cannot pass through. Use Bun.stringWidth for every layout width, wrap and truncation, clamp layout widths to MIN_LAYOUT_WIDTH=10, preserve style through wrapping and indents, truncate overlong code only at the layout stage (renderMarkdown returns a long code line unwrapped). TOOL_ARG_LIMIT and shortModel retain their explicitly specified character counts, while final line fitting uses display columns. Per-entry identity preservation enables the injectable layout cache; isolate cache by theme as needed so glyph/color fallback cannot leak between themes while retaining once-per-entry/(width,expanded) behavior for a stable theme. Markdown lexer/highlighter are maintained libraries, not hand-written markdown parsing; known languages/aliases use the core build and highlighting exceptions fall back to plain code. Raw HTML/tables are source text, not terminal markup. Durations with unparsable fixture timestamps are zero. The layout must emit only visible lines with one separator between rendered entries; active thinking has no transcript rows. The full-screen root uses stream rows/columns, listens for resize, allocates dynamic bottom-region height and at least one viewport row; on a terminal smaller than fixed regions, preserve a rendered footer and no throw rather than forcing a negative height (the spec does not require an exact five-row frame). ChatApp may delegate to hooks to stay below the 600-line hard limit. Every introduced timer uses a documented setTimeout chain cancelled with clearTimeout on unmount; no setInterval, no uncancellable sleeps. One owner per key/state avoids multiple Ink handlers acting on a single escape/return/arrow event.\n\nMigration and verification: US-001..019 add modules beside the legacy presentation, with only US-003 additive host metadata and US-019 alternate-screen behavior exposed; US-024 and US-026 have their explicitly specified command-output migrations. US-020/021 compose layout/keys; US-023 replaces asks; US-025 adds menu; US-027 mounts pickers; US-028 removes legacy modules after consumers move. Binding dependencies remain exact even where prose numbering labels differ (layout is Design 6, not US-007). Existing regression coverage is packages/nax/test/ui/chat/chat-app.test.tsx:17-92 (typed fake host, scripted events and Ink harness), chat-asks-keys.test.tsx, chat-shell-lines.test.tsx, slash-commands.test.tsx, slash-resources.test.tsx, and test/unit/cli/chat.test.ts:31-59,:100,:169-196 plus chat-resources.test.ts. Preserve all existing behavior assertions except the spec's explicit presentation substitutions: footer instead of pipe-status/id8; card labels/result previews instead of [ok]/[error]; Thought for after an explicit turn_end; Bash first-line argument truncation; descriptive help; picker outcome assertions. renderChat call matching widens to objectContaining and fixture prop types widen. UI seams must enter at mounted ChatApp over the typed fake host, replay SessionEvents, set stdout rows/columns (Ink testing stdout defaults columns=100 and rows absent), emit resize and use fake clocks/injectable seams. Host seam tests must enter through host.send. New tests live in the specified unit/ui mirroring directories and extended models reuse predecessor test files. US-028 is deletion-only with no behavioral AC, verified by package typecheck/lint and no new test file. Read docs/architecture/ARCHITECTURE.md:13-40,:170-188 and applicable canonical .nax/rules before implementation; use existing _deps/helpers rather than global monkeypatches. Run targeted tests with explicit paths from packages/nax, never bare bun test or bun run nax; pipeline handles gates and do not run coverage inside NAX_SANDBOXED=1.\n\nPrerequisite identified in the actual checkout: packages/nax/package.json:91-104 has chalk/Ink/React but no marked or highlight.js. Per the feature exclusions, a maintainer must add both packages and bun.lock on the branch before executing the feature; no story installs them and no version/release is requested. All .nax content remains read-only during implementation; this requested PRD artifact is the only planning output written here. No source or tests were changed or executed while drafting. Failure-table coverage is mapped to US-003 (catalog failure), US-007 (malformed markdown), US-008 (highlighter fallback), US-027 (listing/switch/resume failures), US-019 (exit current failure/exit guard), US-020 (undersized terminal).\n\nRefine-pass adversarial audit: re-read spec.md's Context Files, Modifies, Failure Handling, Out of Scope and complete Acceptance Criteria sections, compared them with every draft story, and re-read the actual ChatApp/slash-command/control/shutdown and command-shell/subagent regression seams. Manual enumeration finds 442 original spec AC bullets. For each story below, spec ordinal 1 through N remains acceptanceCriteria ordinal 1 through N in that same story: US-001 N=14; US-002 N=11; US-003 N=14; US-004 N=21; US-005 N=17; US-006 N=20; US-007 N=19; US-008 N=15; US-009 N=15; US-010 N=14; US-011 N=16; US-012 N=18; US-013 N=9; US-014 N=21; US-015 N=20; US-016 N=19; US-017 N=16; US-018 N=10; US-019 N=12; US-020 N=22; US-021 N=15; US-022 N=16; US-023 N=20; US-024 N=16; US-025 N=17; US-026 N=15; US-027 N=20; US-028 N=0. Existing extra failure-table assertions are retained; audit additions are appended, not substituted for spec ACs. Regression qualifiers retained include same-reference unmatched results/earlier entries (US-004), non-overlapping common-prefix/suffix behavior (US-006), unclosed-fence fallback (US-008), width-4 equivalence to width-10 (US-009), active=false inertness (US-013/015), the Ink delete-key parenthetical and unchanged boundary state (US-014), preserved contextTokens (US-016), exit-code preservation when summary lookup throws (US-019), remember-eligibility guards (US-022/023), and explicit-argument resume/model behavior (US-026). No original AC is moved to suggestedCriteria.\n\nSemantic corrections in this pass: US-003's catalog fixture now follows CatalogDeps.loadProviders -> normalise -> Catalog rather than pretending loadProviders returns a Catalog (agents/catalog/index.ts:74-82). US-005's Grep expectations specify actual literal quote characters instead of ambiguous doubly-escaped string notation. US-017's hint-ending assertions explicitly reuse the initial sandbox-available fixture so they do not contradict the sandbox suffix rules. US-027 now asserts switchTo({ model: host.models[1] }) rather than a raw model string and resumes with { id: row.sessionId }, matching chat-host.ts:35-40 and :57-61; a held-row warning substitutes a concrete sessionId instead of asserting the literal placeholder <id>. Both switch and resume failure paths explicitly return the main input. US-015's description no longer implies truncating the full placeholder in the required width-20 standalone fixture. The cache cross-reference now points to US-010, and US-010's scope distinguishes caching listing entries from US-011's listing-specific formatting.\n\nNegative-path inventory: US-001 color/locale fallbacks; US-002 escape/control sanitising and undefined background; US-003 lookup/load/seam failures; US-004 unmatched tool_result; US-005 error/absent-preview summaries; US-006 empty Bash preview/running Edit; US-007 malformed input; US-008 throwing/unknown-language highlighter; US-009 undersized width; US-010 hostile Bash preview and missing diff backgrounds; US-011 empty listing/adversarial notice; US-012 short content/shrink clamping; US-013 inactive keys; US-014 cursor-zero deletion/ignored keys; US-015 busy, whitespace and expired clear arm; US-016 unanswerable approval/tagged-event no-op; US-017 absent/zero context window; US-018 unparsable timestamp; US-019 failing current()/exit without unmount; US-020 rejected send/undersized terminal/failed command expansion; US-021 idle or ask-owned escape does not cancel; US-022 no matching Edit call; US-023 forbidden remembering/ctrl-letter and denial paths; US-024 non-slash/unmatched input; US-025 no matches or ask-owned typing; US-026 invalid updatedAt; US-027 locked rows and rejected host operations. US-028 originally has no AC by design; to satisfy this refine request's every-story negative-path check without adding runtime scope, its sole added AC is a reviewable file-content assertion of no remaining imports/re-exports resolving to deleted modules. It remains no-test deletion-only cleanup.\n\nRegression additions anchor unchanged forwarded tool fields and $1.00+$0.40=$1.40 persisted spend (test/unit/chat/host-subagents.test.ts:215-232); running Read arguments after tool-result support; existing inline markdown and user/reply layouts after renderer extensions; exitOnCtrlC:false and close-before-unmount after screen restoration; failed command-template expansion never reaching host.send (test/ui/chat/chat-shell-lines.test.tsx:119-127); and existing first/second Ctrl-C cancellation/quit actions (useChatKeys.ts:63-79). These add explicit compatibility proof instead of weakening old tests. Routing is reduced to medium/tdd-simple for US-004 and US-010, which extend existing pure reducer/dispatcher patterns, and from expert to complex for US-020, which composes upstream pieces; strict security/session TDD remains where control/approval/lifecycle paths warrant it. All 28 ids/workdirs and the exact binding dependency arrays remain unchanged. Every spec-recommended context file is present (US-003 and US-019 additionally include existing affected regressions), no contextFiles list exceeds five, and no story's own created file is in its contextFiles. All 15 feature-level exclusions remain verbatim at the top level; nearby Scope exclusions echo the relevant boundaries rather than accidentally excluding other stories' implementation. This was a read/edit audit, not a claim that tests or a machine JSON/schema validator were executed.",
