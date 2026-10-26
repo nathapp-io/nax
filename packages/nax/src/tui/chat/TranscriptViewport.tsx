@@ -8,17 +8,23 @@
  * (pageUp, pageDown, shift+upArrow, shift+downArrow, home, end) each map to one action.
  *
  * The window is exactly `height` rows: the visible lines with blank rows padded at the top
- * while the transcript is shorter than the window. While lines are unseen the bottom row
- * becomes the muted `↓ <n> new lines (End)` marker, naming the key that returns to them.
+ * while the transcript is shorter than the window. Every row is one physical row — an empty
+ * line still takes its row, and anything measuring wider than the window is clipped rather
+ * than wrapped — so the height the caller allocated is the height drawn. While lines are
+ * unseen the bottom row becomes the muted `↓ <n> new lines (End)` marker, naming the key
+ * that returns to them.
  */
 import { Box, type Key, Text, useInput } from "ink";
-import { type ReactElement, useState } from "react";
+import { type ReactElement, type ReactNode, useState } from "react";
 import { type StyledLine, StyledLineView } from "./styled-line";
 import type { ChatTheme } from "./theme";
 import { INITIAL_VIEWPORT, reduceViewport, type ViewportAction, type ViewportState, visibleRange } from "./viewport";
 
 /** The shortest window the view will draw; ChatApp guarantees at least this many rows. */
 const MIN_VIEWPORT_ROWS = 1;
+
+/** Every row of the window is one physical row, whatever its content measures. */
+const ROW_HEIGHT = 1;
 
 /** A blank row still has to be a row, so it is one space rather than an empty string. */
 const BLANK_ROW = " ";
@@ -79,6 +85,21 @@ interface ViewportRowsProps {
   readonly theme: ChatTheme;
 }
 
+/**
+ * One row of the window. The fixed height plus clipped overflow keeps the window at exactly
+ * `rows` physical rows: an empty line (the gap `layoutTranscript` puts between entries, and
+ * a line whose spans are all empty) still takes its row instead of collapsing, and a line,
+ * or the unseen marker, that measures wider than the window is clipped rather than wrapped
+ * into rows the height budget never allocated.
+ */
+function ViewportRow({ children }: { readonly children: ReactNode }): ReactElement {
+  return (
+    <Box height={ROW_HEIGHT} overflow="hidden">
+      {children}
+    </Box>
+  );
+}
+
 /** The `rows`-tall window: blank padding, the visible lines, then the unseen marker. */
 function ViewportRows({ visible, rows, unseen, theme }: ViewportRowsProps): ReactElement {
   const showingUnseen = unseen > 0;
@@ -88,13 +109,23 @@ function ViewportRows({ visible, rows, unseen, theme }: ViewportRowsProps): Reac
     <Box flexDirection="column">
       {Array.from({ length: padding }, (_unused, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: blank rows are interchangeable and the window is re-rendered whole.
-        <Text key={index}>{BLANK_ROW}</Text>
+        <ViewportRow key={index}>
+          <Text>{BLANK_ROW}</Text>
+        </ViewportRow>
       ))}
       {body.map((line, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: a row's identity is its position in the window, which every scroll redraws.
-        <StyledLineView key={index} line={line} theme={theme} />
+        <ViewportRow key={index}>
+          <StyledLineView line={line} theme={theme} />
+        </ViewportRow>
       ))}
-      {showingUnseen ? <Text color={theme.colors.muted}>{`${UNSEEN_MARKER} ${unseen} ${UNSEEN_LABEL}`}</Text> : null}
+      {showingUnseen ? (
+        <ViewportRow>
+          <Text wrap="truncate" color={theme.colors.muted}>
+            {`${UNSEEN_MARKER} ${unseen} ${UNSEEN_LABEL}`}
+          </Text>
+        </ViewportRow>
+      ) : null}
     </Box>
   );
 }

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { Box } from "ink";
 import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
+import { EMPTY_LINE } from "@/tui/chat/layout";
 import type { StyledLine } from "@/tui/chat/styled-line";
 import { TranscriptViewport } from "@/tui/chat/TranscriptViewport";
 import { resolveChatTheme } from "@/tui/chat/theme";
@@ -37,13 +39,17 @@ function rowsOf(lastFrame: string | undefined): string[] {
 interface MountOptions {
   readonly active?: boolean;
   readonly height?: number;
+  /** The columns the window is given; omitted means the harness default (100). */
+  readonly width?: number;
 }
 
 /** Mount the viewport and expose the harness verbs the tests need. */
-function mount(lines: StyledLine[], { active = true, height = HEIGHT }: MountOptions = {}) {
-  const show = (next: StyledLine[]) =>
-    render(<TranscriptViewport lines={next} height={height} theme={THEME} active={active} />);
-  const ui = show(lines);
+function mount(lines: StyledLine[], { active = true, height = HEIGHT, width }: MountOptions = {}) {
+  const window = (next: StyledLine[]) => (
+    <TranscriptViewport lines={next} height={height} theme={THEME} active={active} />
+  );
+  const frame = (next: StyledLine[]) => (width === undefined ? window(next) : <Box width={width}>{window(next)}</Box>);
+  const ui = render(frame(lines));
   return {
     rows: () => rowsOf(ui.lastFrame()),
     press: (sequence: string) =>
@@ -53,7 +59,7 @@ function mount(lines: StyledLine[], { active = true, height = HEIGHT }: MountOpt
     update: (next: StyledLine[]) =>
       Promise.resolve(
         act(async () => {
-          ui.rerender(<TranscriptViewport lines={next} height={height} theme={THEME} active={active} />);
+          ui.rerender(frame(next));
         }),
       ),
   };
@@ -171,5 +177,29 @@ describe("TranscriptViewport", () => {
 
   test("a window height below one row still draws one row", () => {
     expect(mount(numbered(20), { height: 0 }).rows()).toEqual(["line 20"]);
+  });
+
+  test("F1 an empty line still occupies a row", () => {
+    // `layoutTranscript` separates entries with `EMPTY_LINE`; an empty line and a line of
+    // empty spans must each keep the row they were given, or the transcript loses its gaps.
+    const lines: StyledLine[] = [[{ text: "a" }], EMPTY_LINE, [{ text: "" }], [{ text: "b" }]];
+    expect(mount(lines, { height: 4 }).rows()).toEqual(["a", "", "", "b"]);
+  });
+
+  test("F2 the unseen marker stays on the last row of a narrow window", async () => {
+    const view = mount(numbered(20), { width: 10 });
+    view.press(PAGE_UP);
+    await view.update(numbered(23));
+    const rows = view.rows();
+    expect(rows).toHaveLength(HEIGHT);
+    expect(rows.filter((row) => row.startsWith("↓"))).toEqual(["↓ 3 new l…"]);
+  });
+
+  test("F2 content lines wider than the window do not grow it", () => {
+    const wide: StyledLine[] = [[{ text: "a line far wider than ten columns" }], [{ text: "b" }]];
+    const rows = mount(wide, { height: 2, width: 10 }).rows();
+    expect(rows).toHaveLength(2);
+    expect(rows.at(0)).toBe("a line far");
+    expect(rows.at(1)).toBe("b");
   });
 });
