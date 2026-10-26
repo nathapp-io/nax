@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T10:37:33.012Z",
+  "updatedAt": "2026-10-26T12:01:03.762Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1190,14 +1190,17 @@
         "US-018",
         "US-019"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Composes upstream tested Ink models/components rather than inventing a terminal framework; asynchronous send/finishTurn and permission-control integration still justify strict session/security TDD while resize and timers make the composition cross-module."
+        "reasoning": "Composes upstream tested Ink models/components rather than inventing a terminal framework; asynchronous send/finishTurn and permission-control integration still justify strict session/security TDD while resize and timers make the composition cross-module.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/chat.ts",
@@ -1232,7 +1235,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3c73846cd57403b823a517740b04bab1607093a8"
     },
     {
       "id": "US-021",
