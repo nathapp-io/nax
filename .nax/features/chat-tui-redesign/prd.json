@@ -3,7 +3,7 @@
   "feature": "chat-tui-redesign",
   "branchName": "feat/chat-tui-redesign",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-10-26T16:24:39.282Z",
+  "updatedAt": "2026-10-26T17:09:00.967Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1664,14 +1664,17 @@
         "US-021",
         "US-026"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Async picker choices invoke permission-mode switching and session resumes with locking/error semantics; strict security/session override."
+        "reasoning": "Async picker choices invoke permission-mode switching and session resumes with locking/error semantics; strict security/session override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/relative-time.ts",
@@ -1691,7 +1694,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "136ad285e924b6e9bce1c0fdd0ea398442fedff4"
     },
     {
       "id": "US-028",
