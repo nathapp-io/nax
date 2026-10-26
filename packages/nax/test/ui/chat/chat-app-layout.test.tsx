@@ -591,6 +591,18 @@ describe("ChatApp pending ask layout", () => {
     expect(ui.rows().at(-1)).toContain("⏵ guarded");
   });
 
+  test("F2 a tall answer on a short terminal keeps every row the card reserved", async () => {
+    const ui = await harness();
+    ui.ask({ type: "question", requestId: "q1", text: "Proceed?", expiresAt: "later" });
+    ui.type(Array.from({ length: 12 }, (_, index) => `row ${index}`).join("\n"));
+    const rows = ui.rows();
+    expect(rows).toHaveLength(30);
+    // The card is drawn whole: its last row — the frame's bottom rule — sits directly above
+    // the footer. A box measured with one cap and drawn with another leaves a gap here.
+    expect(rows.at(-2)).toMatch(/^─+$/);
+    expect(rows.at(-1)).toContain("⏵ guarded");
+  });
+
   test("F6 an oversized ask is windowed, keeping its answer box and the frame's rows", async () => {
     const ui = await harness();
     const text = Array.from({ length: 60 }, (_, index) => `line ${index}`).join("\n");

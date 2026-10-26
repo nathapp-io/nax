@@ -133,6 +133,8 @@ interface MountOptions {
   readonly budget?: number;
   /** Absent: the colourless theme, whose rows are the plain characters. */
   readonly theme?: ChatTheme;
+  /** The question card's starting draft; absent means an untouched box. */
+  readonly answer?: InputDraft;
 }
 
 /**
@@ -144,7 +146,7 @@ function mountCard(ask: ChatPendingAsk, options: MountOptions = {}) {
   const { controller, resolve, answerQuestion } = fakeController(canRemember);
   const onDeclined = mock(() => {});
   function Harness(): ReactElement {
-    const [answer, setAnswer] = useState<InputDraft>(EMPTY_DRAFT);
+    const [answer, setAnswer] = useState<InputDraft>(options.answer ?? EMPTY_DRAFT);
     const model = askCardModel(ask, { canRemember, entries: options.entries ?? NO_ENTRIES });
     return (
       <AskCard
@@ -170,6 +172,15 @@ function mountCard(ask: ChatPendingAsk, options: MountOptions = {}) {
       act(() => {
         ui.stdin.write(text);
       }),
+    /**
+     * Several keys delivered in one React batch, the way a fast typist or a paste of key
+     * sequences arrives: every handler runs before the card re-renders, so a handler that
+     * reads rendered state reads the state from *before* the keys in this batch.
+     */
+    typeBatch: (...keys: readonly string[]) =>
+      act(() => {
+        for (const key of keys) ui.stdin.write(key);
+      }),
     /** Every drawn row, escape codes and trailing padding removed. */
     rows: () => (ui.lastFrame() ?? "").split("\n").map((row) => Bun.stripANSI(row).trimEnd()),
     frame: () =>
@@ -178,6 +189,12 @@ function mountCard(ask: ChatPendingAsk, options: MountOptions = {}) {
         .map((row) => Bun.stripANSI(row).trimEnd())
         .join("\n"),
   };
+}
+
+/** A draft holding `lines` numbered source rows, the cursor at the end of the last one. */
+function tallDraft(lines: number): InputDraft {
+  const text = Array.from({ length: lines }, (_, index) => `answer ${index}`).join("\n");
+  return { editor: { text, cursor: Array.from(text).length }, history: [] };
 }
 
 /** The card's whole clock: the countdown's `now` and the timer that re-renders it. */
@@ -209,6 +226,22 @@ describe("AskCard options and keys", () => {
     card.type(DOWN);
     card.type(RETURN);
     expect(card.resolve).toHaveBeenCalledWith("ask-1", "allow_session");
+  });
+
+  test("AC-2 batched downArrow and return still choose the session option", () => {
+    const card = mountCard(approval());
+    card.typeBatch(DOWN, RETURN);
+    expect(card.resolve).toHaveBeenCalledWith("ask-1", "allow_session");
+    expect(card.frame()).toContain("❯ 2. Yes, and don't ask again for this in this session");
+  });
+
+  test("batched navigation to No denies instead of authorizing the ask", () => {
+    const card = mountCard(approval());
+    card.typeBatch(DOWN, DOWN, RETURN);
+    expect(card.resolve).toHaveBeenCalledWith("ask-1", "deny");
+    expect(card.onDeclined).toHaveBeenCalledTimes(1);
+    // The pointer and the decision agree: the frame the batch left behind shows No selected.
+    expect(card.frame()).toContain("❯ 3. No, tell nax what to do instead");
   });
 
   test("AC-3 the number key chooses its own option", () => {
@@ -367,6 +400,23 @@ describe("AskCard measurement", () => {
     expect(card.rows()).toHaveLength(measuredRows(ask, true, 10));
     expect(card.frame()).toContain("more lines");
     expect(card.frame()).toContain("1. Yes");
+    expect(card.frame()).toContain("expires in");
+  });
+
+  test("a tall answer on a short screen draws the rows it measured and fits its budget", () => {
+    const ask = question();
+    const answer = tallDraft(12);
+    const card = mountCard(ask, { budget: 10, answer });
+    const model = askCardModel(ask, { canRemember: false, entries: NO_ENTRIES });
+    const layout = askCardLayout(model, {
+      width: WIDTH,
+      budget: 10,
+      theme: THEME,
+      answer,
+      expiresAt: ask.expiresAt,
+    });
+    expect(layout.rows).toBeLessThanOrEqual(10);
+    expect(card.rows()).toHaveLength(layout.rows);
     expect(card.frame()).toContain("expires in");
   });
 });

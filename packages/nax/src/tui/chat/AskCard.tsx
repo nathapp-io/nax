@@ -24,10 +24,10 @@
  * so a test moves time instead of waiting for it.
  */
 import { Box, type Key, useInput } from "ink";
-import { type ReactElement, useEffect, useState } from "react";
+import { type ReactElement, useEffect, useRef, useState } from "react";
 import type { AskChoice, ChatAskController, ChatPendingAsk } from "@/chat";
 import type { AskCardApproval, AskCardModel, AskCardQuestion, AskOption } from "./ask-card";
-import { ChatInput, type InputDraft, inputRows } from "./ChatInput";
+import { ChatInput, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
 import {
   type LayoutContext,
   oneLine,
@@ -128,8 +128,14 @@ export interface AskCardLayout {
   readonly head: readonly StyledLine[];
   /** Everything below it: the options, the countdown and the frame's bottom rule. */
   readonly tail: readonly StyledLine[];
-  /** The rows the question box may draw; 0 on an approval, which has no box. */
+  /** The rows the question box draws, the two rules that frame it included; 0 on an approval. */
   readonly input: number;
+  /**
+   * The most **text** rows the box may draw — `ChatInput`'s `maxRows`, which counts the
+   * editor's rows only. It is this, never `input`, that the card hands the input: a cap on
+   * the whole box would let the two rule rows on top of it draw rows nobody reserved.
+   */
+  readonly inputMaxRows: number;
   /** How many of the card's own rows were withheld — the elision label names them. */
   readonly elided: number;
   /** Every row the card occupies, `head` + `input` + `tail`. */
@@ -266,26 +272,38 @@ function elisionRows(elided: number, context: LayoutContext): readonly StyledLin
   return textRows(`${context.theme.glyphs.ellipsis} ${count}`, [], { color: "muted" }, context);
 }
 
+/** The question box's rows: the whole box as drawn, and the text-row cap it was measured with. */
+interface QuestionBox {
+  readonly rows: number;
+  readonly maxRows: number;
+}
+
+/** An approval's box: none — an approval has no input. */
+const NO_BOX: QuestionBox = { rows: 0, maxRows: 0 };
+
 /**
  * Fit the card to the rows the screen can spare: the question's box and the tail — the
  * options and the countdown, which the user must act on — are kept, and the head gives up
  * its last rows to an elision label until the card fits.
  */
-function fitCard(card: Card, input: number, budget: number, context: LayoutContext): AskCardLayout {
-  const room = budget - input - card.tail.length;
-  if (card.head.length <= room) {
-    return { head: card.head, tail: card.tail, input, elided: 0, rows: card.head.length + input + card.tail.length };
-  }
-  if (room <= 0) {
-    return { head: [], tail: card.tail, input, elided: card.head.length, rows: input + card.tail.length };
-  }
+function fitCard(card: Card, box: QuestionBox, budget: number, context: LayoutContext): AskCardLayout {
+  const room = budget - box.rows - card.tail.length;
+  const fitted = (head: readonly StyledLine[], elided: number): AskCardLayout => ({
+    head,
+    tail: card.tail,
+    input: box.rows,
+    inputMaxRows: box.maxRows,
+    elided,
+    rows: head.length + box.rows + card.tail.length,
+  });
+  if (card.head.length <= room) return fitted(card.head, 0);
+  if (room <= 0) return fitted([], card.head.length);
   // The label is a row of its own, and it wraps on a narrow card; it is measured at the
   // widest count it could carry, so the reservation never comes up a row short.
   const reserve = elisionRows(card.head.length, context).length;
   const kept = Math.max(0, room - reserve);
   const elided = card.head.length - kept;
-  const head = [...card.head.slice(0, kept), ...(elided === 0 ? [] : elisionRows(elided, context))];
-  return { head, tail: card.tail, input, elided, rows: head.length + input + card.tail.length };
+  return fitted([...card.head.slice(0, kept), ...(elided === 0 ? [] : elisionRows(elided, context))], elided);
 }
 
 /**
@@ -295,13 +313,17 @@ function fitCard(card: Card, input: number, budget: number, context: LayoutConte
 export function askCardLayout(model: AskCardModel, options: AskCardLayoutOptions): AskCardLayout {
   const context: LayoutContext = { width: resolveWidth(options.width), theme: options.theme, expanded: false };
   const budget = Math.max(1, Math.floor(options.budget));
-  const card =
-    model.kind === "question" ? questionBody(model, options, context) : approvalBody(model, options, context);
-  if (model.kind !== "question") return fitCard(card, 0, budget, context);
-  // The box keeps at least one row, and never so many that the frame's own rules are cut.
-  const maxRows = Math.max(1, budget - card.tail.length - 1);
-  const input = inputRows(options.answer, { width: options.width, container: options.width, maxRows });
-  return fitCard(card, input, budget, context);
+  if (model.kind !== "question") {
+    return fitCard(approvalBody(model, options, context), NO_BOX, budget, context);
+  }
+  // The box keeps at least one text row, and never so many that the frame's own rules are
+  // cut. `maxRows` caps the editor's rows alone, so the two rules are deducted from the room
+  // first: a cap on the whole box would draw two rows nobody reserved.
+  const card = questionBody(model, options, context);
+  const room = Math.max(INPUT_RULE_ROWS + 1, budget - card.tail.length - 1);
+  const maxRows = Math.max(1, room - INPUT_RULE_ROWS);
+  const box = { rows: inputRows(options.answer, { width: options.width, container: options.width, maxRows }), maxRows };
+  return fitCard(card, box, budget, context);
 }
 
 export interface AskCardProps {
@@ -357,7 +379,21 @@ export function AskCard({
 }: AskCardProps): ReactElement {
   const [nowMs, setNowMs] = useState<number>(() => _askCardDeps.now());
   const [selected, setSelected] = useState(0);
+  /**
+   * The newest selection, ahead of the card's re-render. Two keys delivered in one batch both
+   * run before React re-renders, so reducing the `selected` state would make the second key
+   * discard the first one's move — and a return in that batch would choose the option the
+   * card no longer shows. Every handler reads and writes this ref, as `ChatInput` does for
+   * its draft.
+   */
+  const latestSelected = useRef(0);
   const options = model.kind === "approval" ? model.options : [];
+
+  /** Move the pointer, publishing the move for the next render. A clamped move stays put. */
+  const moveSelection = (next: number): void => {
+    latestSelected.current = next;
+    setSelected(next);
+  };
 
   // The countdown's clock: a `setTimeout` chain, cancelled on unmount and once nothing is
   // left to count. `setInterval` cannot be stopped by the cleanup before its next tick fires.
@@ -391,15 +427,15 @@ export function AskCard({
         choose("deny");
         return;
       }
-      const choice = chosenOption(input, key, options, selected);
+      const choice = chosenOption(input, key, options, latestSelected.current);
       if (choice !== undefined) {
         choose(choice);
         return;
       }
       // A shifted arrow belongs to the transcript viewport, which keeps it in every state.
       if (key.shift) return;
-      if (key.upArrow) setSelected((current) => Math.max(0, current - 1));
-      else if (key.downArrow) setSelected((current) => Math.min(options.length - 1, current + 1));
+      if (key.upArrow) moveSelection(Math.max(0, latestSelected.current - 1));
+      else if (key.downArrow) moveSelection(Math.min(options.length - 1, latestSelected.current + 1));
     },
     { isActive: active },
   );
@@ -419,7 +455,7 @@ export function AskCard({
           width={width}
           theme={theme}
           active={active}
-          maxRows={layout.input}
+          maxRows={layout.inputMaxRows}
         />
       ) : null}
       {layout.tail.map((line, index) => (
