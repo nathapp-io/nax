@@ -533,6 +533,42 @@ describe("SlashMenu on a short terminal", () => {
     expect(rows).toHaveLength(SHORT_ROWS);
     expect(rows).toContain("❯ /clear  Clear the conversation");
   });
+
+  /** An 80x8 terminal: the input's own frame and one viewport row leave the menu no rows. */
+  const NO_MENU_ROOM_ROWS = 8;
+
+  async function zeroRowScreen() {
+    const ui = mount();
+    await ui.resize(80, NO_MENU_ROOM_ROWS);
+    return ui;
+  }
+
+  test("F15 a terminal with no rows for the menu leaves return to the input", async () => {
+    const ui = await zeroRowScreen();
+    ui.type("/co");
+    // The menu the query would open has no row to draw in, so nothing of it is on screen...
+    expect(ui.lastFrame()).not.toContain("Show session cost");
+    expect(ui.rows()).toHaveLength(NO_MENU_ROOM_ROWS);
+    // ...and the return is the prompt's: the line runs as typed. A menu nobody can see must
+    // not own the key, or the return would run a row the user never saw.
+    await ui.submitTyped();
+    expect(ui.rows()).toContain("※ unknown command /co");
+    expect(ui.lastFrame()).not.toContain("Cost");
+  });
+
+  test("F16 the arrows browse the prompt's history when the menu has no rows", async () => {
+    const ui = await zeroRowScreen();
+    await ui.submit("hello");
+    await ui.settle();
+    ui.type("/co");
+    // The prompt is the third row from the bottom: the footer, the input's closing rule, then
+    // the text row the input draws between its two rules.
+    const prompt = (): string => ui.rows().at(-3) ?? "";
+    expect(prompt()).toBe("> /co");
+    // Up is the input's again, so it walks the history rather than moving an invisible pointer.
+    ui.press(UP);
+    expect(prompt()).toBe("> hello");
+  });
 });
 
 describe("SlashMenu submission bookkeeping", () => {

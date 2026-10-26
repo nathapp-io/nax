@@ -39,12 +39,14 @@
  * follow token, so a message typed while scrolled up brings the screen back to the newest
  * line.
  *
- * The menu's ownership is `menuOwnsKeys`: the menu must be on screen and must still own the
- * prompt as the newest key left it (`use-slash-menu-keys.ts`). Both the input and the menu ask
- * it at key time rather than reading the render, so a batch that completes a name and then
- * returns leaves that return with the prompt — while a `/quit` typed and returned before the
- * menu it opens is ever mounted keeps its return, because a key yielded to a component that is
- * not there is a key nobody handles.
+ * The menu's ownership is `menuOwnsKeys`: the menu must be on screen — a query that keeps
+ * matches the terminal has no row left to draw them in (`menuShown`, and `menuRowsFor` for the
+ * arithmetic) is no menu at all — and it must still own the prompt as the newest key left it
+ * (`use-slash-menu-keys.ts`). Both the input and the menu ask it at key time rather than
+ * reading the render, so a batch that completes a name and then returns leaves that return
+ * with the prompt — while a `/quit` typed and returned before the menu it opens is ever
+ * mounted keeps its return, because a key yielded to a component that is not there is a key
+ * nobody handles.
  */
 
 import type { SessionEvent } from "@nathapp/nax-agent";
@@ -298,15 +300,35 @@ export function ChatApp({
     dismissed: dismissedQuery,
     blocked: bottomBlocked(ask, picker.model),
   });
+  // The working line and the rows the bottom region may claim are settled here, above the key
+  // handlers, because the rows the menu gets decide whether it owns a key at all: a terminal
+  // too short to leave the menu a row (`menuRowsFor`) draws none of it, and a menu nobody can
+  // see must not take the arrows or the return — that key would run a row the user never saw
+  // (`/co` silently running `/cost` on an eight-row terminal).
+  const working = workingLine(status, nowMs, theme.glyphs);
+  const bottomBudget = Math.max(
+    1,
+    size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
+  );
+  const menuRows = menuRowsFor({ rows: menu.rows, budget: bottomBudget });
+  /**
+   * Whether the menu is on screen: its query keeps matches (`menu.open`) and the bottom region
+   * has a row to draw them in. Zero rows is a menu the terminal cannot show, so the surface
+   * there is the input alone.
+   */
+  function menuShown(): boolean {
+    return menu.open && menuRows > 0;
+  }
   /**
    * Whether the slash menu owns a navigation key, asked at key time by both the input and the
-   * menu. It takes both halves: the menu has to be on screen — a `/quit` typed and returned in
+   * menu. It takes three things: the menu has to be on screen — a `/quit` typed and returned in
    * one batch reaches the input before the menu it opens is mounted, and a key yielded to a
-   * component that is not there is a key nobody handles — and it has to still own the prompt as
-   * the newest key left it, so the return after a completion is the prompt's.
+   * component that is not there is a key nobody handles — it has to have a row to draw that
+   * key's effect in, and it has to still own the prompt as the newest key left it, so the return
+   * after a completion is the prompt's.
    */
   function menuOwnsKeys(): boolean {
-    return menu.open && slashKeys.ownsKeys();
+    return menuShown() && slashKeys.ownsKeys();
   }
   if (menu.reopen) {
     slashKeys.sawDismissal(undefined);
@@ -328,7 +350,7 @@ export function ChatApp({
       setExpanded((current) => !current);
       return;
     }
-    if (!key.escape || ask !== undefined || picker.model !== undefined || menu.open) return;
+    if (!key.escape || ask !== undefined || picker.model !== undefined || menuShown()) return;
     if (!turnRunning || !keys.canControl()) return;
     host.cancel();
   });
@@ -493,25 +515,14 @@ export function ChatApp({
   const columns = size.columns;
   const lines = layoutTranscript(entries, { width: columns, theme, expanded });
   const header = headerLines({ state, version, cwd, home, width: columns, glyphs: theme.glyphs });
-  const working = workingLine(status, nowMs, theme.glyphs);
   const footer = footerModel({
     state,
     status,
     hint: footerHint({ quitArmed: keys.quitArmed(), clearArmed, busy: turnRunning, expanded }),
     glyphs: theme.glyphs,
   });
-  // The rows the bottom region may claim: everything the fixed regions and the viewport's
-  // minimum do not. Both the input and the ask card are measured against it, so whatever they
-  // wrap to, the footer stays on the screen's last row.
-  const bottomBudget = Math.max(
-    1,
-    size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
-  );
-  // The menu's rows are the bottom region's too, and they are capped by what the input's own
-  // frame leaves: they are reserved before the input is measured, so an open menu shortens the
-  // viewport instead of pushing the footer off screen, and a short terminal draws a shorter
-  // window rather than a frame taller than the screen.
-  const menuRows = menuRowsFor({ rows: menu.rows, budget: bottomBudget });
+  // The bottom budget and the menu's share of it are measured above the key handlers, beside
+  // the claim that reads them; the input is measured against what those two leave.
   const inputBudget = Math.max(1, bottomBudget - INPUT_RULE_ROWS - menuRows);
   // The question card's draft is the screen's state: only then can the card's rows — the
   // answer box included — be measured before the frame is composed. It is the card's own
@@ -625,7 +636,7 @@ export function ChatApp({
             handle={inputHandle}
             onClearArmedChange={setClearArmed}
           />
-          {menu.open ? (
+          {menuShown() ? (
             <SlashMenu
               menu={menu}
               width={columns}
