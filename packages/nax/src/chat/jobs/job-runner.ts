@@ -177,6 +177,8 @@ class DetachedJobs implements ChatJobs {
     }
   }
   private async finalize(job: ChatJob, exitCode: number): Promise<void> {
+    // The child has exited; artifact reads/writes must not leave escalation armed for a recycled PID.
+    this.clearGrace(job.id);
     const outcome = await resolveJobOutcome(this.records.get(job.id) ?? job, { exitCode }, this.options.repoRoot);
     // Polling may refresh metrics while outcome resolution is awaiting the command record.
     const current = this.records.get(job.id) ?? job;
@@ -184,7 +186,6 @@ class DetachedJobs implements ChatJobs {
     await writeJobRecord(this.options.outputDir, terminal);
     this.records.set(job.id, terminal);
     this.ownedIds.delete(job.id);
-    this.clearGrace(job.id);
     this.syncPoll();
     this.notices.push(buildJobNotice(terminal));
     this.emit();

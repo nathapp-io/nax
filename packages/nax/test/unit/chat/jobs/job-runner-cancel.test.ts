@@ -120,6 +120,35 @@ describe("createJobRunner cancellation", () => {
     expect((await readJobRecords(outputDir))[0]).toMatchObject({ state: "cancelled", cancelRequested: true });
     expect(clock.pending()).toBe(0);
   });
+  test("F1 observed child exit stops escalation while outcome resolution is pending", async () => {
+    const job = await jobs.start({
+      kind: "run",
+      target: "f1",
+      argv: [],
+      sessionId: "chat",
+      approvedAt: new Date(0).toISOString(),
+    });
+    await jobs.cancel(job.id);
+    const outcome = Promise.withResolvers<null>();
+    let reading = false;
+    _jobOutcomeDeps.readStatusFile = () => {
+      reading = true;
+      return outcome.promise;
+    };
+    exited.resolve(0);
+    await waitForCondition(() => reading, 500);
+    try {
+      // A recycled PID can appear alive even though this child has already exited.
+      expect(jobs.get(job.id)?.state).toBe("running");
+      await clock.advance(CANCEL_GRACE_MS);
+      expect(_jobRunnerDeps.kill).toHaveBeenCalledTimes(1);
+      expect(_jobRunnerDeps.kill).toHaveBeenLastCalledWith(job.pid, "SIGINT");
+    } finally {
+      outcome.resolve(null);
+      await waitForCondition(() => jobs.get(job.id)?.state === "cancelled", 500);
+    }
+    expect(clock.pending()).toBe(0);
+  });
   test("AC-7 succeeded job cannot be cancelled", async () => {
     const job = await attach("bot_review", "succeeded");
     expect(await jobs.canCancel(job.id)).toEqual({
