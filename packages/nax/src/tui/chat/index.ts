@@ -2,6 +2,7 @@ import { type Instance, render } from "ink";
 import { createElement } from "react";
 import { ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN } from "./alt-screen";
 import { ChatApp, type ChatAppProps } from "./ChatApp";
+import { createMouseInput, DISABLE_MOUSE, ENABLE_MOUSE } from "./mouse-input";
 
 export { ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN } from "./alt-screen";
 export { ChatApp, type ChatAppProps } from "./ChatApp";
@@ -10,6 +11,8 @@ export { type ChatTheme, resolveChatTheme } from "./theme";
 
 export const _renderChatDeps = {
   render,
+  stdin: (): NodeJS.ReadStream => process.stdin,
+  createMouseInput,
   write: (text: string): void => {
     process.stdout.write(text);
   },
@@ -32,6 +35,9 @@ export const _renderChatDeps = {
  * user's terminal in the alternate buffer.
  */
 export function renderChat(props: ChatAppProps): Instance {
+  const source = _renderChatDeps.stdin();
+  const mouse = _renderChatDeps.createMouseInput(source);
+  const isTTY = source.isTTY;
   _renderChatDeps.write(ENTER_ALT_SCREEN);
   let restored = false;
   let removeExit: (() => void) | undefined;
@@ -39,13 +45,17 @@ export function renderChat(props: ChatAppProps): Instance {
     if (restored) return;
     restored = true;
     removeExit?.();
+    if (isTTY) _renderChatDeps.write(DISABLE_MOUSE);
     _renderChatDeps.write(LEAVE_ALT_SCREEN);
+    mouse.dispose();
   };
   try {
-    const instance = _renderChatDeps.render(createElement(ChatApp, props), {
+    const instance = _renderChatDeps.render(createElement(ChatApp, { ...props, mouse: mouse.events }), {
       exitOnCtrlC: false,
       incrementalRendering: true,
+      stdin: mouse.stdin,
     });
+    if (isTTY) _renderChatDeps.write(ENABLE_MOUSE);
     removeExit = _renderChatDeps.onExit(restore);
     return {
       ...instance,

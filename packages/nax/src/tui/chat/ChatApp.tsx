@@ -72,6 +72,7 @@ import {
   workingLine,
 } from "./chat-status";
 import { layoutTranscript } from "./layout";
+import type { MouseEvents } from "./mouse-input";
 import { Picker, useChatPicker } from "./Picker";
 import { SlashMenu } from "./SlashMenu";
 import { parseSlashCommand, runSlashCommand, type SlashCommand, type SlashOutcome } from "./slash-commands";
@@ -85,6 +86,7 @@ import { useChatKeys } from "./useChatKeys";
 
 export interface ChatAppProps {
   readonly host: ChatHost;
+  readonly mouse?: MouseEvents;
   /** Absent: colour off, Unicode glyphs — what a captured environment would resolve. */
   readonly theme?: ChatTheme;
   /** Absent: the running build's version. */
@@ -235,6 +237,7 @@ function slashSink(title: string | undefined, append: (entry: TranscriptEntry) =
 
 export function ChatApp({
   host,
+  mouse,
   theme = DEFAULT_THEME,
   version = NAX_VERSION,
   cwd = host.repoRoot,
@@ -568,6 +571,7 @@ export function ChatApp({
         ))}
       </Box>
       <TranscriptViewport
+        mouse={mouse}
         lines={lines}
         height={viewportHeight}
         theme={theme}

@@ -6,6 +6,7 @@ import { EMPTY_LINE } from "@/tui/chat/layout";
 import type { StyledLine } from "@/tui/chat/styled-line";
 import { TranscriptViewport } from "@/tui/chat/TranscriptViewport";
 import { resolveChatTheme } from "@/tui/chat/theme";
+import { fakeMouse } from "./mouse";
 
 /** Colour off, so every frame is the plain row text and no assertion depends on escapes. */
 const THEME = resolveChatTheme({ env: {}, colorLevel: 0 });
@@ -201,5 +202,46 @@ describe("TranscriptViewport", () => {
     expect(rows).toHaveLength(2);
     expect(rows.at(0)).toBe("a line far");
     expect(rows.at(1)).toBe("b");
+  });
+});
+
+describe("TranscriptViewport mouse", () => {
+  const lines: StyledLine[] = Array.from({ length: 50 }, (_, index) => [{ text: `line-${index}` }]);
+  const labels = (start: number, count = 10) => Array.from({ length: count }, (_, index) => `line-${start + index}`);
+  test("US003 AC-13 scrolls up three rows and down again wherever the pointer is", () => {
+    const mouse = fakeMouse();
+    const ui = render(<TranscriptViewport lines={lines} height={10} theme={THEME} mouse={mouse.events} />);
+    expect(rowsOf(ui.lastFrame())).toEqual(labels(40));
+    act(() => mouse.emit("wheelUp"));
+    expect(rowsOf(ui.lastFrame())).toEqual(labels(37));
+    act(() => mouse.emit("wheelDown"));
+    expect(rowsOf(ui.lastFrame())).toEqual(labels(40));
+    act(() => mouse.emit("move"));
+    expect(rowsOf(ui.lastFrame())).toEqual(labels(40));
+    ui.unmount();
+    expect(mouse.listeners.size).toBe(0);
+  });
+  test("US003 AC-14 ignores wheel events while inactive and unsubscribes on deactivation", async () => {
+    const mouse = fakeMouse();
+    const frame = (active: boolean) => (
+      <TranscriptViewport lines={lines} height={10} theme={THEME} mouse={mouse.events} active={active} />
+    );
+    const ui = render(frame(false));
+    act(() => mouse.emit("wheelUp"));
+    expect(rowsOf(ui.lastFrame())).toEqual(labels(40));
+    expect(mouse.listeners.size).toBe(0);
+    await act(async () => ui.rerender(frame(true)));
+    expect(mouse.listeners.size).toBe(1);
+    await act(async () => ui.rerender(frame(false)));
+    act(() => mouse.emit("wheelUp"));
+    expect(rowsOf(ui.lastFrame())).toEqual(labels(40));
+    expect(mouse.listeners.size).toBe(0);
+  });
+  test("US003 AC-17 PageUp without a mouse keeps the one-row overlap", () => {
+    const ui = render(<TranscriptViewport lines={lines.slice(0, 20)} height={5} theme={THEME} />);
+    act(() => {
+      ui.stdin.write(PAGE_UP);
+    });
+    expect(rowsOf(ui.lastFrame())).toEqual(labels(11, 5));
   });
 });

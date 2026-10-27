@@ -204,3 +204,16 @@ describe("visibleRange", () => {
     expect(visibleRange(5, 10, 0)).toEqual({ start: 0, end: 5 });
   });
 });
+
+describe("reduceViewport — wheel", () => {
+  test.each([
+    ["AC-10", "wheelUp", 0, 3, false],
+    ["AC-11", "wheelDown", 2, 0, true],
+    ["AC-12", "wheelUp", 89, 90, false],
+  ] satisfies [string, "wheelUp" | "wheelDown", number, number, boolean][])(
+    "US003 %s clamps %s from %s",
+    (_ac, type, offset, expected, follow) => {
+      expect(apply(state({ offset, follow: offset === 0 }), { type })).toEqual({ offset: expected, follow, unseen: 0 });
+    },
+  );
+});

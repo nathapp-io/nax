@@ -15,7 +15,8 @@
  * that returns to them.
  */
 import { Box, type Key, Text, useInput } from "ink";
-import { type ReactElement, type ReactNode, useState } from "react";
+import { type ReactElement, type ReactNode, useEffect, useState } from "react";
+import type { MouseEvents } from "./mouse-input";
 import { type StyledLine, StyledLineView } from "./styled-line";
 import type { ChatTheme } from "./theme";
 import { INITIAL_VIEWPORT, reduceViewport, type ViewportAction, type ViewportState, visibleRange } from "./viewport";
@@ -39,6 +40,7 @@ export interface TranscriptViewportProps {
   readonly theme: ChatTheme;
   /** False while another surface — an ask card, a picker, the slash menu — owns the keys. */
   readonly active?: boolean;
+  readonly mouse?: MouseEvents;
   /**
    * Bumped by the owner when the window must return to the newest line — the user sent a
    * message. The view cannot see the send itself, and a send while scrolled up would
@@ -154,6 +156,7 @@ export function TranscriptViewport({
   height,
   theme,
   active = true,
+  mouse,
   followToken = 0,
 }: TranscriptViewportProps): ReactElement {
   const rows = viewRows(height);
@@ -171,6 +174,17 @@ export function TranscriptViewport({
   if (memory.total !== total || memory.height !== rows || memory.token !== followToken) {
     setMemory(nextMemory(memory, total, rows, followToken));
   }
+  useEffect(() => {
+    if (!active || !mouse) return;
+    return mouse.subscribe((event) => {
+      if (event.kind !== "wheelUp" && event.kind !== "wheelDown") return;
+      const action: ViewportAction = { type: event.kind };
+      setMemory((previous) => ({
+        ...previous,
+        state: reduceViewport(previous.state, action, previous.total, previous.height),
+      }));
+    });
+  }, [active, mouse]);
   useInput(
     (_input, key) => {
       const action = viewportAction(key);

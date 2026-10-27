@@ -5,6 +5,8 @@ import { act } from "react";
 import { type ChatHost, type ChatHostState, type ChatMcpState, createChatAskController } from "@/chat";
 import { buildResourceCatalog, type ResourcePackage } from "@/resources";
 import { ChatApp, type ChatTheme, resolveChatTheme } from "@/tui/chat";
+import type { MouseEvents } from "@/tui/chat/mouse-input";
+import { fakeMouse } from "./mouse";
 
 /**
  * The mounted screen, as the acceptance criteria observe it: the frame's rows, the events a
@@ -38,6 +40,7 @@ const SANDBOX_WARNING = "sandbox unavailable: commands run outside the sandbox";
 const FIXED_ROWS_WITHOUT_VIEWPORT = 3 + 3 + 1;
 
 interface MountOptions {
+  readonly mouse?: MouseEvents;
   readonly state?: Partial<ChatHostState>;
   readonly mcp?: ChatMcpState;
   readonly catalog?: ChatHost["catalog"];
@@ -97,7 +100,13 @@ function fakeHost(options: MountOptions = {}) {
 
 function mount(options: MountOptions = {}) {
   const fake = fakeHost(options);
-  const ui = render(<ChatApp host={fake.host} {...(options.theme === undefined ? {} : { theme: options.theme })} />);
+  const ui = render(
+    <ChatApp
+      host={fake.host}
+      mouse={options.mouse}
+      {...(options.theme === undefined ? {} : { theme: options.theme })}
+    />,
+  );
   const rows = () => (ui.lastFrame() ?? "").split("\n");
   const type = (text: string) =>
     act(() => {
@@ -647,4 +656,18 @@ describe("ChatApp pending ask layout", () => {
     expect(rows.some((row) => row.startsWith("> "))).toBe(true);
     expect(rows.at(-1)).toContain("⏵ guarded");
   });
+});
+
+test("US003 AC-15 ChatApp forwards wheel events to its transcript viewport", async () => {
+  const mouse = fakeMouse();
+  const ui = await harness({ mouse: mouse.events });
+  await ui.start();
+  ui.emit({ type: "text_delta", round: 1, text: Array.from({ length: 50 }, (_, i) => `row-${i}`).join("\n\n") });
+  await ui.settle();
+  const before = ui.rows().slice(3, -4);
+  const older = "  row-38";
+  expect(before).not.toContain(older);
+  act(() => mouse.emit("wheelUp"));
+  expect(ui.rows().slice(3, -4)).not.toEqual(before);
+  expect(ui.rows()).toContain(older);
 });
