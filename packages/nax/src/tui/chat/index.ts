@@ -52,7 +52,8 @@ export function renderChat(props: ChatAppProps): Instance {
   try {
     const instance = _renderChatDeps.render(createElement(ChatApp, { ...props, mouse: mouse.events }), {
       exitOnCtrlC: false,
-      incrementalRendering: true,
+      // No incrementalRendering: Ink 6.7's incremental path ignores the trailing
+      // newline of a non-fullscreen frame and redraws one row low (#2717).
       stdin: mouse.stdin,
     });
     if (isTTY) _renderChatDeps.write(ENABLE_MOUSE);
