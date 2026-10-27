@@ -3,7 +3,7 @@
   "feature": "chat-workflow-state",
   "branchName": "feat/chat-workflow-state",
   "createdAt": "2026-10-27T00:00:00.000Z",
-  "updatedAt": "2026-10-27T11:30:31.300Z",
+  "updatedAt": "2026-10-27T11:44:51.287Z",
   "userStories": [
     {
       "id": "US-001",
@@ -306,14 +306,17 @@
         "US-003",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Mirrors createAgentsProvider with a thin wrapper over existing feature readers and validation plus barrel exports; standard TDD covers malformed inputs and real-file delegation without changing authentication, access-control or session lifecycle."
+        "reasoning": "Mirrors createAgentsProvider with a thin wrapper over existing feature readers and validation plus barrel exports; standard TDD covers malformed inputs and real-file delegation without changing authentication, access-control or session lifecycle.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/agents-provider.ts",
@@ -335,7 +338,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1cfe5a260962324283af7b2aa788f14b8fab021e"
     },
     {
       "id": "US-006",
