@@ -1,10 +1,17 @@
+import { readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { errorMessage, isProcessAlive } from "@nathapp/nax-agent/internal";
-import { featureDir } from "@/config";
+import { featureDir, featuresDir } from "@/config";
+import { NaxError } from "@/errors";
 import { countStories, loadPRD } from "@/prd";
 import { gitWithTimeout } from "@/utils/git";
 // biome-ignore lint/style/noRestrictedImports: shared status reader must use the relative leaf to avoid the execution barrel.
 import { readStatusFile } from "../../execution/status-file-read";
+// Relative workflow leaves avoid the workflow -> step-context -> cli import cycle.
+// biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
+import { buildVerdict } from "../../workflow/open-items";
+// biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
+import { fillStoryStates, loadRunVerdict } from "../../workflow/run-verdict";
 
 export interface FeatureStateOptions {
   readonly repoRoot: string;
@@ -70,6 +77,8 @@ export const _featureStateDeps = {
   git: gitWithTimeout,
   isProcessAlive,
   file: Bun.file,
+  readdir: readdirSync,
+  loadRunVerdict,
 };
 
 /** Read repo-scoped feature artifacts without mutating them. */
@@ -105,11 +114,98 @@ export async function readFeatureState(name: string, options: FeatureStateOption
     spec,
     prd,
     run,
-    workflow: null,
+    workflow: await readWorkflow(name, options, warnings),
     branch: prd ? await readBranch(prd.branchName, options.repoRoot) : null,
-    lastRunLog: null,
+    lastRunLog: readLastRunLog(name, options.outputDir),
     warnings,
   };
+}
+
+async function readWorkflow(
+  name: string,
+  options: FeatureStateOptions,
+  warnings: string[],
+): Promise<FeatureState["workflow"]> {
+  try {
+    const loaded = await _featureStateDeps.loadRunVerdict(options.repoRoot, name, async () => options.outputDir);
+    const { record } = loaded;
+    const verdict = buildVerdict(fillStoryStates(record, loaded.result));
+    return {
+      runId: loaded.runId,
+      step: record.step,
+      ...(verdict ? { outcome: verdict.outcome } : {}),
+      ...(record.url === undefined ? {} : { url: record.url }),
+      ...(record.ci === undefined ? {} : { ci: record.ci }),
+      openItems: loaded.openItems.length,
+      firstOpenItems: loaded.openItems.slice(0, FIRST_OPEN_ITEMS_LIMIT).map((i) => `[${i.kind}] ${i.id} — ${i.issue}`),
+    };
+  } catch (err) {
+    if (!(err instanceof NaxError && ["WORKFLOW_RESULT_MISSING", "WORKFLOW_NOT_STARTED"].includes(err.code))) {
+      warnings.push(`workflow record unreadable: ${errorMessage(err)}`);
+    }
+    return null;
+  }
+}
+
+/** Missing artifact trees are ordinary absence; other filesystem failures remain visible. */
+function directoryEntries(path: string) {
+  try {
+    return _featureStateDeps.readdir(path, { withFileTypes: true });
+  } catch (err) {
+    if (isMissingFile(err)) return [];
+    throw err;
+  }
+}
+
+function isMissingFile(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && err.code === "ENOENT";
+}
+
+function readLastRunLog(name: string, outputDir: string): string | null {
+  // Same descending timestamp-filename ordering as nax status; never read log contents.
+  const names = directoryEntries(join(outputDir, "features", name, "runs"))
+    .filter((e) => e.isFile() && e.name.endsWith(".jsonl") && e.name !== "latest.jsonl")
+    .map((e) => e.name)
+    .sort()
+    .reverse();
+  return names[0]?.slice(0, -".jsonl".length) ?? null;
+}
+
+/** List only valid feature directories, projecting artifacts only after applying the bound. */
+export async function readWorkflowStateList(options: FeatureStateOptions): Promise<WorkflowStateList> {
+  const directories = directoryEntries(featuresDir(options.repoRoot)).filter((e) => e.isDirectory());
+  const valid = directories.flatMap((entry) => {
+    try {
+      return [{ name: entry.name, dir: featureDir(options.repoRoot, entry.name) }];
+    } catch {
+      // Stray invalid directory names cannot abort the feature list.
+      return [];
+    }
+  });
+  const recent = await Promise.all(
+    valid.map(async (entry) => ({ ...entry, modified: await featureRecency(entry.dir) })),
+  );
+  recent.sort((a, b) => b.modified - a.modified || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return {
+    features: await Promise.all(
+      recent.slice(0, WORKFLOW_STATE_LIST_LIMIT).map((e) => readFeatureState(e.name, options)),
+    ),
+    omitted: Math.max(0, valid.length - WORKFLOW_STATE_LIST_LIMIT),
+  };
+}
+
+async function featureRecency(dir: string): Promise<number> {
+  const times = await Promise.all(
+    ["spec.md", "prd.json", "status.json"].map(async (name) => {
+      try {
+        return (await _featureStateDeps.file(join(dir, name)).stat()).mtimeMs;
+      } catch (err) {
+        if (isMissingFile(err)) return 0;
+        throw err;
+      }
+    }),
+  );
+  return Math.max(0, ...times);
 }
 
 async function readSpec(name: string, repoRoot: string): Promise<string | null> {
