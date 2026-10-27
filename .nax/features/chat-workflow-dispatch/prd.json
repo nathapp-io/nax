@@ -3,7 +3,7 @@
   "feature": "chat-workflow-dispatch",
   "branchName": "feat/chat-workflow-dispatch",
   "createdAt": "2026-10-27T00:00:00Z",
-  "updatedAt": "2026-10-27T13:50:13.291Z",
+  "updatedAt": "2026-10-27T13:58:39.493Z",
   "userStories": [
     {
       "id": "US-001",
@@ -98,14 +98,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Pure parser and exact argv mapping, with security-sensitive path and flag-injection validation requiring strict test isolation."
+        "reasoning": "Pure parser and exact argv mapping, with security-sensitive path and flag-injection validation requiring strict test isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/jobs/job-types.ts",
@@ -121,7 +124,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "04eeb73a863663166ffa33e9724aca2f4197fb3e"
     },
     {
       "id": "US-003",
