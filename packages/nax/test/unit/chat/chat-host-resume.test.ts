@@ -198,7 +198,7 @@ describe("createChatHost resume and switch", () => {
     await start();
     const id = host.current().sessionId;
     await host.switchTo({ mode: "full" });
-    expect(order).toEqual(["open:ask", "close", "open:full"]);
+    expect(order).toEqual(["open:full", "close", "open:full"]);
     expect(optionsSeen[1]).toMatchObject({ sessionId: id, profile: "full" });
     expect(await storage.readMeta(id)).toMatchObject({ mode: "full", bashApproval: "raw" });
     expect(await storage.readLockHolder(id)).toMatchObject({ state: "own" });
@@ -228,8 +228,8 @@ describe("createChatHost resume and switch", () => {
     const before = await storage.readMeta(id);
     failNext = true;
     await expect(host.switchTo({ mode: "full" })).rejects.toBe(failure);
-    expect(order).toEqual(["open:ask", "close", "open:full", "open:ask"]);
-    expect(optionsSeen[2]).toMatchObject({ sessionId: id, profile: "ask" });
+    expect(order).toEqual(["open:full", "close", "open:full", "open:full"]);
+    expect(optionsSeen[2]).toMatchObject({ sessionId: id, profile: "full" });
     expect(await storage.readMeta(id)).toEqual(before);
     expect(host.current().mode).toBe("guarded");
     expect(await storage.readLockHolder(id)).toMatchObject({ state: "own" });

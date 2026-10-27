@@ -15,11 +15,11 @@ import {
   type SessionStorageDeps,
   type ToolProvider,
 } from "@nathapp/nax-agent";
-import { globalConfigDir, type NaxConfig } from "@/config";
+import { globalConfigDir, type NaxConfig, resolveTuiPermissions, type TuiPermissions } from "@/config";
 import { resolveRuleSet } from "@/context/rules/rule-set";
 import { NaxError } from "@/errors";
 import { buildChatInstructions, toRulesIndexEntry } from "@/prompts";
-import { type ChatMode, chatModeOfMeta, chatSessionSettings } from "./chat-mode";
+import { type ChatMode, chatBackendPosture, chatModeOfMeta, chatSessionSettings } from "./chat-mode";
 
 export const _openChatSessionDeps = {
   createAgentSession,
@@ -28,6 +28,7 @@ export const _openChatSessionDeps = {
   createSessionStorage,
   createFileTranscriptStore,
   resolveRuleSet,
+  resolveTuiPermissions,
   randomUUID: (): string => randomUUID(),
   env: process.env,
   now: (): Date => new Date(),
@@ -84,20 +85,32 @@ async function readResumeMeta(storage: SessionStorage, id: string): Promise<Sess
   return stored;
 }
 
-/** Validate stored modes before taking ownership, including on an explicit switch. */
-async function sessionMeta(request: OpenChatSessionRequest, deps: typeof _openChatSessionDeps): Promise<SessionMeta> {
-  if (request.resumeId !== undefined) {
-    const id = request.resumeId;
-    const stored = await readResumeMeta(request.storage, id);
-    const mode = chatModeOfMeta(stored.mode);
-    if (mode === null) {
-      throw new NaxError(
-        `session ${id} was created in mode ${stored.mode}; nax chat opens full or ask sessions only`,
-        "CHAT_SESSION_MODE_UNSUPPORTED",
-        { stage: "chat", sessionId: id },
-      );
-    }
-    const settings = chatSessionSettings(request.mode ?? mode);
+interface SessionPosture {
+  readonly mode: ChatMode;
+  readonly posture: TuiPermissions | undefined;
+  readonly stored: SessionMeta | undefined;
+}
+
+/** Stored mode validation must precede posture resolution and lock ownership. */
+function validatedMode(stored: SessionMeta): ChatMode {
+  const mode = chatModeOfMeta(stored.mode);
+  if (mode === null) {
+    throw new NaxError(
+      `session ${stored.sessionId} was created in mode ${stored.mode}; nax chat opens full or ask sessions only`,
+      "CHAT_SESSION_MODE_UNSUPPORTED",
+      { stage: "chat", sessionId: stored.sessionId },
+    );
+  }
+  return mode;
+}
+
+function sessionMeta(
+  request: OpenChatSessionRequest,
+  { mode, posture, stored }: SessionPosture,
+  deps: typeof _openChatSessionDeps,
+): SessionMeta {
+  const settings = chatSessionSettings(mode, posture);
+  if (stored !== undefined) {
     return {
       ...stored,
       mode: settings.metaMode,
@@ -110,7 +123,6 @@ async function sessionMeta(request: OpenChatSessionRequest, deps: typeof _openCh
       stage: "chat",
     });
   }
-  const settings = chatSessionSettings(request.mode ?? "guarded");
   return {
     schemaVersion: 1,
     sessionId: deps.randomUUID(),
@@ -126,7 +138,7 @@ async function sessionMeta(request: OpenChatSessionRequest, deps: typeof _openCh
 
 async function sessionOptions(
   request: OpenChatSessionRequest,
-  meta: SessionMeta,
+  { meta, posture }: { readonly meta: SessionMeta; readonly posture: TuiPermissions | undefined },
   deps: typeof _openChatSessionDeps,
 ): Promise<Omit<CreateAgentSessionOptions, "transcriptStore">> {
   const rules = request.config.context.rules;
@@ -141,6 +153,7 @@ async function sessionOptions(
   const compaction = request.config.execution.compaction;
   return {
     backend: deps.nativeBackend({
+      ...chatBackendPosture(mode, request.config, posture),
       model: meta.model,
       bashApproval: meta.bashApproval,
       allowUnsandboxed: true,
@@ -153,7 +166,7 @@ async function sessionOptions(
       ...(compaction !== undefined ? { compaction } : {}),
     }),
     sessionId: meta.sessionId,
-    profile: chatSessionSettings(mode).profile,
+    profile: chatSessionSettings(mode, posture).profile,
     workdir: request.cwd,
     instructions: buildChatInstructions({ mode, rulesIndex: set.rules.map(toRulesIndexEntry) }),
     approvalTimeoutMs: request.config.execution.approvalTimeout,
@@ -169,11 +182,15 @@ export async function openChatSession(
     throw new NaxError("[chat] invalid session id", "CHAT_SESSION_ID_INVALID", { stage: "chat" });
   }
   const transcripts = deps.createFileTranscriptStore(request.storage.dir);
-  const meta = await sessionMeta(request, deps);
+  const stored = request.resumeId === undefined ? undefined : await readResumeMeta(request.storage, request.resumeId);
+  const storedMode = stored === undefined ? undefined : validatedMode(stored);
+  const mode = request.mode ?? storedMode ?? "guarded";
+  const posture = mode === "guarded" ? deps.resolveTuiPermissions(request.config) : undefined;
+  const meta = sessionMeta(request, { mode, posture, stored }, deps);
   const release = await request.storage.acquireLock(meta.sessionId);
   try {
     if (request.resumeId === undefined) await request.storage.writeMeta(meta);
-    const options = { ...(await sessionOptions(request, meta, deps)), transcriptStore: transcripts };
+    const options = { ...(await sessionOptions(request, { meta, posture }, deps)), transcriptStore: transcripts };
     const doc = await transcripts.load(meta.sessionId);
     const session =
       doc === null ? await deps.createAgentSession(options) : await deps.resumeAgentSession(meta.sessionId, options);

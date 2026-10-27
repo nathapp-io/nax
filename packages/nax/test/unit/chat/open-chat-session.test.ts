@@ -17,7 +17,7 @@ import {
   openChatSession,
   resolveChatSessionsDir,
 } from "@/chat/open-chat-session";
-import { globalConfigDir } from "@/config";
+import { globalConfigDir, type TuiPermissions } from "@/config";
 import { NaxError } from "@/errors";
 
 const ID = "injected-session-id";
@@ -101,7 +101,7 @@ async function seed(overrides: Partial<SessionMeta> = {}) {
 
 describe("openChatSession", () => {
   test.each([
-    ["AC-1", "bashApproval", "gated"],
+    ["AC-1", "bashApproval", "raw"],
     ["AC-2", "allowUnsandboxed", true],
     ["AC-3", "allowUnsandboxedCommands", true],
     ["AC-4", "loopHandlerRole", "tui"],
@@ -143,7 +143,7 @@ describe("openChatSession", () => {
     expect(handle.meta).toMatchObject({
       sessionId: ID,
       mode: "ask",
-      bashApproval: "gated",
+      bashApproval: "raw",
       createdAt: NOW.toISOString(),
       updatedAt: null,
       title: null,
@@ -216,6 +216,71 @@ describe("openChatSession", () => {
   });
 });
 
+describe("openChatSession resolved posture", () => {
+  test("AC-7/8/9/10 resolves once and shares the guarded posture", async () => {
+    const posture = { bashApproval: "gated", askRules: ["Write"], denyRules: [] } as const;
+    deps.resolveTuiPermissions = mock(() => posture);
+    const backendSpy = spyOn(deps, "nativeBackend");
+    const handle = await open({ mode: "guarded" });
+    expect(deps.resolveTuiPermissions).toHaveBeenCalledTimes(1);
+    expect(deps.resolveTuiPermissions).toHaveBeenCalledWith(request.config);
+    expect(deps.nativeBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bashApproval: "gated",
+        sandbox: request.config.execution.sandbox,
+        askRules: posture.askRules,
+        denyRules: posture.denyRules,
+        askOnUnsandboxed: true,
+        askWhenSandboxDown: true,
+        askDiscoveredTools: true,
+      }),
+    );
+    const options = backendSpy.mock.calls[0]?.[0];
+    expect(options?.askRules).toBe(posture.askRules);
+    expect(options?.denyRules).toBe(posture.denyRules);
+    expect(handle.meta.bashApproval).toBe("gated");
+    expect(deps.createAgentSession).toHaveBeenCalledWith(expect.objectContaining({ profile: "full" }));
+  });
+  test("AC-11/12 full never resolves or forwards guarded-only keys", async () => {
+    deps.resolveTuiPermissions = mock(_openChatSessionDeps.resolveTuiPermissions);
+    const backendSpy = spyOn(deps, "nativeBackend");
+    await open({ mode: "full" });
+    expect(deps.resolveTuiPermissions).not.toHaveBeenCalled();
+    const options = backendSpy.mock.calls[0]?.[0];
+    expect(options).toMatchObject({ bashApproval: "raw", sandbox: request.config.execution.sandbox });
+    for (const key of ["askRules", "denyRules", "askOnUnsandboxed", "askWhenSandboxDown", "askDiscoveredTools"]) {
+      expect(options).not.toHaveProperty(key);
+    }
+  });
+  test.each(["guarded", "full"] as const)("AC-13 %s uses execution sandbox", async (mode) => {
+    const config = makeNaxConfig({ execution: { sandbox: { enabled: false } } });
+    await open({ mode, config });
+    expect(deps.nativeBackend).toHaveBeenCalledWith(expect.objectContaining({ sandbox: config.execution.sandbox }));
+  });
+  test("AC-14 guarded raw metadata remains ask", async () => {
+    await open({ config: makeNaxConfig({ execution: { bashApproval: "raw" } }) });
+    expect(await storage.readMeta(ID)).toMatchObject({ mode: "ask", bashApproval: "raw" });
+  });
+  test("AC-15 resume recomputes current policy without writing stored policy", async () => {
+    await seed({ mode: "ask", bashApproval: "gated" });
+    doc = { savedAt: NOW.toISOString(), messages: [] };
+    deps.resolveTuiPermissions = mock((): TuiPermissions => ({ bashApproval: "raw", askRules: [], denyRules: [] }));
+    const handle = await open({ resumeId: ID, model: undefined });
+    expect(handle.meta).toMatchObject({ mode: "ask", bashApproval: "raw" });
+    expect(deps.resumeAgentSession).toHaveBeenCalledWith(ID, expect.objectContaining({ profile: "full" }));
+    expect(deps.nativeBackend).toHaveBeenCalledWith(expect.objectContaining({ bashApproval: "raw" }));
+    expect(deps.resolveTuiPermissions).toHaveBeenCalledTimes(1);
+    expect(deps.resolveTuiPermissions).toHaveBeenCalledWith(request.config);
+    expect(await storage.readMeta(ID)).toMatchObject({ bashApproval: "gated" });
+  });
+  test("explicit full switch from stored ask skips posture resolution", async () => {
+    await seed({ mode: "ask", bashApproval: "gated" });
+    deps.resolveTuiPermissions = mock(_openChatSessionDeps.resolveTuiPermissions);
+    await open({ resumeId: ID, mode: "full" });
+    expect(deps.resolveTuiPermissions).not.toHaveBeenCalled();
+  });
+});
+
 describe("openChatSession edge cases", () => {
   test.each(["../outside", "nested/session", "nested\\session", "/absolute", "", ".", "..", "a".repeat(129)])(
     "F1 rejects invalid resume id %j before storage access",
@@ -247,7 +312,7 @@ describe("openChatSession edge cases", () => {
     const handle = await open({ resumeId: ID, mode: "guarded", model: "anthropic/switched" });
     expect(handle.meta).toMatchObject({
       mode: "ask",
-      bashApproval: "gated",
+      bashApproval: "raw",
       model: "anthropic/switched",
       title: "Existing",
     });
@@ -255,7 +320,7 @@ describe("openChatSession edge cases", () => {
     expect(deps.nativeBackend).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "anthropic/switched",
-        bashApproval: "gated",
+        bashApproval: "raw",
         carryHistoryAcrossModels: true,
         loopHandlers: request.loopHandlers,
       }),

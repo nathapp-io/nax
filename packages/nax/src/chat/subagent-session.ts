@@ -9,13 +9,13 @@ import {
   type ToolProvider,
 } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import type { NaxConfig } from "@/config";
+import { type NaxConfig, resolveTuiPermissions, type TuiPermissions } from "@/config";
 import { resolveRuleSet } from "@/context/rules/rule-set";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import { buildSubagentInstructions, toRulesIndexEntry } from "@/prompts";
 import type { AgentResource } from "@/resources";
-import { type ChatMode, chatSessionSettings } from "./chat-mode";
+import { type ChatMode, chatBackendPosture, chatSessionSettings } from "./chat-mode";
 
 export interface RunSubagentInput {
   readonly agent: AgentResource;
@@ -51,14 +51,16 @@ export const _subagentSessionDeps = {
   nativeBackend,
   createMemoryTranscriptStore,
   resolveRuleSet,
+  resolveTuiPermissions,
 };
 
 /** Build every option before any session exists, so a failure here never opens one. */
 async function subagentSessionOptions(
   input: RunSubagentInput,
+  posture: TuiPermissions | undefined,
   deps: typeof _subagentSessionDeps,
 ): Promise<CreateAgentSessionOptions> {
-  const settings = chatSessionSettings(input.mode);
+  const settings = chatSessionSettings(input.mode, posture);
   const rules = input.config.context.rules;
   const set = await deps.resolveRuleSet({
     repoRoot: input.repoRoot,
@@ -70,6 +72,7 @@ async function subagentSessionOptions(
   const compaction = input.config.execution.compaction;
   return {
     backend: deps.nativeBackend({
+      ...chatBackendPosture(input.mode, input.config, posture),
       model: input.model,
       bashApproval: settings.bashApproval,
       allowUnsandboxed: true,
@@ -167,7 +170,8 @@ async function runOnSession(session: AgentSession, input: RunSubagentInput): Pro
  */
 export async function runSubagent(input: RunSubagentInput, deps = _subagentSessionDeps): Promise<RunSubagentResult> {
   if (input.signal?.aborted) return cancelledResult(input);
-  const options = await subagentSessionOptions(input, deps);
+  const posture = input.mode === "guarded" ? deps.resolveTuiPermissions(input.config) : undefined;
+  const options = await subagentSessionOptions(input, posture, deps);
   let session: AgentSession;
   try {
     session = await deps.createAgentSession(options);

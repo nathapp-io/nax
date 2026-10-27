@@ -103,11 +103,11 @@ describe("chat host nested session options", () => {
     expect(ids).toEqual(["base"]);
   });
 
-  test("AC-8 a guarded host opens the nested session with profile ask", async () => {
+  test("AC-8 a guarded host opens the nested session with profile full", async () => {
     const h = setup();
     await h.host.start({ mode: "guarded", model: CHAT_MODEL });
     await h.host.send("go", () => {});
-    expect(h.nestedSessionOptions.map((options) => options.profile)).toEqual(["ask"]);
+    expect(h.nestedSessionOptions.map((options) => options.profile)).toEqual(["full"]);
   });
 
   test("AC-9 after switching to full the nested session opens with profile full", async () => {
