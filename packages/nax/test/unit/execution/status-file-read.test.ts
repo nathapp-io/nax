@@ -25,7 +25,7 @@ describe("readStatusFile", () => {
   test("AC-1 returns the parsed version-1 file unchanged", async () => {
     const status = validStatus();
     await Bun.write(join(dir, "status.json"), JSON.stringify(status));
-    expect(await readStatusFile(dir)).toEqual(status);
+    expect<unknown>(await readStatusFile(dir)).toEqual(status);
   });
 
   test("AC-2 returns null for a missing file", async () => {
@@ -64,7 +64,7 @@ describe("readStatusFile", () => {
       },
     };
     await Bun.write(join(dir, "status.json"), JSON.stringify(status));
-    expect(await readStatusFile(dir)).toEqual(status);
+    expect<unknown>(await readStatusFile(dir)).toEqual(status);
   });
 });
 
@@ -73,6 +73,6 @@ describe("readStatusFileAt", () => {
     const status = validStatus();
     const path = join(dir, "arbitrary.json");
     await Bun.write(path, JSON.stringify(status));
-    expect(await readStatusFileAt(path)).toEqual(status);
+    expect<unknown>(await readStatusFileAt(path)).toEqual(status);
   });
 });
