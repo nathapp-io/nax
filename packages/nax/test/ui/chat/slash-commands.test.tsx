@@ -3,7 +3,7 @@ import { CHAT_MODEL, makeAgentResource, makeSubagentHostHarness } from "@test/he
 import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
 import type { ChatHost, ChatHostState, ChatMcpState } from "@/chat";
-import { formatMcpListing } from "@/chat";
+import { type ChatJob, type ChatJobs, formatJobsListing, formatMcpListing } from "@/chat";
 import { featureDir } from "@/config";
 import { buildChatFeatureMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing, type SkillResource } from "@/resources";
@@ -325,7 +325,9 @@ describe("agents command", () => {
   test("US-011 AC-15 US-024 AC-15 help lists /agents between /mcp and /quit", async () => {
     const ui = mount();
     await ui.line("/help");
-    expect(ui.lastFrame()).toContain("/mcp  List MCP servers\n/agents  List agents\n/quit  Quit nax chat");
+    expect(ui.lastFrame()).toContain(
+      "/mcp  List MCP servers\n/agents  List agents\n/jobs  List nax jobs\n/quit  Quit nax chat",
+    );
   });
 
   test("US-024 AC-16 help lists a catalog command with its hyphen description", async () => {
@@ -383,6 +385,49 @@ describe("agents command", () => {
     } finally {
       await harness.dispose();
     }
+  });
+});
+describe("jobs command", () => {
+  test("US-015 AC-1 AC-2 lists jobs locally without a model call", async () => {
+    const ui = mount();
+    const job: ChatJob = {
+      schemaVersion: 1,
+      id: "run-12345678",
+      kind: "run",
+      target: "f1",
+      argv: [],
+      cwd: "/repo",
+      pid: 123,
+      startedAt: "now",
+      state: "running",
+      logPath: "/log",
+      sessionId: "old-session",
+      approvedAt: "now",
+    };
+    const jobs: ChatJobs = {
+      list: () => [job],
+      running: () => [],
+      owned: () => [],
+      get: () => job,
+      start: async () => job,
+      cancel: async () => job,
+      canCancel: async () => ({ ok: true }),
+      attach: async () => {},
+      logTail: async () => "",
+      dispose: () => {},
+      peekNotice: () => undefined,
+      takeNotice: () => undefined,
+      onChange: () => () => {},
+    };
+    Object.assign(ui.host, { jobs });
+    await ui.line("/jobs");
+    expect(ui.lastFrame()).toContain(formatJobsListing([job]));
+    expect(ui.send).not.toHaveBeenCalled();
+  });
+  test("US-015 AC-3 reports jobs unavailable", async () => {
+    const ui = mount();
+    await ui.line("/jobs");
+    expect(ui.lastFrame()).toContain("jobs are not available in this session");
   });
 });
 describe("feature command", () => {

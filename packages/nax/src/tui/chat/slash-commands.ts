@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { type ChatHost, formatAgentsListing, formatMcpListing } from "@/chat";
+import { type ChatHost, formatAgentsListing, formatJobsListing, formatMcpListing } from "@/chat";
 import { featureDir } from "@/config";
 import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing } from "@/resources";
@@ -43,6 +43,7 @@ export const COMMANDS = [
   "plugins",
   "mcp",
   "agents",
+  "jobs",
   "quit",
 ] as const;
 
@@ -62,6 +63,7 @@ export const COMMAND_DESCRIPTIONS = {
   plugins: "List plugins and what they provide",
   mcp: "List MCP servers",
   agents: "List agents",
+  jobs: "List nax jobs",
   quit: "Quit nax chat",
 } satisfies Record<SlashCommandName, string>;
 
@@ -140,6 +142,9 @@ export async function runSlashCommand(
       break;
     case "agents":
       show(formatAgentsListing(host.agents?.() ?? []));
+      break;
+    case "jobs":
+      show(host.jobs ? formatJobsListing(host.jobs.list()) : "jobs are not available in this session");
       break;
     case "mode":
       if (!arg) return { kind: "picker", picker: "mode" };

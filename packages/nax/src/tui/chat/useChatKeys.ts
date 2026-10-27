@@ -35,8 +35,8 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
   quitArmed(): boolean;
   /**
    * The synchronous control guard `runControl` applies: false once close has begun and while
-   * a control action is in flight. It reads refs, not state, so a key handler can ask before
-   * acting — a `locked` render can lag a keypress by one, and a teardown must never be handed
+   * confirming a close or a control action is in flight. It reads refs, not state, so a key
+   * handler can ask before acting — a `locked` render can lag a keypress by one, and a teardown must never be handed
    * a fresh `host.cancel()`: the host marks itself closed immediately, so the call would throw
    * `CHAT_HOST_CLOSED` in the middle of a normal exit.
    */
@@ -52,6 +52,7 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
   const quitExpiry = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const switching = useRef<Promise<void> | undefined>(undefined);
   const closing = useRef(false);
+  const confirming = useRef(false);
   const [locked, setLocked] = useState(false);
 
   /**
@@ -78,7 +79,7 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
 
   /** The guard every control path shares; see the interface note on `canControl`. */
   function canControl(): boolean {
-    return !closing.current && switching.current === undefined;
+    return !closing.current && !confirming.current && switching.current === undefined;
   }
 
   async function switchMode(mode: ChatMode): Promise<void> {
@@ -102,6 +103,19 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
     }
   }
   async function close(): Promise<void> {
+    if (closing.current || confirming.current) return;
+    if (host.confirmJobsBeforeClose) {
+      confirming.current = true;
+      try {
+        // Keep the ask card answerable: closing/locked are only set after confirmation.
+        await host.confirmJobsBeforeClose();
+      } catch (error) {
+        onError(error);
+        return;
+      } finally {
+        confirming.current = false;
+      }
+    }
     closing.current = true;
     queued.current = undefined;
     setLocked(true);
