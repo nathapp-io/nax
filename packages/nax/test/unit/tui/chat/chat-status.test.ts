@@ -3,7 +3,9 @@ import type { SandboxState, SessionEvent } from "@nathapp/nax-agent";
 import type { ChatHostState } from "@/chat";
 import {
   type FooterHint,
+  type FooterJob,
   footerModel,
+  formatJobStrip,
   formatTokens,
   headerLines,
   IDLE_STATUS,
@@ -298,6 +300,46 @@ function footer(overrides: { state?: Partial<ChatHostState>; status?: TurnStatus
     hint: overrides.hint ?? "idle",
   });
 }
+
+describe("formatJobStrip", () => {
+  test.each<{ ac: string; jobs: FooterJob[]; expected: string }>([
+    {
+      ac: "AC-1",
+      jobs: [{ kind: "run", target: "f1", progress: { passed: 3, total: 7 }, cost: 1.2 }],
+      expected: "run f1 3/7 $1.20",
+    },
+    { ac: "AC-2", jobs: [{ kind: "plan", target: "f1" }], expected: "plan f1" },
+    { ac: "AC-3", jobs: [{ kind: "bot_fix", target: "12" }], expected: "bot_fix #12" },
+    {
+      ac: "AC-4",
+      jobs: ["f1", "f2", "f3", "f4"].map((target) => ({ kind: "plan", target })),
+      expected: "plan f1 · plan f2 +2",
+    },
+    { ac: "AC-5", jobs: [{ kind: "plan", target: "a-very-long-feature-name" }], expected: "plan a-very-long-fea…" },
+    { ac: "bot review", jobs: [{ kind: "bot_review", target: "42" }], expected: "bot_review #42" },
+    {
+      ac: "zero values",
+      jobs: [{ kind: "run", target: "f1", cost: 0, progress: { passed: 0, total: 0 } }],
+      expected: "run f1 0/0 $0.00",
+    },
+    { ac: "empty", jobs: [], expected: "" },
+  ])("US-014 $ac formats jobs", ({ jobs, expected }) => {
+    expect(formatJobStrip(jobs)).toBe(expected);
+  });
+  test("US-014 AC-6 prepends the job strip to the right footer", () => {
+    const model = footerModel({
+      state: chatState(),
+      status: IDLE_STATUS,
+      hint: "idle",
+      jobs: [{ kind: "plan", target: "f1" }],
+    });
+    expect(model.right[0]?.text).toBe("plan f1");
+  });
+  test("US-014 AC-7 empty jobs preserve the footer", () => {
+    const input = { state: chatState(), status: IDLE_STATUS, hint: "idle" as const };
+    expect(footerModel({ ...input, jobs: [] }).right).toEqual(footerModel(input).right);
+  });
+});
 
 describe("footerModel left", () => {
   test("copied feedback includes the character count and preserves mode and cost", () => {
