@@ -521,21 +521,23 @@ export function Picker({
     setSelection(value);
   };
 
+  /** Returns true when model-query editing consumed the key, including empty deletion. */
+  const editQuery = (input: string, key: Key): boolean => {
+    if (model.kind !== "model" || key.escape) return false;
+    const next = editedQuery(input, key, queryRef.current);
+    if (next === undefined) return false;
+    if (next === queryRef.current) return true;
+    queryRef.current = next;
+    onQuery?.(next);
+    const reset = { kind: model.kind, query: next, index: FIRST_ENTRY };
+    latest.current = reset;
+    setSelection(reset);
+    return true;
+  };
+
   useInput(
     (input, key) => {
-      if (model.kind === "model" && !key.escape) {
-        const next = editedQuery(input, key, queryRef.current);
-        if (next !== undefined) {
-          if (next !== queryRef.current) {
-            queryRef.current = next;
-            onQuery?.(next);
-            const reset = { kind: model.kind, query: next, index: FIRST_ENTRY };
-            latest.current = reset;
-            setSelection(reset);
-          }
-          return;
-        }
-      }
+      if (editQuery(input, key)) return;
       if (!ownsPickerKey(key)) return;
       // ink reports a lone escape as `escape` *and* `meta`, so escape is taken first: the
       // chord rule below is about shifted and ctrl keys, which belong to other surfaces.
