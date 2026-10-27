@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import type { TextProps } from "ink";
 import { cleanup, render } from "ink-testing-library";
+import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import {
   displayWidth,
   MIN_LAYOUT_WIDTH,
@@ -74,7 +76,25 @@ describe("MIN_LAYOUT_WIDTH", () => {
   });
 });
 
+function firstSpanProps(element: ReactElement): TextProps {
+  if (!isValidElement<{ children: ReactNode }>(element)) throw new Error("expected line element");
+  const child = Children.toArray(element.props.children)[0];
+  if (!isValidElement<TextProps>(child)) throw new Error("expected span element");
+  return child.props;
+}
+
 describe("StyledLineView", () => {
+  test("AC-14 passes inverse to Ink Text", () => {
+    const element = StyledLineView({ line: [{ text: "selected", inverse: true }], theme: NO_COLOR_THEME });
+    expect(firstSpanProps(element).inverse).toBe(true);
+  });
+
+  test("AC-21 omitted inverse preserves bold without inverse", () => {
+    const element = StyledLineView({ line: [{ text: "plain", bold: true }], theme: NO_COLOR_THEME });
+    expect(firstSpanProps(element).bold).toBe(true);
+    expect(firstSpanProps(element).inverse).toBeUndefined();
+    expect(firstSpanProps(element).children).toBe("plain");
+  });
   test("renders a colourless theme's spans as plain frame text", () => {
     expect(frameText([{ text: "hi", color: "accent" }], NO_COLOR_THEME)).toBe("hi");
   });
