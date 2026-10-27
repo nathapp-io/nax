@@ -12,6 +12,7 @@ import {
 import { makeNaxConfig } from "@test/helpers";
 import type { ChatMode } from "@/chat/chat-mode";
 import { type _subagentSessionDeps, type RunSubagentInput, runSubagent } from "@/chat/subagent-session";
+import type { TuiPermissions } from "@/config";
 import type { ResolvedRule } from "@/context/rules/rule-set";
 import { NaxError } from "@/errors";
 import type { AgentResource } from "@/resources";
@@ -131,6 +132,7 @@ beforeEach(() => {
       return backend;
     }),
     createMemoryTranscriptStore: mock(() => store),
+    resolveTuiPermissions: mock((): TuiPermissions => ({ bashApproval: "raw", askRules: [], denyRules: [] })),
     resolveRuleSet: mock(async () => ({
       rules: [],
       repoRulesTotal: 0,
@@ -157,7 +159,7 @@ const run = (overrides: Partial<RunSubagentInput> = {}) => runSubagent({ ...inpu
 
 describe("runSubagent session options", () => {
   test.each<[string, ChatMode, CreateAgentSessionOptions["profile"]]>([
-    ["AC-1", "guarded", "ask"],
+    ["AC-1", "guarded", "full"],
     ["AC-2", "full", "full"],
   ])("%s mode %s opens profile %s", async (_ac, mode, profile) => {
     await run({ mode });
@@ -165,7 +167,7 @@ describe("runSubagent session options", () => {
   });
 
   test.each<[string, ChatMode, BackendOptions["bashApproval"]]>([
-    ["AC-3", "guarded", "gated"],
+    ["AC-3", "guarded", "raw"],
     ["AC-4", "full", "raw"],
   ])("%s mode %s uses bashApproval %s", async (_ac, mode, bashApproval) => {
     await run({ mode });
@@ -461,5 +463,36 @@ describe("runSubagent failures", () => {
     });
     stub = { ...stub, close: closed };
     expect(await run()).toEqual({ content: "done" });
+  });
+});
+
+describe("runSubagent resolved posture", () => {
+  test("AC-16/17/18/21 guarded resolves once and forwards posture without host ports", async () => {
+    const posture = { bashApproval: "raw", askRules: ["Write"], denyRules: ["Delete(src/**)"] } as const;
+    deps.resolveTuiPermissions = mock(() => posture);
+    await run();
+    expect(deps.resolveTuiPermissions).toHaveBeenCalledTimes(1);
+    expect(deps.resolveTuiPermissions).toHaveBeenCalledWith(input.config);
+    expect(backendOptions()).toMatchObject({
+      bashApproval: "raw",
+      sandbox: input.config.execution.sandbox,
+      askRules: posture.askRules,
+      denyRules: posture.denyRules,
+      askOnUnsandboxed: true,
+      askWhenSandboxDown: true,
+      askDiscoveredTools: true,
+    });
+    expect(backendOptions().askRules).toBe(posture.askRules);
+    expect(backendOptions().denyRules).toBe(posture.denyRules);
+    expect(sessionOptions().profile).toBe("full");
+    expect(backendOptions()).not.toHaveProperty("hostPorts");
+  });
+  test("AC-19/20 full skips resolution and has only the sandbox posture", async () => {
+    await run({ mode: "full" });
+    expect(deps.resolveTuiPermissions).not.toHaveBeenCalled();
+    expect(backendOptions().sandbox).toBe(input.config.execution.sandbox);
+    for (const key of ["askRules", "denyRules", "askOnUnsandboxed", "askWhenSandboxDown", "askDiscoveredTools"]) {
+      expect(backendOptions()).not.toHaveProperty(key);
+    }
   });
 });

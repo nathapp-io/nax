@@ -144,6 +144,66 @@ function ask(id: string) {
 const start = (): Promise<void> => host.start({ mode: "guarded", model: MODEL });
 
 describe("createChatHost resume and switch", () => {
+  function shadows() {
+    const drains: ReturnType<typeof mock<() => Promise<void>>>[] = [];
+    _openChatSessionDeps.buildCommandShadow = () => {
+      const drain = mock(async () => {
+        expect(await storage.readLockHolder(host.current().sessionId)).toMatchObject({ state: "own" });
+      });
+      drains.push(drain);
+      return { observe() {}, settle() {}, drain };
+    };
+    return drains;
+  }
+
+  test("full to guarded drains the reopened shadow before unlocking on close", async () => {
+    const drains = shadows();
+    await host.start({ mode: "full", model: MODEL });
+    const id = host.current().sessionId;
+    await host.switchTo({ mode: "guarded" });
+    expect(drains).toHaveLength(1);
+    expect(drains[0]).not.toHaveBeenCalled();
+    await host.close();
+    expect(drains[0]).toHaveBeenCalledTimes(1);
+    expect(await storage.readLockHolder(id)).toBeNull();
+  });
+
+  test("guarded model and mode switches retire each shadow without unlocking", async () => {
+    const drains = shadows();
+    await start();
+    const id = host.current().sessionId;
+    await host.switchTo({ model: "other/model" });
+    expect(drains[0]).toHaveBeenCalledTimes(1);
+    expect(drains[1]).not.toHaveBeenCalled();
+    await host.switchTo({ mode: "full" });
+    expect(drains[1]).toHaveBeenCalledTimes(1);
+    expect(await storage.readLockHolder(id)).toMatchObject({ state: "own" });
+    await host.close();
+    expect(drains.map((drain) => drain.mock.calls.length)).toEqual([1, 1]);
+    expect(await storage.readLockHolder(id)).toBeNull();
+  });
+
+  test.each(["open", "persist"] as const)("failed %s retires attempted and rollback shadows", async (kind) => {
+    const drains = shadows();
+    await start();
+    const id = host.current().sessionId;
+    if (kind === "open") failNext = true;
+    else {
+      const writeMeta = storage.writeMeta.bind(storage);
+      storage.writeMeta = mock(async () => {
+        storage.writeMeta = writeMeta;
+        throw failure;
+      });
+    }
+    await expect(host.switchTo({ model: "other/model" })).rejects.toBe(failure);
+    expect(drains).toHaveLength(3);
+    expect(drains.map((drain) => drain.mock.calls.length)).toEqual([1, 1, 0]);
+    expect(host.current().model).toBe(MODEL);
+    expect(await storage.readLockHolder(id)).toMatchObject({ state: "own" });
+    await host.close();
+    expect(drains.map((drain) => drain.mock.calls.length)).toEqual([1, 1, 1]);
+    expect(await storage.readLockHolder(id)).toBeNull();
+  });
   test("AC-1 latest uses storage order and preserves stored settings", async () => {
     await stored("older");
     await stored("newer", "full", NOW.toISOString());
@@ -198,7 +258,7 @@ describe("createChatHost resume and switch", () => {
     await start();
     const id = host.current().sessionId;
     await host.switchTo({ mode: "full" });
-    expect(order).toEqual(["open:ask", "close", "open:full"]);
+    expect(order).toEqual(["open:full", "close", "open:full"]);
     expect(optionsSeen[1]).toMatchObject({ sessionId: id, profile: "full" });
     expect(await storage.readMeta(id)).toMatchObject({ mode: "full", bashApproval: "raw" });
     expect(await storage.readLockHolder(id)).toMatchObject({ state: "own" });
@@ -228,8 +288,8 @@ describe("createChatHost resume and switch", () => {
     const before = await storage.readMeta(id);
     failNext = true;
     await expect(host.switchTo({ mode: "full" })).rejects.toBe(failure);
-    expect(order).toEqual(["open:ask", "close", "open:full", "open:ask"]);
-    expect(optionsSeen[2]).toMatchObject({ sessionId: id, profile: "ask" });
+    expect(order).toEqual(["open:full", "close", "open:full", "open:full"]);
+    expect(optionsSeen[2]).toMatchObject({ sessionId: id, profile: "full" });
     expect(await storage.readMeta(id)).toEqual(before);
     expect(host.current().mode).toBe("guarded");
     expect(await storage.readLockHolder(id)).toMatchObject({ state: "own" });

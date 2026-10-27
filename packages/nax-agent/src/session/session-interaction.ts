@@ -35,6 +35,8 @@ export interface SessionInteractionDeps {
   readonly sessionId: string;
   readonly runtime: CodingToolRuntime;
   readonly embedderTools: ReadonlyMap<string, EmbedderTool>;
+  /** Declared coding tools withheld by the runtime's advertisement policy. Never execute these calls. */
+  readonly unavailableTools?: ReadonlySet<string>;
   readonly asks: SessionAskPort;
   /** The running turn's signal (a never-aborting one between turns). */
   readonly turnSignal: () => AbortSignal;
@@ -201,7 +203,15 @@ export function createSessionInteractionHandler(deps: SessionInteractionDeps): I
   return {
     async onInteraction(request) {
       if (request.kind === "question") return answerQuestion(deps, request.text);
-      if (request.kind === "context-tool") throw toolError(`Unknown tool "${request.name}"`, request.name);
+      if (request.kind === "context-tool") {
+        // A model may still call a denied tool it remembers from earlier turns.
+        // Keep it hidden, but distinguish a policy refusal from an unknown name.
+        if (deps.unavailableTools?.has(request.name)) {
+          const reason = `Tool "${request.name}" is not available under the session policy`;
+          return { answer: `Denied: ${reason}`, denied: { reason, breach: false } };
+        }
+        throw toolError(`Unknown tool "${request.name}"`, request.name);
+      }
       const tool = deps.embedderTools.get(request.name);
       return tool !== undefined ? runEmbedderTool(deps, tool, request) : runCodingTool(deps, request);
     },

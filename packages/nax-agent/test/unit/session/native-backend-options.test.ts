@@ -310,3 +310,80 @@ describe("nativeProfileRules: allowUnsandboxedCommands", () => {
     expect(caught.message).toContain("backend.allowUnsandboxedCommands");
   });
 });
+
+describe("parseNativeBackendOptions: posture", () => {
+  test.each(["askRules", "denyRules"] as const)("AC-7/8/20: rejects malformed %s with its backend path", (option) => {
+    for (const value of [[""], [1], ["Write", null], "Write", null, {}, 1, true]) {
+      let caught: unknown;
+      try {
+        parseNativeBackendOptions({ model: "openai/x", [option]: value });
+      } catch (err) {
+        caught = err;
+      }
+      assertNaxError(caught);
+      expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+      expect(caught.message).toContain(`backend.${option}`);
+    }
+  });
+
+  test("accepts rule lists and partial sandbox, preserving raw identity", () => {
+    const raw = { model: "openai/x", askRules: ["Write(notes/**)"], denyRules: [], sandbox: { enabled: false } };
+    expect(parseNativeBackendOptions(raw).raw).toBe(raw);
+  });
+
+  test("AC-18/22: invalid sandbox reports a backend.sandbox path", () => {
+    for (const sandbox of [{ enabled: "yes" }, { network: { allowedDomains: [1] } }, null, "off"]) {
+      let caught: unknown;
+      try {
+        parseNativeBackendOptions({ model: "openai/x", sandbox });
+      } catch (err) {
+        caught = err;
+      }
+      assertNaxError(caught);
+      expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+      expect(caught.message).toContain("backend.sandbox");
+      expect(caught.context).toMatchObject({ path: expect.stringMatching(/^backend\.sandbox/) });
+    }
+  });
+});
+
+describe("parseNativeBackendOptions ask overlays and shadow", () => {
+  test.each(
+    [
+      null,
+      1,
+      [],
+      {},
+      { observe() {}, settle() {} },
+      { observe: true, settle() {}, drain() {} },
+      { observe() {}, settle: 1, drain() {} },
+      { observe() {}, settle() {}, drain: false },
+    ].map((commandShadow) => ({ commandShadow })),
+  )("AC-22/24: rejects malformed shadow %j with exact path", ({ commandShadow }) => {
+    let caught: unknown;
+    try {
+      parseNativeBackendOptions({ model: "openai/x", hostPorts: { commandShadow } });
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught);
+    expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(caught.message).toContain("backend.hostPorts.commandShadow");
+  });
+  test("accepts booleans and preserves shadow identity", () => {
+    const commandShadow = { observe() {}, settle() {}, async drain() {} };
+    const input = {
+      model: "openai/x",
+      askOnUnsandboxed: true,
+      askWhenSandboxDown: true,
+      askDiscoveredTools: true,
+      hostPorts: { commandShadow },
+    };
+    expect(parseNativeBackendOptions(input).raw).toBe(input);
+  });
+  test.each(["askOnUnsandboxed", "askWhenSandboxDown", "askDiscoveredTools"])("rejects nonboolean %s", (name) => {
+    expect(code(() => parseNativeBackendOptions({ model: "openai/x", [name]: "yes" }))).toBe(
+      "AGENT_SESSION_INVALID_OPTIONS",
+    );
+  });
+});

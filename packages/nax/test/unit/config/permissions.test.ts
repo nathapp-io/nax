@@ -11,11 +11,13 @@
  * - No dangerouslySkipPermissions references remain in src/ (grep check)
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
 import type { NaxConfig } from "@/config";
+import * as configExports from "@/config";
 import type { PipelineStage } from "@/config/permissions";
 import { DEFAULT_PERMISSION_PROFILE, resolvePermissions, SESSION_CLOSE_PERMISSION_MODE } from "@/config/permissions";
+import { initLogger, resetLogger } from "@/logger";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -357,5 +359,165 @@ describe("Exec grant", () => {
     const resolved = resolvePermissions(config, "run");
     const execGrant = (resolved.toolGrants ?? []).find((g) => g.tool === "Exec");
     expect(execGrant?.patterns).toEqual(["bun add*", "bun install"]);
+  });
+});
+
+describe("resolveTuiPermissions", () => {
+  let warn: ReturnType<typeof spyOn>;
+  beforeEach(() => {
+    resetLogger();
+    warn = spyOn(initLogger({ level: "warn", suppressConsole: true }), "warn");
+  });
+  afterEach(() => {
+    warn.mockRestore();
+    resetLogger();
+  });
+
+  test.each([
+    ["AC-1: global raw", { bashApproval: "raw" }, "raw"],
+    ["AC-2: global gated", { bashApproval: "gated" }, "gated"],
+    ["AC-3: tui overrides global", { bashApproval: "raw", permissions: { tui: { bashApproval: "gated" } } }, "gated"],
+    ["AC-4: default fallback", { permissions: { default: { bashApproval: "gated" } } }, "gated"],
+  ] as const)("%s", (_name, execution, bashApproval) => {
+    expect(configExports.resolveTuiPermissions(cfg(execution))).toEqual({ bashApproval, askRules: [], denyRules: [] });
+  });
+
+  test("AC-5: tui replaces the whole default block", () => {
+    expect(
+      configExports.resolveTuiPermissions(
+        cfg({
+          permissions: {
+            tui: { ask: ["Write"] },
+            default: { ask: ["Delete"], deny: ["Git"] },
+          },
+        }),
+      ),
+    ).toEqual({ bashApproval: "raw", askRules: ["Write"], denyRules: [] });
+  });
+
+  test("AC-6: tui follows an inherit chain", () => {
+    expect(
+      configExports.resolveTuiPermissions(
+        cfg({
+          permissions: {
+            tui: { inherit: "run" },
+            run: { deny: ["Delete(src/**)"] },
+          },
+        }),
+      ).denyRules,
+    ).toEqual(["Delete(src/**)"]);
+  });
+
+  test("AC-7: ask expressions retain their order and spelling", () => {
+    const ask = ["Bash(git push*)", "Write(docs/**)"];
+    expect(configExports.resolveTuiPermissions(cfg({ permissions: { tui: { ask } } })).askRules).toEqual(ask);
+  });
+
+  test.each([
+    ["AC-8/12/20: tui escalate", { permissions: { tui: { bashApproval: "escalate" } } }],
+    ["AC-9/20: global escalate", { bashApproval: "escalate" }],
+  ])("%s maps to gated and warns exactly once", (_name, execution) => {
+    expect(configExports.resolveTuiPermissions(cfg(execution))).toEqual({
+      bashApproval: "gated",
+      askRules: [],
+      denyRules: [],
+    });
+    expect(warn.mock.calls).toEqual([
+      ["permissions", '[tui] bashApproval "escalate" has no meaning in chat; using "gated"'],
+    ]);
+  });
+
+  test.each([
+    ["ask", ["Bash(git push*)"], []],
+    ["deny", [], ["Bash(rm *)"]],
+    ["both", ["Bash(git push*)", "Write(docs/**)"], ["Bash(rm *)", "Delete(src/**)"]],
+  ])("AC-10/18/19: raw %s patterns warn once without changing lists", (_name, ask, deny) => {
+    const config = cfg({ bashApproval: "raw", permissions: { tui: { ask, deny } } });
+    expect(configExports.resolveTuiPermissions(config)).toEqual({
+      bashApproval: "raw",
+      askRules: ask,
+      denyRules: deny,
+    });
+    expect(warn.mock.calls).toEqual([
+      ["permissions", '[tui] Bash(...) ask/deny patterns are not consulted under bashApproval "raw"'],
+    ]);
+  });
+
+  test.each(["Write", "Bash", "Bash(*)"])("AC-11: raw %s is not a scoped Bash pattern", (rule) => {
+    expect(
+      configExports.resolveTuiPermissions(
+        cfg({ bashApproval: "raw", permissions: { tui: { ask: [rule], deny: [rule] } } }),
+      ).askRules,
+    ).toEqual([rule]);
+    expect(warn.mock.calls).toEqual([]);
+  });
+
+  test("AC-13: allow and legacy allowedTools are not returned", () => {
+    for (const block of [{ allow: ["Bash(ls*)"] }, { allowedTools: ["Bash(ls*)"] }]) {
+      expect(Object.keys(configExports.resolveTuiPermissions(cfg({ permissions: { tui: block } }))).sort()).toEqual([
+        "askRules",
+        "bashApproval",
+        "denyRules",
+      ]);
+    }
+  });
+
+  test("AC-14: undefined config resolves to raw and empty lists", () => {
+    expect(configExports.resolveTuiPermissions(undefined)).toEqual({
+      bashApproval: "raw",
+      askRules: [],
+      denyRules: [],
+    });
+  });
+
+  test("AC-15: resolver is exported from the config barrel", () => {
+    expect(typeof configExports.resolveTuiPermissions).toBe("function");
+  });
+
+  test("AC-16: tui posture never leaks into pipeline stages", () => {
+    const config = cfg({ bashApproval: "raw", permissions: { tui: { bashApproval: "gated", ask: ["Write"] } } });
+    expect(configExports.resolveTuiPermissions(config).bashApproval).toBe("gated");
+    const pipeline = resolvePermissions(config, "run");
+    expect(pipeline.bashApproval).toBe("raw");
+    expect(pipeline.askRules).toBeUndefined();
+  });
+
+  test("a bash-only tui block does not merge default lists; explicit inheritance does", () => {
+    const permissions = { tui: { bashApproval: "gated" }, default: { ask: ["Write"], deny: ["Delete"] } };
+    expect(configExports.resolveTuiPermissions(cfg({ permissions }))).toEqual({
+      bashApproval: "gated",
+      askRules: [],
+      denyRules: [],
+    });
+    expect(
+      configExports.resolveTuiPermissions(cfg({ permissions: { ...permissions, tui: { inherit: "default" } } })),
+    ).toEqual({ bashApproval: "raw", askRules: ["Write"], denyRules: ["Delete"] });
+  });
+
+  test.each(["constructor", "toString", "__proto__"])(
+    "unconfigured inherited name %s cannot hide the default deny list",
+    (inherit) => {
+      const config = cfg({
+        permissions: { tui: { inherit }, run: { inherit }, default: { deny: ["Delete(src/**)"] } },
+      });
+      expect(configExports.resolveTuiPermissions(config).denyRules).toEqual(["Delete(src/**)"]);
+      expect(resolvePermissions(config, "run").denyRules).toEqual([{ tool: "Delete", patterns: ["src/**"] }]);
+    },
+  );
+
+  test("an explicitly configured constructor block remains a valid inherit target", () => {
+    const config = cfg({
+      permissions: { tui: { inherit: "constructor" }, constructor: { deny: ["Delete(src/**)"] } },
+    });
+    expect(configExports.resolveTuiPermissions(config).denyRules).toEqual(["Delete(src/**)"]);
+  });
+
+  test("gated patterns do not warn and permissionProfile is ignored", () => {
+    expect(
+      configExports.resolveTuiPermissions(
+        cfg({ permissionProfile: "safe", bashApproval: "gated", permissions: { tui: { ask: ["Bash(git *)"] } } }),
+      ),
+    ).toEqual({ bashApproval: "gated", askRules: ["Bash(git *)"], denyRules: [] });
+    expect(warn.mock.calls).toEqual([]);
   });
 });

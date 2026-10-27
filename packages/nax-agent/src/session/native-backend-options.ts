@@ -6,6 +6,7 @@
  */
 import { z } from "zod";
 import type { BashApprovalMode } from "#src/config/bash-approval";
+import { SandboxConfigSchema } from "#src/config/schemas-sandbox";
 import type { NativeCatalogOverrides } from "#src/native/client";
 import type { CredentialSource } from "#src/native/credentials/session-source";
 import { parseNativeModel } from "#src/native/models";
@@ -29,6 +30,17 @@ export interface NativeBackendOptions {
   readonly loopHandlerRole?: string;
   readonly hostPorts?: AgentSessionHostPorts;
   readonly bashApproval?: BashApprovalMode;
+  /** Ask before a per-call sandbox escape, including under raw; requires allowUnsandboxedCommands. */
+  readonly askOnUnsandboxed?: boolean;
+  /** Gate Bash when the sandbox is disabled or unavailable at session open. */
+  readonly askWhenSandboxDown?: boolean;
+  /** Keep provider-designated mutating tool asks outside the ask profile too. */
+  readonly askDiscoveredTools?: boolean;
+  /** Rule overlays appended to the profile's own permission rules. */
+  readonly askRules?: readonly string[];
+  readonly denyRules?: readonly string[];
+  /** Partial sandbox input, validated here and default-filled at posture resolution. */
+  readonly sandbox?: z.input<typeof SandboxConfigSchema>;
   readonly allowUnsandboxed?: boolean;
   /** Narrow the declared tools to these names (built-in names, `<provider>__<tool>`, or `<provider>__*`); scratchpad tools are always kept. */
   readonly allowedTools?: readonly string[];
@@ -113,10 +125,19 @@ const OptionsSchema = z.strictObject({
           "must be a protected-paths policy with gitExcludePathspecs and gitIgnorePatterns string arrays",
         )
         .optional(),
+      commandShadow: z
+        .custom(hasMethods(["observe", "settle", "drain"]), "must implement observe, settle and drain")
+        .optional(),
       commandInterceptor: z.custom(hasMethods(["intercept"]), "must implement intercept").optional(),
     })
     .optional(),
   bashApproval: z.enum(["raw", "gated", "escalate"]).optional(),
+  askOnUnsandboxed: z.boolean().optional(),
+  askWhenSandboxDown: z.boolean().optional(),
+  askDiscoveredTools: z.boolean().optional(),
+  askRules: z.array(z.string().min(1)).optional(),
+  denyRules: z.array(z.string().min(1)).optional(),
+  sandbox: SandboxConfigSchema.optional(),
   allowUnsandboxed: z.boolean().optional(),
   allowedTools: z.array(z.string().min(1)).optional(),
   allowUnsandboxedCommands: z.boolean().optional(),

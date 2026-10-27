@@ -181,18 +181,46 @@ interface StageBlock {
  * resolveScopedPermissions; now shared by every profile (spec R10). */
 function lookupStageBlock(
   blocks: Record<string, StageBlock | undefined> | undefined,
-  stage: PipelineStage,
+  stage: string,
 ): StageBlock | undefined {
   if (!blocks) return undefined;
   const seen = new Set<string>();
   let key: string | undefined = stage;
-  let block = blocks[stage];
+  let block = Object.hasOwn(blocks, stage) ? blocks[stage] : undefined;
   while (block?.inherit !== undefined && key !== undefined && !seen.has(key)) {
     seen.add(key);
     key = block.inherit;
-    block = blocks[key];
+    block = Object.hasOwn(blocks, key) ? blocks[key] : undefined;
   }
-  return block ?? blocks.default;
+  return block ?? (Object.hasOwn(blocks, "default") ? blocks.default : undefined);
+}
+
+export interface TuiPermissions {
+  readonly bashApproval: "raw" | "gated";
+  readonly askRules: readonly string[];
+  readonly denyRules: readonly string[];
+}
+
+/** Chat uses whole-block lookup, not pipeline grants or permission profiles. */
+export function resolveTuiPermissions(config: AgentManagerConfig | undefined): TuiPermissions {
+  const block = lookupStageBlock(config?.execution?.permissions, "tui");
+  const bashApproval = resolveBashApproval(config?.execution?.bashApproval, block?.bashApproval);
+  const askRules = block?.ask ?? [];
+  const denyRules = block?.deny ?? [];
+  if (bashApproval === "escalate") {
+    getSafeLogger()?.warn("permissions", '[tui] bashApproval "escalate" has no meaning in chat; using "gated"');
+  } else if (bashApproval === "raw" && hasScopedBashRules([...askRules, ...denyRules])) {
+    getSafeLogger()?.warn(
+      "permissions",
+      '[tui] Bash(...) ask/deny patterns are not consulted under bashApproval "raw"',
+    );
+  }
+  return { bashApproval: bashApproval === "escalate" ? "gated" : bashApproval, askRules, denyRules };
+}
+
+/** Bare Bash and Bash(*) are unconditional rules, not command patterns. */
+function hasScopedBashRules(rules: readonly string[]): boolean {
+  return parseRuleList(rules).some((rule) => rule.tool === "Bash" && !rule.patterns.includes("*"));
 }
 
 interface StageRules {

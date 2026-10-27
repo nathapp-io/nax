@@ -1,12 +1,51 @@
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
+import { chatBackendPosture, chatSessionSettings } from "@/chat";
+import { NaxError } from "@/errors";
 
 describe("chatSessionSettings", () => {
   test.each([
-    ["AC-1", "full", { profile: "full", bashApproval: "raw", metaMode: "full" }],
-    ["AC-2", "guarded", { profile: "ask", bashApproval: "gated", metaMode: "ask" }],
-  ] as const)("%s: maps %s to session settings", async (_ac, mode, expected) => {
-    const { chatSessionSettings } = await import("@/chat");
-    expect(chatSessionSettings(mode)).toEqual(expected);
+    ["AC-1", "guarded", "raw", "ask"],
+    ["AC-2", "guarded", "gated", "ask"],
+    ["AC-3", "full", "gated", "full"],
+  ] as const)("%s resolved %s posture %s", (_ac, mode, bashApproval, metaMode) => {
+    expect(
+      chatSessionSettings(mode, { bashApproval, askRules: mode === "full" ? ["Write"] : [], denyRules: [] }),
+    ).toEqual({
+      profile: "full",
+      bashApproval: mode === "full" ? "raw" : bashApproval,
+      metaMode,
+    });
+  });
+  test("AC-4 guarded missing posture is a wiring error", () => {
+    expect(() => chatSessionSettings("guarded", undefined)).toThrow(NaxError);
+    expect(() => chatSessionSettings("guarded", undefined)).toThrow(
+      expect.objectContaining({ code: "CHAT_POSTURE_REQUIRED" }),
+    );
+  });
+});
+
+describe("chatBackendPosture", () => {
+  test("AC-5 full exports only the configured sandbox", () => {
+    const config = makeNaxConfig();
+    expect(chatBackendPosture("full", config, undefined)).toEqual({ sandbox: config.execution.sandbox });
+    expect(chatSessionSettings("full", undefined)).toEqual({ profile: "full", bashApproval: "raw", metaMode: "full" });
+  });
+  test("AC-6 guarded forwards rules by identity and all ask overlays", () => {
+    const config = makeNaxConfig();
+    const posture = { bashApproval: "raw", askRules: ["Write"], denyRules: ["Delete(src/**)"] } as const;
+    const options = chatBackendPosture("guarded", config, posture);
+    expect(options).toEqual({
+      sandbox: config.execution.sandbox,
+      askRules: posture.askRules,
+      denyRules: posture.denyRules,
+      askOnUnsandboxed: true,
+      askWhenSandboxDown: true,
+      askDiscoveredTools: true,
+    });
+    expect(options.askRules).toBe(posture.askRules);
+    expect(options.denyRules).toBe(posture.denyRules);
+    expect(() => chatBackendPosture("guarded", config, undefined)).toThrow(NaxError);
   });
 });
 

@@ -30,6 +30,7 @@ export { formatMcpListing } from "./chat-mcp-listing";
 export {
   type ChatMode,
   type ChatSessionSettings,
+  chatBackendPosture,
   chatModeOfMeta,
   chatSessionSettings,
   nextChatMode,

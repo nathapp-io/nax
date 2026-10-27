@@ -9,8 +9,9 @@ import { resolveSessionSandbox } from "#src/coding-tools/coding-tool-sandbox";
 import { buildCodingToolSupport, type CodingToolSupport } from "#src/coding-tools/coding-tool-support";
 import { UNIVERSAL_CODING_TOOLS } from "#src/coding-tools/universal-coding-tools";
 import type { CommandInterceptor } from "#src/command-interceptor/index";
+import type { CommandShadow } from "#src/command-safety/types";
 import type { BashApprovalMode } from "#src/config/bash-approval";
-import { DEFAULT_SANDBOX_CONFIG } from "#src/config/schemas-sandbox";
+import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "#src/config/schemas-sandbox";
 import { credentialsConfig } from "#src/infra/credentials-config";
 import type { AskResolver } from "#src/permissions/index";
 import type { CommandLauncher, SandboxState } from "#src/sandbox/index";
@@ -92,6 +93,7 @@ export interface SessionLauncherArgs {
    */
   readonly bashApproval: BashApprovalMode;
   readonly allowUnsandboxed: boolean;
+  readonly config?: SandboxConfig;
 }
 
 /** What the floor decided: the launcher to run under (if any), and the state to report. */
@@ -112,7 +114,7 @@ export async function resolveSessionLauncher(args: SessionLauncherArgs): Promise
     return { launcher: undefined, sandbox: { kind: "disabled" } };
   }
   const launcher = await resolveSessionSandbox({
-    config: DEFAULT_SANDBOX_CONFIG,
+    config: args.config ?? DEFAULT_SANDBOX_CONFIG,
     root: args.root,
     needsLauncher: true,
     protectedPaths: args.protectedPaths,
@@ -137,6 +139,11 @@ export interface SessionToolSupportArgs {
   readonly launcher: CommandLauncher | undefined;
   readonly askResolver: AskResolver;
   readonly interceptor: CommandInterceptor | undefined;
+  readonly askRules?: readonly ToolGrant[];
+  readonly denyRules?: readonly ToolGrant[];
+  readonly askOnUnsandboxed?: boolean;
+  readonly askDiscoveredTools?: boolean;
+  readonly commandShadow?: CommandShadow;
   /**
    * US-003: offer Bash's per-call `unsandboxed` argument for this session
    * (from `nativeProfileRules(...).allowUnsandboxedCommands`). Optional and
@@ -176,6 +183,19 @@ export interface SessionToolSupport {
   readonly grants: readonly ToolGrant[];
 }
 
+/** Optional overlays share one forwarding point for future posture knobs. */
+function postureToolOptions(args: SessionToolSupportArgs): {
+  readonly denyRules?: readonly ToolGrant[];
+  readonly askOnUnsandboxed?: boolean;
+  readonly commandShadow?: CommandShadow;
+} {
+  return {
+    ...(args.denyRules !== undefined ? { denyRules: args.denyRules } : {}),
+    ...(args.askOnUnsandboxed !== undefined ? { askOnUnsandboxed: args.askOnUnsandboxed } : {}),
+    ...(args.commandShadow !== undefined ? { commandShadow: args.commandShadow } : {}),
+  };
+}
+
 export function buildSessionToolSupport(args: SessionToolSupportArgs): SessionToolSupport {
   const profileTools = narrowBuiltIns(declaredToolsFor(args.profile, args.protectedPaths), args.allowedTools);
   // CodingToolName enumerates built-ins, but the runtime also accepts provider names.
@@ -183,13 +203,14 @@ export function buildSessionToolSupport(args: SessionToolSupportArgs): SessionTo
     ...new Set([...profileTools, ...(args.providerTools?.tools.map((tool) => tool.name) ?? [])]),
   ] as readonly CodingToolName[];
   const grants = [...grantsFor(profileTools), ...(args.providerTools?.grants ?? [])];
-  // Only the "ask" profile puts a discovered, non-read-only tool to the person; "full" never asks.
+  // Provider asks remain opt-in outside "ask"; configured rules follow them.
   const askRules = [
     ...askRulesFor(profileTools, args.bashApproval, args.profile),
-    ...(args.profile === "ask" ? (args.providerTools?.askTools ?? []) : []).map((tool) => ({
+    ...(args.profile === "ask" || args.askDiscoveredTools ? (args.providerTools?.askTools ?? []) : []).map((tool) => ({
       tool: tool as CodingToolName,
       patterns: ["*"],
     })),
+    ...(args.askRules ?? []),
   ];
   const providerInstructions = renderProviderInstructions(args.providerTools?.instructions ?? []);
   const support = buildCodingToolSupport({
@@ -214,6 +235,7 @@ export function buildSessionToolSupport(args: SessionToolSupportArgs): SessionTo
     ...(args.interceptor !== undefined ? { interceptor: args.interceptor } : {}),
     ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
     ...unsandboxedToolOptions(args),
+    ...postureToolOptions(args),
   });
   // Unreachable while the scratchpad trio is always declared and granted; kept for the type.
   if (support === undefined) {

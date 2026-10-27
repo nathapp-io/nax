@@ -5,7 +5,11 @@
  * (US-008) — a declared command has no argv to unwrap.
  */
 import { describe, expect, test } from "bun:test";
-import { buildDeclaredCommandTools, type DeclaredCommandToolsArgs } from "#src/coding-tools/coding-tool-extras";
+import {
+  buildDeclaredCommandTools,
+  type DeclaredCommandToolsArgs,
+  unsandboxedRuntimeOption,
+} from "#src/coding-tools/coding-tool-extras";
 import type { QualityCommandSpec } from "#src/internal/command-spec/index";
 import type { CodingTool } from "#src/tools/index";
 
@@ -85,5 +89,22 @@ describe("buildDeclaredCommandTools — unsandboxedCommands on the argv branch (
     const tools = buildDeclaredCommandTools(execArgs());
     expect(propertyKeys(runCommand(tools))).not.toContain("unsandboxed");
     expect(propertyKeys(runCommand(tools))).not.toContain("unsandboxedReason");
+  });
+});
+
+describe("unsandboxedRuntimeOption", () => {
+  test.each([true, false])("AC-3/4: preserves baseline shape unless askOnUnsandboxed=%s", (ask) => {
+    const input = {
+      unsandboxedCommands: true,
+      bashApproval: "raw" as const,
+      ...(ask ? { askOnUnsandboxed: true } : {}),
+    };
+    expect(unsandboxedRuntimeOption(input)).toEqual({
+      unsandboxed: {
+        enabled: true,
+        bashApproval: "raw",
+        ...(ask ? { alwaysAsk: true } : {}),
+      },
+    });
   });
 });

@@ -144,7 +144,9 @@ export function resolveUnsandboxedCall(p: {
   identity: string;
   tool: CodingTool;
   input: Record<string, unknown>;
-  option: { readonly enabled: boolean; readonly bashApproval: BashApprovalMode } | undefined;
+  option:
+    | { readonly enabled: boolean; readonly bashApproval: BashApprovalMode; readonly alwaysAsk?: boolean }
+    | undefined;
 }): UnsandboxedCall | undefined {
   const field = p.tool.scope.unsandboxedField;
   if (field === undefined) return undefined;
@@ -154,7 +156,7 @@ export function resolveUnsandboxedCall(p: {
   return {
     kind: "unsandboxed",
     suffix: unsandboxedReasonSuffix(p.input),
-    asksOnAllow: p.option.bashApproval !== "raw",
+    asksOnAllow: p.option.alwaysAsk === true || p.option.bashApproval !== "raw",
   };
 }
 

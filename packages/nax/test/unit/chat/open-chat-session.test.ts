@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { join } from "node:path";
 import {
   type AgentSession,
+  buildCommandShadow,
+  type CommandShadow,
   createSessionStorage,
   defaultSessionsDir,
   type SessionBackend,
@@ -17,7 +19,7 @@ import {
   openChatSession,
   resolveChatSessionsDir,
 } from "@/chat/open-chat-session";
-import { globalConfigDir } from "@/config";
+import { DEFAULT_CONFIG, globalConfigDir, type TuiPermissions } from "@/config";
 import { NaxError } from "@/errors";
 
 const ID = "injected-session-id";
@@ -101,7 +103,7 @@ async function seed(overrides: Partial<SessionMeta> = {}) {
 
 describe("openChatSession", () => {
   test.each([
-    ["AC-1", "bashApproval", "gated"],
+    ["AC-1", "bashApproval", "raw"],
     ["AC-2", "allowUnsandboxed", true],
     ["AC-3", "allowUnsandboxedCommands", true],
     ["AC-4", "loopHandlerRole", "tui"],
@@ -143,7 +145,7 @@ describe("openChatSession", () => {
     expect(handle.meta).toMatchObject({
       sessionId: ID,
       mode: "ask",
-      bashApproval: "gated",
+      bashApproval: "raw",
       createdAt: NOW.toISOString(),
       updatedAt: null,
       title: null,
@@ -216,6 +218,71 @@ describe("openChatSession", () => {
   });
 });
 
+describe("openChatSession resolved posture", () => {
+  test("AC-7/8/9/10 resolves once and shares the guarded posture", async () => {
+    const posture = { bashApproval: "gated", askRules: ["Write"], denyRules: [] } as const;
+    deps.resolveTuiPermissions = mock(() => posture);
+    const backendSpy = spyOn(deps, "nativeBackend");
+    const handle = await open({ mode: "guarded" });
+    expect(deps.resolveTuiPermissions).toHaveBeenCalledTimes(1);
+    expect(deps.resolveTuiPermissions).toHaveBeenCalledWith(request.config);
+    expect(deps.nativeBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bashApproval: "gated",
+        sandbox: request.config.execution.sandbox,
+        askRules: posture.askRules,
+        denyRules: posture.denyRules,
+        askOnUnsandboxed: true,
+        askWhenSandboxDown: true,
+        askDiscoveredTools: true,
+      }),
+    );
+    const options = backendSpy.mock.calls[0]?.[0];
+    expect(options?.askRules).toBe(posture.askRules);
+    expect(options?.denyRules).toBe(posture.denyRules);
+    expect(handle.meta.bashApproval).toBe("gated");
+    expect(deps.createAgentSession).toHaveBeenCalledWith(expect.objectContaining({ profile: "full" }));
+  });
+  test("AC-11/12 full never resolves or forwards guarded-only keys", async () => {
+    deps.resolveTuiPermissions = mock(_openChatSessionDeps.resolveTuiPermissions);
+    const backendSpy = spyOn(deps, "nativeBackend");
+    await open({ mode: "full" });
+    expect(deps.resolveTuiPermissions).not.toHaveBeenCalled();
+    const options = backendSpy.mock.calls[0]?.[0];
+    expect(options).toMatchObject({ bashApproval: "raw", sandbox: request.config.execution.sandbox });
+    for (const key of ["askRules", "denyRules", "askOnUnsandboxed", "askWhenSandboxDown", "askDiscoveredTools"]) {
+      expect(options).not.toHaveProperty(key);
+    }
+  });
+  test.each(["guarded", "full"] as const)("AC-13 %s uses execution sandbox", async (mode) => {
+    const config = makeNaxConfig({ execution: { sandbox: { enabled: false } } });
+    await open({ mode, config });
+    expect(deps.nativeBackend).toHaveBeenCalledWith(expect.objectContaining({ sandbox: config.execution.sandbox }));
+  });
+  test("AC-14 guarded raw metadata remains ask", async () => {
+    await open({ config: makeNaxConfig({ execution: { bashApproval: "raw" } }) });
+    expect(await storage.readMeta(ID)).toMatchObject({ mode: "ask", bashApproval: "raw" });
+  });
+  test("AC-15 resume recomputes current policy without writing stored policy", async () => {
+    await seed({ mode: "ask", bashApproval: "gated" });
+    doc = { savedAt: NOW.toISOString(), messages: [] };
+    deps.resolveTuiPermissions = mock((): TuiPermissions => ({ bashApproval: "raw", askRules: [], denyRules: [] }));
+    const handle = await open({ resumeId: ID, model: undefined });
+    expect(handle.meta).toMatchObject({ mode: "ask", bashApproval: "raw" });
+    expect(deps.resumeAgentSession).toHaveBeenCalledWith(ID, expect.objectContaining({ profile: "full" }));
+    expect(deps.nativeBackend).toHaveBeenCalledWith(expect.objectContaining({ bashApproval: "raw" }));
+    expect(deps.resolveTuiPermissions).toHaveBeenCalledTimes(1);
+    expect(deps.resolveTuiPermissions).toHaveBeenCalledWith(request.config);
+    expect(await storage.readMeta(ID)).toMatchObject({ bashApproval: "gated" });
+  });
+  test("explicit full switch from stored ask skips posture resolution", async () => {
+    await seed({ mode: "ask", bashApproval: "gated" });
+    deps.resolveTuiPermissions = mock(_openChatSessionDeps.resolveTuiPermissions);
+    await open({ resumeId: ID, mode: "full" });
+    expect(deps.resolveTuiPermissions).not.toHaveBeenCalled();
+  });
+});
+
 describe("openChatSession edge cases", () => {
   test.each(["../outside", "nested/session", "nested\\session", "/absolute", "", ".", "..", "a".repeat(129)])(
     "F1 rejects invalid resume id %j before storage access",
@@ -247,7 +314,7 @@ describe("openChatSession edge cases", () => {
     const handle = await open({ resumeId: ID, mode: "guarded", model: "anthropic/switched" });
     expect(handle.meta).toMatchObject({
       mode: "ask",
-      bashApproval: "gated",
+      bashApproval: "raw",
       model: "anthropic/switched",
       title: "Existing",
     });
@@ -255,7 +322,7 @@ describe("openChatSession edge cases", () => {
     expect(deps.nativeBackend).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "anthropic/switched",
-        bashApproval: "gated",
+        bashApproval: "raw",
         carryHistoryAcrossModels: true,
         loopHandlers: request.loopHandlers,
       }),
@@ -304,6 +371,106 @@ describe("openChatSession edge cases", () => {
       expect.objectContaining({ catalogOverrides: expect.anything() }),
     );
   });
+});
+
+describe("openChatSession command shadow", () => {
+  let order: string[];
+  let shadow: CommandShadow;
+  beforeEach(() => {
+    order = [];
+    shadow = {
+      observe() {},
+      settle() {},
+      drain: mock(async () => {
+        order.push("drain");
+      }),
+    };
+    // Object.assign lets these regressions execute before the new dependency exists.
+    Object.assign(deps, { buildCommandShadow: mock(() => shadow) });
+    const acquire = storage.acquireLock.bind(storage);
+    spyOn(storage, "acquireLock").mockImplementation(async (id) => {
+      const unlock = await acquire(id);
+      return async () => {
+        order.push("unlock");
+        await unlock();
+      };
+    });
+  });
+  test("shadow AC-1/2 builds once with session identity and forwards the same port", async () => {
+    const config = makeNaxConfig({ execution: { commandSafety: { shadow: { url: "http://127.0.0.1:9999" } } } });
+    const build = spyOn(deps, "buildCommandShadow");
+    const native = spyOn(deps, "nativeBackend");
+    const handle = await open({ config });
+    expect(build).toHaveBeenCalledTimes(1);
+    expect(build).toHaveBeenCalledWith({
+      config: config.execution.commandSafety,
+      outputDir: storage.dir,
+      runId: handle.meta.sessionId,
+      env: deps.env,
+    });
+    expect(native.mock.calls[0]?.[0]?.hostPorts?.commandShadow).toBe(shadow);
+  });
+  test("shadow AC-4 full never builds or forwards a shadow", async () => {
+    const build = spyOn(deps, "buildCommandShadow");
+    const native = spyOn(deps, "nativeBackend");
+    await open({ mode: "full" });
+    expect(build).not.toHaveBeenCalled();
+    expect(native.mock.calls[0]?.[0]).not.toHaveProperty("hostPorts");
+  });
+  test("shadow AC-5 drains before unlocking on release", async () => {
+    const handle = await open();
+    await handle.release();
+    expect(order).toEqual(["drain", "unlock"]);
+    expect(await storage.readLockHolder(ID)).toBeNull();
+  });
+  test("retiring a handle drains once while deferring its lock release", async () => {
+    const handle = await open();
+    await Promise.all([handle.release({ retainLock: true }), handle.release({ retainLock: true })]);
+    expect(order).toEqual(["drain"]);
+    expect(await storage.readLockHolder(ID)).toMatchObject({ state: "own" });
+    await Promise.all([handle.release(), handle.release()]);
+    expect(order).toEqual(["drain", "unlock"]);
+    expect(shadow.drain).toHaveBeenCalledTimes(1);
+    expect(await storage.readLockHolder(ID)).toBeNull();
+  });
+  test.each(["create", "backend", "resume"] as const)(
+    "shadow AC-6/7/13 %s failure preserves error and drains before unlocking",
+    async (stage) => {
+      const error = new NaxError("open failed", "TEST_FAILURE", { stage: "test" });
+      const fail = () => {
+        throw error;
+      };
+      if (stage === "backend") deps.nativeBackend = mock(fail);
+      if (stage === "create") deps.createAgentSession = mock(async () => fail());
+      if (stage === "resume") {
+        await seed({ mode: "ask" });
+        doc = { savedAt: NOW.toISOString(), messages: [] };
+        deps.resumeAgentSession = mock(async () => fail());
+      }
+      await expect(open(stage === "resume" ? { resumeId: ID } : {})).rejects.toBe(error);
+      expect(shadow.drain).toHaveBeenCalledTimes(1);
+      expect(order).toEqual(["drain", "unlock"]);
+      expect(await storage.readLockHolder(ID)).toBeNull();
+    },
+  );
+  test.each([undefined, { guard: { threshold: 0.5 } }])(
+    "shadow AC-3/11/12 no shadow config %j omits hostPorts and only unlocks",
+    async (commandSafety) => {
+      const defaultCommandSafety = structuredClone(DEFAULT_CONFIG.execution.commandSafety);
+      const config = makeNaxConfig({ execution: { commandSafety } });
+      expect(DEFAULT_CONFIG.execution.commandSafety).toEqual(defaultCommandSafety);
+      const build = spyOn(deps, "buildCommandShadow").mockImplementation(buildCommandShadow);
+      const native = spyOn(deps, "nativeBackend");
+      const handle = await open({ config });
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(build.mock.results[0]?.value).toBeUndefined();
+      expect(native.mock.calls[0]?.[0]).not.toHaveProperty("hostPorts");
+      await handle.release();
+      expect(shadow.drain).not.toHaveBeenCalled();
+      expect(order).toEqual(["unlock"]);
+      expect(await storage.readLockHolder(ID)).toBeNull();
+    },
+  );
 });
 
 describe("resolveChatSessionsDir", () => {

@@ -371,8 +371,8 @@ class NativeChatHost implements ChatHost {
     input: { mode: ChatMode; model: string },
     previous: ChatSessionHandle,
   ): Promise<ChatSessionHandle> {
-    // The host already owns this id. Reopens must neither reacquire nor release that lock,
-    // including the opener's failure cleanup; the original release remains authoritative.
+    // Reopens own per-open cleanup, but share the original storage lock. Even a
+    // failed open must drain its shadow without releasing the active host's lock.
     const storage: SessionStorage = { ...this.deps.storage, acquireLock: async () => async () => {} };
     const next = await (this.deps.open ?? openChatSession)({
       ...input,
@@ -384,7 +384,16 @@ class NativeChatHost implements ChatHost {
       loopHandlers: this.loopHandlers,
       ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
     });
-    return { ...next, release: previous.release };
+    return {
+      ...next,
+      release: async (options) => {
+        try {
+          await next.release(options);
+        } finally {
+          await previous.release(options);
+        }
+      },
+    };
   }
 
   async switchTo(input: { mode?: ChatMode; model?: string }): Promise<void> {
@@ -396,13 +405,23 @@ class NativeChatHost implements ChatHost {
     const from = this.current();
     const target = { mode: input.mode ?? from.mode, model: input.model ?? from.model };
     if (target.mode === from.mode && target.model === from.model) return;
-    await previous.session.close();
+    try {
+      await previous.session.close();
+    } finally {
+      await previous.release({ retainLock: true });
+    }
     let next: ChatSessionHandle | undefined;
     try {
       next = await this.reopen(target, previous);
       await this.deps.storage.writeMeta(next.meta);
     } catch (error) {
-      if (next) await next.session.close();
+      if (next) {
+        try {
+          await next.session.close();
+        } finally {
+          await next.release({ retainLock: true });
+        }
+      }
       this.handle = await this.reopen(from, previous);
       throw error;
     }
