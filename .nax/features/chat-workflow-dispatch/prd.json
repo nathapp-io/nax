@@ -3,7 +3,7 @@
   "feature": "chat-workflow-dispatch",
   "branchName": "feat/chat-workflow-dispatch",
   "createdAt": "2026-10-27T00:00:00Z",
-  "updatedAt": "2026-10-27T15:37:32.383Z",
+  "updatedAt": "2026-10-27T15:44:40.543Z",
   "userStories": [
     {
       "id": "US-001",
@@ -757,14 +757,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Small pure modules, but the before_tool block/allow decision is an access-control guard for checkout writes."
+        "reasoning": "Small pure modules, but the before_tool block/allow decision is an access-control guard for checkout writes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/jobs/job-runner.ts",
@@ -782,7 +785,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d9b20e56d63ef5f6148e5f4708edc21f109fbf06"
     },
     {
       "id": "US-013",
