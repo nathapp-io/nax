@@ -423,6 +423,16 @@ describe("openChatSession command shadow", () => {
     expect(order).toEqual(["drain", "unlock"]);
     expect(await storage.readLockHolder(ID)).toBeNull();
   });
+  test("retiring a handle drains once while deferring its lock release", async () => {
+    const handle = await open();
+    await Promise.all([handle.release({ retainLock: true }), handle.release({ retainLock: true })]);
+    expect(order).toEqual(["drain"]);
+    expect(await storage.readLockHolder(ID)).toMatchObject({ state: "own" });
+    await Promise.all([handle.release(), handle.release()]);
+    expect(order).toEqual(["drain", "unlock"]);
+    expect(shadow.drain).toHaveBeenCalledTimes(1);
+    expect(await storage.readLockHolder(ID)).toBeNull();
+  });
   test.each(["create", "backend", "resume"] as const)(
     "shadow AC-6/7/13 %s failure preserves error and drains before unlocking",
     async (stage) => {

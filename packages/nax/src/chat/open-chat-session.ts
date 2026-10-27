@@ -52,7 +52,8 @@ export interface OpenChatSessionRequest {
 export interface ChatSessionHandle {
   readonly session: AgentSession;
   readonly meta: SessionMeta;
-  readonly release: () => Promise<void>;
+  /** Retire per-open work; reopens retain the host's shared storage lock. */
+  readonly release: (options?: { readonly retainLock?: boolean }) => Promise<void>;
 }
 
 export type ChatStorageOptions = Pick<SessionStorageDeps, "pid" | "now" | "logger"> & {
@@ -186,16 +187,23 @@ async function sessionOptions(
 }
 
 /** The shadow's drain is total and bounded; retain lock ownership until it settles. */
-function sessionRelease(unlock: () => Promise<void>, shadow: () => CommandShadow | undefined): () => Promise<void> {
-  let released: Promise<void> | undefined;
-  return () =>
-    (released ??= (async () => {
-      try {
-        await shadow()?.drain();
-      } finally {
-        await unlock();
+function sessionRelease(
+  unlock: () => Promise<void>,
+  shadow: () => CommandShadow | undefined,
+): ChatSessionHandle["release"] {
+  let drained: Promise<void> | undefined;
+  let unlocked: Promise<void> | undefined;
+  return async (options) => {
+    try {
+      drained ??= Promise.resolve().then(() => shadow()?.drain());
+      await drained;
+    } finally {
+      if (!options?.retainLock) {
+        unlocked ??= unlock();
+        await unlocked;
       }
-    })());
+    }
+  };
 }
 
 /** Open the shared native session while holding its store lock until the host releases it. */
