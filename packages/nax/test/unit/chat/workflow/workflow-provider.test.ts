@@ -87,6 +87,51 @@ describe("createWorkflowProvider", () => {
     expect(JSON.parse(result.content).features).toHaveLength(2);
     expect(result.content).toBe(JSON.stringify(JSON.parse(result.content), null, 2));
   });
+  describe.each([123, null, false, {}, [], undefined].map((branchName) => ({ branchName })))(
+    "malformed PRD %j",
+    ({ branchName }) => {
+      async function malformedPrd() {
+        features("f1", "f2");
+        await Bun.write(
+          join(featureDir(options.repoRoot, "f1"), "prd.json"),
+          JSON.stringify({ branchName, userStories: [] }),
+        );
+        const git = mock(originalDeps.git);
+        _featureStateDeps.git = git;
+        return git;
+      }
+      test("named mode returns null PRD and branch with an unreadable warning", async () => {
+        const git = await malformedPrd();
+        const result = await run({ feature: "f1" });
+        expect(result.isError).not.toBe(true);
+        expect(JSON.parse(result.content)).toMatchObject({
+          name: "f1",
+          prd: null,
+          branch: null,
+          warnings: [expect.stringContaining("prd.json unreadable:")],
+        });
+        expect(git).not.toHaveBeenCalled();
+      });
+      test("list mode preserves malformed and healthy features", async () => {
+        const git = await malformedPrd();
+        const result = await run({});
+        expect(result.isError).not.toBe(true);
+        const list = JSON.parse(result.content);
+        expect(list.omitted).toBe(0);
+        expect(list.features).toHaveLength(2);
+        expect(list.features).toContainEqual(
+          expect.objectContaining({
+            name: "f1",
+            prd: null,
+            branch: null,
+            warnings: [expect.stringContaining("prd.json unreadable:")],
+          }),
+        );
+        expect(list.features).toContainEqual(expect.objectContaining({ name: "f2", warnings: [] }));
+        expect(git).not.toHaveBeenCalled();
+      });
+    },
+  );
   test("AC-11 unknown feature without feature tree", async () => {
     expect(await run({ feature: "nope" })).toEqual({ isError: true, content: "unknown feature nope; known: (none)" });
   });

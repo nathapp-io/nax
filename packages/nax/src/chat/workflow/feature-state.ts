@@ -219,6 +219,9 @@ async function readPrd(path: string, warnings: string[]): Promise<FeatureState["
   if (!(await _featureStateDeps.file(path).exists())) return null;
   try {
     const prd = await loadPRD(path);
+    if (typeof prd.branchName !== "string") {
+      throw new NaxError("[chat] prd.branchName must be a string", "SCHEMA_VALIDATION_FAILED", { stage: "chat" });
+    }
     const { total, passed, failed, pending } = countStories(prd);
     return { branchName: prd.branchName, total, passed, failed, pending };
   } catch (err) {
