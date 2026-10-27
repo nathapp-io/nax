@@ -3,7 +3,7 @@
   "feature": "chat-workflow-dispatch",
   "branchName": "feat/chat-workflow-dispatch",
   "createdAt": "2026-10-27T00:00:00Z",
-  "updatedAt": "2026-10-27T14:12:47.778Z",
+  "updatedAt": "2026-10-27T14:30:17.827Z",
   "userStories": [
     {
       "id": "US-001",
@@ -277,14 +277,17 @@
         "US-003",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "New detached process lifecycle with fd ownership, asynchronous exit persistence, record resolver and FIFO notice seams."
+        "reasoning": "New detached process lifecycle with fd ownership, asynchronous exit persistence, record resolver and FIFO notice seams.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/jobs/job-store.ts",
@@ -305,7 +308,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "720fa2ca1ac166f26c2ffa2bdf62f71110766dc1"
     },
     {
       "id": "US-006",
