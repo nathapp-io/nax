@@ -4,8 +4,8 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import { buildJobNotice } from "@/prompts";
-import { resolveJobOutcome } from "./job-outcome";
-import { jobLogPath, jobsDir, newJobId, writeJobRecord } from "./job-store";
+import { readRunProgress, resolveJobOutcome } from "./job-outcome";
+import { jobLogPath, jobsDir, newJobId, readJobRecords, writeJobRecord } from "./job-store";
 import type { ChatJob, ChatJobKind } from "./job-types";
 
 export const JOB_POLL_MS = 2_000;
@@ -80,6 +80,7 @@ export const _jobRunnerDeps = {
   openLog: (path: string): number => openSync(path, "a"),
   closeLog: (fd: number): void => closeSync(fd),
   mkdir: mkdirSync,
+  readLog: (path: string): Promise<string> => Bun.file(path).text(),
 };
 
 class DetachedJobs implements ChatJobs {
@@ -87,6 +88,10 @@ class DetachedJobs implements ChatJobs {
   private readonly ownedIds = new Set<string>();
   private readonly notices: string[] = [];
   private readonly listeners = new Set<() => void>();
+  private attachment?: Promise<void>;
+  private pollTimer?: ReturnType<typeof setTimeout> | number;
+  private polling = false;
+  private disposed = false;
 
   constructor(private readonly options: JobRunnerOptions) {}
 
@@ -146,6 +151,7 @@ class DetachedJobs implements ChatJobs {
     };
     this.records.set(id, job);
     this.ownedIds.add(id);
+    this.syncPoll();
     child.unref();
     // Failure to save does not undo a launch or detach its exit observer.
     const saved: Promise<ChatJob> = this.persistRunning(job);
@@ -169,11 +175,13 @@ class DetachedJobs implements ChatJobs {
     }
   }
   private async finalize(job: ChatJob, exitCode: number): Promise<void> {
-    const outcome = await resolveJobOutcome(job, { exitCode }, this.options.repoRoot);
-    const terminal: ChatJob = { ...job, ...outcome, exitCode, endedAt: this.options.now().toISOString() };
+    const current = this.records.get(job.id) ?? job;
+    const outcome = await resolveJobOutcome(current, { exitCode }, this.options.repoRoot);
+    const terminal: ChatJob = { ...current, ...outcome, exitCode, endedAt: this.options.now().toISOString() };
     await writeJobRecord(this.options.outputDir, terminal);
     this.records.set(job.id, terminal);
     this.ownedIds.delete(job.id);
+    this.syncPoll();
     this.notices.push(buildJobNotice(terminal));
     this.emit();
   }
@@ -209,12 +217,102 @@ class DetachedJobs implements ChatJobs {
   async canCancel(id: string): Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }> {
     throw new NaxError(`[chat] job ${id} is not running`, "CHAT_JOB_NOT_RUNNING", { stage: "chat" });
   }
-  // Implemented in US-006; intentionally no store reads, polling or shutdown work yet.
-  async attach(): Promise<void> {}
-  async logTail(_id: string, _lines = JOB_LOG_TAIL_LINES): Promise<string> {
-    return "";
+  attach(): Promise<void> {
+    this.attachment ??= this.loadRecords();
+    return this.attachment;
   }
-  dispose(): void {}
+  private async loadRecords(): Promise<void> {
+    const records = await readJobRecords(this.options.outputDir);
+    for (const job of records) {
+      if (job.cwd !== this.options.repoRoot || this.records.has(job.id)) continue;
+      this.records.set(job.id, job);
+      if (job.state === "running" && !_jobRunnerDeps.isProcessAlive(job.pid)) {
+        await this.finalizeAttached(job, false);
+      }
+    }
+    this.syncPoll();
+    this.emit();
+  }
+  private async finalizeAttached(job: ChatJob, notify: boolean): Promise<void> {
+    const disk = (await readJobRecords(this.options.outputDir)).find(
+      (record) => record.id === job.id && record.cwd === this.options.repoRoot,
+    );
+    if (disk && disk.state !== "running") {
+      this.records.set(job.id, disk);
+    } else {
+      const outcome = await resolveJobOutcome(job, {}, this.options.repoRoot);
+      const terminal: ChatJob = { ...job, ...outcome, endedAt: this.options.now().toISOString() };
+      await writeJobRecord(this.options.outputDir, terminal);
+      this.records.set(job.id, terminal);
+      if (notify) this.notices.push(buildJobNotice(terminal));
+    }
+    this.emit();
+  }
+  private syncPoll(): void {
+    if (this.disposed || this.running().length === 0) {
+      if (this.pollTimer !== undefined) _jobRunnerDeps.clearTimeout(this.pollTimer);
+      this.pollTimer = undefined;
+      return;
+    }
+    if (this.pollTimer !== undefined || this.polling) return;
+    // Cancellable UI cadence: dispose and the last terminal transition clear this handle.
+    this.pollTimer = _jobRunnerDeps.setTimeout(() => {
+      this.pollTimer = undefined;
+      this.polling = true;
+      void this.poll()
+        .finally(() => {
+          this.polling = false;
+          this.syncPoll();
+        })
+        .catch((cause) => this.warn(cause));
+    }, JOB_POLL_MS);
+  }
+  private async poll(): Promise<void> {
+    for (const job of this.running()) {
+      if (this.disposed) break;
+      try {
+        if (!this.ownedIds.has(job.id) && !_jobRunnerDeps.isProcessAlive(job.pid)) {
+          await this.finalizeAttached(job, true);
+        } else if (job.kind === "run") {
+          await this.refreshProgress(job);
+        }
+      } catch (cause) {
+        this.warn(cause);
+      }
+    }
+  }
+  private async refreshProgress(job: ChatJob): Promise<void> {
+    const metrics = await readRunProgress(job, this.options.repoRoot);
+    const current = this.records.get(job.id);
+    if (this.disposed || current?.state !== "running" || !metrics) return;
+    if (
+      current.cost === metrics.cost &&
+      current.progress?.passed === metrics.progress.passed &&
+      current.progress?.total === metrics.progress.total
+    )
+      return;
+    this.records.set(job.id, { ...current, ...metrics });
+    this.emit();
+  }
+  async logTail(id: string, lines = JOB_LOG_TAIL_LINES): Promise<string> {
+    const job = this.records.get(id);
+    if (!job || !Number.isFinite(lines) || lines < 1) return "";
+    try {
+      const text = await _jobRunnerDeps.readLog(job.logPath);
+      return text
+        .replace(/\r?\n$/, "")
+        .split(/\r?\n/)
+        .slice(-Math.floor(lines))
+        .join("\n");
+    } catch (cause) {
+      if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT") return "";
+      throw cause;
+    }
+  }
+  dispose(): void {
+    this.disposed = true;
+    this.syncPoll();
+  }
 }
 
 export function createJobRunner(options: JobRunnerOptions): ChatJobs {

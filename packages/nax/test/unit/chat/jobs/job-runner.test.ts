@@ -221,7 +221,7 @@ describe("createJobRunner", () => {
     expect(jobs.get("missing")).toBeUndefined();
   });
 
-  test("temporary methods do not read, poll or signal; unsubscribe removes listener", async () => {
+  test("cancel placeholders reject, missing log is empty, and dispose does not signal; unsubscribe removes listener", async () => {
     const jobs = runner();
     const changed = mock(() => {});
     const off = jobs.onChange(changed);
