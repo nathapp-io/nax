@@ -310,3 +310,39 @@ describe("nativeProfileRules: allowUnsandboxedCommands", () => {
     expect(caught.message).toContain("backend.allowUnsandboxedCommands");
   });
 });
+
+describe("parseNativeBackendOptions: posture", () => {
+  test.each(["askRules", "denyRules"] as const)("AC-7/8/20: rejects malformed %s with its backend path", (option) => {
+    for (const value of [[""], [1], ["Write", null], "Write", null, {}, 1, true]) {
+      let caught: unknown;
+      try {
+        parseNativeBackendOptions({ model: "openai/x", [option]: value });
+      } catch (err) {
+        caught = err;
+      }
+      assertNaxError(caught);
+      expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+      expect(caught.message).toContain(`backend.${option}`);
+    }
+  });
+
+  test("accepts rule lists and partial sandbox, preserving raw identity", () => {
+    const raw = { model: "openai/x", askRules: ["Write(notes/**)"], denyRules: [], sandbox: { enabled: false } };
+    expect(parseNativeBackendOptions(raw).raw).toBe(raw);
+  });
+
+  test("AC-18/22: invalid sandbox reports a backend.sandbox path", () => {
+    for (const sandbox of [{ enabled: "yes" }, { network: { allowedDomains: [1] } }, null, "off"]) {
+      let caught: unknown;
+      try {
+        parseNativeBackendOptions({ model: "openai/x", sandbox });
+      } catch (err) {
+        caught = err;
+      }
+      assertNaxError(caught);
+      expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+      expect(caught.message).toContain("backend.sandbox");
+      expect(caught.context).toMatchObject({ path: expect.stringMatching(/^backend\.sandbox/) });
+    }
+  });
+});

@@ -4,10 +4,12 @@
  * default protected-paths policy (spec 6.2), the credential read-deny reaching
  * Read, and the sandbox floor for "full" (spec 6.3).
  */
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { _sessionSandboxDeps } from "#src/coding-tools/coding-tool-sandbox";
+import * as codingSupport from "#src/coding-tools/coding-tool-support";
+import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "#src/config/schemas-sandbox";
 import { _resetCredentialsConfig, configureCredentials, credentialsConfig } from "#src/infra/credentials-config";
 import { chainAskLinks } from "#src/permissions/index";
 import {
@@ -383,5 +385,59 @@ describe("profile review (nax#2500)", () => {
         allowUnsandboxed: false,
       }),
     ).rejects.toThrow('Profile "review" needs a usable sandbox');
+  });
+});
+
+describe("session posture forwarding", () => {
+  withDepsRestore(_sessionSandboxDeps);
+  withSessionSandboxSeam(_sessionSandboxDeps);
+
+  test("AC-14: configured asks follow profile Bash asks and denies are forwarded", async () => {
+    const spy = spyOn(codingSupport, "buildCodingToolSupport");
+    const rule = { tool: "GitCommit" as const, patterns: ["*"] };
+    const denyRules = [{ tool: "Delete" as const, patterns: ["keep/**"] }];
+    try {
+      buildSessionToolSupport(await args({ profile: "full", bashApproval: "gated", askRules: [rule], denyRules }));
+      expect(spy.mock.calls[0]?.[0].askRules).toEqual([{ tool: "Bash", patterns: ["*"] }, rule]);
+      expect(spy.mock.calls[0]?.[0].denyRules).toEqual(denyRules);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("AC-15: disabled config and explicit fallback returns no launcher", async () => {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    const result = await resolveSessionLauncher({
+      profile: "full",
+      root: "/work",
+      protectedPaths: EMPTY,
+      bashApproval: "raw",
+      allowUnsandboxed: true,
+      config: { ...DEFAULT_SANDBOX_CONFIG, enabled: false },
+    });
+    expect(result.sandbox.kind).toBe("disabled");
+    expect(result.launcher).toBeUndefined();
+  });
+
+  test.each([false, true])("AC-16/17: backend receives default or configured domains (custom=%s)", async (custom) => {
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps);
+    const configs: SandboxConfig[] = [];
+    _sessionSandboxDeps.backendFor = (config) => {
+      configs.push(config);
+      return seam.backend;
+    };
+    const config = {
+      ...DEFAULT_SANDBOX_CONFIG,
+      network: { ...DEFAULT_SANDBOX_CONFIG.network, allowedDomains: ["registry.npmjs.org"] },
+    };
+    await resolveSessionLauncher({
+      profile: "full",
+      root: "/work",
+      protectedPaths: EMPTY,
+      bashApproval: "gated",
+      allowUnsandboxed: false,
+      ...(custom ? { config } : {}),
+    });
+    expect(configs).toEqual([custom ? config : DEFAULT_SANDBOX_CONFIG]);
   });
 });

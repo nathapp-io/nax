@@ -21,6 +21,7 @@ import {
   parseNativeBackendOptions,
   type ResolvedNativeOptions,
 } from "./native-backend-options.ts";
+import { nativePostureRules } from "./native-posture-rules.ts";
 import { createSessionAskLink, createSessionAskResolver } from "./session-ask-link.ts";
 import type { BackendOpenContext, OpenedBackend, SessionBackend } from "./session-backend.ts";
 import { createSessionInteractionHandler, embedderToolDescriptor } from "./session-interaction.ts";
@@ -65,6 +66,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
   if (ctx.resume !== undefined && raw.carryHistoryAcrossModels !== true)
     checkResumeModel(ctx.resume.doc, ctx.sessionId, raw.model);
   const { bashApproval, allowUnsandboxed, allowUnsandboxedCommands } = nativeProfileRules(ctx.profile, raw);
+  const posture = nativePostureRules(ctx.profile, raw);
   const protectedPaths = {
     ...defaultProtectedPaths(raw.credentials !== undefined),
     ...raw.hostPorts?.protectedPaths,
@@ -75,6 +77,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     protectedPaths,
     bashApproval,
     allowUnsandboxed,
+    config: posture.sandbox,
   });
   const providerTools =
     ctx.profile === "none" || raw.toolProviders === undefined
@@ -109,6 +112,8 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     launcher,
     askResolver: createSessionAskResolver(createSessionAskLink({ port: ctx.asks, currentCallId: () => callId })),
     interceptor: raw.hostPorts?.commandInterceptor,
+    askRules: posture.askRules,
+    denyRules: posture.denyRules,
     // US-003: the profile's validated opt-in, so an interactive "full" session
     // can offer Bash's per-call escape without turning the sandbox off.
     ...(allowUnsandboxedCommands ? { unsandboxedCommands: true } : {}),
