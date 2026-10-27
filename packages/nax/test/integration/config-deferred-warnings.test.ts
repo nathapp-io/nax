@@ -1,8 +1,25 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
+import * as configExports from "@/config";
 import { loadConfig } from "@/config";
 import * as logging from "@/logger/logger";
 import { cleanupTempDir, makeTempDir } from "../helpers/temp";
+
+test("AC-17: loadConfig preserves the tui permission block for posture resolution", async () => {
+  projectDir = makeTempDir("nax-config-tui-");
+  await Bun.write(
+    join(projectDir, ".nax/config.json"),
+    JSON.stringify({
+      execution: { permissions: { tui: { bashApproval: "gated", ask: ["Write"], deny: ["Delete(src/**)"] } } },
+    }),
+  );
+  const config = await loadConfig(projectDir);
+  expect(configExports.resolveTuiPermissions(config)).toEqual({
+    bashApproval: "gated",
+    askRules: ["Write"],
+    denyRules: ["Delete(src/**)"],
+  });
+});
 
 let projectDir: string | undefined;
 afterEach(() => {

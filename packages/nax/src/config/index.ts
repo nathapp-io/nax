@@ -32,8 +32,13 @@ export {
   PROJECT_NAX_DIR,
   projectConfigDir,
 } from "./paths";
-export type { PipelineStage } from "./permissions";
-export { isPipelineStage, resolvePermissions, SESSION_CLOSE_PERMISSION_MODE } from "./permissions";
+export type { PipelineStage, TuiPermissions } from "./permissions";
+export {
+  isPipelineStage,
+  resolvePermissions,
+  resolveTuiPermissions,
+  SESSION_CLOSE_PERMISSION_MODE,
+} from "./permissions";
 export {
   listProfiles,
   loadProfile,
