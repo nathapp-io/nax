@@ -3,7 +3,7 @@
   "feature": "chat-workflow-state",
   "branchName": "feat/chat-workflow-state",
   "createdAt": "2026-10-27T00:00:00.000Z",
-  "updatedAt": "2026-10-27T11:00:15.339Z",
+  "updatedAt": "2026-10-27T11:11:17.347Z",
   "userStories": [
     {
       "id": "US-001",
@@ -175,14 +175,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Extends one reader and adds one test file using the existing verdict loader, optional-field projection and deterministic file sorting; fixture-based TDD can isolate errors and mtimes without new orchestration or concurrency abstractions."
+        "reasoning": "Extends one reader and adds one test file using the existing verdict loader, optional-field projection and deterministic file sorting; fixture-based TDD can isolate errors and mtimes without new orchestration or concurrency abstractions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/workflow/feature-state.ts",
@@ -206,7 +209,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "67894c596d43e6e345736a13ec63c023f08d2cb6"
     },
     {
       "id": "US-004",
