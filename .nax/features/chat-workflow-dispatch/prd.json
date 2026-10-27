@@ -3,7 +3,7 @@
   "feature": "chat-workflow-dispatch",
   "branchName": "feat/chat-workflow-dispatch",
   "createdAt": "2026-10-27T00:00:00Z",
-  "updatedAt": "2026-10-27T15:03:43.633Z",
+  "updatedAt": "2026-10-27T15:13:27.970Z",
   "userStories": [
     {
       "id": "US-001",
@@ -473,14 +473,17 @@
         "sessions"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Extend the existing ask controller with a bounded host-request map and cancellable timers; approval routing and memory isolation remain security-critical and require strict TDD."
+        "reasoning": "Extend the existing ask controller with a bounded host-request map and cancellable timers; approval routing and memory isolation remain security-critical and require strict TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/ask-controller.ts",
@@ -512,7 +515,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f32e8652d7b9dad17ea99068feb05968a131e3a4"
     },
     {
       "id": "US-009",
