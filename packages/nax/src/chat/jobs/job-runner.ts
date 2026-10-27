@@ -175,8 +175,9 @@ class DetachedJobs implements ChatJobs {
     }
   }
   private async finalize(job: ChatJob, exitCode: number): Promise<void> {
+    const outcome = await resolveJobOutcome(this.records.get(job.id) ?? job, { exitCode }, this.options.repoRoot);
+    // Polling may refresh metrics while outcome resolution is awaiting the command record.
     const current = this.records.get(job.id) ?? job;
-    const outcome = await resolveJobOutcome(current, { exitCode }, this.options.repoRoot);
     const terminal: ChatJob = { ...current, ...outcome, exitCode, endedAt: this.options.now().toISOString() };
     await writeJobRecord(this.options.outputDir, terminal);
     this.records.set(job.id, terminal);

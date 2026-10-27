@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeFakeClock, makeTempDir, waitForCondition } from "@test/helpers";
+import { _jobOutcomeDeps } from "@/chat/jobs/job-outcome";
 import { _jobRunnerDeps, type ChatJobs, createJobRunner, JOB_POLL_MS } from "@/chat/jobs/job-runner";
 import { _jobStoreDeps, jobLogPath, readJobRecords, writeJobRecord } from "@/chat/jobs/job-store";
 import type { ChatJob } from "@/chat/jobs/job-types";
@@ -8,6 +9,7 @@ import { featureDir } from "@/config";
 
 const originalDeps = { ..._jobRunnerDeps };
 const originalStore = { ..._jobStoreDeps };
+const originalOutcome = { ..._jobOutcomeDeps };
 let repoRoot: string;
 let outputDir: string;
 let clock: ReturnType<typeof makeFakeClock>;
@@ -48,6 +50,7 @@ afterEach(() => {
   jobs.dispose();
   Object.assign(_jobRunnerDeps, originalDeps);
   Object.assign(_jobStoreDeps, originalStore);
+  Object.assign(_jobOutcomeDeps, originalOutcome);
   cleanupTempDir(repoRoot);
 });
 async function status(passed: number, state = "running", cost = 1.5) {
@@ -172,6 +175,34 @@ describe("createJobRunner attachment and polling", () => {
       progress: { passed: 2, total: 5 },
       exitCode: 1,
     });
+    expect(clock.pending()).toBe(0);
+  });
+  test("owned finalization retains metrics refreshed while outcome resolution is pending", async () => {
+    const exited = Promise.withResolvers<number>();
+    const outcomeStatus = Promise.withResolvers<Awaited<ReturnType<typeof originalOutcome.readStatusFile>>>();
+    let outcomeStarted = false;
+    _jobRunnerDeps.spawn = mock(() => ({ pid: 4242, exited: exited.promise, unref() {} }));
+    job = await jobs.start({ kind: "run", target: "f1", argv: [], sessionId: "chat", approvedAt: job.approvedAt });
+    _jobOutcomeDeps.readStatusFile = mock((path) => {
+      if (!outcomeStarted) {
+        outcomeStarted = true;
+        return outcomeStatus.promise;
+      }
+      return originalOutcome.readStatusFile(path);
+    });
+    exited.resolve(1);
+    await waitForCondition(() => outcomeStarted, 500);
+    await status(2, "running", 2.5);
+    await clock.advance(JOB_POLL_MS);
+    await waitForCondition(() => jobs.get(job.id)?.cost === 2.5, 500);
+    expect(jobs.get(job.id)?.progress).toEqual({ passed: 2, total: 5 });
+    // The blocked outcome contributes no metrics, so the concurrent refresh must survive.
+    outcomeStatus.resolve(null);
+    await waitForCondition(() => jobs.get(job.id)?.state === "failed", 500);
+    const expected = { cost: 2.5, progress: { passed: 2, total: 5 }, state: "failed", exitCode: 1 };
+    expect(jobs.get(job.id)).toMatchObject(expected);
+    expect((await readJobRecords(outputDir))[0]).toMatchObject(expected);
+    expect(jobs.takeNotice()).toContain("cost $2.50");
     expect(clock.pending()).toBe(0);
   });
   test("AC-16 no poll is armed without running jobs", async () => {
