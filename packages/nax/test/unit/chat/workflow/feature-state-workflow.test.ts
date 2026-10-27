@@ -28,6 +28,8 @@ function loaded(count = 2, record: Partial<WorkflowFeatureRecord> = {}): LoadedR
       fixRan: false,
       rulings: [],
       reasons: [],
+      timings: {},
+      tokensByRole: {},
       url: "https://example.test/pr/7",
       ...record,
     },
