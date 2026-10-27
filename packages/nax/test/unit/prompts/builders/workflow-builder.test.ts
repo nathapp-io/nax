@@ -12,6 +12,32 @@ function lines(text: string): string[] {
   return text.split("\n");
 }
 
+/** A clause that starts a billed launch only on the user's explicit approval. */
+const APPROVAL_GATED_LAUNCH =
+  /\b(never start|do not start|don't start|only after)\b[^.;]*explicit(ly)? approv[^.;]*\blaunch\b/i;
+
+/** A prohibition on launching without the user's explicit approval of that launch. */
+const LAUNCH_FORBIDDEN_WITHOUT_APPROVAL =
+  /\b(never|do not|don't)\b[^.;]*\bwithout\b[^.;]*explicit(ly)? approv[^.;]*\blaunch\b/i;
+
+/** Lines that name every billed command, say so, and gate the launch on explicit approval. */
+function approvalGatedLaunchLines(text: string): string[] {
+  return lines(text).filter(
+    (line) =>
+      BILLED_COMMANDS.every((command) => line.includes(command)) &&
+      line.includes("billed") &&
+      APPROVAL_GATED_LAUNCH.test(line),
+  );
+}
+
+/** Lines that name every billed command and forbid a launch lacking that approval. */
+function forbiddingWithoutApprovalLines(text: string): string[] {
+  return lines(text).filter(
+    (line) =>
+      BILLED_COMMANDS.every((command) => line.includes(command)) && LAUNCH_FORBIDDEN_WITHOUT_APPROVAL.test(line),
+  );
+}
+
 describe("buildWorkflowInstructions", () => {
   test("AC-1 names nax-workflow__state", () => {
     expect(buildWorkflowInstructions()).toContain("nax-workflow__state");
@@ -42,11 +68,11 @@ describe("buildWorkflowInstructions", () => {
     expect(buildWorkflowInstructions()).toContain("at most two");
   });
 
-  test("AC-5 says a billed launch starts only on explicit approval", () => {
-    const approvalLine = lines(buildWorkflowInstructions()).find((line) => line.includes("explicit")) ?? "";
-    expect(approvalLine).not.toBe("");
-    expect(approvalLine).toContain("billed");
-    for (const command of BILLED_COMMANDS) expect(approvalLine).toContain(command);
+  test("AC-5 says a billed launch starts only on the user's explicit approval", () => {
+    const text = buildWorkflowInstructions();
+    expect(approvalGatedLaunchLines(text)).toHaveLength(1);
+    const approvalLine = approvalGatedLaunchLines(text)[0] ?? "";
+    expect(approvalLine).toContain("explicit");
   });
 
   test("AC-6 says nax never merges a PR", () => {
@@ -59,13 +85,17 @@ describe("buildWorkflowInstructions", () => {
   });
 
   test("AC-8 forbids launching any billed command without the user's explicit approval of that launch", () => {
-    const forbidding = lines(buildWorkflowInstructions()).filter(
-      (line) =>
-        BILLED_COMMANDS.every((command) => line.includes(command)) &&
-        /\bnever\b|\bdo not\b/i.test(line) &&
-        /approv/i.test(line),
-    );
-    expect(forbidding).toHaveLength(1);
+    expect(forbiddingWithoutApprovalLines(buildWorkflowInstructions())).toHaveLength(1);
+  });
+
+  test("AC-5/AC-8 assertions reject a billed line that never ties the launch to approval", () => {
+    const weakWording = [
+      "`nax plan`, `nax run`, `nax bot review` and `nax bot fix` are billed; explicit is an adjective.",
+      "`nax plan`, `nax run`, `nax bot review` and `nax bot fix` are billed and approval exists somewhere.",
+      "`nax plan`, `nax run`, `nax bot review` and `nax bot fix` are billed: you may approve a launch.",
+    ].join("\n");
+    expect(approvalGatedLaunchLines(weakWording)).toHaveLength(0);
+    expect(forbiddingWithoutApprovalLines(weakWording)).toHaveLength(0);
   });
 
   test("returns the same fixed text on every call", () => {
