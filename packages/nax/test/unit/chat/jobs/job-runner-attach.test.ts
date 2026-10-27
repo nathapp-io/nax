@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeFakeClock, makeTempDir, waitForCondition } from "@test/helpers";
 import { _jobRunnerDeps, type ChatJobs, createJobRunner, JOB_POLL_MS } from "@/chat/jobs/job-runner";
@@ -104,7 +104,7 @@ describe("createJobRunner attachment and polling", () => {
   });
   test("AC-8 concurrent and repeated attach reads once", async () => {
     await writeJobRecord(outputDir, { ...job, state: "succeeded" });
-    _jobStoreDeps.readdir = mock(originalStore.readdir);
+    spyOn(_jobStoreDeps, "readdir");
     await Promise.all([jobs.attach(), jobs.attach()]);
     await jobs.attach();
     expect(_jobStoreDeps.readdir).toHaveBeenCalledTimes(1);
@@ -122,7 +122,7 @@ describe("createJobRunner attachment and polling", () => {
     await attachLive();
     const terminal: ChatJob = { ...job, state: "succeeded", exitCode: 0, endedAt: "2026-10-02T00:00:00Z" };
     await writeJobRecord(outputDir, terminal);
-    _jobStoreDeps.write = mock(originalStore.write);
+    spyOn(_jobStoreDeps, "write");
     alive = false;
     await clock.advance(JOB_POLL_MS);
     await waitForCondition(() => jobs.get(job.id)?.state === "succeeded", 500);
