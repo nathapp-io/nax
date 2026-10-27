@@ -4,8 +4,12 @@ export const _clipboardDeps = {
     process.stdout.write(text);
   },
   platform: process.platform,
+  spawn: Bun.spawn as (
+    command: string[],
+    options: { stdin: Uint8Array; stdout: "ignore"; stderr: "ignore" },
+  ) => Pick<Bun.Subprocess, "exited">,
   spawnCopy: async (text: string): Promise<number> => {
-    const child = Bun.spawn(["pbcopy"], {
+    const child = _clipboardDeps.spawn(["pbcopy"], {
       stdin: new TextEncoder().encode(text),
       stdout: "ignore",
       stderr: "ignore",

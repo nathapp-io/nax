@@ -14,6 +14,23 @@ describe("osc52", () => {
   test("AC-15 encodes hi", () => expect(osc52("hi")).toBe("\u001b]52;c;aGk=\u0007"));
   test("encodes UTF-8", () => expect(osc52("😀")).toBe("\u001b]52;c;8J+YgA==\u0007"));
 });
+describe("pbcopy wrapper", () => {
+  test.each([0, 1])("passes UTF-8 on stdin and returns exit code %i", async (exitCode) => {
+    const spawn = mock((_command: string[], _options: Parameters<typeof _clipboardDeps.spawn>[1]) => ({
+      exited: Promise.resolve(exitCode),
+    }));
+    _clipboardDeps.spawn = spawn;
+    _clipboardDeps.spawnCopy = original.spawnCopy;
+    _clipboardDeps.platform = "darwin";
+
+    await expect(original.spawnCopy("hello 😀")).resolves.toBe(exitCode);
+    expect(spawn.mock.calls).toEqual([
+      [["pbcopy"], { stdin: new TextEncoder().encode("hello 😀"), stdout: "ignore", stderr: "ignore" }],
+    ]);
+    await expect(copyToClipboard("hello 😀")).resolves.toBeUndefined();
+    expect(write.mock.calls).toEqual([[osc52("hello 😀")]]);
+  });
+});
 describe("copyToClipboard", () => {
   test("AC-16 writes OSC52", async () => {
     await copyToClipboard("hi");
