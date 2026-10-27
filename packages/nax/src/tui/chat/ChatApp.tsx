@@ -6,9 +6,8 @@
  * own view. `headerLines` composes the three rows above the transcript, `layoutTranscript`
  * turns the entry union into styled lines, `TranscriptViewport` windows them, `workingLine`
  * draws the turn's live state and `footerModel` the one-row footer. The screen's job is the
- * arithmetic between them: the viewport gets every row the fixed regions do not claim
- * (`rows - header - working - bottom - footer`), never fewer than one, so a terminal too
- * small for those regions loses transcript rather than the footer or the input.
+ * arithmetic between them: the viewport gets the usable rows the fixed regions leave,
+ * never fewer than one; one terminal row stays free unless the fixed regions cannot fit.
  *
  * The screen owns the transcript (`reduceTranscript`), the turn status
  * (`reduceTurnStatus`), the input's `InputDraft` — so unmounting the input for an ask card
@@ -63,7 +62,6 @@ import { askCardModel } from "./ask-card";
 import { bottomBlocked, bottomRowsFor, menuRowsFor, viewportActive } from "./bottom-region";
 import { ChatInput, type ChatInputHandle, EMPTY_DRAFT, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
 import {
-  type FooterHint,
   footerModel,
   headerLines,
   IDLE_STATUS,
@@ -73,6 +71,7 @@ import {
   workingLine,
 } from "./chat-status";
 import { layoutTranscript } from "./layout";
+import type { MouseEvents } from "./mouse-input";
 import { Picker, useChatPicker } from "./Picker";
 import { SlashMenu } from "./SlashMenu";
 import { parseSlashCommand, runSlashCommand, type SlashCommand, type SlashOutcome } from "./slash-commands";
@@ -81,11 +80,13 @@ import { StyledLineView } from "./styled-line";
 import { TranscriptViewport } from "./TranscriptViewport";
 import { type ChatTheme, resolveChatTheme } from "./theme";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
+import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
 import { useSlashMenuKeys } from "./use-slash-menu-keys";
 import { useChatKeys } from "./useChatKeys";
 
 export interface ChatAppProps {
   readonly host: ChatHost;
+  readonly mouse?: MouseEvents;
   /** Absent: colour off, Unicode glyphs — what a captured environment would resolve. */
   readonly theme?: ChatTheme;
   /** Absent: the running build's version. */
@@ -96,7 +97,7 @@ export interface ChatAppProps {
   readonly home?: string;
 }
 
-/** Rows the header always claims: the product line, the path line and the rule. */
+const FRAME_SLACK_ROWS = 1; // Keep Ink below its full-terminal clear threshold.
 const HEADER_ROWS = 3;
 /** Rows the footer always claims. */
 const FOOTER_ROWS = 1;
@@ -186,19 +187,6 @@ function welcomeEntry(host: ChatHost): TranscriptEntry {
 }
 
 /**
- * The gesture the footer offers, in precedence order: an armed quit, then an armed clear,
- * then a running turn, then expanded detail, then the idle hint. Only one is ever shown, so
- * the warning-coloured quit hint is never hidden behind something the screen is merely doing.
- */
-function footerHint(input: { quitArmed: boolean; clearArmed: boolean; busy: boolean; expanded: boolean }): FooterHint {
-  if (input.quitArmed) return "quit";
-  if (input.clearArmed) return "clear";
-  if (input.busy) return "busy";
-  if (input.expanded) return "expanded";
-  return "idle";
-}
-
-/**
  * The status of a turn whose stream has settled. A `turn_end` already stopped it; a stream
  * that ended without one (a rejection, or a runner that threw) leaves the status running, and
  * carrying it forward would keep the working line and the busy footer alive for a turn that
@@ -236,12 +224,14 @@ function slashSink(title: string | undefined, append: (entry: TranscriptEntry) =
 
 export function ChatApp({
   host,
+  mouse,
   theme = DEFAULT_THEME,
   version = NAX_VERSION,
   cwd = host.repoRoot,
   home = "",
 }: ChatAppProps): ReactElement {
   const { stdout } = useStdout();
+  const { copiedChars, onCopy } = useClipboardFeedback(mouse);
   const [size, setSize] = useState<TerminalSize>(() => terminalSize(stdout));
   const [entries, setEntries] = useState<readonly TranscriptEntry[]>(() => [welcomeEntry(host)]);
   const [status, setStatus] = useState<TurnStatus>(IDLE_STATUS);
@@ -306,9 +296,10 @@ export function ChatApp({
   // see must not take the arrows or the return — that key would run a row the user never saw
   // (`/co` silently running `/cost` on an eight-row terminal).
   const working = workingLine(status, nowMs, theme.glyphs);
+  const usableRows = size.rows - FRAME_SLACK_ROWS;
   const bottomBudget = Math.max(
     1,
-    size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
+    usableRows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
   );
   const menuRows = menuRowsFor({ rows: menu.rows, budget: bottomBudget });
   /**
@@ -518,7 +509,11 @@ export function ChatApp({
   const footer = footerModel({
     state,
     status,
-    hint: footerHint({ quitArmed: keys.quitArmed(), clearArmed, busy: turnRunning, expanded }),
+    hint:
+      copiedChars === undefined
+        ? footerHint({ quitArmed: keys.quitArmed(), clearArmed, busy: turnRunning, expanded })
+        : "copied",
+    copiedChars,
     glyphs: theme.glyphs,
   });
   // The bottom budget and the menu's share of it are measured above the key handlers, beside
@@ -554,7 +549,7 @@ export function ChatApp({
   });
   const viewportHeight = Math.max(
     MIN_VIEWPORT_ROWS,
-    size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - bottomRows - FOOTER_ROWS,
+    usableRows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - bottomRows - FOOTER_ROWS,
   );
 
   return (
@@ -568,6 +563,9 @@ export function ChatApp({
         ))}
       </Box>
       <TranscriptViewport
+        mouse={mouse}
+        top={HEADER_ROWS}
+        onCopy={onCopy}
         lines={lines}
         height={viewportHeight}
         theme={theme}
@@ -615,6 +613,8 @@ export function ChatApp({
             active={!keys.locked}
             onChoose={picker.choose}
             onCancel={picker.cancel}
+            onQuery={picker.setQuery}
+            query={picker.model.query}
           />
         </Box>
       ) : (

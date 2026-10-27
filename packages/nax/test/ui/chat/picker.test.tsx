@@ -30,7 +30,17 @@ import {
 } from "@/chat";
 import { createChatHost } from "@/chat/chat-host";
 import { ChatApp } from "@/tui/chat";
-import { _pickerDeps } from "@/tui/chat/Picker";
+import {
+  _pickerDeps,
+  type ChatPicker,
+  type PickerModel,
+  pickerLayout,
+  pickerModel,
+  pickerRows,
+  useChatPicker,
+} from "@/tui/chat/Picker";
+import { plainText } from "@/tui/chat/styled-line";
+import { resolveChatTheme } from "@/tui/chat/theme";
 
 /** The sequences ink parses into the keys the picker owns. */
 const ESCAPE = "\x1b";
@@ -92,6 +102,7 @@ function chatState(current: Partial<ChatHostState> = {}): ChatHostState {
 }
 
 interface MountOptions {
+  readonly models?: readonly string[];
   readonly current?: Partial<ChatHostState>;
   /** Absent: `listSessions()` resolves to no rows at once. */
   readonly sessions?: () => Promise<readonly ChatSessionRow[]>;
@@ -125,7 +136,7 @@ function mount(options: MountOptions = {}) {
   });
   const fake: ChatHost = {
     repoRoot: "/repo",
-    models: MODELS,
+    models: options.models ?? MODELS,
     asks: createChatAskController({ mode: "guarded", answer: () => {} }),
     current: () => current,
     notice: () => undefined,
@@ -212,6 +223,17 @@ function labelOf(row: string): string {
 }
 
 describe("Picker — model and mode", () => {
+  test("US-006 AC-16 navigates to the twentieth host model", async () => {
+    const models = Array.from({ length: 20 }, (_, index) => `p/model-${index + 1}`);
+    const ui = mount({ models, current: { model: models[0] } });
+    await ui.submit("/model");
+    for (let index = 0; index < 19; index++) ui.press(DOWN);
+    const entries = entryRows(frameOf(ui.rows(), "Switch model").inside);
+    expect(entries.find((row) => row.startsWith(POINTER))).toContain("p/model-20");
+    ui.press(RETURN);
+    await ui.settle();
+    expect(ui.switchTo).toHaveBeenCalledWith({ model: "p/model-20" });
+  });
   test("AC-1 /model opens a framed Switch model list with a row per host model", async () => {
     const ui = mount();
     await ui.submit("/model");
@@ -287,6 +309,208 @@ describe("Picker — model and mode", () => {
     ui.press(RETURN);
     await ui.settle();
     expect(ui.switchTo).toHaveBeenCalledWith({ mode: "full" });
+  });
+});
+
+const FILTER_MODELS = ["anthropic/claude-x", "openai/gpt-y"];
+const FILTER_THEME = resolveChatTheme({ env: {}, colorLevel: 0 });
+const filterModel = (query = "", kind: PickerModel["kind"] = "model") =>
+  pickerModel({ kind, query, models: FILTER_MODELS, currentModel: FILTER_MODELS[0] ?? "", currentMode: "guarded" });
+const filterLayout = (query: string) =>
+  pickerLayout(filterModel(query), { width: 80, budget: 20, theme: FILTER_THEME });
+
+describe("US-007 pure model and layout", () => {
+  test("AC-1 case-insensitive substring filters model values", () => {
+    expect(filterModel("GPT").entries.map((entry) => entry.value)).toEqual(["openai/gpt-y"]);
+  });
+  test("AC-2 empty and absent queries retain every model", () => {
+    expect(filterModel().entries.map((entry) => entry.value)).toEqual(FILTER_MODELS);
+    expect(
+      pickerModel({ kind: "model", models: FILTER_MODELS, currentModel: "", currentMode: "guarded" }).entries,
+    ).toHaveLength(2);
+  });
+  test("AC-3 carries the query", () => {
+    expect(filterModel("GPT").query).toBe("GPT");
+    expect(filterModel().query).toBe("");
+  });
+  test("AC-4 mode ignores query", () => {
+    expect(filterModel("zzz", "mode").entries.map((entry) => entry.value)).toEqual(["guarded", "full"]);
+    expect(filterModel("zzz", "mode").query).toBeUndefined();
+  });
+  test("AC-5 equal three-entry fixtures reserve one extra model row", () => {
+    const fixture: PickerModel = {
+      kind: "mode",
+      title: "fixture",
+      entries: ["a", "b", "c"].map((value) => ({ value, label: value })),
+    };
+    expect(pickerRows({ ...fixture, kind: "model" }, 20)).toBe(pickerRows(fixture, 20) + 1);
+  });
+  test.each([
+    ["", "type to filter"],
+    ["gp", "Filter: gp"],
+  ])("AC-6 AC-7 query %s sits directly under title", (query, text) => {
+    const layout = filterLayout(query);
+    expect(layout.lines[1]?.map((span) => span.text).join("")).toBe("Switch model");
+    expect(layout.lines[2]?.map((span) => span.text).join("")).toBe(text);
+    expect(layout.rows).toBe(pickerRows(filterModel(query), 20));
+    if (query === "") expect(layout.lines[2]?.[0]?.color).toBe("muted");
+  });
+  test("AC-8 empty matches draw a muted note", () => {
+    const layout = filterLayout("zzz");
+    const note = layout.lines.find((line) => plainText(line) === "no models match");
+    expect(note?.[0]?.color).toBe("muted");
+    expect(filterModel("zzz").entries).toEqual([]);
+  });
+});
+
+describe("US-007 hook query state", () => {
+  test("AC-9 AC-10 filters and resets on cancel and reopen", () => {
+    const { host } = mount({ models: FILTER_MODELS });
+    let picker: ChatPicker | undefined;
+    function Harness() {
+      picker = useChatPicker({
+        host,
+        runControl: async (task) => {
+          await task();
+          return true;
+        },
+        onError: () => {},
+      });
+      return null;
+    }
+    render(<Harness />);
+    const current = (): ChatPicker => {
+      assertDefined(picker, "hook result");
+      return picker;
+    };
+    act(() => current().open("model"));
+    act(() => current().setQuery("gp"));
+    expect(current().model?.entries.map((entry) => entry.value)).toEqual(["openai/gpt-y"]);
+    act(() => current().cancel());
+    expect(current().model).toBeUndefined();
+    act(() => current().open("model"));
+    expect(current().model?.query).toBe("");
+    expect(current().model?.entries).toHaveLength(2);
+  });
+});
+
+describe("US-007 mounted query seam", () => {
+  const open = async () => {
+    const ui = mount({ models: FILTER_MODELS });
+    await ui.submit("/model");
+    return ui;
+  };
+  const entries = (ui: ReturnType<typeof mount>) => entryRows(frameOf(ui.rows(), "Switch model").inside);
+  test("AC-11 typing gpt leaves exactly the matching entry", async () => {
+    const ui = await open();
+    ui.press("gpt");
+    expect(entries(ui).map(labelOf)).toEqual(["openai/gpt-y"]);
+    expect(ui.rows()).toHaveLength(23);
+  });
+  test("AC-12 backspace removes the last query character", async () => {
+    const ui = await open();
+    ui.press("gpt");
+    ui.press("\x7f");
+    expect(ui.rows()).toContain("Filter: gp");
+  });
+  test("AC-13 return chooses the filtered entry", async () => {
+    const ui = await open();
+    ui.press("gpt");
+    ui.press(RETURN);
+    await ui.settle();
+    expect(ui.switchTo).toHaveBeenCalledWith({ model: "openai/gpt-y" });
+  });
+  test.each([
+    ["", ["gpt", RETURN], "openai/gpt-y"],
+    ["", ["zzz", RETURN], undefined],
+    ["gpt", ["\x7f", "\x7f", "\x7f", RETURN], "anthropic/claude-x"],
+    ["", ["claude", DOWN, RETURN], "anthropic/claude-x"],
+  ] as const)("batched query and return use latest matches from '%s': %j", async (initial, keys, expected) => {
+    const ui = await open();
+    if (initial !== "") ui.press(initial);
+    act(() => {
+      for (const key of keys) ui.ui.stdin.write(key);
+    });
+    await ui.settle();
+    if (expected === undefined) {
+      expect(ui.switchTo).not.toHaveBeenCalled();
+      expect(ui.rows()).toContain("no models match");
+      expect(ui.rows()).toContain("Switch model");
+    } else {
+      expect(ui.switchTo).toHaveBeenCalledTimes(1);
+      expect(ui.switchTo).toHaveBeenCalledWith({ model: expected });
+    }
+  });
+  test("AC-14 query change resets the pointer", async () => {
+    const ui = await open();
+    ui.press(DOWN);
+    ui.press("a");
+    expect(entries(ui)[0]?.startsWith(POINTER)).toBe(true);
+    expect(ui.rows()).toContain("Filter: a");
+  });
+  test("AC-15 no matches keeps picker open and return does nothing", async () => {
+    const ui = await open();
+    ui.press("zzz");
+    ui.press(RETURN);
+    await ui.settle();
+    expect(entries(ui)).toEqual([]);
+    expect(ui.rows()).toContain("no models match");
+    expect(ui.rows()).toContain("Switch model");
+    expect(ui.switchTo).not.toHaveBeenCalled();
+  });
+  test("AC-16 escape cancels a filtered picker", async () => {
+    const ui = await open();
+    ui.press("gpt");
+    expect(ui.rows()).toContain("Filter: gpt");
+    ui.press(ESCAPE);
+    await ui.settle();
+    expect(ui.rows()).not.toContain("Switch model");
+    expect(ui.switchTo).not.toHaveBeenCalled();
+  });
+  test("AC-17 typing leaves the chat draft unchanged", async () => {
+    const ui = await open();
+    ui.press("gpt");
+    expect(ui.rows()).toContain("Filter: gpt");
+    ui.press(ESCAPE);
+    expect(ui.rows().join("\n")).toContain(INPUT_PLACEHOLDER);
+    expect(ui.rows().join("\n")).not.toContain("gpt");
+  });
+  test("AC-18 ctrl-modified letters leave the query unchanged", async () => {
+    const ui = await open();
+    ui.press("gp");
+    ui.press("\x14");
+    expect(ui.rows()).toContain("Filter: gp");
+  });
+  test("batched pointer moves and return choose the latest row", async () => {
+    const ui = await open();
+    act(() => {
+      ui.ui.stdin.write(DOWN);
+      ui.ui.stdin.write(RETURN);
+    });
+    await ui.settle();
+    expect(ui.switchTo).toHaveBeenCalledWith({ model: "openai/gpt-y" });
+  });
+  test("mode and resume do not take typed queries", async () => {
+    const ui = mount({ sessions: async () => [session()] });
+    await ui.submit("/mode");
+    ui.press("zzz");
+    expect(entryRows(frameOf(ui.rows(), "Permission mode").inside).map(labelOf)).toEqual(["guarded", "full"]);
+    ui.press(ESCAPE);
+    await ui.submit("/resume");
+    await ui.settle();
+    ui.press("zzz");
+    expect(resumeRows(ui).map(labelOf)).toEqual(["first session"]);
+    expect(ui.rows().join("\n")).not.toContain("Filter:");
+  });
+  test("delete removes a whole grapheme and empty deletion is harmless", async () => {
+    const ui = await open();
+    ui.press("gp👩‍💻");
+    ui.press("\x1b[3~");
+    expect(ui.rows()).toContain("Filter: gp");
+    ui.press("\x7f");
+    ui.press("\x7f");
+    ui.press("\x7f");
+    expect(ui.rows()).toContain("type to filter");
   });
 });
 

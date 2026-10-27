@@ -300,6 +300,11 @@ function footer(overrides: { state?: Partial<ChatHostState>; status?: TurnStatus
 }
 
 describe("footerModel left", () => {
+  test("copied feedback includes the character count and preserves mode and cost", () => {
+    const model = footerModel({ state: chatState(), status: IDLE_STATUS, hint: "copied", copiedChars: 5 });
+    expect(plainText(model.left)).toBe("⏵ guarded · copied 5 chars");
+    expect(plainText(model.right)).toBe("m1 · $0.42");
+  });
   test("gives the guarded mode, the idle hint and no sandbox suffix", () => {
     expect(plainText(footer().left)).toBe("⏵ guarded · shift+tab to cycle");
   });

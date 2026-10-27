@@ -508,7 +508,7 @@ describe("SlashMenu on a short terminal", () => {
     const ui = await shortScreen();
     ui.type("/");
     const rows = ui.rows();
-    expect(rows).toHaveLength(SHORT_ROWS);
+    expect(rows).toHaveLength(SHORT_ROWS - 1);
     // The fixed regions are still the first and last rows, and the prompt is still drawn.
     expect(rows[0]).toStartWith("✻ nax chat");
     expect(rows.at(-1)).toContain("⏵ guarded");
@@ -522,7 +522,7 @@ describe("SlashMenu on a short terminal", () => {
     const drawn = rows.filter((row) => row.startsWith("❯ ") || /^ {2}\//.test(row));
     expect(drawn.length).toBeLessThan(SLASH_MENU_MAX_ROWS);
     expect(drawn.length).toBeGreaterThan(0);
-    expect(rows).toHaveLength(SHORT_ROWS);
+    expect(rows).toHaveLength(SHORT_ROWS - 1);
   });
 
   test("F13 moving the pointer keeps the selection inside the shortened window", async () => {
@@ -530,12 +530,12 @@ describe("SlashMenu on a short terminal", () => {
     ui.type("/");
     for (let index = 0; index < 5; index++) ui.press(DOWN);
     const rows = ui.rows();
-    expect(rows).toHaveLength(SHORT_ROWS);
+    expect(rows).toHaveLength(SHORT_ROWS - 1);
     expect(rows).toContain("❯ /clear  Clear the conversation");
   });
 
-  /** An 80x8 terminal: the input's own frame and one viewport row leave the menu no rows. */
-  const NO_MENU_ROOM_ROWS = 8;
+  /** An 80x9 terminal: the input's own frame and one viewport row leave the menu no rows. */
+  const NO_MENU_ROOM_ROWS = 9;
 
   async function zeroRowScreen() {
     const ui = mount();
@@ -548,7 +548,7 @@ describe("SlashMenu on a short terminal", () => {
     ui.type("/co");
     // The menu the query would open has no row to draw in, so nothing of it is on screen...
     expect(ui.lastFrame()).not.toContain("Show session cost");
-    expect(ui.rows()).toHaveLength(NO_MENU_ROOM_ROWS);
+    expect(ui.rows()).toHaveLength(NO_MENU_ROOM_ROWS - 1);
     // ...and the return is the prompt's: the line runs as typed. A menu nobody can see must
     // not own the key, or the return would run a row the user never saw.
     await ui.submitTyped();

@@ -5,6 +5,9 @@ import { act } from "react";
 import { type ChatHost, type ChatHostState, type ChatMcpState, createChatAskController } from "@/chat";
 import { buildResourceCatalog, type ResourcePackage } from "@/resources";
 import { ChatApp, type ChatTheme, resolveChatTheme } from "@/tui/chat";
+import { _clipboardDeps, osc52 } from "@/tui/chat/clipboard";
+import type { MouseEvents } from "@/tui/chat/mouse-input";
+import { fakeMouse } from "./mouse";
 
 /**
  * The mounted screen, as the acceptance criteria observe it: the frame's rows, the events a
@@ -38,6 +41,7 @@ const SANDBOX_WARNING = "sandbox unavailable: commands run outside the sandbox";
 const FIXED_ROWS_WITHOUT_VIEWPORT = 3 + 3 + 1;
 
 interface MountOptions {
+  readonly mouse?: MouseEvents;
   readonly state?: Partial<ChatHostState>;
   readonly mcp?: ChatMcpState;
   readonly catalog?: ChatHost["catalog"];
@@ -97,7 +101,13 @@ function fakeHost(options: MountOptions = {}) {
 
 function mount(options: MountOptions = {}) {
   const fake = fakeHost(options);
-  const ui = render(<ChatApp host={fake.host} {...(options.theme === undefined ? {} : { theme: options.theme })} />);
+  const ui = render(
+    <ChatApp
+      host={fake.host}
+      mouse={options.mouse}
+      {...(options.theme === undefined ? {} : { theme: options.theme })}
+    />,
+  );
   const rows = () => (ui.lastFrame() ?? "").split("\n");
   const type = (text: string) =>
     act(() => {
@@ -165,9 +175,9 @@ const harness = async (options: MountOptions = {}) => {
 };
 
 describe("ChatApp full-screen layout", () => {
-  test("AC-1 a 30-row terminal renders a frame of 30 rows", async () => {
+  test("AC-1 a 30-row terminal renders a frame of 29 rows", async () => {
     const ui = await harness();
-    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows()).toHaveLength(29);
   });
 
   test("AC-2 the frame opens with the product and version in the header", async () => {
@@ -178,11 +188,12 @@ describe("ChatApp full-screen layout", () => {
   test("AC-3 the frame closes with the mode in the footer", async () => {
     const ui = await harness();
     expect(ui.rows().at(-1)).toContain("⏵ guarded");
+    expect(ui.rows()).toHaveLength(29);
   });
 
-  test("AC-4 a stream with no rows renders the 24-row default", () => {
+  test("AC-4 a stream with no rows renders the 23 usable rows of the default", () => {
     const ui = mount();
-    expect(ui.rows()).toHaveLength(24);
+    expect(ui.rows()).toHaveLength(23);
   });
 
   test("AC-5 a 5-row terminal does not throw and keeps the footer", async () => {
@@ -235,6 +246,7 @@ describe("ChatApp full-screen layout", () => {
     ui.emit({ type: "turn_start" });
     ui.emit({ type: "thinking_delta", round: 1, text: "hmm" });
     expect(rowMatching(ui.rows(), /Thinking…/)).toBeDefined();
+    expect(ui.rows()).toHaveLength(29);
   });
 
   test("AC-13 a running turn offers the interrupt in the footer", async () => {
@@ -385,7 +397,7 @@ describe("ChatApp draft and theme robustness", () => {
   test("F1 a draft wider than the terminal keeps the frame at the terminal's rows", async () => {
     const ui = await harness();
     ui.type("x".repeat(120));
-    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows()).toHaveLength(29);
     // The wrapped draft is drawn, not clipped: the last text row carries its tail.
     expect(ui.rows().at(-3)?.endsWith("xxx")).toBe(true);
   });
@@ -394,7 +406,7 @@ describe("ChatApp draft and theme robustness", () => {
     const ui = mount();
     await ui.resize(40, 30);
     ui.type("alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu");
-    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows()).toHaveLength(29);
     // The input's bottom rule sits directly above the footer: no filler row from a mis-measure.
     expect(ui.rows().at(-2)).toMatch(/^─+$/);
   });
@@ -404,7 +416,7 @@ describe("ChatApp draft and theme robustness", () => {
     // 78 columns of text fill the row behind the `> ` marker, so the cursor cell is the 81st
     // column: the input reserves the wrapped row instead of losing a rule to it.
     ui.type("w".repeat(78));
-    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows()).toHaveLength(29);
     // The row holding the cursor reserves the cell, so the draft's last character wraps.
     expect(ui.rows()).toContainEqual(expect.stringMatching(/^> w{77}$/));
     expect(ui.rows()).toContain("  w");
@@ -415,7 +427,7 @@ describe("ChatApp draft and theme robustness", () => {
   test("F1 a draft taller than the input's window scrolls instead of growing the frame", async () => {
     const ui = await harness();
     ui.type("v".repeat(2400));
-    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows()).toHaveLength(29);
     // The window follows the cursor, so the draft's newest columns are on screen.
     expect(ui.lastFrame()).toContain("vvvv");
     expect(ui.rows().at(-1)).toContain("⏵ guarded");
@@ -427,7 +439,7 @@ describe("ChatApp draft and theme robustness", () => {
     // The spaces are content: the row is 205 columns wide and wraps into three, whether or
     // not the characters at the wrap points are visible.
     ui.type(`hello${" ".repeat(200)}`);
-    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows()).toHaveLength(29);
     expect(ui.rows().filter((row) => /^─+$/.test(row))).toHaveLength(3);
   });
 
@@ -435,7 +447,7 @@ describe("ChatApp draft and theme robustness", () => {
     const ui = mount();
     await ui.resize(80, 12);
     ui.type("v".repeat(2400));
-    expect(ui.rows()).toHaveLength(12);
+    expect(ui.rows()).toHaveLength(11);
     expect(ui.rows().at(-1)).toContain("⏵ guarded");
   });
 
@@ -443,7 +455,7 @@ describe("ChatApp draft and theme robustness", () => {
     const ui = mount();
     await ui.resize(28, 30);
     ui.type("y".repeat(300));
-    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows()).toHaveLength(29);
     // The window follows the cursor: the newest row is the tail of the draft.
     expect(ui.rows().slice(0, -2)).toContainEqual(expect.stringContaining("y"));
   });
@@ -483,6 +495,24 @@ describe("ChatApp draft and theme robustness", () => {
   });
 });
 
+describe("ChatApp steady overlays", () => {
+  test("steady AC-7 a model picker keeps one terminal row free", async () => {
+    const ui = await harness();
+    await ui.line("/model");
+    expect(ui.rows()).toContain("Switch model");
+    expect(ui.rows()).toHaveLength(29);
+    expect(ui.rows().at(-1)).toContain("⏵ guarded");
+  });
+
+  test("steady AC-8 a slash menu keeps one terminal row free", async () => {
+    const ui = await harness();
+    ui.type("/");
+    expect(ui.lastFrame()).toContain("Show commands and skills");
+    expect(ui.rows()).toHaveLength(29);
+    expect(ui.rows().at(-1)).toContain("⏵ guarded");
+  });
+});
+
 describe("ChatApp pending ask layout", () => {
   const longAsk: SessionEventBody = {
     type: "approval_requested",
@@ -509,7 +539,16 @@ describe("ChatApp pending ask layout", () => {
     const ui = mount();
     await ui.resize(40, 30);
     ui.ask(longAsk);
-    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows()).toHaveLength(29);
+    expect(ui.rows().at(-1)).toContain("⏵ guarded");
+  });
+
+  test("steady AC-6 an oversized approval keeps one terminal row free", async () => {
+    const ui = await harness();
+    ui.ask({ ...longAsk, command: Array.from({ length: 60 }, (_, index) => `cmd ${index}`).join("\n") });
+    expect(ui.lastFrame()).toContain("Bash command");
+    expect(rowMatching(ui.rows(), /^… \d+ more lines$/)).toBeDefined();
+    expect(ui.rows()).toHaveLength(29);
     expect(ui.rows().at(-1)).toContain("⏵ guarded");
   });
 
@@ -523,7 +562,7 @@ describe("ChatApp pending ask layout", () => {
     expect(frame).toContain("npm test");
     expect(frame).not.toContain(screenSwitch);
     expect(frame).not.toContain("[?1049l");
-    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows()).toHaveLength(29);
   });
 
   test("F5 an approval's reason cannot leave the alternate screen", async () => {
@@ -541,7 +580,7 @@ describe("ChatApp pending ask layout", () => {
     const frame = ui.lastFrame() ?? "";
     expect(frame).toContain("Proceed?");
     expect(frame).not.toContain(screenSwitch);
-    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows()).toHaveLength(29);
   });
 
   test("F5 a typed answer cannot leave the alternate screen", async () => {
@@ -551,14 +590,14 @@ describe("ChatApp pending ask layout", () => {
     const frame = ui.lastFrame() ?? "";
     expect(frame).toContain("done");
     expect(frame).not.toContain(screenSwitch);
-    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows()).toHaveLength(29);
   });
 
   test("F6 an approval keeps a two-line command on its own rows", () => {
     const ui = mount();
     ui.ask({ ...longAsk, command: "npm test\nbun test --watch", reason: "Run the tests" });
     const rows = ui.rows();
-    expect(rows).toHaveLength(24);
+    expect(rows).toHaveLength(23);
     expect(rows).toContain("Bash command");
     expect(rows).toContain("   npm test");
     expect(rows).toContain("   bun test --watch");
@@ -570,10 +609,10 @@ describe("ChatApp pending ask layout", () => {
   test("F6 a multi-row question answer keeps the frame at the terminal's rows", async () => {
     const ui = await harness();
     ui.ask({ type: "question", requestId: "q1", text: "Proceed?", expiresAt: "later" });
-    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows()).toHaveLength(29);
     ui.type("one\ntwo\nthree");
     const rows = ui.rows();
-    expect(rows).toHaveLength(30);
+    expect(rows).toHaveLength(29);
     expect(rows).toContain("> one");
     expect(rows).toContain("  two");
     expect(rows).toContain("  three");
@@ -587,7 +626,7 @@ describe("ChatApp pending ask layout", () => {
     await ui.resize(40, 30);
     ui.ask({ type: "question", requestId: "q1", text: "Proceed?", expiresAt: "later" });
     ui.type("y".repeat(200));
-    expect(ui.rows()).toHaveLength(30);
+    expect(ui.rows()).toHaveLength(29);
     expect(ui.rows().at(-1)).toContain("⏵ guarded");
   });
 
@@ -596,7 +635,7 @@ describe("ChatApp pending ask layout", () => {
     ui.ask({ type: "question", requestId: "q1", text: "Proceed?", expiresAt: "later" });
     ui.type(Array.from({ length: 12 }, (_, index) => `row ${index}`).join("\n"));
     const rows = ui.rows();
-    expect(rows).toHaveLength(30);
+    expect(rows).toHaveLength(29);
     // The card is drawn whole: its last row — the frame's bottom rule — sits directly above
     // the footer. A box measured with one cap and drawn with another leaves a gap here.
     expect(rows.at(-2)).toMatch(/^─+$/);
@@ -608,7 +647,7 @@ describe("ChatApp pending ask layout", () => {
     const text = Array.from({ length: 60 }, (_, index) => `line ${index}`).join("\n");
     ui.ask({ type: "question", requestId: "q1", text, expiresAt: "later" });
     const rows = ui.rows();
-    expect(rows).toHaveLength(30);
+    expect(rows).toHaveLength(29);
     // The card's head is kept from the top — its title and the question's first lines — and
     // the elision row names what did not fit above the answer box.
     expect(rows).toContain("nax asks");
@@ -617,5 +656,79 @@ describe("ChatApp pending ask layout", () => {
     // The answer box is the one thing a short screen must never drop.
     expect(rows.some((row) => row.startsWith("> "))).toBe(true);
     expect(rows.at(-1)).toContain("⏵ guarded");
+  });
+});
+
+test("US003 AC-15 ChatApp forwards wheel events to its transcript viewport", async () => {
+  const mouse = fakeMouse();
+  const ui = await harness({ mouse: mouse.events });
+  await ui.start();
+  ui.emit({ type: "text_delta", round: 1, text: Array.from({ length: 50 }, (_, i) => `row-${i}`).join("\n\n") });
+  await ui.settle();
+  const before = ui.rows().slice(3, -4);
+  const older = "  row-38";
+  expect(before).not.toContain(older);
+  act(() => mouse.emit("wheelUp"));
+  expect(ui.rows().slice(3, -4)).not.toEqual(before);
+  expect(ui.rows()).toContain(older);
+});
+
+describe("US005 ChatApp clipboard", () => {
+  const original = { ..._clipboardDeps };
+  afterEach(() => Object.assign(_clipboardDeps, original));
+  async function copyScreen() {
+    const mouse = fakeMouse();
+    const writes = mock((_text: string) => {});
+    _clipboardDeps.write = writes;
+    _clipboardDeps.platform = "linux";
+    const ui = mount({ mouse: mouse.events });
+    // One viewport row directly below the three header rows.
+    await ui.resize(80, 8);
+    await ui.start();
+    expect(ui.rows()[3]).toBe("> hello");
+    const event = (kind: "press" | "drag" | "release", x: number) =>
+      act(() => mouse.emit(kind, { button: "left", x, y: 4 }));
+    const drag = async () => {
+      event("press", 3);
+      event("drag", 7);
+      await Promise.resolve(
+        act(async () => {
+          event("release", 7);
+        }),
+      );
+    };
+    return { ui, writes, event, drag };
+  }
+  test("AC-4 click makes no copy or footer hint", async () => {
+    const { ui, writes, event } = await copyScreen();
+    expect(ui.rows().at(-1)).not.toContain("copied");
+    event("press", 3);
+    event("release", 3);
+    expect(writes).not.toHaveBeenCalled();
+    expect(ui.rows().at(-1)).not.toContain("copied");
+  });
+  test.each(["key", "press"])("AC-10/11/12/13 copies absolute cells and clears hint on %s", async (next) => {
+    const { ui, writes, event, drag } = await copyScreen();
+    await drag();
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(writes).toHaveBeenCalledWith(osc52("hello"));
+    expect(ui.rows().at(-1)).toContain("copied 5 chars");
+    if (next === "key") ui.type("a");
+    else event("press", 3);
+    expect(ui.rows().at(-1)).not.toContain("copied");
+  });
+  test.each(["reject", "non-zero"])("AC-14 copied hint survives darwin spawnCopy %s", async (failure) => {
+    const { ui, writes, drag } = await copyScreen();
+    _clipboardDeps.platform = "darwin";
+    _clipboardDeps.spawnCopy = mock(async () => {
+      if (failure === "reject") throw new Error("pbcopy unavailable");
+      return 1;
+    });
+    await drag();
+    expect(_clipboardDeps.spawnCopy).toHaveBeenCalledTimes(1);
+    expect(_clipboardDeps.spawnCopy).toHaveBeenCalledWith("hello");
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(writes).toHaveBeenCalledWith(osc52("hello"));
+    expect(ui.rows().at(-1)).toContain("copied 5 chars");
   });
 });

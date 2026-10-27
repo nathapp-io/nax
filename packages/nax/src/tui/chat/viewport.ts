@@ -23,6 +23,8 @@ export type ViewportAction =
   | { type: "pageDown" }
   | { type: "lineUp" }
   | { type: "lineDown" }
+  | { type: "wheelUp" }
+  | { type: "wheelDown" }
   | { type: "home" }
   | { type: "end" };
 
@@ -31,6 +33,7 @@ export const INITIAL_VIEWPORT: ViewportState = { offset: 0, follow: true, unseen
 
 /** A line move moves one line; a page keeps one line of the previous page as context. */
 const LINE_STEP = 1;
+const WHEEL_LINES = 3;
 const PAGE_OVERLAP = 1;
 
 /** The furthest the view can scroll before the first line sits at the top of the view. */
@@ -90,6 +93,10 @@ export function reduceViewport(
       return afterMove(state, LINE_STEP, total, height);
     case "lineDown":
       return afterMove(state, -LINE_STEP, total, height);
+    case "wheelUp":
+      return afterMove(state, WHEEL_LINES, total, height);
+    case "wheelDown":
+      return afterMove(state, -WHEEL_LINES, total, height);
     case "home":
       return settle(maxOffset(total, height), total, height, state.unseen);
     case "end":

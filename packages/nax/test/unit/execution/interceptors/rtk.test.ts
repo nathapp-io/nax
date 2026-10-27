@@ -475,7 +475,9 @@ describe("rtk defaultRewrite (US-002)", () => {
     expect(RTK_REWRITE_TIMEOUT_MS).toBe(2000);
   });
 
-  test.concurrent("US-002 AC22: a sleeping rtk is timed out within the bound, after really running", async () => {
+  // These real-process deadline tests run serially: concurrent launches compete
+  // for startup time inside the fixed production deadline, before writing the PID.
+  test("US-002 AC22: a sleeping rtk is timed out within the bound, after really running", async () => {
     const run = await runWithFakeRtk('echo $$ > "%PID%"\nexec sleep 8');
     expect(run.outcome).toEqual({ exitCode: -1, stdout: "", timedOut: true });
     expect(run.elapsedMs).toBeLessThanOrEqual(RTK_REWRITE_TIMEOUT_MS + 1000);
@@ -484,7 +486,7 @@ describe("rtk defaultRewrite (US-002)", () => {
     expect(run.pid).toBeGreaterThan(0);
   }, 20_000);
 
-  test.concurrent("US-002 AC23: the timed-out child is no longer a running process", async () => {
+  test("US-002 AC23: the timed-out child is no longer a running process", async () => {
     const run = await runWithFakeRtk('echo $$ > "%PID%"\nexec sleep 8');
     expect(run.outcome).toEqual({ exitCode: -1, stdout: "", timedOut: true });
     expect(run.pid).toBeGreaterThan(0);

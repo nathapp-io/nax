@@ -16,6 +16,23 @@ function mixedSpans(): readonly Span[] {
 }
 
 describe("wrapSpans", () => {
+  test("retains inverse without merging selected and plain neighbours", () => {
+    const spans: StyledLine = [{ text: "selected", inverse: true }, { text: "plain" }];
+    expect(mergeSpans(spans)).toEqual(spans);
+    const result = wrapSpans(spans, { width: 40 }).flat();
+    expect(
+      result
+        .filter((span) => span.inverse)
+        .map((span) => span.text)
+        .join(""),
+    ).toBe("selected");
+    expect(
+      result
+        .filter((span) => !span.inverse)
+        .map((span) => span.text)
+        .join(""),
+    ).toBe("plain");
+  });
   test("wraps already-styled spans to the width behind the prefix", () => {
     const lines = wrapSpans(mixedSpans(), { width: WIDTH, prefix: [{ text: STAR }] });
     for (const line of lines) expect(displayWidth(textOf(line))).toBeLessThanOrEqual(WIDTH);

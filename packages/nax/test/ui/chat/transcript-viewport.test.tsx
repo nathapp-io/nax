@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import chalk from "chalk";
 import { Box } from "ink";
 import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
@@ -6,6 +7,7 @@ import { EMPTY_LINE } from "@/tui/chat/layout";
 import type { StyledLine } from "@/tui/chat/styled-line";
 import { TranscriptViewport } from "@/tui/chat/TranscriptViewport";
 import { resolveChatTheme } from "@/tui/chat/theme";
+import { fakeMouse } from "./mouse";
 
 /** Colour off, so every frame is the plain row text and no assertion depends on escapes. */
 const THEME = resolveChatTheme({ env: {}, colorLevel: 0 });
@@ -201,5 +203,133 @@ describe("TranscriptViewport", () => {
     expect(rows).toHaveLength(2);
     expect(rows.at(0)).toBe("a line far");
     expect(rows.at(1)).toBe("b");
+  });
+});
+
+describe("TranscriptViewport mouse", () => {
+  const lines: StyledLine[] = Array.from({ length: 50 }, (_, index) => [{ text: `line-${index}` }]);
+  const labels = (start: number, count = 10) => Array.from({ length: count }, (_, index) => `line-${start + index}`);
+  test("US003 AC-13 scrolls up three rows and down again wherever the pointer is", () => {
+    const mouse = fakeMouse();
+    const ui = render(<TranscriptViewport lines={lines} height={10} theme={THEME} mouse={mouse.events} />);
+    expect(rowsOf(ui.lastFrame())).toEqual(labels(40));
+    act(() => mouse.emit("wheelUp"));
+    expect(rowsOf(ui.lastFrame())).toEqual(labels(37));
+    act(() => mouse.emit("wheelDown"));
+    expect(rowsOf(ui.lastFrame())).toEqual(labels(40));
+    act(() => mouse.emit("move"));
+    expect(rowsOf(ui.lastFrame())).toEqual(labels(40));
+    ui.unmount();
+    expect(mouse.listeners.size).toBe(0);
+  });
+  test("US003 AC-14 ignores wheel events while inactive and unsubscribes on deactivation", async () => {
+    const mouse = fakeMouse();
+    const frame = (active: boolean) => (
+      <TranscriptViewport lines={lines} height={10} theme={THEME} mouse={mouse.events} active={active} />
+    );
+    const ui = render(frame(false));
+    act(() => mouse.emit("wheelUp"));
+    expect(rowsOf(ui.lastFrame())).toEqual(labels(40));
+    expect(mouse.listeners.size).toBe(0);
+    await Promise.resolve(act(async () => ui.rerender(frame(true))));
+    expect(mouse.listeners.size).toBe(2);
+    await Promise.resolve(act(async () => ui.rerender(frame(false))));
+    act(() => mouse.emit("wheelUp"));
+    expect(rowsOf(ui.lastFrame())).toEqual(labels(40));
+    expect(mouse.listeners.size).toBe(0);
+  });
+  test("US003 AC-17 PageUp without a mouse keeps the one-row overlap", () => {
+    const ui = render(<TranscriptViewport lines={lines.slice(0, 20)} height={5} theme={THEME} />);
+    act(() => {
+      ui.stdin.write(PAGE_UP);
+    });
+    expect(rowsOf(ui.lastFrame())).toEqual(labels(11, 5));
+  });
+});
+
+describe("US005 TranscriptViewport selection", () => {
+  const inverse = "\x1b[7mhello\x1b[27m";
+  function selectionView() {
+    const mouse = fakeMouse();
+    const copies: string[] = [];
+    const frame = (lines: StyledLine[]) => (
+      <TranscriptViewport
+        lines={lines}
+        height={2}
+        top={0}
+        theme={THEME}
+        mouse={mouse.events}
+        onCopy={(text) => copies.push(text)}
+      />
+    );
+    const ui = render(frame([[{ text: "hello world" }]]));
+    const event = (kind: "press" | "drag" | "release", x: number, y = 2) =>
+      act(() => mouse.emit(kind, { button: "left", x, y }));
+    const drag = () => {
+      event("press", 1);
+      event("drag", 5);
+      event("release", 5);
+    };
+    return {
+      ...ui,
+      copies,
+      event,
+      drag,
+      update: async (lines: StyledLine[]) => {
+        await Promise.resolve(act(async () => ui.rerender(frame(lines))));
+      },
+    };
+  }
+  test("AC-1/2 copies hello exactly once, not again on duplicate release", () => {
+    const ui = selectionView();
+    ui.drag();
+    expect(ui.copies).toEqual(["hello"]);
+    ui.event("release", 5);
+    expect(ui.copies).toEqual(["hello"]);
+  });
+  test("AC-3 click does not copy", () => {
+    const ui = selectionView();
+    ui.event("press", 1);
+    ui.event("release", 1);
+    expect(ui.copies).toEqual([]);
+    ui.drag();
+    expect(ui.copies).toEqual(["hello"]);
+  });
+  test.each(["press", "same-count", "count-change", "outside"])(
+    "AC-5/6/7/8/9 inverse lifecycle: %s",
+    async (change) => {
+      const level = chalk.level;
+      chalk.level = 1;
+      try {
+        const ui = selectionView();
+        ui.drag();
+        expect(ui.lastFrame()).toContain(inverse);
+        if (change === "press") ui.event("press", 8);
+        if (change === "outside") ui.event("press", 1, 3);
+        if (change === "same-count") await ui.update([[{ text: "hello streamed" }]]);
+        if (change === "count-change") {
+          await ui.update([[{ text: "hello world" }], [{ text: "new" }]]);
+          expect(ui.lastFrame()).toContain("hello world"); // The old selected row is still visible.
+        }
+        if (change === "same-count") expect(ui.lastFrame()).toContain(inverse);
+        else expect(ui.lastFrame()).not.toContain("\x1b[7mhello");
+      } finally {
+        chalk.level = level;
+      }
+    },
+  );
+  test("drag outside retains focus and release copies the last inside range", () => {
+    const ui = selectionView();
+    ui.event("press", 1);
+    ui.event("drag", 5);
+    ui.event("drag", 9, 3);
+    ui.event("release", 9, 3);
+    expect(ui.copies).toEqual(["hello"]);
+  });
+  test("AC-15 optional mouse/top/copy preserve default newest page without inverse", () => {
+    const lines: StyledLine[] = Array.from({ length: 50 }, (_, i) => [{ text: `line-${i}` }]);
+    const ui = render(<TranscriptViewport lines={lines} height={10} theme={THEME} />);
+    expect(rowsOf(ui.lastFrame())).toEqual(Array.from({ length: 10 }, (_, i) => `line-${40 + i}`));
+    expect(ui.lastFrame()).not.toContain("\x1b[7m");
   });
 });

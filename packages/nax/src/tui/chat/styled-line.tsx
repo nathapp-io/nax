@@ -20,6 +20,7 @@ export interface Span {
   readonly background?: ChatColorToken;
   readonly bold?: boolean;
   readonly italic?: boolean;
+  readonly inverse?: boolean;
 }
 
 export type StyledLine = readonly Span[];
@@ -73,6 +74,7 @@ function spanProps(span: Span, theme: ChatTheme): TextProps {
     backgroundColor: span.background === undefined ? undefined : theme.colors[span.background],
     bold: span.bold,
     italic: span.italic,
+    inverse: span.inverse,
   };
 }
 

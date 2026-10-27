@@ -173,6 +173,18 @@ export async function lookupContextWindow(provider: string, model: string): Prom
   }
 }
 
+/** Tool-capable models in requested provider order and bundled catalog order. */
+export async function listCatalogModels(providerIds: readonly string[]): Promise<readonly string[]> {
+  const catalog = await loadCatalog(_catalogDeps.loadProviders);
+  if (catalog === null) return [];
+  return providerIds.flatMap((provider) =>
+    catalog
+      .listModels(provider)
+      .filter((model) => model.supportsTools)
+      .map((model) => `${provider}/${model.id}`),
+  );
+}
+
 /**
  * Whether the catalog's most recent load attempt for the current
  * `_catalogDeps.loadProviders` reference failed (returned `null` from

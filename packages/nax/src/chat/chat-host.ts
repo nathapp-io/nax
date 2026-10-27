@@ -20,6 +20,7 @@ import { type AskFallback, createAskFallback } from "./ask-fallback";
 import { type ChatAgentRow, listAgentRows } from "./chat-agents-listing";
 import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import { type ChatMode, chatModeOfMeta } from "./chat-mode";
+import { tierModels } from "./chat-models";
 import { type ChatSessionHandle, openChatSession } from "./open-chat-session";
 import type { ChatResources } from "./resources";
 import { createSubagentRuns, type SubagentRuns } from "./subagent-runs";
@@ -79,6 +80,7 @@ export interface ChatHost {
 
 export interface ChatHostDeps {
   readonly resources?: ChatResources;
+  readonly models?: readonly string[];
   readonly config: NaxConfig;
   readonly cwd: string;
   readonly repoRoot: string;
@@ -87,15 +89,6 @@ export interface ChatHostDeps {
   readonly storage: SessionStorage;
   readonly now: () => Date;
   readonly logger: Pick<Logger, "warn">;
-}
-
-function nativeModels(config: NaxConfig): readonly string[] {
-  const tiers = config.models.native;
-  const models = (["fast", "balanced", "powerful"] as const).flatMap((tier) => {
-    const entry = tiers?.[tier];
-    return entry === undefined ? [] : [typeof entry === "string" ? entry : `${entry.provider}/${entry.model}`];
-  });
-  return Object.freeze([...new Set(models)]);
 }
 
 async function closeHandle(handle: ChatSessionHandle): Promise<void> {
@@ -136,7 +129,7 @@ class NativeChatHost implements ChatHost {
     this.catalog = deps.resources?.catalog;
     this.naxPlugins = deps.resources?.naxPlugins;
     this.mcp = deps.resources?.mcp;
-    this.models = nativeModels(deps.config);
+    this.models = deps.models ?? tierModels(deps.config);
     this.projectKey = getProjectKey(deps.config, deps.repoRoot);
     this.outputDir = projectOutputDir(this.projectKey, deps.config.outputDir);
     const rules = deps.config.context.rules;

@@ -68,6 +68,10 @@ function replyEntry(text: string): TranscriptEntry {
   return { kind: "reply", turnId: "t1", text };
 }
 
+test("steady AC-17 reply block gap keeps the gutter indent", () => {
+  expect(texts(layout([replyEntry("# T\n\npara")]))).toEqual(["⏺ T", "  ", "  para"]);
+});
+
 function thinkingEntry(overrides: Partial<ThinkingEntry> = {}): ThinkingEntry {
   return { kind: "thinking", turnId: "t1", text: THOUGHT, startedAt: AT, endedAt: AT_PLUS_6S, ...overrides };
 }

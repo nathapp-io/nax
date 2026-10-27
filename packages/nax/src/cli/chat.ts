@@ -4,13 +4,16 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import chalk from "chalk";
 import type { Command } from "commander";
 import type { Instance } from "ink";
+import { listCatalogModels } from "@/agents/catalog";
 import {
   type ChatHost,
   type ChatHostState,
   type ChatResources,
+  chatModelChoices,
   createChatHost,
   createChatMcp,
   createChatStorage,
+  tierModels,
 } from "@/chat";
 import { findProjectDir, globalConfigDir, loadConfig, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
@@ -21,6 +24,7 @@ import { createSkillsProvider, loadResourceCatalog, naxPluginPackages } from "@/
 import { ensureProjectTrusted, normalizeTrustPath, resolveTrustRoot } from "@/trust";
 import { type ChatAppProps, formatChatExitSummary, renderChat, resolveChatTheme } from "@/tui/chat";
 import { NAX_VERSION } from "@/version";
+import { collectAuthList } from "./auth-list";
 
 const SIGNAL_EXIT_CODES = { SIGTERM: 143, SIGHUP: 129 } as const;
 type ChatSignal = keyof typeof SIGNAL_EXIT_CODES;
@@ -35,6 +39,8 @@ export interface ChatCommandOptions {
 }
 
 export const _chatCommandDeps = {
+  collectAuthList,
+  listCatalogModels,
   stdinIsTTY: (): boolean => process.stdin.isTTY === true,
   ensureTrusted: async (cwd: string): Promise<void> => {
     await ensureProjectTrusted(await normalizeTrustPath(resolveTrustRoot(cwd)), { interactive: true });
@@ -206,12 +212,30 @@ async function chatResources(repoRoot: string, config: NaxConfig, deps: ChatComm
   }
 }
 
+async function discoverModels(config: NaxConfig, deps: ChatCommandDeps): Promise<readonly string[]> {
+  const requested = [
+    ...new Set([
+      ...tierModels(config).map((model) => model.slice(0, model.indexOf("/"))),
+      ...(config.agent?.native?.catalogOverrides ?? []).map(({ provider }) => provider),
+    ]),
+  ];
+  let availableProviders: string[] = [];
+  try {
+    const report = await deps.collectAuthList(requested);
+    availableProviders = report.providers.filter(({ available }) => available).map(({ providerId }) => providerId);
+  } catch {
+    // Auth discovery is optional; explicitly configured models remain usable.
+  }
+  return chatModelChoices({ config, availableProviders, listCatalogModels: deps.listCatalogModels });
+}
+
 async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, cwd: string): Promise<void> {
   const naxDir = deps.findProjectDir(cwd);
   const config = options.profile?.length
     ? await deps.loadConfig(naxDir ?? undefined, { profile: options.profile })
     : await deps.loadConfig(naxDir ?? undefined);
   const repoRoot = naxDir ? dirname(naxDir) : cwd;
+  const models = await discoverModels(config, deps);
   const resources = await chatResources(repoRoot, config, deps);
   const log = (stage: string, message: string): void => deps.writeErr(`[${stage}] ${message}`);
   const logger = getSafeLogger() ?? { warn: log, error: log, info: log, debug: log };
@@ -220,6 +244,7 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
   let host: ChatHost;
   try {
     host = deps.createChatHost({
+      models,
       config,
       cwd,
       repoRoot,
