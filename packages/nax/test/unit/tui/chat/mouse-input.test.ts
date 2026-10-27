@@ -186,6 +186,39 @@ describe("createMouseInput", () => {
     expect(readText(input)).toBe(`${ESC}[<0;xz`);
     expect(events).toHaveLength(1);
   });
+  test.each([`${ESC}[<`, `${ESC}[<0;`, `${ESC}[<0;1;`])(
+    "bounds unterminated numeric fields starting with %j and recovers",
+    (prefix) => {
+      const { source, input, events } = setup();
+      // The adapter retains at most 64 characters of a partial report.
+      const partial = prefix + "1".repeat(64 - prefix.length);
+      source.write(partial);
+      expect(input.stdin.read()).toBeNull();
+      source.write("1");
+      expect(readText(input)).toBe(`${partial}1`);
+      expect(events).toEqual([]);
+      source.write(`23${wheel}z`);
+      expect(readText(input)).toBe("23z");
+      expect(events).toEqual([{ kind: "wheelUp", button: "none", x: 3, y: 4 }]);
+    },
+  );
+  test("forwards an oversized unterminated report in a single chunk", () => {
+    const { source, input, events } = setup();
+    const oversized = `${ESC}[<${"1".repeat(10_000)}`;
+    source.write(oversized);
+    expect(readText(input)).toBe(oversized);
+    expect(events).toEqual([]);
+  });
+  test("completes a report at the partial-buffer boundary", () => {
+    const { source, input, events } = setup();
+    const prefix = `${ESC}[<0;1;`;
+    const partial = `${prefix}${"0".repeat(64 - prefix.length - 1)}5`;
+    source.write(partial);
+    expect(input.stdin.read()).toBeNull();
+    source.write("M");
+    expect(input.stdin.read()).toBeNull();
+    expect(events).toEqual([{ kind: "press", button: "left", x: 1, y: 5 }]);
+  });
   test("exports any-motion SGR enable and reverse-order disable sequences", () => {
     expect(ENABLE_MOUSE).toBe(`${ESC}[?1003h${ESC}[?1006h`);
     expect(DISABLE_MOUSE).toBe(`${ESC}[?1006l${ESC}[?1003l`);

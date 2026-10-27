@@ -23,6 +23,8 @@ export interface MouseInput {
 }
 
 const REPORT_PREFIX = "\u001b[<";
+// Far beyond ordinary terminal reports; bounds retained stdin data even without a terminator.
+const MAX_PENDING_REPORT_LENGTH = 64;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: SGR reports begin with the terminal ESC control byte.
 const REPORT = /^\u001b\[<(\d+);(\d+);(\d+)([Mm])/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: Only an ESC-[< prefix starts a buffered mouse report.
@@ -63,7 +65,9 @@ function filterReports(text: string, emit: (event: MouseEvent) => void): { keys:
       cursor = start + match[0].length;
     } else {
       // `$` also matches before a final newline; require the entire tail to match.
-      if (PARTIAL_REPORT.exec(tail)?.[0] === tail) return { keys, pending: tail };
+      if (tail.length <= MAX_PENDING_REPORT_LENGTH && PARTIAL_REPORT.exec(tail)?.[0] === tail) {
+        return { keys, pending: tail };
+      }
       keys += REPORT_PREFIX;
       cursor = start + REPORT_PREFIX.length;
     }
