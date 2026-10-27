@@ -186,13 +186,13 @@ function lookupStageBlock(
   if (!blocks) return undefined;
   const seen = new Set<string>();
   let key: string | undefined = stage;
-  let block = blocks[stage];
+  let block = Object.hasOwn(blocks, stage) ? blocks[stage] : undefined;
   while (block?.inherit !== undefined && key !== undefined && !seen.has(key)) {
     seen.add(key);
     key = block.inherit;
-    block = blocks[key];
+    block = Object.hasOwn(blocks, key) ? blocks[key] : undefined;
   }
-  return block ?? blocks.default;
+  return block ?? (Object.hasOwn(blocks, "default") ? blocks.default : undefined);
 }
 
 export interface TuiPermissions {

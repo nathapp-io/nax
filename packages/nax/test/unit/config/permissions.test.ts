@@ -494,6 +494,24 @@ describe("resolveTuiPermissions", () => {
     ).toEqual({ bashApproval: "raw", askRules: ["Write"], denyRules: ["Delete"] });
   });
 
+  test.each(["constructor", "toString", "__proto__"])(
+    "unconfigured inherited name %s cannot hide the default deny list",
+    (inherit) => {
+      const config = makeConfig({
+        permissions: { tui: { inherit }, run: { inherit }, default: { deny: ["Delete(src/**)"] } },
+      });
+      expect(configExports.resolveTuiPermissions(config).denyRules).toEqual(["Delete(src/**)"]);
+      expect(resolvePermissions(config, "run").denyRules).toEqual([{ tool: "Delete", patterns: ["src/**"] }]);
+    },
+  );
+
+  test("an explicitly configured constructor block remains a valid inherit target", () => {
+    const config = makeConfig({
+      permissions: { tui: { inherit: "constructor" }, constructor: { deny: ["Delete(src/**)"] } },
+    });
+    expect(configExports.resolveTuiPermissions(config).denyRules).toEqual(["Delete(src/**)"]);
+  });
+
   test("gated patterns do not warn and permissionProfile is ignored", () => {
     expect(
       configExports.resolveTuiPermissions(

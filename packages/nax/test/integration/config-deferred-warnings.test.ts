@@ -21,6 +21,29 @@ test("AC-17: loadConfig preserves the tui permission block for posture resolutio
   });
 });
 
+test.each(["constructor", "toString", "__proto__"])(
+  "loadConfig rejects unconfigured inherited permission target %s",
+  async (inherit) => {
+    projectDir = makeTempDir("nax-config-inherit-");
+    await Bun.write(
+      join(projectDir, ".nax/config.json"),
+      JSON.stringify({ execution: { permissions: { tui: { inherit }, default: { deny: ["Delete(src/**)"] } } } }),
+    );
+    await expect(loadConfig(projectDir)).rejects.toThrow(`inherit names "${inherit}", which is not a permission block`);
+  },
+);
+
+test("loadConfig rejects a constructor target stripped by safe config merging", async () => {
+  projectDir = makeTempDir("nax-config-own-inherit-");
+  await Bun.write(
+    join(projectDir, ".nax/config.json"),
+    JSON.stringify({
+      execution: { permissions: { tui: { inherit: "constructor" }, constructor: { deny: ["Delete(src/**)"] } } },
+    }),
+  );
+  await expect(loadConfig(projectDir)).rejects.toThrow('inherit names "constructor", which is not a permission block');
+});
+
 let projectDir: string | undefined;
 afterEach(() => {
   logging.resetLogger();

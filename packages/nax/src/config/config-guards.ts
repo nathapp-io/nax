@@ -476,7 +476,11 @@ export function validatePermissionsBlock(conf: Record<string, unknown>): void {
   // in a rule list even though no tool by that name is ever registered.
   const known = new Set<string>([...RESERVED_TOOL_NAMES, MCP_RULE_TOOL]);
   for (const [stage, block] of Object.entries(blocks)) {
-    if (block?.inherit !== undefined && typeof block.inherit === "string" && blocks[block.inherit] === undefined) {
+    if (
+      block?.inherit !== undefined &&
+      typeof block.inherit === "string" &&
+      (!Object.hasOwn(blocks, block.inherit) || blocks[block.inherit] === undefined)
+    ) {
       throw new NaxError(
         `Invalid configuration — execution.permissions.${stage}.inherit names "${block.inherit}", which is not a permission block.`,
         "CONFIG_PERMISSIONS_BAD_INHERIT",
@@ -510,7 +514,7 @@ export function validatePermissionsBlock(conf: Record<string, unknown>): void {
         );
       }
       seen.add(cursor);
-      cursor = blocks[cursor]?.inherit;
+      cursor = Object.hasOwn(blocks, cursor) ? blocks[cursor]?.inherit : undefined;
     }
 
     if (block?.allowedTools !== undefined && block?.allow !== undefined) {
