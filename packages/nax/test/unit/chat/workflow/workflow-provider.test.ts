@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _featureStateDeps, type FeatureStateOptions } from "@/chat/workflow/feature-state";
-import { featureDir } from "@/config";
+import { featureDir, featuresDir } from "@/config";
 import { buildWorkflowInstructions } from "@/prompts";
 import { validateFeatureName } from "@/utils/feature-name";
 
@@ -126,6 +126,47 @@ describe("createWorkflowProvider", () => {
       }
     },
   );
+  test.each([65, 128])(
+    "returns a validation ToolResult for a %i-character name, including legacy specs",
+    async (length) => {
+      const feature = "f".repeat(length);
+      validateFeatureName(feature);
+      await Bun.write(join(options.repoRoot, ".nax", "specs", `${feature}.md`), "legacy");
+      const { _workflowProviderDeps } = await import("@/chat/workflow/workflow-provider");
+      const originalProviderDeps = { ..._workflowProviderDeps };
+      const stat = mock(originalProviderDeps.stat);
+      const readdir = mock(originalProviderDeps.readdir);
+      const file = mock(originalDeps.file);
+      const git = mock(originalDeps.git);
+      Object.assign(_workflowProviderDeps, { stat, readdir });
+      Object.assign(_featureStateDeps, { file, git });
+      try {
+        let message = "";
+        try {
+          featureDir(options.repoRoot, feature);
+        } catch (err) {
+          message = err instanceof Error ? err.message : String(err);
+        }
+        expect(message).not.toBe("");
+        expect(await run({ feature })).toEqual({ isError: true, content: message });
+        for (const read of [stat, readdir, file, git]) expect(read).not.toHaveBeenCalled();
+      } finally {
+        Object.assign(_workflowProviderDeps, originalProviderDeps);
+      }
+    },
+  );
+  test("does not suggest directories rejected by the feature path validator", async () => {
+    features("f1");
+    mkdirSync(join(featuresDir(options.repoRoot), "f".repeat(65)));
+    expect(await run({ feature: "nope" })).toEqual({ isError: true, content: "unknown feature nope; known: f1" });
+  });
+  test("accepts a 64-character feature name at the path limit", async () => {
+    const feature = "f".repeat(64);
+    features(feature);
+    const result = await run({ feature });
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(result.content).name).toBe(feature);
+  });
   test("AC-15 sorts known directory names", async () => {
     features("f2", "f1");
     expect(await run({ feature: "nope" })).toEqual({ isError: true, content: "unknown feature nope; known: f1, f2" });

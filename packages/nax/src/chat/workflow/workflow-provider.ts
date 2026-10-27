@@ -27,6 +27,7 @@ function knownDirectories(repoRoot: string): string[] {
       .flatMap((entry) => {
         try {
           validateFeatureName(entry.name);
+          featureDir(repoRoot, entry.name);
           return [entry.name];
         } catch {
           // Stray invalid names are not features and must not enter suggestions.
@@ -56,15 +57,15 @@ async function readState(input: Record<string, unknown>, options: FeatureStateOp
     return { content: JSON.stringify(await readWorkflowStateList(options), null, 2) };
   }
   if (typeof feature !== "string") return failure("[chat] nax-workflow__state feature must be a string");
+  let dir: string;
   try {
     validateFeatureName(feature);
+    // The artifact reader also requires featureDir's stricter feature-ID contract.
+    dir = featureDir(options.repoRoot, feature);
   } catch (err) {
     return failure(errorMessage(err));
   }
-  if (
-    exists(featureDir(options.repoRoot, feature), "directory") ||
-    exists(join(options.repoRoot, ".nax", "specs", `${feature}.md`), "file")
-  ) {
+  if (exists(dir, "directory") || exists(join(options.repoRoot, ".nax", "specs", `${feature}.md`), "file")) {
     return { content: JSON.stringify(await readFeatureState(feature, options), null, 2) };
   }
   const names = knownDirectories(options.repoRoot);
