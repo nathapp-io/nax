@@ -14,11 +14,11 @@ function lines(text: string): string[] {
 
 /** A clause that starts a billed launch only on the user's explicit approval. */
 const APPROVAL_GATED_LAUNCH =
-  /\b(never start|do not start|don't start|only after)\b[^.;]*explicit(ly)? approv[^.;]*\blaunch\b/i;
+  /\b(never start|do not start|don't start|only after)\b[^.;]*\b(user's?|person's?)\b[^.;]*explicit(ly)? approv[^.;]*\blaunch\b/i;
 
 /** A prohibition on launching without the user's explicit approval of that launch. */
 const LAUNCH_FORBIDDEN_WITHOUT_APPROVAL =
-  /\b(never|do not|don't)\b[^.;]*\bwithout\b[^.;]*explicit(ly)? approv[^.;]*\blaunch\b/i;
+  /\b(never|do not|don't)\b[^.;]*\bwithout\b[^.;]*\b(user's?|person's?)\b[^.;]*explicit(ly)? approv[^.;]*\bof (that|this|the) launch\b/i;
 
 /** Lines that name every billed command, say so, and gate the launch on explicit approval. */
 function approvalGatedLaunchLines(text: string): string[] {
@@ -96,6 +96,16 @@ describe("buildWorkflowInstructions", () => {
     ].join("\n");
     expect(approvalGatedLaunchLines(weakWording)).toHaveLength(0);
     expect(forbiddingWithoutApprovalLines(weakWording)).toHaveLength(0);
+  });
+
+  test("AC-5/AC-8 assertions reject generic approval that is not the user's", () => {
+    const genericApproval = [
+      "`nax plan`, `nax run`, `nax bot review` and `nax bot fix` are billed: never start one without explicit approval of that launch.",
+      "`nax plan`, `nax run`, `nax bot review` and `nax bot fix` are billed: never start one without the agent's explicit approval of that launch.",
+      "`nax plan`, `nax run`, `nax bot review` and `nax bot fix` are billed and start only after explicit approval of that launch.",
+    ].join("\n");
+    expect(approvalGatedLaunchLines(genericApproval)).toHaveLength(0);
+    expect(forbiddingWithoutApprovalLines(genericApproval)).toHaveLength(0);
   });
 
   test("returns the same fixed text on every call", () => {
