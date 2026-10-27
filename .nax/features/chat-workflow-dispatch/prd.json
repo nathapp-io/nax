@@ -3,7 +3,7 @@
   "feature": "chat-workflow-dispatch",
   "branchName": "feat/chat-workflow-dispatch",
   "createdAt": "2026-10-27T00:00:00Z",
-  "updatedAt": "2026-10-27T14:06:36.586Z",
+  "updatedAt": "2026-10-27T14:12:47.778Z",
   "userStories": [
     {
       "id": "US-001",
@@ -217,14 +217,17 @@
         "prompts"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure additive prompt formatting plus an existing barrel and test module; no process or authorization state."
+        "reasoning": "Pure additive prompt formatting plus an existing barrel and test module; no process or authorization state.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/workflow-builder.ts",
@@ -235,7 +238,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "90ee8458b20dcaaf0ab7717679203da244b825c6"
     },
     {
       "id": "US-005",
