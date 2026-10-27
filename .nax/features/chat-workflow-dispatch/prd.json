@@ -3,7 +3,7 @@
   "feature": "chat-workflow-dispatch",
   "branchName": "feat/chat-workflow-dispatch",
   "createdAt": "2026-10-27T00:00:00Z",
-  "updatedAt": "2026-10-27T15:53:48.618Z",
+  "updatedAt": "2026-10-27T16:04:22.523Z",
   "userStories": [
     {
       "id": "US-001",
@@ -902,14 +902,17 @@
       "dependencies": [
         "US-013"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A new reactive FIFO scheduler starts session turns only when sending, pending host approvals, pickers and control transitions permit; strict session TDD protects those interacting boundaries."
+        "reasoning": "A new reactive FIFO scheduler starts session turns only when sending, pending host approvals, pickers and control transitions permit; strict session TDD protects those interacting boundaries.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -931,7 +934,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c5dcdc23fb7a2fc458b7d30ff3afeeb805688dea"
     },
     {
       "id": "US-015",
