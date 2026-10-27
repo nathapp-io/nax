@@ -128,6 +128,8 @@ export {
   buildWorkflowBranchReReviewPrompt,
   buildWorkflowBranchReviewPrompt,
 } from "./builders/workflow-branch-builder";
+// US-004 (chat-workflow-state) — the fixed "nax loop" section of a chat session.
+export { buildWorkflowInstructions } from "./builders/workflow-builder";
 // US-004 — the CI repair's own brief, and the two rules it must never break.
 export {
   buildWorkflowCiRepairPrompt,

@@ -161,6 +161,26 @@ describe("createChatMcp", () => {
     expect(reserved?.severity).toBe("error");
     expect(reserved?.message).toBe("[resources] mcp server id nax-agents is reserved");
   });
+  test.each(["providers", "servers", "diagnostics"] as const)(
+    "US-006 reserved workflow ID: %s (AC-6/7/8)",
+    async (surface) => {
+      const f = install();
+      const chat = await createChatMcp(input({ "nax-workflow": server() }));
+      if (surface === "providers") expect(chat.providers.map((p) => p.id)).not.toContain("nax-workflow");
+      if (surface === "servers") expect(chat.state.servers).toEqual([]);
+      if (surface === "diagnostics")
+        expect(chat.state.diagnostics).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              severity: "error",
+              message: "[resources] mcp server id nax-workflow is reserved",
+            }),
+          ]),
+        );
+      expect(f.createMcpPool).not.toHaveBeenCalled();
+      await chat.close();
+    },
+  );
   test("AC-22 each reserved id gets its own diagnostic when both are configured", async () => {
     install();
     const chat = await createChatMcp(input({ "nax-skills": server(), "nax-agents": server() }));

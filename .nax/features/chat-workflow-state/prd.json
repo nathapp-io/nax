@@ -1,0 +1,422 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-workflow-state",
+  "branchName": "feat/chat-workflow-state",
+  "createdAt": "2026-10-27T00:00:00.000Z",
+  "updatedAt": "2026-10-27T11:52:42.062Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Move the status.json reader into a shared leaf",
+      "description": "**Goal** — Extract the existing fail-soft status.json parser for reuse without changing nax status output.\n\n**Motivation** — A dispatching session (features 2 and 3) is useless if it cannot find the feature it would dispatch, so this read path ships first.\n\n**Approach** — Refactor only. `loadStatusFile` and `isUsableStatusFile` leave `src/cli/status-features.ts` for a new `src/execution/status-file-read.ts`. It exports `readStatusFileAt(path)` (parse plus shape guard) and `readStatusFile(featureDir)` (`readStatusFileAt(join(featureDir, \"status.json\"))`). `status-features.ts` calls `readStatusFile` for the feature file and `readStatusFileAt` for the project file, and its output is unchanged. The existing `test/unit/cli/cli-status-project-level.test.ts` and `status-features*.test.ts` stay green as the regression guard for both paths. The new tests go in a new `test/unit/execution/status-file-read.test.ts`. A \"valid version-1 status file\" fixture there means `version: 1`, a `run` with string `id`, string `status` and number `pid`, a `cost` with a number `spent` and a `limit` that is a number or `null`, and a `progress` with number `passed` and `total`.\n\nThe `status.json` parse and shape guard (`loadStatusFile` + `isUsableStatusFile`, file-local in `src/cli/status-features.ts`) move to a new leaf `src/execution/status-file-read.ts` as `readStatusFile(featureDir)`. `status-features.ts` calls it, so `nax status` and the chat tool share one parser. `loadProjectStatusFile` stays in `status-features.ts` and reads its file through the same helper, given a path.\n\n`status-file-read.ts` is imported by relative leaf path only: `../execution/status-file-read` from `status-features.ts` and `../../execution/status-file-read` from `feature-state.ts`. It is never imported through `@/execution`. `check:alias-internals` rejects a deep `@/execution/...` import, and the `@/execution` barrel is not loaded from `chat/`, to avoid new cycles.\n\nKeep the existing optional postRun guard: when postRun is present, both acceptance.status and regression.status must be strings. Missing, non-JSON and shape-rejected files return null without throwing. Preserve the guard rather than validating every NaxStatusFile field. Remove both old file-local functions and replace every feature/project call site; keep project-output resolution in the CLI.\n\n**Scope** — In: shared leaf parser, CLI delegation, new reader tests and specified display regressions. Out: feature-state aggregation (US-002/US-003), prompt builder (US-004), provider (US-005), chat wiring (US-006). Feature-level boundary: Any change to `nax status` or `nax workflow status` output; US-001 is a behaviour-preserving move of the status.json reader.\n\n**Interface**\n```typescript\nexport function readStatusFileAt(path: string): Promise<NaxStatusFile | null>;\nexport function readStatusFile(featureDir: string): Promise<NaxStatusFile | null>;\n```",
+      "acceptanceCriteria": [
+        "[unit] readStatusFile(dir) for a directory whose status.json is a valid version-1 status file returns an object deep-equal to the file's parsed JSON.",
+        "[unit] readStatusFile(dir) for a directory with no status.json returns null.",
+        "[unit] readStatusFile(dir) for a status.json holding not json returns null without throwing.",
+        "[unit] readStatusFile(dir) for an otherwise valid status.json whose version is 2 returns null.",
+        "[unit] readStatusFile(dir) for an otherwise valid status.json with no run.pid returns null.",
+        "[unit] readStatusFile(dir) for an otherwise valid status.json whose cost.limit is the string \"5\" returns null.",
+        "[unit] readStatusFile(dir) for an otherwise valid status.json that has a postRun object with no acceptance.status returns null.",
+        "[unit] readStatusFileAt(path) for a valid status file at an arbitrary path returns an object deep-equal to that file's parsed JSON.",
+        "[integration] displayFeatureStatus({ dir, feature: \"f1\" }) on a fixture repo whose f1 has a prd.json and an otherwise valid status.json with run id r-drift and version 2 resolves without throwing.",
+        "[integration] displayFeatureStatus({ dir, feature: \"f1\" }) on that fixture with run id r-drift and version 2 writes no console output containing r-drift.",
+        "[integration] displayFeatureStatus({ dir, feature: \"f1\" }) on the same fixture with a valid version-1 status.json whose run id is r-ok writes console output that includes r-ok."
+      ],
+      "tags": [
+        "refactor",
+        "execution",
+        "status"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded parser extraction and two CLI read paths; behavior is preserved, with focused parser tests and existing display regression guards.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/status-features.ts",
+        "packages/nax/src/execution/status-file.ts",
+        "packages/nax/test/unit/cli/cli-status-project-level.test.ts",
+        "packages/nax/test/unit/cli/status-features.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/execution/status-file-read.ts",
+        "packages/nax/test/unit/execution/status-file-read.test.ts"
+      ],
+      "suggestedCriteria": [
+        "readStatusFile(dir) returns null for an otherwise valid status.json whose postRun.regression has no status.",
+        "displayFeatureStatus({ dir }) does not include a project-level run id from a version-2 status.json at the resolved output root, preserving the existing fail-soft display behavior."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "60cca7868d98a549bb45faead9be7f79d91180f1"
+    },
+    {
+      "id": "US-002",
+      "title": "Read feature spec, PRD, last run, branch and warnings",
+      "description": "**Goal** — Introduce the read-only feature-state data model and aggregate spec, PRD, run and local branch state.\n\n**Motivation** — Today a chat session has no tool or instruction that points it at `.nax/features/<name>/`, the PRD, the last run or the published PR, so it cannot answer \"where does feature X stand\" without the user walking it through the files.\n\n**Approach** — New `src/chat/workflow/feature-state.ts` with the `FeatureStateOptions`, `FeatureState` and `WorkflowStateList` types, the two limits, `_featureStateDeps` (`git`, `isProcessAlive`), and `readFeatureState` filling `name`, `spec`, `prd`, `run`, `branch` and warnings 1-3 as described in Design. In this story `workflow` is always `null` and `lastRunLog` is always `null`; US-003 fills them. `status.json` is read through `readStatusFile`. Tests go in a new `test/unit/chat/workflow/feature-state.test.ts`, using a temp-dir fixture repo with real files and stubbed `git` and `isProcessAlive`.\n\nPaths under `.nax/features` are built only with `featureDir` / `featuresDir`, because `check:feature-dir-ssot` bans open-coded `.nax/features` paths. `spec` is `relative(repoRoot, join(featureDir(repoRoot, name), \"spec.md\"))`. Resolve that spec first, then `.nax/specs/<name>.md`, else null. Read PRD with loadPRD and select branchName plus total/passed/failed/pending from countStories; missing PRD means prd and branch null. The shared status reader is imported via `../../execution/status-file-read`, never via `@/execution`. A missing, non-JSON or shape-rejected status file yields run null without warning; valid run fields come from run metadata, cost and progress, with alive from the injected process check.\n\nGit probes, run in `repoRoot` through an injectable `_featureStateDeps.git` (default `gitWithTimeout`). A `branchName` that is empty or starts with `-` is never passed to git. Its branch fields take their negative values, because a leading `-` would be read as an option:\n- `exists`: `rev-parse --verify --quiet refs/heads/<branch>` exits 0;\n- `current`: `symbolic-ref --short HEAD` stdout trimmed equals the branch;\n- `upstream`: `rev-parse --abbrev-ref <branch>@{upstream}` stdout trimmed when it exits 0, else null.\nA git probe exiting non-zero, timing out or throwing makes only that field negative (exists false, current false, upstream null), with no warning. No git call is made without a PRD branch.\n\nWarnings, in this order when several apply:\n1. `prd.json unreadable: <message>` when `prd.json` exists but `loadPRD` throws;\n2. `prd has <R> stories left but execution.maxIterations is <M>; pass -m <R> to nax run (nax#2706)` when `R = prd.pending` is greater than `maxIterations`. Only pending stories are eligible: `getNextStory` skips `passed`, `failed`, `regression-failed` and the other terminal states (`src/prd/index.ts:203-210`), and the run loop stops at `maxIterations` iterations (`unified-executor.ts:177`). Retries only add iterations, so `-m <R>` is a floor;\n3. `run <id> is marked running but its process is gone` when `status.json` says `running` and the pid is not alive.\n\nUS-005 validates model-supplied names with validateFeatureName before any reads and translates validation/unknown-feature failures into ToolResult errors. This reader builds feature paths with featureDir; do not add a stricter validateFeatureName filter to the featureDir-based directory enumeration assigned to US-003, because the existing validators accept different name sets. Reuse existing path helpers rather than creating another feature-name grammar. Introduce the complete shared interfaces now; US-003 adds workflow/log aggregation and implements the list reader before US-005 consumes it.\n\n**Scope** — In: shared types/limits, `_featureStateDeps.git` and `.isProcessAlive`, feature artifact reads, run projection, branch probes and warnings 1-3. Out: workflow verdicts, log discovery and list implementation (US-003), instructions (US-004), tool validation/error formatting and barrel exports (US-005), CLI composition (US-006). Feature-level boundaries: Fixing nax#2706 (silent stop at `maxIterations`); this feature only warns about it. Reading `naxCommit` from run logs, and spec layouts other than `.nax/features/<name>/spec.md` and `.nax/specs/<name>.md`.\n\n**Interface** — verbatim data contract:\n```typescript\nexport interface FeatureStateOptions {\n  readonly repoRoot: string;\n  /** `~/.nax/<projectKey>` (or the configured outputDir). */\n  readonly outputDir: string;\n  /** Resolved `config.execution.maxIterations`. */\n  readonly maxIterations: number;\n}\n\nexport interface FeatureState {\n  readonly name: string;\n  /** Repo-relative path of `.nax/features/<name>/spec.md` or `.nax/specs/<name>.md`; null when neither exists. */\n  readonly spec: string | null;\n  readonly prd: { readonly branchName: string; readonly total: number; readonly passed: number;\n                  readonly failed: number; readonly pending: number } | null;\n  /** From `.nax/features/<name>/status.json`. */\n  readonly run: { readonly id: string; readonly status: string; readonly startedAt: string;\n                  readonly alive: boolean; readonly spent: number;\n                  readonly passed: number; readonly total: number } | null;\n  /** From the newest readable `workflow/<runId>/result.json`. */\n  readonly workflow: { readonly runId: string; readonly step: string; readonly outcome?: string;\n                       readonly url?: string; readonly ci?: string;\n                       readonly openItems: number; readonly firstOpenItems: readonly string[] } | null;\n  /** Present only when `prd` is present (the branch name comes from it). */\n  readonly branch: { readonly name: string; readonly exists: boolean; readonly current: boolean;\n                     readonly upstream: string | null } | null;\n  /** Newest `<outputDir>/features/<name>/runs/*.jsonl` file name without extension, excluding `latest.jsonl`. */\n  readonly lastRunLog: string | null;\n  readonly warnings: readonly string[];\n}\n\nexport interface WorkflowStateList {\n  readonly features: readonly FeatureState[];\n  /** Feature directories beyond the list limit. */\n  readonly omitted: number;\n}\n\nexport const WORKFLOW_STATE_LIST_LIMIT = 10;\nexport const FIRST_OPEN_ITEMS_LIMIT = 5;\n\nexport function readFeatureState(name: string, options: FeatureStateOptions): Promise<FeatureState>;\nexport function readWorkflowStateList(options: FeatureStateOptions): Promise<WorkflowStateList>;\n```",
+      "acceptanceCriteria": [
+        "[unit] readFeatureState(\"f1\", options) for a fixture with .nax/features/f1/spec.md returns spec equal to .nax/features/f1/spec.md.",
+        "[unit] readFeatureState(\"f1\", options) for a fixture with no feature spec but a .nax/specs/f1.md returns spec equal to .nax/specs/f1.md.",
+        "[unit] readFeatureState(\"f1\", options) for a fixture with neither spec file returns spec: null.",
+        "[unit] readFeatureState(\"f1\", options) for a fixture whose prd.json has branch feat/f1 and 3 stories (2 passed, 1 pending) returns prd deep-equal to { branchName: \"feat/f1\", total: 3, passed: 2, failed: 0, pending: 1 }.",
+        "[unit] readFeatureState(\"f1\", options) for a fixture with no prd.json returns prd: null.",
+        "[unit] readFeatureState(\"f1\", options) for a fixture with no prd.json returns branch: null and no warnings entry starting prd.json unreadable:.",
+        "[unit] readFeatureState(\"f1\", options) for a fixture whose prd.json holds { returns a warnings entry starting prd.json unreadable:.",
+        "[unit] readFeatureState(\"f1\", { ...options, maxIterations: 2 }) for a PRD with 3 pending stories returns a warnings entry equal to prd has 3 stories left but execution.maxIterations is 2; pass -m 3 to nax run (nax#2706).",
+        "[unit] readFeatureState(\"f1\", { ...options, maxIterations: 2 }) for a 25-story PRD with 24 passed and 1 pending returns no warning containing maxIterations.",
+        "[unit] For a valid status.json with run id r1, status running, pid 4242, cost.spent 1.5 and progress 1 of 3, with _featureStateDeps.isProcessAlive returning true, readFeatureState returns run deep-equal to { id: \"r1\", status: \"running\", startedAt: <the file's startedAt>, alive: true, spent: 1.5, passed: 1, total: 3 }.",
+        "[unit] With that status.json and _featureStateDeps.isProcessAlive returning false, readFeatureState returns a warnings entry equal to run r1 is marked running but its process is gone.",
+        "[unit] For an otherwise valid status.json whose version is 2, readFeatureState returns run: null.",
+        "[unit] With a prd.json that holds { and a running status.json whose pid is not alive, readFeatureState returns the prd.json unreadable: warning before the run r1 is marked running warning.",
+        "[unit] With _featureStateDeps.git answering rev-parse --verify --quiet refs/heads/feat/f1 with exit 0, symbolic-ref --short HEAD with stdout feat/f1\\n, and rev-parse --abbrev-ref feat/f1@{upstream} with stdout origin/feat/f1\\n, readFeatureState returns branch deep-equal to { name: \"feat/f1\", exists: true, current: true, upstream: \"origin/feat/f1\" }.",
+        "[unit] With _featureStateDeps.git exiting 1 for every call, readFeatureState returns branch deep-equal to { name: \"feat/f1\", exists: false, current: false, upstream: null }.",
+        "[unit] With _featureStateDeps.git rejecting for every call, readFeatureState resolves with branch.exists equal to false.",
+        "[unit] For a prd.json whose branchName is --upload-pack=x, readFeatureState never calls _featureStateDeps.git.",
+        "[unit] For that branchName, readFeatureState returns branch deep-equal to { name: \"--upload-pack=x\", exists: false, current: false, upstream: null }.",
+        "[unit] For a prd.json whose branchName is \"\", readFeatureState never calls _featureStateDeps.git.",
+        "[unit] For a prd.json whose branchName is \"\", readFeatureState returns branch deep-equal to { name: \"\", exists: false, current: false, upstream: null }.",
+        "[unit] readFeatureState(\"f1\", options) for a fixture with no workflow/ directory returns workflow: null.",
+        "[unit] readFeatureState returns run: null and warnings deep-equal to [] for an otherwise clean feature when status.json is missing or holds not json, preserving nax status's fail-soft behavior.",
+        "[unit] readFeatureState returns prd: null and branch: null when an existing prd.json causes loadPRD to throw.",
+        "[unit] When every git probe times out, readFeatureState returns branch deep-equal to { name: \"feat/f1\", exists: false, current: false, upstream: null } and adds no warning; probes that exit non-zero or throw add no warning either."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "workflow",
+        "read-only",
+        "input-validation"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two new files aggregate existing parser/PRD helpers and three fixed read-only git probes through standard dependency seams; focused TDD covers validation and branch-option rejection without introducing authentication, permissions or session controls.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/status-file-read.ts",
+        "packages/nax/src/prd/index.ts",
+        "packages/nax/src/config/paths/index.ts",
+        "packages/nax/src/utils/git.ts",
+        "packages/nax/src/utils/feature-name.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/workflow/feature-state.ts",
+        "packages/nax/test/unit/chat/workflow/feature-state.test.ts"
+      ],
+      "suggestedCriteria": [
+        "readFeatureState returns the feature-local spec path when both feature-local and legacy spec files exist.",
+        "readFeatureState returns no maxIterations warning when prd.pending equals maxIterations.",
+        "readFeatureState returns no marked-running warning for a completed run whose pid is not alive.",
+        "readFeatureState returns branch.current: false when symbolic-ref reports another branch while exists remains true for the requested branch."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "65967126565fd16e8b2b46b1f5ce31d9efd774bc"
+    },
+    {
+      "id": "US-003",
+      "title": "Add workflow verdict, last run log and recent-feature list",
+      "description": "**Goal** — Complete feature state with workflow verdicts and run-log discovery, and implement the bounded recently touched feature list.\n\n**Motivation** — The user carries that state in their head between `nax plan`, `nax run` and `nax bot fix`, which is the fragmentation the main roadmap exists to remove.\n\n**Approach** — `readFeatureState` fills `workflow` from `loadRunVerdict` (called as `loadRunVerdict(repoRoot, name, async () => outputDir)`, through `_featureStateDeps`), with `outcome` from `buildVerdict(fillStoryStates(record, result))`, plus warning 4. `_featureStateDeps` gains `loadRunVerdict`. It fills `lastRunLog` from `<outputDir>/features/<name>/runs/`. `readWorkflowStateList` lists feature directories newest first, capped at `WORKFLOW_STATE_LIST_LIMIT`. Workflow modules are imported by relative leaf path, never through `@/workflow`. Tests go in a new `test/unit/chat/workflow/feature-state-workflow.test.ts`.\n\nThe reader `readFeatureState` / `readWorkflowStateList` lives in `src/chat/workflow/feature-state.ts`. It reaches workflow modules only by relative leaf paths (`../../workflow/run-verdict`), never through the `@/workflow` barrel, because that barrel loads `step-context` → `@/cli` and would close an import cycle (see `src/cli/workflow.ts` header). Running `bun run check:import-cycles` from `packages/nax` is the gate.\n\n`loadRunVerdict` is called as `loadRunVerdict(options.repoRoot, name, async () => options.outputDir)`.\n\n- `firstOpenItems` entries are formatted `[<kind>] <id> — <issue>`, matching `nax workflow status`'s plain line. `openItems` is the full count.\n- `outcome` is `buildVerdict(fillStoryStates(record, result))?.outcome`. It is absent when the record has no outcome yet. `ci` and `url` pass through from `record` when present.\n- List mode covers feature directories only. A spec-only feature (`.nax/specs/<name>.md` with no directory) is accepted by name but not listed. Directory entries whose name `featureDir` rejects are skipped.\n- List order: newest first by the latest modification time among the feature directory's `spec.md`, `prd.json` and `status.json` (missing files ignored). Ties are ordered by name ascending.\n\nUse the LoadedRun fields runId, record (step/url?/ci?), openItems and result. firstOpenItems includes at most FIRST_OPEN_ITEMS_LIMIT (5), without changing the full openItems count. Missing result (`WORKFLOW_RESULT_MISSING`) or a newest result with no feature workflow (`WORKFLOW_NOT_STARTED`) yields workflow null without warning. Any other loader exception yields workflow null and warning 4, `workflow record unreadable: <message>`, after warnings 1-3. Preserve existing field behavior from US-002.\n\nFor lastRunLog, select the newest regular `<outputDir>/features/<name>/runs/*.jsonl` filename without extension, excluding latest.jsonl; missing directory or only latest.jsonl returns null. Reuse the timestamp-filename ordering used by nax status; do not read log contents or naxCommit. All repository feature paths use featureDir/featuresDir. For list mode, enumerate valid directories, compute/sort recency, take 10, return each selected feature's full FeatureState, and report the number of valid directories beyond the limit as omitted. A missing feature tree returns { features: [], omitted: 0 }.\n\n**Scope** — In: workflow projection and warning 4, injectable loadRunVerdict, log filename discovery, mtime sorting and bounded lists. Out: replacing the US-002 PRD/run/branch logic, prompt instructions (US-004), tool wrappers and unknown-feature formatting (US-005), chat composition (US-006). Feature-level boundaries: Live forge lookups (`gh` / `glab`) for PR state such as merged or closed, or for a PR that exists without a published workflow record; the state tool reads only files and git, and the PR url and outcome come from the workflow record. Reading `naxCommit` from run logs, and spec layouts other than `.nax/features/<name>/spec.md` and `.nax/specs/<name>.md`. Listing spec-only features (a `.nax/specs/<name>.md` with no feature directory) in list mode; they are readable by name only. Any change to `nax status` or `nax workflow status` output; US-001 is a behaviour-preserving move of the status.json reader.\n\n**Interface** — use the complete FeatureStateOptions/FeatureState/WorkflowStateList contracts introduced by US-002, including:\n```typescript\nexport const WORKFLOW_STATE_LIST_LIMIT = 10;\nexport const FIRST_OPEN_ITEMS_LIMIT = 5;\nexport function readFeatureState(name: string, options: FeatureStateOptions): Promise<FeatureState>;\nexport function readWorkflowStateList(options: FeatureStateOptions): Promise<WorkflowStateList>;\n```\nThe existing leaf integration is `loadRunVerdict(dir: string, feature: string, resolveOutputDir: (dir: string) => Promise<string>): Promise<LoadedRun>`; do not alter its behavior.",
+      "acceptanceCriteria": [
+        "[unit] readFeatureState(\"f1\", options) calls _featureStateDeps.loadRunVerdict with options.repoRoot, \"f1\" and a function that resolves to options.outputDir.",
+        "[unit] When _featureStateDeps.loadRunVerdict resolves a LoadedRun with runId w1, record.step done, record.url https://example.test/pr/7 and two entries in loaded.openItems, the { runId, step, url, openItems } projection of readFeatureState's workflow deep-equals { runId: \"w1\", step: \"done\", url: \"https://example.test/pr/7\", openItems: 2 }.",
+        "[unit] When the loader resolves a LoadedRun whose first openItems entry has kind finding, id F1 and issue fix this, readFeatureState returns workflow.firstOpenItems[0] equal to [finding] F1 — fix this, matching [<kind>] <id> — <issue> built from that entry.",
+        "[unit] With _featureStateDeps.loadRunVerdict resolving a LoadedRun with seven openItems entries, readFeatureState returns workflow.firstOpenItems with length 5.",
+        "[unit] With _featureStateDeps.loadRunVerdict resolving a LoadedRun with seven openItems entries, readFeatureState returns workflow.openItems equal to 7.",
+        "[unit] With a resolved record whose outcome is draft, readFeatureState returns workflow.outcome equal to draft.",
+        "[unit] With a resolved record that has no outcome, readFeatureState returns a workflow with no outcome key.",
+        "[unit] With a resolved record whose ci is pending, readFeatureState returns workflow.ci equal to pending.",
+        "[unit] With _featureStateDeps.loadRunVerdict rejecting a NaxError whose code is WORKFLOW_RESULT_MISSING, readFeatureState returns workflow: null.",
+        "[unit] With _featureStateDeps.loadRunVerdict rejecting a NaxError whose code is WORKFLOW_RESULT_MISSING, readFeatureState returns no warning starting workflow record unreadable.",
+        "[unit] With _featureStateDeps.loadRunVerdict rejecting a NaxError whose code is WORKFLOW_NOT_STARTED, readFeatureState returns workflow: null.",
+        "[unit] With _featureStateDeps.loadRunVerdict rejecting a NaxError whose code is WORKFLOW_NOT_STARTED, readFeatureState returns no warning starting workflow record unreadable.",
+        "[unit] With _featureStateDeps.loadRunVerdict rejecting new Error(\"bad json\"), readFeatureState returns a warnings entry equal to workflow record unreadable: bad json.",
+        "[unit] For an outputDir whose features/f1/runs/ holds 2026-10-01T10-00-00.jsonl, 2026-10-02T10-00-00.jsonl and latest.jsonl, readFeatureState returns lastRunLog equal to 2026-10-02T10-00-00.",
+        "[unit] For an outputDir with no features/f1/runs/ directory, readFeatureState returns lastRunLog: null.",
+        "[unit] For an outputDir whose features/f1/runs/ holds only latest.jsonl, readFeatureState returns lastRunLog: null.",
+        "[unit] readWorkflowStateList(options) for a fixture with twelve valid feature directories returns 10 features.",
+        "[unit] readWorkflowStateList(options) for a fixture with twelve valid feature directories returns omitted: 2.",
+        "[unit] readWorkflowStateList(options) for twelve valid feature directories returns first the feature whose prd.json was modified most recently, given that this prd.json is also newer than every feature's spec.md and status.json.",
+        "[unit] readWorkflowStateList(options) for two feature directories b and a whose files share one modification time returns a before b.",
+        "[unit] readWorkflowStateList(options) for a fixture whose .nax/features/ holds a valid feature directory f1 and a directory named bad name returns features with one entry, named f1.",
+        "[unit] readWorkflowStateList(options) for a repo with no .nax/features/ directory returns { features: [], omitted: 0 }.",
+        "[unit] readFeatureState returns workflow: null when _featureStateDeps.loadRunVerdict throws an error other than WORKFLOW_RESULT_MISSING or WORKFLOW_NOT_STARTED."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "workflow",
+        "read-only"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Extends one reader and adds one test file using the existing verdict loader, optional-field projection and deterministic file sorting; fixture-based TDD can isolate errors and mtimes without new orchestration or concurrency abstractions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/workflow/feature-state.ts",
+        "packages/nax/src/workflow/run-verdict.ts",
+        "packages/nax/src/workflow/open-items.ts",
+        "packages/nax/src/cli/workflow.ts",
+        "packages/nax/src/cli/status-features.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/workflow/feature-state-workflow.test.ts"
+      ],
+      "suggestedCriteria": [
+        "readWorkflowStateList excludes a feature represented only by .nax/specs/f3.md.",
+        "readWorkflowStateList ranks a feature first when its status.json is newer than every other feature's spec.md, prd.json and status.json.",
+        "readWorkflowStateList ranks a feature first when its spec.md is newest even if its directory mtime is older.",
+        "readFeatureState places workflow record unreadable: bad json after a prd.json unreadable: warning and a dead-running-process warning when all three conditions occur.",
+        "readFeatureState returns no ci or url keys in workflow when those fields are absent from the loaded record.",
+        "readWorkflowStateList counts only valid feature directories toward omitted when invalid directories and regular files are also present."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "67894c596d43e6e345736a13ec63c023f08d2cb6"
+    },
+    {
+      "id": "US-004",
+      "title": "Build the fixed nax loop instructions",
+      "description": "**Goal** — Add a small deterministic prompt builder for workflow order, state checks and explicit billed-launch guidance.\n\n**Motivation** — Today a chat session has no tool or instruction that points it at `.nax/features/<name>/`, the PRD, the last run or the published PR, so it cannot answer \"where does feature X stand\" without the user walking it through the files.\n\n**Approach** — New `src/prompts/builders/workflow-builder.ts` exporting `buildWorkflowInstructions(): string` with the required content listed in Design, re-exported from `src/prompts/index.ts`. Tests go in a new `test/unit/prompts/builders/workflow-builder.test.ts`.\n\nThe provider's `instructions()` returns a fixed \"nax loop\" section from a new prompt builder `buildWorkflowInstructions()` in `src/prompts/builders/workflow-builder.ts`, exported from the `@/prompts` barrel like `buildAgentsInstructions`.\n\n### Instructions text (`buildWorkflowInstructions()`)\nA fixed section. Its required content:\n1. a line naming `nax-workflow__state` and saying to call it before proposing any workflow step and again after any workflow step ends;\n2. the loop in this order: brainstorm → spec-writing → spec-review (at most two fix rounds) → `nax plan` → PRD fidelity check (spec-review `--prd`) → commit the spec and PRD → `nax run` → `nax bot review` / `nax bot fix` → the user merges → the user releases;\n3. a line saying `nax plan`, `nax run`, `nax bot review` and `nax bot fix` are billed and start only after the user explicitly approves that launch;\n4. a line saying nax never merges a PR and never releases.\nExact wording is the builder's.\n\nKeep this a pure fixed-text builder without config, file reads or model calls. Place other command mentions so first appearances of spec-review, nax plan, nax run and nax bot fix remain in loop order.\n\n**Scope** — In: fixed builder, public prompt-barrel export and builder behavior tests. Out: feature-state reads (US-002/US-003), provider construction/instructions delegation (US-005), chat registration (US-006). Feature-level boundaries: The billed workflow tools (`plan`, `run`, `bot review`, `bot fix`), background jobs, job records, cancel and the launch approval card; these are feature `chat-workflow-dispatch`. Full-run (chain) approval; this is feature `chat-workflow-chain`. This excludes implementing launches or approval UI, not the in-scope instruction text about them.\n\n**Interface**\n```typescript\nexport function buildWorkflowInstructions(): string;\n```",
+      "acceptanceCriteria": [
+        "[unit] buildWorkflowInstructions() returns text that includes nax-workflow__state.",
+        "[unit] In buildWorkflowInstructions()'s text, spec-review, nax plan, nax run and nax bot fix first appear in that order.",
+        "[unit] buildWorkflowInstructions() returns text that includes --prd.",
+        "[unit] buildWorkflowInstructions() returns text that includes at most two.",
+        "[unit] buildWorkflowInstructions() returns text that includes explicit (the billed-launch approval line).",
+        "[unit] buildWorkflowInstructions() returns text that includes never merges.",
+        "[unit] buildWorkflowInstructions imported from @/prompts returns the same text as the export of src/prompts/builders/workflow-builder.ts.",
+        "[unit] buildWorkflowInstructions() returns text forbidding a launch of nax plan, nax run, nax bot review or nax bot fix without the user's explicit approval of that launch."
+      ],
+      "tags": [
+        "feature",
+        "prompts",
+        "workflow"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure fixed-text builder plus one barrel export, mirroring an established neighboring builder; no runtime approval or access-control implementation.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/agents-builder.ts",
+        "packages/nax/src/prompts/index.ts",
+        "packages/nax/test/unit/prompts/builders/agents-builder.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/prompts/builders/workflow-builder.ts",
+        "packages/nax/test/unit/prompts/builders/workflow-builder.test.ts"
+      ],
+      "suggestedCriteria": [
+        "buildWorkflowInstructions() tells the agent to call nax-workflow__state again after a workflow step ends.",
+        "buildWorkflowInstructions() places committing the spec and PRD after the PRD fidelity check and before nax run.",
+        "buildWorkflowInstructions() states that nax never releases.",
+        "buildWorkflowInstructions() places the user's merge before the user's release and after nax bot review / nax bot fix."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5acc51d06ee53fc1a96e9c73a6c3538d6261157d"
+    },
+    {
+      "id": "US-005",
+      "title": "Expose nax-workflow__state through a static provider",
+      "description": "**Goal** — Expose completed feature-state readers and workflow instructions through a single read-only static chat tool provider.\n\n**Motivation** — A dispatching session (features 2 and 3) is useless if it cannot find the feature it would dispatch, so this read path ships first.\n\n**Approach** — New `src/chat/workflow/workflow-provider.ts` with `createWorkflowProvider(options: FeatureStateOptions): ToolProvider`: id `nax-workflow`, kind `static`, stages `[\"*\"]`, one tool `state` behaving as in Design § Tool behaviour, and `instructions` returning `buildWorkflowInstructions()`. `createWorkflowProvider` and the `FeatureStateOptions` type are exported from `src/chat/index.ts`. Tests go in a new `test/unit/chat/workflow/workflow-provider.test.ts`.\n\nA new static `ToolProvider` with id `nax-workflow`, in `packages/nax/src/chat/workflow/`. Its one tool has local name `state`, so the model sees `nax-workflow__state`. This mirrors `createAgentsProvider` (`src/chat/agents-provider.ts`), which ships `nax-agents__run`. The design doc calls the tool `workflow__state`; the `nax-` prefix matches the other chat providers (`nax-skills`, `nax-agents`).\n\n### Tool behaviour (`nax-workflow__state`)\n- Input schema: `{ type: \"object\", properties: { feature: { type: \"string\" } }, additionalProperties: false }`.\n- `feature` absent, `null`, or a string that is empty or whitespace-only → `readWorkflowStateList` (models often send `\"\"` or `null` for an optional string). `content` is `JSON.stringify(list, null, 2)`.\n- After the list-mode and type checks above, a non-empty string `feature` that passes validateFeatureName and identifies a known feature → `readFeatureState`. `content` is `JSON.stringify(state, null, 2)`.\n- A known feature is one whose directory `.nax/features/<name>/` exists or whose spec `.nax/specs/<name>.md` exists.\n- Description: \"Read where a nax feature stands (spec, PRD, last run, workflow verdict, branch). Omit feature to list recently active features. Read-only; call it before proposing any nax plan/run/bot step.\"\n\nFailure handling:\n- `feature` is neither a string nor `null`: `ToolResult` `isError: true`, content `[chat] nax-workflow__state feature must be a string`; absent feature remains list mode.\n- `feature` fails `validateFeatureName`: `isError: true`, content is the thrown message; nothing is read. Validate before any name-derived filesystem or git access.\n- `feature` is valid but unknown: `isError: true`, content `unknown feature <name>; known: <names>`, where names are the valid feature directory names sorted ascending, at most 20, comma-and-space separated, followed by `, +<N> more` when more exist; `known: (none)` when there are none.\n- `.nax/features/` does not exist in list mode: `{ \"features\": [], \"omitted\": 0 }`, not an error.\nThe reader owns fail-soft artifact, git and workflow handling from US-002/US-003; the provider delegates rather than duplicating that logic. Use featureDir/featuresDir for feature-tree paths and existing validators; legacy spec-only features are accepted by name but not listed.\n\nThe provider's `instructions()` returns a fixed \"nax loop\" section from a new prompt builder `buildWorkflowInstructions()` in `src/prompts/builders/workflow-builder.ts`, exported from the `@/prompts` barrel like `buildAgentsInstructions`.\n\nThe tool result is returned as built. The native runtime's existing `ctx.maxBytes` bound on every tool result truncates it. The list limit (10) and `FIRST_OPEN_ITEMS_LIMIT` (5) keep a normal result well under that bound.\n\nUse `ToolProvider` / `ProviderTool` / `ToolResult` from `@nathapp/nax-agent`. A `static` provider tool runs without a framework ask. This tool has no model call, network access, writes, launch behavior or custom truncation. Integration ACs run the real tool over fixture repositories, proving the US-003 reader and US-004 instruction-builder seams.\n\n**Scope** — In: provider, exact schema/description, list-vs-feature dispatch, validation and unknown-feature ToolResult errors, instructions delegation and chat-barrel exports. Out: modifying state aggregation (US-002/US-003), authoring instructions text (US-004), registration/reserved MCP IDs (US-006). Feature-level boundaries: The billed workflow tools (`plan`, `run`, `bot review`, `bot fix`), background jobs, job records, cancel and the launch approval card; these are feature `chat-workflow-dispatch`. Full-run (chain) approval; this is feature `chat-workflow-chain`. Registering the `nax-workflow` provider in the ACP server (koda); only `nax chat` gets it. Truncating the tool result inside the provider; the native runtime's existing `ctx.maxBytes` bound applies.\n\n**Interface**\n```typescript\nexport function createWorkflowProvider(options: FeatureStateOptions): ToolProvider;\n```\nExport createWorkflowProvider and the upstream FeatureStateOptions type from src/chat/index.ts; do not export internal dependency seams as public agent APIs.",
+      "acceptanceCriteria": [
+        "[unit] createWorkflowProvider(options) returns a provider with id nax-workflow.",
+        "[unit] createWorkflowProvider(options) returns a provider with kind static.",
+        "[unit] createWorkflowProvider(options) returns a provider with stages deep-equal to [\"*\"].",
+        "[unit] The provider's tools(repoRoot) resolves to exactly one tool, whose localName is state.",
+        "[unit] That tool's inputSchema deep-equals { type: \"object\", properties: { feature: { type: \"string\" } }, additionalProperties: false }.",
+        "[unit] The state tool's description includes Read-only.",
+        "[integration] Running the state tool with { feature: \"f1\" } on a fixture repo with feature f1 returns a non-error result whose content parses as JSON with name equal to f1.",
+        "[integration] Running the state tool with {} on a fixture repo with features f1 and f2 returns a non-error result whose content parses as JSON with a features array of length 2.",
+        "[integration] Running the state tool with { feature: \"  \" } on that fixture returns a non-error result whose JSON has a features array of length 2.",
+        "[integration] Running the state tool with { feature: null } on that fixture returns a non-error result whose JSON has a features array of length 2.",
+        "[integration] Running the state tool with { feature: \"nope\" } on a fixture repo with no .nax/features/ directory returns isError: true with content unknown feature nope; known: (none).",
+        "[unit] Running the state tool with { feature: 7 } returns isError: true with content [chat] nax-workflow__state feature must be a string.",
+        "[unit] Running the state tool with { feature: \"../etc\" } returns isError: true.",
+        "[unit] Running the state tool with { feature: \"../etc\" } never calls _featureStateDeps.git.",
+        "[integration] Running the state tool with { feature: \"nope\" } on a fixture repo with features f2 and f1 returns isError: true with content unknown feature nope; known: f1, f2.",
+        "[integration] Running the state tool with { feature: \"f3\" } on a fixture repo with no .nax/features/f3/ directory but a .nax/specs/f3.md file returns a non-error result whose JSON spec equals .nax/specs/f3.md.",
+        "[unit] The provider's instructions(repoRoot) resolves to the string buildWorkflowInstructions() returns.",
+        "[unit] createWorkflowProvider imported from @/chat builds a provider whose id is nax-workflow.",
+        "[unit] Running the state tool with a feature value that is neither a string nor null, excluding an absent feature, returns isError: true with content [chat] nax-workflow__state feature must be a string.",
+        "[unit] Running the state tool with a name rejected by validateFeatureName returns content equal to the thrown validation message.",
+        "[unit] Running the state tool with a name rejected by validateFeatureName performs no filesystem reads.",
+        "[integration] Running the state tool with {} on a repo with no .nax/features/ directory returns a non-error result whose content parses as { features: [], omitted: 0 }.",
+        "[integration] Running the state tool with { feature: \"nope\" } on a fixture with valid directories f01 through f22 and a directory named bad name returns content equal to unknown feature nope; known: f01, f02, f03, f04, f05, f06, f07, f08, f09, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, +2 more."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "workflow",
+        "tool-provider",
+        "input-validation"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Mirrors createAgentsProvider with a thin wrapper over existing feature readers and validation plus barrel exports; standard TDD covers malformed inputs and real-file delegation without changing authentication, access-control or session lifecycle.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/agents-provider.ts",
+        "packages/nax/src/chat/index.ts",
+        "packages/nax/src/chat/workflow/feature-state.ts",
+        "packages/nax/src/prompts/builders/workflow-builder.ts",
+        "packages/nax/test/unit/chat/agents-provider.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/workflow/workflow-provider.ts",
+        "packages/nax/test/unit/chat/workflow/workflow-provider.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Running the state tool with { feature: \"\" } on a repo containing f1 and f2 returns a non-error JSON result with two features.",
+        "Running the state tool for f1 serializes the completed FeatureState with two-space JSON indentation.",
+        "Running the state tool for a feature without any optional artifacts returns its name and null state sections rather than an unknown-feature error when the feature directory exists."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1cfe5a260962324283af7b2aa788f14b8fab021e"
+    },
+    {
+      "id": "US-006",
+      "title": "Wire the workflow provider into nax chat and reserve its ID",
+      "description": "**Goal** — Register the workflow provider in nax chat with resolved repository/config context and prevent MCP servers from shadowing it.\n\n**Motivation** — A dispatching session (features 2 and 3) is useless if it cannot find the feature it would dispatch, so this read path ships first.\n\n**Approach** — `chatResources` in `src/cli/chat.ts` resolves `outputDir = projectOutputDir(getProjectKey(config, repoRoot), config.outputDir)` and inserts `createWorkflowProvider({ repoRoot, outputDir, maxIterations: config.execution.maxIterations })` after the skills provider. `nax-workflow` is added to `RESERVED_SERVER_IDS` in `src/chat/chat-mcp.ts`. The wiring tests go in the existing `test/unit/cli/chat-resources.test.ts`, and the reserved-id test in the existing `test/unit/chat/chat-mcp.test.ts`.\n\n`chatResources` in `src/cli/chat.ts` builds the provider and places it second: `[skills, nax-workflow, ...mcp]`. It imports `createWorkflowProvider` from the `@/chat` barrel (`src/chat/index.ts`), because `check:alias-internals` rejects a deep `@/chat/workflow/...` import. Unlike the spec's shorthand comparison, cli/chat.ts does not currently import createAgentsProvider: the existing chat-host.ts appends that provider independently. Keep that host behavior unchanged.\n\n`nax-workflow` joins `RESERVED_SERVER_IDS` in `src/chat/chat-mcp.ts`. Providers resolve last-wins, so without this an MCP server named `nax-workflow` would silently replace the state tool.\n\nChanged integration targets:\n- `src/cli/chat.ts` `chatResources`.\n  - Baseline: `toolProviders: [createSkillsProvider(async () => catalog), ...mcp.providers]`.\n  - Target: `toolProviders: [createSkillsProvider(async () => catalog), createWorkflowProvider({ repoRoot, outputDir, maxIterations: config.execution.maxIterations }), ...mcp.providers]`, with `outputDir = projectOutputDir(getProjectKey(config, repoRoot), config.outputDir)`. A relative `config.outputDir` makes `projectOutputDir` throw `CONFIG_INVALID` here, before `createChatHost`. `chat-host.ts` already throws the same error, so only the point of failure moves, and `chatResources`' existing `catch` still tears the plugin registry down.\n- `src/chat/chat-mcp.ts` `RESERVED_SERVER_IDS`.\n  - Baseline: `new Set([\"nax-skills\", \"nax-agents\"])`.\n  - Target: `new Set([\"nax-skills\", \"nax-agents\", \"nax-workflow\"])`.\n\n`packages/nax/test/unit/cli/chat-resources.test.ts` — test \"AC-15 appends MCP providers after the skills provider\" asserts `toolProviders.map((p) => p.id)` `toEqual([\"nax-skills\", \"docs\"])`; the workflow provider now sits second, so the expected list becomes `[\"nax-skills\", \"nax-workflow\", \"docs\"]` (skills first, MCP providers last and in order is the invariant kept).\n\nUse the real outer chatCommand entry with existing injected deps and temporary feature files; capture resources handed to createChatHost and run the actual provider/tool. Thread maxIterations from loaded config, not a provider default. The output-root test must set NAX_GLOBAL_CONFIG_DIR to temporary storage, never the real ~/.nax, and restore environment/dependencies afterward. Reserve the ID through the existing skip/diagnostic branch so neither providers nor state.servers includes the rejected MCP server.\n\n**Scope** — In: chatResources imports/resolved options/provider ordering, reserved MCP ID, existing wiring and diagnostic tests. Out: changing reader behavior (US-002/US-003), builder text (US-004), provider behavior/exports (US-005), chat-host agent registration, permission or trust logic. Feature-level boundaries: Registering the `nax-workflow` provider in the ACP server (koda); only `nax chat` gets it. The billed workflow tools (`plan`, `run`, `bot review`, `bot fix`), background jobs, job records, cancel and the launch approval card; these are feature `chat-workflow-dispatch`.\n\n**Interface** — consume the upstream `createWorkflowProvider(options: FeatureStateOptions): ToolProvider` via `@/chat`; resolve the existing `projectOutputDir(projectKey, outputDirOverride)` using `getProjectKey(config, repoRoot)`. No new API or file is required.",
+      "acceptanceCriteria": [
+        "[integration] chatCommand({}, deps) with an MCP provider docs hands createChatHost resources whose toolProviders ids equal [\"nax-skills\", \"nax-workflow\", \"docs\"].",
+        "[integration] chatCommand({ dir }, deps) on a temp fixture repo whose .nax/features/f1/ holds a 3-story prd.json hands createChatHost a nax-workflow provider whose state tool, run with { feature: \"f1\" }, returns JSON with prd.total equal to 3.",
+        "[integration] chatCommand({ dir }, deps) with a loaded config whose execution.maxIterations is 2, on a fixture whose f1 PRD has 3 pending stories, yields a nax-workflow state result for f1 whose warnings include an entry containing execution.maxIterations is 2.",
+        "[integration] chatCommand({ dir }, deps) hands createChatHost a nax-workflow provider whose instructions(dir) resolves to a non-empty string that includes nax-workflow__state.",
+        "[integration] With NAX_GLOBAL_CONFIG_DIR set to a temp directory (never the real ~/.nax), chatCommand({ dir }, deps) with a loaded config whose name is proj-x and no outputDir yields a nax-workflow state result for f1 whose lastRunLog comes from <globalConfigDir>/proj-x/features/f1/runs/ (fixture run log 2026-10-03T00-00-00.jsonl reported as 2026-10-03T00-00-00).",
+        "[unit] createChatMcp for MCP servers { \"nax-workflow\": <stdio server> } returns providers whose ids do not include nax-workflow.",
+        "[unit] createChatMcp for MCP servers { \"nax-workflow\": <stdio server> } returns state.servers deep-equal to [].",
+        "[unit] createChatMcp for MCP servers { \"nax-workflow\": <stdio server> } returns state.diagnostics with an entry of severity error and message [resources] mcp server id nax-workflow is reserved."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "workflow",
+        "cli",
+        "mcp"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Small existing resource-composition and reserved-ID changes across two source files and two existing test files; preserves trust, permissions and session lifecycle while proving real tool wiring.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/chat.ts",
+        "packages/nax/src/chat/chat-mcp.ts",
+        "packages/nax/src/config/project-key.ts",
+        "packages/nax/test/unit/cli/chat-resources.test.ts",
+        "packages/nax/test/unit/chat/chat-mcp.test.ts"
+      ],
+      "suggestedCriteria": [
+        "chatCommand with a relative config.outputDir reports outputDir must be absolute or start with ~/ and does not call createChatHost.",
+        "chatCommand with a relative config.outputDir tears the loaded plugin registry down before returning.",
+        "chatCommand with an absolute config.outputDir yields a workflow state lastRunLog from that override rather than the default project output directory.",
+        "chatCommand with two MCP providers hands createChatHost provider IDs ordered nax-skills, nax-workflow, then the two MCP IDs in their original order."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/cli/chat-resources.test.ts",
+          "reason": "test \"AC-15 appends MCP providers after the skills provider\" asserts `toolProviders.map((p) => p.id)` `toEqual([\"nax-skills\", \"docs\"])`; the workflow provider now sits second, so the expected list becomes `[\"nax-skills\", \"nax-workflow\", \"docs\"]` (skills first, MCP providers last and in order is the invariant kept)."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f5fabdb360974ce0bb23d177210d3f8bb4d56e9b"
+    }
+  ],
+  "analysis": "Existing-code enhancement scoped entirely to packages/nax; no package manifest, agent-library API, persistence schema or network changes are required. Goal: a nax chat session can answer where a feature stands from files and local git, using one static nax-workflow provider and a fixed workflow instruction section. This is the read-path prerequisite for dispatch and chain approval, not an implementation of either. Codebase-memory MCP was unavailable in this planning session, so discovery used direct reads and text search. References below describe the current repository, not assumptions based solely on the spec.\n\nUS-001 / shared parser: packages/nax/src/cli/status-features.ts:76-93 contains file-local loadStatusFile; :96-111 separately reads the project status file using the same guard; :120-146 contains isUsableStatusFile. Feature summary and detail callers are at :179 and :366. Move parsing and the existing minimal guard into execution/status-file-read.ts, retaining project-output resolution in loadProjectStatusFile. Preserve version 1, numeric pid/spent/progress, number-or-null cost.limit, and both acceptance.status and regression.status checks when postRun is present. Do not tighten this into full schema validation: the current guard deliberately accepts less than the full NaxStatusFile interface, including not checking startedAt. packages/nax/src/execution/status-file.ts:135-184 defines the relevant run metadata and :186-213 defines progress/cost; this is primarily a writer module with additional dependencies, so the new reader must import its type only. packages/nax/src/cli/status.ts:19 re-exports displayFeatureStatus, and cli/status-dispatch.ts:54 dynamically invokes it; these public paths need no migration. status-features-details consumes passed status data rather than importing the reader (its header at :4-15 explains that separation). Existing regression tests include packages/nax/test/unit/cli/cli-status-project-level.test.ts:15-117 (temp repo, redirected output dir, captured console, status fixtures), status-features.test.ts:16-119 (single-feature and postRun output), status-features-repo-paths.test.ts and status-features-details-edges.test.ts. Add focused new reader tests and the specified display regressions without changing existing output expectations. The spec's Modifies: None for US-001 describes existing-test import/output compatibility, not a prohibition on modifying the source file explicitly named by the story.\n\nUS-002 / files, PRD and branch: packages/nax/src/prd/index.ts:103-169 implements loadPRD with file existence/size checks, JSON error wrapping, userStories shape checks, normalization and in-memory propagation; :249-282 implements countStories, counting regression-failed as failed and excluding terminal states from pending. Select exactly total/passed/failed/pending rather than spreading all count fields. The iteration warning uses countStories(prd).pending, never total-minus-passed. getNextStory at :195-226 also excludes terminal states for ordinary selection; it has a separate failed-current-story retry path, so the warning is a floor, not a prediction of all run iterations. Do not fix executor stopping behavior. packages/nax/src/config/paths/index.ts:110-136 defines featuresDir/featureDir and :25-54 rejects invalid directory IDs; repository feature paths must use these helpers to satisfy feature-dir-ssot. packages/nax/src/utils/feature-name.ts:6-22 is the tool-input validator; it rejects separators and traversal before reads. Its charset/length contract differs from featureDir's (128 vs 64 characters and underscore handling), so reuse both for their specified roles rather than changing either validator globally. packages/nax/src/utils/git.ts:15 re-exports gitWithTimeout from nax-agent/internal. The new _featureStateDeps seam owns git and isProcessAlive; use argument arrays in repoRoot, no shell and no branch argument when branchName is empty or starts with '-'. Each git result independently fails soft, including thrown errors and timedOut results. PID liveness is best-effort only: status-features.ts:64-73 documents PID reuse, which cannot be solved without a schema change and is not in scope. Warnings must be assembled in specified order regardless of read concurrency. Tests use real temporary artifacts and stub the named seams, restoring them after each case.\n\nUS-003 / workflow and lists: packages/nax/src/workflow/run-verdict.ts:24-36 defines LoadedRun, including openItems, reasons and supplementaryItems. :59-61 exports fillStoryStates; :64-80 assigns WORKFLOW_NOT_STARTED and WORKFLOW_RESULT_MISSING; :87-107 loads the newest readable result, validates the name, fills story states, and reads supplementary files through the supplied output-dir resolver. Do not reimplement newest-result selection or call a forge. packages/nax/src/workflow/open-items.ts:148-158 builds an optional verdict only when outcome exists. packages/nax/src/cli/workflow.ts:76-91 demonstrates buildVerdict(fillStoryStates(record, result)) and conditional optional fields; :109 formats plain open-item lines. The chat summary reports loaded.openItems, not supplementaryItems, and formats each preview without the CLI bullet prefix. loadRunVerdict must be reached through ../../workflow/run-verdict and open-items through its relative leaf; the header at cli/workflow.ts:9-14 documents the barrel -> step-context -> cli cycle. The new shared status reader likewise uses a relative leaf import, not @/execution or a deep execution alias. Add loadRunVerdict to _featureStateDeps so workflow exceptions can be tested deterministically. Run-log naming follows existing status-features.ts:218-232: filter regular .jsonl files, exclude latest.jsonl, sort newest timestamp-style filename first, remove the extension. Output logs live under outputDir/features/name/runs, not the repository feature directory. List only valid feature directories, compute recency from max mtime of spec.md/prd.json/status.json (not directory mtime or output logs), sort descending with ascending-name ties, then cap at 10 and count omitted valid directories. Spec-only legacy features are readable by name but never listed. Missing sources fail soft only as specified; unexpected workflow errors become the fourth warning.\n\nUS-004 / instructions: packages/nax/src/prompts/builders/agents-builder.ts:15-26 shows a small function returning joined instruction lines. packages/nax/src/prompts/index.ts:1-7 requires cross-subsystem imports through the public prompt barrel; :24-30 exports the agents builder. Add buildWorkflowInstructions to that barrel without changing existing builders. Keep the first appearance of spec-review, nax plan, nax run, and nax bot fix in workflow order; place a billing reminder after the loop so it does not accidentally break that order. This is fixed guidance, not an LLM call or an approval mechanism. Include read-before/read-after, bounded spec-review fixes, PRD fidelity review, committing artifacts, user merge and user release, billed launch approval, and never-merge/never-release statements.\n\nUS-005 / static provider: packages/nax/src/chat/agents-provider.ts:23-57 is the closest template: ToolProvider, ProviderTool and ToolResult from @nathapp/nax-agent, one namespaced local tool, failure(content) returning isError, and async tools/instructions. packages/nax-agent/src/tools/provider-types.ts:20-55 defines the contracts and explains that static schemas are repo-authored; use these existing public types without changing nax-agent. Static tools run without a framework ask; this tool must remain read-only, while billing/approval instructions describe future launches only. Preserve the exact optional-string JSON schema while accepting null at runtime because models send it despite that schema. Absence/null/empty/whitespace routes to list; other non-strings return the exact prefixed error. Validate non-empty names before any filesystem or git operation; unknown-name diagnostics enumerate only valid feature directories, alphabetically, at most 20 with an omitted suffix. A legacy spec alone establishes knownness. packages/nax/src/chat/index.ts:1 currently exports createAgentsProvider and its options; add only the requested createWorkflowProvider and FeatureStateOptions exports, not the internal deps seam. The existing agents-provider.test.ts and prompts/builders/agents-builder.test.ts are neighboring test patterns. Exercise the new tool end-to-end on real fixture files to prove it actually delegates to the reader and builder; do not replace integration behavior with a stub response. Return JSON.stringify(value, null, 2) as built, without provider-local truncation. No nax-agent runtime changes are needed.\n\nUS-006 / CLI wiring and collisions: packages/nax/src/cli/chat.ts:172-219 loads the plugin registry, catalog and MCP resources, currently returning [skills, ...mcp.providers] at :196. Add the workflow provider second, resolving projectOutputDir(getProjectKey(config, repoRoot), config.outputDir) inside the existing resource-composition try so its failure tears down the registry. Import createWorkflowProvider via @/chat, not a deep alias. packages/nax/src/config/project-key.ts:24-26 trims configured name and falls back to repo basename; packages/nax/src/runtime/paths.ts:19-32 uses globalConfigDir, expands '~/', accepts absolute paths and throws CONFIG_INVALID for relative outputDir. packages/nax/src/config/paths/index.ts:62-66 honors NAX_GLOBAL_CONFIG_DIR. Tests must set this environment override to temporary storage, restore it afterward, and never write to real ~/.nax. packages/nax/src/chat/chat-host.ts:133-134 already derives the same key/outputDir; :152-166 consumes resources.toolProviders and appends the agents provider when agents exist. Preserve that behavior rather than registering workflow separately in the host. Resolving invalid outputDir now fails earlier, before createChatHost; preserve existing registry cleanup. packages/nax/src/chat/chat-mcp.ts:27 reserves skills/agents, :63-71 supplies exact reserved diagnostics, and :98-110 skips reserved servers before attaching or listing them. Add nax-workflow there to prevent last-wins shadowing. packages/nax/test/unit/cli/chat-resources.test.ts:21-67 provides the injectable chatCommand fixture; :151-162 pins [nax-skills, docs] and must change to [nax-skills, nax-workflow, docs]; :191-232 protects MCP-before-registry teardown and failure cleanup. packages/nax/test/unit/chat/chat-mcp.test.ts:150-179 demonstrates reserved-provider exclusion, empty rows and error diagnostics. Extend these existing files; US-006 creates no new files. Test from chatCommand, capturing createChatHost resources and running the real provider on temporary feature files, so config, root, outputDir and maxIterations threading are all proven. Do not change trust, session lifecycle, permission resolution or ACP server registration.\n\nDelivery order and migration: exactly US-001 -> US-002 -> US-003, independently US-004, then US-005 after US-003/US-004, then US-006. Only new feature APIs and two barrel additions are public within nax; existing status output and workflow status output remain unchanged. No data migration, release bump, new external dependency, model invocation or network access is needed. Feature-state types and limits are introduced by US-002, with workflow/lastRunLog temporarily null; US-003 extends that file and implements list mode before the provider consumes it. Main risks are parser drift, import cycles from large barrels, feature path or git-option injection, warning ordering, dropped optional fields vs undefined keys, incorrect pending counts/mtime sorting, MCP namespace collisions, and incorrect output-root derivation. Harden invalid-name/branch handling through focused negative-path TDD; these stories reuse existing validation and do not introduce authentication, permissions or session lifecycle changes, so standard TDD is sufficient. Follow repository _deps seams rather than mock.module/global patching and shared temp/config helpers rather than new duplicate fixtures. Architecture index docs/architecture/ARCHITECTURE.md:17-39 documents injection, type safety, testing and security references; :163-177 lists function/file-size limits. Keep helpers small and the new feature-state module maintainable without introducing extra files outside declared outputs. From packages/nax, the pipeline runs normal tests/typecheck/check:all; import-cycles, alias-internals, feature-dir-ssot, no-real-global-nax and package-boundaries are relevant gates (package.json:15-21). These are verification steps, not acceptance criteria. Coverage is separate and must not be run inside NAX_SANDBOXED=1. No commands were executed during PRD drafting because this session exposed only file/navigation tools.\n\nRefine audit against spec.md:428-524: all 83 explicit spec ACs remain in their declared stories (10/20/20/7/18/8). Ordinals below count each original spec bullet; mappings refer to the revised acceptanceCriteria arrays. US-001: original 1-8 -> revised 1-8, original 9 -> revised 9-10 (resolve and absence of r-drift output separately), original 10 -> revised 11. US-002: original 1-18 -> revised 1-18, original 19 -> revised 19-20 (empty-branch no-call and values separately), original 20 -> revised 21. US-003: original 1-8 -> revised 1-8, original 9 -> revised 9-10, original 10 -> revised 11-12 (coded-error null and no-warning assertions separately), originals 11-20 -> revised 13-22. US-004: original 1-7 -> revised 1-7. US-005: original 1-18 -> revised 1-18. US-006: original 1-8 -> revised 1-8. Remaining criteria enumerate the spec failure table plus US-004's required negative safety guidance. The explicit billed-launch parenthetical, same-fixture display regression, non-error JSON assertions, and temporary-global-directory/run-log qualifiers all survive. No deprecated file-content tags were present.\n\nFailure-table audit: invalid type/name/unknown name and missing-tree tool results are in US-005; missing-tree reader behavior is also in US-003. Missing/non-JSON/shape-rejected status and missing/corrupt PRD are in US-002, using US-001's parser. Missing/not-started/unexpected workflow results and absent/only-latest log directories are in US-003. Non-zero/timed-out/thrown git probes and empty/leading-minus branch behavior are in US-002. Each story has a negative criterion; the zero-input US-004 builder has no exception API, so its negative criterion checks text forbidding unapproved billed launches rather than inventing an invalid-input path. Regression protection is provided by status display assertions in US-001, real non-null workflow projections in US-003, and the existing skills/MCP-order invariant with workflow inserted second in US-006.\n\nCorrections from the audit: make LoadedRun.openItems the explicit source of workflow counts/previews, compare only the specified workflow projection rather than the whole richer object, constrain the list-recency fixture so a newer spec/status file cannot invalidate its newest-PRD assertion, replace vague status-warning absence with an observable empty warnings array on a clean fixture, and make MCP rejection assertions self-contained. Null/whitespace tool inputs are explicitly excluded from the named-feature branch in the description. The input validator belongs to the provider boundary, not an additional list filter: config/paths/index.ts:24 allows underscore-prefixed directory IDs while utils/feature-name.ts:18 does not. Avoid imposing the narrower grammar on readWorkflowStateList. cli/chat.ts:173-213 confirms resource composition, while chat-host.ts:164-166, not cli/chat.ts, appends createAgentsProvider; corrected the misleading prose. Standard medium/tdd-simple routing fits the existing-reader/validator/provider patterns in US-002/US-003/US-005; none changes authentication, permission decisions or session lifecycle.\n\nAll six contextFiles lists retain every spec-recommended context path within the five-file cap; no story lists its own new output as context. All binding IDs, package workdirs and dependency arrays remain exactly as specified. All eleven feature-level exclusions match the spec verbatim, and nearby Scope Out sections now echo the relevant full exclusions without excluding required warning/instruction text. No story-local exclusion block exists in the spec. No new files or dependencies were introduced by refinement beyond the original declared outputs. Only the PRD was revised; execution-based JSON/test validation was unavailable in this file-tool-only session.",
+  "outOfScope": [
+    "Live forge lookups (`gh` / `glab`) for PR state such as merged or closed, or for a PR that exists without a published workflow record; the state tool reads only files and git, and the PR url and outcome come from the workflow record.",
+    "The billed workflow tools (`plan`, `run`, `bot review`, `bot fix`), background jobs, job records, cancel and the launch approval card; these are feature `chat-workflow-dispatch`.",
+    "Full-run (chain) approval; this is feature `chat-workflow-chain`.",
+    "Cross-session memory of rulings, preferences or past sessions; this is its own slice, not yet designed (user ruling 2026-10-27).",
+    "Registering the `nax-workflow` provider in the ACP server (koda); only `nax chat` gets it.",
+    "Reading `naxCommit` from run logs, and spec layouts other than `.nax/features/<name>/spec.md` and `.nax/specs/<name>.md`.",
+    "Any change to `nax status` or `nax workflow status` output; US-001 is a behaviour-preserving move of the status.json reader.",
+    "Fixing nax#2706 (silent stop at `maxIterations`); this feature only warns about it.",
+    "Editing files under `.nax/` (rules, context) or the slice 2 design document.",
+    "Listing spec-only features (a `.nax/specs/<name>.md` with no feature directory) in list mode; they are readable by name only.",
+    "Truncating the tool result inside the provider; the native runtime's existing `ctx.maxBytes` bound applies."
+  ],
+  "routingProfile": "native-claude"
+}

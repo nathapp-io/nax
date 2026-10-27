@@ -23,8 +23,8 @@ import {
 /** One attempt per server: session open resolves providers one after another, so retries would stall the start. */
 export const CHAT_MCP_RETRY = { maxAttempts: 1, baseDelayMs: 0 } as const;
 
-/** The skills and agents providers' ids; an MCP server may not shadow either. */
-const RESERVED_SERVER_IDS: ReadonlySet<string> = new Set(["nax-skills", "nax-agents"]);
+/** Built-in provider ids; an MCP server may not shadow them. */
+const RESERVED_SERVER_IDS: ReadonlySet<string> = new Set(["nax-skills", "nax-agents", "nax-workflow"]);
 
 export interface ChatMcpServerRow {
   readonly id: string;
