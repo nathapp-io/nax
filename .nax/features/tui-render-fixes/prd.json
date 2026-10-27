@@ -3,7 +3,7 @@
   "feature": "tui-render-fixes",
   "branchName": "feat/tui-render-fixes",
   "createdAt": "2026-10-27T00:00:00.000Z",
-  "updatedAt": "2026-10-27T02:59:29.841Z",
+  "updatedAt": "2026-10-27T03:13:39.222Z",
   "userStories": [
     {
       "id": "US-001",
@@ -35,14 +35,17 @@
         "bugfix"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Localized row-budget arithmetic and top-level block joining use established models and injectable render seams; existing UI and pure-model tests can be extended first."
+        "reasoning": "Localized row-budget arithmetic and top-level block joining use established models and injectable render seams; existing UI and pure-model tests can be extended first.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -70,7 +73,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7e6245157a4c49afd8a8e1b90142f366720fd6c0"
     },
     {
       "id": "US-002",
@@ -132,7 +139,10 @@
         "When an incomplete SGR prefix is followed by a chunk that breaks its grammar, the complete malformed text is forwarded unchanged."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -195,7 +205,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -259,7 +272,10 @@
         "On darwin, copyToClipboard writes OSC52 before invoking spawnCopy."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -319,7 +335,10 @@
         "When a mouse move or wheel event occurs after copying, the copied footer hint remains visible until a key press or mouse press."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -392,7 +411,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -455,7 +477,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Enhancement of the existing @nathapp/nax React/Ink chat UI, closing #2708–#2711; not a greenfield rewrite. Navigation: codebase-memory MCP is not exposed in this host, so discovery used direct reads and text searches rooted at the supplied repository. All implementation changes stay in packages/nax. No other package needs modification. Read docs/architecture/ARCHITECTURE.md:15 for the conventions/DI index and :172 for the quick-reference constraints; use existing injectable _deps seams, Bun-native runtime operations, bun:test, ink-testing-library and React act. This planning task does not execute tests or change implementation code.\n\nUS-001 baseline and impact: packages/nax/src/tui/chat/ChatApp.tsx:151 applies the 24x80 defaults; :309 derives bottomBudget directly from size.rows; :555 also derives viewportHeight from size.rows. The input, slash menu, ask-card and picker are measured against that budget, and the footer is the final fixed row. Replace both terminal-row roots with usableRows = size.rows - FRAME_SLACK_ROWS (1), not a viewport-only subtraction: long drafts, running turns and oversized bottom surfaces must keep the slack. Preserve existing header/footer/input content and keyboard ownership. packages/nax/src/tui/chat/index.ts:34 owns alternate-screen mounting and :45 currently renders only with exitOnCtrlC:false; add incrementalRendering:true without changing Ink version. packages/nax/src/tui/chat/markdown.ts:273 currently ends by flatMapping blockLines; :213 recursively flattens blockquote children. Add a single [] separator only between nonempty top-level block renderings, leaving list/quote internals and malformed-source fallback intact. packages/nax/src/tui/chat/layout.ts:135 consumes renderMarkdown behind the reply gutter; :350 composes entries and their existing gaps. No extra inter-entry spacing should be introduced. Regression migration: packages/nax/test/ui/chat/chat-app-layout.test.tsx:106 provides mount/resize helpers; update exact full-frame expectations 24→23, 30→29 and 12→11, and affected viewport/input row counts, but not row contents. packages/nax/test/ui/chat/slash-menu.test.tsx:497 covers SHORT_ROWS=12; change full-frame assertions to SHORT_ROWS-1, and shift F15/F16 terminal heights up one if needed to preserve the no-menu-row scenario (:546, :559). packages/nax/test/ui/chat/index.test.tsx:130 expects exact render options and must first gain incrementalRendering, then stdin in US-003. Existing unit markdown, layout and wrap tests under test/unit/tui/chat also cover the rendering consumers.\n\nUS-002 architecture: create packages/nax/src/tui/chat/mouse-input.ts as a reusable filtered input stream plus ordered event subscription, independent of React and renderChat wiring. Node-compatible PassThrough and StringDecoder are specifically required by the Ink NodeJS.ReadStream contract; these are not a reason to replace Bun subprocess APIs elsewhere. Preserve source isTTY, setRawMode, ref and unref and the filtered stream's own UTF-8 read encoding. Parse only full SGR reports; hold syntactically incomplete ESC[< tails, but not bare ESC or ESC[. Invalid grammar must pass through rather than swallowing typed input; complete unsupported horizontal-wheel reports must be removed without events. Decoder state matters for split UTF-8. dispose removes the source data listener; unsubscribe removes individual event listeners. Risks: input corruption, Escape latency, report leakage, stale listeners and inaccurate stream methods would break all Ink input. Unit tests use fake sources and never attach to the test runner's stdin.\n\nUS-003 integration: packages/nax/src/tui/chat/index.ts:35 writes ENTER_ALT_SCREEN, :38 builds a one-shot restore, :46 registers the removable exit guard, and the catch path already restores on renderer exceptions. Retain exception safety and unmount-before-terminal-restore ordering. Add injected stdin/createMouseInput, pass filtered stdin in render options and events in the ChatApp element, enable reporting only after render returns/raw mode is installed, and disable reporting immediately before leaving the alternate screen (TTY only); dispose exactly once even on process exit. packages/nax/test/ui/chat/index.test.tsx:33 stubScreen must inject both stdin and mouse construction before production uses them; update TTY write-order assertions, non-TTY behavior and render options without opening real input. packages/nax/src/tui/chat/viewport.ts:20 has the action union; :52 settle clamps offsets and resumes follow at zero; :76 reduces actions; :104 exposes visibleRange. Add wheelUp/down through the same clamp with WHEEL_LINES=3. packages/nax/src/tui/chat/TranscriptViewport.tsx:152 owns memory and keyboard activity; subscribe to mouse while active and clean up subscriptions. Mouse wheel is position-independent. packages/nax/src/tui/chat/bottom-region.ts:37 defines the existing activity decision (!locked && no picker); preserve that decision rather than changing ask/picker policy. Tests at packages/nax/test/ui/chat/transcript-viewport.test.tsx:46 mount the viewport and :89 check the unseen marker; extend existing reducer and UI suites and include a mounted ChatApp seam proving mouse reaches the viewport.\n\nUS-004 architecture: introduce pure selection.ts and injectable clipboard.ts. packages/nax/src/tui/chat/TranscriptViewport.tsx:125 draws padding above short content and replaces the final visible row with the unseen marker; coordinate mapping must exactly mirror that presentation, not simply add visibleRange.start to y. top is zero-based screen geometry, terminal x/y are one-based, transcript columns are display cells, and selection includes the focus cell. packages/nax/src/tui/chat/styled-line.tsx:17 defines Span, :39 concatenates plain text, :44 uses Bun.stringWidth, and :85 renders nested Ink Text. Add optional inverse and forward it via spanProps. packages/nax/src/tui/chat/wrap.ts:29 defines SpanStyle, :63 compares styles, :91 extracts styles and the grapheme engine segments the combined text across span boundaries. Watch those helpers: inverse cannot be dropped or merged into unselected spans if reused for highlighting. Preserve existing color/bold/italic/background styles and whole graphemes, including an emoji partly intersected by a cell range; avoid UTF-16 slicing by cell number. Clipboard always emits UTF-8/base64 OSC52; macOS additionally uses Bun.spawn pbcopy with stdin data. Swallow pbcopy rejection/nonzero status without suppressing OSC52. Tests must inject stdout/platform/spawn rather than touch the real clipboard. Existing test/ui/chat/styled-line.test.tsx and test/unit/tui/chat/wrap.test.ts provide primitive regressions; create selection.test.ts and clipboard.test.ts in mirrored unit paths.\n\nUS-005 integration: keep press/drag/release state in the new use-mouse-selection.ts hook to avoid expanding ChatApp and TranscriptViewport with branch-heavy selection code. Use current viewport geometry/lines when resolving events, and distinguish a completed selection retained for highlighting from an active drag, so subsequent releases do not recopy. Anchor/focus equality is a click and must not copy. Out-of-bounds drags retain focus; an outside left press clears selection. Retain highlight on equal line counts even if the lines array or last-line text changes; clear only when line count changes or another left press starts/clears it. Render selected spans at transcript indices, not viewport-relative indices. ChatApp passes HEADER_ROWS=3 and copies via clipboard.ts. packages/nax/src/tui/chat/chat-status.ts:146 has FooterHint and a Record mapping that must accommodate the new copied hint; :254 takes footerModel input and must accept copiedChars. packages/nax/src/tui/chat/ChatApp.tsx:518 selects the footer hint; add transient copied count and clear on the next keyboard or mouse press. Do not let clock ticks, wheel motion or unchanged-count streaming erase highlight. Extend existing mounted chat-app/transcript-viewport and status suites using fake MouseEvents and _clipboardDeps; assert actual inverse attributes/OSC52 bytes and absolute-screen coordinates rather than only calling helpers.\n\nUS-006 catalog/auth/model path: packages/nax/src/chat/chat-host.ts:92 nativeModels currently formats string or object tier entries in fast/balanced/powerful order, deduplicates and freezes them; :139 assigns that tier-only list. Move this helper to new chat-models.ts as tierModels, export it with chatModelChoices through packages/nax/src/chat/index.ts:12, and accept optional ChatHostDeps.models (:79). Presence, including [], must override the fallback without altering session/model-switch lifecycle. packages/nax/src/agents/catalog/index.ts:74 exposes injected catalog loading; :95–118 cache successful and failed loads per loader reference and deduplicate in-flight work. listCatalogModels must share loadCatalog and remain inside the existing nax-ai import boundary, preserving pricing/context-window behavior. Read-only dependency confirmation: packages/nax-ai/src/providers/catalog.ts:51 exposes Catalog.listModels(provider?), and packages/nax-ai/src/providers/types.ts:137 exposes supportsTools. Return only tool-capable bundled models, requested provider order then catalog order. packages/nax/src/config/schemas-model.ts:104 defines override model fields, including required supportsTools; :182 defines provider overrides. Reuse these existing config shapes, do not add schema keys. Detailed design ordering is authoritative over summary wording: all tool-capable configured overrides are included before catalog results, even for unavailable providers or entries also in the bundled catalog; first-occurrence deduplication removes duplicates. packages/nax/src/cli/chat.ts:209 composeChat owns config/resources/storage/chain/host composition; compute models before createChatHost and pass them in through injected listCatalogModels/collectAuthList. packages/nax/src/cli/auth-list.ts:133 already merges stored providers with requested tier/override provider ids, sorts them, probes ambient auth and marks available; use that report as the only availability decision, without copying credential logic or exposing auth contents. Auth probing is credential-adjacent, so US-006 uses three-session-tdd security isolation even though no credential implementation changes are requested. Auth or catalog rejection must not prevent chat startup; fallback keeps tiers and eligible overrides. Preserve trust-before-composition and existing resource cleanup. packages/nax/test/unit/cli/chat.test.ts:39 and chat-resources.test.ts:33 spread the production deps; add empty-report/catalog stubs to both fixtures before exercising composition so tests never read real credentials/catalog. Existing test/unit/agents/catalog/lookup-pricing.test.ts and context-window.test.ts cover shared cache regressions; add a focused list-models.test.ts and chat-models.test.ts. Existing chat-host and picker tests cover supplied models and navigation to the twentieth item. ACP session-config.ts stays untouched.\n\nUS-007 picker/filter path: packages/nax/src/tui/chat/Picker.tsx:105/112 define model/input; :137 creates entries; :175 builds each kind; :216 fixedRows and :269 pickerRows measure the surface; :274 draws it. Add model-only query/filter/note in the pure model and count/draw the filter row there, not as a component-local list filter that ChatApp cannot measure. packages/nax/src/tui/chat/bottom-region.ts:55 consumes pickerRows, so consistent pure arithmetic preserves frame slack. Picker.tsx:354 owns open/cancel/choose state and stale asynchronous resume-list guards; add query/setQuery without changing those semantics. :440 owns pointer state plus a ref for keys delivered before rerender; reset pointer on query changes and keep immediate query state coherent for batched input. Append printable unmodified text only for model pickers; remove the last grapheme for backspace/delete, including when no entries match; Return on zero entries must not choose or close. Escape must still be taken before Ink's meta flag check. ChatApp.tsx's existing picker props gain query and onQuery. packages/nax/test/ui/chat/picker.test.tsx:115 provides a mounted fake-host harness; its entryRows logic recognizes pointer/indented entries, so the new filter row must start at column 0 and must not look like an entry. Adjust only whole-frame model-picker row counts by +1; existing entry text/current markers/choices remain unchanged. /mode and /resume do not filter.\n\nCompatibility/migration: no persisted data, schema, lockstep version, dependency or transport migration. Optional props and optional host model injection retain old callers. The intentional observable migrations are one fewer rendered terminal row, one blank row between nonempty top-level markdown blocks, mouse reporting with in-app copy, expanded model choices and one extra model-picker filter row. Highest risks are terminal cleanup ordering, stream chunk/encoding behavior, display-cell selection math, React event batching/stale closures, and row-budget consistency under small terminals. Shared files ChatApp.tsx, index.ts and Picker.tsx are touched by independent stories; integrate carefully without changing the binding dependency graph. Binding execution: US-001/002/004/006/007 have no dependencies; US-003 follows US-001 and US-002; US-005 follows US-003 and US-004. All contextFiles are existing files or declared upstream outputs and all paths are repo-relative. Write tests first using the assigned routing strategies; package commands run from packages/nax and the pipeline handles lint/typecheck/tests. Never run bare bun test, bun run nax or sandboxed coverage. Preserve every stated acceptance criterion and the failure-table behaviors; supplementary design-only edge cases are suggestedCriteria rather than new mandatory spec criteria.\n\nRefine-pass adversarial audit: all 119 explicitly enumerated spec ACs remain in their original stories, with regression qualifiers retained. Inventory (numbers are per-story spec AC ordinals): US-001 [1 30-row frame; 2 absent-row default; 3 footer/mode; 4 working frame; 5 tall draft; 6 oversized ask; 7 picker frame; 8 menu frame; 9 incremental render; 10 heading/paragraph gap; 11 paragraph/list gap; 12 adjacent fence/paragraph gap with no source blank; 13 repeated blank collapse; 14 loose-list adjacency; 15 invisible definition/no trailing gap; 16 quote/rule gap; 17 transcript gutter blank]. US-002 [1 left press; 2 release; 3 drag; 4 move; 5 wheelUp; 6 wheelDown; 7 ctrl bit ignored; 8 malformed parse; 9 stripped stream text; 10 wheel event count; 11 split-report output suppression; 12 split-report event; 13 immediate Escape; 14 malformed report passthrough/no event; 15 horizontal-wheel suppression/no event; 16 split UTF-8; 17 own string read encoding; 18 raw-mode forwarding; 19 isTTY forwarding; 20 unsubscribe; 21 dispose]. US-003 [1 enter before render; 2 enable after render; 3 ordered one-shot unmount restore; 4 one-shot dispose; 5 process-exit restore; 6 non-TTY disables reporting; 7 injected source to constructor; 8 filtered stdin to Ink; 9 events to ChatApp; 10 wheelUp step/follow; 11 wheelDown resumes follow; 12 upper clamp; 13 mounted wheel window; 14 inactive ignore; 15 ChatApp wheel seam]. US-004 [1 absolute cell mapping; 2 header exclusion; 3 below-viewport exclusion; 4 padding exclusion; 5 short-content start mapping; 6 marker exclusion; 7 multiline inclusive text; 8 reverse selection; 9 partial wide-grapheme inclusion; 10 trailing-space trim; 11 selected inverse; 12 unselected non-inverse; 13 outside-line identity; 14 inverse Ink rendering; 15 exact OSC52; 16 Linux OSC52 write; 17 no Linux subprocess; 18 macOS subprocess text; 19 rejection swallowed; 20 nonzero swallowed]. US-005 [1 one copy per drag; 2 selected hello; 3 click does not copy; 4 retained inverse; 5 next left press removes old highlight; 6 same-count retention; 7 count-change reset; 8 outside press clears; 9 absolute ChatApp clipboard seam; 10 copied count; 11 key clears hint; 12 left press clears hint]. US-006 [1 tool-capable catalog filtering; 2 provider order; 3 missing provider; 4 failed loader; 5 tier order/deduplication; 6 tier/override/catalog order/deduplication; 7 non-tool override excluded; 8 unavailable override included; 9 exact provider-list forwarding; 10 catalog rejection fallback; 11 injected host models; 12 requested tier/override provider probes; 13 only available providers forwarded; 14 host receives tier/catalog choices; 15 auth rejection retains tiers; 16 twentieth item reachable]. US-007 [1 case-insensitive filtering; 2 empty-query compatibility; 3 query carried; 4 mode ignores query; 5 extra measured model row; 6 empty placeholder under title; 7 populated filter under title; 8 no-match note; 9 hook setQuery; 10 reset on reopen; 11 mounted typing seam; 12 backspace; 13 filtered Return; 14 pointer reset; 15 no-match Return stays open/no switch; 16 Escape closes/no switch; 17 draft unchanged; 18 ctrl ignored].\n\nAudit corrections: made the failure-table click/no-hint outcome explicit; retained all ten failure rows, including immediate ESC[, non-TTY data forwarding, process-exit once, macOS copy-failure hint and tier-plus-override fallbacks. Clarified tier-only composition fixtures have no overrides, avoiding a contradiction with the override fallback rule. The three-entry mode row comparison is a PickerModel layout fixture (Picker.tsx:175 actually creates two mode choices); no production mode choice is added. Added narrow backward-compatibility assertions for mouse-omitted keyboard PageUp, inverse-omitted spans, default selection-free viewport props and host models-omitted tier formatting. Every story has a negative path: US-001 missing terminal rows/invisible definitions and oversized cards; US-002 malformed reports; US-003 non-TTY/inactive viewport; US-004 invalid screen rows/pbcopy failure; US-005 click/outside press; US-006 catalog/auth failures; US-007 no matches/modifier rejection. Retained all nine feature exclusions verbatim, exact spec contextFiles (including upstream-created files), the seven binding IDs/workdirs/dependencies, and all creates. US-004 and US-007 are medium/tdd-simple after reassessing their deterministic helpers and existing picker patterns; stream construction and lifecycle/gesture integrations remain complex, and US-006 retains strict security-isolated TDD. No runtime code or tests were executed during this document-only audit.",
