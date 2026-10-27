@@ -25,6 +25,7 @@ export interface StartJobRequest {
   readonly approvedAt: string;
 }
 export interface ChatJobs {
+  /** A launched child remains managed on record-write failure; the returned note warns not to retry. */
   start(request: StartJobRequest): Promise<ChatJob>;
   /** Every job of this repo the runner knows, newest first. */
   list(): readonly ChatJob[];
@@ -119,39 +120,52 @@ class DetachedJobs implements ChatJobs {
     }
   }
   async start(request: StartJobRequest): Promise<ChatJob> {
+    const id = newJobId(request.kind);
+    const logPath = jobLogPath(this.options.outputDir, id);
+    let child: OwnedChild;
     try {
-      const id = newJobId(request.kind);
-      const logPath = jobLogPath(this.options.outputDir, id);
       // nax-git-env-allow: forwards a nax CLI job to the detached-launch helper, not git.
-      const child = this.spawn(request, logPath);
-      const job: ChatJob = {
-        ...request,
-        argv: [...request.argv],
-        schemaVersion: 1,
-        id,
-        logPath,
-        cwd: this.options.repoRoot,
-        pid: child.pid,
-        startedAt: this.options.now().toISOString(),
-        state: "running",
-      };
-      this.records.set(id, job);
-      this.ownedIds.add(id);
-      child.unref();
-      // Observe exits immediately, but serialize terminal persistence after the initial write.
-      const saved: Promise<void> = writeJobRecord(this.options.outputDir, job);
-      void Promise.all([saved, child.exited])
-        .then(([, code]) => this.finalize(job, code))
-        .catch((cause) => this.warn(cause));
-      await saved;
-      this.emit();
-      return structuredClone(job);
+      child = this.spawn(request, logPath);
     } catch (cause) {
       throw new NaxError(
         `[chat] could not start nax ${request.kind}: ${errorMessage(cause)}`,
         "CHAT_JOB_SPAWN_FAILED",
         { stage: "chat", cause },
       );
+    }
+    const job: ChatJob = {
+      ...request,
+      argv: [...request.argv],
+      schemaVersion: 1,
+      id,
+      logPath,
+      cwd: this.options.repoRoot,
+      pid: child.pid,
+      startedAt: this.options.now().toISOString(),
+      state: "running",
+    };
+    this.records.set(id, job);
+    this.ownedIds.add(id);
+    child.unref();
+    // Failure to save does not undo a launch or detach its exit observer.
+    const saved: Promise<ChatJob> = this.persistRunning(job);
+    void Promise.all([saved, child.exited])
+      .then(([, code]) => this.finalize(job, code))
+      .catch((cause) => this.warn(cause));
+    const tracked = await saved;
+    this.emit();
+    return structuredClone(tracked);
+  }
+  private async persistRunning(job: ChatJob): Promise<ChatJob> {
+    try {
+      await writeJobRecord(this.options.outputDir, job);
+      return job;
+    } catch (cause) {
+      const note = `job ${job.id} started (pid ${job.pid}), but its running record could not be saved; do not retry; keep this chat open to track it`;
+      const tracked: ChatJob = { ...job, note };
+      this.records.set(job.id, tracked);
+      getLogger()?.warn("chat", note, { id: job.id, pid: job.pid, error: errorMessage(cause) });
+      return tracked;
     }
   }
   private async finalize(job: ChatJob, exitCode: number): Promise<void> {

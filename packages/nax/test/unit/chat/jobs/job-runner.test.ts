@@ -3,11 +3,12 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeFakeClock, makeTempDir } from "@test/helpers";
 import { _jobRunnerDeps, createJobRunner, type StartJobRequest } from "@/chat/jobs/job-runner";
-import { jobLogPath, jobsDir, readJobRecords } from "@/chat/jobs/job-store";
+import { _jobStoreDeps, jobLogPath, jobsDir, readJobRecords } from "@/chat/jobs/job-store";
 import { featureDir } from "@/config";
 import { NaxError } from "@/errors";
 
 const originalDeps = { ..._jobRunnerDeps };
+const originalStoreDeps = { ..._jobStoreDeps };
 let repoRoot: string;
 let outputDir: string;
 let clock: ReturnType<typeof makeFakeClock>;
@@ -40,6 +41,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   Object.assign(_jobRunnerDeps, originalDeps);
+  Object.assign(_jobStoreDeps, originalStoreDeps);
   cleanupTempDir(repoRoot);
 });
 function runner() {
@@ -124,6 +126,37 @@ describe("createJobRunner", () => {
     expect(jobs.running()).toEqual([]);
     expect(changed).not.toHaveBeenCalled();
     expect(_jobRunnerDeps.closeLog).toHaveBeenCalledWith(73);
+  });
+
+  test("running-record failure returns an explicitly managed launch, not a retryable spawn failure", async () => {
+    _jobStoreDeps.rename = mock(() => {
+      throw new Error("disk full");
+    });
+    const jobs = runner();
+    const changed = mock(() => {});
+    jobs.onChange(changed);
+    const job = await jobs.start({ ...request, kind: "bot_fix" });
+    expect(job).toMatchObject({ state: "running", pid: child.pid });
+    expect(job.note).toContain("running record could not be saved");
+    expect(job.note).toContain("do not retry");
+    expect(job.note).toContain("keep this chat open");
+    expect(jobs.owned()).toEqual([job]);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(_jobRunnerDeps.spawn).toHaveBeenCalledTimes(1);
+    expect(_jobRunnerDeps.kill).not.toHaveBeenCalled();
+    expect(await readJobRecords(outputDir)).toEqual([]);
+
+    // The exit observer must survive failure of the initial running-record write.
+    _jobStoreDeps.rename = originalStoreDeps.rename;
+    const ended = nextChange(jobs);
+    exit(2);
+    await ended;
+    expect(await readJobRecords(outputDir)).toEqual([
+      expect.objectContaining({ id: job.id, state: "failed", exitCode: 2, endedAt: expect.any(String) }),
+    ]);
+    expect(jobs.running()).toEqual([]);
+    expect(changed).toHaveBeenCalledTimes(2);
+    expect(jobs.takeNotice()).toContain(`job ${job.id} (bot_fix f1) ended: failed`);
   });
 
   test("AC-10,11,12,13,14,16,18 owned exit uses matching real status, persists and queues notice", async () => {
