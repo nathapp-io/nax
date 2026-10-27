@@ -62,6 +62,7 @@ interface SpawnOptions {
   stderr: number;
 }
 export const _jobRunnerDeps = {
+  // nax-git-env-allow: launches the nax CLI, not git; Git subprocesses harden their own environment.
   spawn: (argv: readonly string[], options: SpawnOptions): OwnedChild => Bun.spawn([...argv], options),
   kill: (pid: number, signal: NodeJS.Signals): boolean => process.kill(pid, signal),
   isProcessAlive: (pid: number): boolean => {
@@ -100,10 +101,12 @@ class DetachedJobs implements ChatJobs {
   private warn(cause: unknown): void {
     getLogger()?.warn("chat", "Job lifecycle callback failed", { error: errorMessage(cause) });
   }
+  // nax-git-env-allow: helper declaration for detached nax CLI launches, not a Git invocation.
   private spawn(request: StartJobRequest, logPath: string): OwnedChild {
     _jobRunnerDeps.mkdir(jobsDir(this.options.outputDir), { recursive: true });
     const fd = _jobRunnerDeps.openLog(logPath);
     try {
+      // nax-git-env-allow: request.argv invokes nax plan/run/bot, not git.
       return _jobRunnerDeps.spawn(request.argv, {
         cwd: this.options.repoRoot,
         detached: true,
@@ -119,6 +122,7 @@ class DetachedJobs implements ChatJobs {
     try {
       const id = newJobId(request.kind);
       const logPath = jobLogPath(this.options.outputDir, id);
+      // nax-git-env-allow: forwards a nax CLI job to the detached-launch helper, not git.
       const child = this.spawn(request, logPath);
       const job: ChatJob = {
         ...request,
