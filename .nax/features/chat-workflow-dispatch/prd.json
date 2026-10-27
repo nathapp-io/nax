@@ -3,7 +3,7 @@
   "feature": "chat-workflow-dispatch",
   "branchName": "feat/chat-workflow-dispatch",
   "createdAt": "2026-10-27T00:00:00Z",
-  "updatedAt": "2026-10-27T14:30:17.827Z",
+  "updatedAt": "2026-10-27T14:46:13.352Z",
   "userStories": [
     {
       "id": "US-001",
@@ -348,14 +348,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Cross-chat ownership reconciliation, idempotent attachment, asynchronous poll teardown and terminal-record races."
+        "reasoning": "Cross-chat ownership reconciliation, idempotent attachment, asynchronous poll teardown and terminal-record races.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/jobs/job-runner.ts",
@@ -374,7 +377,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4ad6aed745656b2a1487b425b6123c854e772732"
     },
     {
       "id": "US-007",
