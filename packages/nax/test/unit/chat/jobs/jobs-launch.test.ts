@@ -163,9 +163,9 @@ describe("createJobsProvider", () => {
       argv: ["bun", "/n.ts", "bot", "review", "12", "-d", options.repoRoot, "--model", "opus", "--decisions", "d.json"],
     });
   });
-  test("unreadable PRD propagates without approving or launching (US-010 maps it)", async () => {
+  test("unreadable PRD returns an error without approving or launching", async () => {
     await Bun.write(join(featureDir(options.repoRoot, "f1"), "prd.json"), "not json");
-    await expect(launch()).rejects.toThrow();
+    expect(await launch()).toMatchObject({ isError: true });
     expect(approve).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
   });

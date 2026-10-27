@@ -1,6 +1,7 @@
 /** Repo-scoped billed launches. Approval is host-owned, even for a static provider. */
 import { join, relative } from "node:path";
 import type { ProviderTool, ToolResult } from "@nathapp/nax-agent";
+import { errorMessage, isProcessAlive } from "@nathapp/nax-agent/internal";
 import { featureDir } from "@/config";
 import { countStories, loadPRD } from "@/prd";
 import { gitWithTimeout } from "@/utils/git";
@@ -10,11 +11,74 @@ import type { JobsProviderOptions } from "./jobs-provider";
 
 export const _jobsLaunchDeps = {
   git: gitWithTimeout,
-  // US-010 supplies the real lock reader and busy checks.
-  lockHolder: async (_repoRoot: string): Promise<number | null> => null,
+  lockHolder,
+  readLock: (path: string): Promise<unknown> => Bun.file(path).json(),
+  isProcessAlive,
   exists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   loadPRD,
 };
+
+/** Advisory read only: execution remains responsible for acquiring the checkout lock. */
+async function lockHolder(repoRoot: string): Promise<number | null> {
+  try {
+    const raw = await _jobsLaunchDeps.readLock(join(repoRoot, "nax.lock"));
+    if (typeof raw !== "object" || raw === null || !("pid" in raw)) return null;
+    const { pid } = raw;
+    if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) return null;
+    return _jobsLaunchDeps.isProcessAlive(pid) ? pid : null;
+  } catch {
+    // Missing, unreadable or corrupt lock records do not identify a live holder.
+    return null;
+  }
+}
+
+function busyJob(options: JobsProviderOptions): ToolResult | undefined {
+  const job = options.jobs
+    .running()
+    .find((job) => job.cwd === options.repoRoot && (job.kind === "plan" || job.kind === "run"));
+  return job
+    ? { isError: true, content: `[chat] nax ${job.kind} job ${job.id} is already running in this checkout` }
+    : undefined;
+}
+
+async function busyLock(options: JobsProviderOptions): Promise<ToolResult | undefined> {
+  const pid = await _jobsLaunchDeps.lockHolder(options.repoRoot);
+  return pid === null
+    ? undefined
+    : { isError: true, content: `[chat] this checkout is held by nax pid ${pid}; wait for it or stop it first` };
+}
+
+async function startApproved(
+  input: JobLaunchInput,
+  argv: readonly string[],
+  options: JobsProviderOptions,
+): Promise<ToolResult> {
+  if (input.kind === "plan" || input.kind === "run") {
+    const held = await busyLock(options);
+    if (held) return held;
+  }
+  try {
+    // No await from this final in-memory check to start: the runner registers synchronously.
+    const busy = input.kind === "plan" || input.kind === "run" ? busyJob(options) : undefined;
+    if (busy) return busy;
+    const job = await options.jobs.start({
+      kind: input.kind,
+      target: "feature" in input ? input.feature : String(input.pr),
+      argv,
+      sessionId: options.sessionId(),
+      approvedAt: options.now().toISOString(),
+    });
+    return {
+      content: `${JSON.stringify({ job: job.id, state: "running", log: job.logPath })}\nA [nax-jobs] notice arrives when it ends.`,
+    };
+  } catch (cause) {
+    const prefix = `could not start nax ${input.kind}: `;
+    let message = errorMessage(cause);
+    if (message.startsWith(`[chat] ${prefix}`)) message = message.slice("[chat] ".length);
+    if (message.startsWith(prefix)) message = message.slice(prefix.length);
+    return { isError: true, content: `[chat] ${prefix}${message}` };
+  }
+}
 
 type Prepared = { readonly input: JobLaunchInput; readonly details: readonly string[] };
 type TargetError = { readonly error: string };
@@ -54,7 +118,13 @@ async function prepareRun(
   if (!(await _jobsLaunchDeps.exists(path))) {
     return { error: `[chat] no prd.json for ${input.feature}; run nax plan first` };
   }
-  const { pending, total } = countStories(await _jobsLaunchDeps.loadPRD(path));
+  let prd: Awaited<ReturnType<typeof loadPRD>>;
+  try {
+    prd = await _jobsLaunchDeps.loadPRD(path);
+  } catch (cause) {
+    return { error: `[chat] prd.json for ${input.feature} is unreadable: ${errorMessage(cause)}` };
+  }
+  const { pending, total } = countStories(prd);
   const limit = input.maxIterations ?? options.maxIterations;
   const details = [`stories ${pending} pending of ${total}; max iterations ${limit}`];
   if (pending > limit)
@@ -65,6 +135,13 @@ async function prepareRun(
 }
 
 async function prepareTarget(input: JobLaunchInput, options: JobsProviderOptions): Promise<Prepared | TargetError> {
+  if ("feature" in input) {
+    try {
+      featureDir(options.repoRoot, input.feature);
+    } catch (cause) {
+      return { error: errorMessage(cause) };
+    }
+  }
   if (input.kind === "plan") return preparePlan(input, options);
   if (input.kind === "run") return prepareRun(input, options);
   if (
@@ -97,6 +174,10 @@ export async function launchJob(
   const prepared = await prepareTarget(parsed, options);
   if ("error" in prepared) return { isError: true, content: prepared.error };
   const { input } = prepared;
+  if (input.kind === "plan" || input.kind === "run") {
+    const busy = busyJob(options) ?? (await busyLock(options));
+    if (busy) return busy;
+  }
   const target = "feature" in input ? input.feature : String(input.pr);
   const summary =
     "feature" in input
@@ -116,16 +197,7 @@ export async function launchJob(
       content: `[chat] the user declined ${summary}; do not retry with different arguments unless the user asks`,
     };
   }
-  const job = await options.jobs.start({
-    kind: input.kind,
-    target,
-    argv,
-    sessionId: options.sessionId(),
-    approvedAt: options.now().toISOString(),
-  });
-  return {
-    content: `${JSON.stringify({ job: job.id, state: "running", log: job.logPath })}\nA [nax-jobs] notice arrives when it ends.`,
-  };
+  return startApproved(input, argv, options);
 }
 
 /** Adapter keeps the launch flow independent of static-provider approval behavior. */
