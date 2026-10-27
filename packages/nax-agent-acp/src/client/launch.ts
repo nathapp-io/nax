@@ -85,6 +85,16 @@ export function pickCandidate(
 
 function ignore(): void {}
 
+/**
+ * `Readable.toWeb` is declared against `node:stream/web`'s `ReadableStream`, while the ACP
+ * stream wants the global one. The two are the same class at runtime and differ only in how
+ * their `getReader` overloads are written, so no assignment between them typechecks. This is
+ * the one place that bridges the two declarations.
+ */
+function toWebStream(stream: Readable): ReadableStream<Uint8Array> {
+  return Readable.toWeb(stream) as unknown as ReadableStream<Uint8Array>;
+}
+
 function failedLaunch(stderr: StderrTail, error: unknown): LaunchedAgent {
   const exit: AgentExit = {
     code: null,
@@ -142,7 +152,7 @@ function startedLaunch(
   child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
   const stream = ndJsonStream(
     Writable.toWeb(child.stdin),
-    Readable.toWeb(child.stdout),
+    toWebStream(child.stdout),
     maxMessageBytes === undefined ? undefined : { maxMessageBytes },
   );
   const pid = child.pid;

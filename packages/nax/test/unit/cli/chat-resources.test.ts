@@ -53,6 +53,7 @@ function fixture() {
     renderChat: () => ({ unmount() {}, waitUntilExit: async () => {} }),
     onSignal: () => () => {},
     writeErr: mock((_message: string) => {}),
+    writeOut: mock((_message: string) => {}),
     setExitCode: mock((_code: number) => {}),
   };
   return { deps, order };

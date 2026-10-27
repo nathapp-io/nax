@@ -3,7 +3,10 @@ import { join } from "node:path";
 import type { SessionEvent } from "@nathapp/nax-agent";
 import {
   approvalRequestedEvent,
+  assertDefined,
   CHAT_MODEL,
+  forwardedToolCall,
+  forwardedToolResult,
   makeAgentResource,
   makeSubagentHostHarness,
   questionEvent,
@@ -18,6 +21,8 @@ import {
 } from "@test/helpers";
 
 const reviewer = makeAgentResource({ name: "reviewer" });
+/** The task the harness's scripted chat turn hands the `run` tool unless a test overrides it. */
+const DEFAULT_TASK = "check it";
 let harness: SubagentHostHarness | undefined;
 
 function setup(options: SubagentHostOptions = { agents: [reviewer] }): SubagentHostHarness {
@@ -220,15 +225,21 @@ describe("chat host nested usage, spend and tool events", () => {
     expect((await spent(h)) - before).toBeCloseTo(1.4);
   });
 
-  test("AC-12/13/14 forwards nested tool events to the send's onEvent but not text", async () => {
+  test("forwards nested tool events to the send's onEvent but not text", async () => {
     const call = toolCallEvent();
     const result = toolResultEvent();
     const h = setup({ agents: [reviewer], nestedEvents: [textDeltaEvent(), call, result] });
     await h.host.start({ mode: "guarded", model: CHAT_MODEL });
     const seen: SessionEvent[] = [];
     await h.host.send("go", (event) => seen.push(event));
-    expect(seen).toContainEqual(call);
-    expect(seen).toContainEqual(result);
+    const delivered = forwardedToolCall(seen, call.callId);
+    const deliveredResult = forwardedToolResult(seen, result.callId);
+    assertDefined(delivered, "forwarded tool_call");
+    assertDefined(deliveredResult, "forwarded tool_result");
+    // AC-15: the tags are additive — the tool-activity fields are the fixture's own.
+    expect(delivered.name).toBe(call.name);
+    expect(deliveredResult.isError).toBe(result.isError);
+    expect(delivered.metadata.subagentTask).toBe(DEFAULT_TASK);
     expect(seen.some((event) => event.type === "text_delta")).toBe(false);
   });
 
@@ -272,7 +283,10 @@ describe("chat host overlapping sends", () => {
     await expect(h.host.send("again", () => {})).rejects.toThrow();
     h.releaseNested();
     await first;
-    expect(seen).toContainEqual(lateCall);
+    const delivered = forwardedToolCall(seen, lateCall.callId);
+    assertDefined(delivered, "forwarded late tool_call");
+    expect(delivered.name).toBe(lateCall.name);
+    expect(delivered.metadata.subagentTask).toBe(DEFAULT_TASK);
   });
 });
 
@@ -355,7 +369,49 @@ describe("chat host nested cancel and close", () => {
     const before = (await spent(h)) ?? 0;
     await h.host.send("again", (event) => nextSeen.push(event));
     expect((await spent(h)) - before).toBeCloseTo(1);
-    expect(nextSeen).not.toContainEqual(lateCall);
-    expect(firstSeen).toContainEqual(lateCall);
+    expect(forwardedToolCall(nextSeen, lateCall.callId)).toBeUndefined();
+    const firstLate = forwardedToolCall(firstSeen, lateCall.callId);
+    assertDefined(firstLate, "forwarded late tool_call");
+    expect(firstLate.name).toBe(lateCall.name);
+    expect(firstLate.metadata.subagentTask).toBe(DEFAULT_TASK);
+  });
+});
+
+describe("chat host forwarded subagent event tags", () => {
+  const TASK = "scan";
+
+  /** Send one turn whose nested session emits `events`, collecting what the turn listener saw. */
+  async function forwarded(events: readonly SessionEvent[], agent = reviewer): Promise<SessionEvent[]> {
+    const h = setup({ agents: [agent], task: TASK, nestedEvents: events });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    const seen: SessionEvent[] = [];
+    await h.host.send("go", (event) => seen.push(event));
+    return seen;
+  }
+
+  test("AC-11 AC-12 a forwarded nested tool_call is tagged with the task and the agent's qualified name", async () => {
+    const call = toolCallEvent();
+    const seen = await forwarded([call]);
+    const delivered = forwardedToolCall(seen, call.callId);
+    assertDefined(delivered, "forwarded tool_call");
+    expect(delivered.metadata.subagentTask).toBe(TASK);
+    expect(delivered.metadata.subagent).toBe(reviewer.qualifiedName);
+  });
+
+  test("AC-13 a forwarded nested tool_result carries the same task and agent tags", async () => {
+    const result = toolResultEvent();
+    const seen = await forwarded([result]);
+    const delivered = forwardedToolResult(seen, result.callId);
+    assertDefined(delivered, "forwarded tool_result");
+    expect(delivered.metadata.subagentTask).toBe(TASK);
+    expect(delivered.metadata.subagent).toBe(reviewer.qualifiedName);
+  });
+
+  test("AC-14 the nested event's own metadata is kept alongside the tags", async () => {
+    const call = { ...toolCallEvent(), metadata: { k: "v" } };
+    const seen = await forwarded([call]);
+    const delivered = forwardedToolCall(seen, call.callId);
+    assertDefined(delivered, "forwarded tool_call");
+    expect(delivered.metadata).toEqual({ k: "v", subagent: reviewer.qualifiedName, subagentTask: TASK });
   });
 });

@@ -8,22 +8,8 @@ import { featureDir } from "@/config";
 import { buildChatFeatureMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing, type SkillResource } from "@/resources";
 import { ChatApp } from "@/tui/chat";
+import { COMMAND_DESCRIPTIONS, COMMANDS } from "@/tui/chat/slash-commands";
 
-const COMMANDS = [
-  "help",
-  "mode",
-  "model",
-  "sessions",
-  "resume",
-  "clear",
-  "cost",
-  "feature",
-  "skills",
-  "plugins",
-  "mcp",
-  "agents",
-  "quit",
-];
 afterEach(() => {
   cleanup();
   mock.restore();
@@ -114,10 +100,15 @@ describe("slash command routing", () => {
     await ui.line(`/${command}`);
     expect(ui.send).not.toHaveBeenCalled();
   });
-  test("AC-5 reports current mode in transcript", async () => {
+  test("US-026 AC-5 /mode with no argument asks for the mode picker and shows nothing", async () => {
+    const { runSlashCommand } = await import("@/tui/chat/slash-commands");
     const ui = mount();
-    await ui.line("/mode");
-    expect(ui.lastFrame()).toContain("guarded\n");
+    const show = mock((_text: string) => {});
+    expect(await runSlashCommand({ name: "mode", args: [], rest: "" }, { host: ui.host, show })).toEqual({
+      kind: "picker",
+      picker: "mode",
+    });
+    expect(show).not.toHaveBeenCalled();
   });
   test("AC-6 rejects an invalid mode", async () => {
     const ui = mount();
@@ -125,15 +116,21 @@ describe("slash command routing", () => {
     expect(ui.lastFrame()).toContain("unknown mode bogus; expected full or guarded");
     expect(ui.host.switchTo).not.toHaveBeenCalled();
   });
-  test("AC-7 switches explicit model", async () => {
+  test("AC-7 US-026 AC-7 switches explicit model", async () => {
     const ui = mount();
     await ui.line("/model anthropic/claude-sonnet-5-5");
     expect(ui.host.switchTo).toHaveBeenCalledWith({ model: "anthropic/claude-sonnet-5-5" });
   });
-  test("AC-8 lists all configured models", async () => {
+  test("US-026 AC-1 AC-2 /model with no argument asks for the model picker and shows and switches nothing", async () => {
+    const { runSlashCommand } = await import("@/tui/chat/slash-commands");
     const ui = mount();
-    await ui.line("/model");
-    for (const model of ui.host.models) expect(ui.lastFrame()).toContain(model);
+    const show = mock((_text: string) => {});
+    expect(await runSlashCommand({ name: "model", args: [], rest: "" }, { host: ui.host, show })).toEqual({
+      kind: "picker",
+      picker: "model",
+    });
+    expect(show).not.toHaveBeenCalled();
+    expect(ui.host.switchTo).not.toHaveBeenCalled();
   });
   test("AC-9 AC-10 lists session ids, titles and live holders", async () => {
     const ui = mount();
@@ -141,10 +138,29 @@ describe("slash command routing", () => {
     for (const text of ["abc", "first title", "def", "second title", "in use by pid 4242"])
       expect(ui.lastFrame()).toContain(text);
   });
-  test("AC-11 resumes explicit id", async () => {
+  test("AC-11 US-026 AC-6 resumes explicit id", async () => {
     const ui = mount();
     await ui.line("/resume abc");
     expect(ui.host.resume).toHaveBeenCalledWith({ id: "abc" });
+  });
+  test("US-026 AC-3 AC-4 /resume with no argument asks for the resume picker and resumes nothing", async () => {
+    const { runSlashCommand } = await import("@/tui/chat/slash-commands");
+    const ui = mount();
+    const show = mock((_text: string) => {});
+    expect(await runSlashCommand({ name: "resume", args: [], rest: "" }, { host: ui.host, show })).toEqual({
+      kind: "picker",
+      picker: "resume",
+    });
+    expect(ui.host.resume).not.toHaveBeenCalled();
+  });
+  test("US-026 AC-8 /model with no argument sends nothing and is not an unknown command", async () => {
+    const ui = mount();
+    await ui.line("/model");
+    expect(ui.send).not.toHaveBeenCalled();
+    expect(ui.host.switchTo).not.toHaveBeenCalled();
+    expect(ui.lastFrame()).not.toContain("unknown command");
+    // The picker outcome is dropped, not misread as a command outcome: no error row appears.
+    expect(ui.lastFrame()).not.toContain("✗");
   });
   test("AC-12 clears session", async () => {
     const ui = mount();
@@ -156,17 +172,17 @@ describe("slash command routing", () => {
     await ui.line("/cost");
     expect(ui.lastFrame()).toContain("$1.24\n");
   });
-  test("AC-16 help lists every command", async () => {
+  test("AC-16 US-024 AC-14 help lists every command with its description", async () => {
     const ui = mount();
     await ui.line("/help");
     expect(ui.host.catalog).toBeUndefined();
     expect(ui.host.resourceNotice).toBeUndefined();
-    expect(ui.lastFrame()).toContain(COMMANDS.map((command) => `/${command}`).join("\n"));
+    expect(ui.lastFrame()).toContain(COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`).join("\n"));
   });
-  test("US-008 AC-21 help lists /mcp on the line after /plugins", async () => {
+  test("US-008 AC-21 US-024 AC-14 help lists /mcp on the line after /plugins", async () => {
     const ui = mount();
     await ui.line("/help");
-    expect(ui.lastFrame()).toContain("/plugins\n/mcp\n");
+    expect(ui.lastFrame()).toContain("/plugins  List plugins and what they provide\n/mcp  List MCP servers");
   });
   test("AC-17 closes and exits", async () => {
     const ui = mount();
@@ -305,10 +321,41 @@ describe("agents command", () => {
     expect(show).toHaveBeenCalledWith("(no agents)");
   });
 
-  test("US-011 AC-15 help lists /agents between /mcp and /quit", async () => {
+  test("US-011 AC-15 US-024 AC-15 help lists /agents between /mcp and /quit", async () => {
     const ui = mount();
     await ui.line("/help");
-    expect(ui.lastFrame()).toContain("/mcp\n/agents\n/quit");
+    expect(ui.lastFrame()).toContain("/mcp  List MCP servers\n/agents  List agents\n/quit  Quit nax chat");
+  });
+
+  test("US-024 AC-16 help lists a catalog command with its hyphen description", async () => {
+    const ui = mount();
+    Object.assign(ui.host, {
+      catalog: buildResourceCatalog([
+        {
+          id: "claude-project",
+          origin: { kind: "claude-project" },
+          root: "/repo",
+          skills: [],
+          agents: [],
+          mcpServers: [],
+          hooks: [],
+          diagnostics: [],
+          commands: [
+            {
+              kind: "command",
+              name: "deploy",
+              qualifiedName: "deploy",
+              description: "Ship it",
+              template: "Deploy $ARGUMENTS",
+              path: "/repo/.claude/commands/deploy.md",
+              origin: { kind: "claude-project" },
+            },
+          ],
+        },
+      ]),
+    });
+    await ui.line("/help");
+    expect(ui.lastFrame()).toContain("/deploy - Ship it");
   });
 
   test("US-011 shows the listing of host.agents() in the transcript without sending", async () => {

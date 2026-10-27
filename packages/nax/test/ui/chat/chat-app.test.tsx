@@ -1,17 +1,14 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { SessionEvent, SessionEventBody } from "@nathapp/nax-agent";
 import { makeLogger, makeNaxConfig } from "@test/helpers";
-import { Box } from "ink";
 import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
 import { type ChatHost, type ChatHostState, createChatHost, createChatStorage } from "@/chat";
 import { buildResourceCatalog, type ResourcePackage } from "@/resources";
-import { _renderChatDeps, ChatApp, renderChat } from "@/tui/chat";
+import { ChatApp, renderChat } from "@/tui/chat";
 
-const originalRender = _renderChatDeps.render;
 afterEach(() => {
   cleanup();
-  _renderChatDeps.render = originalRender;
   mock.restore();
 });
 
@@ -100,6 +97,19 @@ const errored: SessionEventBody = {
 };
 
 describe("chat shell", () => {
+  test("AC-1 exports the full-screen renderer and React application from the chat barrel", () => {
+    expect(typeof renderChat).toBe("function");
+    expect(typeof ChatApp).toBe("function");
+    const ui = render(<ChatApp host={fakeHost().host} />);
+    expect(ui.lastFrame()).toContain("nax chat");
+  });
+  test("AC-1 removes the obsolete chat components", async () => {
+    const names = ["Transcript", "ChatStatusLine", "AskPrompt", "InputBox"];
+    const existing = await Promise.all(
+      names.map((name) => Bun.file(`${import.meta.dir}/../../../src/tui/chat/${name}.tsx`).exists()),
+    );
+    expect(existing).toEqual([false, false, false, false]);
+  });
   test("US-015 AC-13 hooks notice appears once across real host resume", async () => {
     const meta = fakeHost().host.current().meta;
     const packages: ResourcePackage[] = ["one", "two"].map((id) => ({
@@ -164,16 +174,6 @@ describe("chat shell", () => {
       await host.close();
     }
   });
-  test("AC-1 renderChat renders with Ctrl-C exit disabled and unmounts", () => {
-    const renderSpy = mock<typeof originalRender>((node) => {
-      const ui = render(<Box flexDirection="column">{node}</Box>);
-      return { rerender: ui.rerender, unmount: ui.unmount, waitUntilExit: async () => {}, cleanup, clear: () => {} };
-    });
-    _renderChatDeps.render = renderSpy;
-    const view = renderChat({ host: fakeHost().host });
-    expect(renderSpy.mock.calls[0]?.[1]).toEqual({ exitOnCtrlC: false });
-    expect(() => view.unmount()).not.toThrow();
-  });
   test("AC-2 sends hello", () => {
     const ui = mount();
     ui.start();
@@ -203,35 +203,46 @@ describe("chat shell", () => {
     expect(ui.lastFrame()).toContain("Hello");
   });
   test.each([
-    ["AC-6", false, "ok"],
-    ["AC-7", true, "error"],
-  ] as const)("%s correlates tool results", (_ac, isError, label) => {
+    ["AC-6", false, "Read 1 lines"],
+    ["AC-7", true, "ignored preview"],
+  ] as const)("%s correlates tool results", (_ac, isError, summary) => {
     const ui = mount();
     ui.start();
     ui.emit({ type: "tool_call", callId: "c1", name: "Read", input: { path: "src/a.ts" } });
     ui.emit({ type: "tool_result", callId: "c1", isError, preview: "ignored preview" });
-    expect(ui.lastFrame()).toContain(`Read src/a.ts [${label}]`);
-    expect(ui.lastFrame()?.split("Read src/a.ts")).toHaveLength(2);
+    const frame = ui.lastFrame() ?? "";
+    expect(frame.split("⏺ Read(src/a.ts)")).toHaveLength(2);
+    const resultRow = frame.split("\n").find((row) => row.startsWith("  ⎿"));
+    expect(resultRow).toContain(summary);
   });
   test("AC-8 shows Bash command", () => {
     const ui = mount();
     ui.start();
     ui.emit({ type: "tool_call", callId: "c1", name: "Bash", input: { command: "bun run build" } });
-    expect(ui.lastFrame()).toContain("Bash bun run build");
+    expect(ui.lastFrame()).toContain("Bash(bun run build)");
   });
   test("AC-9 collapses private thinking", () => {
     const ui = mount();
     ui.start();
     ui.emit({ type: "thinking_delta", round: 1, text: "secret" });
     ui.emit({ type: "thinking_delta", round: 1, text: "more secret" });
-    expect(ui.lastFrame()?.split("thinking...")).toHaveLength(2);
+    ui.emit({
+      type: "turn_end",
+      status: "completed",
+      output: "",
+      costUsd: 0,
+      usage: { inputTokens: 0, outputTokens: 0 },
+    });
+    expect(ui.lastFrame()?.split("Thought for")).toHaveLength(2);
     expect(ui.lastFrame()).not.toContain("secret");
   });
   test("AC-10 shows model and mode", () => {
-    expect(mount().lastFrame()).toContain("test-model | guarded");
+    const frame = mount().lastFrame() ?? "";
+    expect(frame).toContain("⏵ guarded");
+    expect(frame).toContain("test-model");
   });
-  test("AC-11 shows shortened id and initial spend", () => {
-    expect(mount().lastFrame()).toContain("abcdefgh | $0.00");
+  test("AC-11 shows the initial spend", () => {
+    expect(mount().lastFrame()).toContain("$0.00");
   });
   test.each([
     ["AC-12", { kind: "available", backend: "srt", network: "open" }, "on"],
@@ -309,13 +320,20 @@ describe("chat shell", () => {
     );
     expect(ui.lastFrame()?.split(warning)).toHaveLength(3);
   });
-  test.each(["Read", "Write", "Edit", "Delete", "Bash"])("limits %s detail to a single 60-character line", (name) => {
+  test.each(["Read", "Write", "Edit", "Delete"])("limits %s detail to a single 60-character argument", (name) => {
     const ui = mount();
     ui.start();
     const detail = `first\n${"x".repeat(80)}`;
     ui.emit({ type: "tool_call", callId: "c1", name, input: { path: detail, command: detail } });
-    expect(ui.lastFrame()).toContain(`${name} first ${"x".repeat(54)}`);
+    expect(ui.lastFrame()).toContain(`${name}(first ${"x".repeat(54)}…`);
     expect(ui.lastFrame()).not.toContain("x".repeat(55));
+  });
+  test("shows only the first line of a Bash command", () => {
+    const ui = mount();
+    ui.start();
+    ui.emit({ type: "tool_call", callId: "c1", name: "Bash", input: { command: `first\n${"x".repeat(80)}` } });
+    expect(ui.lastFrame()).toContain("Bash(first)");
+    expect(ui.lastFrame()).not.toContain("xxxx");
   });
   test("ignores unknown tool detail and unrelated results", () => {
     const ui = mount();

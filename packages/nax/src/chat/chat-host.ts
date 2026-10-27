@@ -2,10 +2,12 @@ import type {
   CommandRunResult,
   SandboxState,
   SessionEvent,
+  SessionListEntry,
   SessionMeta,
   SessionStorage,
   ToolProvider,
 } from "@nathapp/nax-agent";
+import { lookupContextWindow } from "@/agents/catalog";
 import { getProjectKey, type NaxConfig } from "@/config";
 import { createRuleDeliveryHandlers } from "@/context/rules/rule-delivery";
 import { NaxError } from "@/errors";
@@ -25,12 +27,23 @@ import { routeAskEvent, runChatTurn } from "./turn-runner";
 
 const DEFAULT_CHAT_ASK_FALLBACK_MS = 60_000;
 
+/**
+ * Injectable seams for the host itself — tests replace these to drive the host
+ * deterministically. Distinct from `ChatHostDeps`, which is the composition
+ * input a caller supplies.
+ */
+export const _chatHostDeps = {
+  lookupContextWindow,
+};
+
 export interface ChatHostState {
   readonly sessionId: string;
   readonly mode: ChatMode;
   readonly model: string;
   readonly meta: SessionMeta;
   readonly sandbox?: SandboxState;
+  /** The session model's catalog context window; absent when the catalog cannot say. */
+  readonly contextWindow?: number;
 }
 
 export interface ChatSessionRow {
@@ -106,6 +119,8 @@ class NativeChatHost implements ChatHost {
   private readonly outputDir: string;
   private readonly runs?: SubagentRuns;
   private readonly toolProviders?: readonly ToolProvider[];
+  /** Catalog context window per model string; `undefined` records a model whose window the catalog cannot state. */
+  private readonly contextWindows = new Map<string, number | undefined>();
   private turnListener?: (event: SessionEvent) => void;
   private sending = false;
   private handle?: ChatSessionHandle;
@@ -181,13 +196,39 @@ class NativeChatHost implements ChatHost {
     const handle = this.handle;
     if (!handle) throw new NaxError("[chat] no session is open", "CHAT_SESSION_NOT_OPEN", { stage: "chat" });
     const { session, meta } = handle;
+    const contextWindow = this.contextWindows.get(meta.model);
     return {
       sessionId: meta.sessionId,
       mode: meta.mode === "full" ? "full" : "guarded",
       model: meta.model,
       meta,
       ...(session.backend.sandbox === undefined ? {} : { sandbox: session.backend.sandbox }),
+      ...(contextWindow === undefined ? {} : { contextWindow }),
     };
+  }
+
+  /**
+   * Remember the session model's catalog context window, read once per model
+   * string: a mode switch reopens on the same model, whose window cannot have
+   * changed, and re-reading it per switch would cost a catalog load per toggle.
+   * A model string with no non-empty `<provider>/` prefix names no catalog
+   * entry, so it is not looked up at all (US-003 AC-10).
+   */
+  private async primeContextWindow(model: string): Promise<void> {
+    if (this.contextWindows.has(model)) return;
+    const split = model.indexOf("/");
+    if (split <= 0) {
+      this.contextWindows.set(model, undefined);
+      return;
+    }
+    let contextWindow: number | undefined;
+    try {
+      contextWindow = await _chatHostDeps.lookupContextWindow(model.slice(0, split), model.slice(split + 1));
+    } catch {
+      // Fail-open (US-003 AC-8): an unavailable catalog leaves the window
+      // unknown rather than failing the session operation that read it.
+    }
+    this.contextWindows.set(model, contextWindow);
   }
 
   agents(): readonly ChatAgentRow[] {
@@ -227,6 +268,7 @@ class NativeChatHost implements ChatHost {
     });
     await this.replace(next);
     this.resumeNotice = undefined;
+    await this.primeContextWindow(next.meta.model);
   }
 
   private async replace(next: ChatSessionHandle): Promise<void> {
@@ -260,22 +302,35 @@ class NativeChatHost implements ChatHost {
     return count > 0 ? `hooks declared by ${count} package(s) are not executed by nax` : undefined;
   }
 
-  private async latestId(): Promise<string> {
+  /**
+   * Every session this cwd has, in the store's newest-first order — not just its first page.
+   * The store hands sessions back `LIST_PAGE_SIZE` at a time with a cursor, so a read that
+   * stopped at the first page would hide every session past the fiftieth from `/resume`: the
+   * picker's list is exactly this list, and an older free session is as resumable as a new
+   * one. Both readers below go through here, so neither can forget the cursor.
+   */
+  private async allSessions(): Promise<readonly SessionListEntry[]> {
+    const sessions: SessionListEntry[] = [];
     let cursor: string | undefined;
     do {
       const page = await this.deps.storage.list({ cwd: this.deps.cwd, ...(cursor ? { cursor } : {}) });
-      for (const { sessionId } of page.sessions) {
-        try {
-          const meta = await this.deps.storage.readMeta(sessionId);
-          if (meta === null || meta.sessionId !== sessionId || chatModeOfMeta(meta.mode) === null) continue;
-          if ((await this.deps.storage.readLockHolder(sessionId))?.state !== "live") return sessionId;
-        } catch (error) {
-          if (!(error instanceof Error && "code" in error && error.code === "SESSION_META_UNREADABLE")) throw error;
-          this.deps.logger.warn("chat", "skipping unreadable session metadata", { sessionId, cause: error });
-        }
-      }
+      sessions.push(...page.sessions);
       cursor = page.nextCursor;
     } while (cursor !== undefined);
+    return sessions;
+  }
+
+  private async latestId(): Promise<string> {
+    for (const { sessionId } of await this.allSessions()) {
+      try {
+        const meta = await this.deps.storage.readMeta(sessionId);
+        if (meta === null || meta.sessionId !== sessionId || chatModeOfMeta(meta.mode) === null) continue;
+        if ((await this.deps.storage.readLockHolder(sessionId))?.state !== "live") return sessionId;
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "SESSION_META_UNREADABLE")) throw error;
+        this.deps.logger.warn("chat", "skipping unreadable session metadata", { sessionId, cause: error });
+      }
+    }
     throw new NaxError(`no resumable session for ${this.deps.cwd}`, "CHAT_SESSION_NOT_FOUND", { stage: "chat" });
   }
 
@@ -311,10 +366,12 @@ class NativeChatHost implements ChatHost {
       }
       await this.replace(next);
     }
+    const resumed = this.requireHandle();
     this.resumeNotice =
-      this.requireHandle().session.lastTurn?.status === "interrupted"
+      resumed.session.lastTurn?.status === "interrupted"
         ? "The last turn was interrupted. Send a message to continue it."
         : undefined;
+    await this.primeContextWindow(resumed.meta.model);
   }
 
   private async reopen(
@@ -358,6 +415,7 @@ class NativeChatHost implements ChatHost {
     }
     this.handle = next;
     this.asks.setMode(target.mode);
+    await this.primeContextWindow(next.meta.model);
   }
 
   async clear(): Promise<void> {
@@ -420,7 +478,7 @@ class NativeChatHost implements ChatHost {
   }
 
   async listSessions(): Promise<readonly ChatSessionRow[]> {
-    const { sessions } = await this.deps.storage.list({ cwd: this.deps.cwd });
+    const sessions = await this.allSessions();
     return Promise.all(
       sessions.map(async ({ sessionId, title, updatedAt }) => {
         const holder = await this.deps.storage.readLockHolder(sessionId);

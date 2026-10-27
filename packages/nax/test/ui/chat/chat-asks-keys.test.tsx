@@ -181,7 +181,7 @@ describe("chat asks and keys", () => {
         }),
       );
       // Teardown is deliberately blocked while ask/turn updates rerender the shell.
-      expect(ui.lastFrame()).toContain("model | guarded");
+      expect(ui.lastFrame()).toContain("model · guarded");
       expect(ui.frames.join("\n")).not.toContain("CHAT_HOST_CLOSED");
       expect(release).not.toHaveBeenCalled();
       await Promise.resolve(
@@ -215,7 +215,7 @@ describe("chat asks and keys", () => {
   ] as const)("%s resolves approval", (_ac, key, choice) => {
     const ui = mount();
     ui.pending();
-    if (key === "s") expect(ui.lastFrame()).toContain("s: allow for this session");
+    if (key === "s") expect(ui.lastFrame()).toContain("Yes, and don't ask again for this in this session");
     ui.type(key);
     expect(ui.resolve).toHaveBeenCalledWith("ask-1", choice);
     expect(ui.lastFrame()).not.toContain("Run the tests");
@@ -226,7 +226,7 @@ describe("chat asks and keys", () => {
     const ui = mount();
     ui.pending({ ...approval, unsandboxed: true });
     expect(ui.lastFrame()).toContain("npm test");
-    expect(ui.lastFrame()).not.toContain("s: allow for this session");
+    expect(ui.lastFrame()).not.toContain("Yes, and don't ask again for this in this session");
     ui.type("s");
     expect(ui.resolve).not.toHaveBeenCalled();
     ui.type("a");
@@ -257,7 +257,7 @@ describe("chat asks and keys", () => {
     const ui = mount();
     ui.type("\x1b[Z");
     await flush();
-    expect(ui.lastFrame()).toContain("model | full");
+    expect(ui.lastFrame()).toContain("model · full");
   });
   test("AC-10 and AC-11 defer mode switch until turn_end", async () => {
     const ui = mount();
@@ -377,10 +377,10 @@ describe("chat asks and keys", () => {
     ui.type("\x1b[Z");
     await flush();
     expect(ui.lastFrame()).toContain("switch failed");
-    expect(ui.lastFrame()).toContain("model | guarded");
+    expect(ui.lastFrame()).toContain("model · guarded");
     ui.type("\x1b[Z");
     await flush();
-    expect(ui.lastFrame()).toContain("model | full");
+    expect(ui.lastFrame()).toContain("model · full");
   });
   test("surfaces failed close without exiting and permits retry", async () => {
     const ui = mount();

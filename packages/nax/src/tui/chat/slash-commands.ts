@@ -4,9 +4,14 @@ import { featureDir } from "@/config";
 import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing } from "@/resources";
 
+/** The no-argument commands whose argument is chosen in a picker rather than typed. */
+export type PickerKind = "model" | "resume" | "mode";
+
 export type SlashOutcome =
   | { kind: "send"; message: string }
-  | { kind: "command"; name: string; template: string; rest: string };
+  | { kind: "command"; name: string; template: string; rest: string }
+  /** `/model`, `/resume` and `/mode` with no argument: the screen opens the named picker. */
+  | { kind: "picker"; picker: PickerKind };
 
 export interface SlashCommand {
   name: string;
@@ -24,7 +29,8 @@ export const _slashCommandDeps = {
     }
   },
 };
-const COMMANDS = [
+/** The built-ins in the order `/help` and the slash menu list them. */
+export const COMMANDS = [
   "help",
   "mode",
   "model",
@@ -38,7 +44,26 @@ const COMMANDS = [
   "mcp",
   "agents",
   "quit",
-];
+] as const;
+
+export type SlashCommandName = (typeof COMMANDS)[number];
+
+/** What each built-in does: the help text and the slash menu's second column. */
+export const COMMAND_DESCRIPTIONS = {
+  help: "Show commands and skills",
+  mode: "Switch permission mode",
+  model: "Switch model",
+  sessions: "List saved sessions",
+  resume: "Resume a saved session",
+  clear: "Clear the conversation",
+  cost: "Show session cost",
+  feature: "Load a feature spec into the conversation",
+  skills: "List skills",
+  plugins: "List plugins and what they provide",
+  mcp: "List MCP servers",
+  agents: "List agents",
+  quit: "Quit nax chat",
+} satisfies Record<SlashCommandName, string>;
 
 export function parseSlashCommand(text: string): SlashCommand | null {
   if (!text.startsWith("/")) return null;
@@ -75,7 +100,7 @@ interface CommandContext {
 
 function formatHelp(host: ChatHost): string {
   return [
-    ...COMMANDS.map((name) => `/${name}`),
+    ...COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`),
     ...(host.catalog?.commands ?? []).map((entry) => `/${entry.name} - ${entry.description ?? ""}`),
     ...(host.catalog?.skills ?? []).map((entry) => `/${entry.name} - ${entry.description}`),
   ].join("\n");
@@ -89,7 +114,12 @@ function catalogCommand(command: SlashCommand, { host, show }: CommandContext): 
   show(`unknown command /${command.name}`);
 }
 
-/** Built-ins take precedence; catalog commands remain distinct from explicit skill turns. */
+/**
+ * Built-ins take precedence; catalog commands remain distinct from explicit skill turns.
+ *
+ * `/mode`, `/model` and `/resume` answer an argument-less call with a `picker` outcome: the
+ * session command is not run here, because the choice it needs has to be made on screen.
+ */
 export async function runSlashCommand(
   command: SlashCommand,
   { host, show }: CommandContext,
@@ -112,13 +142,13 @@ export async function runSlashCommand(
       show(formatAgentsListing(host.agents?.() ?? []));
       break;
     case "mode":
-      if (!arg) show(host.current().mode);
-      else if (arg === "full" || arg === "guarded") await host.switchTo({ mode: arg });
+      if (!arg) return { kind: "picker", picker: "mode" };
+      if (arg === "full" || arg === "guarded") await host.switchTo({ mode: arg });
       else show(`unknown mode ${arg}; expected full or guarded`);
       break;
     case "model":
-      if (arg) await host.switchTo({ model: arg });
-      else show(host.models.join("\n"));
+      if (!arg) return { kind: "picker", picker: "model" };
+      await host.switchTo({ model: arg });
       break;
     case "sessions":
       for (const row of await host.listSessions()) {
@@ -128,7 +158,8 @@ export async function runSlashCommand(
       }
       break;
     case "resume":
-      await host.resume(arg ? { id: arg } : {});
+      if (!arg) return { kind: "picker", picker: "resume" };
+      await host.resume({ id: arg });
       break;
     case "clear":
       await host.clear();

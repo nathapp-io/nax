@@ -110,12 +110,32 @@ export function usageEvent(at: string = AT, costUsd = 0.1): SessionEvent {
   };
 }
 
-export function toolCallEvent(callId = "c1"): SessionEvent {
+export function toolCallEvent(callId = "c1"): Extract<SessionEvent, { type: "tool_call" }> {
   return { ...EVENT_BASE, type: "tool_call", callId, name: "Read", input: { path: "a.ts" } };
 }
 
-export function toolResultEvent(callId = "c1"): SessionEvent {
+export function toolResultEvent(callId = "c1"): Extract<SessionEvent, { type: "tool_result" }> {
   return { ...EVENT_BASE, type: "tool_result", callId, isError: false, preview: "contents" };
+}
+
+/** The forwarded `tool_call` carrying `callId`, or undefined when it was not forwarded. */
+export function forwardedToolCall(
+  events: readonly SessionEvent[],
+  callId: string,
+): Extract<SessionEvent, { type: "tool_call" }> | undefined {
+  return events.find((event): event is Extract<SessionEvent, { type: "tool_call" }> => {
+    return event.type === "tool_call" && event.callId === callId;
+  });
+}
+
+/** The forwarded `tool_result` carrying `callId`, or undefined when it was not forwarded. */
+export function forwardedToolResult(
+  events: readonly SessionEvent[],
+  callId: string,
+): Extract<SessionEvent, { type: "tool_result" }> | undefined {
+  return events.find((event): event is Extract<SessionEvent, { type: "tool_result" }> => {
+    return event.type === "tool_result" && event.callId === callId;
+  });
 }
 
 export function textDeltaEvent(text = "hello"): SessionEvent {
@@ -183,6 +203,8 @@ export interface SubagentHostOptions {
   readonly modelAliases?: Record<string, string>;
   /** The agent the scripted chat session runs; defaults to the first agent. */
   readonly runAgent?: string;
+  /** The task text the scripted chat session hands the `run` tool; defaults to `"check it"`. */
+  readonly task?: string;
   /** Events the nested session emits before it ends its turn. */
   readonly nestedEvents?: readonly SessionEvent[];
   /** Keep the nested turn open until `releaseNested()` or the nested session is cancelled. */
@@ -323,7 +345,7 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
         maxFileBytes: 1_000_000,
         signal: turn.signal,
       };
-      const pendingRun = tool.run({ agent: runAgentName, task: "check it" }, ctx);
+      const pendingRun = tool.run({ agent: runAgentName, task: options.task ?? "check it" }, ctx);
       toolResults.push(
         options.abandonToolOnAbort
           ? await Promise.race([

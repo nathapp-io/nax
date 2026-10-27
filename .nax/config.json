@@ -107,7 +107,7 @@
   "execution": {
     "permissionProfile": "unrestricted",
     "sessionTimeoutSeconds": 7200,
-    "maxStoriesPerFeature": 20,
+    "maxStoriesPerFeature": 28,
     "sandbox": {
       "network": {
         "allowLocalBinding": true

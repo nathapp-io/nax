@@ -173,7 +173,9 @@ export function acquireSessionLock(
       rmSync(temp, { force: true });
     }
   }, LOCK_HEARTBEAT_MS);
-  timer.unref();
+  // Bun returns a number and Node a Timeout; only the latter can be unref'd, and only it
+  // needs to be (a number handle never holds the loop open on its own).
+  if (typeof timer !== "number") timer.unref();
   return async () => {
     try {
       // The heartbeat stays live while release waits out contention.

@@ -24,6 +24,8 @@ export {
   approvalRequestedEvent,
   approvalResolvedEvent,
   CHAT_MODEL,
+  forwardedToolCall,
+  forwardedToolResult,
   makeAgentCatalog,
   makeAgentResource,
   makeScriptedSession,
