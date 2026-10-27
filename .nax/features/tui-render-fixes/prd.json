@@ -3,7 +3,7 @@
   "feature": "tui-render-fixes",
   "branchName": "feat/tui-render-fixes",
   "createdAt": "2026-10-27T00:00:00.000Z",
-  "updatedAt": "2026-10-27T03:33:56.983Z",
+  "updatedAt": "2026-10-27T03:43:52.306Z",
   "userStories": [
     {
       "id": "US-001",
@@ -181,14 +181,17 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Integrates terminal lifecycle, injected Ink input, React subscriptions and viewport state across multiple modules; seam tests must prove data and event plumbing."
+        "reasoning": "Integrates terminal lifecycle, injected Ink input, React subscriptions and viewport state across multiple modules; seam tests must prove data and event plumbing.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/index.ts",
@@ -212,7 +215,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "511fcfc0e6d68efe1e9635fa14c04a165a391263"
     },
     {
       "id": "US-004",
