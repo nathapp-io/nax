@@ -187,6 +187,11 @@ function slashSink(title: string | undefined, append: (entry: TranscriptEntry) =
   };
 }
 
+/** Notices wait until neither a turn, a bottom-region surface nor host control owns the screen. */
+function idleForJobNotice(input: { turnRunning: boolean; bottomBlocked: boolean; canControl: boolean }): boolean {
+  return !input.turnRunning && !input.bottomBlocked && input.canControl;
+}
+
 export function ChatApp({
   host,
   mouse,
@@ -445,7 +450,11 @@ export function ChatApp({
   }
 
   const jobs = useJobs(host, {
-    idle: !turnRunning && ask === undefined && picker.model === undefined && keys.canControl(),
+    idle: idleForJobNotice({
+      turnRunning,
+      bottomBlocked: bottomBlocked(ask, picker.model),
+      canControl: keys.canControl(),
+    }),
     deliver: async (text) => {
       if (sending.current) return false;
       await sendTurn(text);
