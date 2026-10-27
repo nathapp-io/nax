@@ -1,0 +1,474 @@
+{
+  "project": "nax-monorepo",
+  "feature": "tui-render-fixes",
+  "branchName": "feat/tui-render-fixes",
+  "createdAt": "2026-10-27T00:00:00.000Z",
+  "updatedAt": "2026-10-27T02:59:29.841Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Steady frame and markdown block spacing",
+      "description": "**Goal** — Keep the composed chat frame one terminal row short and separate nonempty top-level markdown blocks by one blank row.\n\n**Motivation** — #2708 — the whole screen blinks on every keystroke, on the working-line tick and while text streams.\n\n**Approach** — **1. Steady frame (US-001, #2708).** `ChatApp` derives every row budget from `usableRows = size.rows - FRAME_SLACK_ROWS` (`FRAME_SLACK_ROWS = 1`) instead of `size.rows`: the bottom budget, the menu, ask-card and picker budgets and the viewport height alike. The composed frame is therefore at most `rows - 1` rows tall in every state — a long draft, an oversized ask card, an open picker or slash menu included — so Ink's `lastOutputHeight >= stdout.rows` branch is never taken and Ink's normal log-update path runs. The footer stays the frame's last row; the terminal's last row stays blank. `renderChat` passes `incrementalRendering: true` (an Ink 6.7 `RenderOptions` field) next to `exitOnCtrlC: false`, so Ink rewrites only the rows that changed.\n\n**2. Block spacing (US-001, #2709).** `renderMarkdown` renders each top-level token with `blockLines` as today, drops the blocks that produced no lines (`space`, `def`, an empty paragraph), and joins the remaining blocks with exactly one empty `StyledLine` (`[]`) between each adjacent pair: none before the first block and none after the last. The gap is independent of the source: `code` immediately followed by a paragraph with no blank source line still gets one blank row. Spacing inside a list (between items, tight or loose) and inside a blockquote is unchanged — only top-level blocks are separated.\n\n**Scope** — In: ChatApp row arithmetic, renderChat's incremental option, top-level markdown joins and corresponding existing layout/markdown/render tests. Out: mouse stream construction/lifecycle and wheel actions (US-002/003), selection/copy (US-004/005), model enumeration/filtering (US-006/007). The Ink version is not changed.\n\n**Interface** — Existing `renderChat(props)` retains its interface and renders with `{ exitOnCtrlC: false, incrementalRendering: true }`; US-003 later adds `stdin`. Existing `renderMarkdown` retains its public signature and returns `readonly StyledLine[]`.\n\n**Regression migration** — Update all full-frame counts in chat-app-layout.test.tsx: default 24→23, 30-row cases including tall draft F1 and ask card 30→29, and 12-row tall draft 12→11; update viewport/input counts where slack falls, preserving header/footer/input/viewport content assertions. In slash-menu.test.tsx change SHORT_ROWS counts to SHORT_ROWS-1, and increase F15/F16 terminal heights by one if needed to preserve the no-menu-row scenario and its key behavior. In index.test.tsx add incrementalRendering to exact options expectations; alt-screen write ordering is unchanged in this story.",
+      "acceptanceCriteria": [
+        "[unit] Mounting ChatApp on a 30-row, 80-column stream renders exactly 29 rows.",
+        "[unit] Mounting ChatApp on a stream that reports no rows renders exactly 23 rows (the 24-row default minus one).",
+        "[unit] On a 30-row stream the last rendered row is the footer and contains the mode label ⏵ guarded.",
+        "[unit] On a 30-row stream with a running turn (working line shown), the frame renders exactly 29 rows.",
+        "[unit] On a 30-row stream with a draft wider than four terminal rows typed into the input, the frame renders exactly 29 rows.",
+        "[unit] On a 30-row stream with a pending approval ask whose card is taller than the bottom budget, the frame renders exactly 29 rows.",
+        "[unit] On a 30-row stream with the /model picker open, the frame renders exactly 29 rows.",
+        "[unit] On a 30-row stream with / typed so the slash menu is open, the frame renders exactly 29 rows.",
+        "[unit] renderChat(props) calls the injected render with options whose incrementalRendering is true.",
+        "[unit] renderMarkdown(\"# T\\n\\npara\", ...) returns the lines T, an empty line, para.",
+        "[unit] renderMarkdown(\"para\\n\\n- a\\n- b\", ...) returns para, an empty line, - a, - b.",
+        "[unit] renderMarkdown of a fenced ts block followed on the next source line by after (no blank source line) returns the fence's lines, one empty line, then after.",
+        "[unit] renderMarkdown(\"a\\n\\n\\n\\nb\", ...) returns a, exactly one empty line, b.",
+        "[unit] renderMarkdown(\"- a\\n\\n- b\", ...) returns - a, - b with no empty line between the items (a loose list is still one block).",
+        "[unit] renderMarkdown(\"para\\n\\n[1]: https://x.y\", ...) returns exactly one line, para, with no trailing empty line (a link definition renders no lines and adds no gap).",
+        "[unit] renderMarkdown(\"> q\\n\\n---\", ...) returns the quote's line, one empty line, then the rule line.",
+        "[unit] layoutTranscript of one reply entry \"# T\\n\\npara\" at width 40 returns the gutter line for T, then the line \"  \" (the gutter's blank indent), then the indented para line."
+      ],
+      "tags": [
+        "tui",
+        "rendering",
+        "markdown",
+        "bugfix"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Localized row-budget arithmetic and top-level block joining use established models and injectable render seams; existing UI and pure-model tests can be extended first."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/index.ts",
+        "packages/nax/src/tui/chat/markdown.ts",
+        "packages/nax/test/ui/chat/chat-app-layout.test.tsx",
+        "packages/nax/test/ui/chat/slash-menu.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "renderMarkdown of a document containing only link definitions returns an empty array.",
+        "renderMarkdown of a blockquote containing multiple nested blocks preserves their existing internal spacing."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/chat-app-layout.test.tsx",
+          "reason": "every assertion that the frame has exactly the terminal's row count changes to that count minus one, because every budget now derives from `usableRows = rows - 1`: the default-stream case (24 becomes 23), the 30-row harness cases including the tall-draft (F1) and ask-card cases (30 becomes 29), and the 12-row tall-draft case (12 becomes 11); an assertion that counts viewport or input rows changes by the same one row where the slack falls on it; every assertion on what the footer, header, input or viewport rows contain is unchanged."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/slash-menu.test.tsx",
+          "reason": "the short-terminal cases that assert `rows` has length `SHORT_ROWS` (12) change to `SHORT_ROWS - 1`, and the F15/F16 cases (a terminal with no rows for the menu) keep their behaviour but move their terminal height up by one row if the one-row slack would otherwise change whether the menu gets a row; the menu-key behaviour each case asserts is unchanged."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/index.test.tsx",
+          "reason": "the case asserting `render` was called with options equal to `{ exitOnCtrlC: false }` changes its expected options to include `incrementalRendering: true` beside `exitOnCtrlC: false` (US-003 later adds `stdin`); the alt-screen write-order assertions are unchanged in this story."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Mouse input module",
+      "description": "**Goal** — Add a chunk-safe SGR mouse parser and a filtered Ink-compatible input stream with ordered mouse subscriptions and disposal.\n\n**Motivation** — #2710 — the transcript cannot be scrolled with the mouse.\n\n**Approach** — **3. Mouse input (US-002 module, US-003 wiring, #2710).** New module `src/tui/chat/mouse-input.ts`:\n\n```ts\nexport const ENABLE_MOUSE = \"\\u001b[?1003h\\u001b[?1006h\";\nexport const DISABLE_MOUSE = \"\\u001b[?1006l\\u001b[?1003l\";\n\nexport type MouseButton = \"left\" | \"middle\" | \"right\" | \"none\";\nexport interface MouseEvent {\n  readonly kind: \"press\" | \"release\" | \"drag\" | \"move\" | \"wheelUp\" | \"wheelDown\";\n  readonly button: MouseButton;\n  /** 1-based terminal column and row, as the terminal reports them. */\n  readonly x: number;\n  readonly y: number;\n}\nexport interface MouseEvents {\n  subscribe(listener: (event: MouseEvent) => void): () => void;\n}\nexport interface MouseInput {\n  /** What Ink reads: the source with every complete SGR mouse report removed. */\n  readonly stdin: NodeJS.ReadStream;\n  readonly events: MouseEvents;\n  dispose(): void;\n}\nexport function parseSgrMouse(sequence: string): MouseEvent | undefined;\nexport function createMouseInput(source: NodeJS.ReadStream): MouseInput;\n```\n\nAn SGR report is `ESC [ < b ; x ; y M` (press or motion) or `... m` (release). The low two bits of `b` name the button (0 left, 1 middle, 2 right, 3 none); bit 32 marks motion (`drag` when a button is held, `move` when `b & 3 === 3`); 64 is `wheelUp` and 65 `wheelDown`; modifier bits 4, 8 and 16 are ignored. Horizontal wheel reports (`b` 66 and 67) parse to `undefined` but, being complete reports, are still removed from the stream and emit no event. `parseSgrMouse` returns `undefined` for anything that is not one complete report.\n\n`createMouseInput` returns a `PassThrough` stream that forwards Ink's control calls to the source — `isTTY` (a property), `setRawMode`, `ref` and `unref` (added to the stream, since a `PassThrough` has no `ref`/`unref`) — and whose own `setEncoding(\"utf8\")` call also sets the stream's own encoding, so Ink's `read()` returns strings. Source chunks are decoded with a `StringDecoder(\"utf8\")`, so a multi-byte character split across chunks is not corrupted. `MouseInput` also has `dispose(): void`, which removes the source listener. For every chunk the source emits, writes the chunk minus its complete SGR reports and emits one `MouseEvent` per report, in order. A chunk that ends inside a report (its tail begins with `ESC [ <` and has no `M`/`m` terminator yet) keeps that tail and prepends it to the next chunk. A trailing bare `ESC` or `ESC [` is never held, so a pressed Escape key reaches Ink at once. A sequence that begins with `ESC [ <` but breaks the grammar before a terminator is passed through unchanged.\n\n**Scope** — In: the new mouse-input module and its isolated unit tests. Out: renderChat/ChatApp/TranscriptViewport wiring and wheel reducers (US-003), selection/clipboard primitives and screen behavior (US-004/005). No configuration key to turn mouse reporting off is added.\n\n**Interface** — The TypeScript declarations above are the module contract, with `MouseInput.dispose(): void` included as required by the design's lifecycle paragraph. Inject no real terminal into tests: create fake Node-compatible read streams. Add no imports of this module to production consumers until US-003.",
+      "acceptanceCriteria": [
+        "[unit] parseSgrMouse(\"\\u001b[<0;10;5M\") returns { kind: \"press\", button: \"left\", x: 10, y: 5 }.",
+        "[unit] parseSgrMouse(\"\\u001b[<0;10;5m\") returns { kind: \"release\", button: \"left\", x: 10, y: 5 }.",
+        "[unit] parseSgrMouse(\"\\u001b[<32;11;5M\") returns { kind: \"drag\", button: \"left\", x: 11, y: 5 }.",
+        "[unit] parseSgrMouse(\"\\u001b[<35;11;5M\") returns { kind: \"move\", button: \"none\", x: 11, y: 5 }.",
+        "[unit] parseSgrMouse(\"\\u001b[<64;3;4M\") returns { kind: \"wheelUp\", button: \"none\", x: 3, y: 4 }.",
+        "[unit] parseSgrMouse(\"\\u001b[<65;3;4M\") returns { kind: \"wheelDown\", button: \"none\", x: 3, y: 4 }.",
+        "[unit] parseSgrMouse(\"\\u001b[<16;3;4M\") (left press with the ctrl bit) returns kind press and button left.",
+        "[unit] parseSgrMouse(\"\\u001b[<x;3;4M\") returns undefined.",
+        "[unit] Writing the chunk a\\u001b[<64;3;4Mb to the source of createMouseInput makes the filtered stream yield ab.",
+        "[unit] Writing that same chunk emits exactly one wheelUp event to a subscriber.",
+        "[unit] Writing \\u001b[<0;10 then ;5M as two source chunks yields nothing on the filtered stream.",
+        "[unit] Writing \\u001b[<0;10 then ;5M as two source chunks emits one press event at x: 10, y: 5.",
+        "[unit] Writing the chunk \\u001b to the source yields \\u001b on the filtered stream without waiting for another chunk.",
+        "[unit] Writing \\u001b[<x;1;1M to the source yields \\u001b[<x;1;1M unchanged on the filtered stream and emits no event.",
+        "[unit] Writing \\u001b[<66;3;4M to the source yields nothing on the filtered stream and emits no event.",
+        "[unit] Writing the two Buffer chunks that split the UTF-8 bytes of é makes the filtered stream yield é.",
+        "[unit] After setEncoding(\"utf8\") on the filtered stream, read() returns a string.",
+        "[unit] Calling setRawMode(true) on the filtered stream calls setRawMode(true) on the source.",
+        "[unit] The filtered stream's isTTY equals the source's isTTY.",
+        "[unit] A listener whose unsubscribe function was called receives no further events.",
+        "[unit] After dispose(), writing a report to the source emits no event.",
+        "[unit] Writing a trailing bare \\u001b[ to the source yields \\u001b[ on the filtered stream immediately, without waiting for another chunk."
+      ],
+      "tags": [
+        "tui",
+        "mouse",
+        "input-stream",
+        "bugfix"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New stream/event abstraction must combine incremental grammar parsing, UTF-8 decoding, terminal control forwarding and listener lifecycle without corrupting keyboard input."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/index.ts",
+        "packages/nax/src/tui/chat/alt-screen.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/mouse-input.ts",
+        "packages/nax/test/unit/tui/chat/mouse-input.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Calling ref() and unref() on the filtered stream forwards each call to the source.",
+        "Writing multiple complete SGR reports mixed with typed text in one chunk emits mouse events in report order and yields only the typed text.",
+        "parseSgrMouse returns undefined when the string contains a complete report followed by extra text.",
+        "Writing horizontal wheel report \\u001b[<67;3;4M yields no filtered bytes and no mouse event.",
+        "When an incomplete SGR prefix is followed by a chunk that breaks its grammar, the complete malformed text is forwarded unchanged."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Mouse wiring and wheel scrolling",
+      "description": "**Goal** — Wire the mouse input into the terminal screen and route wheel reports to clamped transcript scrolling.\n\n**Motivation** — The TUI enables no mouse reporting, so on the alternate screen the terminal turns the wheel into bare Up/Down, which the input consumes as prompt history.\n\n**Approach** — `renderChat` builds the mouse input from `process.stdin` (injected through `_renderChatDeps.stdin`), passes `stdin: mouse.stdin` to `render`, passes `mouse.events` to `ChatApp` as a new optional prop `mouse`, writes `ENABLE_MOUSE` after `render` returns (Ink has put the terminal in raw mode by then, so no report is echoed) when the source is a TTY, and in its one-shot restore (unmount and the process `exit` handler alike) writes `DISABLE_MOUSE` right before `LEAVE_ALT_SCREEN` and calls `mouse.dispose()`.\n\n**Wheel scroll.** `ChatApp` hands `mouse` to `TranscriptViewport` (new optional prop `mouse`). The viewport subscribes while it is active; `wheelUp` reduces the new viewport action `{ type: \"wheelUp\" }` and `wheelDown` `{ type: \"wheelDown\" }`, which move `WHEEL_LINES = 3` lines through the same `settle` clamp the line actions use (toward older lines for `wheelUp`). The wheel scrolls wherever the pointer is. Keyboard scrolling and the footer are unchanged.\n\n**Scope** — In: renderChat filtered input and mouse enable/disable/dispose lifecycle, optional mouse props, viewport wheel actions and mounted seams. Out: implementing the parser/filter (US-002), selection helpers/clipboard (US-004), drag selection and copied hint (US-005), model choices/filter (US-006/007). No configuration key to turn mouse reporting off is added. The Ink version is not changed.\n\n**Interface**\n```ts\n// Add to _renderChatDeps:\nstdin: () => NodeJS.ReadStream;\ncreateMouseInput: typeof createMouseInput;\n// Add to ChatAppProps and TranscriptViewportProps:\nreadonly mouse?: MouseEvents;\n// Add to ViewportAction:\n{ type: \"wheelUp\" } | { type: \"wheelDown\" };\n```\nTarget render expression: `render(createElement(ChatApp, { ...props, mouse: mouse.events }), { exitOnCtrlC: false, incrementalRendering: true, stdin: mouse.stdin })`. Write `ENTER_ALT_SCREEN` before render. For non-TTY stdin write neither ENABLE_MOUSE nor DISABLE_MOUSE; ordinary input continues through the filtered stream. Preserve existing renderer-throw restoration.\n\n**Regression migration** — In test/ui/chat/index.test.tsx, stubScreen injects fake stdin and a fake MouseInput with recorded dispose; no test touches process.stdin. Render-options equality gains stdin equal to the fake mouse stream. TTY write order becomes [ENTER_ALT_SCREEN, ENABLE_MOUSE, DISABLE_MOUSE, LEAVE_ALT_SCREEN], with ENABLE_MOUSE after render; non-TTY stays [ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN]. Restore remains one-shot.",
+      "acceptanceCriteria": [
+        "[unit] renderChat with a TTY stdin writes ENTER_ALT_SCREEN before calling render.",
+        "[unit] renderChat with a TTY stdin writes ENABLE_MOUSE after render returns.",
+        "[unit] Unmounting the instance renderChat returned writes DISABLE_MOUSE then LEAVE_ALT_SCREEN, each exactly once.",
+        "[unit] Unmounting the instance renderChat returned calls the mouse input's dispose once.",
+        "[unit] Invoking the registered process-exit handler of a renderChat instance that was never unmounted writes DISABLE_MOUSE then LEAVE_ALT_SCREEN, each exactly once.",
+        "[unit] renderChat with a non-TTY stdin writes neither ENABLE_MOUSE nor DISABLE_MOUSE.",
+        "[unit] Seam: renderChat with an injected createMouseInput spy calls it once with the injected stdin.",
+        "[unit] Seam: renderChat passes the spy's returned stdin as the stdin option of render.",
+        "[unit] Seam: renderChat passes the spy's returned events as the mouse prop of the rendered ChatApp element.",
+        "[unit] reduceViewport with { type: \"wheelUp\" } from offset 0 with 100 lines and height 10 returns offset 3 and follow: false.",
+        "[unit] reduceViewport with { type: \"wheelDown\" } from offset 2 with 100 lines and height 10 returns offset 0 and follow: true.",
+        "[unit] reduceViewport with { type: \"wheelUp\" } from offset 89 with 100 lines and height 10 returns offset 90 (clamped).",
+        "[unit] TranscriptViewport given a fake MouseEvents, 50 lines labelled line-0 to line-49 and height 10 shows line-37 to line-46 after one emitted wheelUp event.",
+        "[unit] TranscriptViewport with active: false ignores an emitted wheelUp event and keeps showing line-40 to line-49.",
+        "[unit] Seam: ChatApp given a fake mouse and a transcript longer than its viewport shows an older line after one emitted wheelUp event.",
+        "[unit] Given a non-TTY source passed through renderChat's mouse input, when ordinary text is emitted, then that text reaches the filtered stdin supplied to render unchanged.",
+        "[unit] Given an active TranscriptViewport without a mouse prop, 20 lines labelled line-0 to line-19 and height 5, when PageUp is pressed from the initial newest window, then it shows line-11 to line-15, preserving the existing one-row page overlap."
+      ],
+      "tags": [
+        "tui",
+        "mouse",
+        "scrolling",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Integrates terminal lifecycle, injected Ink input, React subscriptions and viewport state across multiple modules; seam tests must prove data and event plumbing."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/index.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/TranscriptViewport.tsx",
+        "packages/nax/src/tui/chat/viewport.ts",
+        "packages/nax/src/tui/chat/mouse-input.ts"
+      ],
+      "suggestedCriteria": [
+        "When the injected renderer throws, renderChat restores the alternate screen and disposes the mouse input before rethrowing the same error.",
+        "When TranscriptViewport unmounts, subsequent wheel events do not update its viewport.",
+        "A wheelUp event with coordinates outside the transcript still scrolls an active TranscriptViewport by three lines."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/index.test.tsx",
+          "reason": "`stubScreen()` gains an injected fake stdin (`_renderChatDeps.stdin`) and an injected `_renderChatDeps.createMouseInput` returning a fake `MouseInput` whose `dispose` is recorded, so no test touches the runner's real `process.stdin`; the render-options assertion gains `stdin` equal to that fake mouse input's stream; the write-order assertions change from `[ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN]` to `[ENTER_ALT_SCREEN, ENABLE_MOUSE, DISABLE_MOUSE, LEAVE_ALT_SCREEN]` when the fake stdin is a TTY and stay `[ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN]` for a non-TTY stdin; the order assertion places `ENABLE_MOUSE` after `render`; restore still runs exactly once."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Selection and clipboard modules",
+      "description": "**Goal** — Add pure display-cell selection primitives and a portable clipboard writer, with inverse span rendering.\n\n**Motivation** — A tmux probe on 2026-10-27 confirmed Claude Code v2.1 enables any-motion tracking with SGR encoding on its alternate screen and draws and copies its own selection; the user ruled the TUI does the same (wheel scroll on, in-app drag selection).\n\n**Approach** — **4. Selection and copy (US-004 modules, US-005 wiring, #2710).** A pure module `src/tui/chat/selection.ts`:\n\n```ts\nexport interface TranscriptPoint { readonly line: number; readonly column: number }\nexport interface Selection { readonly anchor: TranscriptPoint; readonly focus: TranscriptPoint }\nexport interface ViewportGeometry {\n  readonly top: number;      // 0-based screen row of the viewport's first row\n  readonly height: number;   // viewport rows\n  readonly total: number;    // transcript lines\n  readonly offset: number;   // ViewportState.offset\n  readonly unseen: number;   // ViewportState.unseen\n}\nexport function transcriptPointAt(geometry: ViewportGeometry, x: number, y: number): TranscriptPoint | undefined;\nexport function selectedText(lines: readonly StyledLine[], selection: Selection): string;\nexport function highlightLine(line: StyledLine, index: number, selection: Selection): StyledLine;\n```\n\n`transcriptPointAt` maps a 1-based terminal cell to a transcript line and 0-based display column using the same window `ViewportRows` draws: `visibleRange(total, height, offset)`, the blank padding rows above short content, and the unseen-marker row (which is not a transcript line). Rows outside the viewport, padding rows and the marker row map to `undefined`. `selectedText` orders anchor and focus, takes each line's span text, slices the first and last line by display column (a wide grapheme partly inside the range is taken whole), trims trailing spaces per line and joins lines with `\\n`. `highlightLine` returns the line with the selected columns split into spans carrying `inverse: true`; a line outside the selection is returned unchanged. `Span` gains `inverse?: boolean`, which `StyledLineView` passes to Ink's `Text` `inverse`.\n\nSelection is inclusive of the focus cell.\n\nNew module `src/tui/chat/clipboard.ts`:\n\n```ts\nexport const _clipboardDeps = {\n  write: (text: string): void => { process.stdout.write(text); },\n  platform: process.platform,\n  spawnCopy: (text: string): Promise<number> => { /* Bun.spawn([\"pbcopy\"], { stdin }) exit code */ },\n};\nexport function osc52(text: string): string; // \"\\u001b]52;c;\" + base64(utf8 text) + \"\\u0007\"\nexport async function copyToClipboard(text: string): Promise<void>;\n```\n\n`copyToClipboard` always writes `osc52(text)`; on `platform === \"darwin\"` it also runs `spawnCopy(text)`, because Terminal.app ignores OSC 52. A rejected or non-zero `spawnCopy` is swallowed (OSC 52 was already sent).\n\n**Scope** — In: selection.ts, clipboard.ts, Span.inverse/StyledLineView, unit tests and existing styled-line rendering tests. Out: React gesture state, mouse subscription/wiring, top propagation and copied footer feedback (US-005); mouse parsing and scroll wiring (US-002/003). US-004 only: copying uses OSC 52 everywhere and `pbcopy` on macOS; no Linux or Windows clipboard command (`wl-copy`, `xclip`, `clip.exe`) is spawned.\n\n**Interface** — Preserve the declarations above and add `readonly inverse?: boolean` to Span. Keep original styles while splitting selected runs. Tests isolate _clipboardDeps and use terminal display columns, including wide graphemes and reversed selections; no real clipboard subprocesses or stdout writes.",
+      "acceptanceCriteria": [
+        "[unit] transcriptPointAt with top: 3, height: 10, total: 50, offset: 0, unseen: 0 maps terminal cell x: 5, y: 4 to { line: 40, column: 4 }.",
+        "[unit] transcriptPointAt with the same geometry maps y: 3 (a header row) to undefined.",
+        "[unit] transcriptPointAt with the same geometry maps y: 14 (below the viewport) to undefined.",
+        "[unit] transcriptPointAt with total: 4, height: 10, top: 0 maps y: 1 (a padding row) to undefined.",
+        "[unit] transcriptPointAt with total: 4, height: 10, top: 0 maps y: 7 to line 0.",
+        "[unit] transcriptPointAt with unseen: 2 maps the viewport's last row (the unseen marker) to undefined.",
+        "[unit] selectedText over lines hello world and second line with anchor { line: 0, column: 6 } and focus { line: 1, column: 5 } returns world\\nsecond (the focus cell is included).",
+        "[unit] selectedText with focus before anchor returns the same text as with the two points swapped.",
+        "[unit] selectedText over a line a😀b with a range starting at column 2 (the emoji's second cell) returns text starting with 😀.",
+        "[unit] selectedText trims trailing spaces from each selected line.",
+        "[unit] highlightLine returns a line whose spans covering the selected columns carry inverse: true.",
+        "[unit] highlightLine returns a line whose spans outside the selected columns do not carry inverse: true.",
+        "[unit] highlightLine for a line index outside the selection returns the line unchanged.",
+        "[unit] StyledLineView renders a span with inverse: true using Ink's inverse attribute.",
+        "[unit] osc52(\"hi\") returns \"\\u001b]52;c;aGk=\\u0007\".",
+        "[unit] copyToClipboard(\"hi\") with platform \"linux\" writes osc52(\"hi\").",
+        "[unit] copyToClipboard(\"hi\") with platform \"linux\" does not call spawnCopy.",
+        "[unit] copyToClipboard(\"hi\") with platform \"darwin\" calls spawnCopy with \"hi\".",
+        "[unit] copyToClipboard resolves when spawnCopy rejects.",
+        "[unit] copyToClipboard resolves when spawnCopy resolves a non-zero exit code.",
+        "[unit] Given a StyledLine span { text: \"plain\", bold: true } with inverse omitted, StyledLineView renders plain as bold text without the inverse attribute, preserving existing span rendering."
+      ],
+      "tags": [
+        "tui",
+        "selection",
+        "clipboard",
+        "unicode"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Selection is deterministic geometry/display-cell arithmetic and styled-span splitting, while clipboard uses the existing _deps pattern; three focused source changes with standard Intl.Segmenter/Bun APIs are adequately tested with tdd-simple."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/styled-line.tsx",
+        "packages/nax/src/tui/chat/wrap.ts",
+        "packages/nax/src/tui/chat/viewport.ts",
+        "packages/nax/src/tui/chat/TranscriptViewport.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/selection.ts",
+        "packages/nax/src/tui/chat/clipboard.ts",
+        "packages/nax/test/unit/tui/chat/selection.test.ts",
+        "packages/nax/test/unit/tui/chat/clipboard.test.ts"
+      ],
+      "suggestedCriteria": [
+        "highlightLine preserves original foreground/background, bold and italic styles on selected and unselected spans.",
+        "selectedText preserves a ZWJ grapheme that crosses multiple styled spans when any of its display cells are selected.",
+        "osc52 encodes non-ASCII text using its UTF-8 bytes.",
+        "On darwin, copyToClipboard writes OSC52 before invoking spawnCopy."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Drag selection and copy in the screen",
+      "description": "**Goal** — Connect mouse gestures to transcript selection/highlighting and clipboard copy with transient footer feedback.\n\n**Motivation** — A tmux probe on 2026-10-27 confirmed Claude Code v2.1 enables any-motion tracking with SGR encoding on its alternate screen and draws and copies its own selection; the user ruled the TUI does the same (wheel scroll on, in-app drag selection).\n\n**Approach** — `TranscriptViewport` owns the selection state: a `press` with `button: \"left\"` on a transcript point starts a selection (anchor = focus = that point) and clears any earlier one; a `drag` with `button: \"left\"` moves the focus to the point under the pointer (a drag outside the viewport keeps the last focus); a `release` copies when anchor and focus differ, by calling the new optional prop `onCopy(text)` with `selectedText`; the highlight stays until the next left press or until the transcript's line count changes (a re-render with the same number of lines, such as the working-line tick or a streamed token on the last line, keeps it). Selection is inclusive of the focus cell. `ChatApp` passes `top={HEADER_ROWS}` (3), the screen row of the viewport's first row. The press, drag and release state lives in a new hook `src/tui/chat/use-mouse-selection.ts` (`useMouseSelection`), which `TranscriptViewport` calls, so neither component grows a new branchy body. A press outside the transcript clears the selection and starts none. Drag-to-autoscroll past the viewport edge is out of scope.\n\n`ChatApp` passes `onCopy` that calls `copyToClipboard` and shows the footer hint `copied <n> chars` (new `FooterHint` value `copied`, with the count) until the next key press or mouse press.\n\n**Scope** — In: useMouseSelection, TranscriptViewport selection/highlight rendering, absolute top coordinate, ChatApp clipboard callback, copied footer hint and mounted/status regression tests. Out: parser/wheel plumbing (US-002/003), pure selection/clipboard implementation (US-004), catalog and picker filter changes (US-006/007). Guarded-mode permission posture (#2712) is the follow-up feature `tui-guarded-posture`; this feature does not change `chat-mode.ts`, `askRulesFor` or any permission or approval behaviour. US-005 only: drag-to-autoscroll when the pointer leaves the viewport during a selection is not implemented; the focus stays at the last point inside the viewport. US-005 only: double-click word selection, triple-click line selection and selecting text inside the input, ask card, picker, header or footer are not implemented.\n\n**Interface**\n```ts\n// Add to TranscriptViewportProps:\nreadonly top?: number; // default 0; ChatApp passes HEADER_ROWS\nreadonly onCopy?: (text: string) => void;\n// Add to FooterHint's existing union:\n\"copied\";\n// Add to footerModel input:\ncopiedChars?: number;\n```\nConsume `transcriptPointAt(geometry, x, y)`, `selectedText(lines, selection)` and `highlightLine(line, index, selection)` from US-004 and `MouseEvents` from US-002. Invoke `copyToClipboard(text): Promise<void>` from the ChatApp callback. A click (anchor equal to focus) makes no copy and shows no hint. Rejected/non-zero macOS spawnCopy is swallowed by clipboard.ts and does not prevent the copied hint. Add mounted seams driving fake MouseEvents at absolute screen coordinates, checking inverse rendering and stubbed _clipboardDeps.write OSC52 output; extend existing chat/viewport/status tests rather than touching the real terminal.",
+      "acceptanceCriteria": [
+        "[unit] Seam: TranscriptViewport given a fake MouseEvents, top: 0 and a row showing hello world, receiving a left press at column 1, a left drag at column 5 and a left release at column 5 on that row, calls onCopy exactly once.",
+        "[unit] In that sequence onCopy receives hello.",
+        "[unit] A left press and release at the same cell does not call onCopy.",
+        "[unit] Given a ChatApp footer that has no copied hint, when a left press and release occur at the same transcript cell, then the footer still has no copied hint (a click makes no copy and shows no hint).",
+        "[unit] After a completed drag, the selected cells render with the inverse attribute.",
+        "[unit] After a completed drag, the next left press removes the inverse attribute from those cells.",
+        "[unit] A completed drag's highlight survives a re-render with the same number of lines.",
+        "[unit] A completed drag's highlight is removed when the number of transcript lines changes.",
+        "[unit] A left press on a row outside the viewport clears an existing highlight.",
+        "[unit] Seam: a mounted ChatApp given a fake mouse with _clipboardDeps.write stubbed, after a left drag over the absolute screen cells of five transcript characters on the row below the three header rows, passes osc52 of those five characters to the stubbed write.",
+        "[unit] After that copy the footer shows copied 5 chars.",
+        "[unit] The copied footer hint is gone after the next key press.",
+        "[unit] The copied footer hint is gone after the next left press.",
+        "[unit] When a five-character drag copy uses darwin clipboard dependencies whose spawnCopy rejects or exits non-zero, then the ChatApp footer still shows copied 5 chars.",
+        "[unit] Given TranscriptViewport with 50 lines labelled line-0 to line-49, height 10 and mouse, top and onCopy omitted, then it still renders line-40 to line-49 without inverse spans, preserving existing callers' default viewport rendering."
+      ],
+      "tags": [
+        "tui",
+        "mouse",
+        "selection",
+        "clipboard",
+        "integration"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Coordinates mouse gesture lifecycle, viewport geometry, stable selection, inverse rendering and asynchronous clipboard feedback across a hook and screen components."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/TranscriptViewport.tsx",
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/src/tui/chat/selection.ts",
+        "packages/nax/src/tui/chat/clipboard.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/use-mouse-selection.ts"
+      ],
+      "suggestedCriteria": [
+        "When a left drag moves outside the viewport and is released, onCopy receives text ending at the last focus point inside the viewport.",
+        "When the last transcript line changes text without changing the line count, the completed selection remains highlighted.",
+        "A release received after an already completed drag does not copy the selection a second time.",
+        "When a mouse move or wheel event occurs after copying, the copied footer hint remains visible until a key press or mouse press."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "/model lists catalog and override models",
+      "description": "**Goal** — Expand native chat model choices from tier-only entries to ordered, deduplicated tiers, configured tool-capable overrides and tool-capable models from available providers.\n\n**Motivation** — #2711 — `/model` offers three models.\n\n**Approach** — **5. `/model` list (US-006, #2711).** New function in `src/agents/catalog/index.ts`:\n\n```ts\nexport async function listCatalogModels(providerIds: readonly string[]): Promise<readonly string[]>;\n```\n\nIt loads the bundled catalog through the existing cached `loadCatalog(_catalogDeps.loadProviders)` and returns `\"<provider>/<id>\"` for every model of each named provider whose `supportsTools` is true, providers in the order given, models in catalog order. A failed catalog load returns `[]`.\n\nNew module `src/chat/chat-models.ts`, exported from the chat barrel:\n\n```ts\nexport interface ChatModelChoicesInput {\n  readonly config: Pick<NaxConfig, \"models\" | \"agent\">;\n  readonly availableProviders: readonly string[];\n  readonly listCatalogModels: (providerIds: readonly string[]) => Promise<readonly string[]>;\n}\nexport async function chatModelChoices(input: ChatModelChoicesInput): Promise<readonly string[]>;\n```\n\nOrder: (a) the tier models `fast`, `balanced`, `powerful` exactly as `nativeModels` builds them today — `nativeModels` moves from `chat-host.ts` into `chat-models.ts` as the exported `tierModels(config)`, and `chat-host.ts` imports it; (b) every `agent.native.catalogOverrides[].models[]` entry whose `supportsTools` is true, as `\"<provider>/<id>\"`, in config order, whether or not its provider is in `availableProviders` (the user configured it on purpose); (c) `listCatalogModels(availableProviders)`. Duplicates keep their first position. A `listCatalogModels` rejection yields (a) then (b).\n\n`ChatHostDeps` gains optional `models?: readonly string[]`; `NativeChatHost` uses it when present and the moved `tierModels(config)` otherwise. The old name `nativeModels(config)` in the baseline refers to this helper, not a second implementation to retain.\n\n`composeChat` (`src/cli/chat.ts`) computes the list before `createChatHost`: `collectAuthList(requested)` (new `_chatCommandDeps.collectAuthList`), where `requested` is the provider of every tier model and every override (so a provider authenticated only through an environment variable is probed too), gives the providers with `available: true`, `chatModelChoices` (with new `_chatCommandDeps.listCatalogModels`) builds the list, and it is passed as `models`. A rejected `collectAuthList` is treated as no available provider.\n\n**Scope** — In: catalog boundary listing, chat-models.ts and chat barrel export, optional host model injection, composeChat auth/list composition and fail-open behavior, CLI dependency-fixture updates, pure model/catalog tests, host fallback regressions and mounted picker navigation coverage. Out: model-picker typed filtering (US-007), all screen/mouse/rendering changes (US-001–005), changes to credential resolution or permission posture. US-006 only: ACP `modelChoices` (`packages/nax-agent-acp/src/server/session-config.ts`) keeps its tier-only list.\n\n**Interface**\n```ts\nexport function tierModels(config: Pick<NaxConfig, \"models\">): readonly string[];\n// Add to ChatHostDeps:\nreadonly models?: readonly string[];\n// Add to _chatCommandDeps:\ncollectAuthList: typeof collectAuthList;\nlistCatalogModels: typeof listCatalogModels;\n```\nThe new tierModels signature retains the existing string/object formatting and first-position deduplication. `collectAuthList(providerIds): Promise<AuthListReport>` and `AuthListProvider.available: boolean` are existing read-only integration contracts. nax-ai `Catalog.listModels(provider?)` returns `ResolvedModel { id, provider, ... }`; supportsTools is the eligibility flag. Reuse ProviderCatalogOverrideSchema and CatalogModelOverrideSchema; add no config shape. Catalog/auth failures still leave tiers then eligible overrides. Stub both new deps in test/unit/cli/chat.test.ts and chat-resources.test.ts to empty provider reports and [] catalog results so existing tests never read credentials or load the real catalog, preserving existing assertions. Add pure helper/catalog tests and chatCommand seams asserting requested providers, available providers and models passed to the host. Preserve catalog caching and existing lifecycle cleanup.",
+      "acceptanceCriteria": [
+        "[unit] listCatalogModels([\"anthropic\"]) with an injected catalog holding anthropic models a1 (supportsTools true) and a2 (supportsTools false) returns [\"anthropic/a1\"].",
+        "[unit] listCatalogModels([\"p2\", \"p1\"]) returns p2's models before p1's.",
+        "[unit] listCatalogModels([\"nope\"]) for a provider the catalog lacks returns [].",
+        "[unit] listCatalogModels returns [] when the injected loadProviders rejects.",
+        "[unit] tierModels with tiers fast: \"p1/m1\", balanced: \"p1/m1\", powerful: \"p2/m2\" returns [\"p1/m1\", \"p2/m2\"].",
+        "[unit] chatModelChoices with tier fast: \"p1/m1\", an override { provider: \"local\", models: [{ id: \"x\", supportsTools: true }] } and catalog result [\"p1/m1\", \"p1/m3\"] returns [\"p1/m1\", \"local/x\", \"p1/m3\"].",
+        "[unit] chatModelChoices excludes an override model whose supportsTools is false.",
+        "[unit] chatModelChoices includes an override model whose provider is not in availableProviders.",
+        "[unit] chatModelChoices calls listCatalogModels with exactly availableProviders.",
+        "[unit] chatModelChoices returns tiers then overrides when listCatalogModels rejects.",
+        "[unit] createChatHost given models: [\"a/b\", \"c/d\"] exposes host.models equal to [\"a/b\", \"c/d\"].",
+        "[unit] Seam: chatCommand(options, deps) with tier fast: \"p1/m1\" and an override for provider local calls the injected collectAuthList with a list containing p1 and local.",
+        "[unit] Seam: chatCommand(options, deps) with injected collectAuthList reporting providers p1 (available) and p2 (not available) calls the injected listCatalogModels with [\"p1\"].",
+        "[unit] Seam: given no configured catalogOverrides, the host chatCommand creates receives models equal to the tier models followed by the injected listCatalogModels result, with duplicates retaining their first position.",
+        "[unit] chatCommand(options, deps) with no configured catalogOverrides and an injected collectAuthList that rejects creates the host with models equal to the tier models.",
+        "[unit] The /model picker for a host whose models has 20 entries lists the 20th entry after the pointer is moved down 19 times.",
+        "[unit] When the catalog load fails and a tool-capable local/x override is configured after tier p1/m1, then chatModelChoices returns [\"p1/m1\", \"local/x\"].",
+        "[unit] When collectAuthList rejects and a tool-capable local/x override is configured after tier p1/m1, then chatCommand creates the host with models [\"p1/m1\", \"local/x\"].",
+        "[unit] Given ChatHostDeps.models is omitted and native tiers fast: { provider: \"p1\", model: \"m1\" }, balanced: \"p1/m1\", powerful: \"p2/m2\", createChatHost exposes host.models [\"p1/m1\", \"p2/m2\"], preserving the previous string/object tier formatting, order and deduplication."
+      ],
+      "tags": [
+        "chat",
+        "models",
+        "catalog",
+        "auth",
+        "integration"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module catalog/host/CLI composition includes authentication availability and credential-adjacent probes, so the security override requires strict three-session TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/catalog/index.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/cli/chat.ts",
+        "packages/nax/src/cli/auth-list.ts",
+        "packages/nax/test/unit/cli/chat.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/chat-models.ts",
+        "packages/nax/test/unit/chat/chat-models.test.ts",
+        "packages/nax/test/unit/agents/catalog/list-models.test.ts"
+      ],
+      "suggestedCriteria": [
+        "tierModels formats object entries { provider: \"p1\", model: \"m1\" } as p1/m1 and skips absent tiers.",
+        "createChatHost given models: [] exposes an empty host.models rather than falling back to configured tiers.",
+        "Concurrent listCatalogModels and lookupContextWindow calls using the same injected loadProviders invoke that loader once.",
+        "When a tool-capable override duplicates a bundled model id, chatModelChoices retains its earlier override position without adding a second entry."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/cli/chat.test.ts",
+          "reason": "the deps fixture built from `...api._chatCommandDeps` gains stubs for the two new members: `collectAuthList` resolving a report with no providers and `listCatalogModels` resolving `[]`, so no existing `chatCommand` case reads real credentials or loads the real catalog; every existing assertion is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/chat-resources.test.ts",
+          "reason": "the deps fixture built from `...api._chatCommandDeps` gains the same two stubs for the same reason; every existing assertion is unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "/model picker filters by name",
+      "description": "**Goal** — Add model-only typed substring filtering whose state, row budget and rendered picker always agree.\n\n**Motivation** — Follow-up ruling the same day: the `/model` list must be filterable by name, since it now holds dozens of rows.\n\n**Approach** — **6. `/model` filter (US-007, #2711).** The filter lives in the picker's state, not in the `Picker` component, so the rows `ChatApp` reserves (`bottomRowsFor` → `pickerRows`) are the rows it draws. `PickerModelInput` and `PickerModel` gain `query?: string`. For `kind: \"model\"`, `pickerModel` keeps only the entries whose `value` contains the query case-insensitively (an empty or absent query keeps every entry) and always carries the query; the `mode` and `resume` kinds ignore it. A model picker draws one extra row under its title (counted by `fixedRows`, so `pickerRows` grows by one for `kind: \"model\"`): `Filter: <query>` when the query is non-empty, and the muted placeholder `type to filter` when it is empty; the row starts at column 0, never with the pointer or its blank. A model picker whose filter matches nothing draws the muted note `no models match`.\n\n`ChatPicker` gains `setQuery(query: string): void`; `useChatPicker` stores the query with the open picker, resets it to `\"\"` on `open` and on `cancel`/`choose`, and builds `model` from it. `PickerProps` gains optional `onQuery?: (query: string) => void` and `query?: string`; `ChatApp` passes `picker.setQuery` and `picker.model.query`. While a `kind: \"model\"` picker is active, `Picker` also owns: a printable input with no ctrl or meta modifier (appended to the query), and backspace or delete (the last grapheme removed; nothing happens on an empty query). Escape, return and the arrows keep their meaning. The pointer returns to the first entry whenever the query changes. Return on a picker with no entries does nothing.\n\n**Scope** — In: Picker model/state/query interfaces, filter/note layout and row accounting, model-only typing/deletion and pointer reset, ChatApp prop wiring, and pure-layout/hook/mounted picker regression tests. Out: computing catalog/auth model choices (US-006), row slack/markdown (US-001), mouse/selection/clipboard (US-002–005). US-007 only: the `/resume` and `/mode` pickers do not filter; only the `/model` picker takes a typed query. US-007 only: the filter is a case-insensitive substring match on the model string; no fuzzy matching, ranking or highlighting of the matched characters.\n\n**Interface**\n```ts\n// Add to PickerModelInput and PickerModel:\nreadonly query?: string;\n// Add to ChatPicker:\nsetQuery(query: string): void;\n// Add to PickerProps:\nreadonly query?: string;\nreadonly onQuery?: (query: string) => void;\n```\nBuild the model from useChatPicker's query and pass `onQuery={picker.setQuery}` and `query={picker.model.query}` at ChatApp's Picker call site. Preserve existing key ownership and batched-key pointer behavior, including Escape's Ink meta flag and no choice on an empty filtered list. Extend test/ui/chat/picker.test.tsx with pure model/layout and mounted query seams: whole Switch model frame counts gain one row; entryRows, labels, (current) markers and choice assertions stay unchanged because the filter row starts at column 0.",
+      "acceptanceCriteria": [
+        "[unit] pickerModel({ kind: \"model\", models: [\"anthropic/claude-x\", \"openai/gpt-y\"], query: \"GPT\", ... }) returns exactly one entry, openai/gpt-y.",
+        "[unit] pickerModel with kind: \"model\" and query: \"\" returns every model as an entry.",
+        "[unit] pickerModel with kind: \"model\" carries the given query on the returned model.",
+        "[unit] pickerModel with kind: \"mode\" and query: \"zzz\" still returns both mode entries.",
+        "[unit] Given PickerModel fixtures with 3 entries each and no note, pickerRows(modelFixture, 20) for kind: \"model\" is one more than pickerRows(modeFixture, 20) for kind: \"mode\" (the comparison uses layout fixtures, not pickerModel's two-entry mode choices).",
+        "[unit] pickerLayout of a model picker with query: \"\" draws a row reading type to filter directly under the title.",
+        "[unit] pickerLayout of a model picker with query: \"gp\" draws the row Filter: gp directly under the title.",
+        "[unit] pickerLayout of a model picker whose filter matches nothing draws the muted note no models match.",
+        "[unit] useChatPicker's setQuery(\"gp\") after open(\"model\") makes model.entries contain only models whose string contains gp.",
+        "[unit] useChatPicker's open(\"model\") after an earlier setQuery(\"gp\") and cancel() starts with query \"\".",
+        "[unit] Seam: in a mounted ChatApp whose host has models anthropic/claude-x and openai/gpt-y, submitting /model then typing gpt leaves exactly one entry row, openai/gpt-y.",
+        "[unit] After typing gpt in that picker, pressing backspace leaves the filter row reading Filter: gp.",
+        "[unit] After typing gpt in that picker, pressing return switches the host to openai/gpt-y.",
+        "[unit] After moving the pointer down once and then typing a, the pointer is on the first remaining entry.",
+        "[unit] Typing zzz in the model picker and pressing return calls no host switch and keeps the picker open.",
+        "[unit] Pressing escape in a filtered model picker closes it and calls no host switch.",
+        "[unit] Typing in the model picker does not change the chat input's draft.",
+        "[unit] A ctrl-modified letter typed in the model picker leaves the query unchanged."
+      ],
+      "tags": [
+        "tui",
+        "models",
+        "picker",
+        "filtering"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Filtering extends Picker.tsx's existing pure models, layout arithmetic, hook state and pointer-ref pattern plus ChatApp props; no new service or lifecycle abstraction is needed, so focused pure and mounted tests can use tdd-simple."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/Picker.tsx",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/bottom-region.ts",
+        "packages/nax/test/ui/chat/picker.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "Deleting the last grapheme of a model query containing an emoji ZWJ sequence removes that whole sequence.",
+        "Backspace or delete on an empty model query leaves the query empty.",
+        "A meta-modified printable letter leaves the model query unchanged.",
+        "pickerModel with kind: resume and query: zzz retains every saved-session entry.",
+        "Typing printable characters and backspace while the filtered model list is empty still updates the query and restores matching entries when appropriate.",
+        "When several printable characters are delivered before React rerenders, the filter query contains all of them in order."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/picker.test.tsx",
+          "reason": "an assertion that counts every row inside the `Switch model` frame (rather than the entry rows `entryRows` selects) gains the one filter row under the title; the entry-row, label, `(current)` marker and choice assertions are unchanged, because the filter row starts at column 0 and is not an entry row."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Enhancement of the existing @nathapp/nax React/Ink chat UI, closing #2708–#2711; not a greenfield rewrite. Navigation: codebase-memory MCP is not exposed in this host, so discovery used direct reads and text searches rooted at the supplied repository. All implementation changes stay in packages/nax. No other package needs modification. Read docs/architecture/ARCHITECTURE.md:15 for the conventions/DI index and :172 for the quick-reference constraints; use existing injectable _deps seams, Bun-native runtime operations, bun:test, ink-testing-library and React act. This planning task does not execute tests or change implementation code.\n\nUS-001 baseline and impact: packages/nax/src/tui/chat/ChatApp.tsx:151 applies the 24x80 defaults; :309 derives bottomBudget directly from size.rows; :555 also derives viewportHeight from size.rows. The input, slash menu, ask-card and picker are measured against that budget, and the footer is the final fixed row. Replace both terminal-row roots with usableRows = size.rows - FRAME_SLACK_ROWS (1), not a viewport-only subtraction: long drafts, running turns and oversized bottom surfaces must keep the slack. Preserve existing header/footer/input content and keyboard ownership. packages/nax/src/tui/chat/index.ts:34 owns alternate-screen mounting and :45 currently renders only with exitOnCtrlC:false; add incrementalRendering:true without changing Ink version. packages/nax/src/tui/chat/markdown.ts:273 currently ends by flatMapping blockLines; :213 recursively flattens blockquote children. Add a single [] separator only between nonempty top-level block renderings, leaving list/quote internals and malformed-source fallback intact. packages/nax/src/tui/chat/layout.ts:135 consumes renderMarkdown behind the reply gutter; :350 composes entries and their existing gaps. No extra inter-entry spacing should be introduced. Regression migration: packages/nax/test/ui/chat/chat-app-layout.test.tsx:106 provides mount/resize helpers; update exact full-frame expectations 24→23, 30→29 and 12→11, and affected viewport/input row counts, but not row contents. packages/nax/test/ui/chat/slash-menu.test.tsx:497 covers SHORT_ROWS=12; change full-frame assertions to SHORT_ROWS-1, and shift F15/F16 terminal heights up one if needed to preserve the no-menu-row scenario (:546, :559). packages/nax/test/ui/chat/index.test.tsx:130 expects exact render options and must first gain incrementalRendering, then stdin in US-003. Existing unit markdown, layout and wrap tests under test/unit/tui/chat also cover the rendering consumers.\n\nUS-002 architecture: create packages/nax/src/tui/chat/mouse-input.ts as a reusable filtered input stream plus ordered event subscription, independent of React and renderChat wiring. Node-compatible PassThrough and StringDecoder are specifically required by the Ink NodeJS.ReadStream contract; these are not a reason to replace Bun subprocess APIs elsewhere. Preserve source isTTY, setRawMode, ref and unref and the filtered stream's own UTF-8 read encoding. Parse only full SGR reports; hold syntactically incomplete ESC[< tails, but not bare ESC or ESC[. Invalid grammar must pass through rather than swallowing typed input; complete unsupported horizontal-wheel reports must be removed without events. Decoder state matters for split UTF-8. dispose removes the source data listener; unsubscribe removes individual event listeners. Risks: input corruption, Escape latency, report leakage, stale listeners and inaccurate stream methods would break all Ink input. Unit tests use fake sources and never attach to the test runner's stdin.\n\nUS-003 integration: packages/nax/src/tui/chat/index.ts:35 writes ENTER_ALT_SCREEN, :38 builds a one-shot restore, :46 registers the removable exit guard, and the catch path already restores on renderer exceptions. Retain exception safety and unmount-before-terminal-restore ordering. Add injected stdin/createMouseInput, pass filtered stdin in render options and events in the ChatApp element, enable reporting only after render returns/raw mode is installed, and disable reporting immediately before leaving the alternate screen (TTY only); dispose exactly once even on process exit. packages/nax/test/ui/chat/index.test.tsx:33 stubScreen must inject both stdin and mouse construction before production uses them; update TTY write-order assertions, non-TTY behavior and render options without opening real input. packages/nax/src/tui/chat/viewport.ts:20 has the action union; :52 settle clamps offsets and resumes follow at zero; :76 reduces actions; :104 exposes visibleRange. Add wheelUp/down through the same clamp with WHEEL_LINES=3. packages/nax/src/tui/chat/TranscriptViewport.tsx:152 owns memory and keyboard activity; subscribe to mouse while active and clean up subscriptions. Mouse wheel is position-independent. packages/nax/src/tui/chat/bottom-region.ts:37 defines the existing activity decision (!locked && no picker); preserve that decision rather than changing ask/picker policy. Tests at packages/nax/test/ui/chat/transcript-viewport.test.tsx:46 mount the viewport and :89 check the unseen marker; extend existing reducer and UI suites and include a mounted ChatApp seam proving mouse reaches the viewport.\n\nUS-004 architecture: introduce pure selection.ts and injectable clipboard.ts. packages/nax/src/tui/chat/TranscriptViewport.tsx:125 draws padding above short content and replaces the final visible row with the unseen marker; coordinate mapping must exactly mirror that presentation, not simply add visibleRange.start to y. top is zero-based screen geometry, terminal x/y are one-based, transcript columns are display cells, and selection includes the focus cell. packages/nax/src/tui/chat/styled-line.tsx:17 defines Span, :39 concatenates plain text, :44 uses Bun.stringWidth, and :85 renders nested Ink Text. Add optional inverse and forward it via spanProps. packages/nax/src/tui/chat/wrap.ts:29 defines SpanStyle, :63 compares styles, :91 extracts styles and the grapheme engine segments the combined text across span boundaries. Watch those helpers: inverse cannot be dropped or merged into unselected spans if reused for highlighting. Preserve existing color/bold/italic/background styles and whole graphemes, including an emoji partly intersected by a cell range; avoid UTF-16 slicing by cell number. Clipboard always emits UTF-8/base64 OSC52; macOS additionally uses Bun.spawn pbcopy with stdin data. Swallow pbcopy rejection/nonzero status without suppressing OSC52. Tests must inject stdout/platform/spawn rather than touch the real clipboard. Existing test/ui/chat/styled-line.test.tsx and test/unit/tui/chat/wrap.test.ts provide primitive regressions; create selection.test.ts and clipboard.test.ts in mirrored unit paths.\n\nUS-005 integration: keep press/drag/release state in the new use-mouse-selection.ts hook to avoid expanding ChatApp and TranscriptViewport with branch-heavy selection code. Use current viewport geometry/lines when resolving events, and distinguish a completed selection retained for highlighting from an active drag, so subsequent releases do not recopy. Anchor/focus equality is a click and must not copy. Out-of-bounds drags retain focus; an outside left press clears selection. Retain highlight on equal line counts even if the lines array or last-line text changes; clear only when line count changes or another left press starts/clears it. Render selected spans at transcript indices, not viewport-relative indices. ChatApp passes HEADER_ROWS=3 and copies via clipboard.ts. packages/nax/src/tui/chat/chat-status.ts:146 has FooterHint and a Record mapping that must accommodate the new copied hint; :254 takes footerModel input and must accept copiedChars. packages/nax/src/tui/chat/ChatApp.tsx:518 selects the footer hint; add transient copied count and clear on the next keyboard or mouse press. Do not let clock ticks, wheel motion or unchanged-count streaming erase highlight. Extend existing mounted chat-app/transcript-viewport and status suites using fake MouseEvents and _clipboardDeps; assert actual inverse attributes/OSC52 bytes and absolute-screen coordinates rather than only calling helpers.\n\nUS-006 catalog/auth/model path: packages/nax/src/chat/chat-host.ts:92 nativeModels currently formats string or object tier entries in fast/balanced/powerful order, deduplicates and freezes them; :139 assigns that tier-only list. Move this helper to new chat-models.ts as tierModels, export it with chatModelChoices through packages/nax/src/chat/index.ts:12, and accept optional ChatHostDeps.models (:79). Presence, including [], must override the fallback without altering session/model-switch lifecycle. packages/nax/src/agents/catalog/index.ts:74 exposes injected catalog loading; :95–118 cache successful and failed loads per loader reference and deduplicate in-flight work. listCatalogModels must share loadCatalog and remain inside the existing nax-ai import boundary, preserving pricing/context-window behavior. Read-only dependency confirmation: packages/nax-ai/src/providers/catalog.ts:51 exposes Catalog.listModels(provider?), and packages/nax-ai/src/providers/types.ts:137 exposes supportsTools. Return only tool-capable bundled models, requested provider order then catalog order. packages/nax/src/config/schemas-model.ts:104 defines override model fields, including required supportsTools; :182 defines provider overrides. Reuse these existing config shapes, do not add schema keys. Detailed design ordering is authoritative over summary wording: all tool-capable configured overrides are included before catalog results, even for unavailable providers or entries also in the bundled catalog; first-occurrence deduplication removes duplicates. packages/nax/src/cli/chat.ts:209 composeChat owns config/resources/storage/chain/host composition; compute models before createChatHost and pass them in through injected listCatalogModels/collectAuthList. packages/nax/src/cli/auth-list.ts:133 already merges stored providers with requested tier/override provider ids, sorts them, probes ambient auth and marks available; use that report as the only availability decision, without copying credential logic or exposing auth contents. Auth probing is credential-adjacent, so US-006 uses three-session-tdd security isolation even though no credential implementation changes are requested. Auth or catalog rejection must not prevent chat startup; fallback keeps tiers and eligible overrides. Preserve trust-before-composition and existing resource cleanup. packages/nax/test/unit/cli/chat.test.ts:39 and chat-resources.test.ts:33 spread the production deps; add empty-report/catalog stubs to both fixtures before exercising composition so tests never read real credentials/catalog. Existing test/unit/agents/catalog/lookup-pricing.test.ts and context-window.test.ts cover shared cache regressions; add a focused list-models.test.ts and chat-models.test.ts. Existing chat-host and picker tests cover supplied models and navigation to the twentieth item. ACP session-config.ts stays untouched.\n\nUS-007 picker/filter path: packages/nax/src/tui/chat/Picker.tsx:105/112 define model/input; :137 creates entries; :175 builds each kind; :216 fixedRows and :269 pickerRows measure the surface; :274 draws it. Add model-only query/filter/note in the pure model and count/draw the filter row there, not as a component-local list filter that ChatApp cannot measure. packages/nax/src/tui/chat/bottom-region.ts:55 consumes pickerRows, so consistent pure arithmetic preserves frame slack. Picker.tsx:354 owns open/cancel/choose state and stale asynchronous resume-list guards; add query/setQuery without changing those semantics. :440 owns pointer state plus a ref for keys delivered before rerender; reset pointer on query changes and keep immediate query state coherent for batched input. Append printable unmodified text only for model pickers; remove the last grapheme for backspace/delete, including when no entries match; Return on zero entries must not choose or close. Escape must still be taken before Ink's meta flag check. ChatApp.tsx's existing picker props gain query and onQuery. packages/nax/test/ui/chat/picker.test.tsx:115 provides a mounted fake-host harness; its entryRows logic recognizes pointer/indented entries, so the new filter row must start at column 0 and must not look like an entry. Adjust only whole-frame model-picker row counts by +1; existing entry text/current markers/choices remain unchanged. /mode and /resume do not filter.\n\nCompatibility/migration: no persisted data, schema, lockstep version, dependency or transport migration. Optional props and optional host model injection retain old callers. The intentional observable migrations are one fewer rendered terminal row, one blank row between nonempty top-level markdown blocks, mouse reporting with in-app copy, expanded model choices and one extra model-picker filter row. Highest risks are terminal cleanup ordering, stream chunk/encoding behavior, display-cell selection math, React event batching/stale closures, and row-budget consistency under small terminals. Shared files ChatApp.tsx, index.ts and Picker.tsx are touched by independent stories; integrate carefully without changing the binding dependency graph. Binding execution: US-001/002/004/006/007 have no dependencies; US-003 follows US-001 and US-002; US-005 follows US-003 and US-004. All contextFiles are existing files or declared upstream outputs and all paths are repo-relative. Write tests first using the assigned routing strategies; package commands run from packages/nax and the pipeline handles lint/typecheck/tests. Never run bare bun test, bun run nax or sandboxed coverage. Preserve every stated acceptance criterion and the failure-table behaviors; supplementary design-only edge cases are suggestedCriteria rather than new mandatory spec criteria.\n\nRefine-pass adversarial audit: all 119 explicitly enumerated spec ACs remain in their original stories, with regression qualifiers retained. Inventory (numbers are per-story spec AC ordinals): US-001 [1 30-row frame; 2 absent-row default; 3 footer/mode; 4 working frame; 5 tall draft; 6 oversized ask; 7 picker frame; 8 menu frame; 9 incremental render; 10 heading/paragraph gap; 11 paragraph/list gap; 12 adjacent fence/paragraph gap with no source blank; 13 repeated blank collapse; 14 loose-list adjacency; 15 invisible definition/no trailing gap; 16 quote/rule gap; 17 transcript gutter blank]. US-002 [1 left press; 2 release; 3 drag; 4 move; 5 wheelUp; 6 wheelDown; 7 ctrl bit ignored; 8 malformed parse; 9 stripped stream text; 10 wheel event count; 11 split-report output suppression; 12 split-report event; 13 immediate Escape; 14 malformed report passthrough/no event; 15 horizontal-wheel suppression/no event; 16 split UTF-8; 17 own string read encoding; 18 raw-mode forwarding; 19 isTTY forwarding; 20 unsubscribe; 21 dispose]. US-003 [1 enter before render; 2 enable after render; 3 ordered one-shot unmount restore; 4 one-shot dispose; 5 process-exit restore; 6 non-TTY disables reporting; 7 injected source to constructor; 8 filtered stdin to Ink; 9 events to ChatApp; 10 wheelUp step/follow; 11 wheelDown resumes follow; 12 upper clamp; 13 mounted wheel window; 14 inactive ignore; 15 ChatApp wheel seam]. US-004 [1 absolute cell mapping; 2 header exclusion; 3 below-viewport exclusion; 4 padding exclusion; 5 short-content start mapping; 6 marker exclusion; 7 multiline inclusive text; 8 reverse selection; 9 partial wide-grapheme inclusion; 10 trailing-space trim; 11 selected inverse; 12 unselected non-inverse; 13 outside-line identity; 14 inverse Ink rendering; 15 exact OSC52; 16 Linux OSC52 write; 17 no Linux subprocess; 18 macOS subprocess text; 19 rejection swallowed; 20 nonzero swallowed]. US-005 [1 one copy per drag; 2 selected hello; 3 click does not copy; 4 retained inverse; 5 next left press removes old highlight; 6 same-count retention; 7 count-change reset; 8 outside press clears; 9 absolute ChatApp clipboard seam; 10 copied count; 11 key clears hint; 12 left press clears hint]. US-006 [1 tool-capable catalog filtering; 2 provider order; 3 missing provider; 4 failed loader; 5 tier order/deduplication; 6 tier/override/catalog order/deduplication; 7 non-tool override excluded; 8 unavailable override included; 9 exact provider-list forwarding; 10 catalog rejection fallback; 11 injected host models; 12 requested tier/override provider probes; 13 only available providers forwarded; 14 host receives tier/catalog choices; 15 auth rejection retains tiers; 16 twentieth item reachable]. US-007 [1 case-insensitive filtering; 2 empty-query compatibility; 3 query carried; 4 mode ignores query; 5 extra measured model row; 6 empty placeholder under title; 7 populated filter under title; 8 no-match note; 9 hook setQuery; 10 reset on reopen; 11 mounted typing seam; 12 backspace; 13 filtered Return; 14 pointer reset; 15 no-match Return stays open/no switch; 16 Escape closes/no switch; 17 draft unchanged; 18 ctrl ignored].\n\nAudit corrections: made the failure-table click/no-hint outcome explicit; retained all ten failure rows, including immediate ESC[, non-TTY data forwarding, process-exit once, macOS copy-failure hint and tier-plus-override fallbacks. Clarified tier-only composition fixtures have no overrides, avoiding a contradiction with the override fallback rule. The three-entry mode row comparison is a PickerModel layout fixture (Picker.tsx:175 actually creates two mode choices); no production mode choice is added. Added narrow backward-compatibility assertions for mouse-omitted keyboard PageUp, inverse-omitted spans, default selection-free viewport props and host models-omitted tier formatting. Every story has a negative path: US-001 missing terminal rows/invisible definitions and oversized cards; US-002 malformed reports; US-003 non-TTY/inactive viewport; US-004 invalid screen rows/pbcopy failure; US-005 click/outside press; US-006 catalog/auth failures; US-007 no matches/modifier rejection. Retained all nine feature exclusions verbatim, exact spec contextFiles (including upstream-created files), the seven binding IDs/workdirs/dependencies, and all creates. US-004 and US-007 are medium/tdd-simple after reassessing their deterministic helpers and existing picker patterns; stream construction and lifecycle/gesture integrations remain complex, and US-006 retains strict security-isolated TDD. No runtime code or tests were executed during this document-only audit.",
+  "outOfScope": [
+    "Guarded-mode permission posture (#2712) is the follow-up feature `tui-guarded-posture`; this feature does not change `chat-mode.ts`, `askRulesFor` or any permission or approval behaviour.",
+    "US-005 only: drag-to-autoscroll when the pointer leaves the viewport during a selection is not implemented; the focus stays at the last point inside the viewport.",
+    "US-005 only: double-click word selection, triple-click line selection and selecting text inside the input, ask card, picker, header or footer are not implemented.",
+    "US-004 only: copying uses OSC 52 everywhere and `pbcopy` on macOS; no Linux or Windows clipboard command (`wl-copy`, `xclip`, `clip.exe`) is spawned.",
+    "US-007 only: the `/resume` and `/mode` pickers do not filter; only the `/model` picker takes a typed query.",
+    "US-007 only: the filter is a case-insensitive substring match on the model string; no fuzzy matching, ranking or highlighting of the matched characters.",
+    "US-006 only: ACP `modelChoices` (`packages/nax-agent-acp/src/server/session-config.ts`) keeps its tier-only list.",
+    "No configuration key to turn mouse reporting off is added.",
+    "The Ink version is not changed."
+  ],
+  "routingProfile": "native-claude"
+}
