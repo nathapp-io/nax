@@ -3,7 +3,7 @@
   "feature": "chat-workflow-state",
   "branchName": "feat/chat-workflow-state",
   "createdAt": "2026-10-27T00:00:00.000Z",
-  "updatedAt": "2026-10-27T10:52:02.894Z",
+  "updatedAt": "2026-10-27T11:00:15.339Z",
   "userStories": [
     {
       "id": "US-001",
@@ -101,14 +101,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Two new files aggregate existing parser/PRD helpers and three fixed read-only git probes through standard dependency seams; focused TDD covers validation and branch-option rejection without introducing authentication, permissions or session controls."
+        "reasoning": "Two new files aggregate existing parser/PRD helpers and three fixed read-only git probes through standard dependency seams; focused TDD covers validation and branch-option rejection without introducing authentication, permissions or session controls.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/execution/status-file-read.ts",
@@ -131,7 +134,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "65967126565fd16e8b2b46b1f5ce31d9efd774bc"
     },
     {
       "id": "US-003",
