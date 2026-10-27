@@ -167,6 +167,20 @@ describe("ChatApp jobs", () => {
     expect(ui.takeNotice).toHaveBeenCalledTimes(1);
     expect(ui.order).toEqual([`send:${NOTICE}`, "take"]);
   });
+  test("retains a notice rejected before turn_start and retries at the next idle opportunity", async () => {
+    const ui = mount();
+    ui.send.mockImplementationOnce(async () => {
+      throw new Error("session unavailable");
+    });
+    await ui.emit(NOTICE);
+    expect(ui.takeNotice).not.toHaveBeenCalled();
+    expect(ui.notices).toEqual([NOTICE]);
+    await ui.emit();
+    expect(ui.send).toHaveBeenCalledTimes(2);
+    await ui.finish(0);
+    expect(ui.takeNotice).toHaveBeenCalledTimes(1);
+    expect(ui.notices).toEqual([]);
+  });
   test("US-014 AC-11 waits for the entire running turn", async () => {
     const ui = mount();
     ui.start();

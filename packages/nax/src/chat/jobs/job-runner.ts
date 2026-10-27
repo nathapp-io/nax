@@ -86,6 +86,8 @@ export const _jobRunnerDeps = {
 class DetachedJobs implements ChatJobs {
   private readonly records = new Map<string, ChatJob>();
   private readonly ownedIds = new Set<string>();
+  private readonly observedExits = new Map<string, number>();
+  private readonly pendingTerminals = new Map<string, ChatJob>();
   private readonly notices: string[] = [];
   private readonly listeners = new Set<() => void>();
   private attachment?: Promise<void>;
@@ -157,8 +159,13 @@ class DetachedJobs implements ChatJobs {
     child.unref();
     // Failure to save does not undo a launch or detach its exit observer.
     const saved: Promise<ChatJob> = this.persistRunning(job);
-    void Promise.all([saved, child.exited])
-      .then(([, code]) => this.mutate(job.id, () => this.finalize(job, code)))
+    void child.exited
+      .then(async (code) => {
+        this.observedExits.set(job.id, code);
+        this.clearGrace(job.id);
+        await saved;
+        await this.mutate(job.id, () => this.finalize(job, code));
+      })
       .catch((cause) => this.warn(cause));
     const tracked = await saved;
     this.emit();
@@ -177,18 +184,43 @@ class DetachedJobs implements ChatJobs {
     }
   }
   private async finalize(job: ChatJob, exitCode: number): Promise<void> {
+    if (!this.observedExits.has(job.id)) return;
     // The child has exited; artifact reads/writes must not leave escalation armed for a recycled PID.
     this.clearGrace(job.id);
-    const outcome = await resolveJobOutcome(this.records.get(job.id) ?? job, { exitCode }, this.options.repoRoot);
-    // Polling may refresh metrics while outcome resolution is awaiting the command record.
+    const disk = (await readJobRecords(this.options.outputDir)).find(
+      (record) => record.id === job.id && record.cwd === job.cwd && record.pid === job.pid,
+    );
     const current = this.records.get(job.id) ?? job;
-    const terminal: ChatJob = { ...current, ...outcome, exitCode, endedAt: this.options.now().toISOString() };
-    await writeJobRecord(this.options.outputDir, terminal);
+    const merged: ChatJob = disk?.cancelRequested ? { ...current, cancelRequested: true } : current;
+    const outcome = await resolveJobOutcome(merged, { exitCode }, this.options.repoRoot);
+    const terminal: ChatJob = {
+      ...(this.records.get(job.id) ?? merged),
+      ...(merged.cancelRequested ? { cancelRequested: true } : {}),
+      ...outcome,
+      exitCode,
+      endedAt: this.options.now().toISOString(),
+    };
     this.records.set(job.id, terminal);
     this.ownedIds.delete(job.id);
+    this.observedExits.delete(job.id);
+    this.pendingTerminals.set(job.id, terminal);
+    await this.saveTerminal(terminal);
     this.syncPoll();
-    this.notices.push(buildJobNotice(terminal));
+    this.notices.push(buildJobNotice(this.records.get(job.id) ?? terminal));
     this.emit();
+  }
+  private async saveTerminal(terminal: ChatJob): Promise<void> {
+    try {
+      await writeJobRecord(this.options.outputDir, terminal);
+      this.pendingTerminals.delete(terminal.id);
+      this.records.set(terminal.id, terminal);
+    } catch (cause) {
+      this.warn(cause);
+      const note = [terminal.note, "terminal record could not be saved; will retry while this chat is open"]
+        .filter(Boolean)
+        .join("; ");
+      this.records.set(terminal.id, { ...terminal, note });
+    }
   }
   list(): readonly ChatJob[] {
     return [...this.records.values()]
@@ -199,7 +231,7 @@ class DetachedJobs implements ChatJobs {
     return this.list().find((job) => job.id === id);
   }
   running(): readonly ChatJob[] {
-    return this.list().filter((job) => job.state === "running");
+    return this.list().filter((job) => job.state === "running" && !this.observedExits.has(job.id));
   }
   owned(): readonly ChatJob[] {
     return this.running().filter((job) => this.ownedIds.has(job.id));
@@ -218,7 +250,7 @@ class DetachedJobs implements ChatJobs {
   }
   private async cancellationError(id: string): Promise<NaxError | null> {
     const job = this.records.get(id);
-    if (job?.state !== "running") {
+    if (job?.state !== "running" || this.observedExits.has(id)) {
       return new NaxError(`job ${id} is not running (state ${job?.state ?? "unknown"})`, "CHAT_JOB_NOT_RUNNING", {
         stage: "chat",
       });
@@ -254,8 +286,10 @@ class DetachedJobs implements ChatJobs {
     const job: ChatJob = { ...current, cancelRequested: true };
     await writeJobRecord(this.options.outputDir, job);
     this.records.set(id, job);
-    this.signal(job.pid, "SIGINT");
-    this.armGrace(job);
+    if (!this.observedExits.has(id)) {
+      this.signal(job.pid, "SIGINT");
+      this.armGrace(job);
+    }
     this.emit();
     return structuredClone(job);
   }
@@ -322,7 +356,10 @@ class DetachedJobs implements ChatJobs {
     this.emit();
   }
   private syncPoll(): void {
-    if (this.disposed || this.running().length === 0) {
+    if (
+      this.disposed ||
+      (this.running().length === 0 && this.pendingTerminals.size === 0 && this.observedExits.size === 0)
+    ) {
       if (this.pollTimer !== undefined) _jobRunnerDeps.clearTimeout(this.pollTimer);
       this.pollTimer = undefined;
       return;
@@ -341,7 +378,19 @@ class DetachedJobs implements ChatJobs {
     }, JOB_POLL_MS);
   }
   private async poll(): Promise<void> {
-    for (const job of this.running()) {
+    for (const [id, code] of this.observedExits) {
+      const job = this.records.get(id);
+      if (this.disposed) return;
+      if (job && !this.mutations.has(id)) {
+        await this.mutate(id, () => this.finalize(job, code)).catch((cause) => this.warn(cause));
+      }
+    }
+    for (const terminal of this.pendingTerminals.values()) {
+      if (this.disposed) return;
+      await this.mutate(terminal.id, () => this.saveTerminal(terminal));
+      this.emit();
+    }
+    for (const job of this.list().filter((record) => record.state === "running")) {
       if (this.disposed) break;
       try {
         if (!this.ownedIds.has(job.id) && !_jobRunnerDeps.isProcessAlive(job.pid)) {

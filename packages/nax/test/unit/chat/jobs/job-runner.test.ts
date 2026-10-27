@@ -192,6 +192,64 @@ describe("createJobRunner", () => {
     expect(jobs.owned()).toEqual([]);
   });
 
+  test("owner preserves cancellation durably requested by another chat", async () => {
+    const jobs = runner();
+    const job = await jobs.start(request);
+    await Bun.write(
+      join(featureDir(repoRoot, "f1"), "status.json"),
+      JSON.stringify({
+        version: 1,
+        run: { id: "run-1", pid: job.pid, status: "completed" },
+        cost: { spent: 1.2, limit: null },
+        progress: { passed: 3, total: 7, failed: 0, pending: 4 },
+      }),
+    );
+    const attached = runner();
+    await attached.attach();
+    await attached.cancel(job.id);
+    expect((await readJobRecords(outputDir))[0]?.cancelRequested).toBe(true);
+    expect(jobs.get(job.id)?.cancelRequested).toBeUndefined();
+    const ended = nextChange(jobs);
+    exit(0);
+    await ended;
+    expect((await readJobRecords(outputDir))[0]).toMatchObject({
+      state: "cancelled",
+      cancelRequested: true,
+      exitCode: 0,
+      cost: 1.2,
+    });
+    expect(jobs.takeNotice()).toContain("ended: cancelled");
+    attached.dispose();
+    jobs.dispose();
+  });
+
+  test("terminal write failure releases an exited job and retries without signalling or duplicate notices", async () => {
+    const jobs = runner();
+    const job = await jobs.start(request);
+    _jobStoreDeps.rename = mock(() => {
+      throw new Error("transient rename failure");
+    });
+    const ended = nextChange(jobs);
+    exit(7);
+    await ended;
+    expect(jobs.running()).toEqual([]);
+    expect(jobs.owned()).toEqual([]);
+    expect(jobs.get(job.id)).toMatchObject({ state: "failed", exitCode: 7, endedAt: expect.any(String) });
+    expect(jobs.get(job.id)?.note).toContain("could not be saved");
+    expect(jobs.takeNotice()).toContain("could not be saved");
+    await expect(jobs.cancel(job.id)).rejects.toMatchObject({ code: "CHAT_JOB_NOT_RUNNING" });
+    expect(_jobRunnerDeps.kill).not.toHaveBeenCalled();
+    expect((await readJobRecords(outputDir))[0]?.state).toBe("running");
+    _jobStoreDeps.rename = originalStoreDeps.rename;
+    const saved = nextChange(jobs);
+    await clock.advance(2_000);
+    await saved;
+    expect((await readJobRecords(outputDir))[0]).toMatchObject({ state: "failed", exitCode: 7 });
+    expect(jobs.takeNotice()).toBeUndefined();
+    expect(clock.pending()).toBe(0);
+    jobs.dispose();
+  });
+
   test("immediately exited children finalize after the running write; notices stay FIFO", async () => {
     _jobRunnerDeps.spawn = mock(() => ({ ...child, exited: Promise.resolve(2) }));
     const jobs = runner();
@@ -239,7 +297,7 @@ describe("createJobRunner", () => {
 function nextTerminal(jobs: ReturnType<typeof runner>): Promise<void> {
   return new Promise((resolve) => {
     const off = jobs.onChange(() => {
-      if (jobs.peekNotice() && jobs.running().length === 0) {
+      if (jobs.peekNotice() && jobs.list().every((job) => job.state !== "running")) {
         off();
         resolve();
       }

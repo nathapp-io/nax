@@ -424,21 +424,27 @@ export function ChatApp({
   async function sendTurn(
     message: string,
     prepare?: () => Promise<{ message: string } | { notice: string }>,
-  ): Promise<void> {
-    if (sending.current) return;
+  ): Promise<boolean> {
+    if (sending.current) return false;
     sending.current = true;
     setBusy(true);
+    let started = false;
     try {
       const prepared = prepare ? await prepare() : { message };
       if ("notice" in prepared) {
         append({ kind: "notice", text: prepared.notice });
-        return;
+        return false;
       }
       append({ kind: "user", text: prepared.message });
       setFollowToken((token) => token + 1);
-      await host.send(prepared.message, handleEvent);
+      await host.send(prepared.message, (event) => {
+        if (event.type === "turn_start") started = true;
+        handleEvent(event);
+      });
+      return true;
     } catch (error) {
       append({ kind: "error", text: errorMessage(error) });
+      return started;
     } finally {
       sending.current = false;
       await keys.finishTurn();
@@ -455,11 +461,7 @@ export function ChatApp({
       bottomBlocked: bottomBlocked(ask, picker.model),
       canControl: keys.canControl(),
     }),
-    deliver: async (text) => {
-      if (sending.current) return false;
-      await sendTurn(text);
-      return true;
-    },
+    deliver: (text) => sendTurn(text),
   });
 
   /**
