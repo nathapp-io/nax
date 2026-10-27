@@ -107,6 +107,8 @@ export interface PickerModel {
   readonly query?: string;
   readonly title: string;
   readonly entries: readonly PickerEntry[];
+  /** Full model choices, so queued query edits can broaden matches before the next render. */
+  readonly allEntries?: readonly PickerEntry[];
   readonly note?: PickerNote;
 }
 
@@ -133,14 +135,17 @@ function displayText(text: string): string {
 
 /** The model rows: one per catalogue entry, the session's own marked. */
 function modelEntries(input: PickerModelInput): readonly PickerEntry[] {
-  const query = (input.query ?? "").toLowerCase();
-  return input.models
-    .filter((model) => model.toLowerCase().includes(query))
-    .map((model) => ({
-      value: model,
-      label: displayText(model),
-      current: model === input.currentModel,
-    }));
+  return input.models.map((model) => ({
+    value: model,
+    label: displayText(model),
+    current: model === input.currentModel,
+  }));
+}
+
+/** Shared by rendering and queued input: both resolve the same case-insensitive matches. */
+function matchingEntries(entries: readonly PickerEntry[], query: string): readonly PickerEntry[] {
+  const needle = query.toLowerCase();
+  return entries.filter((entry) => entry.value.toLowerCase().includes(needle));
 }
 
 /** The mode rows: what each mode does, the session's own marked. */
@@ -180,11 +185,13 @@ function resumeNote(input: PickerModelInput): PickerNote | undefined {
 export function pickerModel(input: PickerModelInput): PickerModel {
   if (input.kind === "mode") return { kind: "mode", title: TITLES.mode, entries: modeEntries(input) };
   if (input.kind === "model") {
-    const entries = modelEntries(input);
+    const allEntries = modelEntries(input);
+    const entries = matchingEntries(allEntries, input.query ?? "");
     return {
       kind: "model",
       title: TITLES.model,
       entries,
+      allEntries,
       query: input.query ?? "",
       ...(entries.length === 0 ? { note: { text: "no models match", tone: "muted" as const } } : {}),
     };
@@ -506,16 +513,18 @@ export function Picker({
   }
   const queryRef = useRef(query);
   queryRef.current = query;
-  /** The last entry's index, and the pointer's floor: a list with no entries has neither. */
-  const last = Math.max(FIRST_ENTRY, model.entries.length - 1);
-  /** The pointer as the last key left it, clamped to the entries on screen now. */
-  const pointer = (): number => Math.min(Math.max(latest.current.index, FIRST_ENTRY), last);
+  /** Resolve against the synchronous query, not the previous render's filtered rows. */
+  const entries = (): readonly PickerEntry[] =>
+    model.kind === "model" ? matchingEntries(model.allEntries ?? model.entries, queryRef.current) : model.entries;
+  const last = (): number => Math.max(FIRST_ENTRY, entries().length - 1);
+  /** The newest pointer, clamped to the latest query's matches even within one input batch. */
+  const pointer = (): number => Math.min(Math.max(latest.current.index, FIRST_ENTRY), last());
 
   const move = (delta: number): void => {
     const value: PickerSelection = {
       kind: model.kind,
-      query,
-      index: Math.min(Math.max(pointer() + delta, FIRST_ENTRY), last),
+      query: queryRef.current,
+      index: Math.min(Math.max(pointer() + delta, FIRST_ENTRY), last()),
     };
     latest.current = value;
     setSelection(value);
@@ -546,7 +555,7 @@ export function Picker({
         return;
       }
       if (key.shift || key.ctrl || key.meta) return;
-      const entry = model.entries[pointer()];
+      const entry = entries()[pointer()];
       if (entry === undefined) return;
       if (key.return) onChoose(entry);
       else if (key.upArrow) move(-1);

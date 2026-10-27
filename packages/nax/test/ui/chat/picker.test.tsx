@@ -420,6 +420,27 @@ describe("US-007 mounted query seam", () => {
     await ui.settle();
     expect(ui.switchTo).toHaveBeenCalledWith({ model: "openai/gpt-y" });
   });
+  test.each([
+    ["", ["gpt", RETURN], "openai/gpt-y"],
+    ["", ["zzz", RETURN], undefined],
+    ["gpt", ["\x7f", "\x7f", "\x7f", RETURN], "anthropic/claude-x"],
+    ["", ["claude", DOWN, RETURN], "anthropic/claude-x"],
+  ] as const)("batched query and return use latest matches from '%s': %j", async (initial, keys, expected) => {
+    const ui = await open();
+    if (initial !== "") ui.press(initial);
+    act(() => {
+      for (const key of keys) ui.ui.stdin.write(key);
+    });
+    await ui.settle();
+    if (expected === undefined) {
+      expect(ui.switchTo).not.toHaveBeenCalled();
+      expect(ui.rows()).toContain("no models match");
+      expect(ui.rows()).toContain("Switch model");
+    } else {
+      expect(ui.switchTo).toHaveBeenCalledTimes(1);
+      expect(ui.switchTo).toHaveBeenCalledWith({ model: expected });
+    }
+  });
   test("AC-14 query change resets the pointer", async () => {
     const ui = await open();
     ui.press(DOWN);
