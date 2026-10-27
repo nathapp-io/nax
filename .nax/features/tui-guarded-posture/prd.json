@@ -3,7 +3,7 @@
   "feature": "tui-guarded-posture",
   "branchName": "feat/tui-guarded-posture",
   "createdAt": "2026-10-27T00:00:00.000Z",
-  "updatedAt": "2026-10-27T06:00:33.043Z",
+  "updatedAt": "2026-10-27T06:22:19.798Z",
   "userStories": [
     {
       "id": "US-001",
@@ -41,14 +41,17 @@
         "nax-agent"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "New posture resolver integrates validated public backend options, sandbox resolution and tool-policy precedence across session modules; access-control/session changes require strict three-session isolation."
+        "reasoning": "New posture resolver integrates validated public backend options, sandbox resolution and tool-policy precedence across session modules; access-control/session changes require strict three-session isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/session/native-backend-options.ts",
@@ -63,7 +66,11 @@
         "packages/nax-agent/test/unit/session/native-posture-rules.test.ts"
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d06d64159711a52da519315275944897967c636f"
     },
     {
       "id": "US-002",
@@ -126,7 +133,10 @@
         "packages/nax-agent/test/unit/session/native-backend-asks.test.ts"
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -183,7 +193,10 @@
         "With execution.bashApproval: \"raw\" and tui.deny: [\"Bash(*)\"], resolveTuiPermissions logs no ignored-pattern warning."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -270,7 +283,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -334,7 +350,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Refine-pass audit: enumerated all 89 explicit spec ACs and retained their assertions and regression qualifiers in the same stories: US-001 AC1-19, US-002 AC1-22, US-003 AC1-17, US-004 AC1-21, US-005 AC1-10. Supplemental criteria cover all 11 failure-table rows; each story has a negative path and backward-compatibility assertions. All 13 feature out-of-scope items remain verbatim, with relevant boundaries echoed in descriptions. All binding ids, workdirs and dependencies are unchanged; all spec-recommended context files are included, and outputs are separated from context. Re-read the current session/config/guard/prompt implementations. Clarified the unreachable-classifier AC to an observable forwarded commandShadow.guard.assess return rather than an unspecified assessment: packages/nax-agent/src/command-safety/guard.ts:112 returns basis rules on unavailable classifier results, and packages/nax-agent/src/command-safety/guard.ts:176 makes assess total. This does not add or change a guard algorithm. Reduced US-005 complexity to medium because it reuses the existing builder, opener cleanup and shared paragraph; its security-critical test strategy remains three-session-tdd. No spec AC was removed, moved or weakened, and no feature exclusion was promoted to an AC.\n\nEnhancement/bug fix for #2712, not greenfield. Discovery used direct reads and targeted text searches because codebase-memory MCP is unavailable in this host; no graph results are assumed. Goal: guarded chat uses configured permission posture, avoids blanket shell/edit prompts, and retains explicit escape, sandbox-down, configured ask, command-safety and non-read-only discovered MCP prompts. Binding implementation order: US-001 -> US-002; US-003 is independent; US-004 depends on US-001/002/003; US-005 depends on US-004. All stories are security-sensitive sessions/access control and require three-session-tdd, including the smaller config resolver story.\n\nVerified baseline and impact: packages/nax/src/chat/chat-mode.ts:12 hard-codes guarded to profile ask/bashApproval gated; chatModeOfMeta at :23 maps persisted ask to guarded and must remain unchanged. packages/nax-agent/src/session/native-backend-options.ts:164 nativeProfileRules rejects ask with non-gated approval and returns only bashApproval, allowUnsandboxed and allowUnsandboxedCommands. Keep that validator and its exact return shape unchanged; add a separate native-posture-rules.ts instead of changing ask semantics for other embedders. parseNativeBackendOptions validates a strict schema but preserves the caller-owned raw object (packages/nax-agent/test/unit/session/native-backend-options.test.ts:25). Thus validating sandbox in OptionsSchema is insufficient to deliver default-filled sandbox data: nativePostureRules must obtain the parsed SandboxConfigSchema output, not forward raw partial input. Sandbox schema nested prefaults/defaults are defined in packages/nax-agent/src/config/schemas-sandbox.ts:21 and DEFAULT_SANDBOX_CONFIG derives from parsing {} at :61. Public sandbox option must use z.input<typeof SandboxConfigSchema> so network-only inputs typecheck without manufacturing required output fields.\n\nUS-001 agent flow: packages/nax-agent/src/session/native-backend.ts:63 openNative currently resolves profile rules, gets the launcher, resolves providers, builds support and opens NativeSessionAdapter. Add posture resolution alongside profile resolution; pass parsed sandbox to the launcher and parsed ask/deny grants to support. packages/nax-agent/src/session/session-tool-support.ts:179 composes tool grants and ask rules; configured asks must append after profile asks and provider asks, not replace them. resolveSessionLauncher currently uses DEFAULT_SANDBOX_CONFIG; add optional config with its existing default fallback. Deny and ask precedence must remain that of compileToolPolicy. packages/nax-agent/src/tools/policy.ts:313 checks unconditional deny before command handling, while packages/nax-agent/src/tools/policy-command-branch.ts:64 returns through the raw screen before scoped deny/ask evaluation. Preserve that ADR-030 distinction: unconditional Bash/Bash(*) deny holds under raw; scoped Bash patterns are not consulted under raw; non-Bash tool rules continue to apply. No raw screen change is needed.\n\nUS-002 runtime flow: packages/nax-agent/src/coding-tools/coding-tool-extras.ts:77 unsandboxedRuntimeOption currently returns only enabled/bashApproval; add alwaysAsk only for the opt-in, retaining absent-key legacy shape. packages/nax-agent/src/tools/runtime-calltool.ts:143 resolveUnsandboxedCall currently uses approval mode alone; widen its option and use alwaysAsk === true || bashApproval !== raw. Existing convertUnsandboxedAllow and resolveAskOutcome already carry the escape reason; do not invent another approval path. packages/nax-agent/src/session/agent-session-types.ts:47 AgentSessionHostPorts needs the commandShadow port and the strict backend hostPorts schema must check observe/settle/drain without cloning away shadow identity. packages/nax-agent/src/coding-tools/coding-tool-support.ts:167 already accepts commandShadow, :265 forwards it, and :304 builds the runtime unsandboxed option; add askOnUnsandboxed as a plain argument property, with no new conditional in buildCodingToolSupport. packages/nax-agent/src/tools/runtime.ts:233 is the existing single-line unsandboxed option declaration; keep the widened declaration on one line because the file is at its 600-line limit. Existing runtime shadow tap and guard consumers are at runtime.ts:427 and :575. Guard failure remains fail-open through existing resolveGuardDenial; the opt-in only wires it to chat. Preserve non-read-only provider asks when moving guarded to full by adding askDiscoveredTools; profile ask continues asking as before. Effective gated fallback must be used both in runtime support and NativeSessionAdapter.openSession resolvedPermissions, not just one of them. Sandbox kind is captured once at open.\n\nUS-003 config: packages/nax/src/config/permissions.ts:182 lookupStageBlock already implements block selection/inherit walk/default fallback; widen only its file-local stage argument to string. It selects a whole block, not a per-field merge. stageRules at :205 and resolvePermissions at :232 remain unchanged. Resolve tui directly from the selected block's ask/deny/bashApproval and reuse resolveBashApproval (packages/nax-agent/src/config/bash-approval.ts:33; defaults to raw via :22). Do not read permissionProfile, allow or allowedTools and do not add tui to PipelineStage or MCP pipeline-stage enums. Export TuiPermissions and resolveTuiPermissions via packages/nax/src/config/index.ts:35-36. No config schema expansion is required: packages/nax/src/config/schemas-execution.ts:215 uses a string-keyed record, :305 uses the shared sandbox schema, and packages/nax/src/config/config-guards.ts:464 validates arbitrary block keys/inheritance. Config loader already invokes validatePermissionsBlock at packages/nax/src/config/loader.ts:224 and :545. Warnings use getSafeLogger warn on stage permissions; collapse multiple raw scoped Bash patterns to one warning per resolution. Escalate resolves to gated with its separate single warning. Do not accidentally classify unconditional Bash/Bash(*) deny as an ignored scoped deny.\n\nUS-004 resource opening: packages/nax/src/chat/open-chat-session.ts:88 sessionMeta validates persisted metadata and overrides effective settings; :127 sessionOptions constructs nativeBackend; :164 openChatSession owns the storage lock and session creation/resume. Resolve effective mode from explicit request or validated stored mode before posture policy is selected. Resolve posture once at the resource opener for guarded only, then pass the same value to metadata/options; never reconstruct policy from stored bashApproval. New sessions retain meta.mode ask while using native profile full. Full opens must not resolve posture or log its warnings. Resume and /mode or /model reopen under current config without changing existing metadata persistence sites. SessionOptions must use current settings rather than treating stored policy as authoritative. packages/nax/src/chat/subagent-session.ts:49 has injectable dependencies, :57 constructs options and :168 runSubagent is the opener; resolve there once for guarded and forward posture into the helper. Subagents retain memory transcripts, narrowing, loopHandlerRole subagent and existing cancellation/error lifecycle; no commandShadow/hostPorts. Export chatBackendPosture through packages/nax/src/chat/index.ts:33-34. Direct consumers to preserve are chat-host.ts:253, :340 and :377 (open/resume/switch), subagent-runs.ts:175 (nested opens), and existing mode/meta helpers.\n\nUS-005 lifecycle: packages/nax-agent/src/command-safety/build.ts:36 buildCommandShadow already returns undefined without config.shadow, derives command-safety directory under outputDir, and uses env for auth. Reuse it through _openChatSessionDeps; do not reuse the run-scoped buildDispatchAskWiring or its approvals-cache side effects (packages/nax/src/interaction/dispatch-ask.ts:112). Guarded main opens use request.storage.dir and meta.sessionId, including resume, and env from deps. Omit hostPorts entirely when no shadow exists. Returned release drains before lock release; both backend synchronous throw and create/resume rejection after shadow creation must drain and release before preserving the same original error. Existing CommandShadow contract is total (packages/nax-agent/src/command-safety/types.ts:92), with its bounded timeout behavior reused. Rows belong to <sessionsDir>/command-safety/<sessionId>.jsonl; metadata suffix is .session.json in packages/nax-agent/src/session-store/storage.ts:33. packages/nax/src/prompts/builders/chat-builder.ts:17 is the shared permission sentence; agents-builder.ts imports and uses it for subagents, so change the shared sentence without unrelated TUI copy changes.\n\nTests and implementation seams: agent unit tests already cover strict backend validation and raw object identity (native-backend-options.test.ts), profile ask behavior and full's gated-only Bash asks (session-tool-support.test.ts:98-117), unsandboxed runtime shape (coding-tool-extras.test.ts), and escape routing (runtime-unsandboxed.test.ts). Create only the three new files assigned to US-001 and one new integration-style unit test file for US-002. Session-level behavior tests use the scripted-provider/session readers in packages/nax-agent/test/helpers/agent-session.ts and stubSessionSandboxDeps in test/helpers/session-sandbox-deps.ts:108; these avoid real model/network/sandbox availability. Important helper hazard: agent-session.ts:173 sessionOptions explicitly destructures and forwards native-only options; extend its forwarding if tests use it, otherwise new options silently disappear. Restore all _deps changes with shared helpers. Regressions must fail against old code before counting. Tests tagged integration in the spec are session-level integration behavior but intentionally live in the specified test/unit/session/native-backend-posture.test.ts and native-backend-asks.test.ts. Do not relocate them into a new integration hierarchy.\n\nNax tests to extend: existing permissions.test.ts (pipeline behavior at :58 onward) and loader integration coverage; chat-mode.test.ts:3-9, open-chat-session.test.ts:104/:146/:250/:258, chat-host-resume.test.ts:201/:231, subagent-session.test.ts:167 and host-subagents.test.ts:106 need the exact expectation adjustments specified by US-004. Preserve the allowUnsandboxed, allowUnsandboxedCommands, loopHandlerRole, stored metadata and lock assertions; do not bulk-rewrite every fixture containing gated. Add resolver and buildCommandShadow stubs to typed deps literals where required. Prompt expectations are in chat-builder.test.ts and agents-builder.test.ts:53/:101-102; only guarded paragraph changes, full wording stays. US-001/002 spec Modifies None describes unchanged existing assertion shapes, NOT an instruction to avoid editing existing source files. US-003 likewise does not prohibit changing permissions.ts and its barrel.\n\nRisks and compatibility/migration: changing guarded profile is intentionally user-visible and reduces blanket prompts, but optional agent options default off and preserve all legacy embedder behavior. Reject tool-only overlays on none/read with path-specific errors, validate shadow shape, and do not silently weaken deny precedence. Keep sandbox-down fail-safe gated even when configured raw, but do not impose it on full or unrelated embedders. Configured sandbox now reaches both chat modes and may alter network/filesystem behavior intentionally. Main chat command shadow must be released on all error paths without leaking locks or masking the original open error; subagents must not gain this guard. No stored metadata migration, schema migration, ACP server option change, package version bump, provider expansion of Mcp rules, or permissionProfile consumption is required. Preserve nativeProfileRules and askRulesFor return/behavior exactly. New helpers remain package-local rather than leaking test seams into the public root. Follow package source imports (#src and explicit .ts relative imports in nax-agent), Node-compatible agent runtime spawning through the runtime slot, and nax Bun conventions. Review the intended declaration/API baseline when widening publicly exported NativeBackendOptions/AgentSessionHostPorts; regenerate api/nax-agent.api.txt as required by the package's API gate, without adding public underscore exports. Root docs/architecture/ARCHITECTURE.md was read; implementation must also follow scoped architecture/rules. Automatic pipeline lint/typecheck/build are not product ACs. Full package coverage is not to be run inside NAX_SANDBOXED=1; targeted tests must use explicit paths, never bare bun test. No code or tests were executed while drafting this PRD.",
