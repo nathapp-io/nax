@@ -3,7 +3,7 @@
   "feature": "chat-workflow-dispatch",
   "branchName": "feat/chat-workflow-dispatch",
   "createdAt": "2026-10-27T00:00:00Z",
-  "updatedAt": "2026-10-27T15:13:27.970Z",
+  "updatedAt": "2026-10-27T15:21:15.871Z",
   "userStories": [
     {
       "id": "US-001",
@@ -561,14 +561,17 @@
         "US-005",
         "US-008"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Billed launch authorization connects untrusted model inputs, target files, explicit host cards and background process starts."
+        "reasoning": "Billed launch authorization connects untrusted model inputs, target files, explicit host cards and background process starts.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/jobs/job-argv.ts",
@@ -586,7 +589,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6e3216e3830f94b7896a9b76a5ca79753b7803d2"
     },
     {
       "id": "US-010",
