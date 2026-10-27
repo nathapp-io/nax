@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeFakeClock, makeTempDir } from "@test/helpers";
-import { _jobRunnerDeps, createJobRunner, type StartJobRequest } from "@/chat/jobs/job-runner";
+import { _jobRunnerDeps, createJobRunner, JOB_POLL_MS, type StartJobRequest } from "@/chat/jobs/job-runner";
 import { _jobStoreDeps, jobLogPath, jobsDir, readJobRecords } from "@/chat/jobs/job-store";
 import { featureDir } from "@/config";
 import { NaxError } from "@/errors";
@@ -262,6 +262,45 @@ describe("createJobRunner", () => {
     expect((await readJobRecords(outputDir)).every((job) => job.state === "failed" && job.exitCode === 2)).toBe(true);
     expect(jobs.takeNotice()).toContain(first.id);
     expect(jobs.takeNotice()).toContain(second.id);
+  });
+
+  test("polling cannot overwrite a terminal outcome with a delayed initial running write", async () => {
+    const release = Promise.withResolvers<void>();
+    const writing = Promise.withResolvers<void>();
+    spyOn(_jobStoreDeps, "write").mockImplementation(async (path, content) => {
+      if (typeof path !== "string" || typeof content !== "string") throw new Error("expected a JSON record write");
+      if (content.includes('"state": "running"')) {
+        writing.resolve();
+        await release.promise;
+      }
+      return originalStoreDeps.write(path, content);
+    });
+    const jobs = runner();
+    const ended = nextTerminal(jobs);
+    const starting = jobs.start({ ...request, kind: "bot_fix" });
+    await writing.promise;
+    exit(0);
+    await child.exited;
+    const rearmed = Promise.withResolvers<void>();
+    _jobRunnerDeps.setTimeout = (callback, ms) => {
+      rearmed.resolve();
+      return clock.setTimeout(callback, ms);
+    };
+    try {
+      await clock.advance(JOB_POLL_MS);
+      // Wait until the poll either finishes or (incorrectly) finalizes before releasing the write.
+      await Promise.race([rearmed.promise, ended]);
+    } finally {
+      release.resolve();
+    }
+    const job = await starting;
+    await ended;
+    expect(jobs.get(job.id)).toMatchObject({ state: "succeeded", exitCode: 0 });
+    expect((await readJobRecords(outputDir))[0]).toMatchObject({ state: "succeeded", exitCode: 0 });
+    expect(jobs.takeNotice()).toContain("ended: succeeded");
+    expect(jobs.takeNotice()).toBeUndefined();
+    expect(clock.pending()).toBe(0);
+    jobs.dispose();
   });
 
   test("query results and start results are independent snapshots, sorted newest first", async () => {

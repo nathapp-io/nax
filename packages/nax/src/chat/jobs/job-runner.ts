@@ -158,7 +158,8 @@ class DetachedJobs implements ChatJobs {
     this.syncPoll();
     child.unref();
     // Failure to save does not undo a launch or detach its exit observer.
-    const saved: Promise<ChatJob> = this.persistRunning(job);
+    // Polling, cancellation and exit finalization must not overtake the initial write.
+    const saved = this.mutate(id, () => this.persistRunning(job));
     void child.exited
       .then(async (code) => {
         this.observedExits.set(job.id, code);
