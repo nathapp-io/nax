@@ -32,6 +32,13 @@ function fixture() {
   const order: string[] = [];
   const deps = {
     ..._chatCommandDeps,
+    collectAuthList: mock(
+      async (_ids: readonly string[]): Promise<import("@/cli/auth-list").AuthListReport> => ({
+        source: "file",
+        providers: [],
+      }),
+    ),
+    listCatalogModels: mock(async (_ids: readonly string[]): Promise<readonly string[]> => []),
     stdinIsTTY: () => true,
     ensureTrusted: mock(async (_cwd: string) => {
       order.push("trust");

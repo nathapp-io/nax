@@ -14,7 +14,7 @@ import { NAX_VERSION } from "@/version";
 
 async function fixture() {
   const api = await import("@/cli/chat");
-  const config = makeNaxConfig({ models: { native: { balanced: "openai/gpt-6" } } });
+  const config = structuredClone(makeNaxConfig({ models: { native: { balanced: "openai/gpt-6" } } }));
   const logger = makeLogger();
   const storage = createChatStorage({ pid: process.pid, now: () => new Date(), logger });
   const host = Object.assign(
@@ -37,6 +37,13 @@ async function fixture() {
   };
   const deps = {
     ...api._chatCommandDeps,
+    collectAuthList: mock(
+      async (_ids: readonly string[]): Promise<import("@/cli/auth-list").AuthListReport> => ({
+        source: "file",
+        providers: [],
+      }),
+    ),
+    listCatalogModels: mock(async (_ids: readonly string[]): Promise<readonly string[]> => []),
     stdinIsTTY: () => true,
     ensureTrusted: async () => {},
     loadPlugins: async () => new PluginRegistry([]),
@@ -441,4 +448,86 @@ describe("registerChatCommand", () => {
     expect(code).toBe(0);
     expect(stdout).toContain("--mode <full|guarded>");
   }, 30_000);
+});
+
+describe("chatCommand model discovery", () => {
+  test("US-006 AC-12/13/14 requests configured providers and uses only available catalog providers", async () => {
+    const f = await fixture();
+    f.config.models.native = { fast: { provider: "p1", model: "m1" }, balanced: "p1/m1", powerful: "p2/m2" };
+    f.config.agent = {
+      ...f.config.agent,
+      native: {
+        ...f.config.agent?.native,
+        catalogOverrides: [
+          {
+            provider: "local",
+            models: [
+              {
+                id: "x",
+                supportsTools: true,
+                protocol: "openai-completions",
+                contextWindow: 1000,
+                thinkingLevels: [],
+                pricing: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              },
+            ],
+          },
+        ],
+      },
+    };
+    f.deps.collectAuthList.mockResolvedValue({
+      source: "file",
+      providers: [
+        { providerId: "p1", available: true, stored: null, ambient: true },
+        { providerId: "p2", available: false, stored: null, ambient: false },
+      ],
+    });
+    f.deps.listCatalogModels.mockResolvedValue(["p1/m1", "p1/m3"]);
+    await f.chatCommand({}, f.deps);
+    expect(f.deps.collectAuthList).toHaveBeenCalledWith(["p1", "p2", "local"]);
+    expect(f.deps.listCatalogModels).toHaveBeenCalledWith(["p1"]);
+    expect(f.deps.createChatHost).toHaveBeenCalledWith(
+      expect.objectContaining({ models: ["p1/m1", "p2/m2", "local/x", "p1/m3"] }),
+    );
+  });
+  test("US-006 AC-14 no overrides: tiers precede deduplicated catalog models", async () => {
+    const f = await fixture();
+    f.config.models.native = { balanced: "openai/gpt-6" };
+    f.deps.listCatalogModels.mockResolvedValue(["openai/gpt-6", "p1/m3"]);
+    await f.chatCommand({}, f.deps);
+    expect(f.deps.createChatHost).toHaveBeenCalledWith(expect.objectContaining({ models: ["openai/gpt-6", "p1/m3"] }));
+  });
+  test.each([false, true])("US-006 AC-15/18 auth rejection preserves tiers and overrides=%s", async (override) => {
+    const f = await fixture();
+    f.config.models.native = { fast: "p1/m1", balanced: "p1/m1" };
+    if (override)
+      f.config.agent = {
+        ...f.config.agent,
+        native: {
+          ...f.config.agent?.native,
+          catalogOverrides: [
+            {
+              provider: "local",
+              models: [
+                {
+                  id: "x",
+                  supportsTools: true,
+                  protocol: "openai-completions",
+                  contextWindow: 1000,
+                  thinkingLevels: [],
+                  pricing: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                },
+              ],
+            },
+          ],
+        },
+      };
+    f.deps.collectAuthList.mockRejectedValue(new Error("offline"));
+    await f.chatCommand({}, f.deps);
+    expect(f.deps.listCatalogModels).toHaveBeenCalledWith([]);
+    expect(f.deps.createChatHost).toHaveBeenCalledWith(
+      expect.objectContaining({ models: override ? ["p1/m1", "local/x"] : ["p1/m1"] }),
+    );
+    expect(f.deps.setExitCode).not.toHaveBeenCalled();
+  });
 });

@@ -424,3 +424,35 @@ describe("createChatHost", () => {
     await expect(start()).rejects.toMatchObject({ code: "CHAT_HOST_CLOSED" });
   });
 });
+
+describe("chat host model choices", () => {
+  test.each([
+    ["AC-11", ["a/b", "c/d"], ["a/b", "c/d"]],
+    ["AC-19", undefined, ["p1/m1", "p2/m2"]],
+  ] as const)("%s injected models or tier fallback", async (_ac, models, expected) => {
+    const config = makeNaxConfig({
+      models: {
+        native: {
+          fast: { provider: "p1", model: "m1" },
+          balanced: "p1/m1",
+          powerful: "p2/m2",
+        },
+      },
+    });
+    const local = createChatHost({
+      config,
+      models,
+      storage,
+      cwd: dir,
+      repoRoot: dir,
+      chain: null,
+      now: () => NOW,
+      logger: makeLogger(),
+    });
+    try {
+      expect(local.models).toEqual(expected);
+    } finally {
+      await local.close();
+    }
+  });
+});

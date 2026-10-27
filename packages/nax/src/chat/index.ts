@@ -34,6 +34,7 @@ export {
   chatSessionSettings,
   nextChatMode,
 } from "./chat-mode";
+export { type ChatModelChoicesInput, chatModelChoices, tierModels } from "./chat-models";
 export {
   _openChatSessionDeps,
   type ChatSessionHandle,

@@ -92,6 +92,7 @@ function chatState(current: Partial<ChatHostState> = {}): ChatHostState {
 }
 
 interface MountOptions {
+  readonly models?: readonly string[];
   readonly current?: Partial<ChatHostState>;
   /** Absent: `listSessions()` resolves to no rows at once. */
   readonly sessions?: () => Promise<readonly ChatSessionRow[]>;
@@ -125,7 +126,7 @@ function mount(options: MountOptions = {}) {
   });
   const fake: ChatHost = {
     repoRoot: "/repo",
-    models: MODELS,
+    models: options.models ?? MODELS,
     asks: createChatAskController({ mode: "guarded", answer: () => {} }),
     current: () => current,
     notice: () => undefined,
@@ -212,6 +213,17 @@ function labelOf(row: string): string {
 }
 
 describe("Picker — model and mode", () => {
+  test("US-006 AC-16 navigates to the twentieth host model", async () => {
+    const models = Array.from({ length: 20 }, (_, index) => `p/model-${index + 1}`);
+    const ui = mount({ models, current: { model: models[0] } });
+    await ui.submit("/model");
+    for (let index = 0; index < 19; index++) ui.press(DOWN);
+    const entries = entryRows(frameOf(ui.rows(), "Switch model").inside);
+    expect(entries.find((row) => row.startsWith(POINTER))).toContain("p/model-20");
+    ui.press(RETURN);
+    await ui.settle();
+    expect(ui.switchTo).toHaveBeenCalledWith({ model: "p/model-20" });
+  });
   test("AC-1 /model opens a framed Switch model list with a row per host model", async () => {
     const ui = mount();
     await ui.submit("/model");
