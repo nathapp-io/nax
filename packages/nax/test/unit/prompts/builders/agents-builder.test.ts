@@ -50,7 +50,7 @@ describe("buildSkillsInstructions after the helper extraction", () => {
 describe("buildChatInstructions after the permission extraction", () => {
   test("guarded mode returns the frozen text", () => {
     expect(prompts.buildChatInstructions({ mode: "guarded", rulesIndex: [] })).toBe(
-      "You are an interactive coding agent working in this repository with the person.\n\n## Permission mode\n\nIn guarded mode, edits, deletes, commits and every shell command are put to the person before they run.\n\n## Commands outside the sandbox\n\nSet `unsandboxed: true` with an `unsandboxedReason` only when a command needs the network, the Docker socket, a local port or a device the sandbox blocks.",
+      "You are an interactive coding agent working in this repository with the person.\n\n## Permission mode\n\nIn guarded mode, commands run inside the sandbox under the configured posture; a command that asks to run outside the sandbox, any command while the sandbox is unavailable, a call the configured permission rules mark for asking, and a call to an MCP tool that is not read-only are put to the person before they run.\n\n## Commands outside the sandbox\n\nSet `unsandboxed: true` with an `unsandboxedReason` only when a command needs the network, the Docker socket, a local port or a device the sandbox blocks.",
     );
   });
 
@@ -99,7 +99,7 @@ describe("buildSubagentInstructions", () => {
   test("contains the guarded permission paragraph", () => {
     const text = prompts.buildSubagentInstructions({ agent, mode: "guarded", rulesIndex: [] });
     expect(text).toContain(chatPermissionParagraph("guarded"));
-    expect(text).toContain("In guarded mode, edits, deletes, commits");
+    expect(text).toContain("In guarded mode, commands run inside the sandbox");
   });
 
   test("contains the full permission paragraph", () => {

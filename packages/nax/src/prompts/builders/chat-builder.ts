@@ -17,7 +17,7 @@ export interface ChatFeatureMessageInput {
 export function chatPermissionParagraph(mode: ChatInstructionsInput["mode"]): string {
   return mode === "full"
     ? "In full mode, tools run without asking."
-    : "In guarded mode, edits, deletes, commits and every shell command are put to the person before they run.";
+    : "In guarded mode, commands run inside the sandbox under the configured posture; a command that asks to run outside the sandbox, any command while the sandbox is unavailable, a call the configured permission rules mark for asking, and a call to an MCP tool that is not read-only are put to the person before they run.";
 }
 
 /** Pure system instructions; repository instructions are loaded separately from AGENTS.md. */

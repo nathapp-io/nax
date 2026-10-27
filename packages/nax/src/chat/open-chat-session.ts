@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
   type AgentSession,
+  buildCommandShadow,
+  type CommandShadow,
   type CreateAgentSessionOptions,
   createAgentSession,
   createFileTranscriptStore,
@@ -22,6 +24,7 @@ import { buildChatInstructions, toRulesIndexEntry } from "@/prompts";
 import { type ChatMode, chatBackendPosture, chatModeOfMeta, chatSessionSettings } from "./chat-mode";
 
 export const _openChatSessionDeps = {
+  buildCommandShadow,
   createAgentSession,
   resumeAgentSession,
   nativeBackend,
@@ -138,7 +141,15 @@ function sessionMeta(
 
 async function sessionOptions(
   request: OpenChatSessionRequest,
-  { meta, posture }: { readonly meta: SessionMeta; readonly posture: TuiPermissions | undefined },
+  {
+    meta,
+    posture,
+    commandShadow,
+  }: {
+    readonly meta: SessionMeta;
+    readonly posture: TuiPermissions | undefined;
+    readonly commandShadow: CommandShadow | undefined;
+  },
   deps: typeof _openChatSessionDeps,
 ): Promise<Omit<CreateAgentSessionOptions, "transcriptStore">> {
   const rules = request.config.context.rules;
@@ -154,6 +165,7 @@ async function sessionOptions(
   return {
     backend: deps.nativeBackend({
       ...chatBackendPosture(mode, request.config, posture),
+      ...(commandShadow !== undefined ? { hostPorts: { commandShadow } } : {}),
       model: meta.model,
       bashApproval: meta.bashApproval,
       allowUnsandboxed: true,
@@ -173,6 +185,19 @@ async function sessionOptions(
   };
 }
 
+/** The shadow's drain is total and bounded; retain lock ownership until it settles. */
+function sessionRelease(unlock: () => Promise<void>, shadow: () => CommandShadow | undefined): () => Promise<void> {
+  let released: Promise<void> | undefined;
+  return () =>
+    (released ??= (async () => {
+      try {
+        await shadow()?.drain();
+      } finally {
+        await unlock();
+      }
+    })());
+}
+
 /** Open the shared native session while holding its store lock until the host releases it. */
 export async function openChatSession(
   request: OpenChatSessionRequest,
@@ -187,10 +212,22 @@ export async function openChatSession(
   const mode = request.mode ?? storedMode ?? "guarded";
   const posture = mode === "guarded" ? deps.resolveTuiPermissions(request.config) : undefined;
   const meta = sessionMeta(request, { mode, posture, stored }, deps);
-  const release = await request.storage.acquireLock(meta.sessionId);
+  const unlock = await request.storage.acquireLock(meta.sessionId);
+  let commandShadow: CommandShadow | undefined;
+  const release = sessionRelease(unlock, () => commandShadow);
   try {
+    if (mode === "guarded")
+      commandShadow = deps.buildCommandShadow({
+        config: request.config.execution.commandSafety,
+        outputDir: request.storage.dir,
+        runId: meta.sessionId,
+        env: deps.env,
+      });
     if (request.resumeId === undefined) await request.storage.writeMeta(meta);
-    const options = { ...(await sessionOptions(request, { meta, posture }, deps)), transcriptStore: transcripts };
+    const options = {
+      ...(await sessionOptions(request, { meta, posture, commandShadow }, deps)),
+      transcriptStore: transcripts,
+    };
     const doc = await transcripts.load(meta.sessionId);
     const session =
       doc === null ? await deps.createAgentSession(options) : await deps.resumeAgentSession(meta.sessionId, options);

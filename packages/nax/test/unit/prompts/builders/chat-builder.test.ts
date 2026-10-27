@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import * as prompts from "@/prompts";
+import { chatPermissionParagraph } from "@/prompts/builders/chat-builder";
 
 const rule = {
   ruleId: "error-handling",
@@ -14,13 +15,29 @@ function guarded(): string {
   return prompts.buildChatInstructions({ mode: "guarded", rulesIndex: [] });
 }
 
+describe("chatPermissionParagraph", () => {
+  test("shadow AC-8 returns the exact guarded sentence", () => {
+    expect(chatPermissionParagraph("guarded")).toBe(
+      "In guarded mode, commands run inside the sandbox under the configured posture; a command that asks to run outside the sandbox, any command while the sandbox is unavailable, a call the configured permission rules mark for asking, and a call to an MCP tool that is not read-only are put to the person before they run.",
+    );
+  });
+});
+
 describe("buildChatInstructions", () => {
+  test("shadow AC-9 places the exact sentence in the permission section", () => {
+    expect(guarded().split("## Permission mode\n\n")[1]?.split("\n\n")[0]).toBe(
+      "In guarded mode, commands run inside the sandbox under the configured posture; a command that asks to run outside the sandbox, any command while the sandbox is unavailable, a call the configured permission rules mark for asking, and a call to an MCP tool that is not read-only are put to the person before they run.",
+    );
+  });
   test("AC-1: is exported from src/prompts", () => {
     expect(typeof prompts.buildChatInstructions).toBe("function");
   });
   test.each([
     ["AC-2", "## Permission mode"],
-    ["AC-3", "edits, deletes, commits and every shell command are put to the person before they run"],
+    [
+      "AC-3",
+      "In guarded mode, commands run inside the sandbox under the configured posture; a command that asks to run outside the sandbox, any command while the sandbox is unavailable, a call the configured permission rules mark for asking, and a call to an MCP tool that is not read-only are put to the person before they run.",
+    ],
     ["AC-5", "## Commands outside the sandbox"],
   ])("%s: includes %s", (_ac, text) => {
     expect(guarded()).toContain(text);

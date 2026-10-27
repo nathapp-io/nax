@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { createSessionStorage, type SessionEvent } from "@nathapp/nax-agent";
-import { _sessionSandboxDeps } from "@nathapp/nax-agent/internal";
+import { _sessionSandboxDeps, _systemOneClientDeps } from "@nathapp/nax-agent/internal";
 import {
   cleanupTempDir,
   makeLogger,
@@ -10,9 +10,49 @@ import {
   withDepsRestore,
 } from "@test/helpers";
 import { type ChatSessionHandle, openChatSession } from "@/chat";
+import { _openChatSessionDeps } from "@/chat/open-chat-session";
 
 describe("openChatSession sandbox-down posture", () => {
   withDepsRestore(_sessionSandboxDeps);
+  withDepsRestore(_systemOneClientDeps);
+  test("shadow AC-14 forwarded guard falls back to rules on classifier timeout", async () => {
+    dir = makeTempDir("chat-shadow-");
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    const timeout = new AbortController();
+    const timeoutSignal = spyOn(_systemOneClientDeps, "timeoutSignal").mockReturnValue(timeout.signal);
+    const fetch = spyOn(_systemOneClientDeps, "fetch").mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+        }),
+    );
+    const native = spyOn(_openChatSessionDeps, "nativeBackend");
+    handle = await openChatSession({
+      storage: createSessionStorage({ dir, pid: process.pid, now: () => new Date(), logger: makeLogger() }),
+      cwd: dir,
+      repoRoot: dir,
+      mode: "guarded",
+      model: "openai/gpt-5.4-mini",
+      loopHandlers: [],
+      config: makeNaxConfig({
+        execution: {
+          sandbox: { enabled: false },
+          commandSafety: {
+            shadow: { url: "http://127.0.0.1:9999", timeoutMs: 37 },
+            guard: { threshold: 0.5 },
+          },
+        },
+      }),
+    });
+    const guard = native.mock.calls[0]?.[0]?.hostPorts?.commandShadow?.guard;
+    expect(guard).toBeDefined();
+    if (guard === undefined) throw new Error("no forwarded command guard");
+    const decision = guard.assess({ command: "echo ok", cwd: dir, tempConfined: false });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(timeoutSignal).toHaveBeenCalledWith(37);
+    timeout.abort(new DOMException("classifier unreachable", "TimeoutError"));
+    await expect(decision).resolves.toMatchObject({ basis: "rules" });
+  });
   let handle: ChatSessionHandle | undefined;
   let dir: string | undefined;
   afterEach(async () => {
@@ -23,6 +63,7 @@ describe("openChatSession sandbox-down posture", () => {
       handle = undefined;
       if (dir !== undefined) cleanupTempDir(dir);
       dir = undefined;
+      mock.restore();
     }
   });
   test.each(["disabled", "unavailable"] as const)("AC-22 %s opens and each Bash asks", async (kind) => {

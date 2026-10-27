@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { join } from "node:path";
 import {
   type AgentSession,
+  buildCommandShadow,
+  type CommandShadow,
   createSessionStorage,
   defaultSessionsDir,
   type SessionBackend,
@@ -369,6 +371,95 @@ describe("openChatSession edge cases", () => {
       expect.objectContaining({ catalogOverrides: expect.anything() }),
     );
   });
+});
+
+describe("openChatSession command shadow", () => {
+  let order: string[];
+  let shadow: CommandShadow;
+  beforeEach(() => {
+    order = [];
+    shadow = {
+      observe() {},
+      settle() {},
+      drain: mock(async () => {
+        order.push("drain");
+      }),
+    };
+    // Object.assign lets these regressions execute before the new dependency exists.
+    Object.assign(deps, { buildCommandShadow: mock(() => shadow) });
+    const acquire = storage.acquireLock.bind(storage);
+    spyOn(storage, "acquireLock").mockImplementation(async (id) => {
+      const unlock = await acquire(id);
+      return async () => {
+        order.push("unlock");
+        await unlock();
+      };
+    });
+  });
+  test("shadow AC-1/2 builds once with session identity and forwards the same port", async () => {
+    const config = makeNaxConfig({ execution: { commandSafety: { shadow: { url: "http://127.0.0.1:9999" } } } });
+    const build = spyOn(deps, "buildCommandShadow");
+    const native = spyOn(deps, "nativeBackend");
+    const handle = await open({ config });
+    expect(build).toHaveBeenCalledTimes(1);
+    expect(build).toHaveBeenCalledWith({
+      config: config.execution.commandSafety,
+      outputDir: storage.dir,
+      runId: handle.meta.sessionId,
+      env: deps.env,
+    });
+    expect(native.mock.calls[0]?.[0]?.hostPorts?.commandShadow).toBe(shadow);
+  });
+  test("shadow AC-4 full never builds or forwards a shadow", async () => {
+    const build = spyOn(deps, "buildCommandShadow");
+    const native = spyOn(deps, "nativeBackend");
+    await open({ mode: "full" });
+    expect(build).not.toHaveBeenCalled();
+    expect(native.mock.calls[0]?.[0]).not.toHaveProperty("hostPorts");
+  });
+  test("shadow AC-5 drains before unlocking on release", async () => {
+    const handle = await open();
+    await handle.release();
+    expect(order).toEqual(["drain", "unlock"]);
+    expect(await storage.readLockHolder(ID)).toBeNull();
+  });
+  test.each(["create", "backend", "resume"] as const)(
+    "shadow AC-6/7/13 %s failure preserves error and drains before unlocking",
+    async (stage) => {
+      const error = new NaxError("open failed", "TEST_FAILURE", { stage: "test" });
+      const fail = () => {
+        throw error;
+      };
+      if (stage === "backend") deps.nativeBackend = mock(fail);
+      if (stage === "create") deps.createAgentSession = mock(async () => fail());
+      if (stage === "resume") {
+        await seed({ mode: "ask" });
+        doc = { savedAt: NOW.toISOString(), messages: [] };
+        deps.resumeAgentSession = mock(async () => fail());
+      }
+      await expect(open(stage === "resume" ? { resumeId: ID } : {})).rejects.toBe(error);
+      expect(shadow.drain).toHaveBeenCalledTimes(1);
+      expect(order).toEqual(["drain", "unlock"]);
+      expect(await storage.readLockHolder(ID)).toBeNull();
+    },
+  );
+  test.each([undefined, { guard: { threshold: 0.5 } }])(
+    "shadow AC-3/11/12 no shadow config %j omits hostPorts and only unlocks",
+    async (commandSafety) => {
+      const config = makeNaxConfig();
+      config.execution.commandSafety = commandSafety;
+      const build = spyOn(deps, "buildCommandShadow").mockImplementation(buildCommandShadow);
+      const native = spyOn(deps, "nativeBackend");
+      const handle = await open({ config });
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(build.mock.results[0]?.value).toBeUndefined();
+      expect(native.mock.calls[0]?.[0]).not.toHaveProperty("hostPorts");
+      await handle.release();
+      expect(shadow.drain).not.toHaveBeenCalled();
+      expect(order).toEqual(["unlock"]);
+      expect(await storage.readLockHolder(ID)).toBeNull();
+    },
+  );
 });
 
 describe("resolveChatSessionsDir", () => {
