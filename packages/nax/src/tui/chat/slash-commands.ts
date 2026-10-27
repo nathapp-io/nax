@@ -108,6 +108,11 @@ function formatHelp(host: ChatHost): string {
   ].join("\n");
 }
 
+/** Keep the optional jobs capability's fallback separate from command dispatch. */
+function formatSessionJobs(host: ChatHost): string {
+  return host.jobs ? formatJobsListing(host.jobs.list()) : "jobs are not available in this session";
+}
+
 function catalogCommand(command: SlashCommand, { host, show }: CommandContext): SlashOutcome | undefined {
   const resource = host.catalog?.findCommand(command.name);
   if (resource) return { kind: "command", name: command.name, template: resource.template, rest: command.rest };
@@ -144,7 +149,7 @@ export async function runSlashCommand(
       show(formatAgentsListing(host.agents?.() ?? []));
       break;
     case "jobs":
-      show(host.jobs ? formatJobsListing(host.jobs.list()) : "jobs are not available in this session");
+      show(formatSessionJobs(host));
       break;
     case "mode":
       if (!arg) return { kind: "picker", picker: "mode" };
