@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { readdirSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import type { ChatJob } from "@/chat/jobs/job-types";
@@ -98,7 +98,7 @@ describe("writeJobRecord", () => {
     let renamed = false;
     store._jobStoreDeps.rename = (from, to) => {
       expect(from).not.toBe(to);
-      expect(Bun.file(from).size).toBeGreaterThan(0);
+      expect(statSync(from).size).toBeGreaterThan(0);
       expect(readdirSync(store.jobsDir(dir))).not.toContain(`${job().id}.json`);
       renamed = true;
       return rename(from, to);
