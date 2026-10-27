@@ -318,6 +318,16 @@ describe("US005 TranscriptViewport selection", () => {
       }
     },
   );
+  test("#2718 a drag over a blank row copies nothing", async () => {
+    const ui = selectionView();
+    await ui.update([EMPTY_LINE, [{ text: "hello world" }]]);
+    ui.event("press", 1, 1);
+    ui.event("drag", 5, 1);
+    ui.event("release", 5, 1);
+    expect(ui.copies).toEqual([]);
+    ui.drag();
+    expect(ui.copies).toEqual(["hello"]);
+  });
   test("drag outside retains focus and release copies the last inside range", () => {
     const ui = selectionView();
     ui.event("press", 1);

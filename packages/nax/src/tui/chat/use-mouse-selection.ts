@@ -16,13 +16,16 @@ interface MouseGesture {
   dragging: boolean;
 }
 
-/** A release ends the gesture once; a click has no range to copy. */
+/**
+ * A release ends the gesture once; a click has no range to copy, and a range over blank
+ * cells has no text, so neither overwrites the clipboard (#2718).
+ */
 function finishSelection(gesture: MouseGesture, input: MouseSelectionInput): void {
   gesture.dragging = false;
   const range = gesture.selection;
-  if (range && (range.anchor.line !== range.focus.line || range.anchor.column !== range.focus.column)) {
-    input.onCopy?.(selectedText(input.lines, range));
-  }
+  if (!range || (range.anchor.line === range.focus.line && range.anchor.column === range.focus.column)) return;
+  const text = selectedText(input.lines, range);
+  if (text.length > 0) input.onCopy?.(text);
 }
 
 /** Gesture state is synchronous so batched mouse reports never read a stale focus. */
