@@ -230,9 +230,9 @@ describe("TranscriptViewport mouse", () => {
     act(() => mouse.emit("wheelUp"));
     expect(rowsOf(ui.lastFrame())).toEqual(labels(40));
     expect(mouse.listeners.size).toBe(0);
-    await act(async () => ui.rerender(frame(true)));
+    await Promise.resolve(act(async () => ui.rerender(frame(true))));
     expect(mouse.listeners.size).toBe(1);
-    await act(async () => ui.rerender(frame(false)));
+    await Promise.resolve(act(async () => ui.rerender(frame(false))));
     act(() => mouse.emit("wheelUp"));
     expect(rowsOf(ui.lastFrame())).toEqual(labels(40));
     expect(mouse.listeners.size).toBe(0);
