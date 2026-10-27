@@ -38,6 +38,7 @@ export {
   nextChatMode,
 } from "./chat-mode";
 export { type ChatModelChoicesInput, chatModelChoices, tierModels } from "./chat-models";
+export { type ChatJob, type ChatJobs, formatJobsListing } from "./jobs";
 export {
   _openChatSessionDeps,
   type ChatSessionHandle,

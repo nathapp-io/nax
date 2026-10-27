@@ -42,6 +42,8 @@ export interface ChatCommandOptions {
 
 export const _chatCommandDeps = {
   collectAuthList,
+  naxEntry: (): readonly string[] | undefined =>
+    process.argv[1] === undefined ? undefined : [process.execPath, process.argv[1]],
   listCatalogModels,
   stdinIsTTY: (): boolean => process.stdin.isTTY === true,
   ensureTrusted: async (cwd: string): Promise<void> => {
@@ -248,10 +250,12 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
   const logger = getSafeLogger() ?? { warn: log, error: log, info: log, debug: log };
   const storage = deps.createChatStorage({ pid: process.pid, now: () => new Date(), logger });
   const chain = await interactionChain(config, deps);
+  const naxEntry = deps.naxEntry();
   let host: ChatHost;
   try {
     host = deps.createChatHost({
       models,
+      ...(naxEntry === undefined ? {} : { naxEntry }),
       config,
       cwd,
       repoRoot,

@@ -72,6 +72,18 @@ afterEach(() => {
 });
 
 describe("chatCommand resources and trust", () => {
+  test.each([{ entry: ["bun", "/n.ts"] }, { entry: undefined }])(
+    "US-013 AC-19/20 forwards only a defined naxEntry: %j",
+    async ({ entry }) => {
+      const { deps } = fixture();
+      Object.assign(deps, { naxEntry: () => entry });
+      await chatCommand({ dir: "/r" }, deps);
+      const input = deps.createChatHost.mock.calls[0]?.[0];
+      assertDefined(input, "host dependencies");
+      if (entry) expect(input).toHaveProperty("naxEntry", entry);
+      else expect(input).not.toHaveProperty("naxEntry");
+    },
+  );
   test.each([
     [
       "AC-1–4",

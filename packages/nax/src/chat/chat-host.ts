@@ -21,6 +21,7 @@ import { type ChatAgentRow, listAgentRows } from "./chat-agents-listing";
 import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import { type ChatMode, chatModeOfMeta } from "./chat-mode";
 import { tierModels } from "./chat-models";
+import { type ChatJobs, createHostJobs } from "./jobs";
 import { type ChatSessionHandle, openChatSession } from "./open-chat-session";
 import type { ChatResources } from "./resources";
 import { createSubagentRuns, type SubagentRuns } from "./subagent-runs";
@@ -62,6 +63,8 @@ export interface ChatHost {
   readonly mcp?: ChatResources["mcp"];
   readonly models: readonly string[];
   readonly asks: ChatAskController;
+  readonly jobs?: ChatJobs;
+  readonly confirmJobsBeforeClose?: () => Promise<void>;
   current(): ChatHostState;
   /** One row per catalog agent in catalog order, resolved against the chat session's current model. */
   agents?(): readonly ChatAgentRow[];
@@ -79,6 +82,7 @@ export interface ChatHost {
 }
 
 export interface ChatHostDeps {
+  readonly naxEntry?: readonly string[];
   readonly resources?: ChatResources;
   readonly models?: readonly string[];
   readonly config: NaxConfig;
@@ -106,6 +110,8 @@ class NativeChatHost implements ChatHost {
   readonly mcp?: ChatResources["mcp"];
   readonly models: readonly string[];
   readonly asks: ChatAskController;
+  readonly jobs?: ChatJobs;
+  readonly confirmJobsBeforeClose?: () => Promise<void>;
   private readonly fallback: AskFallback;
   private readonly loopHandlers: ReturnType<typeof createRuleDeliveryHandlers>;
   private readonly projectKey: string;
@@ -132,6 +138,29 @@ class NativeChatHost implements ChatHost {
     this.models = deps.models ?? tierModels(deps.config);
     this.projectKey = getProjectKey(deps.config, deps.repoRoot);
     this.outputDir = projectOutputDir(this.projectKey, deps.config.outputDir);
+    this.asks = createChatAskController({
+      mode: "guarded",
+      approvalTimeoutMs: deps.config.execution.approvalTimeout,
+      now: deps.now,
+      answer: (id, reply) => {
+        (this.runs?.sessionFor(id) ?? this.requireHandle().session).answer(id, reply);
+      },
+    });
+    const hostJobs =
+      deps.resources && deps.naxEntry
+        ? createHostJobs({
+            repoRoot: this.repoRoot,
+            outputDir: this.outputDir,
+            naxEntry: deps.naxEntry,
+            config: deps.config,
+            asks: this.asks,
+            now: deps.now,
+            logger: deps.logger,
+            sessionId: () => this.current().sessionId,
+          })
+        : undefined;
+    this.jobs = hostJobs?.jobs;
+    this.confirmJobsBeforeClose = hostJobs?.confirmClose;
     const rules = deps.config.context.rules;
     this.loopHandlers = Object.freeze([
       ...(deps.resources?.pluginHandlers ?? []),
@@ -140,13 +169,8 @@ class NativeChatHost implements ChatHost {
         overrideDir: rules?.overrideDir,
         overrideMode: rules?.overrideMode,
       }),
+      ...(hostJobs?.guard ?? []),
     ]);
-    this.asks = createChatAskController({
-      mode: "guarded",
-      answer: (id, reply) => {
-        (this.runs?.sessionFor(id) ?? this.requireHandle().session).answer(id, reply);
-      },
-    });
     const resources = deps.resources;
     if (resources) {
       this.runs = createSubagentRuns({
@@ -161,9 +185,10 @@ class NativeChatHost implements ChatHost {
         ledger: () => this.ledger,
         turnListener: () => this.turnListener,
       });
+      const providers = hostJobs ? [...resources.toolProviders, hostJobs.provider] : resources.toolProviders;
       this.toolProviders = resources.catalog.agents.length
-        ? [...resources.toolProviders, createAgentsProvider({ catalog: resources.catalog, run: this.runs.run })]
-        : resources.toolProviders;
+        ? [...providers, createAgentsProvider({ catalog: resources.catalog, run: this.runs.run })]
+        : providers;
     }
     this.fallback = createAskFallback({
       controller: this.asks,
@@ -260,6 +285,7 @@ class NativeChatHost implements ChatHost {
       ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
     });
     await this.replace(next);
+    await this.jobs?.attach();
     this.resumeNotice = undefined;
     await this.primeContextWindow(next.meta.model);
   }
@@ -359,6 +385,7 @@ class NativeChatHost implements ChatHost {
       }
       await this.replace(next);
     }
+    await this.jobs?.attach();
     const resumed = this.requireHandle();
     this.resumeNotice =
       resumed.session.lastTurn?.status === "interrupted"
@@ -512,6 +539,7 @@ class NativeChatHost implements ChatHost {
     // closed blocks new operations. Drain existing opens, replacements and rollback
     // reopens (including late-handle cleanup) before releasing the final handle.
     await Promise.all(this.sessionOperations);
+    this.jobs?.dispose();
     try {
       await this.runs?.closeAll();
     } finally {
