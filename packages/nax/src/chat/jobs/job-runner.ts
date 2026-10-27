@@ -90,6 +90,8 @@ class DetachedJobs implements ChatJobs {
   private readonly listeners = new Set<() => void>();
   private attachment?: Promise<void>;
   private pollTimer?: ReturnType<typeof setTimeout> | number;
+  private readonly graceTimers = new Map<string, ReturnType<typeof setTimeout> | number>();
+  private readonly mutations = new Map<string, Promise<void>>();
   private polling = false;
   private disposed = false;
 
@@ -156,7 +158,7 @@ class DetachedJobs implements ChatJobs {
     // Failure to save does not undo a launch or detach its exit observer.
     const saved: Promise<ChatJob> = this.persistRunning(job);
     void Promise.all([saved, child.exited])
-      .then(([, code]) => this.finalize(job, code))
+      .then(([, code]) => this.mutate(job.id, () => this.finalize(job, code)))
       .catch((cause) => this.warn(cause));
     const tracked = await saved;
     this.emit();
@@ -182,6 +184,7 @@ class DetachedJobs implements ChatJobs {
     await writeJobRecord(this.options.outputDir, terminal);
     this.records.set(job.id, terminal);
     this.ownedIds.delete(job.id);
+    this.clearGrace(job.id);
     this.syncPoll();
     this.notices.push(buildJobNotice(terminal));
     this.emit();
@@ -212,11 +215,78 @@ class DetachedJobs implements ChatJobs {
       this.listeners.delete(listener);
     };
   }
-  async cancel(id: string): Promise<ChatJob> {
-    throw new NaxError(`[chat] job ${id} is not running`, "CHAT_JOB_NOT_RUNNING", { stage: "chat" });
+  private async cancellationError(id: string): Promise<NaxError | null> {
+    const job = this.records.get(id);
+    if (job?.state !== "running") {
+      return new NaxError(`job ${id} is not running (state ${job?.state ?? "unknown"})`, "CHAT_JOB_NOT_RUNNING", {
+        stage: "chat",
+      });
+    }
+    if (this.ownedIds.has(id) || (await readRunProgress(job, this.options.repoRoot))) return null;
+    return new NaxError(
+      `job ${id} was started by another chat and its pid cannot be verified; stop it from that chat or by hand`,
+      "CHAT_JOB_UNVERIFIED",
+      { stage: "chat" },
+    );
+  }
+  /** Serialize intent and terminal writes so neither can resurrect or erase the other. */
+  private mutate<T>(id: string, action: () => Promise<T>): Promise<T> {
+    const next = (this.mutations.get(id) ?? Promise.resolve()).then(action);
+    const settled = next.then(
+      () => {},
+      () => {},
+    );
+    this.mutations.set(id, settled);
+    void settled.then(() => {
+      if (this.mutations.get(id) === settled) this.mutations.delete(id);
+    });
+    return next;
+  }
+  cancel(id: string): Promise<ChatJob> {
+    return this.mutate(id, () => this.requestCancel(id));
+  }
+  private async requestCancel(id: string): Promise<ChatJob> {
+    const error = await this.cancellationError(id);
+    if (error) throw new NaxError(`[chat] ${error.message}`, error.code, error.context);
+    const current = this.records.get(id);
+    if (!current) throw new NaxError(`[chat] unknown job ${id}`, "CHAT_JOB_NOT_RUNNING", { stage: "chat" });
+    const job: ChatJob = { ...current, cancelRequested: true };
+    await writeJobRecord(this.options.outputDir, job);
+    this.records.set(id, job);
+    this.signal(job.pid, "SIGINT");
+    this.armGrace(job);
+    this.emit();
+    return structuredClone(job);
   }
   async canCancel(id: string): Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }> {
-    throw new NaxError(`[chat] job ${id} is not running`, "CHAT_JOB_NOT_RUNNING", { stage: "chat" });
+    const error = await this.cancellationError(id);
+    return error ? { ok: false, message: error.message } : { ok: true };
+  }
+  private signal(pid: number, signal: NodeJS.Signals): void {
+    try {
+      _jobRunnerDeps.kill(pid, signal);
+    } catch {
+      // Exit may beat either signal; the exit observer or next poll owns finalization.
+    }
+  }
+  private clearGrace(id: string): void {
+    const timer = this.graceTimers.get(id);
+    if (timer !== undefined) _jobRunnerDeps.clearTimeout(timer);
+    this.graceTimers.delete(id);
+  }
+  private armGrace(job: ChatJob): void {
+    this.clearGrace(job.id);
+    if (this.disposed || this.records.get(job.id)?.state !== "running") return;
+    // Cancellable escalation: terminal transitions and dispose must prevent a late signal.
+    this.graceTimers.set(
+      job.id,
+      _jobRunnerDeps.setTimeout(() => {
+        this.graceTimers.delete(job.id);
+        if (this.records.get(job.id)?.state === "running" && _jobRunnerDeps.isProcessAlive(job.pid)) {
+          this.signal(job.pid, "SIGTERM");
+        }
+      }, CANCEL_GRACE_MS),
+    );
   }
   attach(): Promise<void> {
     this.attachment ??= this.loadRecords();
@@ -228,13 +298,14 @@ class DetachedJobs implements ChatJobs {
       if (job.cwd !== this.options.repoRoot || this.records.has(job.id)) continue;
       this.records.set(job.id, job);
       if (job.state === "running" && !_jobRunnerDeps.isProcessAlive(job.pid)) {
-        await this.finalizeAttached(job, false);
+        await this.mutate(job.id, () => this.finalizeAttached(job, false));
       }
     }
     this.syncPoll();
     this.emit();
   }
   private async finalizeAttached(job: ChatJob, notify: boolean): Promise<void> {
+    this.clearGrace(job.id);
     const disk = (await readJobRecords(this.options.outputDir)).find(
       (record) => record.id === job.id && record.cwd === this.options.repoRoot,
     );
@@ -273,7 +344,7 @@ class DetachedJobs implements ChatJobs {
       if (this.disposed) break;
       try {
         if (!this.ownedIds.has(job.id) && !_jobRunnerDeps.isProcessAlive(job.pid)) {
-          await this.finalizeAttached(job, true);
+          await this.mutate(job.id, () => this.finalizeAttached(this.records.get(job.id) ?? job, true));
         } else if (job.kind === "run") {
           await this.refreshProgress(job);
         }
@@ -312,6 +383,7 @@ class DetachedJobs implements ChatJobs {
   }
   dispose(): void {
     this.disposed = true;
+    for (const id of this.graceTimers.keys()) this.clearGrace(id);
     this.syncPoll();
   }
 }

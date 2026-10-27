@@ -221,7 +221,7 @@ describe("createJobRunner", () => {
     expect(jobs.get("missing")).toBeUndefined();
   });
 
-  test("cancel placeholders reject, missing log is empty, and dispose does not signal; unsubscribe removes listener", async () => {
+  test("missing log is empty and dispose does not signal; unsubscribe removes listener", async () => {
     const jobs = runner();
     const changed = mock(() => {});
     const off = jobs.onChange(changed);
@@ -229,9 +229,6 @@ describe("createJobRunner", () => {
     const job = await jobs.start(request);
     await jobs.attach();
     expect(await jobs.logTail(job.id)).toBe("");
-    for (const action of [() => jobs.cancel(job.id), () => jobs.canCancel(job.id)]) {
-      await expect(action()).rejects.toMatchObject({ code: "CHAT_JOB_NOT_RUNNING", context: { stage: "chat" } });
-    }
     jobs.dispose();
     expect(changed).not.toHaveBeenCalled();
     expect(clock.pending()).toBe(0);
