@@ -3,7 +3,7 @@
   "feature": "chat-workflow-dispatch",
   "branchName": "feat/chat-workflow-dispatch",
   "createdAt": "2026-10-27T00:00:00Z",
-  "updatedAt": "2026-10-27T15:44:40.543Z",
+  "updatedAt": "2026-10-27T15:53:48.618Z",
   "userStories": [
     {
       "id": "US-001",
@@ -832,14 +832,17 @@
         "US-011",
         "US-012"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Additive composition reuses existing host/provider seams rather than changing architecture; parent/subagent capability isolation and host session approvals still require strict security TDD."
+        "reasoning": "Additive composition reuses existing host/provider seams rather than changing architecture; parent/subagent capability isolation and host session approvals still require strict security TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/chat-host.ts",
@@ -862,7 +865,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1acb51279854773305448df52b7b3740e175152a"
     },
     {
       "id": "US-014",
