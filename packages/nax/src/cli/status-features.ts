@@ -13,6 +13,7 @@ import { findProjectDir, loadConfig } from "../config";
 import { featureDir as configFeatureDir, featuresDir as configFeaturesDir } from "../config/paths";
 import { NaxError } from "../errors";
 import type { NaxStatusFile } from "../execution/status-file";
+import { readStatusFile, readStatusFileAt } from "../execution/status-file-read";
 import { countStories, loadPRD } from "../prd";
 import { projectOutputDir } from "../runtime";
 import {
@@ -72,76 +73,12 @@ interface FeatureSummary {
  * status.json schema change.
  */
 
-/** Load status.json for a feature (if it exists) */
-async function loadStatusFile(featureDir: string): Promise<NaxStatusFile | null> {
-  const statusPath = join(featureDir, "status.json");
-  if (!existsSync(statusPath)) {
-    return null;
-  }
-
-  try {
-    const content = Bun.file(statusPath);
-    const raw = (await content.json()) as unknown;
-    // BUG-16: valid JSON is not enough — a schema-drifted file (older schema,
-    // truncated write) must degrade to "no status", not crash the display
-    // functions with a TypeError on `status.run.pid` / `status.cost.spent`.
-    return isUsableStatusFile(raw) ? raw : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Load project-level status.json (if it exists) */
+/** Load project-level status.json, keeping output resolution at the CLI boundary. */
 async function loadProjectStatusFile(projectDir: string): Promise<NaxStatusFile | null> {
   const config = await _statusFeaturesDeps.loadConfig(projectDir).catch(() => null);
   const projectKey = config?.name?.trim() || basename(projectDir);
   const outputDir = _statusFeaturesDeps.projectOutputDir(projectKey, config?.outputDir);
-  const statusPath = join(outputDir, "status.json");
-  if (!existsSync(statusPath)) {
-    return null;
-  }
-
-  try {
-    const content = Bun.file(statusPath);
-    const raw = (await content.json()) as unknown;
-    return isUsableStatusFile(raw) ? raw : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * BUG-16: minimal shape guard for a read status.json. Rejects files that
- * parsed as JSON but drifted from the schema (older format, torn write) —
- * the display functions below dereference `run.pid`, `cost.spent` and
- * `progress.passed` unconditionally, and `postRun.acceptance/regression`
- * when `postRun` is present.
- */
-function isUsableStatusFile(value: unknown): value is NaxStatusFile {
-  if (typeof value !== "object" || value === null) return false;
-  const v = value as Record<string, unknown>;
-  if (v.version !== 1) return false;
-
-  const run = v.run as Record<string, unknown> | undefined;
-  if (!run || typeof run.id !== "string" || typeof run.status !== "string" || typeof run.pid !== "number") {
-    return false;
-  }
-  const cost = v.cost as Record<string, unknown> | undefined;
-  if (!cost || typeof cost.spent !== "number") return false;
-  // BUG-16 (review): the cost-limit banner does `(cost.limit ?? 0).toFixed(4)`
-  // — a non-number `limit` crashes it just like a missing section would.
-  if (typeof cost.limit !== "number" && cost.limit !== null) return false;
-  const progress = v.progress as Record<string, unknown> | undefined;
-  if (!progress || typeof progress.passed !== "number" || typeof progress.total !== "number") return false;
-
-  const postRun = v.postRun as Record<string, unknown> | undefined;
-  if (postRun !== undefined) {
-    const acceptance = postRun.acceptance as Record<string, unknown> | undefined;
-    const regression = postRun.regression as Record<string, unknown> | undefined;
-    if (!acceptance || typeof acceptance.status !== "string") return false;
-    if (!regression || typeof regression.status !== "string") return false;
-  }
-  return true;
+  return readStatusFileAt(join(outputDir, "status.json"));
 }
 
 /** Get feature summary from prd.json and optional status.json */
@@ -176,7 +113,7 @@ async function getFeatureSummary(featureName: string, featureDir: string, runsDi
   // by extension the aggregate Promise.all in displayAllFeatures) when a
   // nested field like `cost` or `run` is missing.
   try {
-    const status = await loadStatusFile(featureDir);
+    const status = await readStatusFile(featureDir);
     if (status) {
       summary.cost = status.cost?.spent;
 
@@ -210,7 +147,7 @@ async function getFeatureSummary(featureName: string, featureDir: string, runsDi
     }
   } catch {
     // status.json is schema-drifted or otherwise unreadable in a way
-    // loadStatusFile's own try/catch didn't already absorb — leave the
+    // readStatusFile's own try/catch didn't already absorb — leave the
     // summary at its prd.json-derived defaults rather than crashing.
   }
 
@@ -363,7 +300,7 @@ async function displayFeatureDetails(featureName: string, featureDir: string): P
   const counts = countStories(prd);
 
   // Load status.json if available
-  const status = await loadStatusFile(featureDir);
+  const status = await readStatusFile(featureDir);
 
   console.log(chalk.bold(`\n📊 ${prd.feature}\n`));
 
