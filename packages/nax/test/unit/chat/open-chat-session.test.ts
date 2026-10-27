@@ -19,7 +19,7 @@ import {
   openChatSession,
   resolveChatSessionsDir,
 } from "@/chat/open-chat-session";
-import { globalConfigDir, type TuiPermissions } from "@/config";
+import { DEFAULT_CONFIG, globalConfigDir, type TuiPermissions } from "@/config";
 import { NaxError } from "@/errors";
 
 const ID = "injected-session-id";
@@ -446,8 +446,9 @@ describe("openChatSession command shadow", () => {
   test.each([undefined, { guard: { threshold: 0.5 } }])(
     "shadow AC-3/11/12 no shadow config %j omits hostPorts and only unlocks",
     async (commandSafety) => {
-      const config = makeNaxConfig();
-      config.execution.commandSafety = commandSafety;
+      const defaultCommandSafety = structuredClone(DEFAULT_CONFIG.execution.commandSafety);
+      const config = makeNaxConfig({ execution: { commandSafety } });
+      expect(DEFAULT_CONFIG.execution.commandSafety).toEqual(defaultCommandSafety);
       const build = spyOn(deps, "buildCommandShadow").mockImplementation(buildCommandShadow);
       const native = spyOn(deps, "nativeBackend");
       const handle = await open({ config });
