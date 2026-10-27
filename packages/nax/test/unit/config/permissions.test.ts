@@ -497,7 +497,7 @@ describe("resolveTuiPermissions", () => {
   test.each(["constructor", "toString", "__proto__"])(
     "unconfigured inherited name %s cannot hide the default deny list",
     (inherit) => {
-      const config = makeConfig({
+      const config = cfg({
         permissions: { tui: { inherit }, run: { inherit }, default: { deny: ["Delete(src/**)"] } },
       });
       expect(configExports.resolveTuiPermissions(config).denyRules).toEqual(["Delete(src/**)"]);
@@ -506,7 +506,7 @@ describe("resolveTuiPermissions", () => {
   );
 
   test("an explicitly configured constructor block remains a valid inherit target", () => {
-    const config = makeConfig({
+    const config = cfg({
       permissions: { tui: { inherit: "constructor" }, constructor: { deny: ["Delete(src/**)"] } },
     });
     expect(configExports.resolveTuiPermissions(config).denyRules).toEqual(["Delete(src/**)"]);

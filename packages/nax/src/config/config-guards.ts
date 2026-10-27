@@ -452,6 +452,51 @@ function validateMcpExpression(stage: string, expression: string): void {
   }
 }
 
+type PermissionBlocks = Record<
+  string,
+  { allowedTools?: unknown; allow?: unknown; deny?: unknown; ask?: unknown; inherit?: unknown } | undefined
+>;
+
+/** Validate block references without treating Object prototype members as blocks. */
+function validatePermissionInheritance(blocks: PermissionBlocks, stage: string, inherit: unknown): void {
+  if (typeof inherit === "string" && (!Object.hasOwn(blocks, inherit) || blocks[inherit] === undefined)) {
+    throw new NaxError(
+      `Invalid configuration — execution.permissions.${stage}.inherit names "${inherit}", which is not a permission block.`,
+      "CONFIG_PERMISSIONS_BAD_INHERIT",
+      { stage: "config" },
+    );
+  }
+
+  // A cycle is not a security hole -- resolveScopedPermissions walks with its
+  // own seen-set and falls through to `default`, so a cycle yields FEWER
+  // grants, never more. It is refused because of how it fails: the stage
+  // silently receives the default block's grants instead of the ones its
+  // author wrote, and the symptom is a mid-run permission denial with
+  // nothing pointing back at the config.
+  //
+  // The seen-set is per-walk, not shared across stages: two stages inheriting
+  // the same target is convergence, not a cycle.
+  const seen = new Set<string>([stage]);
+  const path = [stage];
+  let cursor = inherit;
+  while (typeof cursor === "string") {
+    path.push(cursor);
+    if (seen.has(cursor)) {
+      throw new NaxError(
+        [
+          `Invalid configuration — execution.permissions has an inherit cycle: ${path.join(" -> ")}.`,
+          "A cycle resolves to the default block rather than the grants written here,",
+          "so the stage would be denied something the config appears to permit.",
+        ].join("\n"),
+        "CONFIG_PERMISSIONS_INHERIT_CYCLE",
+        { stage: "config" },
+      );
+    }
+    seen.add(cursor);
+    cursor = Object.hasOwn(blocks, cursor) ? blocks[cursor]?.inherit : undefined;
+  }
+}
+
 /**
  * @internal Validate `execution.permissions` at load time.
  *
@@ -463,12 +508,7 @@ function validateMcpExpression(stage: string, expression: string): void {
  */
 export function validatePermissionsBlock(conf: Record<string, unknown>): void {
   const execution = conf.execution as Record<string, unknown> | undefined;
-  const blocks = execution?.permissions as
-    | Record<
-        string,
-        { allowedTools?: unknown; allow?: unknown; deny?: unknown; ask?: unknown; inherit?: unknown } | undefined
-      >
-    | undefined;
+  const blocks = execution?.permissions as PermissionBlocks | undefined;
   if (!blocks) return;
 
   // `Mcp` is a PSEUDO-tool: it is expanded to concrete `<server>__<tool>`
@@ -476,46 +516,7 @@ export function validatePermissionsBlock(conf: Record<string, unknown>): void {
   // in a rule list even though no tool by that name is ever registered.
   const known = new Set<string>([...RESERVED_TOOL_NAMES, MCP_RULE_TOOL]);
   for (const [stage, block] of Object.entries(blocks)) {
-    if (
-      block?.inherit !== undefined &&
-      typeof block.inherit === "string" &&
-      (!Object.hasOwn(blocks, block.inherit) || blocks[block.inherit] === undefined)
-    ) {
-      throw new NaxError(
-        `Invalid configuration — execution.permissions.${stage}.inherit names "${block.inherit}", which is not a permission block.`,
-        "CONFIG_PERMISSIONS_BAD_INHERIT",
-        { stage: "config" },
-      );
-    }
-
-    // A cycle is not a security hole -- resolveScopedPermissions walks with its
-    // own seen-set and falls through to `default`, so a cycle yields FEWER
-    // grants, never more. It is refused because of how it fails: the stage
-    // silently receives the default block's grants instead of the ones its
-    // author wrote, and the symptom is a mid-run permission denial with
-    // nothing pointing back at the config.
-    //
-    // The seen-set is per-walk, not shared across stages: two stages inheriting
-    // the same target is convergence, not a cycle.
-    const seen = new Set<string>([stage]);
-    const path = [stage];
-    let cursor = block?.inherit;
-    while (typeof cursor === "string") {
-      path.push(cursor);
-      if (seen.has(cursor)) {
-        throw new NaxError(
-          [
-            `Invalid configuration — execution.permissions has an inherit cycle: ${path.join(" -> ")}.`,
-            "A cycle resolves to the default block rather than the grants written here,",
-            "so the stage would be denied something the config appears to permit.",
-          ].join("\n"),
-          "CONFIG_PERMISSIONS_INHERIT_CYCLE",
-          { stage: "config" },
-        );
-      }
-      seen.add(cursor);
-      cursor = Object.hasOwn(blocks, cursor) ? blocks[cursor]?.inherit : undefined;
-    }
+    validatePermissionInheritance(blocks, stage, block?.inherit);
 
     if (block?.allowedTools !== undefined && block?.allow !== undefined) {
       throw new NaxError(
