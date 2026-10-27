@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import * as prompts from "@/prompts";
+import * as workflow from "@/prompts/builders/workflow-builder";
 import { buildWorkflowInstructions } from "@/prompts/builders/workflow-builder";
 
 /** The four billed nax commands the instruction section must gate behind approval. */
@@ -110,5 +111,99 @@ describe("buildWorkflowInstructions", () => {
 
   test("returns the same fixed text on every call", () => {
     expect(buildWorkflowInstructions()).toBe(buildWorkflowInstructions());
+  });
+});
+
+const JOB = { id: "run-1a2b3c4d", kind: "run", target: "f1", state: "succeeded", logPath: "/o/l.log" };
+
+describe("buildJobNotice", () => {
+  test("US-004 AC-1 formats cost to two decimals", () => {
+    expect(lines(workflow.buildJobNotice({ ...JOB, cost: 1.234 }))[0]).toBe(
+      "[nax-jobs] job run-1a2b3c4d (run f1) ended: succeeded cost $1.23 log /o/l.log",
+    );
+  });
+
+  test("US-004 AC-2 includes an exit note without cost", () => {
+    const first = lines(workflow.buildJobNotice({ ...JOB, note: "exit code 2" }))[0];
+    expect(first).toContain(" (exit code 2) log ");
+    expect(first).not.toContain("cost");
+  });
+
+  test("US-004 AC-3 gives state, outcome and single next-step instructions on the second line", () => {
+    const noticeLines = lines(workflow.buildJobNotice(JOB));
+    expect(noticeLines).toHaveLength(2);
+    expect(noticeLines[1]).toContain("nax-workflow__state");
+    expect(noticeLines[1]).toContain("report the outcome to the user");
+    expect(noticeLines[1]).toContain("propose the single next step");
+  });
+
+  test("US-004 AC-10 preserves failure note without fabricating cost", () => {
+    expect(lines(workflow.buildJobNotice({ ...JOB, state: "failed", note: "no run record for pid 4242" }))[0]).toBe(
+      "[nax-jobs] job run-1a2b3c4d (run f1) ended: failed (no run record for pid 4242) log /o/l.log",
+    );
+  });
+
+  test("includes zero cost and places cost before note", () => {
+    expect(lines(workflow.buildJobNotice({ ...JOB, cost: 0, note: "done" }))[0]).toBe(
+      "[nax-jobs] job run-1a2b3c4d (run f1) ended: succeeded cost $0.00 (done) log /o/l.log",
+    );
+  });
+
+  test("US-004 AC-9 barrel notice matches the builder", () => {
+    expect(prompts.buildJobNotice(JOB)).toBe(workflow.buildJobNotice(JOB));
+  });
+});
+
+describe("buildJobsInstructions", () => {
+  test.each(["nax-jobs__plan", "nax-jobs__run", "nax-jobs__bot_review", "nax-jobs__bot_fix"])(
+    "US-004 AC-4 names billed tool %s",
+    (tool) => {
+      expect(workflow.buildJobsInstructions()).toContain(tool);
+    },
+  );
+
+  test("US-004 AC-5 requires an approval card for each billed call", () => {
+    expect(workflow.buildJobsInstructions()).toContain("each is billed and shows the user an approval card");
+  });
+
+  test("US-004 AC-6 explains background completion notices", () => {
+    expect(workflow.buildJobsInstructions()).toContain(
+      "Jobs run in the background; a [nax-jobs] notice arrives when one ends.",
+    );
+  });
+
+  test("US-004 AC-7 explains checkout write refusal during run or plan", () => {
+    expect(workflow.buildJobsInstructions()).toContain(
+      "Write, Edit, Delete and GitCommit are refused in this checkout while a run or plan job runs.",
+    );
+  });
+
+  test("US-004 AC-8 makes denial final and forbids argument-changing retries", () => {
+    expect(workflow.buildJobsInstructions().toLowerCase()).toContain(
+      "a denial is final for that call; do not retry with changed arguments to get round it.",
+    );
+  });
+
+  test("requires one step at a time and reporting before proposing the next", () => {
+    expect(workflow.buildJobsInstructions()).toContain(
+      "Start one step at a time: after a job ends, report the outcome to the user and propose the single next step.",
+    );
+  });
+
+  test("US-004 AC-9 barrel instructions match the builder", () => {
+    expect(prompts.buildJobsInstructions()).toBe(workflow.buildJobsInstructions());
+  });
+});
+
+describe("workflow text preservation", () => {
+  test("US-004 AC-11 retains the exact four original lines", () => {
+    expect(buildWorkflowInstructions()).toBe(
+      [
+        "Call `nax-workflow__state` before proposing any workflow step, and call it again after any workflow step ends, so what you propose matches the feature's real state.",
+        "The nax loop runs in this order: brainstorm → spec-writing → spec-review (at most two fix rounds) → `nax plan` → PRD fidelity check (spec-review `--prd`) → commit the spec and PRD → `nax run` → `nax bot review` / `nax bot fix` → the user merges → the user releases.",
+        "`nax plan`, `nax run`, `nax bot review` and `nax bot fix` are billed: never start one without the user's explicit approval of that launch.",
+        "nax never merges a PR and never releases; the user merges the PR and the user releases.",
+      ].join("\n"),
+    );
   });
 });
