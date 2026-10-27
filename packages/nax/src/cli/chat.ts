@@ -13,14 +13,16 @@ import {
   createChatHost,
   createChatMcp,
   createChatStorage,
+  createWorkflowProvider,
   tierModels,
 } from "@/chat";
-import { findProjectDir, globalConfigDir, loadConfig, type NaxConfig } from "@/config";
+import { findProjectDir, getProjectKey, globalConfigDir, loadConfig, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { type InteractionChain, initInteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
 import { loadPlugins, PluginRegistry } from "@/plugins";
 import { createSkillsProvider, loadResourceCatalog, naxPluginPackages } from "@/resources";
+import { projectOutputDir } from "@/runtime";
 import { ensureProjectTrusted, normalizeTrustPath, resolveTrustRoot } from "@/trust";
 import { type ChatAppProps, formatChatExitSummary, renderChat, resolveChatTheme } from "@/tui/chat";
 import { NAX_VERSION } from "@/version";
@@ -191,10 +193,15 @@ async function chatResources(repoRoot: string, config: NaxConfig, deps: ChatComm
       env: deps.env,
       naxPluginPackages: await naxPluginPackages(registry.getResourceDirs()),
     });
+    const outputDir = projectOutputDir(getProjectKey(config, repoRoot), config.outputDir);
     const mcp = await deps.createChatMcp({ config, catalog, repoRoot, env: deps.env });
     return {
       catalog,
-      toolProviders: [createSkillsProvider(async () => catalog), ...mcp.providers],
+      toolProviders: [
+        createSkillsProvider(async () => catalog),
+        createWorkflowProvider({ repoRoot, outputDir, maxIterations: config.execution.maxIterations }),
+        ...mcp.providers,
+      ],
       pluginHandlers: registry.getLoopHandlers(),
       naxPlugins: registry.plugins.map(({ name, provides }) => ({ name, provides })),
       mcp: mcp.state,

@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { join, resolve } from "node:path";
-import { assertDefined, makeLogger, makeNaxConfig, withTempDir } from "@test/helpers";
+import { assertDefined, makeLogger, makeNaxConfig, makePRD, makeStory, withTempDir } from "@test/helpers";
 import { _chatMcpDeps, type ChatMcp, createChatHost, createChatMcp, createChatStorage } from "@/chat";
 import { _chatCommandDeps, chatCommand } from "@/cli/chat";
-import { globalConfigDir } from "@/config";
+import { featureDir, globalConfigDir } from "@/config";
 import { NaxError } from "@/errors";
 import type { McpPool } from "@/mcp";
 import { PluginRegistry } from "@/plugins";
@@ -141,6 +141,84 @@ describe("chatCommand resources and trust", () => {
   });
 });
 
+async function workflowFixture(dir: string) {
+  const { deps } = fixture();
+  deps.findProjectDir = () => join(dir, ".nax");
+  deps.loadConfig.mockResolvedValue(
+    makeNaxConfig({
+      name: "proj-x",
+      models: { native: { balanced: "test/model" } },
+      execution: { maxIterations: 2 },
+    }),
+  );
+  await Bun.write(
+    join(featureDir(dir, "f1"), "prd.json"),
+    JSON.stringify(
+      makePRD({
+        userStories: Array.from({ length: 3 }, (_, i) => makeStory({ id: `US-${i + 1}`, status: "pending" })),
+      }),
+    ),
+  );
+  await chatCommand({ dir }, deps);
+  expect(deps.setExitCode).not.toHaveBeenCalled();
+  const provider = deps.createChatHost.mock.calls[0]?.[0].resources?.toolProviders.find((p) => p.id === "nax-workflow");
+  assertDefined(provider, "workflow provider handed to createChatHost");
+  return provider;
+}
+
+async function workflowState(dir: string) {
+  const provider = await workflowFixture(dir);
+  const tool = (await provider.tools(dir)).find((t) => t.localName === "state");
+  assertDefined(tool, "state tool");
+  const result = await tool.run(
+    { feature: "f1" },
+    {
+      root: dir,
+      resolvedPaths: [],
+      maxBytes: 300_000,
+      maxFileBytes: 300_000,
+    },
+  );
+  expect(result.isError).not.toBe(true);
+  return JSON.parse(result.content);
+}
+
+describe("chatCommand workflow composition", () => {
+  test("US-006 AC-2 reads the fixture PRD through the actual state tool", async () => {
+    await withTempDir(async (dir) => {
+      expect((await workflowState(dir)).prd.total).toBe(3);
+    });
+  });
+  test("US-006 AC-3 threads loaded execution.maxIterations", async () => {
+    await withTempDir(async (dir) => {
+      expect((await workflowState(dir)).warnings).toEqual(
+        expect.arrayContaining([expect.stringContaining("execution.maxIterations is 2")]),
+      );
+    });
+  });
+  test("US-006 AC-4 provides nonempty workflow instructions", async () => {
+    await withTempDir(async (dir) => {
+      const provider = await workflowFixture(dir);
+      const instructions = await provider.instructions?.(dir);
+      expect(instructions).toBeString();
+      expect(instructions).toContain("nax-workflow__state");
+    });
+  });
+  test("US-006 AC-5 resolves the configured project key under isolated global storage", async () => {
+    await withTempDir(async (dir) => {
+      const original = process.env.NAX_GLOBAL_CONFIG_DIR;
+      process.env.NAX_GLOBAL_CONFIG_DIR = join(dir, "global");
+      try {
+        await Bun.write(join(dir, "global/proj-x/features/f1/runs/2026-10-03T00-00-00.jsonl"), "{}\n");
+        expect((await workflowState(dir)).lastRunLog).toBe("2026-10-03T00-00-00");
+      } finally {
+        if (original === undefined) delete process.env.NAX_GLOBAL_CONFIG_DIR;
+        else process.env.NAX_GLOBAL_CONFIG_DIR = original;
+      }
+    });
+  });
+});
+
 function dockerProvider(id: string): ChatMcp["providers"][number] {
   return { id, kind: "discovered", stages: ["*"], tools: async () => [] };
 }
@@ -152,7 +230,7 @@ describe("chatCommand MCP composition", () => {
     deps.createChatMcp.mockResolvedValue(mcp);
     await chatCommand({}, deps);
     const resources = deps.createChatHost.mock.calls[0]?.[0].resources;
-    expect(resources?.toolProviders.map((p) => p.id)).toEqual(["nax-skills", "docs"]);
+    expect(resources?.toolProviders.map((p) => p.id)).toEqual(["nax-skills", "nax-workflow", "docs"]);
     expect(resources?.mcp).toBe(mcp.state);
     expect(deps.createChatMcp.mock.calls[0]?.[0]).toMatchObject({ repoRoot: "/r", env: deps.env });
   });
