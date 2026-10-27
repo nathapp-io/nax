@@ -170,7 +170,6 @@ describe("renderChat alternate screen", () => {
     const view = renderChat({ host: chatHost() });
     expect(screen.renderMock.mock.calls[0]?.[1]).toEqual({
       exitOnCtrlC: false,
-      incrementalRendering: true,
       stdin: screen.mouse.stdin,
     });
     view.unmount();
@@ -209,7 +208,6 @@ describe("renderChat mouse seams", () => {
     const view = renderChat({ host: chatHost() });
     expect(screen.renderMock.mock.calls[0]?.[1]).toEqual({
       exitOnCtrlC: false,
-      incrementalRendering: true,
       stdin: screen.mouse.stdin,
     });
     view.unmount();
