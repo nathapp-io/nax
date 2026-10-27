@@ -5,6 +5,7 @@ import { act } from "react";
 import { type ChatHost, type ChatHostState, type ChatMcpState, createChatAskController } from "@/chat";
 import { buildResourceCatalog, type ResourcePackage } from "@/resources";
 import { ChatApp, type ChatTheme, resolveChatTheme } from "@/tui/chat";
+import { _clipboardDeps, osc52 } from "@/tui/chat/clipboard";
 import type { MouseEvents } from "@/tui/chat/mouse-input";
 import { fakeMouse } from "./mouse";
 
@@ -670,4 +671,64 @@ test("US003 AC-15 ChatApp forwards wheel events to its transcript viewport", asy
   act(() => mouse.emit("wheelUp"));
   expect(ui.rows().slice(3, -4)).not.toEqual(before);
   expect(ui.rows()).toContain(older);
+});
+
+describe("US005 ChatApp clipboard", () => {
+  const original = { ..._clipboardDeps };
+  afterEach(() => Object.assign(_clipboardDeps, original));
+  async function copyScreen() {
+    const mouse = fakeMouse();
+    const writes = mock((_text: string) => {});
+    _clipboardDeps.write = writes;
+    _clipboardDeps.platform = "linux";
+    const ui = mount({ mouse: mouse.events });
+    // One viewport row directly below the three header rows.
+    await ui.resize(80, 8);
+    await ui.start();
+    expect(ui.rows()[3]).toBe("> hello");
+    const event = (kind: "press" | "drag" | "release", x: number) =>
+      act(() => mouse.emit(kind, { button: "left", x, y: 4 }));
+    const drag = async () => {
+      event("press", 3);
+      event("drag", 7);
+      await Promise.resolve(
+        act(async () => {
+          event("release", 7);
+        }),
+      );
+    };
+    return { ui, writes, event, drag };
+  }
+  test("AC-4 click makes no copy or footer hint", async () => {
+    const { ui, writes, event } = await copyScreen();
+    expect(ui.rows().at(-1)).not.toContain("copied");
+    event("press", 3);
+    event("release", 3);
+    expect(writes).not.toHaveBeenCalled();
+    expect(ui.rows().at(-1)).not.toContain("copied");
+  });
+  test.each(["key", "press"])("AC-10/11/12/13 copies absolute cells and clears hint on %s", async (next) => {
+    const { ui, writes, event, drag } = await copyScreen();
+    await drag();
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(writes).toHaveBeenCalledWith(osc52("hello"));
+    expect(ui.rows().at(-1)).toContain("copied 5 chars");
+    if (next === "key") ui.type("a");
+    else event("press", 3);
+    expect(ui.rows().at(-1)).not.toContain("copied");
+  });
+  test.each(["reject", "non-zero"])("AC-14 copied hint survives darwin spawnCopy %s", async (failure) => {
+    const { ui, writes, drag } = await copyScreen();
+    _clipboardDeps.platform = "darwin";
+    _clipboardDeps.spawnCopy = mock(async () => {
+      if (failure === "reject") throw new Error("pbcopy unavailable");
+      return 1;
+    });
+    await drag();
+    expect(_clipboardDeps.spawnCopy).toHaveBeenCalledTimes(1);
+    expect(_clipboardDeps.spawnCopy).toHaveBeenCalledWith("hello");
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(writes).toHaveBeenCalledWith(osc52("hello"));
+    expect(ui.rows().at(-1)).toContain("copied 5 chars");
+  });
 });

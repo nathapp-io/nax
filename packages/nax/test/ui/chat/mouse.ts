@@ -14,8 +14,8 @@ export function fakeMouse() {
   return {
     events,
     listeners,
-    emit(kind: MouseEvent["kind"]) {
-      for (const listener of listeners) listener({ kind, button: "none", x: 1, y: 1 });
+    emit(kind: MouseEvent["kind"], point: Partial<Omit<MouseEvent, "kind">> = {}) {
+      for (const listener of listeners) listener({ kind, button: "none", x: 1, y: 1, ...point });
     },
   };
 }

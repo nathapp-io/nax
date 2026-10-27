@@ -17,8 +17,10 @@
 import { Box, type Key, Text, useInput } from "ink";
 import { type ReactElement, type ReactNode, useEffect, useState } from "react";
 import type { MouseEvents } from "./mouse-input";
+import { highlightLine } from "./selection";
 import { type StyledLine, StyledLineView } from "./styled-line";
 import type { ChatTheme } from "./theme";
+import { useMouseSelection } from "./use-mouse-selection";
 import { INITIAL_VIEWPORT, reduceViewport, type ViewportAction, type ViewportState, visibleRange } from "./viewport";
 
 /** The shortest window the view will draw; ChatApp guarantees at least this many rows. */
@@ -41,6 +43,8 @@ export interface TranscriptViewportProps {
   /** False while another surface — an ask card, a picker, the slash menu — owns the keys. */
   readonly active?: boolean;
   readonly mouse?: MouseEvents;
+  readonly top?: number;
+  readonly onCopy?: (text: string) => void;
   /**
    * Bumped by the owner when the window must return to the newest line — the user sent a
    * message. The view cannot see the send itself, and a send while scrolled up would
@@ -157,6 +161,8 @@ export function TranscriptViewport({
   theme,
   active = true,
   mouse,
+  top = 0,
+  onCopy,
   followToken = 0,
 }: TranscriptViewportProps): ReactElement {
   const rows = viewRows(height);
@@ -196,6 +202,16 @@ export function TranscriptViewport({
     },
     { isActive: active },
   );
+  const selection = useMouseSelection({
+    mouse,
+    active,
+    lines,
+    onCopy,
+    geometry: { top, height: rows, total, offset: memory.state.offset, unseen: memory.state.unseen },
+  });
   const { start, end } = visibleRange(total, rows, memory.state.offset);
-  return <ViewportRows visible={lines.slice(start, end)} rows={rows} unseen={memory.state.unseen} theme={theme} />;
+  const visible = lines
+    .slice(start, end)
+    .map((line, index) => (selection ? highlightLine(line, start + index, selection) : line));
+  return <ViewportRows visible={visible} rows={rows} unseen={memory.state.unseen} theme={theme} />;
 }

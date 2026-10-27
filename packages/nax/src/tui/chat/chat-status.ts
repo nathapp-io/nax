@@ -143,9 +143,10 @@ export function shortModel(model: string): string {
 }
 
 /** The gesture the footer offers, in precedence order; only one is ever shown. */
-export type FooterHint = "quit" | "clear" | "busy" | "expanded" | "idle";
+export type FooterHint = "quit" | "clear" | "busy" | "expanded" | "idle" | "copied";
 
 const HINT_TEXT: Readonly<Record<FooterHint, string>> = {
+  copied: "copied",
   quit: "press ctrl-c again to quit",
   clear: "esc again to clear",
   busy: "esc to interrupt",
@@ -195,8 +196,11 @@ function modeSpan(state: ChatHostState, glyphs: ChatGlyphs): Span {
   };
 }
 
-function hintSpan(hint: FooterHint): Span {
-  return { text: HINT_TEXT[hint], color: hint === "quit" ? "warning" : "muted" };
+function hintSpan(hint: FooterHint, copiedChars = 0): Span {
+  return {
+    text: hint === "copied" ? `copied ${copiedChars} chars` : HINT_TEXT[hint],
+    color: hint === "quit" ? "warning" : "muted",
+  };
 }
 
 /** A sandbox nobody can rely on is a warning; one that is off is only a muted fact. */
@@ -208,10 +212,16 @@ function sandboxSpan(sandbox: ChatHostState["sandbox"]): Span | undefined {
   return { text: `${SEPARATOR}${SANDBOX_OFF}`, color: "muted" };
 }
 
-function leftLine(state: ChatHostState, hint: FooterHint, glyphs: ChatGlyphs): StyledLine {
+function leftLine(input: {
+  state: ChatHostState;
+  hint: FooterHint;
+  glyphs: ChatGlyphs;
+  copiedChars?: number;
+}): StyledLine {
+  const { state, hint, glyphs, copiedChars } = input;
   if (hint === "quit") return [hintSpan(hint)];
   const sandbox = sandboxSpan(state.sandbox);
-  const spans: Span[] = [modeSpan(state, glyphs), { text: SEPARATOR, color: "muted" }, hintSpan(hint)];
+  const spans: Span[] = [modeSpan(state, glyphs), { text: SEPARATOR, color: "muted" }, hintSpan(hint, copiedChars)];
   return sandbox === undefined ? spans : [...spans, sandbox];
 }
 
@@ -255,13 +265,14 @@ export function footerModel(input: {
   state: ChatHostState;
   status: TurnStatus;
   hint: FooterHint;
+  copiedChars?: number;
   glyphs?: ChatGlyphs;
 }): {
   left: StyledLine;
   right: StyledLine;
 } {
   return {
-    left: leftLine(input.state, input.hint, input.glyphs ?? GLYPHS),
+    left: leftLine({ ...input, glyphs: input.glyphs ?? GLYPHS }),
     right: rightLine(input.state, input.status),
   };
 }

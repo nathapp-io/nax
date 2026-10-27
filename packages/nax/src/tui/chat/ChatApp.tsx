@@ -62,7 +62,6 @@ import { askCardModel } from "./ask-card";
 import { bottomBlocked, bottomRowsFor, menuRowsFor, viewportActive } from "./bottom-region";
 import { ChatInput, type ChatInputHandle, EMPTY_DRAFT, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
 import {
-  type FooterHint,
   footerModel,
   headerLines,
   IDLE_STATUS,
@@ -81,6 +80,7 @@ import { StyledLineView } from "./styled-line";
 import { TranscriptViewport } from "./TranscriptViewport";
 import { type ChatTheme, resolveChatTheme } from "./theme";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
+import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
 import { useSlashMenuKeys } from "./use-slash-menu-keys";
 import { useChatKeys } from "./useChatKeys";
 
@@ -187,19 +187,6 @@ function welcomeEntry(host: ChatHost): TranscriptEntry {
 }
 
 /**
- * The gesture the footer offers, in precedence order: an armed quit, then an armed clear,
- * then a running turn, then expanded detail, then the idle hint. Only one is ever shown, so
- * the warning-coloured quit hint is never hidden behind something the screen is merely doing.
- */
-function footerHint(input: { quitArmed: boolean; clearArmed: boolean; busy: boolean; expanded: boolean }): FooterHint {
-  if (input.quitArmed) return "quit";
-  if (input.clearArmed) return "clear";
-  if (input.busy) return "busy";
-  if (input.expanded) return "expanded";
-  return "idle";
-}
-
-/**
  * The status of a turn whose stream has settled. A `turn_end` already stopped it; a stream
  * that ended without one (a rejection, or a runner that threw) leaves the status running, and
  * carrying it forward would keep the working line and the busy footer alive for a turn that
@@ -244,6 +231,7 @@ export function ChatApp({
   home = "",
 }: ChatAppProps): ReactElement {
   const { stdout } = useStdout();
+  const { copiedChars, onCopy } = useClipboardFeedback(mouse);
   const [size, setSize] = useState<TerminalSize>(() => terminalSize(stdout));
   const [entries, setEntries] = useState<readonly TranscriptEntry[]>(() => [welcomeEntry(host)]);
   const [status, setStatus] = useState<TurnStatus>(IDLE_STATUS);
@@ -521,7 +509,11 @@ export function ChatApp({
   const footer = footerModel({
     state,
     status,
-    hint: footerHint({ quitArmed: keys.quitArmed(), clearArmed, busy: turnRunning, expanded }),
+    hint:
+      copiedChars === undefined
+        ? footerHint({ quitArmed: keys.quitArmed(), clearArmed, busy: turnRunning, expanded })
+        : "copied",
+    copiedChars,
     glyphs: theme.glyphs,
   });
   // The bottom budget and the menu's share of it are measured above the key handlers, beside
@@ -572,6 +564,8 @@ export function ChatApp({
       </Box>
       <TranscriptViewport
         mouse={mouse}
+        top={HEADER_ROWS}
+        onCopy={onCopy}
         lines={lines}
         height={viewportHeight}
         theme={theme}
