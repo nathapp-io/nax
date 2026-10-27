@@ -104,6 +104,7 @@ export interface PickerNote {
 /** What one picker shows: the title it carries and the rows it offers. */
 export interface PickerModel {
   readonly kind: PickerKind;
+  readonly query?: string;
   readonly title: string;
   readonly entries: readonly PickerEntry[];
   readonly note?: PickerNote;
@@ -111,6 +112,7 @@ export interface PickerModel {
 
 export interface PickerModelInput {
   readonly kind: PickerKind;
+  readonly query?: string;
   /** The host's models, in catalogue order — the model picker's rows. */
   readonly models: readonly string[];
   /** The model the session is on, marked `(current)`. */
@@ -131,11 +133,14 @@ function displayText(text: string): string {
 
 /** The model rows: one per catalogue entry, the session's own marked. */
 function modelEntries(input: PickerModelInput): readonly PickerEntry[] {
-  return input.models.map((model) => ({
-    value: model,
-    label: displayText(model),
-    current: model === input.currentModel,
-  }));
+  const query = (input.query ?? "").toLowerCase();
+  return input.models
+    .filter((model) => model.toLowerCase().includes(query))
+    .map((model) => ({
+      value: model,
+      label: displayText(model),
+      current: model === input.currentModel,
+    }));
 }
 
 /** The mode rows: what each mode does, the session's own marked. */
@@ -174,7 +179,16 @@ function resumeNote(input: PickerModelInput): PickerNote | undefined {
 /** The rows one kind of picker offers. */
 export function pickerModel(input: PickerModelInput): PickerModel {
   if (input.kind === "mode") return { kind: "mode", title: TITLES.mode, entries: modeEntries(input) };
-  if (input.kind === "model") return { kind: "model", title: TITLES.model, entries: modelEntries(input) };
+  if (input.kind === "model") {
+    const entries = modelEntries(input);
+    return {
+      kind: "model",
+      title: TITLES.model,
+      entries,
+      query: input.query ?? "",
+      ...(entries.length === 0 ? { note: { text: "no models match", tone: "muted" as const } } : {}),
+    };
+  }
   const nowMs = input.nowMs ?? _pickerDeps.now();
   const sessions = input.sessions ?? [];
   const note = resumeNote(input);
@@ -214,7 +228,7 @@ export interface PickerLayout {
 
 /** The rows a picker's frame and title claim, plus the note row when it has one. */
 function fixedRows(model: PickerModel): number {
-  return FRAME_ROWS + (model.note === undefined ? 0 : 1);
+  return FRAME_ROWS + (model.kind === "model" ? 1 : 0) + (model.note === undefined ? 0 : 1);
 }
 
 /** How many entries the picker draws: the window's rows, never past the rows it was given. */
@@ -281,6 +295,14 @@ export function pickerLayout(model: PickerModel, options: PickerLayoutOptions): 
   const lines: StyledLine[] = [
     ruleRow(options.theme, columns),
     cutSpans([styled(displayText(model.title), { bold: true })], columns),
+    ...(model.kind === "model"
+      ? [
+          cutSpans(
+            [styled(model.query ? `Filter: ${displayText(model.query)}` : "type to filter", { color: "muted" })],
+            columns,
+          ),
+        ]
+      : []),
     ...model.entries
       .slice(first, first + rows)
       .map((entry, at) => entryRow(entry, first + at === selected, options.theme, columns)),
@@ -292,6 +314,7 @@ export function pickerLayout(model: PickerModel, options: PickerLayoutOptions): 
 
 interface PickerState {
   readonly kind: PickerKind;
+  readonly query: string;
   /** The saved sessions; absent while `listSessions()` has not settled. */
   readonly sessions?: readonly ChatSessionRow[];
   /** What a choice warned about, drawn under the entries until the picker closes. */
@@ -311,6 +334,7 @@ export interface ChatPicker {
   readonly model: PickerModel | undefined;
   /** Open the picker a `picker` outcome named; a resume list starts loading its sessions. */
   open(kind: PickerKind): void;
+  setQuery(query: string): void;
   /** Escape: the picker goes and nothing is chosen. */
   cancel(): void;
   /** Return: the host action the chosen entry names, or the warning an in-use session earns. */
@@ -333,6 +357,7 @@ function heldWarning(sessionId: string, pid: number): string {
 function modelOf(state: PickerState, current: ChatHostState, models: readonly string[]): PickerModel {
   return pickerModel({
     kind: state.kind,
+    query: state.query,
     models,
     currentModel: current.model,
     currentMode: current.mode,
@@ -365,7 +390,7 @@ export function useChatPicker({ host, runControl, onError }: ChatPickerOptions):
     (kind: PickerKind): void => {
       openings.current += 1;
       const opening = openings.current;
-      setState({ kind });
+      setState({ kind, query: "" });
       if (kind !== "resume") return;
       void host.listSessions().then(
         (sessions) => {
@@ -406,7 +431,10 @@ export function useChatPicker({ host, runControl, onError }: ChatPickerOptions):
 
   const current = state === undefined ? undefined : host.current();
   const model = state === undefined || current === undefined ? undefined : modelOf(state, current, host.models);
-  return { model, open, cancel, choose };
+  const setQuery = useCallback((query: string): void => {
+    setState((current) => (current?.kind === "model" ? { ...current, query } : current));
+  }, []);
+  return { model, open, cancel, choose, setQuery };
 }
 
 /** The keys the picker owns, and no others. */
@@ -417,11 +445,14 @@ function ownsPickerKey(key: Key): boolean {
 /** Where the pointer is, and which list it was placed in. */
 interface PickerSelection {
   readonly kind: PickerKind;
+  readonly query?: string;
   readonly index: number;
 }
 
 export interface PickerProps {
   readonly model: PickerModel;
+  readonly query?: string;
+  readonly onQuery?: (query: string) => void;
   readonly width: number;
   readonly theme: ChatTheme;
   /** The rows the screen can give the picker; the entry window never exceeds them. */
@@ -432,16 +463,49 @@ export interface PickerProps {
   readonly onCancel: () => void;
 }
 
-/**
- * The framed picker. It draws exactly the rows `pickerLayout` measured and hands the chosen
- * entry to the screen: what a choice means to the host is the screen's business, not a
- * list's.
- */
-export function Picker({ model, width, theme, budget, active = true, onChoose, onCancel }: PickerProps): ReactElement {
+/** Query deletion follows the same whole-grapheme convention as the chat editor. */
+const QUERY_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** Model-only editing; chords and navigation stay with their existing owners. */
+function editedQuery(input: string, key: Key, query: string): string | undefined {
+  if (key.ctrl || key.meta) return undefined;
+  if (key.backspace || key.delete) {
+    const graphemes = Array.from(QUERY_SEGMENTER.segment(query), (part) => part.segment);
+    return graphemes.slice(0, -1).join("");
+  }
+  if (
+    input !== "" &&
+    !key.return &&
+    !key.upArrow &&
+    !key.downArrow &&
+    Array.from(input).every((char) => {
+      const code = char.codePointAt(0) ?? 0;
+      return code >= 0x20 && code !== 0x7f;
+    })
+  )
+    return query + input;
+  return undefined;
+}
+
+export function Picker({
+  model,
+  width,
+  theme,
+  budget,
+  active = true,
+  onChoose,
+  onCancel,
+  query = model.query ?? "",
+  onQuery,
+}: PickerProps): ReactElement {
   const [selection, setSelection] = useState<PickerSelection>({ kind: model.kind, index: FIRST_ENTRY });
   /** The newest pointer, ahead of the re-render two keys in one batch would share. */
   const latest = useRef<PickerSelection>(selection);
-  if (latest.current.kind !== model.kind) latest.current = { kind: model.kind, index: FIRST_ENTRY };
+  if (latest.current.kind !== model.kind || latest.current.query !== query) {
+    latest.current = { kind: model.kind, query, index: FIRST_ENTRY };
+  }
+  const queryRef = useRef(query);
+  queryRef.current = query;
   /** The last entry's index, and the pointer's floor: a list with no entries has neither. */
   const last = Math.max(FIRST_ENTRY, model.entries.length - 1);
   /** The pointer as the last key left it, clamped to the entries on screen now. */
@@ -450,6 +514,7 @@ export function Picker({ model, width, theme, budget, active = true, onChoose, o
   const move = (delta: number): void => {
     const value: PickerSelection = {
       kind: model.kind,
+      query,
       index: Math.min(Math.max(pointer() + delta, FIRST_ENTRY), last),
     };
     latest.current = value;
@@ -457,7 +522,20 @@ export function Picker({ model, width, theme, budget, active = true, onChoose, o
   };
 
   useInput(
-    (_input, key) => {
+    (input, key) => {
+      if (model.kind === "model" && !key.escape) {
+        const next = editedQuery(input, key, queryRef.current);
+        if (next !== undefined) {
+          if (next !== queryRef.current) {
+            queryRef.current = next;
+            onQuery?.(next);
+            const reset = { kind: model.kind, query: next, index: FIRST_ENTRY };
+            latest.current = reset;
+            setSelection(reset);
+          }
+          return;
+        }
+      }
       if (!ownsPickerKey(key)) return;
       // ink reports a lone escape as `escape` *and* `meta`, so escape is taken first: the
       // chord rule below is about shifted and ctrl keys, which belong to other surfaces.

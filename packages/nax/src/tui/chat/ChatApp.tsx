@@ -613,6 +613,8 @@ export function ChatApp({
             active={!keys.locked}
             onChoose={picker.choose}
             onCancel={picker.cancel}
+            onQuery={picker.setQuery}
+            query={picker.model.query}
           />
         </Box>
       ) : (
