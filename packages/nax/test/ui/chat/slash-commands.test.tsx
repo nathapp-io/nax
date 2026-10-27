@@ -42,6 +42,7 @@ function mount() {
     asks: {
       pending: () => [],
       canRemember: () => false,
+      requestHostApproval: async () => "deny",
       resolve: () => {},
       setMode: () => {},
       reset: () => {},

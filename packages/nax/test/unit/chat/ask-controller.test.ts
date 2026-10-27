@@ -1,6 +1,8 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AnswerReply, SessionEvent } from "@nathapp/nax-agent";
+import { makeFakeClock } from "@test/helpers";
 import * as chat from "@/chat";
+import * as hostAsks from "@/chat/ask-controller";
 
 type Approval = Extract<SessionEvent, { type: "approval_requested" }>;
 const base = { sessionId: "s1", turnId: "t1", at: "2026-10-20T00:00:00Z", metadata: {} };
@@ -210,5 +212,125 @@ describe("createChatAskController", () => {
     asks.handle({ ...event, requestId: "r2" });
     expect(answer).toHaveBeenLastCalledWith("r2", { decision: "allow" });
     expect(asks.pending()).toEqual([]);
+  });
+});
+
+describe("host approvals (US-008)", () => {
+  const original = { ...hostAsks._askControllerDeps };
+  const card = { tool: "nax-jobs__run", summary: "nax run f1", command: "c", reason: "r" };
+  const now = new Date("2026-10-27T00:00:00.000Z");
+  const timeout = 2_000;
+  let clock: ReturnType<typeof makeFakeClock>;
+  beforeEach(() => {
+    clock = makeFakeClock();
+    hostAsks._askControllerDeps.setTimeout = clock.setTimeout;
+    hostAsks._askControllerDeps.clearTimeout = (handle) => clock.clearTimeout(Number(handle));
+  });
+  afterEach(() => Object.assign(hostAsks._askControllerDeps, original));
+  function hostSetup(approvalTimeoutMs: number | undefined = timeout) {
+    const answer = mock((_id: string, _reply: AnswerReply) => {});
+    const asks = hostAsks.createChatAskController({ mode: "full", answer, now: () => now, approvalTimeoutMs });
+    return { asks, answer };
+  }
+  test("AC-1 through AC-5, AC-11: full-mode host card carries fields and expiry and never auto-answers", async () => {
+    const { asks, answer } = hostSetup();
+    const result = asks.requestHostApproval(card);
+    expect(asks.pending()).toHaveLength(1);
+    const event = asks.pending()[0];
+    expect(event?.requestId.startsWith("host-")).toBe(true);
+    expect(event).toMatchObject({
+      ...card,
+      type: "approval_requested",
+      expiresAt: new Date(now.getTime() + timeout).toISOString(),
+    });
+    if (event?.type !== "approval_requested") throw new Error("missing host approval");
+    expect(asks.canRemember(event)).toBe(false);
+    asks.handle(event);
+    expect(asks.pending()).toEqual([event]);
+    expect(answer).not.toHaveBeenCalled();
+    asks.reset();
+    expect(await result).toBe("deny");
+  });
+  test.each([
+    ["allow_once", "allow"],
+    ["deny", "deny"],
+    ["allow_session", "allow"],
+  ] as const)("AC-6 through AC-10: %s resolves %s only to the host and cleans up", async (choice, decision) => {
+    const { asks, answer } = hostSetup();
+    const result = asks.requestHostApproval(card);
+    const id = asks.pending()[0]?.requestId ?? "missing";
+    const changed = mock(() => {});
+    asks.onChange(changed);
+    asks.resolve(id, choice);
+    expect(await result).toBe(decision);
+    expect(answer).not.toHaveBeenCalled();
+    expect(asks.pending()).toEqual([]);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(clock.pending()).toBe(0);
+    asks.resolve(id, "deny");
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+  test("AC-12: allow_session never remembers even a rememberable host tool", async () => {
+    const { asks, answer } = hostSetup();
+    asks.setMode("guarded");
+    const rememberable = { ...card, tool: "Bash", command: "npm test" };
+    const first = asks.requestHostApproval(rememberable);
+    const event = asks.pending()[0];
+    if (event?.type !== "approval_requested") throw new Error("missing host approval");
+    expect(asks.canRemember(event)).toBe(false);
+    asks.resolve(asks.pending()[0]?.requestId ?? "missing", "allow_session");
+    expect(await first).toBe("allow");
+    const second = asks.requestHostApproval(rememberable);
+    expect(asks.pending()).toHaveLength(1);
+    asks.handle(approval());
+    expect(asks.pending()).toHaveLength(2);
+    expect(answer).not.toHaveBeenCalled();
+    asks.reset();
+    expect(await second).toBe("deny");
+  });
+  test("AC-13: expiry fails closed at precisely the timeout and notifies", async () => {
+    const { asks } = hostSetup();
+    const result = asks.requestHostApproval(card);
+    const changed = mock(() => {});
+    asks.onChange(changed);
+    await clock.advance(timeout - 1);
+    expect(asks.pending()).toHaveLength(1);
+    await clock.advance(1);
+    expect(await result).toBe("deny");
+    expect(asks.pending()).toEqual([]);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(clock.pending()).toBe(0);
+  });
+  test.each([false, true])("AC-14, AC-15: abort fails closed (already aborted: %s)", async (already) => {
+    const { asks, answer } = hostSetup();
+    const abort = new AbortController();
+    if (already) abort.abort();
+    const result = asks.requestHostApproval({ ...card, signal: abort.signal });
+    const changed = mock(() => {});
+    asks.onChange(changed);
+    abort.abort();
+    expect(await result).toBe("deny");
+    expect(asks.pending()).toEqual([]);
+    expect(answer).not.toHaveBeenCalled();
+    expect(clock.pending()).toBe(0);
+    if (!already) expect(changed).toHaveBeenCalledTimes(1);
+  });
+  test("AC-16: reset denies all host promises and cancels every timer", async () => {
+    const { asks, answer } = hostSetup();
+    const results = [asks.requestHostApproval(card), asks.requestHostApproval(card)];
+    expect(new Set(asks.pending().map((event) => event.requestId)).size).toBe(2);
+    asks.reset();
+    expect(await Promise.all(results)).toEqual(["deny", "deny"]);
+    expect(asks.pending()).toEqual([]);
+    expect(clock.pending()).toBe(0);
+    expect(answer).not.toHaveBeenCalled();
+  });
+  test("AC-17: omitted timeout defaults to ten minutes", async () => {
+    const asks = hostAsks.createChatAskController({ mode: "guarded", answer: () => {}, now: () => now });
+    const result = asks.requestHostApproval(card);
+    expect(hostAsks.DEFAULT_HOST_APPROVAL_TIMEOUT_MS).toBe(600_000);
+    expect(asks.pending()[0]?.expiresAt).toBe(new Date(now.getTime() + 600_000).toISOString());
+    asks.reset();
+    expect(await result).toBe("deny");
   });
 });
