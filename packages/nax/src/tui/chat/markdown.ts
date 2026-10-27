@@ -285,5 +285,12 @@ export function renderMarkdown(text: string, options: RenderMarkdownOptions): re
     // possibly half-streamed reply: show its source rather than losing the turn.
     return sourceLines(text);
   }
-  return tokens.flatMap((token) => blockLines(token, context));
+  const lines: StyledLine[] = [];
+  for (const token of tokens) {
+    const block = blockLines(token, context);
+    if (block.length === 0) continue;
+    if (lines.length > 0) lines.push([]);
+    lines.push(...block);
+  }
+  return lines;
 }

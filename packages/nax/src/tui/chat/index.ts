@@ -42,7 +42,10 @@ export function renderChat(props: ChatAppProps): Instance {
     _renderChatDeps.write(LEAVE_ALT_SCREEN);
   };
   try {
-    const instance = _renderChatDeps.render(createElement(ChatApp, props), { exitOnCtrlC: false });
+    const instance = _renderChatDeps.render(createElement(ChatApp, props), {
+      exitOnCtrlC: false,
+      incrementalRendering: true,
+    });
     removeExit = _renderChatDeps.onExit(restore);
     return {
       ...instance,

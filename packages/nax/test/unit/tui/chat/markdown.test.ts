@@ -88,6 +88,34 @@ function spansText(spans: readonly Span[]): string {
   return spans.map((span) => span.text).join("");
 }
 
+describe("renderMarkdown top-level block spacing", () => {
+  test.each([
+    ["AC-10 heading then paragraph", "# T\n\npara", ["T", "", "para"]],
+    ["AC-11 paragraph then list", "para\n\n- a\n- b", ["para", "", "- a", "- b"]],
+    ["AC-13 repeated source gaps", "a\n\n\n\nb", ["a", "", "b"]],
+    ["AC-14 loose list stays one block", "- a\n\n- b", ["- a", "- b"]],
+    ["AC-15 trailing definition adds no gap", "para\n\n[1]: https://x.y", ["para"]],
+    ["AC-16 quote then rule", "> q\n\n---", [`${theme.glyphs.codeSide} q`, "", theme.glyphs.rule.repeat(WIDTH)]],
+    ["quote internals stay unchanged", "> a\n>\n> b", [`${theme.glyphs.codeSide} a`, `${theme.glyphs.codeSide} b`]],
+    ["only empty blocks", "\n\n[1]: https://x.y", []],
+  ] as const)("%s", (_name, source, expected) => {
+    expect(texts(render(source))).toEqual(expected);
+  });
+
+  test("AC-12 fence then paragraph without a source gap", () => {
+    const source = `${fence("const x = 1;")}\nafter`;
+    const lines = render(source);
+    expect(texts(lines)).toEqual([
+      `${theme.glyphs.codeTop} ts`,
+      `${theme.glyphs.codeSide} const x = 1;`,
+      theme.glyphs.codeBottom,
+      "",
+      "after",
+    ]);
+    expect(lines[3]).toEqual([]);
+  });
+});
+
 describe("renderMarkdown headings", () => {
   test("renders a heading as its text without the marker (AC-1)", () => {
     expect(texts(render("# Title"))).toEqual(["Title"]);

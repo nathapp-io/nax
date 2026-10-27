@@ -6,9 +6,8 @@
  * own view. `headerLines` composes the three rows above the transcript, `layoutTranscript`
  * turns the entry union into styled lines, `TranscriptViewport` windows them, `workingLine`
  * draws the turn's live state and `footerModel` the one-row footer. The screen's job is the
- * arithmetic between them: the viewport gets every row the fixed regions do not claim
- * (`rows - header - working - bottom - footer`), never fewer than one, so a terminal too
- * small for those regions loses transcript rather than the footer or the input.
+ * arithmetic between them: the viewport gets the usable rows the fixed regions leave,
+ * never fewer than one; one terminal row stays free unless the fixed regions cannot fit.
  *
  * The screen owns the transcript (`reduceTranscript`), the turn status
  * (`reduceTurnStatus`), the input's `InputDraft` — so unmounting the input for an ask card
@@ -96,7 +95,7 @@ export interface ChatAppProps {
   readonly home?: string;
 }
 
-/** Rows the header always claims: the product line, the path line and the rule. */
+const FRAME_SLACK_ROWS = 1; // Keep Ink below its full-terminal clear threshold.
 const HEADER_ROWS = 3;
 /** Rows the footer always claims. */
 const FOOTER_ROWS = 1;
@@ -306,9 +305,10 @@ export function ChatApp({
   // see must not take the arrows or the return — that key would run a row the user never saw
   // (`/co` silently running `/cost` on an eight-row terminal).
   const working = workingLine(status, nowMs, theme.glyphs);
+  const usableRows = size.rows - FRAME_SLACK_ROWS;
   const bottomBudget = Math.max(
     1,
-    size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
+    usableRows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
   );
   const menuRows = menuRowsFor({ rows: menu.rows, budget: bottomBudget });
   /**
@@ -554,7 +554,7 @@ export function ChatApp({
   });
   const viewportHeight = Math.max(
     MIN_VIEWPORT_ROWS,
-    size.rows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - bottomRows - FOOTER_ROWS,
+    usableRows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - bottomRows - FOOTER_ROWS,
   );
 
   return (

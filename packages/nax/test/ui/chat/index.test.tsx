@@ -129,7 +129,7 @@ describe("renderChat alternate screen", () => {
   test("AC-13: render keeps Ctrl-C in the chat's hands", () => {
     const screen = stubScreen();
     const view = renderChat({ host: chatHost() });
-    expect(screen.renderMock.mock.calls[0]?.[1]).toEqual({ exitOnCtrlC: false });
+    expect(screen.renderMock.mock.calls[0]?.[1]).toEqual({ exitOnCtrlC: false, incrementalRendering: true });
     view.unmount();
   });
 
