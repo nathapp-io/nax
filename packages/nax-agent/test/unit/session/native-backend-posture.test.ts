@@ -103,7 +103,40 @@ describe("native backend posture in assembled sessions", () => {
     expect(await Bun.file(`${root}/keep/a.txt`).text()).toBe("original");
   });
 
-  test("AC-4: unconditional Bash deny holds under raw without asking", async () => {
+  test("AC-4: model-issued Bash receives a denial under raw while remaining unadvertised", async () => {
+    const seam = stubSessionSandboxDeps(_sessionSandboxDeps);
+    const { provider, session } = await open({ denyRules: ["Bash"] });
+    provider.push(toolRound([{ id: "denied-bash", name: "Bash", input: { command: "echo never" } }]), textRound("ok"));
+    const events: SessionEvent[] = [];
+    for await (const event of session.send("try bash")) {
+      events.push(event);
+      if (event.type === "approval_requested") session.answer(event.requestId, { decision: "deny" });
+    }
+    expect(turnEndOf(events).status).toBe("completed");
+    expect(eventsOf(events, "approval_requested")).toEqual([]);
+    expect(provider.requests[0]?.tools?.map((tool) => tool.name)).not.toContain("Bash");
+    expect(provider.requests[1]?.messages.find((message) => message.role === "tool-result")).toMatchObject({
+      toolCallId: "denied-bash",
+      content: expect.stringContaining("Denied:"),
+      denied: { breach: false },
+    });
+    expect(seam.backend.calls).toEqual([]);
+  });
+
+  test("unknown model tool names remain errors rather than policy denials", async () => {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    const { provider, session } = await open({ denyRules: ["Bash"] });
+    provider.push(toolRound([{ id: "unknown", name: "NotADeclaredTool", input: {} }]), textRound("ok"));
+    const events: SessionEvent[] = [];
+    for await (const event of session.send("try unknown tool")) events.push(event);
+    expect(turnEndOf(events).status).toBe("completed");
+    expect(eventsOf(events, "approval_requested")).toEqual([]);
+    const result = provider.requests[1]?.messages.find((message) => message.role === "tool-result");
+    expect(result).toMatchObject({ toolCallId: "unknown", isError: true, content: 'Unknown tool "NotADeclaredTool"' });
+    expect(result).not.toHaveProperty("denied");
+  });
+
+  test("host runCommand: unconditional Bash deny holds under raw without asking", async () => {
     stubSessionSandboxDeps(_sessionSandboxDeps);
     const { session } = await open({ denyRules: ["Bash"] });
     const asked: string[] = [];

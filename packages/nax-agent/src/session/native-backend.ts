@@ -121,6 +121,9 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
   const interactionHandler = createSessionInteractionHandler({
     sessionId: ctx.sessionId,
     runtime: support.runtime,
+    unavailableTools: new Set(
+      (support.declaredTools ?? []).filter((name) => !support.tools.some((tool) => tool.name === name)),
+    ),
     embedderTools: new Map(ctx.tools.map((tool) => [tool.name, tool])),
     asks: ctx.asks,
     turnSignal: ctx.turnSignal,
