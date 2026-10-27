@@ -9,6 +9,7 @@ import { resolveSessionSandbox } from "#src/coding-tools/coding-tool-sandbox";
 import { buildCodingToolSupport, type CodingToolSupport } from "#src/coding-tools/coding-tool-support";
 import { UNIVERSAL_CODING_TOOLS } from "#src/coding-tools/universal-coding-tools";
 import type { CommandInterceptor } from "#src/command-interceptor/index";
+import type { CommandShadow } from "#src/command-safety/types";
 import type { BashApprovalMode } from "#src/config/bash-approval";
 import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "#src/config/schemas-sandbox";
 import { credentialsConfig } from "#src/infra/credentials-config";
@@ -140,6 +141,9 @@ export interface SessionToolSupportArgs {
   readonly interceptor: CommandInterceptor | undefined;
   readonly askRules?: readonly ToolGrant[];
   readonly denyRules?: readonly ToolGrant[];
+  readonly askOnUnsandboxed?: boolean;
+  readonly askDiscoveredTools?: boolean;
+  readonly commandShadow?: CommandShadow;
   /**
    * US-003: offer Bash's per-call `unsandboxed` argument for this session
    * (from `nativeProfileRules(...).allowUnsandboxedCommands`). Optional and
@@ -180,8 +184,16 @@ export interface SessionToolSupport {
 }
 
 /** Optional overlays share one forwarding point for future posture knobs. */
-function postureToolOptions(args: SessionToolSupportArgs): { readonly denyRules?: readonly ToolGrant[] } {
-  return args.denyRules === undefined ? {} : { denyRules: args.denyRules };
+function postureToolOptions(args: SessionToolSupportArgs): {
+  readonly denyRules?: readonly ToolGrant[];
+  readonly askOnUnsandboxed?: boolean;
+  readonly commandShadow?: CommandShadow;
+} {
+  return {
+    ...(args.denyRules !== undefined ? { denyRules: args.denyRules } : {}),
+    ...(args.askOnUnsandboxed !== undefined ? { askOnUnsandboxed: args.askOnUnsandboxed } : {}),
+    ...(args.commandShadow !== undefined ? { commandShadow: args.commandShadow } : {}),
+  };
 }
 
 export function buildSessionToolSupport(args: SessionToolSupportArgs): SessionToolSupport {
@@ -191,10 +203,10 @@ export function buildSessionToolSupport(args: SessionToolSupportArgs): SessionTo
     ...new Set([...profileTools, ...(args.providerTools?.tools.map((tool) => tool.name) ?? [])]),
   ] as readonly CodingToolName[];
   const grants = [...grantsFor(profileTools), ...(args.providerTools?.grants ?? [])];
-  // Only the "ask" profile adds provider asks by default; configured overlays follow them.
+  // Provider asks remain opt-in outside "ask"; configured rules follow them.
   const askRules = [
     ...askRulesFor(profileTools, args.bashApproval, args.profile),
-    ...(args.profile === "ask" ? (args.providerTools?.askTools ?? []) : []).map((tool) => ({
+    ...(args.profile === "ask" || args.askDiscoveredTools ? (args.providerTools?.askTools ?? []) : []).map((tool) => ({
       tool: tool as CodingToolName,
       patterns: ["*"],
     })),

@@ -346,3 +346,44 @@ describe("parseNativeBackendOptions: posture", () => {
     }
   });
 });
+
+describe("parseNativeBackendOptions ask overlays and shadow", () => {
+  test.each(
+    [
+      null,
+      1,
+      [],
+      {},
+      { observe() {}, settle() {} },
+      { observe: true, settle() {}, drain() {} },
+      { observe() {}, settle: 1, drain() {} },
+      { observe() {}, settle() {}, drain: false },
+    ].map((commandShadow) => ({ commandShadow })),
+  )("AC-22/24: rejects malformed shadow %j with exact path", ({ commandShadow }) => {
+    let caught: unknown;
+    try {
+      parseNativeBackendOptions({ model: "openai/x", hostPorts: { commandShadow } });
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught);
+    expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(caught.message).toContain("backend.hostPorts.commandShadow");
+  });
+  test("accepts booleans and preserves shadow identity", () => {
+    const commandShadow = { observe() {}, settle() {}, async drain() {} };
+    const input = {
+      model: "openai/x",
+      askOnUnsandboxed: true,
+      askWhenSandboxDown: true,
+      askDiscoveredTools: true,
+      hostPorts: { commandShadow },
+    };
+    expect(parseNativeBackendOptions(input).raw).toBe(input);
+  });
+  test.each(["askOnUnsandboxed", "askWhenSandboxDown", "askDiscoveredTools"])("rejects nonboolean %s", (name) => {
+    expect(code(() => parseNativeBackendOptions({ model: "openai/x", [name]: "yes" }))).toBe(
+      "AGENT_SESSION_INVALID_OPTIONS",
+    );
+  });
+});

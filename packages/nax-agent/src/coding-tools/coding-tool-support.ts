@@ -173,6 +173,7 @@ export function buildCodingToolSupport(args: {
    * the runtime's own reading of the field is a later story.
    */
   unsandboxedCommands?: boolean;
+  askOnUnsandboxed?: boolean;
   /** US-001: forwarded into ToolRunContext so Bash/Exec can SIGKILL on cancel. */
   abortSignal?: AbortSignal;
   /**
@@ -301,7 +302,11 @@ export function buildCodingToolSupport(args: {
     // schema — with the locally resolved mode, so a caller that left
     // `bashApproval` unset cannot enable an escape under a mode it did not
     // choose.
-    ...unsandboxedRuntimeOption({ unsandboxedCommands: args.unsandboxedCommands, bashApproval }),
+    ...unsandboxedRuntimeOption({
+      unsandboxedCommands: args.unsandboxedCommands,
+      askOnUnsandboxed: args.askOnUnsandboxed,
+      bashApproval,
+    }),
   });
   const tools = runtime.advertised(advertised);
   // The fixed per-hop cost of advertising provider tools: their schemas enter

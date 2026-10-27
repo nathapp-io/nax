@@ -230,7 +230,7 @@ export function createCodingToolRuntime(opts: {
    * `Bash`/`Exec` call carrying `unsandboxed: true` is then refused before the
    * policy evaluates it.
    */
-  unsandboxed?: { readonly enabled: boolean; readonly bashApproval: BashApprovalMode };
+  unsandboxed?: { readonly enabled: boolean; readonly bashApproval: BashApprovalMode; readonly alwaysAsk?: boolean };
 }): CodingToolRuntime {
   registerBuiltinCodingTools();
   // The global registry cannot hold session-local tools like RunCommand (its

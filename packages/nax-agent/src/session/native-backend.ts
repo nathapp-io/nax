@@ -21,7 +21,7 @@ import {
   parseNativeBackendOptions,
   type ResolvedNativeOptions,
 } from "./native-backend-options.ts";
-import { nativePostureRules } from "./native-posture-rules.ts";
+import { effectiveBashApproval, nativePostureRules } from "./native-posture-rules.ts";
 import { createSessionAskLink, createSessionAskResolver } from "./session-ask-link.ts";
 import type { BackendOpenContext, OpenedBackend, SessionBackend } from "./session-backend.ts";
 import { createSessionInteractionHandler, embedderToolDescriptor } from "./session-interaction.ts";
@@ -65,7 +65,11 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
   const raw = resolved.raw;
   if (ctx.resume !== undefined && raw.carryHistoryAcrossModels !== true)
     checkResumeModel(ctx.resume.doc, ctx.sessionId, raw.model);
-  const { bashApproval, allowUnsandboxed, allowUnsandboxedCommands } = nativeProfileRules(ctx.profile, raw);
+  const {
+    bashApproval: profileMode,
+    allowUnsandboxed,
+    allowUnsandboxedCommands,
+  } = nativeProfileRules(ctx.profile, raw);
   const posture = nativePostureRules(ctx.profile, raw);
   const protectedPaths = {
     ...defaultProtectedPaths(raw.credentials !== undefined),
@@ -75,10 +79,11 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     profile: ctx.profile,
     root: ctx.workdir,
     protectedPaths,
-    bashApproval,
+    bashApproval: profileMode,
     allowUnsandboxed,
     config: posture.sandbox,
   });
+  const bashApproval = effectiveBashApproval(profileMode, posture.askWhenSandboxDown, sandbox.kind);
   const providerTools =
     ctx.profile === "none" || raw.toolProviders === undefined
       ? undefined
@@ -114,6 +119,9 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     interceptor: raw.hostPorts?.commandInterceptor,
     askRules: posture.askRules,
     denyRules: posture.denyRules,
+    askOnUnsandboxed: posture.askOnUnsandboxed,
+    askDiscoveredTools: posture.askDiscoveredTools,
+    commandShadow: raw.hostPorts?.commandShadow,
     // US-003: the profile's validated opt-in, so an interactive "full" session
     // can offer Bash's per-call escape without turning the sandbox off.
     ...(allowUnsandboxedCommands ? { unsandboxedCommands: true } : {}),

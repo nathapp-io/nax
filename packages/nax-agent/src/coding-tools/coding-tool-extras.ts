@@ -76,9 +76,23 @@ export function unsandboxedToolOptions(args: { readonly unsandboxedCommands?: bo
  */
 export function unsandboxedRuntimeOption(args: {
   readonly unsandboxedCommands?: boolean;
+  readonly askOnUnsandboxed?: boolean;
   readonly bashApproval: BashApprovalMode;
-}): { readonly unsandboxed?: { readonly enabled: boolean; readonly bashApproval: BashApprovalMode } } {
-  return args.unsandboxedCommands === true ? { unsandboxed: { enabled: true, bashApproval: args.bashApproval } } : {};
+}): {
+  readonly unsandboxed?: {
+    readonly enabled: boolean;
+    readonly bashApproval: BashApprovalMode;
+    readonly alwaysAsk?: boolean;
+  };
+} {
+  if (args.unsandboxedCommands !== true) return {};
+  return {
+    unsandboxed: {
+      enabled: true,
+      bashApproval: args.bashApproval,
+      ...(args.askOnUnsandboxed === true ? { alwaysAsk: true } : {}),
+    },
+  };
 }
 
 export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): CodingTool[] {

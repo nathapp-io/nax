@@ -441,3 +441,32 @@ describe("session posture forwarding", () => {
     expect(configs).toEqual([custom ? config : DEFAULT_SANDBOX_CONFIG]);
   });
 });
+
+describe("buildSessionToolSupport discovered asks", () => {
+  test.each([true, false])("AC-18/19: full provider asks opt-in=%s", async (ask) => {
+    const spy = spyOn(codingSupport, "buildCodingToolSupport");
+    try {
+      buildSessionToolSupport(
+        await args({
+          profile: "full",
+          bashApproval: "raw",
+          ...(ask ? { askDiscoveredTools: true } : {}),
+          providerTools: {
+            tools: [],
+            grants: [],
+            askTools: ["docs__write"],
+            providerIdByTool: new Map(),
+            instructions: [],
+            failures: [],
+            skipped: [],
+            withheld: [],
+            entries: [],
+          },
+        }),
+      );
+      expect(spy.mock.calls[0]?.[0].askRules ?? []).toEqual(ask ? [{ tool: "docs__write", patterns: ["*"] }] : []);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

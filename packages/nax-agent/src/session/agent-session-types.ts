@@ -4,6 +4,7 @@
  * @nathapp/nax-agent-acp backend (S4) reuses these types unchanged.
  */
 import type { CommandInterceptor } from "#src/command-interceptor/index";
+import type { CommandShadow } from "#src/command-safety/types";
 import type { TokenUsage } from "#src/cost/standard-types";
 import type { TranscriptStore } from "#src/native/session/transcript-types";
 import type { ProtectedPathsPolicy } from "#src/tools/protected-paths";
@@ -48,6 +49,7 @@ export interface AgentSessionHostPorts {
   /** Paths the sandbox and the read tools deny. Default: the configured credentials directory, if any. */
   readonly protectedPaths?: ProtectedPathsPolicy;
   readonly commandInterceptor?: CommandInterceptor;
+  readonly commandShadow?: CommandShadow;
 }
 
 export interface CreateAgentSessionOptions {

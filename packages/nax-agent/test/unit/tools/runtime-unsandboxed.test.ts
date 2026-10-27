@@ -35,6 +35,7 @@ import { _bashToolDeps, createBashTool } from "#src/tools/bash";
 import { compileToolPolicy } from "#src/tools/policy";
 import type { CodingTool } from "#src/tools/registry";
 import { type CodingToolRuntime, createCodingToolRuntime } from "#src/tools/runtime";
+import { resolveUnsandboxedCall } from "#src/tools/runtime-calltool";
 import type { ToolAuditSink, ToolCallRecord } from "#src/tools/tool-audit";
 import { BASH_TOOL_NAME, EXEC_TOOL_NAME, type ToolGrant, type ToolPolicy, type ToolScope } from "#src/tools/types";
 import { assertDefined, cleanupTempDir, makeTempDir, withDepsRestore } from "#test/helpers/index";
@@ -699,5 +700,19 @@ describe("callTool — the real Bash tool runs the escape it was granted", () =>
     // `requested` is what distinguishes the approved escape from an ordinary
     // run of the same command under a disabled sandbox.
     expect(records[0]?.sandbox).toEqual({ backend: "none", wrapped: false, reason: "requested" });
+  });
+});
+
+describe("resolveUnsandboxedCall opt-in asks", () => {
+  test.each([true, false])("AC-1/2: raw escape alwaysAsk=%s", (alwaysAsk) => {
+    const option = { enabled: true, bashApproval: "raw" as const, ...(alwaysAsk ? { alwaysAsk: true } : {}) };
+    expect(
+      resolveUnsandboxedCall({
+        identity: "Bash",
+        tool: recordingTool("Bash", BASH_SCOPE).tool,
+        input: { unsandboxed: true },
+        option,
+      }),
+    ).toMatchObject({ kind: "unsandboxed", asksOnAllow: alwaysAsk });
   });
 });

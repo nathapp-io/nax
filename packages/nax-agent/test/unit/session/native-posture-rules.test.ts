@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_SANDBOX_CONFIG } from "#src/config/schemas-sandbox";
-import { nativePostureRules } from "#src/session/native-posture-rules";
+import * as posture from "#src/session/native-posture-rules";
+
+const { nativePostureRules } = posture;
+
 import { assertNaxError } from "#test/helpers/index";
 
 describe("nativePostureRules", () => {
@@ -31,6 +34,9 @@ describe("nativePostureRules", () => {
       askRules: [],
       denyRules: [],
       sandbox: DEFAULT_SANDBOX_CONFIG,
+      askOnUnsandboxed: false,
+      askWhenSandboxDown: false,
+      askDiscoveredTools: false,
     });
   });
 
@@ -45,5 +51,58 @@ describe("nativePostureRules", () => {
     expect(result.sandbox.enabled).toBe(DEFAULT_SANDBOX_CONFIG.enabled);
     expect(result.sandbox.network.allowedDomains).toEqual(["registry.npmjs.org"]);
     expect(raw.sandbox).not.toHaveProperty("enabled");
+  });
+});
+
+describe("nativePostureRules ask overlays", () => {
+  describe.each(["none", "read"] as const)("profile %s", (profile) => {
+    test.each(["askOnUnsandboxed", "askWhenSandboxDown", "askDiscoveredTools"] as const)(
+      "AC-9/10/11/23: rejects %s even false",
+      (name) => {
+        for (const value of [true, false]) {
+          let caught: unknown;
+          try {
+            nativePostureRules(profile, { model: "openai/x", [name]: value });
+          } catch (err) {
+            caught = err;
+          }
+          assertNaxError(caught);
+          expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+          expect(caught.message).toContain(`backend.${name}`);
+        }
+      },
+    );
+  });
+  test("AC-8: escape ask requires the escape capability", () => {
+    let caught: unknown;
+    try {
+      nativePostureRules("full", { model: "openai/x", askOnUnsandboxed: true });
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught);
+    expect(caught.code).toBe("AGENT_SESSION_INVALID_OPTIONS");
+    expect(caught.message).toContain("backend.askOnUnsandboxed");
+  });
+  test("returns enabled flags", () => {
+    expect(
+      nativePostureRules("full", {
+        model: "openai/x",
+        allowUnsandboxedCommands: true,
+        askOnUnsandboxed: true,
+        askWhenSandboxDown: true,
+        askDiscoveredTools: true,
+      }),
+    ).toMatchObject({ askOnUnsandboxed: true, askWhenSandboxDown: true, askDiscoveredTools: true });
+  });
+});
+describe("effectiveBashApproval", () => {
+  test.each([
+    [true, "unavailable", "gated"],
+    [true, "available", "raw"],
+    [false, "unavailable", "raw"],
+    [true, "disabled", "gated"],
+  ] as const)("AC-12/13/14: down ask=%s sandbox=%s returns %s", (ask, kind, expected) => {
+    expect(posture.effectiveBashApproval("raw", ask, kind)).toBe(expected);
   });
 });
