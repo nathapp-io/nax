@@ -133,6 +133,21 @@ describe("closed formats", () => {
     expect(renderItemClosed(head)).toBe("No longer open in the run at aaaaaaa.");
   });
 });
+describe("reopen formats", () => {
+  test("AC-1 derives the reopen key from the item key", async () => {
+    expect((await formats()).reopenKey(key)).toBe("wo-w-B3.12345678");
+  });
+  test("AC-2 renders the reopen notice with a short sha", async () => {
+    expect((await formats()).renderItemReopened(head)).toBe(
+      "Raised again by the run at aaaaaaa. Reply on this thread to rule on it.",
+    );
+  });
+  test("AC-3 only fixed and verified rulings are cancelled by a re-raise", async () => {
+    const reopened = (await formats()).REOPENED_BY_RERAISE;
+    expect(reopened.size).toBe(2);
+    expect([...reopened].toSorted((left, right) => left.localeCompare(right))).toEqual(["fixed", "verified"]);
+  });
+});
 describe("renderItemIndex", () => {
   test("AC-15 renders ordered index", async () => {
     expect(

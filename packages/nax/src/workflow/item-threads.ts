@@ -49,6 +49,15 @@ const KIND_NAMES = {
   reason: true,
 } satisfies Record<OpenItem["kind"], boolean>;
 
+/**
+ * Rulings a re-raise cancels. `waived`, `confirmed` and `overridden` carry over when the same item is raised
+ * again: they are the reviewer's standing judgement on the item, not a statement that it is gone.
+ */
+export const REOPENED_BY_RERAISE: ReadonlySet<Disposition> = new Set<Disposition>([
+  "fixed",
+  "verified",
+] satisfies readonly Disposition[]);
+
 export function itemKey(item: OpenItem): string {
   const hash = createHash("sha256").update(`${item.kind}\n${item.issue}`).digest("hex").slice(0, HASH_CHARS);
   return `w-${item.id}.${hash}`;
@@ -143,6 +152,19 @@ export function closedKey(key: string): string {
 
 export function renderItemClosed(sha: string): string {
   return `No longer open in the run at ${sha.slice(0, SHORT_SHA_CHARS)}.`;
+}
+
+/**
+ * Marker key of the notice that supersedes a cancelled ruling. `readThread` reads a ruling only from the last own
+ * marked comment, so posting the notice after a `wr-` echo leaves the item unruled until someone rules again.
+ */
+export function reopenKey(key: string): string {
+  return `wo-${key}`;
+}
+
+/** Unwrapped body; callers apply withNaxBotMarker with reopenKey(key). */
+export function renderItemReopened(sha: string): string {
+  return `Raised again by the run at ${sha.slice(0, SHORT_SHA_CHARS)}. Reply on this thread to rule on it.`;
 }
 
 function validSha(sha: string | undefined): string | undefined {

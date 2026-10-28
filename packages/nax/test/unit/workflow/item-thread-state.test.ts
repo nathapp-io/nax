@@ -3,9 +3,16 @@ import { withNaxBotMarker } from "@/forge";
 import type { PrComment, PrThread } from "@/forge/pr-types";
 import type { ItemThread, ReadItemThreads } from "@/workflow/item-thread-state";
 import { readItemThreads, settleItemThreads, unindexedItemKeys } from "@/workflow/item-thread-state";
-import { renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
+import {
+  renderItemIndex,
+  renderItemOpener,
+  renderItemReopened,
+  renderRulingEcho,
+  reopenKey,
+} from "@/workflow/item-threads";
 
 const key = "w-B3.12345678";
+const head = "a".repeat(40);
 const ruling = { itemKey: key, itemId: "B3", disposition: "waived", reason: "ok", by: "alice" } as const;
 const comment = (id: string, body: string, author = "bot"): PrComment => ({
   id,
@@ -36,6 +43,36 @@ const item = (replies: readonly PrComment[] = [], ruled = true): ItemThread => (
   ...(ruled ? { ruling } : {}),
 });
 const read = (entry: ItemThread): ReadItemThreads => ({ index: { keys: [key] }, items: [entry] });
+const fixedRuling = { ...ruling, disposition: "fixed", sha: head } as const;
+const fixedEcho = () => marked("2", renderRulingEcho(fixedRuling), `wr-fixed-${key}`);
+const reopened = () => marked("notice", renderItemReopened(head), reopenKey(key));
+
+describe("reopen notice", () => {
+  test("AC-4 a last-own reopen notice leaves a previously fixed item without a ruling", () => {
+    const ruled = readItemThreads([thread(opener(), fixedEcho())], [index()], "bot");
+    expect(ruled.items[0]?.ruling?.disposition).toBe("fixed");
+    const result = readItemThreads([thread(opener(), fixedEcho(), reopened())], [index()], "bot");
+    expect(result.items.map((entry) => entry.key)).toEqual([key]);
+    expect(result.items[0]?.ruling).toBeUndefined();
+  });
+  test("AC-5 replies contain only the comments after the reopen notice", () => {
+    const superseded = comment("early", "waive", "alice");
+    const after = comment("late", "still broken", "alice");
+    const source = thread(opener(), fixedEcho(), superseded, reopened(), after);
+    expect(readItemThreads([source], [index()], "bot").items[0]?.replies).toEqual([after]);
+  });
+  test("AC-6 settleItemThreads puts a re-raised item in open", async () => {
+    const reRaised = readItemThreads([thread(opener(), fixedEcho(), reopened())], [index()], "bot");
+    expect(await settleItemThreads(reRaised, async () => true)).toEqual({
+      settled: [],
+      open: [{ ...reRaised.items[0], kept: [] }],
+    });
+  });
+  test("AC-7 an unparseable opener yields no item even with a later reopen marker", () => {
+    const malformed = marked("1", "Open item **B3** (unknown): x", key);
+    expect(readItemThreads([thread(malformed, reopened())], [index()], "bot").items).toEqual([]);
+  });
+});
 
 describe("readItemThreads", () => {
   test("AC-1 ignores a marked opener from another login", async () => {
