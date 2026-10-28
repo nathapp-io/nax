@@ -26,11 +26,14 @@ export interface JobNoticeInput {
 }
 
 /**
- * Third notice line for a job that belongs to a chain: it names the chain and
- * step, and points the agent at the chain state instead of a fresh card.
+ * Third notice line for a job that belongs to a chain: it names the chain (and
+ * its step, when the job carries one) and points the agent at the chain state
+ * instead of a fresh card. A job with a `chainId` always gets the line — losing
+ * the instruction is worse than losing the step number.
  */
-function chainNoticeLine(chainId: string, chainStep: number): string {
-  return `This job is step ${chainStep} of chain ${chainId}; call nax-jobs__list to see whether the chain continues, and if it does, call the next step's launch tool with exactly the approved arguments (no card is shown for it).`;
+function chainNoticeLine(chainId: string, chainStep: number | undefined): string {
+  const position = chainStep !== undefined ? `step ${chainStep} of ` : "part of ";
+  return `This job is ${position}chain ${chainId}; call nax-jobs__list to see whether the chain continues, and if it does, call the next step's launch tool with exactly the approved arguments (no card is shown for it).`;
 }
 
 /** Pure completion notice shared by owned and re-attached background jobs. */
@@ -41,7 +44,7 @@ export function buildJobNotice(input: JobNoticeInput): string {
     `[nax-jobs] job ${input.id} (${input.kind} ${input.target}) ended: ${input.state}${cost}${note} log ${input.logPath}`,
     "Call `nax-workflow__state`, report the outcome to the user and propose the single next step.",
   ];
-  if (input.chainId !== undefined && input.chainStep !== undefined) {
+  if (input.chainId !== undefined) {
     noticeLines.push(chainNoticeLine(input.chainId, input.chainStep));
   }
   return noticeLines.join("\n");

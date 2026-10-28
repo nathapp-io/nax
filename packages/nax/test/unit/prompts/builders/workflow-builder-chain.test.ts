@@ -43,8 +43,19 @@ describe("buildJobNotice — chain line", () => {
     expect(lines(buildJobNotice({ ...CHAIN_JOB, chainId: undefined, chainStep: undefined }))).toHaveLength(2);
   });
 
-  test("AC-3 a chainId without a chainStep yields the two original lines", () => {
-    expect(lines(buildJobNotice({ ...CHAIN_JOB, chainStep: undefined }))).toHaveLength(2);
+  test("F1 a chainId without a chainStep still gets a chain line", () => {
+    const chainedOnly = lines(buildJobNotice({ ...CHAIN_JOB, chainStep: undefined }));
+    expect(chainedOnly).toHaveLength(3);
+    expect(chainedOnly[2]).toBe(
+      "This job is part of chain chain-1a2b3c4d; call nax-jobs__list to see whether the chain continues, and if it does, call the next step's launch tool with exactly the approved arguments (no card is shown for it).",
+    );
+  });
+
+  test("F1 a chainId without a chainStep never prints an undefined step", () => {
+    const third = lines(buildJobNotice({ ...CHAIN_JOB, chainStep: undefined }))[2] ?? "";
+    expect(third).toContain("chain chain-1a2b3c4d");
+    expect(third).not.toContain("undefined");
+    expect(third).not.toContain("step ");
   });
 
   test("AC-2/AC-9 the two original lines are unchanged for a chained job", () => {
