@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { MouseEvents } from "./mouse-input";
+import type { MouseEvent, MouseEvents } from "./mouse-input";
 import {
   type Selection,
   selectedText,
@@ -41,6 +41,30 @@ function finishSelection(gesture: MouseGesture, input: MouseSelectionInput, same
   if (text.length > 0) input.onCopy?.(text);
 }
 
+function atPressCell(gesture: MouseGesture, event: MouseEvent): boolean {
+  return event.x === gesture.press?.x && event.y === gesture.press?.y;
+}
+
+function startSelection(gesture: MouseGesture, event: MouseEvent, point: TranscriptPoint | undefined): void {
+  gesture.selection = point ? { anchor: point, focus: point } : undefined;
+  gesture.dragging = point !== undefined;
+  gesture.press = { x: event.x, y: event.y };
+  gesture.moved = false;
+}
+
+/** Track every excursion, but retain the last mapped focus when dragging outside. */
+function moveSelection(
+  gesture: MouseGesture,
+  event: MouseEvent,
+  point: TranscriptPoint | undefined,
+): Selection | undefined {
+  if (!gesture.dragging || !gesture.selection) return undefined;
+  if (!atPressCell(gesture, event)) gesture.moved = true;
+  if (!point) return undefined;
+  gesture.selection = { ...gesture.selection, focus: point };
+  return gesture.selection;
+}
+
 /** Gesture state is synchronous so batched mouse reports never read a stale focus. */
 export function useMouseSelection(input: MouseSelectionInput): Selection | undefined {
   const latest = useRef(input);
@@ -61,19 +85,13 @@ export function useMouseSelection(input: MouseSelectionInput): Selection | undef
       const point = transcriptPointAt(geometry, event.x, event.y);
       const current = gesture.current;
       if (event.kind === "press") {
-        current.selection = point ? { anchor: point, focus: point } : undefined;
-        current.dragging = point !== undefined;
-        current.press = { x: event.x, y: event.y };
-        current.moved = false;
+        startSelection(current, event, point);
         setSelection(undefined); // A click alone has no visible selection.
-      } else if (event.kind === "drag" && current.dragging && current.selection) {
-        if (event.x !== current.press?.x || event.y !== current.press?.y) current.moved = true;
-        if (point) {
-          current.selection = { ...current.selection, focus: point };
-          setSelection(current.selection);
-        }
+      } else if (event.kind === "drag") {
+        const moved = moveSelection(current, event, point);
+        if (moved) setSelection(moved);
       } else if (event.kind === "release" && current.dragging) {
-        finishSelection(current, latest.current, event.x === current.press?.x && event.y === current.press?.y);
+        finishSelection(current, latest.current, atPressCell(current, event));
       }
     });
   }, [input.active, input.mouse]);
