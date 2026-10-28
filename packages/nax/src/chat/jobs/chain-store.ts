@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync, unlinkSync } from "node:fs";
+import { linkSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { NaxError } from "@/errors";
 import { CHAIN_ID_PATTERN, type ChatChain } from "./chain-types";
@@ -14,6 +14,7 @@ export const _chainStoreDeps = {
   write: Bun.write,
   mkdir: mkdirSync,
   rename: renameSync,
+  link: linkSync,
   unlink: unlinkSync,
 };
 
@@ -25,8 +26,17 @@ export function newChainId(): string {
   return `chain-${_chainStoreDeps.randomHex()}`;
 }
 
-/** Publish complete audit records atomically using a unique sibling temporary file. */
+/** Replace an already-owned chain's audit record atomically. */
 export async function writeChainRecord(outputDir: string, chain: ChatChain): Promise<void> {
+  await publishRecord(outputDir, chain, false);
+}
+
+/** Atomically claim a new ID without replacing any record; false means collision. */
+export function createChainRecord(outputDir: string, chain: ChatChain): Promise<boolean> {
+  return publishRecord(outputDir, chain, true);
+}
+
+async function publishRecord(outputDir: string, chain: ChatChain, exclusive: boolean): Promise<boolean> {
   if (!CHAIN_ID_PATTERN.test(chain.id)) {
     throw new NaxError(`[chat] Invalid chain id: ${chain.id}`, "CHAT_CHAIN_INVALID_ID", { stage: "chat" });
   }
@@ -35,7 +45,12 @@ export async function writeChainRecord(outputDir: string, chain: ChatChain): Pro
   try {
     _chainStoreDeps.mkdir(dir, { recursive: true });
     await _chainStoreDeps.write(temp, JSON.stringify(chain, null, 2));
-    _chainStoreDeps.rename(temp, join(dir, `${chain.id}.json`));
+    const published = publishTemp(temp, join(dir, `${chain.id}.json`), exclusive);
+    if (exclusive) {
+      const cleanupCause = removeTemp(temp);
+      if (cleanupCause) throw cleanupCause;
+    }
+    return published;
   } catch (cause) {
     const cleanupCause = removeTemp(temp);
     throw new NaxError(`[chat] Failed to write chain ${chain.id}`, "CHAT_CHAIN_WRITE_FAILED", {
@@ -44,6 +59,21 @@ export async function writeChainRecord(outputDir: string, chain: ChatChain): Pro
       cause,
       cleanupCause,
     });
+  }
+}
+
+/** A same-directory hard link publishes the complete inode with atomic no-replace semantics. */
+function publishTemp(temp: string, destination: string, exclusive: boolean): boolean {
+  if (!exclusive) {
+    _chainStoreDeps.rename(temp, destination);
+    return true;
+  }
+  try {
+    _chainStoreDeps.link(temp, destination);
+    return true;
+  } catch (err) {
+    if (typeof err === "object" && err !== null && "code" in err && err.code === "EEXIST") return false;
+    throw err;
   }
 }
 

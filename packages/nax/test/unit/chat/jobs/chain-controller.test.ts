@@ -65,11 +65,18 @@ beforeEach(() => {
   jobs = new Map();
   writes = 0;
   waiters = [];
-  _chainStoreDeps.rename = (from, to) => {
-    originalDeps.rename(from, to);
+  const published = (): void => {
     writes++;
     for (const waiter of waiters) if (writes >= waiter.count) waiter.resolve();
     waiters = waiters.filter((waiter) => writes < waiter.count);
+  };
+  _chainStoreDeps.rename = (from, to) => {
+    originalDeps.rename(from, to);
+    published();
+  };
+  _chainStoreDeps.link = (from, to) => {
+    originalDeps.link(from, to);
+    published();
   };
   chains = controller();
 });
@@ -80,6 +87,43 @@ afterEach(() => {
 });
 
 describe("createChainController", () => {
+  test("F3 retries an existing ID without replacing its audit history", async () => {
+    _chainStoreDeps.randomHex = () => "11111111";
+    const original = await chains.activate({ steps: [first] });
+    chains.stop("original ended");
+    await written(2);
+    const preserved = await readChainRecord(dir, original.id);
+    let attempts = 0;
+    _chainStoreDeps.randomHex = () => (++attempts === 1 ? "11111111" : "22222222");
+    const next = await controller().activate({ steps: [second] });
+    expect(next.id).toBe("chain-22222222");
+    expect(await readChainRecord(dir, original.id)).toEqual(preserved);
+    expect(await readChainRecord(dir, next.id)).toEqual(next);
+  });
+  test("F3 separate hosts atomically resolve simultaneous ID collisions", async () => {
+    let attempts = 0;
+    _chainStoreDeps.randomHex = () => (++attempts <= 2 ? "11111111" : "22222222");
+    const [one, two] = await Promise.all([
+      chains.activate({ steps: [first] }),
+      controller().activate({ steps: [second] }),
+    ]);
+    expect(one.id).not.toBe(two.id);
+    expect(await readChainRecord(dir, one.id)).toEqual(one);
+    expect(await readChainRecord(dir, two.id)).toEqual(two);
+  });
+  test("F3 fails closed if ID collisions exhaust retries and allows a later retry", async () => {
+    _chainStoreDeps.randomHex = () => "11111111";
+    const original = await chains.activate({ steps: [first] });
+    const other = controller();
+    await expect(other.activate({ steps: [second] })).rejects.toMatchObject({
+      code: "CHAT_CHAIN_WRITE_FAILED",
+      context: { stage: "chat" },
+    });
+    expect(other.active()).toBeUndefined();
+    expect(await readChainRecord(dir, original.id)).toEqual(original);
+    _chainStoreDeps.randomHex = () => "22222222";
+    expect((await other.activate({ steps: [second] })).id).toBe("chain-22222222");
+  });
   test("AC-1 activates the approved steps", async () => {
     expect((await chains.activate({ steps: [first] })).state).toBe("active");
   });

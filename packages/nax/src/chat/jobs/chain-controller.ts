@@ -2,10 +2,12 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import { resolveStepArgv } from "./chain-argv";
-import { newChainId, writeChainRecord } from "./chain-store";
+import { createChainRecord, newChainId, writeChainRecord } from "./chain-store";
 import type { ChainCheck, ChainState, ChainStep, ChatChain } from "./chain-types";
 import type { ChatJobs } from "./job-runner";
 import type { ChatJobKind, ChatJobState } from "./job-types";
+
+const CHAIN_ID_MAX_ATTEMPTS = 16;
 
 export interface ChainLaunch {
   readonly kind: ChatJobKind;
@@ -86,13 +88,25 @@ class ChainController implements ChatChains {
         steps: proposal.steps.map((step) => ({ ...step, argv: [...step.argv] })),
         ...(proposal.costCap === undefined ? {} : { costCap: proposal.costCap }),
       };
-      await writeChainRecord(this.options.outputDir, chain);
-      this.current = chain;
+      const activated = await this.reserve(chain);
+      this.current = activated;
       this.next = 1;
-      return chain;
+      return activated;
     } finally {
       this.activating = false;
     }
+  }
+
+  private async reserve(chain: ChatChain): Promise<ChatChain> {
+    for (let attempt = 0; attempt < CHAIN_ID_MAX_ATTEMPTS; attempt++) {
+      const candidate = attempt === 0 ? chain : { ...chain, id: newChainId() };
+      if (await createChainRecord(this.options.outputDir, candidate)) return candidate;
+    }
+    throw new NaxError("[chat] Could not reserve a unique chain ID", "CHAT_CHAIN_WRITE_FAILED", {
+      stage: "chat",
+      attempts: CHAIN_ID_MAX_ATTEMPTS,
+      outputDir: this.options.outputDir,
+    });
   }
 
   admit(launch: ChainLaunch): ChainAdmission {
