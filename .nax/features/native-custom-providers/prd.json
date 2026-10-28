@@ -3,7 +3,7 @@
   "feature": "native-custom-providers",
   "branchName": "feat/native-custom-providers",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T14:15:40.992Z",
+  "updatedAt": "2026-10-28T14:20:55.509Z",
   "userStories": [
     {
       "id": "US-001",
@@ -147,14 +147,17 @@
         "thinking"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "New behavior-bearing provider registration, no-template model synthesis and real backend payload integration cross the catalog/auth seam; credential precedence mandates strict security TDD."
+        "reasoning": "New behavior-bearing provider registration, no-template model synthesis and real backend payload integration cross the catalog/auth seam; credential precedence mandates strict security TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-ai/src/protocols/pi-client.ts",
@@ -185,7 +188,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f084dab4baae9d4df9da6184549758c995e179f0"
     },
     {
       "id": "US-004",
