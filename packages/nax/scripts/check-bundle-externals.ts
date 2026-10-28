@@ -54,11 +54,17 @@
  *    declares every runtime dependency of each itself
  *    (scripts/lib/agent-bundling.ts).
  *
+ * 5. ink must stay pinned to the version its patch is keyed on, and the copy
+ *    the bundler reads must carry the patch. `patches/ink@6.7.0.patch` (root
+ *    `patchedDependencies`) backports Ink 8's incremental cursor fix (#2717);
+ *    the chat renders incrementally, so an unpatched ink draws every frame one
+ *    row low. Widening the pin to a range drops the patch without an error.
+ *
  * Usage:
  *   bun scripts/check-bundle-externals.ts
  *
  * Exit codes:
- *   0 -- all four invariants hold
+ *   0 -- all five invariants hold
  *   1 -- one of them is broken
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -69,6 +75,9 @@ const REQUIRED_EXTERNAL = '--external "@nathapp/nax-ai"';
 const REQUIRED_SANDBOX_EXTERNAL = '--external "@anthropic-ai/sandbox-runtime"';
 const STUB_SPECIFIER = "file:./stubs/react-devtools-core";
 const STUB_ENTRY = "stubs/react-devtools-core/index.js";
+const INK_VERSION = "6.7.0";
+const INK_PATCH_KEY = `ink@${INK_VERSION}`;
+const INK_PATCHED_LINE = "cursorUp(previousLines.length - 1)";
 
 const pkg = JSON.parse(readFileSync("package.json", "utf8")) as {
   scripts?: Record<string, string>;
@@ -117,6 +126,23 @@ if (!existsSync(STUB_ENTRY)) {
   failures.push(`the stub entry point ${STUB_ENTRY} is missing.`);
 }
 
+const repoRoot = join(import.meta.dir, "..", "..", "..");
+const rootPkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
+  patchedDependencies?: Record<string, string>;
+};
+const inkDeclared = pkg.dependencies?.ink;
+const inkPatch = rootPkg.patchedDependencies?.[INK_PATCH_KEY];
+if (inkDeclared !== INK_VERSION) {
+  failures.push(`"ink" must be pinned to exactly "${INK_VERSION}" (found ${inkDeclared}); its patch is keyed on it.`);
+}
+if (inkPatch === undefined || !existsSync(join(repoRoot, inkPatch))) {
+  failures.push(`the root package.json must register an existing patch for "${INK_PATCH_KEY}" in patchedDependencies.`);
+}
+const inkLogUpdate = join("node_modules", "ink", "build", "log-update.js");
+if (!existsSync(inkLogUpdate) || !readFileSync(inkLogUpdate, "utf8").includes(INK_PATCHED_LINE)) {
+  failures.push(`the installed ink is unpatched: ${inkLogUpdate} lacks ${INK_PATCHED_LINE}. Run bun install.`);
+}
+
 const agentPkg = JSON.parse(readFileSync(join(import.meta.dir, "..", "..", "nax-agent", "package.json"), "utf8"));
 failures.push(...checkAgentBundling(pkg, agentPkg));
 
@@ -129,5 +155,5 @@ if (failures.length > 0) {
 }
 
 console.log(
-  "check-bundle-externals: nax-ai and sandbox-runtime stay external; react-devtools-core resolves to the stub; nax-agent and nax-agent-acp are bundled",
+  "check-bundle-externals: nax-ai and sandbox-runtime stay external; react-devtools-core resolves to the stub; nax-agent and nax-agent-acp are bundled; ink is pinned and patched",
 );

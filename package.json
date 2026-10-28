@@ -12,5 +12,8 @@
   },
   "devDependencies": {
     "typescript": "7.0.2"
+  },
+  "patchedDependencies": {
+    "ink@6.7.0": "patches/ink@6.7.0.patch"
   }
 }
