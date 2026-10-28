@@ -6,6 +6,9 @@ const MINIMAX_2056 =
   '429 {"type":"error","error":{"type":"rate_limit_error","message":"Token Plan usage limit reached: Upgrade your Token Plan or purchase Credits for more usage. (2056)"},"request_id":"071bcc0b16aa41f1df8e44bb58fc234e"}';
 const SLOW_DOWN =
   '429 {"type":"error","error":{"type":"rate_limit_error","message":"Rate limit exceeded, please slow down"}}';
+/** MiniMax-M3 with an empty balance: provider error type and message both use an underscore. */
+const MINIMAX_M3_402 =
+  '402 {"type":"error","error":{"type":"insufficient_balance_error","message":"insufficient balance (1008)"}}';
 
 describe("quota classification", () => {
   test("isQuotaMessage matches usage-limit / quota / credits wording, not plain rate limits", () => {
@@ -51,5 +54,33 @@ describe("quota classification", () => {
     const failure = classifyCompleteException(new Error(MINIMAX_2056));
     expect(failure.outcome).toBe("fail-quota");
     expect(failure.retriable).toBe(false);
+  });
+});
+
+/**
+ * MiniMax-M3 reports an empty balance as `insufficient_balance_error` — an
+ * underscore where the pattern historically demanded a space — so the wording
+ * never matched and an account exhaustion was reported as a transient failure.
+ * Twin of nax-ai's QUOTA_MESSAGE_PATTERN, which accepts the same spellings.
+ */
+describe("underscore-delimited insufficient-balance wording", () => {
+  test("isQuotaMessage matches an insufficient_balance_error payload", () => {
+    expect(isQuotaMessage('{"error":{"type":"insufficient_balance_error","message":"x"}}')).toBe(true);
+    expect(isQuotaMessage(MINIMAX_M3_402)).toBe(true);
+  });
+
+  test("isQuotaMessage matches 'insufficient balance (1008)'", () => {
+    expect(isQuotaMessage("insufficient balance (1008)")).toBe(true);
+  });
+
+  test.each(["insufficient_credits", "insufficient_quota", "insufficient_balance"])(
+    "isQuotaMessage matches the underscore spelling %s",
+    (wording) => {
+      expect(isQuotaMessage(wording)).toBe(true);
+    },
+  );
+
+  test("a transient rate limit stays false, so the rate-limit/quota distinction survives", () => {
+    expect(isQuotaMessage("Rate limit exceeded, please slow down")).toBe(false);
   });
 });

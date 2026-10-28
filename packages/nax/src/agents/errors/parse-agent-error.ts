@@ -102,9 +102,18 @@ export function classifyParsedAgentError(
   }
 }
 
-/** Account/plan exhaustion wording: the fault lasts for the run, unlike a transient rate limit. */
+/**
+ * Account/plan exhaustion wording: the fault lasts for the run, unlike a
+ * transient rate limit.
+ *
+ * `insufficient[ _](credits|quota|balance)` accepts the underscore spelling
+ * too: MiniMax-M3 reports an empty balance as `insufficient_balance_error`, and
+ * a space-only pattern read that account exhaustion as a transient failure.
+ * Twin of QUOTA_MESSAGE_PATTERN in packages/nax-ai src/protocols/errors.ts
+ * (nax-ai cannot import from nax); keep the two in step.
+ */
 const QUOTA_PATTERN =
-  /usage limit reached|token plan|exceeded your current quota|insufficient (credits|quota|balance)|purchase credits/i;
+  /usage limit reached|token plan|exceeded your current quota|insufficient[ _](credits|quota|balance)|purchase credits/i;
 
 export function isQuotaMessage(message: string): boolean {
   return QUOTA_PATTERN.test(message);
