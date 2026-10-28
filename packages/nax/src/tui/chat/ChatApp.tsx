@@ -538,6 +538,7 @@ export function ChatApp({
         ))}
       </Box>
       <TranscriptViewport
+        key={state.sessionId}
         mouse={mouse}
         top={HEADER_ROWS}
         onCopy={onCopy}

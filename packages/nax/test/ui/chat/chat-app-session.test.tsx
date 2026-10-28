@@ -39,6 +39,7 @@ function session(id: string, title: string | null): ChatHostState {
 function mount(
   options: {
     history?: ChatHistory;
+    resumeHistory?: ChatHistory;
     title?: string;
     missingHistory?: boolean;
     resource?: string;
@@ -71,7 +72,7 @@ function mount(
     },
     resume: async ({ id = "s2" }) => {
       state = session(id, `title ${id}`);
-      history = { messages: [{ role: "user", content: `from ${id}` }] };
+      history = options.resumeHistory ?? { messages: [{ role: "user", content: `from ${id}` }] };
     },
     listSessions: async () => [session("s2", "title s2").meta],
   };
@@ -135,6 +136,39 @@ describe("ChatApp session transcript", () => {
     expect(ui.frame()).not.toContain("earlier question");
     expect(ui.frame()).not.toContain("earlier answer");
     expect(ui.frame()).not.toContain("live before resume");
+  });
+
+  test.each(["direct", "picker"])("B1 %s resume follows the new session after PageUp", async (path) => {
+    const history = (count: number, label: string): ChatHistory => ({
+      messages: Array.from({ length: count }, (_, index) => ({ role: "user", content: `${label} message ${index}` })),
+    });
+    const ui = mount({ history: history(30, "old"), resumeHistory: history(40, "new") });
+    expect(ui.frame()).toContain("resumed first session");
+    await ui.key("\u001b[5~");
+    expect(ui.frame()).not.toContain("resumed first session");
+    await ui.command(path === "direct" ? "/resume s2" : "/resume");
+    if (path === "picker") await ui.key("\r");
+    expect(ui.host.current().sessionId).toBe("s2");
+    inOrder(ui.frame(), "new message 39", "resumed title s2");
+    expect(ui.frame()).not.toContain("new lines (End)");
+    expect(ui.frame()).not.toContain("old message");
+  });
+
+  test("B1 same-id mode and model switches preserve the scrolled viewport", async () => {
+    const ui = mount({
+      history: {
+        messages: Array.from({ length: 30 }, (_, index) => ({ role: "user", content: `stored message ${index}` })),
+      },
+    });
+    await ui.key("\u001b[5~");
+    const transcript = () => ui.frame().split("\n").slice(2, -2).join("\n");
+    const scrolled = transcript();
+    expect(ui.frame()).not.toContain("resumed first session");
+    for (const command of ["/mode full", "/model p/m"]) {
+      await ui.command(command);
+      expect(ui.host.current().sessionId).toBe("s1");
+      expect(transcript()).toBe(scrolled);
+    }
   });
 
   test("AC-5 same-id mode and model changes preserve replay and live entries", async () => {
