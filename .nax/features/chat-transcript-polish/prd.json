@@ -3,7 +3,7 @@
   "feature": "chat-transcript-polish",
   "branchName": "feat/chat-transcript-polish",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T11:40:30.699Z",
+  "updatedAt": "2026-10-28T11:49:10.093Z",
   "userStories": [
     {
       "id": "US-001",
@@ -102,14 +102,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "The code scope is medium: two existing display paths consume US-001's parser using typed host and replay fixtures. Retain strict three-session-tdd under the prompt's explicit sessions override because this story changes persisted-session replay; it does not add authentication or change storage/redaction policy."
+        "reasoning": "The code scope is medium: two existing display paths consume US-001's parser using typed host and replay fixtures. Retain strict three-session-tdd under the prompt's explicit sessions override because this story changes persisted-session replay; it does not add authentication or change storage/redaction policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -136,7 +139,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "55e70ddfc014da45d2b9a72b676a796e884d0cf6"
     },
     {
       "id": "US-003",
