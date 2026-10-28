@@ -87,6 +87,11 @@ describe("writeJobRecord", () => {
     await store.writeJobRecord(dir, record);
     expect(await store.readJobRecords(dir)).toEqual([record]);
   });
+  test("chain AC-11 preserves optional chain links", async () => {
+    const record: ChatJob = { ...job(), chainId: "chain-1a2b3c4d", chainStep: 2 };
+    await store.writeJobRecord(dir, record);
+    expect(await store.readJobRecords(dir)).toEqual([record]);
+  });
   test("AC-7 replaces an existing record", async () => {
     await store.writeJobRecord(dir, job());
     const updated = job({ state: "succeeded", exitCode: 0 });

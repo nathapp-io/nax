@@ -21,6 +21,9 @@ export interface ChatJob {
   readonly sessionId: string;
   /** When the user said yes on the launch card. */
   readonly approvedAt: string;
+  readonly chainId?: string;
+  /** 1-based index of this job's step in the approved chain. */
+  readonly chainStep?: number;
   readonly cancelRequested?: true;
   readonly exitCode?: number;
   readonly cost?: number;
