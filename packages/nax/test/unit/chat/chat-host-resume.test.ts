@@ -430,6 +430,32 @@ describe("session hygiene", () => {
     await host.resume({});
     expect(host.current().sessionId).toBe("prior");
   });
+  test.each(["close", "replace", "switch-close"] as const)(
+    "cleanup retains lock during metadata re-read and removal on %s",
+    async (operation) => {
+      await start();
+      const id = host.current().sessionId;
+      if (operation === "switch-close") await host.switchTo({ mode: "full" });
+      if (operation === "replace") await stored("prior");
+      const read = storage.readMeta.bind(storage);
+      const remove = storage.removeMeta.bind(storage);
+      const holders: unknown[] = [];
+      storage.readMeta = async (sessionId) => {
+        if (sessionId === id) holders.push(await storage.readLockHolder(id));
+        return read(sessionId);
+      };
+      storage.removeMeta = async (sessionId) => {
+        if (sessionId === id) holders.push(await storage.readLockHolder(id));
+        await remove(sessionId);
+      };
+      if (operation === "replace") await host.resume({ id: "prior" });
+      else await host.close();
+      expect(holders).toEqual([expect.objectContaining({ state: "own" }), expect.objectContaining({ state: "own" })]);
+      expect(await storage.readLockHolder(id)).toBeNull();
+      expect(await read(id)).toBeNull();
+      expect(logger.warn).not.toHaveBeenCalled();
+    },
+  );
   test("hygiene AC-9 closes an unsent new session and removes meta", async () => {
     await start();
     const id = host.current().sessionId;
@@ -481,6 +507,7 @@ describe("session hygiene", () => {
         await host.resume({ id: "prior" });
         expect(host.current().sessionId).toBe("prior");
       } else await host.close();
+      expect(await storage.readLockHolder(id)).toBeNull();
       expect(logger.warn).toHaveBeenCalledWith("chat", "could not remove empty session", {
         sessionId: id,
         cause: expect.anything(),

@@ -37,6 +37,7 @@ export async function resumableRows(
   return rows.filter((row): row is NonNullable<typeof row> => row !== null);
 }
 
+/** Caller must hold the session's storage lock through the re-read and removal. */
 export async function removeIfEmpty(input: {
   readonly storage: Pick<SessionStorage, "readMeta" | "removeMeta">;
   readonly logger: Pick<Logger, "warn">;
@@ -70,11 +71,16 @@ export function createSessionHygiene(deps: HygieneDeps): {
         try {
           await handle.session.close();
         } finally {
-          await handle.release();
+          // Drain per-open work without letting another writer acquire the lock.
+          await handle.release({ retainLock: true });
         }
       } finally {
-        if (handle.meta.sessionId !== nextId)
-          await removeIfEmpty({ ...deps, sessionId: handle.meta.sessionId, history: handle.history, sentOn });
+        try {
+          if (handle.meta.sessionId !== nextId)
+            await removeIfEmpty({ ...deps, sessionId: handle.meta.sessionId, history: handle.history, sentOn });
+        } finally {
+          await handle.release();
+        }
       }
     },
   };
