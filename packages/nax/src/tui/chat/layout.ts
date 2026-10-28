@@ -172,6 +172,23 @@ function cardIndent(theme: ChatTheme): string {
   return SPACE.repeat(displayWidth(resultPrefix(theme)));
 }
 
+/** A skill's slash invocation, muted line count, and optional indented body. */
+function skillLines(entry: Extract<TranscriptEntry, { kind: "skill" }>, context: LayoutContext): readonly StyledLine[] {
+  const sources = entry.body === "" ? [] : entry.body.replace(/(?:\r\n|[\r\n])$/, "").split(SOURCE_LINE_BREAK);
+  const invocation = `/${entry.name}${entry.args === "" ? "" : SPACE + entry.args}`;
+  const user = userLines({ kind: "user", text: invocation }, context);
+  const indent = cardIndent(context.theme);
+  const unit = sources.length === 1 ? "line" : "lines";
+  const hint = context.expanded ? HIDE_HINT : SHOW_HINT;
+  const label = `skill ${entry.name} · ${sources.length} ${unit} ${hint}`;
+  const header = cardRows(label, { head: resultPrefix(context.theme), rest: indent }, { color: "muted" }, context);
+  if (!context.expanded) return [...user, ...header];
+  const body = sources.flatMap((source) =>
+    cardRows(source, { head: indent, rest: indent }, { color: "muted" }, context),
+  );
+  return [...user, ...header, ...body];
+}
+
 /**
  * One card line's rows: its text split at its own line breaks, the first physical line
  * behind `head` and every later one behind `rest`. A summary that interpolates a path
@@ -267,6 +284,8 @@ function layoutEntry(entry: TranscriptEntry, context: LayoutContext): readonly S
   switch (entry.kind) {
     case "user":
       return userLines(entry, context);
+    case "skill":
+      return skillLines(entry, context);
     case "reply":
       return replyLines(entry, context);
     case "thinking":

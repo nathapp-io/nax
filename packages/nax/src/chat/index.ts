@@ -53,6 +53,7 @@ export {
 } from "./open-chat-session";
 export type { ChatResources } from "./resources";
 export { sessionTitleText } from "./session-title";
+export { parseSkillInvocation } from "./skill-invocation";
 export {
   type ResolvedSubagentModel,
   type ResolveSubagentModelOptions,
