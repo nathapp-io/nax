@@ -26,6 +26,17 @@ interface Options {
   permission?: "write" | "read" | "reject";
   fail?: "reply" | "unresolve";
 }
+function rejectWrite(cmd: readonly string[], failure: Options["fail"]): void {
+  const replyFailed = failure === "reply" && cmd.some((arg) => arg.includes("key=wo-"));
+  const unresolveFailed = failure === "unresolve" && cmd.some((arg) => arg.includes("unresolveReviewThread"));
+  if (replyFailed || unresolveFailed) throw new Error("write rejected");
+}
+
+function permissionReply(permission: Options["permission"]): { permission: string } {
+  if (permission === "reject") throw new Error("permission rejected");
+  return { permission: permission ?? "read" };
+}
+
 function harness(options: Options = {}) {
   const writes: string[][] = [];
   const permissions: string[][] = [];
@@ -51,19 +62,14 @@ function harness(options: Options = {}) {
     run: async (cmd) => {
       if (cmd.includes("POST") || cmd.includes("PATCH") || cmd.some((arg) => arg.startsWith("query=mutation"))) {
         writes.push(cmd);
-        if (
-          (options.fail === "reply" && cmd.some((arg) => arg.includes("key=wo-"))) ||
-          (options.fail === "unresolve" && cmd.some((arg) => arg.includes("unresolveReviewThread")))
-        )
-          throw new Error("write rejected");
+        rejectWrite(cmd, options.fail);
         return ok({ id: 1 });
       }
       if (cmd[0] === "git") return { exitCode: 0, stdout: "git@github.com:o/r.git", stderr: "" };
       if (cmd.includes("user")) return ok({ login: "bot", id: 1 });
       if (cmd.some((arg) => arg.includes("/permission"))) {
         permissions.push(cmd);
-        if (options.permission === "reject") throw new Error("permission rejected");
-        return ok({ permission: options.permission ?? "read" });
+        return ok(permissionReply(options.permission));
       }
       if (cmd.includes("graphql"))
         return ok({
