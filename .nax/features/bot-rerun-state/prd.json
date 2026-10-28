@@ -3,7 +3,7 @@
   "feature": "bot-rerun-state",
   "branchName": "feat/bot-rerun-state",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T17:05:07.277Z",
+  "updatedAt": "2026-10-28T17:12:24.211Z",
   "userStories": [
     {
       "id": "US-001",
@@ -332,14 +332,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Four existing source files add a dual-format parser, presentation-only counts and a best-effort index edit through established dependencies; ordinary TDD can cover compatibility and failure behavior without changing permission decisions."
+        "reasoning": "Four existing source files add a dual-format parser, presentation-only counts and a best-effort index edit through established dependencies; ordinary TDD can cover compatibility and failure behavior without changing permission decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/item-threads.ts",
@@ -374,7 +377,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d4da22a2d46610fd0a5ddb2cfe6f184ff1c3629c"
     },
     {
       "id": "US-007",
