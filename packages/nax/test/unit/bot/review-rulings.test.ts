@@ -32,7 +32,7 @@ const outcome: RecordRulingsOutcome = {
   asked: 0,
   failed: 0,
 };
-function input() {
+function input(): Parameters<typeof readReviewRulings>[0] {
   return {
     ctx,
     staticMode: false,
@@ -54,7 +54,10 @@ function input() {
     threads: [],
     comments: [],
     cwd: "/repo",
-    deps: { run: async () => ({ exitCode: 0, stdout: "", stderr: "" }) },
+    deps: {
+      run: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+      readText: async () => "",
+    },
   };
 }
 beforeEach(() => {
