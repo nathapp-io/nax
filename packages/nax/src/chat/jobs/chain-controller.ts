@@ -69,6 +69,9 @@ class ChainController implements ChatChains {
   constructor(private readonly options: ChainControllerOptions) {}
 
   active(): ChatChain | undefined {
+    if (this.current?.state === "active" && this.current.sessionId !== this.options.sessionId()) {
+      this.stop("chat session changed");
+    }
     return this.current?.state === "active" ? this.current : undefined;
   }
 
@@ -110,8 +113,9 @@ class ChainController implements ChatChains {
   }
 
   admit(launch: ChainLaunch): ChainAdmission {
-    const chain = this.active();
-    if (!chain) return { kind: "card" };
+    // Keep the pre-invalidation chain so this call can report why it stopped.
+    const chain = this.current;
+    if (chain?.state !== "active") return { kind: "card" };
     const reason = this.refusal(chain, launch);
     if (reason) {
       this.stop(reason);
@@ -125,10 +129,14 @@ class ChainController implements ChatChains {
   }
 
   private refusal(chain: ChatChain, launch: ChainLaunch): string | undefined {
+    if (chain.sessionId !== this.options.sessionId()) return "chat session changed";
     const step = chain.steps[this.next - 1];
     if (!step || step.kind !== launch.kind) return "off-card step";
     const argv = resolveStepArgv(step.argv, step.prIndex, launch.pr);
     if (argv.length !== launch.argv.length || argv.some((token, i) => token !== launch.argv[i])) return "off-card step";
+    if (step.prIndex !== undefined && chain.pr !== undefined && launch.pr !== chain.pr) {
+      return `PR ${launch.pr} differs from PR ${chain.pr} the chain already uses`;
+    }
     if (this.next > 1) {
       const previousId = chain.steps[this.next - 2]?.jobId;
       if (!previousId || this.options.jobs.get(previousId)?.state !== "succeeded") {
@@ -174,8 +182,9 @@ class ChainController implements ChatChains {
   }
 
   stop(reason: string): ChatChain | undefined {
-    const chain = this.active();
-    if (!chain) return undefined;
+    // Do not call active(): session invalidation itself stops through this method.
+    const chain = this.current;
+    if (chain?.state !== "active") return undefined;
     this.current = { ...chain, state: "stopped", stopReason: reason, endedAt: this.options.now().toISOString() };
     this.persist(this.current);
     return this.current;
@@ -191,6 +200,7 @@ class ChainController implements ChatChains {
   }
 
   summary(): ChainSummary | null {
+    this.active();
     const chain = this.current;
     if (!chain) return null;
     return {
