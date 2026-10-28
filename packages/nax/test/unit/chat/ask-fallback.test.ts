@@ -52,6 +52,23 @@ describe("createAskFallback", () => {
     controller.handle(approval());
     return { controller, answer, response, prompt, cancel, logger };
   }
+  test("US-008 AC-18: fallback approval resolves a full-mode host promise after its delay", async () => {
+    const { controller, response, prompt, answer } = setup();
+    controller.reset();
+    controller.setMode("full");
+    const result = controller.requestHostApproval({ tool: "nax-jobs__run", summary: "Launch", reason: "Billed" });
+    const id = controller.pending()[0]?.requestId;
+    await clock.advance(DELAY - 1);
+    expect(prompt).not.toHaveBeenCalled();
+    expect(controller.pending()).toHaveLength(1);
+    await clock.advance(1);
+    expect(prompt).toHaveBeenCalledTimes(1);
+    response.resolve({ requestId: `chat-${id}`, action: "approve", respondedAt: clock.now() });
+    await clock.advance(0);
+    expect(await result).toBe("allow");
+    expect(controller.pending()).toEqual([]);
+    expect(answer).not.toHaveBeenCalled();
+  });
   test("AC-1: waits for the complete delay", async () => {
     const { prompt } = setup();
     await clock.advance(DELAY - 1);

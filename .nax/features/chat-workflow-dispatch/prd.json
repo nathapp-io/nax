@@ -1,0 +1,1037 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-workflow-dispatch",
+  "branchName": "feat/chat-workflow-dispatch",
+  "createdAt": "2026-10-27T00:00:00Z",
+  "updatedAt": "2026-10-27T16:15:43.827Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Job types and atomic job record store",
+      "description": "**Goal** — Add the durable job contract and atomic per-project record storage.\n\n**Motivation** — That stitching is the pain the roadmap exists to remove.\n\n**Approach** — New `src/chat/jobs/job-types.ts` with `ChatJobKind`, `ChatJobState`, `ChatJob` and `JOB_ID_PATTERN`, and new `src/chat/jobs/job-store.ts` with `CHAT_JOBS_DIR`, `jobsDir`, `jobLogPath`, `newJobId`, `writeJobRecord` and `readJobRecords`, as in Design § Data shapes. `writeJobRecord` writes `<id>.json` through a temp file and a rename, so a reader never sees half a record. `readJobRecords` keeps only records with `schemaVersion` 1, a string `id` matching `JOB_ID_PATTERN`, a known `kind` and `state`, a numeric `pid`, and string `cwd`, `startedAt`, `logPath` and `sessionId`. `_jobStoreDeps.randomHex` (default: 8 hex characters from `crypto.randomUUID()`) makes `newJobId` testable. Tests go in a new `test/unit/chat/jobs/job-store.test.ts`, using a temp directory.\n\nJob records live in the project output dir: `<outputDir>/chat-jobs/<id>.json`, with the log at `<outputDir>/chat-jobs/<id>.log`. `outputDir` is the value `chat-host.ts` already computes (`projectOutputDir(getProjectKey(config, repoRoot), config.outputDir)`), so jobs are per project and a later chat in the same repo finds them. A job record file that is not JSON or fails the shape guard is skipped; a missing directory yields `[]`.\n\n**Scope** — In: the record types, path/id helpers, atomic writes, shape filtering and newest-first reads. Out: argv parsing (US-002), outcome resolution (US-003), runner lifecycle (US-005–US-007), provider and host composition (US-009–US-013).\n\n**Interface** —\n```ts\nexport type ChatJobKind = \"plan\" | \"run\" | \"bot_review\" | \"bot_fix\";\nexport type ChatJobState = \"running\" | \"succeeded\" | \"failed\" | \"cancelled\" | \"lost\";\n\nexport interface ChatJob {\n  readonly schemaVersion: 1;\n  /** `<kind>-<8 lowercase hex>`, e.g. `run-1a2b3c4d`. */\n  readonly id: string;\n  readonly kind: ChatJobKind;\n  /** Feature name for plan/run; the PR number as a decimal string for bot jobs. */\n  readonly target: string;\n  readonly argv: readonly string[];\n  /** The repo root the job runs in. */\n  readonly cwd: string;\n  readonly pid: number;\n  readonly startedAt: string;\n  readonly endedAt?: string;\n  readonly state: ChatJobState;\n  readonly logPath: string;\n  /** The chat session that started it. */\n  readonly sessionId: string;\n  /** When the user said yes on the launch card. */\n  readonly approvedAt: string;\n  readonly cancelRequested?: true;\n  readonly exitCode?: number;\n  readonly cost?: number;\n  readonly progress?: { readonly passed: number; readonly total: number };\n  readonly note?: string;\n}\n\nexport const JOB_ID_PATTERN = /^(plan|run|bot_review|bot_fix)-[0-9a-f]{8}$/;\n\nexport const CHAT_JOBS_DIR = \"chat-jobs\";\nexport function jobsDir(outputDir: string): string;            // join(outputDir, \"chat-jobs\")\nexport function jobLogPath(outputDir: string, id: string): string; // join(jobsDir, `${id}.log`)\nexport function newJobId(kind: ChatJobKind): string;           // via _jobStoreDeps.randomHex\nexport function writeJobRecord(outputDir: string, job: ChatJob): Promise<void>;\nexport function readJobRecords(outputDir: string): Promise<ChatJob[]>; // newest first by startedAt\n```",
+      "acceptanceCriteria": [
+        "[unit] jobsDir(\"/o\") returns /o/chat-jobs.",
+        "[unit] jobLogPath(\"/o\", \"run-1a2b3c4d\") returns /o/chat-jobs/run-1a2b3c4d.log.",
+        "[unit] With _jobStoreDeps.randomHex returning 1a2b3c4d, newJobId(\"run\") returns run-1a2b3c4d.",
+        "[unit] JOB_ID_PATTERN accepts bot_fix-0f0f0f0f.",
+        "[unit] JOB_ID_PATTERN rejects run-../../x.",
+        "[unit] writeJobRecord(dir, job) followed by readJobRecords(dir) returns one record deep-equal to job.",
+        "[unit] writeJobRecord for an existing id replaces the record, and readJobRecords returns the new state.",
+        "[unit] readJobRecords(dir) for records started at 2026-10-01T00:00:00Z and 2026-10-02T00:00:00Z returns the 2026-10-02 record first.",
+        "[unit] readJobRecords(dir) skips a chat-jobs/x.json holding not json and still returns the valid records.",
+        "[unit] readJobRecords(dir) skips a record whose state is paused.",
+        "[unit] readJobRecords(dir) skips a record whose id is ../escape.",
+        "[unit] readJobRecords(dir) for an output dir with no chat-jobs/ directory returns [].",
+        "[unit] After writeJobRecord(dir, job), chat-jobs/ holds no file other than <id>.json (the temp file was renamed into place)."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "jobs",
+        "persistence"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive typed records and atomic filesystem storage using established seams and temp-directory tests.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/workflow/feature-state.ts",
+        "packages/nax/src/runtime/paths.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/jobs/job-types.ts",
+        "packages/nax/src/chat/jobs/job-store.ts",
+        "packages/nax/test/unit/chat/jobs/job-store.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "20dfff5e085f14305ee8fd54e90caaeb8c0d69a8"
+    },
+    {
+      "id": "US-002",
+      "title": "Validate launch input and build exact CLI argv",
+      "description": "**Goal** — Add pure validation and shell-free argv construction for the four launch kinds.\n\n**Motivation** — That stitching is the pain the roadmap exists to remove.\n\n**Approach** — New `src/chat/jobs/job-argv.ts` with `JobLaunchInput`, `parseJobInput` and `buildJobArgv`, as in Design § Data shapes, with the validation rows of Design § Failure Handling that concern input fields. Pure: no file reads. Tests go in a new `test/unit/chat/jobs/job-argv.test.ts`.\n\nArgv, exactly, with `E` = `...naxEntry`, `R` = `repoRoot` and `P` = one `\"--profile\", <p>` pair per profile in order:\n- plan: `[E, \"plan\", \"-f\", feature, \"--from\", spec, \"-d\", R, P]`\n- run: `[E, \"run\", \"-f\", feature, \"-d\", R, \"--headless\", P]`, then `\"-m\", String(maxIterations)` when set, then `\"--max-cost\", String(maxCost)` when set\n- bot_review: `[E, \"bot\", \"review\", String(pr), \"-d\", R, P]`, then `\"--model\", model` when set, then `\"--decisions\", decisions` when set\n- bot_fix: `[E, \"bot\", \"fix\", String(pr), \"-d\", R, P]`, then `\"--model\", model` when set, then `\"--trust\"` when `trust` is true, then `\"--no-rereview\"` when `noRereview` is true\n\nFailure handling: missing/non-string feature → `[chat] feature must be a string`; preserve validateFeatureName's thrown message. Profiles default to []; a non-array or any non-string member → `[chat] profiles must be an array of strings`; names must match `^[A-Za-z0-9][A-Za-z0-9._-]*$`, else `[chat] profile <p> is not a valid profile name`. maxIterations must be an integer from 1 to 1000, else `[chat] maxIterations must be an integer from 1 to 1000`. maxCost must be finite and above 0, else `[chat] maxCost must be a positive number`. pr must be a positive integer, else `[chat] pr must be a positive integer`; the explicit AC requires numeric string `\"12\"` to normalize to 12. Model must match `^[A-Za-z0-9][A-Za-z0-9._:/-]*$`, else `[chat] model <m> is not a valid model id`. spec/decisions must be repo-relative, not absolute, not starting `-`, and contain no `..` segment, else `[chat] <field> must be a repo-relative path`. trust/noRereview, when present, must be booleans, else `[chat] <field> must be a boolean`.\n\n**Scope** — In: parse input and construct exact arrays without file reads. Out: featureDir/target existence checks and resolving a default plan spec (US-009/US-010), cards (US-008/US-009), busy checking and spawning (US-005/US-010). Do not expose the CLI flags excluded at feature level.\n\n**Interface** —\n```ts\nexport type JobLaunchInput =\n  | { readonly kind: \"plan\"; readonly feature: string; readonly spec?: string; readonly profiles: readonly string[] }\n  | { readonly kind: \"run\"; readonly feature: string; readonly profiles: readonly string[];\n      readonly maxIterations?: number; readonly maxCost?: number }\n  | { readonly kind: \"bot_review\"; readonly pr: number; readonly profiles: readonly string[];\n      readonly model?: string; readonly decisions?: string }\n  | { readonly kind: \"bot_fix\"; readonly pr: number; readonly profiles: readonly string[];\n      readonly model?: string; readonly trust?: boolean; readonly noRereview?: boolean };\n\n/** Checks `feature` with `validateFeatureName` only; `featureDir` needs a repo root and is called by jobs-launch. */\nexport function parseJobInput(kind: ChatJobKind, raw: Record<string, unknown>): JobLaunchInput | { readonly error: string };\n/** `spec` must be resolved (repo-relative) before a plan argv is built. */\nexport function buildJobArgv(input: JobLaunchInput & { readonly spec?: string },\n                             ctx: { readonly naxEntry: readonly string[]; readonly repoRoot: string }): readonly string[];\n```",
+      "acceptanceCriteria": [
+        "[unit] buildJobArgv for a plan of f1 with spec .nax/features/f1/spec.md, profiles [\"a\", \"b\"], entry [\"bun\", \"/n.ts\"] and repoRoot /r returns [\"bun\", \"/n.ts\", \"plan\", \"-f\", \"f1\", \"--from\", \".nax/features/f1/spec.md\", \"-d\", \"/r\", \"--profile\", \"a\", \"--profile\", \"b\"].",
+        "[unit] buildJobArgv for a run of f1 with no profiles and no limits returns [\"bun\", \"/n.ts\", \"run\", \"-f\", \"f1\", \"-d\", \"/r\", \"--headless\"].",
+        "[unit] buildJobArgv for a run of f1 with maxIterations 40 and maxCost 12.5 ends with \"-m\", \"40\", \"--max-cost\", \"12.5\".",
+        "[unit] buildJobArgv for a bot_review of PR 12 with model opus and decisions d.json returns [\"bun\", \"/n.ts\", \"bot\", \"review\", \"12\", \"-d\", \"/r\", \"--model\", \"opus\", \"--decisions\", \"d.json\"].",
+        "[unit] buildJobArgv for a bot_fix of PR 12 with trust true and noRereview true ends with \"--trust\", \"--no-rereview\".",
+        "[unit] buildJobArgv for a bot_fix of PR 12 with trust false includes no --trust.",
+        "[unit] parseJobInput(\"run\", { feature: \"f1\" }) returns { kind: \"run\", feature: \"f1\", profiles: [] }.",
+        "[unit] parseJobInput(\"run\", {}) and parseJobInput(\"run\", { feature: 12 }) each return { error: \"[chat] feature must be a string\" }.",
+        "[unit] parseJobInput(\"run\", { feature: \"../x\" }) returns an object whose error equals the message thrown by validateFeatureName(\"../x\"), rather than throwing.",
+        "[unit] parseJobInput(\"run\", { feature: \"f1\", profiles: \"a\" }) and parseJobInput(\"run\", { feature: \"f1\", profiles: [1] }) each return { error: \"[chat] profiles must be an array of strings\" }.",
+        "[unit] parseJobInput(\"run\", { feature: \"f1\", profiles: [\"--evil\"] }) returns { error: \"[chat] profile --evil is not a valid profile name\" }.",
+        "[unit] parseJobInput(\"run\", { feature: \"f1\", maxIterations: 0 }) returns { error: \"[chat] maxIterations must be an integer from 1 to 1000\" }.",
+        "[unit] parseJobInput(\"run\", { feature: \"f1\", maxIterations: 2.5 }) and parseJobInput(\"run\", { feature: \"f1\", maxIterations: 1001 }) each return { error: \"[chat] maxIterations must be an integer from 1 to 1000\" }.",
+        "[unit] parseJobInput(\"run\", { feature: \"f1\", maxCost }) for maxCost -1, 0, NaN or Infinity each return { error: \"[chat] maxCost must be a positive number\" }.",
+        "[unit] parseJobInput(\"bot_fix\", { pr: \"12\" }) returns a bot_fix input with pr 12.",
+        "[unit] parseJobInput(\"bot_fix\", { pr: 0 }) and parseJobInput(\"bot_fix\", { pr: 2.5 }) each return { error: \"[chat] pr must be a positive integer\" }.",
+        "[unit] parseJobInput(\"bot_review\", { pr: 1, model: \"-x\" }) returns { error: \"[chat] model -x is not a valid model id\" }.",
+        "[unit] parseJobInput(\"bot_review\", { pr: 1, decisions: \"../d.json\" }) returns { error: \"[chat] decisions must be a repo-relative path\" }.",
+        "[unit] parseJobInput(\"plan\", { feature: \"f1\", spec: \"/etc/passwd\" }) returns { error: \"[chat] spec must be a repo-relative path\" }.",
+        "[unit] parseJobInput(\"bot_fix\", { pr: 1, trust: \"yes\" }) returns { error: \"[chat] trust must be a boolean\" }.",
+        "[unit] parseJobInput(\"plan\", { feature: \"f1\" }) returns a plan input with no spec.",
+        "[unit] parseJobInput returns [chat] <field> must be a repo-relative path for either spec or decisions when the supplied path is absolute, starts with -, or has a .. segment.",
+        "[unit] parseJobInput(\"bot_fix\", { pr: 1, noRereview: \"yes\" }) returns { error: \"[chat] noRereview must be a boolean\" }."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "jobs",
+        "security",
+        "validation"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Pure parser and exact argv mapping, with security-sensitive path and flag-injection validation requiring strict test isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/job-types.ts",
+        "packages/nax/src/utils/feature-name.ts",
+        "packages/nax/src/config/paths/index.ts",
+        "packages/nax/src/cli/bot.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/jobs/job-argv.ts",
+        "packages/nax/test/unit/chat/jobs/job-argv.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "04eeb73a863663166ffa33e9724aca2f4197fb3e"
+    },
+    {
+      "id": "US-003",
+      "title": "Resolve job outcomes from command records",
+      "description": "**Goal** — Determine job completion from run/plan records and expose PID-matched run progress.\n\n**Motivation** — That stitching is the pain the roadmap exists to remove.\n\n**Approach** — New `src/chat/jobs/job-outcome.ts` with `JobOutcome`, `resolveJobOutcome` and `readRunProgress`, following the outcome rules in Design § Data shapes. `_jobOutcomeDeps = { readStatusFile, stat }`. `readStatusFile` is imported by relative leaf path. Tests go in a new `test/unit/chat/jobs/job-outcome.test.ts`, with temp-dir `status.json` and `prd.json` fixtures. It reaches `src/execution/status-file-read.ts` by relative leaf path (`../../execution/status-file-read`), never through `@/execution`, as feature 1 does.\n\nOutcome rules, applied in this order:\n1. `job.cancelRequested` → `cancelled`. For a run whose status record matches (rule 2), `cost` and `progress` are kept.\n2. run: `status = readStatusFile(featureDir(repoRoot, job.target))`. When `status.run.pid === job.pid`: `completed` → `succeeded`; `aborted` → `cancelled`; any other status → `failed` with note `run status <status>`. `cost = status.cost.spent`, `progress = { passed, total }` from `status.progress`. When `completed` and `exit.exitCode` is defined and non-zero, the state stays `succeeded` with note `exit code <n> disagrees with the run record`. With no status, or a status whose pid differs → `failed` with note `no run record for pid <pid>`, followed by `; exit code <n>` when the exit code is known.\n3. plan: `<featureDir>/prd.json` exists and its modification time is at or after `Date.parse(job.startedAt)` → `succeeded`; otherwise `failed` with note `plan wrote no prd.json`.\n4. bot_review / bot_fix: exit code `0` → `succeeded`; a non-zero exit code → `failed` with note `exit code <n>`; no exit code → `lost` with note `outcome unknown: exit code not observed`.\n\n`readRunProgress` returns `{ cost, progress }` from the same status file when its `run.pid` is the job's pid, else `null`.\n\n**Scope** — In: pure outcome decisions around injectable status/stat reads and progress projection. Out: observing subprocess exits, persisting terminal records and notices (US-005/US-006), signalling or cancellation identity checks (US-007), changing the existing status reader. Cost for plan and bot jobs; only `run` jobs report cost, from `status.json`.\n\n**Interface** —\n```ts\nexport interface JobOutcome {\n  readonly state: Exclude<ChatJobState, \"running\">;\n  readonly cost?: number;\n  readonly progress?: { readonly passed: number; readonly total: number };\n  readonly note?: string;\n}\nexport function resolveJobOutcome(job: ChatJob, exit: { readonly exitCode?: number }, repoRoot: string): Promise<JobOutcome>;\nexport function readRunProgress(job: ChatJob, repoRoot: string):\n  Promise<{ readonly cost: number; readonly progress: { readonly passed: number; readonly total: number } } | null>;\n```",
+      "acceptanceCriteria": [
+        "[unit] For a run job with pid 4242 and a status.json whose run.pid is 4242 and run.status is completed, resolveJobOutcome(job, { exitCode: 0 }, repoRoot) returns state succeeded.",
+        "[unit] For that matching completed status file, resolveJobOutcome returns cost equal to status.cost.spent.",
+        "[unit] For that matching completed status file, resolveJobOutcome returns progress deep-equal to the status file's { passed, total }.",
+        "[unit] For that matching status file with run.status completed and exit code 1, resolveJobOutcome returns state and note deep-equal to { state: \"succeeded\", note: \"exit code 1 disagrees with the run record\" }.",
+        "[unit] For a matching status file with run.status failed, resolveJobOutcome returns state and note deep-equal to { state: \"failed\", note: \"run status failed\" }.",
+        "[unit] For a matching status file with run.status aborted, resolveJobOutcome returns state cancelled.",
+        "[unit] For a matching status file with run.status running (the process ended without a final write), resolveJobOutcome returns state and note deep-equal to { state: \"failed\", note: \"run status running\" }.",
+        "[unit] For a status file whose run.pid is 1 (a different run), with exit code 0, resolveJobOutcome for pid 4242 returns state and note deep-equal to { state: \"failed\", note: \"no run record for pid 4242; exit code 0\" }.",
+        "[unit] With no status file and no exit code, resolveJobOutcome for pid 4242 returns state and note deep-equal to { state: \"failed\", note: \"no run record for pid 4242\" }.",
+        "[unit] For a run job with cancelRequested and a matching completed status file, resolveJobOutcome returns state cancelled.",
+        "[unit] For a plan job started at T and a prd.json modified after T, resolveJobOutcome returns state succeeded.",
+        "[unit] For a plan job started at T and a prd.json last modified before T, resolveJobOutcome returns state and note deep-equal to { state: \"failed\", note: \"plan wrote no prd.json\" }.",
+        "[unit] For a plan job with no prd.json, resolveJobOutcome returns state and note deep-equal to { state: \"failed\", note: \"plan wrote no prd.json\" }.",
+        "[unit] For a bot_fix job with exit code 0, resolveJobOutcome returns state succeeded.",
+        "[unit] For a bot_review job with exit code 2, resolveJobOutcome returns state and note deep-equal to { state: \"failed\", note: \"exit code 2\" }.",
+        "[unit] For a bot_review job with no exit code, resolveJobOutcome returns state and note deep-equal to { state: \"lost\", note: \"outcome unknown: exit code not observed\" }.",
+        "[unit] readRunProgress(job, repoRoot) for a matching status file with progress 3 of 7 and cost.spent 1.2 returns { cost: 1.2, progress: { passed: 3, total: 7 } }.",
+        "[unit] readRunProgress(job, repoRoot) for a status file whose pid differs returns null."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "jobs",
+        "outcomes"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Bounded record-reading adapter and deterministic precedence rules; PID matching here attributes outcomes rather than granting cancellation authority.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/job-types.ts",
+        "packages/nax/src/execution/status-file-read.ts",
+        "packages/nax/src/execution/status-file.ts",
+        "packages/nax/src/config/paths/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/jobs/job-outcome.ts",
+        "packages/nax/test/unit/chat/jobs/job-outcome.test.ts"
+      ],
+      "suggestedCriteria": [
+        "For a cancelled run with matching cost/progress records, resolveJobOutcome retains cost and progress while returning state cancelled.",
+        "For a plan whose prd.json modification time equals startedAt exactly, resolveJobOutcome returns state succeeded."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "80a5be0ebd5e0b552d3962d098e6258f377ebd5d"
+    },
+    {
+      "id": "US-004",
+      "title": "Build job completion notices and provider instructions",
+      "description": "**Goal** — Centralize model-facing job notices and usage instructions in the existing workflow prompt builder.\n\n**Motivation** — That stitching is the pain the roadmap exists to remove.\n\n**Approach** — `src/prompts/builders/workflow-builder.ts` gains `JobNoticeInput`, `buildJobNotice` and `buildJobsInstructions`, re-exported from `src/prompts/index.ts`. The builders take plain values and import nothing from `src/chat/`. Tests go in the existing `test/unit/prompts/builders/workflow-builder.test.ts`.\n\n`buildJobNotice` returns `[nax-jobs] job <id> (<kind> <target>) ended: <state>`, then ` cost $<cost.toFixed(2)>` when `cost` is set, then ` (<note>)` when `note` is set, then ` log <logPath>`, then a newline and one line telling the agent to call `nax-workflow__state`, report the outcome to the user and propose the single next step.\n\n`buildJobsInstructions` content (exact wording is the builder's):\n1. names `nax-jobs__plan`, `nax-jobs__run`, `nax-jobs__bot_review` and `nax-jobs__bot_fix`, and says each is billed and shows the user an approval card;\n2. says a denial is final for that call, and the agent must not retry with changed arguments to get round it;\n3. says jobs run in the background and a `[nax-jobs]` notice arrives when one ends;\n4. says Write, Edit, Delete and GitCommit are refused in this checkout while a run or plan job runs;\n5. says to start one step at a time: after a job ends, report and propose the next step.\n\n**Scope** — In: additive pure builders, barrel exports, failure-notice formatting, and preservation of the existing `buildWorkflowInstructions` output. Out: runner notice queuing (US-005), provider instructions attachment (US-011), notice turns (US-014). Do not rewrite `buildWorkflowInstructions`; its text is unchanged. Full-run (chain) approval and the agent starting a second billed step without a new card; this is feature `chat-workflow-chain`.\n\n**Interface** —\n```ts\nexport interface JobNoticeInput {\n  readonly id: string; readonly kind: string; readonly target: string; readonly state: string;\n  readonly cost?: number; readonly note?: string; readonly logPath: string;\n}\nexport function buildJobNotice(input: JobNoticeInput): string;\nexport function buildJobsInstructions(): string;\n```",
+      "acceptanceCriteria": [
+        "[unit] buildJobNotice({ id: \"run-1a2b3c4d\", kind: \"run\", target: \"f1\", state: \"succeeded\", cost: 1.234, logPath: \"/o/l.log\" }) returns text whose first line is [nax-jobs] job run-1a2b3c4d (run f1) ended: succeeded cost $1.23 log /o/l.log.",
+        "[unit] buildJobNotice with note \"exit code 2\" and no cost returns a first line containing \" (exit code 2) log \".",
+        "[unit] buildJobNotice returns text whose second line includes nax-workflow__state.",
+        "[unit] buildJobsInstructions() returns text that includes nax-jobs__plan, nax-jobs__run, nax-jobs__bot_review and nax-jobs__bot_fix.",
+        "[unit] buildJobsInstructions() returns text that includes approval card.",
+        "[unit] buildJobsInstructions() returns text that includes [nax-jobs].",
+        "[unit] buildJobsInstructions() returns text that includes GitCommit.",
+        "[unit] buildJobsInstructions() returns text that includes do not retry (case-insensitive).",
+        "[unit] buildJobNotice and buildJobsInstructions imported from @/prompts return the same text as the exports of src/prompts/builders/workflow-builder.ts.",
+        "[unit] buildJobNotice({ id: \"run-1a2b3c4d\", kind: \"run\", target: \"f1\", state: \"failed\", note: \"no run record for pid 4242\", logPath: \"/o/l.log\" }) returns a first line exactly equal to \"[nax-jobs] job run-1a2b3c4d (run f1) ended: failed (no run record for pid 4242) log /o/l.log\", without a fabricated cost when cost is absent.",
+        "[unit] After adding the job builders, buildWorkflowInstructions() still returns the existing four newline-joined lines unchanged: \"Call `nax-workflow__state` before proposing any workflow step, and call it again after any workflow step ends, so what you propose matches the feature's real state.\"; \"The nax loop runs in this order: brainstorm → spec-writing → spec-review (at most two fix rounds) → `nax plan` → PRD fidelity check (spec-review `--prd`) → commit the spec and PRD → `nax run` → `nax bot review` / `nax bot fix` → the user merges → the user releases.\"; \"`nax plan`, `nax run`, `nax bot review` and `nax bot fix` are billed: never start one without the user's explicit approval of that launch.\"; \"nax never merges a PR and never releases; the user merges the PR and the user releases.\"."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "jobs",
+        "prompts"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure additive prompt formatting plus an existing barrel and test module; no process or authorization state.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/workflow-builder.ts",
+        "packages/nax/src/prompts/index.ts",
+        "packages/nax/test/unit/prompts/builders/workflow-builder.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "90ee8458b20dcaaf0ab7717679203da244b825c6"
+    },
+    {
+      "id": "US-005",
+      "title": "Start detached jobs and finalize owned exits",
+      "description": "**Goal** — Add the detached job runner's start/owned-exit lifecycle and FIFO completion notices.\n\n**Motivation** — That stitching is the pain the roadmap exists to remove.\n\n**Approach** — New `src/chat/jobs/job-runner.ts` with `JobRunnerOptions`, `StartJobRequest`, `ChatJobs`, `createJobRunner`, the three constants and `_jobRunnerDeps`, behaving as described under Design § Data shapes for `start`, owned-child exit, `list`, `get`, `running`, `owned`, `peekNotice`, `takeNotice` and `onChange`. Spawn options: `cwd: repoRoot`, `detached: true`, `stdin: \"ignore\"`, and one append fd for `jobLogPath(outputDir, id)` passed as both `stdout` and `stderr` (opened through `_jobRunnerDeps.openLog`, closed through `_jobRunnerDeps.closeLog` after the spawn); `chat-jobs/` is created first. The runner calls `unref()` on the child. Notices are built with `buildJobNotice`. In this story `attach()` resolves without reading the store, `logTail` returns `\"\"`, polling is not armed, `dispose()` does nothing, and `cancel` / `canCancel` reject with `CHAT_JOB_NOT_RUNNING`; US-006 and US-007 fill them in. Tests go in a new `test/unit/chat/jobs/job-runner.test.ts`, with a stubbed spawn whose `exited` promise the test resolves, stubbed `kill` and `isProcessAlive`, and fake timers from `makeFakeClock()`.\n\n`start` creates `chat-jobs/` (recursive), opens the log fd, spawns, closes the fd in the parent, registers the job in memory synchronously right after the spawn returns (so `running()` holds it before any further await), then writes the record (state `running`) and emits a change. A spawn that throws rejects with `NaxError` `CHAT_JOB_SPAWN_FAILED`, message `could not start nax <kind>: <message>`, and writes no record. When the owned child exits, the runner resolves the outcome with the observed exit code, writes the record with `endedAt`, queues a notice and emits a change. The owner always writes: it holds the real exit code.\n\nOut of process. Each launch spawns the nax CLI as a child with `Bun.spawn`, never in process: `nax run` has no in-process API, a run takes process locks and installs signal handlers, and a crashing run must not take the chat down. Detached and headless. The child is spawned with `detached: true` and `stdin: \"ignore\"`. Its stdout and stderr share ONE file descriptor: the runner creates `chat-jobs/` (recursive), opens the job's log once with `node:fs` `openSync(path, \"a\")`, passes that same numeric fd as both `stdout` and `stderr`, and closes it in the parent after the spawn returns. Two `Bun.file()` targets would open the file twice with separate offsets and overwrite each other (verified on Bun 1.4.4). `openSync` / `closeSync` are not on the forbidden list (only `readFileSync` / `writeFileSync` are). The runner calls `unref()` on the child, so a kept job outlives the chat. Only `nax run` takes `--headless`. `nax plan` and `nax bot` do not accept the flag and are already headless without a TTY.\n\nEvery error the module throws is a `NaxError` with `stage: \"chat\"` and a code (`CHAT_JOB_SPAWN_FAILED`, `CHAT_JOB_NOT_RUNNING`, `CHAT_JOB_UNVERIFIED`); `check:nax-error` has a zero baseline. Notices are FIFO. A seam AC drives the stubbed owned child's exit over a real matching status.json and checks persisted terminal state; notices use the real builder prefix.\n\n**Scope** — In: the complete runner contract and owned lifecycle, snapshot queries, subscriptions and notices. Out: implement attach/poll/logTail/dispose in US-006 and cancellation in US-007; host composition in US-013. The interface comments describe the final contract; use the explicit temporary behavior above for this story's unfinished methods. Adding job cost to the chat session's `costUsd`; the two ledgers stay separate.\n\n**Interface** —\n```ts\nexport const JOB_POLL_MS = 2_000;\nexport const CANCEL_GRACE_MS = 10_000;\nexport const JOB_LOG_TAIL_LINES = 40;\n\nexport interface JobRunnerOptions {\n  readonly repoRoot: string;\n  readonly outputDir: string;\n  readonly now: () => Date;\n}\nexport interface StartJobRequest {\n  readonly kind: ChatJobKind;\n  readonly target: string;\n  readonly argv: readonly string[];\n  readonly sessionId: string;\n  readonly approvedAt: string;\n}\nexport interface ChatJobs {\n  start(request: StartJobRequest): Promise<ChatJob>;\n  /** Every job of this repo the runner knows, newest first. */\n  list(): readonly ChatJob[];\n  get(id: string): ChatJob | undefined;\n  /** Jobs in state `running`, newest first. */\n  running(): readonly ChatJob[];\n  /** Running jobs this runner spawned (not re-attached ones). */\n  owned(): readonly ChatJob[];\n  /**\n   * Persists `cancelRequested: true` to the record, sends SIGINT, then SIGTERM after\n   * CANCEL_GRACE_MS if the pid is still alive. No ask. Rejects `CHAT_JOB_UNVERIFIED` for a\n   * re-attached job it cannot tie to its pid (see below).\n   */\n  cancel(id: string): Promise<ChatJob>;\n  /** The check `cancel` runs, without signalling: running, and owned or a verified re-attached run. */\n  canCancel(id: string): Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }>;\n  /** Loads this repo's records once; idempotent. */\n  attach(): Promise<void>;\n  logTail(id: string, lines?: number): Promise<string>;\n  /** The oldest queued notice, left in the queue. */\n  peekNotice(): string | undefined;\n  /** Returns and removes the oldest queued notice. */\n  takeNotice(): string | undefined;\n  onChange(listener: () => void): () => void;\n  /** Stops polling and timers; never kills a child. */\n  dispose(): void;\n}\nexport function createJobRunner(options: JobRunnerOptions): ChatJobs;\nexport const _jobRunnerDeps: { spawn; kill; isProcessAlive; setTimeout; clearTimeout; openLog; closeLog };\n```",
+      "acceptanceCriteria": [
+        "[unit] start(request) calls _jobRunnerDeps.spawn with request.argv as its first argument.",
+        "[unit] The spawn options start passes match { cwd: repoRoot, detached: true, stdin: \"ignore\" }.",
+        "[unit] After start resolves, readJobRecords(outputDir) returns one record whose state, pid and sessionId deep-equal { state: \"running\", pid: <the spawned pid>, sessionId: <the request's> }.",
+        "[unit] start calls unref() on the spawned child.",
+        "[unit] The spawn options' stdout and stderr are the same numeric fd that _jobRunnerDeps.openLog returned for jobLogPath(outputDir, id).",
+        "[unit] _jobRunnerDeps.closeLog is called with that fd after the spawn returns.",
+        "[unit] start on an output dir with no chat-jobs/ directory creates it before opening the log.",
+        "[unit] With _jobRunnerDeps.spawn throwing boom, start rejects with a message containing could not start nax run: boom.",
+        "[unit] When spawn throws boom, readJobRecords(outputDir) returns [].",
+        "[integration] For a started run job whose stubbed child exits with code 0 over a fixture status.json with the job's pid and status completed, the record in readJobRecords(outputDir) has state succeeded.",
+        "[integration] In that matching fixture run-exit case, the record has an endedAt.",
+        "[unit] In that matching fixture run-exit case, takeNotice() returns text starting [nax-jobs] job <id> (run f1) ended: succeeded.",
+        "[unit] peekNotice() called before that takeNotice() returns the same text.",
+        "[unit] A second takeNotice() after that returns undefined.",
+        "[unit] An onChange listener is called once when a job starts.",
+        "[unit] That listener is called once more when the job ends.",
+        "[unit] owned() holds a job between its start and its exit.",
+        "[unit] After the job's exit, running() no longer holds it.",
+        "[unit] When Bun.spawn throws, start rejects with NaxError code CHAT_JOB_SPAWN_FAILED and stage chat."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "jobs",
+        "process-lifecycle"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-003",
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New detached process lifecycle with fd ownership, asynchronous exit persistence, record resolver and FIFO notice seams.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/job-store.ts",
+        "packages/nax/src/chat/jobs/job-outcome.ts",
+        "packages/nax/src/prompts/builders/workflow-builder.ts",
+        "packages/nax/src/chat/ask-fallback.ts",
+        "packages/nax/test/helpers/fake-clock.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/jobs/job-runner.ts",
+        "packages/nax/test/unit/chat/jobs/job-runner.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When spawn throws after the log fd was opened, the runner closes that fd.",
+        "When a child exits before the initial running-record write settles, the eventual persisted record retains the terminal outcome rather than reverting to running."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "720fa2ca1ac166f26c2ffa2bdf62f71110766dc1"
+    },
+    {
+      "id": "US-006",
+      "title": "Re-attach jobs, poll progress and tail logs",
+      "description": "**Goal** — Extend the runner to discover existing repo jobs, poll their lifecycle/progress, tail logs and stop timers safely.\n\n**Motivation** — That stitching is the pain the roadmap exists to remove.\n\n**Approach** — `createJobRunner` gains `attach()` (re-attaching this repo's records, with no notices), the `JOB_POLL_MS` poll (liveness of re-attached jobs, `run` progress and cost), re-attached finalization (adopting an already-terminal record), `logTail` and `dispose()` (stopping the poll), as described under Design § Data shapes. Tests go in a new `test/unit/chat/jobs/job-runner-attach.test.ts`, with the same stubs and fake clock.\n\nPolling uses a chained cancellable `setTimeout` of `JOB_POLL_MS` (the documented exception in the forbidden-patterns table), armed only while a job is running. Each tick: a re-attached running job whose pid is dead is finalized (see re-attached finalization below), and queues a notice when this runner wrote its terminal state; a running `run` job's `cost` and `progress` are refreshed from `readRunProgress`, and a change is emitted when either changed. Refreshed values are kept in memory and written with the final record.\n\n`attach` reads `readJobRecords(outputDir)` and keeps the records whose `cwd` equals `repoRoot`. A `running` record whose pid is alive is tracked by polling. A `running` record whose pid is dead is finalized and written, and queues NO notice: stale jobs found at startup are visible in `list()` and `/jobs`, and must not start a stack of model turns.\n\nRe-attached finalization: before writing a terminal state for a job it did not spawn, the runner re-reads that job's record. If the record is already terminal (its owner wrote it), the runner adopts it unchanged, writes nothing and queues no notice. Otherwise it resolves the outcome with no exit code and writes it.\n\n`JOB_POLL_MS`, `CANCEL_GRACE_MS` and `DEFAULT_HOST_APPROVAL_TIMEOUT_MS` are named constants, not config. The host passes the real approval timeout from `config.execution.approvalTimeout`; the other two are UI cadences, deliberately not tunable. `logTail` returns the last `JOB_LOG_TAIL_LINES = 40` lines by default and `\"\"` when the log is missing. Notices are FIFO. `dispose()` stops polling and timers; never kills a child.\n\n**Scope** — In: replace US-005's attach/logTail/dispose placeholders and add polling/finalization. Out: cancellation and grace timers (US-007), notices delivered as model turns (US-014). Notices for stale jobs finalized at startup (`attach`); they show in `/jobs` and `nax-jobs__list` only. A compare-and-set write of a job record across two chats; when both finalize the same job in the same moment, the last write wins (the owner writes the real exit code at exit, and the other chat adopts a terminal record it finds). Detecting a recycled pid for a re-attached job's liveness; such a job stays `running` in the list until that pid exits, and only cancel is guarded (by the `run` status-file check).\n\n**Interface** — Extend the existing `ChatJobs` implementation without changing its signatures:\n```ts\n/** Loads this repo's records once; idempotent. */\nattach(): Promise<void>;\nlogTail(id: string, lines?: number): Promise<string>;\n/** Stops polling and timers; never kills a child. */\ndispose(): void;\n```\nUse `JOB_POLL_MS = 2_000`, `JOB_LOG_TAIL_LINES = 40`, the runner's timer/liveness seams and US-003's `readRunProgress` / `resolveJobOutcome`.",
+      "acceptanceCriteria": [
+        "[unit] attach() over a running bot_review record for this repo whose pid isProcessAlive reports dead writes it back with state lost.",
+        "[unit] In that startup dead-bot case, takeNotice() returns undefined (no notice at attach).",
+        "[integration] attach() over a running run record whose pid is dead and whose fixture status.json has that pid and status completed writes it back with state succeeded.",
+        "[unit] attach() over a running record whose pid is alive keeps it in running().",
+        "[unit] In that attached-live case, owned() does not hold it.",
+        "[unit] attach() ignores a record whose cwd is another repo: list() does not hold it.",
+        "[unit] attach() loads a finished record for this repo into list() unchanged.",
+        "[unit] Calling attach() twice reads the store once.",
+        "[unit] With a re-attached running job, advancing the fake clock by JOB_POLL_MS after isProcessAlive turns false finalizes the job.",
+        "[unit] In that poll-finalized case, takeNotice() returns a notice that starts [nax-jobs] job <that id>.",
+        "[unit] When that job's record on disk is already succeeded (written by its owner) at the poll that finds the pid dead, the runner keeps state succeeded unchanged.",
+        "[unit] When that job's record on disk is already succeeded (written by its owner) at the poll that finds the pid dead, the runner writes nothing.",
+        "[unit] When that job's record on disk is already succeeded (written by its owner) at the poll that finds the pid dead, the runner queues no notice.",
+        "[unit] With a running run job and a fixture status.json whose progress becomes 2 of 5, advancing the fake clock by JOB_POLL_MS makes get(id).progress deep-equal { passed: 2, total: 5 }.",
+        "[unit] In that refreshed-progress case, an onChange listener is called.",
+        "[unit] With no running job, the fake clock has no poll timer armed.",
+        "[unit] logTail(id, 2) for a log holding lines a, b, c returns b\nc.",
+        "[unit] logTail(id) for a log of 50 lines returns the last 40.",
+        "[unit] logTail(id) for a job whose log file is missing returns an empty string.",
+        "[unit] dispose() with a running owned job leaves no timer armed on the fake clock.",
+        "[unit] dispose() with a running owned job never calls kill."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "jobs",
+        "lifecycle",
+        "polling"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-chat ownership reconciliation, idempotent attachment, asynchronous poll teardown and terminal-record races.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/job-runner.ts",
+        "packages/nax/src/chat/jobs/job-store.ts",
+        "packages/nax/src/chat/jobs/job-outcome.ts",
+        "packages/nax/test/helpers/fake-clock.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/jobs/job-runner-attach.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When dispose() occurs during an awaited poll read, the completed poll does not arm a new timer.",
+        "When only a matching run's cost changes on a poll, get(id).cost reflects the new value and the runner emits onChange."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4ad6aed745656b2a1487b425b6123c854e772732"
+    },
+    {
+      "id": "US-007",
+      "title": "Cancel owned and verified re-attached jobs",
+      "description": "**Goal** — Add identity-checked cancellation with persisted intent and a cancellable signal escalation timer.\n\n**Motivation** — That stitching is the pain the roadmap exists to remove.\n\n**Approach** — `createJobRunner` gains `canCancel(id)` and `cancel(id)`, as described under Design § Data shapes: `cancel` runs the same check as `canCancel`, persists `cancelRequested: true` to the record, sends SIGINT, and arms the `CANCEL_GRACE_MS` timer that sends SIGTERM when the pid is still alive; a re-attached job passes only as a `run` whose `status.json` `run.pid` matches. `dispose()` also clears the grace timers. Tests go in a new `test/unit/chat/jobs/job-runner-cancel.test.ts`, with the same stubs and fake clock.\n\nRe-attached identity: `isProcessAlive` cannot tell a recycled pid from the job. A re-attached job is cancellable only when it is a `run` job whose `status.json` `run.pid` equals the job's pid. Any other re-attached job rejects `cancel` with `CHAT_JOB_UNVERIFIED`, message `job <id> was started by another chat and its pid cannot be verified; stop it from that chat or by hand`.\n\nA non-running job makes `canCancel` return `{ ok: false, message: \"job <id> is not running (state <state>)\" }`; `cancel` rejects `CHAT_JOB_NOT_RUNNING`. Both use `NaxError` with `stage: \"chat\"` for thrown errors. `jobs.cancel` on a pid that is already dead: SIGINT failure is ignored; the next poll or exit finalizes the job. No ask occurs inside the runner: provider/host callers own approval. `CANCEL_GRACE_MS = 10_000`. The cancelled outcome takes precedence over command records, preserving matching run cost/progress through the existing resolver.\n\n**Scope** — In: replace the cancel/canCancel placeholders, verify re-attached run identity, persist intent before signalling, timer escalation and cleanup. Out: approval cards for cancel (US-011), close prompt (US-013/US-015). Sending SIGTERM after the cancel grace period when the chat has already exited; the SIGINT is sent, and the grace timer dies with the chat. Detecting a recycled pid for re-attached liveness remains excluded.\n\n**Interface** —\n```ts\n/**\n * Persists `cancelRequested: true` to the record, sends SIGINT, then SIGTERM after\n * CANCEL_GRACE_MS if the pid is still alive. No ask. Rejects `CHAT_JOB_UNVERIFIED` for a\n * re-attached job it cannot tie to its pid (see below).\n */\ncancel(id: string): Promise<ChatJob>;\n/** The check `cancel` runs, without signalling: running, and owned or a verified re-attached run. */\ncanCancel(id: string): Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }>;\n/** Stops polling and timers; never kills a child. */\ndispose(): void;\n```",
+      "acceptanceCriteria": [
+        "[unit] canCancel(id) for a running owned job resolves { ok: true }.",
+        "[unit] cancel(id) for a running owned job calls _jobRunnerDeps.kill with the job's pid and SIGINT.",
+        "[unit] Before that kill, the job's record in readJobRecords(outputDir) has cancelRequested: true.",
+        "[unit] After cancel(id), advancing the fake clock by CANCEL_GRACE_MS with isProcessAlive returning true calls kill with the pid and SIGTERM.",
+        "[unit] After cancel(id), advancing the fake clock by CANCEL_GRACE_MS with isProcessAlive returning false sends no SIGTERM.",
+        "[unit] After cancel(id) and the child's exit, the job's state is cancelled.",
+        "[unit] canCancel(id) for a job in state succeeded resolves { ok: false } with a message containing is not running.",
+        "[unit] cancel(id) for a job in state succeeded rejects with code CHAT_JOB_NOT_RUNNING.",
+        "[unit] cancel(id) whose kill throws (the pid is already dead) resolves without throwing.",
+        "[unit] canCancel(id) for a re-attached bot_review job resolves { ok: false, message: \"job <id> was started by another chat and its pid cannot be verified; stop it from that chat or by hand\" }.",
+        "[unit] cancel(id) for that re-attached bot_review job rejects with code CHAT_JOB_UNVERIFIED.",
+        "[unit] In that unverified case, kill is not called.",
+        "[integration] canCancel(id) for a re-attached run job whose fixture status.json run.pid equals the job's pid resolves { ok: true }.",
+        "[integration] cancel(id) for that verified re-attached run job calls kill with SIGINT.",
+        "[unit] dispose() after cancel(id) leaves no grace timer armed on the fake clock."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "jobs",
+        "security",
+        "cancellation"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Security-critical process signalling authority depends on ownership/PID verification, persisted cancellation and timer races.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/job-runner.ts",
+        "packages/nax/src/execution/status-file-read.ts",
+        "packages/nax/src/chat/jobs/job-outcome.ts",
+        "packages/nax/test/helpers/fake-clock.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/jobs/job-runner-cancel.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2a3f5255d5ad4f311d943c94c07b4521806f7dc4"
+    },
+    {
+      "id": "US-008",
+      "title": "Add unrememberable host approval requests",
+      "description": "**Goal** — Add host-owned approval promises that always ask, even in full mode, and fail closed on timeout, abort or reset.\n\n**Motivation** — The standing rule is that a billed launch needs the user's explicit yes at the launch moment (user).\n\n**Approach** — `src/chat/ask-controller.ts` gains `HostApprovalCard`, `DEFAULT_HOST_APPROVAL_TIMEOUT_MS`, the `approvalTimeoutMs` and `now` options, and `requestHostApproval`. Host requests use request ids starting `host-`. They join `pending()` as `approval_requested` events with `expiresAt = now + approvalTimeoutMs`. `handle()` never answers them, in either mode. `canRemember()` is false for them. `resolve()` routes them to the waiting promise and never to `options.answer`: `allow_once` and `allow_session` give `\"allow\"`, `deny` gives `\"deny\"`, and none adds to approval memory. A timer (`_askControllerDeps.setTimeout` / `clearTimeout`) resolves `\"deny\"` at expiry. An abort of `card.signal` resolves `\"deny\"`. `reset()` resolves every open host request `\"deny\"`. Each resolution removes the event from `pending()` and notifies listeners. Tests go in the existing `test/unit/chat/ask-controller.test.ts`, plus a fallback test in the existing `test/unit/chat/ask-fallback.test.ts`.\n\nLaunch approval. A `static` provider tool gets no framework ask, and `ChatAskController.handle()` auto-allows every session approval in full mode (`src/chat/ask-controller.ts:53`). So the controller gains a separate host entry point, `requestHostApproval(card)`. It adds a synthesized `approval_requested` event to `pending()`, so the existing card (`src/tui/chat/ask-card.ts`) and the Telegram fallback (`ask-fallback.ts`) show it unchanged. It is never auto-allowed, never remembered, and resolves `deny` on timeout, on the tool call's abort signal, or on `reset()`.\n\nOptions gain `approvalTimeoutMs?: number` (default `DEFAULT_HOST_APPROVAL_TIMEOUT_MS = 600_000`) and `now?: () => Date`. New `_askControllerDeps = { setTimeout, clearTimeout }` holds the expiry timer (the documented `setTimeout` exception: the handle is cancelled when the ask resolves). Preserve ordinary session approval behavior and positive approval memory.\n\nRequired fixture adaptation: add an inert `requestHostApproval: async () => \"deny\"` member to the literal `asks` in `test/ui/chat/chat-app.test.tsx` and `test/ui/chat/slash-commands.test.tsx`, and the literal `ChatAskController` built by `fakeController` in `test/ui/chat/ask-card.test.tsx`. The new method is required; no existing assertions change.\n\n**Scope** — In: host-card controller lifecycle, timers, fallback compatibility and these literal fixture adaptations. Out: job launch/cancel cards (US-009/US-011), passing resolved config timeout (US-013), UI close gating (US-015). Full-run (chain) approval and the agent starting a second billed step without a new card; this is feature `chat-workflow-chain`. Cross-session memory of rulings or preferences; this is its own slice, not yet designed (user ruling 2026-10-27).\n\n**Interface** —\n```ts\nexport interface HostApprovalCard {\n  readonly tool: string;\n  readonly summary: string;\n  readonly command?: string;\n  readonly reason: string;\n  readonly signal?: AbortSignal;\n}\nexport const DEFAULT_HOST_APPROVAL_TIMEOUT_MS = 600_000;\n```\n`ChatAskController` adds `requestHostApproval(card: HostApprovalCard): Promise<\"allow\" | \"deny\">`; `ChatAskControllerOptions` retains `{ mode, answer }` and gains `approvalTimeoutMs?: number` and `now?: () => Date`.",
+      "acceptanceCriteria": [
+        "[unit] requestHostApproval({ tool: \"nax-jobs__run\", summary: \"nax run f1\", command: \"c\", reason: \"r\" }) adds one approval_requested event to pending() whose requestId starts with host-.",
+        "[unit] That event has tool, summary, command and reason equal to the card's.",
+        "[unit] That event's expiresAt equals now + approvalTimeoutMs as an ISO string.",
+        "[unit] On a controller created with mode full, requestHostApproval leaves its event in pending().",
+        "[unit] On a controller created with mode full, requestHostApproval never calls options.answer.",
+        "[unit] resolve(<host request id>, \"allow_once\") resolves the promise \"allow\".",
+        "[unit] resolve(<host request id>, \"deny\") resolves the promise \"deny\".",
+        "[unit] resolve(<host request id>, \"allow_once\") never calls options.answer.",
+        "[unit] After a host request resolves, its event is no longer in pending().",
+        "[unit] After a host request resolves, an onChange listener was called.",
+        "[unit] canRemember(<host event>) returns false.",
+        "[unit] Resolving a host request allow_session, then raising an identical card, leaves the second event in pending() (nothing was remembered).",
+        "[unit] Advancing the fake clock by approvalTimeoutMs resolves an open host request \"deny\".",
+        "[unit] Aborting the card's signal resolves the request \"deny\".",
+        "[unit] After that abort, the request's event is no longer in pending().",
+        "[unit] reset() resolves every open host request \"deny\".",
+        "[unit] A controller created without approvalTimeoutMs gives expiresAt equal to now + 600000.",
+        "[integration] createAskFallback with a chain whose prompt answers approve resolves a host request \"allow\" after the fallback delay.",
+        "[unit] For an ordinary answerable session approval event (not a host request), handle(event) in full mode still calls options.answer(event.requestId, { decision: \"allow\" }) exactly once, preserving existing full-mode session approval behavior.",
+        "[unit] In guarded mode, resolving an ordinary rememberable session approval with allow_session still makes handle() auto-answer the next matching session approval through options.answer, preserving existing positive approval memory."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "security",
+        "approval",
+        "sessions"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Extend the existing ask controller with a bounded host-request map and cancellable timers; approval routing and memory isolation remain security-critical and require strict TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/ask-controller.ts",
+        "packages/nax/src/chat/ask-fallback.ts",
+        "packages/nax/src/tui/chat/ask-card.ts",
+        "packages/nax/test/unit/chat/ask-controller.test.ts",
+        "packages/nax/test/ui/chat/ask-card.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "requestHostApproval with an already-aborted signal resolves deny without leaving a pending card.",
+        "Resolving a host card clears its expiry timer so no later timeout can change the decision.",
+        "Switching to full mode while a host card is pending leaves the host card pending."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/chat-app.test.tsx",
+          "reason": "the fake host's `asks` is an object literal `{ pending, canRemember, resolve, setMode, reset, handle, answerQuestion, onChange }` typed through `const host: ChatHost`; `ChatAskController` gains the required `requestHostApproval`, so the literal no longer typechecks (TS2741). Add an inert `requestHostApproval: async () => \"deny\"` member; no assertion changes."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/slash-commands.test.tsx",
+          "reason": "the fake host's `asks` is the same object literal `{ pending, canRemember, resolve, setMode, reset, handle, answerQuestion, onChange }` typed through `const host: ChatHost`; it no longer typechecks once `requestHostApproval` is required. Add an inert `requestHostApproval: async () => \"deny\"` member; no assertion changes."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/ask-card.test.tsx",
+          "reason": "`fakeController` builds a `const controller: ChatAskController = { handle, pending, resolve, canRemember, answerQuestion, setMode, reset, onChange }` object literal; the interface gains the required `requestHostApproval`, so the literal no longer typechecks. Add an inert `requestHostApproval: async () => \"deny\"` member; every card assertion in the file stays as it is (the card's calls are unchanged)."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f32e8652d7b9dad17ea99068feb05968a131e3a4"
+    },
+    {
+      "id": "US-009",
+      "title": "Expose approved background launch tools",
+      "description": "**Goal** — Add the nax-jobs provider's four billed launch tools with target validation, launch cards and job-start results.\n\n**Motivation** — The standing rule is that a billed launch needs the user's explicit yes at the launch moment (user).\n\n**Approach** — New `src/chat/jobs/jobs-launch.ts` (input parse, target checks, card, start; `_jobsLaunchDeps`) and new `src/chat/jobs/jobs-provider.ts` with `JobsProviderOptions` and `createJobsProvider`, exposing the `plan`, `run`, `bot_review` and `bot_fix` tools as in Design § The `nax-jobs` provider, launch steps 1, 2, 4, 5 and the `jobs.start` call of step 6. A `loadPRD` rejection is left to propagate in this story; US-010 maps it to the unreadable-`prd.json` error. The busy checks (step 3 and the re-check in step 6) and the `start`-rejection mapping are US-010. In this story the provider has exactly these four tools and no `instructions`; US-011 adds the rest. Tests go in a new `test/unit/chat/jobs/jobs-launch.test.ts`, with a temp-dir fixture repo, a stub `approve`, and a stub `ChatJobs` whose `start` records its request.\n\nThe launch logic lives in `src/chat/jobs/jobs-launch.ts`, with `_jobsLaunchDeps = { git, lockHolder, exists, loadPRD }`. `lockHolder(repoRoot)` reads `<repoRoot>/nax.lock` and returns its `pid` when that pid is alive, else `null` (a missing or unparseable file is `null`); its real implementation and use are US-010. Use gitWithTimeout for the git seam. Tool input schemas (`additionalProperties: false` on each): plan properties `feature: string`, `spec: string`, `profiles: string[]`, required `feature`; run properties `feature: string`, `profiles: string[]`, `maxIterations: integer`, `maxCost: number`, required `feature`; bot_review properties `pr: integer`, `profiles: string[]`, `model: string`, `decisions: string`, required `pr`; bot_fix properties `pr: integer`, `profiles: string[]`, `model: string`, `trust: boolean`, `noRereview: boolean`, required `pr`. The four launch tools' descriptions include `Billed` and `asks the user`.\n\nA launch, in this order (busy steps are added by US-010):\n1. `parseJobInput` (validation table in Failure Handling). For plan and run, `featureDir(repoRoot, f)` is then called; when it throws, its message is the error result (US-010 adds that mapping).\n2. Target checks. plan: when `spec` is absent, it resolves to `.nax/features/<f>/spec.md` if that file exists, else `.nax/specs/<f>.md` if that exists; the resolved file must exist. run: `<featureDir>/prd.json` must exist and load. bot_review: `decisions`, when given, must exist.\n4. The card: `approve({ tool: \"nax-jobs__<kind>\", summary, command, reason, signal: ctx.signal })`.\n   - `summary`: `nax plan <f>`, `nax run <f>`, `nax bot review #<pr>`, `nax bot fix #<pr>`.\n   - `command`: the argv joined with single spaces.\n   - `reason`: lines joined with `\\n`, in this order:\n     - `workdir <repoRoot>`, plus ` on branch <b>` when `git symbolic-ref --short HEAD` exits 0;\n     - `nax <naxEntry joined with spaces>`;\n     - `profiles <p1, p2>`, or `profiles (none)`;\n     - run only: `stories <pending> pending of <total>; max iterations <m>`, where `m` is `maxIterations` from the input or else the provider's resolved value;\n     - run only, when `pending > m`: `warning: <pending> stories pending but max iterations is <m>; pass maxIterations (nax#2706)`;\n     - run only, when `interactionPlugin` is `\"cli\"`: `warning: this run has no channel for its own asks; they will time out`;\n     - plan only, when `<featureDir>/prd.json` exists: `warning: prd.json exists and will be replaced`.\n5. `deny` → an error result: `[chat] the user declined <summary>; do not retry with different arguments unless the user asks`.\n6. `allow` → `jobs.start({ kind, target, argv, sessionId: sessionId(), approvedAt: now().toISOString() })`. The result content is one line of JSON `{ \"job\": <id>, \"state\": \"running\", \"log\": <logPath> }`, followed by a newline and `A [nax-jobs] notice arrives when it ends.`\n\nTarget failures: plan spec not found → `[chat] no spec for <f>; looked for <path(s)>`; run with no prd.json → `[chat] no prd.json for <f>; run nax plan first`; bot_review decisions missing → `[chat] decisions file <path> not found`. Parse failures return `{ isError: true, content: <parse error> }`. Resolve a spec to a repo-relative path before building argv. Reuse loadPRD/countStories from @/prd. The provider id is `nax-jobs`, kind `static`, stages `[\"*\"]`; approval is explicitly host-owned, never inferred from static-provider framework behavior.\n\n**Scope** — In: exactly four launch tools, schemas, parse/target/card/start flow, summaries/reasons/results and abort-signal propagation. Out: busy checks, real lockHolder, featureDir/loadPRD/start rejection mapping (US-010), list/cancel/instructions (US-011), host registration (US-013). Routing the run's own asks into the chat card, fixing nax#2706, changing the child commands or allowing subagents to launch billed work are excluded.\n\n**Interface** —\n```ts\nexport interface JobsProviderOptions {\n  readonly repoRoot: string;\n  readonly naxEntry: readonly string[];\n  /** Resolved config.execution.maxIterations. */\n  readonly maxIterations: number;\n  /** Resolved `config.interaction?.plugin ?? \"cli\"`. */\n  readonly interactionPlugin: string;\n  readonly jobs: ChatJobs;\n  readonly approve: (card: HostApprovalCard) => Promise<\"allow\" | \"deny\">;\n  readonly sessionId: () => string;\n  readonly now: () => Date;\n}\nexport function createJobsProvider(options: JobsProviderOptions): ToolProvider; // id \"nax-jobs\", kind \"static\", stages [\"*\"]\n```",
+      "acceptanceCriteria": [
+        "[unit] Its tools(repoRoot) resolves to tools whose localNames are exactly plan, run, bot_review and bot_fix at this story's stage; US-011 later extends this to six tools.",
+        "[unit] Each of the four tools' description includes asks the user.",
+        "[integration] Running run with { feature: \"f1\" } on a fixture repo whose f1 has a 3-story prd.json calls approve exactly once.",
+        "[integration] In that fixture run case, the card's tool and summary deep-equal { tool: \"nax-jobs__run\", summary: \"nax run f1\" }.",
+        "[integration] In that fixture run case, the card's command equals the run argv joined with single spaces.",
+        "[integration] In that fixture run case, with approve resolving \"allow\", jobs.start receives a request whose kind, target and argv deep-equal { kind: \"run\", target: \"f1\", argv: <the run argv> }.",
+        "[integration] In that fixture run case, the result content's first line parses as JSON whose job and state deep-equal { job: <the started id>, state: \"running\" }.",
+        "[integration] With approve resolving \"deny\", jobs.start is never called.",
+        "[integration] With approve resolving \"deny\" for run f1, the result deep-equals { isError: true, content: \"[chat] the user declined nax run f1; do not retry with different arguments unless the user asks\" }.",
+        "[integration] For a run, the card's reason includes stories 3 pending of 3; max iterations 20 when the provider's maxIterations is 20.",
+        "[integration] For a run with maxIterations: 2 in the input over 3 pending stories, the card's reason includes warning: 3 stories pending but max iterations is 2; pass maxIterations (nax#2706).",
+        "[integration] For a run with interactionPlugin cli, the card's reason includes warning: this run has no channel for its own asks; they will time out.",
+        "[integration] For a run with interactionPlugin telegram, the card's reason has no line containing no channel.",
+        "[integration] With _jobsLaunchDeps.git answering symbolic-ref --short HEAD with feat/f1\n, the card's reason starts with workdir <repoRoot> on branch feat/f1.",
+        "[integration] With _jobsLaunchDeps.git exiting 1 for symbolic-ref, the card's reason first line is exactly workdir <repoRoot>.",
+        "[integration] With naxEntry [\"bun\", \"/n.ts\"] and no profiles, the card's reason lines include nax bun /n.ts immediately followed by profiles (none).",
+        "[integration] Running plan with { feature: \"f1\" } on a fixture whose only spec is .nax/specs/f1.md builds an argv containing \"--from\", \".nax/specs/f1.md\".",
+        "[integration] Running plan with { feature: \"f1\" } and no spec file returns a result whose content starts \"[chat] no spec for f1; looked for \" and names both .nax/features/f1/spec.md and .nax/specs/f1.md.",
+        "[integration] Running plan for a feature that already has a prd.json puts warning: prd.json exists and will be replaced in the card's reason.",
+        "[integration] Running run with { feature: \"f2\" } where f2 has no prd.json returns a result deep-equal to { isError: true, content: \"[chat] no prd.json for f2; run nax plan first\" }.",
+        "[integration] Running bot_fix with { pr: 12, trust: true } calls approve with a card whose summary is nax bot fix #12.",
+        "[integration] Running bot_review with { pr: 12, decisions: \"d.json\" } where d.json does not exist returns a result deep-equal to { isError: true, content: \"[chat] decisions file d.json not found\" }.",
+        "[unit] Running run with { feature: \"f1\", profiles: [\"--x\"] } returns a result deep-equal to { isError: true, content: \"[chat] profile --x is not a valid profile name\" }.",
+        "[integration] The signal the tool run receives in its context is the signal passed to approve."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "jobs",
+        "security",
+        "tools",
+        "approval"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-005",
+        "US-008"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Billed launch authorization connects untrusted model inputs, target files, explicit host cards and background process starts.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/job-argv.ts",
+        "packages/nax/src/chat/jobs/job-runner.ts",
+        "packages/nax/src/chat/ask-controller.ts",
+        "packages/nax/src/chat/workflow/workflow-provider.ts",
+        "packages/nax/src/prd/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/jobs/jobs-launch.ts",
+        "packages/nax/src/chat/jobs/jobs-provider.ts",
+        "packages/nax/test/unit/chat/jobs/jobs-launch.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6e3216e3830f94b7896a9b76a5ca79753b7803d2"
+    },
+    {
+      "id": "US-010",
+      "title": "Prevent busy-checkout launches and map start failures",
+      "description": "**Goal** — Add pre/post-approval busy checks, a real checkout-lock reader and launch-boundary error mapping.\n\n**Motivation** — The standing rule is that a billed launch needs the user's explicit yes at the launch moment (user).\n\n**Approach** — `jobs-launch.ts` gains the busy checks before the card and again after `allow` (plan and run), the real `lockHolder` (reads `<repoRoot>/nax.lock`; `null` for missing, unparseable or dead-pid), the `featureDir` throw and unreadable-`prd.json` error results, and the mapping of a `jobs.start` rejection to `[chat] could not start nax <kind>: <message>`, as in Design § The `nax-jobs` provider and § Failure Handling. Tests go in a new `test/unit/chat/jobs/jobs-launch-busy.test.ts`.\n\nThe launch logic lives in `src/chat/jobs/jobs-launch.ts`, with `_jobsLaunchDeps = { git, lockHolder, exists, loadPRD }`. `lockHolder(repoRoot)` reads `<repoRoot>/nax.lock` and returns its `pid` when that pid is alive, else `null` (a missing or unparseable file is `null`).\n\n3. Busy checks (plan and run only): a running `plan` or `run` job in `jobs.running()`, then the checkout lock holder. They run here, before the card, and again in step 6 after `allow`, because the card can stay open for up to `approvalTimeoutMs` and two launches can race in one model batch.\n6. `allow` → re-run the busy checks (plan and run); a hit returns the same busy error and nothing starts. The in-memory job check runs after the `lockHolder` read, immediately before `jobs.start` with no await between them, so two launches allowed together cannot both pass. Then `jobs.start({ kind, target, argv, sessionId: sessionId(), approvedAt: now().toISOString() })`. A `start` rejection becomes the error result `[chat] could not start nax <kind>: <message>` (the runner's message with its own `could not start nax <kind>: ` prefix removed when present). The result content is one line of JSON `{ \"job\": <id>, \"state\": \"running\", \"log\": <logPath> }`, followed by a newline and `A [nax-jobs] notice arrives when it ends.`\n\nFailure Handling:\n- a plan or run job already running in this repo → error `[chat] nax <kind> job <id> is already running in this checkout`; no card;\n- `nax.lock` held by a live pid → error `[chat] this checkout is held by nax pid <pid>; wait for it or stop it first`; no card;\n- a plan or run job, or a live `nax.lock` holder, appears while the launch card is open → after `allow`, the same busy error as before the card; nothing starts;\n- `nax.lock` missing, unparseable, or naming a dead pid → `lockHolder` returns `null`; no busy error;\n- `feature` fails `featureDir` → error, content is the thrown message;\n- run whose `prd.json` does not load → error `[chat] prd.json for <f> is unreadable: <message>`;\n- `Bun.spawn` throws → the runner rejects `CHAT_JOB_SPAWN_FAILED` and writes no record; the tool returns error `[chat] could not start nax <kind>: <message>`;\n- `jobs.start` rejects for another reason (for example the record write fails) → error `[chat] could not start nax <kind>: <message>`.\n\nThe busy re-check runs inside the same launch path, proven by an `approve` stub that starts a competing job before resolving `allow`. New errors thrown by the jobs module use NaxError, stage chat; provider failures are ToolResult values, not arbitrary throws.\n\n**Scope** — In: extend US-009's launch path, real lock reader and named failure results. Out: list/cancel/instructions (US-011), host and screen wiring (US-013–US-015). Refusing a second bot review or bot fix on a PR that already has one running, or a run of a PRD whose stories have all passed; only plan and run are checked for a busy checkout. No changes to execution lock acquisition or CLI commands.\n\n**Interface** — Keep `createJobsProvider(options: JobsProviderOptions): ToolProvider` and `ChatJobs.start(request: StartJobRequest): Promise<ChatJob>` unchanged; implement the `lockHolder(repoRoot)` seam and the existing launch path's second busy check.",
+      "acceptanceCriteria": [
+        "[integration] Running run while jobs.running() holds plan job plan-00000001 for this repo returns a result deep-equal to { isError: true, content: \"[chat] nax plan job plan-00000001 is already running in this checkout\" }.",
+        "[integration] In that busy-job case, approve is never called.",
+        "[integration] Running plan while _jobsLaunchDeps.lockHolder returns 777 returns a result deep-equal to { isError: true, content: \"[chat] this checkout is held by nax pid 777; wait for it or stop it first\" }.",
+        "[integration] Running run with an approve stub that, before resolving \"allow\", makes jobs.running() hold run job run-00000002 for this repo returns the busy error naming run-00000002.",
+        "[integration] In that post-approval busy-job case, jobs.start is never called.",
+        "[integration] Running run with an approve stub that makes lockHolder return 888 before resolving \"allow\" returns the held by nax pid 888 error.",
+        "[integration] In that post-approval lock-holder case, jobs.start is never called.",
+        "[integration] Running bot_fix while jobs.running() holds a run job for this repo still calls approve (bot jobs are not busy-checked).",
+        "[unit] The real lockHolder(repoRoot) for a nax.lock holding {\"pid\": <a live pid>} returns that pid.",
+        "[unit] The real lockHolder(repoRoot) for a nax.lock naming a pid that isProcessAlive reports dead returns null.",
+        "[unit] The real lockHolder(repoRoot) for a nax.lock holding not json returns null.",
+        "[unit] The real lockHolder(repoRoot) with no nax.lock returns null.",
+        "[integration] Running run with { feature: \"f1\" } where f1's prd.json holds { returns a result whose content starts [chat] prd.json for f1 is unreadable:.",
+        "[integration] Running run with { feature: \"f1\" } where jobs.start rejects with could not start nax run: spawn ENOENT returns a result deep-equal to { isError: true, content: \"[chat] could not start nax run: spawn ENOENT\" }.",
+        "[integration] Running run where jobs.start rejects with disk full returns a result deep-equal to { isError: true, content: \"[chat] could not start nax run: disk full\" }.",
+        "[integration] Running plan with a feature name that passes validateFeatureName but that featureDir rejects returns an error result whose content is featureDir's message.",
+        "[integration] When the live checkout lock is detected before approval, approve is never called."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "jobs",
+        "security",
+        "concurrency",
+        "errors"
+      ],
+      "dependencies": [
+        "US-009"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Extend one existing launch path with lock reading, repeated checks and error mapping; post-approval TOCTOU protection is authorization-sensitive, so strict TDD is retained.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/jobs-launch.ts",
+        "packages/nax/src/execution/lock.ts",
+        "packages/nax/src/utils/git.ts",
+        "packages/nax/src/config/paths/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/jobs/jobs-launch-busy.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When two plan/run launch calls are approved together against an initially empty runner, only one jobs.start invocation reaches a spawned child and the other returns the busy error."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1a0d35a871e8cc2e8d07ed663b65adb8156356e0"
+    },
+    {
+      "id": "US-011",
+      "title": "Complete job list, cancel and instruction tools",
+      "description": "**Goal** — Complete the static nax-jobs provider with bounded job inspection, explicitly approved cancellation and prompt instructions.\n\n**Motivation** — The standing rule is that a billed launch needs the user's explicit yes at the launch moment (user).\n\n**Approach** — `createJobsProvider` gains the `list` and `cancel` tools and `instructions()` returning `buildJobsInstructions()`, as in Design § The `nax-jobs` provider. `JOBS_LIST_LIMIT` is exported from `jobs-provider.ts`. Tests go in a new `test/unit/chat/jobs/jobs-provider.test.ts`.\n\n`list` with no `job` returns JSON `{ \"jobs\": [...], \"omitted\": <n> }`, at most `JOBS_LIST_LIMIT = 20` newest first. Each entry has `id`, `kind`, `target`, `state`, `startedAt`, and `endedAt`, `progress`, `cost`, `note` when present. `list` with `job` returns that record's fields plus `logTail`, the last `JOB_LOG_TAIL_LINES` lines of its log.\n\n`cancel` first calls `jobs.canCancel(id)`; on `{ ok: false }` it returns `[chat] <message>` as an error result with no card (this covers a job that is not running and an unverified re-attached job). Otherwise it asks with `tool: \"nax-jobs__cancel\"`, summary `cancel nax <kind> <target> (<id>)`, reason `Cancelling stops the job; paid work it has done is not refunded.` On `allow` it calls `jobs.cancel(id)` and returns `cancel requested for job <id>; SIGINT sent`. On `deny` it returns the error `[chat] the user declined to cancel job <id>`.\n\n`instructions()` returns `buildJobsInstructions()`. Both list/cancel schemas use `additionalProperties: false`, with `job: string`; list has no required properties and cancel requires `job`. Reject a `job` not matching `JOB_ID_PATTERN` with error `[chat] invalid job id <id>`; an unknown id gives `[chat] unknown job <id>`. A non-running job returns `[chat] job <id> is not running (state <state>)` without a card. An unverified re-attached job returns `[chat] job <id> was started by another chat and its pid cannot be verified; stop it from that chat or by hand` without a card. Missing logs tail as `\"\"`. Host cancellation approval uses the same unrememberable host-card path and receives the call's abort signal.\n\nThe final provider advertises exactly `plan`, `run`, `bot_review`, `bot_fix`, `list` and `cancel`, with id `nax-jobs`, kind `static`, stages `[\"*\"]`. Four launch descriptions still include `Billed` and `asks the user`; their existing schemas are preserved.\n\n**Scope** — In: two new tools, 20-entry projection, job id validation, cancellation preflight/card/result and provider instructions. Out: signalling internals (US-007), host registration (US-013), /jobs and the close prompt UI (US-015). No TUI picker/log-tail view, stale-startup notices, subagent launches or ACP-server registration.\n\n**Interface** —\n```ts\nexport const JOBS_LIST_LIMIT = 20;\nexport function createJobsProvider(options: JobsProviderOptions): ToolProvider;\n```\nUse the existing `ChatJobs.canCancel(id)`, `cancel(id)`, `list()`, `get(id)` and `logTail(id, lines?)`; `instructions(workdir)` resolves `buildJobsInstructions()` from @/prompts.",
+      "acceptanceCriteria": [
+        "[unit] createJobsProvider(options) returns a provider with id nax-jobs.",
+        "[unit] It has kind static and stages deep-equal to [\"*\"].",
+        "[unit] Its tools(repoRoot) resolves to six tools whose localNames are plan, run, bot_review, bot_fix, list and cancel.",
+        "[unit] The run tool's inputSchema has required deep-equal to [\"feature\"].",
+        "[unit] Each of the plan, run, bot_review and bot_fix tools' description includes Billed.",
+        "[unit] Running list with {} over a stub with 25 jobs returns JSON whose jobs has length 20.",
+        "[unit] In that 25-job list case, the JSON's omitted is 5.",
+        "[unit] In that 25-job list case, the first entry's id is the newest job's.",
+        "[unit] Each list entry for a job with no endedAt has no endedAt key.",
+        "[unit] Running list with { job: \"run-1a2b3c4d\" } returns JSON whose logTail equals the stub logTail result for that id.",
+        "[unit] Running list with { job: \"x/../y\" } returns a result deep-equal to { isError: true, content: \"[chat] invalid job id x/../y\" }.",
+        "[unit] Running list with { job: \"run-ffffffff\" } for an unknown id returns a result deep-equal to { isError: true, content: \"[chat] unknown job run-ffffffff\" }.",
+        "[unit] Running cancel with { job: \"run-1a2b3c4d\" } for a running job calls approve with a card whose tool is nax-jobs__cancel and summary is cancel nax run f1 (run-1a2b3c4d).",
+        "[unit] In that cancel-card case, with approve resolving \"allow\", jobs.cancel is called with run-1a2b3c4d.",
+        "[unit] In that allowed-cancel case, the result content is cancel requested for job run-1a2b3c4d; SIGINT sent.",
+        "[unit] With approve resolving \"deny\", jobs.cancel is never called.",
+        "[unit] With approve resolving \"deny\", the cancel result content is [chat] the user declined to cancel job run-1a2b3c4d.",
+        "[unit] Running cancel for a job in state failed returns a result deep-equal to { isError: true, content: \"[chat] job run-1a2b3c4d is not running (state failed)\" }, with no card.",
+        "[unit] Running cancel for a re-attached bot_fix job returns the was started by another chat and its pid cannot be verified error, with no card.",
+        "[unit] Running cancel with { job: \"run-ffffffff\" } for an unknown id returns a result deep-equal to { isError: true, content: \"[chat] unknown job run-ffffffff\" }.",
+        "[unit] Running cancel with { job: \"nope\" } returns a result deep-equal to { isError: true, content: \"[chat] invalid job id nope\" }.",
+        "[unit] The provider's instructions(repoRoot) resolves to the string buildJobsInstructions() returns."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "jobs",
+        "security",
+        "tools",
+        "cancellation"
+      ],
+      "dependencies": [
+        "US-007",
+        "US-010"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Standard provider projection but cancellation is an access-control surface requiring verified identity and explicit approval.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/jobs-provider.ts",
+        "packages/nax/src/chat/jobs/job-runner.ts",
+        "packages/nax/src/chat/ask-controller.ts",
+        "packages/nax/src/prompts/builders/workflow-builder.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/jobs/jobs-provider.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "dfc7ca85962c5730c59f0b35ba09291f1b912ff2"
+    },
+    {
+      "id": "US-012",
+      "title": "Guard checkout writes and format job listings",
+      "description": "**Goal** — Refuse competing coding writes during run/plan jobs and provide the plain-text /jobs listing formatter.\n\n**Motivation** — That stitching is the pain the roadmap exists to remove.\n\n**Approach** — New `src/chat/jobs/job-write-guard.ts` with `GUARDED_WRITE_TOOLS` and `createJobWriteGuard`, as in Design § Write guard, and new `src/chat/jobs/jobs-listing.ts` with `formatJobsListing`, as in Design § Host and screen (`/jobs`). Tests go in a new `test/unit/chat/jobs/job-write-guard.test.ts`, with a stub `running()`, and a new `test/unit/chat/jobs/jobs-listing.test.ts`.\n\nOne entry: plugin `nax-jobs`, event `before_tool`. For a call whose `name` is in `GUARDED_WRITE_TOOLS`, while `jobs.running()` holds a `plan` or `run` job whose `cwd` equals `repoRoot`, the handler returns `{ kind: \"block\", isError: true, content: \"[nax-jobs] <name> refused: nax <kind> job <id> is running in this checkout; wait for it to end or cancel it\" }`, naming the newest such job. Otherwise it returns `{ kind: \"allow\" }`.\n\nTwo writers. The write guard is a `before_tool` loop handler (`LoopHandlerSet`, plugin name `nax-jobs`). It returns `{ kind: \"block\" }` for `Write`, `Edit`, `Delete` and `GitCommit` while a `run` or `plan` job for this repo is running. No `@nathapp/nax-agent` change is needed. The host appends it to its frozen loop handler set, so chat sessions and subagent sessions both get it (US-013). The `Git` tool is read-only (`GIT_READ_VERBS`) and Bash is not blocked (design 4.5).\n\n`formatJobsListing(jobs: readonly ChatJob[]): string` lives in `src/chat/jobs/jobs-listing.ts` and is exported from `@/chat`, like `formatAgentsListing` (barrel export is US-013). One line per job, newest first, at most 20, then `+<n> more` when there are more: `<id>  <state>  <kind> <target>`, then `  <passed>/<total>` when `progress` is set, then `  $<cost.toFixed(2)>` when `cost` is set, then `  <startedAt>`. Bot targets show as `#<pr>`. No jobs gives `(no jobs)`.\n\n**Scope** — In: guard and formatter only. Out: appending guards to parent/subagent sessions (US-013), invoking the formatter from /jobs (US-015), footer presentation (US-014). Blocking Bash, or any tool other than Write, Edit, Delete and GitCommit, while a job holds the checkout. Do not change nax-agent or the read-only Git tool.\n\n**Interface** —\n```ts\nexport const GUARDED_WRITE_TOOLS: readonly string[] = [\"Write\", \"Edit\", \"Delete\", \"GitCommit\"];\nexport function createJobWriteGuard(jobs: Pick<ChatJobs, \"running\">, repoRoot: string): LoopHandlerSet;\nexport function formatJobsListing(jobs: readonly ChatJob[]): string;\n```",
+      "acceptanceCriteria": [
+        "[unit] createJobWriteGuard(jobs, \"/r\") returns one entry with plugin nax-jobs and event before_tool.",
+        "[unit] With running() holding run job run-1a2b3c4d whose cwd is /r, the handler for a Write call returns { kind: \"block\", isError: true, content: \"[nax-jobs] Write refused: nax run job run-1a2b3c4d is running in this checkout; wait for it to end or cancel it\" }.",
+        "[unit] In that running-run state, the handler returns kind block for an Edit call.",
+        "[unit] In that running-run state, the handler returns kind block for a Delete call.",
+        "[unit] In that running-run state, the handler returns kind block for a GitCommit call.",
+        "[unit] In that running-run state, the handler returns { kind: \"allow\" } for a Read call.",
+        "[unit] In that running-run state, the handler returns { kind: \"allow\" } for a Bash call.",
+        "[unit] With running() holding only a bot_fix job for /r, the handler returns { kind: \"allow\" } for a Write call.",
+        "[unit] With running() holding a run job whose cwd is /other, the handler returns { kind: \"allow\" } for a Write call.",
+        "[unit] With running() empty, the handler returns { kind: \"allow\" } for a Write call.",
+        "[unit] With a plan job and a newer run job running for /r, the block content names the run job.",
+        "[unit] formatJobsListing([]) returns (no jobs).",
+        "[unit] formatJobsListing for a running run job run-1a2b3c4d on f1 with progress 3 of 7, cost 1.2 and startedAt 2026-10-27T10:00:00Z returns run-1a2b3c4d  running  run f1  3/7  $1.20  2026-10-27T10:00:00Z.",
+        "[unit] formatJobsListing for a failed bot_fix job on PR 12 returns a line containing bot_fix #12.",
+        "[unit] formatJobsListing for 23 jobs returns 20 job lines followed by +3 more."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "jobs",
+        "security",
+        "write-guard",
+        "formatting"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Small pure modules, but the before_tool block/allow decision is an access-control guard for checkout writes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/job-runner.ts",
+        "packages/nax/src/chat/chat-agents-listing.ts",
+        "packages/nax/src/context/rules/rule-delivery/index.ts",
+        "packages/nax-agent/src/native/session/loop-events/types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/jobs/job-write-guard.ts",
+        "packages/nax/test/unit/chat/jobs/job-write-guard.test.ts",
+        "packages/nax/src/chat/jobs/jobs-listing.ts",
+        "packages/nax/test/unit/chat/jobs/jobs-listing.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d9b20e56d63ef5f6148e5f4708edc21f109fbf06"
+    },
+    {
+      "id": "US-013",
+      "title": "Wire jobs into the chat host and CLI",
+      "description": "**Goal** — Compose the optional runner/provider/guard in the chat host, wire the same executable entry from the CLI and expose close confirmation.\n\n**Motivation** — The user ruled on 2026-10-27 that full and guarded mode are only the Bash and coding-tool permission posture, so billed launches ask in both (Q3).\n\n**Approach** — `src/chat/jobs/index.ts` barrels the module. `src/chat/index.ts` exports the `ChatJob`, `ChatJobs` and `HostApprovalCard` types and the `formatJobsListing` function. New `src/chat/jobs/jobs-host.ts` with `createHostJobs` (runner, provider, guard and `confirmClose`). `ChatHostDeps.naxEntry`, `ChatHost.jobs`, `ChatHost.confirmJobsBeforeClose`, the call to `createHostJobs`, `attach` on start and resume, `dispose` on close, and the ask controller's `approvalTimeoutMs` / `now` are added in `src/chat/chat-host.ts`, as in Design § Host and screen; `chat-host.ts` stays under 600 lines. `nax-jobs` joins `RESERVED_SERVER_IDS`. `src/cli/chat.ts` gains the `naxEntry` dep and passes it on. Host tests go in a new `test/unit/chat/chat-host-jobs.test.ts`. The CLI test goes in the existing `test/unit/cli/chat-resources.test.ts`, and the reserved-id test in the existing `test/unit/chat/chat-mcp.test.ts`.\n\nSame nax. The child argv starts with the chat process's own entry, `naxEntry`: `[process.execPath, process.argv[1]]`, resolved once at the CLI boundary in `src/cli/chat.ts`. This is `bun <repo>/packages/nax/bin/nax.ts` for a local build and `bun .../dist/nax.js` for the global install. The child never resolves `nax` from `PATH`, which closes the version trap. When `process.argv[1]` is undefined, no `naxEntry` is passed, and the host registers no `nax-jobs` provider.\n\nComposition. The host builds the runner, the provider and the guard itself, the way it builds `createAgentsProvider`, because the provider needs the host's ask controller and session id. The composition and the close prompt live in a new `src/chat/jobs/jobs-host.ts` (`createHostJobs`), so `chat-host.ts` (538 lines, held to the 600-line source limit) gains only the call sites. They exist only when the host has both `resources` and a `naxEntry`. The provider sits after the resources' own providers and before `nax-agents`. Subagent sessions do not receive it: they get `resources.toolProviders` only, so a subagent cannot launch billed work.\n\n`createHostJobs(...)` in `src/chat/jobs/jobs-host.ts` returns `{ jobs, provider, guard, confirmClose }`. `createChatHost` with both `resources` and `naxEntry` calls it and so builds the runner (`createJobRunner({ repoRoot, outputDir, now })`), the provider (with `approve: (card) => this.asks.requestHostApproval(card)`, `sessionId: () => this.current().sessionId`, `maxIterations: config.execution.maxIterations` and `interactionPlugin: config.interaction?.plugin ?? \"cli\"`) and the guard. `toolProviders` becomes `[...resources.toolProviders, nax-jobs, nax-agents?]`. The loop handler set becomes `[...pluginHandlers, ...ruleDeliveryHandlers, ...guard]`, still frozen. `host.jobs` is the runner. Without either input, none of this exists and `host.jobs` is undefined.\n\n`start()` and `resume()` await `jobs.attach()` after the session opens.\n\n`confirmJobsBeforeClose()`: with no `owned()` jobs it resolves without asking. Otherwise it asks with `tool: \"nax-jobs__close\"`, summary `<n> nax job(s) still running: <ids comma-separated>`, reason `Yes cancels them. No keeps them running in the background; a later nax chat in this repo picks them up.` `allow` calls `jobs.cancel` for each owned job; a cancel that rejects is logged through the host logger's `warn` and the rest are still cancelled. `deny`, including a timeout, keeps them. `host.confirmJobsBeforeClose` is `confirmClose` from `createHostJobs`, and is undefined when the jobs pieces do not exist.\n\n`close()` calls `jobs.dispose()` and never cancels a job. The SIGTERM and SIGHUP shutdown path in `runShell` calls `host.close()` directly, so it keeps running jobs without asking.\n\nChanged integration targets:\n- `ChatHostDeps` gains `readonly naxEntry?: readonly string[]`. `ChatHost` gains `readonly jobs?: ChatJobs` and `confirmJobsBeforeClose?(): Promise<void>`. The ask controller is created with `approvalTimeoutMs: config.execution.approvalTimeout` and `now: deps.now`.\n- `RESERVED_SERVER_IDS` becomes `new Set([\"nax-skills\", \"nax-agents\", \"nax-workflow\", \"nax-jobs\"])`.\n- `_chatCommandDeps.naxEntry: () => readonly string[] | undefined`, default `process.argv[1] === undefined ? undefined : [process.execPath, process.argv[1]]`; `composeChat` passes `naxEntry` to `createChatHost` when it is defined.\n\nExisting host fixtures supply no naxEntry: host-subagents.test.ts keeps nax-agents last and resource providers unchanged; chat-host-resources.test.ts keeps plugin/rule-delivery event ordering. The host interfaces only gain optional jobs members. Prove composition by capturing the session open arguments, invoking the actual frozen guard, opening a launch tool from a full-mode host and observing a real pending host card, and checking chatCommand's host dependencies.\n\n**Scope** — In: jobs module/barrel, conditional composition, host lifecycle and close-confirmation method, CLI entry capture and MCP reservation. Out: footer/notice delivery (US-014), /jobs and user-key close sequencing (US-015). Giving subagent sessions the `nax-jobs` tools; subagents cannot launch billed work. Registering the `nax-jobs` provider in the ACP server (koda); only `nax chat` gets it. Do not alter SIGTERM/SIGHUP into interactive shutdown or merge child-job cost into chat cost.\n\n**Interface** — Additive members:\n```ts\n// ChatHostDeps\nreadonly naxEntry?: readonly string[];\n// ChatHost\nreadonly jobs?: ChatJobs;\nconfirmJobsBeforeClose?(): Promise<void>;\n```\n`createHostJobs(...)` returns `{ jobs, provider, guard, confirmClose }`; `HostApprovalCard` is exported from ask-controller and re-exported from @/chat with ChatJob, ChatJobs and formatJobsListing.",
+      "acceptanceCriteria": [
+        "[integration] createChatHost with resources (catalog with one agent) and naxEntry [\"bun\", \"/n.ts\"], after start, opens the session with toolProviders whose ids, sliced to the last two, deep-equal [\"nax-jobs\", \"nax-agents\"].",
+        "[integration] createChatHost with resources and no naxEntry, after start, opens with toolProviders that contain no nax-jobs provider.",
+        "[integration] In that no-naxEntry case, host.jobs is undefined.",
+        "[integration] With naxEntry, the loop handler set passed to open is frozen.",
+        "[integration] With naxEntry, the last entry of that loop handler set has plugin nax-jobs and event before_tool.",
+        "[integration] With naxEntry, while host.jobs holds a running run job for the host's repoRoot (stubbed spawn), calling that last handler with a Write call returns kind block.",
+        "[integration] With naxEntry, a fixture chat-jobs/ record for this repo in state running whose pid is dead is finalized during host.start, so host.jobs.list()[0].state is not running.",
+        "[integration] With resources and naxEntry, host.resume over a fixture running chat-jobs/ record for this repo whose pid is dead finalizes that record after opening the resumed session, so host.jobs.list()[0].state is not running, just as on host.start.",
+        "[integration] With naxEntry and a host started in mode full, running the nax-jobs provider's run tool on a fixture feature leaves one event with tool nax-jobs__run in host.asks.pending() until it is resolved.",
+        "[integration] Resolving that event deny through host.asks.resolve makes the tool return the declined error.",
+        "[integration] With config.execution.approvalTimeout 30000 and now fixed at T, that event's expiresAt is T plus 30 seconds.",
+        "[integration] host.confirmJobsBeforeClose() with no owned running job resolves without adding anything to host.asks.pending().",
+        "[integration] With one owned running job, host.confirmJobsBeforeClose() adds an event with tool nax-jobs__close to host.asks.pending().",
+        "[integration] Resolving that event allow_once calls cancel for the owned job.",
+        "[integration] With two owned jobs whose first cancel rejects, resolving that event allow_once still calls cancel for the second, and logs one warn through the host logger.",
+        "[integration] Resolving that event deny resolves confirmJobsBeforeClose without calling cancel.",
+        "[integration] host.close() with a running owned job never calls cancel.",
+        "[integration] host.close() calls the runner's dispose.",
+        "[integration] chatCommand({ dir }, deps) with deps.naxEntry returning [\"bun\", \"/n.ts\"] hands createChatHost deps whose naxEntry deep-equals [\"bun\", \"/n.ts\"].",
+        "[integration] chatCommand({ dir }, deps) with deps.naxEntry returning undefined hands createChatHost deps with no naxEntry.",
+        "[unit] createChatMcp for MCP servers { \"nax-jobs\": <stdio server> } returns providers whose ids do not include nax-jobs.",
+        "[unit] In that reserved-server case, state.diagnostics has an entry whose message is [resources] mcp server id nax-jobs is reserved.",
+        "[integration] The nax-jobs provider the host hands to open has instructions resolving to text that includes nax-jobs__run.",
+        "[integration] With resources and no naxEntry, the session open request still receives resources.toolProviders unchanged, and its frozen loop handler set still consists of plugin handlers followed by rule-delivery handlers with no nax-jobs entry."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "jobs",
+        "security",
+        "sessions",
+        "cli",
+        "integration"
+      ],
+      "dependencies": [
+        "US-007",
+        "US-011",
+        "US-012"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Additive composition reuses existing host/provider seams rather than changing architecture; parent/subagent capability isolation and host session approvals still require strict security TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/cli/chat.ts",
+        "packages/nax/src/chat/chat-mcp.ts",
+        "packages/nax/test/unit/chat/chat-host-resources.test.ts",
+        "packages/nax/test/unit/cli/chat-resources.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/jobs/index.ts",
+        "packages/nax/src/chat/jobs/jobs-host.ts",
+        "packages/nax/test/unit/chat/chat-host-jobs.test.ts"
+      ],
+      "suggestedCriteria": [
+        "With resources and naxEntry, a subagent session receives the frozen nax-jobs write guard but its provider ids do not contain nax-jobs.",
+        "With naxEntry but no resources, host.jobs and host.confirmJobsBeforeClose are undefined.",
+        "When the close approval times out, confirmJobsBeforeClose resolves without cancelling any owned job."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1acb51279854773305448df52b7b3740e175152a"
+    },
+    {
+      "id": "US-014",
+      "title": "Show running jobs and deliver end notices while idle",
+      "description": "**Goal** — Add the footer job strip and reliable FIFO job-notice turns to the chat screen.\n\n**Motivation** — That stitching is the pain the roadmap exists to remove.\n\n**Approach** — `formatJobStrip`, `FooterJob` and the `footerModel` `jobs` input in `src/tui/chat/chat-status.ts`; the new hook `src/tui/chat/use-jobs.ts`; and the `ChatApp` wiring of the strip and notice delivery, as in Design § Host and screen. Strip tests go in the existing `test/unit/tui/chat/chat-status.test.ts`. Screen tests go in a new `test/ui/chat/chat-jobs.test.tsx`, using a fake `ChatHost` whose `jobs` is a stub `ChatJobs`.\n\n`formatJobStrip(jobs: readonly FooterJob[]): string`, with `FooterJob = { kind, target, progress?, cost? }`, in `chat-status.ts`. One part per job: `run <f>` plus ` <passed>/<total>` when `progress` is set, plus ` $<cost.toFixed(2)>` when `cost` is set; `plan <f>`; `bot_review #<pr>`; `bot_fix #<pr>`. A feature name longer than 16 characters is cut to its first 15 characters plus `…`, so the strip fits the one-row footer. It shows at most two parts joined with ` · `, then ` +<n>` for the rest.\n\n`footerModel` input gains `jobs?: readonly FooterJob[]`; when it holds at least one job, the right line starts with one span whose text is `formatJobStrip(jobs)`, followed by the existing spans. Its existing input is `{ state, status, hint, copiedChars?, glyphs? }`; empty or omitted jobs preserve existing output.\n\nNew hook `useJobs(host, { idle, deliver })` in `src/tui/chat/use-jobs.ts`. It returns `host.jobs?.running() ?? []` and re-renders on `host.jobs.onChange`. Whenever `idle` is true and `peekNotice()` returns a notice, it calls `deliver(notice)`, which returns `Promise<boolean>`; only on `true` does it call `takeNotice()`. A notice is therefore never lost to a turn that did not start. `deliver` is read through a ref, so the latest `sendTurn` closure is used. At most one delivery is in flight at a time.\n\n`ChatApp` passes `idle = !turnRunning && ask === undefined && picker.model === undefined && keys.canControl()`, `deliver` = a function that returns `false` when `sending.current` is already true and otherwise awaits `sendTurn(text)` and returns `true`, and the running jobs to `footerModel` as `jobs`.\n\nA notice is peeked but the turn cannot start (a turn is already sending): `deliver` returns `false`; the notice stays queued for the next idle moment. Model-facing notice text remains in US-004's workflow builders, not new prompt literals in the hook. Existing footer tests continue to use the optional input without changes.\n\n**Scope** — In: pure strip/footer additions, hook subscription and delivery coordination, real ChatApp integration. Out: runner queue construction (US-005), /jobs and close-confirmation key sequencing (US-015). A job picker or a log-tail view in the TUI; `/jobs` prints a plain listing, and the model reads a job's log through `nax-jobs__list`. A job card in the transcript (design 4.8); the launch tool's result and the end notice are the transcript record. Adding job cost to the chat session's `costUsd`; the two ledgers stay separate.\n\n**Interface** — `formatJobStrip(jobs: readonly FooterJob[]): string`; `FooterJob = { kind, target, progress?, cost? }`; `footerModel` gains `jobs?: readonly FooterJob[]`; `useJobs(host, { idle, deliver })` returns the current running job array, with `deliver(notice): Promise<boolean>`. Reuse `ChatJobs.running`, `onChange`, `peekNotice` and `takeNotice`.",
+      "acceptanceCriteria": [
+        "[unit] formatJobStrip([{ kind: \"run\", target: \"f1\", progress: { passed: 3, total: 7 }, cost: 1.2 }]) returns run f1 3/7 $1.20.",
+        "[unit] formatJobStrip([{ kind: \"plan\", target: \"f1\" }]) returns plan f1.",
+        "[unit] formatJobStrip([{ kind: \"bot_fix\", target: \"12\" }]) returns bot_fix #12.",
+        "[unit] formatJobStrip for four jobs returns the first two parts joined with \" · \", followed by \" +2\".",
+        "[unit] formatJobStrip([{ kind: \"plan\", target: \"a-very-long-feature-name\" }]) returns \"plan a-very-long-fea…\".",
+        "[unit] footerModel with jobs holding one plan job for f1 returns a right line whose first span text is plan f1.",
+        "[unit] footerModel with jobs empty returns a right line equal to the one it returns with no jobs input.",
+        "[integration] Rendering ChatApp with a fake host whose jobs.running() returns one run job for f1 shows a footer containing run f1.",
+        "[integration] When the fake host's jobs emits a change while idle and peekNotice() returns [nax-jobs] job run-1 (run f1) ended: succeeded, the screen calls host.send once with that text.",
+        "[integration] In that idle-notice case, takeNotice() is called once, after host.send was called.",
+        "[integration] When the change arrives while a turn is running, host.send is not called for the notice until that turn ends, and then it is called once.",
+        "[integration] When the change arrives while an ask card is shown, host.send is not called for the notice until the card is resolved.",
+        "[integration] When the change arrives while a mode switch is in flight (keys.canControl() false), host.send is not called for the notice.",
+        "[integration] When the change arrives while a mode switch is in flight (keys.canControl() false), takeNotice() is not called.",
+        "[integration] With two queued notices, the screen sends them in queue order, one turn each.",
+        "[integration] When the change arrives while idle but a turn is already sending (deliver returns false), takeNotice() is not called.",
+        "[integration] When deliver returns false because a turn is already sending, the retained notice is sent at the next idle moment."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "jobs",
+        "tui",
+        "react",
+        "notices"
+      ],
+      "dependencies": [
+        "US-013"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A new reactive FIFO scheduler starts session turns only when sending, pending host approvals, pickers and control transitions permit; strict session TDD protects those interacting boundaries.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/test/ui/chat/chat-app.test.tsx",
+        "packages/nax/src/chat/jobs/job-runner.ts",
+        "packages/nax/src/tui/chat/useChatKeys.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/use-jobs.ts",
+        "packages/nax/test/ui/chat/chat-jobs.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "When a model picker is open, a queued job notice remains queued until the picker closes.",
+        "After the jobs hook unmounts, job changes no longer cause screen sends.",
+        "formatJobStrip for a run with cost 0 displays $0.00."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c5dcdc23fb7a2fc458b7d30ff3afeeb805688dea"
+    },
+    {
+      "id": "US-015",
+      "title": "Add /jobs and interactive close confirmation",
+      "description": "**Goal** — Add the local /jobs command and keep the chat interactive while asking whether owned jobs should be cancelled on quit.\n\n**Motivation** — Closing the chat with a running job asks whether to cancel it or keep it running in the background (Q4).\n\n**Approach** — The `/jobs` built-in in `src/tui/chat/slash-commands.ts`, and the `confirmJobsBeforeClose` call in `useChatKeys.close()`, as in Design § Host and screen and § Changed (`useChatKeys.ts`). Slash command tests go in the existing `test/ui/chat/slash-commands.test.tsx`. Close tests go in a new `test/ui/chat/chat-jobs-close.test.tsx`.\n\n`/jobs` is a new built-in slash command, placed after `agents` and before `quit` in `COMMANDS`, with description `List nax jobs`. It shows `formatJobsListing(host.jobs?.list() ?? [])`, or `jobs are not available in this session` when `host.jobs` is undefined. It makes no model call.\n\n`src/tui/chat/useChatKeys.ts` `close()`. Baseline: sets `closing` and `locked` synchronously, then awaits `host.close()` inside a `try`. Target: when `host.confirmJobsBeforeClose` is defined, `close()` first sets a `confirming` ref and awaits it, leaving `closing` and `locked` untouched until it settles, because the ask card is only answerable while `!keys.locked` (`ChatApp.tsx:603`). A second ctrl+c or `/quit` while `confirming` is set returns at once and raises no second card. After it resolves, `confirming` is cleared and the existing closing sequence runs. When the method is absent, `close()` runs exactly as today, with no extra await, so the existing synchronous teardown path is unchanged. If the call rejects, the error is shown through `onError`, `confirming` is cleared and the chat stays open.\n\n`useChatKeys` `close()` is the only path from `/quit` and ctrl+c to `host.close()`. `keys.canControl()` is the guard every control path shares. Do not lock the card while confirming or duplicate it on a repeated quit gesture. US-013 owns the close card itself: owned jobs only, Yes cancels, No/timeout keeps, per-job cancellation rejection logs warn and continues. SIGTERM/SIGHUP still call host.close directly.\n\nExisting test modification: `test/ui/chat/slash-commands.test.tsx` test `US-011 AC-15 US-024 AC-15 help lists /agents between /mcp and /quit` expects the help frame to contain the three rows mcp, agents, quit back to back (List MCP servers, List agents, Quit nax chat). The new jobs built-in now sits between agents and quit, so the expected text gains the row `/jobs  List nax jobs` between the agents row and the quit row (built-ins listed in COMMANDS order, quit last, is the invariant kept).\n\n**Scope** — In: built-in registration/listing, help-order expectation, close key sequencing and real AskCard interaction. Out: close card composition/cancel policy (US-013), listing formatting (US-012), footer and completion notices (US-014). Running `/jobs` while a turn is in flight; like every other built-in it is refused with the busy notice, and the footer strip shows running jobs meanwhile. No picker/log view or interactive SIGTERM/SIGHUP shutdown.\n\n**Interface** — Reuse `host.jobs?: ChatJobs`, `formatJobsListing(jobs: readonly ChatJob[]): string` and `host.confirmJobsBeforeClose?(): Promise<void>`. Preserve the existing `useChatKeys.close(): Promise<void>` and `canControl(): boolean` surfaces; add the internal confirming ref, not a mandatory new host method.",
+      "acceptanceCriteria": [
+        "[integration] Typing /jobs with a fake host whose jobs.list() holds one job shows the formatJobsListing line for it.",
+        "[integration] Typing /jobs with a fake host whose jobs.list() holds one job never calls host.send.",
+        "[integration] Typing /jobs with a fake host that has no jobs shows jobs are not available in this session.",
+        "[integration] /help lists /jobs  List nax jobs between /agents and /quit.",
+        "[integration] Typing /quit calls host.confirmJobsBeforeClose before host.close.",
+        "[integration] Pressing ctrl+c on an idle screen calls host.confirmJobsBeforeClose before host.close.",
+        "[integration] With confirmJobsBeforeClose pending, a second ctrl+c calls confirmJobsBeforeClose no second time.",
+        "[integration] With confirmJobsBeforeClose rejecting boom, the screen shows boom.",
+        "[integration] With confirmJobsBeforeClose rejecting boom, host.close is not called.",
+        "[integration] With a fake host whose confirmJobsBeforeClose raises a real asks.requestHostApproval card (createChatAskController), typing /quit renders that pending approval card in ChatApp.",
+        "[integration] In that real-card quit flow, answering with 1 (yes) through the real AskCard resolves the host approval and then calls host.close.",
+        "[integration] In that real-card quit flow, while the card is shown, host.close has not been called.",
+        "[integration] A fake host with no confirmJobsBeforeClose still closes on /quit.",
+        "[integration] With no host.confirmJobsBeforeClose, invoking useChatKeys.close() makes keys.canControl() return false synchronously before the first microtask checkpoint, preserving the existing no-extra-await teardown guard.",
+        "[integration] After confirmJobsBeforeClose rejects boom and the error is shown, a subsequent /quit invokes confirmJobsBeforeClose again, proving the chat remains open and its confirming ref was cleared."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "jobs",
+        "security",
+        "approval",
+        "tui",
+        "shutdown"
+      ],
+      "dependencies": [
+        "US-014"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A bounded confirming-ref change in the existing key hook plus one built-in command; approval-card interactivity during session teardown requires strict security TDD and legacy-path regression tests.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/useChatKeys.ts",
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/tui/chat/AskCard.tsx",
+        "packages/nax/test/ui/chat/chat-app-keys.test.tsx",
+        "packages/nax/test/ui/chat/slash-commands.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/chat-jobs-close.test.tsx"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/slash-commands.test.tsx",
+          "reason": "test \"US-011 AC-15 US-024 AC-15 help lists /agents between /mcp and /quit\" expects the help frame to contain the three rows mcp, agents, quit back to back (List MCP servers, List agents, Quit nax chat). The new jobs built-in now sits between agents and quit, so the expected text gains the row \"/jobs  List nax jobs\" between the agents row and the quit row (built-ins listed in COMMANDS order, quit last, is the invariant kept)."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f58990b278ed73c914198aedc7d169d0c8f02d70"
+    }
+  ],
+  "analysis": "Enhancement to the existing Bun/TypeScript nax chat, not a greenfield application. All 15 binding stories run in packages/nax; nax-agent, nax-agent-acp and nax-ai are read-only dependencies. Graph-first navigation was unavailable because this session exposes no codebase-memory tools, so findings were verified with direct reads and text searches rooted at the supplied execution repository. No implementation or tests were run during PRD drafting.\n\nExisting architecture and integration: packages/nax/src/chat/chat-host.ts:55 defines ChatHost, :78 defines ChatHostDeps, :99 begins NativeChatHost, and :128-177 composes project output paths, frozen loop handlers, asks, subagents and providers. The file currently has 538 lines; use the new jobs/jobs-host.ts composition helper to remain below 600 rather than embedding job machinery in the host. The output directory already comes from getProjectKey and projectOutputDir (:135-136); packages/nax/src/runtime/paths.ts:19-32 handles the global default and absolute/tilde overrides. Store job artifacts there, not in the repo's feature tree. The host currently freezes plugin handlers followed by rule delivery (:138-146), constructs asks afterward (:147-153), passes resources.toolProviders and the shared handler set to subagents (:157-170), and conditionally appends nax-agents to parent providers (:171-173). Reorder composition carefully: asks and host jobs must exist before freezing the augmented handler set and constructing subagent runs. Parent providers must be resources, then nax-jobs, then nax-agents if present. Subagents must continue receiving resources.toolProviders only, but receive the augmented frozen guard handler set; packages/nax/src/chat/subagent-runs.ts:181-182 forwards these inputs. No change to nax-agent's tool loop is necessary.\n\nLifecycle: packages/nax/src/chat/chat-host.ts:247-267 opens start sessions and replaces their handle; :281-284 resets asks and applies mode; :330-367 resumes sessions; :495-527 makes close idempotent, drains active opens and subagents, releases handles, tears down resources and destroys the interaction chain. Attach job records after the session opens on start and resume; attachment is idempotent across clear/resume. Dispose runner timers on close, without cancelling jobs or putting them in subagent cleanup. Session ids for launch records must come from a closure reading current(), not a captured old handle. Keep session-operation draining and late-open cleanup intact. Jobs are optional and exist only with BOTH resources and naxEntry, preserving older host fixtures and no-entry sessions.\n\nApproval boundary: packages/nax/src/chat/ask-controller.ts:8-23 declares options and interface, :43-64 handles session asks, :53 auto-allows full-mode session approvals, :71-83 controls approval memory and resolution, and :96-102 resets asks. Billed dispatch must not use handle() as its launch authority: add an independent host approval promise path, synthesized pending events, host- ids, no memory and no full-mode bypass. Host resolution must never call options.answer (which targets an AgentSession). Timeout, abort and reset all deny and remove pending events, clear timers/listeners and notify consumers. Existing session approval behavior stays unchanged. packages/nax/src/chat/ask-fallback.ts:58-84 prompts the interaction chain and resolves via the controller; :86-113 subscribes to pending asks and cleans up offers. The new events can use this fallback unchanged. packages/nax/src/tui/chat/ask-card.ts:162-188 already omits the session option when canRemember is false, and packages/nax/src/tui/chat/AskCard.tsx:387-429 resolves numeric/shortcut choices through the controller. Supply config.execution.approvalTimeout from the host; its resolved default and range live in packages/nax/src/config/schemas-execution.ts:303. This is access-control work and requires strict three-session-tdd even where the patch is small.\n\nCLI and provider seam: packages/nax/src/cli/chat.ts:42-74 owns injectable CLI dependencies; :174-214 composes skills, workflow and MCP resources; :234-270 builds the host. Resolve [process.execPath, process.argv[1]] at this boundary once, omit naxEntry entirely when argv[1] is undefined, and never find another nax on PATH. packages/nax/src/cli/chat.ts:136-172 owns shell lifetime; SIGTERM/SIGHUP must retain the existing direct host.close() path without a close card. packages/nax/src/chat/chat-mcp.ts:27 reserves built-in ids and :63-69 formats collision diagnostics; reserve nax-jobs before accepting MCP providers. packages/nax/src/chat/workflow/workflow-provider.ts:80-97 is the existing static-provider pattern, and packages/nax-agent/src/tools/provider-types.ts:20-56 specifies Promise-returning tools(), run(input, ctx) and optional instructions(). Use the public @nathapp/nax-agent types without modifying the library. Input schema constraints must be backed by parseJobInput checks because direct tool tests/calls can bypass schema admission. Numeric-string PR input must normalize to 12 for \"12\" per the explicit AC even though advertised schemas say integer.\n\nArtifact reuse: packages/nax/src/config/paths/index.ts:23-54 validates feature ids more strictly than packages/nax/src/utils/feature-name.ts:6-26 (64 versus 128 characters); validateFeatureName belongs in pure parsing and featureDir in launch target resolution. A long name can pass parsing but fail featureDir; preserve the thrown message. featureDir at packages/nax/src/config/paths/index.ts:120 is the feature-path SSOT. packages/nax/src/execution/status-file-read.ts:11-23 is a fail-soft reader for missing/malformed/drifted status files, with a minimum version/run/cost/progress guard at :32-58. New job-outcome code must import ../../execution/status-file-read directly, following packages/nax/src/chat/workflow/feature-state.ts:9-10, not the execution barrel, which risks a runtime import cycle. Fixtures must satisfy that reader's shape, including cost.limit as a number or null. packages/nax/src/execution/status-file.ts:126-166 exposes pid, status and progress. packages/nax/src/prd/index.ts:91-120 loads PRDs with coded errors; :235-265 counts pending and total using actual story status/passes semantics. Reuse these rather than approximating counts. packages/nax/src/execution/lock.ts:313 anchors the checkout lock at workdir/nax.lock. packages/nax/bin/nax.ts:215-249 and :676-690 and packages/nax/src/cli/bot.ts:167-200 confirm accepted flags: only run gets --headless, all accept repeatable profiles, bot fix accepts --trust and --no-rereview. Do not modify these commands.\n\nNew jobs architecture: add typed immutable records and atomic temp/rename storage, pure parsing/argv, record-authoritative outcomes, a detached-process runner, launch/provider presentation, a write guard and plain listing. No jobs module exists yet. Start/exit ownership and attachment/polling/cancellation are deliberately incremental stories US-005 through US-007; US-005's placeholders are temporary, not final behavior. US-009's four tools/no instructions and unhandled loadPRD rejection are similarly intermediate; US-010 maps failures/adds busy checks and US-011 completes six tools/instructions. The binding dependencies must not be strengthened, merged or reordered into different story ids. US-004 builds prompt helpers independently; US-011 consumes the already-created builder through upstream runner dependencies. New prompt text belongs in packages/nax/src/prompts/builders/workflow-builder.ts:7-14 and its existing barrel export at packages/nax/src/prompts/index.ts:132; buildWorkflowInstructions itself is unchanged. packages/nax/src/errors.ts:7-9 re-exports the shared NaxError; new thrown job errors use stage chat and CHAT_JOB_SPAWN_FAILED, CHAT_JOB_NOT_RUNNING or CHAT_JOB_UNVERIFIED as appropriate, with cause chaining rather than raw Error throws. Expose external calls via the specified _deps seams.\n\nConcurrency and persistence risks: create the log directory, open one append fd for BOTH stdout and stderr, close it in the parent after spawn and unref the detached child. Two separately opened Bun.file log streams can overwrite one another. Register a spawned job in memory immediately after spawn returns before any further await. A launch allowed after a long card must reread the checkout lock and then check in-memory jobs immediately before invoking start, with no await between that last check and start. Pre-spawn directory creation must not introduce an unreserved asynchronous gap that lets two approved plan/run calls both pass before either spawned child is registered. Preserve the specified synchronous job visibility and existing start signature rather than inventing a new public launch API or changing binding dependencies. Disk-write failure after successful spawn must not erase knowledge of a live child. Owner exit always writes using the observed exit code. Re-attached finalizers reread the record, adopt terminal owner results unchanged, and otherwise infer without an exit code. Live pid is liveness only, not identity: cancellation of re-attached jobs is restricted to runs with a matching status pid, and bot/plan liveness cannot be strengthened in this feature. Startup stale finalization must not queue notices; later poll finalization queues only when this runner writes the result. Timer chains arm only while running, are cancellable and must not rearm after dispose. Cancel persists the intent before SIGINT, ignores dead-pid signalling failure and schedules SIGTERM only while this chat remains alive. Job cost is not chat cost.\n\nScreen changes and regression surfaces: packages/nax/src/tui/chat/chat-status.ts:256-284 composes footer right-line model/context/chat cost spans; prefix an optional job strip without changing the empty/omitted-jobs output. packages/nax/src/tui/chat/ChatApp.tsx:252-265 owns sending, asks, keys, picker and turnRunning; :422-451 routes slash commands and handles quit; :455-486 owns sendTurn and turn completion; :603 passes active={!keys.locked} to AskCard. The new useJobs hook must subscribe/unsubscribe on host changes, read latest deliver via ref, preserve FIFO, consume only after deliver returns true, and avoid overlapping delivery or launching during turns, asks, pickers or control transitions. packages/nax/src/tui/chat/useChatKeys.ts:80-82 implements canControl, :104-122 closes synchronously before its first await, and :123-142 routes ctrl+c. Add a confirming ref to keep close cards interactive; do not set closing/locked until confirmation settles, do not duplicate confirmation, and retain the zero-extra-await path for hosts without the optional method. A rejection shows an error and keeps the chat open. packages/nax/src/tui/chat/slash-commands.ts:33-67 defines command order/descriptions and :135-146 handles local listings. Add /jobs after agents before quit, with no model call; retain the screen's existing busy built-in behavior.\n\nTest and migration plan: use bun:test, temp repo/output directories, project helpers and fake timers, never real billed subprocesses. packages/nax/test/helpers/fake-clock.ts:1-2 re-exports makeFakeClock from test-kit. Existing regression anchors include packages/nax/test/unit/chat/ask-controller.test.ts:33-190 (full-mode session approval, remembering, reset, subscriptions), test/unit/chat/ask-fallback.test.ts, test/unit/chat/chat-host-resources.test.ts:130-158 (frozen handler ordering/provider identity/teardown), test/unit/chat/host-subagents.test.ts, test/unit/cli/chat-resources.test.ts:21-69 (CLI seam fixture), test/unit/chat/chat-mcp.test.ts, test/unit/prompts/builders/workflow-builder.test.ts and test/unit/tui/chat/chat-status.test.ts. UI tests use ink-testing-library and React act. US-008 must add inert requestHostApproval: async () => \"deny\" to required ChatAskController literals in packages/nax/test/ui/chat/chat-app.test.tsx:43, slash-commands.test.tsx:42 and ask-card.test.tsx:114, without changing card assertions. US-015 updates the exact help-order assertion at packages/nax/test/ui/chat/slash-commands.test.tsx:324-327 to include /jobs, keeping quit last. Existing slash-menu tests also exercise COMMANDS-derived lists; inspect them for order-sensitive regressions rather than changing unrelated assertions. Store format is new schemaVersion 1 with no migration of existing run/plan artifacts. Missing job directories and bad records are skipped; no-entry sessions preserve old provider/handler behavior. All contextFiles are repo-rooted and either verified existing or created by transitive upstream stories; expectedFiles lists only outputs first authored in that story. Read docs/architecture/ARCHITECTURE.md and applicable canonical rules before implementation. Pipeline owns lint/typecheck/tests; never run bare bun test or bun run nax, and never run coverage in NAX_SANDBOXED=1. Second-pass adversarial audit: manually enumerated and matched all 252 explicit spec ACs in their original binding stories. Original AC counts for US-001 through US-015 are respectively 13, 21, 18, 9, 18, 19, 15, 16, 24, 15, 21, 15, 23, 15 and 10; compound assertions were split only within their original story, preserving matching-record, already-terminal/owner-written, unchanged, no-card and legacy-behavior qualifiers. All 24 feature-level exclusions remain verbatim and no story-local exclusion was hoisted. All spec-recommended context files are included within the five-file cap, and binding ids/workdirs/dependencies and created-file declarations remain unchanged. Clarified parseJobInput's returned error union, made host.resume attachment observable through the finalized record, quoted the exact truncated strip output, and kept absent optional close confirmation's synchronous canControl guard without incorrectly requiring synchronous host.close (useChatKeys.ts:111 already awaits switching). Added the missing US-004 failed-job notice negative path and explicit legacy-output regression; added ordinary-session approval regressions to US-008, resources-only composition regressions to US-013, and rejection-recovery/no-extra-await guards to US-015. Each story now has a negative, refusal or absence case. Complexity was reduced to medium for US-008, US-010 and US-015, and from expert to complex for US-013 because these extend existing seams rather than replace the architecture; mandatory security/session TDD remains strict. Acceptance arrays otherwise preserve the spec and enumerate its failure table; optional hardening remains in suggestedCriteria. This was a file/code audit, not an executed test suite or automated JSON-parser run.",
+  "outOfScope": [
+    "Full-run (chain) approval and the agent starting a second billed step without a new card; this is feature `chat-workflow-chain`.",
+    "Routing a running `nax run`'s own asks (story-level approvals) into the chat card; the run keeps its own interaction chain, and the card only warns when that chain is `cli`.",
+    "A job picker or a log-tail view in the TUI; `/jobs` prints a plain listing, and the model reads a job's log through `nax-jobs__list`.",
+    "Refusing a second bot review or bot fix on a PR that already has one running, or a run of a PRD whose stories have all passed; only plan and run are checked for a busy checkout.",
+    "Detecting a recycled pid for a re-attached job's liveness; such a job stays `running` in the list until that pid exits, and only cancel is guarded (by the `run` status-file check).",
+    "Notices for stale jobs finalized at startup (`attach`); they show in `/jobs` and `nax-jobs__list` only.",
+    "Running `/jobs` while a turn is in flight; like every other built-in it is refused with the busy notice, and the footer strip shows running jobs meanwhile.",
+    "A compare-and-set write of a job record across two chats; when both finalize the same job in the same moment, the last write wins (the owner writes the real exit code at exit, and the other chat adopts a terminal record it finds).",
+    "A job card in the transcript (design 4.8); the launch tool's result and the end notice are the transcript record.",
+    "Recording which channel (terminal or Telegram) answered a launch card; the record keeps `approvedAt` only.",
+    "Reading `naxCommit` from a run log into the job record or the card; the card shows the nax entry path.",
+    "Cost for plan and bot jobs; only `run` jobs report cost, from `status.json`.",
+    "Adding job cost to the chat session's `costUsd`; the two ledgers stay separate.",
+    "Registering the `nax-jobs` provider in the ACP server (koda); only `nax chat` gets it.",
+    "Giving subagent sessions the `nax-jobs` tools; subagents cannot launch billed work.",
+    "Blocking Bash, or any tool other than Write, Edit, Delete and GitCommit, while a job holds the checkout.",
+    "`--in-place` for `nax bot fix`, and the `nax run` flags `--dry-run`, `--parallel`, `--schedule`, `--compare`, `--plan`, `--fresh` and `--no-resume`; the tools do not offer them.",
+    "Tools for merge, release or `nax workflow promote`; those stay with the user.",
+    "Sending SIGTERM after the cancel grace period when the chat has already exited; the SIGINT is sent, and the grace timer dies with the chat.",
+    "Reporting jobs inside `nax-workflow__state` output; feature 1's state tool is unchanged.",
+    "Fixing nax#2706; the run card only warns about it.",
+    "Any change to `nax run`, `nax plan` or `nax bot` themselves, or to `@nathapp/nax-agent`.",
+    "Editing files under `.nax/` (rules, context) or the slice 2 design document.",
+    "Cross-session memory of rulings or preferences; this is its own slice, not yet designed (user ruling 2026-10-27)."
+  ],
+  "routingProfile": "native-claude"
+}

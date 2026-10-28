@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { type ChatHost, formatAgentsListing, formatMcpListing } from "@/chat";
+import { type ChatHost, formatAgentsListing, formatJobsListing, formatMcpListing } from "@/chat";
 import { featureDir } from "@/config";
 import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing } from "@/resources";
@@ -43,6 +43,7 @@ export const COMMANDS = [
   "plugins",
   "mcp",
   "agents",
+  "jobs",
   "quit",
 ] as const;
 
@@ -62,6 +63,7 @@ export const COMMAND_DESCRIPTIONS = {
   plugins: "List plugins and what they provide",
   mcp: "List MCP servers",
   agents: "List agents",
+  jobs: "List nax jobs",
   quit: "Quit nax chat",
 } satisfies Record<SlashCommandName, string>;
 
@@ -106,6 +108,11 @@ function formatHelp(host: ChatHost): string {
   ].join("\n");
 }
 
+/** Keep the optional jobs capability's fallback separate from command dispatch. */
+function formatSessionJobs(host: ChatHost): string {
+  return host.jobs ? formatJobsListing(host.jobs.list()) : "jobs are not available in this session";
+}
+
 function catalogCommand(command: SlashCommand, { host, show }: CommandContext): SlashOutcome | undefined {
   const resource = host.catalog?.findCommand(command.name);
   if (resource) return { kind: "command", name: command.name, template: resource.template, rest: command.rest };
@@ -140,6 +147,9 @@ export async function runSlashCommand(
       break;
     case "agents":
       show(formatAgentsListing(host.agents?.() ?? []));
+      break;
+    case "jobs":
+      show(formatSessionJobs(host));
       break;
     case "mode":
       if (!arg) return { kind: "picker", picker: "mode" };

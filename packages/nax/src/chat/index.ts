@@ -6,6 +6,8 @@ export {
   type ChatAskControllerOptions,
   type ChatPendingAsk,
   createChatAskController,
+  DEFAULT_HOST_APPROVAL_TIMEOUT_MS,
+  type HostApprovalCard,
 } from "./ask-controller";
 export { _askFallbackDeps, type AskFallback, type AskFallbackOptions, createAskFallback } from "./ask-fallback";
 export { type ChatAgentRow, formatAgentsListing } from "./chat-agents-listing";
@@ -36,6 +38,7 @@ export {
   nextChatMode,
 } from "./chat-mode";
 export { type ChatModelChoicesInput, chatModelChoices, tierModels } from "./chat-models";
+export { type ChatJob, type ChatJobs, formatJobsListing } from "./jobs";
 export {
   _openChatSessionDeps,
   type ChatSessionHandle,

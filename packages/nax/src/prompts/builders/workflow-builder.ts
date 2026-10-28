@@ -12,3 +12,34 @@ export function buildWorkflowInstructions(): string {
     "nax never merges a PR and never releases; the user merges the PR and the user releases.",
   ].join("\n");
 }
+
+export interface JobNoticeInput {
+  readonly id: string;
+  readonly kind: string;
+  readonly target: string;
+  readonly state: string;
+  readonly cost?: number;
+  readonly note?: string;
+  readonly logPath: string;
+}
+
+/** Pure completion notice shared by owned and re-attached background jobs. */
+export function buildJobNotice(input: JobNoticeInput): string {
+  const cost = input.cost !== undefined ? ` cost $${input.cost.toFixed(2)}` : "";
+  const note = input.note !== undefined ? ` (${input.note})` : "";
+  return [
+    `[nax-jobs] job ${input.id} (${input.kind} ${input.target}) ended: ${input.state}${cost}${note} log ${input.logPath}`,
+    "Call `nax-workflow__state`, report the outcome to the user and propose the single next step.",
+  ].join("\n");
+}
+
+/** Fixed provider guidance; launching, approval and checkout guards live elsewhere. */
+export function buildJobsInstructions(): string {
+  return [
+    "`nax-jobs__plan`, `nax-jobs__run`, `nax-jobs__bot_review` and `nax-jobs__bot_fix`: each is billed and shows the user an approval card.",
+    "A denial is final for that call; do not retry with changed arguments to get round it.",
+    "Jobs run in the background; a [nax-jobs] notice arrives when one ends.",
+    "Write, Edit, Delete and GitCommit are refused in this checkout while a run or plan job runs.",
+    "Start one step at a time: after a job ends, report the outcome to the user and propose the single next step.",
+  ].join("\n");
+}

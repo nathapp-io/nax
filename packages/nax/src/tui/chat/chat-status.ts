@@ -248,6 +248,34 @@ function costSpan(state: ChatHostState): Span {
   return { text: `${SEPARATOR}${COST_PREFIX}${cost}`, color: "muted" };
 }
 
+export interface FooterJob {
+  readonly kind: "run" | "plan" | "bot_review" | "bot_fix";
+  readonly target: string;
+  readonly progress?: { readonly passed: number; readonly total: number };
+  readonly cost?: number;
+}
+
+const JOB_TARGET_LIMIT = 16;
+const JOB_STRIP_LIMIT = 2;
+
+function jobPart(job: FooterJob): string {
+  const target = singleRow(job.target);
+  if (job.kind === "bot_review" || job.kind === "bot_fix") return `${job.kind} #${target}`;
+  const feature = target.length > JOB_TARGET_LIMIT ? `${target.slice(0, JOB_TARGET_LIMIT - 1)}…` : target;
+  let part = `${job.kind} ${feature}`;
+  if (job.kind === "run") {
+    if (job.progress !== undefined) part += ` ${job.progress.passed}/${job.progress.total}`;
+    if (job.cost !== undefined) part += ` $${job.cost.toFixed(COST_DECIMALS)}`;
+  }
+  return part;
+}
+
+/** Compact, independent job ledger for the one-row footer. */
+export function formatJobStrip(jobs: readonly FooterJob[]): string {
+  const strip = jobs.slice(0, JOB_STRIP_LIMIT).map(jobPart).join(SEPARATOR);
+  return jobs.length > JOB_STRIP_LIMIT ? `${strip} +${jobs.length - JOB_STRIP_LIMIT}` : strip;
+}
+
 function rightLine(state: ChatHostState, status: TurnStatus): StyledLine {
   // The model is the host's text, so it is reduced to the footer's one row before it is measured or drawn.
   const model: Span = { text: shortModel(singleRow(state.model)) };
@@ -267,13 +295,19 @@ export function footerModel(input: {
   hint: FooterHint;
   copiedChars?: number;
   glyphs?: ChatGlyphs;
+  jobs?: readonly FooterJob[];
 }): {
   left: StyledLine;
   right: StyledLine;
 } {
   return {
     left: leftLine({ ...input, glyphs: input.glyphs ?? GLYPHS }),
-    right: rightLine(input.state, input.status),
+    right: [
+      ...(input.jobs?.length
+        ? [{ text: formatJobStrip(input.jobs) }, { text: SEPARATOR, color: "muted" as const }]
+        : []),
+      ...rightLine(input.state, input.status),
+    ],
   };
 }
 

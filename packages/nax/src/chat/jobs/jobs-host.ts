@@ -1,0 +1,54 @@
+import { errorMessage } from "@nathapp/nax-agent/internal";
+import type { NaxConfig } from "@/config";
+import type { Logger } from "@/logger";
+import type { ChatAskController } from "../ask-controller";
+import { createJobRunner } from "./job-runner";
+import { createJobWriteGuard } from "./job-write-guard";
+import { createJobsProvider } from "./jobs-provider";
+
+interface HostJobsOptions {
+  readonly repoRoot: string;
+  readonly outputDir: string;
+  readonly naxEntry: readonly string[];
+  readonly config: NaxConfig;
+  readonly asks: ChatAskController;
+  readonly sessionId: () => string;
+  readonly now: () => Date;
+  readonly logger: Pick<Logger, "warn">;
+}
+
+/** Compose repo-scoped jobs only for the parent chat, never for subagent providers. */
+export function createHostJobs(options: HostJobsOptions): {
+  jobs: ReturnType<typeof createJobRunner>;
+  provider: ReturnType<typeof createJobsProvider>;
+  guard: ReturnType<typeof createJobWriteGuard>;
+  confirmClose: () => Promise<void>;
+} {
+  const jobs = createJobRunner({ repoRoot: options.repoRoot, outputDir: options.outputDir, now: options.now });
+  const approve: ChatAskController["requestHostApproval"] = (card) => options.asks.requestHostApproval(card);
+  const provider = createJobsProvider({
+    ...options,
+    jobs,
+    approve,
+    maxIterations: options.config.execution.maxIterations,
+    interactionPlugin: options.config.interaction?.plugin ?? "cli",
+  });
+  const confirmClose = async (): Promise<void> => {
+    const owned = jobs.owned();
+    if (!owned.length) return;
+    const decision = await approve({
+      tool: "nax-jobs__close",
+      summary: `${owned.length} nax job(s) still running: ${owned.map((job) => job.id).join(", ")}`,
+      reason: "Yes cancels them. No keeps them running in the background; a later nax chat in this repo picks them up.",
+    });
+    if (decision !== "allow") return;
+    for (const job of owned) {
+      try {
+        await jobs.cancel(job.id);
+      } catch (cause) {
+        options.logger.warn("chat", "Failed to cancel nax job on close", { jobId: job.id, error: errorMessage(cause) });
+      }
+    }
+  };
+  return { jobs, provider, guard: createJobWriteGuard(jobs, options.repoRoot), confirmClose };
+}

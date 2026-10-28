@@ -71,6 +71,14 @@ function projectCatalog(name: string) {
 }
 
 describe("createChatMcp", () => {
+  test("US-013 AC-21/22 reserves nax-jobs with an explicit diagnostic", async () => {
+    install();
+    const chat = await createChatMcp(input({ "nax-jobs": server() }));
+    expect(chat.providers.map((p) => p.id)).not.toContain("nax-jobs");
+    expect(chat.state.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ message: "[resources] mcp server id nax-jobs is reserved" })]),
+    );
+  });
   test("AC-1 builds the pool with stages [*] for a run-only configured server", async () => {
     const f = install();
     await createChatMcp(input({ docs: server({ stages: ["run"] }) }));

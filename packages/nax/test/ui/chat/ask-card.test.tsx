@@ -119,6 +119,7 @@ function fakeController(canRemember: boolean) {
     pending: () => [],
     resolve,
     canRemember: () => canRemember,
+    requestHostApproval: async () => "deny",
     answerQuestion,
     setMode: () => {},
     reset: () => {},

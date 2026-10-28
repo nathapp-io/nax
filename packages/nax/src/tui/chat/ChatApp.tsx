@@ -1,51 +1,15 @@
 /**
- * The chat screen — the full-screen composition of the fixed header, the scrolling
- * transcript viewport, the live working line, the bottom region and the one-line footer.
+ * Full-screen chat composition: header, transcript viewport, live working line, bottom
+ * region and one-row footer. Pure region models own drawing; this screen owns transcript,
+ * turn status, persistent drafts and the row budget between them.
  *
- * The component owns no drawing of its own: every region is a pure model rendered by its
- * own view. `headerLines` composes the three rows above the transcript, `layoutTranscript`
- * turns the entry union into styled lines, `TranscriptViewport` windows them, `workingLine`
- * draws the turn's live state and `footerModel` the one-row footer. The screen's job is the
- * arithmetic between them: the viewport gets the usable rows the fixed regions leave,
- * never fewer than one; one terminal row stays free unless the fixed regions cannot fit.
+ * Keys have one owner: ask card, picker and visible slash menu precede the input and
+ * viewport. The screen owns ctrl+o and running-turn escape; useChatKeys owns ctrl-c and
+ * shift+tab. Navigation ownership is checked at key time so batched completion and submit
+ * cannot yield a key to a surface that is no longer mounted.
  *
- * The screen owns the transcript (`reduceTranscript`), the turn status
- * (`reduceTurnStatus`), the input's `InputDraft` — so unmounting the input for an ask card
- * loses neither the typed text nor the history — and the entry sources the session does not
- * provide: the welcome banner at mount and after `/clear`, a `listing` for the commands
- * that list and a `notice` for every other command's text, and `notice` / `warning` /
- * `error` entries for the host's own statements. It also owns the slash menu's state — the
- * query, the escape that put it away and what the two keys that complete a line write back
- * into the prompt — while the rows themselves are the model's (`slashMenuQueryState`), so
- * the rows it reserves under the input are the rows the menu draws. Those rows are capped by
- * what the input's own frame leaves (`menuRowsFor`), so a short terminal shows a shorter menu
- * window rather than a frame taller than the screen.
- *
- * Terminal size comes from `useStdout` (24 rows and 80 columns when the stream cannot say)
- * and is re-read on the stream's `resize` event. The working line's clock is a `setTimeout`
- * chain of `WORKING_TICK_MS`, cleared with `clearTimeout` when the turn ends or the screen
- * unmounts; `setInterval` is not used because the effect's cleanup could not stop a tick
- * already queued.
- *
- * Keys have one owner each, and the first matching surface wins: an ask card owns escape,
- * return and the arrows; the picker and the slash menu own theirs; the input
- * owns escaping an idle prompt and the typing keys; the viewport owns pageUp, pageDown,
- * home, end and shift+arrow. The screen itself owns the two that apply in every state —
- * ctrl+o toggles collapsed detail, and escape interrupts a running turn, but never while an
- * ask card is up (the card owns escape, and it must not reach `host.cancel()`) and never
- * while the slash menu is open (the menu's escape puts the menu away, keeps the text and
- * arms nothing). ctrl-c and shift+tab stay with `useChatKeys`. A send bumps the viewport's
- * follow token, so a message typed while scrolled up brings the screen back to the newest
- * line.
- *
- * The menu's ownership is `menuOwnsKeys`: the menu must be on screen — a query that keeps
- * matches the terminal has no row left to draw them in (`menuShown`, and `menuRowsFor` for the
- * arithmetic) is no menu at all — and it must still own the prompt as the newest key left it
- * (`use-slash-menu-keys.ts`). Both the input and the menu ask it at key time rather than
- * reading the render, so a batch that completes a name and then returns leaves that return
- * with the prompt — while a `/quit` typed and returned before the menu it opens is ever
- * mounted keeps its return, because a key yielded to a component that is not there is a key
- * nobody handles.
+ * Terminal resize and the cancellable working-line timer trigger redraws. Job notices
+ * enter through the same sendTurn path as user messages, only while all surfaces are idle.
  */
 
 import type { SessionEvent } from "@nathapp/nax-agent";
@@ -81,6 +45,7 @@ import { TranscriptViewport } from "./TranscriptViewport";
 import { type ChatTheme, resolveChatTheme } from "./theme";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
+import { useJobs } from "./use-jobs";
 import { useSlashMenuKeys } from "./use-slash-menu-keys";
 import { useChatKeys } from "./useChatKeys";
 
@@ -220,6 +185,11 @@ function slashSink(title: string | undefined, append: (entry: TranscriptEntry) =
       append({ kind: "listing", title, text: rows.join("\n") });
     },
   };
+}
+
+/** Notices wait until neither a turn, a bottom-region surface nor host control owns the screen. */
+function idleForJobNotice(input: { turnRunning: boolean; bottomBlocked: boolean; canControl: boolean }): boolean {
+  return !input.turnRunning && !input.bottomBlocked && input.canControl;
 }
 
 export function ChatApp({
@@ -454,21 +424,27 @@ export function ChatApp({
   async function sendTurn(
     message: string,
     prepare?: () => Promise<{ message: string } | { notice: string }>,
-  ): Promise<void> {
-    if (sending.current) return;
+  ): Promise<boolean> {
+    if (sending.current) return false;
     sending.current = true;
     setBusy(true);
+    let started = false;
     try {
       const prepared = prepare ? await prepare() : { message };
       if ("notice" in prepared) {
         append({ kind: "notice", text: prepared.notice });
-        return;
+        return false;
       }
       append({ kind: "user", text: prepared.message });
       setFollowToken((token) => token + 1);
-      await host.send(prepared.message, handleEvent);
+      await host.send(prepared.message, (event) => {
+        if (event.type === "turn_start") started = true;
+        handleEvent(event);
+      });
+      return true;
     } catch (error) {
       append({ kind: "error", text: errorMessage(error) });
+      return started;
     } finally {
       sending.current = false;
       await keys.finishTurn();
@@ -478,6 +454,15 @@ export function ChatApp({
       setStatus(stopTurn);
     }
   }
+
+  const jobs = useJobs(host, {
+    idle: idleForJobNotice({
+      turnRunning,
+      bottomBlocked: bottomBlocked(ask, picker.model),
+      canControl: keys.canControl(),
+    }),
+    deliver: (text) => sendTurn(text),
+  });
 
   /**
    * The menu's two actions go through the input's own bookkeeping: `complete` writes the
@@ -507,6 +492,7 @@ export function ChatApp({
   const lines = layoutTranscript(entries, { width: columns, theme, expanded });
   const header = headerLines({ state, version, cwd, home, width: columns, glyphs: theme.glyphs });
   const footer = footerModel({
+    jobs,
     state,
     status,
     hint:
