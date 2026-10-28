@@ -113,7 +113,9 @@ describe("resolvePlanSpec", () => {
   });
   test("AC-19 missing spec preserves lookup error", async () => {
     const result = await launches.resolvePlanSpec("f9", undefined, options);
-    expect(result).toEqual({ error: expect.stringContaining("[chat] no spec for f9; looked for") });
+    expect("error" in result).toBe(true);
+    if (!("error" in result)) throw new Error("expected a missing-spec error");
+    expect(result.error).toStartWith("[chat] no spec for f9; looked for");
   });
 });
 
@@ -192,8 +194,15 @@ describe("launchJob chain admission", () => {
       .mockResolvedValueOnce(777);
     const result = await launch();
     expect(start).not.toHaveBeenCalled();
-    expect(chains.startFailed).toHaveBeenCalledWith(chainId, 2, result.content.slice(7));
-    expect(result.isError).toBe(true);
+    expect(chains.startFailed).toHaveBeenCalledWith(
+      chainId,
+      2,
+      "this checkout is held by nax pid 777; wait for it or stop it first",
+    );
+    expect(result).toEqual({
+      isError: true,
+      content: "[chat] this checkout is held by nax pid 777; wait for it or stop it first",
+    });
   });
   test("AC-13 spawn rejection reports normalized start failure", async () => {
     start.mockRejectedValue(new Error("spawn failed"));
