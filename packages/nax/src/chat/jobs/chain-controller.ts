@@ -66,7 +66,42 @@ class ChainController implements ChatChains {
   private next = 1;
   private writes: Promise<void> = Promise.resolve();
 
-  constructor(private readonly options: ChainControllerOptions) {}
+  private disposed = false;
+  private readonly unsubscribe: () => void;
+
+  constructor(private readonly options: ChainControllerOptions) {
+    this.unsubscribe = options.jobs.onChange(() => {
+      if (!this.disposed) this.reconcile();
+    });
+  }
+
+  private spent(chain: ChatChain): number {
+    return chain.steps.reduce(
+      (sum, step) => sum + (step.jobId ? (this.options.jobs.get(step.jobId)?.cost ?? 0) : 0),
+      0,
+    );
+  }
+
+  /** Admission and runner notifications share terminal rules; summaries only observe. */
+  private reconcile(): void {
+    const chain = this.current;
+    if (chain?.state !== "active") return;
+    const index = chain.steps.findLastIndex((step) => step.jobId !== undefined);
+    const jobId = chain.steps[index]?.jobId;
+    const job = jobId === undefined ? undefined : this.options.jobs.get(jobId);
+    if (!job || job.state === "running") return;
+    if (job.state !== "succeeded") {
+      this.stop(`step ${index + 1} ended ${job.state}`);
+    } else if (index === chain.steps.length - 1) {
+      this.current = { ...chain, state: "completed", endedAt: this.options.now().toISOString() };
+      this.persist(this.current);
+    } else if (chain.costCap !== undefined) {
+      const spent = this.spent(chain);
+      if (spent >= chain.costCap) {
+        this.stop(`cost cap $${chain.costCap.toFixed(2)} reached: spent $${spent.toFixed(2)}`);
+      }
+    }
+  }
 
   active(): ChatChain | undefined {
     if (this.current?.state === "active" && this.current.sessionId !== this.options.sessionId()) {
@@ -113,9 +148,12 @@ class ChainController implements ChatChains {
   }
 
   admit(launch: ChainLaunch): ChainAdmission {
-    // Keep the pre-invalidation chain so this call can report why it stopped.
+    if (this.current?.state !== "active") return { kind: "card" };
+    this.reconcile();
+    // Reconciliation precedes even session and off-card checks.
     const chain = this.current;
-    if (chain?.state !== "active") return { kind: "card" };
+    if (chain.state === "completed") return { kind: "card" };
+    if (chain.state === "stopped") return { kind: "card", note: `chain ${chain.id} stopped: ${chain.stopReason}` };
     const reason = this.refusal(chain, launch);
     if (reason) {
       this.stop(reason);
@@ -216,16 +254,16 @@ class ChainController implements ChatChains {
         ...(entry.jobId === undefined ? {} : { job: entry.jobId, jobState: this.options.jobs.get(entry.jobId)?.state }),
       })),
       ...(chain.costCap === undefined ? {} : { costCap: chain.costCap }),
-      spent: chain.steps.reduce(
-        (sum, step) => sum + (step.jobId ? (this.options.jobs.get(step.jobId)?.cost ?? 0) : 0),
-        0,
-      ),
+      spent: this.spent(chain),
       ...(chain.stopReason === undefined ? {} : { stopReason: chain.stopReason }),
     };
   }
 
-  // No listener or timer until job-end reconciliation is added (US-004).
-  dispose(): void {}
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.unsubscribe();
+  }
 }
 
 export function createChainController(options: ChainControllerOptions): ChatChains {
