@@ -43,7 +43,13 @@ import type {
 import type { CredentialStore, StopReason } from "../types.ts";
 import { toTokenUsage, totalTokens } from "../usage.ts";
 import { vendorAppHeaders } from "./client-app.ts";
-import { classifyProviderError, classifyThrown, ProtocolSetupError, parseRetryAfter } from "./errors.ts";
+import {
+  classifyProviderError,
+  classifyThrown,
+  ProtocolSetupError,
+  parseRetryAfter,
+  statusFromSdkMessage,
+} from "./errors.ts";
 import type { PiProtocolOptions } from "./pi-protocols.ts";
 import { assertValidHeaders, assertValidSessionId, mergeRequestHeaders, withoutEmpty } from "./request-headers.ts";
 import { vendorSessionHeaders } from "./session-id.ts";
@@ -372,7 +378,7 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
             }
 
             case "error": {
-              const status = observed?.status;
+              const status = observed?.status ?? statusFromSdkMessage(event.error.errorMessage);
               const retryAfter = parseRetryAfter(observed?.headers);
               const usage = toTokenUsage(event.error.usage);
               // A failed request that consumed tokens still bills for them.
