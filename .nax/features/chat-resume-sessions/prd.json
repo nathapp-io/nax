@@ -3,7 +3,7 @@
   "feature": "chat-resume-sessions",
   "branchName": "feat/chat-resume-sessions",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T07:23:58.287Z",
+  "updatedAt": "2026-10-28T07:47:11.047Z",
   "userStories": [
     {
       "id": "US-001",
@@ -128,14 +128,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Session lifecycle cleanup, immutable history exposure, paginated filtering, lock-sensitive reopens and fault-tolerant teardown cross several modules under a tight host-size constraint. Session persistence/removal triggers the strict sessions security override."
+        "reasoning": "Session lifecycle cleanup, immutable history exposure, paginated filtering, lock-sensitive reopens and fault-tolerant teardown cross several modules under a tight host-size constraint. Session persistence/removal triggers the strict sessions security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/open-chat-session.ts",
@@ -173,7 +176,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d11cafbf3c2aaadd2464ebde0b370aaf84fe02f9"
     },
     {
       "id": "US-003",
