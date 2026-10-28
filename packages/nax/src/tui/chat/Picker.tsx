@@ -2,11 +2,10 @@
  * Picker — the framed list the chat screen shows in place of its input while a slash
  * command's argument can only be chosen (US-027).
  *
- * `/model`, `/resume` and `/mode` with no argument answer with a `picker` outcome rather
- * than sending anything (`slash-commands.ts`), and this module is what the screen does with
- * it. One model, three lists: the host's models with the session's own marked `(current)`,
- * the two permission modes with the statement each one makes, and — US-027's second half —
- * the saved sessions.
+ * `/model`, `/resume`, `/mode` and `/effort` without arguments answer with a `picker` outcome
+ * rather than sending anything (`slash-commands.ts`). The screen draws the host's models,
+ * the two permission modes, the saved sessions, or the eight reasoning effort levels.
+ * Model, mode and effort lists mark the session's own choice `(current)`.
  *
  * The pure half is the list: `pickerModel` builds the rows a picker draws and `pickerLayout`
  * turns them into styled lines, windowed to `PICKER_MAX_ROWS` around the pointer and never

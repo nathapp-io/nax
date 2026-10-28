@@ -51,6 +51,11 @@ export interface ChatPicker {
 function actionFor(host: ChatHost, kind: PickerKind, entry: PickerEntry): Promise<void> {
   if (kind === "model") return host.switchTo({ model: entry.original ?? entry.value });
   if (kind === "mode") return host.switchTo({ mode: pickerMode(entry.value) });
+  if (kind === "effort") {
+    return isEffortLevel(entry.value)
+      ? host.switchTo({ model: withEffort(host.current().model, entry.value) })
+      : Promise.resolve();
+  }
   return host.resume({ id: entry.value });
 }
 

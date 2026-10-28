@@ -1,6 +1,13 @@
 /** Pure picker rows, filtering, and host-choice metadata. */
 import { parseModelSpec } from "@nathapp/nax-agent";
-import { type ChatMode, type ChatSessionRow, type EffortLevel, sessionTitleText } from "@/chat";
+import {
+  type ChatMode,
+  type ChatSessionRow,
+  EFFORT_LEVELS,
+  type EffortLevel,
+  modelEffort,
+  sessionTitleText,
+} from "@/chat";
 import { oneLine } from "./layout-lines";
 import { relativeTime } from "./relative-time";
 import type { PickerKind } from "./slash-commands";
@@ -13,6 +20,7 @@ const TITLES = {
   model: "Switch model",
   resume: "Resume a session",
   mode: "Permission mode",
+  effort: "Reasoning effort",
 } as const satisfies Record<PickerKind, string>;
 
 /** The permission modes in the order the picker offers them, with what each one means. */
@@ -148,6 +156,14 @@ function resumeNote(input: PickerModelInput): PickerNote | undefined {
 /** The rows one kind of picker offers. */
 export function pickerModel(input: PickerModelInput): PickerModel {
   if (input.kind === "mode") return { kind: "mode", title: TITLES.mode, entries: modeEntries(input) };
+  if (input.kind === "effort") {
+    const current = modelEffort(input.currentModel);
+    return {
+      kind: "effort",
+      title: TITLES.effort,
+      entries: EFFORT_LEVELS.map((level) => ({ value: level, label: level, current: level === current })),
+    };
+  }
   if (input.kind === "model") {
     const allEntries = modelEntries(input);
     const entries = matchingEntries(allEntries, input.query ?? "");

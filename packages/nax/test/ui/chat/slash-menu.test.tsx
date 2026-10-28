@@ -34,8 +34,9 @@ const HELP_ROW = "/help  Show commands and skills";
 const RESUME_ROW = "/resume  Resume a saved session";
 const FEATURE_ROW = "/feature  Load a feature spec into the conversation";
 
-/** The built-ins a thirteen-match frame has to leave out: everything past the eighth row. */
+/** The built-ins a fifteen-match frame has to leave out: everything past the eighth row. */
 const BEYOND_THE_WINDOW = [
+  FEATURE_ROW,
   "/skills  List skills",
   "/plugins  List plugins and what they provide",
   "/mcp  List MCP servers",
@@ -249,6 +250,12 @@ describe("SlashMenu opening and selection", () => {
     expect(rows.indexOf("> /")).toBeLessThan(rows.indexOf(`❯ ${HELP_ROW}`));
   });
 
+  test("effort AC-19 typing /eff discovers the effort command and description", async () => {
+    const ui = await screen();
+    ui.type("/eff");
+    expect(ui.rows()).toContain("❯ /effort  Switch reasoning effort");
+  });
+
   test("AC-2 typing /re puts the pointer on the first match", async () => {
     const ui = await screen();
     ui.type("/re");
@@ -318,7 +325,7 @@ describe("SlashMenu completion and dismissal", () => {
 });
 
 describe("SlashMenu window", () => {
-  test("AC-10 thirteen matches draw eight rows", async () => {
+  test("AC-10 fifteen matches draw eight rows", async () => {
     const ui = await screen();
     ui.type("/");
     expect(ui.lastFrame()).toContain(HELP_ROW);
@@ -329,7 +336,7 @@ describe("SlashMenu window", () => {
     const ui = await screen();
     ui.type("/");
     for (let index = 0; index < 9; index++) ui.press(DOWN);
-    expect(ui.rows()).toContain("❯ /plugins  List plugins and what they provide");
+    expect(ui.rows()).toContain("❯ /skills  List skills");
     expect(ui.lastFrame()).not.toContain(HELP_ROW);
   });
 });
@@ -531,7 +538,7 @@ describe("SlashMenu on a short terminal", () => {
     for (let index = 0; index < 5; index++) ui.press(DOWN);
     const rows = ui.rows();
     expect(rows).toHaveLength(SHORT_ROWS - 1);
-    expect(rows).toContain("❯ /clear  Clear the conversation");
+    expect(rows).toContain("❯ /resume  Resume a saved session");
   });
 
   /** An 80x9 terminal: the input's own frame and one viewport row leave the menu no rows. */

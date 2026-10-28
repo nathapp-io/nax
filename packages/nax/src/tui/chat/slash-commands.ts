@@ -1,16 +1,25 @@
 import { join } from "node:path";
-import { type ChatHost, formatAgentsListing, formatJobsListing, formatMcpListing, sessionTitleText } from "@/chat";
+import {
+  type ChatHost,
+  EFFORT_LEVELS,
+  formatAgentsListing,
+  formatJobsListing,
+  formatMcpListing,
+  isEffortLevel,
+  sessionTitleText,
+  withEffort,
+} from "@/chat";
 import { featureDir } from "@/config";
 import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing } from "@/resources";
 
 /** The no-argument commands whose argument is chosen in a picker rather than typed. */
-export type PickerKind = "model" | "resume" | "mode";
+export type PickerKind = "model" | "resume" | "mode" | "effort";
 
 export type SlashOutcome =
   | { kind: "send"; message: string }
   | { kind: "command"; name: string; template: string; rest: string }
-  /** `/model`, `/resume` and `/mode` with no argument: the screen opens the named picker. */
+  /** `/model`, `/resume`, `/mode` and `/effort` without arguments open the named picker. */
   | { kind: "picker"; picker: PickerKind };
 
 export interface SlashCommand {
@@ -34,6 +43,7 @@ export const COMMANDS = [
   "help",
   "mode",
   "model",
+  "effort",
   "sessions",
   "resume",
   "clear",
@@ -54,6 +64,7 @@ export const COMMAND_DESCRIPTIONS = {
   help: "Show commands and skills",
   mode: "Switch permission mode",
   model: "Switch model",
+  effort: "Switch reasoning effort",
   sessions: "List saved sessions",
   resume: "Resume a saved session",
   clear: "Clear the conversation",
@@ -121,10 +132,25 @@ function catalogCommand(command: SlashCommand, { host, show }: CommandContext): 
   show(`unknown command /${command.name}`);
 }
 
+async function effortCommand(command: SlashCommand, { host, show }: CommandContext): Promise<SlashOutcome | undefined> {
+  if (command.args.length > 1) {
+    show("usage: /effort [level]");
+    return;
+  }
+  const arg = command.args[0];
+  if (arg === undefined) return { kind: "picker", picker: "effort" };
+  const level = arg.toLowerCase();
+  if (!isEffortLevel(level)) {
+    show(`unknown effort "${arg}"; use one of: ${EFFORT_LEVELS.join(", ")}`);
+    return;
+  }
+  await host.switchTo({ model: withEffort(host.current().model, level) });
+}
+
 /**
  * Built-ins take precedence; catalog commands remain distinct from explicit skill turns.
  *
- * `/mode`, `/model` and `/resume` answer an argument-less call with a `picker` outcome: the
+ * `/mode`, `/model`, `/resume` and `/effort` answer argument-less calls with a `picker` outcome: the
  * session command is not run here, because the choice it needs has to be made on screen.
  */
 export async function runSlashCommand(
@@ -160,6 +186,8 @@ export async function runSlashCommand(
       if (!arg) return { kind: "picker", picker: "model" };
       await host.switchTo({ model: arg });
       break;
+    case "effort":
+      return effortCommand(command, { host, show });
     case "sessions":
       for (const row of await host.listSessions()) {
         show(
