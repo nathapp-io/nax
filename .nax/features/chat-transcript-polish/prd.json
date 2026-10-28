@@ -3,7 +3,7 @@
   "feature": "chat-transcript-polish",
   "branchName": "feat/chat-transcript-polish",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T12:21:10.559Z",
+  "updatedAt": "2026-10-28T12:38:57.710Z",
   "userStories": [
     {
       "id": "US-001",
@@ -182,14 +182,17 @@
         "US-001",
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Cross-module interaction joins terminal-cell gestures, viewport mapping, exact layout ownership, immutable entry state and global/local expansion precedence. Separate test, implementation and verification sessions cover the mounted seam and drag/copy regressions."
+        "reasoning": "Cross-module interaction joins terminal-cell gestures, viewport mapping, exact layout ownership, immutable entry state and global/local expansion precedence. Separate test, implementation and verification sessions cover the mounted seam and drag/copy regressions.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/transcript-model.ts",
@@ -213,7 +216,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3a77d0d4bce3c084e9bfd24d1ab33aab11b32cab"
     },
     {
       "id": "US-004",
