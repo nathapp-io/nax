@@ -10,7 +10,7 @@
  * Everything here is pure. A status the event does not change is returned as the same
  * object, so a component that compares by reference does no needless work.
  */
-import type { SessionEvent } from "@nathapp/nax-agent";
+import { parseModelSpec, type SessionEvent } from "@nathapp/nax-agent";
 import { type ChatHostState, sessionTitleText } from "@/chat";
 import { oneLine, resolveWidth } from "./layout-lines";
 import { displayWidth, type Span, type StyledLine, sanitizeText } from "./styled-line";
@@ -50,9 +50,8 @@ const TOKEN_UNIT = 1000;
 const TOKEN_DECIMALS = 1;
 const TOKEN_SUFFIX = "k";
 
-/** A model name longer than this is elided; `SHORT_MODEL_KEEP` plus the ellipsis fills it. */
+/** Footer columns reserved for the model name alone, excluding its effort suffix. */
 const SHORT_MODEL_MAX = 24;
-const SHORT_MODEL_KEEP = 23;
 const ELLIPSIS = "…";
 /** The separator in a model's provider-qualified name and in a path. */
 const PATH_SEPARATOR = "/";
@@ -136,10 +135,19 @@ export function formatTokens(n: number): string {
   return `${(rounded / TOKEN_UNIT).toFixed(TOKEN_DECIMALS)}${TOKEN_SUFFIX}`;
 }
 
-/** The model without its provider prefix, elided to 24 characters. */
+/** Display parts retain even unknown effort levels without treating their text as a path. */
+function modelParts(raw: string): { name: string; suffix: string } {
+  const { model, effort } = parseModelSpec(raw);
+  return {
+    name: model.slice(model.lastIndexOf(PATH_SEPARATOR) + 1),
+    suffix: effort === undefined ? "" : `[${effort}]`,
+  };
+}
+
+/** The model without its provider prefix: at most 24 name columns, plus the whole suffix. */
 export function shortModel(model: string): string {
-  const short = model.slice(model.lastIndexOf(PATH_SEPARATOR) + 1);
-  return short.length > SHORT_MODEL_MAX ? `${short.slice(0, SHORT_MODEL_KEEP)}${ELLIPSIS}` : short;
+  const { name, suffix } = modelParts(model);
+  return `${elideEnd(name, SHORT_MODEL_MAX, ELLIPSIS)}${suffix}`;
 }
 
 /** The gesture the footer offers, in precedence order; only one is ever shown. */
@@ -459,12 +467,22 @@ function elideEnd(text: string, columns: number, ellipsis: string): string {
 
 const MIN_TITLE_COLUMNS = 8;
 
-/** The existing prefix never yields columns to the optional session title. */
+/** Elide only the name; even an exhausted budget keeps the whole ellipsis and suffix. */
+function headerModel(raw: string, columns: number, ellipsis: string): string {
+  const { name, suffix } = modelParts(raw);
+  if (displayWidth(`${name}${suffix}`) <= columns) return `${name}${suffix}`;
+  const room = Math.max(0, columns - displayWidth(suffix) - displayWidth(ellipsis));
+  return `${headColumns(name, room)}${ellipsis}${suffix}`;
+}
+
+/** The session title yields first, then the model name; product, version and mode stay fixed. */
 function headerTitleLine(state: ChatHostState, version: string, width: number, glyphs: ChatGlyphs): StyledLine {
   const title: Span = { text: `${glyphs.thinking} ${HEADER_TITLE}`, color: "accent", bold: true };
-  // The version sits one space after the product's name; the further facts are separated
-  // from each other, so the line never reads as a list of four items.
-  const facts = ` v${singleRow(version)}${SEPARATOR}${shortModel(singleRow(state.model))}${SEPARATOR}${modeLabel(state.mode)}`;
+  const beforeModel = ` v${singleRow(version)}${SEPARATOR}`;
+  const afterModel = `${SEPARATOR}${modeLabel(state.mode)}`;
+  const modelRoom = width - displayWidth(`${title.text}${beforeModel}${afterModel}`);
+  const model = headerModel(singleRow(state.model), modelRoom, glyphs.ellipsis);
+  const facts = `${beforeModel}${model}${afterModel}`;
   const room = width - displayWidth(`${title.text}${facts}${SEPARATOR}`);
   const sessionTitle =
     state.meta.title !== null && room >= MIN_TITLE_COLUMNS

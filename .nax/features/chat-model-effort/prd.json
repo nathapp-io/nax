@@ -1,0 +1,309 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-model-effort",
+  "branchName": "feat/chat-model-effort",
+  "createdAt": "2026-10-28T00:00:00.000Z",
+  "updatedAt": "2026-10-28T10:04:02.593Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add pure chat effort helpers",
+      "description": "**Goal** — Add the shared pure effort API used by chat model selection and the effort command.\n\n**Motivation** — The `/model` picker lists ids exactly as configured (`tierModels` plus catalog discovery), so a model is offered only at the suffixes that happen to be configured, and changing effort means retyping the id.\n\n**Approach** — **Effort helpers** (pure, new `packages/nax/src/chat/chat-effort.ts`). The levels a user can pick are `default` (no suffix — the provider's default) followed by nax-agent's `THINKING_LEVELS` in their declared order: `off, minimal, low, medium, high, xhigh, max`. `modelEffort(model)` reads the suffix with `parseModelSpec`; `withEffort(model, level)` rewrites it (`default` removes it); `cycleEffort(level, step)` moves one level left or right and wraps.\n\nRead only: `parseModelSpec(raw): { model; effort? }` (`@nathapp/nax-agent`, `packages/nax-agent/src/cost/model-spec.ts`) — matches `<model>[<effort>]` where neither part contains a bracket. `THINKING_LEVELS: Record<ThinkingLevel, true>` (`@nathapp/nax-agent/internal`, `packages/nax-agent/src/native/models.ts`) — keys in order `off, minimal, low, medium, high, xhigh, max`.\n\nNew: `packages/nax/src/chat/chat-effort.ts` exporting `EFFORT_LEVELS`, `type EffortLevel`, `isEffortLevel(text)`, `modelEffort(model)`, `withEffort(model, level)`, `cycleEffort(level, step)`, re-exported from `packages/nax/src/chat/index.ts`.\n\nA model id whose suffix is not a known level (`m[turbo]`): `modelEffort` returns `default`; `withEffort` replaces the unknown suffix. `isEffortLevel` itself matches exactly; command argument lowercasing belongs to US-004. Keep every slash of a model id when rewriting. Consume existing package exports, not deep source imports or a direct nax-ai import. Add the new helper tests at `packages/nax/test/unit/chat/chat-effort.test.ts`.\n\n**Scope** — In: pure effort levels, parsing, rewriting, wrapping, and named chat barrel exports. Out: header/footer rendering (US-002), picker state/key handling (US-003), slash dispatch and the effort picker (US-004). Any change to `@nathapp/nax-agent`. Validating whether a given provider or model honours a thinking level; an unsupported level still reaches the provider, which `toThinkingLevel` already logs and ignores.\n\n**Interface** — `EFFORT_LEVELS`, `type EffortLevel`, `isEffortLevel(text)`, `modelEffort(model)`, `withEffort(model, level)`, `cycleEffort(level, step)`; existing parser contract: `parseModelSpec(raw): { model; effort? }`; existing level registry: `THINKING_LEVELS: Record<ThinkingLevel, true>`.",
+      "acceptanceCriteria": [
+        "[unit] EFFORT_LEVELS equals [\"default\", \"off\", \"minimal\", \"low\", \"medium\", \"high\", \"xhigh\", \"max\"].",
+        "[unit] isEffortLevel(\"high\") returns true.",
+        "[unit] isEffortLevel(\"turbo\") returns false.",
+        "[unit] modelEffort(\"opencode-go/deepseek-v4.1-flash[high]\") returns \"high\".",
+        "[unit] modelEffort(\"minimax/MiniMax-M3\") returns \"default\".",
+        "[unit] modelEffort(\"m/x[turbo]\") returns \"default\".",
+        "[unit] withEffort(\"opencode-go/deepseek-v4.1-flash[high]\", \"low\") returns \"opencode-go/deepseek-v4.1-flash[low]\".",
+        "[unit] withEffort(\"minimax/MiniMax-M3\", \"max\") returns \"minimax/MiniMax-M3[max]\".",
+        "[unit] withEffort(\"opencode-go/deepseek-v4.1-flash[high]\", \"default\") returns \"opencode-go/deepseek-v4.1-flash\".",
+        "[unit] withEffort(\"m/x[turbo]\", \"high\") returns \"m/x[high]\".",
+        "[unit] withEffort(\"huggingface/MiniMaxAI/MiniMax-M2.7\", \"low\") returns \"huggingface/MiniMaxAI/MiniMax-M2.7[low]\", keeping every slash of the multi-slash id.",
+        "[unit] cycleEffort(\"high\", 1) returns \"xhigh\".",
+        "[unit] cycleEffort(\"high\", -1) returns \"medium\".",
+        "[unit] cycleEffort(\"max\", 1) returns \"default\".",
+        "[unit] cycleEffort(\"default\", -1) returns \"max\"."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "model-effort"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A small pure module, barrel integration, and unit tests use existing parsing and level registries without external effects or new dependencies.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/cost/model-spec.ts",
+        "packages/nax-agent/src/native/models.ts",
+        "packages/nax/src/chat/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/chat-effort.ts",
+        "packages/nax/test/unit/chat/chat-effort.test.ts"
+      ],
+      "suggestedCriteria": [
+        "isEffortLevel(\"HIGH\") returns false.",
+        "isEffortLevel(\"default\") returns true.",
+        "withEffort(\"m/x[turbo]\", \"default\") returns \"m/x\"."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/chat/index.ts",
+          "reason": "export the effort helpers from the chat barrel so the TUI imports them through it."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6a2795097af9643ea5f35fb07d4c76010c855847"
+    },
+    {
+      "id": "US-002",
+      "title": "Keep effort visible in the chat header and footer",
+      "description": "**Goal** — Preserve the full effort suffix in the real header/footer renderers and show the uncapped model name whenever the header has room.\n\n**Motivation** — `shortModel` (`packages/nax/src/tui/chat/chat-status.ts`) cuts any name longer than 24 characters to 23 plus `…`. Both the header (`headerTitleLine`) and the footer (`rightLine`) use it, so `deepseek-v4.1-flash[high]` (25 characters) shows as `deepseek-v4.1-flash[hig…` — the effort, the part that changes, is the part removed. The header has a whole row to spare.\n\n**Approach** — **Display.** `shortModel` keeps a trailing `[effort]` suffix whole and elides only the name in front of it. The header's model segment drops the 24-character cap. When the first line does not fit, the product, version and mode stay fixed, the session title (from chat-resume-sessions) yields first, shrinking to nothing, and only then is the model's name elided, its suffix kept whole; with no room left for any of the name, the name collapses to the ellipsis alone and the suffix still follows it. A name with no suffix is elided at its end the same way. The header uses the theme's `glyphs.ellipsis` (`...` in the ASCII theme); `shortModel` keeps its literal `…`.\n\n`shortModel` Target: the same text, but when it ends in `[<effort>]` the suffix is kept whole and only the part before it is cut, so the result is at most 24 characters plus the suffix length when the name alone exceeds 24, and is unchanged otherwise.\n\n`headerTitleLine` Target: the text after the last `/` with no length cap, elided in its name part (suffix kept) only when the first line would exceed the header width.\n\n`headerTitleLine` (`chat-status.ts`) — Baseline is the post-chat-resume-sessions `headerTitleLine(state, version, width, glyphs)` with its title span; the Target keeps that signature and applies the yield order above.\n\nUse display-column measurement and the theme's actual ellipsis width; preserve existing single-row sanitization and suffix text, including unknown levels. Do not confuse the footer's 24-character name limit with a 24-character total suffix-inclusive limit. Modify `packages/nax/src/tui/chat/chat-status.ts` and `packages/nax/test/unit/tui/chat/chat-status.test.ts`; add shortModel cases for a suffixed name and header cases for the uncapped model; the existing shortModel cases and the flatten case pass unchanged. Update the upstream test that intentionally expected an overflowing fixed model prefix because this feature now elides the model after the title yields. `packages/nax/test/unit/tui/chat/chat-status.test.ts` is 722 lines and `check:file-sizes` fails a test file over 800, so put the new header cases in a sibling file split by describe block (for example `packages/nax/test/unit/tui/chat/chat-status-header.test.ts`) rather than growing it past ~650 lines.\n\n`shortModel`'s suffix rule (US-002) is reached from the footer and header renderers; US-002's ACs call `footerModel` and `headerLines`, the functions `ChatApp` draws from.\n\n**Scope** — In: footer model shortening and header first-line width allocation, with session-title and sanitization regressions retained. Out: helper API implementation (US-001), effort selection and picker input/state (US-003), the effort command (US-004). Bounding the length of an `[effort]` suffix: `parseModelSpec` accepts any non-bracket text, and an unusually long configured suffix is drawn whole.\n\n**Interface** — Preserve `headerTitleLine(state, version, width, glyphs)`; keep the existing `shortModel`, `footerModel`, and `headerLines` call interfaces.",
+      "acceptanceCriteria": [
+        "[unit] shortModel(\"opencode-go/deepseek-v4.1-flash[high]\") returns \"deepseek-v4.1-flash[high]\".",
+        "[unit] shortModel of a name of 30 characters followed by [high] returns the first 23 characters, …, then [high].",
+        "[unit] shortModel(\"abcdefghijklmnopqrstuvwxyz1234\") with no suffix still returns its first 23 characters followed by ….",
+        "[unit] shortModel(\"anthropic/claude-sonnet-5-5\") still returns \"claude-sonnet-5-5\".",
+        "[unit] footerModel for a state on opencode-go/deepseek-v4.1-flash[high] draws deepseek-v4.1-flash[high] in its right side.",
+        "[unit] headerLines at width 120 for a state on opencode-go/deepseek-v4.1-flash[high] shows deepseek-v4.1-flash[high] in the first line with no ….",
+        "[unit] headerLines at width 120 for a model whose name is 40 characters shows the whole name in the first line.",
+        "[unit] headerLines at width 40 for a model whose name is 40 characters plus [high] keeps the first line within 40 display columns.",
+        "[unit] headerLines at width 40 for a model whose name is 40 characters plus [high] still ends the model segment with [high].",
+        "[unit] headerLines at width 60 for a model whose name is 40 characters plus [high] and a non-null session title keeps the first line within 60 display columns.",
+        "[unit] headerLines at width 60 for a model whose name is 40 characters plus [high] and a non-null session title drops the title segment.",
+        "[unit] headerLines at width 60 for a model whose name is 40 characters plus [high] and a non-null session title ends the model segment with [high].",
+        "[unit] headerLines at a width that leaves no room for any of the model's name draws the model segment as the theme's ellipsis followed by [high].",
+        "[unit] headerLines at width 40 for an unsuffixed model whose name is 40 characters keeps the first line within 40 display columns.",
+        "[unit] headerLines at width 40 for an unsuffixed model whose name is 40 characters ends the model segment with the theme's ellipsis."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "display"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure display changes use established styled-line and width helpers; the primary risk is suffix-aware width allocation and preserving the prior title/sanitization behavior, not session lifecycle or access control.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/test/unit/tui/chat/chat-status.test.ts",
+        "packages/nax/src/tui/chat/styled-line.tsx",
+        "packages/nax/src/tui/chat/theme.ts",
+        "packages/nax/src/chat/chat-effort.ts"
+      ],
+      "suggestedCriteria": [
+        "When headerLines must elide a suffixed model under the ASCII theme, the model segment ends with ...[high].",
+        "When headerLines elides a model containing wide CJK characters at a feasible display-width budget, the first line does not exceed that budget.",
+        "shortModel(\"p/abcdefghijklmnopqrstuvwxyz1234[turbo]\") returns \"abcdefghijklmnopqrstuvw…[turbo]\".",
+        "When headerLines has room for the full model and a shortened session title, the model remains unelided."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/tui/chat/chat-status.test.ts",
+          "reason": "add shortModel cases for a suffixed name and header cases for the uncapped model; the existing shortModel cases and the flatten case pass unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9a1d298f49c432ef6afbccf7fdd9a348f6aea049"
+    },
+    {
+      "id": "US-003",
+      "title": "Cycle model effort in the model picker",
+      "description": "**Goal** — Let left/right arrows cycle the highlighted base model's pending effort and apply model and effort together on Return.\n\n**Motivation** — The `/model` picker lists ids exactly as configured (`tierModels` plus catalog discovery), so a model is offered only at the suffixes that happen to be configured, and changing effort means retyping the id.\n\n**Approach** — **`/model` picker.** Rows are de-duplicated by base model (the id without its suffix), in the order their first occurrence appears; a row's `value` is the base model, its `label` is `displayText(base)`, and the typed query filters on the base model (so typing `high` no longer matches a `[high]` suffix — intended). Each row remembers its original id (the current session model for the current row, else its first-seen id) and shows `effort <level>` in its detail column, where the level is that id's suffix text as written (`effort turbo` for an unknown suffix) or `default`. The pending efforts live in `useChatPicker`'s picker state, keyed by base model, and `choose` reads them synchronously the way it reads the pointer, so a → and a Return delivered in one input batch apply the cycled effort. ←/→ cycles the highlighted row's pending effort through `EFFORT_LEVELS` (an unknown suffix cycles as if it were `default`); Return switches to the row's original id when its effort was never cycled, else to `withEffort(base, pending)`.\n\n`PickerEntry` (`packages/nax/src/tui/chat/Picker.tsx`) — the model picker's rows take `value` = base model and gain `original?: string` and `effortLabel?: string`; the detail column shows `effort <effortLabel>`.\n\n`ownsPickerKey` (`packages/nax/src/tui/chat/Picker.tsx`) Target: `ownsPickerKey(key, kind)` — also left and right when `kind` is `model`.\n\n`ChatPicker` (returned by `useChatPicker`) gains `cycle(entry: PickerEntry, step: 1 | -1): void`; `PickerProps` gains `onCycle?: (entry: PickerEntry, step: 1 | -1) => void`, which `Picker`'s key handler calls on ←/→ for a model row.\n\n`PickerState` gains `pending: ReadonlyMap<string, EffortLevel>` (base model -> cycled level) for rendering; `useChatPicker` also keeps a ref mirror of that map, written by `cycle` and read by `choose`, so a `→` and a Return in one input batch — and repeated `→→` — read the latest level rather than the render's state. A cycle starts from the ref's level for that base, else from the row's effort label (`default` for an unknown suffix).\n\n`PickerModelInput` gains `pending?: ReadonlyMap<string, EffortLevel>`; `pickerModel` sets a model row's `effortLabel` to the pending level when one exists, and sets `detail = \"effort \" + effortLabel`, so `entryRow` draws it like any other detail.\n\nWire `onCycle={picker.cycle}` at the existing `Picker` mount in `packages/nax/src/tui/chat/ChatApp.tsx`. Preserve existing ref-backed query/pointer batching, model-only query editing, modified-key ownership, non-model pickers, and runControl error reporting. Initial pending maps are empty per opening; cancellation or choosing must not persist preferences. A rejected switch uses the existing transcript error route, just as `/model <id>` does.\n\nModify `packages/nax/test/ui/chat/picker.test.tsx` — model-picker rows now carry the base model as their value and a `effort <level>` detail; fixtures that list the same base model at two suffixes now expect one row, and assertions on a model row's full text gain the `effort <level>` detail. The existing file is at its hard line limit; keep tests and source within repository limits by factoring focused code/tests and reusing the harness where needed.\n\n`withEffort` (US-001) is consumed by the `/model` picker (US-003) and `/effort` (US-004), and `cycleEffort` by the `/model` picker only; their ACs enter through the mounted `ChatApp` (typing `/model` or `/effort`) and assert the fake host's `switchTo` received the suffixed model id.\n\n**Scope** — In: model-row de-duplication and display details, per-row pending efforts, synchronous cycle/choose state, model-only arrow handling, and ChatApp callback wiring. Out: display shortening (US-002), the new command and effort picker kind (US-004), changing shared model discovery, and reimplementing effort helpers (US-001). Persisting a per-model preferred effort across sessions; the session meta keeps the chosen model id with its suffix, as today. A notice in the transcript after a model or effort switch (feature chat-transcript-polish).\n\n**Interface** — `original?: string`; `effortLabel?: string`; `ownsPickerKey(key, kind)`; `cycle(entry: PickerEntry, step: 1 | -1): void`; `onCycle?: (entry: PickerEntry, step: 1 | -1) => void`; `pending: ReadonlyMap<string, EffortLevel>`; `pending?: ReadonlyMap<string, EffortLevel>`.",
+      "acceptanceCriteria": [
+        "[unit] pickerModel({ kind: \"model\", models: [\"p/a[high]\", \"p/a[low]\", \"p/b\"], currentModel: \"p/b\", currentMode: \"guarded\" }) returns two entries with values \"p/a\" and \"p/b\", in that order.",
+        "[unit] Given model choices [\"p/a[high]\", \"p/a[low]\", \"p/b\"] and currentModel \"p/b\", pickerModel returns the p/a entry with effortLabel \"high\", its first-seen suffix.",
+        "[unit] Given model choices [\"p/a[high]\", \"p/a[low]\", \"p/b\"] and currentModel \"p/b\", pickerModel returns the p/b entry with effortLabel \"default\".",
+        "[unit] Given model choices [\"p/a[high]\", \"p/a[low]\", \"p/b\"] and currentModel \"p/a[low]\", pickerModel returns the p/a entry with effortLabel \"low\".",
+        "[unit] Given model choices [\"p/a[high]\", \"p/a[low]\", \"p/b\"] and currentModel \"p/a[low]\", pickerModel returns the p/a entry with current: true.",
+        "[unit] Given pickerModel({ kind: \"model\", models: [\"p/a[high]\"], currentModel: \"p/a[high]\", currentMode: \"guarded\" }), pickerLayout renders its model row with the detail \"effort high\", corresponding to the row's effortLabel \"high\".",
+        "[unit] A model row first seen as m/x[turbo] shows the detail \"effort turbo\".",
+        "[integration] Return on an un-cycled m/x[turbo] row calls switchTo({ model: \"m/x[turbo]\" }), keeping the id as configured.",
+        "[integration] Given a highlighted p/a[high] row, when → and Return are delivered in one input batch, switchTo receives { model: \"p/a[xhigh]\" }, applying xhigh to that same base.",
+        "[integration] Typing the query high in the model picker keeps only rows whose base model contains high, not rows whose suffix is [high].",
+        "[integration] In a mounted ChatApp offering [\"p/a[high]\", \"p/b\"] with current model p/b, typing /model, then →, then Return on the first row calls the fake host's switchTo with { model: \"p/a[xhigh]\" }, matching { model: withEffort(<first row base>, cycleEffort(<its effort>, 1)) }.",
+        "[integration] Given a highlighted p/a[high] row, when ← then Return are pressed, switchTo receives { model: \"p/a[medium]\" }, applying the level one step lower.",
+        "[integration] Given rows p/a[high] then p/b[low] with the first row highlighted, when →, ↓, then Return are pressed, switchTo receives { model: \"p/b[low]\" } at the second row's own initial effort; the first row's change is not applied.",
+        "[integration] Given query high with p/high-model[high] highlighted, when ← or → is pressed, the highlighted row displays detail \"effort medium\" or \"effort xhigh\", respectively.",
+        "[integration] Given a model picker filtered by the typed query high, when ←/→ cycles the highlighted row's effort, the query remains high, leaving the query text unchanged.",
+        "[integration] When ←/→ is pressed in an open /resume picker, its rendered picker and transcript remain unchanged, including the picker's rows and highlighted entry.",
+        "[integration] ←/→ in the /resume picker does not call switchTo.",
+        "[integration] ←/→ in the /resume picker does not call resume.",
+        "[integration] A rejected switchTo from the model picker shows its error in the transcript, as /model <id> does."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "picker",
+        "model-effort"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Row deduplication, a pending map/ref, and one ChatApp callback extend established picker patterns without a new subsystem; strict three-session TDD follows the required session-touching override because choices invoke ChatHost.switchTo and share dispatch with resume.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/Picker.tsx",
+        "packages/nax/src/chat/chat-effort.ts",
+        "packages/nax/test/ui/chat/picker.test.tsx",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/useChatKeys.ts"
+      ],
+      "suggestedCriteria": [
+        "When →→ and Return arrive in one input batch on p/a[high], switchTo receives { model: \"p/a[max]\" }.",
+        "When → and Return are used on an m/x[turbo] row, switchTo receives { model: \"m/x[off]\" }.",
+        "When a model row is cycled, the pointer moves away and returns, its detail still shows its own pending effort.",
+        "When a cycled model picker is cancelled and reopened, its rows show their original efforts rather than the cancelled pending efforts.",
+        "When the current model is p/a[low] but p/a[high] was listed first, Return on the un-cycled current row calls switchTo({ model: \"p/a[low]\" })."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/picker.test.tsx",
+          "reason": "model-picker rows now carry the base model as their value and a `effort <level>` detail; fixtures that list the same base model at two suffixes now expect one row, and assertions on a model row's full text gain the `effort <level>` detail."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "31ba005556e1847b4a7341a461e21aec1039719a"
+    },
+    {
+      "id": "US-004",
+      "title": "Add the effort command and level picker",
+      "description": "**Goal** — Add /effort to change only the current model's reasoning effort, directly or through a level picker.\n\n**Motivation** — The user asked for effort switching from the TUI (2026-10-28 ruling: picker ←/→ plus `/effort`).\n\n**Approach** — **`/effort`.** A new built-in after `model` in `COMMANDS`. `/effort <level>` switches to `withEffort(current model, level)`; `/effort` with no argument opens a new `effort` picker whose rows are the eight levels with the current one marked `(current)`.\n\n`PickerKind` (`packages/nax/src/tui/chat/slash-commands.ts`) Target: `\"model\" | \"resume\" | \"mode\" | \"effort\"`.\n\n`TITLES` (`Picker.tsx`, `satisfies Record<PickerKind, string>`) gains `effort: \"Reasoning effort\"`.\n\n`pickerModel` gains an `effort` branch: rows are `EFFORT_LEVELS` in order, the row equal to `modelEffort(currentModel)` marked current; the branch takes no query (like `mode`). The function's final branch no longer treats every other kind as `resume`.\n\n`actionFor` gains an `effort` case: `host.switchTo({ model: withEffort(host.current().model, entry.value) })`, reading the host's model at choose time.\n\n`COMMANDS` / `COMMAND_DESCRIPTIONS` — `\"effort\"` inserted right after `\"model\"`, described `\"Switch reasoning effort\"`.\n\nFailure handling: `/effort <x>` with `x` not one of the eight levels: no switch; the command shows `unknown effort \"<x>\"; use one of: default, off, minimal, low, medium, high, xhigh, max`, echoing `x` as typed. The command lowercases its argument before calling `isEffortLevel`, which itself matches exactly. `/effort` with more than one argument: no switch; the command shows `usage: /effort [level]`. `/effort <level>` equal to the current effort: `switchTo` is called with the unchanged model and returns without reopening; nothing else happens. A model id whose suffix is not a known level (`m[turbo]`): `modelEffort` returns `default`; `withEffort` replaces the unknown suffix. `switchTo` rejects (provider unknown, open fails): the picker or command shows the error the same way `/model <id>` does today.\n\nModify slash dispatch and the existing picker, not ChatHost or provider validation. Both direct and picker selections go through the existing runControl/error route; no effort selection may call resume. Use the current model at the moment of choosing so a picker cannot apply its effort to a stale model id. The no-reopen case uses the host's existing exact model/mode equality check, not an early return based only on modelEffort; rewriting an unknown suffix still goes through withEffort and switchTo.\n\nModify `packages/nax/test/ui/chat/slash-menu.test.tsx` — the effort command now sits after the model command, shifting every later built-in down one row: the nine-down-arrow case that expected the plugins row now lands on the skills row (or takes one more press to reach plugins), and the beyond-the-window comment and the thirteen-matches title are updated to the new count. This checkout's registry has 14 commands before the addition, so use the actual resulting count of 15 rather than the stale test title's number.\n\nModify `packages/nax/test/ui/chat/slash-commands.test.tsx` — the help listing and the cases driven by the built-in command list now include the effort command and its description, between the model and sessions commands. Exercise mounted ChatApp for command dispatch, picker behavior, and slash-menu discovery; extend picker tests as needed without exceeding file-size limits.\n\n**Scope** — In: effort built-in registration/help/menu, direct argument validation, the effort picker and its choose-time model rewrite, failure behavior, and affected menu regressions. Out: model-picker cycling (US-003), renderer width changes (US-002), helper implementation (US-001). A notice in the transcript after a model or effort switch (feature chat-transcript-polish). Changing effort for a subagent run (`agent.modelAliases`) or for `nax run`. Validating whether a given provider or model honours a thinking level; an unsupported level still reaches the provider, which `toThinkingLevel` already logs and ignores.\n\n**Interface** — `PickerKind = \"model\" | \"resume\" | \"mode\" | \"effort\"`; `effort: \"Reasoning effort\"`; `host.switchTo({ model: withEffort(host.current().model, entry.value) })`; reuse `runSlashCommand`, `modelEffort`, `isEffortLevel`, and `withEffort` through existing module/barrel boundaries.",
+      "acceptanceCriteria": [
+        "[unit] COMMANDS lists \"effort\" immediately after \"model\".",
+        "[unit] COMMAND_DESCRIPTIONS.effort equals \"Switch reasoning effort\".",
+        "[integration] Typing /effort high in a mounted ChatApp whose host is on p/m[low] calls switchTo({ model: \"p/m[high]\" }).",
+        "[integration] /effort default on p/m[low] calls switchTo({ model: \"p/m\" }).",
+        "[integration] /effort turbo calls no switchTo.",
+        "[integration] /effort turbo shows 'unknown effort \"turbo\"; use one of: default, off, minimal, low, medium, high, xhigh, max'.",
+        "[integration] /effort with no argument opens a picker titled \"Reasoning effort\".",
+        "[integration] /effort with no argument opens a picker with eight rows in EFFORT_LEVELS order.",
+        "[integration] /effort with no argument opens a picker with the current level marked (current).",
+        "[integration] Choosing xhigh in that picker on host model p/m[low] calls switchTo({ model: \"p/m[xhigh]\" }).",
+        "[integration] Escape in the effort picker closes it.",
+        "[integration] Escape in the effort picker calls no switchTo.",
+        "[integration] /effort HIGH is treated as high (the command lowercases its argument) and calls switchTo({ model: \"p/m[high]\" }) on host model p/m.",
+        "[integration] /effort high now calls no switchTo.",
+        "[integration] /effort high now shows \"usage: /effort [level]\".",
+        "[integration] Choosing a level in the effort picker never calls host.resume.",
+        "[integration] /effort high whose switchTo rejects shows the rejection's message in the transcript.",
+        "[integration] /effort high whose switchTo rejects leaves the host on its model.",
+        "[integration] The slash menu opened by typing /eff offers /effort with the description \"Switch reasoning effort\".",
+        "[integration] Given host model p/m[high], when /effort high is submitted, switchTo is called with the unchanged model { model: \"p/m[high]\" }.",
+        "[integration] Given an open host on p/m[high], when /effort high is submitted, the existing session is not reopened.",
+        "[integration] When switchTo rejects for a choice in the effort picker, the rejection's message is shown through the same transcript error route as /model <id>."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "slash-command",
+        "model-effort"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Argument validation, registry entries, and an effort branch reuse the existing command and picker patterns across a few modules; strict three-session TDD follows the required session-touching override for ChatHost.switchTo, unchanged-session reuse, and the shared resume dispatcher.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/test/ui/chat/slash-menu.test.tsx",
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/tui/chat/Picker.tsx",
+        "packages/nax/src/chat/chat-effort.ts",
+        "packages/nax/test/ui/chat/slash-commands.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "When /effort TuRbO is submitted, the transcript shows 'unknown effort \"TuRbO\"; use one of: default, off, minimal, low, medium, high, xhigh, max'.",
+        "When an effort picker opened over p/old[low] is chosen after the host model changes to p/new[medium], choosing high calls switchTo({ model: \"p/new[high]\" }).",
+        "When /effort high is submitted on p/m[turbo], switchTo receives { model: \"p/m[high]\" }.",
+        "When /effort opens over p/m[turbo], the default row is marked (current).",
+        "When /help is submitted, /effort  Switch reasoning effort appears between /model  Switch model and /sessions  List saved sessions."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/slash-menu.test.tsx",
+          "reason": "the effort command now sits after the model command, shifting every later built-in down one row: the nine-down-arrow case that expected the plugins row now lands on the skills row (or takes one more press to reach plugins), and the beyond-the-window comment and the thirteen-matches title are updated to the new count."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/slash-commands.test.tsx",
+          "reason": "the help listing and the cases driven by the built-in command list now include the effort command and its description, between the model and sessions commands."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "75b162af70c9197c2c25d1dd932ef733e3a00321"
+    }
+  ],
+  "analysis": "Feature and prerequisite: This is an enhancement to the existing native chat UI, not a new chat or provider implementation. The chat-resume-sessions prerequisite is already represented in this checkout: packages/nax/src/tui/chat/chat-status.ts:463 defines headerTitleLine(state, version, width, glyphs), and :469 constructs the optional session title. Preserve this signature and the title functionality while changing the width-allocation policy. All four stories implement code inside packages/nax; packages/nax-agent is read-only reference material. The binding execution order is US-001 first, US-002 and US-003 independently after it, then US-004 after US-001 and US-003. No additional stories or prerequisite implementation work are needed. Codebase-memory MCP is unavailable in this session; findings were obtained with direct file reads and text searches. No implementation changes or tests were run while drafting this PRD.\n\nExisting effort boundary: packages/nax-agent/src/cost/model-spec.ts:29 defines the anchored suffix grammar, and :31 exposes parseModelSpec(raw). Only well-formed trailing bracket pairs with non-bracket, nonempty components are stripped; malformed strings remain opaque model ids. packages/nax-agent/src/index.ts:78 publicly exports parseModelSpec. packages/nax-agent/src/native/models.ts:41 parses the suffix before splitting on the FIRST slash, preserving multi-slash model ids; :71 defines THINKING_LEVELS in the required off/minimal/low/medium/high/xhigh/max order; :100 translates unknown levels to the provider default with a warning. THINKING_LEVELS is already reachable through the internal entry's re-export at packages/nax-agent/src/internal.ts:60. US-001 must consume these existing package entries rather than modify nax-agent, import deep package source, duplicate the grammar, or import nax-ai from chat. Add the pure helper module and named chat barrel exports in packages/nax/src/chat/index.ts, whose existing model exports are at :41. EFFORT_LEVELS is default followed by the declared THINKING_LEVELS keys; default means removing the suffix, not serializing [default]. Exact helper validation and command-level case normalization are distinct. Unknown suffixes deliberately have two interpretations: modelEffort returns default for navigation/current-effort purposes, but an unmodified model-picker row retains and displays its original suffix text.\n\nModel source and compatibility: packages/nax/src/chat/chat-models.ts:4 builds configured tier models and :20 combines tiers, overrides, and optional catalog discovery, de-duplicating exact ids only. Do not change those globally shared choices to de-duplicate bases: that behavior belongs in the model picker. packages/nax/src/tui/chat/Picker.tsx:133 currently maps each configured model directly to a row, and :142 filters case-insensitively on entry.value. US-003 changes these values to base ids while preserving first-occurrence order. A matching current base must use the current session's original full id, even if a different suffix appeared first in the catalog. Every row needs its original id and raw effort label, with pending known levels overriding only the visible detail and the eventual chosen id. Filtering on base ids intentionally removes suffix-only matches. Do not strip slash-delimited model path components when rewriting ids; dropping provider prefixes is display-only. Returning on an untouched unknown-suffix row must preserve the full original configured string, not silently normalize it to default.\n\nRendering: packages/nax/src/tui/chat/chat-status.ts:139 currently caps the entire provider-stripped string to 24 characters, causing the suffix truncation. :280 uses that helper in the footer; :461 also uses it in header facts. Separate the name from its trailing suffix. The footer keeps its literal Unicode ellipsis and 24-character NAME budget; a suffix is appended whole and does not consume that name budget. The header is uncapped until the first line's actual display-column budget requires elision. Keep product, version, separators, and mode fixed, yield the optional title before model-name characters, and preserve the suffix even when only the theme ellipsis remains as the name. packages/nax/src/tui/chat/chat-status.ts:414 already has headColumns, :454 has end elision, and :505 exposes headerLines with theme glyphs. packages/nax/src/tui/chat/styled-line.tsx:30 sets the existing minimum layout width to 10 and :47 measures via Bun.stringWidth; use displayWidth, not JavaScript character length, for header allocation. The header uses glyphs.ellipsis, including the three-column ASCII form; shortModel retains its literal one-character ellipsis. Keep sanitization/flattening before rendering (singleRow at chat-status.ts:185). The specified suffix-preservation policy can exceed an impossibly small width or a width smaller than the fixed facts plus ellipsis and suffix; do not truncate an arbitrarily long suffix or change fixed product/version/mode text to manufacture a fit. The concrete bounded-width ACs use feasible budgets.\n\nPicker state and integration: packages/nax/src/tui/chat/Picker.tsx:181 constructs picker models, :265 draws existing detail columns, :318 holds PickerState, :348 dispatches choices, and :382 owns the hook. Extend these existing seams rather than introduce a parallel picker. The mounted Picker already mirrors pointer and query in refs at :506 and :510 because multiple keys can run before React renders. Pending efforts need the same synchronous-ref contract: update the ref immediately for each cycle, render through state, and read the ref at choose time, not a stale row label or captured render state. This is necessary for arrow+Return and repeated arrows in one input batch, as well as independently pending rows. Scope the pending map to one picker opening and discard it on cancellation/choice/reopening; it is not a persisted preference. ownsPickerKey at :444 currently claims only escape/return/up/down, and the key handler at :543 must claim left/right for model rows only without treating arrows as query edits or stealing existing modified shortcuts. packages/nax/src/tui/chat/ChatApp.tsx:218 creates the hook and :584 mounts Picker: US-003 also modifies this call site to pass onCycle={picker.cycle}; otherwise pure helper tests would pass while the UI remained disconnected. packages/nax/src/tui/chat/bottom-region.ts:19 consumes PickerModel for row budgeting and needs to continue using the existing generic picker sizing.\n\nCommands and host lifecycle: packages/nax/src/tui/chat/slash-commands.ts:8 defines PickerKind, :33 defines ordered COMMANDS, :52 defines descriptions, :72 parses whitespace-separated arguments, and :130 dispatches commands. US-004 adds the effort kind, title, no-query rows, and explicit actionFor branch so the current final resume fallback cannot accidentally resume a session for an effort choice. Read host.current().model at choice time. Direct /effort normalizes a single argument to lowercase, validates through isEffortLevel, preserves the original spelling in unknown-level diagnostics, rejects extra arguments with the specified usage text, and uses withEffort plus host.switchTo. packages/nax/src/tui/chat/slash-menu.ts:38 derives built-ins directly from COMMANDS, so effort discovery and ordering follow from the command registry rather than another hardcoded menu. ChatApp runs slash commands through runControl at packages/nax/src/tui/chat/ChatApp.tsx:365; picker choices already run through it at Picker.tsx:430. packages/nax/src/tui/chat/useChatKeys.ts:88 locks control actions, refreshes after success, and reports errors via onError. Reuse this route for provider/open failures, with no switch notice added to the transcript. packages/nax/src/chat/chat-host.ts:434 serializes switchTo and :442 returns for an unchanged mode/model; :451 reopens the target and writes metadata, while :461 reopens the old target on failure. No changes to ChatHost, storage schema, adapters, provider validation, or permission resolution should be required. Model suffix persistence already happens through the existing model string.\n\nTests and regressions: packages/nax/test/unit/tui/chat/chat-status.test.ts:250 covers shortModel; :394 checks footer model flattening; :578 covers session-title rendering; :678 checks header version/model flattening. Its :593 test currently expects an overflowing prefix to remain untouched: update that intentionally superseded expectation for the new model-elision policy rather than preserving overflow. Existing shortModel and flatten cases must remain unchanged. Exercise footerModel and headerLines, not just an isolated formatter, including width 120/60/40, the no-name budget, and actual theme ellipsis widths. packages/nax/test/ui/chat/picker.test.tsx:124 supplies a typed mounted host harness, :225 covers model/mode choices, :322 covers pure row/layout/query models, :397 covers mounted query behavior, :484 already covers batched pointer movement, :545 covers resume, and :623 covers failures and key ownership. Extend these behaviors with effort state, base de-duplication, raw unknown suffix preservation, same-batch cycling, filtered navigation, and rejected switches. Update existing exact model-row text assertions to include effort details. packages/nax/test/ui/chat/slash-commands.test.tsx:17 mounts a fake host; :101 iterates COMMANDS; :124 covers explicit /model switching. Extend this mounted path for /effort and command failures. packages/nax/test/ui/chat/slash-menu.test.tsx:37 and :321 contain stale thirteen-match wording, and :328 assumes nine down arrows land on plugins. The actual current command array has 14 built-ins; inserting effort makes 15. Update counts to actual registry contents and the window assumptions: nine down arrows now land on skills, or ten are needed for plugins. The newly ninth feature command belongs beyond the initial eight-row window. /help ordering must place effort between model and sessions.\n\nEngineering risks and implementation discipline: The core risks are loss of unknown suffixes, stale pending refs in batched input, cross-row effort leakage, accidental query mutation, misrouting the new picker to resume, and display-width regressions with ASCII/CJK/emoji. Preserve controls, locks, held-session warnings, loading cancellation, and permission-mode shortcuts without extending their behavior. This feature changes session model selection but not authentication, approvals, sandbox policy, or access control. US-003 is medium complexity: deduplication and a pending map/ref extend established picker patterns and one ChatApp callback, rather than adding a new subsystem. US-003 and US-004 retain strict three-session TDD under the requested session-touching override because their actions invoke ChatHost.switchTo and share dispatch with resume. The presentation and pure-helper stories use tdd-simple. Review docs/architecture/ARCHITECTURE.md and the applicable canonical .nax/rules before implementation. Picker.tsx is already 572 lines and picker.test.tsx is 800 lines; chat-status.ts is 520 lines and its test is 722 lines. Keep additions within repository limits, factoring focused helpers/tests and sharing existing harnesses as necessary rather than duplicating them or increasing ratchets. Every regression test should first fail against old behavior; use bun:test and ink-testing-library/React act with existing seams, not provider/network calls or sleeps. Targeted package-relative commands include bun test test/unit/chat/chat-effort.test.ts --timeout=30000, bun test test/unit/tui/chat/chat-status.test.ts --timeout=30000, and bun test test/ui/chat/picker.test.tsx test/ui/chat/slash-commands.test.tsx test/ui/chat/slash-menu.test.tsx --timeout=30000. Gates are pipeline responsibilities, not acceptance criteria; never run bare bun test or test:coverage inside a sandboxed nax session.\n\nMigration and rollout: No migration, version bump, new dependency, new config, or persistence format is needed. Existing /model <id> remains supported. Session metadata continues to store the chosen suffixed id unchanged. Picker presentation intentionally collapses configured suffix variants into one base row; untouched selections retain the current/first configured id. Done means the four specified stories expose the helpers, preserve the visible effort in the real renderers, wire model-picker cycling through mounted ChatApp to switchTo, and make both forms of /effort available with the exact error behavior. Transcript switch notices and other adjacent chat-polish work remain deferred.\n\nRefine audit: Re-read the on-disk spec and existing picker, header, slash dispatcher, host switching, and relevant regression tests. All 49 source AC bullets remain represented by 71 independently observable assertions; no source AC or regression qualifier was removed. The following mappings use 1-based source AC -> PRD acceptanceCriteria positions within the same story. US-001: 1->1, 2->2/3, 3->4, 4->5, 5->6, 6->7, 7->8, 8->9, 9->10, 10->11, 11->12/13, 12->14/15. US-002: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8/9, 9->10/11/12, 10->13, 11->14/15. US-003: 1->1, 2->2/3, 3->4/5, 4->6, 5->7, 6->8, 7->9, 8->10, 9->11, 10->12, 11->13, 12->14/15, 13->16/17/18, 14->19. US-004: 1->1/2, 2->3, 3->4, 4->5/6, 5->7/8/9, 6->10, 7->11/12, 8->13, 9->14/15, 10->16, 11->17/18, 12->19. US-004 criteria 20-22 additionally enumerate unchanged-model/no-reopen and effort-picker rejection behavior from Failure Handling. All five failure-table rows have criteria: invalid arguments and extra arguments in US-004, unchanged effort in US-004, unknown suffix fallback/replacement in US-001, and rejected switches in US-003/US-004. Negative paths already exist in each story: unknown effort inputs, insufficient-width fallbacks, rejected model switches, and invalid/failed effort commands, respectively.\n\nAudit corrections: COMMAND_DESCRIPTIONS.effort is a property, not a callable; pickerLayout draws entry.detail built by pickerModel rather than deriving it from effortLabel. Picker fixtures and integration switch expectations now state concrete inputs/results, filtered arrow behavior is observable as changed effort detail plus unchanged query, and resume arrows preserve rendered rows/selection. The description clarifies that unchanged-model reuse is the host's exact id equality check, not a modelEffort-only early return that would mishandle an unknown suffix. No new provider, authentication, or storage behavior is introduced. All spec-recommended context files are present within each five-file limit; only upstream-created chat-effort.ts appears in downstream context. The four story IDs, workdirs, and dependencies remain exactly the binding structure. All six feature-level exclusions remain verbatim and the nearby story scopes echo them. US-003 complexity was reduced to medium to reflect reuse of the existing hook/ref architecture; its strict strategy and US-004's strict strategy retain the required session-touching override.",
+  "outOfScope": [
+    "Validating whether a given provider or model honours a thinking level; an unsupported level still reaches the provider, which `toThinkingLevel` already logs and ignores.",
+    "A notice in the transcript after a model or effort switch (feature chat-transcript-polish).",
+    "Persisting a per-model preferred effort across sessions; the session meta keeps the chosen model id with its suffix, as today.",
+    "Changing effort for a subagent run (`agent.modelAliases`) or for `nax run`.",
+    "Any change to `@nathapp/nax-agent`.",
+    "Bounding the length of an `[effort]` suffix: `parseModelSpec` accepts any non-bracket text, and an unusually long configured suffix is drawn whole."
+  ],
+  "routingProfile": "native-claude"
+}

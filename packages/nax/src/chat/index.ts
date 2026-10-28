@@ -11,6 +11,7 @@ export {
 } from "./ask-controller";
 export { _askFallbackDeps, type AskFallback, type AskFallbackOptions, createAskFallback } from "./ask-fallback";
 export { type ChatAgentRow, formatAgentsListing } from "./chat-agents-listing";
+export { cycleEffort, EFFORT_LEVELS, type EffortLevel, isEffortLevel, modelEffort, withEffort } from "./chat-effort";
 export {
   _chatHostDeps,
   type ChatHost,

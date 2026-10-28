@@ -190,6 +190,13 @@ describe("slash command routing", () => {
     expect(ui.host.resourceNotice).toBeUndefined();
     expect(ui.lastFrame()).toContain(COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`).join("\n"));
   });
+  test("effort help appears between model and sessions", async () => {
+    const ui = mount();
+    await ui.line("/help");
+    expect(ui.lastFrame()).toContain(
+      "/model  Switch model\n/effort  Switch reasoning effort\n/sessions  List saved sessions",
+    );
+  });
   test("US-008 AC-21 US-024 AC-14 help lists /mcp on the line after /plugins", async () => {
     const ui = mount();
     await ui.line("/help");

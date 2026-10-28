@@ -20,6 +20,12 @@ export { makeBotReviewDeps } from "./bot-review";
 export { makeMockCallContext } from "./call-context";
 export { type CallOpStubOptions, DEFAULT_AGENT_ENVELOPE, makeCallOp, makeScriptedCallOp } from "./call-op";
 export {
+  entryRows as pickerEntryRows,
+  frameOf as pickerFrameOf,
+  labelOf as pickerLabelOf,
+  mount as mountChatPicker,
+} from "./chat-picker";
+export {
   type AnswerRecord,
   approvalRequestedEvent,
   approvalResolvedEvent,
