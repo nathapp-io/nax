@@ -5,12 +5,14 @@ import {
   classifyThrown,
   ProtocolSetupError,
   parseRetryAfter,
+  statusFromSdkMessage,
 } from "../../src/protocols/errors.ts";
 
 describe("classifyHttpError", () => {
   it.each([
     [undefined, "unknown"],
     [401, "auth"],
+    [402, "quota"],
     [403, "auth"],
     [429, "rate-limit"],
     [503, "overloaded"],
@@ -27,6 +29,21 @@ describe("classifyHttpError", () => {
   it("prefers the specific classification over the range for 429 and 503", () => {
     expect(classifyHttpError(429)).not.toBe("bad-request");
     expect(classifyHttpError(503)).not.toBe("transport");
+  });
+});
+
+describe("statusFromSdkMessage", () => {
+  it.each([
+    ['402 {"type":"error","error":{"type":"insufficient_balance_error","message":"insufficient balance (1008)"}}', 402],
+    ["429 status code (no body)", 429],
+    ['401: {"type":"authentication_error","message":"missing or wrong API key"}', 401],
+    ["500 tokens were generated before the stream broke", undefined],
+    [undefined, undefined],
+    ["401 Unauthorized", undefined],
+    ['200 {"error":{}}', undefined],
+    ['prefix 402 {"error":{}}', undefined],
+  ] as const)("recovers only SDK status prefixes: %s", (message, status) => {
+    expect(statusFromSdkMessage(message)).toBe(status);
   });
 });
 
@@ -54,6 +71,19 @@ describe("parseRetryAfter", () => {
 });
 
 describe("classifyProviderError", () => {
+  it.each([
+    [undefined, "Provider is not configured: strata", "auth"],
+    [undefined, "No API key for provider: strata", "auth"],
+    [200, "PROVIDER IS NOT CONFIGURED: strata; rate limit exceeded", "auth"],
+    [200, "NO API KEY FOR PROVIDER: strata; quota exceeded", "auth"],
+    [429, "insufficient_balance: top up your account", "quota"],
+    [429, "insufficient_credits", "quota"],
+    [429, "insufficient_quota", "quota"],
+    [429, "insufficient balance", "quota"],
+    [503, "Provider is not configured: strata", "overloaded"],
+  ] as const)("classifies terminal account errors: %s %s", (status, message, kind) => {
+    expect(classifyProviderError(status, message)).toBe(kind);
+  });
   // Phrasings observed in provider documentation and error payloads. They are
   // upstream wire strings and will drift; this table is the contract, and a
   // provider that rewords its message shows up here as a failing case rather

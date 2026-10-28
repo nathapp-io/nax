@@ -287,6 +287,48 @@ describe("agent.native.catalogOverrides", () => {
   });
 });
 
+describe("custom provider security", () => {
+  test("AC-1 remote plaintext rejection names allowInsecureHttp", () => {
+    expect(() =>
+      parseNative({ catalogOverrides: [{ ...VALID_OVERRIDE, baseUrl: "http://192.168.1.175:8080/v1" }] }),
+    ).toThrow("allowInsecureHttp");
+  });
+  test.each([
+    ["AC-2", "http://192.168.1.175:8080/v1", true],
+    ["AC-5", "http://127.0.0.1:8080/v1", undefined],
+    ["AC-6", "https://gw.test/v1", true],
+    ["AC-22", "http://127.0.0.1:18080/v1", true],
+  ])("%s preserves accepted endpoint and flag", (_ac, baseUrl, allowInsecureHttp) => {
+    const override = { ...VALID_OVERRIDE, baseUrl, ...(allowInsecureHttp === undefined ? {} : { allowInsecureHttp }) };
+    const parsed: ProviderCatalogOverride | undefined = parseNative({ catalogOverrides: [override] }).agent?.native
+      ?.catalogOverrides?.[0];
+    expect(parsed).toEqual(override);
+  });
+  test.each([
+    ["AC-3", "http://user:tok@192.168.1.175:8080/v1", true],
+    ["AC-4", "file:///etc/passwd", true],
+    ["AC-23", "https://user:tok@gw.test/v1", undefined],
+  ])("%s rejects unsafe endpoints even with opt-in", (_ac, baseUrl, allowInsecureHttp) => {
+    const override = { ...VALID_OVERRIDE, baseUrl, ...(allowInsecureHttp === undefined ? {} : { allowInsecureHttp }) };
+    expect(() => parseNative({ catalogOverrides: [override] })).toThrow();
+  });
+  test("AC-7 preserves typed authEnv", () => {
+    const parsed: ProviderCatalogOverride | undefined = parseNative({
+      catalogOverrides: [{ ...VALID_OVERRIDE, authEnv: "STRATA_API_KEY" }],
+    }).agent?.native?.catalogOverrides?.[0];
+    expect(parsed?.authEnv).toBe("STRATA_API_KEY");
+  });
+  test("AC-8 rejects invalid authEnv", () => {
+    expect(() => parseNative({ catalogOverrides: [{ ...VALID_OVERRIDE, authEnv: "strata-key" }] })).toThrow();
+  });
+  test("AC-9 preserves openrouter", () => {
+    const override = { ...VALID_OVERRIDE, models: [{ ...VALID_OVERRIDE.models[0], thinkingFormat: "openrouter" }] };
+    const parsed: ProviderCatalogOverride | undefined = parseNative({ catalogOverrides: [override] }).agent?.native
+      ?.catalogOverrides?.[0];
+    expect(parsed?.models[0]?.thinkingFormat).toBe("openrouter");
+  });
+});
+
 describe("catalog model thinkingFormat (nax#2696)", () => {
   test.each(["openai", "deepseek", "zai", "qwen", "qwen-chat-template"])(
     "accepts the backend format %s",

@@ -89,7 +89,7 @@ export interface CatalogModelOverride {
    * Thinking wire format for an `openai-completions` model (nax#2696).
    * Mirrored from nax-ai's ThinkingFormat; omit to inherit the provider's format.
    */
-  thinkingFormat?: "openai" | "qwen" | "qwen-chat-template" | "deepseek" | "zai";
+  thinkingFormat?: "openai" | "qwen" | "qwen-chat-template" | "deepseek" | "zai" | "openrouter";
 }
 
 /** Provider-scoped catalog overrides — maps 1:1 onto nax-ai's `ProviderOverride[]`. */
@@ -100,6 +100,10 @@ export interface ProviderCatalogOverride {
    * not to `models` individually, despite sitting alongside a model list.
    */
   baseUrl?: string;
+  /** Environment variable supplying a custom provider's bearer credential. */
+  authEnv?: string;
+  /** Config/precheck opt-in only; never forwarded to nax-ai or enforced here. */
+  allowInsecureHttp?: boolean;
   /** Provider-wide extra request headers (nax#2019). May carry credentials. */
   headers?: Record<string, string>;
   models: CatalogModelOverride[];

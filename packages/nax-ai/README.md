@@ -84,7 +84,11 @@ const client = createClient({
 
 **What an override can say.** A `ProviderOverride` carries `baseUrl`, `headers` and `models`. `baseUrl` and `headers` replace rather than merge, and apply to every model of that provider, bundled ones included — that is how a proxy or a tenant header is wired. Each entry in `models` is a full `ResolvedModel`: `pricing`, `contextWindow`, `maxTokens`, `supportsTools`, `thinkingLevels`, `thinkingLevelMap` and `supportsStrictToolSampling`.
 
-**What it cannot say.** Declaration data only: behaviour belongs in a protocol backend, not here. An override also amends a provider — it cannot introduce one, since there would be no `stream` implementation to inherit.
+**Custom providers.** An override can introduce an unknown provider id when it declares `baseUrl` and a non-empty `models` list. Every model must declare `maxTokens` and use `openai-completions` or `anthropic-messages`. Declare a new provider only once per override list. Models are synthesised without inheriting bundled metadata; `thinkingFormat: "openrouter"` sends graded reasoning effort and an explicit disable signal at `off` on OpenAI-compatible endpoints.
+
+For an introduced provider, `authEnv` names the environment variable read at dispatch. A credential already stored under the provider id wins over that variable. Without either, the provider is unconfigured (an auth error); keyless servers require a placeholder key in the named variable. `authEnv` is rejected on bundled providers, whose existing credential resolution is unchanged. Custom-provider login/import is not added.
+
+**What it cannot say.** Declaration data only: behaviour belongs in a protocol backend, not here. Introduced providers support only the two wire backends above; existing-provider amendments retain their bundled implementations.
 
 **Two rules that throw rather than warn.** A model's own `provider` field must equal the override's `provider` (otherwise the request would be signed against a provider you never named), and a model the base catalog does not carry must be declared on both sides.
 

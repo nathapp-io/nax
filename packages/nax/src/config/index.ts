@@ -139,6 +139,7 @@ export {
 export { MCP_DEFAULT_TIMEOUT_MS, MCP_SERVER_ID_RE } from "./schemas-mcp";
 export {
   ConfiguredModelSchema,
+  isRemotePlainHttp,
   ModelTierSchema,
   ProviderCatalogOverrideSchema,
   ThinkingLevelSchema,

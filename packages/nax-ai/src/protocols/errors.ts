@@ -11,11 +11,18 @@ import type { ProtocolError, ProtocolErrorKind } from "./types.ts";
 export function classifyHttpError(status: number | undefined): ProtocolErrorKind {
   if (status === undefined) return "unknown";
   if (status === 401 || status === 403) return "auth";
+  if (status === 402) return "quota";
   if (status === 429) return "rate-limit";
   if (status === 529 || status === 503) return "overloaded";
   if (status >= 400 && status < 500) return "bad-request";
   if (status >= 500) return "transport";
   return "unknown";
+}
+
+/** Recover only the known SDK error prefixes, not arbitrary leading numbers. */
+export function statusFromSdkMessage(message: string | undefined): number | undefined {
+  const match = message?.match(/^([45]\d\d):? (\{|status code)/);
+  return match === undefined || match === null ? undefined : Number(match[1]);
 }
 
 /**
@@ -101,6 +108,9 @@ const NON_OVERFLOW_MARKERS: readonly string[] = [
   "too many requests",
 ];
 
+/** Missing credentials are terminal, even when the message also names a policy fault. */
+const CREDENTIAL_MARKERS: readonly string[] = ["provider is not configured", "no api key for provider"];
+
 /**
  * Substrings that identify a mid-stream error carrying policy content,
  * lowercased. Read only for a stream that broke under a non-failing status —
@@ -128,7 +138,7 @@ const STREAM_POLICY_MARKERS: readonly (readonly [marker: string, kind: ProtocolE
  * the two in step. Same drift caveat as the tables above: upstream wire strings.
  */
 export const QUOTA_MESSAGE_PATTERN =
-  /usage limit reached|token plan|exceeded your current quota|insufficient (credits|quota|balance)|purchase credits/i;
+  /usage limit reached|token plan|exceeded your current quota|insufficient[ _](credits|quota|balance)|purchase credits/i;
 
 /** A status that is not itself a report of failure: absent, or below 4xx. */
 function isNonFailingStatus(status: number | undefined): boolean {
@@ -191,14 +201,15 @@ function matchesContextOverflow(message: string): boolean {
 
 /**
  * The kind for an error event whose status reported no failure: `transport`,
- * unless the message carries policy content nax-ai must not retry itself
- * (checked first, so an established rate-limit/overload phrasing keeps its
- * kind), or names a context overflow (nax#44) — the aggregator-relay shape
+ * unless the message names missing credentials (checked first), carries policy
+ * content nax-ai must not retry itself, or names a context overflow (nax#44) — the aggregator-relay shape
  * described on `classifyProviderError`.
  */
 function classifyBrokenStream(message: string | undefined): ProtocolErrorKind {
   if (message === undefined) return "transport";
   const haystack = message.toLowerCase();
+
+  if (CREDENTIAL_MARKERS.some((marker) => haystack.includes(marker))) return "auth";
 
   const policy = STREAM_POLICY_MARKERS.find(([marker]) => haystack.includes(marker));
   if (policy) return policy[1];

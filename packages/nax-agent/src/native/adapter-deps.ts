@@ -16,6 +16,8 @@ export function isProtocolStreamError(err: unknown): err is { protocolError: { k
 export const _adapterDeps = {
   listStoredProviders,
   anyAmbientCredential,
+  /** Environment lookup for custom providers not covered by pi's ambient probe. */
+  readEnv: (name: string): string | undefined => process.env[name],
   /**
    * US-004: whether the global auth config points at an exec helper. Injectable
    * so a test can pin the credential-source decision without writing

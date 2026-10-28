@@ -301,8 +301,9 @@ each has bitten someone:
 - **A redirect carries your credential.** Auth is resolved from the provider *name*
   with no reference to the destination host, so the stored credential for that
   provider is sent to whatever `baseUrl` names. Therefore `baseUrl` must be `https`
-  (plain `http` is accepted only for `localhost`/`127.0.0.1`, where nothing leaves
-  the machine), and a URL embedding `user:password@` is rejected. A precheck
+  unless it is loopback (`localhost`, `127.0.0.1`, `[::1]`) or you explicitly set
+  `allowInsecureHttp: true`. Remote plaintext sends credentials unencrypted and
+  triggers an additional warning. A URL embedding `user:password@` is always rejected. A precheck
   warning names the provider and the host on every run that has a redirect
   configured — if you see one you did not intend, treat the config as untrusted.
   Remember `.nax/config.json` is usually committed, so a redirect can arrive with
@@ -311,10 +312,50 @@ each has bitten someone:
 `headers` values are masked in `nax config` and `nax config profile show`; header
 names and `baseUrl` stay readable so a misrouted request is still diagnosable.
 
+**Custom native providers.** Declare a new provider with its endpoint and complete
+model record, rather than borrowing an unrelated provider's identity:
+
+```json
+{
+  "agent": {
+    "native": {
+      "catalogOverrides": [{
+        "provider": "strata",
+        "baseUrl": "http://192.168.1.175:8080/v1",
+        "authEnv": "STRATA_API_KEY",
+        "allowInsecureHttp": true,
+        "models": [{
+          "id": "qwen3.8-flash",
+          "protocol": "openai-completions",
+          "contextWindow": 262144,
+          "maxTokens": 32768,
+          "supportsTools": true,
+          "thinkingLevels": ["off", "low", "medium", "high"],
+          "thinkingFormat": "openrouter",
+          "pricing": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        }]
+      }]
+    }
+  }
+}
+```
+
+Set `STRATA_API_KEY` outside config; `authEnv` is the variable's **name**, never
+its secret value. A stored credential for `strata` takes precedence. Precheck
+warns if the variable is unset or empty and names the host that receives its
+value as a bearer credential. Review project-level overrides before running:
+a config can redirect a secret-holding variable to an arbitrary host.
+`allowInsecureHttp` is an explicit acceptance of unencrypted remote traffic;
+it does not permit embedded URL credentials or non-HTTP schemes, and has no
+effect for HTTPS or loopback. Prefer HTTPS whenever the server supports it.
+The example's zero pricing is illustrative; set your actual rates.
+
 **Selecting a thinking wire format (nax#2696).** A model entry may set
 `thinkingFormat` to select how its thinking levels are sent on
 `protocol: "openai-completions"`. Allowed values are `openai`, `qwen`,
-`qwen-chat-template`, `deepseek`, and `zai`, using the backend's existing formats.
+`qwen-chat-template`, `deepseek`, `zai`, and `openrouter`, using the backend's existing formats.
+`openrouter` sends `reasoning: {effort: "none"}` at `off` and the declared positive
+level names as effort values.
 Unknown values fail config validation; declaring the field on another protocol
 fails client construction with the model id and protocol.
 An `openai` declaration is also rejected if the inherited provider settings

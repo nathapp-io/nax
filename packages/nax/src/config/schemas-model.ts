@@ -121,7 +121,7 @@ export const CatalogModelOverrideSchema = z
     // non-`openai-completions` protocol.
     openRouterRouting: OpenRouterRoutingSchema.optional(),
     // nax#2696: a model declaration, never a provider-wide compat override.
-    thinkingFormat: z.enum(["openai", "qwen", "qwen-chat-template", "deepseek", "zai"]).optional(),
+    thinkingFormat: z.enum(["openai", "qwen", "qwen-chat-template", "deepseek", "zai", "openrouter"]).optional(),
   })
   .strict();
 
@@ -133,28 +133,16 @@ export const CatalogModelOverrideSchema = z
  */
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
-const BASE_URL_MESSAGE =
-  "baseUrl must be an https URL (http allowed only for localhost/127.0.0.1) and must not embed credentials";
+const BASE_URL_MESSAGE = "baseUrl must be an http or https URL and must not embed credentials";
 
-/**
- * Whether a redirect target is safe enough to send a provider credential to.
- *
- * Not an allowlist of hosts — the point of the field is an arbitrary gateway.
- * It rejects the two cases that leak a credential by accident rather than by
- * intent: plaintext http to a remote host (the credential goes out in clear),
- * and userinfo embedded in the URL (a secret pasted into config, which no
- * masker covers because it is part of a value that must stay readable).
- */
-function isSafeBaseUrl(value: string): boolean {
-  let url: URL;
+/** Shared plaintext destination decision for schema validation and precheck. */
+export function isRemotePlainHttp(value: string): boolean {
   try {
-    url = new URL(value);
+    const url = new URL(value);
+    return url.protocol === "http:" && !LOOPBACK_HOSTS.has(url.hostname);
   } catch {
     return false;
   }
-  if (url.username !== "" || url.password !== "") return false;
-  if (url.protocol === "https:") return true;
-  return url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname);
 }
 
 /**
@@ -187,7 +175,13 @@ export const ProviderCatalogOverrideSchema = z
     // one throwaway model id is enough to reroute a real, credentialed model.
     // A scheme-less "proxy.test/v1" would also load clean under a bare string
     // check and fail deep inside pi-ai's fetch on the first dispatch.
-    baseUrl: z.string().refine(isSafeBaseUrl, { message: BASE_URL_MESSAGE }).optional(),
+    baseUrl: z.string().optional(),
+    // The variable NAME stays readable in `nax config`; never put secrets here.
+    authEnv: z
+      .string()
+      .regex(/^[A-Z_][A-Z0-9_]*$/, "authEnv names an environment variable (e.g. STRATA_API_KEY)")
+      .optional(),
+    allowInsecureHttp: z.boolean().optional(),
     // Non-empty when present. Headers REPLACE rather than merge on the nax-ai
     // side (`override?.headers ?? rawProvider.headers`, providers/catalog.ts),
     // and both layers gate on `!== undefined` rather than on emptiness — so
@@ -202,7 +196,27 @@ export const ProviderCatalogOverrideSchema = z
       .optional(),
     models: z.array(CatalogModelOverrideSchema).min(1, "models must not be empty"),
   })
-  .strict();
+  .strict()
+  .superRefine((override, ctx) => {
+    if (override.baseUrl === undefined) return;
+    let url: URL;
+    try {
+      url = new URL(override.baseUrl);
+    } catch {
+      ctx.addIssue({ code: "custom", path: ["baseUrl"], message: BASE_URL_MESSAGE });
+      return;
+    }
+    if (url.username !== "" || url.password !== "" || !["http:", "https:"].includes(url.protocol)) {
+      ctx.addIssue({ code: "custom", path: ["baseUrl"], message: BASE_URL_MESSAGE });
+    } else if (isRemotePlainHttp(override.baseUrl) && override.allowInsecureHttp !== true) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["baseUrl"],
+        message:
+          "baseUrl uses remote http; set allowInsecureHttp: true to send this provider's credential over plain http",
+      });
+    }
+  });
 
 const ModelDefSchema = z.object({
   provider: z.string().min(1, "Provider must be non-empty"),

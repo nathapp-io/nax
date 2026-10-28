@@ -24,7 +24,10 @@ import type {
   Usage as PiUsage,
   SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
-import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { envApiKeyAuth, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { createProvider } from "@earendil-works/pi-ai/models";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { createPiAuthResolver, toPiCredentialStore } from "../auth/pi-auth.ts";
 import type { AuthResolver } from "../auth/resolver.ts";
@@ -43,7 +46,13 @@ import type {
 import type { CredentialStore, StopReason } from "../types.ts";
 import { toTokenUsage, totalTokens } from "../usage.ts";
 import { vendorAppHeaders } from "./client-app.ts";
-import { classifyProviderError, classifyThrown, ProtocolSetupError, parseRetryAfter } from "./errors.ts";
+import {
+  classifyProviderError,
+  classifyThrown,
+  ProtocolSetupError,
+  parseRetryAfter,
+  statusFromSdkMessage,
+} from "./errors.ts";
 import type { PiProtocolOptions } from "./pi-protocols.ts";
 import { assertValidHeaders, assertValidSessionId, mergeRequestHeaders, withoutEmpty } from "./request-headers.ts";
 import { vendorSessionHeaders } from "./session-id.ts";
@@ -372,7 +381,7 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
             }
 
             case "error": {
-              const status = observed?.status;
+              const status = observed?.status ?? statusFromSdkMessage(event.error.errorMessage);
               const retryAfter = parseRetryAfter(observed?.headers);
               const usage = toTokenUsage(event.error.usage);
               // A failed request that consumed tokens still bills for them.
@@ -759,26 +768,98 @@ function deriveThinkingLevelMap(
   return map;
 }
 
+/** Builds a custom provider with only explicitly supported lazy wire backends. */
+function introduceProvider(override: ProviderOverride): PiProvider {
+  if (override.baseUrl === undefined) {
+    throw new Error(`Provider "${override.provider}" requires baseUrl to be introduced.`);
+  }
+  if (override.models === undefined || override.models.length === 0) {
+    throw new Error(`Provider "${override.provider}" requires a non-empty models list.`);
+  }
+  const byId = new Map<string, Model<Api>>();
+  for (const model of override.models) {
+    byId.set(model.id, synthesiseIntroducedModel(override, model, override.baseUrl));
+  }
+  const entries = [...byId.values()];
+  return createProvider({
+    id: override.provider,
+    name: override.provider,
+    baseUrl: override.baseUrl,
+    ...(override.headers !== undefined ? { headers: { ...override.headers } } : {}),
+    auth: { apiKey: envApiKeyAuth(override.provider, override.authEnv !== undefined ? [override.authEnv] : []) },
+    models: entries,
+    api: {
+      ...(entries.some((model) => model.api === "openai-completions")
+        ? { "openai-completions": openAICompletionsApi() }
+        : {}),
+      ...(entries.some((model) => model.api === "anthropic-messages")
+        ? { "anthropic-messages": anthropicMessagesApi() }
+        : {}),
+    },
+  });
+}
+
+/** No template exists for an introduced provider: all wire metadata is declared. */
+function synthesiseIntroducedModel(override: ProviderOverride, model: ResolvedModel, baseUrl: string): Model<Api> {
+  assertOverrideModelProvider(override.provider, model);
+  assertOverrideModelRouting(model);
+  assertOverrideModelThinkingFormat(model);
+  if (model.protocol !== "openai-completions" && model.protocol !== "anthropic-messages") {
+    throw new Error(
+      `Provider "${override.provider}" model "${model.id}" uses unsupported protocol "${model.protocol}".`,
+    );
+  }
+  if (model.maxTokens === undefined) {
+    throw new Error(`Provider "${override.provider}" model "${model.id}" requires maxTokens.`);
+  }
+  return {
+    id: model.id,
+    name: model.id,
+    api: model.protocol,
+    provider: override.provider,
+    baseUrl,
+    input: ["text"],
+    contextWindow: model.contextWindow,
+    maxTokens: model.maxTokens,
+    cost: toPiCost(model.pricing),
+    reasoning:
+      model.thinkingLevels.some((level) => level !== "off") ||
+      (model.thinkingFormat !== undefined && model.thinkingLevels.includes("off")),
+    compat: {
+      ...(model.thinkingFormat !== undefined ? { thinkingFormat: model.thinkingFormat } : {}),
+      ...(model.openRouterRouting !== undefined
+        ? { openRouterRouting: toPiOpenRouterRouting(model.openRouterRouting) }
+        : {}),
+    },
+    thinkingLevelMap: model.thinkingLevelMap ?? deriveThinkingLevelMap(model, undefined),
+    ...(override.headers !== undefined ? { headers: { ...override.headers } } : {}),
+  };
+}
+
 /**
- * Applies overrides to a catalog by wrapping each affected provider.
+ * Applies overrides by introducing custom providers or wrapping bundled ones.
  *
  * A pi `Provider` is behaviour-bearing — `getModels()`, `stream()`,
  * `streamSimple()`, `auth` — not a data record with a `.models` array, and
- * `setProvider` upserts by id. So the provider is read, wrapped and written
- * back: rebuilding one from the override alone would leave it with no `stream`
- * implementation at all.
+ * `setProvider` upserts by id. Bundled providers are wrapped to retain their
+ * implementation and auth; custom providers get explicit lazy wire backends.
  *
  * Mutates only the dedicated instance its caller just constructed.
  */
 function applyOverrides(models: MutableModels, overrides: readonly ProviderOverride[]): void {
+  const introduced = new Set<string>();
   for (const override of overrides) {
+    if (introduced.has(override.provider)) {
+      throw new Error(`Provider "${override.provider}" was already introduced in this override list.`);
+    }
     const base = models.getProvider(override.provider);
     if (base === undefined) {
-      throw new Error(
-        `Cannot apply a provider override for "${override.provider}": the backend catalog does not know that ` +
-          `provider, so there is no stream implementation to inherit. Overrides amend a provider; they cannot ` +
-          `introduce one.`,
-      );
+      models.setProvider(introduceProvider(override));
+      introduced.add(override.provider);
+      continue;
+    }
+    if (override.authEnv !== undefined) {
+      throw new Error(`Provider "${override.provider}" is bundled and cannot declare authEnv.`);
     }
 
     // Keyed by id, last-wins, because normaliseCatalog stores override models
