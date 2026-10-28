@@ -3,7 +3,7 @@
   "feature": "chat-model-effort",
   "branchName": "feat/chat-model-effort",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T09:18:44.063Z",
+  "updatedAt": "2026-10-28T09:27:21.302Z",
   "userStories": [
     {
       "id": "US-001",
@@ -101,14 +101,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure display changes use established styled-line and width helpers; the primary risk is suffix-aware width allocation and preserving the prior title/sanitization behavior, not session lifecycle or access control."
+        "reasoning": "Pure display changes use established styled-line and width helpers; the primary risk is suffix-aware width allocation and preserving the prior title/sanitization behavior, not session lifecycle or access control.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/chat-status.ts",
@@ -133,7 +136,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9a1d298f49c432ef6afbccf7fdd9a348f6aea049"
     },
     {
       "id": "US-003",
