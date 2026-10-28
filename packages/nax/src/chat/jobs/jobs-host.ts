@@ -27,8 +27,10 @@ export function createHostJobs(options: HostJobsOptions): {
   confirmClose: () => Promise<void>;
 } {
   const jobs = createJobRunner({ repoRoot: options.repoRoot, outputDir: options.outputDir, now: options.now });
+  const closing = new AbortController();
   const chains = createChainController({
     outputDir: options.outputDir,
+    closeSignal: closing.signal,
     cwd: options.repoRoot,
     jobs,
     sessionId: options.sessionId,
@@ -44,6 +46,7 @@ export function createHostJobs(options: HostJobsOptions): {
     interactionPlugin: options.config.interaction?.plugin ?? "cli",
   });
   const confirmClose = async (): Promise<void> => {
+    closing.abort();
     chains.stop("the chat closed");
     const owned = jobs.owned();
     if (!owned.length) return;

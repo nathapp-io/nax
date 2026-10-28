@@ -53,6 +53,8 @@ export interface ChatChains {
 }
 export interface ChainControllerOptions {
   readonly outputDir: string;
+  /** Host close is irreversible, including while an activation write is pending. */
+  readonly closeSignal?: AbortSignal;
   readonly cwd: string;
   readonly jobs: Pick<ChatJobs, "get" | "onChange">;
   readonly sessionId: () => string;
@@ -110,7 +112,14 @@ class ChainController implements ChatChains {
     return this.current?.state === "active" ? this.current : undefined;
   }
 
+  private ensureOpen(): void {
+    if (!this.options.closeSignal?.aborted) return;
+    this.stop("the chat closed");
+    throw new NaxError("[chat] the chat closed; the chain is not active", "CHAT_CHAIN_CLOSED", { stage: "chat" });
+  }
+
   async activate(proposal: { readonly steps: readonly ChainStep[]; readonly costCap?: number }): Promise<ChatChain> {
+    this.ensureOpen();
     if (this.activating || this.active()) {
       throw new NaxError("[chat] A chain is already active", "CHAT_CHAIN_ACTIVE", { stage: "chat" });
     }
@@ -128,6 +137,8 @@ class ChainController implements ChatChains {
       };
       const activated = await this.reserve(chain);
       this.current = activated;
+      // No await between publication and this check: close cannot expose a late active chain.
+      this.ensureOpen();
       this.next = 1;
       return activated;
     } finally {

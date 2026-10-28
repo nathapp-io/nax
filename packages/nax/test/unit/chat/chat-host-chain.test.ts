@@ -5,6 +5,7 @@ import { assertDefined, cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir, 
 import { type ChatResources, createChatHost, createChatStorage } from "@/chat";
 import { createChatAskController } from "@/chat/ask-controller";
 import { createHostJobs } from "@/chat/jobs";
+import { _chainStoreDeps, readChainRecord } from "@/chat/jobs/chain-store";
 import { _jobsLaunchDeps } from "@/chat/jobs/jobs-launch";
 import type { OpenChatSessionRequest } from "@/chat/open-chat-session";
 import { buildResourceCatalog } from "@/resources";
@@ -13,6 +14,8 @@ const dirs: string[] = [];
 const hosts: ReturnType<typeof createChatHost>[] = [];
 const compositions: ReturnType<typeof createHostJobs>[] = [];
 const originalGit = _jobsLaunchDeps.git;
+const originalWrite = _chainStoreDeps.write;
+const originalRename = _chainStoreDeps.rename;
 const now = () => new Date("2026-10-28T00:00:00Z");
 afterEach(async () => {
   for (const host of hosts.splice(0)) {
@@ -24,6 +27,8 @@ afterEach(async () => {
     composition.jobs.dispose();
   }
   _jobsLaunchDeps.git = originalGit;
+  _chainStoreDeps.write = originalWrite;
+  _chainStoreDeps.rename = originalRename;
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
 function fixture() {
@@ -55,6 +60,79 @@ async function activate(f: ReturnType<typeof compose>) {
 }
 
 describe("createHostJobs chains", () => {
+  test.each([false, true])("F3 close blocks an in-flight activation (owned job=%s)", async (owned) => {
+    const f = compose();
+    const writing = Promise.withResolvers<void>();
+    const releaseWrite = Promise.withResolvers<void>();
+    const closeDecision = Promise.withResolvers<"allow" | "deny">();
+    const stoppedRecord = Promise.withResolvers<void>();
+    _chainStoreDeps.rename = (from, to) => {
+      originalRename(from, to);
+      stoppedRecord.resolve();
+    };
+    _chainStoreDeps.write = async (path, data) => {
+      if (typeof path !== "string" || typeof data !== "string") throw new Error("expected JSON audit write");
+      writing.resolve();
+      await releaseWrite.promise;
+      return originalWrite(path, data);
+    };
+    if (owned) {
+      spyOn(f.jobs, "owned").mockReturnValue([
+        {
+          schemaVersion: 1,
+          id: "run-12345678",
+          kind: "run",
+          target: "f1",
+          cwd: f.repoRoot,
+          pid: 42,
+          state: "running",
+          sessionId: "chat-chain",
+          argv: [],
+          approvedAt: now().toISOString(),
+          startedAt: now().toISOString(),
+          logPath: join(f.repoRoot, "job.log"),
+        },
+      ]);
+    }
+    f.approve.mockImplementation((card) =>
+      card.tool === "nax-jobs__close" ? closeDecision.promise : Promise.resolve("allow"),
+    );
+    _jobsLaunchDeps.git = async () => ({ exitCode: 0, stdout: "feat/f1\n", stderr: "" });
+    const chainTool = (await f.provider.tools(f.repoRoot)).find((t) => t.localName === "chain");
+    assertDefined(chainTool, "chain tool");
+    const activation = chainTool.run(
+      { steps: [{ kind: "run", input: { feature: "f1" } }] },
+      {
+        root: f.repoRoot,
+        resolvedPaths: [],
+        maxBytes: 300_000,
+        maxFileBytes: 300_000,
+      },
+    );
+    await writing.promise;
+    const closing = f.confirmClose();
+    try {
+      releaseWrite.resolve();
+      const result = await activation;
+      expect(f.chains.active()).toBeUndefined();
+      expect(result.isError).toBe(true);
+      expect(f.chains.summary()).toMatchObject({ state: "stopped", stopReason: "the chat closed" });
+      const summary = f.chains.summary();
+      assertDefined(summary, "stopped chain summary");
+      expect(f.chains.admit({ kind: "run", argv: summary.steps[0]?.argv ?? [] }).kind).toBe("card");
+      await stoppedRecord.promise;
+      expect(await readChainRecord(f.outputDir, summary.id)).toMatchObject({
+        state: "stopped",
+        stopReason: "the chat closed",
+      });
+      await expect(activate(f)).rejects.toMatchObject({ code: "CHAT_CHAIN_CLOSED" });
+      expect(f.approve).toHaveBeenCalledTimes(owned ? 2 : 1);
+    } finally {
+      releaseWrite.resolve();
+      closeDecision.resolve("deny");
+      await closing;
+    }
+  });
   test("AC-13 returns a fresh controller", () => {
     const f = compose();
     assertDefined(f.chains, "chains controller");
