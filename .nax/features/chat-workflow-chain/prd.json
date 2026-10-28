@@ -3,7 +3,7 @@
   "feature": "chat-workflow-chain",
   "branchName": "feat/chat-workflow-chain",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T03:36:04.716Z",
+  "updatedAt": "2026-10-28T03:50:15.263Z",
   "userStories": [
     {
       "id": "US-001",
@@ -364,14 +364,17 @@
         "US-002",
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module billed-launch authorization bypass and stop/start race protection are security-critical; use real provider tools with controlled chain/lock/spawn seams under strict TDD isolation."
+        "reasoning": "Cross-module billed-launch authorization bypass and stop/start race protection are security-critical; use real provider tools with controlled chain/lock/spawn seams under strict TDD isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/jobs/jobs-launch.ts",
@@ -387,7 +390,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "dd5daa161ab79e7003a5f48f17158c9db4794418"
     },
     {
       "id": "US-007",
