@@ -3,7 +3,7 @@
   "feature": "chat-transcript-polish",
   "branchName": "feat/chat-transcript-polish",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T11:58:38.568Z",
+  "updatedAt": "2026-10-28T12:13:16.503Z",
   "userStories": [
     {
       "id": "US-001",
@@ -302,14 +302,17 @@
         "usage"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "A single pure status module gains an additive counter and deterministic formatting, with existing reducer and working-line fixtures. Token counts here are usage estimates, not authentication tokens or other security-sensitive credentials."
+        "reasoning": "A single pure status module gains an additive counter and deterministic formatting, with existing reducer and working-line fixtures. Token counts here are usage estimates, not authentication tokens or other security-sensitive credentials.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/chat-status.ts",
@@ -329,7 +332,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9084e3ad9533955edd02ffec697873a77b73ed73"
     },
     {
       "id": "US-006",
