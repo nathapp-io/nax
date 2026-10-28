@@ -110,7 +110,62 @@ afterEach(() => {
   resetLogger();
 });
 
+function gitlabHarness(indexAuthor = "bot") {
+  const writes: string[][] = [];
+  const reads: string[][] = [];
+  const ok = (value: unknown) => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: "" });
+  const deps: ForgeDeps = {
+    readText: async () => null,
+    run: async (cmd) => {
+      if (cmd.includes("POST") || cmd.includes("PUT")) {
+        writes.push(cmd);
+        return ok({ id: 9 });
+      }
+      reads.push(cmd);
+      if (cmd[0] === "git") return { exitCode: 0, stdout: "git@gitlab.com:o/r.git", stderr: "" };
+      if (cmd.includes("user")) return ok({ username: "bot", id: 1 });
+      if (cmd.some((arg) => arg.includes("/discussions?")))
+        return ok([
+          {
+            id: "index-discussion",
+            individual_note: false,
+            notes: [
+              { id: 9, system: false, author: { username: indexAuthor, id: 1 }, body: oldIndex, created_at: "t" },
+              { id: 10, system: false, author: { username: "carol", id: 2 }, body: "reply", created_at: "later" },
+            ],
+          },
+        ]);
+      return ok({ sha: HEAD, source_branch: "feature", target_branch: "main", author: { username: "author" } });
+    },
+  };
+  return { deps, writes, reads };
+}
+
 describe("postItemThreads index and closing", () => {
+  test("AC-11/12 GitLab edits a replied own index without posting a new note", async () => {
+    const h = gitlabHarness();
+    expect(
+      await postItemThreads({ ...input(), url: "https://gitlab.com/o/r/-/merge_requests/7" }, h.deps),
+    ).toMatchObject({ failed: 0 });
+    expect(h.writes).toHaveLength(1);
+    expect(h.writes[0]).toContain("PUT");
+    expect(h.writes[0]).toContain("projects/o%2Fr/merge_requests/7/notes/9");
+    expect(h.writes[0]?.some((arg) => arg.includes("key=w-index"))).toBe(true);
+    expect(h.writes.some((cmd) => cmd.includes("POST"))).toBe(false);
+    expect(h.reads.filter((cmd) => cmd.some((arg) => arg.includes("/discussions?")))).toHaveLength(2);
+  });
+  test("AC-12 GitLab never posts a duplicate replied index", async () => {
+    const h = gitlabHarness();
+    await postItemThreads({ ...input(), url: "https://gitlab.com/o/r/-/merge_requests/7" }, h.deps);
+    expect(h.writes.some((cmd) => cmd.includes("POST"))).toBe(false);
+  });
+  test("GitLab flattening does not grant ownership to a forged index", async () => {
+    const h = gitlabHarness("other");
+    await postItemThreads({ ...input(), url: "https://gitlab.com/o/r/-/merge_requests/7" }, h.deps);
+    expect(h.writes).toHaveLength(1);
+    expect(h.writes[0]).toContain("POST");
+    expect(h.writes[0]).toContain("projects/o%2Fr/merge_requests/7/notes");
+  });
   test("AC-1 posts a top-level index when none is owned", async () => {
     const h = harness({ index: oldIndex, indexAuthor: "other" });
     await postItemThreads(input(), h.deps);

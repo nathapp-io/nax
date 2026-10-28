@@ -62,6 +62,23 @@ describe("parseView", () => {
 });
 
 describe("openDraftFinishPr", () => {
+  test.each(["github", "gitlab"] as const)("AC-16/17 %s unreadable PR list holds creation", async (forge) => {
+    const { deps, calls } = depsFor((cmd) => ({
+      exitCode: 0,
+      stdout: cmd.includes("list") ? "not json" : "https://x/9",
+    }));
+    await expect(openDraftFinishPr({ ...args, forge }, deps)).resolves.toBeNull();
+    expect(calls.some((cmd) => cmd.includes("create"))).toBe(false);
+    expect(calls).toHaveLength(1);
+  });
+  test("AC-17 never creates on an unreadable PR list", async () => {
+    const { deps, calls } = depsFor((cmd) => ({
+      exitCode: 0,
+      stdout: cmd.includes("list") ? "not json" : "https://x/9",
+    }));
+    await openDraftFinishPr(args, deps);
+    expect(calls.some((cmd) => cmd.includes("create"))).toBe(false);
+  });
   test("opens a draft when the branch has no open PR", async () => {
     const { deps, calls } = depsFor((cmd) =>
       cmd.includes("list") ? { exitCode: 0, stdout: "[]" } : { exitCode: 0, stdout: "https://x/9" },

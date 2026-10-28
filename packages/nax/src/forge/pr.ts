@@ -49,12 +49,25 @@ export async function hasOpenPr(forge: ForgeKind, branch: string, deps: ForgeDep
       { forge, branch, exitCode: result.exitCode },
     );
   }
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(result.stdout) as unknown;
-    return Array.isArray(parsed) && parsed.length > 0;
-  } catch {
-    return false;
+    parsed = JSON.parse(result.stdout);
+  } catch (cause) {
+    throw new NaxError(`[forge] Cannot parse open PR list for ${branch}`, "FORGE_PR_LIST_UNPARSEABLE", {
+      stage: "forge",
+      forge,
+      branch,
+      cause,
+    });
   }
+  if (!Array.isArray(parsed)) {
+    throw new NaxError(`[forge] Open PR list is not an array for ${branch}`, "FORGE_PR_LIST_UNPARSEABLE", {
+      stage: "forge",
+      forge,
+      branch,
+    });
+  }
+  return parsed.length > 0;
 }
 
 /** Inputs required to open a PR/MR. */

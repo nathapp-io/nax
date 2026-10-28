@@ -1,8 +1,12 @@
 import { NaxError } from "@/errors";
+import { isNaxBotMarkerKey, markerPattern, parseNaxBotMarker } from "./marker-grammar";
+
 import type { OwnComment, PrComment, PrRef } from "./pr-types";
 import { listPrComments, listReviewThreads } from "./threads";
 import { readCurrentUser } from "./trust";
 import type { ForgeDeps } from "./types";
+
+export { isNaxBotMarkerKey, parseNaxBotMarker } from "./marker-grammar";
 
 export const NAX_BOT_HEADER = "**nax bot**";
 export const NAX_WORKFLOW_PR_MARKER = "<!-- nax-workflow:v1 -->";
@@ -11,14 +15,6 @@ export const NAX_WORKFLOW_PR_MARKER = "<!-- nax-workflow:v1 -->";
 export function hasNaxWorkflowMarker(body: string): boolean {
   return body.split(/\r?\n/).some((line) => line === NAX_WORKFLOW_PR_MARKER);
 }
-const MARKER_KEY_PATTERN = "[A-Za-z0-9._:-]{1,128}";
-const markerPattern = () => new RegExp(`<!-- nax-bot:v1 key=(${MARKER_KEY_PATTERN}) -->`, "g");
-const MARKER_KEY = new RegExp(`^${MARKER_KEY_PATTERN}$`);
-
-export function isNaxBotMarkerKey(key: string): boolean {
-  return MARKER_KEY.exec(key)?.[0] === key;
-}
-
 /** Wrap a comment with a stable visible header and an injection-safe identity marker. */
 export function withNaxBotMarker(body: string, key: string): string {
   // Compare the full match: JavaScript's $ also matches before a final newline.
@@ -26,17 +22,6 @@ export function withNaxBotMarker(body: string, key: string): string {
     throw new NaxError("[forge] Invalid nax bot marker key", "FORGE_MARKER_KEY_INVALID", { stage: "forge", key });
   }
   return `${NAX_BOT_HEADER}\n\n${body}\n\n<!-- nax-bot:v1 key=${key} -->`;
-}
-
-/** Return the last valid v1 marker; a marker alone does not establish ownership. */
-export function parseNaxBotMarker(body: string): { key: string } | null {
-  const pattern = markerPattern();
-  let result: { key: string } | null = null;
-  for (const match of body.matchAll(pattern)) {
-    const key = match[1];
-    if (key !== undefined) result = { key };
-  }
-  return result;
 }
 
 export function ownComments(comments: readonly PrComment[], login: string, threadId?: string): OwnComment[] {
