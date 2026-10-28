@@ -588,6 +588,7 @@ export function ChatApp({
             budget={bottomBudget}
             active={!keys.locked}
             onChoose={picker.choose}
+            onCycle={picker.cycle}
             onCancel={picker.cancel}
             onQuery={picker.setQuery}
             query={picker.model.query}
