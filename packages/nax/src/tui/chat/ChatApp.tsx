@@ -384,7 +384,7 @@ export function ChatApp({
       return;
     }
     if (outcome.kind === "send") {
-      await sendTurn(outcome.message);
+      await sendTurn(outcome.message, undefined, `/${command.name}${command.rest}`);
       return;
     }
     const { name, template, rest } = outcome;
@@ -420,10 +420,10 @@ export function ChatApp({
     await runCommand(command);
   }
 
-  // Wait for send's metadata drain before reopening the session for a queued mode.
   async function sendTurn(
     message: string,
     prepare?: () => Promise<{ message: string } | { notice: string }>,
+    title = message,
   ): Promise<boolean> {
     if (sending.current) return false;
     sending.current = true;
@@ -437,10 +437,12 @@ export function ChatApp({
       }
       append({ kind: "user", text: prepared.message });
       setFollowToken((token) => token + 1);
-      await host.send(prepared.message, (event) => {
+      const onEvent = (event: SessionEvent): void => {
         if (event.type === "turn_start") started = true;
         handleEvent(event);
-      });
+      };
+      if (prepared.message === title) await host.send(prepared.message, onEvent);
+      else await host.send(prepared.message, onEvent, { title });
       return true;
     } catch (error) {
       append({ kind: "error", text: errorMessage(error) });
@@ -449,8 +451,6 @@ export function ChatApp({
       sending.current = false;
       await keys.finishTurn();
       setBusy(false);
-      // A stream that ends without `turn_end` — a rejection mid-turn is the usual way — still
-      // ends the turn: the working line and the busy footer must not outlive it.
       setStatus(stopTurn);
     }
   }

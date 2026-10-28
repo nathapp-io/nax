@@ -557,7 +557,11 @@ describe("Picker — resume", () => {
     _pickerDeps.now = () => NOW_MS;
     const rows: readonly ChatSessionRow[] = [
       session(),
-      session({ sessionId: "22222222-bbbb", title: "older session", updatedAt: "2026-01-01T09:00:00.000Z" }),
+      session({
+        sessionId: "22222222-bbbb",
+        title: '<skill name="superpowers:brainstorming" location="/a',
+        updatedAt: "2026-01-01T09:00:00.000Z",
+      }),
     ];
     const ui = mount({ sessions: async () => rows });
     await ui.submit("/resume");
@@ -565,7 +569,7 @@ describe("Picker — resume", () => {
     const drawn = resumeRows(ui);
     expect(drawn[0]).toContain("first session");
     expect(drawn[0]).toContain("5 min ago");
-    expect(drawn[1]).toContain("older session");
+    expect(drawn[1]).toContain("/superpowers:brainstorming");
     expect(drawn[1]).toContain("3 h ago");
   });
 

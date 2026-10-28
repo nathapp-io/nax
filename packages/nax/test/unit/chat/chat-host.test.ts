@@ -179,6 +179,11 @@ async function liveHold(session: string): Promise<void> {
 }
 
 describe("createChatHost", () => {
+  test("title options AC-5 persists the typed title through host.send", async () => {
+    await start();
+    await host.send("expanded", () => {}, { title: "/x y" });
+    expect((await storage.readMeta(host.current().sessionId))?.title).toBe("/x y");
+  });
   test("AC-1 start maps guarded to persisted ask mode", async () => {
     await start();
     expect(host.current()).toMatchObject({ mode: "guarded", model: MODEL, meta: { mode: "ask" } });

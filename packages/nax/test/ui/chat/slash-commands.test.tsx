@@ -139,6 +139,16 @@ describe("slash command routing", () => {
     for (const text of ["abc", "first title", "def", "second title", "in use by pid 4242"])
       expect(ui.lastFrame()).toContain(text);
   });
+  test("AC-16 sessions renders null and legacy titles", async () => {
+    const ui = mount();
+    ui.host.listSessions = async () => [
+      { sessionId: "fba63185-0000", title: null, updatedAt: null },
+      { sessionId: "legacy", title: '<skill name="superpowers:brainstorming" location="/a', updatedAt: null },
+    ];
+    await ui.line("/sessions");
+    expect(ui.lastFrame()).toContain("fba63185-0000 untitled fba63185");
+    expect(ui.lastFrame()).toContain("legacy /superpowers:brainstorming");
+  });
   test("AC-11 US-026 AC-6 resumes explicit id", async () => {
     const ui = mount();
     await ui.line("/resume abc");
@@ -492,6 +502,7 @@ describe("feature command", () => {
         expect(ui.send).toHaveBeenCalledWith(
           buildChatFeatureMessage({ feature: "auth", spec, prd, message }),
           expect.any(Function),
+          { title: `/feature auth${message ? ` ${message}` : ""}` },
         );
       }
       await Promise.resolve(act(async () => ui.finish()));

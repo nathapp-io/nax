@@ -114,7 +114,7 @@ describe("ChatApp command shell lines", () => {
     });
     await ui.line("/status-cmd");
     expect(run).toHaveBeenCalledWith("git status", expect.any(Function));
-    expect(ui.send).toHaveBeenCalledWith("Status: clean", expect.any(Function));
+    expect(ui.send).toHaveBeenCalledWith("Status: clean", expect.any(Function), { title: "/status-cmd" });
     expect(order).toEqual(["git status", "Status: clean"]);
   });
   test("AC-14 AC-15 failure shows a notice and never sends", async () => {
@@ -137,7 +137,7 @@ describe("ChatApp command shell lines", () => {
     const ui = mount(run);
     await ui.line("/say !`rm x`");
     expect(run).not.toHaveBeenCalled();
-    expect(ui.send).toHaveBeenCalledWith("Say !`rm x`", expect.any(Function));
+    expect(ui.send).toHaveBeenCalledWith("Say !`rm x`", expect.any(Function), { title: "/say !`rm x`" });
   });
   test("AC-20 AC-21 missing capability shows a notice and never sends", async () => {
     const ui = mount();

@@ -105,8 +105,9 @@ function command(text: string) {
 describe("catalog slash routing", () => {
   test.each([
     ["AC-1", "/brainstorming idea", "idea"],
-    ["AC-2", "/superpowers:brainstorming", ""],
+    ["AC-2", "/superpowers:brainstorming plan the cut", "plan the cut"],
     ["AC-3", "/manual", ""],
+    ["raw rest", "/brainstorming  plan  it", " plan  it"],
   ])("%s sends explicitly invoked skill builder text", async (_ac, input, args) => {
     const ui = mount();
     await ui.line(input);
@@ -117,19 +118,51 @@ describe("catalog slash routing", () => {
     expect(ui.send).toHaveBeenCalledWith(
       buildSkillInvocationMessage({ skill: selected, args: args ? ` ${args}` : "" }),
       expect.any(Function),
+      { title: input },
     );
     expect(ui.send.mock.calls[0]?.[0]).toContain(skill.body);
     if (args) expect(ui.send.mock.calls[0]?.[0]).toContain(args);
     if (_ac === "AC-2") expect(ui.send.mock.calls[0]?.[0]).toContain('<skill name="superpowers:brainstorming"');
   });
   test.each([
-    ["AC-4", "/review x.ts", "Review x.ts"],
+    ["AC-4", "/review now", "Review now"],
     ["AC-6", "/deploy", "Deploy "],
   ])("%s sends the command builder text before considering skills", async (_ac, input, expected) => {
     const ui = mount();
     await ui.line(input);
     expect(ui.send).toHaveBeenCalledTimes(1);
-    expect(ui.send).toHaveBeenCalledWith(expected, expect.any(Function));
+    expect(ui.send).toHaveBeenCalledWith(expected, expect.any(Function), { title: input });
+  });
+  test("equal catalog payload and typed line retain exactly two arguments", async () => {
+    const { host, send } = fixture();
+    const command = host.catalog?.commands[0];
+    if (!command) throw new Error("missing command fixture");
+    Object.assign(command, { template: "/review $ARGUMENTS" });
+    const ui = render(<ChatApp host={host} />);
+    act(() => {
+      ui.stdin.write("/review now");
+    });
+    await Promise.resolve(
+      act(async () => {
+        ui.stdin.write("\r");
+      }),
+    );
+    expect(send).toHaveBeenCalledWith("/review now", expect.any(Function));
+  });
+  test("AC-10 plain messages retain exactly two send arguments", async () => {
+    const ui = mount();
+    await ui.line("hello world");
+    expect(ui.send).toHaveBeenCalledWith("hello world", expect.any(Function));
+  });
+  test("AC-13 feature sends expanded payload with typed title", async () => {
+    _slashCommandDeps.readText = async (path) => (path.endsWith("spec.md") ? "spec" : undefined);
+    const ui = mount();
+    await ui.line("/feature chat-resume-sessions");
+    expect(ui.send).toHaveBeenCalledWith(
+      buildChatFeatureMessage({ feature: "chat-resume-sessions", spec: "spec", message: "" }),
+      expect.any(Function),
+      { title: "/feature chat-resume-sessions" },
+    );
   });
   test("command outcome retains template and raw rest for later expansion", async () => {
     const { host } = fixture();

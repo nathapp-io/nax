@@ -90,7 +90,12 @@ function ledger(startedAt = new Date(START)) {
   return createChatLedger({ sessionId: ID, projectKey: "test-project", model: MODEL, outputDir: dir, startedAt });
 }
 function run(
-  options: { message?: string; costLedger?: ReturnType<typeof createChatLedger>; extraCostUsd?: () => number } = {},
+  options: {
+    title?: string;
+    message?: string;
+    costLedger?: ReturnType<typeof createChatLedger>;
+    extraCostUsd?: () => number;
+  } = {},
 ) {
   const asks = { handle: mock((_event: SessionEvent) => {}) };
   const onEvent = mock((_event: SessionEvent) => {});
@@ -99,6 +104,7 @@ function run(
     handle,
     storage,
     message: options.message ?? "fix bug",
+    ...("title" in options ? { title: options.title } : {}),
     asks,
     ledger: costLedger,
     onEvent,
@@ -116,6 +122,27 @@ async function rows(startedAt = Date.parse(START)): Promise<CostEvent[]> {
 }
 
 describe("runChatTurn", () => {
+  test.each([
+    ["AC-1 typed title", "<skill …>body", "/brainstorm plan it", "/brainstorm plan it"],
+    ["AC-2 empty title", "hello there", "", "hello there"],
+    [
+      "AC-3 clipped title",
+      "expanded",
+      `  ${"😀".repeat(40)} \n ${"😀".repeat(60)}`,
+      `${"😀".repeat(40)} ${"😀".repeat(39)}`,
+    ],
+    ["AC-11 blank title", "hello there", "   ", "hello there"],
+    ["AC-17 absent title", "hello there", undefined, "hello there"],
+  ])("title options %s", async (_ac, message, title, expected) => {
+    await run({ message, ...(title === undefined ? {} : { title }) }).result;
+    expect((await storage.readMeta(ID))?.title).toBe(expected);
+  });
+  test("title options AC-4 preserves first title on a second turn", async () => {
+    const costLedger = ledger();
+    await run({ title: "first", costLedger }).result;
+    await run({ title: "different", costLedger }).result;
+    expect((await storage.readMeta(ID))?.title).toBe("first");
+  });
   test("AC-1 forwards every event in order", async () => {
     const turn = run();
     await turn.result;

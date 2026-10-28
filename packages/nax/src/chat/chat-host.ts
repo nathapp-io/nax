@@ -55,6 +55,10 @@ export interface ChatSessionRow {
   readonly heldByPid?: number;
 }
 
+export interface ChatSendOptions {
+  readonly title?: string;
+}
+
 /** Shared-session chat lifecycle, independent of the terminal shell. */
 export interface ChatHost {
   readonly repoRoot: string;
@@ -74,7 +78,7 @@ export interface ChatHost {
   notice(): string | undefined;
   resourceNotice?(): string | undefined;
   switchTo(input: { mode?: ChatMode; model?: string }): Promise<void>;
-  send(message: string, onEvent: (event: SessionEvent) => void): Promise<void>;
+  send(message: string, onEvent: (event: SessionEvent) => void, options?: ChatSendOptions): Promise<void>;
   runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>;
   cancel(): void;
   listSessions(): Promise<readonly ChatSessionRow[]>;
@@ -465,7 +469,7 @@ class NativeChatHost implements ChatHost {
     await this.start({ mode, model });
   }
 
-  async send(message: string, onEvent: (event: SessionEvent) => void): Promise<void> {
+  async send(message: string, onEvent: (event: SessionEvent) => void, options?: ChatSendOptions): Promise<void> {
     const handle = this.requireHandle();
     const ledger = this.ledger;
     if (!ledger) throw new NaxError("[chat] ledger is not initialized", "CHAT_SESSION_NOT_OPEN", { stage: "chat" });
@@ -483,6 +487,7 @@ class NativeChatHost implements ChatHost {
         handle,
         storage: this.deps.storage,
         message,
+        title: options?.title,
         asks: this.asks,
         ledger,
         onEvent,
