@@ -73,6 +73,7 @@ function inspectionTool(name: "list" | "cancel", options: JobsProviderOptions): 
           content: JSON.stringify({
             jobs: jobs.slice(0, JOBS_LIST_LIMIT).map(summary),
             omitted: Math.max(0, jobs.length - JOBS_LIST_LIMIT),
+            ...(options.chains ? { chain: options.chains.summary() } : {}),
           }),
         };
       }

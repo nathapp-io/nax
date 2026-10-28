@@ -2,6 +2,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "@/config";
 import type { Logger } from "@/logger";
 import type { ChatAskController } from "../ask-controller";
+import { type ChatChains, createChainController } from "./chain-controller";
 import { createJobRunner } from "./job-runner";
 import { createJobWriteGuard } from "./job-write-guard";
 import { createJobsProvider } from "./jobs-provider";
@@ -20,20 +21,30 @@ interface HostJobsOptions {
 /** Compose repo-scoped jobs only for the parent chat, never for subagent providers. */
 export function createHostJobs(options: HostJobsOptions): {
   jobs: ReturnType<typeof createJobRunner>;
+  chains: ChatChains;
   provider: ReturnType<typeof createJobsProvider>;
   guard: ReturnType<typeof createJobWriteGuard>;
   confirmClose: () => Promise<void>;
 } {
   const jobs = createJobRunner({ repoRoot: options.repoRoot, outputDir: options.outputDir, now: options.now });
+  const chains = createChainController({
+    outputDir: options.outputDir,
+    cwd: options.repoRoot,
+    jobs,
+    sessionId: options.sessionId,
+    now: options.now,
+  });
   const approve: ChatAskController["requestHostApproval"] = (card) => options.asks.requestHostApproval(card);
   const provider = createJobsProvider({
     ...options,
     jobs,
+    chains,
     approve,
     maxIterations: options.config.execution.maxIterations,
     interactionPlugin: options.config.interaction?.plugin ?? "cli",
   });
   const confirmClose = async (): Promise<void> => {
+    chains.stop("the chat closed");
     const owned = jobs.owned();
     if (!owned.length) return;
     const decision = await approve({
@@ -50,5 +61,5 @@ export function createHostJobs(options: HostJobsOptions): {
       }
     }
   };
-  return { jobs, provider, guard: createJobWriteGuard(jobs, options.repoRoot), confirmClose };
+  return { jobs, chains, provider, guard: createJobWriteGuard(jobs, options.repoRoot), confirmClose };
 }

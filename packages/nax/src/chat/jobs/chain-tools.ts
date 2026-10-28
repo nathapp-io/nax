@@ -197,13 +197,32 @@ export function createChainTools(options: JobsProviderOptions & { readonly chain
         required: ["step", "passed", "note"],
         properties: { step: { type: "integer" }, passed: { type: "boolean" }, note: { type: "string" } },
       },
-      run: async () => failure("[chat] chain_check is not available yet"),
+      run: async ({ step, passed, note }) => {
+        if (
+          typeof step !== "number" ||
+          !Number.isInteger(step) ||
+          typeof passed !== "boolean" ||
+          typeof note !== "string"
+        ) {
+          return failure("[chat] chain_check requires an integer step, boolean passed and string note");
+        }
+        const result = options.chains.recordCheck(step, passed, note);
+        return result.ok
+          ? { content: `check recorded for step ${step}${passed ? "" : "; the chain stopped"}` }
+          : failure(`[chat] ${result.message}`);
+      },
     },
     {
       localName: "chain_stop",
       description: "Stop chain autonomy without cancelling running jobs.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false, required: [] },
-      run: async () => failure("[chat] chain_stop is not available yet"),
+      run: async () => {
+        if (!options.chains.active()) return failure("[chat] no active chain");
+        const chain = options.chains.stop("stopped by the agent");
+        return chain
+          ? { content: `chain ${chain.id} stopped; running jobs keep running` }
+          : failure("[chat] no active chain");
+      },
     },
   ];
 }
