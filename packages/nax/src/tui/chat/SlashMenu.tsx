@@ -55,9 +55,15 @@ function pointerPrefix(theme: ChatTheme, chosen: boolean): Span {
 }
 
 /** One row: the pointer or its blank, `/name`, and the description, cut at the terminal. */
-function menuRow(item: SlashMenuItem, chosen: boolean, width: number, theme: ChatTheme): StyledLine {
-  const name = styled(`/${item.name}`, chosen ? { bold: true } : {});
-  const description = styled(`${NAME_GAP}${item.description}`, { color: "muted" });
+function menuRow(
+  item: SlashMenuItem,
+  options: { chosen: boolean; width: number; nameWidth: number; theme: ChatTheme },
+): StyledLine {
+  const { chosen, width, nameWidth, theme } = options;
+  const text = `/${item.name}`;
+  const name = styled(text, chosen ? { bold: true } : {});
+  const padding = SPACE.repeat(nameWidth - displayWidth(text));
+  const description = styled(`${padding}${NAME_GAP}${item.description}`, { color: "muted" });
   return cutSpans([pointerPrefix(theme, chosen), name, description], width);
 }
 
@@ -88,14 +94,20 @@ const NO_WINDOW: SlashMenuWindow = { first: FIRST_MATCH, rows: 0 };
 /** The rows the menu draws at a given width: the window around the pointer, one row each. */
 export function slashMenuLayout(matches: readonly SlashMenuItem[], options: SlashMenuLayoutOptions): SlashMenuLayout {
   const selected = Math.min(Math.max(options.selected ?? FIRST_MATCH, FIRST_MATCH), matches.length - 1);
+  const maxRows = options.maxRows ?? SLASH_MENU_MAX_ROWS;
+  const more = matches.length > maxRows && maxRows >= 2;
   const drawn =
-    matches.length === 0
-      ? NO_WINDOW
-      : slashMenuWindow(matches.length, selected, options.maxRows ?? SLASH_MENU_MAX_ROWS);
+    matches.length === 0 ? NO_WINDOW : slashMenuWindow(matches.length, selected, more ? maxRows - 1 : maxRows);
   const width = resolveWidth(options.width);
-  const lines = matches
-    .slice(drawn.first, drawn.first + drawn.rows)
-    .map((item, at) => menuRow(item, drawn.first + at === selected, width, options.theme));
+  const items = matches.slice(drawn.first, drawn.first + drawn.rows);
+  const nameWidth = items.reduce((widest, item) => Math.max(widest, displayWidth(`/${item.name}`)), 0);
+  const lines = items.map((item, at) =>
+    menuRow(item, { chosen: drawn.first + at === selected, width, nameWidth, theme: options.theme }),
+  );
+  if (more) {
+    const text = `  ${options.theme.glyphs.ellipsis} ${matches.length - items.length} more`;
+    lines.push(cutSpans([styled(text, { color: "muted" })], width));
+  }
   return { selected, first: drawn.first, rows: lines.length, lines };
 }
 
