@@ -3,7 +3,7 @@
   "feature": "chat-workflow-chain",
   "branchName": "feat/chat-workflow-chain",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T03:50:15.263Z",
+  "updatedAt": "2026-10-28T03:59:01.932Z",
   "userStories": [
     {
       "id": "US-001",
@@ -432,14 +432,17 @@
       "dependencies": [
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Two source files add standard provider registration and ordered validation using existing argv/spec/controller ports; exact approved-input validation is security-critical despite the bounded medium scope."
+        "reasoning": "Two source files add standard provider registration and ordered validation using existing argv/spec/controller ports; exact approved-input validation is security-critical despite the bounded medium scope.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/jobs/chain-controller.ts",
@@ -461,7 +464,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b917cabd7ae24e7e96d3572449a041ae74b92453"
     },
     {
       "id": "US-008",
