@@ -52,8 +52,11 @@ export function renderChat(props: ChatAppProps): Instance {
   try {
     const instance = _renderChatDeps.render(createElement(ChatApp, { ...props, mouse: mouse.events }), {
       exitOnCtrlC: false,
-      // No incrementalRendering: Ink 6.7's incremental path ignores the trailing
-      // newline of a non-fullscreen frame and redraws one row low (#2717).
+      // Rewrite only the rows that changed. The standard path erases and redraws the
+      // whole frame on every render, which blinks wherever synchronized output is not
+      // honoured. Ink 6.7's incremental path drew one row low (#2717); the root
+      // `patches/ink@6.7.0.patch` backports Ink 8's fix, and ink is pinned to match.
+      incrementalRendering: true,
       stdin: mouse.stdin,
     });
     if (isTTY) _renderChatDeps.write(ENABLE_MOUSE);

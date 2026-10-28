@@ -170,8 +170,17 @@ describe("renderChat alternate screen", () => {
     const view = renderChat({ host: chatHost() });
     expect(screen.renderMock.mock.calls[0]?.[1]).toEqual({
       exitOnCtrlC: false,
+      incrementalRendering: true,
       stdin: screen.mouse.stdin,
     });
+    view.unmount();
+  });
+
+  test("render rewrites only the rows that changed, so a frame does not blink", () => {
+    const screen = stubScreen();
+    const view = renderChat({ host: chatHost() });
+    const options = screen.renderMock.mock.calls[0]?.[1];
+    expect(options && "incrementalRendering" in options && options.incrementalRendering).toBe(true);
     view.unmount();
   });
 
@@ -208,6 +217,7 @@ describe("renderChat mouse seams", () => {
     const view = renderChat({ host: chatHost() });
     expect(screen.renderMock.mock.calls[0]?.[1]).toEqual({
       exitOnCtrlC: false,
+      incrementalRendering: true,
       stdin: screen.mouse.stdin,
     });
     view.unmount();
