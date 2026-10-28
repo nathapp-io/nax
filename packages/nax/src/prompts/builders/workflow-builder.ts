@@ -21,16 +21,30 @@ export interface JobNoticeInput {
   readonly cost?: number;
   readonly note?: string;
   readonly logPath: string;
+  readonly chainId?: string;
+  readonly chainStep?: number;
+}
+
+/**
+ * Third notice line for a job that belongs to a chain: it names the chain and
+ * step, and points the agent at the chain state instead of a fresh card.
+ */
+function chainNoticeLine(chainId: string, chainStep: number): string {
+  return `This job is step ${chainStep} of chain ${chainId}; call nax-jobs__list to see whether the chain continues, and if it does, call the next step's launch tool with exactly the approved arguments (no card is shown for it).`;
 }
 
 /** Pure completion notice shared by owned and re-attached background jobs. */
 export function buildJobNotice(input: JobNoticeInput): string {
   const cost = input.cost !== undefined ? ` cost $${input.cost.toFixed(2)}` : "";
   const note = input.note !== undefined ? ` (${input.note})` : "";
-  return [
+  const noticeLines = [
     `[nax-jobs] job ${input.id} (${input.kind} ${input.target}) ended: ${input.state}${cost}${note} log ${input.logPath}`,
     "Call `nax-workflow__state`, report the outcome to the user and propose the single next step.",
-  ].join("\n");
+  ];
+  if (input.chainId !== undefined && input.chainStep !== undefined) {
+    noticeLines.push(chainNoticeLine(input.chainId, input.chainStep));
+  }
+  return noticeLines.join("\n");
 }
 
 /** Fixed provider guidance; launching, approval and checkout guards live elsewhere. */
@@ -41,5 +55,8 @@ export function buildJobsInstructions(): string {
     "Jobs run in the background; a [nax-jobs] notice arrives when one ends.",
     "Write, Edit, Delete and GitCommit are refused in this checkout while a run or plan job runs.",
     "Start one step at a time: after a job ends, report the outcome to the user and propose the single next step.",
+    '`nax-jobs__chain` proposes a full run: an ordered list of billed steps on one approval card. Only the user\'s yes on that card approves it; a chat message such as "go ahead" does not.',
+    "While a chain is active, call each step's launch tool with exactly the approved arguments, one step at a time, after the previous step succeeded; a different call stops the chain and shows a normal card.",
+    "Before a step that names a check, run that check yourself and record its verdict with `nax-jobs__chain_check`; stop the chain with `nax-jobs__chain_stop` when the user asks.",
   ].join("\n");
 }
