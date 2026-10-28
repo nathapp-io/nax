@@ -1,10 +1,11 @@
 /** Repo-scoped chain proposals: validate the whole proposal before host approval. */
 import type { ProviderTool, ToolResult } from "@nathapp/nax-agent";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { buildChainStepArgv, CHAIN_STEP_FIELDS, type ChainStepInput, parseChainStepInput } from "./chain-argv";
 import type { ChatChains } from "./chain-controller";
 import { CHAIN_CHECK_MAX_LENGTH, CHAIN_MAX_STEPS, type ChainStep } from "./chain-types";
 import type { ChatJobKind } from "./job-types";
-import { resolvePlanSpec } from "./jobs-launch";
+import { _jobsLaunchDeps, resolvePlanSpec } from "./jobs-launch";
 import type { JobsProviderOptions } from "./jobs-provider";
 
 const BOT_PR_OFFSET = 2;
@@ -101,6 +102,52 @@ function failure(content: string): ToolResult {
   return { isError: true, content };
 }
 
+function stepLabel(step: ChainStep): string {
+  if (step.kind === "plan" || step.kind === "run") return `nax ${step.kind} ${step.target}`;
+  const action = step.kind === "bot_review" ? "review" : "fix";
+  return `nax bot ${action} ${step.prIndex === undefined ? `#${step.target}` : "(PR chosen by the agent)"}`;
+}
+
+function stepReason(step: ChainStep, index: number): string {
+  const condition = index === 0 ? "you approve this card" : `step ${index} succeeded`;
+  const check = step.checkBefore === undefined ? "" : ` and check "${step.checkBefore}" passed`;
+  const pr = step.prIndex === undefined ? "" : " — the agent picks the PR when the step starts";
+  return `${index + 1}. ${stepLabel(step)} — starts after: ${condition}${check}${pr}`;
+}
+
+async function chainReason(proposal: ResolvedChainProposal, options: Options): Promise<string> {
+  const branch = await _jobsLaunchDeps.git(["symbolic-ref", "--short", "HEAD"], options.repoRoot);
+  return [
+    `workdir ${options.repoRoot}${branch.exitCode === 0 ? ` on branch ${branch.stdout.trim()}` : ""}`,
+    `nax ${options.naxEntry.join(" ")}`,
+    ...proposal.steps.map(stepReason),
+    proposal.costCap === undefined
+      ? "no cost cap"
+      : `cost cap $${proposal.costCap.toFixed(2)}, checked between steps; plan and bot job costs are not counted`,
+    ...proposal.existingPlanPrds.map(
+      ({ step, feature }) => `warning: step ${step} replaces the existing prd.json for ${feature}`,
+    ),
+    ...(options.interactionPlugin === "cli" && proposal.steps.some((step) => step.kind === "run")
+      ? ["warning: run steps have no channel for their own asks; they will time out"]
+      : []),
+    "Steps run in this order, each once. A failed step or check, a different step, the cost cap, a cancel or closing the chat stops the chain.",
+  ].join("\n");
+}
+
+async function activateProposal(proposal: ResolvedChainProposal, options: Options): Promise<ToolResult> {
+  try {
+    const chain = await options.chains.activate({ steps: proposal.steps, costCap: proposal.costCap });
+    return {
+      content: `${JSON.stringify({ chain: chain.id, state: "active", next: 1 })}\nCall step 1 now with exactly the approved arguments.`,
+    };
+  } catch (cause) {
+    if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "CHAT_CHAIN_ACTIVE") {
+      return failure("[chat] another chain became active while this card was open; this one is not active");
+    }
+    return failure(`[chat] could not save the chain: ${errorMessage(cause)}; it is not active`);
+  }
+}
+
 export function createChainTools(options: JobsProviderOptions & { readonly chains: ChatChains }): ProviderTool[] {
   return [
     {
@@ -128,17 +175,13 @@ export function createChainTools(options: JobsProviderOptions & { readonly chain
         if ("error" in proposal) return failure(proposal.error);
         const decision = await options.approve({
           tool: "nax-jobs__chain",
-          summary: `full run of ${proposal.steps.length} steps`,
-          reason: "Chain proposal validated; activation is not available yet.",
+          summary: `full run of ${proposal.steps.length} steps: ${proposal.steps.map(stepLabel).join(" → ")}`,
+          reason: await chainReason(proposal, options),
           command: proposal.steps.map((step) => step.argv.join(" ")).join("\n"),
           signal: ctx.signal,
         });
-        // US-008 completes the card and activation; never grant autonomy in this placeholder.
-        return failure(
-          decision === "deny"
-            ? "[chat] the user declined the chain; propose steps one at a time"
-            : "[chat] chain activation is not available yet; nothing started",
-        );
+        if (decision === "deny") return failure("[chat] the user declined the chain; propose steps one at a time");
+        return activateProposal(proposal, options);
       },
     },
     {
