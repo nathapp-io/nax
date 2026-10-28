@@ -129,6 +129,30 @@ describe("createChainTools card and activation", () => {
       "cost cap $25.00, checked between steps; plan and bot job costs are not counted",
     );
   });
+  test.each([25.004, 25.001, 0.004, 0.005, 1.005])(
+    "rejects fractional-cent cost cap %p before approval or activation",
+    async (costCap) => {
+      approve.mockResolvedValue("allow");
+      expect(await invoke({ steps, costCap })).toEqual({
+        isError: true,
+        content: "[chat] costCap must have at most two decimal places",
+      });
+      expect(approve).not.toHaveBeenCalled();
+      expect(chains.active()).toBeUndefined();
+    },
+  );
+  test.each([0.01, 0.29, 1.1, 25.01])("activates exactly the displayed cent-valued cap %p", async (costCap) => {
+    approve.mockResolvedValue("allow");
+    const result = await invoke({ steps, costCap });
+    expect(result.isError).not.toBe(true);
+    expect(card().reason.split("\n")).toContain(
+      `cost cap $${costCap.toFixed(2)}, checked between steps; plan and bot job costs are not counted`,
+    );
+    const active = chains.active();
+    assertDefined(active, "active chain");
+    expect(active.costCap).toBe(Number(costCap.toFixed(2)));
+    expect((await readChainRecord(join(root, "output"), active.id))?.costCap).toBe(costCap);
+  });
   test("AC-12 PR-less bot command retains the sole PR slot", async () => {
     await invoke({ steps: [{ kind: "bot_review", input: {} }] });
     expect(card().command).toBe(["bun", "nax.js", "bot", "review", "<pr>", "-d", root].join(" "));

@@ -87,6 +87,10 @@ export async function resolveChainProposal(
   if (costCap !== undefined && (typeof costCap !== "number" || !Number.isFinite(costCap) || costCap <= 0)) {
     return { error: "[chat] costCap must be a positive number" };
   }
+  // Match the card's decimal representation without rejecting valid cents due to binary multiplication noise.
+  if (costCap !== undefined && Number(costCap.toFixed(2)) !== costCap) {
+    return { error: "[chat] costCap must have at most two decimal places" };
+  }
   const parsed: ParsedStep[] = [];
   for (const [index, rawStep] of raw.steps.entries()) {
     const step = parseStep(rawStep, index + 1);
