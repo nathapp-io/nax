@@ -3,7 +3,7 @@
   "feature": "native-custom-providers",
   "branchName": "feat/native-custom-providers",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T14:20:55.509Z",
+  "updatedAt": "2026-10-28T14:24:59.611Z",
   "userStories": [
     {
       "id": "US-001",
@@ -215,14 +215,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Existing mapper/type/seam patterns span five source files with a real dispatch regression; session credential eligibility and bearer forwarding require strict security TDD."
+        "reasoning": "Existing mapper/type/seam patterns span five source files with a real dispatch regression; session credential eligibility and bearer forwarding require strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/config/catalog-overrides.ts",
@@ -243,7 +246,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "26e10426651681bf185861c4949f11a65668ac05"
     },
     {
       "id": "US-005",
