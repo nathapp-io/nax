@@ -3,7 +3,7 @@
   "feature": "bot-rerun-state",
   "branchName": "feat/bot-rerun-state",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T16:45:51.116Z",
+  "updatedAt": "2026-10-28T16:55:11.226Z",
   "userStories": [
     {
       "id": "US-001",
@@ -212,14 +212,17 @@
         "US-002",
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "New publish orchestration combines durable ruling state, reviewed-head provenance and cached role checks; access-control decisions require strict three-session TDD."
+        "reasoning": "New publish orchestration combines durable ruling state, reviewed-head provenance and cached role checks; access-control decisions require strict three-session TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/item-threads-post.ts",
@@ -241,7 +244,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7d5cf6070d99893a4df77370177a561b477848f0"
     },
     {
       "id": "US-005",
