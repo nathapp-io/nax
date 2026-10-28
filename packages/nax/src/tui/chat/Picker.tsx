@@ -201,6 +201,19 @@ export interface PickerProps {
   readonly onCancel: () => void;
 }
 
+interface PickerEntryActions extends Pick<PickerProps, "onChoose" | "onCycle"> {
+  move(delta: number): void;
+}
+
+/** Dispatch an owned, unmodified key after resolving the latest highlighted entry. */
+function applyEntryKey(key: Key, entry: PickerEntry, actions: PickerEntryActions): void {
+  if (key.return) actions.onChoose(entry);
+  else if (key.upArrow) actions.move(-1);
+  else if (key.downArrow) actions.move(1);
+  else if (key.leftArrow) actions.onCycle?.(entry, -1);
+  else if (key.rightArrow) actions.onCycle?.(entry, 1);
+}
+
 /** Query deletion follows the same whole-grapheme convention as the chat editor. */
 const QUERY_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
@@ -291,11 +304,7 @@ export function Picker({
       if (key.shift || key.ctrl || key.meta) return;
       const entry = entries()[pointer()];
       if (entry === undefined) return;
-      if (key.return) onChoose(entry);
-      else if (key.upArrow) move(-1);
-      else if (key.downArrow) move(1);
-      else if (key.leftArrow) onCycle?.(entry, -1);
-      else if (key.rightArrow) onCycle?.(entry, 1);
+      applyEntryKey(key, entry, { onChoose, onCycle, move });
     },
     { isActive: active },
   );
