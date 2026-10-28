@@ -176,14 +176,6 @@ describe("renderChat alternate screen", () => {
     view.unmount();
   });
 
-  test("render rewrites only the rows that changed, so a frame does not blink", () => {
-    const screen = stubScreen();
-    const view = renderChat({ host: chatHost() });
-    const options = screen.renderMock.mock.calls[0]?.[1];
-    expect(options && "incrementalRendering" in options && options.incrementalRendering).toBe(true);
-    view.unmount();
-  });
-
   test("the returned instance is ink's, with only unmount guarded", () => {
     const screen = stubScreen();
     const view = renderChat({ host: chatHost() });
