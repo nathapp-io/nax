@@ -162,6 +162,13 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
       if (this.ownStore !== undefined) return true;
       if (await _adapterDeps.authSourceIsExec()) return true;
       if ((await _adapterDeps.listStoredProviders()).length > 0) return true;
+      if (
+        this.catalogOverrides.some(
+          (override) => override.authEnv !== undefined && !!_adapterDeps.readEnv(override.authEnv),
+        )
+      ) {
+        return true;
+      }
       return await _adapterDeps.anyAmbientCredential();
     } catch {
       return true;

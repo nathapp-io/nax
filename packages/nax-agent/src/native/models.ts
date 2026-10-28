@@ -123,6 +123,7 @@ export function toProviderOverrides(overrides: readonly ProviderCatalogOverride[
     // `!== undefined` as a declaration and checks it against the protocol
     // entries (nax#2019).
     ...(override.baseUrl !== undefined ? { baseUrl: override.baseUrl } : {}),
+    ...(override.authEnv !== undefined ? { authEnv: override.authEnv } : {}),
     // Copied, not aliased: nax-ai's client catalog assigns this reference
     // straight onto ResolvedProvider.headers (providers/catalog.ts) without a
     // copy of its own, so forwarding the live config object would let a later
