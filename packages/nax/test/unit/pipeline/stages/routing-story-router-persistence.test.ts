@@ -142,7 +142,9 @@ test.each([
   expect(consult).toHaveBeenCalledTimes(2);
 });
 test("AC-16 AC-17 logs the decision with storyId first", async () => {
-  const info = spyOn(getLogger(), "info").mockImplementation(() => {});
+  const info = spyOn(getLogger(), "info")
+    .mockImplementation(() => {})
+    .mockClear();
   const ctx = fixture();
   await routingStage.execute(ctx);
   const call = info.mock.calls.find((call) => call[1] === "routing.router.decision");
@@ -165,7 +167,10 @@ test.each([
   ["AC-19", "timeout"],
 ] as const)("%s logs %s at warn", async (_ac, kind) => {
   consult.mockResolvedValue({ kind, router: "test-router", message: "router down", latencyMs: 3 });
-  const warn = spyOn(getLogger(), "warn").mockImplementation(() => {});
+  // spyOn reuses an existing mock on the shared logger; restore does not clear its history.
+  const warn = spyOn(getLogger(), "warn")
+    .mockImplementation(() => {})
+    .mockClear();
   await routingStage.execute(fixture());
   const call = warn.mock.calls.find((call) => call[1] === "routing.router.failed");
   expect(call?.[0]).toBe("routing");
@@ -174,8 +179,12 @@ test.each([
 });
 test("AC-20 no-router emits neither decision nor failure", async () => {
   consult.mockResolvedValue({ kind: "no-router" });
-  const info = spyOn(getLogger(), "info").mockImplementation(() => {});
-  const warn = spyOn(getLogger(), "warn").mockImplementation(() => {});
+  const info = spyOn(getLogger(), "info")
+    .mockImplementation(() => {})
+    .mockClear();
+  const warn = spyOn(getLogger(), "warn")
+    .mockImplementation(() => {})
+    .mockClear();
   await routingStage.execute(fixture());
   expect(
     [...info.mock.calls, ...warn.mock.calls].filter((call) =>
