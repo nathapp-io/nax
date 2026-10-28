@@ -179,7 +179,9 @@ describe("createChainTools card and activation", () => {
     await invoke({ steps, costCap: 25 });
     const active = chains.active();
     assertDefined(active, "active chain");
-    expect(active.steps.map((step) => step.argv.join(" ")).join("\n")).toBe(card().command);
+    const command = card().command;
+    assertDefined(command, "displayed chain command");
+    expect(active.steps.map((step) => step.argv.join(" ")).join("\n")).toBe(command);
     expect(active.costCap).toBe(25);
     expect(await readChainRecord(join(root, "output"), active.id)).toEqual(active);
   });
