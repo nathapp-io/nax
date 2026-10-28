@@ -25,10 +25,8 @@ export function transcriptPointAt(geometry: ViewportGeometry, x: number, y: numb
   const { start, end } = visibleRange(total, height, offset);
   const marker = unseen > 0 ? 1 : 0;
   const count = Math.max(0, end - start - marker);
-  const padding = Math.max(0, height - count - marker);
-  const index = row - padding;
-  if (index < 0 || index >= count) return undefined;
-  return { line: start + index, column: x - 1 };
+  if (row >= count) return undefined;
+  return { line: start + row, column: x - 1 };
 }
 
 function ordered(selection: Selection): readonly [TranscriptPoint, TranscriptPoint] {

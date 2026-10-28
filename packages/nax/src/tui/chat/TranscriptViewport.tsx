@@ -7,7 +7,7 @@
  * as a prop and is fed in as the reducer's `content` action; the six keys the view owns
  * (pageUp, pageDown, shift+upArrow, shift+downArrow, home, end) each map to one action.
  *
- * The window is exactly `height` rows: the visible lines with blank rows padded at the top
+ * The window is exactly `height` rows: the visible lines with blank rows padded at the bottom
  * while the transcript is shorter than the window. Every row is one physical row — an empty
  * line still takes its row, and anything measuring wider than the window is clipped rather
  * than wrapped — so the height the caller allocated is the height drawn. While lines are
@@ -125,23 +125,23 @@ function ViewportRow({ children }: { readonly children: ReactNode }): ReactEleme
   );
 }
 
-/** The `rows`-tall window: blank padding, the visible lines, then the unseen marker. */
+/** The `rows`-tall window: visible lines, blank padding, then the bottom unseen marker. */
 function ViewportRows({ visible, rows, unseen, theme }: ViewportRowsProps): ReactElement {
   const showingUnseen = unseen > 0;
   const body = showingUnseen ? visible.slice(0, -1) : visible;
   const padding = Math.max(0, rows - body.length - (showingUnseen ? 1 : 0));
   return (
     <Box flexDirection="column">
-      {Array.from({ length: padding }, (_unused, index) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: blank rows are interchangeable and the window is re-rendered whole.
-        <ViewportRow key={index}>
-          <Text>{BLANK_ROW}</Text>
-        </ViewportRow>
-      ))}
       {body.map((line, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: a row's identity is its position in the window, which every scroll redraws.
         <ViewportRow key={index}>
           <StyledLineView line={line} theme={theme} />
+        </ViewportRow>
+      ))}
+      {Array.from({ length: padding }, (_unused, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: blank rows are interchangeable and the window is re-rendered whole.
+        <ViewportRow key={`padding-${index}`}>
+          <Text>{BLANK_ROW}</Text>
         </ViewportRow>
       ))}
       {showingUnseen ? (

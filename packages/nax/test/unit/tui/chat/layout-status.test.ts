@@ -111,17 +111,10 @@ describe("layoutTranscript: welcome entry", () => {
     expectColor(lineWith(layout([welcomeEntry()], { width: WIDE }), COUNTS), "muted");
   });
 
-  test("opens with the thinking glyph and the product name, bold", () => {
-    const first = layout([welcomeEntry()], { width: WIDE })[0];
-    expect(plainText(first)).toBe(`${theme.glyphs.thinking} nax chat`);
-    expect(first.every((span) => span.bold === true)).toBe(true);
-    expect(first.every((span) => span.color === "accent")).toBe(true);
-  });
-
-  test("leaves an empty line between the banner and its counts", () => {
+  test("US-006 AC-1 opens with counts then tips without a repeated title", () => {
     const lines = layout([welcomeEntry()], { width: WIDE });
-    expect(texts(lines)[1]).toBe("");
-    expect(texts(lines)[2]).toBe(COUNTS);
+    expect(texts(lines)).toEqual([COUNTS, TIPS]);
+    for (const line of lines) expectColor(line, "muted");
   });
 
   test("closes with the tips line, muted", () => {
