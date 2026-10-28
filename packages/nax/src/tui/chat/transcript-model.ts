@@ -21,7 +21,7 @@ export type TranscriptEntry =
   | { kind: "user"; text: string }
   | { kind: "skill"; name: string; args: string; body: string; open?: boolean }
   | { kind: "reply"; turnId: string; text: string }
-  | { kind: "thinking"; turnId: string; text: string; startedAt: string; endedAt?: string }
+  | { kind: "thinking"; turnId: string; text: string; startedAt: string; endedAt?: string; open?: boolean }
   | {
       kind: "tool";
       turnId: string;
@@ -30,6 +30,7 @@ export type TranscriptEntry =
       input: unknown;
       startedAt: string;
       status: "running" | "ok" | "error";
+      open?: boolean;
       preview?: string;
       endedAt?: string;
       children: readonly ToolChild[];

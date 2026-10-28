@@ -344,14 +344,15 @@ function variantsFor(entry: TranscriptEntry, theme: ChatTheme): Map<string, read
 }
 
 /**
- * One entry's lines for this context, computed once per `(width, expanded)` pair and kept
- * for as long as the entry object lives: a later call with the same entry, width and
- * expansion always reuses them, however many widths were laid out in between. Retention is
- * bounded by the entry — the `WeakMap` key — so the whole cache dies with the transcript.
- * A theme is resolved once per chat session, so a different theme object means the cached
- * lines were drawn with another one's colours and glyphs and cannot be reused.
+ * Cache by width and effective expansion (`open ?? expanded` for collapsible entries).
+ * Entry identity bounds retention; replacing a clicked entry invalidates only its layout.
+ * A different theme discards its variants so colours and glyphs never leak across themes.
  */
-function cachedLines(entry: TranscriptEntry, context: LayoutContext): readonly StyledLine[] {
+function cachedLines(entry: TranscriptEntry, base: LayoutContext): readonly StyledLine[] {
+  const context =
+    entry.kind === "thinking" || entry.kind === "tool" || entry.kind === "skill"
+      ? { ...base, expanded: entry.open ?? base.expanded }
+      : base;
   const variants = variantsFor(entry, context.theme);
   const key = variantKey(context.width, context.expanded);
   const cached = variants.get(key);
@@ -380,4 +381,19 @@ export function layoutTranscript(entries: readonly TranscriptEntry[], options: L
     lines.push(...entryLines);
   }
   return lines;
+}
+
+/** Entry indices for the same cached layout, with unowned inter-entry separators. */
+export function transcriptLineOwners(
+  entries: readonly TranscriptEntry[],
+  options: LayoutOptions,
+): readonly (number | undefined)[] {
+  const owners: (number | undefined)[] = [];
+  entries.forEach((entry, index) => {
+    const count = layoutTranscript([entry], options).length;
+    if (count === 0) return;
+    if (owners.length > 0) owners.push(undefined);
+    owners.push(...Array.from({ length: count }, () => index));
+  });
+  return owners;
 }

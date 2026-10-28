@@ -13,16 +13,7 @@
 import type { SessionEvent } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, useInput, useStdout } from "ink";
-import {
-  type ReactElement,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type ChatHost, parseSkillInvocation } from "@/chat";
 import { buildCommandMessage } from "@/prompts";
 import { runCommandShellLines } from "@/resources";
@@ -40,6 +31,7 @@ import {
   WORKING_TICK_MS,
   workingLine,
 } from "./chat-status";
+import { FixedRow } from "./FixedRow";
 import { layoutTranscript } from "./layout";
 import type { MouseEvents } from "./mouse-input";
 import { Picker, useChatPicker } from "./Picker";
@@ -50,6 +42,7 @@ import { slashMenuItems, slashMenuQueryState } from "./slash-menu";
 import { StyledLineView } from "./styled-line";
 import { TranscriptViewport } from "./TranscriptViewport";
 import { type ChatTheme, resolveChatTheme } from "./theme";
+import { toggleTranscriptLine } from "./transcript-click";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
 import { useJobs } from "./use-jobs";
@@ -123,15 +116,6 @@ interface TerminalSize {
 /** The stream's size, with the assumed defaults where it cannot report one. */
 function terminalSize(stdout: { columns?: number; rows?: number }): TerminalSize {
   return { columns: stdout.columns || DEFAULT_COLUMNS, rows: stdout.rows || DEFAULT_ROWS };
-}
-
-/** One transcript entry, drawn as one of the screen's own fixed rows. */
-function FixedRow({ children }: { readonly children: ReactNode }): ReactElement {
-  return (
-    <Box height={1} overflow="hidden">
-      {children}
-    </Box>
-  );
 }
 
 /**
@@ -479,7 +463,8 @@ export function ChatApp({
   }
 
   const columns = size.columns;
-  const lines = layoutTranscript(entries, { width: columns, theme, expanded });
+  const layoutOptions = { width: columns, theme, expanded };
+  const lines = layoutTranscript(entries, layoutOptions);
   const header = headerLines({ state, version, cwd, home, width: columns, glyphs: theme.glyphs });
   const footer = footerModel({
     jobs,
@@ -543,6 +528,7 @@ export function ChatApp({
         mouse={mouse}
         top={HEADER_ROWS}
         onCopy={onCopy}
+        onClick={(line) => setEntries((rows) => toggleTranscriptLine(rows, line, layoutOptions))}
         lines={lines}
         height={viewportHeight}
         theme={theme}

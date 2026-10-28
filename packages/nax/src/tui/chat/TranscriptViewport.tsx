@@ -45,6 +45,7 @@ export interface TranscriptViewportProps {
   readonly mouse?: MouseEvents;
   readonly top?: number;
   readonly onCopy?: (text: string) => void;
+  readonly onClick?: (line: number) => void;
   /**
    * Bumped by the owner when the window must return to the newest line — the user sent a
    * message. The view cannot see the send itself, and a send while scrolled up would
@@ -163,6 +164,7 @@ export function TranscriptViewport({
   mouse,
   top = 0,
   onCopy,
+  onClick,
   followToken = 0,
 }: TranscriptViewportProps): ReactElement {
   const rows = viewRows(height);
@@ -207,6 +209,7 @@ export function TranscriptViewport({
     active,
     lines,
     onCopy,
+    onClick: (point) => onClick?.(point.line),
     geometry: { top, height: rows, total, offset: memory.state.offset, unseen: memory.state.unseen },
   });
   const { start, end } = visibleRange(total, rows, memory.state.offset);
