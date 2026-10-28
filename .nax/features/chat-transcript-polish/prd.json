@@ -3,7 +3,7 @@
   "feature": "chat-transcript-polish",
   "branchName": "feat/chat-transcript-polish",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T12:13:16.503Z",
+  "updatedAt": "2026-10-28T12:21:10.559Z",
   "userStories": [
     {
       "id": "US-001",
@@ -355,14 +355,17 @@
         "selection"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Three existing rendering/geometry modules need a coordinated but conventional row-order change. Test exact frames, hit coordinates and drag-copy behavior first while preserving reducer-driven scrolling and unseen markers."
+        "reasoning": "Three existing rendering/geometry modules need a coordinated but conventional row-order change. Test exact frames, hit coordinates and drag-copy behavior first while preserving reducer-driven scrolling and unseen markers.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/layout-status.ts",
@@ -397,7 +400,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8499b09dd8fc9bbcc519828bcc718658f4c28319"
     },
     {
       "id": "US-007",
