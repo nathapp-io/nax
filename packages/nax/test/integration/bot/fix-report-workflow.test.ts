@@ -176,7 +176,7 @@ describe("readyStep workflow drafts", () => {
     expect((await readyStep(s.env, state)).patch).toEqual({ markedReady: true });
     expect(s.order).toEqual(["ci", "post", "ready"]);
     expect(s.post).toHaveBeenCalledWith(s.env.ref, evidence, s.env.forge, s.env.repoRoot);
-    expect(s.run).toHaveBeenCalledWith(markReadyArgv(s.env.ref.forge, String(s.env.ref.number)), {
+    expect(s.run).toHaveBeenCalledWith(markReadyArgv(s.env.ref.forge, s.env.info.url), {
       cwd: s.env.repoRoot,
     });
   });

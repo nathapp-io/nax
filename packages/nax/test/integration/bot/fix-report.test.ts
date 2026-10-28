@@ -264,6 +264,41 @@ describe("replyStep", () => {
 });
 
 describe("readyStep", () => {
+  test.each(["matching", "changed", "unreadable", "reviewed"] as const)(
+    "US-008 AC-1/3/5–8: post-green head %s",
+    async (mode) => {
+      const env = makeBotFixDraftEnv();
+      const currentState = mode === "reviewed" ? nothingState : state;
+      const order: string[] = [];
+      spyOn(_fixReportDeps, "waitForChecks").mockImplementation(async () => {
+        order.push("ci");
+        return greenCi;
+      });
+      const read = spyOn(_fixReportDeps, "readPrInfo").mockImplementation(async () => {
+        order.push("read");
+        if (mode === "unreadable") throw new Error("offline");
+        return { ...env.info, headSha: mode === "changed" ? "other" : (currentState.pushedSha ?? env.info.headSha) };
+      });
+      const run = spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const result = await readyStep(env, currentState);
+      expect(order).toEqual(["ci", "read"]);
+      expect(read).toHaveBeenCalledWith(env.ref, env.forge, env.repoRoot);
+      if (mode === "matching" || mode === "reviewed") {
+        expect(result).toEqual({ patch: { markedReady: true }, exit: "report" });
+        expect(run).toHaveBeenCalledWith(markReadyArgv(env.ref.forge, env.info.url), { cwd: env.repoRoot });
+      } else {
+        expect(result).toEqual({
+          patch: {
+            markedReady: false,
+            readyHeld: mode === "changed" ? "PR head changed since this execution" : "PR head could not be re-read",
+          },
+          exit: "report",
+        });
+        expect(run).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   test("AC-1/2/3: leaves a PR that is not a draft alone", async () => {
     const env = makeBotFixEnv();
     const run = spyOn(env.forge, "run");
@@ -300,6 +335,10 @@ describe("readyStep", () => {
   });
   test("AC-7: waits for CI on the pushed head", async () => {
     const env = makeBotFixDraftEnv();
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue({
+      ...env.info,
+      headSha: state.pushedSha ?? env.info.headSha,
+    });
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
     spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
     await readyStep(env, state);
@@ -309,11 +348,16 @@ describe("readyStep", () => {
     const env = makeBotFixDraftEnv();
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
     spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue(env.info);
     await readyStep(env, nothingState);
     expect(wait.mock.calls[0]?.[2]?.expectedSha).toBe(env.info.headSha);
   });
   test("AC-9: waits with the configured CI timeout", async () => {
     const env = draftEnvWithTimeouts();
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue({
+      ...env.info,
+      headSha: state.pushedSha ?? env.info.headSha,
+    });
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
     spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
     await readyStep(env, state);
@@ -321,6 +365,10 @@ describe("readyStep", () => {
   });
   test("AC-10: waits with the configured CI poll interval", async () => {
     const env = draftEnvWithTimeouts();
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue({
+      ...env.info,
+      headSha: state.pushedSha ?? env.info.headSha,
+    });
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
     spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
     await readyStep(env, state);
@@ -349,11 +397,15 @@ describe("readyStep", () => {
   test.each(["github", "gitlab"] as const)("AC-14/15: marks a green %s draft ready in repo root", async (forge) => {
     const base = makeBotFixDraftEnv();
     const env = { ...base, ref: { ...base.ref, forge } };
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue({
+      ...env.info,
+      headSha: state.pushedSha ?? env.info.headSha,
+    });
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
     const run = spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
     expect(await readyStep(env, state)).toEqual({ patch: { markedReady: true }, exit: "report" });
     expect(wait).toHaveBeenCalledTimes(1);
-    expect(run).toHaveBeenCalledWith(markReadyArgv(forge, "42"), { cwd: env.repoRoot });
+    expect(run).toHaveBeenCalledWith(markReadyArgv(forge, env.info.url), { cwd: env.repoRoot });
   });
   test("aborting during the first CI polling delay stops polling and never marks ready", async () => {
     const controller = new AbortController();
@@ -389,16 +441,28 @@ describe("readyStep", () => {
       controller.abort();
       return greenCi;
     });
+    const read = spyOn(_fixReportDeps, "readPrInfo");
     const run = spyOn(env.forge, "run");
     await expect(readyStep(env, state)).rejects.toMatchObject({ name: "AbortError" });
+    expect(read).not.toHaveBeenCalled();
     expect(wait.mock.calls[0]?.[2]?.signal).toBe(runtime.signal);
     expect(run).not.toHaveBeenCalled();
   });
-  test("AC-16: rejects failed readiness writes without claiming success", async () => {
+  test.each([
+    [1, "denied\n", "denied"],
+    [2, "", "exit code 2"],
+  ] as const)("US-008 AC-9/10: ready exit %s holds for report", async (exitCode, stderr, detail) => {
     const env = makeBotFixDraftEnv();
     spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
-    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 1, stdout: "", stderr: "denied" });
-    await expect(readyStep(env, state)).rejects.toMatchObject({ code: "BOT_FIX_READY_FAILED" });
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue({
+      ...env.info,
+      headSha: state.pushedSha ?? env.info.headSha,
+    });
+    spyOn(env.forge, "run").mockResolvedValue({ exitCode, stdout: "", stderr });
+    expect(await readyStep(env, state)).toEqual({
+      patch: { markedReady: false, readyHeld: `could not mark ready: ${detail}` },
+      exit: "report",
+    });
   });
 });
 

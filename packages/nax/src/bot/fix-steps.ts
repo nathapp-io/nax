@@ -295,7 +295,13 @@ export async function pushStep(env: BotFixEnv, _state: BotFixState): Promise<Ste
   const unsafe = await unsafeTree(env, _state);
   if (unsafe) return unsafe;
   const result = await _fixStepsDeps.runGit(
-    ["push", "--no-verify", "origin", `HEAD:refs/heads/${env.info.headRef}`],
+    [
+      "push",
+      "--no-verify",
+      `--force-with-lease=refs/heads/${env.info.headRef}:${env.info.headSha}`,
+      "origin",
+      `HEAD:refs/heads/${env.info.headRef}`,
+    ],
     env.checkout.worktree,
     PUSH_TIMEOUT_MS,
   );
