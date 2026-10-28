@@ -70,7 +70,10 @@ function fakeHost(options: MountOptions = {}) {
     cancel,
     close,
     start: async () => {},
-    clear: async () => {},
+    clear: async () => {
+      const sessionId = `${state.sessionId}-cleared`;
+      state = { ...state, sessionId, meta: { ...state.meta, sessionId, title: null, updatedAt: null, costUsd: 0 } };
+    },
     resume: async () => {},
     switchTo: async () => {},
     listSessions: async () => [],
@@ -343,7 +346,10 @@ describe("ChatApp slash command entries", () => {
     await ui.start();
     expect(ui.rows()).toContain("> hello");
     await ui.settle();
+    const previousId = ui.host.current().sessionId;
     await ui.line("/clear");
+    expect(ui.host.current().sessionId).not.toBe(previousId);
+    expect(ui.host.current().meta.sessionId).toBe(ui.host.current().sessionId);
     const rows = ui.rows();
     expect(rowMatching(rows, /skills 0 · commands 0 · mcp 0 \(0 connected\) · agents 0/)).toBeDefined();
     expect(rows).not.toContain("> hello");
