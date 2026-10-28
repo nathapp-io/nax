@@ -2,6 +2,7 @@ import type { ProviderTool, ToolProvider, ToolResult } from "@nathapp/nax-agent"
 import { buildJobsInstructions } from "@/prompts";
 import type { HostApprovalCard } from "../ask-controller";
 import type { ChatChains } from "./chain-controller";
+import { createChainTools } from "./chain-tools";
 import { type ChatJobs, JOB_LOG_TAIL_LINES } from "./job-runner";
 import { type ChatJob, type ChatJobKind, JOB_ID_PATTERN } from "./job-types";
 import { launchToolRun } from "./jobs-launch";
@@ -111,6 +112,7 @@ export function createJobsProvider(options: JobsProviderOptions): ToolProvider {
       })),
       inspectionTool("list", options),
       inspectionTool("cancel", options),
+      ...(options.chains ? createChainTools({ ...options, chains: options.chains }) : []),
     ],
   };
 }
