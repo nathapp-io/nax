@@ -3,7 +3,7 @@
   "feature": "chat-model-effort",
   "branchName": "feat/chat-model-effort",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T09:27:21.302Z",
+  "updatedAt": "2026-10-28T09:55:17.796Z",
   "userStories": [
     {
       "id": "US-001",
@@ -174,14 +174,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Row deduplication, a pending map/ref, and one ChatApp callback extend established picker patterns without a new subsystem; strict three-session TDD follows the required session-touching override because choices invoke ChatHost.switchTo and share dispatch with resume."
+        "reasoning": "Row deduplication, a pending map/ref, and one ChatApp callback extend established picker patterns without a new subsystem; strict three-session TDD follows the required session-touching override because choices invoke ChatHost.switchTo and share dispatch with resume.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/Picker.tsx",
@@ -207,7 +210,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "31ba005556e1847b4a7341a461e21aec1039719a"
     },
     {
       "id": "US-004",
