@@ -116,9 +116,12 @@ describe("createChainController", () => {
   });
   test("AC-7 guards activation synchronously while the durable write is pending", async () => {
     const gate = Promise.withResolvers<void>();
-    _chainStoreDeps.write = async (...args) => {
+    _chainStoreDeps.write = async (destination, input, options) => {
       await gate.promise;
-      return originalDeps.write(...args);
+      if (typeof input !== "string") {
+        throw new NaxError("Expected chain JSON string", "TEST_FAILURE", { stage: "test" });
+      }
+      return originalDeps.write(destination, input, options);
     };
     const one = chains.activate({ steps: [first] });
     const two = chains.activate({ steps: [second] });
@@ -231,9 +234,12 @@ describe("createChainController", () => {
   test("retains authoritative state and continues the write queue after a later write failure", async () => {
     const chain = await chains.activate({ steps: [first] });
     let attempts = 0;
-    _chainStoreDeps.write = async (...args) => {
+    _chainStoreDeps.write = async (destination, input, options) => {
       if (++attempts === 1) throw new NaxError("write failed", "TEST_FAILURE", { stage: "test" });
-      return originalDeps.write(...args);
+      if (typeof input !== "string") {
+        throw new NaxError("Expected chain JSON string", "TEST_FAILURE", { stage: "test" });
+      }
+      return originalDeps.write(destination, input, options);
     };
     chains.stop("user");
     chains.started(chain.id, 1, "run-1a2b3c4d");
