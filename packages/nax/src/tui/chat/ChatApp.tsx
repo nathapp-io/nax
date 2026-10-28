@@ -25,7 +25,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ChatHost } from "@/chat";
+import { type ChatHost, parseSkillInvocation } from "@/chat";
 import { buildCommandMessage } from "@/prompts";
 import { runCommandShellLines } from "@/resources";
 import { NAX_VERSION } from "@/version";
@@ -424,7 +424,8 @@ export function ChatApp({
         append({ kind: "notice", text: prepared.notice });
         return false;
       }
-      append({ kind: "user", text: prepared.message });
+      const skill = parseSkillInvocation(prepared.message);
+      append(skill ? { kind: "skill", ...skill } : { kind: "user", text: prepared.message });
       setFollowToken((token) => token + 1);
       const onEvent = (event: SessionEvent): void => {
         if (event.type === "turn_start") started = true;

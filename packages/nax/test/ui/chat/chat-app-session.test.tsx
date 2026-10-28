@@ -115,6 +115,20 @@ describe("ChatApp session transcript", () => {
     expect(ui.frame()).not.toContain("resumed ");
   });
 
+  test.each(["direct", "picker"])("resumed skill starts collapsed via %s resume", async (path) => {
+    const content =
+      '<skill name="superpowers:brainstorming" location="/p">\nrefs\nprivate skill body\n</skill>\n\nplan it';
+    const ui = mount({ resumeHistory: { messages: [{ role: "user", content }] } });
+    await ui.command(path === "direct" ? "/resume s2" : "/resume");
+    if (path === "picker") await ui.key("\r");
+    expect(ui.host.current().sessionId).toBe("s2");
+    expect(ui.frame()).toContain("> /superpowers:brainstorming plan it");
+    expect(ui.frame()).toContain("⎿  skill superpowers:brainstorming · 1 line (ctrl+o to show)");
+    expect(ui.frame()).not.toContain("private skill body");
+    await ui.key("\u000f");
+    expect(ui.frame()).toContain("private skill body");
+  });
+
   test("AC-2 replays opening history after welcome", () => {
     const ui = mount({ history: HISTORY });
     inOrder(ui.frame(), WELCOME, "earlier question", "earlier answer", "resumed first session");
