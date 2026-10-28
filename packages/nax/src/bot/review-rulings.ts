@@ -3,6 +3,7 @@ import { hasNaxWorkflowMarker, ownComments, type PrThread } from "@/forge";
 import { getLogger } from "@/logger";
 import type { BotSettledRuling } from "@/prompts";
 import type { PrStepContext } from "../workflow/branch-step-context";
+import type { Disposition } from "../workflow/decisions-sidecar";
 import { type ItemIndex, parseItemOpener } from "../workflow/item-threads";
 import type { PrCheckout } from "./checkout";
 import type { PostReviewInput } from "./post";
@@ -10,12 +11,36 @@ import { earlierIssue } from "./post-earlier";
 import { rulingModelReader } from "./ruling-reader";
 import type { RecordRulingsInput, RecordRulingsOutcome, recordPrRulings } from "./rulings";
 
+export interface ItemStatus {
+  readonly recorded: readonly {
+    readonly id: string;
+    readonly disposition: Disposition;
+    readonly by: string | null;
+  }[];
+  readonly open: number;
+  readonly total: number;
+}
+
+function itemStatus(outcome: RecordRulingsOutcome): ItemStatus | undefined {
+  if (outcome.index === undefined) return undefined;
+  const settled = new Set(outcome.settled.map(({ key }) => key));
+  const total = outcome.index.keys.length;
+  return {
+    recorded: outcome.recorded.map(({ itemId, disposition, by }) => ({ id: itemId, disposition, by })),
+    open: total - outcome.index.keys.filter((key) => settled.has(key)).length,
+    total,
+  };
+}
+
 /** Ruling reads are privileged and best-effort; an absent outcome must not invent counts. */
 export async function readReviewRulings(
   input: Omit<RecordRulingsInput, "readModel"> & { staticMode: boolean; ctx: PrStepContext },
   record: typeof recordPrRulings,
 ): Promise<
-  Pick<PostReviewInput, "itemEarlier" | "rulings"> & { reviewedIndex?: ItemIndex; settled?: BotSettledRuling[] }
+  Pick<PostReviewInput, "itemEarlier" | "rulings" | "itemStatus"> & {
+    reviewedIndex?: ItemIndex;
+    settled?: BotSettledRuling[];
+  }
 > {
   const { staticMode, ctx, ...raw } = input;
   if (staticMode || !hasNaxWorkflowMarker(raw.info.body)) return {};
@@ -26,6 +51,7 @@ export async function readReviewRulings(
     });
     return {
       reviewedIndex: outcome.index,
+      ...(outcome.index === undefined ? {} : { itemStatus: itemStatus(outcome) }),
       settled: outcome.settled.map((item) => ({
         id: item.itemId,
         kind: item.kind,

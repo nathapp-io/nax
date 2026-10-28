@@ -130,6 +130,33 @@ afterEach(async () => {
 });
 
 describe("runBotReview finding rulings", () => {
+  test("US-007 AC-9/10 posts recorded workflow item rulings and open counts through the real post", async () => {
+    info = { ...info, body: NAX_WORKFLOW_PR_MARKER };
+    const item = { id: "_run:cv1", kind: "cannot-verify" as const, issue: "Check live service" };
+    const wKey = itemKey(item);
+    const ruling = { itemKey: wKey, itemId: item.id, disposition: "verified" as const, reason: "checked", by: "alice" };
+    const thread: PrThread = {
+      id: "W1",
+      replyTo: "W0",
+      resolved: false,
+      outdated: false,
+      comments: [comment("W0", "bot", withNaxBotMarker(renderItemOpener(item), wKey))],
+    };
+    threads = [];
+    _botReviewDeps.recordPrRulings = async () => ({
+      index: { keys: [wKey] },
+      recorded: [ruling],
+      settled: [{ key: wKey, itemId: item.id, kind: item.kind, thread, ruling, replies: [] }],
+      open: [],
+      asked: 0,
+      failed: 0,
+    });
+    const result = await runBotReview(input);
+    expect(result.outcome).toBe("posted");
+    const posted = forge.mock.calls.flatMap(([argv]) => argv).find((arg) => arg.includes("Review of "));
+    expect(posted).toContain("Item rulings recorded: 1 (_run:cv1 verified by @alice).");
+    expect(posted).toContain("Open items: 0 of 1.");
+  });
   test.each([true, false])("US-002 AC-17/18: re-raised own finding reopens only when resolved=%s", async (resolved) => {
     const thread = findingThread("no ruling", resolved);
     threads = [{ ...thread, comments: thread.comments.slice(0, 1) }];

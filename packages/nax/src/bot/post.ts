@@ -11,7 +11,7 @@ import type { BotChecks } from "./checks";
 import { earlierCounts, earlierIssue, effectiveEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
 import { commentKey, findingKey, threadKey } from "./render";
 import { renderFindingComment, renderReviewSummary, renderThreadReply } from "./render-comments";
-import type { BotReviewScope } from "./review-rulings";
+import type { BotReviewScope, ItemStatus } from "./review-rulings";
 
 interface AgreedBase {
   readonly key: string;
@@ -67,6 +67,7 @@ export interface BotReviewArtifact {
   readonly agreed: readonly AgreedItem[];
 }
 export interface PostReviewInput {
+  readonly itemStatus?: ItemStatus;
   readonly writers?: ReadonlySet<string>;
   readonly settledKeys?: ReadonlySet<string>;
   readonly resolvedThreadIds?: ReadonlySet<string>;
@@ -295,6 +296,7 @@ async function postSummary(
 ): Promise<void> {
   const body = renderReviewSummary({
     headSha: input.info.headSha,
+    ...(input.itemStatus === undefined ? {} : { itemStatus: input.itemStatus }),
     ...(input.scope === undefined ? {} : { scope: input.scope }),
     ...(input.incrementalSince === undefined ? {} : { incrementalSince: input.incrementalSince }),
     intent: input.verdict.intent,

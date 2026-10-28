@@ -25,6 +25,60 @@ function summary(overrides: Partial<ReviewSummaryInput> = {}): ReviewSummaryInpu
   };
 }
 
+describe("renderReviewSummary item status", () => {
+  test("US-007 AC-3 names recorded item rulings and forge logins", () => {
+    const body = bot.renderReviewSummary(
+      summary({
+        itemStatus: {
+          recorded: [
+            { id: "_run:cv1", disposition: "verified", by: "alice" },
+            { id: "_run:cv2", disposition: "waived", by: "bob" },
+          ],
+          open: 0,
+          total: 2,
+        },
+      }),
+    );
+    expect(body.split("\n")).toContain(
+      "Item rulings recorded: 2 (_run:cv1 verified by @alice, _run:cv2 waived by @bob).",
+    );
+  });
+  test("US-007 AC-4 attributes null logins to nax bot and sanitizes ids", () => {
+    const id = "@evil [link](https://example.com)";
+    const body = bot.renderReviewSummary(
+      summary({ itemStatus: { recorded: [{ id, disposition: "verified", by: null }], open: 0, total: 1 } }),
+    );
+    expect(body).toContain(`${bot.safeText(id, 100)} verified by nax bot`);
+    expect(body).not.toContain(id);
+  });
+  test("US-007 AC-5 lists only the first 20 of 23 rulings", () => {
+    const recorded = Array.from({ length: 23 }, (_, i) => ({
+      id: `_run:cv${i + 1}`,
+      disposition: "verified" as const,
+      by: "alice",
+    }));
+    const body = bot.renderReviewSummary(summary({ itemStatus: { recorded, open: 0, total: 23 } }));
+    const line = body.split("\n").find((line) => line.startsWith("Item rulings recorded"));
+    expect(line).toBe(
+      `Item rulings recorded: 23 (${recorded
+        .slice(0, 20)
+        .map(({ id }) => `${id} verified by @alice`)
+        .join(", ")}, and 3 more).`,
+    );
+    expect(body).not.toContain("_run:cv21");
+  });
+  test("US-007 AC-6/7 shows open counts without an empty recorded line", () => {
+    const body = bot.renderReviewSummary(summary({ itemStatus: { recorded: [], open: 1, total: 2 } }));
+    expect(body.split("\n")).toContain("Open items: 1 of 2.");
+    expect(body).not.toContain("Item rulings recorded");
+  });
+  test("US-007 AC-8 omits both lines without an index status", () => {
+    const body = bot.renderReviewSummary(summary());
+    expect(body).not.toContain("Item rulings recorded");
+    expect(body).not.toContain("Open items:");
+  });
+});
+
 describe("renderFindingComment", () => {
   test("AC-1 marks the finding identity", () => {
     expect(parseNaxBotMarker(bot.renderFindingComment(finding))).toEqual({ key: bot.findingKey(finding) });
