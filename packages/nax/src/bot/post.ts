@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { ForgeDeps, OwnComment, PrComment, PrInfo, PrRef, PrThread } from "@/forge";
-import { editComment, postInlineComment, postPrComment, replyToThread } from "@/forge";
+import { editComment, postInlineComment, postPrComment, replyToThread, unresolveThread } from "@/forge";
 import { getLogger } from "@/logger";
 import type { PrReviewVerdict, PrTriageDecision } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
@@ -69,6 +69,7 @@ export interface BotReviewArtifact {
 export interface PostReviewInput {
   readonly writers?: ReadonlySet<string>;
   readonly settledKeys?: ReadonlySet<string>;
+  readonly resolvedThreadIds?: ReadonlySet<string>;
   readonly unreadFiles?: readonly string[];
   readonly preRunFailed?: string;
   /** The build step that failed after a successful install; the review still ran (US-007). */
@@ -200,11 +201,23 @@ async function persistArtifact(input: PostReviewInput): Promise<void> {
   }
 }
 
-async function writeFinding(input: PostReviewInput, finding: WorkflowFindingDraft): Promise<void> {
+async function writeFinding(input: PostReviewInput, finding: WorkflowFindingDraft): Promise<boolean> {
   const own = input.own.find(({ key }) => key === findingKey(finding));
   const body = renderFindingComment(finding);
   if (own) {
     await editComment(input.ref, own.comment, body, input.deps, input.cwd);
+    if (own.threadId !== undefined && input.resolvedThreadIds?.has(own.threadId)) {
+      try {
+        await unresolveThread(input.ref, { id: own.threadId }, input.deps, input.cwd);
+      } catch (cause) {
+        getLogger()?.warn("bot-post", "Could not reopen a re-raised finding thread", {
+          key: own.key,
+          threadId: own.threadId,
+          error: errorMessage(cause),
+        });
+        return false;
+      }
+    }
   } else if (finding.file !== undefined && finding.line !== undefined) {
     await postInlineComment(
       input.ref,
@@ -213,6 +226,7 @@ async function writeFinding(input: PostReviewInput, finding: WorkflowFindingDraf
       input.cwd,
     );
   }
+  return true;
 }
 
 async function postFindings(
@@ -236,8 +250,8 @@ async function postFindings(
       continue;
     }
     try {
-      await writeFinding(input, finding);
-      inlineFindings++;
+      if (await writeFinding(input, finding)) inlineFindings++;
+      else offLine.push(finding);
     } catch (cause) {
       // A failed edit is not a failed new-line post; do not hide it or duplicate the comment.
       if (input.own.some((own) => own.key === key)) throw cause;

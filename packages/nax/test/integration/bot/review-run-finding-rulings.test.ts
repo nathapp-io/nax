@@ -46,7 +46,11 @@ const record = mock(recordFindingRulings);
 const access = mock(async () => true);
 const echo = mock(async () => {});
 const resolve = mock(async () => {});
-const forge = mock(async () => ({ exitCode: 0, stdout: '{"id": 999}', stderr: "" }));
+const forge = mock(async (_argv: string[], _opts: { cwd: string }) => ({
+  exitCode: 0,
+  stdout: '{"id": 999}',
+  stderr: "",
+}));
 
 function findingThread(reply: string, resolved = false): PrThread {
   return {
@@ -93,6 +97,7 @@ beforeEach(() => {
     inspectedFiles: [],
   };
   for (const fn of [record, access, echo, resolve, forge]) fn.mockClear();
+  forge.mockImplementation(async () => ({ exitCode: 0, stdout: '{"id":999}', stderr: "" }));
   access.mockImplementation(async () => true);
   Object.assign(_botReviewDeps, {
     ...makeBotReviewDeps({ config, runtime, info: () => info, threads: () => threads }),
@@ -125,6 +130,26 @@ afterEach(async () => {
 });
 
 describe("runBotReview finding rulings", () => {
+  test.each([true, false])("US-002 AC-17/18: re-raised own finding reopens only when resolved=%s", async (resolved) => {
+    const thread = findingThread("no ruling", resolved);
+    threads = [{ ...thread, comments: thread.comments.slice(0, 1) }];
+    verdict = { ...verdict, findings: [finding] };
+    forge.mockImplementation(async () => {
+      expect(artifact?.agreed).toContainEqual(expect.objectContaining({ key }));
+      return { exitCode: 0, stdout: '{"id":999}', stderr: "" };
+    });
+    const result = await runBotReview(input);
+    expect(result).toMatchObject({ outcome: "posted", inlineFindings: 1 });
+    const calls = forge.mock.calls.map(([argv]) => argv);
+    expect(calls[0]).toContain("PATCH");
+    expect(calls[0]).toContain("repos/o/r/pulls/comments/101");
+    const reopen = calls.filter((argv) => argv.some((arg) => arg.includes("unresolveReviewThread")));
+    expect(reopen).toHaveLength(resolved ? 1 : 0);
+    if (resolved) {
+      expect(calls[1]).toEqual(reopen[0]);
+      expect(reopen[0]).toContain("id=T1");
+    }
+  });
   test("AC-1 passes raw own finding thread to recorder", async () => {
     await runBotReview(input);
     expect(record).toHaveBeenCalledTimes(1);

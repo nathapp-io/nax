@@ -349,6 +349,7 @@ async function reviewEnvironment(
       }),
       earlier: postEarlier,
       settledKeys: new Set(findings.settled.map(({ ruling }) => ruling.id)),
+      resolvedThreadIds: new Set(ownFindingThreads.filter(({ resolved }) => resolved).map(({ id }) => id)),
       ...(rulings !== undefined && { rulings }),
       scope,
       ...(scope === "incremental" && { incrementalSince: range.rangeBase }),

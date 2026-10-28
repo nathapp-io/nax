@@ -26,6 +26,7 @@ export {
   postPrComment,
   replyToThread,
   resolveThread,
+  unresolveThread,
 } from "./comments";
 export { defaultForgeDeps } from "./deps";
 export { detectForge, forgeFromRemoteUrl, remoteHost } from "./detect";
