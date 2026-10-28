@@ -3,7 +3,7 @@
   "feature": "native-custom-providers",
   "branchName": "feat/native-custom-providers",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T14:10:01.554Z",
+  "updatedAt": "2026-10-28T14:15:40.992Z",
   "userStories": [
     {
       "id": "US-001",
@@ -92,14 +92,17 @@
         "quota"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "A localized quota regex change with existing helper tests; no authentication, session or credential behavior changes in this story."
+        "reasoning": "A localized quota regex change with existing helper tests; no authentication, session or credential behavior changes in this story.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/agents/errors/parse-agent-error.ts",
@@ -109,7 +112,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "edc28c32311bb36a2b6bbed73b80251f1619c741"
     },
     {
       "id": "US-003",
