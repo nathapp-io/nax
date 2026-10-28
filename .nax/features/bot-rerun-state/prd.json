@@ -3,7 +3,7 @@
   "feature": "bot-rerun-state",
   "branchName": "feat/bot-rerun-state",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T16:29:14.569Z",
+  "updatedAt": "2026-10-28T16:36:46.399Z",
   "userStories": [
     {
       "id": "US-001",
@@ -106,14 +106,17 @@
         "security"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Four source files mirror resolveThread's existing validated write path, pass an optional resolved-id set and handle one local failure flag; authentication and settled-key authorization remain unchanged, so ordinary TDD is sufficient."
+        "reasoning": "Four source files mirror resolveThread's existing validated write path, pass an optional resolved-id set and handle one local failure flag; authentication and settled-key authorization remain unchanged, so ordinary TDD is sufficient.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/forge/comments.ts",
@@ -126,7 +129,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "07c9d65789b018d7720bc6232eef6af8b1107659"
     },
     {
       "id": "US-003",
