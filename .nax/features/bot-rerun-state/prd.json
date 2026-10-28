@@ -3,7 +3,7 @@
   "feature": "bot-rerun-state",
   "branchName": "feat/bot-rerun-state",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T17:12:24.211Z",
+  "updatedAt": "2026-10-28T17:21:54.716Z",
   "userStories": [
     {
       "id": "US-001",
@@ -405,14 +405,17 @@
         "workflow"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Four source files map existing recorder data into an optional status field, render two bounded lines and replace one body instruction; reviewEnvironment already spreads recorder fields, so existing unit and review-run harnesses support ordinary TDD."
+        "reasoning": "Four source files map existing recorder data into an optional status field, render two bounded lines and replace one body instruction; reviewEnvironment already spreads recorder fields, so existing unit and review-run harnesses support ordinary TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/review-rulings.ts",
@@ -436,7 +439,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "bbf09279d7b14260327c956d708eda6c8b9ba853"
     },
     {
       "id": "US-008",
