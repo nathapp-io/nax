@@ -44,6 +44,19 @@ describe("pickerModel effort rows", () => {
   test("AC-5 marks the base current", () => {
     expect(model("p/a[low]").entries[0]?.current).toBe(true);
   });
+  test("sanitizes unknown effort detail without changing selection metadata", () => {
+    const effort = "turbo\nboost\x07\r\t\x7f";
+    const original = `m/x[${effort}]`;
+    const rows = model(original, [original]);
+    expect(rows.entries[0]).toMatchObject({
+      value: "m/x",
+      original,
+      effortLabel: effort,
+      detail: "effort turbo boost  ",
+    });
+    const layout = pickerLayout(rows, { width: 80, budget: 20, theme: resolveChatTheme({ env: {}, colorLevel: 0 }) });
+    expect(layout.lines.map(plainText)).toContain("❯ m/x  effort turbo boost    (current)");
+  });
   test.each([
     ["AC-6", "p/a[high]", "p/a", "high"],
     ["AC-7", "m/x[turbo]", "m/x", "turbo"],

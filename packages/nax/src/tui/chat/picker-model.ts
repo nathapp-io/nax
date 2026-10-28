@@ -95,7 +95,14 @@ function modelEntries(input: PickerModelInput): readonly PickerEntry[] {
     const current = base === currentBase;
     const original = current ? input.currentModel : first;
     const effortLabel = input.pending?.get(base) ?? parseModelSpec(original).effort ?? "default";
-    return { value: base, label: displayText(base), original, effortLabel, detail: `effort ${effortLabel}`, current };
+    return {
+      value: base,
+      label: displayText(base),
+      original,
+      effortLabel,
+      detail: displayText(`effort ${effortLabel}`),
+      current,
+    };
   });
 }
 
