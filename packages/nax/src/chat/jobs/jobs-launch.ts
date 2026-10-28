@@ -5,8 +5,9 @@ import { errorMessage, isProcessAlive } from "@nathapp/nax-agent/internal";
 import { featureDir } from "@/config";
 import { countStories, loadPRD } from "@/prd";
 import { gitWithTimeout } from "@/utils/git";
+import type { ChainAdmission } from "./chain-controller";
 import { buildJobArgv, type JobLaunchInput, parseJobInput } from "./job-argv";
-import type { ChatJobKind } from "./job-types";
+import type { ChatJob, ChatJobKind } from "./job-types";
 import type { JobsProviderOptions } from "./jobs-provider";
 
 export const _jobsLaunchDeps = {
@@ -48,11 +49,34 @@ async function busyLock(options: JobsProviderOptions): Promise<ToolResult | unde
     : { isError: true, content: `[chat] this checkout is held by nax pid ${pid}; wait for it or stop it first` };
 }
 
+type ApprovedLaunch = {
+  readonly argv: readonly string[];
+  readonly auto?: Extract<ChainAdmission, { kind: "auto" }>;
+  readonly details?: readonly string[];
+};
+
+function startedResult(job: ChatJob, launch: ApprovedLaunch): ToolResult {
+  const { auto } = launch;
+  return {
+    content: [
+      JSON.stringify({ job: job.id, state: "running", log: job.logPath }),
+      ...(auto
+        ? [
+            `started as step ${auto.step} of chain ${auto.chainId}; no card (approved by the chain card)`,
+            ...(launch.details ?? []),
+          ]
+        : []),
+      "A [nax-jobs] notice arrives when it ends.",
+    ].join("\n"),
+  };
+}
+
 async function startApproved(
   input: JobLaunchInput,
-  argv: readonly string[],
+  launch: ApprovedLaunch,
   options: JobsProviderOptions,
 ): Promise<ToolResult> {
+  const { argv, auto } = launch;
   if (input.kind === "plan" || input.kind === "run") {
     const held = await busyLock(options);
     if (held) return held;
@@ -61,16 +85,22 @@ async function startApproved(
     // No await from this final in-memory check to start: the runner registers synchronously.
     const busy = input.kind === "plan" || input.kind === "run" ? busyJob(options) : undefined;
     if (busy) return busy;
+    if (auto && !options.chains?.isActive(auto.chainId)) {
+      return {
+        isError: true,
+        content: `[chat] chain ${auto.chainId} stopped before step ${auto.step} started; nothing started`,
+      };
+    }
     const job = await options.jobs.start({
       kind: input.kind,
       target: "feature" in input ? input.feature : String(input.pr),
       argv,
       sessionId: options.sessionId(),
-      approvedAt: options.now().toISOString(),
+      approvedAt: auto ? auto.approvedAt : options.now().toISOString(),
+      ...(auto ? { chainId: auto.chainId, chainStep: auto.step } : {}),
     });
-    return {
-      content: `${JSON.stringify({ job: job.id, state: "running", log: job.logPath })}\nA [nax-jobs] notice arrives when it ends.`,
-    };
+    if (auto) options.chains?.started(auto.chainId, auto.step, job.id);
+    return startedResult(job, launch);
   } catch (cause) {
     const prefix = `could not start nax ${input.kind}: `;
     let message = errorMessage(cause);
@@ -80,18 +110,34 @@ async function startApproved(
   }
 }
 
-type Prepared = { readonly input: JobLaunchInput; readonly details: readonly string[] };
+type Prepared = {
+  readonly input: JobLaunchInput;
+  readonly details: readonly string[];
+  readonly overLimit?: { readonly pending: number; readonly limit: number };
+};
 type TargetError = { readonly error: string };
 
 async function preparePlan(
   input: Extract<JobLaunchInput, { kind: "plan" }>,
   options: JobsProviderOptions,
 ): Promise<Prepared | TargetError> {
-  const dir = featureDir(options.repoRoot, input.feature);
+  const resolved = await resolvePlanSpec(input.feature, input.spec, options);
+  if ("error" in resolved) return resolved;
+  const details = resolved.prdExists ? ["warning: prd.json exists and will be replaced"] : [];
+  return { input: { ...input, spec: resolved.spec }, details };
+}
+
+/** Resolve plan inputs without requiring a PRD (a chain may plan before it runs). */
+export async function resolvePlanSpec(
+  feature: string,
+  requestedSpec: string | undefined,
+  options: Pick<JobsProviderOptions, "repoRoot">,
+): Promise<{ readonly spec: string; readonly prdExists: boolean } | TargetError> {
+  const dir = featureDir(options.repoRoot, feature);
   const candidates =
-    input.spec === undefined
-      ? [join(dir, "spec.md"), join(options.repoRoot, ".nax", "specs", `${input.feature}.md`)]
-      : [join(options.repoRoot, input.spec)];
+    requestedSpec === undefined
+      ? [join(dir, "spec.md"), join(options.repoRoot, ".nax", "specs", `${feature}.md`)]
+      : [join(options.repoRoot, requestedSpec)];
   let spec: string | undefined;
   for (const path of candidates) {
     if (await _jobsLaunchDeps.exists(path)) {
@@ -101,13 +147,10 @@ async function preparePlan(
   }
   if (spec === undefined) {
     return {
-      error: `[chat] no spec for ${input.feature}; looked for ${candidates.map((p) => relative(options.repoRoot, p)).join(", ")}`,
+      error: `[chat] no spec for ${feature}; looked for ${candidates.map((p) => relative(options.repoRoot, p)).join(", ")}`,
     };
   }
-  const details = (await _jobsLaunchDeps.exists(join(dir, "prd.json")))
-    ? ["warning: prd.json exists and will be replaced"]
-    : [];
-  return { input: { ...input, spec }, details };
+  return { spec, prdExists: await _jobsLaunchDeps.exists(join(dir, "prd.json")) };
 }
 
 async function prepareRun(
@@ -131,7 +174,7 @@ async function prepareRun(
     details.push(`warning: ${pending} stories pending but max iterations is ${limit}; pass maxIterations (nax#2706)`);
   if (options.interactionPlugin === "cli")
     details.push("warning: this run has no channel for its own asks; they will time out");
-  return { input, details };
+  return { input, details, ...(pending > limit ? { overLimit: { pending, limit } } : {}) };
 }
 
 async function prepareTarget(input: JobLaunchInput, options: JobsProviderOptions): Promise<Prepared | TargetError> {
@@ -164,7 +207,7 @@ async function launchReason(prepared: Prepared, options: JobsProviderOptions): P
   ].join("\n");
 }
 
-/** Parse, validate target, ask explicitly, then launch only the approved argv. */
+/** Parse, prepare, check busy state, then use chain admission or a host card. */
 export async function launchJob(
   request: { readonly kind: ChatJobKind; readonly raw: Record<string, unknown>; readonly signal?: AbortSignal },
   options: JobsProviderOptions,
@@ -178,18 +221,46 @@ export async function launchJob(
     const busy = busyJob(options) ?? (await busyLock(options));
     if (busy) return busy;
   }
+  const argv = buildJobArgv(input, options);
+  let admission = options.chains?.admit({ kind: input.kind, argv, ...("pr" in input ? { pr: input.pr } : {}) });
+  if (admission?.kind === "auto" && prepared.overLimit) {
+    const { pending, limit } = prepared.overLimit;
+    const reason = `step ${admission.step}: ${pending} stories pending but max iterations is ${limit} (nax#2706)`;
+    options.chains?.stop(reason);
+    admission = { kind: "card", note: `chain ${admission.chainId} stopped: ${reason}` };
+  }
+  if (admission?.kind === "auto") {
+    const result = await startApproved(input, { argv, auto: admission, details: prepared.details }, options);
+    if (result.isError)
+      options.chains?.startFailed(admission.chainId, admission.step, result.content.replace(/^\[chat\] /, ""));
+    return result;
+  }
+  return approvePrepared({ prepared, argv, note: admission?.note, signal: request.signal }, options);
+}
+
+async function approvePrepared(
+  launch: {
+    readonly prepared: Prepared;
+    readonly argv: readonly string[];
+    readonly note?: string;
+    readonly signal?: AbortSignal;
+  },
+  options: JobsProviderOptions,
+): Promise<ToolResult> {
+  const { prepared, argv } = launch;
+  const { input } = prepared;
   const target = "feature" in input ? input.feature : String(input.pr);
   const summary =
     "feature" in input
       ? `nax ${input.kind} ${target}`
       : `nax bot ${input.kind === "bot_review" ? "review" : "fix"} #${target}`;
-  const argv = buildJobArgv(input, options);
+  const reason = await launchReason(prepared, options);
   const decision = await options.approve({
     tool: `nax-jobs__${input.kind}`,
     summary,
     command: argv.join(" "),
-    reason: await launchReason(prepared, options),
-    signal: request.signal,
+    reason: launch.note === undefined ? reason : `${reason}\n${launch.note}`,
+    signal: launch.signal,
   });
   if (decision === "deny") {
     return {
@@ -197,7 +268,7 @@ export async function launchJob(
       content: `[chat] the user declined ${summary}; do not retry with different arguments unless the user asks`,
     };
   }
-  return startApproved(input, argv, options);
+  return startApproved(input, { argv }, options);
 }
 
 /** Adapter keeps the launch flow independent of static-provider approval behavior. */

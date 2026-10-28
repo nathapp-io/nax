@@ -1,0 +1,637 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-workflow-chain",
+  "branchName": "feat/chat-workflow-chain",
+  "createdAt": "2026-10-28T00:00:00.000Z",
+  "updatedAt": "2026-10-28T04:33:47.735Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Chain types, step argv and atomic record store",
+      "description": "**Goal** — Add the chain data contracts, exact step argv helpers and atomic audit record store, and extend ChatJob with optional chain links.\n\n**Motivation** — A plan → run → review → fix loop therefore needs the user at the keyboard four times, often an hour apart.\n\n**Approach** — Everything new lives in the existing module `packages/nax/src/chat/jobs/`, next to the feature 2 code it extends. Five new files: `chain-types.ts` (types and constants), `chain-store.ts` (atomic record writes), `chain-argv.ts` (step input and argv), `chain-controller.ts` (the chain's state machine), and `chain-tools.ts` (the three new provider tools and the card text). This story creates the first three.\n\n`CHAIN_STEP_FIELDS` lists the input keys each kind accepts, the same keys as the feature 2 launch tool schemas: plan `feature, spec, profiles`; run `feature, profiles, maxIterations, maxCost`; bot_review `pr, profiles, model, decisions`; bot_fix `pr, profiles, model, trust, noRereview`.\n\n`parseChainStepInput` first rejects any key of `raw` not in `CHAIN_STEP_FIELDS[kind]` with `[chat] unknown field <key>`, so nothing the card does not show can reach argv. It then delegates to `parseJobInput`. For a bot kind with `raw.pr === undefined`, it parses with the rest of `raw` and returns the input without `pr`. A bot `pr` that is present but invalid gives the same error as `parseJobInput`. Preserve the existing parser's default profiles array; use a valid temporary PR for delegation when absent, removing that property afterward.\n\n`buildChainStepArgv` returns `buildJobArgv(input, ctx)` when the input has every field. For a bot step without `pr`, it returns the argv `buildJobArgv` gives for `pr: 1`, with the token at index `ctx.naxEntry.length + 2` replaced by `CHAIN_PR_PLACEHOLDER`; the caller stores that index as the step's `prIndex`.\n\n`writeChainRecord` and `readChainRecord` mirror `writeJobRecord` / `readRecord` in `job-store.ts`: an id that fails `CHAIN_ID_PATTERN` is rejected before any write; a failed write removes the temp file and throws `CHAT_CHAIN_WRITE_FAILED`; a missing or non-JSON file reads as `null`. New `NaxError` codes, all with `stage: \"chat\"`: `CHAT_CHAIN_INVALID_ID`, `CHAT_CHAIN_WRITE_FAILED`, `CHAT_CHAIN_ACTIVE`. This story uses the first two; US-002 uses the third.\n\n**Scope** — In: the three new source files, optional `readonly chainId?: string` and `readonly chainStep?: number` (1-based) on ChatJob, and new chain-argv/store tests using temporary directories. Out: controller activation/admission (US-002), controller lifecycle (US-003/004), launch integration and StartJobRequest (US-006), provider tools (US-007/008/009).\n- Reading chain records back into an active chain after a restart, a `--resume` or a crash; a chain never outlives the chat host that approved it, and a record left `active` on disk by a crash is inert.\n\n**Interface** —\n```ts\nexport const CHAIN_ID_PATTERN = /^chain-[0-9a-f]{8}$/;\nexport const CHAIN_MAX_STEPS = 6;\nexport const CHAIN_CHECK_MAX_LENGTH = 200;\nexport const CHAIN_PR_PLACEHOLDER = \"<pr>\";\n\nexport type ChainState = \"active\" | \"completed\" | \"stopped\";\n\nexport interface ChainCheck {\n  readonly passed: boolean;\n  readonly note: string;\n  readonly at: string;\n}\n\nexport interface ChainStep {\n  readonly kind: ChatJobKind;\n  /** Exact argv; a bot step proposed without a PR holds CHAIN_PR_PLACEHOLDER where the PR goes. */\n  readonly argv: readonly string[];\n  /** Index of CHAIN_PR_PLACEHOLDER in argv; set only for a bot step proposed without a PR. */\n  readonly prIndex?: number;\n  /** Feature name, the PR as a decimal string, or \"\" when the agent chooses the PR. */\n  readonly target: string;\n  /** An in-session check the agent must record as passed before this step starts. */\n  readonly checkBefore?: string;\n  readonly check?: ChainCheck;\n  /** Set once the step's job started. */\n  readonly jobId?: string;\n}\n\nexport interface ChatChain {\n  readonly schemaVersion: 1;\n  readonly id: string;\n  /** The chat session that approved it. */\n  readonly sessionId: string;\n  readonly cwd: string;\n  readonly steps: readonly ChainStep[];\n  readonly costCap?: number;\n  /** The PR fixed by the first PR-less bot step that started. */\n  readonly pr?: number;\n  readonly approvedAt: string;\n  readonly state: ChainState;\n  readonly stopReason?: string;\n  readonly endedAt?: string;\n}\n\n/** Like JobLaunchInput, except a bot step may omit pr. */\nexport type ChainStepInput =\n  | Exclude<JobLaunchInput, { kind: \"bot_review\" | \"bot_fix\" }>\n  | (Omit<Extract<JobLaunchInput, { kind: \"bot_review\" }>, \"pr\"> & { readonly pr?: number })\n  | (Omit<Extract<JobLaunchInput, { kind: \"bot_fix\" }>, \"pr\"> & { readonly pr?: number });\n\nexport function parseChainStepInput(kind: ChatJobKind, raw: Record<string, unknown>): ChainStepInput | { readonly error: string };\nexport function buildChainStepArgv(input: ChainStepInput & { readonly spec?: string },\n  ctx: { readonly naxEntry: readonly string[]; readonly repoRoot: string }): readonly string[];\n/** Replaces the token at prIndex with String(pr); returns argv unchanged when prIndex or pr is undefined. */\nexport function resolveStepArgv(argv: readonly string[], prIndex: number | undefined, pr?: number): readonly string[];\nexport const CHAIN_STEP_FIELDS: Readonly<Record<ChatJobKind, readonly string[]>>;\n\nexport const CHAT_CHAINS_DIR = \"chat-chains\";\nexport const _chainStoreDeps = { randomHex, randomUUID, file: Bun.file, write: Bun.write, mkdir, rename, unlink };\nexport function chainsDir(outputDir: string): string;              // <outputDir>/chat-chains\nexport function newChainId(): string;                               // chain-<8 hex>\nexport function writeChainRecord(outputDir: string, chain: ChatChain): Promise<void>; // temp file + rename\nexport function readChainRecord(outputDir: string, id: string): Promise<ChatChain | null>;\n```",
+      "acceptanceCriteria": [
+        "[unit] chainsDir(\"/o\") returns /o/chat-chains.",
+        "[unit] With _chainStoreDeps.randomHex returning 1a2b3c4d, newChainId() returns chain-1a2b3c4d.",
+        "[unit] CHAIN_ID_PATTERN rejects chain-../../x.",
+        "[unit] writeChainRecord(dir, chain) followed by readChainRecord(dir, chain.id) returns a record deep-equal to chain.",
+        "[unit] writeChainRecord for an existing id replaces the record, and readChainRecord returns the new state stopped.",
+        "[unit] After writeChainRecord(dir, chain), the chat-chains/ directory holds exactly one entry, <id>.json.",
+        "[unit] writeChainRecord for a chain whose id is ../x rejects with a NaxError of code CHAT_CHAIN_INVALID_ID.",
+        "[unit] writeChainRecord when _chainStoreDeps.write rejects throws a NaxError of code CHAT_CHAIN_WRITE_FAILED.",
+        "[unit] readChainRecord(dir, \"chain-1a2b3c4d\") with no such file returns null.",
+        "[unit] readChainRecord(dir, \"chain-1a2b3c4d\") for a file holding not json returns null.",
+        "[unit] A job record with chainId chain-1a2b3c4d and chainStep 2, written with writeJobRecord and read with readJobRecords, keeps both fields.",
+        "[unit] parseChainStepInput(\"bot_review\", { profiles: [\"p\"] }) returns { kind: \"bot_review\", profiles: [\"p\"] } with no pr key.",
+        "[unit] parseChainStepInput(\"bot_fix\", { pr: 0 }) returns { error: \"[chat] pr must be a positive integer\" }.",
+        "[unit] parseChainStepInput(\"run\", { feature: \"f1\", maxIterations: 40 }) returns the same value as parseJobInput(\"run\", { feature: \"f1\", maxIterations: 40 }).",
+        "[unit] parseChainStepInput(\"run\", { feature: \"f1\", bogus: 1 }) returns { error: \"[chat] unknown field bogus\" }.",
+        "[unit] parseChainStepInput(\"bot_review\", { decisions: \"d.json\", trust: true }) returns { error: \"[chat] unknown field trust\" }.",
+        "[unit] buildChainStepArgv for a bot_review with no pr, entry [\"bun\", \"/n.ts\"] and repoRoot /r returns [\"bun\", \"/n.ts\", \"bot\", \"review\", \"<pr>\", \"-d\", \"/r\"].",
+        "[unit] buildChainStepArgv for a bot_fix of PR 12 with trust: true returns the same argv as buildJobArgv for that input.",
+        "[unit] resolveStepArgv([\"bun\", \"/n.ts\", \"bot\", \"review\", \"<pr>\", \"-d\", \"/r\"], 4, 12) returns [\"bun\", \"/n.ts\", \"bot\", \"review\", \"12\", \"-d\", \"/r\"].",
+        "[unit] resolveStepArgv([\"bun\", \"/n.ts\", \"bot\", \"review\", \"<pr>\", \"-d\", \"/r\", \"--decisions\", \"<pr>\"], 4, 12) returns an argv whose last token is still <pr>.",
+        "[unit] resolveStepArgv(argv, undefined, 12) returns an argv equal to the input."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "persistence",
+        "argv"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive contracts, pure argv normalization and atomic persistence mirror existing patterns; no approval or session decision is made here. Write failing argv/store tests first.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/job-types.ts",
+        "packages/nax/src/chat/jobs/job-store.ts",
+        "packages/nax/src/chat/jobs/job-argv.ts",
+        "packages/nax/src/chat/jobs/jobs-provider.ts",
+        "packages/nax/test/unit/chat/jobs/job-store.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/jobs/chain-types.ts",
+        "packages/nax/src/chat/jobs/chain-argv.ts",
+        "packages/nax/src/chat/jobs/chain-store.ts",
+        "packages/nax/test/unit/chat/jobs/chain-argv.test.ts",
+        "packages/nax/test/unit/chat/jobs/chain-store.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When rename fails while replacing a chain record, readChainRecord still returns the previous complete record and no temporary file remains.",
+        "When resolveStepArgv receives a defined prIndex but no pr, it returns argv equal to the input."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b2c17ba29701453a2ae6640cc732e3bf972005e9"
+    },
+    {
+      "id": "US-002",
+      "title": "Chain controller activation and synchronous admission",
+      "description": "**Goal** — Create the session-local chain controller with durable activation, single-flight protection and exact ordered admission.\n\n**Motivation** — The standing rule still holds: no billed launch without the user's explicit yes.\n\n**Approach** — **One chain at a time, per chat host, in memory.** `createChainController` holds at most one current chain. It is `active` until it becomes `completed` or `stopped`, and a stopped or completed chain never becomes active again. The chain record is also written to `<outputDir>/chat-chains/<id>.json`, for audit and so every job it starts can link to it. Records are never read back into an active chain: a new chat, a `--resume` or a crash starts with no chain.\n\n**Fail closed on the record.** `activate` writes the record before the chain becomes active. If that write fails, no chain is active and the tool returns an error. `activate` marks itself in flight synchronously, before its first `await`, so a second `activate` while one is in flight or a chain is active rejects `CHAT_CHAIN_ACTIVE`; two chain cards approved in parallel therefore activate at most one chain. Later record writes (a step started, a check, a stop) are best effort: a failure logs a warning, and the in-memory state stays authoritative for this session. US-003 completes the shared best-effort handling.\n\n`activate` records `sessionId: options.sessionId()`, `cwd: options.cwd`, `approvedAt: options.now().toISOString()` and `state: \"active\"`.\n\nAdmission is synchronous, so two calls in the same tick cannot both be admitted. When there is no active chain, the result is `card` with no note. This story implements admission checks 3, 4 and 5 and reserves the step:\n3. a next step exists and its `kind` and argv equal the call's (`resolveStepArgv(step.argv, step.prIndex, pr)` compared token by token): else reason `off-card step`;\n4. for step N > 1, the job of step N-1 is in state `succeeded`: else reason `step <N-1> has not succeeded`;\n5. if step N has `checkBefore`, a check is recorded for it with `passed: true`: else reason `check \"<checkBefore>\" not recorded`.\nThe first failing check stops the chain and returns `card` with the note `chain <id> stopped: <reason>`.\n\nOn success the step is reserved at once (the next admit sees step N+1 as next). For a step proposed without a PR, the call's `pr` becomes the chain's `pr` if none was set. The result is `{ kind: \"auto\", chainId, step: N, approvedAt: chain.approvedAt }`.\n\n`started(chainId, step, jobId)` sets `steps[step-1].jobId` and writes the record, also when the current chain stopped in the meantime (the job did start, and the record keeps it for audit). It is a no-op when `chainId` is not the current chain. `jobs.start` emits its change before `started` runs, so a job that ends within that window is caught by check 1 of the next `admit`.\n\n`startFailed(chainId, step, message)` stops the chain with reason `step <step> could not start: <message>`. New `NaxError` codes, all with `stage: \"chat\"`: `CHAT_CHAIN_INVALID_ID`, `CHAT_CHAIN_WRITE_FAILED`, `CHAT_CHAIN_ACTIVE`.\n\nUse a one-step fixture for repeated-step admission so the second call has no next step. In multi-step fixtures, admit step 1 before started so reservation is already in place. Since started and stop return synchronously, observe their queued writes through controlled test dependencies before asserting disk contents.\n\n**Scope** — In: new chain-controller.ts, full public contracts, activation, exact-argv admission, reservation, started/startFailed, and stop persistence needed by these ACs; new controller tests read real records from a temp output dir and stub jobs.get. Out: session invalidation, check recording and PR reuse consistency (US-003); job-end reconciliation, cost cap and full summary/dispose (US-004); launch admission wiring (US-006) and tool/card work (US-007/008/009). recordCheck, stop, isActive, summary and dispose may be minimal here but must keep their final signatures and support this story's behavior. No automatic step launch.\n- Restarting, resuming or editing a chain once it has stopped or completed; a new chain needs a new card.\n- Reading chain records back into an active chain after a restart, a `--resume` or a crash; a chain never outlives the chat host that approved it, and a record left `active` on disk by a crash is inert.\n\n**Interface** —\n```ts\nexport interface ChainLaunch {\n  readonly kind: ChatJobKind;\n  readonly argv: readonly string[];\n  readonly pr?: number;\n}\nexport type ChainAdmission =\n  | { readonly kind: \"card\"; readonly note?: string }\n  | { readonly kind: \"auto\"; readonly chainId: string; readonly step: number; readonly approvedAt: string };\n\nexport interface ChainSummary {\n  readonly id: string;\n  readonly state: ChainState;\n  /** 1-based index of the next step to start; absent when none is left or the chain is not active. */\n  readonly next?: number;\n  readonly steps: readonly {\n    readonly step: number;\n    readonly kind: ChatJobKind;\n    readonly argv: readonly string[];\n    readonly checkBefore?: string;\n    readonly check?: ChainCheck;\n    readonly job?: string;\n    readonly jobState?: ChatJobState;\n  }[];\n  readonly costCap?: number;\n  readonly spent: number;\n  readonly stopReason?: string;\n}\n\nexport interface ChatChains {\n  active(): ChatChain | undefined;\n  /** Writes the record, then makes the chain active. Rejects CHAT_CHAIN_ACTIVE or CHAT_CHAIN_WRITE_FAILED. */\n  activate(proposal: { readonly steps: readonly ChainStep[]; readonly costCap?: number }): Promise<ChatChain>;\n  admit(launch: ChainLaunch): ChainAdmission;\n  /** True while chainId is the current chain and it is active. */\n  isActive(chainId: string): boolean;\n  started(chainId: string, step: number, jobId: string): void;\n  startFailed(chainId: string, step: number, message: string): void;\n  recordCheck(step: number, passed: boolean, note: string): { readonly ok: true } | { readonly ok: false; readonly message: string };\n  stop(reason: string): ChatChain | undefined;\n  /** The current chain (active, completed or stopped), or null before the first activation. */\n  summary(): ChainSummary | null;\n  dispose(): void;\n}\n\nexport interface ChainControllerOptions {\n  readonly outputDir: string;\n  readonly cwd: string;\n  readonly jobs: Pick<ChatJobs, \"get\" | \"onChange\">;\n  readonly sessionId: () => string;\n  readonly now: () => Date;\n}\nexport function createChainController(options: ChainControllerOptions): ChatChains;\n```",
+      "acceptanceCriteria": [
+        "[unit] activate({ steps }) resolves a chain whose state is active.",
+        "[unit] activate({ steps }) with sessionId() returning chat-1 resolves a chain whose sessionId is chat-1.",
+        "[unit] activate({ steps }) with now() returning 2026-10-28T00:00:00Z resolves a chain whose approvedAt is 2026-10-28T00:00:00.000Z.",
+        "[unit] After activate, readChainRecord(outputDir, chain.id) returns a record whose state is active.",
+        "[unit] activate when _chainStoreDeps.write rejects rejects with code CHAT_CHAIN_WRITE_FAILED, and active() then returns undefined.",
+        "[unit] activate while a chain is active rejects with a NaxError of code CHAT_CHAIN_ACTIVE.",
+        "[unit] Two activate calls started in the same tick, before either resolves, give one fulfilled chain and one rejection with code CHAT_CHAIN_ACTIVE.",
+        "[unit] admit with no active chain returns { kind: \"card\" } with no note.",
+        "[unit] For an active chain whose step 1 is a run with argv A, admit({ kind: \"run\", argv: A }) returns { kind: \"auto\", chainId: <id>, step: 1, approvedAt: <chain approvedAt> }.",
+        "[unit] For the same chain, admit({ kind: \"run\", argv: A with \"-m\", \"40\" appended }) returns { kind: \"card\", note: \"chain <id> stopped: off-card step\" }.",
+        "[unit] After that off-card admit, active() returns undefined.",
+        "[unit] For an active chain whose step 1 is a run, admit({ kind: \"plan\", argv: <step 1 argv> }) returns card with the note chain <id> stopped: off-card step.",
+        "[unit] For a bot_review step whose argv holds <pr> at its prIndex, admit({ kind: \"bot_review\", argv: <that argv with \"12\" at prIndex>, pr: 12 }) returns auto.",
+        "[unit] For a bot_review step whose argv names PR 12, admit with pr: 13 and the argv for PR 13 returns card with the note chain <id> stopped: off-card step.",
+        "[unit] For a one-step chain, calling admit twice in a row with step 1's exact argv returns auto and then card with the note chain <id> stopped: off-card step.",
+        "[unit] For a two-step chain after started(<id>, 1, \"run-1a2b3c4d\"), with jobs.get(\"run-1a2b3c4d\") in state running, admit with step 2's argv returns card with the note chain <id> stopped: step 1 has not succeeded.",
+        "[unit] For a two-step chain after started(<id>, 1, \"run-1a2b3c4d\"), with that job in state succeeded, admit with step 2's argv returns auto with step 2.",
+        "[unit] For a two-step chain whose step 1 was admitted but never started, admit with step 2's argv returns card with the note chain <id> stopped: step 1 has not succeeded.",
+        "[unit] For a step 2 with checkBefore PRD fidelity READY and no recorded check, after step 1 succeeded, admit with step 2's argv returns card with the note chain <id> stopped: check \"PRD fidelity READY\" not recorded.",
+        "[unit] started(<id>, 1, \"run-1a2b3c4d\") makes readChainRecord return the chain with steps[0].jobId run-1a2b3c4d.",
+        "[unit] startFailed(<id>, 1, \"checkout busy\") makes active() return undefined, and the chain record's stopReason is step 1 could not start: checkout busy."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "security",
+        "approval",
+        "state-machine"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New approval authorization state machine with atomic activation and synchronous admission reservation; access-control and session binding require strict security isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/chain-types.ts",
+        "packages/nax/src/chat/jobs/chain-store.ts",
+        "packages/nax/src/chat/jobs/chain-argv.ts",
+        "packages/nax/src/chat/jobs/job-runner.ts",
+        "packages/nax/src/chat/jobs/job-types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/jobs/chain-controller.ts",
+        "packages/nax/test/unit/chat/jobs/chain-controller.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "089ed39281c143807c4e80ff7b3eda62691fb691"
+    },
+    {
+      "id": "US-003",
+      "title": "Chain checks, irreversible stops and session/PR consistency",
+      "description": "**Goal** — Complete check recording, stop/isActive, session invalidation, PR reuse and best-effort audit updates in the controller.\n\n**Motivation** — It may carry on through the steps without asking again only when the human has explicitly approved the full run.\n\n**Approach** — Extend chain-controller.ts without changing its US-002 public contracts. Admission checks 2 and 3b slot around the existing exact-command check, preserving final ordering:\n2. the current `sessionId()` equals the chain's `sessionId`: else reason `chat session changed`. `active()`, `recordCheck` and `summary()` apply this same check first, so after `/clear`, `/new` or `/resume` the old chain reads as stopped everywhere (and a new chain may be proposed) without waiting for a launch call;\n3b. for a step proposed without a PR, when an earlier PR-less bot step of this chain already fixed the chain's `pr`, the call's `pr` equals it: else reason `PR <pr> differs from PR <chain pr> the chain already uses`.\n\n**The PR of a bot step** (user, 2026-10-28). A chain's bot step may omit `pr`. Its stored argv then holds `CHAIN_PR_PLACEHOLDER` (`\"<pr>\"`) where the PR number goes, and the card says the agent chooses the PR when the step starts. On the call, the host substitutes the call's `pr` at the step's `prIndex` only (never anywhere else) and compares every token. A bot step that names `pr` on the card must be called with that PR. The first PR-less bot step to start fixes the chain's PR, and every later PR-less bot step of that chain must use the same PR (Claude, within the ruling: the agent picks the PR once per chain). Binding is reserved at successful admission as specified in US-002.\n\n`stop(reason)` on an active chain sets `state: \"stopped\"`, `stopReason: reason` and `endedAt`, writes the record and returns the chain; with no active chain it returns `undefined` and writes nothing.\n\n`started(chainId, step, jobId)` sets `steps[step-1].jobId` and writes the record, also when the current chain stopped in the meantime (the job did start, and the record keeps it for audit). It is a no-op when `chainId` is not the current chain. `jobs.start` emits its change before `started` runs, so a job that ends within that window is caught by check 1 of the next `admit`.\n\n`recordCheck(step, passed, note)` checks, in order: an active chain exists (else `no active chain`); `step` is the next step (else `step <step> is not the next step`); that step has `checkBefore` (else `step <step> has no check to record`). It then stores `{ passed, note, at }` on the step and writes the record. With `passed: false`, it also stops the chain with reason `check \"<checkBefore>\" did not pass: <note>`.\n\nLater record writes (a step started, a check, a stop) are best effort: a failure logs a warning, and the in-memory state stays authoritative for this session. Use getLogger() and errorMessage from @nathapp/nax-agent/internal; log at stage chat, do not turn audit failure into authorization recovery. A stopped chain never restarts, and stop never cancels a running job.\n\n**Scope** — In: extend controller methods and admission session/PR checks, including session invalidation when summary() is read; new chain-checks.test.ts. Out: job-end listener/cost/full summary projection/dispose (US-004), invoking recordCheck/stop through provider tools (US-009), and card text (US-008).\n- Recording a check verdict for anything but the next step, or the host running the check itself; the agent runs in-session checks such as the PRD fidelity check and records their verdict.\n- Verifying that a bot step's PR is the one the run published; the agent chooses the PR (user ruling 2026-10-28), the host checks that every other argument matches the card, and later PR-less bot steps of the same chain must reuse the first one's PR.\n- Persisting a record-write failure for `started` or `recordCheck` beyond a logged warning; like `stop`, those writes are best effort after activation.\n- Cancelling the running job when the chain stops or is stopped; `nax-jobs__cancel` (with its own card) cancels a job.\n- Cross-session memory; it is its own slice, not yet designed (user ruling 2026-10-27).\n\n**Interface** —\n```ts\nactive(): ChatChain | undefined;\n/** True while chainId is the current chain and it is active. */\nisActive(chainId: string): boolean;\nstarted(chainId: string, step: number, jobId: string): void;\nrecordCheck(step: number, passed: boolean, note: string): { readonly ok: true } | { readonly ok: false; readonly message: string };\nstop(reason: string): ChatChain | undefined;\n/** The current chain (active, completed or stopped), or null before the first activation. */\nsummary(): ChainSummary | null;\n```",
+      "acceptanceCriteria": [
+        "[unit] After recordCheck(2, true, \"READY\") returns { ok: true } on a step 2 with checkBefore, and step 1's job succeeded, admit with step 2's argv returns auto.",
+        "[unit] After recordCheck(2, true, \"READY\"), readChainRecord returns step 2 with check { passed: true, note: \"READY\", at: <now> }.",
+        "[unit] recordCheck(2, false, \"2 blockers\") on a step 2 with checkBefore PRD fidelity READY returns { ok: true }, and the chain record's stopReason is then check \"PRD fidelity READY\" did not pass: 2 blockers.",
+        "[unit] recordCheck(2, true, \"x\") on a step 2 with no checkBefore returns { ok: false, message: \"step 2 has no check to record\" }.",
+        "[unit] recordCheck(3, true, \"x\") while step 2 is next returns { ok: false, message: \"step 3 is not the next step\" }.",
+        "[unit] recordCheck(1, true, \"x\") with no active chain returns { ok: false, message: \"no active chain\" }.",
+        "[unit] stop(\"user asked\") on an active chain returns the chain with state stopped, stopReason user asked, and endedAt equal to now().toISOString().",
+        "[unit] After stop(\"user asked\"), readChainRecord returns state stopped.",
+        "[unit] stop(\"x\") with no active chain returns undefined.",
+        "[unit] isActive(<id>) returns true for the active chain and false after stop(\"x\").",
+        "[unit] isActive(\"chain-ffffffff\") for an id that is not the current chain returns false.",
+        "[unit] started(\"chain-ffffffff\", 1, \"run-1a2b3c4d\") for a chain id that is not the current chain leaves the current chain's steps[0].jobId unset.",
+        "[unit] For a chain approved while sessionId() returned chat-1, active() called while sessionId() returns chat-2 returns undefined, and the chain record's stopReason is chat session changed.",
+        "[unit] started(<id>, 1, \"run-1a2b3c4d\") after stop(\"x\") on that chain still makes readChainRecord return steps[0].jobId run-1a2b3c4d.",
+        "[unit] For a chain approved while sessionId() returned chat-1, admit with step 1's exact argv while sessionId() returns chat-2 returns card with the note chain <id> stopped: chat session changed.",
+        "[unit] For a chain of two PR-less bot steps (review, then fix), after step 1 is admitted with pr 12 and its job succeeded, admit for step 2 with pr 12 returns auto.",
+        "[unit] For the same chain, after step 1 is admitted with pr 12 and its job succeeded, admit for step 2 with pr 13 returns card with the note chain <id> stopped: PR 13 differs from PR 12 the chain already uses.",
+        "[unit] When _chainStoreDeps.write rejects during stop(\"x\") on an active chain, stop still returns the chain with state stopped, and active() returns undefined.",
+        "[unit] When _chainStoreDeps.write rejects during stop(\"x\"), a warning is logged through the logger getLogger() returns.",
+        "[unit] When _chainStoreDeps.write rejects during recordCheck(2, true, \"READY\"), the call still returns { ok: true }, and a later admit for step 2 (step 1 succeeded) returns auto."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "security",
+        "sessions",
+        "state-machine"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One existing controller gains bounded check/stop/session/PR rules using the established store; medium scope is sufficient, but session-bound authorization requires strict security TDD isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/chain-controller.ts",
+        "packages/nax/src/chat/jobs/chain-store.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/jobs/chain-checks.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When sessionId changes before recordCheck, recordCheck returns { ok: false, message: 'no active chain' } and does not record a verdict.",
+        "When sessionId changes before summary(), summary() returns state stopped with stopReason chat session changed and no next key.",
+        "When a write rejects during started, the current in-memory step keeps its jobId and a warning is logged."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "77696fd95d9791aac06b6a2d59ba256b09f1f735"
+    },
+    {
+      "id": "US-004",
+      "title": "Job-end transitions, between-step cost cap and chain summary",
+      "description": "**Goal** — Reconcile chain jobs through the runner's change events and admission preflight, enforce between-step caps, and expose the current summary.\n\n**Motivation** — The user ruled on 2026-10-27 (design Q1): by default the agent proposes each billed step and waits for its card.\n\n**Approach** — **Job-end transitions**\nThe controller subscribes to `jobs.onChange` at creation, and `admit` applies the same rules first. For the active chain, take the last step that has a `jobId`, and that job's state from `jobs.get`:\n- state `running`, or the job unknown: nothing changes;\n- `failed`, `cancelled` or `lost`: stop, reason `step <N> ended <state>`;\n- `succeeded` and it is the last step: state `completed`, `endedAt` set, record written;\n- `succeeded`, more steps remain, `costCap` set and `spent >= costCap`: stop, reason `cost cap $<cap, 2 decimals> reached: spent $<spent, 2 decimals>`;\n- `succeeded` otherwise: nothing changes.\n\nA chain that is no longer active is never changed again, so a repeated change event writes nothing. `dispose()` removes the listener. The exception for started after stop remains audit-only, as defined in US-003.\n\n**Cost cap** (user, 2026-10-28). `spent` is the sum of `cost` over the jobs the chain started, read through `jobs.get`. A job with no `cost` counts as 0: only `run` jobs record cost (feature 2), so plan and bot costs are not counted, and the card says so. The cap is checked when a step's job ends, in § Job-end transitions. It never interrupts a running step. A `run` step's own `--max-cost`, which the card shows, is the limit inside one step.\n\nAdmission check 1 is applied before the session/command/PR/previous-success/check checks implemented upstream. When check 1 completes the chain (its last step already succeeded), `admit` returns `card` with no note; when check 1 stops it, the note carries that stop reason.\n\nsummary() describes the current chain, not persisted history, resolving job state and spent via jobs.get; preserve upstream session invalidation first. next is the 1-based index of the next unreserved step, including while the previous job runs, and is omitted when none remains or the chain is not active. Do not run job-end transitions from summary(): after dispose, firing a captured no-longer-subscribed callback must not change state, as the AC specifies.\n\n**Scope** — In: extend chain-controller.ts with onChange subscription, terminal reconciliation at the start of admit, spent/cap handling, summary and dispose; new chain-transitions.test.ts with captured listener and fixture job records. Out: launch behavior (US-006), approval/card tools (US-007/008), listing/host composition (US-009), and timers that launch steps.\n- Checking the cost cap while a step runs, or killing a running step when the cap is passed; the cap is checked only when a step ends, and a run step's own `--max-cost` bounds spend inside that step.\n- Counting the cost of plan and bot jobs toward the cap; only `run` jobs record cost.\n- A time limit on an active chain; it ends only on the conditions listed in Design.\n\n**Interface** —\n```ts\nexport interface ChainSummary {\n  readonly id: string;\n  readonly state: ChainState;\n  /** 1-based index of the next step to start; absent when none is left or the chain is not active. */\n  readonly next?: number;\n  readonly steps: readonly {\n    readonly step: number;\n    readonly kind: ChatJobKind;\n    readonly argv: readonly string[];\n    readonly checkBefore?: string;\n    readonly check?: ChainCheck;\n    readonly job?: string;\n    readonly jobState?: ChatJobState;\n  }[];\n  readonly costCap?: number;\n  readonly spent: number;\n  readonly stopReason?: string;\n}\n\n/** The current chain (active, completed or stopped), or null before the first activation. */\nsummary(): ChainSummary | null;\ndispose(): void;\n```",
+      "acceptanceCriteria": [
+        "[unit] When the stub job of step 1 turns failed and the captured onChange listener fires, the chain record's state is stopped with stopReason step 1 ended failed.",
+        "[unit] When the step 1 job turns cancelled and the listener fires, stopReason is step 1 ended cancelled.",
+        "[unit] When the step 1 job turns lost and the listener fires, stopReason is step 1 ended lost.",
+        "[unit] When the job of the last step turns succeeded and the listener fires, the chain record's state is completed with endedAt equal to now().toISOString().",
+        "[unit] After the last step's job succeeded and the listener fired, active() returns undefined.",
+        "[unit] When the step 1 job of a three-step chain with no costCap turns succeeded and the listener fires, active() still returns the chain.",
+        "[unit] For a chain with costCap 10 whose step 1 job recorded cost 6 and step 2 job recorded cost 5, when step 2 turns succeeded with step 3 left and the listener fires, stopReason is cost cap $10.00 reached: spent $11.00.",
+        "[unit] For a chain with costCap 10 whose step 1 job recorded cost 4, when step 1 turns succeeded and the listener fires, active() still returns the chain.",
+        "[unit] A step job with no cost adds 0 to summary().spent.",
+        "[unit] For a chain with costCap 10 whose step 1 job recorded cost 10, when step 1 turns succeeded with steps left and the listener fires, stopReason is cost cap $10.00 reached: spent $10.00.",
+        "[unit] With the last step's job succeeded and the listener never fired, admit with any argv returns { kind: \"card\" } with no note, and the chain record's state is completed.",
+        "[unit] After the chain stopped on a failed step, firing the listener again leaves the number of _chainStoreDeps.write calls unchanged.",
+        "[unit] Firing the listener while the step 1 job is still running leaves active() returning the chain.",
+        "[unit] With the step 1 job failed and the listener never fired, admit with step 2's argv returns card with the note chain <id> stopped: step 1 ended failed.",
+        "[unit] summary() before any activate returns null.",
+        "[unit] For a two-step chain with step 1 started as job run-1a2b3c4d in state running and costCap 25, summary() returns { id, state: \"active\", next: 2, steps: [{ step: 1, kind: \"run\", argv, job: \"run-1a2b3c4d\", jobState: \"running\" }, { step: 2, kind: \"bot_review\", argv }], costCap: 25, spent: 0 }.",
+        "[unit] After stop(\"x\"), summary() returns that chain with state stopped and stopReason x.",
+        "[unit] After stop(\"x\"), summary() has no next key.",
+        "[unit] After dispose(), turning the step 1 job failed and firing the captured listener leaves summary().state active."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "security",
+        "state-machine",
+        "cost"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A fixed transition table, synchronous jobs.get/onChange ports and summary projection extend one controller without a new abstraction; revocation of billed-launch authorization still requires strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/chain-controller.ts",
+        "packages/nax/src/chat/jobs/job-runner.ts",
+        "packages/nax/src/chat/jobs/job-outcome.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/jobs/chain-transitions.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the final step succeeds with spent equal to or greater than costCap, the chain completes rather than stopping for cost.",
+        "When a running step reports cost above the cap and onChange fires, the chain remains active until that step ends.",
+        "When a linked job is unknown to jobs.get, onChange leaves the active chain unchanged."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e94f72f152ab04753e8d617b944244370aab8944"
+    },
+    {
+      "id": "US-005",
+      "title": "Chain guidance in job notices and provider instructions",
+      "description": "**Goal** — Extend the pure workflow prompt builders with chain job notices and three fixed chain instruction lines while preserving all existing text.\n\n**Motivation** — After feature 2, the session can start each billed step, but every step needs its own card.\n\n**Approach** — **Notices.** The feature 2 job notice gains a third line for a chain job, telling the agent to read the chain's state with `nax-jobs__list`. The provider's instruction text gains three lines. Both are prompts, so they come from `src/prompts/builders/workflow-builder.ts`.\n\n`JobNoticeInput` adds `readonly chainId?: string; readonly chainStep?: number`. With `chainId` set, the notice has a third line; without it, the output is unchanged.\n\n**Notice and instruction text**\n`buildJobNotice` third line for a job with `chainId` and `chainStep`:\n\n`This job is step <chainStep> of chain <chainId>; call nax-jobs__list to see whether the chain continues, and if it does, call the next step's launch tool with exactly the approved arguments (no card is shown for it).`\n\n`buildJobsInstructions` keeps its five lines, then adds:\n1. `nax-jobs__chain` proposes a full run: an ordered list of billed steps on one approval card. Only the user's yes on that card approves it; a chat message such as \"go ahead\" does not.`\n2. `While a chain is active, call each step's launch tool with exactly the approved arguments, one step at a time, after the previous step succeeded; a different call stops the chain and shows a normal card.`\n3. `Before a step that names a check, run that check yourself and record its verdict with `nax-jobs__chain_check`; stop the chain with `nax-jobs__chain_stop` when the user asks.`\n\nPreserve both original notice lines and the five original jobs instruction lines verbatim. Existing runner call sites already pass the full record, including any new optional fields, to this builder.\n\n**Scope** — In: workflow-builder.ts additions and new workflow-builder-chain.test.ts. Out: any controller/provider/runner execution logic (US-001/002/003/004/006/007/008/009) and changing buildWorkflowInstructions.\n- Making the chain line of a job notice depend on the chain still being current; a notice for a re-attached chain job in a later chat still names its chain, and `nax-jobs__list` then shows that chat's own chain or `null`.\n- A chain view, footer marker or `/jobs` line in the TUI; the chain shows through its card, the tool results, the job notices and `nax-jobs__list`.\n\n**Interface** —\n```ts\n// Add to JobNoticeInput:\nreadonly chainId?: string;\nreadonly chainStep?: number;\n\nexport function buildJobNotice(input: JobNoticeInput): string;\nexport function buildJobsInstructions(): string;\n```",
+      "acceptanceCriteria": [
+        "[unit] buildJobNotice for a job with chainId chain-1a2b3c4d and chainStep 2 returns three lines.",
+        "[unit] The third line of that notice is This job is step 2 of chain chain-1a2b3c4d; call nax-jobs__list to see whether the chain continues, and if it does, call the next step's launch tool with exactly the approved arguments (no card is shown for it).",
+        "[unit] buildJobNotice for a job with no chainId returns two lines.",
+        "[unit] buildJobsInstructions() contains the line `nax-jobs__chain` proposes a full run: an ordered list of billed steps on one approval card. Only the user's yes on that card approves it; a chat message such as \"go ahead\" does not.",
+        "[unit] buildJobsInstructions() contains the line While a chain is active, call each step's launch tool with exactly the approved arguments, one step at a time, after the previous step succeeded; a different call stops the chain and shows a normal card.",
+        "[unit] buildJobsInstructions() contains the line Before a step that names a check, run that check yourself and record its verdict with `nax-jobs__chain_check`; stop the chain with `nax-jobs__chain_stop` when the user asks.",
+        "[unit] The fifth line of buildJobsInstructions() is still Start one step at a time: after a job ends, report the outcome to the user and propose the single next step.",
+        "[unit] buildJobsInstructions() returns eight lines.",
+        "[unit] When buildJobNotice receives { id: \"run-1a2b3c4d\", kind: \"run\", target: \"f1\", state: \"failed\", note: \"no run record for pid 4242\", logPath: \"/o/l.log\" } with no chainId, it returns exactly \"[nax-jobs] job run-1a2b3c4d (run f1) ended: failed (no run record for pid 4242) log /o/l.log\\nCall `nax-workflow__state`, report the outcome to the user and propose the single next step.\", preserving the original failure notice without a chain continuation line."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "prompts"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure additive string builder behavior with optional inputs and exact output assertions; no permission, session or launch decision is implemented.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/workflow-builder.ts",
+        "packages/nax/test/unit/prompts/builders/workflow-builder.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/prompts/builders/workflow-builder-chain.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "afd3af871c70903006088a5a75155ae066bd8012"
+    },
+    {
+      "id": "US-006",
+      "title": "Admit chain steps through the existing launch path",
+      "description": "**Goal** — Integrate optional chain admission into existing launch tools without changing legacy cards, target preparation or early busy-check behavior.\n\n**Motivation** — That yes is now either the step's own card or the chain card that lists the step.\n\n**Approach** — **The agent drives; the host admits.** No new process or timer starts steps. The agent wakes on the feature 2 job notice, runs any in-session check itself (for example the PRD fidelity check, `spec-review --prd`), records it, and calls the next launch tool. Inside `launchJob` (`jobs-launch.ts`), after the input is parsed, the target is prepared and the early busy checks pass, the launch asks `chains.admit(...)`. A call refused by the early busy checks (a running plan or run job, or a live `nax.lock`) returns the feature 2 error and never reaches `admit`, so the chain is unchanged. The launch skips `approve` only on an `auto` admission, with two exceptions handled in `launchJob`:\n- an `auto` run step whose pending stories exceed its iteration limit is not started. The private `Prepared` type gains `overLimit?: { readonly pending: number; readonly limit: number }`, which `prepareRun` sets when `pending > limit` (next to its existing warning string), and `launchJob` reads that field, never the string: `launchJob` calls `chains.stop(\"step <N>: <pending> stories pending but max iterations is <limit> (nax#2706)\")` and continues as a `card` admission whose note is `chain <id> stopped: <that reason>`;\n- the auto result's content is `{\"job\":\"<job id>\",\"state\":\"running\",\"log\":\"<log path>\"}`, a newline, `started as step <N> of chain <id>; no card (approved by the chain card)`, then each other prepared detail (for example the no-ask-channel warning) on its own line, then `A [nax-jobs] notice arrives when it ends.`\nOn the auto path, `startApproved` re-checks `chains.isActive(chainId)` synchronously right before `jobs.start`, after its own awaits. If the chain stopped in between (a `chain_stop`, a close), nothing starts and the result is the error `[chat] chain <id> stopped before step <N> started; nothing started`. When the late busy re-check or the spawn fails after an `auto` admission, `launchJob` calls `chains.startFailed(chainId, N, <the error content without its [chat] prefix>)`.\n\n**Job records link the chain.** `ChatJob` gains optional `chainId` and `chainStep`, and `StartJobRequest` gains the same optional fields. The runner already spreads the request into the record, so an auto-admitted job's record carries both. A launch outside a chain omits both keys rather than passing `undefined`. Its `approvedAt` is the chain's `approvedAt`, the moment the user approved the full run.\n\nNew export from `jobs-launch.ts`:\n`resolvePlanSpec(feature: string, spec: string | undefined, options: Pick<JobsProviderOptions, \"repoRoot\">): Promise<{ readonly spec: string; readonly prdExists: boolean } | { readonly error: string }>`\nIt holds the spec-candidate lookup and the `prd.json` existence check that `preparePlan` does today, through `_jobsLaunchDeps.exists`, with the same error text; `preparePlan` calls it and keeps its `warning: prd.json exists and will be replaced` detail. The chain tool calls it for plan steps only, and never calls `prepareRun` at chain time (a plan → run chain has no `prd.json` yet).\n\nTarget launch order: parse → prepare → early busy check → `options.chains?.admit({ kind, argv, pr })` → on `auto`, the exceptions above, then `startApproved` with the chain fields and no `approve`; on `card`, `approve` as before, with the admission's `note` (when present) as the last line of the card's `reason`. `JobsProviderOptions` adds `readonly chains?: ChatChains`. When it is absent, the provider and the launch path behave exactly as in feature 2.\n\n**Scope** — In: jobs-launch.ts admission/auto/error paths, structured overLimit, resolvePlanSpec extraction, optional StartJobRequest fields in job-runner.ts and chains in JobsProviderOptions; new jobs-launch-chain.test.ts through real run/bot_review provider tools with stub chains, plus runner record propagation. Out: controller completion beyond US-002 (US-003/004), chain tool registration/validation (US-007), chain card (US-008), and host/list/check/stop composition (US-009). Parse and early-busy failures also leave the chain unchanged.\n- Stopping the chain when a launch call fails target preparation (for example a missing `prd.json`); the chain stays active and the next call is admitted or refused under the same rules.\n- Fixing nax#2706; the run card keeps its feature 2 warning.\n- Routing a running `nax run`'s own asks into the chat; the run keeps its own interaction chain.\n- Any change to `nax run`, `nax plan`, `nax bot`, `@nathapp/nax-agent` or `chat-host.ts`.\n\n**Interface** —\n```ts\nexport function resolvePlanSpec(feature: string, spec: string | undefined, options: Pick<JobsProviderOptions, \"repoRoot\">): Promise<{ readonly spec: string; readonly prdExists: boolean } | { readonly error: string }>;\n// Add to private Prepared:\noverLimit?: { readonly pending: number; readonly limit: number };\n// Add to StartJobRequest:\nreadonly chainId?: string;\nreadonly chainStep?: number;\n// Add to JobsProviderOptions:\nreadonly chains?: ChatChains;\n```",
+      "acceptanceCriteria": [
+        "[unit] With options.chains unset, a nax-jobs__run call for f1 calls approve once and jobs.start once.",
+        "[unit] With a stub chains.admit returning { kind: \"auto\", chainId: \"chain-1a2b3c4d\", step: 2, approvedAt: \"2026-10-01T00:00:00Z\" } and chains.isActive returning true, a nax-jobs__run call for f1 never calls approve.",
+        "[unit] In that auto case, jobs.start is called once with chainId chain-1a2b3c4d, chainStep 2 and approvedAt 2026-10-01T00:00:00Z.",
+        "[unit] In that auto case, chains.started is called with (\"chain-1a2b3c4d\", 2, <the id jobs.start returned>).",
+        "[unit] In that auto case, the tool result content contains started as step 2 of chain chain-1a2b3c4d; no card (approved by the chain card).",
+        "[unit] In that auto case with the interaction plugin cli, the tool result content contains warning: this run has no channel for its own asks; they will time out.",
+        "[unit] A nax-jobs__run call for f1 with maxIterations 40 calls chains.admit with kind run and argv equal to buildJobArgv for that input.",
+        "[unit] A nax-jobs__bot_review call for PR 12 calls chains.admit with kind bot_review and pr 12.",
+        "[unit] With chains.admit returning { kind: \"card\", note: \"chain chain-1a2b3c4d stopped: off-card step\" }, the last line of the card reason passed to approve is chain chain-1a2b3c4d stopped: off-card step.",
+        "[unit] With chains.admit returning { kind: \"card\" } with no note, the card reason equals the reason the same call builds with chains unset.",
+        "[unit] With _jobsLaunchDeps.lockHolder returning a live pid 777 from its first call, a nax-jobs__run call returns [chat] this checkout is held by nax pid 777; wait for it or stop it first and never calls chains.admit.",
+        "[unit] In the auto case for a nax-jobs__run call, with _jobsLaunchDeps.lockHolder returning null on its first call and 777 on its second, jobs.start is not called, and chains.startFailed is called with (\"chain-1a2b3c4d\", 2, \"this checkout is held by nax pid 777; wait for it or stop it first\").",
+        "[unit] In the auto case with jobs.start rejecting spawn failed, chains.startFailed is called with step 2 and a message starting could not start nax run:.",
+        "[unit] In the auto case with chains.isActive(\"chain-1a2b3c4d\") returning false, jobs.start is not called, and the result is the error [chat] chain chain-1a2b3c4d stopped before step 2 started; nothing started.",
+        "[unit] In the auto case for a run of f1 whose prd.json has 25 pending stories and no maxIterations (limit 20), with approve resolving deny, jobs.start is not called, and chains.stop is called with step 2: 25 stories pending but max iterations is 20 (nax#2706).",
+        "[unit] In that nax#2706 case, approve is called once, and the last line of its card reason is chain chain-1a2b3c4d stopped: step 2: 25 stories pending but max iterations is 20 (nax#2706).",
+        "[unit] A nax-jobs__run call for a feature with no prd.json returns [chat] no prd.json for <feature>; run nax plan first and never calls chains.admit.",
+        "[unit] resolvePlanSpec(\"f1\", undefined, { repoRoot }) for a repo with .nax/features/f1/spec.md and a prd.json returns { spec: \".nax/features/f1/spec.md\", prdExists: true }.",
+        "[unit] resolvePlanSpec(\"f9\", undefined, { repoRoot }) for a feature with no spec returns an error starting [chat] no spec for f9; looked for.",
+        "[unit] The job runner's start with a request carrying chainId chain-1a2b3c4d and chainStep 2 writes a record whose chainId is chain-1a2b3c4d and whose chainStep is 2.",
+        "[unit] With options.chains unset, the request a nax-jobs__run call passes to jobs.start has no chainId key and no chainStep key.",
+        "[unit] When a running plan or run job in this checkout refuses a launch at the early busy check, the tool returns the existing feature 2 busy error without calling chains.admit.",
+        "[unit] When an auto-admitted launch fails the late running-job busy re-check, chains.startFailed receives its chain id, step and the existing busy error content without the [chat] prefix."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "security",
+        "approval",
+        "jobs"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module billed-launch authorization bypass and stop/start race protection are security-critical; use real provider tools with controlled chain/lock/spawn seams under strict TDD isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/jobs-launch.ts",
+        "packages/nax/src/chat/jobs/job-runner.ts",
+        "packages/nax/src/chat/jobs/jobs-provider.ts",
+        "packages/nax/test/unit/chat/jobs/jobs-launch-busy.test.ts",
+        "packages/nax/src/chat/jobs/chain-controller.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/jobs/jobs-launch-chain.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "dd5daa161ab79e7003a5f48f17158c9db4794418"
+    },
+    {
+      "id": "US-007",
+      "title": "Register chain tools and validate chain proposals",
+      "description": "**Goal** — Add optional chain tool registration and validate the complete proposal before showing any approval card.\n\n**Motivation** — A plain chat message such as \"go ahead\" is not an approval.\n\n**Approach** — `createChainTools({ ...JobsProviderOptions, chains })` in `chain-tools.ts` returns three `ProviderTool`s. `createJobsProvider` appends them after `cancel` when `options.chains` is set. With chains absent, keep the existing six tools. `jobs-provider.ts` (114 lines) gains only the registration of the three tools, and the tools live in `chain-tools.ts`.\n\n**`chain`.** Input schema: `{ steps: array of { kind: string, input: object, checkBefore?: string }, costCap?: number }`, `required: [\"steps\"]`, `additionalProperties: false`. Validation, in this order, with no card on any error:\n1. `chains.active()` is defined: `[chat] chain <id> is already active; stop it with nax-jobs__chain_stop first`;\n2. `steps` is not an array of 1 to `CHAIN_MAX_STEPS` items: `[chat] a chain needs 1 to 6 steps`;\n3. `costCap` is present and not a positive finite number: `[chat] costCap must be a positive number`;\n4. per step N, in order: a step that is not an object, or whose `input` is missing or is not a plain object (null and arrays included), gives `[chat] step N: input must be an object`; a `kind` that is not one of the four launch kinds (a non-string included) gives `[chat] step N: unknown kind <kind>`; a `parseChainStepInput` error (an unknown input field included) gives `[chat] step N: <error without its [chat] prefix>`; a `checkBefore` that is not a string of 1 to `CHAIN_CHECK_MAX_LENGTH` characters gives `[chat] step N: checkBefore must be 1 to 200 characters`;\n5. per plan step N, `resolvePlanSpec` resolves the spec (the feature 2 candidate order); its error gives `[chat] step N: <error without its [chat] prefix>`, for example `[chat] step N: no spec for <feature>; looked for <paths>`. Run and bot steps get no target check at chain time; their launch call runs the full feature 2 preparation.\n\nAfter validation, build exact argv through buildChainStepArgv, storing prIndex only for PR-less bot steps and target as feature name, explicit PR decimal string or empty string. Preserve which plan PRDs already exist for US-008's warning lines. Never prepareRun at chain time: plan → run may not yet have prd.json. Valid proposals must reach approve so the boundary AC is executable; complete card text and activation belong to US-008. chain_check and chain_stop may be minimal here with final tool names/schemas, and are completed in US-009.\n\n**Scope** — In: new chain-tools.ts, registration in jobs-provider.ts, chain schema/ordered validation and resolved steps, new chain-tool-input.test.ts using a real controller with temp output dir and fixture .nax/features/f1/spec.md/prd.json. Out: complete card text/approval activation (US-008), functional chain_check/chain_stop and list/host wiring (US-009), controller transitions (US-004), and running checks or launching steps.\n- Any merge, release, `nax workflow promote` or ruling-post step in a chain; a chain only holds `nax plan`, `nax run`, `nax bot review` and `nax bot fix` steps, and it ends at a PR that is ready or draft.\n- Giving subagent sessions the chain tools; like every `nax-jobs` tool, they reach the parent chat only.\n- Registering the chain tools in the ACP server (koda); only `nax chat` gets them.\n\n**Interface** —\n```ts\nexport function createChainTools(options: JobsProviderOptions & { readonly chains: ChatChains }): ProviderTool[];\n```\nThe provider tool schemas use ProviderTool and ToolResult from @nathapp/nax-agent, and the host approval port remains JobsProviderOptions.approve.",
+      "acceptanceCriteria": [
+        "[unit] With chains set, awaiting createJobsProvider(options).tools(options.repoRoot) returns tools whose local names are [\"plan\", \"run\", \"bot_review\", \"bot_fix\", \"list\", \"cancel\", \"chain\", \"chain_check\", \"chain_stop\"].",
+        "[unit] The chain tool's input schema has required [\"steps\"] and additionalProperties false.",
+        "[unit] A nax-jobs__chain call with steps: [] returns the error [chat] a chain needs 1 to 6 steps.",
+        "[unit] A nax-jobs__chain call with seven valid run steps returns the error [chat] a chain needs 1 to 6 steps.",
+        "[unit] A nax-jobs__chain call with six valid run steps and a 200-character checkBefore on step 2 reaches approve.",
+        "[unit] A nax-jobs__chain call whose steps is the string \"plan\" returns the error [chat] a chain needs 1 to 6 steps.",
+        "[unit] A step that is the string \"run\" returns the error [chat] step 1: input must be an object.",
+        "[unit] A step { kind: \"run\" } with no input returns the error [chat] step 1: input must be an object.",
+        "[unit] A step whose input is an array returns the error [chat] step 1: input must be an object.",
+        "[unit] A step with kind merge returns the error [chat] step 1: unknown kind merge.",
+        "[unit] A step with kind 7 returns the error [chat] step 1: unknown kind 7.",
+        "[unit] A run step with input { feature: \"f1\", bogus: 1 } returns the error [chat] step 1: unknown field bogus.",
+        "[unit] A run step with feature ../x returns an error whose content equals \"[chat] step 1: \" followed by the error message parseJobInput(\"run\", { feature: \"../x\" }) returns, with that message's leading \"[chat] \" removed.",
+        "[unit] A plan step for feature f9, which has no spec, returns an error starting [chat] step 1: no spec for f9; looked for.",
+        "[unit] costCap -1 returns the error [chat] costCap must be a positive number.",
+        "[unit] costCap \"10\" (a string) returns the error [chat] costCap must be a positive number.",
+        "[unit] A step 2 with checkBefore \"\" returns the error [chat] step 2: checkBefore must be 1 to 200 characters.",
+        "[unit] A step 2 with a 201-character checkBefore returns the error [chat] step 2: checkBefore must be 1 to 200 characters.",
+        "[unit] A nax-jobs__chain call while a chain is active returns the error [chat] chain <id> is already active; stop it with nax-jobs__chain_stop first.",
+        "[unit] When a chain is active and the step list is also empty, the error is the already-active error.",
+        "[unit] For each invalid call above, the stub approve is never called.",
+        "[unit] When a step's input is null or otherwise not a plain object, nax-jobs__chain returns [chat] step N: input must be an object without showing a card.",
+        "[unit] With options.chains absent, awaiting createJobsProvider(options).tools(options.repoRoot) returns the unchanged local-name list [\"plan\", \"run\", \"bot_review\", \"bot_fix\", \"list\", \"cancel\"]."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "security",
+        "tools",
+        "validation"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Two source files add standard provider registration and ordered validation using existing argv/spec/controller ports; exact approved-input validation is security-critical despite the bounded medium scope.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/chain-controller.ts",
+        "packages/nax/src/chat/jobs/chain-argv.ts",
+        "packages/nax/src/chat/jobs/jobs-launch.ts",
+        "packages/nax/src/chat/jobs/jobs-provider.ts",
+        "packages/nax/test/unit/chat/jobs/jobs-provider.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/jobs/chain-tools.ts",
+        "packages/nax/test/unit/chat/jobs/chain-tool-input.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When costCap is 0, NaN or Infinity, the chain tool returns [chat] costCap must be a positive number without calling approve.",
+        "When checkBefore is a number, the chain tool returns [chat] step N: checkBefore must be 1 to 200 characters without calling approve.",
+        "When a plan step has a resolvable spec and its following run step has no prd.json yet, proposal validation still reaches approve."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b917cabd7ae24e7e96d3572449a041ae74b92453"
+    },
+    {
+      "id": "US-008",
+      "title": "Full-run card, explicit approval and durable activation",
+      "description": "**Goal** — Complete the chain tool's full-run approval card and activate only the precisely displayed proposal after explicit host approval.\n\n**Motivation** — A plain chat message such as \"go ahead\" is not an approval. Only the card is.\n\n**Approach** — **Approval is the card only.** A chain becomes active only inside `nax-jobs__chain`, after `approve(card)` (the feature 2 `requestHostApproval` port) resolves `\"allow\"`. A deny, a timeout or an abort activates nothing. The card is never remembered, as in feature 2.\n\nAfter US-007's ordered validation, show one card through `approve`:\n- `tool`: `nax-jobs__chain`;\n- `summary`: `full run of <N> steps: <step labels joined by \" → \">`, where a label is `nax plan <f>`, `nax run <f>`, `nax bot review #<pr>`, `nax bot fix #<pr>`, or `nax bot review (PR chosen by the agent)` / `nax bot fix (PR chosen by the agent)` without a PR;\n- `command`: each step's argv joined by spaces, one step per line;\n- `reason`, one line each: `workdir <repoRoot>[ on branch <branch>]`; `nax <naxEntry joined>`; then per step `<N>. <label> — starts after: <condition>`, where the condition is `you approve this card` for step 1 and `step <N-1> succeeded` otherwise, with ` and check \"<checkBefore>\" passed` appended when the step has one; for a bot step without a PR, the line ends ` — the agent picks the PR when the step starts`; then the cost line, `cost cap $<cap, 2 decimals>, checked between steps; plan and bot job costs are not counted` or `no cost cap`; then one warning line per plan step whose feature already has a `prd.json`, `warning: step <N> replaces the existing prd.json for <feature>`; then, when the chain has a run step and the interaction plugin is `cli`, `warning: run steps have no channel for their own asks; they will time out`; then the fixed line `Steps run in this order, each once. A failed step or check, a different step, the cost cap, a cancel or closing the chat stops the chain.`;\n- `signal`: the tool call's `ctx.signal`.\n\nOn `\"deny\"`: error `[chat] the user declined the chain; propose steps one at a time`. On `\"allow\"`: `chains.activate({ steps, costCap })`. If that rejects with `CHAT_CHAIN_ACTIVE` (another chain card was approved while this one was open): `[chat] another chain became active while this card was open; this one is not active`. If it rejects for any other reason: `[chat] could not save the chain: <message>; it is not active`. Otherwise the result content is `{\"chain\":\"<id>\",\"state\":\"active\",\"next\":1}`, then a newline and `Call step 1 now with exactly the approved arguments.`\n\nThe host checks every other argument exactly for PR-less bot steps; `<pr>` on the card is the sole substitution slot. The cap is checked between steps from finished jobs, not a forecast and not an interrupt. The card shows each run's own --max-cost through its exact argv. Use existing injected git behavior to obtain the branch without new process mechanisms.\n\n**Scope** — In: finish chain card/allow/deny/error mapping in chain-tools.ts, new chain-tool-card.test.ts with fixture repo, real controller, stub approve and injectable store failures. Out: validation changes beyond US-007, functional chain_check/chain_stop/list/host composition (US-009), controller transition mechanics (US-003/004), launch changes (US-006), remembered approval or plain chat-message approval.\n- Recording which channel (terminal or Telegram) answered the chain card; the record keeps `approvedAt` only.\n- Checking the cost cap while a step runs, or killing a running step when the cap is passed; the cap is checked only when a step ends, and a run step's own `--max-cost` bounds spend inside that step.\n\n**Interface** —\n```ts\nexport interface HostApprovalCard {\n  readonly tool: string;\n  readonly summary: string;\n  readonly command?: string;\n  readonly reason: string;\n  readonly signal?: AbortSignal;\n}\n// Existing host port; do not change ask-controller.ts:\nrequestHostApproval(card: HostApprovalCard): Promise<\"allow\" | \"deny\">;\n// Controller port consumed after allow:\nactivate(proposal: { readonly steps: readonly ChainStep[]; readonly costCap?: number }): Promise<ChatChain>;\n```",
+      "acceptanceCriteria": [
+        "[unit] A nax-jobs__chain call with steps plan f1 and run f1 with maxIterations 40 calls approve once with tool nax-jobs__chain.",
+        "[unit] For that call, the card command equals the plan step's argv joined by spaces, a newline, and the run step's argv joined by spaces.",
+        "[unit] For that call, the card summary is full run of 2 steps: nax plan f1 → nax run f1.",
+        "[unit] For that call, the card reason contains the line 1. nax plan f1 — starts after: you approve this card.",
+        "[unit] For that call, the card reason contains the line 2. nax run f1 — starts after: step 1 succeeded.",
+        "[unit] For a step 2 with checkBefore PRD fidelity READY, the card reason contains 2. nax run f1 — starts after: step 1 succeeded and check \"PRD fidelity READY\" passed.",
+        "[unit] With costCap 25, the card reason contains cost cap $25.00, checked between steps; plan and bot job costs are not counted.",
+        "[unit] Without costCap, the card reason contains no cost cap.",
+        "[unit] The card reason contains Steps run in this order, each once. A failed step or check, a different step, the cost cap, a cancel or closing the chat stops the chain.",
+        "[unit] With f1 already holding a prd.json, the card reason for the plan-then-run chain contains warning: step 1 replaces the existing prd.json for f1.",
+        "[unit] With the interaction plugin cli and a run step in the chain, the card reason contains warning: run steps have no channel for their own asks; they will time out.",
+        "[unit] For a single bot_review step without pr, the card command contains <pr>.",
+        "[unit] For a single bot_review step without pr, the card summary is full run of 1 steps: nax bot review (PR chosen by the agent).",
+        "[unit] For a single bot_review step without pr, its reason step line ends — the agent picks the PR when the step starts.",
+        "[unit] The card passed to approve carries the tool call's ctx.signal.",
+        "[unit] When approve resolves allow, chains.active() returns a chain whose two steps carry the argv shown on the card.",
+        "[unit] When approve resolves allow, the result content starts with {\"chain\":\"<id>\",\"state\":\"active\",\"next\":1} and contains Call step 1 now with exactly the approved arguments.",
+        "[unit] When approve resolves deny, the result is an error with content [chat] the user declined the chain; propose steps one at a time, and chains.active() returns undefined.",
+        "[unit] When approve resolves allow and _chainStoreDeps.write rejects disk full, the result is an error starting [chat] could not save the chain: and ending ; it is not active, and chains.active() returns undefined.",
+        "[unit] When two nax-jobs__chain calls both reach their cards and both are approved, the second result is the error [chat] another chain became active while this card was open; this one is not active.",
+        "[unit] When the chain card times out or aborts through requestHostApproval, the chain tool returns [chat] the user declined the chain; propose steps one at a time and activates no chain."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "security",
+        "approval",
+        "tools"
+      ],
+      "dependencies": [
+        "US-007"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One tool module completes deterministic card formatting and consumes existing approve/activate ports rather than implementing concurrency itself; explicit full-run approval nevertheless requires strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/chain-tools.ts",
+        "packages/nax/src/chat/jobs/jobs-launch.ts",
+        "packages/nax/src/chat/ask-controller.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/jobs/chain-tool-card.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When git branch lookup succeeds, the card's first reason line is workdir <repoRoot> on branch <branch>.",
+        "When git branch lookup fails, the card's first reason line is workdir <repoRoot> without a branch suffix.",
+        "When a bot step explicitly names PR 12, its summary label is nax bot review #12 or nax bot fix #12 rather than a PR-chosen-by-agent label."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "78489b9f5f041186624fac2a17d55eb3412e76de"
+    },
+    {
+      "id": "US-009",
+      "title": "Check/stop tools, chain listing and parent chat composition",
+      "description": "**Goal** — Finish chain_check and chain_stop, expose chain summaries in list, and compose the real controller into parent chat jobs and close confirmation.\n\n**Motivation** — The main nax roadmap is one `nax chat` session that takes the user from a brainstorm to an open PR (user, 2026-10-24).\n\n**Approach** — **`chain_check`.** Input `{ step: integer, passed: boolean, note: string }`, all required. Calls `chains.recordCheck`. `{ ok: false, message }` gives error `[chat] <message>`. `{ ok: true }` gives `check recorded for step <step>`, plus `; the chain stopped` when `passed` was `false`.\n\n**`chain_stop`.** Input `{}`. No card: stopping a chain only removes autonomy and never cancels a job. With an active chain: `chains.stop(\"stopped by the agent\")`, result `chain <id> stopped; running jobs keep running`. Without one: error `[chat] no active chain`.\n\n`createJobsProvider(options)` target: when `options.chains` is set, tools `plan, run, bot_review, bot_fix, list, cancel, chain, chain_check, chain_stop`, and `list` with no `job` returns `{ jobs, omitted, chain }`, where `chain` is `options.chains.summary()`. With no chains, preserve feature 2's exact tool list and listing shape. Do not add chain to a job-detail query.\n\n`createHostJobs(options)` target: also builds `chains = createChainController({ outputDir, cwd: repoRoot, jobs, sessionId, now })`, passes it to `createJobsProvider`, returns `{ jobs, chains, provider, guard, confirmClose }`, and `confirmClose` first calls `chains.stop(\"the chat closed\")`.\n\n**Close.** `createHostJobs().confirmClose` stops the active chain with reason `the chat closed` before anything else, whether or not jobs are still running. A kept job keeps running in the background, and the chain does not start its next step (design 4.3). Preserve the existing single close approval when owned jobs run and no approval when none do.\n\nThe `src/chat/jobs/index.ts` barrel exports `createChainController` and the chain types. `chat-host.ts` (566 lines, held under the 600-line limit) does not change. Existing host wiring already provides the live session id closure, registers the jobs provider only in the parent and keeps host-owned cards pending even in full mode.\n\nSeams to verify: a chain approved through the real `nax-jobs__chain` tool lets the real `nax-jobs__run` tool start step 1 with no second `approve` call (a real `createChainController`, a stub `jobs.start`); repeat the run call with a non-blocking stub running-job list to reach admission and assert a second `approve` call. From `createChatHost` with a `naxEntry`, the `nax-jobs` provider the session receives has the `chain`, `chain_check` and `chain_stop` tools, and a chain card raised in full mode stays in `host.asks.pending()` until resolved. Build host fixtures the way chat-host-jobs.test.ts does, without modifying that existing test file.\n\n**Scope** — In: complete chain-tools.ts check/stop, conditionally extend list in jobs-provider.ts, controller composition/return/close stop in jobs-host.ts, barrel exports, new chain-tools.test.ts and chat-host-chain.test.ts. Out: launch policy changes (US-006), proposal/card behavior changes (US-007/008), and controller internals (US-002/003/004).\n- Any change to `nax run`, `nax plan`, `nax bot`, `@nathapp/nax-agent` or `chat-host.ts`.\n- Giving subagent sessions the chain tools; like every `nax-jobs` tool, they reach the parent chat only.\n- Registering the chain tools in the ACP server (koda); only `nax chat` gets them.\n- A chain view, footer marker or `/jobs` line in the TUI; the chain shows through its card, the tool results, the job notices and `nax-jobs__list`.\n- Cancelling the running job when the chain stops or is stopped; `nax-jobs__cancel` (with its own card) cancels a job.\n- Cross-session memory; it is its own slice, not yet designed (user ruling 2026-10-27).\n\n**Interface** —\n```ts\nrecordCheck(step: number, passed: boolean, note: string): { readonly ok: true } | { readonly ok: false; readonly message: string };\nstop(reason: string): ChatChain | undefined;\n/** The current chain (active, completed or stopped), or null before the first activation. */\nsummary(): ChainSummary | null;\n```\ncreateHostJobs extends its existing returned object with chains: ChatChains; no new member is required on createChatHost's public API.",
+      "acceptanceCriteria": [
+        "[unit] nax-jobs__chain_check with { step: 2, passed: true, note: \"READY\" } for a next step 2 that has a check returns check recorded for step 2.",
+        "[unit] nax-jobs__chain_check with { step: 2, passed: false, note: \"2 blockers\" } returns check recorded for step 2; the chain stopped.",
+        "[unit] nax-jobs__chain_check with no active chain returns the error [chat] no active chain.",
+        "[unit] nax-jobs__chain_check for step 3 while step 2 is next returns the error [chat] step 3 is not the next step.",
+        "[unit] The chain_check input schema requires step, passed and note, with additionalProperties false.",
+        "[unit] nax-jobs__chain_stop with an active chain returns chain <id> stopped; running jobs keep running, and chains.active() then returns undefined.",
+        "[unit] nax-jobs__chain_stop never calls approve.",
+        "[unit] nax-jobs__chain_stop with no active chain returns the error [chat] no active chain.",
+        "[unit] nax-jobs__list with no job and chains set returns JSON whose chain is null before any chain.",
+        "[unit] After a chain is activated, nax-jobs__list with no job returns JSON whose chain deep-equals chains.summary().",
+        "[integration] After a chain of one step, run f1, is approved through nax-jobs__chain (stub approve resolving allow), a nax-jobs__run call for f1 calls the stub jobs.start once with chainStep 1, and approve has been called once in total.",
+        "[integration] After that auto-started step, a second nax-jobs__run call for f1 calls approve again, so approve has been called twice in total.",
+        "[unit] createHostJobs(...) returns a chains member whose active() is undefined and whose summary() is null.",
+        "[unit] The provider returned by createHostJobs(...) has tools named chain, chain_check and chain_stop.",
+        "[unit] With an active chain and no owned running jobs, confirmClose() resolves without calling requestHostApproval, and chains.summary().stopReason is the chat closed.",
+        "[unit] With an active chain and one owned running job, confirmClose() stops the chain with stopReason the chat closed and calls requestHostApproval once.",
+        "[integration] From createChatHost with a naxEntry and resources, the nax-jobs provider passed to the session's open request has tools named chain, chain_check and chain_stop.",
+        "[integration] In a full-mode host from createChatHost, a nax-jobs__chain call for one run step of f1 leaves one ask in host.asks.pending() whose tool is nax-jobs__chain until it is resolved.",
+        "[unit] nax-jobs__chain_check for a next step N without checkBefore returns the error [chat] step N has no check to record.",
+        "[unit] With options.chains absent and jobs.list() returning [], nax-jobs__list with no job returns content exactly {\"jobs\":[],\"omitted\":0}, preserving the existing listing shape with no chain key."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "security",
+        "integration",
+        "tools"
+      ],
+      "dependencies": [
+        "US-004",
+        "US-008"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Parent-session approval composition and revocation on close span host/provider/controller boundaries; strict security TDD verifies the real one-card launch seam and full-mode host asks.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/chain-tools.ts",
+        "packages/nax/src/chat/jobs/jobs-host.ts",
+        "packages/nax/src/chat/jobs/jobs-provider.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/test/unit/chat/chat-host-jobs.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/jobs/chain-tools.test.ts",
+        "packages/nax/test/unit/chat/chat-host-chain.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When chain_stop stops an active chain with a running job, the job remains running and jobs.cancel is not called.",
+        "When close confirmation is denied after stopping a chain, owned jobs remain running and the chain remains stopped.",
+        "When a new host sees persisted chain records from an earlier host, nax-jobs__list returns chain null until a new chain card is approved."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "249f61e1de8b268531efd300323ff8aa7e8a4c76"
+    }
+  ],
+  "analysis": "This is an additive enhancement to the shipped chat workflow state and dispatch features, entirely in packages/nax; it is not a new execution engine. Repository exploration used Read/Grep because codebase-memory MCP is unavailable in this host. Architecture guidance was read at docs/architecture/ARCHITECTURE.md:1; its index requires dependency injection, structured NaxError errors, prompt builders and bounded modules (quick reference at :171). Use Bun, strict TypeScript, bun:test, existing @test/helpers and _deps seams; do not introduce dependencies or modify sibling packages.\n\nVerified baseline and impact: packages/nax/src/chat/jobs/job-types.ts:1 defines the four launch kinds and five job states; ChatJob at :5 has no chain fields and gains optional chainId/chainStep. packages/nax/src/chat/jobs/job-argv.ts:7 defines JobLaunchInput, :131 parseJobInput validates feature names and delegates kind-specific parsing, and :150 buildJobArgv constructs token arrays without a shell. Bot PR parsing at :98 accepts positive safe integers, including numeric strings; chain parsing must reuse these semantics while rejecting unknown keys before delegation. A missing bot PR must be parsed using a valid temporary PR and then omitted from the returned object, not passed undefined to the existing required-PR parser. Profiles default to [], and optional false flags may normalize to the same argv. Authorization compares built argv token by token, not raw objects or joined display strings. The bot PR token is at naxEntry.length + 2; replace only that index so another '<pr>' token such as a decisions path remains unchanged. Explicit PRs remain exact; only omitted PRs participate in the chain's once-chosen PR binding.\n\nPersistence model: packages/nax/src/chat/jobs/job-store.ts:10 exposes _jobStoreDeps, :35 validates ids before writing a unique sibling temp file and renaming, :57 retains cleanup errors, :71 validates a minimum job record without projecting unknown fields away, and :88 treats missing/malformed JSON as absence while preserving unexpected I/O errors. Mirror these patterns in chain-store.ts, using CHAT_CHAIN_INVALID_ID and CHAT_CHAIN_WRITE_FAILED with stage 'chat' rather than copying the old 'chat-jobs' stage. The existing job reader already preserves new optional chain fields; it needs no migration or projection change. packages/nax/src/errors.ts:7 re-exports NaxError from nax-agent/internal; do not invent a new error registry or modify nax-agent. CHAT_CHAIN_ACTIVE is raised in the controller with stage 'chat'. Chain files are audit-only, schemaVersion 1, under outputDir/chat-chains; never rehydrate autonomy from them. Activation must await a successful durable record before exposing active state, and must reserve its in-flight activation slot synchronously so parallel approved cards cannot create two active chains. After activation, memory is authoritative and writes are best effort with getLogger()?.warn('chat', ...); avoid unhandled rejections and stale snapshots overwriting newer audit state.\n\nRunner seam: packages/nax/src/chat/jobs/job-runner.ts:20 defines StartJobRequest and :27 ChatJobs, including synchronous get and onChange plus asynchronous start. start at :130 spawns and registers before its first await, then spreads the request into the record at :145, so optional chain fields propagate without changing execution. onChange emission at :102 invokes listeners synchronously; start emits at :174 before the launch can call chains.started. Finalization sets a terminal record before emission and builds notices at :210. A job may finish before started links its id, so admit must reconcile terminal state directly through jobs.get even without a notification. Terminal outcomes, not exit codes, are authoritative: packages/nax/src/chat/jobs/job-outcome.ts:35 only obtains cost for PID-matched run jobs, :43 derives run state from run artifacts, :71 resolves plan/bot outcomes. Sum recorded cost with missing cost as zero; no new plan/bot accounting. The cap stops subsequent steps only after successful job completion, never interrupts a running job, and final-step success completes before checking the cap. Controller onChange handling must be idempotent; dispose removes only its listener. summary applies session invalidation but must not opportunistically run job-end transitions, preserving the explicit dispose AC.\n\nLaunch integration: packages/nax/src/chat/jobs/jobs-launch.ts:85 prepares a plan by searching feature spec.md then .nax/specs/<feature>.md, or an explicit repo-relative spec, and checking existing prd.json. Extract that logic into resolvePlanSpec with unchanged messages and _jobsLaunchDeps.exists, and keep the existing replacement warning in preparePlan. :113 prepareRun reads/counts pending stories and builds warnings; add structured Prepared.overLimit beside the existing warning, never infer policy from warning text. :167 launchJob currently parses, prepares, applies early busyJob/busyLock at :177, builds argv, asks, then starts. Admit only after preparation and early busy checks: rejected preparation, an existing run/plan, or live lock must leave the chain unchanged. :51 startApproved awaits the late lock check, then performs the in-memory running-job check immediately before jobs.start. Extend that boundary with a synchronous chains.isActive(chainId) guard after all awaits; no await may separate this guard from jobs.start. Auto launches retain the original busy/spawn error text and report failures via startFailed with the [chat] prefix stripped. Over-limit auto runs stop the chain and fall back to an ordinary card. The original per-step path remains byte-for-byte compatible in output/card behavior when chains is absent, and chain keys must be omitted, not passed as undefined.\n\nProvider/host seam: packages/nax/src/chat/jobs/jobs-provider.ts:10 defines options and gains optional chains; :61 inspectionTool handles list/cancel and :92 createJobsProvider currently registers six ordered tools. Append the three chain tools only when chains is present; list without a job conditionally adds chains.summary(), while detail/cancel schemas and behavior stay unchanged. Keep validation/card logic in chain-tools.ts to avoid growing the 114-line provider into a controller. packages/nax/src/chat/ask-controller.ts:8 defines HostApprovalCard and :72 requestHostApproval creates expiring host-owned asks even in full mode. Abort and timeout resolve deny, and host approvals cannot be remembered (:135). A chain becomes active only after this port returns allow, never from chat text, permission memory or full mode. packages/nax/src/chat/jobs/jobs-host.ts:21 is the intended composition root: create the controller with repoRoot as cwd and the existing live sessionId closure, pass it into the provider, return it, and stop it before any close confirmation work at :36. packages/nax/src/chat/chat-host.ts:149 already composes createHostJobs when both resources and naxEntry exist, :159 supplies () => this.current().sessionId, :176 gives subagents only resources.toolProviders, and :188 appends jobs only for the parent session. These existing connections provide chain tools to parent chat without changing chat-host.ts (566 lines). Its teardown at :538 disposes the job runner; feature close behavior is deliberately implemented in createHostJobs.confirmClose, not by changing chat-host.ts. packages/nax/src/chat/jobs/index.ts:1 is the existing barrel to extend with controller/types. Consumers of ChatJob include packages/nax/src/tui/chat/use-jobs.ts:4 and the chat barrel at packages/nax/src/chat/index.ts:41; optional fields require no TUI or public-host changes.\n\nPrompt ownership: packages/nax/src/prompts/builders/workflow-builder.ts:16 defines JobNoticeInput; :27 emits two-line notices; :37 returns five instruction lines. Add conditional chain notice text and append precisely the three specified instruction lines, leaving all original lines unchanged. packages/nax/src/prompts/index.ts:133 already exports these builders. Both owned and attached runner notices pass full records, so no new notice router is needed. Reattached chain jobs may mention an old inert chain; list always describes only this host's controller.\n\nExisting regression anchors and fixtures: packages/nax/test/unit/chat/jobs/jobs-launch-busy.test.ts:35 builds options with temp PRD/spec and _jobsLaunchDeps stubs; :96 pins early busy rejection, :115 late job/lock races, :126 bot independence, :165 simultaneous launches. packages/nax/test/unit/chat/jobs/jobs-provider.test.ts:76 pins the six-tool order and :90 closed list/cancel schemas; its fixture has no chains, so it must remain unchanged. packages/nax/test/unit/chat/jobs/job-store.test.ts:24 creates complete fixture records and :90 checks atomic replacement/cleanup; mirror it for the new store, keeping new tests in chain-store.test.ts. packages/nax/test/unit/prompts/builders/workflow-builder.test.ts:127 pins two-line non-chain notices and :185 preserves existing instruction text. packages/nax/test/unit/chat/chat-host-jobs.test.ts:39 builds a real createChatHost using makeNaxConfig/makeLogger, a stub open request and runner spawn; :190 proves full-mode host cards remain pending, :219 pins close prompting and :247 disposal without cancellation. Additional existing suites include job-argv.test.ts, jobs-launch.test.ts, job-runner.test.ts, job-runner-attach.test.ts, job-runner-cancel.test.ts, job-outcome.test.ts and job-write-guard.test.ts. New tests must use the exact new filenames assigned to each story; no existing assertions need modification. The spec's 'Modifies: None' describes existing test assertions, not source edits: source extensions listed above are required.\n\nImplementation order is binding: US-001 creates contracts/argv/store; US-002 activation/admission; US-003 checks/session/PR consistency; US-004 transitions/cost/summary. US-005 prompt changes is independent. US-006 depends exactly on US-002 and US-005 and integrates using a stub controller, without assuming US-003/004 already ran. US-007 validation depends on US-006; US-008 card/activation depends on US-007; US-009 depends on US-004 and US-008 and completes host/tool integration. Minimal controller/tool methods allowed in intermediate stories must retain the final public signatures and compile, with their behavior finished in the assigned downstream stories. Each context file exists now or is created by an upstream dependency. Every path is repo-rooted even though all workdirs are packages/nax.\n\nPrimary risks: unauthorized off-card launches, reusing approvals across sessions, double admission in the same tick, a stopped chain starting after asynchronous lock checks, duplicate terminal writes, PR wildcard substitution beyond its sole approved slot, and loss of prepared warnings on the auto path. Preserve admission order exactly: terminal reconciliation, session, exact kind/argv, bound PR, previous succeeded record, passed named check; reservation is synchronous. Stop is irreversible and never cancels work. Match error text and card line order as part of the tool protocol. There is no database migration, version bump, record backfill or new config. Existing job records remain readable; new chains are opt-in via an explicit card and never resume from disk. Validate through new targeted bun:test files from packages/nax; never run bare bun test or bun run nax. Pipeline handles lint/typecheck/tests; do not run coverage inside a sandboxed nax session. Routing uses strict three-session-tdd for the approval/admission/session/access-control stories; the pure prompt and record/argv additions use tdd-simple. Suggested criteria are separate from required spec ACs; required failure-table rows not already represented by a listed AC are included in the matching story.\n\nRefine-pass audit: re-read the stored spec, the draft, jobs-launch.ts, jobs-provider.ts, jobs-host.ts, workflow-builder.ts, ask-controller.ts, job-store.ts, job-runner.ts and provider regression tests. The spec has 169 explicitly listed ACs: US-001 21, US-002 21, US-003 20, US-004 19, US-005 8, US-006 21, US-007 21, US-008 20, US-009 18. Each remains in acceptanceCriteria of its original story, in the same ordinal position; additional failure-table/regression assertions follow the originals. No source AC uses a deprecated grep/file/verbatim tag. All clauses such as 'with no pr key', 'for that input', 'still <pr>', 'never fired', 'unchanged', 'already holding', 'in total' and 'until it is resolved' were retained. Corrections preserve semantic intent: endedAt is now().toISOString(), not a Date object; provider.tools is awaited with repoRoot and its localName values are projected; the repeated-admit off-card scenario explicitly uses one step so it cannot be confused with a legal next step having identical argv; the invalid-feature error criterion preserves the exact leading '[chat] ' space removal.\n\nExhaustive AC preservation ledger (numbers are the spec's within-story ordinals, mapped to the same PRD ordinals):\nUS-001: 1 chainsDir path; 2 injected new id; 3 traversal pattern rejection; 4 chain round trip; 5 replacement stopped state; 6 sole json entry; 7 invalid-id NaxError; 8 failed-write NaxError; 9 missing read null; 10 non-JSON read null; 11 job chain fields survive read; 12 PR-less review input has no pr key; 13 invalid fix PR error; 14 run parsing equals existing parser; 15 unknown run field; 16 review rejects trust; 17 PR-less review argv; 18 explicit fix argv equals existing builder for that input; 19 indexed PR substitution; 20 last '<pr>' remains unchanged; 21 undefined prIndex leaves argv equal.\nUS-002: 1 activation active; 2 captured session; 3 ISO approvedAt; 4 durable active record; 5 failed activation write leaves no active chain; 6 active rejection; 7 same-tick activation race; 8 absent chain card without note; 9 exact auto result; 10 changed argv stopped note; 11 off-card clears active; 12 wrong kind off-card; 13 PR placeholder admission; 14 explicit PR mismatch; 15 repeated admission off-card; 16 running prior job refused; 17 succeeded prior job auto step 2; 18 reserved but unstarted predecessor refused; 19 missing named check refused; 20 started persists jobId; 21 startFailed clears active and persists reason.\nUS-003: 1 passed next check admits; 2 check persisted with timestamp; 3 failed check returns ok and stops; 4 no check label error; 5 not-next error; 6 no-active error; 7 stopped fields with endedAt; 8 stopped persisted; 9 stop absent undefined; 10 isActive before/after stop; 11 foreign id inactive; 12 foreign started no-op; 13 active invalidates changed session; 14 started after stop still audited; 15 admit session-change note; 16 PR-less review/fix reuse PR 12; 17 PR 13 rejects with bound-PR reason; 18 failed stop write leaves stopped memory; 19 failed stop write logs warning through getLogger; 20 failed check write keeps ok/admission.\nUS-004: 1 failed terminal stops; 2 cancelled terminal stops; 3 lost terminal stops; 4 final success completes with endedAt; 5 completed not active; 6 intermediate success without cap remains active; 7 cumulative 6+5 exceeds cap 10; 8 spend 4 below cap stays active; 9 missing cost adds zero; 10 exact cap 10 stops; 11 missed final event reconciled by admit with no note; 12 repeated event causes no second write; 13 running event remains active; 14 missed failed event reconciled before admit; 15 initial summary null; 16 exact two-step running summary; 17 stopped summary reason; 18 stopped summary omits next; 19 dispose prevents captured callback from transitioning.\nUS-005: 1 chain notice three lines; 2 exact third line; 3 ordinary notice two lines; 4 exact full-run-card instruction; 5 exact ordered-launch instruction; 6 exact check/stop instruction; 7 fifth original instruction still unchanged; 8 eight instruction lines.\nUS-006: 1 no-chain approval/start; 2 auto skips approval; 3 auto request chain metadata/approvedAt; 4 started receives returned id; 5 auto result explanation; 6 auto CLI warning; 7 admit receives built run argv; 8 bot admit receives PR 12; 9 note ends card reason; 10 note-less reason equals no-chain behavior; 11 early lock error before admit; 12 late lock refusal/startFailed; 13 spawn rejection/startFailed prefix; 14 stopped-before-start error without launch; 15 over-limit auto stops without launch after deny; 16 over-limit fallback card and last reason line; 17 missing PRD before admit; 18 resolved feature spec and existing PRD; 19 missing spec error; 20 runner persists chain link; 21 no-chain request omits keys.\nUS-007: 1 ordered nine-tool list; 2 required/closed schema; 3 empty steps error; 4 seven-step error; 5 six-step/200-character boundary reaches approve; 6 non-array steps error; 7 primitive step error; 8 missing input error; 9 array input error; 10 merge kind error; 11 numeric kind error; 12 unknown input key; 13 invalid feature preserves parser message after exact prefix removal; 14 missing plan spec; 15 negative cap; 16 string cap; 17 empty check; 18 overlong check; 19 already-active error; 20 active error takes precedence over empty steps; 21 all invalid calls show no card.\nUS-008: 1 one chain approve call/tool id; 2 exact command lines; 3 plan/run summary; 4 first starts-after line; 5 next starts-after line; 6 named-check condition; 7 cap disclosure including uncounted costs; 8 no-cap disclosure; 9 exact fixed stop line; 10 already-existing PRD replacement warning; 11 CLI asks warning; 12 omitted PR placeholder command; 13 omitted PR summary; 14 omitted PR reason suffix; 15 signal forwarding; 16 allowed chain argv equals displayed argv; 17 active JSON plus next-call guidance; 18 deny error/no activation; 19 activation-save error/no activation; 20 concurrent approved-card error.\nUS-009: 1 positive check result; 2 failed check result; 3 absent check chain error; 4 wrong step error; 5 closed required check schema; 6 stop result/inactive state; 7 stop never asks; 8 absent stop chain error; 9 initial list chain null; 10 list chain equals summary; 11 one approved card through real chain/run seam; 12 repeated run asks again/two approvals in total; 13 returned controller initial state; 14 composed provider has chain tools; 15 empty close stops without asking; 16 owned-job close stops and asks once; 17 real host open receives chain tools; 18 full-mode chain ask remains pending until resolved.\n\nFailure table coverage was checked row by row: active proposal, bad step count/kind/input/check/cap/spec, deny/timeout/abort, activation-write and later-write failures, off-card/prior-job/check/session refusals, early busy and late busy/spawn, over-limit auto fallback, stop-before-start, inconsistent PR, non-object and unknown-field inputs, parallel activation, failed target preparation, failed/cancelled/lost jobs, reached cap, invalid/failed check recording, absent stop and close are represented in the owning story's required ACs. Every story has a negative-path criterion; the pure prompt story now explicitly preserves an ordinary failed-job notice instead of inventing a throwing behavior for a string builder. Explicit legacy six-tool and no-chain list-shape assertions were added where those functions change. For extracted plan spec behavior, retain the existing candidate order and replacement warning in implementation; the original spec-resolution ACs remain required.\n\nContext audit: all nine contextFiles arrays exactly match the spec's recommended sets, stay at five or fewer entries and contain no file created by the same story; upstream chain files are supplied by binding dependencies. All expectedFiles lists exactly match the spec's Creates lists. Binding ids, workdirs and dependencies are unchanged and every referenced id exists. Complexity was reduced to medium for US-003, US-004, US-007 and US-008 because they extend existing controller/tool ports with bounded rules, without adding architectural abstractions; strict three-session-tdd remains required for approval/session/access-control behavior. US-001 remains medium/tdd-simple, US-005 simple/tdd-simple, and US-002/006/009 complex/three-session-tdd for their new controller or cross-module admission/host seams.\n\nScope audit: all 21 feature-level out-of-scope bullets are preserved verbatim in the top-level array, in the spec's order. Near-boundary descriptions also echo the applicable exclusions verbatim. No story-local out-of-scope block was present to hoist. Session invalidation during summary is explicitly in US-003; full summary projection remains US-004. New failed-notice, optional-provider and optional-list regressions fit their existing source/test scope, without adding stories or files. No production code was changed during this PRD audit.",
+  "outOfScope": [
+    "Any merge, release, `nax workflow promote` or ruling-post step in a chain; a chain only holds `nax plan`, `nax run`, `nax bot review` and `nax bot fix` steps, and it ends at a PR that is ready or draft.",
+    "Restarting, resuming or editing a chain once it has stopped or completed; a new chain needs a new card.",
+    "Reading chain records back into an active chain after a restart, a `--resume` or a crash; a chain never outlives the chat host that approved it, and a record left `active` on disk by a crash is inert.",
+    "Checking the cost cap while a step runs, or killing a running step when the cap is passed; the cap is checked only when a step ends, and a run step's own `--max-cost` bounds spend inside that step.",
+    "Counting the cost of plan and bot jobs toward the cap; only `run` jobs record cost.",
+    "Verifying that a bot step's PR is the one the run published; the agent chooses the PR (user ruling 2026-10-28), the host checks that every other argument matches the card, and later PR-less bot steps of the same chain must reuse the first one's PR.",
+    "Making the chain line of a job notice depend on the chain still being current; a notice for a re-attached chain job in a later chat still names its chain, and `nax-jobs__list` then shows that chat's own chain or `null`.",
+    "Persisting a record-write failure for `started` or `recordCheck` beyond a logged warning; like `stop`, those writes are best effort after activation.",
+    "A time limit on an active chain; it ends only on the conditions listed in Design.",
+    "Recording a check verdict for anything but the next step, or the host running the check itself; the agent runs in-session checks such as the PRD fidelity check and records their verdict.",
+    "Stopping the chain when a launch call fails target preparation (for example a missing `prd.json`); the chain stays active and the next call is admitted or refused under the same rules.",
+    "A chain view, footer marker or `/jobs` line in the TUI; the chain shows through its card, the tool results, the job notices and `nax-jobs__list`.",
+    "Cancelling the running job when the chain stops or is stopped; `nax-jobs__cancel` (with its own card) cancels a job.",
+    "Recording which channel (terminal or Telegram) answered the chain card; the record keeps `approvedAt` only.",
+    "Giving subagent sessions the chain tools; like every `nax-jobs` tool, they reach the parent chat only.",
+    "Registering the chain tools in the ACP server (koda); only `nax chat` gets them.",
+    "Routing a running `nax run`'s own asks into the chat; the run keeps its own interaction chain.",
+    "Fixing nax#2706; the run card keeps its feature 2 warning.",
+    "Any change to `nax run`, `nax plan`, `nax bot`, `@nathapp/nax-agent` or `chat-host.ts`.",
+    "Editing files under `.nax/` (rules, context) or the slice 2 design document.",
+    "Cross-session memory; it is its own slice, not yet designed (user ruling 2026-10-27)."
+  ],
+  "routingProfile": "native-claude"
+}

@@ -112,6 +112,7 @@ class NativeChatHost implements ChatHost {
   readonly asks: ChatAskController;
   readonly jobs?: ChatJobs;
   readonly confirmJobsBeforeClose?: () => Promise<void>;
+  private readonly hostJobs?: ReturnType<typeof createHostJobs>;
   private readonly fallback: AskFallback;
   private readonly loopHandlers: ReturnType<typeof createRuleDeliveryHandlers>;
   private readonly projectKey: string;
@@ -159,6 +160,7 @@ class NativeChatHost implements ChatHost {
             sessionId: () => this.current().sessionId,
           })
         : undefined;
+    this.hostJobs = hostJobs;
     this.jobs = hostJobs?.jobs;
     this.confirmJobsBeforeClose = hostJobs?.confirmClose;
     const rules = deps.config.context.rules;
@@ -297,6 +299,7 @@ class NativeChatHost implements ChatHost {
       this.assertOpen();
     }
     const previous = this.handle;
+    if (previous) this.hostJobs?.sessionChanged();
     this.handle = next;
     this.ledger ??= createChatLedger({
       sessionId: next.meta.sessionId,
@@ -529,6 +532,7 @@ class NativeChatHost implements ChatHost {
   close(): Promise<void> {
     if (this.closing !== undefined) return this.closing;
     this.closed = true;
+    this.hostJobs?.close();
     this.fallback.dispose();
     // Leave asks intact while the shell is mounted; final close cannot reuse them.
     this.closing = this.teardown();
