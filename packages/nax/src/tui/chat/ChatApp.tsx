@@ -7,9 +7,7 @@
  * viewport. The screen owns ctrl+o and running-turn escape; useChatKeys owns ctrl-c and
  * shift+tab. Navigation ownership is checked at key time so batched completion and submit
  * cannot yield a key to a surface that is no longer mounted.
- *
- * Terminal resize and the cancellable working-line timer trigger redraws. Job notices
- * enter through the same sendTurn path as user messages, only while all surfaces are idle.
+ * Same-session model and mode notices share one drawn-state comparison after control refresh.
  */
 
 import type { SessionEvent } from "@nathapp/nax-agent";
@@ -56,6 +54,7 @@ import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
 import { useJobs } from "./use-jobs";
 import { useSlashMenuKeys } from "./use-slash-menu-keys";
+import { useSwitchNotices } from "./use-switch-notices";
 import { useChatKeys } from "./useChatKeys";
 
 export interface ChatAppProps {
@@ -317,6 +316,7 @@ export function ChatApp({
     transcriptSession.current = state.sessionId;
     setEntries(sessionTranscript(host));
   }, [host, state.sessionId]);
+  useSwitchNotices(state, append);
   useEffect(() => host.asks.onChange(update), [host, update]);
   useEffect(() => {
     const resourceNotice = host.resourceNotice?.();
