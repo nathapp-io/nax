@@ -196,6 +196,8 @@ class ChainController implements ChatChains {
       steps: this.current.steps.map((entry, i) => (i === step - 1 ? { ...entry, jobId } : entry)),
     };
     this.persist(this.current);
+    // The terminal notification may have arrived before the launch returned its job ID.
+    this.reconcile();
   }
 
   startFailed(chainId: string, step: number, message: string): void {

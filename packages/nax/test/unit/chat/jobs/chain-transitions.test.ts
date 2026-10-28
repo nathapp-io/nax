@@ -211,6 +211,28 @@ describe("createChainController job-end transitions", () => {
     chains.dispose();
     expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
+  test.each(["failed", "cancelled", "lost", "succeeded"] as const)(
+    "reconciles %s emitted before started registers the job",
+    async (state) => {
+      const chain = await chains.activate({ steps: [first] });
+      expect(chains.admit(first).kind).toBe("auto");
+      setJob(jobId, state);
+      listener();
+      expect(chains.active()?.id).toBe(chain.id);
+
+      chains.started(chain.id, 1, jobId);
+
+      const expectedState = state === "succeeded" ? "completed" : "stopped";
+      expect(chains.summary()).toMatchObject({ state: expectedState });
+      expect(chains.active()).toBeUndefined();
+      expect(await saved(chain, expectedState)).toMatchObject({
+        state: expectedState,
+        endedAt: now,
+        steps: [{ ...first, jobId }],
+        ...(state === "succeeded" ? {} : { stopReason: `step 1 ended ${state}` }),
+      });
+    },
+  );
   test("unknown jobs are not reconciled", async () => {
     const chain = await start();
     jobs.delete(jobId);
