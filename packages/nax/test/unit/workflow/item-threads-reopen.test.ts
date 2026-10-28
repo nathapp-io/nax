@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { type ForgeDeps, withNaxBotMarker as marked } from "@/forge";
+import { recordPrRulings } from "@/bot/rulings";
+import { workflowPrReadiness } from "@/bot/workflow-ready";
+import { type ForgeDeps, listPrComments, listReviewThreads, withNaxBotMarker as marked, readPrInfo } from "@/forge";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { Disposition } from "@/workflow/decisions-sidecar";
 import { newFeatureRecord } from "@/workflow/feature-record";
+import { readItemThreads } from "@/workflow/item-thread-state";
 import {
   closedKey,
   itemKey,
@@ -28,14 +31,16 @@ interface Options {
   closed?: boolean;
   resolved?: boolean;
   indexBody?: string;
+  noIndex?: boolean;
   author?: string;
   permission?: "write" | "read" | "reject";
-  fail?: "reply" | "unresolve";
+  fail?: "reply" | "unresolve" | "index";
 }
 function rejectWrite(cmd: readonly string[], failure: Options["fail"]): void {
   const replyFailed = failure === "reply" && cmd.some((arg) => arg.includes("key=wo-"));
   const unresolveFailed = failure === "unresolve" && cmd.some((arg) => arg.includes("unresolveReviewThread"));
-  if (replyFailed || unresolveFailed) throw new Error("write rejected");
+  const indexFailed = failure === "index" && cmd.some((arg) => arg.includes("key=w-index"));
+  if (replyFailed || unresolveFailed || indexFailed) throw new Error("write rejected");
 }
 
 function permissionReply(permission: Options["permission"]): { permission: string } {
@@ -55,6 +60,10 @@ function indexCommentBody(options: Options): string {
       "w-index",
     )
   );
+}
+
+function indexComments(options: Options) {
+  return options.noIndex ? [] : [{ id: 9, user: { login: "bot" }, created_at: "t", body: indexCommentBody(options) }];
 }
 
 function harness(options: Options = {}) {
@@ -84,6 +93,8 @@ function harness(options: Options = {}) {
       if (cmd.includes("POST") || cmd.includes("PATCH") || cmd.some((arg) => arg.startsWith("query=mutation"))) {
         writes.push(cmd);
         rejectWrite(cmd, options.fail);
+        const body = cmd.find((arg) => arg.startsWith("body=") && arg.includes("key=wo-"));
+        if (body) comments.push(comment(body.slice("body=".length), "bot", 15));
         return ok({ id: 1 });
       }
       if (cmd[0] === "git") return { exitCode: 0, stdout: "git@github.com:o/r.git", stderr: "" };
@@ -113,15 +124,7 @@ function harness(options: Options = {}) {
           },
         });
       if (cmd.some((arg) => arg.includes("/reviews?"))) return ok([]);
-      if (cmd.some((arg) => arg.includes("?per_page=")))
-        return ok([
-          {
-            id: 9,
-            user: { login: "bot" },
-            created_at: "t",
-            body: indexCommentBody(options),
-          },
-        ]);
+      if (cmd.some((arg) => arg.includes("?per_page="))) return ok(indexComments(options));
       return ok({ head: { sha: HEAD, ref: "feature" }, base: { ref: "main" }, user: { login: "author" } });
     },
   };
@@ -151,20 +154,85 @@ afterEach(() => {
   resetLogger();
 });
 function writtenIndexBody(writes: string[][]): string {
-  const body = writes.flat().find((arg) => arg.startsWith("body=") && arg.includes("key=w-index"));
+  const body = writes.flat().findLast((arg) => arg.startsWith("body=") && arg.includes("key=w-index"));
   expect(body).toBeDefined();
   return body?.slice("body=".length) ?? "";
 }
 
+const ref = { forge: "github", host: "github.com", repo: "o/r", number: 7 } as const;
+
+async function snapshot(h: ReturnType<typeof harness>) {
+  const threads = await listReviewThreads(ref, h.deps, "/repo");
+  const comments = await listPrComments(ref, h.deps, "/repo");
+  return { threads, comments };
+}
+
 describe("postItemThreads closed items and reopen retries", () => {
+  test("B1 failed notice holds real recorder readiness after a successful index edit", async () => {
+    const first = harness({ fail: "reply" });
+    expect(await postItemThreads(first.input, first.deps)).toMatchObject({ failed: 1 });
+    const next = harness({ indexBody: writtenIndexBody(first.writes) });
+    const outcome = await recordPrRulings({
+      ref,
+      info: await readPrInfo(ref, next.deps, "/repo"),
+      login: "bot",
+      ...(await snapshot(next)),
+      deps: next.deps,
+      cwd: "/repo",
+      readModel: async () => null,
+    });
+    expect(outcome.settled).toHaveLength(0);
+    expect(outcome.open).toHaveLength(1);
+    expect(workflowPrReadiness({ outcome, ci: { outcome: "green", detail: "passed" } })).toMatchObject({
+      ready: false,
+    });
+  });
+  test("B1 pre-notice publication creates a missing index only once", async () => {
+    const h = harness({ noIndex: true });
+    expect(await postItemThreads(h.input, h.deps)).toMatchObject({ failed: 0 });
+    const indexes = h.writes.filter((cmd) => cmd.some((arg) => arg.includes("key=w-index")));
+    expect(indexes).toHaveLength(2);
+    expect(indexes[0]).toContain("POST");
+    expect(indexes[1]).toContain("PATCH");
+  });
+  test("B1 no notice is attempted until the pending invalidation is durable", async () => {
+    const h = harness({ fail: "index" });
+    expect(await postItemThreads(h.input, h.deps)).toMatchObject({ failed: 2 });
+    expect(h.replies()).toHaveLength(0);
+    expect(h.unresolves()).toHaveLength(0);
+  });
+  test("B1 pending invalidation retries even on an incomplete review", async () => {
+    const first = harness({ fail: "reply" });
+    await postItemThreads(first.input, first.deps);
+    const next = harness({ indexBody: writtenIndexBody(first.writes) });
+    await postItemThreads({ ...next.input, record: { ...next.input.record, reviewRan: false } }, next.deps);
+    expect(next.replies()).toHaveLength(1);
+  });
+  test.each(["read", "reject"] as const)("B2 closed item still reopens for %s-only replies", async (permission) => {
+    const h = harness({ closed: true, previous: HEAD, author: "dave", permission });
+    await postItemThreads(h.input, h.deps);
+    expect(h.permissions).toHaveLength(1);
+    expect(h.replies()).toHaveLength(1);
+    expect(h.unresolves()).toHaveLength(1);
+  });
+  test("B2 closed item preserves pending writer replies while unresolving", async () => {
+    const h = harness({ closed: true, previous: HEAD, author: "carol", permission: "write" });
+    await postItemThreads(h.input, h.deps);
+    expect(h.permissions).toHaveLength(1);
+    expect(h.replies()).toHaveLength(0);
+    expect(h.unresolves()).toHaveLength(1);
+    const read = readItemThreads((await snapshot(h)).threads, [], "bot");
+    expect(read.items[0]?.replies.map((reply) => reply.id)).toEqual(["13", "14"]);
+  });
   test("US-005 AC-1/2 reopens a closed item at an unchanged reviewed head, reply first", async () => {
     const h = harness({ closed: true, previous: HEAD });
     await postItemThreads(h.input, h.deps);
     expect(h.replies()).toHaveLength(1);
     expect(h.replies()[0]).toContain(`body=${marked(renderItemReopened(HEAD), reopenKey(key))}`);
     expect(h.unresolves()).toHaveLength(1);
-    expect(h.writes[0]).toBe(h.replies()[0]);
-    expect(h.writes[1]).toBe(h.unresolves()[0]);
+    expect(h.writes[0]?.join(" ")).toContain("Pending reopen:");
+    expect(h.writes[1]).toBe(h.replies()[0]);
+    expect(h.writes[2]).toBe(h.unresolves()[0]);
   });
   test("US-005 AC-3/4 retries unresolve without a second notice, even without review", async () => {
     const h = harness({ notice: true, resolved: true, previous: HEAD });
@@ -211,9 +279,10 @@ describe("postItemThreads re-raised rulings", () => {
     expect(h.replies()[0]?.join(" ")).toContain("Raised again by the run at aaaaaaa");
     expect(h.unresolves()).toHaveLength(1);
     expect(h.unresolves()[0]).toContain("id=T");
-    expect(h.writes[0]).toBe(h.replies()[0]);
-    expect(h.writes[1]).toBe(h.unresolves()[0]);
-    expect(h.writes[2]?.join(" ")).toContain("key=w-index");
+    expect(h.writes[0]?.join(" ")).toContain("Pending reopen:");
+    expect(h.writes[1]).toBe(h.replies()[0]);
+    expect(h.writes[2]).toBe(h.unresolves()[0]);
+    expect(h.writes[3]?.join(" ")).toContain("key=w-index");
   });
   test.each(["waived", "confirmed", "overridden"] as const)("AC-5 preserves %s", async (disposition) => {
     const h = harness({ disposition });

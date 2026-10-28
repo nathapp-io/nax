@@ -8,6 +8,8 @@ import { closedKey, type ItemIndex, renderItemClosed, renderItemIndex } from "./
 import type { ItemThreadsInput } from "./item-threads-post";
 
 interface IndexContext {
+  /** Reuse an index created by the pre-notice write during this publish. */
+  postedIndex?: { id: string; kind: "comment" };
   readonly ref: PrRef;
   readonly read: ReadItemThreads;
   readonly login: string;
@@ -44,19 +46,33 @@ async function write(itemId: string, action: () => Promise<unknown>): Promise<bo
   }
 }
 
+export async function writeItemIndex(index: ItemIndex, context: IndexContext, settled = 0): Promise<boolean> {
+  const { ref, read, deps, cwd } = context;
+  const body = withNaxBotMarker(renderItemIndex(index, settled), "w-index");
+  return write("w-index", async () => {
+    const comment = read.indexComment ?? context.postedIndex;
+    if (comment) await editComment(ref, comment, body, deps, cwd);
+    else {
+      const posted = await postPrComment(ref, body, deps, cwd);
+      context.postedIndex = { id: posted.id, kind: "comment" };
+    }
+  });
+}
+
 export async function maintainItemIndex(
   input: ItemThreadsInput,
   keys: readonly string[],
   context: IndexContext,
-  options: { keepReviewed?: boolean; settled?: number } = {},
+  options: { keepReviewed?: boolean; settled?: number; pendingReopens?: ItemIndex["pendingReopens"] } = {},
 ): Promise<{ closed: number; failed: number }> {
   const { ref, read, login, deps, cwd } = context;
   const reviewed = options.keepReviewed
     ? { reviewedHead: read.index?.reviewedHead, reviewedBase: read.index?.reviewedBase }
     : reviewedIndex(input, read.index);
-  const body = withNaxBotMarker(renderItemIndex({ keys, ...reviewed }, options.settled ?? 0), "w-index");
-  const indexed = await write("w-index", () =>
-    read.indexComment ? editComment(ref, read.indexComment, body, deps, cwd) : postPrComment(ref, body, deps, cwd),
+  const indexed = await writeItemIndex(
+    { keys, ...reviewed, pendingReopens: options.pendingReopens ?? read.index?.pendingReopens },
+    context,
+    options.settled ?? 0,
   );
   const outcome = { closed: 0, failed: indexed ? 0 : 1 };
   if (!indexed) return outcome;

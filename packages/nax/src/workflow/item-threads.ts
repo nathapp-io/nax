@@ -20,6 +20,8 @@ export interface ItemIndex {
   readonly reviewedHead?: string;
   readonly reviewedBase?: string;
   readonly keys: readonly string[];
+  /** Invalidate only the own comment observed before a reopen, never a later ruling echo. */
+  readonly pendingReopens?: readonly { readonly key: string; readonly commentId: string }[];
 }
 
 const HASH_CHARS = 8;
@@ -178,6 +180,7 @@ export function renderItemIndex(index: ItemIndex, settled = 0): string {
     `nax workflow items: ${index.keys.length} (${settled} settled)`,
     `Reviewed head: ${head ?? "none"}`,
     ...(base ? [`Reviewed base: ${base}`] : []),
+    ...(index.pendingReopens ?? []).map(({ key, commentId }) => `Pending reopen: ${key} ${commentId}`),
     ...index.keys.map((key) => `- ${key}`),
   ].join("\n");
 }
@@ -191,10 +194,17 @@ export function parseItemIndex(body: string): ItemIndex | null {
   const head = validSha(headLine.slice("Reviewed head: ".length));
   const baseLine = rest[0]?.startsWith("Reviewed base: ") ? rest.shift() : undefined;
   const base = head && baseLine ? validSha(baseLine.slice("Reviewed base: ".length)) : undefined;
+  const pendingReopens: NonNullable<ItemIndex["pendingReopens"]>[number][] = [];
+  while (rest[0]?.startsWith("Pending reopen: ")) {
+    const match = /^Pending reopen: (\S+) (\d+)$/.exec(rest.shift() ?? "");
+    if (!match?.[1] || !match[2]) return null;
+    pendingReopens.push({ key: match[1], commentId: match[2] });
+  }
   // Preserve even unpostable item keys: their presence must continue to hold readiness closed.
   if (rest.some((line) => !line.startsWith("- ")) || rest.length !== Number(count)) return null;
   return {
     keys: rest.map((line) => line.slice(2)),
+    ...(pendingReopens.length ? { pendingReopens } : {}),
     ...(head ? { reviewedHead: head } : {}),
     ...(base ? { reviewedBase: base } : {}),
   };

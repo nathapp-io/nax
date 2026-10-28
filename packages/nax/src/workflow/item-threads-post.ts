@@ -140,6 +140,7 @@ export async function postItemThreads(
   );
   const index = await maintainItemIndex(input, keys, maintenance, {
     keepReviewed: reopen.failed > 0,
+    pendingReopens: reopen.pendingReopens,
     settled: keys.filter((key) => settled.has(key)).length,
   });
   return { ...outcome, closed: index.closed, failed: outcome.failed + index.failed };

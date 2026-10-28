@@ -23,14 +23,17 @@ export interface SettledItems {
   readonly open: readonly (ItemThread & { readonly kept: readonly PrComment[] })[];
 }
 
-function readThread(thread: PrThread, login: string): ItemThread | null {
+function readThread(thread: PrThread, login: string, index?: ItemIndex): ItemThread | null {
   const own = ownComments(thread.comments, login);
   const opener = own[0];
   if (!opener || opener.comment !== thread.comments[0] || !opener.key.startsWith("w-")) return null;
   const identity = parseItemOpener(opener.comment.body);
   if (!identity) return null;
   const last = own.at(-1);
-  const parsed = last?.key.startsWith("wr-") ? parseRulingEcho(last.key, last.comment.body) : null;
+  const pending = index?.pendingReopens?.some(
+    ({ key, commentId }) => key === opener.key && commentId === last?.comment.id,
+  );
+  const parsed = !pending && last?.key.startsWith("wr-") ? parseRulingEcho(last.key, last.comment.body) : null;
   const ruling = parsed?.itemKey === opener.key && parsed.itemId === identity.id ? parsed : undefined;
   const boundary = last ? thread.comments.indexOf(last.comment) : 0;
   const owned = new Set(own.map(({ comment }) => comment));
@@ -55,7 +58,7 @@ export function readItemThreads(
     .at(-1)?.comment;
   const index = indexComment ? parseItemIndex(indexComment.body) : null;
   const items = threads.flatMap((thread) => {
-    const item = readThread(thread, login);
+    const item = readThread(thread, login, index ?? undefined);
     return item ? [item] : [];
   });
   return { items, ...(indexComment ? { indexComment } : {}), ...(index ? { index } : {}) };

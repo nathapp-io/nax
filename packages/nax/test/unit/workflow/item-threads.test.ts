@@ -163,6 +163,14 @@ describe("renderItemIndex", () => {
   });
 });
 describe("parseItemIndex", () => {
+  test("round trips readiness-readable pending reopen boundaries", async () => {
+    const { parseItemIndex, renderItemIndex } = await formats();
+    const index = { keys: [key], pendingReopens: [{ key, commentId: "42" }] };
+    expect(parseItemIndex(renderItemIndex(index))).toEqual(index);
+    expect(
+      parseItemIndex(`nax workflow items: 1 (0 settled)\nReviewed head: none\nPending reopen: ${key} bad\n- ${key}`),
+    ).toBeNull();
+  });
   test("AC-16 round trips raw and marked indices", async () => {
     const { parseItemIndex, renderItemIndex } = await formats();
     const index = { reviewedHead: head, reviewedBase: base, keys: [key, "w-bad id.12345678"] };

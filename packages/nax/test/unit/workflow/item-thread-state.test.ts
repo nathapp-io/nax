@@ -48,6 +48,18 @@ const fixedEcho = () => marked("2", renderRulingEcho(fixedRuling), `wr-fixed-${k
 const reopened = () => marked("notice", renderItemReopened(head), reopenKey(key));
 
 describe("reopen notice", () => {
+  test("pending invalidation holds the observed echo but permits a later durable ruling", async () => {
+    const pending = marked(
+      "index",
+      renderItemIndex({ keys: [key], pendingReopens: [{ key, commentId: "2" }] }),
+      "w-index",
+    );
+    const held = readItemThreads([thread(opener(), fixedEcho())], [pending], "bot");
+    expect((await settleItemThreads(held, async () => false)).open).toHaveLength(1);
+    const newer = marked("3", renderRulingEcho(fixedRuling), `wr-fixed-${key}`);
+    const reread = readItemThreads([thread(opener(), fixedEcho(), newer)], [pending], "bot");
+    expect((await settleItemThreads(reread, async () => false)).settled).toHaveLength(1);
+  });
   test("AC-4 a last-own reopen notice leaves a previously fixed item without a ruling", () => {
     const ruled = readItemThreads([thread(opener(), fixedEcho())], [index()], "bot");
     expect(ruled.items[0]?.ruling?.disposition).toBe("fixed");
