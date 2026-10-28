@@ -29,7 +29,8 @@ afterEach(async () => {
 function fixture() {
   const repoRoot = makeTempDir("host-chain-");
   dirs.push(repoRoot);
-  const config = makeNaxConfig({ outputDir: join(repoRoot, "output"), execution: { approvalTimeout: 30_000 } });
+  const outputDir = join(repoRoot, "output");
+  const config = makeNaxConfig({ outputDir, execution: { approvalTimeout: 30_000 } });
   const logger = makeLogger();
   return {
     repoRoot,
@@ -37,7 +38,7 @@ function fixture() {
     logger,
     now,
     naxEntry: ["bun", "/n.ts"],
-    outputDir: config.outputDir,
+    outputDir,
     sessionId: () => "chat-chain",
   };
 }
@@ -187,7 +188,7 @@ describe("createChatHost chain composition", () => {
     await waitForCondition(() => f.host.asks.pending().length === 1);
     const card = f.host.asks.pending()[0];
     assertDefined(card, "chain approval");
-    expect(card.tool).toBe("nax-jobs__chain");
+    expect(card).toMatchObject({ type: "approval_requested", tool: "nax-jobs__chain" });
     expect(f.host.asks.pending()).toHaveLength(1);
     f.host.asks.resolve(card.requestId, "allow_once");
     expect((await pending).isError).not.toBe(true);
