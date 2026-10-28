@@ -117,7 +117,7 @@ export interface ResolvedProvider {
 }
 
 /** Thinking wire formats selectable by a catalog override. */
-export type ThinkingFormat = "openai" | "qwen" | "qwen-chat-template" | "deepseek" | "zai";
+export type ThinkingFormat = "openai" | "qwen" | "qwen-chat-template" | "deepseek" | "zai" | "openrouter";
 
 export interface ResolvedModel {
   readonly id: string;
@@ -192,6 +192,8 @@ export interface ResolvedModel {
  */
 export interface ProviderOverride {
   readonly provider: string;
+  /** Environment variable for an introduced provider; stored credentials win. Invalid on bundled providers. */
+  readonly authEnv?: string;
   readonly baseUrl?: string;
   readonly headers?: Readonly<Record<string, string>>;
   readonly models?: readonly ResolvedModel[];
