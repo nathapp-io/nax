@@ -1,6 +1,7 @@
 import type { ProviderTool, ToolProvider, ToolResult } from "@nathapp/nax-agent";
 import { buildJobsInstructions } from "@/prompts";
 import type { HostApprovalCard } from "../ask-controller";
+import type { ChatChains } from "./chain-controller";
 import { type ChatJobs, JOB_LOG_TAIL_LINES } from "./job-runner";
 import { type ChatJob, type ChatJobKind, JOB_ID_PATTERN } from "./job-types";
 import { launchToolRun } from "./jobs-launch";
@@ -13,6 +14,7 @@ export interface JobsProviderOptions {
   readonly maxIterations: number;
   readonly interactionPlugin: string;
   readonly jobs: ChatJobs;
+  readonly chains?: ChatChains;
   readonly approve: (card: HostApprovalCard) => Promise<"allow" | "deny">;
   readonly sessionId: () => string;
   readonly now: () => Date;
@@ -88,7 +90,7 @@ function inspectionTool(name: "list" | "cancel", options: JobsProviderOptions): 
   };
 }
 
-/** Repo-scoped static tools; every billed launch asks through the host approval port. */
+/** Repo-scoped static tools; billed launches require their own card or chain approval. */
 export function createJobsProvider(options: JobsProviderOptions): ToolProvider {
   return {
     id: "nax-jobs",

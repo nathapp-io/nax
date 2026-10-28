@@ -59,6 +59,16 @@ function nextChange(jobs: ReturnType<typeof runner>): Promise<void> {
 }
 
 describe("createJobRunner", () => {
+  test("US-006 AC-20 persists chain identity from start request", async () => {
+    const jobs = runner();
+    try {
+      const chained = { ...request, chainId: "chain-1a2b3c4d", chainStep: 2 };
+      await jobs.start(chained);
+      expect((await readJobRecords(outputDir))[0]).toMatchObject({ chainId: chained.chainId, chainStep: 2 });
+    } finally {
+      jobs.dispose();
+    }
+  });
   test("AC-1,2,4,5,6,7 spawns detached with one append log fd and closes it in order", async () => {
     const events: string[] = [];
     _jobRunnerDeps.openLog = mock(() => {

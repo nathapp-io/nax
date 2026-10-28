@@ -23,6 +23,8 @@ export interface StartJobRequest {
   readonly argv: readonly string[];
   readonly sessionId: string;
   readonly approvedAt: string;
+  readonly chainId?: string;
+  readonly chainStep?: number;
 }
 export interface ChatJobs {
   /** A launched child remains managed on record-write failure; the returned note warns not to retry. */
