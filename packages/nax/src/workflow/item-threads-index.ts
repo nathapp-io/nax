@@ -48,9 +48,13 @@ export async function maintainItemIndex(
   input: ItemThreadsInput,
   keys: readonly string[],
   context: IndexContext,
+  options: { keepReviewed?: boolean } = {},
 ): Promise<{ closed: number; failed: number }> {
   const { ref, read, login, deps, cwd } = context;
-  const body = withNaxBotMarker(renderItemIndex({ keys, ...reviewedIndex(input, read.index) }), "w-index");
+  const reviewed = options.keepReviewed
+    ? { reviewedHead: read.index?.reviewedHead, reviewedBase: read.index?.reviewedBase }
+    : reviewedIndex(input, read.index);
+  const body = withNaxBotMarker(renderItemIndex({ keys, ...reviewed }), "w-index");
   const indexed = await write("w-index", () =>
     read.indexComment ? editComment(ref, read.indexComment, body, deps, cwd) : postPrComment(ref, body, deps, cwd),
   );

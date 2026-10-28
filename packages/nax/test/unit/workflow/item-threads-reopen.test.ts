@@ -4,7 +4,10 @@ import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { Disposition } from "@/workflow/decisions-sidecar";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import {
+  closedKey,
   itemKey,
+  parseItemIndex,
+  renderItemClosed,
   renderItemIndex,
   renderItemOpener,
   renderItemReopened,
@@ -22,6 +25,9 @@ interface Options {
   disposition?: Disposition;
   previous?: string | null;
   notice?: boolean;
+  closed?: boolean;
+  resolved?: boolean;
+  indexBody?: string;
   author?: string;
   permission?: "write" | "read" | "reject";
   fail?: "reply" | "unresolve";
@@ -52,6 +58,7 @@ function harness(options: Options = {}) {
   const comments = [
     comment(marked(renderItemOpener(item), key), "bot", 10),
     comment(marked(renderRulingEcho(ruling), `wr-${disposition}-${key}`), "bot", 11),
+    ...(options.closed ? [comment(marked(renderItemClosed(OLD), closedKey(key)), "bot", 12)] : []),
     ...(options.notice ? [comment(marked(renderItemReopened(OLD), reopenKey(key)), "bot", 12)] : []),
     ...(options.author
       ? [comment("pending reply", options.author, 13), comment("another reply", options.author, 14)]
@@ -77,7 +84,14 @@ function harness(options: Options = {}) {
             repository: {
               pullRequest: {
                 reviewThreads: {
-                  nodes: [{ id: "T", isResolved: !options.notice, isOutdated: false, comments: { nodes: comments } }],
+                  nodes: [
+                    {
+                      id: "T",
+                      isResolved: options.resolved ?? !options.notice,
+                      isOutdated: false,
+                      comments: { nodes: comments },
+                    },
+                  ],
                   pageInfo: { hasNextPage: false },
                 },
               },
@@ -91,13 +105,16 @@ function harness(options: Options = {}) {
             id: 9,
             user: { login: "bot" },
             created_at: "t",
-            body: marked(
-              renderItemIndex({
-                keys: [key],
-                reviewedHead: options.previous === null ? undefined : (options.previous ?? OLD),
-              }),
-              "w-index",
-            ),
+            body:
+              options.indexBody ??
+              marked(
+                renderItemIndex({
+                  keys: [key],
+                  reviewedHead: options.previous === null ? undefined : (options.previous ?? OLD),
+                  reviewedBase: OLD,
+                }),
+                "w-index",
+              ),
           },
         ]);
       return ok({ head: { sha: HEAD, ref: "feature" }, base: { ref: "main" }, user: { login: "author" } });
@@ -128,6 +145,58 @@ afterEach(() => {
   remove();
   resetLogger();
 });
+function writtenIndexBody(writes: string[][]): string {
+  const body = writes.flat().find((arg) => arg.startsWith("body=") && arg.includes("key=w-index"));
+  expect(body).toBeDefined();
+  return body?.slice("body=".length) ?? "";
+}
+
+describe("postItemThreads closed items and reopen retries", () => {
+  test("US-005 AC-1/2 reopens a closed item at an unchanged reviewed head, reply first", async () => {
+    const h = harness({ closed: true, previous: HEAD });
+    await postItemThreads(h.input, h.deps);
+    expect(h.replies()).toHaveLength(1);
+    expect(h.replies()[0]).toContain(`body=${marked(renderItemReopened(HEAD), reopenKey(key))}`);
+    expect(h.unresolves()).toHaveLength(1);
+    expect(h.writes[0]).toBe(h.replies()[0]);
+    expect(h.writes[1]).toBe(h.unresolves()[0]);
+  });
+  test("US-005 AC-3/4 retries unresolve without a second notice, even without review", async () => {
+    const h = harness({ notice: true, resolved: true, previous: HEAD });
+    await postItemThreads({ ...h.input, record: { ...h.input.record, reviewRan: false } }, h.deps);
+    expect(h.unresolves()).toHaveLength(1);
+    expect(h.replies()).toHaveLength(0);
+  });
+  test.each(["reply", "unresolve"] as const)("US-005 AC-5/6 closed %s failure retains provenance", async (fail) => {
+    const h = harness({ closed: true, fail });
+    const result = await postItemThreads({ ...h.input, record: { ...h.input.record, seed: HEAD } }, h.deps);
+    expect(result.failed).toBe(1);
+    expect(h.replies()).toHaveLength(1);
+    expect(h.unresolves()).toHaveLength(fail === "reply" ? 0 : 1);
+    expect(parseItemIndex(writtenIndexBody(h.writes))).toMatchObject({ reviewedHead: OLD, reviewedBase: OLD });
+    expect(
+      logs.some((entry) => entry.message === "[item-threads] Reopen write failed" && entry.data?.itemId === "B1"),
+    ).toBe(true);
+  });
+  test("US-005 AC-7 successful closed reopen advances reviewed head and base", async () => {
+    const h = harness({ closed: true });
+    expect(await postItemThreads({ ...h.input, record: { ...h.input.record, seed: HEAD } }, h.deps)).toMatchObject({
+      failed: 0,
+    });
+    expect(h.replies()).toHaveLength(1);
+    expect(parseItemIndex(writtenIndexBody(h.writes))).toMatchObject({ reviewedHead: HEAD, reviewedBase: HEAD });
+  });
+  test("US-005 AC-8 retries a failed ruled reply from the retained index and unchanged thread", async () => {
+    const first = harness({ fail: "reply" });
+    expect(await postItemThreads(first.input, first.deps)).toMatchObject({ failed: 1 });
+    const indexBody = writtenIndexBody(first.writes);
+    const next = harness({ indexBody });
+    expect(await postItemThreads(next.input, next.deps)).toMatchObject({ failed: 0 });
+    expect(next.replies()).toHaveLength(1);
+    expect(next.unresolves()).toHaveLength(1);
+  });
+});
+
 describe("postItemThreads re-raised rulings", () => {
   test.each(["fixed", "verified"] as const)("AC-1/2/3/4 reopens %s before unresolve and index", async (disposition) => {
     const h = harness({ disposition });

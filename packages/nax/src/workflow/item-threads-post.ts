@@ -133,6 +133,6 @@ export async function postItemThreads(
   const maintenance = { ...snapshot, deps, cwd: input.projectDir };
   const reopen = await reopenReraisedItems(input, keys, maintenance);
   outcome.failed += reopen.failed;
-  const index = await maintainItemIndex(input, keys, maintenance);
+  const index = await maintainItemIndex(input, keys, maintenance, { keepReviewed: reopen.failed > 0 });
   return { ...outcome, closed: index.closed, failed: outcome.failed + index.failed };
 }
