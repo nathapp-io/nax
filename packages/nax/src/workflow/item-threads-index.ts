@@ -16,7 +16,7 @@ interface IndexContext {
   readonly info: { readonly headSha: string };
 }
 
-function reviewedIndex(input: ItemThreadsInput, previous: ItemIndex | undefined): Omit<ItemIndex, "keys"> {
+export function reviewedIndex(input: ItemThreadsInput, previous: ItemIndex | undefined): Omit<ItemIndex, "keys"> {
   const rec = input.record;
   if (
     rec.reviewRan !== true ||
