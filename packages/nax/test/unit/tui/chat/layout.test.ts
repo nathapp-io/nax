@@ -249,7 +249,7 @@ describe("layoutTranscript: skill entries", () => {
     const args = "x".repeat(100);
     const rows = texts(layout([{ ...skill, args }]));
     expect(rows.length).toBeGreaterThan(2);
-    expect(rows.slice(0, -1)).toEqual(texts(layout([userEntry(`/s ${args}`)])));
+    expect(rows.slice(0, -1)).toEqual([...texts(layout([userEntry(`/s ${args}`)]))]);
     expect(rows.at(-1)).toBe("  ⎿  skill s · 3 lines (ctrl+o to show)");
     expect(rows.filter((row) => row.includes("⎿  skill"))).toHaveLength(1);
   });
