@@ -1,17 +1,32 @@
 /** Record collaborator rulings durably on the PR; body ticks are best-effort presentation only. */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ForgeDeps } from "@/forge";
-import { hasWriteAccess, ownComments, readPrInfo, replyToThread, resolveThread, withNaxBotMarker } from "@/forge";
+import {
+  editComment,
+  hasWriteAccess,
+  ownComments,
+  readPrInfo,
+  replyToThread,
+  resolveThread,
+  withNaxBotMarker,
+} from "@/forge";
 import type { PrComment, PrInfo, PrRef } from "@/forge/pr-types";
 import { getLogger } from "@/logger";
 import { RULING_SHA_PATTERN } from "@/utils/ruling-sha";
 import type { BotRulingReadInput, BotRulingReadVerdict } from "../operations/bot-ruling-read";
 import { type DecisionEntry, sidecarKindFor } from "../workflow/decisions-sidecar";
-import type { ItemThread, SettledItems } from "../workflow/item-thread-state";
+import type { ItemThread, ReadItemThreads, SettledItems } from "../workflow/item-thread-state";
 // Workflow leaves avoid pulling feature orchestration into the bot recorder.
 import { readItemThreads, settleItemThreads, unindexedItemKeys } from "../workflow/item-thread-state";
 import type { ItemIndex, PrRuling } from "../workflow/item-threads";
-import { askKey, isOpenItemKind, parseItemOpener, renderRulingAsk, renderRulingEcho } from "../workflow/item-threads";
+import {
+  askKey,
+  isOpenItemKind,
+  parseItemOpener,
+  renderItemIndex,
+  renderRulingAsk,
+  renderRulingEcho,
+} from "../workflow/item-threads";
 import { editBodyArgv, hasChecklistItem, tickChecklist } from "../workflow/promote";
 import { parseRulingKeyword } from "../workflow/ruling-keyword";
 import { writerCheck } from "./writers";
@@ -42,6 +57,7 @@ export interface RecordRulingsOutcome {
 }
 
 export const _rulingsDeps = {
+  editComment,
   hasWriteAccess,
   readPrInfo,
   replyToThread,
@@ -192,6 +208,23 @@ async function readModelCandidates(input: RecordRulingsInput, open: SettledItems
   return result;
 }
 
+async function refreshIndex(
+  input: RecordRulingsInput,
+  read: ReadItemThreads,
+  settled: SettledItems["settled"],
+): Promise<void> {
+  if (!read.index || !read.indexComment) return;
+  const keys = new Set(read.index.keys);
+  const count = new Set(settled.filter((item) => keys.has(item.key)).map((item) => item.key)).size;
+  const body = withNaxBotMarker(renderItemIndex(read.index, count), "w-index");
+  if (body === read.indexComment.body) return;
+  try {
+    await _rulingsDeps.editComment(input.ref, read.indexComment, body, input.deps, input.cwd);
+  } catch (error) {
+    warn("Could not refresh the item index", { error: errorMessage(error) });
+  }
+}
+
 /** Only successful echoes count as newly recorded; resolution failure never undoes an echo. */
 export async function recordPrRulings(input: RecordRulingsInput): Promise<RecordRulingsOutcome> {
   const read = readItemThreads(input.threads, input.comments, input.login);
@@ -225,6 +258,7 @@ export async function recordPrRulings(input: RecordRulingsInput): Promise<Record
     await resolve(input, item);
   }
   await tickBody(input, settled);
+  await refreshIndex(input, read, settled);
   const unindexed = unindexedItemKeys(read, input.login);
   return {
     ...(read.index ? { index: read.index } : {}),

@@ -279,3 +279,29 @@ describe("postItemThreads re-raised rulings", () => {
     },
   );
 });
+
+describe("postItemThreads settled index counts", () => {
+  test("US-006 AC-7 counts only this publish's ruled keys without permission reads", async () => {
+    const h = harness({ disposition: "waived" });
+    const second = { ...finding, id: "B2", issue: "another" };
+    await postItemThreads({ ...h.input, record: { ...h.input.record, reviewOpen: [finding, second] } }, h.deps);
+    expect(writtenIndexBody(h.writes).split("\n")[2]).toBe("nax workflow items: 2 (1 settled)");
+    expect(h.permissions).toHaveLength(0);
+  });
+  test.each([undefined, "reply"] as const)("US-006 AC-8/9 excludes attempted reopen %s", async (fail) => {
+    const baseline = harness({ previous: HEAD });
+    await postItemThreads(baseline.input, baseline.deps);
+    expect(writtenIndexBody(baseline.writes).split("\n")[2]).toBe("nax workflow items: 1 (1 settled)");
+    const h = harness({ fail });
+    const out = await postItemThreads(h.input, h.deps);
+    expect(out.failed).toBe(fail ? 1 : 0);
+    expect(h.replies()).toHaveLength(1);
+    expect(writtenIndexBody(h.writes).split("\n")[2]).toBe("nax workflow items: 1 (0 settled)");
+  });
+  test("US-006 AC-10 any later reply prevents settlement without permission reads", async () => {
+    const h = harness({ disposition: "waived", author: "carol" });
+    await postItemThreads(h.input, h.deps);
+    expect(writtenIndexBody(h.writes).split("\n")[2]).toBe("nax workflow items: 1 (0 settled)");
+    expect(h.permissions).toHaveLength(0);
+  });
+});

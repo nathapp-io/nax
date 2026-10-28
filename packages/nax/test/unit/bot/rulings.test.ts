@@ -45,6 +45,7 @@ const original = { ..._rulingsDeps };
 const logger = makeLogger();
 const access = mock(async (..._args: Parameters<typeof _rulingsDeps.hasWriteAccess>) => true);
 const post = mock(async () => ({ id: "posted" }));
+const edit = mock(async () => {});
 const resolve = mock(async () => {});
 const read = mock(async () => ({ ...info, body: "- [ ] **B3** (finding): x\n- [ ] **B30** untouched" }));
 const tick = mock(tickChecklist);
@@ -63,13 +64,15 @@ const input = (threads = [thread(opener(), reply())]): RecordRulingsInput => ({
 
 beforeEach(() => {
   logger.reset();
-  for (const fn of [access, post, resolve, read, tick, run, readModel]) fn.mockClear();
+  for (const fn of [edit, access, post, resolve, read, tick, run, readModel]) fn.mockClear();
+  edit.mockImplementation(async () => {});
   access.mockImplementation(async () => true);
   post.mockImplementation(async () => ({ id: "posted" }));
   resolve.mockImplementation(async () => {});
   read.mockImplementation(async () => ({ ...info, body: "- [ ] **B3** (finding): x\n- [ ] **B30** untouched" }));
   run.mockImplementation(async () => ({ exitCode: 0, stdout: "", stderr: "" }));
   Object.assign(_rulingsDeps, {
+    editComment: edit,
     hasWriteAccess: access,
     replyToThread: post,
     resolveThread: resolve,
@@ -270,5 +273,59 @@ describe("recordPrRulings", () => {
     expect((await recordPrRulings(input())).recorded).toEqual([ruling]);
     expect(logger.warn).toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe("recordPrRulings index refresh", () => {
+  test("US-006 AC-11 refreshes using the original provenance", async () => {
+    const value = input();
+    await recordPrRulings(value);
+    expect(edit).toHaveBeenCalledWith(
+      value.ref,
+      value.comments[0],
+      withNaxBotMarker(renderItemIndex({ keys: [key], reviewedHead: info.headSha }, 1), "w-index"),
+      value.deps,
+      value.cwd,
+    );
+  });
+  test("US-006 AC-12 does not rewrite matching body", async () => {
+    await recordPrRulings({ ...input(), comments: [marked("index", renderItemIndex({ keys: [key] }, 1), "w-index")] });
+    expect(edit).not.toHaveBeenCalled();
+  });
+  test("US-006 AC-13 no owned index means no refresh", async () => {
+    await recordPrRulings({ ...input(), comments: [] });
+    expect(edit).not.toHaveBeenCalled();
+  });
+  test("US-006 AC-14 excludes settled threads outside the index", async () => {
+    const otherKey = "w-B4.12345678";
+    const other = thread(
+      marked("other", renderItemOpener({ id: "B4", kind: "finding", issue: "other" }), otherKey),
+      marked("other-echo", renderRulingEcho({ ...ruling, itemId: "B4", itemKey: otherKey }), `wr-waived-${otherKey}`),
+    );
+    await recordPrRulings(input([thread(opener(), echo()), other]));
+    expect(edit).toHaveBeenCalledTimes(1);
+    expect(edit.mock.calls[0]).toBeDefined();
+    expect(edit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.stringContaining("nax workflow items: 1 (1 settled)"),
+      expect.anything(),
+      "/checkout",
+    );
+  });
+  test("US-006 AC-15/16/17 refresh failure warns and leaves the full outcome unchanged", async () => {
+    const value = input();
+    const success = await recordPrRulings(value);
+    edit.mockImplementation(async () => {
+      throw new Error("refresh failed");
+    });
+    const failed = await recordPrRulings(value);
+    expect(failed).toEqual(success);
+    expect(failed.settled).toHaveLength(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "bot-rulings",
+      "[bot-rulings] Could not refresh the item index",
+      expect.objectContaining({ error: "refresh failed" }),
+    );
   });
 });

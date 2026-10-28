@@ -251,6 +251,7 @@ describe("runBotReview finding rulings", () => {
       comment("index", "bot", withNaxBotMarker(renderItemIndex({ keys: [wKey] }), "w-index")),
     ];
     Object.assign(_rulingsDeps, {
+      editComment: async () => {},
       hasWriteAccess: access,
       readPrInfo: async () => info,
       replyToThread: echo,

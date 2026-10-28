@@ -171,11 +171,11 @@ function validSha(sha: string | undefined): string | undefined {
   return sha !== undefined && SHA_PATTERN.exec(sha)?.[0] === sha ? sha : undefined;
 }
 
-export function renderItemIndex(index: ItemIndex): string {
+export function renderItemIndex(index: ItemIndex, settled = 0): string {
   const head = validSha(index.reviewedHead);
   const base = head ? validSha(index.reviewedBase) : undefined;
   return [
-    `nax workflow open items: ${index.keys.length}`,
+    `nax workflow items: ${index.keys.length} (${settled} settled)`,
     `Reviewed head: ${head ?? "none"}`,
     ...(base ? [`Reviewed base: ${base}`] : []),
     ...index.keys.map((key) => `- ${key}`),
@@ -184,8 +184,10 @@ export function renderItemIndex(index: ItemIndex): string {
 
 export function parseItemIndex(body: string): ItemIndex | null {
   const [countLine, headLine, ...rest] = bodyLines(body);
-  const count = /^nax workflow open items: (\d+)$/.exec(countLine ?? "")?.[1];
-  if (count === undefined || !headLine?.startsWith("Reviewed head: ")) return null;
+  const modern = /^nax workflow items: (\d+) \((\d+) settled\)$/.exec(countLine ?? "");
+  const count = modern?.[1] ?? /^nax workflow open items: (\d+)$/.exec(countLine ?? "")?.[1];
+  if (count === undefined || Number(modern?.[2] ?? 0) > Number(count)) return null;
+  if (!headLine?.startsWith("Reviewed head: ")) return null;
   const head = validSha(headLine.slice("Reviewed head: ".length));
   const baseLine = rest[0]?.startsWith("Reviewed base: ") ? rest.shift() : undefined;
   const base = head && baseLine ? validSha(baseLine.slice("Reviewed base: ".length)) : undefined;

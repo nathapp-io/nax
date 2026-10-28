@@ -133,6 +133,14 @@ export async function postItemThreads(
   const maintenance = { ...snapshot, deps, cwd: input.projectDir };
   const reopen = await reopenReraisedItems(input, keys, maintenance);
   outcome.failed += reopen.failed;
-  const index = await maintainItemIndex(input, keys, maintenance, { keepReviewed: reopen.failed > 0 });
+  const settled = new Set(
+    snapshot.read.items
+      .filter((item) => item.ruling && item.replies.length === 0 && !reopen.reopened.has(item.key))
+      .map((item) => item.key),
+  );
+  const index = await maintainItemIndex(input, keys, maintenance, {
+    keepReviewed: reopen.failed > 0,
+    settled: keys.filter((key) => settled.has(key)).length,
+  });
   return { ...outcome, closed: index.closed, failed: outcome.failed + index.failed };
 }

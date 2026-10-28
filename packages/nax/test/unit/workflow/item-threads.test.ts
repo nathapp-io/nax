@@ -152,11 +152,13 @@ describe("renderItemIndex", () => {
   test("AC-15 renders ordered index", async () => {
     expect(
       (await formats()).renderItemIndex({ reviewedHead: head, reviewedBase: base, keys: [key, "w-other.abcdef12"] }),
-    ).toBe(`nax workflow open items: 2\nReviewed head: ${head}\nReviewed base: ${base}\n- ${key}\n- w-other.abcdef12`);
+    ).toBe(
+      `nax workflow items: 2 (0 settled)\nReviewed head: ${head}\nReviewed base: ${base}\n- ${key}\n- w-other.abcdef12`,
+    );
   });
   test("retains unpostable keys and omits base without head", async () => {
     expect((await formats()).renderItemIndex({ reviewedBase: base, keys: ["w-bad id.12345678"] })).toBe(
-      "nax workflow open items: 1\nReviewed head: none\n- w-bad id.12345678",
+      "nax workflow items: 1 (0 settled)\nReviewed head: none\n- w-bad id.12345678",
     );
   });
 });
@@ -192,4 +194,33 @@ test("GitLab dotted logins round-trip", async () => {
   const f = await formats();
   const value = { ...ruling, by: "john.doe" };
   expect(f.parseRulingEcho(`wr-waived-${key}`, f.renderRulingEcho(value))).toEqual(value);
+});
+
+describe("settled item index", () => {
+  test("US-006 AC-2 explicit settled count", async () => {
+    expect((await formats()).renderItemIndex({ keys: [key, "w-other.abcdef12"] }, 1).split("\n")[0]).toBe(
+      "nax workflow items: 2 (1 settled)",
+    );
+  });
+  test("US-006 AC-3 count is presentation only", async () => {
+    const { renderItemIndex, parseItemIndex } = await formats();
+    const index = { reviewedHead: head, reviewedBase: base, keys: [key] };
+    expect(parseItemIndex(renderItemIndex(index, 1))).toEqual(index);
+    expect(
+      parseItemIndex(`nax workflow items: 1 (1 settled)\nReviewed head: ${head}\nReviewed base: ${base}\n- ${key}`),
+    ).toEqual(index);
+  });
+  test("US-006 AC-4 accepts legacy populated index", async () => {
+    expect((await formats()).parseItemIndex(`nax workflow open items: 1\nReviewed head: none\n- ${key}`)).toEqual({
+      keys: [key],
+    });
+  });
+  test.each([
+    [1, 2],
+    [2, 0],
+  ])("US-006 AC-5/6 rejects invalid counts %s/%s", async (n, settled) => {
+    expect(
+      (await formats()).parseItemIndex(`nax workflow items: ${n} (${settled} settled)\nReviewed head: none\n- ${key}`),
+    ).toBeNull();
+  });
 });
