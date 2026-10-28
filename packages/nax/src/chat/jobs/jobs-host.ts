@@ -25,10 +25,14 @@ export function createHostJobs(options: HostJobsOptions): {
   provider: ReturnType<typeof createJobsProvider>;
   guard: ReturnType<typeof createJobWriteGuard>;
   confirmClose: () => Promise<void>;
+  close: () => void;
+  sessionChanged: () => void;
 } {
   const jobs = createJobRunner({ repoRoot: options.repoRoot, outputDir: options.outputDir, now: options.now });
   const closing = new AbortController();
+  let sessionGeneration = 0;
   const chains = createChainController({
+    sessionGeneration: () => sessionGeneration,
     outputDir: options.outputDir,
     closeSignal: closing.signal,
     cwd: options.repoRoot,
@@ -45,9 +49,16 @@ export function createHostJobs(options: HostJobsOptions): {
     maxIterations: options.config.execution.maxIterations,
     interactionPlugin: options.config.interaction?.plugin ?? "cli",
   });
-  const confirmClose = async (): Promise<void> => {
+  const close = (): void => {
     closing.abort();
     chains.stop("the chat closed");
+  };
+  const sessionChanged = (): void => {
+    sessionGeneration++;
+    chains.stop("chat session changed");
+  };
+  const confirmClose = async (): Promise<void> => {
+    close();
     const owned = jobs.owned();
     if (!owned.length) return;
     const decision = await approve({
@@ -64,5 +75,13 @@ export function createHostJobs(options: HostJobsOptions): {
       }
     }
   };
-  return { jobs, chains, provider, guard: createJobWriteGuard(jobs, options.repoRoot), confirmClose };
+  return {
+    jobs,
+    chains,
+    provider,
+    guard: createJobWriteGuard(jobs, options.repoRoot),
+    confirmClose,
+    close,
+    sessionChanged,
+  };
 }

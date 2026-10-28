@@ -87,6 +87,15 @@ afterEach(() => {
 });
 
 describe("createChainController", () => {
+  test("activation succeeds consistently with its audit record when post-publication cleanup fails", async () => {
+    _chainStoreDeps.unlink = () => {
+      throw new NaxError("cleanup failed", "TEST_FAILURE", { stage: "test" });
+    };
+    const chain = await chains.activate({ steps: [first] });
+    expect(chains.active()).toEqual(chain);
+    expect(await readChainRecord(dir, chain.id)).toEqual(chain);
+    expect(chains.admit(first)).toMatchObject({ kind: "auto", chainId: chain.id, step: 1 });
+  });
   test("F3 retries an existing ID without replacing its audit history", async () => {
     _chainStoreDeps.randomHex = () => "11111111";
     const original = await chains.activate({ steps: [first] });

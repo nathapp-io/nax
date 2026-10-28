@@ -6,14 +6,17 @@ import { type ChatResources, createChatHost, createChatStorage } from "@/chat";
 import { createChatAskController } from "@/chat/ask-controller";
 import { createHostJobs } from "@/chat/jobs";
 import { _chainStoreDeps, readChainRecord } from "@/chat/jobs/chain-store";
+import { _jobRunnerDeps } from "@/chat/jobs/job-runner";
 import { _jobsLaunchDeps } from "@/chat/jobs/jobs-launch";
 import type { OpenChatSessionRequest } from "@/chat/open-chat-session";
+import { featureDir } from "@/config";
 import { buildResourceCatalog } from "@/resources";
 
 const dirs: string[] = [];
 const hosts: ReturnType<typeof createChatHost>[] = [];
 const compositions: ReturnType<typeof createHostJobs>[] = [];
-const originalGit = _jobsLaunchDeps.git;
+const originalLaunch = { ..._jobsLaunchDeps };
+const originalRunner = { ..._jobRunnerDeps };
 const originalWrite = _chainStoreDeps.write;
 const originalRename = _chainStoreDeps.rename;
 const now = () => new Date("2026-10-28T00:00:00Z");
@@ -26,7 +29,8 @@ afterEach(async () => {
     composition.chains?.dispose();
     composition.jobs.dispose();
   }
-  _jobsLaunchDeps.git = originalGit;
+  Object.assign(_jobsLaunchDeps, originalLaunch);
+  Object.assign(_jobRunnerDeps, originalRunner);
   _chainStoreDeps.write = originalWrite;
   _chainStoreDeps.rename = originalRename;
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
@@ -60,6 +64,25 @@ async function activate(f: ReturnType<typeof compose>) {
 }
 
 describe("createHostJobs chains", () => {
+  test("session replacement during activation cannot survive a session round trip", async () => {
+    const f = compose();
+    const writing = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    _chainStoreDeps.write = async (path, data) => {
+      if (typeof path !== "string" || typeof data !== "string") throw new Error("expected JSON audit write");
+      writing.resolve();
+      await release.promise;
+      return originalWrite(path, data);
+    };
+    const pending = activate(f);
+    await writing.promise;
+    f.sessionChanged();
+    f.sessionChanged();
+    release.resolve();
+    await expect(pending).rejects.toMatchObject({ code: "CHAT_CHAIN_SESSION_CHANGED" });
+    expect(f.chains.active()).toBeUndefined();
+    expect(f.chains.summary()).toMatchObject({ state: "stopped", stopReason: "chat session changed" });
+  });
   test.each([false, true])("F3 close blocks an in-flight activation (owned job=%s)", async (owned) => {
     const f = compose();
     const writing = Promise.withResolvers<void>();
@@ -217,7 +240,11 @@ async function parentHost() {
     cancel() {},
     close: async () => {},
   };
-  const open = mock(async (_request: OpenChatSessionRequest) => ({ session, meta, release: async () => {} }));
+  let generation = 0;
+  const open = mock(async (request: OpenChatSessionRequest) => {
+    const sessionId = request.resumeId ?? (generation++ === 0 ? meta.sessionId : `chat-new-${generation}`);
+    return { session: { ...session, id: sessionId }, meta: { ...meta, sessionId }, release: async () => {} };
+  });
   const resources: ChatResources = {
     catalog: buildResourceCatalog([]),
     toolProviders: [],
@@ -239,7 +266,71 @@ async function parentHost() {
   assertDefined(provider, "parent jobs provider");
   return { ...f, host, tools: await provider.tools(f.repoRoot) };
 }
+function context(f: Awaited<ReturnType<typeof parentHost>>) {
+  return { root: f.repoRoot, resolvedPaths: [], maxBytes: 300_000, maxFileBytes: 300_000 };
+}
+async function approveChain(f: Awaited<ReturnType<typeof parentHost>>) {
+  _jobsLaunchDeps.git = async () => ({ exitCode: 0, stdout: "feat/f1\n", stderr: "" });
+  const tool = f.tools.find((t) => t.localName === "chain");
+  assertDefined(tool, "chain tool");
+  const pending = tool.run({ steps: [{ kind: "run", input: { feature: "f1" } }] }, context(f));
+  await waitForCondition(() => f.host.asks.pending().length === 1);
+  const card = f.host.asks.pending()[0];
+  assertDefined(card, "chain approval");
+  f.host.asks.resolve(card.requestId, "allow_once");
+  expect((await pending).isError).not.toBe(true);
+}
+async function chainSummary(f: Awaited<ReturnType<typeof parentHost>>) {
+  const list = f.tools.find((t) => t.localName === "list");
+  assertDefined(list, "list tool");
+  return JSON.parse(String((await list.run({}, context(f))).content)).chain;
+}
 describe("createChatHost chain composition", () => {
+  test("unconditional close revokes an auto launch paused at its final lock check", async () => {
+    const f = await parentHost();
+    await approveChain(f);
+    await Bun.write(join(featureDir(f.repoRoot, "f1"), "prd.json"), JSON.stringify({ userStories: [] }));
+    const locked = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<number | null>();
+    let checks = 0;
+    _jobsLaunchDeps.lockHolder = async () => {
+      if (++checks === 2) {
+        locked.resolve();
+        return release.promise;
+      }
+      return null;
+    };
+    const spawn = mock(() => ({ pid: 4242, exited: new Promise<number>(() => {}), unref() {} }));
+    _jobRunnerDeps.spawn = spawn;
+    const run = f.tools.find((t) => t.localName === "run");
+    assertDefined(run, "run tool");
+    const pending = run.run({ feature: "f1" }, context(f));
+    try {
+      await locked.promise;
+      const closing = f.host.close();
+      release.resolve(null);
+      const result = await pending;
+      await closing;
+      expect(result.isError).toBe(true);
+      expect(result.content).toContain("stopped before step 1 started; nothing started");
+      expect(spawn).not.toHaveBeenCalled();
+      expect(await chainSummary(f)).toMatchObject({ state: "stopped", stopReason: "the chat closed" });
+    } finally {
+      release.resolve(null);
+    }
+  });
+  test("clear then resume cannot revive authorization without a fresh card", async () => {
+    const f = await parentHost();
+    await approveChain(f);
+    const original = f.host.current().sessionId;
+    await f.host.clear();
+    expect(f.host.current().sessionId).not.toBe(original);
+    // No chain observation in the intervening session.
+    await f.host.resume({ id: original });
+    expect(f.host.current().sessionId).toBe(original);
+    expect(await chainSummary(f)).toMatchObject({ state: "stopped", stopReason: "chat session changed" });
+    expect(await chainSummary(f)).not.toHaveProperty("next");
+  });
   test("AC-17 registers chain tools on the session open request", async () => {
     const f = await parentHost();
     expect(f.tools.map((t) => t.localName)).toEqual([

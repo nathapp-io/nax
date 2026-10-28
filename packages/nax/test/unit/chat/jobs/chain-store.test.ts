@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { _chainStoreDeps, chainsDir, newChainId, readChainRecord, writeChainRecord } from "@/chat/jobs/chain-store";
+import {
+  _chainStoreDeps,
+  chainsDir,
+  createChainRecord,
+  newChainId,
+  readChainRecord,
+  writeChainRecord,
+} from "@/chat/jobs/chain-store";
 import {
   CHAIN_CHECK_MAX_LENGTH,
   CHAIN_ID_PATTERN,
@@ -70,6 +77,14 @@ describe("chain constants", () => {
   });
 });
 describe("writeChainRecord", () => {
+  test("failed temp cleanup cannot reject an already committed exclusive publication", async () => {
+    _chainStoreDeps.unlink = () => {
+      throw new NaxError("cleanup failed", "TEST_FAILURE", { stage: "test" });
+    };
+    expect(await createChainRecord(dir, chain())).toBe(true);
+    expect(await readChainRecord(dir, chain().id)).toEqual(chain());
+    expect(readdirSync(chainsDir(dir))).toHaveLength(2);
+  });
   test("AC-4 round trips full record", async () => {
     const record = chain();
     await writeChainRecord(dir, record);

@@ -1,6 +1,8 @@
 import { linkSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
+import { getLogger } from "@/logger";
 import { CHAIN_ID_PATTERN, type ChatChain } from "./chain-types";
 
 export const CHAT_CHAINS_DIR = "chat-chains";
@@ -45,10 +47,19 @@ async function publishRecord(outputDir: string, chain: ChatChain, exclusive: boo
   try {
     _chainStoreDeps.mkdir(dir, { recursive: true });
     await _chainStoreDeps.write(temp, JSON.stringify(chain, null, 2));
-    const published = publishTemp(temp, join(dir, `${chain.id}.json`), exclusive);
+    const destination = join(dir, `${chain.id}.json`);
+    const published = publishTemp(temp, destination, exclusive);
     if (exclusive) {
       const cleanupCause = removeTemp(temp);
-      if (cleanupCause) throw cleanupCause;
+      if (cleanupCause && !published) throw cleanupCause;
+      if (cleanupCause) {
+        // The hard link committed the complete record. Cleanup cannot undo that
+        // success: rejecting here would orphan an active record without a controller.
+        getLogger()?.warn("chat", "Failed to remove published chain temporary file", {
+          chainId: chain.id,
+          error: errorMessage(cleanupCause),
+        });
+      }
     }
     return published;
   } catch (cause) {

@@ -58,6 +58,8 @@ export interface ChainControllerOptions {
   readonly cwd: string;
   readonly jobs: Pick<ChatJobs, "get" | "onChange">;
   readonly sessionId: () => string;
+  /** Monotonic host lifecycle generation, including session round trips during publication. */
+  readonly sessionGeneration?: () => number;
   readonly now: () => Date;
 }
 
@@ -124,6 +126,7 @@ class ChainController implements ChatChains {
       throw new NaxError("[chat] A chain is already active", "CHAT_CHAIN_ACTIVE", { stage: "chat" });
     }
     this.activating = true;
+    const generation = this.options.sessionGeneration?.();
     try {
       const chain: ChatChain = {
         schemaVersion: 1,
@@ -139,6 +142,12 @@ class ChainController implements ChatChains {
       this.current = activated;
       // No await between publication and this check: close cannot expose a late active chain.
       this.ensureOpen();
+      if (generation !== this.options.sessionGeneration?.() || activated.sessionId !== this.options.sessionId()) {
+        this.stop("chat session changed");
+        throw new NaxError("[chat] chat session changed; the chain is not active", "CHAT_CHAIN_SESSION_CHANGED", {
+          stage: "chat",
+        });
+      }
       this.next = 1;
       return activated;
     } finally {
