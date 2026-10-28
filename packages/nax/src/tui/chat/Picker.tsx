@@ -32,7 +32,7 @@
  */
 import { Box, type Key, useInput } from "ink";
 import { type ReactElement, useCallback, useRef, useState } from "react";
-import type { ChatHost, ChatHostState, ChatMode, ChatSessionRow } from "@/chat";
+import { type ChatHost, type ChatHostState, type ChatMode, type ChatSessionRow, sessionTitleText } from "@/chat";
 import { oneLine, resolveWidth, SPACE, styled } from "./layout-lines";
 import { relativeTime } from "./relative-time";
 import type { PickerKind } from "./slash-commands";
@@ -54,10 +54,6 @@ const COLUMN_GAP = "  ";
 
 /** The marker a list puts on the value the session is already on. */
 const CURRENT_MARK = "(current)";
-
-/** How much of a session id names a session that never got a title. */
-const ID_CHARS = 8;
-const UNTITLED = "untitled";
 
 /** The two notes a resume list draws in place of rows it does not have yet. */
 const LOADING = "loading…";
@@ -160,7 +156,7 @@ function modeEntries(input: PickerModelInput): readonly PickerEntry[] {
 
 /** One saved session: its title (or the id that stands in for one), its age and its holder. */
 function sessionEntry(row: ChatSessionRow, nowMs: number): PickerEntry {
-  const title = row.title === null ? `${UNTITLED} ${row.sessionId.slice(0, ID_CHARS)}` : row.title;
+  const title = sessionTitleText(row.title, row.sessionId);
   const updated = relativeTime(row.updatedAt, nowMs);
   return {
     value: row.sessionId,

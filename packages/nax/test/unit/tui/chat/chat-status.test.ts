@@ -575,6 +575,57 @@ function headerText(index: number, options: Parameters<typeof header>[0] = {}): 
   return plainText(header(options)[index] ?? []);
 }
 
+describe("headerLines session title", () => {
+  function titled(title: string | null, width = 100, model = "p/m", glyphs = GLYPHS): string {
+    const state = chatState({ model, mode: "guarded" });
+    return plainText(
+      headerLines({
+        state: { ...state, meta: { ...state.meta, title } },
+        version: HEADER_VERSION,
+        cwd: HEADER_CWD,
+        home: HEADER_HOME,
+        width,
+        glyphs,
+      })[0] ?? [],
+    );
+  }
+
+  test("AC-12 omits title rather than changing an overflowing prefix", () => {
+    expect(titled("fix login", 40, "p/abcdefghijklmnopqrstuvwx")).toBe(
+      `${GLYPHS.thinking} nax chat v0.91.7 · abcdefghijklmnopqrstuvwx · guarded`,
+    );
+  });
+  test("AC-13 appends a readable title", () => {
+    expect(titled("fix login")).toBe(`${GLYPHS.thinking} nax chat v0.91.7 · m · guarded · fix login`);
+  });
+  test("AC-14 null title preserves the original header", () => {
+    expect(titled(null)).toBe(`${GLYPHS.thinking} nax chat v0.91.7 · m · guarded`);
+  });
+  test("AC-15 elides a long title at the end within display width", () => {
+    const line = titled("x".repeat(100), 60);
+    expect(displayWidth(line)).toBeLessThanOrEqual(60);
+    expect(line.endsWith(GLYPHS.ellipsis)).toBe(true);
+  });
+  test("AC-16 renders legacy skill titles as slash commands", () => {
+    expect(titled('<skill name="superpowers:brainstorming" source="test">body</skill>')).toEndWith(
+      " · /superpowers:brainstorming",
+    );
+  });
+  test.each(["界", "😀", "a\n\u001b[31mb"])("sanitizes and measures title %s using actual theme ellipsis", (text) => {
+    const glyphs = { ...GLYPHS, ellipsis: "...", thinking: "CHAT" };
+    const line = titled(text.repeat(100), 60, "p/界界", glyphs);
+    expect(displayWidth(line)).toBeLessThanOrEqual(60);
+    expect(line).toEndWith("...");
+    expect(line).not.toContain("\n");
+    expect(line).not.toContain("\u001b");
+  });
+  test("requires eight title columns after measuring the entire prefix and separator", () => {
+    const prefix = titled(null);
+    expect(titled("fix login", displayWidth(prefix) + 3 + 7)).toBe(prefix);
+    expect(titled("fix login", displayWidth(prefix) + 3 + 8)).toBe(`${prefix} · fix log…`);
+  });
+});
+
 describe("headerLines", () => {
   test("gives three lines", () => {
     expect(header()).toHaveLength(3);

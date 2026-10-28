@@ -36,8 +36,8 @@ function fixture(packages: readonly ResourcePackage[] = []) {
       events.push("close");
     },
   };
-  const release = async () => {
-    events.push("release");
+  const release = async (options?: { readonly retainLock?: boolean }) => {
+    events.push(options?.retainLock ? "drain" : "release");
   };
   const catalog = buildResourceCatalog(packages);
   const pluginHandlers: LoopHandlerSet = [{ plugin: "kit", event: "before_turn", handler: async () => {} }];
@@ -139,7 +139,7 @@ describe("createChatHost resources", () => {
     await host.start({ mode: "guarded", model: "test/model" });
     await Promise.all([host.close(), host.close()]);
     await host.close();
-    expect(f.events).toEqual(["close", "release", "teardown"]);
+    expect(f.events).toEqual(["close", "drain", "release", "teardown"]);
     expect(f.resources.teardown).toHaveBeenCalledTimes(1);
   });
   test.each(["start", "clear", "resume", "switch"] as const)(

@@ -131,7 +131,10 @@ describe("chat asks and keys", () => {
         await teardown.promise;
       },
     };
-    const release = mock(async () => {});
+    const unlock = mock(async () => {});
+    const release = mock(async (options?: { readonly retainLock?: boolean }) => {
+      if (!options?.retainLock) await unlock();
+    });
     const host = createChatHost({
       config: makeNaxConfig({ outputDir: dir }),
       cwd: dir,
@@ -191,7 +194,8 @@ describe("chat asks and keys", () => {
         }),
       );
       await flush();
-      expect(release).toHaveBeenCalledTimes(1);
+      expect(release.mock.calls).toEqual([[{ retainLock: true }], []]);
+      expect(unlock).toHaveBeenCalledTimes(1);
       expect(ui.stdin.listenerCount("readable")).toBe(0);
     } finally {
       turn.resolve();

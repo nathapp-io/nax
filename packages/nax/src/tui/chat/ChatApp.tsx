@@ -15,9 +15,17 @@
 import type { SessionEvent } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, useInput, useStdout } from "ink";
-import { type ReactElement, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChatHost, ChatMcpState } from "@/chat";
-import type { McpServerEvent } from "@/mcp";
+import {
+  type ReactElement,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { ChatHost } from "@/chat";
 import { buildCommandMessage } from "@/prompts";
 import { runCommandShellLines } from "@/resources";
 import { NAX_VERSION } from "@/version";
@@ -38,6 +46,7 @@ import { layoutTranscript } from "./layout";
 import type { MouseEvents } from "./mouse-input";
 import { Picker, useChatPicker } from "./Picker";
 import { SlashMenu } from "./SlashMenu";
+import { sessionTranscript } from "./session-transcript";
 import { parseSlashCommand, runSlashCommand, type SlashCommand, type SlashOutcome } from "./slash-commands";
 import { slashMenuItems, slashMenuQueryState } from "./slash-menu";
 import { StyledLineView } from "./styled-line";
@@ -77,7 +86,6 @@ const DEFAULT_ROWS = 24;
 const SANDBOX_WARNING = "sandbox unavailable: commands run outside the sandbox";
 const TURN_BUSY_NOTICE = "wait for the turn to finish (Ctrl-C to interrupt)";
 const QUIT = "quit";
-const CLEAR = "clear";
 /** What the input offers after a declined ask, until the next submit says what to do instead. */
 const TELL_NAX_HINT = "tell nax what to do instead";
 /** ink reports ctrl+o as the letter `o` with the ctrl modifier, so the key is its `input`. */
@@ -125,30 +133,6 @@ function FixedRow({ children }: { readonly children: ReactNode }): ReactElement 
       {children}
     </Box>
   );
-}
-
-/** The server's latest connection event; teardown (`closed`) is not a status. */
-function lastServerEvent(events: readonly McpServerEvent[], id: string): McpServerEvent | undefined {
-  return events.findLast((event) => event.serverId === id);
-}
-
-/**
- * The banner the screen opens with, and clears back to: what the session has to work with.
- * A host without a catalogue or an MCP pool counts zero rather than failing.
- */
-function welcomeEntry(host: ChatHost): TranscriptEntry {
-  const catalog = host.catalog;
-  const mcp: ChatMcpState | undefined = host.mcp;
-  const servers = mcp?.servers ?? [];
-  const events = mcp?.events() ?? [];
-  return {
-    kind: "welcome",
-    skills: catalog?.skills.length ?? 0,
-    commands: catalog?.commands.length ?? 0,
-    agents: catalog?.agents.length ?? 0,
-    mcpServers: servers.length,
-    mcpConnected: servers.filter((server) => lastServerEvent(events, server.id)?.kind === "connected").length,
-  };
 }
 
 /**
@@ -203,7 +187,9 @@ export function ChatApp({
   const { stdout } = useStdout();
   const { copiedChars, onCopy } = useClipboardFeedback(mouse);
   const [size, setSize] = useState<TerminalSize>(() => terminalSize(stdout));
-  const [entries, setEntries] = useState<readonly TranscriptEntry[]>(() => [welcomeEntry(host)]);
+  const state = host.current();
+  const transcriptSession = useRef(state.sessionId);
+  const [entries, setEntries] = useState<readonly TranscriptEntry[]>(() => sessionTranscript(host));
   const [status, setStatus] = useState<TurnStatus>(IDLE_STATUS);
   const [draft, setDraft] = useState<InputDraft>(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
@@ -325,18 +311,24 @@ export function ChatApp({
       stdout.off("resize", onResize);
     };
   }, [stdout]);
+  // Rebuild before notice effects append, but never reset mount notices or same-id live rows.
+  useLayoutEffect(() => {
+    if (transcriptSession.current === state.sessionId) return;
+    transcriptSession.current = state.sessionId;
+    setEntries(sessionTranscript(host));
+  }, [host, state.sessionId]);
   useEffect(() => host.asks.onChange(update), [host, update]);
   useEffect(() => {
     const resourceNotice = host.resourceNotice?.();
     if (resourceNotice) append({ kind: "notice", text: resourceNotice });
   }, [host, append]);
 
-  const state = host.current();
   const notice = host.notice();
   const warn = state.mode === "full" && state.sandbox?.kind === "unavailable";
+  // biome-ignore lint/correctness/useExhaustiveDependencies: identical interruption text must reappear after each session rebuild.
   useEffect(() => {
     if (notice) append({ kind: "notice", text: notice });
-  }, [notice, append]);
+  }, [notice, state.sessionId, append]);
   useEffect(() => {
     if (warn) append({ kind: "warning", text: SANDBOX_WARNING });
   }, [warn, append]);
@@ -375,16 +367,13 @@ export function ChatApp({
     });
     sink.flush();
     if (!ready) return;
-    if (outcome === undefined) {
-      if (command.name === CLEAR) setEntries([welcomeEntry(host)]);
-      return;
-    }
+    if (outcome === undefined) return;
     if (outcome.kind === "picker") {
       picker.open(outcome.picker);
       return;
     }
     if (outcome.kind === "send") {
-      await sendTurn(outcome.message);
+      await sendTurn(outcome.message, undefined, `/${command.name}${command.rest}`);
       return;
     }
     const { name, template, rest } = outcome;
@@ -420,10 +409,10 @@ export function ChatApp({
     await runCommand(command);
   }
 
-  // Wait for send's metadata drain before reopening the session for a queued mode.
   async function sendTurn(
     message: string,
     prepare?: () => Promise<{ message: string } | { notice: string }>,
+    title = message,
   ): Promise<boolean> {
     if (sending.current) return false;
     sending.current = true;
@@ -437,10 +426,12 @@ export function ChatApp({
       }
       append({ kind: "user", text: prepared.message });
       setFollowToken((token) => token + 1);
-      await host.send(prepared.message, (event) => {
+      const onEvent = (event: SessionEvent): void => {
         if (event.type === "turn_start") started = true;
         handleEvent(event);
-      });
+      };
+      if (prepared.message === title) await host.send(prepared.message, onEvent);
+      else await host.send(prepared.message, onEvent, { title });
       return true;
     } catch (error) {
       append({ kind: "error", text: errorMessage(error) });
@@ -449,8 +440,6 @@ export function ChatApp({
       sending.current = false;
       await keys.finishTurn();
       setBusy(false);
-      // A stream that ends without `turn_end` — a rejection mid-turn is the usual way — still
-      // ends the turn: the working line and the busy footer must not outlive it.
       setStatus(stopTurn);
     }
   }
@@ -549,6 +538,7 @@ export function ChatApp({
         ))}
       </Box>
       <TranscriptViewport
+        key={state.sessionId}
         mouse={mouse}
         top={HEADER_ROWS}
         onCopy={onCopy}

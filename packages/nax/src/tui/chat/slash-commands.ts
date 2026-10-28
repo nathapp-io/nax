@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { type ChatHost, formatAgentsListing, formatJobsListing, formatMcpListing } from "@/chat";
+import { type ChatHost, formatAgentsListing, formatJobsListing, formatMcpListing, sessionTitleText } from "@/chat";
 import { featureDir } from "@/config";
 import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing } from "@/resources";
@@ -163,7 +163,7 @@ export async function runSlashCommand(
     case "sessions":
       for (const row of await host.listSessions()) {
         show(
-          `${row.sessionId} ${row.title ?? ""}${row.heldByPid === undefined ? "" : ` in use by pid ${row.heldByPid}`}`,
+          `${row.sessionId} ${sessionTitleText(row.title, row.sessionId)}${row.heldByPid === undefined ? "" : ` in use by pid ${row.heldByPid}`}`,
         );
       }
       break;

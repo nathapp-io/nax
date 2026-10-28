@@ -10,6 +10,7 @@ export interface RunChatTurnOptions {
   readonly handle: ChatSessionHandle;
   readonly storage: SessionStorage;
   readonly message: string;
+  readonly title?: string;
   readonly asks: Pick<ChatAskController, "handle">;
   readonly ledger: ChatLedger;
   readonly onEvent: (event: SessionEvent) => void;
@@ -33,7 +34,9 @@ async function writeTurnMeta(options: RunChatTurnOptions, costUsd: number): Prom
     ...handle.meta,
     updatedAt: now,
     costUsd: (stored.costUsd ?? 0) + costUsd + (options.extraCostUsd?.() ?? 0),
-    title: stored.title ?? [...message.trim().replace(/\s+/gu, " ")].slice(0, TITLE_CODE_POINT_LIMIT).join(""),
+    title:
+      stored.title ??
+      [...(options.title?.trim() || message).trim().replace(/\s+/gu, " ")].slice(0, TITLE_CODE_POINT_LIMIT).join(""),
   };
   await storage.writeMeta(meta);
   return meta;

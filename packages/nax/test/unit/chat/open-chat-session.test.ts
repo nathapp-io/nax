@@ -102,6 +102,21 @@ async function seed(overrides: Partial<SessionMeta> = {}) {
 }
 
 describe("openChatSession", () => {
+  test("history AC-1 new session exposes empty opening history", async () => {
+    expect((await open()).history).toEqual({ messages: [] });
+  });
+  test("history AC-2 resume exposes messages and savedAt", async () => {
+    await seed();
+    doc = {
+      savedAt: "2026-10-28T01:00:00.000Z",
+      messages: [
+        { role: "user", content: "hello" },
+        { role: "assistant", content: "hi" },
+      ],
+    };
+    expect((await open({ resumeId: ID })).history).toEqual(doc);
+  });
+
   test.each([
     ["AC-1", "bashApproval", "raw"],
     ["AC-2", "allowUnsandboxed", true],

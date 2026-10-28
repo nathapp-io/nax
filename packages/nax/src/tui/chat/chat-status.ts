@@ -11,7 +11,7 @@
  * object, so a component that compares by reference does no needless work.
  */
 import type { SessionEvent } from "@nathapp/nax-agent";
-import type { ChatHostState } from "@/chat";
+import { type ChatHostState, sessionTitleText } from "@/chat";
 import { oneLine, resolveWidth } from "./layout-lines";
 import { displayWidth, type Span, type StyledLine, sanitizeText } from "./styled-line";
 import { type ChatColorToken, type ChatGlyphs, resolveChatTheme } from "./theme";
@@ -450,13 +450,27 @@ function elideMiddle(text: string, columns: number, ellipsis: string): string {
   return `${head}${ellipsis}${tailColumns(text, room - displayWidth(head))}`;
 }
 
-/** The header's first line: the product, then its version, the model and the mode. */
-function headerTitleLine(state: ChatHostState, version: string, glyphs: ChatGlyphs): StyledLine {
+/** End-elision keeps the beginning of a title within its display-column budget. */
+function elideEnd(text: string, columns: number, ellipsis: string): string {
+  if (displayWidth(text) <= columns) return text;
+  const room = columns - displayWidth(ellipsis);
+  return room < 0 ? headColumns(ellipsis, columns) : `${headColumns(text, room)}${ellipsis}`;
+}
+
+const MIN_TITLE_COLUMNS = 8;
+
+/** The existing prefix never yields columns to the optional session title. */
+function headerTitleLine(state: ChatHostState, version: string, width: number, glyphs: ChatGlyphs): StyledLine {
   const title: Span = { text: `${glyphs.thinking} ${HEADER_TITLE}`, color: "accent", bold: true };
   // The version sits one space after the product's name; the further facts are separated
   // from each other, so the line never reads as a list of four items.
   const facts = ` v${singleRow(version)}${SEPARATOR}${shortModel(singleRow(state.model))}${SEPARATOR}${modeLabel(state.mode)}`;
-  return [title, { text: facts, color: "muted" }];
+  const room = width - displayWidth(`${title.text}${facts}${SEPARATOR}`);
+  const sessionTitle =
+    state.meta.title !== null && room >= MIN_TITLE_COLUMNS
+      ? `${SEPARATOR}${elideEnd(singleRow(sessionTitleText(state.meta.title, state.sessionId)), room, glyphs.ellipsis)}`
+      : "";
+  return [title, { text: `${facts}${sessionTitle}`, color: "muted" }];
 }
 
 /** The header's second line: where the session runs, and what it runs in. */
@@ -499,7 +513,7 @@ export function headerLines(input: {
   const width = resolveWidth(input.width);
   const glyphs = input.glyphs ?? GLYPHS;
   return [
-    headerTitleLine(input.state, input.version, glyphs),
+    headerTitleLine(input.state, input.version, width, glyphs),
     headerPathLine(input.state, input.cwd, input.home, width, glyphs),
     headerRuleLine(width, glyphs),
   ];

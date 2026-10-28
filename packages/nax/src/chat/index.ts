@@ -16,6 +16,7 @@ export {
   type ChatHost,
   type ChatHostDeps,
   type ChatHostState,
+  type ChatSendOptions,
   type ChatSessionRow,
   createChatHost,
 } from "./chat-host";
@@ -41,6 +42,7 @@ export { type ChatModelChoicesInput, chatModelChoices, tierModels } from "./chat
 export { type ChatJob, type ChatJobs, formatJobsListing } from "./jobs";
 export {
   _openChatSessionDeps,
+  type ChatHistory,
   type ChatSessionHandle,
   type ChatStorageOptions,
   createChatStorage,
@@ -49,6 +51,7 @@ export {
   resolveChatSessionsDir,
 } from "./open-chat-session";
 export type { ChatResources } from "./resources";
+export { sessionTitleText } from "./session-title";
 export {
   type ResolvedSubagentModel,
   type ResolveSubagentModelOptions,

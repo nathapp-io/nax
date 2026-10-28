@@ -16,6 +16,7 @@ import {
   type SessionStorage,
   type SessionStorageDeps,
   type ToolProvider,
+  type TranscriptDoc,
 } from "@nathapp/nax-agent";
 import { globalConfigDir, type NaxConfig, resolveTuiPermissions, type TuiPermissions } from "@/config";
 import { resolveRuleSet } from "@/context/rules/rule-set";
@@ -49,7 +50,13 @@ export interface OpenChatSessionRequest {
   readonly config: NaxConfig;
 }
 
+export interface ChatHistory {
+  readonly messages: readonly TranscriptDoc["messages"][number][];
+  readonly savedAt?: string;
+}
+
 export interface ChatSessionHandle {
+  readonly history?: ChatHistory;
   readonly session: AgentSession;
   readonly meta: SessionMeta;
   /** Retire per-open work; reopens retain the host's shared storage lock. */
@@ -239,7 +246,12 @@ export async function openChatSession(
     const doc = await transcripts.load(meta.sessionId);
     const session =
       doc === null ? await deps.createAgentSession(options) : await deps.resumeAgentSession(meta.sessionId, options);
-    return { session, meta, release };
+    return {
+      session,
+      meta,
+      release,
+      history: doc === null ? { messages: [] } : { messages: doc.messages, savedAt: doc.savedAt },
+    };
   } catch (error) {
     await release();
     throw error;

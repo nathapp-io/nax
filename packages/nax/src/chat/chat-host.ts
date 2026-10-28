@@ -22,8 +22,9 @@ import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import { type ChatMode, chatModeOfMeta } from "./chat-mode";
 import { tierModels } from "./chat-models";
 import { type ChatJobs, createHostJobs } from "./jobs";
-import { type ChatSessionHandle, openChatSession } from "./open-chat-session";
+import { type ChatHistory, type ChatSessionHandle, openChatSession } from "./open-chat-session";
 import type { ChatResources } from "./resources";
+import { createSessionHygiene, hasHadTurn, resumableRows } from "./session-hygiene";
 import { createSubagentRuns, type SubagentRuns } from "./subagent-runs";
 import { routeAskEvent, runChatTurn } from "./turn-runner";
 
@@ -55,6 +56,10 @@ export interface ChatSessionRow {
   readonly heldByPid?: number;
 }
 
+export interface ChatSendOptions {
+  readonly title?: string;
+}
+
 /** Shared-session chat lifecycle, independent of the terminal shell. */
 export interface ChatHost {
   readonly repoRoot: string;
@@ -66,6 +71,7 @@ export interface ChatHost {
   readonly jobs?: ChatJobs;
   readonly confirmJobsBeforeClose?: () => Promise<void>;
   current(): ChatHostState;
+  history?(): ChatHistory;
   /** One row per catalog agent in catalog order, resolved against the chat session's current model. */
   agents?(): readonly ChatAgentRow[];
   start(input: { mode: ChatMode; model: string }): Promise<void>;
@@ -74,7 +80,7 @@ export interface ChatHost {
   notice(): string | undefined;
   resourceNotice?(): string | undefined;
   switchTo(input: { mode?: ChatMode; model?: string }): Promise<void>;
-  send(message: string, onEvent: (event: SessionEvent) => void): Promise<void>;
+  send(message: string, onEvent: (event: SessionEvent) => void, options?: ChatSendOptions): Promise<void>;
   runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>;
   cancel(): void;
   listSessions(): Promise<readonly ChatSessionRow[]>;
@@ -95,14 +101,6 @@ export interface ChatHostDeps {
   readonly logger: Pick<Logger, "warn">;
 }
 
-async function closeHandle(handle: ChatSessionHandle): Promise<void> {
-  try {
-    await handle.session.close();
-  } finally {
-    await handle.release();
-  }
-}
-
 class NativeChatHost implements ChatHost {
   readonly repoRoot: string;
   readonly catalog?: ChatResources["catalog"];
@@ -114,6 +112,7 @@ class NativeChatHost implements ChatHost {
   readonly confirmJobsBeforeClose?: () => Promise<void>;
   private readonly hostJobs?: ReturnType<typeof createHostJobs>;
   private readonly fallback: AskFallback;
+  private readonly hygiene: ReturnType<typeof createSessionHygiene>;
   private readonly loopHandlers: ReturnType<typeof createRuleDeliveryHandlers>;
   private readonly projectKey: string;
   private readonly outputDir: string;
@@ -132,6 +131,7 @@ class NativeChatHost implements ChatHost {
   private readonly sessionOperations = new Set<Promise<void>>();
 
   constructor(private readonly deps: ChatHostDeps) {
+    this.hygiene = createSessionHygiene(deps);
     this.repoRoot = deps.repoRoot;
     this.catalog = deps.resources?.catalog;
     this.naxPlugins = deps.resources?.naxPlugins;
@@ -208,6 +208,10 @@ class NativeChatHost implements ChatHost {
     this.assertOpen();
     if (!this.handle) throw new NaxError("[chat] no session is open", "CHAT_SESSION_NOT_OPEN", { stage: "chat" });
     return this.handle;
+  }
+
+  history(): ChatHistory {
+    return this.handle?.history ?? { messages: [] };
   }
 
   current(): ChatHostState {
@@ -295,7 +299,7 @@ class NativeChatHost implements ChatHost {
   private async replace(next: ChatSessionHandle): Promise<void> {
     // A late open must release its handle before the operation drain can finish.
     if (this.closed) {
-      await closeHandle(next);
+      await this.hygiene.close(next);
       this.assertOpen();
     }
     const previous = this.handle;
@@ -310,7 +314,7 @@ class NativeChatHost implements ChatHost {
     });
     this.asks.reset();
     this.asks.setMode(next.meta.mode === "full" ? "full" : "guarded");
-    if (previous) await closeHandle(previous);
+    if (previous) await this.hygiene.close(previous, next.meta.sessionId);
   }
 
   notice(): string | undefined {
@@ -346,7 +350,8 @@ class NativeChatHost implements ChatHost {
     for (const { sessionId } of await this.allSessions()) {
       try {
         const meta = await this.deps.storage.readMeta(sessionId);
-        if (meta === null || meta.sessionId !== sessionId || chatModeOfMeta(meta.mode) === null) continue;
+        if (meta === null || !hasHadTurn(meta) || meta.sessionId !== sessionId || chatModeOfMeta(meta.mode) === null)
+          continue;
         if ((await this.deps.storage.readLockHolder(sessionId))?.state !== "live") return sessionId;
       } catch (error) {
         if (!(error instanceof Error && "code" in error && error.code === "SESSION_META_UNREADABLE")) throw error;
@@ -465,7 +470,7 @@ class NativeChatHost implements ChatHost {
     await this.start({ mode, model });
   }
 
-  async send(message: string, onEvent: (event: SessionEvent) => void): Promise<void> {
+  async send(message: string, onEvent: (event: SessionEvent) => void, options?: ChatSendOptions): Promise<void> {
     const handle = this.requireHandle();
     const ledger = this.ledger;
     if (!ledger) throw new NaxError("[chat] ledger is not initialized", "CHAT_SESSION_NOT_OPEN", { stage: "chat" });
@@ -474,6 +479,7 @@ class NativeChatHost implements ChatHost {
     if (this.sending) {
       throw new NaxError("[chat] a turn is already running", "CHAT_TURN_BUSY", { stage: "chat" });
     }
+    this.hygiene.markSent(handle.meta.sessionId);
     this.sending = true;
     this.turnListener = onEvent;
     const runs = this.runs;
@@ -483,6 +489,7 @@ class NativeChatHost implements ChatHost {
         handle,
         storage: this.deps.storage,
         message,
+        title: options?.title,
         asks: this.asks,
         ledger,
         onEvent,
@@ -521,12 +528,7 @@ class NativeChatHost implements ChatHost {
 
   async listSessions(): Promise<readonly ChatSessionRow[]> {
     const sessions = await this.allSessions();
-    return Promise.all(
-      sessions.map(async ({ sessionId, title, updatedAt }) => {
-        const holder = await this.deps.storage.readLockHolder(sessionId);
-        return { sessionId, title, updatedAt, ...(holder?.state === "live" ? { heldByPid: holder.pid } : {}) };
-      }),
-    );
+    return resumableRows({ ...this.deps, sessions, currentId: this.handle?.meta.sessionId });
   }
 
   close(): Promise<void> {
@@ -553,7 +555,7 @@ class NativeChatHost implements ChatHost {
 
   private async closeSessionAndResources(): Promise<void> {
     try {
-      if (this.handle) await closeHandle(this.handle);
+      if (this.handle) await this.hygiene.close(this.handle);
     } finally {
       try {
         await this.deps.resources?.teardown();
