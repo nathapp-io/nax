@@ -42,6 +42,7 @@ export { type ChatModelChoicesInput, chatModelChoices, tierModels } from "./chat
 export { type ChatJob, type ChatJobs, formatJobsListing } from "./jobs";
 export {
   _openChatSessionDeps,
+  type ChatHistory,
   type ChatSessionHandle,
   type ChatStorageOptions,
   createChatStorage,

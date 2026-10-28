@@ -17,6 +17,7 @@ let optionsSeen: Parameters<typeof _openChatSessionDeps.createAgentSession>[0][]
 let backends: Parameters<typeof _openChatSessionDeps.nativeBackend>[0][];
 let order: string[];
 let failNext: boolean;
+let logger: ReturnType<typeof makeLogger>;
 let status: "completed" | "interrupted" | undefined;
 const failure = new NaxError("opening failed", "TEST_OPEN_FAILED", { stage: "test" });
 
@@ -91,6 +92,7 @@ beforeEach(() => {
     sessions.push(session);
     return session;
   };
+  logger = makeLogger();
   host = createChatHost({
     config: makeNaxConfig({ outputDir: join(dir, "output") }),
     cwd: dir,
@@ -98,7 +100,7 @@ beforeEach(() => {
     storage,
     chain: null,
     now: () => NOW,
-    logger: makeLogger(),
+    logger,
   });
 });
 afterEach(async () => {
@@ -378,5 +380,136 @@ describe("createChatHost resume and switch", () => {
     expect(await storage.readLockHolder(id)).toMatchObject({ state: "own" });
     expect(await storage.readLockHolder("other")).toBeNull();
     await host.send("still works", () => {});
+  });
+});
+
+describe("session hygiene", () => {
+  async function turnless(id: string) {
+    await stored(id);
+    const meta = await storage.readMeta(id);
+    if (!meta) throw failure;
+    await storage.writeMeta({ ...meta, updatedAt: null, createdAt: NOW.toISOString() });
+  }
+  function transcript() {
+    const doc = {
+      savedAt: "2026-10-28T01:00:00.000Z",
+      messages: [
+        { role: "user" as const, content: "hello" },
+        { role: "assistant" as const, content: "hi" },
+      ],
+    };
+    const factory = _openChatSessionDeps.createFileTranscriptStore;
+    _openChatSessionDeps.createFileTranscriptStore = (path) => ({ ...factory(path), load: async () => doc });
+    _openChatSessionDeps.resumeAgentSession = async (_id, options) => _openChatSessionDeps.createAgentSession(options);
+    return doc;
+  }
+  test("hygiene AC-3 history exposes resumed transcript snapshot", async () => {
+    await stored("prior");
+    const doc = transcript();
+    await host.resume({ id: "prior" });
+    expect(host.history?.()).toEqual(doc);
+  });
+  test("hygiene AC-4 excludes own session even with a recorded turn", async () => {
+    await start();
+    await host.send("hello", () => {});
+    expect(await host.listSessions()).toEqual([]);
+  });
+  test("hygiene AC-5 lists recorded sessions without an open handle", async () => {
+    await stored("prior");
+    expect(await host.listSessions()).toEqual([expect.objectContaining({ sessionId: "prior" })]);
+  });
+  test("hygiene AC-7 hides turnless stored sessions", async () => {
+    await stored("prior");
+    await turnless("empty");
+    expect((await host.listSessions()).map((row) => row.sessionId)).toEqual(["prior"]);
+    expect(await storage.readMeta("empty")).not.toBeNull();
+  });
+  test("hygiene AC-8 latest skips a newer turnless session", async () => {
+    await stored("prior");
+    await turnless("empty");
+    await host.resume({});
+    expect(host.current().sessionId).toBe("prior");
+  });
+  test("hygiene AC-9 closes an unsent new session and removes meta", async () => {
+    await start();
+    const id = host.current().sessionId;
+    await host.close();
+    expect(await storage.readMeta(id)).toBeNull();
+  });
+  test.each([false, true])("hygiene AC-6/10 sent session survives close (switch %s)", async (switchMode) => {
+    await start();
+    const id = host.current().sessionId;
+    if (switchMode) await host.switchTo({ mode: "full" });
+    expect(await storage.readMeta(id)).not.toBeNull();
+    await host.send("hello", () => {});
+    await host.close();
+    expect(await storage.readMeta(id)).not.toBeNull();
+  });
+  test("hygiene AC-11 replacing an unsent new session removes its meta", async () => {
+    await start();
+    const id = host.current().sessionId;
+    await stored("prior");
+    await host.resume({ id: "prior" });
+    expect(await storage.readMeta(id)).toBeNull();
+    expect(host.current().sessionId).toBe("prior");
+  });
+  test("hygiene AC-12 explicit turnless resume with history keeps meta", async () => {
+    await turnless("prior");
+    transcript();
+    await host.resume({ id: "prior" });
+    await host.close();
+    expect(await storage.readMeta("prior")).not.toBeNull();
+  });
+  test("hygiene AC-13 already removed meta closes silently", async () => {
+    await start();
+    await storage.removeMeta(host.current().sessionId);
+    await host.close();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+  test.each(["close", "replace", "missing"] as const)(
+    "hygiene AC-14/16/17 removal failure during %s only warns",
+    async (kind) => {
+      await start();
+      const id = host.current().sessionId;
+      if (kind === "missing") Reflect.deleteProperty(storage, "removeMeta");
+      else
+        storage.removeMeta = mock(async () => {
+          throw failure;
+        });
+      if (kind === "replace") {
+        await stored("prior");
+        await host.resume({ id: "prior" });
+        expect(host.current().sessionId).toBe("prior");
+      } else await host.close();
+      expect(logger.warn).toHaveBeenCalledWith("chat", "could not remove empty session", {
+        sessionId: id,
+        cause: expect.anything(),
+      });
+    },
+  );
+  test("hygiene AC-15 unreadable row is skipped while other rows list", async () => {
+    await stored("prior");
+    await stored("bad");
+    const read = storage.readMeta.bind(storage);
+    storage.readMeta = async (id) => {
+      if (id === "bad") throw new NaxError("bad meta", "SESSION_META_UNREADABLE", { stage: "test" });
+      return read(id);
+    };
+    expect((await host.listSessions()).map((row) => row.sessionId)).toEqual(["prior"]);
+    expect(logger.warn).toHaveBeenCalledWith("chat", "skipping unreadable session metadata", { sessionId: "bad" });
+  });
+  test("hygiene failed send survives same-id reopen and close without turn metadata", async () => {
+    await start();
+    const id = host.current().sessionId;
+    const session = sessions[0];
+    if (!session) throw failure;
+    session.send = async function* () {
+      yield { type: "turn_start", sessionId: id, turnId: "failed", at: NOW.toISOString(), metadata: {} };
+      throw failure;
+    };
+    await expect(host.send("hello", () => {})).rejects.toBe(failure);
+    await host.switchTo({ mode: "full" });
+    await host.close();
+    expect(await storage.readMeta(id)).toMatchObject({ updatedAt: null });
   });
 });
