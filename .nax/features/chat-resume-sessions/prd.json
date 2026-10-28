@@ -3,7 +3,7 @@
   "feature": "chat-resume-sessions",
   "branchName": "feat/chat-resume-sessions",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T07:47:11.047Z",
+  "updatedAt": "2026-10-28T07:55:59.983Z",
   "userStories": [
     {
       "id": "US-001",
@@ -215,14 +215,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A pure mapper and mirrored tests use existing types and display helpers with a clear result-indexing algorithm. Although structurally medium, stored-session replay and credential masking require the strict sessions/security test strategy."
+        "reasoning": "A pure mapper and mirrored tests use existing types and display helpers with a clear result-indexing algorithm. Although structurally medium, stored-session replay and credential masking require the strict sessions/security test strategy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/transcript-model.ts",
@@ -244,7 +247,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e083420806440616d54a0040e598e11cc26720e8"
     },
     {
       "id": "US-004",
