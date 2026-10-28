@@ -163,6 +163,12 @@ describe("reduceTurnStatus turn start", () => {
     expect(status.outputTokens).toBe(0);
     expect(status.streamedChars).toBe(0);
   });
+
+  test("resets streamed characters accumulated before a new turn", () => {
+    const streamed = reduceTurnStatus(reduceTurnStatus(IDLE_STATUS, turnStart()), textDelta("x".repeat(40)));
+    expect(streamed.streamedChars).toBe(40);
+    expect(reduceTurnStatus(streamed, turnStart({ at: LATER })).streamedChars).toBe(0);
+  });
 });
 
 describe("reduceTurnStatus streamed characters", () => {
