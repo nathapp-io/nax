@@ -3,7 +3,7 @@
   "feature": "bot-rerun-state",
   "branchName": "feat/bot-rerun-state",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T16:36:46.399Z",
+  "updatedAt": "2026-10-28T16:45:51.116Z",
   "userStories": [
     {
       "id": "US-001",
@@ -151,14 +151,17 @@
         "wire-format"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "Only item-threads.ts needs additive production helpers; the existing last-own-comment reader already resets rulings after a notice, so focused wire/state TDD suffices without new I/O or permission decisions."
+        "reasoning": "Only item-threads.ts needs additive production helpers; the existing last-own-comment reader already resets rulings after a notice, so focused wire/state TDD suffices without new I/O or permission decisions.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/workflow/item-threads.ts",
@@ -170,7 +173,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ac480c23bc8e12873610f0ca21153e0ddd1d74f0"
     },
     {
       "id": "US-004",
