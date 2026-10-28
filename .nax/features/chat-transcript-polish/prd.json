@@ -3,7 +3,7 @@
   "feature": "chat-transcript-polish",
   "branchName": "feat/chat-transcript-polish",
   "createdAt": "2026-10-28T00:00:00.000Z",
-  "updatedAt": "2026-10-28T11:49:10.093Z",
+  "updatedAt": "2026-10-28T11:58:38.568Z",
   "userStories": [
     {
       "id": "US-001",
@@ -239,14 +239,17 @@
         "session-state"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "The code scope is medium: one ChatApp comparison appends notices through existing refresh/append paths, tested across commands, pickers and scrolling. Retain strict three-session-tdd under the prompt's explicit sessions override because notice suppression depends on session-id transitions; no new permission or authentication decision is introduced."
+        "reasoning": "The code scope is medium: one ChatApp comparison appends notices through existing refresh/append paths, tested across commands, pickers and scrolling. Retain strict three-session-tdd under the prompt's explicit sessions override because notice suppression depends on session-id transitions; no new permission or authentication decision is introduced.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -269,7 +272,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0bde25cbe0fbc56f662d5847180c618fbffd821a"
     },
     {
       "id": "US-005",
