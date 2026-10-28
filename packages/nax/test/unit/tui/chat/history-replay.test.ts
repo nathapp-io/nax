@@ -32,12 +32,12 @@ describe("replayHistory", () => {
     expect(replayHistory({ messages: [{ role: "user", content: "" }] })).toEqual([]);
   });
   test.each([
-    ["AC-4: skill with args", "body", "plan it", "/superpowers:brainstorming plan it"],
-    ["AC-5: skill without args", "body", "", "/superpowers:brainstorming"],
-    ["AC-6: leading space in args", "body", " plan it", "/superpowers:brainstorming plan it"],
-    ["AC-7: embedded closing marker", "body\n</skill>\nmore", "go", "/superpowers:brainstorming go"],
-    ["AC-8: embedded delimiter without args", "body\n</skill>\n\nmore", "", "/superpowers:brainstorming"],
-  ])("%s", (_ac, body, args, expected) => {
+    ["AC-4: skill with args", "body", "plan it"],
+    ["AC-5: skill without args", "body", ""],
+    ["AC-6: leading space in args", "body", " plan it"],
+    ["AC-7: embedded closing marker", "body\n</skill>\nmore", "go"],
+    ["AC-8: embedded delimiter without args", "body\n</skill>\n\nmore", ""],
+  ])("%s", (_ac, body, args) => {
     const content = buildSkillInvocationMessage({
       skill: {
         kind: "skill",
@@ -52,7 +52,16 @@ describe("replayHistory", () => {
       },
       args,
     });
-    expect(replayHistory({ messages: [{ role: "user", content }] })).toEqual([{ kind: "user", text: expected }]);
+    expect(replayHistory({ messages: [{ role: "user", content }] })).toEqual([
+      { kind: "skill", name: "superpowers:brainstorming", args: args.trim(), body },
+    ]);
+  });
+  test.each([
+    '<skill name="x',
+    '<skill name="x" location="/p">\nrefs\nbody',
+    '<skill name="x" location="/p">\nrefs\nbody</skill>',
+  ])("rejected envelope remains raw user text: %s", (content) => {
+    expect(replayHistory({ messages: [{ role: "user", content }] })).toEqual([{ kind: "user", text: content }]);
   });
   test("AC-9: compaction summary becomes a notice", () => {
     expect(

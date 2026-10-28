@@ -1,7 +1,7 @@
 /** Pure opening-snapshot replay. Tool data uses the same masking and caps as live turns. */
 import { displayToolInput, toolResultPreview } from "@nathapp/nax-agent";
 import { COMPACTION_SUMMARY_PREFIX } from "@nathapp/nax-agent/internal";
-import type { ChatHistory } from "@/chat";
+import { type ChatHistory, parseSkillInvocation } from "@/chat";
 import type { TranscriptEntry } from "./transcript-model";
 
 type Message = ChatHistory["messages"][number];
@@ -10,19 +10,14 @@ type StoredCall = NonNullable<Extract<Message, { role: "assistant" }>["toolCalls
 
 const FALLBACK_TIMESTAMP = "1970-01-01T00:00:00.000Z";
 const NO_RESULT_TEXT = "No result was recorded for this call.";
-const SKILL_ARGS_DELIMITER = "</skill>\n\n";
 
 function replayUser(content: string): TranscriptEntry[] {
   if (content === "") return [];
   if (content.startsWith(COMPACTION_SUMMARY_PREFIX)) {
     return [{ kind: "notice", text: "earlier conversation compacted" }];
   }
-  const skill = /^<skill name="([^"]+)"/.exec(content);
-  if (!skill) return [{ kind: "user", text: content }];
-  // Check the terminal close first: a body may itself contain the args delimiter.
-  const delimiter = content.endsWith("</skill>") ? -1 : content.lastIndexOf(SKILL_ARGS_DELIMITER);
-  const args = delimiter < 0 ? "" : content.slice(delimiter + SKILL_ARGS_DELIMITER.length).trim();
-  return [{ kind: "user", text: `/${skill[1]}${args ? ` ${args}` : ""}` }];
+  const skill = parseSkillInvocation(content);
+  return [skill ? { kind: "skill", ...skill } : { kind: "user", text: content }];
 }
 
 function replayCall(

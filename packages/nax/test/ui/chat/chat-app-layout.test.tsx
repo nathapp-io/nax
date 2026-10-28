@@ -178,6 +178,17 @@ const harness = async (options: MountOptions = {}) => {
 };
 
 describe("ChatApp full-screen layout", () => {
+  test("US-006 AC-2 welcome counts sit directly below the header at 120x36", async () => {
+    const ui = mount();
+    await ui.resize(120, 36);
+    const rows = ui.rows();
+    expect(rows).toHaveLength(35);
+    expect(rows[2]).toMatch(/^─+$/);
+    expect(rows[3]).toBe("skills 0 · commands 0 · mcp 0 (0 connected) · agents 0");
+    expect(rows[4]).toBe("/feature <name> loads a spec · /resume picks a session · /help lists commands");
+    expect(rows.slice(5, -4).every((row) => row.trim() === "")).toBe(true);
+    expect(rows.filter((row) => row.includes("nax chat"))).toHaveLength(1);
+  });
   test("AC-1 a 30-row terminal renders a frame of 29 rows", async () => {
     const ui = await harness();
     expect(ui.rows()).toHaveLength(29);

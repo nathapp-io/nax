@@ -7,25 +7,14 @@
  * viewport. The screen owns ctrl+o and running-turn escape; useChatKeys owns ctrl-c and
  * shift+tab. Navigation ownership is checked at key time so batched completion and submit
  * cannot yield a key to a surface that is no longer mounted.
- *
- * Terminal resize and the cancellable working-line timer trigger redraws. Job notices
- * enter through the same sendTurn path as user messages, only while all surfaces are idle.
+ * Same-session model and mode notices share one drawn-state comparison after control refresh.
  */
 
 import type { SessionEvent } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, useInput, useStdout } from "ink";
-import {
-  type ReactElement,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import type { ChatHost } from "@/chat";
+import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ChatHost, parseSkillInvocation } from "@/chat";
 import { buildCommandMessage } from "@/prompts";
 import { runCommandShellLines } from "@/resources";
 import { NAX_VERSION } from "@/version";
@@ -42,6 +31,7 @@ import {
   WORKING_TICK_MS,
   workingLine,
 } from "./chat-status";
+import { FixedRow } from "./FixedRow";
 import { layoutTranscript } from "./layout";
 import type { MouseEvents } from "./mouse-input";
 import { Picker, useChatPicker } from "./Picker";
@@ -52,10 +42,12 @@ import { slashMenuItems, slashMenuQueryState } from "./slash-menu";
 import { StyledLineView } from "./styled-line";
 import { TranscriptViewport } from "./TranscriptViewport";
 import { type ChatTheme, resolveChatTheme } from "./theme";
+import { toggleTranscriptLine } from "./transcript-click";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
 import { useJobs } from "./use-jobs";
 import { useSlashMenuKeys } from "./use-slash-menu-keys";
+import { useSwitchNotices } from "./use-switch-notices";
 import { useChatKeys } from "./useChatKeys";
 
 export interface ChatAppProps {
@@ -124,15 +116,6 @@ interface TerminalSize {
 /** The stream's size, with the assumed defaults where it cannot report one. */
 function terminalSize(stdout: { columns?: number; rows?: number }): TerminalSize {
   return { columns: stdout.columns || DEFAULT_COLUMNS, rows: stdout.rows || DEFAULT_ROWS };
-}
-
-/** One transcript entry, drawn as one of the screen's own fixed rows. */
-function FixedRow({ children }: { readonly children: ReactNode }): ReactElement {
-  return (
-    <Box height={1} overflow="hidden">
-      {children}
-    </Box>
-  );
 }
 
 /**
@@ -317,6 +300,7 @@ export function ChatApp({
     transcriptSession.current = state.sessionId;
     setEntries(sessionTranscript(host));
   }, [host, state.sessionId]);
+  useSwitchNotices(state, append);
   useEffect(() => host.asks.onChange(update), [host, update]);
   useEffect(() => {
     const resourceNotice = host.resourceNotice?.();
@@ -424,7 +408,8 @@ export function ChatApp({
         append({ kind: "notice", text: prepared.notice });
         return false;
       }
-      append({ kind: "user", text: prepared.message });
+      const skill = parseSkillInvocation(prepared.message);
+      append(skill ? { kind: "skill", ...skill } : { kind: "user", text: prepared.message });
       setFollowToken((token) => token + 1);
       const onEvent = (event: SessionEvent): void => {
         if (event.type === "turn_start") started = true;
@@ -478,7 +463,8 @@ export function ChatApp({
   }
 
   const columns = size.columns;
-  const lines = layoutTranscript(entries, { width: columns, theme, expanded });
+  const layoutOptions = { width: columns, theme, expanded };
+  const lines = layoutTranscript(entries, layoutOptions);
   const header = headerLines({ state, version, cwd, home, width: columns, glyphs: theme.glyphs });
   const footer = footerModel({
     jobs,
@@ -542,6 +528,7 @@ export function ChatApp({
         mouse={mouse}
         top={HEADER_ROWS}
         onCopy={onCopy}
+        onClick={(line) => setEntries((rows) => toggleTranscriptLine(rows, line, layoutOptions))}
         lines={lines}
         height={viewportHeight}
         theme={theme}

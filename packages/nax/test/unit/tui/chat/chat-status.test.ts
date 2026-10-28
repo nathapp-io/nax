@@ -133,12 +133,20 @@ const TOOL_STATUS: TurnStatus = {
   toolName: "Bash",
   inputTokens: 7,
   outputTokens: 3,
+  streamedChars: 0,
 };
 
 describe("reduceTurnStatus turn start", () => {
   test("starts the turn in the thinking phase at the event's at", () => {
     const status = reduceTurnStatus(IDLE_STATUS, turnStart({ at: AT }));
-    expect(status).toEqual({ running: true, startedAt: AT, phase: "thinking", inputTokens: 0, outputTokens: 0 });
+    expect(status).toEqual({
+      running: true,
+      startedAt: AT,
+      phase: "thinking",
+      inputTokens: 0,
+      outputTokens: 0,
+      streamedChars: 0,
+    });
   });
 
   test("reports running and the event's startedAt", () => {
@@ -153,6 +161,40 @@ describe("reduceTurnStatus turn start", () => {
     const status = reduceTurnStatus(used, turnStart({ at: LATER }));
     expect(status.inputTokens).toBe(0);
     expect(status.outputTokens).toBe(0);
+    expect(status.streamedChars).toBe(0);
+  });
+
+  test("resets streamed characters accumulated before a new turn", () => {
+    const streamed = reduceTurnStatus(reduceTurnStatus(IDLE_STATUS, turnStart()), textDelta("x".repeat(40)));
+    expect(streamed.streamedChars).toBe(40);
+    expect(reduceTurnStatus(streamed, turnStart({ at: LATER })).streamedChars).toBe(0);
+  });
+});
+
+describe("reduceTurnStatus streamed characters", () => {
+  test("counts text and thinking deltas", () => {
+    const started = reduceTurnStatus(IDLE_STATUS, turnStart());
+    const written = reduceTurnStatus(started, textDelta("x".repeat(40)));
+    expect(written.streamedChars).toBe(40);
+    expect(reduceTurnStatus(written, thinkingDelta("hmm")).streamedChars).toBe(43);
+  });
+
+  test("resets streamed characters at usage and preserves token accumulation", () => {
+    const streamed = reduceTurnStatus(reduceTurnStatus(IDLE_STATUS, turnStart()), textDelta("x".repeat(40)));
+    const used = reduceTurnStatus(streamed, usage(1200, 300));
+    expect(used.streamedChars).toBe(0);
+    expect(used.inputTokens).toBe(1200);
+    expect(used.outputTokens).toBe(300);
+  });
+
+  test("resets streamed characters when a stream is reset", () => {
+    const streamed = reduceTurnStatus(reduceTurnStatus(IDLE_STATUS, turnStart()), textDelta("x".repeat(40)));
+    expect(reduceTurnStatus(streamed, streamReset()).streamedChars).toBe(0);
+  });
+
+  test("ignores a subagent-tagged text delta by identity", () => {
+    const before = reduceTurnStatus(IDLE_STATUS, turnStart());
+    expect(reduceTurnStatus(before, textDelta("ignored", { metadata: { subagentTask: "scan" } }))).toBe(before);
   });
 });
 
@@ -449,7 +491,15 @@ function frameAt(elapsedMs: number): string {
 
 /** A status running since `AT`, which most working-line cases start from. */
 function runningStatus(overrides: Partial<TurnStatus> = {}): TurnStatus {
-  return { running: true, startedAt: AT, phase: "thinking", inputTokens: 0, outputTokens: 0, ...overrides };
+  return {
+    running: true,
+    startedAt: AT,
+    phase: "thinking",
+    inputTokens: 0,
+    outputTokens: 0,
+    streamedChars: 0,
+    ...overrides,
+  };
 }
 
 /** Twelve seconds into an agent run that has spent 8.4k in and 1.2k out. */
@@ -466,6 +516,24 @@ function workingText(status: TurnStatus, elapsedMs: number): string {
 }
 
 describe("workingLine", () => {
+  test("shows an estimate alone before usage, rounded up and formatted", () => {
+    expect(workingText(runningStatus({ streamedChars: 40 }), 0)).toContain("↓ ~10 tokens");
+    expect(workingText(runningStatus({ streamedChars: 40 }), 0)).not.toContain("↑");
+    expect(workingText(runningStatus(), 0)).toContain("↓ ~0 tokens");
+    expect(workingText(runningStatus({ streamedChars: 41 }), 0)).toContain("↓ ~11 tokens");
+    expect(workingText(runningStatus({ streamedChars: 8000 }), 0)).toContain("↓ ~2.0k tokens");
+  });
+
+  test("adds estimates after confirmed usage without changing confirmed totals", () => {
+    const used = reduceTurnStatus(reduceTurnStatus(IDLE_STATUS, turnStart()), usage(1200, 300));
+    expect(workingText(used, 0)).toContain("↑ 1.2k ↓ 300 tokens");
+    expect(workingText({ ...used, streamedChars: 400 }, 0)).toContain("↑ 1.2k ↓ 300 (+~100) tokens");
+  });
+
+  test("keeps the existing nonzero agent status text without a live estimate", () => {
+    expect(workingText(AGENT_STATUS, TWELVE_SECONDS)).toContain("↑ 8.4k ↓ 1.2k tokens");
+  });
+
   test("gives no line while no turn runs", () => {
     expect(workingLine(IDLE_STATUS, 0, GLYPHS)).toBeUndefined();
   });
@@ -506,7 +574,7 @@ describe("workingLine", () => {
 
   test("waits for approval in the approval phase", () => {
     expect(workingText(runningStatus({ phase: "approval" }), 0)).toBe(
-      `${GLYPHS.spinner[0]} Waiting for approval… (0s · ↑ 0 ↓ 0 tokens · esc to interrupt)`,
+      `${GLYPHS.spinner[0]} Waiting for approval… (0s · ↓ ~0 tokens · esc to interrupt)`,
     );
   });
 
@@ -519,7 +587,7 @@ describe("workingLine", () => {
 
   test.each(VERB_CASES)("states the %s phase as %s", (phase, verb) => {
     expect(workingText(runningStatus({ phase }), 0)).toBe(
-      `${GLYPHS.spinner[0]} ${verb} (0s · ↑ 0 ↓ 0 tokens · esc to interrupt)`,
+      `${GLYPHS.spinner[0]} ${verb} (0s · ↓ ~0 tokens · esc to interrupt)`,
     );
   });
 
@@ -529,31 +597,31 @@ describe("workingLine", () => {
 
   test("flattens a tool name carrying a line break onto the one row it has", () => {
     const line = workingText(runningStatus({ phase: "tool", toolName: "Ba\nsh" }), 0);
-    expect(line).toBe(`${GLYPHS.spinner[0]} Running Ba sh… (0s · ↑ 0 ↓ 0 tokens · esc to interrupt)`);
+    expect(line).toBe(`${GLYPHS.spinner[0]} Running Ba sh… (0s · ↓ ~0 tokens · esc to interrupt)`);
     expect(line.includes("\n")).toBe(false);
   });
 
   test("counts a start that does not parse as no elapsed time", () => {
     expect(workingText(runningStatus({ startedAt: "now" }), 0)).toBe(
-      `${GLYPHS.spinner[0]} Thinking… (0s · ↑ 0 ↓ 0 tokens · esc to interrupt)`,
+      `${GLYPHS.spinner[0]} Thinking… (0s · ↓ ~0 tokens · esc to interrupt)`,
     );
   });
 
   test("draws no frame when the glyph set has none", () => {
     const bare = { ...GLYPHS, spinner: [] as readonly string[] };
     const line = plainText(workingLine(runningStatus(), STARTED_AT_MS, bare) ?? []);
-    expect(line).toBe("Thinking… (0s · ↑ 0 ↓ 0 tokens · esc to interrupt)");
+    expect(line).toBe("Thinking… (0s · ↓ ~0 tokens · esc to interrupt)");
   });
 
   test("counts a missing start as no elapsed time", () => {
-    const running: TurnStatus = { running: true, phase: "thinking", inputTokens: 0, outputTokens: 0 };
+    const running: TurnStatus = { running: true, phase: "thinking", inputTokens: 0, outputTokens: 0, streamedChars: 0 };
     const line = plainText(workingLine(running, STARTED_AT_MS, GLYPHS) ?? []);
-    expect(line).toBe(`${GLYPHS.spinner[0]} Thinking… (0s · ↑ 0 ↓ 0 tokens · esc to interrupt)`);
+    expect(line).toBe(`${GLYPHS.spinner[0]} Thinking… (0s · ↓ ~0 tokens · esc to interrupt)`);
   });
 
   test("does not count a now before the start as negative time", () => {
     expect(workingText(runningStatus(), -TWELVE_SECONDS)).toBe(
-      `${GLYPHS.spinner[0]} Thinking… (0s · ↑ 0 ↓ 0 tokens · esc to interrupt)`,
+      `${GLYPHS.spinner[0]} Thinking… (0s · ↓ ~0 tokens · esc to interrupt)`,
     );
   });
 

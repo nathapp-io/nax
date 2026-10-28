@@ -27,6 +27,7 @@ export interface TurnStatus {
   readonly toolName?: string;
   readonly inputTokens: number;
   readonly outputTokens: number;
+  readonly streamedChars: number;
   /** input + cacheRead + cacheWrite of the latest usage event; survives turn_end. */
   readonly contextTokens?: number;
 }
@@ -37,6 +38,7 @@ export const IDLE_STATUS: TurnStatus = {
   phase: "thinking",
   inputTokens: 0,
   outputTokens: 0,
+  streamedChars: 0,
 };
 
 const THINKING: TurnPhase = "thinking";
@@ -48,6 +50,7 @@ const RETRYING: TurnPhase = "retrying";
 
 const TOKEN_UNIT = 1000;
 const TOKEN_DECIMALS = 1;
+const CHARS_PER_ESTIMATED_TOKEN = 4;
 const TOKEN_SUFFIX = "k";
 
 /** Footer columns reserved for the model name alone, excluding its effort suffix. */
@@ -81,6 +84,7 @@ function applyTurnStart(status: TurnStatus, event: EventOf<"turn_start">): TurnS
     phase: THINKING,
     inputTokens: 0,
     outputTokens: 0,
+    streamedChars: 0,
   };
   return status.contextTokens === undefined ? started : { ...started, contextTokens: status.contextTokens };
 }
@@ -90,6 +94,7 @@ function applyUsage(status: TurnStatus, event: EventOf<"usage">): TurnStatus {
     ...status,
     inputTokens: status.inputTokens + event.inputTokens,
     outputTokens: status.outputTokens + event.outputTokens,
+    streamedChars: 0,
     contextTokens: event.inputTokens + (event.cacheRead ?? 0) + (event.cacheWrite ?? 0),
   };
 }
@@ -104,9 +109,9 @@ export function reduceTurnStatus(status: TurnStatus, event: SessionEvent): TurnS
     case "turn_start":
       return applyTurnStart(status, event);
     case "thinking_delta":
-      return inPhase(status, THINKING);
+      return { ...inPhase(status, THINKING), streamedChars: status.streamedChars + event.text.length };
     case "text_delta":
-      return inPhase(status, WRITING);
+      return { ...inPhase(status, WRITING), streamedChars: status.streamedChars + event.text.length };
     case "tool_call":
       return inPhase(status, TOOL, event.name);
     case "tool_result":
@@ -118,7 +123,7 @@ export function reduceTurnStatus(status: TurnStatus, event: SessionEvent): TurnS
     case "compaction":
       return inPhase(status, COMPACTING);
     case "stream_reset":
-      return inPhase(status, RETRYING);
+      return { ...inPhase(status, RETRYING), streamedChars: 0 };
     case "usage":
       return applyUsage(status, event);
     case "turn_end":
@@ -374,10 +379,16 @@ function workingVerb(status: TurnStatus, glyphs: ChatGlyphs): string {
 }
 
 /** The muted measurement behind the verb: the seconds, the tokens and the way out. */
+function workingTokens(status: TurnStatus): string {
+  const estimate = formatTokens(Math.ceil(status.streamedChars / CHARS_PER_ESTIMATED_TOKEN));
+  if (status.inputTokens + status.outputTokens === 0) return `${DOWN_ARROW} ~${estimate} tokens`;
+  const suffix = status.streamedChars > 0 ? ` (+~${estimate})` : "";
+  return `${UP_ARROW} ${formatTokens(status.inputTokens)} ${DOWN_ARROW} ${formatTokens(status.outputTokens)}${suffix} tokens`;
+}
+
 function workingDetail(status: TurnStatus, elapsed: number): string {
   const seconds = Math.floor(elapsed / MILLIS_PER_SECOND);
-  const tokens = `${UP_ARROW} ${formatTokens(status.inputTokens)} ${DOWN_ARROW} ${formatTokens(status.outputTokens)} tokens`;
-  return ` (${seconds}s${SEPARATOR}${tokens}${SEPARATOR}${HINT_TEXT.busy})`;
+  return ` (${seconds}s${SEPARATOR}${workingTokens(status)}${SEPARATOR}${HINT_TEXT.busy})`;
 }
 
 /**

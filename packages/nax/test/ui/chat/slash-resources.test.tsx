@@ -103,6 +103,51 @@ function command(text: string) {
   return parsed;
 }
 describe("catalog slash routing", () => {
+  test("skill send collapses the body, preserves payload and expands with ctrl+o", async () => {
+    const ui = mount();
+    await ui.line("/superpowers:brainstorming plan it");
+    expect(ui.send).toHaveBeenCalledWith(
+      buildSkillInvocationMessage({ skill, args: " plan it" }),
+      expect.any(Function),
+      { title: "/superpowers:brainstorming plan it" },
+    );
+    expect(ui.lastFrame()).toContain("> /superpowers:brainstorming plan it");
+    expect(ui.lastFrame()).toContain("⎿  skill superpowers:brainstorming · 1 line (ctrl+o to show)");
+    expect(ui.lastFrame()).not.toContain(skill.body);
+    await Promise.resolve(
+      act(async () => {
+        ui.stdin.write("\u000f");
+      }),
+    );
+    const frame = ui.lastFrame() ?? "";
+    expect(frame).toContain(skill.body);
+    expect(frame.indexOf(skill.body)).toBeGreaterThan(frame.indexOf("⎿  skill"));
+  });
+  test("ctrl+o reveals the sent skill body below its skill row", async () => {
+    const ui = mount();
+    await ui.line("/superpowers:brainstorming plan it");
+    await Promise.resolve(
+      act(async () => {
+        ui.stdin.write("\u000f");
+      }),
+    );
+    const frame = ui.lastFrame() ?? "";
+    expect(frame).toContain("⎿  skill superpowers:brainstorming");
+    expect(frame).toContain(skill.body);
+    expect(frame.indexOf(skill.body)).toBeGreaterThan(frame.indexOf("⎿  skill"));
+  });
+  test.each([
+    '<skill name="x',
+    '<skill name="x" location="/p">\nrefs\nbody',
+    '<skill name="x" location="/p">\nrefs\nbody</skill>',
+  ])("malformed live envelope stays a user row: %s", async (message) => {
+    const ui = mount();
+    await ui.line(message);
+    expect(ui.send).toHaveBeenCalledWith(message, expect.any(Function));
+    expect(ui.lastFrame()).toContain(`> ${message.split("\n")[0]}`);
+    expect(ui.lastFrame()).not.toContain("⎿  skill");
+    for (const line of message.split("\n")) expect(ui.lastFrame()).toContain(line);
+  });
   test.each([
     ["AC-1", "/brainstorming idea", "idea"],
     ["AC-2", "/superpowers:brainstorming plan the cut", "plan the cut"],
@@ -158,6 +203,10 @@ describe("catalog slash routing", () => {
     _slashCommandDeps.readText = async (path) => (path.endsWith("spec.md") ? "spec" : undefined);
     const ui = mount();
     await ui.line("/feature chat-resume-sessions");
+    const payload = buildChatFeatureMessage({ feature: "chat-resume-sessions", spec: "spec", message: "" });
+    expect(ui.lastFrame()).toContain(`> ${payload.split("\n")[0]}`);
+    expect(ui.lastFrame()).toContain("spec");
+    expect(ui.lastFrame()).not.toContain("⎿  skill");
     expect(ui.send).toHaveBeenCalledWith(
       buildChatFeatureMessage({ feature: "chat-resume-sessions", spec: "spec", message: "" }),
       expect.any(Function),

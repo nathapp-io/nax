@@ -191,6 +191,74 @@ describe("layoutTranscript: user entries", () => {
   });
 });
 
+describe("layoutTranscript: skill entries", () => {
+  const skill = { kind: "skill", name: "s", args: "go", body: "a\nb\nc" } as const;
+
+  test("AC-8 collapses a skill into its user row and muted hint", () => {
+    const lines = layout([skill]);
+    expect(texts(lines)).toEqual(["> /s go", "  ⎿  skill s · 3 lines (ctrl+o to show)"]);
+    for (const span of lines[1]) expect(span.color).toBe("muted");
+  });
+
+  test("AC-9 uses the ASCII result glyph", () => {
+    expect(texts(layout([skill], { theme: asciiTheme }))[1]).toBe("  |  skill s · 3 lines (ctrl+o to show)");
+  });
+
+  test("AC-10 omits empty args", () => {
+    expect(texts(layout([{ ...skill, args: "" }]))[0]).toBe("> /s");
+  });
+
+  test.each([
+    ["AC-11", "a\n", "1 line"],
+    ["AC-12", "", "0 lines"],
+    ["AC-13", "a", "1 line"],
+    ["CRLF", "a\r\n", "1 line"],
+    ["CR", "a\r", "1 line"],
+    ["one trailing break only", "a\n\n", "2 lines"],
+  ])("%s counts body lines", (_ac, body, count) => {
+    expect(texts(layout([{ ...skill, body }]))[1]).toBe(`  ⎿  skill s · ${count} (ctrl+o to show)`);
+  });
+
+  test("AC-14 expands muted body lines behind the card indent", () => {
+    const lines = layout([skill], { expanded: true });
+    expect(texts(lines)).toEqual(["> /s go", "  ⎿  skill s · 3 lines (ctrl+o to hide)", "     a", "     b", "     c"]);
+    for (const row of lines.slice(1)) for (const span of row) expect(span.color).toBe("muted");
+  });
+
+  test("AC-15 wraps a 200-character body word without losing text", () => {
+    const word = "x".repeat(200);
+    const lines = layout([{ ...skill, body: word }], { expanded: true });
+    expect(lines.length).toBeGreaterThan(3);
+    for (const width of widths(lines)) expect(width).toBeLessThanOrEqual(WIDTH);
+    const body = texts(lines).slice(2);
+    for (const row of body) expect(row.startsWith(CARD_INDENT)).toBe(true);
+    expect(body.map((row) => row.slice(CARD_INDENT.length)).join("")).toBe(word);
+  });
+
+  test("AC-16 preserves an expanded blank body line", () => {
+    expect(texts(layout([{ ...skill, body: "a\n\nb" }], { expanded: true }))).toEqual([
+      "> /s go",
+      "  ⎿  skill s · 3 lines (ctrl+o to hide)",
+      "     a",
+      CARD_INDENT,
+      "     b",
+    ]);
+  });
+
+  test("AC-17 wraps long args like a user message before one hint", () => {
+    const args = "x".repeat(100);
+    const rows = texts(layout([{ ...skill, args }]));
+    expect(rows.length).toBeGreaterThan(2);
+    expect(rows.slice(0, -1)).toEqual([...texts(layout([userEntry(`/s ${args}`)]))]);
+    expect(rows.at(-1)).toBe("  ⎿  skill s · 3 lines (ctrl+o to show)");
+    expect(rows.filter((row) => row.includes("⎿  skill"))).toHaveLength(1);
+  });
+
+  test("AC-18 leaves ordinary user entries unchanged", () => {
+    expect(texts(layout([userEntry("hello")]))).toEqual(["> hello"]);
+  });
+});
+
 describe("layoutTranscript: reply entries", () => {
   test("draws a one-line reply behind the bullet glyph", () => {
     expect(texts(layout([replyEntry("done")]))).toEqual([`${theme.glyphs.bullet} done`]);

@@ -1,0 +1,483 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-transcript-polish",
+  "branchName": "feat/chat-transcript-polish",
+  "createdAt": "2026-10-28T00:00:00.000Z",
+  "updatedAt": "2026-10-28T12:48:00.160Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Parse skill invocations and render collapsed skill entries",
+      "description": "**Goal** — Add the shared skill-envelope parser and collapsed/expanded skill transcript layout under the existing ctrl+o flag.\n\n**Motivation** — `/superpowers:verification-before-completion check nothing` drew about 120 lines of skill body, ending in `</skill>` and then the user's two words, pushing the conversation off the screen.\n\n**Approach** —\n- **Skill entry.** A new `TranscriptEntry` kind `{ kind: \"skill\"; name: string; args: string; body: string; open?: boolean }`. A new parser `parseSkillInvocation(content)` in `packages/nax/src/chat/skill-invocation.ts` is the inverse of `buildSkillInvocationMessage`. It returns `undefined` unless the content matches `^<skill name=\"([^\"]+)\"\\s` (a non-empty name whose closing quote is followed by whitespace, as `session-title.ts` already requires) and contains a `\\n</skill>` line. Otherwise:\n  - `name` is the `name` attribute.\n  - The closing marker is chosen with the rule `replayHistory` already uses: when the content ends with `</skill>`, that final `\\n</skill>` is the close and `args` is `\"\"`; otherwise the close is the LAST `\\n</skill>\\n\\n` and `args` is the text after it, trimmed. A body may itself contain `</skill>` lines either way.\n  - `body` is the text between the envelope's second line (the `References are relative to …` line) and the chosen close, exactly as stored (not trimmed).\n- **Skill layout.** `<n>` is the body's line count: the number of parts `body.split(SOURCE_LINE_BREAK)` yields (the layout's own `\\r\\n`/`\\r`/`\\n` splitter from `layout-lines.ts`) after removing at most one trailing line break, and 0 for an empty body; the unit is `line` when `<n>` is 1, else `lines`.\n  - Collapsed: the user row text `/<name> <args>` (` <args>` omitted when empty) drawn by the existing `userLines`, so long or multi-line args wrap like any user message, then the muted row `resultPrefix(theme) + \"skill <name> · <n> lines (ctrl+o to show)\"`, e.g. `  ⎿  skill s · 3 lines (ctrl+o to show)` in the default theme and `  |  skill s · 3 lines (ctrl+o to show)` in the ASCII theme.\n  - Expanded: the same rows with `(ctrl+o to hide)`, then each body line (split with `SOURCE_LINE_BREAK`), muted, behind `cardIndent(theme)` (spaces as wide as `resultPrefix(theme)`), wrapped to the layout width; a blank body line is drawn as a row holding only the indent.\n\nThe parser returns the data object `{ name, args, body }`, not a transcript entry with a kind discriminator; consumers attach `kind: \"skill\"`. Export `parseSkillInvocation` from the chat barrel so the TUI imports it through it. Keep session-title.ts's own regex unchanged. Test the parser using the real builder and add layout cases to the existing layout suite, preserving existing thinking/tool/cache assertions.\n\n**Scope** — In: the new parser and test, chat barrel export, skill entry variant and skill renderer. Out: live-send/replay wiring (US-002), per-entry overrides on thinking/tool and click plumbing/ownership (US-003), welcome/padding (US-006). Do not change the envelope builder. Changing how a catalog command turn is shown; only skill invocations collapse.\n\n**Interface** — Spec declarations: `parseSkillInvocation(content)`; `{ kind: \"skill\"; name: string; args: string; body: string; open?: boolean }`. Keep `layoutTranscript`'s signature and return type unchanged.",
+      "acceptanceCriteria": [
+        "[unit] parseSkillInvocation(buildSkillInvocationMessage({ skill, args: \" plan it\" })) for a skill named superpowers:brainstorming with body \"line one\\nline two\" returns { name: \"superpowers:brainstorming\", args: \"plan it\", body: \"line one\\nline two\" }.",
+        "[unit] parseSkillInvocation of an envelope built with args: \"\" returns args: \"\".",
+        "[unit] parseSkillInvocation of an envelope built with body \"body\\n</skill>\\nmore\" and args: \" go\" returns body \"body\\n</skill>\\nmore\" and args: \"go\".",
+        "[unit] parseSkillInvocation of an envelope built with body \"body\\n</skill>\\n\\nmore\" and args: \"\" returns body \"body\\n</skill>\\n\\nmore\" and args: \"\" (the content ends with </skill>, so the embedded delimiter is part of the body).",
+        "[unit] parseSkillInvocation(\"hello\") returns undefined.",
+        "[unit] parseSkillInvocation('<skill name=\"x\" location=\"/p\">\\nbody') returns undefined when there is no closing </skill>.",
+        "[unit] parseSkillInvocation('<skill name=\"x location=\"/p\">\\nrefs\\nbody\\n</skill>') returns undefined when the name has no closing quote.",
+        "[unit] layoutTranscript with a skill entry { name: \"s\", args: \"go\", body: \"a\\nb\\nc\" }, the default theme and expanded: false draws exactly two lines whose text is '> /s go' and '  ⎿  skill s · 3 lines (ctrl+o to show)'.",
+        "[unit] layoutTranscript with the same skill entry and the ASCII theme draws '  |  skill s · 3 lines (ctrl+o to show)' as its second line.",
+        "[unit] layoutTranscript with the same skill entry and args: \"\" draws '> /s' as its first line.",
+        "[unit] layoutTranscript with skill body \"a\\n\" draws the count '1 line' in the second line.",
+        "[unit] layoutTranscript with skill body \"\" draws the count '0 lines' in the second line.",
+        "[unit] layoutTranscript with skill body \"a\" draws the count '1 line' in the second line.",
+        "[unit] layoutTranscript with the \"a\\nb\\nc\" skill entry and expanded: true draws '> /s go', '  ⎿  skill s · 3 lines (ctrl+o to hide)', then '     a', '     b' and '     c' (each behind five spaces, the width of resultPrefix).",
+        "[unit] layoutTranscript with an expanded skill entry whose body is one 200-character word and a layout width of 40 draws that word as several lines, each no wider than 40 columns, whose text after the indent concatenated equals the word.",
+        "[unit] layoutTranscript with an expanded skill entry whose body is \"a\\n\\nb\" draws '     a', a row holding only the five-space indent, and '     b' after the hint row, and the hint row reads '3 lines'.",
+        "[unit] layoutTranscript with a collapsed skill entry whose args are wider than the layout width draws the user row as several wrapped lines followed by one `⎿  skill` hint line.",
+        "[unit] layoutTranscript with the existing user entry { kind: \"user\", text: \"hello\" } still returns exactly one line with plain text '> hello', without any skill hint."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "skills"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A pure inverse parser and renderer extend existing union, wrapping and theme primitives across a small set of modules; no new external dependency or security boundary is introduced. Write builder-round-trip and concrete layout tests first.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/skills-builder/index.ts",
+        "packages/nax/src/tui/chat/transcript-model.ts",
+        "packages/nax/src/tui/chat/layout.ts",
+        "packages/nax/src/tui/chat/layout-lines.ts",
+        "packages/nax/src/chat/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/skill-invocation.ts",
+        "packages/nax/test/unit/chat/skill-invocation.test.ts"
+      ],
+      "suggestedCriteria": [
+        "parseSkillInvocation returns undefined when the name attribute is empty or its closing quote is immediately followed by a non-whitespace character.",
+        "layoutTranscript shows '1 line' for a skill body ending in exactly one CRLF or lone CR after one nonempty source line.",
+        "layoutTranscript renders control-sequence-bearing skill names and bodies without emitting terminal escape sequences."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/chat/index.ts",
+          "reason": "export `parseSkillInvocation` from the chat barrel so the TUI imports it through it."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f3f652d3bfcf7a129b402b3b2cacc40aea561234"
+    },
+    {
+      "id": "US-002",
+      "title": "Use skill entries for live sends and session replay",
+      "description": "**Goal** — Render both newly sent and replayed skill envelopes as the collapsed skill entry without changing the message delivered to the host.\n\n**Motivation** — `/superpowers:verification-before-completion check nothing` drew about 120 lines of skill body, ending in `</skill>` and then the user's two words, pushing the conversation off the screen.\n\n**Approach** —\n- **Live sends.** `sendTurn` in `ChatApp` runs `parseSkillInvocation` on the prepared message it is about to append: when it returns a value, `sendTurn` appends that skill entry instead of the user entry; otherwise it appends the user entry as today. This covers catalog skills (`catalogCommand` is the only builder of the envelope) without a new outcome discriminator; a `/feature` or command turn, whose message never starts with `<skill name=\"`, still draws a user entry. `host.send` still receives the full message.\n- **Replay.** `replayHistory` (from chat-resume-sessions) emits the skill entry `parseSkillInvocation` returns for a stored user message, and a user entry with the raw content when it returns `undefined`. Its inline skill regex and `SKILL_ARGS_DELIMITER` logic are replaced by the parser; `session-title.ts` keeps its own title regex.\n\nConstruct `{ kind: \"skill\", ...parsed }` from the parser's `{ name, args, body }` result. Preserve replayUser's empty/compaction handling, assistant/tool replay masking and caps, host.send's full first argument and optional title, and the existing send follow/busy/error behavior. Import the parser through the chat barrel. Update history-replay.test.ts's AC-4 through AC-8 to expect skill name/args/body, retaining each case's args and embedded marker behavior; rejected envelopes expect the raw user content. Extend existing mounted slash-resources and session tests to exercise actual typed catalog skills, ctrl+o, host payloads, feature turns, malformed input and resumed history.\n\n**Scope** — In: ChatApp.sendTurn and replayUser consumption of US-001's parser plus mounted send/resume coverage. Out: parser/layout creation (US-001), click/open overrides (US-003), switch notices (US-004), changing slash outcome types or command expansion. Persisting a block's open state across a resume; replayed blocks start collapsed. Changing how a catalog command turn is shown; only skill invocations collapse.\n\n**Interface** — `parseSkillInvocation(content)` is provided by US-001; emit `{ kind: \"skill\", name, args, body }` on success. Preserve the existing `replayHistory` signature and `host.send` contract.",
+      "acceptanceCriteria": [
+        "[integration] When /superpowers:brainstorming plan it is typed for a catalog skill in a mounted ChatApp, the frame draws '> /superpowers:brainstorming plan it' and the ⎿ skill superpowers:brainstorming · <n> lines (ctrl+o to show) row without showing the skill body.",
+        "[integration] When ctrl+o is pressed after that send in the mounted ChatApp, the skill body is drawn under the `⎿  skill` row.",
+        "[integration] After that send, the host's send still receives the full invocation message as its first argument.",
+        "[integration] When a /feature command turn is sent in a mounted ChatApp, it still draws its message as a > user row and no `⎿  skill` row.",
+        "[integration] When the typed message '<skill name=\"x' (no closing quote) is sent in a mounted ChatApp, it draws a > user row with that text and no `⎿  skill` row.",
+        "[unit] replayHistory of a stored skill envelope returns { kind: \"skill\", name, args, body } with the values parseSkillInvocation returns.",
+        "[unit] replayHistory of a user message starting with '<skill name=\"' that parseSkillInvocation rejects returns a user entry with the raw content.",
+        "[integration] When a session whose stored history holds a skill envelope is resumed, the mounted ChatApp draws '> /<name> <args>' and the `⎿  skill <name> · <n> lines (ctrl+o to show)` row after the resume, and not the body.",
+        "[integration] When a message starts with '<skill name=\"' but has no closing quote or no newline-delimited </skill> close, live send appends a user entry containing the original message."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "skills",
+        "session-replay"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The code scope is medium: two existing display paths consume US-001's parser using typed host and replay fixtures. Retain strict three-session-tdd under the prompt's explicit sessions override because this story changes persisted-session replay; it does not add authentication or change storage/redaction policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/tui/chat/history-replay.ts",
+        "packages/nax/src/chat/skill-invocation.ts",
+        "packages/nax/src/tui/chat/session-transcript.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/tui/chat/history-replay.test.ts",
+          "reason": "the skill-envelope cases (AC-4 to AC-8) now expect a skill entry (name, args, body) instead of a user entry with the slash line, keeping each case's args; a case whose envelope the parser rejects now expects the raw content."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/history-replay.ts",
+          "reason": "`replayUser` calls `parseSkillInvocation` in place of its inline skill regex and `SKILL_ARGS_DELIMITER`."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/ChatApp.tsx",
+          "reason": "`sendTurn` appends the parsed skill entry for a skill envelope."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "55e70ddfc014da45d2b9a72b676a796e884d0cf6"
+    },
+    {
+      "id": "US-003",
+      "title": "Click individual transcript headers to toggle blocks",
+      "description": "**Goal** — Add per-block expansion overrides and connect precise mouse clicks through selection and the viewport to ChatApp's transcript entries.\n\n**Motivation** — The user asked for collapsed blocks that expand \"only if click or with key combination\"; the ruling (2026-10-28) is ctrl+o plus a click.\n\n**Approach** —\n- **Per-block open state.** Thinking, tool and skill entries gain an optional `open?: boolean`. A block is drawn expanded when `entry.open ?? expanded` is true, where `expanded` is the existing screen-wide ctrl+o flag; ctrl+o keeps flipping only that flag. A new `transcriptLineOwners(entries, options): readonly (number | undefined)[]` returns, for each line `layoutTranscript` produces with the same arguments, the index of the entry that drew it (`undefined` for separator lines). A click (defined below) on a toggle line of a thinking, tool or skill entry replaces that entry with `{ ...entry, open: !(entry.open ?? expanded) }`. The toggle lines are the entry's FIRST line for thinking and tool entries, and for a skill entry the first line of its user row and the `⎿  skill … (ctrl+o to …)` hint row. A click on any other line (a later line of a thinking or tool entry, including a wrapped header's continuation row; a skill body line; a separator; a blank padding row; a line of another entry kind) changes nothing; drag-select and copy are unchanged. After a toggle the viewport behaves exactly as after ctrl+o today.\n- **Click wiring.** A click is a left press on a mapped transcript point followed by a release, with no drag event at a cell other than the press cell in between (mapped or not) and the release at the press cell. `useMouseSelection` gains `onClick?(point: TranscriptPoint)`, called with the press point for a click, on the path where `finishSelection` returns without copying (the click still copies nothing); it tracks a `moved` flag set by any drag event at another cell so a drag that strays onto an unmapped row and back is not a click. `TranscriptViewport` gains an `onClick?(line: number)` prop that it passes through as `onClick: (point) => onClick?.(point.line)`. `ChatApp` passes an `onClick` that looks the line up in `transcriptLineOwners` and applies the toggle. A press whose cell maps to no transcript point records no anchor today and so produces no click.\n\nRun after US-006 so click coordinates follow its bottom-padded geometry. Use identical layout options for lines and owners, preserve the layout cache by replacing rather than mutating the clicked entry, and distinguish structural header/hint positions from body text and wrapped continuations. Preserve existing selection focus/copy behavior when drags leave the mapped window, left-button/active gating and once-only release handling. No existing layout assertion should change merely because an optional open field is absent; add new override/ownership cases. Create use-mouse-selection.test.tsx for hook gestures and chat-transcript-click.test.tsx for mounted mouse-stream integration; reuse test/ui/chat/mouse.ts. Test actual mouse press/release reports through ChatApp, not just the owner function or a detached handler.\n\n**Scope** — In: optional overrides, effective expansion, transcriptLineOwners, selection onClick, viewport forwarding and ChatApp toggle handling. Out: live skill/replay consumption (US-002), welcome/padding implementation (US-006), and switch notices (US-004). A per-block keyboard toggle (moving a cursor between blocks); ctrl+o stays screen-wide. Collapsing long tool output beyond what tool cards already collapse. Persisting a block's open state across a resume; replayed blocks start collapsed. Keeping a clicked block's header in view: after a click toggle the viewport scrolls, follows and counts unseen lines exactly as after ctrl+o today.\n\n**Interface** — `open?: boolean`; `transcriptLineOwners(entries, options): readonly (number | undefined)[]`; `onClick?(point: TranscriptPoint)` on useMouseSelection input; `onClick?(line: number)` on TranscriptViewport. `layoutTranscript`'s signature and return type are unchanged.",
+      "acceptanceCriteria": [
+        "[unit] transcriptLineOwners returns one value per line layoutTranscript returns for the same entries and options.",
+        "[unit] transcriptLineOwners for entries [user, thinking] returns 0 for the user lines, undefined for the separator, and 1 for the thinking lines.",
+        "[unit] layoutTranscript draws a thinking entry with open: true expanded while expanded is false.",
+        "[unit] layoutTranscript draws a thinking entry with open: false collapsed while expanded is true.",
+        "[unit] layoutTranscript draws a tool entry expanded for open: true with expanded: false, and collapsed for open: false with expanded: true, following the same open ?? expanded rule as thinking entries.",
+        "[unit] layoutTranscript draws a skill entry expanded for open: true with expanded: false, and collapsed for open: false with expanded: true, following the same open ?? expanded rule as thinking entries.",
+        "[unit] useMouseSelection calls onClick with the transcript press point for a left press and release at the same cell, and calls no onCopy (the click copies nothing) even when onClick is provided.",
+        "[unit] When a press is followed by a drag to another cell and a release, useMouseSelection calls no onClick.",
+        "[unit] When a press is followed by a drag to another cell and a release, useMouseSelection still copies the selected text.",
+        "[unit] useMouseSelection with a press on a mapped cell, a drag event on an unmapped row, and a release back on the press cell calls no onClick.",
+        "[integration] When a finished thinking block's first row is left-clicked in a mounted ChatApp, the thought is drawn.",
+        "[integration] When that thinking block's first row is clicked a second time in the mounted ChatApp, the block collapses.",
+        "[integration] Given two finished thinking blocks in a mounted ChatApp, a click on the first block's first row expands only that block; the other stays collapsed.",
+        "[integration] Given a block opened by a click in a mounted ChatApp, ctrl+o and ctrl+o again leave that block expanded and toggle the others.",
+        "[integration] After a skill send in a mounted ChatApp, a left click on the `⎿  skill … (ctrl+o to show)` row draws the skill body.",
+        "[integration] After that click opened the skill in a mounted ChatApp, a click on the > user row hides the body again.",
+        "[integration] When an expanded skill body's line is clicked in a mounted ChatApp, the block's expansion state is unchanged.",
+        "[integration] When a reply entry's line is left-clicked in a mounted ChatApp, the frame is unchanged.",
+        "[integration] When a separator row between two entries is left-clicked in a mounted ChatApp, the frame is unchanged.",
+        "[integration] When a blank padding row below a short transcript is left-clicked in a mounted ChatApp, the frame is unchanged.",
+        "[integration] Given a mounted ChatApp at a width where a tool card's header wraps, a left click on the header's continuation row leaves the card collapsed.",
+        "[integration] Given that wrapped tool card in a mounted ChatApp, a left click on its first row expands it.",
+        "[integration] When a click lands outside the transcript in a mounted ChatApp, no block changes expansion state."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "mouse",
+        "transcript"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module interaction joins terminal-cell gestures, viewport mapping, exact layout ownership, immutable entry state and global/local expansion precedence. Separate test, implementation and verification sessions cover the mounted seam and drag/copy regressions.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/transcript-model.ts",
+        "packages/nax/src/tui/chat/use-mouse-selection.ts",
+        "packages/nax/src/tui/chat/selection.ts",
+        "packages/nax/src/tui/chat/TranscriptViewport.tsx",
+        "packages/nax/src/tui/chat/layout.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/use-mouse-selection.test.tsx",
+        "packages/nax/test/ui/chat/chat-transcript-click.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "useMouseSelection calls neither onClick nor onCopy when a mapped press is released at a different cell without an intervening drag event.",
+        "useMouseSelection calls onClick exactly once when a valid click is followed by a duplicate release report.",
+        "transcriptLineOwners omits an unfinished thinking entry that produces no lines and adds no separator for that entry.",
+        "When a wrapped skill argument's continuation row is clicked, the skill's expansion state remains unchanged."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3a77d0d4bce3c084e9bfd24d1ab33aab11b32cab"
+    },
+    {
+      "id": "US-004",
+      "title": "Append notices for model and mode changes",
+      "description": "**Goal** — Record every actual same-session model/effort or mode change once in the transcript through one host-state comparison.\n\n**Motivation** — After `/model deepseek…` nothing in the transcript said the model had changed; only the header and footer did, and those were truncated.\n\n**Approach** — **Switch notices.** `ChatApp` remembers the last `(sessionId, model, mode)` it drew, seeded at mount from the first `host.current()` (so mount appends nothing). When the session id is unchanged and the model string differs it appends `{ kind: \"notice\", text: \"model: <model after the last slash>\" }` (the string keeps any `[<level>]` suffix, e.g. `model: m[high]`); when the mode differs it appends `mode: <full|guarded>`; when both differ, the model notice comes first. A session id change appends neither (chat-resume-sessions rebuilds the transcript then). Every path that ends in `switchTo` (`/model`, `/effort`, the model and effort pickers' choose, shift+tab) is covered by this one comparison; the model picker's left/right effort cycling only stages a choice and appends nothing until choose.\n\nKeep the last tuple synchronized even when a session-id change suppresses notices. Observe actual host.current() values after the shared control refresh rather than appending from individual command/key/picker branches. The model notice is not the footer's shortened model: preserve the entire text after the last slash and its effort suffix. Update chat-app-session.test.tsx's same-id scrolled-viewport case: it now sees the mode/model notice and unseen marker but preserves the previous scrolled content rather than resetting replay or following to the new row. Cover /effort and committed picker choices via existing mounted UI suites; changing staged effort without choosing must not switch the host or append notices.\n\n**Scope** — In: central ChatApp comparison and integration tests for direct commands, shift+tab, committed choices, mount, no-op and resume suppression. Out: skill sends/replay (US-002), click toggles (US-003), token estimates (US-005), modifications to host switching/permission semantics. A notice when the sandbox state changes.\n\n**Interface** — Remember `(sessionId, model, mode)` from `host.current()` and append `{ kind: \"notice\", text: \"model: <model after the last slash>\" }` or `mode: <full|guarded>` through the existing transcript append path; no new host API is required.",
+      "acceptanceCriteria": [
+        "[integration] When /model p/other is run in a mounted ChatApp whose fake host then reports model: \"p/other\" on the same session id, the transcript appends the notice 'model: other'.",
+        "[integration] When shift+tab switches the host from guarded to full on the same session id, the mounted ChatApp appends 'mode: full'.",
+        "[integration] When switchTo changes both model and mode, the mounted ChatApp appends both notices, model first.",
+        "[integration] When resume makes the fake host report a different session id with a different model and mode, the mounted ChatApp appends no model: or mode: notice.",
+        "[integration] When /model names the current model in a mounted ChatApp, no switch notice is appended.",
+        "[integration] When /effort high changes the fake host from model: \"p/m[low]\" to model: \"p/m[high]\" on the same session id, the mounted ChatApp appends 'model: m[high]'.",
+        "[integration] When a different model is chosen in the /model picker, the mounted ChatApp appends one model: notice for the chosen model.",
+        "[integration] When effort is cycled with left/right in the /model picker before choosing, the mounted ChatApp appends no model: notice.",
+        "[integration] When ChatApp mounts, it appends no model: or mode: notice.",
+        "[integration] When a same-id mode or model switch appends its notice while ChatApp is scrolled up, the scrolled viewport is preserved apart from the notice's unseen marker, rather than rebuilding the transcript or jumping to the newest line."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "model",
+        "session-state"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The code scope is medium: one ChatApp comparison appends notices through existing refresh/append paths, tested across commands, pickers and scrolling. Retain strict three-session-tdd under the prompt's explicit sessions override because notice suppression depends on session-id transitions; no new permission or authentication decision is introduced.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/src/tui/chat/useChatKeys.ts",
+        "packages/nax/src/tui/chat/useChatPicker.ts",
+        "packages/nax/src/tui/chat/slash-commands.ts"
+      ],
+      "suggestedCriteria": [
+        "When the effort picker chooses high on the same session id from p/m[low], ChatApp appends exactly one 'model: m[high]' notice.",
+        "When the working-line timer redraws an unchanged host state after a switch, no duplicate model: or mode: notice is appended."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/chat-app-session.test.tsx",
+          "reason": "the same-id mode and model switch case that scrolls up and asserts the transcript is unchanged now sees the new `mode:`/`model:` notice (and the unseen marker it causes); it asserts the scrolled viewport is preserved apart from that notice."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0bde25cbe0fbc56f662d5847180c618fbffd821a"
+    },
+    {
+      "id": "US-005",
+      "title": "Estimate streamed output tokens on the working line",
+      "description": "**Goal** — Show an immediate output-token estimate from streamed text while retaining confirmed usage totals and existing status behavior.\n\n**Motivation** — The working line stayed at `↑ 0 ↓ 0 tokens` throughout a turn that was streaming text.\n\n**Approach** — **Live token estimate.** `TurnStatus` gains `streamedChars: number`, the characters of `text_delta` and `thinking_delta` text since the last `usage` event of the turn; `turn_start` and every `usage` event reset it to 0, and so does `stream_reset` (a retry discards the streamed text). A turn \"has usage\" when `inputTokens + outputTokens > 0` (no new flag). The working line's tokens part is:\n- with usage: `↑ <in> ↓ <out> tokens`, plus ` (+~<estimate>)` after `<out>` while `streamedChars > 0`. Existing working-line cases with token counts (e.g. the `AGENT_STATUS` fixture, `↑ 8.4k ↓ 1.2k tokens`) keep their text.\n- without usage: `↓ ~<estimate> tokens` alone.\n`<estimate>` is `Math.ceil(streamedChars / 4)` formatted with the existing `formatTokens`.\n\nInitialize the required field in IDLE_STATUS and turn-start results, retain the reducer's early subagent guard and all phase/context/usage semantics, and do not add estimates to actual token totals. The suffix appears before ' tokens', as in '↑ 1.2k ↓ 300 (+~100) tokens'. Update typed TOOL_STATUS, AGENT_STATUS, runningStatus() and inline TurnStatus fixtures, equality assertions and only the zero-usage working-line expectations in chat-status.test.ts. Use a named constant for the characters-per-estimated-token divisor. Write reducer/formatting tests first in that existing suite, including resets and subagent identity.\n\n**Scope** — In: TurnStatus, reduceTurnStatus and workingLine in chat-status.ts plus corresponding fixture/assertion updates. Out: switch notices (US-004), transcript changes and provider/ledger billing changes. Exact token counting from a tokenizer; the estimate is characters divided by four.\n\n**Interface** — `streamedChars: number` on `TurnStatus`; existing `reduceTurnStatus`, `workingLine` and `formatTokens` signatures remain unchanged.",
+      "acceptanceCriteria": [
+        "[unit] After turn_start and a text_delta of 40 characters, reduceTurnStatus yields streamedChars: 40.",
+        "[unit] A thinking_delta adds its text length to reduceTurnStatus's streamedChars.",
+        "[unit] A usage event resets streamedChars to 0 and adds its tokens as today.",
+        "[unit] turn_start resets streamedChars to 0.",
+        "[unit] A stream_reset event after a 40-character text_delta makes reduceTurnStatus yield streamedChars: 0.",
+        "[unit] A subagent-tagged text_delta leaves the status unchanged.",
+        "[unit] workingLine for a running turn with no usage and streamedChars: 40 shows '↓ ~10 tokens' and no ↑.",
+        "[unit] workingLine with no usage and streamedChars: 0 shows '↓ ~0 tokens'.",
+        "[unit] workingLine after one usage event with inputTokens: 1200, outputTokens: 300 and streamedChars: 0 shows '↑ 1.2k ↓ 300 tokens'.",
+        "[unit] workingLine with inputTokens: 1200, outputTokens: 300 and streamedChars: 400 shows '↑ 1.2k ↓ 300 (+~100) tokens'.",
+        "[unit] workingLine with no usage and streamedChars: 41 shows '↓ ~11 tokens' (rounded up).",
+        "[unit] workingLine with no usage and streamedChars: 8000 shows '↓ ~2.0k tokens' in the formatTokens form.",
+        "[unit] workingLine for the existing nonzero-token AGENT_STATUS fixture with streamedChars: 0 keeps its existing '↑ 8.4k ↓ 1.2k tokens' text."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "streaming",
+        "usage"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A single pure status module gains an additive counter and deterministic formatting, with existing reducer and working-line fixtures. Token counts here are usage estimates, not authentication tokens or other security-sensitive credentials.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/test/unit/tui/chat/chat-status.test.ts"
+      ],
+      "suggestedCriteria": [
+        "After a zero-input, zero-output usage event, workingLine still uses the estimate-only form with the streamed character count reset to zero.",
+        "A subagent-tagged thinking_delta leaves the TurnStatus object unchanged by identity."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/tui/chat/chat-status.test.ts",
+          "reason": "typed `TurnStatus` fixtures (`TOOL_STATUS`, `AGENT_STATUS`, `runningStatus()`) gain `streamedChars: 0`; working-line assertions for a running turn with zero input and output tokens change from the up-and-down zero-token form to the estimate-only form (cases with non-zero tokens, such as `AGENT_STATUS`, keep their text); turn-status equality assertions gain the new streamed-characters field."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9084e3ad9533955edd02ffec697873a77b73ed73"
+    },
+    {
+      "id": "US-006",
+      "title": "Remove the repeated welcome title and top-anchor the transcript",
+      "description": "**Goal** — Start a short transcript immediately under the header and keep mouse selection aligned with its new bottom padding.\n\n**Motivation** — The header's first row is `✻ nax chat v… · model · mode`, and the welcome card starts with `✻ nax chat` again, 20 blank rows lower, because `TranscriptViewport` pads blank rows above a short transcript.\n\n**Approach** — **Welcome and viewport.** `welcomeLines` drops its `✻ nax chat` title line and the empty line after it, keeping the counts line and the tips line. `TranscriptViewport` pads blank rows BELOW the visible lines when the transcript is shorter than the window; scrolling, follow and the unseen marker are unchanged. `transcriptPointAt` changes to match: with no top padding, window row `r` (0-based, under `top`) maps to visible line `start + r` while `r < count`, and the blank rows below map to `undefined`.\n\nMake the renderer and geometry change together, preserving fixed row heights, clipping and the bottom unseen marker; leave viewport.ts scrolling arithmetic unchanged. Keep counts/tips styling and narrow-width wrapping. Update welcome first-line assertions in layout-status.test.ts, short and short-marker point mappings in selection.test.ts, padded row order and mouse coordinates in transcript-viewport.test.tsx, and short-frame positions in chat-app-layout.test.tsx. In particular, transcript-viewport.test.tsx's existing height-2, one-line selection helper previously used y=2 because padding was above; move the coordinates to the actual text row without changing its drag/copy assertions. Add the 120x36 mounted welcome check using the existing resize harness and a bottom-padded selection drag. US-003 will consume these coordinates for click tests.\n\n**Scope** — In: welcomeLines, TranscriptViewport row order and transcriptPointAt geometry plus affected tests. Out: per-block click/onClick behavior (US-003), skill layouts (US-001), slash-menu layout (US-007), changing scroll/follow/unseen-marker policies.\n\n**Interface** — Preserve `welcomeLines`, `TranscriptViewport` and `transcriptPointAt(geometry, x, y)` APIs in this story; map window row r to `start + r` only for `r < count`.",
+      "acceptanceCriteria": [
+        "[unit] welcomeLines draws the counts line first and the tips line second, with no nax chat title line.",
+        "[integration] A mounted ChatApp at 120x36 with only the welcome entry draws the counts line on the row right after the header rule.",
+        "[integration] TranscriptViewport with 3 lines in a 10-row window draws the 3 lines on rows 1-3 and blank rows on rows 4-10.",
+        "[integration] TranscriptViewport with more lines than the window still follows the last line and shows the unseen marker as before.",
+        "[unit] transcriptPointAt for 3 lines in a 10-row window maps window rows 0-2 to lines 0-2 and rows 3-9 to undefined.",
+        "[integration] In a mounted TranscriptViewport with 3 lines in a 10-row window, a drag from row 0 to row 1 copies text from lines 0 and 1."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "layout",
+        "selection"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three existing rendering/geometry modules need a coordinated but conventional row-order change. Test exact frames, hit coordinates and drag-copy behavior first while preserving reducer-driven scrolling and unseen markers.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/layout-status.ts",
+        "packages/nax/src/tui/chat/TranscriptViewport.tsx",
+        "packages/nax/src/tui/chat/selection.ts",
+        "packages/nax/src/tui/chat/viewport.ts",
+        "packages/nax/test/ui/chat/transcript-viewport.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "transcriptPointAt returns undefined for the unseen-marker row in a short window with bottom padding.",
+        "When a short top-anchored transcript receives another line while following, its first line remains on the first viewport row."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/tui/chat/layout-status.test.ts",
+          "reason": "the welcome lines no longer start with the title line and its blank line; assertions on the welcome card's first lines change to the counts line."
+        },
+        {
+          "path": "packages/nax/test/unit/tui/chat/selection.test.ts",
+          "reason": "`transcriptPointAt` cases on a short (padded) window, including the short-marker case, now map row `r` to line `r` and the blank rows below to `undefined`."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/transcript-viewport.test.tsx",
+          "reason": "a transcript shorter than the window is now drawn from the top row with blank rows below it; assertions on the padded window's row order change accordingly."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/chat-app-layout.test.tsx",
+          "reason": "frames of a short transcript now show the welcome counts right under the header and blank rows below; row-position assertions change accordingly."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8499b09dd8fc9bbcc519828bcc718658f4c28319"
+    },
+    {
+      "id": "US-007",
+      "title": "Align slash descriptions and show undisplayed match counts",
+      "description": "**Goal** — Give slash-menu descriptions one aligned column and disclose hidden matches without increasing the menu's row budget.\n\n**Motivation** — The slash menu's descriptions start right after each name (`/help  Show…`, `/sessions  List…`), so they do not line up, and a list longer than the menu gives no sign that more matches exist.\n\n**Approach** — **Slash menu.** Every drawn row pads `/name` to the widest drawn name plus the existing two-space gap, so descriptions start in one column. When there are more matches than `maxRows` and `maxRows >= 2`, `slashMenuLayout` asks `slashMenuWindow` for a window of `maxRows - 1` rows and appends the muted row `  <ellipsis> <k> more` (`<ellipsis>` = `theme.glyphs.ellipsis`, `…` or `...`; `k` = matches not drawn). When `maxRows` is 1, the pointer's row alone is drawn and no more-row. The menu's total row count, which `ChatApp` budgets, is unchanged. `slashMenuWindow` itself is unchanged.\n\nCompute name padding from the item rows actually drawn, after reserving the overflow row, using terminal display widths so the pointer gutter and existing truncation still fit. Compute k as all matches minus item rows drawn, including omitted matches on either side of the window. Retain selected/first values, key ownership, filtering, pointer movement and cut-not-wrap row rendering. Update exact padded-name and long-window assertions in test/ui/chat/slash-menu.test.tsx and add pure slashMenuLayout cases there; keep the existing unit slashMenuWindow assertions unchanged. Exercise a mounted /s query with ten catalog skills and a constrained menu budget.\n\n**Scope** — In: slashMenuLayout/menu-row name padding and muted overflow row plus renderer and mounted tests. Out: slashMenuWindow or matching/ranking changes, ChatApp budgeting changes, welcome/viewport alignment (US-006) and model/mode notices (US-004).\n\n**Interface** — Preserve `slashMenuLayout`'s existing inputs and `{ selected, first, rows, lines }` result. `slashMenuWindow(count, selected, maxRows)` is unchanged; only call it with `maxRows - 1` when the reserved more-row applies.",
+      "acceptanceCriteria": [
+        "[unit] slashMenuLayout for /help and /sessions draws both descriptions starting at the same column.",
+        "[unit] slashMenuLayout for /help and /sessions starts each description at column `\"/sessions\".length + 2` after the pointer gutter.",
+        "[unit] slashMenuLayout with 12 matches, maxRows: 5, the default theme and the pointer on the first match draws 4 item rows and a fifth row whose text is '  … 8 more'.",
+        "[unit] slashMenuLayout with those 12 matches and maxRows: 5 returns rows: 5.",
+        "[unit] slashMenuLayout with the same input and the ASCII theme draws the fifth row as '  ... 8 more'.",
+        "[unit] slashMenuLayout with 5 matches and maxRows: 5 draws 5 item rows and no more-matches row.",
+        "[unit] slashMenuLayout with 12 matches, maxRows: 5 and the pointer on the last match draws the pointer's row and a more-matches row reading '8 more'.",
+        "[unit] slashMenuLayout with 12 matches and maxRows: 2 draws the pointer's row and '  … 11 more'.",
+        "[unit] slashMenuLayout with 12 matches and maxRows: 1 draws the pointer's row alone and returns rows: 1, with no more-matches row.",
+        "[integration] When /s is typed in a mounted ChatApp whose fake host offers 10 skills starting with s, at a terminal height that gives the menu fewer rows than the matches, the menu shows a row ending in 'more'."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "slash-menu",
+        "layout"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A renderer-level change combines name-column measurement, a reserved overflow row and pointer-centered window sizing. Existing pure window and mounted menu harnesses support test-first verification without changing the menu model or screen budget.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/SlashMenu.tsx",
+        "packages/nax/src/tui/chat/slash-menu.ts",
+        "packages/nax/src/tui/chat/bottom-region.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/test/ui/chat/slash-menu.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "slashMenuLayout with maxRows: 0 returns no lines and rows: 0 even when matches exist.",
+        "slashMenuLayout aligns descriptions by display columns when a drawn name contains wide Unicode characters.",
+        "slashMenuLayout excludes a longer undisplayed name when computing the description column for a shorter drawn window."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/slash-menu.test.tsx",
+          "reason": "rows now pad each name to the widest drawn name, so assertions on a row's exact text gain the padding; a list longer than the window now draws one item row fewer (the window around the pointer shrinks by one) plus the more-matches row."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a160b4aec14140cefec315434a580b184ea5e68a"
+    }
+  ],
+  "analysis": "This is a scoped enhancement to the existing React 19/Ink 6 chat screen in @nathapp/nax, not a new chat implementation. All seven stories operate in packages/nax; no changes to nax-agent, nax-agent-acp, nax-ai, provider usage events, permission enforcement, or persisted session schemas are needed. The execution root is /Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax. codebase-memory MCP was unavailable in this tool set, so discovery used direct reads and text searches. Read docs/architecture/ARCHITECTURE.md before implementation: it indexes dependency injection, pure functions, terminal safety, testing, and size constraints. packages/nax/package.json declares Bun-based tests, React, Ink, ink-testing-library, Biome and strict TypeScript. Use package-scoped targeted bun test paths during iteration, never bare bun test or bun run nax. The pipeline supplies the normal gates; do not run coverage in NAX_SANDBOXED=1. Tests should observe return values, frame rows, host calls, and actual mouse/key streams, using existing typed fakes, React act, cleanup and injectable external dependencies rather than module replacement or real agents.\n\nUS-001 baseline and changes: packages/nax/src/prompts/builders/skills-builder/index.ts:31 builds the skill envelope from four newline-joined components: opening tag, references line, exact skill.body, closing tag; nonempty args follow two newlines and retain command.rest's leading space. It remains read-only. Add packages/nax/src/chat/skill-invocation.ts and export its parser via packages/nax/src/chat/index.ts. The parser is a chat-layer utility, not a TUI dependency: return only { name, args, body } or undefined, and let consumers attach kind: skill. Require the exact nonempty-name prefix and quote-followed-by-whitespace rule in the spec; choose the final close before searching the last args delimiter so embedded closing markers survive. Preserve body bytes between the second envelope line and the selected close, including blank lines and trailing line breaks. packages/nax/src/chat/session-title.ts:4 has its own legacy-title regex (currently [^\"]*, not the parser's required +); keep that regex and title behavior unchanged rather than broadening parser acceptance to match it. packages/nax/src/tui/chat/transcript-model.ts:19 defines the discriminated union; add the skill variant without changing event reduction. packages/nax/src/tui/chat/layout.ts:111 already implements user wrapping and banding; reuse it for slash-name/args rows. layout.ts:147 and :160 draw thinking headers/details using context.expanded, :171 computes cardIndent from displayWidth(resultPrefix), :255 passes expansion to toolCardModel, and :266 is the exhaustive entry dispatcher. Add skill rendering, muted hint/body styling, singular/plural counts, indentation, and wrapping. packages/nax/src/tui/chat/layout-lines.ts:39 defines SOURCE_LINE_BREAK, :78 sanitizes text and removes only a trailing LF in textLines, and :216 defines the theme result prefix. Do not assume textLines already removes a full trailing CRLF or lone CR: the skill count contract explicitly removes at most one whole SOURCE_LINE_BREAK. Keep raw parser output separate from sanitized rendered text. Existing layout tests at packages/nax/test/unit/tui/chat/layout.test.ts:146, :293, :348, :453 and :540 cover wrapping, thinking/tool behavior, caching and separators; extend them with skill cases and create the parser test required by the spec.\n\nUS-002 integration: packages/nax/src/tui/chat/slash-commands.ts:127 is catalogCommand; it returns the existing send outcome for skills while command templates retain a separate command outcome. No new outcome discriminator or envelope-builder change is needed. packages/nax/src/tui/chat/ChatApp.tsx:412 prepares a send, :427 unconditionally appends a user entry, and the following send branches preserve the full message plus optional title. Parse only the successfully prepared message at that append point, emit { kind: skill, ...parsed } on success, and leave host.send payload/title, busy guards, errors and followToken behavior intact. packages/nax/src/tui/chat/history-replay.ts:15 contains replayUser's permissive inline skill regex and SKILL_ARGS_DELIMITER; replace those with the shared parser while preserving empty-message and compaction-summary branches. The assistant/tool replay code and its existing masking/caps must not change. packages/nax/src/tui/chat/session-transcript.ts:26 combines welcome, replayHistory and a resumed notice; ChatApp.tsx:315 rebuilds it only when the session id changes. Thus one replay change covers opening and resume without a storage migration. packages/nax/test/unit/tui/chat/history-replay.test.ts:35 contains the existing AC-4 through AC-8 envelope cases; replace slash-user expectations with skill data, keeping each args/body case. packages/nax/test/ui/chat/slash-resources.test.tsx:15 supplies a real skill fixture, :25 constructs a catalog/typed host, and :105 covers catalog routing and full builder payloads. Extend that mounted path for collapsed/expanded frames, feature turns and malformed raw sends. packages/nax/test/ui/chat/chat-app-session.test.tsx:114 covers opening replay and subsequent direct/picker resume. Block overrides are ephemeral and must not be serialized.\n\nUS-003 integration and risks: packages/nax/src/tui/chat/transcript-model.ts:58 and its reducers replace only changed objects; later text/tool events use spreads, so an optional open override can survive updates without mutating cached entries. layout.ts:312 uses a WeakMap keyed by entry identity and :335 caches width/global-expanded variants; replacing a clicked entry invalidates only its own cache naturally. transcriptLineOwners must share the renderer's exact normalized width/theme/expanded behavior, including no rows for unfinished thinking and undefined separators, rather than estimating line counts from raw text. It reports every line's owner, not whether every owned line is clickable. ChatApp must separately identify the first physical line of a thinking/tool entry and the first user row or hint row of a skill entry; wrapped header/args continuations and all body lines are inert. Do not confuse hint-like body text with the structural hint row. packages/nax/src/tui/chat/use-mouse-selection.ts:23 currently treats a same-point range as no-copy, and :32 stores synchronous gesture state and subscribes to left-button events. Add a raw press-cell identity and moved tracking: set moved for any different-cell drag even when transcriptPointAt returns undefined; require release at the original terminal cell. Compare cells, not just mapped points, so viewport changes do not create false clicks. Preserve existing outside-drag focus retention, clipboard behavior, duplicate-release protection, active gating and unsubscribe cleanup. packages/nax/src/tui/chat/TranscriptViewport.tsx:194 feeds geometry into useMouseSelection; forward onClick(point.line) here, then wire ChatApp.tsx:540 to immutable entry toggles. ctrl+o at ChatApp.tsx:297 changes only the global flag; do not clear per-entry overrides. Keep the viewport's ordinary content-change accounting after either toggle: no special header anchoring and no followToken bump. packages/nax/test/ui/chat/mouse.ts:4 provides the synchronous fakeMouse source. packages/nax/test/ui/chat/transcript-viewport.test.tsx:283, :290 and :331 cover once-only copying, no-copy clicks, and outside drags; these remain regression anchors after US-006's coordinate updates. Create packages/nax/test/ui/chat/use-mouse-selection.test.tsx for isolated hook gestures and packages/nax/test/ui/chat/chat-transcript-click.test.tsx for mounted end-to-end toggles rather than inflating the existing 740-line chat-app-layout test. US-003 must follow both US-001 and US-006 so owners include skills and tests use bottom padding.\n\nUS-004 baseline and integration: ChatApp.tsx:190 reads host.current() on render; :212 appends entries, :315 performs session-id-only rebuilds, and later effects append host notices and sandbox warnings. Track the last drawn sessionId/model/mode tuple independently, seeded from the mount state; compare scalar values, update the remembered tuple even when a session change suppresses notices, and append model before mode when both change. Do not reset live entries or scroll state on a same-id switch. Strip only the provider path through the last slash; do not use shortModel, which truncates names at 24 columns (packages/nax/src/tui/chat/chat-status.ts:151). Preserve any effort suffix verbatim. Shared refresh already exists: packages/nax/src/tui/chat/useChatKeys.ts:88 refreshes after runControl completes, :85 switches mode, and finishTurn applies queued shift+tab changes. Direct /model, /mode and /effort reach switchTo at slash-commands.ts:182, :187 and :147; packages/nax/src/tui/chat/useChatPicker.ts:51 dispatches picker choices, :127 commits pending effort on choose, and :157 only stages cycling. Therefore append notices from the central host-state comparison, never independently in command/picker/key handlers. packages/nax/test/ui/chat/chat-app-session.test.tsx:158 currently asserts an unchanged scrolled transcript after same-id changes; update it to allow the new notice and unseen marker while preserving its scrolled content. The existing /model p/m there is a no-op, so use an actually different model to exercise a model notice and retain the no-op assertion separately. Extend existing session, effort-command and picker-effort UI suites. US-002 and US-004 change only conversation presentation, not permission resolution, host lifecycle, locking, authentication or stored credentials. Their complexity remains medium; strict three-session-tdd is retained solely because the prompt explicitly applies its sessions override to session-related stories. Do not infer any authorization or host-lifecycle implementation work from that routing choice. Actual host switching and replay redaction remain untouched.\n\nUS-005 baseline and compatibility: packages/nax/src/tui/chat/chat-status.ts:23 owns TurnStatus, :35 IDLE_STATUS, :77 applyTurnStart, :88 applyUsage, :101 reduceTurnStatus, :131 formatTokens and :377 workingDetail. Add required streamedChars with zero defaults, sum JavaScript text.length for top-level text/thinking deltas, reset at start/usage/stream_reset, and retain phase changes, accumulated usage, latest contextTokens and the early subagent guard. Detect usage only by inputTokens + outputTokens > 0; a zero-token usage event still resets chars but does not introduce a separate hasUsage flag. Keep confirmed totals separate from estimates; display suffix estimates since the last usage rather than adding estimates to confirmed output or to the footer's context meter. These are token-usage metrics, not credentials. ChatApp.tsx:356 already routes every SessionEvent through reduceTurnStatus and workingLine is already redrawn on the cancellable clock; no event contract or new timer is needed. packages/nax/test/unit/tui/chat/chat-status.test.ts:129, :451, :456 and :549 construct typed fixtures that need streamedChars: 0. Exact zero-token working-line expectations at :509, :522, :532, :538, :545, :551 and :556 change to estimate-only. The nonzero AGENT_STATUS assertion at :474 must retain its existing text. Equality tests at :142 also gain the field.\n\nUS-006 baseline and migration: packages/nax/src/tui/chat/layout-status.ts:24 defines the duplicated welcome title and :59 returns title, empty line, counts and tips. Remove just title/blank-row output, keeping counts/tips muted and wrapped. packages/nax/src/tui/chat/TranscriptViewport.tsx:130 currently draws padding before body and the unseen marker at the bottom. Move blank rows below visible body, keeping the marker on the last reserved row and retaining reducer arithmetic, fixed physical heights, clipping, active ownership and followToken behavior. packages/nax/src/tui/chat/selection.ts:22 currently subtracts top padding before returning a point; remove that subtraction and map only rows below count to start + row. Blank bottom padding and the unseen-marker row must remain unmapped. US-006 must change rendering and hit testing together. packages/nax/test/unit/tui/chat/selection.test.ts:9 has short-window and short-marker coordinates to update; packages/nax/test/ui/chat/transcript-viewport.test.tsx:71 asserts top padding, while its selectionView helper at :251 defaults mouse y to 2 because a one-line transcript is bottom aligned in height 2. Update that helper/case coordinates to the top-aligned layout rather than weakening copy assertions. Update packages/nax/test/unit/tui/chat/layout-status.test.ts:105 welcome expectations and packages/nax/test/ui/chat/chat-app-layout.test.tsx frame positions; the latter's :146 resize helper demonstrates reporting 120x36 via the harness stdout. Existing viewport keyboard/wheel, overflow, unseen marker, grapheme selection and clipboard tests stay meaningful regression tests.\n\nUS-007 baseline and integration: packages/nax/src/tui/chat/SlashMenu.tsx:58 appends a fixed two-space name gap immediately after each name, and :89 selects a slashMenuWindow and reports lines.length. Pad each drawn /name to the widest name in that drawn window plus the existing gap (use display columns consistently with the terminal primitives); then truncate rather than wrap rows as today. When overflowing with at least two rows, use one fewer item row and append a muted theme-specific ellipsis/more row; omitted count is total matches minus item rows drawn, not the number after the pointer. Preserve selected/first semantics and total budget. packages/nax/src/tui/chat/slash-menu.ts:101 computes slashMenuRows, :116 computes slashMenuWindow, and :151 returns query state; none needs changing. ChatApp.tsx:250 budgets menu rows before composing its bottom region and later passes that budget to SlashMenu; keep this contract unchanged. packages/nax/test/ui/chat/slash-menu.test.tsx:33 stores exact unpadded HELP_ROW/RESUME_ROW/FEATURE_ROW strings and subsequent window assertions assume a full item window. Update them for aligned descriptions and the reserved overflow row, without weakening key ownership, batched completion/submit, selected-row visibility, narrow-row truncation or footer-budget assertions. The existing packages/nax/test/unit/tui/chat/slash-menu.test.ts covers model/window math, which remains unchanged; place renderer-level unit cases in the existing UI test module as pure slashMenuLayout assertions.\n\nDelivery and migration: preserve exactly US-001 through US-007 and their specified dependencies/workdirs. US-001 and US-006 can be implemented independently before US-003; US-002 consumes US-001's parser. US-004, US-005 and US-007 are independent. US-002/US-003/US-004 share ChatApp, US-001/US-003 share layout and transcript-model, and US-003/US-006 share TranscriptViewport; coordinate edits without inventing dependency edges. Existing large files are already near or above normal size targets; keep helpers focused and avoid unrelated refactoring or raising ratchet baselines. New named outputs are listed in expectedFiles, and only existing or upstream-produced paths appear in contextFiles. There is no persisted-data migration: stored envelopes and full sends remain unchanged, replay derives the new entry, legacy malformed content falls back to raw user text, and optional open fields are view-only. The required observable changes intentionally alter a small set of exact frame/status/replay assertions while preserving tool redaction, title rendering, scroll/follow/unseen accounting, selection/copy and slash-menu navigation. No code or tests were executed while drafting or auditing this PRD; findings are from source inspection.\n\nRefine-pass audit: re-read the complete spec AC list and failure table against the draft and the current send, replay, selection, geometry, status and menu implementations. All 72 original ACs remain in their assigned stories. The following mapping enumerates each original AC by its one-based position under that story in the spec, followed by its one-based position(s) in this PRD's acceptanceCriteria; splitting compound frame/interaction cases retains every observation and regression qualifier. US-001: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11/12/13, 12->14, 13->15, 14->16, 15->17. US-002: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8. US-003: 1->1, 2->2, 3->3, 4->4, 5->5/6, 6->7, 7->8/9, 8->10, 9->11/12, 10->13, 11->14, 12->15/16/17, 13->18, 14->19/20, 15->21/22. US-004: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7/8, 8->9. US-005: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12. US-006: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6. US-007: 1->1, 2->2, 3->3/4, 4->5, 5->6, 6->7, 7->8/9, 8->10. Qualifiers retained include the embedded-delimiter/body parenthetical, exact five-space indent and wrapped-word preservation, full host payload still received, feature user rows still drawn, drag copying still performed, other blocks staying collapsed, non-target frames unchanged, usage added as today, rounded-up estimates, existing formatTokens output and viewport behavior as before. The draft had dropped the explicit still qualifier from the host.send AC; it is restored.\n\nEvery failure-table row has mandatory criteria: malformed envelopes are covered by US-001 ACs 6/7 and US-002 ACs 7/9; separator/padding/outside clicks by US-003 ACs 19/20/23; non-toggle lines by US-003 ACs 17/18/21/24, with the explicitly allowed skill hint kept clickable; zero streamed chars without usage by US-005 AC 8; maxRows=1 overflow by US-007 AC 9. Every story has a negative path: parser rejection (US-001), raw-user fallback (US-002), no-toggle/no-click targets (US-003), same-model/mount/resume notice suppression (US-004), ignored subagent events and retry reset (US-005), undefined bottom-padding hit points (US-006), and no overflow row when no room or no overflow (US-007). Backward-compatibility anchors are explicit in US-001 AC 18, US-002 ACs 3/4, US-003 ACs 9/25, US-004 AC 10, US-005 ACs 3/13, US-006 ACs 4/6 and US-007 ACs 6/9. US-004's scrolled-viewport assertion and US-005's existing AGENT_STATUS text were previously only suggested; they are now mandatory because the spec explicitly protects these behaviors.\n\nContext audit: all four recommended US-001 files, all four US-002 files, both US-004 files, US-005's status module, all three US-006 files and both US-007 files are included. US-003 has six recommendations but a five-file cap; selection.ts replaces the simple transcript-model slot so agents receive the complete click-to-geometry-to-layout-to-screen chain. transcript-model.ts remains an implementation target identified above and in the description; adding its optional fields does not require a sixth context slot. No story lists its own newly created file as context. The separate mounted click test file is intentional, not a fictitious pre-existing helper: the existing 740-line chat-app-layout.test.tsx cannot reasonably absorb the full new click matrix, while the named fakeMouse helper already exists. No extra source helper, host method, slash outcome or package dependency is prescribed.\n\nBinding story ids, workdirs and dependency edges are unchanged and all referenced ids exist. US-003's after-skill-send case is the feature integration seam with US-002's owned send change; retain that real mounted send assertion and do not duplicate the send implementation or invent an extra dependency edge. Only the mouse/ownership story is complex, with three-session-tdd-lite justified by the multi-module gesture/geometry state seam; send/replay and notice stories remain medium, retaining strict three-session-tdd only under the prompt's explicit sessions override rather than invented authorization work. All seven top-level exclusions are preserved verbatim, with nearby skill/command, ephemeral-open, mouse-scroll, sandbox-notice and tokenizer boundaries echoed in story Scope sections. The audit found no remaining description/AC contradiction; raw parser data, structural click positions, one-based terminal coordinates versus zero-based viewport rows, and provider-qualified model strings are kept distinct.",
+  "outOfScope": [
+    "A per-block keyboard toggle (moving a cursor between blocks); ctrl+o stays screen-wide.",
+    "Collapsing long tool output beyond what tool cards already collapse.",
+    "Persisting a block's open state across a resume; replayed blocks start collapsed.",
+    "Changing how a catalog command turn is shown; only skill invocations collapse.",
+    "A notice when the sandbox state changes.",
+    "Exact token counting from a tokenizer; the estimate is characters divided by four.",
+    "Keeping a clicked block's header in view: after a click toggle the viewport scrolls, follows and counts unseen lines exactly as after ctrl+o today."
+  ],
+  "routingProfile": "native-codex"
+}

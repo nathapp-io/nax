@@ -13,7 +13,7 @@
  * The banner's counts are the entry's own numbers (US-020 collects them from the host), so
  * this module never reads the host and a missing catalogue is simply the entry's zeros.
  */
-import { EMPTY_LINE, type LayoutContext, oneLine, prefixedLine, resultPrefix, SPACE, styled } from "./layout-lines";
+import { type LayoutContext, oneLine, prefixedLine, resultPrefix, SPACE, styled } from "./layout-lines";
 import { type StyledLine, sanitizeText } from "./styled-line";
 import type { ChatColorToken, ChatGlyphs } from "./theme";
 import type { TranscriptEntry } from "./transcript-model";
@@ -21,8 +21,6 @@ import type { TranscriptEntry } from "./transcript-model";
 type WelcomeEntry = Extract<TranscriptEntry, { kind: "welcome" }>;
 type StatusEntry = Extract<TranscriptEntry, { kind: "notice" | "warning" | "error" }>;
 
-/** The banner's first line: the thinking glyph and the product's name. */
-const WELCOME_TITLE = "nax chat";
 /** The banner's closing line: where a new session goes first. */
 const WELCOME_TIPS = "/feature <name> loads a spec · /resume picks a session · /help lists commands";
 /** What separates one count from the next on the banner's summary line. */
@@ -53,16 +51,11 @@ function rowsOf(text: string, color: ChatColorToken, context: LayoutContext): re
 }
 
 /**
- * The welcome banner: `✻ nax chat` in the accent colour, an empty line, then the counts and
- * the tips — both muted, and both wrapped like any other line so a narrow terminal keeps
- * every one of them.
+ * The welcome banner: counts then tips, both muted and wrapped like any other line so a
+ * narrow terminal keeps every one of them. The product title belongs to the header.
  */
 export function welcomeLines(entry: WelcomeEntry, context: LayoutContext): readonly StyledLine[] {
-  const glyph = styled(`${context.theme.glyphs.thinking}${SPACE}`, { color: "accent", bold: true });
-  const title = styled(WELCOME_TITLE, { color: "accent", bold: true });
   return [
-    ...prefixedLine([title], [glyph], context),
-    EMPTY_LINE,
     ...rowsOf(countParts(entry).join(COUNT_SEPARATOR), "muted", context),
     ...rowsOf(WELCOME_TIPS, "muted", context),
   ];

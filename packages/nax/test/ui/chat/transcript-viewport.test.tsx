@@ -68,9 +68,37 @@ function mount(lines: StyledLine[], { active = true, height = HEIGHT, width }: M
 }
 
 describe("TranscriptViewport", () => {
-  test("AC-1 pads a transcript shorter than the view with empty rows at the top", () => {
-    const view = mount(numbered(3));
-    expect(view.rows()).toEqual(["", "", "line 1", "line 2", "line 3"]);
+  test("US-006 AC-3 pads three lines below in a ten-row window", () => {
+    const view = mount(numbered(3), { height: 10 });
+    expect(view.rows()).toEqual(["line 1", "line 2", "line 3", "", "", "", "", "", "", ""]);
+  });
+
+  test("US-006 AC-4 preserves follow and the bottom unseen marker in a ten-row window", async () => {
+    const view = mount(numbered(20), { height: 10 });
+    expect(view.rows()).toEqual(
+      numbered(20)
+        .slice(10)
+        .map((line) => line[0].text),
+    );
+    await view.update(numbered(23));
+    expect(view.rows().at(-1)).toBe("line 23");
+    view.press(PAGE_UP);
+    await view.update(numbered(25));
+    expect(view.rows()).toEqual([
+      "line 5",
+      "line 6",
+      "line 7",
+      "line 8",
+      "line 9",
+      "line 10",
+      "line 11",
+      "line 12",
+      "line 13",
+      "↓ 2 new lines (End)",
+    ]);
+    view.press(END);
+    expect(view.rows().at(-1)).toBe("line 25");
+    expect(view.rows()).toHaveLength(10);
   });
 
   test("AC-2 shows the newest page of a transcript longer than the view", () => {
@@ -248,6 +276,30 @@ describe("TranscriptViewport mouse", () => {
 });
 
 describe("US005 TranscriptViewport selection", () => {
+  test("US-006 AC-6 copies the first two lines above bottom padding", () => {
+    const mouse = fakeMouse();
+    const copies: string[] = [];
+    const ui = render(
+      <TranscriptViewport
+        lines={numbered(3)}
+        height={10}
+        theme={THEME}
+        mouse={mouse.events}
+        onCopy={(text) => copies.push(text)}
+      />,
+    );
+    const event = (kind: "press" | "drag" | "release", x: number, y: number) =>
+      act(() => mouse.emit(kind, { button: "left", x, y }));
+    event("press", 1, 1);
+    event("drag", 6, 2);
+    event("release", 6, 2);
+    expect(copies).toEqual(["line 1\nline 2"]);
+    expect(rowsOf(ui.lastFrame()).slice(3)).toEqual(Array(7).fill(""));
+    event("press", 1, 4);
+    event("drag", 6, 5);
+    event("release", 6, 5);
+    expect(copies).toEqual(["line 1\nline 2"]);
+  });
   const inverse = "\x1b[7mhello\x1b[27m";
   function selectionView() {
     const mouse = fakeMouse();
@@ -263,7 +315,7 @@ describe("US005 TranscriptViewport selection", () => {
       />
     );
     const ui = render(frame([[{ text: "hello world" }]]));
-    const event = (kind: "press" | "drag" | "release", x: number, y = 2) =>
+    const event = (kind: "press" | "drag" | "release", x: number, y = 1) =>
       act(() => mouse.emit(kind, { button: "left", x, y }));
     const drag = () => {
       event("press", 1);
@@ -325,7 +377,9 @@ describe("US005 TranscriptViewport selection", () => {
     ui.event("drag", 5, 1);
     ui.event("release", 5, 1);
     expect(ui.copies).toEqual([]);
-    ui.drag();
+    ui.event("press", 1, 2);
+    ui.event("drag", 5, 2);
+    ui.event("release", 5, 2);
     expect(ui.copies).toEqual(["hello"]);
   });
   test("drag outside retains focus and release copies the last inside range", () => {

@@ -14,7 +14,10 @@ import { act } from "react";
 import { type ChatHost, type ChatHostState, createChatAskController } from "@/chat";
 import { buildResourceCatalog, type ResourcePackage } from "@/resources";
 import { ChatApp } from "@/tui/chat";
-import { SLASH_MENU_MAX_ROWS } from "@/tui/chat/slash-menu";
+import { slashMenuLayout } from "@/tui/chat/SlashMenu";
+import { SLASH_MENU_MAX_ROWS, type SlashMenuItem } from "@/tui/chat/slash-menu";
+import { displayWidth, plainText } from "@/tui/chat/styled-line";
+import { resolveChatTheme } from "@/tui/chat/theme";
 
 /** The keys the menu owns, as ink parses the sequences a terminal sends. */
 const ESCAPE = "\x1b";
@@ -30,19 +33,9 @@ const CTRL_U = "\x15";
 const CLEAR_HINT = "esc again to clear";
 
 /** The rows a description makes recognisable, so a "no rows" assertion cannot be vacuous. */
-const HELP_ROW = "/help  Show commands and skills";
-const RESUME_ROW = "/resume  Resume a saved session";
+const HELP_ROW = "/help      Show commands and skills";
+const RESUME_ROW = "/resume   Resume a saved session";
 const FEATURE_ROW = "/feature  Load a feature spec into the conversation";
-
-/** The built-ins a fifteen-match frame has to leave out: everything past the eighth row. */
-const BEYOND_THE_WINDOW = [
-  FEATURE_ROW,
-  "/skills  List skills",
-  "/plugins  List plugins and what they provide",
-  "/mcp  List MCP servers",
-  "/agents  List agents",
-  "/quit  Quit nax chat",
-] as const;
 
 const STATE: ChatHostState = {
   sessionId: "menu-session",
@@ -76,8 +69,8 @@ const approval: SessionEventBody = {
 const CODE_LINES = Array.from({ length: 100 }, (_unused, index) => `zz${String(index + 1).padStart(3, "0")}`);
 const NEWEST_CODE_LINE = CODE_LINES[CODE_LINES.length - 1] ?? "";
 
-/** A catalogue holding one skill named `skill` — the built-in `skills` prefixes it. */
-function skillCatalog(): ChatHost["catalog"] {
+/** A catalogue of skills; by default `skill`, which the built-in `skills` prefixes. */
+function skillCatalog(names: readonly string[] = ["skill"]): ChatHost["catalog"] {
   const origin = { kind: "nax-plugin", plugin: "kit" } as const;
   const pkg: ResourcePackage = {
     id: "kit",
@@ -88,19 +81,17 @@ function skillCatalog(): ChatHost["catalog"] {
     hooks: [],
     diagnostics: [],
     commands: [],
-    skills: [
-      {
-        kind: "skill",
-        name: "skill",
-        qualifiedName: "kit:skill",
-        description: "literal",
-        body: "!`echo x`",
-        baseDir: "/kit/skill",
-        path: "/kit/skill/SKILL.md",
-        modelInvocable: true,
-        origin,
-      },
-    ],
+    skills: names.map((name) => ({
+      kind: "skill",
+      name,
+      qualifiedName: `kit:${name}`,
+      description: "literal",
+      body: "!`echo x`",
+      baseDir: `/kit/${name}`,
+      path: `/kit/${name}/SKILL.md`,
+      modelInvocable: true,
+      origin,
+    })),
   };
   return buildResourceCatalog([pkg]);
 }
@@ -241,6 +232,81 @@ afterEach(() => {
   mock.restore();
 });
 
+describe("slashMenuLayout", () => {
+  const theme = resolveChatTheme({ env: {}, colorLevel: 0 });
+  const ascii = resolveChatTheme({ env: { NAX_ASCII: "1" }, colorLevel: 0 });
+  const matches: readonly SlashMenuItem[] = Array.from({ length: 12 }, (_, index) => ({
+    name: `s${index}`,
+    description: `description ${index}`,
+  }));
+
+  test("polish AC-1/AC-2 descriptions align at the widest name plus two columns", () => {
+    const lines = slashMenuLayout(
+      [
+        { name: "help", description: "Help description" },
+        { name: "sessions", description: "Sessions description" },
+      ],
+      { width: 80, theme },
+    ).lines.map(plainText);
+    // Compare the actual description starts, excluding the two-column pointer gutter.
+    expect(lines[0]?.indexOf("Help description")).toBe(lines[1]?.indexOf("Sessions description"));
+    expect(lines[0]?.indexOf("Help description")).toBe(2 + "/sessions".length + 2);
+  });
+
+  test.each([
+    { label: "AC-3/AC-4 first pointer", selected: 0, maxRows: 5, theme, first: 0, items: 4, more: "  … 8 more" },
+    { label: "AC-5 ASCII", selected: 0, maxRows: 5, theme: ascii, first: 0, items: 4, more: "  ... 8 more" },
+    { label: "AC-7 last pointer", selected: 11, maxRows: 5, theme, first: 8, items: 4, more: "  … 8 more" },
+    { label: "AC-8 two rows", selected: 11, maxRows: 2, theme, first: 11, items: 1, more: "  … 11 more" },
+    { label: "AC-9 one row", selected: 11, maxRows: 1, theme, first: 11, items: 1, more: undefined },
+  ])("polish $label", ({ selected, maxRows, theme, first, items, more }) => {
+    const layout = slashMenuLayout(matches, { width: 80, theme, selected, maxRows });
+    const text = layout.lines.map(plainText);
+    expect(layout.selected).toBe(selected);
+    expect(layout.first).toBe(first);
+    expect(layout.rows).toBe(maxRows);
+    expect(text.filter((line) => line.includes("/s"))).toHaveLength(items);
+    expect(text.some((line) => line.startsWith(`${theme.glyphs.pointer} /s${selected} `))).toBe(true);
+    if (more === undefined) expect(text.join("\n")).not.toContain("more");
+    else {
+      expect(text.at(-1)).toBe(more);
+      expect(layout.lines.at(-1)?.every((span) => span.color === "muted")).toBe(true);
+    }
+  });
+
+  test("polish padding uses display widths of drawn items only", () => {
+    const items = [
+      { name: "界", description: "wide" },
+      { name: "abc", description: "ascii" },
+      { name: "hidden-long-name", description: "hidden" },
+      ...matches,
+    ];
+    const layout = slashMenuLayout(items, { width: 80, theme, maxRows: 3 });
+    expect(layout.lines.slice(0, 2).map(plainText)).toEqual(["❯ /界   wide", "  /abc  ascii"]);
+    const starts = layout.lines.slice(0, 2).map((line) => {
+      const text = plainText(line);
+      return displayWidth(text.slice(0, text.indexOf(line.at(-1)?.text.trimStart() ?? "")));
+    });
+    expect(starts).toEqual([8, 8]);
+  });
+
+  test("polish narrow rows are cut and a middle window counts omissions on both sides", () => {
+    const layout = slashMenuLayout(matches, { width: 10, theme, maxRows: 5, selected: 6 });
+    expect(layout.first).toBe(3);
+    expect(layout.lines.map(plainText).at(-1)).toBe("  … 8 more");
+    expect(layout.lines.every((line) => displayWidth(plainText(line)) <= 10)).toBe(true);
+    expect(slashMenuLayout(matches, { width: 80, theme, maxRows: 0 }).lines).toEqual([]);
+    expect(slashMenuLayout([], { width: 80, theme, maxRows: 5 }).rows).toBe(0);
+  });
+
+  test("polish AC-6 exact-fit matches do not reserve a more row", () => {
+    const layout = slashMenuLayout(matches.slice(0, 5), { width: 80, theme, maxRows: 5 });
+    expect(layout.rows).toBe(5);
+    expect(layout.lines.map(plainText).filter((line) => line.includes("/s"))).toHaveLength(5);
+    expect(layout.lines.map(plainText).join("\n")).not.toContain("more");
+  });
+});
+
 describe("SlashMenu opening and selection", () => {
   test("AC-1 typing / shows the menu with the built-ins under the input", async () => {
     const ui = await screen();
@@ -320,7 +386,7 @@ describe("SlashMenu completion and dismissal", () => {
     ui.type("/re");
     ui.press(ESCAPE);
     ui.type("s");
-    expect(ui.rows()).toContain(`❯ ${RESUME_ROW}`);
+    expect(ui.rows()).toContain("❯ /resume  Resume a saved session");
   });
 });
 
@@ -328,15 +394,25 @@ describe("SlashMenu window", () => {
   test("AC-10 fifteen matches draw eight rows", async () => {
     const ui = await screen();
     ui.type("/");
-    expect(ui.lastFrame()).toContain(HELP_ROW);
-    for (const row of BEYOND_THE_WINDOW) expect(ui.lastFrame()).not.toContain(row);
+    const rows = ui.rows();
+    const menu = rows.slice(rows.indexOf("> /") + 2, -1);
+    expect(menu).toEqual([
+      `❯ ${HELP_ROW}`,
+      "  /mode      Switch permission mode",
+      "  /model     Switch model",
+      "  /effort    Switch reasoning effort",
+      "  /sessions  List saved sessions",
+      "  /resume    Resume a saved session",
+      "  /clear     Clear the conversation",
+      "  … 8 more",
+    ]);
   });
 
   test("AC-11 nine downArrows keep the selection inside the frame", async () => {
     const ui = await screen();
     ui.type("/");
     for (let index = 0; index < 9; index++) ui.press(DOWN);
-    expect(ui.rows()).toContain("❯ /skills  List skills");
+    expect(ui.rows()).toContain("❯ /skills    List skills");
     expect(ui.lastFrame()).not.toContain(HELP_ROW);
   });
 });
@@ -354,9 +430,9 @@ describe("SlashMenu suppression", () => {
   test("AC-13 a query with whitespace draws no rows", async () => {
     const ui = await screen();
     ui.type("/mode");
-    expect(ui.rows()).toContain("❯ /mode  Switch permission mode");
+    expect(ui.rows()).toContain("❯ /mode   Switch permission mode");
     ui.type(" full");
-    expect(ui.lastFrame()).not.toContain("/mode  Switch permission mode");
+    expect(ui.lastFrame()).not.toContain("/mode   Switch permission mode");
     expect(ui.rows()).toContain("> /mode full");
   });
 
@@ -381,7 +457,7 @@ describe("SlashMenu ranking and key ownership", () => {
   test("AC-15 a skill named skill ranks above the built-in skills", async () => {
     const ui = await screen({ catalog: skillCatalog() });
     ui.type("/skill");
-    expect(ui.rows()).toContain("❯ /skill  (skill) literal");
+    expect(ui.rows()).toContain("❯ /skill   (skill) literal");
     await ui.submitTyped();
     expect(ui.send).toHaveBeenCalledTimes(1);
     expect(ui.send.mock.calls[0]?.[0]).toContain("!`echo x`");
@@ -447,7 +523,7 @@ describe("SlashMenu keys delivered in one batch", () => {
     ui.type("/");
     ui.pressAll(DOWN, DOWN);
     // The third match, not the second: a handler that reads the last render's pointer moves once.
-    expect(ui.rows()).toContain("❯ /model  Switch model");
+    expect(ui.rows()).toContain("❯ /model     Switch model");
   });
 
   test("F6 downArrow then return in one batch run the row the pointer moved to", async () => {
@@ -502,6 +578,20 @@ describe("SlashMenu keys delivered in one batch", () => {
 });
 
 describe("SlashMenu on a short terminal", () => {
+  test("polish AC-10 /s with ten catalog skills discloses undisplayed matches", async () => {
+    const names = Array.from({ length: 10 }, (_, index) => `skill${index}`);
+    const ui = mount({ catalog: skillCatalog(names) });
+    await ui.resize(80, 14);
+    ui.type("/s");
+    const rows = ui.rows();
+    expect(rows).toContain("> /s");
+    expect(rows.some((row) => row.startsWith("❯ /sessions"))).toBe(true);
+    expect(rows.some((row) => row.endsWith(" more"))).toBe(true);
+    const drawnSkills = rows.filter((row) => /^ {2}\/skill\d/.test(row));
+    expect(drawnSkills.length).toBeGreaterThan(0);
+    expect(drawnSkills.length).toBeLessThan(names.length);
+    expect(rows).toHaveLength(13);
+  });
   /** An 80x12 terminal: what the fixed regions need, plus a viewport row and a little slack. */
   const SHORT_ROWS = 12;
 
@@ -538,7 +628,7 @@ describe("SlashMenu on a short terminal", () => {
     for (let index = 0; index < 5; index++) ui.press(DOWN);
     const rows = ui.rows();
     expect(rows).toHaveLength(SHORT_ROWS - 1);
-    expect(rows).toContain("❯ /resume  Resume a saved session");
+    expect(rows).toContain("❯ /resume    Resume a saved session");
   });
 
   /** An 80x9 terminal: the input's own frame and one viewport row leave the menu no rows. */

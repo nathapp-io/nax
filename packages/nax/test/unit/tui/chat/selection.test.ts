@@ -6,15 +6,21 @@ const geometry = { top: 3, height: 10, total: 50, offset: 0, unseen: 0 };
 const lines: readonly StyledLine[] = [[{ text: "hello world" }], [{ text: "second line" }]];
 const selection: Selection = { anchor: { line: 0, column: 6 }, focus: { line: 1, column: 5 } };
 describe("transcriptPointAt", () => {
+  test.each(Array.from({ length: 10 }, (_, row) => row))("US-006 AC-5 short window row %s", (row) => {
+    const view = { ...geometry, total: 3 };
+    expect(transcriptPointAt(view, 1, view.top + row + 1)).toEqual(row < 3 ? { line: row, column: 0 } : undefined);
+  });
   test.each([
     ["AC-1", geometry, 5, 4, { line: 40, column: 4 }],
     ["AC-2", geometry, 5, 3, undefined],
     ["AC-3", geometry, 5, 14, undefined],
-    ["AC-4", { ...geometry, top: 0, total: 4 }, 1, 1, undefined],
-    ["AC-5", { ...geometry, top: 0, total: 4 }, 1, 7, { line: 0, column: 0 }],
+    ["AC-4", { ...geometry, top: 0, total: 4 }, 1, 5, undefined],
+    ["AC-5", { ...geometry, top: 0, total: 4 }, 1, 1, { line: 0, column: 0 }],
     ["AC-6", { ...geometry, unseen: 2 }, 1, 13, undefined],
     ["scrolled", { ...geometry, offset: 3 }, 1, 4, { line: 37, column: 0 }],
-    ["short marker", { ...geometry, top: 0, total: 4, unseen: 2 }, 1, 7, { line: 0, column: 0 }],
+    ["short marker", { ...geometry, top: 0, total: 4, unseen: 2 }, 1, 1, { line: 0, column: 0 }],
+    ["short marker padding", { ...geometry, top: 0, total: 4, unseen: 2 }, 1, 4, undefined],
+    ["short marker bottom", { ...geometry, top: 0, total: 4, unseen: 2 }, 1, 10, undefined],
   ] as const)("%s", (_name, view, x, y, expected) => expect(transcriptPointAt(view, x, y)).toEqual(expected));
 });
 describe("selectedText", () => {

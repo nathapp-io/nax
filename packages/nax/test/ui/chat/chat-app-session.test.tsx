@@ -45,15 +45,19 @@ function mount(
     resource?: string;
     interrupted?: boolean;
     unsafeSandbox?: boolean;
+    model?: string;
+    switchBoth?: boolean;
+    resumeChanged?: boolean;
   } = {},
 ) {
   let state = session("s1", options.title ?? "first session");
   if (options.unsafeSandbox)
     state = { ...state, mode: "full", sandbox: { kind: "unavailable", backend: "srt", reason: "missing" } };
+  if (options.model) state = { ...state, model: options.model };
   let history = options.history ?? EMPTY;
   const host: ChatHost = {
     repoRoot: "/repo",
-    models: ["p/m"],
+    models: ["p/m", "p/other"],
     asks: createChatAskController({ mode: "guarded", answer: () => {} }),
     current: () => state,
     history: () => history,
@@ -68,10 +72,11 @@ function mount(
       history = EMPTY;
     },
     switchTo: async (next) => {
-      state = { ...state, ...next };
+      state = { ...state, ...next, ...(options.switchBoth ? { mode: "full" } : {}) };
     },
     resume: async ({ id = "s2" }) => {
       state = session(id, `title ${id}`);
+      if (options.resumeChanged) state = { ...state, model: "p/resumed", mode: "full" };
       history = options.resumeHistory ?? { messages: [{ role: "user", content: `from ${id}` }] };
     },
     listSessions: async () => [session("s2", "title s2").meta],
@@ -104,6 +109,91 @@ function inOrder(frame: string, ...texts: string[]): void {
 // The welcome card's stable label, separate from the product header.
 const WELCOME = "skills 0 · commands 0";
 
+describe("ChatApp switch notices", () => {
+  test.each([
+    ["AC-1 model", "/model p/other", "p/m", "model: other"],
+    ["AC-6 effort", "/effort high", "p/m[low]", "model: m[high]"],
+    [
+      "unshortened last segment",
+      "/model p/nested/a-very-long-model-name-that-must-not-be-shortened[high]",
+      "p/m",
+      "model: a-very-long-model-name-that-must-not-be-shortened[high]",
+    ],
+  ])("%s appends once", async (_name, command, model, notice) => {
+    const ui = mount({ model });
+    await ui.command(command);
+    expect(ui.frame().split(notice)).toHaveLength(2);
+    await ui.key("\u000f");
+    expect(ui.frame().split(notice)).toHaveLength(2);
+  });
+
+  test("AC-2 shift+tab appends the actual mode", async () => {
+    const ui = mount();
+    await ui.key("\u001b[Z");
+    expect(ui.host.current().mode).toBe("full");
+    expect(ui.frame().split("mode: full")).toHaveLength(2);
+  });
+
+  test("AC-3 simultaneous changes append model first", async () => {
+    const ui = mount({ switchBoth: true });
+    await ui.command("/model p/other");
+    inOrder(ui.frame(), "model: other", "mode: full");
+  });
+
+  test("AC-4 resume suppresses notices and synchronizes the comparison", async () => {
+    const ui = mount({ resumeChanged: true });
+    await ui.command("/resume s2");
+    expect(ui.host.current()).toMatchObject({ sessionId: "s2", model: "p/resumed", mode: "full" });
+    expect(ui.frame()).not.toContain("model:");
+    expect(ui.frame()).not.toContain("mode:");
+    await ui.command("/model p/other");
+    expect(ui.frame().split("model: other")).toHaveLength(2);
+    expect(ui.frame()).not.toContain("mode:");
+    await ui.command("/mode guarded");
+    expect(ui.frame().split("mode: guarded")).toHaveLength(2);
+  });
+
+  test("AC-5/9 mount and no-op model append nothing", async () => {
+    const ui = mount();
+    expect(ui.frame()).not.toContain("model:");
+    expect(ui.frame()).not.toContain("mode:");
+    await ui.command("/model p/m");
+    expect(ui.frame()).not.toContain("model:");
+    expect(ui.frame()).not.toContain("mode:");
+  });
+
+  test("AC-7/8 model picker stages effort silently and commits one notice", async () => {
+    const ui = mount();
+    let switches = 0;
+    const switchTo = ui.host.switchTo;
+    ui.host.switchTo = async (next) => {
+      switches += 1;
+      await switchTo(next);
+    };
+    await ui.command("/model");
+    await ui.key("\u001b[B");
+    await ui.key("\u001b[C");
+    await ui.key("\u001b[D");
+    expect(switches).toBe(0);
+    expect(ui.host.current().model).toBe("p/m");
+    expect(ui.frame()).not.toContain("model:");
+    await ui.key("\r");
+    expect(switches).toBe(1);
+    expect(ui.host.current().model).toBe("p/other");
+    expect(ui.frame().split("model: other")).toHaveLength(2);
+  });
+
+  test("committed effort picker choice appends once", async () => {
+    const ui = mount({ model: "p/m[low]" });
+    await ui.command("/effort");
+    await ui.key("\u001b[B");
+    await ui.key("\r");
+    expect(ui.host.current().model).not.toBe("p/m[low]");
+    const expected = `model: ${ui.host.current().model.slice(2)}`;
+    expect(ui.frame().split(expected)).toHaveLength(2);
+  });
+});
+
 describe("ChatApp session transcript", () => {
   test.each([
     ["AC-1 empty history", {}],
@@ -113,6 +203,20 @@ describe("ChatApp session transcript", () => {
     const ui = mount(options);
     expect(ui.frame()).toContain(WELCOME);
     expect(ui.frame()).not.toContain("resumed ");
+  });
+
+  test.each(["direct", "picker"])("resumed skill starts collapsed via %s resume", async (path) => {
+    const content =
+      '<skill name="superpowers:brainstorming" location="/p">\nrefs\nprivate skill body\n</skill>\n\nplan it';
+    const ui = mount({ resumeHistory: { messages: [{ role: "user", content }] } });
+    await ui.command(path === "direct" ? "/resume s2" : "/resume");
+    if (path === "picker") await ui.key("\r");
+    expect(ui.host.current().sessionId).toBe("s2");
+    expect(ui.frame()).toContain("> /superpowers:brainstorming plan it");
+    expect(ui.frame()).toContain("⎿  skill superpowers:brainstorming · 1 line (ctrl+o to show)");
+    expect(ui.frame()).not.toContain("private skill body");
+    await ui.key("\u000f");
+    expect(ui.frame()).toContain("private skill body");
   });
 
   test("AC-2 replays opening history after welcome", () => {
@@ -161,14 +265,23 @@ describe("ChatApp session transcript", () => {
       },
     });
     await ui.key("\u001b[5~");
-    const transcript = () => ui.frame().split("\n").slice(2, -2).join("\n");
-    const scrolled = transcript();
+    const storedRows = () =>
+      ui
+        .frame()
+        .split("\n")
+        .filter((row) => row.includes("stored message"));
+    const scrolled = storedRows();
+    expect(scrolled.length).toBeGreaterThan(1);
     expect(ui.frame()).not.toContain("resumed first session");
-    for (const command of ["/mode full", "/model p/m"]) {
+    for (const command of ["/mode full", "/model p/other"]) {
       await ui.command(command);
       expect(ui.host.current().sessionId).toBe("s1");
-      expect(transcript()).toBe(scrolled);
+      expect(storedRows()).toEqual(scrolled);
+      expect(ui.frame()).toContain("new lines (End)");
+      expect(ui.frame()).not.toContain("resumed first session");
     }
+    await ui.key("\u001b[F");
+    inOrder(ui.frame(), "mode: full", "model: other");
   });
 
   test("AC-5 same-id mode and model changes preserve replay and live entries", async () => {
