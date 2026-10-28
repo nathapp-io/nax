@@ -22,6 +22,7 @@
 
 import { NATIVE_AGENT, resolveNativeId } from "@nathapp/nax-agent";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
+import { checkCatalogEndpoints } from "./checks-catalog-endpoints";
 import {
   collectConfiguredModelPins,
   type LiteralPin,
@@ -35,6 +36,7 @@ import type { Check } from "./types";
 export type { LiteralPin };
 
 export interface ModelResolutionDeps {
+  env: Readonly<Record<string, string | undefined>>;
   /**
    * Look up a native (provider-qualified) id. Returns "resolved", "unresolved",
    * or "error". A "resolved" result MUST surface whether pricing and
@@ -56,6 +58,7 @@ export interface ModelResolutionDeps {
  * the ACP backend checks them against the agent's advertised models at open.
  */
 export const _modelResolutionDeps: ModelResolutionDeps = {
+  env: process.env,
   resolveNative: (provider, model, overrides) => resolveNativeId(provider, model, overrides),
 };
 
@@ -192,6 +195,7 @@ export async function checkModelResolution(config: unknown): Promise<Check[]> {
       message: `Native catalog resolver rejected the bundled snapshot — every configured native id is treated as unverified until the catalog is back. Configure missing ids under agent.native.catalogOverrides. Sample unresolved ids: ${sample}.`,
     });
   }
+  checks.push(...checkCatalogEndpoints(catalogOverrides, _modelResolutionDeps.env));
   if (checks.length === 0) {
     return [{ name: "model-resolution", tier: "blocker", passed: true, message: "All configured model ids resolve" }];
   }
