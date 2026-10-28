@@ -43,6 +43,20 @@ function permissionReply(permission: Options["permission"]): { permission: strin
   return { permission: permission ?? "read" };
 }
 
+function indexCommentBody(options: Options): string {
+  return (
+    options.indexBody ??
+    marked(
+      renderItemIndex({
+        keys: [key],
+        reviewedHead: options.previous === null ? undefined : (options.previous ?? OLD),
+        reviewedBase: OLD,
+      }),
+      "w-index",
+    )
+  );
+}
+
 function harness(options: Options = {}) {
   const writes: string[][] = [];
   const permissions: string[][] = [];
@@ -105,16 +119,7 @@ function harness(options: Options = {}) {
             id: 9,
             user: { login: "bot" },
             created_at: "t",
-            body:
-              options.indexBody ??
-              marked(
-                renderItemIndex({
-                  keys: [key],
-                  reviewedHead: options.previous === null ? undefined : (options.previous ?? OLD),
-                  reviewedBase: OLD,
-                }),
-                "w-index",
-              ),
+            body: indexCommentBody(options),
           },
         ]);
       return ok({ head: { sha: HEAD, ref: "feature" }, base: { ref: "main" }, user: { login: "author" } });
