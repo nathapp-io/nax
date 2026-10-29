@@ -253,12 +253,18 @@ export async function writeChatAnswer(
   secret: ChatAskSecret,
   signal?: AbortSignal,
 ): Promise<void> {
-  // Parent and child share this lock: settlement cannot publish between this
-  // authenticated check and the atomic answer rename, even across processes.
+  // Parent and child share this lock: neither settlement nor another answer
+  // can publish between these authenticated checks and the atomic answer rename.
   await _chatAskFileDeps.withFileLock(
     `${recordPath(dir, key, "settled")}.lock`,
     async () => {
       if (signal?.aborted || (await readChatSettled(dir, key, secret))) return;
+      if (await readChatAnswer(dir, key, secret)) {
+        throw new NaxError(`[chat-asks] Answer already exists for ${key}`, "CHAT_ASK_ALREADY_ANSWERED", {
+          stage: "chat-asks",
+          key,
+        });
+      }
       const record = { ...answer, schemaVersion: 1 };
       await atomicWrite(recordPath(dir, key, "answer"), { ...record, mac: signChatRecord(secret, record) }, signal);
     },

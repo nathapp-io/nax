@@ -237,6 +237,27 @@ describe("createRunAsks agent routing", () => {
     _runAsksDeps.writeChatAnswer = original.writeChatAnswer;
     expect(await registry.answer(id, reply)).toEqual({ ok: true });
   });
+  test("competing answer after registry precheck cannot be overwritten by the agent", async () => {
+    const id = await publish();
+    const competing = {
+      requestId: request.id,
+      action: "reject" as const,
+      respondedBy: "chat-user" as const,
+      respondedAt: new Date(0).toISOString(),
+      reason: "human denied",
+    };
+    _runAsksDeps.writeChatAnswer = async (...args) => {
+      // This seam is reached only after the registry's answer-file precheck.
+      await original.writeChatAnswer(dir, key(id), competing, secret);
+      await original.writeChatAnswer(...args);
+    };
+    const result = await registry.answer(id, reply);
+    expect(await readChatAnswer(dir, key(id), secret)).toEqual(competing);
+    expect(result.ok).toBe(false);
+    expect(registry.takeNotes()).toEqual([]);
+    expect(await registry.answer(id, reply)).toEqual(notWaiting(id));
+    expect(registry.peekNotice()).toBeUndefined();
+  });
   test("concurrent agent replies publish once", async () => {
     const id = await publish();
     const entered = Promise.withResolvers<void>();

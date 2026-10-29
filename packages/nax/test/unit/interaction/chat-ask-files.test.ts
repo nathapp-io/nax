@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
@@ -85,13 +85,22 @@ describe("chat ask file protocol", () => {
       files._chatAskFileDeps.write = write;
     }
   });
-  test("failed replacement preserves the old answer", async () => {
+  test("duplicate answer is refused before rename and preserves the first answer", async () => {
     await files.writeChatAnswer(dir, key(), answer, secret);
+    const rename = mock(originalRename);
+    files._chatAskFileDeps.rename = rename;
+    await expect(files.writeChatAnswer(dir, key(), { ...answer, action: "reject" }, secret)).rejects.toThrow(
+      "Answer already exists",
+    );
+    expect(rename).not.toHaveBeenCalled();
+    expect(await files.readChatAnswer(dir, key(), secret)).toEqual(answer);
+  });
+  test("failed initial answer rename publishes no answer", async () => {
     files._chatAskFileDeps.rename = () => {
       throw new Error("rename failure");
     };
-    await expect(files.writeChatAnswer(dir, key(), { ...answer, action: "reject" }, secret)).rejects.toThrow();
-    expect(await files.readChatAnswer(dir, key(), secret)).toEqual(answer);
+    await expect(files.writeChatAnswer(dir, key(), answer, secret)).rejects.toThrow("Failed to write");
+    expect(await files.readChatAnswer(dir, key(), secret)).toBeUndefined();
   });
   test("malformed heartbeat is closed", async () => {
     await Bun.write(join(dir, "heartbeat.json"), "{");
