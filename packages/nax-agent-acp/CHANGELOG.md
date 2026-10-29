@@ -3,6 +3,10 @@
 All notable changes to `@nathapp/nax-agent-acp` are recorded here. Versions move in
 step with `@nathapp/nax-agent`.
 
+## [0.91.7-canary.7] - 2026-10-29
+
+- No changes in this package. Released in lockstep with the other nax packages.
+
 ## [0.91.7-canary.6] - 2026-10-28
 
 - No changes in this package. Released in lockstep with the other nax packages.
