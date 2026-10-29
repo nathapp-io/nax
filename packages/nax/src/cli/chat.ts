@@ -17,7 +17,7 @@ import {
   createWorkflowProvider,
   tierModels,
 } from "@/chat";
-import { findProjectDir, getProjectKey, globalConfigDir, loadConfig, type NaxConfig } from "@/config";
+import { findProjectDir, getProjectKey, globalConfigDir, isWorkflowMode, loadConfig, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { type InteractionChain, initInteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
@@ -203,7 +203,11 @@ async function chatResources(repoRoot: string, config: NaxConfig, deps: ChatComm
       catalog,
       toolProviders: [
         createSkillsProvider(async () => catalog),
-        createWorkflowProvider({ repoRoot, outputDir, maxIterations: config.execution.maxIterations }),
+        createWorkflowProvider({
+          repoRoot,
+          outputDir,
+          maxIterations: isWorkflowMode(config) ? undefined : config.execution.maxIterations,
+        }),
         ...mcp.providers,
       ],
       pluginHandlers: registry.getLoopHandlers(),

@@ -3,7 +3,7 @@
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { WorkflowRunStartInput } from "@/workflow";
 import { resolveDefaultAgent } from "../agents";
-import { isWorkflowMode } from "../config";
+import { isWorkflowMode, type NaxConfig } from "../config";
 import { checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
@@ -14,7 +14,7 @@ import { wireInteraction } from "../pipeline/subscribers/interaction";
 import { wireRegistry } from "../pipeline/subscribers/registry";
 import { wireReporters } from "../pipeline/subscribers/reporters";
 import type { PipelineContext } from "../pipeline/types";
-import { countStories, isComplete, loadPRD, savePrdProgress } from "../prd";
+import { countStories, isComplete, loadPRD, pendingStoryIds, savePrdProgress } from "../prd";
 import type { PRD } from "../prd/types";
 import { totalSpendUsd } from "../runtime";
 import { buildNaxIgnoreIndex } from "../utils/path-filters";
@@ -23,6 +23,7 @@ import { startHeartbeat } from "./crash-recovery";
 import { captureRunStartRef, type DeferredReviewResult, runDeferredReview } from "./deferred-review";
 import { preIterationTierCheck } from "./escalation";
 import type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
+import { loopIterationLimit, progressSignature } from "./iteration-bound";
 import { runIteration } from "./iteration-runner";
 import type { RunParallelBatchOptions, RunParallelBatchResult } from "./parallel-batch";
 import { runPreRunPipeline } from "./pre-run";
@@ -36,7 +37,49 @@ export type { SequentialExecutionContext, SequentialExecutionResult } from "./ex
 // Internal run-scoped unsubscribers; do not clear the bus because it has external subscribers.
 let _prevRunUnsubscribers: Array<() => void> = [];
 
+/**
+ * nax#2706: the loop ran out of iterations with stories still waiting. This used to be a debug line,
+ * so a 28-story feature stopped at 20 with nothing above debug level to say why.
+ */
+function logIterationCapReached(prd: PRD, config: NaxConfig, limit: number, iterations: number): void {
+  const pendingIds = pendingStoryIds(prd);
+  if (pendingIds.length === 0) return;
+  const n = pendingIds.length;
+  const what = `${n} ${n === 1 ? "story" : "stories"} still pending (${pendingIds.join(", ")})`;
+  const message = isWorkflowMode(config)
+    ? `Exit reason max-iterations: the derived loop bound (${limit}) was exhausted with ${what}; a story did not settle, check the log for retries`
+    : `Exit reason max-iterations: hit execution.maxIterations (${limit}) with ${what}; raise execution.maxIterations or pass -m`;
+  getSafeLogger()?.warn("execution", message, {
+    storyId: "_run",
+    exitReason: "max-iterations",
+    maxIterations: limit,
+    iterations,
+    pendingStoryIds: pendingIds,
+  });
+}
+
 /** A5 (spec §5.3): the advisor pre-flight runs once before the first story, in workflow mode only. Fail-open inside. */
+/**
+ * Per-iteration loop guard (nax#2706). Workflow mode recomputes the limit from the PRD as it stands,
+ * and flags an iteration that changed nothing since the previous one: it would change nothing on the
+ * next either. Pipeline mode keeps its fixed limit and never stalls here.
+ */
+function nextLoopGuard(
+  config: NaxConfig,
+  state: LoopState,
+  iterations: number,
+  lastSignature: string | undefined,
+  limit: number,
+): { stalled: boolean; limit: number; signature: string | undefined } {
+  if (!isWorkflowMode(config)) return { stalled: false, limit, signature: lastSignature };
+  const signature = progressSignature(state.prd);
+  return {
+    stalled: signature === lastSignature,
+    limit: loopIterationLimit(state.prd, config, iterations - 1, state.lastStoryId),
+    signature,
+  };
+}
+
 async function runWorkflowPreflightOnce(ctx: SequentialExecutionContext, prd: PRD): Promise<void> {
   if (!isWorkflowMode(ctx.config) || ctx.dryRun) return;
   await _unifiedExecutorDeps.runWorkflowPreflight({
@@ -140,6 +183,29 @@ export async function executeUnified(
     );
   };
 
+  const completeRun = async (
+    naxIgnoreIndex: Awaited<ReturnType<typeof getRunNaxIgnoreIndex>>,
+  ): Promise<SequentialExecutionResult> => {
+    logger?.debug("execution", "All stories complete — entering completion path");
+    if (ctx.interactionChain && isTriggerEnabled("pre-merge", ctx.config)) {
+      const shouldProceed = await checkPreMerge(
+        { featureName: ctx.feature, totalStories: state.prd.userStories.length, cost: state.totalCost },
+        ctx.config,
+        ctx.interactionChain,
+      );
+      if (!shouldProceed) return buildResult("pre-merge-aborted");
+    }
+    logger?.debug("execution", "Running deferred review");
+    await runCompletionDeferredReview(naxIgnoreIndex);
+    logger?.debug("execution", "Deferred review done — returning completed");
+    return buildResult("completed");
+  };
+
+  const refreshedIsComplete = async (): Promise<boolean> => {
+    if (state.prdDirty) state = { ...state, prd: await loadPRD(ctx.prdPath), prdDirty: false };
+    return isComplete(state.prd);
+  };
+
   let _executeThrew = false;
   try {
     if (isComplete(state.prd)) {
@@ -174,7 +240,11 @@ export async function executeUnified(
 
     await runWorkflowPreflightOnce(ctx, state.prd);
 
-    while (iterations < ctx.config.execution.maxIterations) {
+    // nax#2706: workflow mode derives the limit from the work left (recomputed each iteration);
+    // execution.maxIterations is pipeline mode's cap.
+    let limit = loopIterationLimit(state.prd, ctx.config, 0, null);
+    let lastSignature: string | undefined;
+    while (iterations < limit) {
       iterations++;
       if (Math.round(process.memoryUsage().heapUsed / 1024 / 1024) > 1024)
         logger?.warn("execution", "High memory usage detected");
@@ -191,21 +261,10 @@ export async function executeUnified(
         failed: storyCounts.failed,
         total: storyCounts.total,
       });
-      if (isComplete(state.prd)) {
-        logger?.debug("execution", "All stories complete — entering completion path");
-        if (ctx.interactionChain && isTriggerEnabled("pre-merge", ctx.config)) {
-          const shouldProceed = await checkPreMerge(
-            { featureName: ctx.feature, totalStories: state.prd.userStories.length, cost: state.totalCost },
-            ctx.config,
-            ctx.interactionChain,
-          );
-          if (!shouldProceed) return buildResult("pre-merge-aborted");
-        }
-        logger?.debug("execution", "Running deferred review");
-        await runCompletionDeferredReview(naxIgnoreIndex);
-        logger?.debug("execution", "Deferred review done — returning completed");
-        return buildResult("completed");
-      }
+      if (isComplete(state.prd)) return completeRun(naxIgnoreIndex);
+      const guard = nextLoopGuard(ctx.config, state, iterations, lastSignature, limit);
+      if (guard.stalled) break;
+      ({ limit, signature: lastSignature } = guard);
 
       const costLimit = ctx.config.execution.costLimit;
       const reportCost = (cost: number) => {
@@ -239,6 +298,12 @@ export async function executeUnified(
       if (seqStep.action === "return") return buildResult(seqStep.exitReason);
     }
 
+    // Defence in depth (workflow mode): the loop can end on the very iteration that finished the last
+    // story; that is a completed run, not an exhausted one.
+    if (isWorkflowMode(ctx.config) && (await refreshedIsComplete())) {
+      return completeRun(await getRunNaxIgnoreIndex(state.prd));
+    }
+
     // Post-run pipeline (acceptance tests) — only when acceptance is configured
     if (ctx.config.acceptance?.enabled) {
       logger?.info("execution", "Running post-run pipeline (acceptance tests)");
@@ -268,6 +333,7 @@ export async function executeUnified(
       logPipelineOutcome(postRunResult, "Post-run pipeline (acceptance tests)");
     }
 
+    logIterationCapReached(state.prd, ctx.config, limit, iterations);
     return buildResult("max-iterations");
   } catch (err) {
     _executeThrew = true;

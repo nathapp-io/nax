@@ -74,6 +74,7 @@ export function makeCtx(overrides: MakeCtxOverrides = {}): SequentialExecutionCo
     ...DEFAULT_CONFIG,
     execution: {
       ...DEFAULT_CONFIG.execution,
+      mode: "pipeline",
       maxIterations,
       costLimit,
       iterationDelayMs: 0,

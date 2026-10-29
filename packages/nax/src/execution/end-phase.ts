@@ -13,10 +13,10 @@ import { isWorkflowMode } from "@/config";
 import { NaxError } from "@/errors";
 import type { FinishPhaseContext, FinishResult } from "@/finish";
 import { getSafeLogger } from "@/logger";
-import { countStories, isComplete } from "@/prd";
+import { countStories, isComplete, pendingStoryIds } from "@/prd";
 import { gitWithTimeout } from "@/utils/git";
 import { storyPackageDir } from "@/utils/path-frame";
-import type { WorkflowFeatureInput, WorkflowFeatureResult } from "@/workflow";
+import type { IterationCapStop, WorkflowFeatureInput, WorkflowFeatureResult } from "@/workflow";
 import type { RunnerCompletionOptions } from "./runner-completion";
 
 export interface EndPhaseDeps {
@@ -125,6 +125,14 @@ async function runFinish(options: RunnerCompletionOptions, deps: EndPhaseDeps, b
   }
 }
 
+/** nax#2706: the cap and the stories it left pending, when the loop ended on `max-iterations`. */
+function iterationCapOf(options: RunnerCompletionOptions): { iterationCap?: IterationCapStop } {
+  if (options.exitReason !== "max-iterations") return {};
+  const pendingIds = pendingStoryIds(options.prd);
+  if (pendingIds.length === 0) return {};
+  return { iterationCap: { pendingIds } };
+}
+
 async function runWorkflowEnd(
   options: RunnerCompletionOptions,
   deps: EndPhaseDeps,
@@ -149,6 +157,7 @@ async function runWorkflowEnd(
       interactionChain: options.interactionChain,
       statusWriter: options.statusWriter,
       storiesDurationMs: (deps.now ?? Date.now)() - options.startTime,
+      ...iterationCapOf(options),
     });
     return {
       passed: result?.passed ?? true,

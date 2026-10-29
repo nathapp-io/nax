@@ -6,7 +6,7 @@
  * entry point (same rationale as run-mode.ts / BUG-23).
  */
 
-import type { NaxConfig } from "../config";
+import { isWorkflowMode, type NaxConfig } from "../config";
 
 export type MaxIterationsFlag = { ok: true; value: number | undefined } | { ok: false; message: string };
 
@@ -34,4 +34,13 @@ export function applyMaxIterationsFlag(config: NaxConfig, flag: number | undefin
   if (flag === undefined) return { ...config, execution: { ...config.execution } };
 
   return { ...config, execution: { ...config.execution, maxIterations: flag } };
+}
+
+/**
+ * nax#2706: workflow mode derives its loop limit from the stories and never reads
+ * `execution.maxIterations`, so a `-m` there does nothing. The notice says so; `undefined` = nothing to say.
+ */
+export function maxIterationsIgnoredNotice(config: NaxConfig, flag: number | undefined): string | undefined {
+  if (flag === undefined || !isWorkflowMode(config)) return undefined;
+  return `--max-iterations ${flag} is ignored in workflow mode: the run is bounded by its stories (pipeline mode only uses it)`;
 }

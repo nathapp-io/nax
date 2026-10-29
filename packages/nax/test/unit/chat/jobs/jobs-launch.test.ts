@@ -245,6 +245,13 @@ describe("createJobsProvider", () => {
       "warning: 3 stories pending but max iterations is 2; pass maxIterations (nax#2706)",
     );
   });
+  test("nax#2706 workflow mode (no maxIterations) shows no limit and no overflow warning, even with an input -m", async () => {
+    options = { ...options, maxIterations: undefined };
+    await launch("run", { feature: "f1", maxIterations: 2 });
+    expect(card().reason).toContain("stories 3 pending of 3");
+    expect(card().reason).not.toContain("max iterations");
+    expect(card().reason).not.toContain("nax#2706");
+  });
   test("AC-12 cli warns about unanswerable asks", async () => {
     await launch();
     expect(card().reason).toContain("warning: this run has no channel for its own asks; they will time out");

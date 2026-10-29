@@ -168,13 +168,19 @@ async function prepareRun(
     return { error: `[chat] prd.json for ${input.feature} is unreadable: ${errorMessage(cause)}` };
   }
   const { pending, total } = countStories(prd);
-  const limit = input.maxIterations ?? options.maxIterations;
-  const details = [`stories ${pending} pending of ${total}; max iterations ${limit}`];
-  if (pending > limit)
+  // Workflow mode bounds the loop by the story count and ignores maxIterations (nax#2706), so there is no limit to compare.
+  const limit = options.maxIterations === undefined ? undefined : (input.maxIterations ?? options.maxIterations);
+  const details = [
+    limit === undefined
+      ? `stories ${pending} pending of ${total}`
+      : `stories ${pending} pending of ${total}; max iterations ${limit}`,
+  ];
+  const overLimit = limit !== undefined && pending > limit ? { pending, limit } : undefined;
+  if (overLimit)
     details.push(`warning: ${pending} stories pending but max iterations is ${limit}; pass maxIterations (nax#2706)`);
   if (options.interactionPlugin === "cli")
     details.push("warning: this run has no channel for its own asks; they will time out");
-  return { input, details, ...(pending > limit ? { overLimit: { pending, limit } } : {}) };
+  return { input, details, ...(overLimit ? { overLimit } : {}) };
 }
 
 async function prepareTarget(input: JobLaunchInput, options: JobsProviderOptions): Promise<Prepared | TargetError> {

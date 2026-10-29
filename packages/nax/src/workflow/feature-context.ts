@@ -8,6 +8,7 @@ import type { PRD } from "@/prd";
 import type { NaxRuntime } from "@/runtime";
 import { storyPackageDir } from "@/utils/path-frame";
 import { workflowFeatureDir, workflowRunDir } from "./paths";
+import type { IterationCapStop } from "./types";
 
 export interface WorkflowFeatureInput {
   readonly runtime: NaxRuntime;
@@ -26,6 +27,8 @@ export interface WorkflowFeatureInput {
   readonly statusWriter?: { setWorkflowStatus?(block: WorkflowStatusBlock): void };
   /** Wall time of the story loops, for the hand-off log line (nax#2491). */
   readonly storiesDurationMs?: number;
+  /** nax#2706: set when the story loop hit its iteration limit with stories pending. */
+  readonly iterationCap?: IterationCapStop;
 }
 
 export interface FeatureContext {
@@ -50,6 +53,8 @@ export interface FeatureContext {
   readonly packageDirs: readonly string[];
   readonly runSignal?: AbortSignal;
   readonly dryRun: boolean;
+  /** nax#2706: from the run; `publish` turns it into a readiness reason. */
+  readonly iterationCap?: IterationCapStop;
 }
 
 export const _featureContextDeps = { buildRunDispatchAskWiring };
@@ -102,6 +107,7 @@ export async function buildFeatureContext(
     packageDirs: [...new Set(storyPackageDirs.filter((d): d is string => typeof d === "string" && d !== ""))],
     ...(input.abortSignal ? { runSignal: input.abortSignal } : {}),
     dryRun: input.runtime.dryRun === true,
+    ...(input.iterationCap ? { iterationCap: input.iterationCap } : {}),
   };
   return { fc, dispose: () => dispatchAsk.dispose() };
 }

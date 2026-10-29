@@ -40,10 +40,13 @@ const DEFAULT_MAX_STORY_RETRIES = 12;
  * "failed" stories outright) — both need the identical "is this really a
  * failed-story retry" check.
  */
+export function maxStoryRetries(config: NaxConfig): number {
+  return config.execution.rectification?.maxAttemptsTotal ?? DEFAULT_MAX_STORY_RETRIES;
+}
+
 export function resolveRetryCandidate(prd: PRD, lastStoryId: string | null, config: NaxConfig): UserStory | null {
   if (lastStoryId == null) return null;
-  const maxRetries = config.execution.rectification?.maxAttemptsTotal ?? DEFAULT_MAX_STORY_RETRIES;
-  const story = getNextStory(prd, lastStoryId, maxRetries);
+  const story = getNextStory(prd, lastStoryId, maxStoryRetries(config));
   return story?.id === lastStoryId && story.status === "failed" ? story : null;
 }
 

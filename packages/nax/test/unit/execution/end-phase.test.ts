@@ -180,3 +180,32 @@ describe("runEndPhase (P4-R16)", () => {
     });
   });
 });
+
+describe("runEndPhase iteration cap (nax#2706)", () => {
+  const CAPPED = makeNaxConfig({ execution: { mode: "workflow", maxIterations: 1 } });
+
+  test("exitReason max-iterations hands the pending story ids to the feature workflow", async () => {
+    _endPhaseDeps.resolveBranch = async () => "feat/x";
+    const { d, workflow } = deps({ passed: false, outcome: "draft", reasons: [] });
+    const prd = makePRD({
+      feature: "f",
+      userStories: [
+        { ...makePRD().userStories[0], id: "US-001", status: "passed", passes: true },
+        { ...makePRD().userStories[0], id: "US-002", status: "pending", passes: false },
+      ],
+    });
+
+    await runEndPhase(opts(CAPPED, { exitReason: "max-iterations", prd }), d);
+
+    expect(workflow[0]?.iterationCap).toEqual({ pendingIds: ["US-002"] });
+  });
+
+  test("any other exit reason passes no iteration cap", async () => {
+    _endPhaseDeps.resolveBranch = async () => "feat/x";
+    const { d, workflow } = deps({ passed: true, outcome: "ready", reasons: [] });
+
+    await runEndPhase(opts(CAPPED, { exitReason: "completed" }), d);
+
+    expect(workflow[0]?.iterationCap).toBeUndefined();
+  });
+});
