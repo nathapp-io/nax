@@ -1,6 +1,16 @@
 import { useApp, useInput } from "ink";
 import { type RefObject, useEffect, useRef, useState } from "react";
-import { type ChatHost, type ChatMode, nextChatMode } from "@/chat";
+import {
+  type ChatHost,
+  type ChatMode,
+  cycleEffort,
+  EFFORT_LEVELS,
+  modelEffort,
+  nextChatMode,
+  withEffort,
+} from "@/chat";
+
+type QueuedSwitch = { mode?: ChatMode; model?: string };
 
 const DOUBLE_INTERRUPT_MS = 2_000;
 export const _chatKeyDeps = { now: () => Date.now() };
@@ -46,7 +56,7 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
   runControl(task: () => Promise<void>): Promise<boolean>;
 } {
   const { exit } = useApp();
-  const queued = useRef<ChatMode | undefined>(undefined);
+  const queued = useRef<QueuedSwitch | undefined>(undefined);
   const interruptedAt = useRef<number | undefined>(undefined);
   /** The armed quit's expiry — a `setTimeout` handle, because it is cleared mid-flight. */
   const quitExpiry = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -146,9 +156,15 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
         host.cancel();
         refresh();
       }
-    } else if (key.shift && key.tab && !key.ctrl && !key.meta && !switching.current) {
-      const mode = nextChatMode(queued.current ?? host.current().mode);
-      if (running.current) queued.current = mode;
+    } else if (key.ctrl && input === "t" && canControl()) {
+      const model = queued.current?.model ?? host.current().model;
+      const levels = host.effortLevels?.(model) ?? EFFORT_LEVELS;
+      const next = withEffort(model, cycleEffort(modelEffort(model), 1, levels));
+      if (running.current) queued.current = { ...queued.current, model: next };
+      else void runControl(() => host.switchTo({ model: next }));
+    } else if (key.shift && key.tab && !key.ctrl && !key.meta && canControl()) {
+      const mode = nextChatMode(queued.current?.mode ?? host.current().mode);
+      if (running.current) queued.current = { ...queued.current, mode };
       else void switchMode(mode);
     }
   });
@@ -161,9 +177,9 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
     async finishTurn() {
       interruptedAt.current = undefined;
       clearTimer(quitExpiry);
-      const mode = queued.current;
+      const next = queued.current;
       queued.current = undefined;
-      if (mode !== undefined && !closing.current) await switchMode(mode);
+      if (next !== undefined && !closing.current) await runControl(() => host.switchTo(next));
     },
   };
 }

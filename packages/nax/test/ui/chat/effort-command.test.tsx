@@ -12,6 +12,24 @@ afterEach(() => {
   mock.restore();
 });
 
+describe("model-supported effort", () => {
+  const levels = ["default", "low", "high", "max"] as const;
+  test("US-002 AC-1 lists exactly the model's supported levels", async () => {
+    const ui = mount({ current: { model: "p/m" }, effortLevels: () => levels });
+    await ui.submit("/effort");
+    expect(pickerFrameOf(ui.rows(), TITLE).inside).toEqual(["❯ default  (current)", "  low", "  high", "  max"]);
+  });
+  test.each([
+    ["AC-2 AC-3", "medium", 'effort "medium" is not available for p/m; use one of: default, low, high, max'],
+    ["AC-4 AC-5", "bogus", 'unknown effort "bogus"; use one of: default, low, high, max'],
+  ])("US-002 %s rejects %s without switching", async (_ac, level, message) => {
+    const ui = mount({ current: { model: "p/m" }, effortLevels: () => levels });
+    await ui.submit(`/effort ${level}`);
+    expect(ui.switchTo).not.toHaveBeenCalled();
+    expect(ui.rows().join("\n")).toContain(message);
+  });
+});
+
 describe("effort command", () => {
   test("AC-1 AC-2 registers effort immediately after model with its description", () => {
     expect(COMMANDS[COMMANDS.indexOf("model") + 1]).toBe("effort");

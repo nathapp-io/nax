@@ -71,6 +71,7 @@ export interface PickerModel {
 
 export interface PickerModelInput {
   readonly pending?: ReadonlyMap<string, EffortLevel>;
+  readonly effortLevels?: readonly EffortLevel[];
   readonly kind: PickerKind;
   readonly query?: string;
   /** The host's models, in catalogue order — the model picker's rows. */
@@ -161,7 +162,11 @@ export function pickerModel(input: PickerModelInput): PickerModel {
     return {
       kind: "effort",
       title: TITLES.effort,
-      entries: EFFORT_LEVELS.map((level) => ({ value: level, label: level, current: level === current })),
+      entries: (input.effortLevels ?? EFFORT_LEVELS).map((level) => ({
+        value: level,
+        label: level,
+        current: level === current,
+      })),
     };
   }
   if (input.kind === "model") {

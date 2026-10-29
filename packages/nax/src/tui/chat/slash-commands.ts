@@ -139,12 +139,18 @@ async function effortCommand(command: SlashCommand, { host, show }: CommandConte
   }
   const arg = command.args[0];
   if (arg === undefined) return { kind: "picker", picker: "effort" };
+  const model = host.current().model;
+  const levels = host.effortLevels?.(model) ?? EFFORT_LEVELS;
   const level = arg.toLowerCase();
   if (!isEffortLevel(level)) {
-    show(`unknown effort "${arg}"; use one of: ${EFFORT_LEVELS.join(", ")}`);
+    show(`unknown effort "${arg}"; use one of: ${levels.join(", ")}`);
     return;
   }
-  await host.switchTo({ model: withEffort(host.current().model, level) });
+  if (!levels.includes(level)) {
+    show(`effort "${arg}" is not available for ${model}; use one of: ${levels.join(", ")}`);
+    return;
+  }
+  await host.switchTo({ model: withEffort(model, level) });
 }
 
 /**
