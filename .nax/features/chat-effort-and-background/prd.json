@@ -3,7 +3,7 @@
   "feature": "chat-effort-and-background",
   "branchName": "feat/chat-effort-and-background",
   "createdAt": "2026-10-29T00:00:00.000Z",
-  "updatedAt": "2026-10-29T05:11:21.238Z",
+  "updatedAt": "2026-10-29T05:19:49.022Z",
   "userStories": [
     {
       "id": "US-001",
@@ -538,14 +538,17 @@
       "dependencies": [
         "US-008"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The completed registry supplies lifecycle behavior; this story follows jobs-provider's established static-tool validation/results pattern plus pure listing/prompt builders and a small composition helper, without changing permission decisions."
+        "reasoning": "The completed registry supplies lifecycle behavior; this story follows jobs-provider's established static-tool validation/results pattern plus pure listing/prompt builders and a small composition helper, without changing permission decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/jobs/jobs-provider.ts",
@@ -575,7 +578,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "efefec54f1b7197d0d5dd3dfe075aeac8a1023b3"
     },
     {
       "id": "US-010",
