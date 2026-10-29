@@ -3,7 +3,7 @@
   "feature": "chat-run-asks",
   "branchName": "feat/chat-run-asks",
   "createdAt": "2026-10-29T12:00:00.000Z",
-  "updatedAt": "2026-10-29T10:56:56.384Z",
+  "updatedAt": "2026-10-29T11:06:19.395Z",
   "userStories": [
     {
       "id": "US-001",
@@ -97,14 +97,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A single new plugin uses the existing chain interface and upstream file helpers for a direct polling/deadline path; authenticated approval transport still requires the security override."
+        "reasoning": "A single new plugin uses the existing chain interface and upstream file helpers for a direct polling/deadline path; authenticated approval transport still requires the security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/interaction/types.ts",
@@ -120,7 +123,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c521ccd466844873ff00c6899e73e97f07d28186"
     },
     {
       "id": "US-003",
