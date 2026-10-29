@@ -30,6 +30,13 @@ async function run(mode: "pipeline" | "workflow", dryRun = false): Promise<Workf
   _unifiedExecutorDeps.runWorkflowPreflight = async (input) => {
     seen.push(input);
   };
+  // Workflow mode ignores maxIterations (nax#2706), so its loop runs: settle every story without touching disk.
+  _unifiedExecutorDeps.runIteration = async (_ctx, prd) => ({
+    prd: { ...prd, userStories: prd.userStories.map((s) => ({ ...s, status: "passed", passes: true })) },
+    storiesCompletedDelta: prd.userStories.length,
+    costDelta: 0,
+    prdDirty: false,
+  });
   const config = configFor(mode);
   const runtime = makeTestRuntime({ config });
   runtimes.push(runtime);
