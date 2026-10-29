@@ -33,9 +33,10 @@ interface ChatKeysOptions {
   running: RefObject<boolean>;
   refresh(): void;
   onError(error: unknown): void;
+  onNotice?: (text: string) => void;
 }
 
-export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions): {
+export function useChatKeys({ host, running, refresh, onError, onNotice }: ChatKeysOptions): {
   locked: boolean;
   /**
    * True while a ctrl-c that cancelled a turn is still within the double-interrupt window:
@@ -163,6 +164,8 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
         host.cancel();
         refresh();
       }
+    } else if (key.ctrl && input === "b" && canControl()) {
+      if (!host.tasks?.moveForeground()) onNotice?.("no running command to move to the background");
     } else if (key.ctrl && input === "t" && canControl()) {
       cycleModelEffort();
     } else if (key.shift && key.tab && !key.ctrl && !key.meta && canControl()) {

@@ -6,7 +6,8 @@ import type { MouseEvents } from "./mouse-input";
 
 /**
  * The gesture the footer offers, in precedence order: an armed quit, then an armed clear,
- * then a running turn, then expanded detail, then the idle hint. Only one is ever shown, so
+ * then a running turn (with a background key when available), then expanded detail, then idle.
+ * Only one is ever shown, so
  * the warning-coloured quit hint is never hidden behind something the screen is merely doing.
  */
 export function footerHint(input: {
@@ -14,9 +15,12 @@ export function footerHint(input: {
   clearArmed: boolean;
   busy: boolean;
   expanded: boolean;
+  backgroundable: boolean;
+  tmux: boolean;
 }): FooterHint {
   if (input.quitArmed) return "quit";
   if (input.clearArmed) return "clear";
+  if (input.busy && input.backgroundable) return input.tmux ? "backgroundTmux" : "background";
   if (input.busy) return "busy";
   if (input.expanded) return "expanded";
   return "idle";

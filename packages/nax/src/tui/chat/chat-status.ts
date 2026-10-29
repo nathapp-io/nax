@@ -156,13 +156,15 @@ export function shortModel(model: string): string {
 }
 
 /** The gesture the footer offers, in precedence order; only one is ever shown. */
-export type FooterHint = "quit" | "clear" | "busy" | "expanded" | "idle" | "copied";
+export type FooterHint = "quit" | "clear" | "busy" | "background" | "backgroundTmux" | "expanded" | "idle" | "copied";
 
 const HINT_TEXT: Readonly<Record<FooterHint, string>> = {
   copied: "copied",
   quit: "press ctrl-c again to quit",
   clear: "esc again to clear",
   busy: "esc to interrupt",
+  background: "esc to interrupt · ctrl+b to background",
+  backgroundTmux: "esc to interrupt · ctrl+b ctrl+b to background",
   expanded: "ctrl+o to collapse",
   idle: "shift+tab to cycle",
 };
