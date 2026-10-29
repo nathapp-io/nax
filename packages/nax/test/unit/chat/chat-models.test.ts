@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
-import { chatModelChoices, tierModels } from "@/chat/chat-models";
+import { chatEffortLevels, chatModelChoices, tierModels } from "@/chat/chat-models";
 
 function config(supportsTools = true) {
   return makeNaxConfig({
@@ -26,6 +26,40 @@ function config(supportsTools = true) {
     },
   });
 }
+describe("chatEffortLevels", () => {
+  test("US-001 AC-16 keys catalog levels by base model and deduplicates lookups", async () => {
+    const lookupThinkingLevels = mock(async () => ["low", "max"] as const);
+    const levels = await chatEffortLevels({ config: config(), models: ["p/m[high]", "p/m"], lookupThinkingLevels });
+    expect([...levels]).toEqual([["p/m", ["default", "low", "max"]]]);
+    expect(lookupThinkingLevels).toHaveBeenCalledTimes(1);
+    expect(lookupThinkingLevels).toHaveBeenCalledWith("p", "m");
+  });
+  test("US-001 AC-17 override levels win over catalog levels", async () => {
+    const value = config();
+    const provider = value.agent.native.catalogOverrides?.[0];
+    if (!provider) throw new Error("missing fixture override");
+    provider.provider = "p";
+    const model = provider.models[0];
+    if (!model) throw new Error("missing fixture model");
+    model.id = "m";
+    model.thinkingLevels = ["high"];
+    const levels = await chatEffortLevels({
+      config: value,
+      models: ["p/m"],
+      lookupThinkingLevels: async () => ["low"],
+    });
+    expect(levels.get("p/m")).toEqual(["default", "high"]);
+  });
+  test("omits unknown declarations and keeps explicit empty overrides", async () => {
+    const levels = await chatEffortLevels({
+      config: config(),
+      models: ["local/x", "p/unknown", "bare"],
+      lookupThinkingLevels: async () => undefined,
+    });
+    expect([...levels]).toEqual([["local/x", ["default"]]]);
+  });
+});
+
 describe("tierModels", () => {
   test("AC-5 formats tiers in order and deduplicates", () => {
     const value = config();

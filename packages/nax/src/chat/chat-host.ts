@@ -18,6 +18,7 @@ import { createAgentsProvider } from "./agents-provider";
 import { type ChatAskController, createChatAskController } from "./ask-controller";
 import { type AskFallback, createAskFallback } from "./ask-fallback";
 import { type ChatAgentRow, listAgentRows } from "./chat-agents-listing";
+import { clampModelEffort, EFFORT_LEVELS, type EffortLevel, withEffort } from "./chat-effort";
 import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import { type ChatMode, chatModeOfMeta } from "./chat-mode";
 import { tierModels } from "./chat-models";
@@ -72,6 +73,7 @@ export interface ChatHost {
   readonly confirmJobsBeforeClose?: () => Promise<void>;
   current(): ChatHostState;
   history?(): ChatHistory;
+  effortLevels?(model: string): readonly EffortLevel[];
   /** One row per catalog agent in catalog order, resolved against the chat session's current model. */
   agents?(): readonly ChatAgentRow[];
   start(input: { mode: ChatMode; model: string }): Promise<void>;
@@ -91,6 +93,7 @@ export interface ChatHostDeps {
   readonly naxEntry?: readonly string[];
   readonly resources?: ChatResources;
   readonly models?: readonly string[];
+  readonly effortLevels?: ReadonlyMap<string, readonly EffortLevel[]>;
   readonly config: NaxConfig;
   readonly cwd: string;
   readonly repoRoot: string;
@@ -208,6 +211,10 @@ class NativeChatHost implements ChatHost {
     this.assertOpen();
     if (!this.handle) throw new NaxError("[chat] no session is open", "CHAT_SESSION_NOT_OPEN", { stage: "chat" });
     return this.handle;
+  }
+
+  effortLevels(model: string): readonly EffortLevel[] {
+    return this.deps.effortLevels?.get(withEffort(model, "default")) ?? EFFORT_LEVELS;
   }
 
   history(): ChatHistory {
@@ -438,7 +445,9 @@ class NativeChatHost implements ChatHost {
   private async switchSession(input: { mode?: ChatMode; model?: string }): Promise<void> {
     const previous = this.requireHandle();
     const from = this.current();
-    const target = { mode: input.mode ?? from.mode, model: input.model ?? from.model };
+    const model =
+      input.model === undefined ? from.model : clampModelEffort(input.model, this.effortLevels(input.model));
+    const target = { mode: input.mode ?? from.mode, model };
     if (target.mode === from.mode && target.model === from.model) return;
     try {
       await previous.session.close();

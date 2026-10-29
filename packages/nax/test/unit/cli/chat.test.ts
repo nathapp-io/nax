@@ -44,6 +44,10 @@ async function fixture() {
       }),
     ),
     listCatalogModels: mock(async (_ids: readonly string[]): Promise<readonly string[]> => []),
+    lookupThinkingLevels: mock(
+      async (_provider: string, _model: string): Promise<readonly import("@/chat").SupportedEffort[] | undefined> =>
+        undefined,
+    ),
     stdinIsTTY: () => true,
     ensureTrusted: async () => {},
     loadPlugins: async () => new PluginRegistry([]),
@@ -113,6 +117,20 @@ const EXIT_STATE: ChatHostState = {
 const EXIT_SUMMARY = "✻ nax chat session abc123 · $0.88\n  resume with: nax chat --resume abc123";
 
 describe("chatCommand", () => {
+  test("US-001 AC-21 composes effort metadata without changing choices, including --model", async () => {
+    const f = await fixture();
+    f.config.models.native = { balanced: "openai/gpt-6" };
+    f.deps.listCatalogModels.mockResolvedValue(["p/m"]);
+    f.deps.lookupThinkingLevels.mockImplementation(async (provider, model) =>
+      provider === "p" && model === "m" ? ["low", "max"] : model === "extra" ? [] : undefined,
+    );
+    await f.chatCommand({ model: "p/extra[high]" }, f.deps);
+    const input = f.deps.createChatHost.mock.calls[0]?.[0];
+    expect(input?.models).toEqual(["openai/gpt-6", "p/m"]);
+    expect(input?.effortLevels?.get("p/m")).toEqual(["default", "low", "max"]);
+    expect(input?.effortLevels?.get("p/extra")).toEqual(["default"]);
+    expect(input?.effortLevels?.has("openai/gpt-6")).toBe(false);
+  });
   test("AC-1/19: non-TTY refuses before opening any session", async () => {
     const f = await fixture();
     f.deps.stdinIsTTY = () => false;

@@ -10,6 +10,7 @@ import {
   makeTempDir,
 } from "@test/helpers";
 import { _askFallbackDeps } from "@/chat/ask-fallback";
+import { EFFORT_LEVELS, type EffortLevel } from "@/chat/chat-effort";
 import { createChatHost } from "@/chat/chat-host";
 import { _openChatSessionDeps } from "@/chat/open-chat-session";
 import { DEFAULT_CONFIG } from "@/config";
@@ -121,6 +122,7 @@ beforeEach(() => {
   });
   host = createChatHost({
     config: makeNaxConfig({ outputDir: join(dir, "output"), interaction: { defaults: { chatAskFallbackMs: DELAY } } }),
+    effortLevels: new Map<string, readonly EffortLevel[]>([["p/m", ["default", "low", "high", "max"]]]),
     cwd: dir,
     repoRoot: dir,
     storage,
@@ -136,6 +138,19 @@ afterEach(async () => {
   Object.assign(_askFallbackDeps, timers);
   cleanupTempDir(dir);
 });
+test("US-001 AC-18 resolves effort capability using the base model", () => {
+  expect(host.effortLevels?.("p/m[high]")).toEqual(["default", "low", "high", "max"]);
+});
+test("US-001 AC-19 unknown models retain all levels", () => {
+  expect(host.effortLevels?.("p/other")).toBe(EFFORT_LEVELS);
+});
+test("US-001 AC-20 switches with a clamped model suffix", async () => {
+  await start();
+  await host.switchTo({ model: "p/m[medium]" });
+  expect(host.current().model).toBe("p/m[low]");
+  expect(backendOptions.at(-1)?.model).toBe("p/m[low]");
+});
+
 const start = () => host.start({ mode: "guarded", model: MODEL });
 const send = () => host.send("hello", () => {});
 
