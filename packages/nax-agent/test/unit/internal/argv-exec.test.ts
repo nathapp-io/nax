@@ -110,6 +110,22 @@ describe("runArgv deadline release and output tee", () => {
     expect(result[stream]).toBe(text);
   });
 
+  test("F1: observer mutations cannot alter stdout or stderr capture", async () => {
+    _argvExecDeps.spawn = makeSpawn(() => ({ stdout: "original stdout", stderr: "original stderr" })).spawn;
+    const onOutput = mock((_stream: "stdout" | "stderr", chunk: Uint8Array) => {
+      chunk.fill(120);
+    });
+    const result = await runArgv({
+      argv: ["fake"],
+      cwd: process.cwd(),
+      timeoutMs: 1000,
+      onOutput,
+    });
+    expect(onOutput).toHaveBeenCalledTimes(2);
+    expect(result.stdout).toBe("original stdout");
+    expect(result.stderr).toBe("original stderr");
+  });
+
   test("AC-7: every throwing observer call leaves full stdout intact", async () => {
     const spawn: typeof _argvExecDeps.spawn = makeSpawn().spawn;
     const proc = spawn(["fake"], { stdout: "pipe", stderr: "pipe" });

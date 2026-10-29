@@ -150,7 +150,8 @@ async function drainToEof(
       if (done === true) break;
       if (value !== undefined) {
         try {
-          onChunk?.(value);
+          // Copy even Buffer-backed chunks: observers must not mutate captured bytes.
+          onChunk?.(Uint8Array.from(value));
         } catch {
           // Observers are best-effort: never let one truncate capture or stop draining.
         }
@@ -312,12 +313,8 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
   // requires that settlement stay bounded even when a background process
   // inherits the pipe and ignores the SIGKILL.
   try {
-    const stdoutPromise = drainToEof(proc.stdout, stdoutController.signal, (chunk) =>
-      options.onOutput?.("stdout", chunk),
-    );
-    const stderrPromise = drainToEof(proc.stderr, stderrController.signal, (chunk) =>
-      options.onOutput?.("stderr", chunk),
-    );
+    const stdoutPromise = drainToEof(proc.stdout, stdoutController.signal, options.onOutput?.bind(undefined, "stdout"));
+    const stderrPromise = drainToEof(proc.stderr, stderrController.signal, options.onOutput?.bind(undefined, "stderr"));
     const exitCode = await proc.exited;
 
     // Post-exit drain grace. After exit, the streams MUST close — they were
