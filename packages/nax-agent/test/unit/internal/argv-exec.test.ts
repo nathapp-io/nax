@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { _argvExecDeps, runArgv } from "#src/internal/argv-exec";
 import {
   cleanupTempDir,
+  makeFakeClock,
   makeSpawn,
   makeTempDir,
   waitForCondition,
@@ -10,6 +11,135 @@ import {
   withDepsRestore,
   withTimeout,
 } from "#test/helpers/index";
+
+describe("runArgv deadline release and output tee", () => {
+  withDepsRestore(_argvExecDeps);
+
+  function controlledRun() {
+    const clock = makeFakeClock();
+    _argvExecDeps.setTimeout = clock.setTimeout;
+    _argvExecDeps.clearTimeout = (id) => {
+      if (typeof id === "number") clock.clearTimeout(id);
+    };
+    const exit = Promise.withResolvers<number>();
+    const spawn: typeof _argvExecDeps.spawn = makeSpawn().spawn;
+    const proc = Object.assign(spawn(["fake"], { stdout: "pipe", stderr: "pipe" }), { exited: exit.promise });
+    _argvExecDeps.spawn = () => proc;
+    const kill = mock(() => {
+      exit.resolve(137);
+      return true;
+    });
+    _argvExecDeps.killProcessGroup = kill;
+    return { clock, exit, kill };
+  }
+
+  test("AC-1/2: releasing before 1000ms prevents kill and timedOut", async () => {
+    const { clock, exit, kill } = controlledRun();
+    const release = new AbortController();
+    const options = { argv: ["fake"], cwd: process.cwd(), timeoutMs: 1000, releaseDeadline: release.signal };
+    const result = runArgv(options);
+    await clock.advance(999);
+    release.abort();
+    await clock.advance(1);
+    exit.resolve(0);
+    const settled = await result;
+    expect(kill).not.toHaveBeenCalled();
+    expect(settled.timedOut).toBe(false);
+    expect(settled.aborted).toBe(false);
+    expect(clock.pending()).toBe(0);
+  });
+
+  test("AC-2: a released command finishing after its deadline is not timed out", async () => {
+    const { clock, exit } = controlledRun();
+    const release = new AbortController();
+    const options = { argv: ["fake"], cwd: process.cwd(), timeoutMs: 1000, releaseDeadline: release.signal };
+    const result = runArgv(options);
+    await clock.advance(500);
+    release.abort();
+    await clock.advance(1000);
+    exit.resolve(0);
+    expect((await result).timedOut).toBe(false);
+  });
+
+  test("AC-3: already released never arms the deadline", async () => {
+    const { clock, exit } = controlledRun();
+    const setTimer = mock(clock.setTimeout);
+    _argvExecDeps.setTimeout = setTimer;
+    const release = new AbortController();
+    release.abort();
+    const options = { argv: ["fake"], cwd: process.cwd(), timeoutMs: 1000, releaseDeadline: release.signal };
+    const result = runArgv(options);
+    exit.resolve(0);
+    expect((await result).timedOut).toBe(false);
+    expect(setTimer.mock.calls.map((call) => call[1])).not.toContain(1000);
+    expect(clock.pending()).toBe(0);
+  });
+
+  test("AC-4: a never-released signal loses its registered listener on settle", async () => {
+    const { exit, clock } = controlledRun();
+    const release = new AbortController();
+    const add = spyOn(release.signal, "addEventListener");
+    const remove = spyOn(release.signal, "removeEventListener");
+    try {
+      const options = { argv: ["fake"], cwd: process.cwd(), timeoutMs: 1000, releaseDeadline: release.signal };
+      const result = runArgv(options);
+      exit.resolve(0);
+      await result;
+      expect(add).toHaveBeenCalledWith("abort", expect.any(Function), { once: true });
+      expect(remove).toHaveBeenCalledWith("abort", add.mock.calls[0]?.[1]);
+      expect(clock.pending()).toBe(0);
+    } finally {
+      add.mockRestore();
+      remove.mockRestore();
+    }
+  });
+
+  test.each([
+    ["stdout", "a"],
+    ["stderr", "b"],
+  ] as const)("AC-5/6: observes %s bytes before capture", async (stream, text) => {
+    const onOutput = mock((_stream: "stdout" | "stderr", _chunk: Uint8Array) => {});
+    const options = {
+      argv: ["sh", "-c", stream === "stdout" ? "printf a" : "printf b >&2"],
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+      onOutput,
+    };
+    const result = await runArgv(options);
+    expect(onOutput).toHaveBeenCalledWith(stream, new TextEncoder().encode(text));
+    expect(result[stream]).toBe(text);
+  });
+
+  test("AC-7: every throwing observer call leaves full stdout intact", async () => {
+    const spawn: typeof _argvExecDeps.spawn = makeSpawn().spawn;
+    const proc = spawn(["fake"], { stdout: "pipe", stderr: "pipe" });
+    const stdout = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const text of ["full", " ", "output"]) controller.enqueue(new TextEncoder().encode(text));
+        controller.close();
+      },
+    });
+    _argvExecDeps.spawn = () => ({ ...proc, stdout });
+    const onOutput = mock(() => {
+      throw new Error("observer failed");
+    });
+    const options = { argv: ["fake"], cwd: process.cwd(), timeoutMs: 1000, onOutput };
+    const result = await runArgv(options);
+    expect(onOutput).toHaveBeenCalledTimes(3);
+    expect(result.stdout).toBe("full output");
+  });
+
+  test("AC-8: no options still kill a hung process at timeoutMs", async () => {
+    const { clock, kill } = controlledRun();
+    const result = runArgv({ argv: ["fake"], cwd: process.cwd(), timeoutMs: 1000 });
+    await clock.advance(999);
+    expect(kill).not.toHaveBeenCalled();
+    await clock.advance(1);
+    expect(kill).toHaveBeenCalledTimes(1);
+    expect((await result).timedOut).toBe(true);
+    expect(clock.pending()).toBe(0);
+  });
+});
 
 describe("runArgv", () => {
   test("returns exit code and stdout without a shell", async () => {

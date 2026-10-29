@@ -118,6 +118,8 @@ async function runUnwrapped(req: LaunchRequest, sandbox: SandboxRecord, env: Lau
     stripEnvVars: [...req.stripEnvVars],
     ...(overlay !== undefined ? { env: overlay } : {}),
     ...(req.signal !== undefined ? { signal: req.signal } : {}),
+    ...(req.releaseDeadline !== undefined ? { releaseDeadline: req.releaseDeadline } : {}),
+    ...(req.onOutput !== undefined ? { onOutput: req.onOutput } : {}),
   });
   return { ...result, executed: argv, sandbox };
 }
@@ -159,6 +161,8 @@ async function runWrapped(
       stripEnvVars: [...req.stripEnvVars],
       ...(req.env !== undefined ? { env: req.env } : {}),
       ...(req.signal !== undefined ? { signal: req.signal } : {}),
+      ...(req.releaseDeadline !== undefined ? { releaseDeadline: req.releaseDeadline } : {}),
+      ...(req.onOutput !== undefined ? { onOutput: req.onOutput } : {}),
     });
     const denied = result.exitCode !== 0 && LIKELY_SANDBOX_DENIAL.test(result.stderr);
     const violations = backend.annotate(commandId, result.stderr);
