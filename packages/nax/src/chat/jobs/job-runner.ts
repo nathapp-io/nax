@@ -195,6 +195,9 @@ class DetachedJobs implements ChatJobs {
     // Failure to deliver or save does not undo a launch or detach its exit observer.
     // Polling, cancellation and exit finalization must not overtake the initial write.
     const saved = this.mutate(id, () => this.persistLaunch(job, child, prepared.secret));
+    // Register ask ownership before exit observation can hide this job from running().
+    // The initial write may still be pending when a short-lived child exits.
+    this.emit();
     void child.exited
       .then(async (code) => {
         this.observedExits.set(job.id, code);

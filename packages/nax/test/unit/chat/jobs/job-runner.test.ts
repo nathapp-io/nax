@@ -224,7 +224,7 @@ describe("createJobRunner", () => {
       const stopped = jobs.stopLaunching();
       await expect(jobs.start(request)).rejects.toMatchObject({ code: "CHAT_JOB_CLOSED" });
       await stopped;
-      expect(changed).toHaveBeenCalledTimes(1);
+      expect(changed).toHaveBeenCalledTimes(2);
       expect(jobs.owned()).toEqual([await starting]);
       expect(_jobRunnerDeps.spawn).toHaveBeenCalledTimes(1);
       expect(_jobRunnerDeps.kill).not.toHaveBeenCalled();
@@ -270,7 +270,7 @@ describe("createJobRunner", () => {
     expect(child.unref).toHaveBeenCalledTimes(1);
   });
 
-  test("AC-3,15,17 registers after transport preparation, persists running identity and emits once", async () => {
+  test("AC-3,15,17 registers after transport preparation, persists running identity and emits at registration and persistence", async () => {
     const jobs = runner();
     const changed = mock(() => {});
     jobs.onChange(changed);
@@ -288,7 +288,7 @@ describe("createJobRunner", () => {
     expect(jobs.owned()).toEqual([job]);
     expect(jobs.get(job.id)).toEqual(job);
     expect(jobs.list()).toEqual([job]);
-    expect(changed).toHaveBeenCalledTimes(1);
+    expect(changed).toHaveBeenCalledTimes(2);
   });
 
   test("AC-8,9,19 spawn failures are chat NaxErrors and write no record", async () => {
@@ -324,7 +324,7 @@ describe("createJobRunner", () => {
     expect(job.note).toContain("do not retry");
     expect(job.note).toContain("keep this chat open");
     expect(jobs.owned()).toEqual([job]);
-    expect(changed).toHaveBeenCalledTimes(1);
+    expect(changed).toHaveBeenCalledTimes(2);
     expect(_jobRunnerDeps.spawn).toHaveBeenCalledTimes(1);
     expect(_jobRunnerDeps.kill).not.toHaveBeenCalled();
     expect(await readJobRecords(outputDir)).toEqual([]);
@@ -338,7 +338,7 @@ describe("createJobRunner", () => {
       expect.objectContaining({ id: job.id, state: "failed", exitCode: 2, endedAt: expect.any(String) }),
     ]);
     expect(jobs.running()).toEqual([]);
-    expect(changed).toHaveBeenCalledTimes(2);
+    expect(changed).toHaveBeenCalledTimes(3);
     expect(jobs.takeNotice()).toContain(`job ${job.id} (bot_fix f1) ended: failed`);
   });
 
@@ -370,7 +370,7 @@ describe("createJobRunner", () => {
     expect(notice?.startsWith(`[nax-jobs] job ${job.id} (run f1) ended: succeeded`)).toBe(true);
     expect(jobs.takeNotice()).toBe(notice);
     expect(jobs.takeNotice()).toBeUndefined();
-    expect(changed).toHaveBeenCalledTimes(2);
+    expect(changed).toHaveBeenCalledTimes(3);
     expect(jobs.running()).toEqual([]);
     expect(jobs.owned()).toEqual([]);
   });
