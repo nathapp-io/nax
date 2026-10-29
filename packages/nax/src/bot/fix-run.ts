@@ -5,6 +5,7 @@ import { resolveDefaultAgent } from "@/agents";
 import type { ConfiguredModel } from "@/config";
 import { NaxError } from "@/errors";
 import { hasNaxWorkflowMarker, ownComments } from "@/forge";
+import type { InteractionChain } from "@/interaction";
 import { getLogger } from "@/logger";
 import { botChecksExtractOp } from "@/operations";
 import { defineStepGraph, runStepGraph, type StepGraph } from "@/step-graph";
@@ -12,6 +13,7 @@ import { defineStepGraph, runStepGraph, type StepGraph } from "@/step-graph";
 import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import { botRunDir } from "../workflow/paths";
 import { _workflowDeps } from "../workflow/step-context";
+import { initBotInteractionChain } from "./chat-asks";
 import { type BotChecks, resolveBotChecks } from "./checks";
 import { botCostEnv } from "./cost";
 import { checkPushAccess, loadLatestReview } from "./fix-input";
@@ -37,6 +39,7 @@ import { basePinScope } from "./session-pin";
 
 export const _botFixDeps = {
   basePinScope,
+  initInteractionChain: _botReviewDeps.initInteractionChain,
   gitToplevel: _botReviewDeps.gitToplevel,
   ensureProjectTrusted: _botReviewDeps.ensureProjectTrusted,
   forge: _botReviewDeps.forge,
@@ -81,6 +84,8 @@ export const BOT_FIX_DETECTED_REFUSAL =
   "the base branch has no nax config and no AGENTS.md or CLAUDE.md checks; run nax setup, or pass --trust to run the package scripts nax detected";
 
 export interface BotFixInput {
+  readonly chatAsksDir?: string;
+  readonly chatAskSecret?: Uint8Array;
   readonly trust?: boolean;
   readonly inPlace?: boolean;
   readonly readyOnly?: boolean;
@@ -356,13 +361,16 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
   const config = await deps.loadBotConfig({ snapshotDir: checkout.snapshotDir, profiles: input.profiles });
   const runtime = deps.createRuntime(config, repoRoot, { featureName: `bot-pr-${ref.number}` });
   const stateDir = botRunDir(runtime.outputDir, ref.number, runtime.runId);
+  let interactionChain: InteractionChain | null = null;
   let log: BotLog | undefined;
   let context: Awaited<ReturnType<typeof deps.buildPrStepContext>> | undefined;
   try {
     log = deps.openBotLog(join(stateDir, "bot.jsonl"));
     await deps.setupBotRuntime(runtime, config, checkout.worktree);
     getLogger().info("bot", "Bot fix started", { pr: ref.number, headSha: info.headSha });
+    interactionChain = await initBotInteractionChain({ input, config, init: deps.initInteractionChain });
     context = await deps.buildPrStepContext({
+      ...(interactionChain ? { interactionChain } : {}),
       runtime,
       config,
       repoRoot: checkout.worktree,
@@ -422,7 +430,11 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
     }
   } finally {
     try {
-      await context?.dispose();
+      try {
+        await context?.dispose();
+      } finally {
+        await interactionChain?.destroy();
+      }
     } finally {
       try {
         await log?.close();

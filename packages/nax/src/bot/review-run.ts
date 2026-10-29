@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { resolveDefaultAgent } from "@/agents";
 import { type ConfiguredModel, DEFAULT_SANDBOX_CONFIG, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
+import type { InteractionChain } from "@/interaction";
 import { getLogger } from "@/logger";
 import { botChecksExtractOp, type PrReviewVerdict } from "@/operations";
 import { renderCheckoutState } from "@/prompts";
@@ -12,6 +13,7 @@ import type { CiWaitResult } from "../workflow/ci-wait";
 import { botRunDir } from "../workflow/paths";
 import type { buildPrStepContext } from "../workflow/pr-step-context";
 import { _workflowDeps } from "../workflow/step-context";
+import { initBotInteractionChain } from "./chat-asks";
 import type { PrCheckout } from "./checkout";
 import { listCiConfigFiles } from "./checkout-state";
 import { type BotCheckSource, type BotChecks, checkCommands, reviewBuildSteps } from "./checks";
@@ -45,6 +47,8 @@ export type BotReviewResult =
   | { readonly outcome: "not-reviewed" | "refused"; readonly reason: string };
 
 export interface BotReviewInput {
+  readonly chatAsksDir?: string;
+  readonly chatAskSecret?: Uint8Array;
   readonly inPlace?: boolean;
   readonly costLimitUsd?: number;
   readonly decisions?: readonly BotDecision[];
@@ -415,13 +419,16 @@ async function reviewCheckout(input: BotReviewInput, prepared: PreparedReview): 
   const config = reviewConfig(loaded, staticMode);
   const runtime = deps.createRuntime(config, repoRoot, { featureName: `bot-pr-${ref.number}` });
   const stateDir = botRunDir(runtime.outputDir, ref.number, runtime.runId);
+  let interactionChain: InteractionChain | null = null;
   let log: BotLog | undefined;
   let context: Awaited<ReturnType<typeof buildPrStepContext>> | undefined;
   try {
     log = deps.openBotLog(join(stateDir, "bot.jsonl"));
     await deps.setupBotRuntime(runtime, config, checkout.worktree);
     getLogger().info("bot", "Bot review started", { pr: ref.number, headSha: info.headSha, trusted: !staticMode });
+    interactionChain = await initBotInteractionChain({ input, config, init: deps.initInteractionChain });
     context = await deps.buildPrStepContext({
+      ...(interactionChain ? { interactionChain } : {}),
       runtime,
       config,
       repoRoot: checkout.worktree,
@@ -442,7 +449,11 @@ async function reviewCheckout(input: BotReviewInput, prepared: PreparedReview): 
     return result.outcome === "posted" && log.path !== undefined ? { ...result, logPath: log.path } : result;
   } finally {
     try {
-      await context?.dispose();
+      try {
+        await context?.dispose();
+      } finally {
+        await interactionChain?.destroy();
+      }
     } finally {
       try {
         await log?.close();

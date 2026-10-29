@@ -11,6 +11,7 @@ import {
   readPrInfo,
   resolvePrRef,
 } from "@/forge";
+import { initInteractionChain } from "@/interaction";
 import { createRuntime } from "@/runtime";
 import { ensureProjectTrusted } from "@/trust";
 import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
@@ -29,6 +30,7 @@ import { recordPrRulings } from "./rulings";
 import { setupBotRuntime } from "./run-setup";
 
 export const _botReviewDeps = {
+  initInteractionChain,
   runGit: botGit,
   async isAncestor(dir: string, ancestor: string, head: string): Promise<boolean> {
     const result = await _botReviewDeps.runGit(["merge-base", "--is-ancestor", ancestor, head], dir);
