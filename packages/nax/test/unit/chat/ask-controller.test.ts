@@ -215,6 +215,122 @@ describe("createChatAskController", () => {
   });
 });
 
+describe("host questions (US-009)", () => {
+  const original = { ...hostAsks._askControllerDeps };
+  const now = new Date("2026-10-27T00:00:00.000Z");
+  const timeout = 200;
+  let clock: ReturnType<typeof makeFakeClock>;
+  beforeEach(() => {
+    clock = makeFakeClock();
+    hostAsks._askControllerDeps.setTimeout = clock.setTimeout;
+    hostAsks._askControllerDeps.clearTimeout = (handle) => clock.clearTimeout(Number(handle));
+  });
+  afterEach(() => Object.assign(hostAsks._askControllerDeps, original));
+  function hostSetup() {
+    const answer = mock((_id: string, _reply: AnswerReply) => {});
+    const asks = chat.createChatAskController({ mode: "full", answer, approvalTimeoutMs: timeout, now: () => now });
+    return { asks, answer };
+  }
+  test("AC-1/2/3/4: queues a host question and answers locally", async () => {
+    const { asks, answer } = hostSetup();
+    const result = asks.requestHostQuestion({ text: "Which base branch?" });
+    expect(asks.pending()).toHaveLength(1);
+    const event = asks.pending()[0];
+    expect(event).toMatchObject({
+      type: "question",
+      text: "Which base branch?",
+      at: now.toISOString(),
+      expiresAt: new Date(now.getTime() + timeout).toISOString(),
+    });
+    expect(event?.requestId.startsWith("host-question-")).toBe(true);
+    const id = event?.requestId ?? "missing";
+    asks.handle({ ...base, type: "approval_resolved", requestId: id, decision: "deny", decidedBy: "timeout" });
+    expect(asks.pending()).toEqual([event]);
+    asks.answerQuestion(id, "main");
+    expect(await result).toBe("main");
+    expect(asks.pending()).toEqual([]);
+    expect(clock.pending()).toBe(0);
+    asks.answerQuestion(id, "stale");
+    expect(answer).not.toHaveBeenCalled();
+  });
+  test("AC-5/6: abort settles null and removes the question", async () => {
+    const { asks, answer } = hostSetup();
+    const abort = new AbortController();
+    const result = asks.requestHostQuestion({ text: "Which base branch?", signal: abort.signal });
+    expect(asks.pending()).toHaveLength(1);
+    abort.abort();
+    expect(await result).toBeNull();
+    expect(asks.pending()).toEqual([]);
+    expect(clock.pending()).toBe(0);
+    expect(answer).not.toHaveBeenCalled();
+  });
+  test("AC-7: pre-aborted signal creates no entry or timer", async () => {
+    const { asks } = hostSetup();
+    const abort = new AbortController();
+    abort.abort();
+    const changed = mock(() => {});
+    asks.onChange(changed);
+    expect(await asks.requestHostQuestion({ text: "Which base branch?", signal: abort.signal })).toBeNull();
+    expect(asks.pending()).toEqual([]);
+    expect(clock.pending()).toBe(0);
+    expect(changed).not.toHaveBeenCalled();
+  });
+  test("AC-8: configured timeout settles null", async () => {
+    const { asks, answer } = hostSetup();
+    const result = asks.requestHostQuestion({ text: "Which base branch?" });
+    await clock.advance(timeout - 1);
+    expect(asks.pending()).toHaveLength(1);
+    await clock.advance(2);
+    expect(await result).toBeNull();
+    expect(asks.pending()).toEqual([]);
+    expect(clock.pending()).toBe(0);
+    expect(answer).not.toHaveBeenCalled();
+  });
+  test("AC-9: reset settles all host questions", async () => {
+    const { asks, answer } = hostSetup();
+    const results = [asks.requestHostQuestion({ text: "First?" }), asks.requestHostQuestion({ text: "Second?" })];
+    expect(new Set(asks.pending().map((ask) => ask.requestId)).size).toBe(2);
+    asks.reset();
+    expect(await Promise.all(results)).toEqual([null, null]);
+    expect(asks.pending()).toEqual([]);
+    expect(clock.pending()).toBe(0);
+    expect(answer).not.toHaveBeenCalled();
+  });
+  test.each(["answer", "abort", "timeout", "reset"] as const)(
+    "%s removes the abort listener and notifies once",
+    async (settlement) => {
+      const { asks, answer } = hostSetup();
+      const abort = new AbortController();
+      const remove = mock(abort.signal.removeEventListener.bind(abort.signal));
+      abort.signal.removeEventListener = remove;
+      const changed = mock(() => {});
+      asks.onChange(changed);
+      const result = asks.requestHostQuestion({ text: "Branch?", signal: abort.signal });
+      const id = asks.pending()[0]?.requestId ?? "missing";
+      if (settlement === "answer") asks.answerQuestion(id, "");
+      else if (settlement === "abort") abort.abort();
+      else if (settlement === "timeout") await clock.advance(timeout);
+      else asks.reset();
+      expect(await result).toBe(settlement === "answer" ? "" : null);
+      expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+      expect(clock.pending()).toBe(0);
+      expect(asks.pending()).toEqual([]);
+      abort.abort();
+      asks.answerQuestion(id, "late");
+      asks.reset();
+      expect(changed).toHaveBeenCalledTimes(2);
+      expect(answer).not.toHaveBeenCalled();
+    },
+  );
+  test("AC-10: session questions still forward text", () => {
+    const { asks, answer } = hostSetup();
+    asks.handle(question("session-question"));
+    asks.answerQuestion("session-question", "main");
+    expect(answer.mock.calls).toEqual([["session-question", { text: "main" }]]);
+    expect(asks.pending()).toEqual([]);
+  });
+});
+
 describe("host approvals (US-008)", () => {
   const original = { ...hostAsks._askControllerDeps };
   const card = { tool: "nax-jobs__run", summary: "nax run f1", command: "c", reason: "r" };
