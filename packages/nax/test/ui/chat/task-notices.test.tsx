@@ -5,6 +5,7 @@ import { cleanup } from "ink-testing-library";
 import type { ChatHost } from "@/chat";
 import { _backgroundTaskDeps, createBackgroundTasks } from "@/chat/background";
 import type { ChatJobs } from "@/chat/jobs/job-runner";
+import { _slashCommandDeps } from "@/tui/chat/slash-commands";
 
 const disposers: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -127,7 +128,8 @@ describe("background task notices", () => {
     expect(ui.send.mock.calls[2]?.[0]).toContain("bash-");
     await ui.finishTurn(2);
   });
-  test("AC-14/15 three task turns hold a fourth until a typed user turn ends", async () => {
+  test.each(["continue", "/feature demo"])("AC-14/15 user message %s resets the task guard", async (message) => {
+    spyOn(_slashCommandDeps, "readText").mockResolvedValue("feature spec");
     const ui = mount();
     for (let i = 0; i < 3; i++) {
       await ui.endTask();
@@ -136,8 +138,8 @@ describe("background task notices", () => {
     await ui.endTask();
     expect(ui.send).toHaveBeenCalledTimes(3);
     expect(ui.tasks.peekNotice()).toBeDefined();
-    await ui.submit("continue");
-    expect(ui.send.mock.calls[3]?.[0]).toBe("continue");
+    await ui.submit(message);
+    expect(ui.send.mock.calls[3]?.[0]).toContain(message === "continue" ? "continue" : "feature spec");
     expect(ui.send).toHaveBeenCalledTimes(4);
     await ui.finishTurn(3);
     expect(ui.send).toHaveBeenCalledTimes(5);

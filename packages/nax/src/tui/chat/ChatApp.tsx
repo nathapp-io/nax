@@ -330,6 +330,7 @@ export function ChatApp({
       return;
     }
     if (outcome.kind === "send") {
+      noteUserTurn();
       await sendTurn(outcome.message, undefined, `/${command.name}${command.rest}`);
       return;
     }
@@ -344,6 +345,7 @@ export function ChatApp({
         const { command: failed, reason } = expandedLines.failed;
         return { notice: `command /${name} not sent: !\`${failed}\` failed: ${reason}` };
       }
+      noteUserTurn();
       return { message: buildCommandMessage(expandedLines.text, rest) };
     });
   }
