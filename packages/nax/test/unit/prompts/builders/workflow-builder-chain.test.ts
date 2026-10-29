@@ -86,6 +86,18 @@ describe("buildJobNotice — chain line", () => {
 });
 
 describe("buildJobsInstructions — chain lines", () => {
+  test("US-012 AC-16 opt-in adds a ninth, last answer-tool line", () => {
+    const enabled = lines(buildJobsInstructions({ answerAsks: true }));
+    expect(enabled).toHaveLength(9);
+    expect(enabled[8]).toContain("nax-jobs__answer_ask");
+    expect(enabled.slice(0, 8)).toEqual(lines(buildJobsInstructions()));
+  });
+
+  test("US-012 AC-17 explicit false preserves the original eight lines", () => {
+    expect(buildJobsInstructions({ answerAsks: false })).toBe(buildJobsInstructions());
+    expect(lines(buildJobsInstructions())).toHaveLength(8);
+  });
+
   test("AC-4 carries the nax-jobs__chain approval line", () => {
     expect(lines(buildJobsInstructions())).toContain(CHAIN_INSTRUCTIONS[0] as string);
   });
