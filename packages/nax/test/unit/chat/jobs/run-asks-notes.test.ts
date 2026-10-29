@@ -18,7 +18,7 @@ import {
 } from "@/interaction/chat-ask-files";
 import type { InteractionRequest } from "@/interaction/types";
 
-const secret = "test-only-secret";
+const secret = new Uint8Array(32).fill(7);
 const original = { ..._runAsksDeps };
 const originalFiles = { ..._chatAskFileDeps };
 const request: InteractionRequest = {
@@ -274,9 +274,13 @@ describe("createRunAsks notes and resource ownership", () => {
     const release = Promise.withResolvers<void>();
     const finished = Promise.withResolvers<void>();
     const key = await publish();
-    _chatAskFileDeps.write = async (...args) => {
-      const result = await originalFiles.write(...args);
-      if (String(args[0]).includes(kind === "answer" ? ".answer.json." : "heartbeat.json.")) {
+    _chatAskFileDeps.write = async (destination, data, options) => {
+      // The protocol publishes JSON through string temporary-file paths only.
+      if (typeof destination !== "string" || typeof data !== "string") {
+        throw new Error("Expected a JSON temporary-file write");
+      }
+      const result = await originalFiles.write(destination, data, options);
+      if (destination.includes(kind === "answer" ? ".answer.json." : "heartbeat.json.")) {
         entered.resolve();
         await release.promise;
       }
