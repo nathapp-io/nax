@@ -1,6 +1,15 @@
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { getSafeLogger, type Logger } from "@/logger";
-import { CHAT_ASK_POLL_MS, readChatAnswer, writeChatAsk, writeChatNotice, writeChatSettled } from "../chat-ask-files";
+import {
+  CHAT_ASK_POLL_MS,
+  chatAskKey,
+  chatHeartbeatFresh,
+  readChatAnswer,
+  writeChatAsk,
+  writeChatNotice,
+  writeChatSettled,
+} from "../chat-ask-files";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
 const DEFAULT_FALLBACK_DELAY_MS = 60_000;
@@ -17,13 +26,19 @@ export const _chatAskPluginDeps = {
 export interface ChatAskPluginOptions {
   readonly dir: string;
   readonly secret: Uint8Array;
-  /** Already initialized by the caller; fallback racing is implemented separately. */
+  /** Already initialized by the caller. */
   readonly fallback?: InteractionPlugin;
   readonly fallbackDelayMs?: number;
   readonly logger?: Pick<Logger, "warn">;
 }
 
 interface PendingAsk {
+  request: InteractionRequest;
+  chatUnavailable: boolean;
+  fallbackSend?: Promise<boolean>;
+  fallbackReceiving?: boolean;
+  fallbackWon?: boolean;
+  deadline?: number;
   humanOnly: boolean;
   warnedInvalid: boolean;
   cancelled?: boolean;
@@ -53,13 +68,76 @@ export class ChatAskPlugin implements InteractionPlugin {
     const { dir, secret } = this.options;
     if (request.type === "notify") {
       await writeChatNotice(dir, request, new Date(askedAt), secret);
+      if (this.options.fallback && !(await chatHeartbeatFresh(dir, _chatAskPluginDeps.now()))) {
+        await this.sendFallback(request);
+      }
       return;
     }
-    const key = await writeChatAsk(dir, request, new Date(askedAt), secret);
+    let chatUnavailable = false;
+    const key = chatAskKey(request.id);
+    try {
+      await writeChatAsk(dir, request, new Date(askedAt), secret);
+    } catch (cause) {
+      if (!this.options.fallback) throw cause;
+      chatUnavailable = true;
+      this.warn(request.id, "Ask write failed; using fallback", cause);
+    }
     const metadata = request.metadata;
     const humanOnly =
       metadata?.safety === "red" || metadata?.trigger === "pre-merge" || metadata?.trigger === "human-review";
-    this.pending.set(request.id, { key, askedAt, active: true, humanOnly, warnedInvalid: false });
+    const ask: PendingAsk = { request, key, askedAt, chatUnavailable, active: true, humanOnly, warnedInvalid: false };
+    this.pending.set(request.id, ask);
+    if (this.options.fallback && (chatUnavailable || !(await chatHeartbeatFresh(dir, _chatAskPluginDeps.now())))) {
+      await this.startFallbackSend(ask);
+    }
+  }
+
+  private warn(requestId: string, message: string, cause: unknown): void {
+    (this.options.logger ?? getSafeLogger())?.warn("chat-asks", `[chat-asks] ${message}`, {
+      requestId,
+      error: errorMessage(cause),
+    });
+  }
+
+  private async sendFallback(request: InteractionRequest): Promise<boolean> {
+    try {
+      await this.options.fallback?.send(request);
+      return true;
+    } catch (cause) {
+      this.warn(request.id, "Fallback send failed", cause);
+      return false;
+    }
+  }
+
+  private startFallbackSend(ask: PendingAsk): Promise<boolean> {
+    ask.fallbackSend ??= this.sendFallback(ask.request).then((sent) => {
+      if (sent && !ask.active) this.cancelFallback(ask);
+      return sent;
+    });
+    return ask.fallbackSend;
+  }
+
+  private cancelFallback(ask: PendingAsk): void {
+    void this.options.fallback?.cancel?.(ask.request.id).catch((cause: unknown) => {
+      this.warn(ask.request.id, "Fallback cancel failed", cause);
+    });
+  }
+
+  private async receiveFallback(ask: PendingAsk): Promise<void> {
+    if (!this.options.fallback || ask.fallbackReceiving || !ask.active) return;
+    ask.fallbackReceiving = true;
+    if (!(await this.startFallbackSend(ask)) || !ask.active) return;
+    const remaining = Math.max(0, (ask.deadline ?? _chatAskPluginDeps.now()) - _chatAskPluginDeps.now());
+    if (remaining === 0) return;
+    try {
+      const response = await this.options.fallback.receive(ask.request.id, remaining);
+      if (!ask.active || ["timeout", "destroyed", "superseded"].includes(response.respondedBy ?? "")) return;
+      if (_chatAskPluginDeps.now() >= (ask.deadline ?? 0)) return;
+      ask.fallbackWon = true;
+      await this.settle(ask.request.id, ask, response);
+    } catch (cause) {
+      this.warn(ask.request.id, "Fallback receive failed", cause);
+    }
   }
 
   async receive(requestId: string, timeout = DEFAULT_TIMEOUT_MS): Promise<InteractionResponse> {
@@ -75,13 +153,15 @@ export class ChatAskPlugin implements InteractionPlugin {
       ask.resolve = resolve;
       ask.reject = reject;
     });
+    ask.deadline = ask.askedAt + timeout;
+    if (ask.fallbackSend) void this.receiveFallback(ask);
     ask.deadlineTimer = _chatAskPluginDeps.setTimeout(
       () => {
         void this.settle(requestId, ask, this.skip(requestId, "timeout"));
       },
       Math.max(0, ask.askedAt + timeout - _chatAskPluginDeps.now()),
     );
-    this.schedulePoll(requestId, ask);
+    if (!ask.chatUnavailable) this.schedulePoll(requestId, ask);
     return ask.response;
   }
 
@@ -112,6 +192,14 @@ export class ChatAskPlugin implements InteractionPlugin {
           respondedAt: typeof answer.respondedAt === "string" ? Date.parse(answer.respondedAt) : answer.respondedAt,
         });
       } else {
+        if (
+          this.options.fallback &&
+          !ask.fallbackReceiving &&
+          (_chatAskPluginDeps.now() - ask.askedAt >= this.fallbackDelayMs ||
+            !(await chatHeartbeatFresh(this.options.dir, _chatAskPluginDeps.now())))
+        ) {
+          void this.receiveFallback(ask);
+        }
         this.schedulePoll(requestId, ask);
       }
     } catch (cause) {
@@ -136,6 +224,7 @@ export class ChatAskPlugin implements InteractionPlugin {
     if (ask.settling !== undefined) return ask.settling;
     ask.active = false;
     this.clearTimers(ask);
+    if (ask.fallbackSend && !ask.fallbackWon) this.cancelFallback(ask);
     ask.settling = this.writeSettlement(ask, response).then(
       () => {
         this.pending.delete(requestId);
@@ -175,6 +264,10 @@ export class ChatAskPlugin implements InteractionPlugin {
   }
 
   async destroy(): Promise<void> {
-    await Promise.all([...this.pending.keys()].map((requestId) => this.cancel(requestId)));
+    try {
+      await Promise.all([...this.pending.keys()].map((requestId) => this.cancel(requestId)));
+    } finally {
+      await this.options.fallback?.destroy?.();
+    }
   }
 }
