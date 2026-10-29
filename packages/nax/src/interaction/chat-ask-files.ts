@@ -169,12 +169,16 @@ function recordPath(dir: string, key: string, kind: string): string {
   return join(dir, `${key}.${kind}.json`);
 }
 
-async function readJson(path: string): Promise<unknown> {
+async function readJson(path: string, onInvalid?: () => void): Promise<unknown> {
   try {
     return await _chatAskFileDeps.file(path).json();
   } catch (err) {
     // Disappearing files and malformed JSON are ordinary polling misses, not I/O failures.
-    if (isMissing(err) || err instanceof SyntaxError) return undefined;
+    if (isMissing(err)) return undefined;
+    if (err instanceof SyntaxError) {
+      onInvalid?.();
+      return undefined;
+    }
     throw err;
   }
 }
@@ -232,10 +236,20 @@ export async function writeChatAnswer(
   await atomicWrite(recordPath(dir, key, "answer"), { ...record, mac: signChatRecord(secret, record) });
 }
 
-export async function readChatAnswer(dir: string, key: string, secret: ChatAskSecret): Promise<ChatAnswer | undefined> {
-  const record = await readSigned(recordPath(dir, key, "answer"), secret, answerSchema);
-  if (!record || chatAskKey(record.requestId) !== key) return undefined;
-  const { schemaVersion: _version, mac: _mac, ...answer } = record;
+export async function readChatAnswer(
+  dir: string,
+  key: string,
+  secret: ChatAskSecret,
+  onInvalid?: () => void,
+): Promise<ChatAnswer | undefined> {
+  const raw = await readJson(recordPath(dir, key, "answer"), onInvalid);
+  if (raw === undefined) return undefined;
+  const parsed = answerSchema.safeParse(raw);
+  if (!verifyChatRecord(secret, raw) || !parsed.success || chatAskKey(parsed.data.requestId) !== key) {
+    onInvalid?.();
+    return undefined;
+  }
+  const { schemaVersion: _version, mac: _mac, ...answer } = parsed.data;
   return answer;
 }
 

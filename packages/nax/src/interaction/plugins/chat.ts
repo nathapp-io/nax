@@ -1,5 +1,5 @@
 import { NaxError } from "@/errors";
-import type { Logger } from "@/logger";
+import { getSafeLogger, type Logger } from "@/logger";
 import { CHAT_ASK_POLL_MS, readChatAnswer, writeChatAsk, writeChatNotice, writeChatSettled } from "../chat-ask-files";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
@@ -24,6 +24,9 @@ export interface ChatAskPluginOptions {
 }
 
 interface PendingAsk {
+  humanOnly: boolean;
+  warnedInvalid: boolean;
+  cancelled?: boolean;
   key: string;
   askedAt: number;
   active: boolean;
@@ -53,13 +56,16 @@ export class ChatAskPlugin implements InteractionPlugin {
       return;
     }
     const key = await writeChatAsk(dir, request, new Date(askedAt), secret);
-    this.pending.set(request.id, { key, askedAt, active: true });
+    const metadata = request.metadata;
+    const humanOnly =
+      metadata?.safety === "red" || metadata?.trigger === "pre-merge" || metadata?.trigger === "human-review";
+    this.pending.set(request.id, { key, askedAt, active: true, humanOnly, warnedInvalid: false });
   }
 
   async receive(requestId: string, timeout = DEFAULT_TIMEOUT_MS): Promise<InteractionResponse> {
     const ask = this.pending.get(requestId);
     if (!ask) {
-      throw new NaxError(`[chat-asks] Unknown request ${requestId}`, "INTERACTION_ERROR", {
+      throw new NaxError(`[chat-asks] Unknown request ${requestId}`, "CHAT_ASK_UNKNOWN", {
         stage: "interaction",
         requestId,
       });
@@ -88,13 +94,20 @@ export class ChatAskPlugin implements InteractionPlugin {
 
   private async poll(requestId: string, ask: PendingAsk): Promise<void> {
     try {
-      const answer = await readChatAnswer(this.options.dir, ask.key, this.options.secret);
+      const answer = await readChatAnswer(this.options.dir, ask.key, this.options.secret, () => {
+        if (ask.warnedInvalid || !ask.active) return;
+        ask.warnedInvalid = true;
+        (this.options.logger ?? getSafeLogger())?.warn("chat-asks", "[chat-asks] Ignoring malformed answer", {
+          requestId,
+          key: ask.key,
+        });
+      });
       if (!ask.active) return;
-      if (answer) {
+      if (answer && !(answer.respondedBy === "chat-agent" && ask.humanOnly)) {
         await this.settle(requestId, ask, {
           requestId,
           action: answer.action,
-          value: answer.value,
+          value: answer.respondedBy === "chat-agent" && answer.value === "allow-remember" ? "allow" : answer.value,
           respondedBy: answer.respondedBy,
           respondedAt: typeof answer.respondedAt === "string" ? Date.parse(answer.respondedAt) : answer.respondedAt,
         });
@@ -142,7 +155,7 @@ export class ChatAskPlugin implements InteractionPlugin {
       ask.key,
       {
         requestId: response.requestId,
-        by: response.respondedBy ?? "timeout",
+        by: ask.cancelled ? "cancelled" : (response.respondedBy ?? "timeout"),
         action: response.action,
         value: response.value,
         settledAt: new Date(_chatAskPluginDeps.now()).toISOString(),
@@ -153,7 +166,12 @@ export class ChatAskPlugin implements InteractionPlugin {
 
   async cancel(requestId: string): Promise<void> {
     const ask = this.pending.get(requestId);
-    if (ask) await this.settle(requestId, ask, this.skip(requestId, "cancelled"));
+    if (ask?.active) {
+      ask.cancelled = true;
+      await this.settle(requestId, ask, this.skip(requestId, "timeout"));
+    } else if (ask?.settling) {
+      await ask.settling;
+    }
   }
 
   async destroy(): Promise<void> {

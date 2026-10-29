@@ -115,7 +115,7 @@ describe("ChatAskPlugin", () => {
     expect(clock.pending()).toBeGreaterThan(0);
     if (method === "cancel") await plugin.cancel(request.id);
     else await plugin.destroy();
-    expect(await pending).toMatchObject({ action: "skip", respondedBy: "cancelled" });
+    expect(await pending).toMatchObject({ action: "skip", respondedBy: "timeout" });
     expect(clock.pending()).toBe(0);
     expect((await readChatSettled(dir, chatAskKey(request.id), secret))?.by).toBe("cancelled");
   });
