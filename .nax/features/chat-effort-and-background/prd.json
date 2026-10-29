@@ -3,7 +3,7 @@
   "feature": "chat-effort-and-background",
   "branchName": "feat/chat-effort-and-background",
   "createdAt": "2026-10-29T00:00:00.000Z",
-  "updatedAt": "2026-10-29T05:19:49.022Z",
+  "updatedAt": "2026-10-29T05:36:48.015Z",
   "userStories": [
     {
       "id": "US-001",
@@ -617,14 +617,17 @@
       "dependencies": [
         "US-009"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Existing session-operation draining and useJobs deliver-then-take hooks can be extended rather than redesigned; task lifetime, three open sites and autonomous-turn ordering remain cross-module session-safety work requiring strict TDD."
+        "reasoning": "Existing session-operation draining and useJobs deliver-then-take hooks can be extended rather than redesigned; task lifetime, three open sites and autonomous-turn ordering remain cross-module session-safety work requiring strict TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/chat-host.ts",
@@ -677,7 +680,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "43339e128b6abc6e440e219c06516814705c7e66"
     },
     {
       "id": "US-011",
