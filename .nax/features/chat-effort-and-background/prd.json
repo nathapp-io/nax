@@ -3,7 +3,7 @@
   "feature": "chat-effort-and-background",
   "branchName": "feat/chat-effort-and-background",
   "createdAt": "2026-10-29T00:00:00.000Z",
-  "updatedAt": "2026-10-29T05:36:48.015Z",
+  "updatedAt": "2026-10-29T05:49:34.553Z",
   "userStories": [
     {
       "id": "US-001",
@@ -712,14 +712,17 @@
         "US-002",
         "US-010"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "UI-level binding and footer wiring consume completed host capabilities without changing session or permission decisions."
+        "reasoning": "UI-level binding and footer wiring consume completed host capabilities without changing session or permission decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/useChatKeys.ts",
@@ -740,7 +743,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "99ccf82fe4316cc114dd94e27acce1feabf94459"
     },
     {
       "id": "US-012",
