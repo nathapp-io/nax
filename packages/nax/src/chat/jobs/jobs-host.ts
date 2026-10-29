@@ -5,6 +5,7 @@ import { type ChatChains, createChainController } from "./chain-controller";
 import { createJobRunner } from "./job-runner";
 import { createJobWriteGuard } from "./job-write-guard";
 import { createJobsProvider } from "./jobs-provider";
+import { type ChatRunAsks, createRunAsks } from "./run-asks";
 
 interface HostJobsOptions {
   readonly repoRoot: string;
@@ -21,6 +22,7 @@ interface HostJobsOptions {
 export function createHostJobs(options: HostJobsOptions): {
   jobs: ReturnType<typeof createJobRunner>;
   chains: ChatChains;
+  runAsks: ChatRunAsks;
   provider: ReturnType<typeof createJobsProvider>;
   guard: ReturnType<typeof createJobWriteGuard>;
   close: () => void;
@@ -38,16 +40,19 @@ export function createHostJobs(options: HostJobsOptions): {
     sessionId: options.sessionId,
     now: options.now,
   });
+  const runAsks = createRunAsks({ ...options, jobs, chains });
   const approve: ChatAskController["requestHostApproval"] = (card) => options.asks.requestHostApproval(card);
   const provider = createJobsProvider({
     ...options,
     jobs,
     chains,
+    runAsks,
     approve,
     maxIterations: isWorkflowMode(options.config) ? undefined : options.config.execution.maxIterations,
     interactionPlugin: options.config.interaction?.plugin ?? "cli",
   });
   const close = (): void => {
+    runAsks.dispose();
     closing.abort();
     chains.stop("the chat closed");
   };
@@ -59,6 +64,7 @@ export function createHostJobs(options: HostJobsOptions): {
     jobs,
     chains,
     provider,
+    runAsks,
     guard: createJobWriteGuard(jobs, options.repoRoot),
     close,
     sessionChanged,

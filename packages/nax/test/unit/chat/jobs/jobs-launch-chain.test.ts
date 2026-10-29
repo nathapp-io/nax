@@ -148,7 +148,7 @@ describe("launchJob chain admission", () => {
     expect(result.content.split("\n").at(-1)).toBe("A [nax-jobs] notice arrives when it ends.");
   });
   test("AC-6 auto output retains no-ask-channel warning", async () => {
-    expect((await launch()).content).toContain("warning: this run has no channel for its own asks; they will time out");
+    expect((await launch()).content).toContain("asks you do not answer in chat fall to the run's timeout defaults");
   });
   test("AC-7 admission receives built run argv", async () => {
     await launch("run", { feature: "f1", maxIterations: 40 });

@@ -116,6 +116,7 @@ describe("createChatHost jobs", () => {
   test("AC-1/4/5/23 composes ordered provider instructions and a frozen last guard", async () => {
     const f = fixture();
     await f.start();
+    expect(f.host.runAsks).toBeDefined();
     const request = f.open.mock.calls[0]?.[0];
     assertDefined(request, "open request");
     expect(request.toolProviders?.slice(-3).map((p) => p.id)).toEqual(["nax-jobs", "nax-tasks", "nax-agents"]);

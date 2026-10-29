@@ -132,7 +132,7 @@ async function chainReason(proposal: ResolvedChainProposal, options: Options): P
       ({ step, feature }) => `warning: step ${step} replaces the existing prd.json for ${feature}`,
     ),
     ...(options.interactionPlugin === "cli" && proposal.steps.some((step) => step.kind === "run")
-      ? ["warning: run steps have no channel for their own asks; they will time out"]
+      ? ["run steps' asks you do not answer in chat fall to their timeout defaults"]
       : []),
     "Steps run in this order, each once. A failed step or check, a different step, the cost cap, a cancel or closing the chat stops the chain.",
   ].join("\n");

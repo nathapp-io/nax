@@ -254,12 +254,13 @@ describe("createJobsProvider", () => {
   });
   test("AC-12 cli warns about unanswerable asks", async () => {
     await launch();
-    expect(card().reason).toContain("warning: this run has no channel for its own asks; they will time out");
+    expect(card().reason).toContain("asks you do not answer in chat fall to the run's timeout defaults");
   });
   test("AC-13 telegram has no channel warning", async () => {
     options = { ...options, interactionPlugin: "telegram" };
     await launch();
     expect(card().reason).not.toContain("no channel");
+    expect(card().reason).not.toContain("asks you do not answer in chat fall to the run's timeout defaults");
   });
   test("AC-14 branch is shown and queried in repo root", async () => {
     await launch();

@@ -24,7 +24,7 @@ import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import { type ChatMode, chatModeOfMeta } from "./chat-mode";
 import { tierModels } from "./chat-models";
 import { createCloseConfirm } from "./close-confirm";
-import { type ChatJobs, createHostJobs } from "./jobs";
+import { type ChatJobs, type ChatRunAsks, createHostJobs } from "./jobs";
 import { type ChatHistory, type ChatSessionHandle, openChatSession } from "./open-chat-session";
 import type { ChatResources } from "./resources";
 import { createSessionHygiene, hasHadTurn, resumableRows } from "./session-hygiene";
@@ -72,6 +72,7 @@ export interface ChatHost {
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   readonly jobs?: ChatJobs;
+  readonly runAsks?: ChatRunAsks;
   readonly tasks?: ChatBackgroundTasks;
   readonly confirmBeforeClose?: () => Promise<boolean>;
   current(): ChatHostState;
@@ -115,6 +116,7 @@ class NativeChatHost implements ChatHost {
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   readonly jobs?: ChatJobs;
+  readonly runAsks?: ChatRunAsks;
   readonly tasks?: ChatBackgroundTasks;
   readonly confirmBeforeClose?: () => Promise<boolean>;
   private readonly hostJobs?: ReturnType<typeof createHostJobs>;
@@ -169,6 +171,7 @@ class NativeChatHost implements ChatHost {
         : undefined;
     this.hostJobs = hostJobs;
     this.jobs = hostJobs?.jobs;
+    this.runAsks = hostJobs?.runAsks;
     const rules = deps.config.context.rules;
     this.loopHandlers = Object.freeze([
       ...(deps.resources?.pluginHandlers ?? []),
