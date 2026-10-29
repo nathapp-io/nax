@@ -3,7 +3,7 @@
   "feature": "chat-effort-and-background",
   "branchName": "feat/chat-effort-and-background",
   "createdAt": "2026-10-29T00:00:00.000Z",
-  "updatedAt": "2026-10-29T05:01:44.186Z",
+  "updatedAt": "2026-10-29T05:11:21.238Z",
   "userStories": [
     {
       "id": "US-001",
@@ -481,14 +481,17 @@
       "dependencies": [
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Snapshot acknowledgement, late adoption during stopAll and foreground-stack races require isolated lifecycle tests."
+        "reasoning": "Snapshot acknowledgement, late adoption during stopAll and foreground-stack races require isolated lifecycle tests.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/background/task-registry.ts",
@@ -505,7 +508,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6d0f949b840ef9eae24460ce34e1c2f95899e8f3"
     },
     {
       "id": "US-009",
