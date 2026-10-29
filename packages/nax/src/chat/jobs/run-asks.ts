@@ -156,10 +156,17 @@ class RunAsks implements ChatRunAsks {
       const ask: HumanAsk = { jobId: job.id, dir, secret, record, controller: new AbortController() };
       this.open.set(id, ask);
       // Never await a human card inside the scan: other asks and heartbeats must keep moving.
+      let failed = false;
       void this.showHuman(ask)
-        .catch((cause) => this.warn(cause, job.id))
+        .catch((cause) => {
+          failed = true;
+          this.warn(cause, job.id);
+        })
         .finally(() => {
           this.open.delete(id);
+          // A rejected host request (or failed delivery) may be transient. Closed
+          // cards remain deduplicated; only failures of a still-live ask retry.
+          if (failed && this.active(job.id) && !ask.controller.signal.aborted) this.seen.delete(id);
           this.changed();
         });
       this.changed();

@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { readdirSync, renameSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { withFileLock } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
 import { NaxError } from "@/errors";
 import type { InteractionAction, InteractionRequest } from "./types";
@@ -53,6 +54,7 @@ export const _chatAskFileDeps = {
   unlink: unlinkSync,
   readdir: readdirSync,
   randomUUID: (): string => crypto.randomUUID(),
+  withFileLock,
 };
 
 const actionSchema = z.enum(["approve", "reject", "choose", "input", "skip", "abort"]);
@@ -232,8 +234,17 @@ export async function writeChatAnswer(
   answer: ChatAnswer,
   secret: ChatAskSecret,
 ): Promise<void> {
-  const record = { ...answer, schemaVersion: 1 };
-  await atomicWrite(recordPath(dir, key, "answer"), { ...record, mac: signChatRecord(secret, record) });
+  // Parent and child share this lock: settlement cannot publish between this
+  // authenticated check and the atomic answer rename, even across processes.
+  await _chatAskFileDeps.withFileLock(
+    `${recordPath(dir, key, "settled")}.lock`,
+    async () => {
+      if (await readChatSettled(dir, key, secret)) return;
+      const record = { ...answer, schemaVersion: 1 };
+      await atomicWrite(recordPath(dir, key, "answer"), { ...record, mac: signChatRecord(secret, record) });
+    },
+    { lockName: "chat-ask", errorPrefix: "[chat-asks]" },
+  );
 }
 
 export async function readChatAnswer(
@@ -259,8 +270,14 @@ export async function writeChatSettled(
   settled: ChatSettled,
   secret: ChatAskSecret,
 ): Promise<void> {
-  const record = { ...settled, schemaVersion: 1 };
-  await atomicWrite(recordPath(dir, key, "settled"), { ...record, mac: signChatRecord(secret, record) });
+  await _chatAskFileDeps.withFileLock(
+    `${recordPath(dir, key, "settled")}.lock`,
+    async () => {
+      const record = { ...settled, schemaVersion: 1 };
+      await atomicWrite(recordPath(dir, key, "settled"), { ...record, mac: signChatRecord(secret, record) });
+    },
+    { lockName: "chat-ask", errorPrefix: "[chat-asks]" },
+  );
 }
 
 export async function readChatSettled(

@@ -231,6 +231,53 @@ describe("createRunAsks", () => {
     expect(schedule.mock.calls.at(-1)?.[1]).toBe(RUN_ASK_POLL_MS);
     expect(schedule.mock.calls.length).toBeGreaterThan(1);
   });
+  test("F1 settlement between registry check and protocol write prevents answer publication", async () => {
+    const delivered = Promise.withResolvers<void>();
+    _runAsksDeps.writeChatAnswer = async (answerDir, key, answer, answerSecret) => {
+      try {
+        await writeChatSettled(
+          answerDir,
+          key,
+          {
+            requestId: request.id,
+            by: "telegram",
+            action: "reject",
+            settledAt: new Date(clock.now()).toISOString(),
+          },
+          answerSecret,
+        );
+        await original.writeChatAnswer(answerDir, key, answer, answerSecret);
+      } finally {
+        delivered.resolve();
+      }
+    };
+    choice.mockResolvedValue("approve");
+    const key = await publish();
+    await tick();
+    await delivered.promise;
+    expect(await readChatAnswer(dir, key, secret)).toBeUndefined();
+  });
+  test.each(["confirm", "input"] as const)("F2 retries a rejected %s card on the next tick", async (type) => {
+    const finished = Promise.withResolvers<void>();
+    let changes = 0;
+    registry.onChange(() => {
+      if (++changes === 2) finished.resolve();
+    });
+    choice.mockRejectedValueOnce(new Error("transient host failure"));
+    question.mockRejectedValueOnce(new Error("transient host failure"));
+    choice.mockResolvedValue("approve");
+    question.mockResolvedValue("main");
+    const key = await publish({ ...request, type });
+    await tick();
+    await finished.promise;
+    await tick();
+    expect(type === "input" ? question.mock.calls.length : choice.mock.calls.length).toBe(2);
+    await waitForCondition(() => Bun.file(`${dir}/${key}.answer.json`).size > 0);
+    expect(await readChatAnswer(dir, key, secret)).toMatchObject({
+      action: type === "input" ? "input" : "approve",
+      respondedBy: "chat-user",
+    });
+  });
   test("later-story placeholders", async () => {
     expect(registry.takeNotice()).toBeUndefined();
     expect(registry.takeNotes()).toEqual([]);

@@ -58,6 +58,33 @@ describe("chat ask file protocol", () => {
     const batches = await Promise.all([files.takeChatNotices(dir, secret), files.takeChatNotices(dir, secret)]);
     expect(batches.flat()).toHaveLength(1);
   });
+  test("F1 answer waits for an in-flight settlement and is not published after it", async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const write = files._chatAskFileDeps.write;
+    files._chatAskFileDeps.write = Object.assign(async (...args: Parameters<typeof write>) => {
+      if (String(args[0]).includes(".settled.json.")) {
+        entered.resolve();
+        await release.promise;
+      }
+      return write(...args);
+    }, write);
+    let settlement: Promise<void> | undefined;
+    let delivery: Promise<void> | undefined;
+    try {
+      settlement = files.writeChatSettled(dir, key(), settled, secret);
+      await entered.promise;
+      delivery = files.writeChatAnswer(dir, key(), answer, secret);
+      release.resolve();
+      await Promise.all([settlement, delivery]);
+      expect(await files.readChatSettled(dir, key(), secret)).toEqual(settled);
+      expect(await files.readChatAnswer(dir, key(), secret)).toBeUndefined();
+    } finally {
+      release.resolve();
+      await Promise.allSettled([settlement, delivery]);
+      files._chatAskFileDeps.write = write;
+    }
+  });
   test("failed replacement preserves the old answer", async () => {
     await files.writeChatAnswer(dir, key(), answer, secret);
     files._chatAskFileDeps.rename = () => {
