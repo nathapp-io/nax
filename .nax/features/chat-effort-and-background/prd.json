@@ -3,7 +3,7 @@
   "feature": "chat-effort-and-background",
   "branchName": "feat/chat-effort-and-background",
   "createdAt": "2026-10-29T00:00:00.000Z",
-  "updatedAt": "2026-10-29T04:40:27.275Z",
+  "updatedAt": "2026-10-29T04:48:02.018Z",
   "userStories": [
     {
       "id": "US-001",
@@ -292,14 +292,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Racing foreground completion, process-group cancellation and sandboxed output handoff is security-sensitive lifecycle work."
+        "reasoning": "Racing foreground completion, process-group cancellation and sandboxed output handoff is security-sensitive lifecycle work.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/tools/bash.ts",
@@ -316,7 +319,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "039bd89729c7eea2388fda8aef49b6164face2e5"
     },
     {
       "id": "US-006",
