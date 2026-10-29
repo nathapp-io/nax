@@ -29,6 +29,7 @@ export {
   buildSubagentInstructions,
   MAX_AGENTS_INDEX_ENTRIES,
 } from "./builders/agents-builder";
+export { buildBackgroundTaskNotice, buildBackgroundTasksInstructions } from "./builders/background-builder";
 export { type CheckoutStateInput, PINNED_BASE_NOTE, renderCheckoutState } from "./builders/bot-checkout-state-builder";
 export { type BotChecksExtractPromptInput, buildBotChecksExtractPrompt } from "./builders/bot-checks-extract-builder";
 export { type BotPrFixPromptInput, buildBotPrFixPrompt } from "./builders/bot-pr-fix-builder";

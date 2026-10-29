@@ -10,6 +10,7 @@ import type {
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { Logger } from "@/logger";
+import { buildBackgroundTaskNotice } from "@/prompts";
 import { type BackgroundTask, type BackgroundTaskState, type ChatBackgroundTasks, TASK_ID_PATTERN } from "./task-types";
 
 export const TASK_LOG_MAX_BYTES = 50 * 1024 * 1024;
@@ -106,8 +107,7 @@ class BackgroundTasks implements ChatBackgroundTasks {
     if (!this.notice && this.unnoticed.size > 0) {
       this.notice = {
         ids: [...this.unnoticed.keys()],
-        // Completion data only; canonical delivery instructions belong to the prompt builder.
-        text: [...this.unnoticed.values()].map((task) => `${task.id}: ${task.state}`).join("\n"),
+        text: buildBackgroundTaskNotice([...this.unnoticed.values()]),
       };
     }
     return this.notice?.text;
