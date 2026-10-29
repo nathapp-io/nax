@@ -107,7 +107,7 @@ describe("ChatAskPlugin", () => {
     await waitForCondition(() => clock.pending() > 0);
     await answer("allow");
     await clock.advance(CHAT_ASK_POLL_MS);
-    expect((await pending).action).toBe("allow");
+    expect(await pending).toMatchObject({ action: "allow" });
   });
   test.each(["cancel", "destroy"] as const)("%s releases pending receivers and timers", async (method) => {
     await plugin.send(request);

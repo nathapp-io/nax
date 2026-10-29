@@ -120,7 +120,7 @@ export class ChatAskPlugin implements InteractionPlugin {
   }
 
   private settle(requestId: string, ask: PendingAsk, response: InteractionResponse): Promise<void> {
-    if (ask.settling) return ask.settling;
+    if (ask.settling !== undefined) return ask.settling;
     ask.active = false;
     this.clearTimers(ask);
     ask.settling = this.writeSettlement(ask, response).then(
