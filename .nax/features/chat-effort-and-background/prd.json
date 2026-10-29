@@ -3,7 +3,7 @@
   "feature": "chat-effort-and-background",
   "branchName": "feat/chat-effort-and-background",
   "createdAt": "2026-10-29T00:00:00.000Z",
-  "updatedAt": "2026-10-29T04:26:32.581Z",
+  "updatedAt": "2026-10-29T04:35:21.256Z",
   "userStories": [
     {
       "id": "US-001",
@@ -171,14 +171,17 @@
         "background"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Two optional executor hooks extend the existing timer and drain implementation and are forwarded through two launcher paths; the scope is bounded, but sandbox/process-cancellation safety requires strict TDD."
+        "reasoning": "Two optional executor hooks extend the existing timer and drain implementation and are forwarded through two launcher paths; the scope is bounded, but sandbox/process-cancellation safety requires strict TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/internal/argv-exec.ts",
@@ -194,7 +197,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "013c0d131c70677bc1e8f391f2cb7a44aa271e80"
     },
     {
       "id": "US-004",
