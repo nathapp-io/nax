@@ -1,7 +1,12 @@
 // Host-owned command records and bounded, machine-local logs; no session dependency.
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { BackgroundCommandEnd, BackgroundCommandHandle, BackgroundCommandSink } from "@nathapp/nax-agent";
+import type {
+  BackgroundCommandEnd,
+  BackgroundCommandHandle,
+  BackgroundCommandSink,
+  ForegroundCommand,
+} from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { Logger } from "@/logger";
@@ -52,7 +57,85 @@ function terminalState(end: BackgroundCommandEnd): BackgroundTaskState {
 
 class BackgroundTasks implements ChatBackgroundTasks {
   private readonly entries = new Map<string, TaskEntry>();
+  private readonly listeners = new Set<() => void>();
+  private readonly foregroundCalls = new Map<symbol, ForegroundCommand>();
+  private readonly completions = new Set<Promise<void>>();
+  private readonly unnoticed = new Map<string, BackgroundTask>();
+  private notice?: { ids: readonly string[]; text: string };
+  private shuttingDown = false;
   constructor(private readonly options: BackgroundTaskOptions) {}
+
+  private emit(): void {
+    for (const listener of [...this.listeners]) {
+      try {
+        listener();
+      } catch (cause) {
+        this.options.logger.warn("chat", "Background task lifecycle callback failed", { error: errorMessage(cause) });
+      }
+    }
+  }
+
+  onChange(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  foreground(call: ForegroundCommand): () => void {
+    const key = Symbol();
+    this.foregroundCalls.set(key, call);
+    this.emit();
+    return () => {
+      if (this.foregroundCalls.delete(key)) this.emit();
+    };
+  }
+
+  hasForeground(): boolean {
+    return this.foregroundCalls.size > 0;
+  }
+
+  moveForeground(): boolean {
+    const call = [...this.foregroundCalls.values()].at(-1);
+    if (!call) return false;
+    call.moveToBackground();
+    return true;
+  }
+
+  peekNotice(): string | undefined {
+    if (!this.notice && this.unnoticed.size > 0) {
+      this.notice = {
+        ids: [...this.unnoticed.keys()],
+        // Completion data only; canonical delivery instructions belong to the prompt builder.
+        text: [...this.unnoticed.values()].map((task) => `${task.id}: ${task.state}`).join("\n"),
+      };
+    }
+    return this.notice?.text;
+  }
+
+  takeNotice(): string | undefined {
+    const text = this.peekNotice();
+    for (const id of this.notice?.ids ?? []) this.unnoticed.delete(id);
+    this.notice = undefined;
+    return text;
+  }
+
+  stop(id: string): BackgroundTask {
+    const entry = this.entries.get(id);
+    if (entry?.record.state !== "running") {
+      throw new NaxError(`[chat] task ${id} is not running`, "CHAT_TASK_NOT_RUNNING", { stage: "chat", id });
+    }
+    entry.record = { ...entry.record, state: "stopped" };
+    entry.handle.stop();
+    return { ...entry.record };
+  }
+
+  async stopAll(): Promise<void> {
+    this.shuttingDown = true;
+    for (const task of this.running()) this.stop(task.id);
+    // Recheck after each batch: handles adopted during shutdown join the drain.
+    while (this.completions.size > 0) await Promise.all([...this.completions]);
+  }
 
   private newId(): string {
     for (let attempt = 0; attempt < ID_ATTEMPTS; attempt++) {
@@ -83,7 +166,13 @@ class BackgroundTasks implements ChatBackgroundTasks {
     };
     this.entries.set(id, entry);
     this.enqueue(entry, () => _backgroundTaskDeps.mkdir(join(this.options.outputDir, "chat-tasks")));
-    void handle.ended.then((end) => this.finalize(entry, end));
+    const completion = handle.ended.then((end) => {
+      this.finalize(entry, end);
+      this.completions.delete(completion);
+    });
+    this.completions.add(completion);
+    if (this.shuttingDown) this.stop(id);
+    this.emit();
     return {
       id,
       append: (_stream, chunk) => {
@@ -126,7 +215,7 @@ class BackgroundTasks implements ChatBackgroundTasks {
   private finalize(entry: TaskEntry, end: BackgroundCommandEnd): void {
     entry.record = {
       ...entry.record,
-      state: terminalState(end),
+      state: entry.record.state === "stopped" ? "stopped" : terminalState(end),
       endedAt: this.options.now().toISOString(),
       exitCode: end.exitCode,
       ...(end.launchError !== undefined ? { note: end.launchError } : {}),
@@ -134,6 +223,10 @@ class BackgroundTasks implements ChatBackgroundTasks {
     const line =
       end.launchError !== undefined ? `[nax] launch failed: ${end.launchError}` : `[nax] exit code ${end.exitCode}`;
     this.append(entry, encoder.encode(`${entry.endsWithNewline ? "" : "\n"}${line}\n`));
+    if (entry.record.state === "succeeded" || entry.record.state === "failed") {
+      this.unnoticed.set(entry.record.id, entry.record);
+    }
+    this.emit();
   }
 
   list(): readonly BackgroundTask[] {

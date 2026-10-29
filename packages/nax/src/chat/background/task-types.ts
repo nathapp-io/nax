@@ -18,8 +18,16 @@ export interface BackgroundTask {
 
 export const TASK_ID_PATTERN = /^bash-[0-9a-f]{8}$/;
 
-/** Adoption and queries; US-008 extends this with the remaining host lifecycle port. */
-export interface ChatBackgroundTasks extends Pick<BackgroundCommandPort, "adopt"> {
+/** Host-owned command lifecycle, independent of the current session. */
+export interface ChatBackgroundTasks extends BackgroundCommandPort {
+  stop(id: string): BackgroundTask;
+  stopAll(): Promise<void>;
+  moveForeground(): boolean;
+  hasForeground(): boolean;
+  /** Stable completion snapshot until takeNotice consumes exactly those tasks. */
+  peekNotice(): string | undefined;
+  takeNotice(): string | undefined;
+  onChange(listener: () => void): () => void;
   list(): readonly BackgroundTask[];
   get(id: string): BackgroundTask | undefined;
   running(): readonly BackgroundTask[];
