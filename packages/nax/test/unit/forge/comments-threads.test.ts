@@ -115,6 +115,48 @@ describe("resolveThread", () => {
   });
 });
 
+describe("unresolveThread", () => {
+  test("US-002 AC-1: GitHub uses a raw GraphQL id variable", async () => {
+    const { run, deps } = harness();
+    await forge.unresolveThread(github, { id: "T1" }, deps, cwd);
+    expect(run).toHaveBeenCalledTimes(1);
+    const argv = run.mock.calls[0]?.[0] ?? [];
+    expect(argv).toContain("graphql");
+    expect(argv.find((arg) => arg.startsWith("query="))).toContain("unresolveReviewThread");
+    expect(argv.slice(-2)).toEqual(["-f", "id=T1"]);
+  });
+  test("US-002 AC-2: GitLab unresolves the encoded discussion endpoint", async () => {
+    const { run, deps } = harness();
+    await forge.unresolveThread(gitlab, { id: "D1" }, deps, cwd);
+    expect(run.mock.calls).toEqual([
+      [
+        [
+          "glab",
+          "api",
+          "--hostname",
+          gitlab.host,
+          "-X",
+          "PUT",
+          "projects/group%2Fsub%2Fproj/merge_requests/8/discussions/D1",
+          "-f",
+          "resolved=false",
+        ],
+        { cwd },
+      ],
+    ]);
+  });
+  test("US-002 AC-3/4: invalid GitLab id rejects before I/O", async () => {
+    const { run, deps } = harness();
+    await expect(forge.unresolveThread(gitlab, { id: "bad/id" }, deps, cwd)).rejects.toMatchObject(invalidId);
+    expect(run).not.toHaveBeenCalled();
+  });
+  test.each([github, gitlab])("US-002 AC-5: failed unresolve rejects without retry on %s", async (ref) => {
+    const { run, deps } = harness({ exitCode: 1, stderr: " HTTP 403\n" });
+    await expect(forge.unresolveThread(ref, { id: "T1" }, deps, cwd)).rejects.toMatchObject(writeFailure);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("editComment", () => {
   test.each([
     ["AC-11", github, "comment", "repos/acme/widgets/issues/comments/42", "gh", "PATCH"],

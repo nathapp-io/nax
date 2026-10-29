@@ -133,7 +133,7 @@ function beforeReady(input: WorkflowPrBodyInput, chars = FULL_TEXT): string | nu
     ...shown,
     ...(hidden > 0 ? [`- …and ${hidden} more, see result.json verdict.openItems`] : []),
     "",
-    "Then: rerun the repo gates, push, and run `gh pr ready`.",
+    `Then: rule on each item by replying on its thread, and run \`nax workflow promote -f ${safeCode(input.feature)} --yes\` to mark the PR ready once every item is settled and CI is green.`,
   ].join("\n");
 }
 

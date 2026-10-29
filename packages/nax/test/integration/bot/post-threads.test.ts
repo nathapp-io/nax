@@ -292,6 +292,69 @@ describe("postPrReview thread publication", () => {
   });
 });
 
+describe("postPrReview re-raised resolved findings", () => {
+  const finding = { kind: "quality", severity: "important", issue: "Leak", file: "a.ts", line: 3 } as const;
+  const key = bot.findingKey(finding);
+  beforeEach(() => {
+    input = {
+      ...input,
+      verdict: { ...input.verdict, threads: [], findings: [finding] },
+      own: [{ key, threadId: "T1", comment }],
+      resolvedThreadIds: new Set(["T1"]),
+    };
+  });
+  test("US-002 AC-6/7: edits before reopening and counts inline", async () => {
+    const result = await bot.postPrReview(input);
+    expect(run.mock.calls).toHaveLength(3);
+    expect(run.mock.calls[0]?.[0]).toContain("repos/o/r/pulls/comments/12");
+    expect(run.mock.calls[0]?.[0]).toContain("PATCH");
+    expect(run.mock.calls[1]?.[0]).toContain("id=T1");
+    expect(run.mock.calls[1]?.[0].join(" ")).toContain("unresolveReviewThread");
+    expect(result).toMatchObject({ inlineFindings: 1, offLine: 0 });
+  });
+  test.each([new Set(["other"]), undefined])(
+    "US-002 AC-8/9: does not reopen without resolved metadata %j",
+    async (resolvedThreadIds) => {
+      const result = await bot.postPrReview({ ...input, resolvedThreadIds });
+      expect(run.mock.calls).toHaveLength(2);
+      expect(run.mock.calls[0]?.[0]).toContain("PATCH");
+      expect(run.mock.calls.flatMap(([argv]) => argv)).not.toContain("graphql");
+      expect(result.inlineFindings).toBe(1);
+    },
+  );
+  test("US-002 AC-10/11: settled finding skips edit and reopen", async () => {
+    const result = await bot.postPrReview({ ...input, settledKeys: new Set([key]) });
+    expect(run.mock.calls).toHaveLength(1);
+    expect(run.mock.calls[0]?.[0]).toContain(summaryEndpoint);
+    expect(result.inlineFindings).toBe(0);
+  });
+  test("US-002 AC-12/13/14: failed reopen warns and keeps finding visible off-line", async () => {
+    const warn = spyOn(initLogger({ level: "silent" }), "warn");
+    try {
+      failEndpoint = "id=T1";
+      const result = await bot.postPrReview(input);
+      expect(warn).toHaveBeenCalledWith(
+        "bot-post",
+        "Could not reopen a re-raised finding thread",
+        expect.objectContaining({ key, threadId: "T1", error: expect.stringContaining("write failed") }),
+      );
+      expect(result).toMatchObject({ inlineFindings: 0, offLine: 1 });
+      expect(summaryBody()).toContain("### Findings not on a changed line\n- **Important** `a.ts:3` Leak");
+      expect(run.mock.calls).toHaveLength(3);
+    } finally {
+      warn.mockRestore();
+      resetLogger();
+    }
+  });
+  test("US-002 AC-15/16: failed owned edit rejects before any reopen", async () => {
+    failEndpoint = "repos/o/r/pulls/comments/12";
+    await expect(bot.postPrReview(input)).rejects.toMatchObject({ code: "FORGE_COMMENT_WRITE_FAILED" });
+    expect(run.mock.calls).toHaveLength(1);
+    expect(run.mock.calls[0]?.[0]).toContain(failEndpoint);
+    expect(run.mock.calls[0]?.[0]).not.toContain("graphql");
+  });
+});
+
 describe("postPrReview earlier findings", () => {
   const key = "f-earlier";
   const earlier: PrThread = {

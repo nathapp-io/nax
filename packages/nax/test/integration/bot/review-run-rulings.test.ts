@@ -180,6 +180,7 @@ describe("runBotReview workflow rulings", () => {
     });
     const access = mock(async () => true);
     Object.assign(_rulingsDeps, {
+      editComment: async () => {},
       hasWriteAccess: access,
       readPrInfo: async () => info,
       replyToThread: async () => {},

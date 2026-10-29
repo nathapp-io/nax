@@ -1,0 +1,544 @@
+{
+  "project": "nax-monorepo",
+  "feature": "bot-rerun-state",
+  "branchName": "feat/bot-rerun-state",
+  "createdAt": "2026-10-28T00:00:00.000Z",
+  "updatedAt": "2026-10-28T17:29:40.656Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Keep replied GitLab nax notes top-level and fail closed on unknown PR lists",
+      "description": "**Goal** — Restore durable top-level nax notes after GitLab replies and prevent duplicate PR creation when the PR list is unreadable.\n\n**Motivation** — On GitLab a human's reply under nax's summary is also invisible to the review, because `triage` drops threads opened by nax.\n\n**Approach** — **C1: flatten replied nax top-level notes on GitLab.** GitHub has no replies to top-level comments: a response is a new top-level comment. GitLab's reply converts the note into a discussion. The GitLab readers restore GitHub's shape: a discussion with `individual_note === false` whose first non-system note has no `position` and carries a nax-bot marker whose key is one of `TOP_LEVEL_MARKER_KEYS` (`summary`, `w-index`, `w-evidence`, `fix-summary`) is returned by `listPrComments` as top-level comments (every non-system note, in order, `kind: \"comment\"`) and is left out of `listReviewThreads`. Every consumer then works unchanged: own-comment lookups find the note, and a human's reply reaches the review as a top-level comment behind the existing writer gate. The marker alone does not establish ownership: flattening changes only how a discussion is classified, and `ownComments` still requires the authenticated login. Item threads (`w-<id>.<hash>`) and finding threads (`f-…`) are never flattened.\n\n`src/forge/marker.ts` imports `listPrComments` from `src/forge/threads.ts`, so `threads.ts` cannot import the marker parser from `marker.ts` without a runtime cycle (`check:import-cycles`). The marker grammar moves to a new leaf, `src/forge/marker-grammar.ts`; `marker.ts` imports from it and re-exports `isNaxBotMarkerKey` and `parseNaxBotMarker`, so `@/forge` exports are unchanged.\n\n`hasOpenPr` throws on unparseable or non-array output; its three callers (`auto-pr` `shouldRun` and `execute`, `openDraftFinishPr`) already treat a throw as \"unknown, do not open\".\n\n**Scope** — In: marker grammar extraction, public forge exports, GitLab reader classification, PR-list parse errors, and GitLab publish-index reuse. Out: finding unresolve writes (US-002), item reopening (US-003–US-005), settlement display (US-006–US-007), and ready/push changes (US-008). A GitLab discussion opened by someone else with a forged top-level marker is flattened into top-level comments; it gains no ownership and stays behind the writer gate.\n\n**Interface** — Marker grammar. Baseline: `MARKER_KEY_PATTERN`, `markerPattern`, `isNaxBotMarkerKey`, `parseNaxBotMarker` in `src/forge/marker.ts`. Target: in new `src/forge/marker-grammar.ts`, plus `export const TOP_LEVEL_MARKER_KEYS = [\"summary\", \"w-index\", \"w-evidence\", \"fix-summary\"] as const`; `marker.ts` imports and re-exports `isNaxBotMarkerKey` and `parseNaxBotMarker`; `src/forge/index.ts` also exports `TOP_LEVEL_MARKER_KEYS`.\n\n`listPrComments(ref, deps, cwd)`. Baseline: GitLab keeps `individual_note === true` discussions only. Target: also returns every non-system note of a flattened discussion (Approach, C1), as `kind: \"comment\"`, in discussion order.\n\n`listReviewThreads(ref, deps, cwd)`. Baseline: GitLab keeps every `individual_note === false` discussion. Target: leaves flattened discussions out.\n\n`hasOpenPr(forge, branch, deps, cwd)`. Baseline: unparseable or non-array JSON returns `false`. Target: throws `NaxError` `FORGE_PR_LIST_UNPARSEABLE` (stage `forge`, context `{ forge, branch }`).\n\nTesting integration: extend the GitLab discussion fixtures in test/unit/forge/threads-comments.test.ts. Add a GitLab variant of the publish harness in test/unit/workflow/item-threads-index.test.ts using discussions and PUT notes/<id>; enter through postItemThreads, not only a reader helper. Change test/unit/forge/pr.test.ts's malformed-output test from false to rejection, preserving [] as false.",
+      "acceptanceCriteria": [
+        "[unit] TOP_LEVEL_MARKER_KEYS imported from @/forge equals [\"summary\", \"w-index\", \"w-evidence\", \"fix-summary\"].",
+        "[unit] parseNaxBotMarker imported from @/forge returns { key: \"summary\" } for withNaxBotMarker(\"body\", \"summary\").",
+        "[unit] On GitLab, when a discussion has individual_note: false, its first note by bot has no position and body withNaxBotMarker(\"s\", \"summary\"), and its second note is a reply by carol, listPrComments returns the two notes in that order as kind: \"comment\".",
+        "[unit] On GitLab, listPrComments also flattens that discussion when the first-note marker key is w-index, w-evidence or fix-summary.",
+        "[unit] On GitLab, listPrComments drops a system note inside a flattened discussion.",
+        "[unit] On GitLab, listPrComments returns no comment for a replied discussion whose marked first note has a position.",
+        "[unit] On GitLab, listPrComments returns no comment for a replied discussion whose first note carries the marker key f-abc123.",
+        "[unit] On GitLab, listPrComments returns no comment for a replied discussion whose marker appears only on its second note.",
+        "[unit] On GitLab, listReviewThreads leaves out the flattened summary discussion.",
+        "[unit] On GitLab, listReviewThreads still returns a position-less discussion whose first note carries the item key w-B1.12345678.",
+        "[integration] On GitLab, when postItemThreads reads a bot-owned w-index note with a reply from carol, it edits that note with a PUT to notes/<its id>.",
+        "[integration] On GitLab, when postItemThreads reads a bot-owned w-index note with a reply from carol, it posts no new top-level note.",
+        "[unit] hasOpenPr rejects with NaxError code FORGE_PR_LIST_UNPARSEABLE when the forge prints not json.",
+        "[unit] hasOpenPr rejects with code FORGE_PR_LIST_UNPARSEABLE when the forge prints the JSON object {\"message\":\"x\"}.",
+        "[unit] hasOpenPr resolves false when the forge prints [].",
+        "[unit] openDraftFinishPr returns null when the open-PR list prints not json.",
+        "[unit] openDraftFinishPr never runs the forge's create command when the open-PR list prints not json."
+      ],
+      "tags": [
+        "bot-rerun-state",
+        "forge",
+        "gitlab",
+        "security"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Five forge source files use existing reader and error patterns; medium complexity suffices, while extraction of the marker grammar used for authenticated ownership warrants strict security-boundary regression isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/forge/threads.ts",
+        "packages/nax/src/forge/marker.ts",
+        "packages/nax/src/forge/pr.ts",
+        "packages/nax/test/unit/forge/threads-comments.test.ts",
+        "packages/nax/test/unit/workflow/item-threads-index.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/forge/marker-grammar.ts"
+      ],
+      "suggestedCriteria": [
+        "When a GitLab discussion begins with a system note followed by an unpositioned summary-marked bot note and a human reply, listPrComments returns only the two non-system notes as comments in order.",
+        "When another author opens a GitLab discussion with a forged summary marker, ownComments on the flattened comments for the authenticated bot login returns no owned summary.",
+        "When hasOpenPr rejects malformed or non-array output, its error context contains stage: forge and the requested forge and branch."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/forge/pr.test.ts",
+          "reason": "the test \"false when the forge returns unparseable output\" (about line 78) expects `hasOpenPr` to resolve `false` for stdout `not json`. It becomes a rejection with code `FORGE_PR_LIST_UNPARSEABLE`. A parseable empty list still resolves `false`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3eef05752b5836eb7cb2cfa2fc896a036bb92f90"
+    },
+    {
+      "id": "US-002",
+      "title": "Unresolve re-raised finding threads and preserve visibility on write failure",
+      "description": "**Goal** — Add forge unresolve support and reopen resolved own finding threads when the review raises an unsettled finding again.\n\n**Motivation** — When a finding thread was resolved without a settling ruling (the bot judged the earlier finding fixed, or a confirmed finding's fix closed it) and the review raises it again, the edit lands inside the hidden thread.\n\n**Approach** — **C4: unresolve a resolved finding thread when the finding is raised again.** `postPrReview` gains `resolvedThreadIds`, the ids of the bot's own finding threads that are resolved. `writeFinding` edits the own comment as today and then, when its thread is in `resolvedThreadIds`, unresolves the thread. `writeFinding` catches an unresolve failure itself, logs it and returns a flag; `postFindings` then lists the finding off-line in the summary instead of counting it inline, so it stays visible. The existing rethrow of a failed edit of an owned comment is unchanged.\n\n**Scope** — In: unresolveThread and public export, resolved-thread metadata from reviewEnvironment, edit-then-unresolve finding writes, and off-line fallback on failed unresolve. Out: workflow-item reopen notices and publish logic (US-003–US-005), index/summary settlement reporting (US-006–US-007), and ready/push safety (US-008). A bot finding (`f-` key) settled by a writer ruling and raised again by a later review stays settled and skipped; only workflow items are reopened on a re-raise.\n\n**Interface** — New `unresolveThread(ref, thread: Pick<PrThread, \"id\">, deps, cwd): Promise<void>` in `src/forge/comments.ts`, exported from `@/forge`. GitHub: GraphQL `mutation($id: ID!) { unresolveReviewThread(input: {threadId: $id}) { thread { id isResolved } } }` with the id as a raw `-f id=` variable, as `resolveThread` does. GitLab: `PUT` on the discussion endpoint with `resolved=false`; the discussion id is validated like `resolveThread`'s.\n\n`PostReviewInput` (`src/bot/post.ts`). Target: gains `readonly resolvedThreadIds?: ReadonlySet<string>`.\n\n`reviewEnvironment` (`src/bot/review-run.ts`). Target: sets `resolvedThreadIds` to the ids of `ownFindingThreads` whose `resolved` is `true`.\n\nFailure handling: `unresolveThread` forge write fails — rejects with the `runForgeWrite` error (`FORGE_COMMENT_WRITE_FAILED`). C4 unresolve fails — `warn(\"bot-post\", \"Could not reopen a re-raised finding thread\", { key, threadId, error })`; the finding goes to the off-line list, not counted inline. Preserve failure propagation for owned edits and skip both writes for settledKeys. Test through postPrReview and through runBotReview, using the existing captured-forge harnesses; keep artifact persistence before forge mutation.",
+      "acceptanceCriteria": [
+        "[unit] unresolveThread imported from @/forge on a GitHub ref with thread id T1 runs one forge API call whose argv contains graphql, a query= argument naming unresolveReviewThread, and id=T1 as a separate -f argument.",
+        "[unit] unresolveThread on a GitLab ref with thread id D1 runs a PUT to projects/<encoded repo>/merge_requests/<n>/discussions/D1 with the argument resolved=false.",
+        "[unit] unresolveThread on a GitLab ref with thread id bad/id rejects with code FORGE_ID_INVALID.",
+        "[unit] unresolveThread on a GitLab ref with thread id bad/id makes no forge call.",
+        "[unit] unresolveThread rejects with code FORGE_COMMENT_WRITE_FAILED when the forge write exits non-zero.",
+        "[integration] When postPrReview receives a verdict finding matching an own comment in thread T1, resolvedThreadIds contains T1, and settledKeys does not contain the key, it edits that comment and then unresolves thread T1.",
+        "[integration] In that case postPrReview returns inlineFindings: 1.",
+        "[integration] When the own comment's thread is not in resolvedThreadIds, postPrReview edits the comment without making an unresolve call.",
+        "[integration] When resolvedThreadIds is not given, postPrReview edits the comment without making an unresolve call.",
+        "[integration] When the key is in settledKeys, postPrReview does not edit the comment.",
+        "[integration] When the key is in settledKeys, postPrReview does not unresolve the thread.",
+        "[integration] When the unresolve rejects, postPrReview logs warn(\"bot-post\", \"Could not reopen a re-raised finding thread\", …) with the key and thread id.",
+        "[integration] When the unresolve rejects, postPrReview returns inlineFindings: 0.",
+        "[integration] When the unresolve rejects, postPrReview returns offLine: 1.",
+        "[integration] When the edit of the owned comment rejects, postPrReview still rejects with that error.",
+        "[integration] When the edit of the owned comment rejects, postPrReview makes no unresolve call.",
+        "[integration] runBotReview on a PR with a resolved own finding thread that has no writer ruling, and whose finding the review raises again, unresolves that thread.",
+        "[integration] runBotReview makes no unresolve call when the own finding thread it raises again is unresolved."
+      ],
+      "tags": [
+        "bot-rerun-state",
+        "forge",
+        "review",
+        "security"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Four source files mirror resolveThread's existing validated write path, pass an optional resolved-id set and handle one local failure flag; authentication and settled-key authorization remain unchanged, so ordinary TDD is sufficient.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/forge/comments.ts",
+        "packages/nax/src/bot/post.ts",
+        "packages/nax/src/bot/review-run.ts",
+        "packages/nax/test/integration/bot/post-threads.test.ts",
+        "packages/nax/test/integration/bot/review-run-finding-rulings.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "07c9d65789b018d7720bc6232eef6af8b1107659"
+    },
+    {
+      "id": "US-003",
+      "title": "Define reopen notices and invalidate prior item rulings after a notice",
+      "description": "**Goal** — Define the workflow-item reopen wire format and pin how a last-own reopen notice resets ruling state and the reply boundary.\n\n**Motivation** — `postItemThreads` (`src/workflow/item-threads-post.ts`) skips an already-owned item key, and `readThread` takes the last own `wr-` echo as the ruling, so `settleItemThreads` settles a re-raised item from the old ruling.\n\n**Approach** — `readThread` takes the last own comment as the ruling only when it is a `wr-` echo, so after the notice the item has no ruling and stays open until someone rules again.\n\n**Scope** — In: add reopenKey, renderItemReopened and REOPENED_BY_RERAISE to the pure wire-format leaf, and preserve/prove last-own-comment ruling and reply-boundary semantics through readItemThreads and settleItemThreads. Out: forge unresolve (US-002), publish-time selection and writer checks (US-004), closure/retry recovery (US-005), and settled-count/summary rendering (US-006–US-007). Workflow item rulings `waived`, `confirmed` and `overridden` carry over when the same item is raised again; only `fixed` and `verified` are cancelled. This story defines that set but does not implement publish-time selection.\n\n**Interface** — New in `src/workflow/item-threads.ts`: `reopenKey(key) => \"wo-\" + key`; `renderItemReopened(sha)` => `Raised again by the run at <first 7 of sha>. Reply on this thread to rule on it.`; `REOPENED_BY_RERAISE: ReadonlySet<Disposition>` = `fixed`, `verified`.\n\nUse the existing SHORT_SHA_CHARS convention and keep these helpers separate from I/O. The existing readThread algorithm already bases ruling parsing on the last own marked comment and filters replies after that boundary; do not replace it with a scan that recovers a superseded wr- echo. Tests belong with the existing wire-format and item-thread-state fixtures. Preserve the existing malformed-opener guard: a later reopen marker cannot manufacture a readable item when parseItemOpener rejects its opener.",
+      "acceptanceCriteria": [
+        "[unit] reopenKey(\"w-B1.12345678\") returns \"wo-w-B1.12345678\".",
+        "[unit] renderItemReopened(\"a\".repeat(40)) returns \"Raised again by the run at aaaaaaa. Reply on this thread to rule on it.\".",
+        "[unit] REOPENED_BY_RERAISE has exactly two members, fixed and verified.",
+        "[unit] When readItemThreads reads an item thread made of the opener, a wr-fixed-<key> echo, and then an own comment marked reopenKey(<key>), it returns that item with no ruling.",
+        "[unit] In that case the item's replies contain only the comments after the reopen notice.",
+        "[unit] settleItemThreads puts that item in open.",
+        "[unit] When a thread's opener cannot be parsed by parseItemOpener, readItemThreads returns no item for that thread, even if a later own comment carries reopenKey(<key>)."
+      ],
+      "tags": [
+        "bot-rerun-state",
+        "workflow",
+        "wire-format"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Only item-threads.ts needs additive production helpers; the existing last-own-comment reader already resets rulings after a notice, so focused wire/state TDD suffices without new I/O or permission decisions.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/item-threads.ts",
+        "packages/nax/src/workflow/item-thread-state.ts",
+        "packages/nax/test/unit/workflow/item-thread-state.test.ts",
+        "packages/nax/test/unit/workflow/item-threads.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ac480c23bc8e12873610f0ca21153e0ddd1d74f0"
+    },
+    {
+      "id": "US-004",
+      "title": "Reopen re-raised fixed and verified workflow items after a newly reviewed head",
+      "description": "**Goal** — Reopen still-raised fixed/verified workflow items when publish records a different fully reviewed head, without hiding a writer's pending reply.\n\n**Motivation** — `postItemThreads` (`src/workflow/item-threads-post.ts`) skips an already-owned item key, and `readThread` takes the last own `wr-` echo as the ruling, so `settleItemThreads` settles a re-raised item from the old ruling.\n\n**Approach** — **C2: a re-raise by a newly reviewed head reopens fixed/verified items.** At publish, `postItemThreads` already computes the index's reviewed head through `reviewedIndex(input, read.index)`. When that returns a `reviewedHead` that differs from the previous index's `reviewedHead`, the run reviewed new code; a previous index with no reviewed head (`Reviewed head: none`, written by an incomplete review) counts as different, so the first fully reviewed run after it can reopen. For each owned item thread whose key is among this publish's item keys, whose current ruling is `fixed` or `verified`, and which has no reply from a writer after that ruling (a writer's pending reply already keeps the item open and must not be hidden behind the notice; a reply from someone without write access is dropped by `settleItemThreads`, so it must not block the reopen), nax replies on the thread with a reopen notice (marker key `reopenKey(key)` = `wo-<key>`) and unresolves the thread. `readThread` takes the last own comment as the ruling only when it is a `wr-` echo, so after the notice the item has no ruling and stays open until someone rules again. A publish whose reviewed head did not change (a CI-repair republish, a resume, an incomplete review) never reopens a ruled item.\n\nThe writer check reuses `writerCheck` and `hasWriteAccess` from `@/forge`, with the same cache and fail-closed rule the recorder uses: a login whose check rejects counts as having no write access, so the reopen goes ahead.\n\n**Scope** — In: ruled-item selection, exported reviewedIndex, cached fail-closed writer checks, notice then unresolve, warning/failure aggregation, and publish seam integration. Out: closed-item selection, unresolve-only retry and keepReviewed recovery (US-005), settled-count presentation (US-006), finding reopening implementation (US-002), and summary changes (US-007). Workflow item rulings `waived`, `confirmed` and `overridden` carry over when the same item is raised again; only `fixed` and `verified` are cancelled. A publish whose reviewed head is unset or unchanged (CI-repair republish, resume, incomplete review) never reopens a ruled item, even when the ruling predates the run.\n\n**Interface** — `reviewedIndex(input, previous)` (`src/workflow/item-threads-index.ts`). Baseline: module-private. Target: exported, behaviour unchanged. Existing signature: `reviewedIndex(input: ItemThreadsInput, previous: ItemIndex | undefined): Omit<ItemIndex, \"keys\">`.\n\nNew `src/workflow/item-threads-reopen.ts`: `reopenReraisedItems(input: ItemThreadsInput, keys: readonly string[], context: ReopenContext): Promise<{ reopened: ReadonlySet<string>; failed: number }>`, with `ReopenContext = { ref, read, login, deps, cwd, info }` (the fields `maintainItemIndex`'s context already has). This story covers the ruled-item case only, including the writer-reply check. `reopened` holds every key a reopen was attempted for, whether or not the write succeeded; those keys never count as settled. The notice's sha is `input.head`, falling back to `info.headSha`.\n\n`postItemThreads`. Target: after posting new items, calls `reopenReraisedItems`, adds its `failed` to the outcome, then calls `maintainItemIndex`. `ItemThreadsOutcome` is unchanged. The keepReviewed and settled options are added by US-005 and US-006 respectively.\n\nFailure handling: C2 reopen reply fails — `warn(\"item-threads\", \"[item-threads] Reopen write failed\", { itemId, error })`; no unresolve; outcome `failed` + 1. C2 unresolve fails after the reply — same warning; outcome `failed` + 1. US-005 adds provenance retention and retry behavior for both failures. Writer check for a reply rejects — that reply's author counts as having no write access; the reopen goes ahead.\n\nUse US-002's unresolveThread and US-003's reopenKey, renderItemReopened and REOPENED_BY_RERAISE. Create test/unit/workflow/item-threads-reopen.test.ts with a captured-forge publish harness modeled on item-threads-index.test.ts; all seam assertions enter postItemThreads, including writer/nonwriter permissions, review provenance, ordering and failed writes.",
+      "acceptanceCriteria": [
+        "[integration] When postItemThreads publishes a record with reviewRan: true and head HEAD, a previous index with reviewed head OLD, and an owned still-raised item with a wr-fixed-<key> echo and no later reply, it replies on that thread with a body carrying marker key wo-<key>.",
+        "[integration] In that case the reply's text contains Raised again by the run at aaaaaaa.",
+        "[integration] In that case postItemThreads unresolves that item's thread after the reply.",
+        "[integration] postItemThreads reopens the same way when the echo is wr-verified-<key>.",
+        "[integration] postItemThreads makes no reopen reply when the echo is wr-waived-<key>, wr-confirmed-<key> or wr-overridden-<key>.",
+        "[integration] postItemThreads makes no reopen reply when the previous index's reviewed head equals the new reviewed head HEAD.",
+        "[integration] postItemThreads reopens a wr-fixed-<key> item when the previous index reads Reviewed head: none and the record has reviewRan: true.",
+        "[integration] postItemThreads makes no reopen reply when the record has reviewRan: false.",
+        "[integration] postItemThreads makes no reopen reply when the record has ciRepairRounds: 1, because the reviewed head is carried over.",
+        "[integration] postItemThreads makes no reopen reply for an owned item with a fixed echo whose key is not among this publish's items.",
+        "[integration] postItemThreads makes no reopen reply for an item whose last own comment is already a reopen notice on an unresolved thread, even when the reviewed head changed again.",
+        "[integration] postItemThreads makes no reopen reply for a wr-fixed-<key> item when carol, whom the forge reports as having write access, replied after the echo.",
+        "[integration] postItemThreads reopens a wr-fixed-<key> item when dave, whom the forge reports as having no write access, replied after the echo.",
+        "[integration] postItemThreads reopens a wr-fixed-<key> item when the write-access check for its only later reply rejects.",
+        "[integration] When the reopen reply rejects, postItemThreads logs warn(\"item-threads\", \"[item-threads] Reopen write failed\", …) with the item id.",
+        "[integration] When the reopen reply rejects, postItemThreads makes no unresolve call.",
+        "[integration] When the reopen reply rejects, postItemThreads returns failed one higher than without the reopen.",
+        "[integration] When the unresolve rejects after a successful reply, postItemThreads logs warn(\"item-threads\", \"[item-threads] Reopen write failed\", …) with the item id.",
+        "[integration] When the unresolve rejects after a successful reply, postItemThreads returns failed one higher."
+      ],
+      "tags": [
+        "bot-rerun-state",
+        "workflow",
+        "publish",
+        "security",
+        "access-control"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New publish orchestration combines durable ruling state, reviewed-head provenance and cached role checks; access-control decisions require strict three-session TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/item-threads-post.ts",
+        "packages/nax/src/workflow/item-threads-index.ts",
+        "packages/nax/src/workflow/item-thread-state.ts",
+        "packages/nax/src/forge/access.ts",
+        "packages/nax/test/unit/workflow/item-threads-index.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/item-threads-reopen.ts",
+        "packages/nax/test/unit/workflow/item-threads-reopen.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When several later replies have the same login, a single publish performs only one write-access lookup for that login.",
+        "When a writer and a nonwriter both replied after a fixed echo, postItemThreads posts no reopen notice for that item.",
+        "When reopenReraisedItems attempts a reopen whose reply rejects, its reopened set still contains that item's key."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7d5cf6070d99893a4df77370177a561b477848f0"
+    },
+    {
+      "id": "US-005",
+      "title": "Reopen re-raised closed items and retry incomplete reopen writes",
+      "description": "**Goal** — Reopen currently closed items on any publish and make partial reopen writes retryable without duplicating notices or advancing reviewed provenance.\n\n**Motivation** — `postItemThreads` (`src/workflow/item-threads-post.ts`) skips an already-owned item key, and `readThread` takes the last own `wr-` echo as the ruling, so `settleItemThreads` settles a re-raised item from the old ruling.\n\n**Approach** — A **closed item raised again** is reopened the same way, at any publish: an owned item thread whose last own comment is its closure notice (`closedKey(key)`, written when the item dropped out of a run) and whose key is among this publish's keys gets the reopen notice and is unresolved. Without this the item is open for readiness but its thread stays resolved and reads \"No longer open\".\n\nA reopen write that fails is retried at the next publish. When `reopenReraisedItems` reports `failed > 0`, the index keeps the previous index's reviewed head and base instead of the new ones, so the next fully reviewed publish still sees a changed head and retries a failed reply. A notice that was posted but whose unresolve failed leaves the thread with the notice as its last own comment and still resolved; at any publish where its key is among the keys, `reopenReraisedItems` unresolves such a thread again without posting a second notice. Readiness is unaffected; only the next review's incremental range starts earlier.\n\nThe writer check reuses `writerCheck` and `hasWriteAccess` from `@/forge`, with the same cache and fail-closed rule the recorder uses: a login whose check rejects counts as having no write access, so the reopen goes ahead.\n\n**Scope** — In: extend US-004's helper with closed-item and unresolve-only cases; preserve previous reviewed head/base after any failed reopen; keep failure aggregation and attempt sets. Out: new settled-count rendering and recorder refresh (US-006), summary/body changes (US-007), and finding mutation behavior (US-002). A reopened item that later drops out of a run again is not re-closed: `maintainItemIndex` skips any thread that already has an own closure notice, so the thread stays open with its reopen notice. Readiness is unaffected.\n\n**Interface** — `reopenReraisedItems(input: ItemThreadsInput, keys: readonly string[], context: ReopenContext): Promise<{ reopened: ReadonlySet<string>; failed: number }>`, with `ReopenContext = { ref, read, login, deps, cwd, info }`. It handles a closed item (last own comment `closedKey(key)`) at any publish, and an already-posted notice whose thread is still resolved, unresolved without a second notice. `reopened` holds every key a reopen was attempted for, whether or not the write succeeded; those keys never count as settled. The notice's sha is `input.head`, falling back to `info.headSha`.\n\n`maintainItemIndex(input, keys, context)`. Target after US-005: `maintainItemIndex(input, keys, context, options: { keepReviewed?: boolean } = {})`, where `reviewed` is the previous index's `reviewedHead`/`reviewedBase` when `keepReviewed` is true, else `reviewedIndex(input, read.index)`.\n\n`postItemThreads`. Target: after posting new items, calls `reopenReraisedItems`, adds its `failed` to the outcome, then calls `maintainItemIndex` with the previous index's reviewed head and base kept when that `failed` is above 0. `ItemThreadsOutcome` is unchanged.\n\nFailure handling: C2 reopen reply fails — `warn(\"item-threads\", \"[item-threads] Reopen write failed\", { itemId, error })`; no unresolve; outcome `failed` + 1; the index keeps the previous reviewed head, so the next fully reviewed publish retries. C2 unresolve fails after the reply — same warning; outcome `failed` + 1; the index keeps the previous reviewed head; the item is open (its last own comment is the notice), and a later publish unresolves the thread without a second notice. Extend the US-004 test harness and enter all integration seams through postItemThreads.",
+      "acceptanceCriteria": [
+        "[integration] When an owned thread's last own comment is its closedKey(<key>) notice and the key is among this publish's items, postItemThreads replies on it with a wo-<key> notice, even if the reviewed head is unchanged.",
+        "[integration] In that closed-item case postItemThreads unresolves the thread after the reply.",
+        "[integration] When the last own comment is a wo-<key> notice, the thread is resolved, and the key is among this publish's items, postItemThreads unresolves the thread.",
+        "[integration] When the last own comment is a wo-<key> notice, the thread is resolved, and the key is among this publish's items, postItemThreads posts no second notice.",
+        "[integration] When the reply in that closed-item case rejects, postItemThreads returns failed one higher.",
+        "[integration] When a reopen write fails, the index that postItemThreads writes keeps the previous index's reviewed head OLD instead of HEAD.",
+        "[integration] When every reopen write succeeds, the index that postItemThreads writes carries the new reviewed head HEAD.",
+        "[integration] Given a failed ruled-item reopen reply on one publish and the written index retaining OLD, when the next fully reviewed publish again raises that item at HEAD with the unchanged remote thread snapshot, postItemThreads attempts the reopen reply again."
+      ],
+      "tags": [
+        "bot-rerun-state",
+        "workflow",
+        "publish",
+        "retry",
+        "security"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Three existing source modules gain explicit closure/notice branches and a keepReviewed option without a new abstraction; strict isolation remains appropriate because these new branches select mutations within US-004's permission-aware reopening helper.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/item-threads-reopen.ts",
+        "packages/nax/src/workflow/item-threads-index.ts",
+        "packages/nax/src/workflow/item-threads-post.ts",
+        "packages/nax/test/unit/workflow/item-threads-reopen.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a reopen write fails and the previous reviewed base differs from the current record seed, the written index retains the previous reviewed base.",
+        "When an unresolve-only retry rejects, postItemThreads increases failed by one and preserves the previous reviewed head."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1f8c8dc68112630004d0ccd0beb97b4d029a8bdf"
+    },
+    {
+      "id": "US-006",
+      "title": "Show settled item counts in the durable index at publish and after rulings",
+      "description": "**Goal** — Display settled workflow-item counts in the index while keeping readiness state and index provenance unchanged.\n\n**Motivation** — `maintainItemIndex` is called only at publish; `renderReviewSummary` counts `threadsAnswered` only.\n\n**Approach** — **#2694: show settlement.** The index's first line becomes `nax workflow items: <N> (<S> settled)`. The listed keys, their count and the reviewed head/base lines are unchanged, so readiness is unchanged; `S` is presentation only and `parseItemIndex` does not return it. The parser still accepts the legacy `nax workflow open items: <N>` line. The publish writes `S` as the number of this publish's keys whose thread carries a ruling with no later reply and was not just reopened. `recordPrRulings` rewrites the index comment after settlement when its `S` changes.\n\n**Scope** — In: backward-compatible parser/new writer, publish settled-count computation excluding all reopen attempts, maintainItemIndex settled option, and best-effort recorder index refresh. Out: summary ItemStatus and draft instructions (US-007), reopen selection/recovery algorithms (US-004–US-005), and ready/push changes (US-008). The publish's settled count does not run the writer permission check; a thread with any reply after its ruling counts as not settled. The index rewrite in `recordPrRulings` edits from the comment snapshot it read; it does not re-read the index first, so a publish that rewrote the index in between can be overwritten until the next publish. An older nax install that reads the new index line treats the PR as having no item index and holds readiness until upgraded.\n\n**Interface** — `renderItemIndex(index)`. Target: `renderItemIndex(index: ItemIndex, settled = 0): string`, first line `nax workflow items: <keys.length> (<settled> settled)`.\n\n`parseItemIndex(body)`. Target: accepts either first line `nax workflow open items: <N>` or `nax workflow items: <N> (<S> settled)`; returns `null` when `S > N`; returns the same `ItemIndex` shape as today (no settled field).\n\n`maintainItemIndex(input, keys, context)`. Target after US-005: `maintainItemIndex(input, keys, context, options: { keepReviewed?: boolean } = {})`, where `reviewed` is the previous index's `reviewedHead`/`reviewedBase` when `keepReviewed` is true, else `reviewedIndex(input, read.index)`. Target after US-006: the options gain `settled?: number` (default 0) and the index body is `renderItemIndex({ keys, ...reviewed }, options.settled ?? 0)`.\n\n`postItemThreads`. Target: after posting new items, calls `reopenReraisedItems`, adds its `failed` to the outcome, then calls `maintainItemIndex` with the settled count and, when that `failed` is above 0, with the previous index's reviewed head and base kept. `ItemThreadsOutcome` is unchanged.\n\n`recordPrRulings` (`src/bot/rulings.ts`). Target: after settlement, when `read.indexComment` and `read.index` exist and the settled count (settled items whose key is in `read.index.keys`) gives a body different from the current one, edits the index comment through `_rulingsDeps.editComment` (new dep, default `editComment`) with `withNaxBotMarker(renderItemIndex(read.index, settled), \"w-index\")`.\n\nFailure handling: Index refresh edit in `recordPrRulings` fails — `warn(\"bot-rulings\", \"[bot-rulings] Could not refresh the item index\", { error })`; the outcome is returned unchanged.\n\nUpdate the first-line render expectations in test/unit/workflow/item-threads.test.ts while retaining its legacy parser fixtures. Add editComment mocks to _rulingsDeps assignments in test/unit/bot/rulings.test.ts, test/unit/bot/rulings-model.test.ts, test/integration/bot/review-run-rulings.test.ts, and the workflow-index case in test/integration/bot/review-run-finding-rulings.test.ts. Their existing run-call counts and other assertions stay unchanged; the index refresh must not escape to real gh api PATCH calls. Exercise publish count exclusion for both successful and failed reopen attempts via postItemThreads.",
+      "acceptanceCriteria": [
+        "[unit] renderItemIndex({ reviewedHead: H, reviewedBase: B, keys: [k1, k2] }) returns nax workflow items: 2 (0 settled) followed by the reviewed head, reviewed base and key lines.",
+        "[unit] renderItemIndex({ keys: [k1, k2] }, 1) returns a first line of nax workflow items: 2 (1 settled).",
+        "[unit] parseItemIndex of renderItemIndex({ reviewedHead: H, reviewedBase: B, keys: [k1] }, 1) returns { reviewedHead: H, reviewedBase: B, keys: [k1] }.",
+        "[unit] parseItemIndex(\"nax workflow open items: 1\\nReviewed head: none\\n- w-B3.12345678\") returns { keys: [\"w-B3.12345678\"] }.",
+        "[unit] parseItemIndex(\"nax workflow items: 1 (2 settled)\\nReviewed head: none\\n- w-B3.12345678\") returns null.",
+        "[unit] parseItemIndex(\"nax workflow items: 2 (0 settled)\\nReviewed head: none\\n- w-B3.12345678\") returns null.",
+        "[integration] When postItemThreads publishes two item keys and one has an owned thread with a wr-waived-<key> echo and no later reply, the written index has the first line nax workflow items: 2 (1 settled).",
+        "[integration] The settled count in the index written by postItemThreads excludes an item it reopened in the same publish.",
+        "[integration] The settled count in the index written by postItemThreads excludes an item when a reopen of it was attempted in the same publish and the reply rejected.",
+        "[integration] The settled count in the index written by postItemThreads excludes an item whose wr-waived-<key> echo has a later reply from carol.",
+        "[unit] When recordPrRulings records one ruling for a one-key index whose body reads (0 settled), it calls _rulingsDeps.editComment on the index comment with withNaxBotMarker(renderItemIndex(<that index>, 1), \"w-index\").",
+        "[unit] recordPrRulings makes no editComment call when the settled count matches the index body.",
+        "[unit] recordPrRulings makes no editComment call when there is no own w-index comment.",
+        "[unit] The index body written by recordPrRulings reports a settled count equal to the number of settled items whose key is listed in the index, excluding settled items outside that index.",
+        "[unit] When editComment rejects, recordPrRulings logs warn(\"bot-rulings\", \"[bot-rulings] Could not refresh the item index\", …).",
+        "[unit] When editComment rejects, recordPrRulings still returns its settled items.",
+        "[unit] When the index refresh editComment rejects, recordPrRulings returns the same RecordRulingsOutcome, including recorded, settled, open, asked and failed, that it would return if that refresh succeeded."
+      ],
+      "tags": [
+        "bot-rerun-state",
+        "workflow",
+        "settlement",
+        "compatibility"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Four existing source files add a dual-format parser, presentation-only counts and a best-effort index edit through established dependencies; ordinary TDD can cover compatibility and failure behavior without changing permission decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/item-threads.ts",
+        "packages/nax/src/workflow/item-threads-index.ts",
+        "packages/nax/src/workflow/item-threads-reopen.ts",
+        "packages/nax/src/bot/rulings.ts",
+        "packages/nax/test/unit/bot/rulings.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/item-threads.test.ts",
+          "reason": "\"AC-15 renders ordered index\" and \"retains unpostable keys and omits base without head\" (about lines 137 and 143) expect the first rendered line `nax workflow open items: <N>`. It becomes `nax workflow items: <N> (0 settled)`. The reviewed head and base lines and the key lines are unchanged. The parser cases that use the legacy line stay as they are."
+        },
+        {
+          "path": "packages/nax/test/unit/bot/rulings.test.ts",
+          "reason": "the `beforeEach` assigns mocks onto `_rulingsDeps`. It also assigns `editComment` to a mock, so the AC-10 and AC-12 cases that count `run` calls (about lines 194, 221 and 234) still count only the PR body edit. Their expected counts are unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/bot/rulings-model.test.ts",
+          "reason": "the `beforeEach` that assigns `_rulingsDeps` mocks also assigns `editComment` to a mock, so the new index refresh never reaches the shared forge `run` mock. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/review-run-rulings.test.ts",
+          "reason": "the tests that run the real `recordPrRulings` (about lines 157-195) assign `_rulingsDeps` mocks without `editComment`. With the index refresh they would spawn a real `gh api` PATCH through the default forge deps. The `Object.assign` onto `_rulingsDeps` also sets `editComment` to a mock. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/review-run-finding-rulings.test.ts",
+          "reason": "the test with a workflow index (about line 228) runs the real `recordPrRulings`. The `_rulingsDeps` assignment also sets `editComment` to a mock, so the refresh is hermetic. No assertion changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d4da22a2d46610fd0a5ddb2cfe6f184ff1c3629c"
+    },
+    {
+      "id": "US-007",
+      "title": "Name recorded item rulings in review summaries and give the correct draft next step",
+      "description": "**Goal** — Carry workflow item settlement status into review summaries and replace forge-specific draft advice with workflow promotion instructions.\n\n**Motivation** — `maintainItemIndex` is called only at publish; `renderReviewSummary` counts `threadsAnswered` only.\n\n**Approach** — The review summary gains two lines from a new `itemStatus` field, present only when the PR has a readable index: the item rulings this review recorded (at most 20 listed, then `and <n> more`; each id passed through `safeText`; `by` is a forge login emitted verbatim after `@`, or `nax bot` when it is `null`), and `Open items: <O> of <N>`.\n\n**C8.** The last line of \"Before marking ready\" becomes: `Then: rule on each item by replying on its thread, and run` `` `nax workflow promote -f <feature> --yes` `` `to mark the PR ready once every item is settled and CI is green.` (one line; `<feature>` is the PR's feature name).\n\n**Scope** — In: ItemStatus mapping and optional-field plumbing from readReviewRulings through reviewEnvironment/postSummary to renderReviewSummary; bounded recorded-ruling list, open count, and draft body next step. Out: index wire-format/count refresh (US-006), item reopening (US-003–US-005), and bot-fix readiness mutations (US-008). The review summary does not link each recorded item to its thread; it names id, disposition and who ruled. The `nax bot fix` \"Nothing to fix\" comment does not list recorded rulings. Finding rulings echoed by `recordFindingRulings` are not listed in the new item-rulings summary line; they stay in the existing counts.\n\n**Interface** — `ItemStatus` (new, exported from `src/bot/review-rulings.ts`): `{ readonly recorded: readonly { readonly id: string; readonly disposition: Disposition; readonly by: string | null }[]; readonly open: number; readonly total: number }`.\n\n`readReviewRulings(input, record)`. Target: on success, and only when `outcome.index` is present, also returns `itemStatus`: `recorded` from `outcome.recorded` (`itemId`, `disposition`, `by`), `total` = `outcome.index.keys.length`, `open` = `total` minus the settled items whose key is in the index. With no index it returns no `itemStatus`. Static mode and recorder failure still return `{}`.\n\n`PostReviewInput` (`src/bot/post.ts`). Target: gains `readonly itemStatus?: ItemStatus`.\n\n`ReviewSummaryInput` (`src/bot/render-comments.ts`). Target: gains `readonly itemStatus?: ItemStatus`; `postSummary` passes `input.itemStatus`.\n\n`beforeReady(input)` (`src/workflow/pr-body.ts`). Target: last line as in Approach (C8).\n\nUse the existing review-run spread of recorder fields but prove the whole seam through runBotReview with real postPrReview and captured forge output. Add focused readReviewRulings and renderReviewSummary unit cases for absence, empty recorded list, bot attribution and the 20-entry cap. Update test/unit/workflow/pr-body.test.ts's draft expected closing line using its fixture feature name. This story has no dependency on US-006: readable legacy indexes already provide the required ItemIndex shape.",
+      "acceptanceCriteria": [
+        "[unit] For an outcome with one recorded verified ruling on _run:cv1 by alice, one settled item and a one-key index, readReviewRulings returns itemStatus { recorded: [{ id: \"_run:cv1\", disposition: \"verified\", by: \"alice\" }], open: 0, total: 1 }.",
+        "[unit] readReviewRulings returns no itemStatus when the recorder outcome has no index.",
+        "[unit] renderReviewSummary with itemStatus.recorded of _run:cv1 verified by alice and _run:cv2 waived by bob contains the line Item rulings recorded: 2 (_run:cv1 verified by @alice, _run:cv2 waived by @bob).",
+        "[unit] renderReviewSummary renders a recorded ruling with by: null as <id> <disposition> by nax bot.",
+        "[unit] renderReviewSummary with 23 recorded rulings lists the first 20 and ends that line with and 3 more).",
+        "[unit] renderReviewSummary with itemStatus { recorded: [], open: 1, total: 2 } contains the line \"Open items: 1 of 2.\".",
+        "[unit] In that case renderReviewSummary has no line starting with Item rulings recorded.",
+        "[unit] renderReviewSummary without itemStatus contains neither the Item rulings recorded line nor the Open items line.",
+        "[integration] runBotReview on a workflow PR, where the recorder outcome has one recorded verified ruling by alice for a one-key index, posts a summary containing \"Item rulings recorded: 1 (\".",
+        "[integration] In that case the posted summary contains \"Open items: 0 of 1.\".",
+        "[unit] buildWorkflowPrBody for a draft with one open item and feature demo ends its Before marking ready section with the line Then: rule on each item by replying on its thread, and run `nax workflow promote -f demo --yes` to mark the PR ready once every item is settled and CI is green.",
+        "[unit] When the recorder rejects, readReviewRulings returns {} without inventing itemStatus counts."
+      ],
+      "tags": [
+        "bot-rerun-state",
+        "review",
+        "settlement",
+        "workflow"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Four source files map existing recorder data into an optional status field, render two bounded lines and replace one body instruction; reviewEnvironment already spreads recorder fields, so existing unit and review-run harnesses support ordinary TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/review-rulings.ts",
+        "packages/nax/src/bot/render-comments.ts",
+        "packages/nax/src/bot/post.ts",
+        "packages/nax/src/workflow/pr-body.ts",
+        "packages/nax/test/integration/bot/review-run-finding-rulings.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When readReviewRulings is called in static mode, it returns {} without invoking the recorder.",
+        "When a recorded item id contains forge marker syntax or an HTML tag, renderReviewSummary neutralizes it through safeText.",
+        "When the recorder reports a settled item outside the index, readReviewRulings does not subtract that item from the indexed open count."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/pr-body.test.ts",
+          "reason": "the draft \"Before marking ready\" test (about line 190) expects the line \"Then: rerun the repo gates, push, and run `gh pr ready`.\" It becomes the new closing line, which names `nax workflow promote -f <feature> --yes` with the fixture's feature name."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "bbf09279d7b14260327c956d708eda6c8b9ba853"
+    },
+    {
+      "id": "US-008",
+      "title": "Bind bot-fix ready and push writes to the intended PR and head",
+      "description": "**Goal** — Mark the intended PR ready only after validating its expected head, keep reporting after rejected ready writes, and protect pushes with an explicit lease.\n\n**Motivation** — On the non-workflow path `readyStep` marks ready right after `waitForCi`, with no head re-read.\n\n**Approach** — **C3/C5/C7: ready and push.** `readyStep` marks ready with `markReadyArgv(env.ref.forge, env.info.url)` on both paths. On the non-workflow path, after the green CI wait and after the existing `throwIfAborted()`, it re-reads the PR and holds when the head is not the expected sha, `state.pushedSha ?? env.info.headSha` (the value `waitForCi` already binds CI to). A non-zero ready exit becomes a hold (`readyHeld: \"could not mark ready: …\"`) so `reportStep` still runs. `pushStep` adds `--force-with-lease=refs/heads/<headRef>:<info.headSha>`.\n\n**Scope** — In: bot-fix ready URL targeting on both paths, non-workflow post-green head reread, report-bound ready-write holds, and real push lease for temporary/in-place checkouts. Out: malformed hasOpenPr output (US-001), forge unresolve writes (US-002), workflow reraising/index/summary changes (US-003–US-007), and existing C6 gates/conflict control flow. US-008 only: a ready write rejected for reasons other than a non-zero exit (spawn failure, abort) still rejects as today. The `--dry-run` push access probe keeps its argv; only the real push gains the lease. `bindToHead` keeps letting a green poll with no sha through; the non-workflow ready path closes the gap with its own head re-read instead.\n\n**Interface** — `readyStep(env, state)`. Existing signature: `readyStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>>`. Keep `waitForPrHead`, `waitForCi`, `workflowReadyHold` and `_fixReportDeps.readPrInfo` as the existing seams. Both paths use `markReadyArgv(env.ref.forge, env.info.url)`.\n\n`pushStep(env, state)`. Baseline argv `[\"push\", \"--no-verify\", \"origin\", \"HEAD:refs/heads/<headRef>\"]`. Target: `[\"push\", \"--no-verify\", \"--force-with-lease=refs/heads/<headRef>:<env.info.headSha>\", \"origin\", \"HEAD:refs/heads/<headRef>\"]`.\n\nFailure handling: PR re-read after green CI rejects (non-workflow ready path) — `readyHeld: \"PR head could not be re-read\"`, not marked ready. PR re-read shows another head — `readyHeld: \"PR head changed since this execution\"`, not marked ready. Ready command exits non-zero — `readyHeld: \"could not mark ready: <trimmed stderr>\"`, or `\"could not mark ready: exit code <n>\"` when stderr is empty; exit `report`. Push rejected by the lease — existing `push-rejected` outcome. Preserve the existing abort check before the reread and the check before the ready write; do not turn spawn/abort exceptions into holds.\n\nUpdate test/integration/bot/fix-report.test.ts's green GitHub/GitLab URL expectation and failed-ready expectation to the resolved report-bound patch. Stub _fixReportDeps.readPrInfo to env.info with headSha=state.pushedSha ?? env.info.headSha in those cases and the non-workflow AC-7 through AC-10 cases, preventing real reads. Update test/integration/bot/fix-report-workflow.test.ts's ready target to s.env.info.url, preserving its evidence/order assertion. Update argv in test/unit/bot/fix-steps.test.ts and test/integration/bot/gates-push-steps.test.ts; rename the latter push case to 'pushes the explicit PR ref with a lease on the reviewed head' and retain timeout/worktree arguments.\n\nThe seam AC enters the fix step graph in test/integration/bot/fix-graph.test.ts. Its beforeEach stubs _botFixDeps.readyStep and reportStep: restore both real steps, stub _fixReportDeps.waitForPrHead, waitForChecks, readPrInfo (head equal to the stub pushedSha) and postPrComment, and use makeBotFixDraftEnv. Capture the posted fix summary to prove reportStep runs after the non-zero ready exit.",
+      "acceptanceCriteria": [
+        "[integration] On the non-workflow path, with green CI and a re-read head equal to state.pushedSha, readyStep runs markReadyArgv(env.ref.forge, env.info.url).",
+        "[integration] On the workflow path, when every hold passes, readyStep runs markReadyArgv(env.ref.forge, env.info.url).",
+        "[integration] On the non-workflow path with green CI, readyStep re-reads the PR through _fixReportDeps.readPrInfo after the CI wait.",
+        "[integration] On the non-workflow path, when an abort fires as CI turns green, readyStep rejects with AbortError without calling _fixReportDeps.readPrInfo.",
+        "[integration] On the non-workflow path, when the re-read returns another head sha, readyStep returns { patch: { markedReady: false, readyHeld: \"PR head changed since this execution\" }, exit: \"report\" }.",
+        "[integration] In that case readyStep runs no ready command.",
+        "[integration] On the non-workflow path, when the re-read rejects, readyStep returns readyHeld: \"PR head could not be re-read\".",
+        "[integration] In that case readyStep runs no ready command.",
+        "[integration] When the ready command exits 1 with stderr denied followed by a newline, readyStep returns { patch: { markedReady: false, readyHeld: \"could not mark ready: denied\" }, exit: \"report\" }.",
+        "[integration] When the ready command exits 2 with empty stderr, readyStep returns readyHeld: \"could not mark ready: exit code 2\".",
+        "[integration] When the fix step graph reaches a ready command that exits 1, it still runs reportStep.",
+        "[integration] When the fix step graph reaches a ready command that exits 1, the posted fix summary contains Kept as draft: could not mark ready.",
+        "[unit] For head ref feat/x, pushStep pushes with argv [\"push\", \"--no-verify\", \"--force-with-lease=refs/heads/feat/x:<env.info.headSha>\", \"origin\", \"HEAD:refs/heads/feat/x\"].",
+        "[unit] On an in-place checkout, pushStep pushes with the same leased argv.",
+        "[unit] When the leased push exits 1 with stderr stale info, pushStep returns outcome push-rejected."
+      ],
+      "tags": [
+        "bot-rerun-state",
+        "bot-fix",
+        "forge",
+        "security",
+        "concurrency"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two existing step implementations gain a URL target, one injected head check, a nonzero-exit hold and one lease argument; existing fix/report graph harnesses cover ordering and failure paths without new authentication or permission logic.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/fix-report.ts",
+        "packages/nax/src/bot/fix-steps.ts",
+        "packages/nax/src/workflow/promote.ts",
+        "packages/nax/test/integration/bot/fix-report.test.ts",
+        "packages/nax/test/integration/bot/fix-graph.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When state.pushedSha is absent and the non-workflow reread head equals env.info.headSha after green CI, readyStep runs the ready command with env.info.url.",
+        "When the ready command rejects due to a spawn error, readyStep rejects with that error rather than returning a readyHeld patch.",
+        "When the real push times out with the lease present, pushStep retains the existing push-unknown outcome."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/integration/bot/fix-report.test.ts",
+          "reason": "three changes, all with a `_fixReportDeps.readPrInfo` stub that resolves `env.info` with `headSha` set to `state.pushedSha ?? env.info.headSha`, so the new head re-read passes. (1) \"AC-14/15: marks a green %s draft ready in repo root\" (about line 349) expects `markReadyArgv(forge, \"42\")`; it becomes `markReadyArgv(forge, env.info.url)`. (2) \"AC-16: rejects failed readiness writes without claiming success\" (about line 397) expects a `BOT_FIX_READY_FAILED` rejection; it becomes a resolved `{ patch: { markedReady: false, readyHeld: \"could not mark ready: denied\" }, exit: \"report\" }`. (3) The non-workflow AC-7 to AC-10 tests (about lines 301-327) get the stub too, so they never reach a real `readPrInfo` through the spied `run`; their assertions are unchanged."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/fix-report-workflow.test.ts",
+          "reason": "\"AC-10 settled items wait, post exact evidence then ready\" (about line 175) expects `markReadyArgv(s.env.ref.forge, String(s.env.ref.number))`. It becomes `markReadyArgv(s.env.ref.forge, s.env.info.url)`. The order assertion is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/bot/fix-steps.test.ts",
+          "reason": "the in-place push case (about line 54) expects the push argv push, --no-verify, origin, HEAD:refs/heads/feat/x. It becomes push, --no-verify, --force-with-lease=refs/heads/feat/x:(env.info.headSha), origin, HEAD:refs/heads/feat/x."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/gates-push-steps.test.ts",
+          "reason": "the push case titled \"pushes the explicit PR ref without force\" (about line 164) expects the same old argv. It becomes the leased argv with `env.info.headSha`, and the title becomes \"pushes the explicit PR ref with a lease on the reviewed head\". The timeout and worktree arguments are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d7774d972792af9d164afbf7940a32092d0a34b2"
+    }
+  ],
+  "analysis": "Goal and completion: close #2694 by making GitLab comment classification, workflow item reraising, finding-thread visibility, settlement presentation, and bot-fix remote writes reflect durable PR state across reruns. This is an enhancement of existing TypeScript/Bun code, entirely inside packages/nax; no new service, dependency, configuration, package release, or storage migration is required. Preserve exactly US-001 through US-008 and their specified dependencies. Implement the independent forge, wire-format, summary, and fix-path stories alongside the sequential reopen chain US-002/US-003 -> US-004 -> US-005 -> US-006. Navigation: codebase-memory MCP was unavailable in this session; findings below come from direct source reads and text searches rooted at the supplied execution repository. Read docs/architecture/ARCHITECTURE.md before implementation: its dependency-injection, cause-chaining, barrel, bounded-function, and test-pattern guidance applies (docs/architecture/ARCHITECTURE.md:9, docs/architecture/ARCHITECTURE.md:163). Existing external calls are injectable through ForgeDeps and module _deps objects; extend these seams rather than adding subprocess or network paths. Tests use bun:test and shared @test/helpers; never run bare bun test or bun run nax. Package-scoped targeted tests may be run during iteration; pipeline handles normal gates, and coverage must not run under NAX_SANDBOXED=1.\n\nUS-001: packages/nax/src/forge/threads.ts:266 filters GitLab comments to individual_note=true; packages/nax/src/forge/threads.ts:294 sends every individual_note=false discussion to review threads. Add one consistent classification predicate using the first non-system note, absence of position, and one of the four exact top-level marker keys, then map every non-system note in that discussion to kind=comment in existing forge/page order. Preserve authorId so GitLab writer checks still work. Item/finding discussions and marker-only replies remain threads. The marker grammar currently lives at packages/nax/src/forge/marker.ts:14, and marker.ts already imports threads at line 3: importing marker.ts back from threads.ts would create a runtime cycle. Create the leaf marker-grammar.ts, move the grammar without changing validation, last-valid-marker parsing, wrapper, or stripping semantics, and retain marker.ts re-exports. Public consumers use packages/nax/src/forge/index.ts:35; add TOP_LEVEL_MARKER_KEYS there. Ownership remains author===login plus valid marker (packages/nax/src/forge/marker.ts:42), never marker alone. This reader fix automatically restores postSummary's top-level own-summary lookup (packages/nax/src/bot/post.ts:277), readItemThreads' top-level index lookup (packages/nax/src/workflow/item-thread-state.ts:48), and evidence lookups in packages/nax/src/bot/fix-report.ts:198. It also exposes human replies through keptComments and the existing writer gate without changing triage (packages/nax/src/bot/review-triage.ts:30). hasOpenPr currently converts malformed and non-array JSON to false (packages/nax/src/forge/pr.ts:39); throw FORGE_PR_LIST_UNPARSEABLE with stage forge and forge/branch context instead. Existing openDraftFinishPr catches failures and returns null (packages/nax/src/finish/pr/open.ts:226); auto-pr shouldRun propagates an inconclusive check without creating, and execute catches its post-push recheck (packages/nax/src/plugins/builtin/auto-pr/index.ts:188, packages/nax/src/plugins/builtin/auto-pr/index.ts:233). Do not expand this into unrelated finish promotion changes. Tests: packages/nax/test/unit/forge/threads-comments.test.ts:29 supplies captured host-aware paginated readers; extend it for flattening and retain pagination/system-note regressions. packages/nax/test/unit/workflow/item-threads-index.test.ts:68 has a GitHub-only publish harness; add a GitLab variant with discussions reads and PUT notes/<id> so the seam proves index reuse. Change the malformed-output expectation at packages/nax/test/unit/forge/pr.test.ts:78; retain []=>false and add non-array plus openDraftFinishPr no-create assertions.\n\nUS-002: mirror resolveThread's raw GraphQL -f id variable, GitLab encoded endpoint and complete id validation (packages/nax/src/forge/comments.ts:184, packages/nax/src/forge/comments.ts:229). runForgeWrite already makes non-zero writes reject FORGE_COMMENT_WRITE_FAILED and never retries a potentially completed write (packages/nax/src/forge/comments.ts:32). Export unresolveThread from the forge barrel. packages/nax/src/bot/post.ts:203 currently edits owned finding comments regardless of resolution; packages/nax/src/bot/post.ts:218 rethrows failed owned edits. Catch only unresolve failure inside writeFinding and return a flag so postFindings routes that finding off-line without counting it inline; do not swallow the edit error. packages/nax/src/bot/review-run.ts:235 receives ownFindingThreads from triage, including resolved threads, and constructs post inputs; derive resolvedThreadIds there. settledKeys must still skip writer-settled findings. Existing seam harnesses: packages/nax/test/integration/bot/post-threads.test.ts:25 captures forge calls after artifact persistence; packages/nax/test/integration/bot/review-run-finding-rulings.test.ts exercises real review/post wiring. Add unit argv/id/error assertions to existing forge comment-thread tests and integration ordering, counts, off-line fallback, logging and edit-error regressions.\n\nUS-003: packages/nax/src/workflow/item-threads.ts:136 already defines closure keys/notices and the 7-character SHA constant; add the reopen helpers and fixed/verified-only disposition set there. packages/nax/src/workflow/item-thread-state.ts:26 already takes only the last OWN marked comment as a candidate wr- ruling and sets the reply boundary after it. Therefore a wo- notice naturally invalidates the prior echo; retain that algorithm and prove it via readItemThreads and settleItemThreads, not a special-case scan for any old wr- echo. Existing tests in packages/nax/test/unit/workflow/item-thread-state.test.ts and item-threads.test.ts provide wire/state fixtures. This story creates production helper code even where state-reader behavior is already correct.\n\nUS-004/US-005: postItemThreads currently deduplicates owned keys and immediately maintains the index (packages/nax/src/workflow/item-threads-post.ts:105). Insert reopenReraisedItems after posting and before index maintenance; leave ItemThreadsOutcome unchanged and aggregate failures. Export reviewedIndex without changing its review eligibility logic (packages/nax/src/workflow/item-threads-index.ts:19): incomplete/unread/cost-limited/skipped/gate-repaired reviews have no new reviewed head, CI repair carries previous provenance, eligible reviews use input.head and seed. Only a defined new reviewed head differing from previous provenance cancels fixed/verified. A previous index with no head counts as different. Check later human replies using the forge's cached writerCheck/hasWriteAccess (packages/nax/src/forge/access.ts:41); rejected permission checks resolve false. Pass GitLab authorId. A writer's pending reply must not be hidden behind a new bot notice; a nonwriter's reply must not prevent cancellation of an obsolete ruling. Use current last-own-comment semantics for closure and notice detection, not any historical closure. US-004 creates item-threads-reopen.ts and its unit-folder publish seam test file; US-005 extends those files. US-005 handles a currently closed item at any publish and an already posted notice on a still-resolved thread via unresolve-only retry. Mark every attempted key reopened even on failure, count one failed reopen operation when reply or subsequent unresolve rejects, never unresolve after a failed reply, and retain reviewed head AND base on any reopen failure so a later fully reviewed publish can retry. A reply that succeeded followed by failed unresolve must not be duplicated next time. maintainItemIndex currently edits/posts the index before closing obsolete threads and skips any thread with an own closure notice (packages/nax/src/workflow/item-threads-index.ts:47); preserve these closure rules and the explicitly deferred re-closure limitation. Readiness remains based on durable ruling/thread state; retaining earlier reviewed provenance only widens the next incremental review. Reuse the publish harness's read-before-write ownership snapshot and captured mutation calls (packages/nax/test/unit/workflow/item-threads-index.test.ts:68); create the focused reopen harness at packages/nax/test/unit/workflow/item-threads-reopen.test.ts. Writer checks make US-004 security-critical and require three-session-tdd; US-005 preserves those checks and uses strict isolation for the additional mutation-selection branches in that permission-aware helper.\n\nUS-006: renderItemIndex and parseItemIndex are the wire-format SSOT (packages/nax/src/workflow/item-threads.ts:152, packages/nax/src/workflow/item-threads.ts:163). Write 'nax workflow items: N (S settled)', accept both new and legacy first lines, reject S>N and count/key mismatches, and return the unchanged ItemIndex shape with no settled field. Keys, ordering, unpostable-key retention, and reviewed-head/base validation must not change. At publish, count only this publish's indexed keys carrying a ruling with NO later reply and not in the reopen attempt set; presentation intentionally performs no new permission check. Newly posted keys are not settled in the old read snapshot. maintainItemIndex gains settled alongside keepReviewed. recordPrRulings computes authoritative settled results after permission-filtered replies and successful echo writes (packages/nax/src/bot/rulings.ts:196); refresh the marked index from read.index/read.indexComment after settlement when the rendered body differs, with a new _rulingsDeps.editComment seam (current deps at packages/nax/src/bot/rulings.ts:44). Filter settled results to index membership. Index refresh errors log and do not change recorded/settled outcomes. Existing body ticking rereads the PR and is separately best-effort; do not mix index refresh with that subprocess counter. Update render assertions at packages/nax/test/unit/workflow/item-threads.test.ts:137 and :142, retain legacy parser fixtures, and stub editComment in the beforeEach assignments at packages/nax/test/unit/bot/rulings.test.ts:72 and packages/nax/test/unit/bot/rulings-model.test.ts:75. Also stub it in real-recorder integration assignments at packages/nax/test/integration/bot/review-run-rulings.test.ts:182 and packages/nax/test/integration/bot/review-run-finding-rulings.test.ts:228; otherwise this new default dependency can reach a real gh api PATCH. Existing run-count assertions should remain unchanged.\n\nUS-007: readReviewRulings is privileged, best-effort, gated by workflow marker and staticMode, returning {} on recorder failure (packages/nax/src/bot/review-rulings.ts:14). Add ItemStatus only for outcomes with a readable index, mapping recorded itemId/disposition/by and deriving open from total minus indexed settled items rather than outcome.open.length (missing threads still hold). reviewEnvironment already spreads the recorder result into post (packages/nax/src/bot/review-run.ts:274); ensure itemStatus survives this path and postSummary explicitly forwards it. PostReviewInput is in packages/nax/src/bot/post.ts:70; ReviewSummaryInput is in packages/nax/src/bot/render-comments.ts:21. Add the bounded, safeText-escaped id list and open count to the human summary, not finding-ruling counts or review artifact authorization data. renderReviewSummary uses prefix/readiness lines and a bounded section renderer (packages/nax/src/bot/render-comments.ts:189); cap recorded entries at 20 and preserve existing summary limits. Forge logins are intentionally emitted verbatim after @, null means nax bot. beforeReady currently recommends gh pr ready (packages/nax/src/workflow/pr-body.ts:126); replace only its final line with the specified feature-specific workflow promote command, on either forge. Existing tests: packages/nax/test/unit/bot/review-rulings-settled.test.ts, packages/nax/test/unit/bot/render-comments.test.ts, packages/nax/test/integration/bot/review-run-finding-rulings.test.ts, and packages/nax/test/unit/workflow/pr-body.test.ts:179. This independent story must not require the new index writer or reopen helper to exist; use existing parsed ItemIndex and recorder outcomes.\n\nUS-008: readyStep currently waits for pushed-head propagation, bypasses non-drafts, branches into workflow preflight or CI-only checks, then marks by number and throws on a non-zero command (packages/nax/src/bot/fix-report.ts:217). Use env.info.url on both branches; markReadyArgv already accepts a string and generates forge-specific commands (packages/nax/src/workflow/promote.ts:117), and workflow promote already uses a URL (packages/nax/src/cli/workflow-promote.ts:221). Only the non-workflow branch needs the extra post-green readPrInfo check after throwIfAborted, comparing against state.pushedSha ?? env.info.headSha. Keep abort/spawn rejection semantics; convert only ready command non-zero exits into report-bound holds with exact trimmed-stderr or exit-code fallback text. The workflow branch already rereads rulings, index, evidence, and head (packages/nax/src/bot/fix-report.ts:174); do not replace these checks. pushStep currently uses an explicit destination but no lease (packages/nax/src/bot/fix-steps.ts:287); add the exact refs/heads/<headRef>:<info.headSha> lease for real pushes in both temporary and in-place checkouts, retaining the branch/clean-tree checks, cwd, 120000ms timeout, push-unknown and push-rejected paths. No dry-run probe change. Tests: update URL and nonzero-write expectations in packages/nax/test/integration/bot/fix-report.test.ts:349 and :397; add head-equality readPrInfo stubs to the green/nonworkflow cases to prevent accidental real forge calls, including existing AC-7 through AC-10. Update the workflow URL expectation in packages/nax/test/integration/bot/fix-report-workflow.test.ts. Update argv expectations in packages/nax/test/unit/bot/fix-steps.test.ts and packages/nax/test/integration/bot/gates-push-steps.test.ts:157, renaming its test to mention the lease while preserving timeout/worktree assertions. packages/nax/test/integration/bot/fix-graph.test.ts:53 stubs ready/report by default; the new graph seam must restore both real nodes and stub _fixReportDeps.waitForPrHead, waitForChecks, readPrInfo and postPrComment using makeBotFixDraftEnv, with reread head equal to stub pushedSha, to prove a failed ready write still posts the fix summary.\n\nRisks and compatibility: marker grammar extraction must not create runtime cycles or change public exports, marker validation or authenticated ownership. Reopen cancellation is limited to workflow fixed/verified rulings, not waived/confirmed/overridden or writer-settled f- findings. Partial writes require preserving provenance and attempt sets to prevent stale settled presentation and ensure retries. Rendering changes are a deliberate wire-format compatibility boundary: new readers accept legacy indexes; older nax readers reject the new first line and hold readiness until upgraded. No mass migration is needed; normal publish/record rewrites existing own index comments. New parser output retains existing reviewed provenance and keys so readiness consumers do not change. Index refresh is intentionally snapshot-based and may temporarily overwrite a concurrent publish until the next publish; no concurrency lock or reread is added. Remaining head/write race windows are not a claim of transactionality: the specified final read and push lease protect the named gaps, and ready spawn/abort failures still propagate. C6 requires no implementation: gates-red exits to report and ciAllowsReady admits only green. Shared-file overlap across independent stories includes forge/index.ts and bot/post.ts; preserve the other story's additive fields/exports and avoid creating extra dependencies. Manual user documentation and S11 remain deferred as specified.\n\nSecond-pass adversarial audit: reread spec.md's complete Design, Failure Handling, Out of Scope, Context Files and Acceptance Criteria sections and rechecked the existing reader, writer, provenance and summary seams. All 102 source ACs are retained in their original stories. The following exhaustive ledger uses one-based source AC and revised acceptanceCriteria positions; split entries preserve every assertion rather than dropping part of a compound source criterion. US-001 (15 source -> 17 revised): 1->1 top-level-key vocabulary; 2->2 parser public export; 3->3 ordered summary flattening; 4->4 other top-level keys; 5->5 system-note exclusion; 6->6 positioned exclusion; 7->7 finding exclusion; 8->8 second-note-only marker exclusion; 9->9 flattened discussion omitted from review threads; 10->10 item discussion still retained; 11->11/12 replied own index edited without duplicate; 12->13 malformed JSON rejection; 13->14 non-array rejection; 14->15 empty-array false; 15->16/17 finish null without create. US-002 (15 source -> 18 revised): 1->1 one GitHub call/raw GraphQL variable; 2->2 GitLab PUT false; 3->3/4 invalid-id rejection/no call; 4->5 failed-write code; 5->6 owned edit before unresolve; 6->7 inline count; 7->8 unresolved-thread edit without unresolve; 8->9 absent-set edit without unresolve; 9->10/11 settled skip of both writes; 10->12 warning identity; 11->13 zero inline on unresolve failure; 12->14 offLine one; 13->15/16 owned-edit rejection/no unresolve; 14->17 review-run reopening; 15->18 unresolved review-run no-op. US-003 (6 source -> 7 revised): 1->1 reopen key; 2->2 exact notice; 3->3 fixed/verified-only set; 4->4 no ruling after own notice; 5->5 replies only after notice; 6->6 open settlement. Appended #7 adds an explicit malformed-opener negative-path regression grounded in item-thread-state.ts:30. US-004 (19 source -> 19 revised): 1->1 new-head fixed notice; 2->2 short SHA; 3->3 unresolve ordering; 4->4 verified notice; 5->5 preserved waived/confirmed/overridden; 6->6 unchanged-head no-op; 7->7 previous none eligible; 8->8 review-not-run no-op; 9->9 CI-repair carried-head no-op; 10->10 omitted-key no-op; 11->11 already-reopened unresolved no-op even after another head change; 12->12 writer-reply no-op; 13->13 nonwriter reply permits reopening; 14->14 failed permission lookup permits reopening; 15->15 reply-failure warning; 16->16 reply-failure no unresolve; 17->17 reply-failure increment; 18->18 unresolve-failure warning; 19->19 unresolve-failure increment. US-005 (6 source -> 8 revised): 1->1 closed-item notice even with unchanged head; 2->2 unresolve after reply; 3->3/4 notice-only retry without duplicate; 4->5 failed closed-item reply increment; 5->6 retained OLD provenance on failure; 6->7 new HEAD after success. Appended #8 promotes the Failure Handling table's next-fully-reviewed-publish retry requirement from suggestedCriteria to mandatory acceptance. US-006 (16 source -> 17 revised): 1->1 default-zero render preserving provenance/key lines; 2->2 explicit settled render; 3->3 unchanged parser shape; 4->4 legacy parse; 5->5 excessive-settled rejection; 6->6 count mismatch rejection; 7->7 publish count; 8->8 reopened exclusion; 9->9 failed-reopen-attempt exclusion; 10->10 later-reply exclusion; 11->11 recorder refresh body; 12->12 unchanged-body no write; 13->13 no-own-index no write; 14->14 only indexed settlements; 15->15 refresh warning; 16->16 settled result survives refresh error. Counts now explicitly refer to the observable written index body, not mutations to RecordRulingsOutcome. Appended #17 covers the failure table's entire unchanged outcome, including failed. US-007 (11 source -> 12 revised): 1->1 mapped itemStatus; 2->2 no index means no status; 3->3 exact writer-attributed list; 4->4 bot attribution; 5->5 twenty-entry cap and suffix; 6->6 exact open-count line; 7->7 empty-recorded omission; 8->8 absent-status omissions; 9->9 review-run recorded substring; 10->10 review-run open-count line; 11->11 exact demo promotion instruction. Appended #12 promotes recorder rejection to an explicit failure acceptance criterion; its {} fallback is already specified by the design and implemented in review-rulings.ts:40. Corrected the quoted integration substring so punctuation cannot accidentally require a period after its opening parenthesis. US-008 (14 source -> 15 revised): 1->1 non-workflow URL; 2->2 workflow URL; 3->3 post-CI reread order; 4->4 abort before read; 5->5 changed-head hold patch; 6->6 changed-head no ready; 7->7 reread-failure hold; 8->8 reread-failure no ready; 9->9 stderr-trimmed hold; 10->10 exit-code fallback; 11->11/12 graph still reports and summary names the hold; 12->13 exact lease argv; 13->14 in-place same lease; 14->15 stale-info push-rejected. No deprecated grep/file/verbatim AC tags were present. Qualifiers retained include still, already, even when, because the reviewed head is carried over, unchanged-head cases, existing rejection behavior, post-reply ordering and the same leased argv.\n\nFailure-table audit: row 1 is US-001 #13-14/#16-17; row 2 US-002 #5; row 3 US-002 #12-14; row 4 US-004 #15-17 plus US-005 #6/#8; row 5 US-004 #18-19 plus US-003 #4/#6 and US-005 #3-4/#6; row 6 US-004 #14; row 7 US-006 #15-17; row 8 US-008 #7-8; row 9 US-008 #5-6; row 10 US-008 #9-12; row 11 US-008 #15. Each story now has an explicit negative path and an observable existing-behavior or compatibility anchor. Context audit: US-001/002/004/006/007/008 include exactly their five spec-recommended paths; US-005 includes all four upstream-produced/existing paths; US-003 includes all three recommendations plus the existing wire-format test sibling. No story lists its own newly created output as context. All referenced dependencies exist, and the binding dependency arrays are unchanged. Scope and description audit found no instruction to implement another story's work: shared optional fields and forge exports remain additive; US-004 explicitly defers keepReviewed/retry and settled options to US-005/006. Routing was reduced to simple for the single-source helper addition (US-003), medium for standard existing-module changes (US-001/002/005/006/007/008), retaining complex only for the new permission-aware reopening coordinator (US-004). Strict TDD remains on the extracted ownership grammar (US-001) and the permission-sensitive reopening helper/branches (US-004/005); other existing-seam changes use tdd-simple.\n\nOut-of-scope audit: all sixteen source entries remain verbatim in top-level outOfScope, in order: 1 writer-settled f- findings; 2 carried waived/confirmed/overridden rulings; 3 unset/unchanged reviewed heads; 4 no re-closure after a reopen; 5 snapshot-based recorder refresh race; 6 US-008 spawn/abort rejection; 7 no per-item summary links; 8 no rulings in Nothing to fix; 9 no finding-ruling list; 10 no publish-count writer check; 11 old-install hold on new format; 12 forged-marker flattening without ownership; 13 unchanged dry-run probe; 14 unchanged bindToHead; 15 deferred S11; 16 manual documentation follow-up. Nearby boundaries are echoed in their story Scope sections. The spec contains no story-local out-of-scope block to hoist or relocate.",
+  "outOfScope": [
+    "A bot finding (`f-` key) settled by a writer ruling and raised again by a later review stays settled and skipped; only workflow items are reopened on a re-raise.",
+    "Workflow item rulings `waived`, `confirmed` and `overridden` carry over when the same item is raised again; only `fixed` and `verified` are cancelled.",
+    "A publish whose reviewed head is unset or unchanged (CI-repair republish, resume, incomplete review) never reopens a ruled item, even when the ruling predates the run.",
+    "A reopened item that later drops out of a run again is not re-closed: `maintainItemIndex` skips any thread that already has an own closure notice, so the thread stays open with its reopen notice. Readiness is unaffected.",
+    "The index rewrite in `recordPrRulings` edits from the comment snapshot it read; it does not re-read the index first, so a publish that rewrote the index in between can be overwritten until the next publish.",
+    "US-008 only: a ready write rejected for reasons other than a non-zero exit (spawn failure, abort) still rejects as today.",
+    "The review summary does not link each recorded item to its thread; it names id, disposition and who ruled.",
+    "The `nax bot fix` \"Nothing to fix\" comment does not list recorded rulings.",
+    "Finding rulings echoed by `recordFindingRulings` are not listed in the new item-rulings summary line; they stay in the existing counts.",
+    "The publish's settled count does not run the writer permission check; a thread with any reply after its ruling counts as not settled.",
+    "An older nax install that reads the new index line treats the PR as having no item index and holds readiness until upgraded.",
+    "A GitLab discussion opened by someone else with a forged top-level marker is flattened into top-level comments; it gains no ownership and stays behind the writer gate.",
+    "The `--dry-run` push access probe keeps its argv; only the real push gains the lease.",
+    "`bindToHead` keeps letting a green poll with no sha through; the non-workflow ready path closes the gap with its own head re-read instead.",
+    "S11 (`--trust` with sandboxed gates for untrusted PRs) stays deferred.",
+    "User documentation of the index line and the reopen notice is a manual follow-up after merge."
+  ],
+  "routingProfile": "native-claude"
+}

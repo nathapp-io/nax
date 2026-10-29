@@ -187,6 +187,8 @@ export async function postItemComment(
 
 const NUMERIC_COMMENT_ID = /^[0-9]+$/;
 const GITLAB_DISCUSSION_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const UNRESOLVE_REVIEW_THREAD =
+  "mutation($id: ID!) { unresolveReviewThread(input: {threadId: $id}) { thread { id isResolved } } }";
 const RESOLVE_REVIEW_THREAD =
   "mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id isResolved } } }";
 
@@ -241,6 +243,26 @@ export async function resolveThread(
           `projects/${encodeProjectPath(ref.repo)}/merge_requests/${ref.number}/discussions/${endpointId(ref, thread.id, GITLAB_DISCUSSION_ID)}`,
           "-f",
           "resolved=true",
+        ];
+  await runForgeWrite(ref, argv, deps, cwd);
+}
+
+/** Reopen a review thread; keep GitHub node ids in raw GraphQL variables. */
+export async function unresolveThread(
+  ref: PrRef,
+  thread: Pick<PrThread, "id">,
+  deps: ForgeDeps,
+  cwd: string,
+): Promise<void> {
+  const argv =
+    ref.forge === "github"
+      ? ["graphql", "-f", `query=${UNRESOLVE_REVIEW_THREAD}`, "-f", `id=${thread.id}`]
+      : [
+          "-X",
+          "PUT",
+          `projects/${encodeProjectPath(ref.repo)}/merge_requests/${ref.number}/discussions/${endpointId(ref, thread.id, GITLAB_DISCUSSION_ID)}`,
+          "-f",
+          "resolved=false",
         ];
   await runForgeWrite(ref, argv, deps, cwd);
 }

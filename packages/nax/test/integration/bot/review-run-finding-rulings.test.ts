@@ -46,7 +46,11 @@ const record = mock(recordFindingRulings);
 const access = mock(async () => true);
 const echo = mock(async () => {});
 const resolve = mock(async () => {});
-const forge = mock(async () => ({ exitCode: 0, stdout: '{"id": 999}', stderr: "" }));
+const forge = mock(async (_argv: string[], _opts: { cwd: string }) => ({
+  exitCode: 0,
+  stdout: '{"id": 999}',
+  stderr: "",
+}));
 
 function findingThread(reply: string, resolved = false): PrThread {
   return {
@@ -93,6 +97,7 @@ beforeEach(() => {
     inspectedFiles: [],
   };
   for (const fn of [record, access, echo, resolve, forge]) fn.mockClear();
+  forge.mockImplementation(async () => ({ exitCode: 0, stdout: '{"id":999}', stderr: "" }));
   access.mockImplementation(async () => true);
   Object.assign(_botReviewDeps, {
     ...makeBotReviewDeps({ config, runtime, info: () => info, threads: () => threads }),
@@ -125,6 +130,53 @@ afterEach(async () => {
 });
 
 describe("runBotReview finding rulings", () => {
+  test("US-007 AC-9/10 posts recorded workflow item rulings and open counts through the real post", async () => {
+    info = { ...info, body: NAX_WORKFLOW_PR_MARKER };
+    const item = { id: "_run:cv1", kind: "cannot-verify" as const, issue: "Check live service" };
+    const wKey = itemKey(item);
+    const ruling = { itemKey: wKey, itemId: item.id, disposition: "verified" as const, reason: "checked", by: "alice" };
+    const thread: PrThread = {
+      id: "W1",
+      replyTo: "W0",
+      resolved: false,
+      outdated: false,
+      comments: [comment("W0", "bot", withNaxBotMarker(renderItemOpener(item), wKey))],
+    };
+    threads = [];
+    _botReviewDeps.recordPrRulings = async () => ({
+      index: { keys: [wKey] },
+      recorded: [ruling],
+      settled: [{ key: wKey, itemId: item.id, kind: item.kind, thread, ruling, replies: [] }],
+      open: [],
+      asked: 0,
+      failed: 0,
+    });
+    const result = await runBotReview(input);
+    expect(result.outcome).toBe("posted");
+    const posted = forge.mock.calls.flatMap(([argv]) => argv).find((arg) => arg.includes("Review of "));
+    expect(posted).toContain("Item rulings recorded: 1 (_run:cv1 verified by @alice).");
+    expect(posted).toContain("Open items: 0 of 1.");
+  });
+  test.each([true, false])("US-002 AC-17/18: re-raised own finding reopens only when resolved=%s", async (resolved) => {
+    const thread = findingThread("no ruling", resolved);
+    threads = [{ ...thread, comments: thread.comments.slice(0, 1) }];
+    verdict = { ...verdict, findings: [finding] };
+    forge.mockImplementation(async () => {
+      expect(artifact?.agreed).toContainEqual(expect.objectContaining({ key }));
+      return { exitCode: 0, stdout: '{"id":999}', stderr: "" };
+    });
+    const result = await runBotReview(input);
+    expect(result).toMatchObject({ outcome: "posted", inlineFindings: 1 });
+    const calls = forge.mock.calls.map(([argv]) => argv);
+    expect(calls[0]).toContain("PATCH");
+    expect(calls[0]).toContain("repos/o/r/pulls/comments/101");
+    const reopen = calls.filter((argv) => argv.some((arg) => arg.includes("unresolveReviewThread")));
+    expect(reopen).toHaveLength(resolved ? 1 : 0);
+    if (resolved) {
+      expect(calls[1]).toEqual(reopen[0]);
+      expect(reopen[0]).toContain("id=T1");
+    }
+  });
   test("AC-1 passes raw own finding thread to recorder", async () => {
     await runBotReview(input);
     expect(record).toHaveBeenCalledTimes(1);
@@ -226,6 +278,7 @@ describe("runBotReview finding rulings", () => {
       comment("index", "bot", withNaxBotMarker(renderItemIndex({ keys: [wKey] }), "w-index")),
     ];
     Object.assign(_rulingsDeps, {
+      editComment: async () => {},
       hasWriteAccess: access,
       readPrInfo: async () => info,
       replyToThread: echo,

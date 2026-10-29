@@ -30,6 +30,32 @@ describe("checkStep", () => {
 });
 
 describe("pushStep", () => {
+  test.each([0, 1])("US-008 AC-13/15: leased temporary push exits %s", async (exitCode) => {
+    const base = makeBotFixEnv();
+    const env = { ...base, info: { ...base.info, headRef: "feat/x" } };
+    const git = mock(async (argv: string[]) => ({
+      exitCode: argv[0] === "push" ? exitCode : 0,
+      stdout: "",
+      stderr: "stale info",
+    }));
+    _fixStepsDeps.runGit = git;
+    expect(await pushStep(env, state)).toEqual(
+      exitCode === 0
+        ? { patch: { outcome: "pushed", pushedSha: "fixed" }, exit: "pushed" }
+        : { patch: { outcome: "push-rejected" }, exit: "rejected" },
+    );
+    expect(git).toHaveBeenCalledWith(
+      [
+        "push",
+        "--no-verify",
+        `--force-with-lease=refs/heads/feat/x:${env.info.headSha}`,
+        "origin",
+        "HEAD:refs/heads/feat/x",
+      ],
+      env.checkout.worktree,
+      120_000,
+    );
+  });
   test.each(["nothing", undefined] as const)("ledger push preserves outcome %s (US-009 AC-1–3)", async (outcome) => {
     const result = await pushStep(makeBotFixEnv(), { ...state, outcome });
     expect(result.patch).toMatchObject({ outcome: outcome ?? "pushed", pushedSha: "fixed" });
@@ -51,7 +77,15 @@ describe("pushStep", () => {
       expect(git.mock.calls[0]?.[0]).toEqual(["symbolic-ref", "--short", "HEAD"]);
       if (branch === "feat/x") {
         expect(result.patch?.outcome).toBe("pushed");
-        expect(pushes.map(([argv]) => argv)).toEqual([["push", "--no-verify", "origin", "HEAD:refs/heads/feat/x"]]);
+        expect(pushes.map(([argv]) => argv)).toEqual([
+          [
+            "push",
+            "--no-verify",
+            `--force-with-lease=refs/heads/feat/x:${env.info.headSha}`,
+            "origin",
+            "HEAD:refs/heads/feat/x",
+          ],
+        ]);
       } else {
         expect(result.patch?.outcome).toBe("push-rejected");
         expect(pushes).toEqual([]);

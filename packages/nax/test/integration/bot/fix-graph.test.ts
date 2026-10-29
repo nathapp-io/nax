@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { makeBotFixDeps, makeBotFixDraftEnv, makeBotFixEnv, makeTestRuntime } from "@test/helpers";
-import { _fixReportDeps, BOT_FIX_GRAPH, type BotFixEnv, readyStep } from "@/bot";
+import { _fixReportDeps, BOT_FIX_GRAPH, type BotFixEnv, readyStep, reportStep } from "@/bot";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
 import type { BotFixState, BotFixStep } from "@/bot/fix-steps";
 import { NAX_WORKFLOW_PR_MARKER } from "@/forge";
@@ -170,6 +170,22 @@ describe("runBotFix graph routing", () => {
 });
 
 describe("BOT_FIX_GRAPH ready node", () => {
+  test("US-008 AC-11/12: rejected ready write still posts the fix summary", async () => {
+    const env = makeBotFixDraftEnv();
+    _botFixDeps.readyStep = readyStep;
+    _botFixDeps.reportStep = reportStep;
+    spyOn(_fixReportDeps, "waitForPrHead").mockResolvedValue(true);
+    spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue({ outcome: "green", detail: "passed" });
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue({ ...env.info, headSha: "abcdef12" });
+    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 1, stdout: "", stderr: "denied\n" });
+    const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "summary" });
+    const result = await runGraph(env);
+    expect(result.step).toBe("done");
+    expect(result.markedReady).toBe(false);
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0]?.[1]).toContain("Kept as draft: could not mark ready");
+  });
+
   /** The `nothing` route: the fix found nothing to fix, so the ready step is the next node. */
   function nothingRoute(): void {
     _botFixDeps.fixStep = async () => ({ patch: { agreedCount: 0, outcome: "nothing" }, exit: "nothing" });

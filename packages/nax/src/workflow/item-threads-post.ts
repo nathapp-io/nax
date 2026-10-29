@@ -20,6 +20,7 @@ import { _featureDeps } from "./feature-deps";
 import { readItemThreads } from "./item-thread-state";
 import { isPostable, itemKey, renderItemOpener } from "./item-threads";
 import { maintainItemIndex } from "./item-threads-index";
+import { reopenReraisedItems } from "./item-threads-reopen";
 import { buildOpenItems } from "./open-items";
 import type { OpenItem, WorkflowFeatureRecord } from "./types";
 
@@ -128,6 +129,19 @@ export async function postItemThreads(
       outcome.failed++;
     }
   }
-  const index = await maintainItemIndex(input, items.map(itemKey), { ...snapshot, deps, cwd: input.projectDir });
+  const keys = items.map(itemKey);
+  const maintenance = { ...snapshot, deps, cwd: input.projectDir };
+  const reopen = await reopenReraisedItems(input, keys, maintenance);
+  outcome.failed += reopen.failed;
+  const settled = new Set(
+    snapshot.read.items
+      .filter((item) => item.ruling && item.replies.length === 0 && !reopen.reopened.has(item.key))
+      .map((item) => item.key),
+  );
+  const index = await maintainItemIndex(input, keys, maintenance, {
+    keepReviewed: reopen.failed > 0,
+    pendingReopens: reopen.pendingReopens,
+    settled: keys.filter((key) => settled.has(key)).length,
+  });
   return { ...outcome, closed: index.closed, failed: outcome.failed + index.failed };
 }

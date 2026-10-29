@@ -6,10 +6,12 @@ import { safeCode } from "../workflow/pr-body-safe";
 import type { BotChecks } from "./checks";
 import { checkCommands } from "./checks";
 import { earlierKey, findingKey, safeText, threadKey } from "./render";
-import type { BotReviewScope } from "./review-rulings";
+import type { BotReviewScope, ItemStatus } from "./review-rulings";
 
 const TEXT_LIMIT = 2_000;
 const AUTHOR_LIMIT = 100;
+const ITEM_RULING_LIMIT = 20;
+const ITEM_ID_LIMIT = 100;
 const SHORT_SHA_LENGTH = 7;
 const SUMMARY_RESERVE = 512;
 const DECISION_LABELS: Record<PrTriageDecision, string> = {
@@ -19,6 +21,7 @@ const DECISION_LABELS: Record<PrTriageDecision, string> = {
 };
 
 export interface ReviewSummaryInput {
+  readonly itemStatus?: ItemStatus;
   readonly unreadFiles?: readonly string[];
   readonly minor?: readonly WorkflowFindingDraft[];
   readonly earlier?: { readonly open: number; readonly fixed: number; readonly withdrawn: number };
@@ -139,6 +142,24 @@ function boundedSummary(prefix: string[], sections: ListSection[], suffix: strin
   return withNaxBotMarker([...prefix, ...lists, ...notice, ...suffix].join("\n"), "summary");
 }
 
+function itemStatusLines(status: ItemStatus | undefined): string[] {
+  if (status === undefined) return [];
+  const lines: string[] = [];
+  if (status.recorded.length > 0) {
+    const shown = status.recorded
+      .slice(0, ITEM_RULING_LIMIT)
+      .map(
+        ({ id, disposition, by }) =>
+          `${safeText(id, ITEM_ID_LIMIT)} ${disposition} by ${by === null ? "nax bot" : `@${by}`}`,
+      );
+    const hidden = status.recorded.length - shown.length;
+    if (hidden > 0) shown.push(`and ${hidden} more`);
+    lines.push(`Item rulings recorded: ${status.recorded.length} (${shown.join(", ")}).`);
+  }
+  lines.push(`Open items: ${status.open} of ${status.total}.`);
+  return lines;
+}
+
 function readinessLines(input: ReviewSummaryInput): string[] {
   const lines: string[] = [];
   if (input.earlier) {
@@ -190,6 +211,7 @@ export function renderReviewSummary(input: ReviewSummaryInput): string {
   const prefix = [
     `Review of ${input.headSha.slice(0, SHORT_SHA_LENGTH)}${scopeSuffix(input.scope, input.incrementalSince)}: intent ${input.intent}, quality ${input.quality}.`,
     `${input.inlineFindings} inline findings, ${input.threadsAnswered} threads answered, ${input.commentVerdicts.length} comments answered.`,
+    ...itemStatusLines(input.itemStatus),
     ...readinessLines(input),
   ];
   if (input.staticMode) prefix.push("Untrusted PR: reviewed without running any code.");

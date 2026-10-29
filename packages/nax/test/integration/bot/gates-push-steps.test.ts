@@ -154,7 +154,7 @@ describe("pushStep", () => {
       patch: { outcome: "push-unknown" },
     });
   });
-  test("AC-11/12/13/14/15 pushes the explicit PR ref without force and records the worktree HEAD", async () => {
+  test("pushes the explicit PR ref with a lease on the reviewed head", async () => {
     const runGit = mock(async () => ({ exitCode: 0, stdout: "", stderr: "" }));
     const readHead = mock(async () => "pushed-sha");
     bot._fixStepsDeps.runGit = runGit;
@@ -164,7 +164,13 @@ describe("pushStep", () => {
     const result = await bot.pushStep(env, state());
     expect(runGit).toHaveBeenCalledTimes(2);
     expect(runGit).toHaveBeenCalledWith(
-      ["push", "--no-verify", "origin", "HEAD:refs/heads/feat/x"],
+      [
+        "push",
+        "--no-verify",
+        `--force-with-lease=refs/heads/feat/x:${env.info.headSha}`,
+        "origin",
+        "HEAD:refs/heads/feat/x",
+      ],
       env.checkout.worktree,
       120_000,
     );

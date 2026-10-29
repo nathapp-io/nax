@@ -187,7 +187,11 @@ describe("buildWorkflowPrBody", () => {
     expect(section).toContain("&lt;script&gt;");
     expect(section).toContain("Suggestion: return the 'id'");
     expect(section).toContain("Advisor: hold — needs a human");
-    expect(section).toContain("Then: rerun the repo gates, push, and run `gh pr ready`.");
+    expect(section.trimEnd().split("\n").at(-1)).toBe(
+      `Then: rule on each item by replying on its thread, and run \`nax workflow promote -f ${input.feature} --yes\` to mark the PR ready once every item is settled and CI is green.`,
+    );
+    const demo = buildWorkflowPrBody({ ...input, feature: "demo", openItems: [held] });
+    expect(demo).toContain("`nax workflow promote -f demo --yes`");
     expect(withItem.indexOf("## Before marking ready")).toBeGreaterThan(withItem.indexOf("## Stories"));
   });
 

@@ -73,6 +73,7 @@ beforeEach(() => {
   resolve.mockImplementation(async () => {});
   readModel.mockImplementation(async () => verdict());
   Object.assign(_rulingsDeps, {
+    editComment: async () => {},
     hasWriteAccess: async () => true,
     replyToThread: post,
     resolveThread: resolve,

@@ -1,4 +1,5 @@
 import { NaxError } from "@/errors";
+import { parseNaxBotMarker, TOP_LEVEL_MARKER_KEYS } from "./marker-grammar";
 import { encodeProjectPath } from "./pr-read";
 import type { PrComment, PrRef, PrThread } from "./pr-types";
 import type { ForgeDeps } from "./types";
@@ -197,6 +198,15 @@ function readGithubThreads(context: ReadContext): Promise<PrThread[]> {
   );
 }
 
+/** Classification only: marker ownership still requires the authenticated login. */
+function isRepliedTopLevelNote(discussion: GitlabDiscussion): boolean {
+  if (discussion.individual_note !== false) return false;
+  const first = discussion.notes.find((note) => !note.system);
+  if (!first || first.position != null) return false;
+  const marker = parseNaxBotMarker(first.body);
+  return marker !== null && TOP_LEVEL_MARKER_KEYS.some((key) => key === marker.key);
+}
+
 function gitlabThread(discussion: GitlabDiscussion): PrThread {
   const first = discussion.notes[0];
   const position = first?.position;
@@ -270,7 +280,7 @@ export async function listPrComments(ref: PrRef, deps: ForgeDeps, cwd: string): 
   const discussions = await readForgeRestPages<GitlabDiscussion>(context, endpoint);
   try {
     return discussions
-      .filter((discussion) => discussion.individual_note === true)
+      .filter((discussion) => discussion.individual_note === true || isRepliedTopLevelNote(discussion))
       .flatMap((discussion) =>
         discussion.notes
           .filter((note) => !note.system)
@@ -297,7 +307,9 @@ export async function listReviewThreads(ref: PrRef, deps: ForgeDeps, cwd: string
   const endpoint = `projects/${encodeProjectPath(ref.repo)}/merge_requests/${ref.number}/discussions`;
   const discussions = await readForgeRestPages<GitlabDiscussion>(context, endpoint);
   try {
-    return discussions.filter((discussion) => discussion.individual_note === false).map(gitlabThread);
+    return discussions
+      .filter((discussion) => discussion.individual_note === false && !isRepliedTopLevelNote(discussion))
+      .map(gitlabThread);
   } catch (cause) {
     throw responseError(ref, cause);
   }

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { NaxError } from "@/errors";
 import { extractUrl, type ForgeDeps, hasOpenPr, openPr, viewArgv } from "@/forge";
 
 function deps(
@@ -75,9 +76,16 @@ describe("hasOpenPr", () => {
     expect(captured).toEqual([["glab", "mr", "list", "--source-branch", "feat/x", "--output", "json"]]);
   });
 
-  test("false when the forge returns unparseable output", async () => {
-    const d = deps(() => ({ exitCode: 0, stdout: "not json", stderr: "" }));
-    expect(await hasOpenPr("github", "feat/x", d, "/repo")).toBe(false);
+  test.each(["not json", '{"message":"x"}'])("AC-13/14 rejects unreadable PR list %s", async (stdout) => {
+    for (const forge of ["github", "gitlab"] as const) {
+      const d = deps(() => ({ exitCode: 0, stdout, stderr: "" }));
+      const pending = hasOpenPr(forge, "feat/x", d, "/repo");
+      await expect(pending).rejects.toBeInstanceOf(NaxError);
+      await expect(pending).rejects.toMatchObject({
+        code: "FORGE_PR_LIST_UNPARSEABLE",
+        context: { stage: "forge", forge, branch: "feat/x" },
+      });
+    }
   });
 });
 

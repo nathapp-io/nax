@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { NaxError } from "@/errors";
 import type { ForgeDeps, ForgeRunResult, PrRef } from "@/forge";
 import * as forge from "@/forge";
+import type { GitlabDiscussion } from "@/forge/threads";
 
 const github: PrRef = { forge: "github", host: "github.example.com", repo: "acme/widgets", number: 5 };
 const gitlab: PrRef = { forge: "gitlab", host: "gitlab.example.com", repo: "group/sub/widgets", number: 5 };
@@ -48,6 +49,62 @@ const endpoint = (ref: PrRef, kind: "issues" | "pulls" | "discussions", page: nu
   kind === "discussions"
     ? `projects/group%2Fsub%2Fwidgets/merge_requests/${ref.number}/discussions?per_page=100&page=${page}`
     : `repos/${ref.repo}/${kind}/${ref.number}/${kind === "issues" ? "comments" : "reviews"}?per_page=100&page=${page}`;
+
+function replied(key = "summary"): GitlabDiscussion {
+  return {
+    id: "summary-thread",
+    individual_note: false,
+    notes: [
+      {
+        id: 91,
+        system: false,
+        author: { username: "bot", id: 1 },
+        body: forge.withNaxBotMarker("s", key),
+        created_at: "t",
+      },
+      { id: 92, system: false, author: { username: "carol", id: 9 }, body: "reply", created_at: "later" },
+    ],
+  };
+}
+
+describe("replied GitLab top-level notes", () => {
+  test("AC-1 exports the top-level marker keys", () => {
+    expect(forge.TOP_LEVEL_MARKER_KEYS).toEqual(["summary", "w-index", "w-evidence", "fix-summary"]);
+  });
+  test("AC-2 preserves the public marker parser", () => {
+    expect(forge.parseNaxBotMarker(forge.withNaxBotMarker("body", "summary"))).toEqual({ key: "summary" });
+  });
+  test.each(["summary", "w-index", "w-evidence", "fix-summary"])("AC-3/4 flattens %s in order", async (key) => {
+    expect(await forge.listPrComments(gitlab, harness([[replied(key)]]).deps, "/repo")).toEqual([
+      { id: "91", kind: "comment", author: "bot", authorId: 1, body: forge.withNaxBotMarker("s", key), createdAt: "t" },
+      { id: "92", kind: "comment", author: "carol", authorId: 9, body: "reply", createdAt: "later" },
+    ]);
+  });
+  test("AC-5 ignores system notes including before the opener", async () => {
+    const d = replied();
+    const system = { ...d.notes[1], id: 90, system: true };
+    d.notes = [system, ...d.notes, system];
+    expect((await forge.listPrComments(gitlab, harness([[d]]).deps, "/repo")).map((c) => c.id)).toEqual(["91", "92"]);
+  });
+  test.each(["position", "finding", "second-only"])("AC-6/7/8 does not flatten %s", async (kind) => {
+    const d = replied(kind === "finding" ? "f-abc123" : "summary");
+    if (kind === "position" && d.notes[0]) d.notes[0].position = { new_path: "a.ts", new_line: 1 };
+    if (kind === "second-only" && d.notes[0] && d.notes[1]) {
+      d.notes[1].body = d.notes[0].body;
+      d.notes[0].body = "unmarked";
+    }
+    expect(await forge.listPrComments(gitlab, harness([[d]]).deps, "/repo")).toEqual([]);
+    expect(await forge.listReviewThreads(gitlab, harness([[d]]).deps, "/repo")).toHaveLength(1);
+  });
+  test("AC-9 leaves flattened summaries out of review threads", async () => {
+    expect(await forge.listReviewThreads(gitlab, harness([[replied()]]).deps, "/repo")).toEqual([]);
+  });
+  test("AC-10 preserves position-less item threads", async () => {
+    const threads = await forge.listReviewThreads(gitlab, harness([[replied("w-B1.12345678")]]).deps, "/repo");
+    expect(threads).toHaveLength(1);
+    expect(threads[0]?.comments.map((c) => c.id)).toEqual(["91", "92"]);
+  });
+});
 
 describe("listPrComments", () => {
   test("US-001 AC-11 maps each GitLab note author id in order", async () => {

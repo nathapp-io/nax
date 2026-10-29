@@ -213,6 +213,17 @@ async function writeEvidence(
   }
 }
 
+async function readyHeadHold(env: BotFixEnv, state: BotFixState): Promise<string | undefined> {
+  try {
+    const fresh = await _fixReportDeps.readPrInfo(env.ref, env.forge, env.repoRoot);
+    if (fresh.headSha !== (state.pushedSha ?? env.info.headSha)) return "PR head changed since this execution";
+  } catch (error) {
+    env.ctx.callCtx.runtime.signal.throwIfAborted();
+    getLogger()?.warn("bot-fix", "Could not re-read PR head", { pr: env.ref.number, error: errorMessage(error) });
+    return "PR head could not be re-read";
+  }
+}
+
 /** Only durable workflow rulings and exact-head green CI can release a workflow draft. */
 export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
   if (
@@ -233,15 +244,14 @@ export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
     if (!ciAllowsReady(ci.outcome)) {
       return { patch: { markedReady: false, readyHeld: `CI ${ci.outcome}: ${ci.detail}` }, exit: "report" };
     }
+    const readyHeld = await readyHeadHold(env, state);
+    if (readyHeld) return { patch: { markedReady: false, readyHeld }, exit: "report" };
   }
   env.ctx.callCtx.runtime.signal.throwIfAborted();
-  const result = await env.forge.run(markReadyArgv(env.ref.forge, String(env.ref.number)), { cwd: env.repoRoot });
+  const result = await env.forge.run(markReadyArgv(env.ref.forge, env.info.url), { cwd: env.repoRoot });
   if (result.exitCode !== 0) {
-    throw new NaxError(`[bot-fix] Could not mark ${env.ref.repo}#${env.ref.number} ready`, "BOT_FIX_READY_FAILED", {
-      stage: "bot-fix",
-      exitCode: result.exitCode,
-      stderr: result.stderr,
-    });
+    const detail = result.stderr.trim() || `exit code ${result.exitCode}`;
+    return { patch: { markedReady: false, readyHeld: `could not mark ready: ${detail}` }, exit: "report" };
   }
   return { patch: { markedReady: true }, exit: "report" };
 }

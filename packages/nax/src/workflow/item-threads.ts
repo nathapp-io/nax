@@ -20,6 +20,8 @@ export interface ItemIndex {
   readonly reviewedHead?: string;
   readonly reviewedBase?: string;
   readonly keys: readonly string[];
+  /** Invalidate only the own comment observed before a reopen, never a later ruling echo. */
+  readonly pendingReopens?: readonly { readonly key: string; readonly commentId: string }[];
 }
 
 const HASH_CHARS = 8;
@@ -48,6 +50,15 @@ const KIND_NAMES = {
   ci: true,
   reason: true,
 } satisfies Record<OpenItem["kind"], boolean>;
+
+/**
+ * Rulings a re-raise cancels. `waived`, `confirmed` and `overridden` carry over when the same item is raised
+ * again: they are the reviewer's standing judgement on the item, not a statement that it is gone.
+ */
+export const REOPENED_BY_RERAISE: ReadonlySet<Disposition> = new Set<Disposition>([
+  "fixed",
+  "verified",
+] satisfies readonly Disposition[]);
 
 export function itemKey(item: OpenItem): string {
   const hash = createHash("sha256").update(`${item.kind}\n${item.issue}`).digest("hex").slice(0, HASH_CHARS);
@@ -145,32 +156,55 @@ export function renderItemClosed(sha: string): string {
   return `No longer open in the run at ${sha.slice(0, SHORT_SHA_CHARS)}.`;
 }
 
+/**
+ * Marker key of the notice that supersedes a cancelled ruling. `readThread` reads a ruling only from the last own
+ * marked comment, so posting the notice after a `wr-` echo leaves the item unruled until someone rules again.
+ */
+export function reopenKey(key: string): string {
+  return `wo-${key}`;
+}
+
+/** Unwrapped body; callers apply withNaxBotMarker with reopenKey(key). */
+export function renderItemReopened(sha: string): string {
+  return `Raised again by the run at ${sha.slice(0, SHORT_SHA_CHARS)}. Reply on this thread to rule on it.`;
+}
+
 function validSha(sha: string | undefined): string | undefined {
   return sha !== undefined && SHA_PATTERN.exec(sha)?.[0] === sha ? sha : undefined;
 }
 
-export function renderItemIndex(index: ItemIndex): string {
+export function renderItemIndex(index: ItemIndex, settled = 0): string {
   const head = validSha(index.reviewedHead);
   const base = head ? validSha(index.reviewedBase) : undefined;
   return [
-    `nax workflow open items: ${index.keys.length}`,
+    `nax workflow items: ${index.keys.length} (${settled} settled)`,
     `Reviewed head: ${head ?? "none"}`,
     ...(base ? [`Reviewed base: ${base}`] : []),
+    ...(index.pendingReopens ?? []).map(({ key, commentId }) => `Pending reopen: ${key} ${commentId}`),
     ...index.keys.map((key) => `- ${key}`),
   ].join("\n");
 }
 
 export function parseItemIndex(body: string): ItemIndex | null {
   const [countLine, headLine, ...rest] = bodyLines(body);
-  const count = /^nax workflow open items: (\d+)$/.exec(countLine ?? "")?.[1];
-  if (count === undefined || !headLine?.startsWith("Reviewed head: ")) return null;
+  const modern = /^nax workflow items: (\d+) \((\d+) settled\)$/.exec(countLine ?? "");
+  const count = modern?.[1] ?? /^nax workflow open items: (\d+)$/.exec(countLine ?? "")?.[1];
+  if (count === undefined || Number(modern?.[2] ?? 0) > Number(count)) return null;
+  if (!headLine?.startsWith("Reviewed head: ")) return null;
   const head = validSha(headLine.slice("Reviewed head: ".length));
   const baseLine = rest[0]?.startsWith("Reviewed base: ") ? rest.shift() : undefined;
   const base = head && baseLine ? validSha(baseLine.slice("Reviewed base: ".length)) : undefined;
+  const pendingReopens: NonNullable<ItemIndex["pendingReopens"]>[number][] = [];
+  while (rest[0]?.startsWith("Pending reopen: ")) {
+    const match = /^Pending reopen: (\S+) (\d+)$/.exec(rest.shift() ?? "");
+    if (!match?.[1] || !match[2]) return null;
+    pendingReopens.push({ key: match[1], commentId: match[2] });
+  }
   // Preserve even unpostable item keys: their presence must continue to hold readiness closed.
   if (rest.some((line) => !line.startsWith("- ")) || rest.length !== Number(count)) return null;
   return {
     keys: rest.map((line) => line.slice(2)),
+    ...(pendingReopens.length ? { pendingReopens } : {}),
     ...(head ? { reviewedHead: head } : {}),
     ...(base ? { reviewedBase: base } : {}),
   };

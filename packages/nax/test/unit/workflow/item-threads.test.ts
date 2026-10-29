@@ -133,19 +133,44 @@ describe("closed formats", () => {
     expect(renderItemClosed(head)).toBe("No longer open in the run at aaaaaaa.");
   });
 });
+describe("reopen formats", () => {
+  test("AC-1 derives the reopen key from the item key", async () => {
+    expect((await formats()).reopenKey(key)).toBe("wo-w-B3.12345678");
+  });
+  test("AC-2 renders the reopen notice with a short sha", async () => {
+    expect((await formats()).renderItemReopened(head)).toBe(
+      "Raised again by the run at aaaaaaa. Reply on this thread to rule on it.",
+    );
+  });
+  test("AC-3 only fixed and verified rulings are cancelled by a re-raise", async () => {
+    const reopened = (await formats()).REOPENED_BY_RERAISE;
+    expect(reopened.size).toBe(2);
+    expect([...reopened].toSorted((left, right) => left.localeCompare(right))).toEqual(["fixed", "verified"]);
+  });
+});
 describe("renderItemIndex", () => {
   test("AC-15 renders ordered index", async () => {
     expect(
       (await formats()).renderItemIndex({ reviewedHead: head, reviewedBase: base, keys: [key, "w-other.abcdef12"] }),
-    ).toBe(`nax workflow open items: 2\nReviewed head: ${head}\nReviewed base: ${base}\n- ${key}\n- w-other.abcdef12`);
+    ).toBe(
+      `nax workflow items: 2 (0 settled)\nReviewed head: ${head}\nReviewed base: ${base}\n- ${key}\n- w-other.abcdef12`,
+    );
   });
   test("retains unpostable keys and omits base without head", async () => {
     expect((await formats()).renderItemIndex({ reviewedBase: base, keys: ["w-bad id.12345678"] })).toBe(
-      "nax workflow open items: 1\nReviewed head: none\n- w-bad id.12345678",
+      "nax workflow items: 1 (0 settled)\nReviewed head: none\n- w-bad id.12345678",
     );
   });
 });
 describe("parseItemIndex", () => {
+  test("round trips readiness-readable pending reopen boundaries", async () => {
+    const { parseItemIndex, renderItemIndex } = await formats();
+    const index = { keys: [key], pendingReopens: [{ key, commentId: "42" }] };
+    expect(parseItemIndex(renderItemIndex(index))).toEqual(index);
+    expect(
+      parseItemIndex(`nax workflow items: 1 (0 settled)\nReviewed head: none\nPending reopen: ${key} bad\n- ${key}`),
+    ).toBeNull();
+  });
   test("AC-16 round trips raw and marked indices", async () => {
     const { parseItemIndex, renderItemIndex } = await formats();
     const index = { reviewedHead: head, reviewedBase: base, keys: [key, "w-bad id.12345678"] };
@@ -177,4 +202,33 @@ test("GitLab dotted logins round-trip", async () => {
   const f = await formats();
   const value = { ...ruling, by: "john.doe" };
   expect(f.parseRulingEcho(`wr-waived-${key}`, f.renderRulingEcho(value))).toEqual(value);
+});
+
+describe("settled item index", () => {
+  test("US-006 AC-2 explicit settled count", async () => {
+    expect((await formats()).renderItemIndex({ keys: [key, "w-other.abcdef12"] }, 1).split("\n")[0]).toBe(
+      "nax workflow items: 2 (1 settled)",
+    );
+  });
+  test("US-006 AC-3 count is presentation only", async () => {
+    const { renderItemIndex, parseItemIndex } = await formats();
+    const index = { reviewedHead: head, reviewedBase: base, keys: [key] };
+    expect(parseItemIndex(renderItemIndex(index, 1))).toEqual(index);
+    expect(
+      parseItemIndex(`nax workflow items: 1 (1 settled)\nReviewed head: ${head}\nReviewed base: ${base}\n- ${key}`),
+    ).toEqual(index);
+  });
+  test("US-006 AC-4 accepts legacy populated index", async () => {
+    expect((await formats()).parseItemIndex(`nax workflow open items: 1\nReviewed head: none\n- ${key}`)).toEqual({
+      keys: [key],
+    });
+  });
+  test.each([
+    [1, 2],
+    [2, 0],
+  ])("US-006 AC-5/6 rejects invalid counts %s/%s", async (n, settled) => {
+    expect(
+      (await formats()).parseItemIndex(`nax workflow items: ${n} (${settled} settled)\nReviewed head: none\n- ${key}`),
+    ).toBeNull();
+  });
 });
