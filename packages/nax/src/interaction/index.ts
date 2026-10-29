@@ -9,6 +9,36 @@ export { buildInteractionBridge } from "./bridge-builder";
 export type { ChainConfig } from "./chain";
 // Chain
 export { InteractionChain } from "./chain";
+export type {
+  ChatAnswer,
+  ChatAnswerRecord,
+  ChatAskRecord,
+  ChatAskSecret,
+  ChatNoticeRecord,
+  ChatSettled,
+  ChatSettledRecord,
+} from "./chat-ask-files";
+export {
+  _chatAskFileDeps,
+  CHAT_ASK_POLL_MS,
+  CHAT_ASK_STALE_MS,
+  CHAT_ASKS_FLAG,
+  chatAskKey,
+  chatHeartbeatFresh,
+  RUN_ASK_POLL_MS,
+  readChatAnswer,
+  readChatAsks,
+  readChatSettled,
+  removeChatHeartbeat,
+  signChatRecord,
+  takeChatNotices,
+  verifyChatRecord,
+  writeChatAnswer,
+  writeChatAsk,
+  writeChatHeartbeat,
+  writeChatNotice,
+  writeChatSettled,
+} from "./chat-ask-files";
 // Offline plugin check (`nax config --json` `interaction`)
 export type { InteractionCheckReport, InteractionCheckStatus } from "./check";
 export { _interactionCheckDeps, checkInteraction, INTERACTION_INIT_FAILED } from "./check";
