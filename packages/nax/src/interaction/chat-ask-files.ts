@@ -272,6 +272,19 @@ export async function writeChatAnswer(
   );
 }
 
+/** Child-only cleanup after rejecting an agent answer to a human-only ask. */
+export async function discardChatAgentAnswer(dir: string, key: string, secret: ChatAskSecret): Promise<void> {
+  await _chatAskFileDeps.withFileLock(
+    `${recordPath(dir, key, "settled")}.lock`,
+    async () => {
+      // Re-read under the publication lock: never remove a newer human answer.
+      const answer = await readChatAnswer(dir, key, secret);
+      if (answer?.respondedBy === "chat-agent") removeFile(recordPath(dir, key, "answer"));
+    },
+    { lockName: "chat-ask", errorPrefix: "[chat-asks]" },
+  );
+}
+
 export async function readChatAnswer(
   dir: string,
   key: string,

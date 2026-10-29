@@ -85,6 +85,16 @@ describe("chat ask file protocol", () => {
       files._chatAskFileDeps.write = write;
     }
   });
+  test.each(["chat-agent", "chat-user"] as const)(
+    "rejected-agent cleanup rechecks attribution under the lock (%s)",
+    async (respondedBy) => {
+      await files.writeChatAnswer(dir, key(), { ...answer, respondedBy }, secret);
+      await files.discardChatAgentAnswer(dir, key(), secret);
+      expect(await files.readChatAnswer(dir, key(), secret)).toEqual(
+        respondedBy === "chat-agent" ? undefined : { ...answer, respondedBy },
+      );
+    },
+  );
   test("duplicate answer is refused before rename and preserves the first answer", async () => {
     await files.writeChatAnswer(dir, key(), answer, secret);
     const rename = mock(originalRename);

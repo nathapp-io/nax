@@ -6,6 +6,7 @@ import {
   _chatAskFileDeps,
   CHAT_ASK_POLL_MS,
   chatAskKey,
+  readChatAnswer,
   readChatSettled,
   signChatRecord,
   writeChatAnswer,
@@ -127,6 +128,7 @@ describe("ChatAskPlugin guards", () => {
     await poll();
     expect(resolved).toBe(false);
     expect(await readChatSettled(dir, chatAskKey(request.id), secret)).toBeUndefined();
+    expect(await readChatAnswer(dir, chatAskKey(request.id), secret)).toBeUndefined();
     await answer();
     await poll();
     expect(await pending).toMatchObject({ respondedBy: "chat-user", value: "allow" });

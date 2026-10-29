@@ -3,8 +3,10 @@ import { NaxError } from "@/errors";
 import { getSafeLogger, type Logger } from "@/logger";
 import {
   CHAT_ASK_POLL_MS,
+  type ChatAnswer,
   chatAskKey,
   chatHeartbeatFresh,
+  discardChatAgentAnswer,
   readChatAnswer,
   writeChatAsk,
   writeChatNotice,
@@ -172,18 +174,27 @@ export class ChatAskPlugin implements InteractionPlugin {
     }, CHAT_ASK_POLL_MS);
   }
 
+  private async readAnswer(requestId: string, ask: PendingAsk): Promise<ChatAnswer | undefined> {
+    const answer = await readChatAnswer(this.options.dir, ask.key, this.options.secret, () => {
+      if (ask.warnedInvalid || !ask.active) return;
+      ask.warnedInvalid = true;
+      (this.options.logger ?? getSafeLogger())?.warn("chat-asks", "[chat-asks] Ignoring malformed answer", {
+        requestId,
+        key: ask.key,
+      });
+    });
+    if (ask.active && answer?.respondedBy === "chat-agent" && ask.humanOnly) {
+      await discardChatAgentAnswer(this.options.dir, ask.key, this.options.secret);
+      return undefined;
+    }
+    return answer;
+  }
+
   private async poll(requestId: string, ask: PendingAsk): Promise<void> {
     try {
-      const answer = await readChatAnswer(this.options.dir, ask.key, this.options.secret, () => {
-        if (ask.warnedInvalid || !ask.active) return;
-        ask.warnedInvalid = true;
-        (this.options.logger ?? getSafeLogger())?.warn("chat-asks", "[chat-asks] Ignoring malformed answer", {
-          requestId,
-          key: ask.key,
-        });
-      });
+      const answer = await this.readAnswer(requestId, ask);
       if (!ask.active) return;
-      if (answer && !(answer.respondedBy === "chat-agent" && ask.humanOnly)) {
+      if (answer) {
         await this.settle(requestId, ask, {
           requestId,
           action: answer.action,
