@@ -3,7 +3,7 @@
   "feature": "chat-run-asks",
   "branchName": "feat/chat-run-asks",
   "createdAt": "2026-10-29T12:00:00.000Z",
-  "updatedAt": "2026-10-29T12:38:13.860Z",
+  "updatedAt": "2026-10-29T12:49:21.647Z",
   "userStories": [
     {
       "id": "US-001",
@@ -670,14 +670,17 @@
       "dependencies": [
         "US-010"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Parent authentication, secretless restart behavior and preventing late approvals after job end are security-critical lifecycle paths."
+        "reasoning": "Parent authentication, secretless restart behavior and preventing late approvals after job end are security-critical lifecycle paths.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/jobs/run-asks.ts",
@@ -696,7 +699,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "70446ed2b075c844c406fe79e117bd22332f5026"
     },
     {
       "id": "US-012",
