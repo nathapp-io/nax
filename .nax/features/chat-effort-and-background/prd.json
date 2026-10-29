@@ -3,7 +3,7 @@
   "feature": "chat-effort-and-background",
   "branchName": "feat/chat-effort-and-background",
   "createdAt": "2026-10-29T00:00:00.000Z",
-  "updatedAt": "2026-10-29T05:49:34.553Z",
+  "updatedAt": "2026-10-29T05:58:48.069Z",
   "userStories": [
     {
       "id": "US-001",
@@ -774,14 +774,17 @@
       "dependencies": [
         "US-011"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Host/session ask isolation, approval-memory guards, timer/abort settlement and interactive card routing are security-sensitive."
+        "reasoning": "Host/session ask isolation, approval-memory guards, timer/abort settlement and interactive card routing are security-sensitive.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/ask-controller.ts",
@@ -814,7 +817,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9e1611d5276c621e85b371002c7655de149f6a99"
     },
     {
       "id": "US-013",
