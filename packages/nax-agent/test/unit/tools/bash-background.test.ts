@@ -118,7 +118,8 @@ describe("createBashTool background", () => {
         { root: "/test", resolvedPaths: [], maxBytes: 40_000, maxFileBytes: 2_000_000 },
       );
       expect(result.content).toContain("exit 0\nforeground");
-      expect(f.options().releaseDeadline).toBeUndefined();
+      // A port makes the foreground call movable, but its deadline stays active until moved.
+      expect(f.options().releaseDeadline?.aborted).toBe(false);
     },
   );
   test("without a port even true keeps foreground behavior", async () => {

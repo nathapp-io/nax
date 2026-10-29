@@ -32,7 +32,7 @@ import { type CommandLauncher, rawBashRefusalReason, sandboxSentence, unsandboxe
 import {
   type BackgroundCommandPort,
   type BackgroundLaunchOptions,
-  startBashBackground,
+  runBashWithBackground,
   withBackgroundSentence,
 } from "./bash-background.ts";
 import type { CodingTool, ToolRunContext } from "./registry.ts";
@@ -265,6 +265,7 @@ interface BashLaunchRequest {
   /** US-003: the call asked for exactly `unsandboxed: true`, so run it outside the sandbox. */
   readonly unwrapped: boolean;
   readonly backgroundLaunch?: BackgroundLaunchOptions;
+  readonly isForeground?: () => boolean;
 }
 
 /**
@@ -285,6 +286,7 @@ async function launchIntercepted({
   timeoutMs,
   unwrapped,
   backgroundLaunch,
+  isForeground,
 }: BashLaunchRequest): Promise<{ launched: BashLaunch; stdout: string }> {
   // The run's interceptor arrives on the context (S1 spec port 7), immutable
   // for this call, so the launch below and `postProcess` see the same object.
@@ -318,7 +320,9 @@ async function launchIntercepted({
           ...(unwrapped ? { unwrapped: true } : {}),
         })
       : { ...(await _bashToolDeps.runArgv({ argv: executed, ...common })), executed, sandbox: undefined };
-  if (backgroundLaunch !== undefined || !intercepted.rewritten) return { launched, stdout: launched.stdout };
+  if (!intercepted.rewritten || (backgroundLaunch !== undefined && isForeground?.() !== true)) {
+    return { launched, stdout: launched.stdout };
+  }
 
   // The request describes the command the MODEL wrote — the same shape
   // `interceptShell` sent — so post-processing stays keyed to the original,
@@ -420,15 +424,16 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
         // given call asked for is the call's.
         const unwrapped = input.unsandboxed === true;
         const request = { command, shell, opts, ctx, timeoutMs, unwrapped };
-        const background = startBashBackground({
+        const result = await runBashWithBackground({
           port: opts.background,
           runInBackground: input.runInBackground,
           command,
           description: input.description,
-          launch: (backgroundLaunch) => launchIntercepted({ ...request, backgroundLaunch }),
+          signal: ctx.signal,
+          launch: (backgroundLaunch, isForeground) => launchIntercepted({ ...request, backgroundLaunch, isForeground }),
         });
-        if (background !== undefined) return background;
-        const { launched, stdout } = await launchIntercepted(request);
+        if ("content" in result) return result;
+        const { launched, stdout } = result;
         // Same framing ladder as RunCommand (Exec) via the shared
         // `formatExecBody`: an aborted call opens with the cancellation line
         // and surfaces whatever partial output the readers captured before the
