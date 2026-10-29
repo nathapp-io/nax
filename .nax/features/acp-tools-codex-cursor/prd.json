@@ -3,7 +3,7 @@
   "feature": "acp-tools-codex-cursor",
   "branchName": "feat/acp-tools-codex-cursor",
   "createdAt": "2026-10-29T00:00:00.000Z",
-  "updatedAt": "2026-10-29T15:37:36.144Z",
+  "updatedAt": "2026-10-29T15:41:02.880Z",
   "userStories": [
     {
       "id": "US-001",
@@ -238,14 +238,17 @@
         "cursor"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A small pure module introduces structured identity parsing and sticky conflict state used for authorization; the access-control security override requires strict test isolation."
+        "reasoning": "A small pure module introduces structured identity parsing and sticky conflict state used for authorization; the access-control security override requires strict test isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/client/registry.ts",
@@ -266,7 +269,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6324f0cc54ecf72e5469d49d0b1021c9afc14149"
     },
     {
       "id": "US-004",
