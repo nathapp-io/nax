@@ -289,7 +289,24 @@ and this feature does not change that.
 | Re-attached jobs: human cards only | Claude | 2026-10-29 |
 | TUI host only, no ACP / koda | Claude | 2026-10-29 |
 
-## 9. Related documents
+## 9. Security amendments (user, 2026-10-29, after an automated security review)
+
+- **Signed records.** The run's own agents can reach the ask directory, so every ask, answer,
+  settled and notice record carries an HMAC-SHA256 over its content with a per-job secret, and
+  unsigned or wrongly signed records are ignored. The chat generates the secret, hands it to the
+  child once over a stdin pipe (never argv, env or disk) and keeps it in memory only. The
+  directory is created `0700`.
+- **Consequence for 4.5.** After a chat restart the parent has no secret for a re-attached job,
+  so it neither refreshes that job's heartbeat nor shows its asks: they go to Telegram, then to
+  the run's timeout default (replaces "re-attached jobs get human cards").
+- **Untrusted text.** The agent notice wraps the run-supplied summary, detail and option labels
+  in a delimited block the agent is told to treat as data, never as instructions.
+- **Audit.** An answer from the chat agent is recorded with `decidedBy: "model"` in the approval
+  audit, not `"human"`.
+- **Unchanged by ruling.** Under an approved full chain the agent still answers tool approvals
+  (user kept 4).
+
+## 10. Related documents
 
 - `2026-10-27-nax-chat-workflow-dispatch-slice2-design.md` (4.6 names this
   follow-up; 4.7 the full-chain approval rule).
