@@ -14,11 +14,14 @@ import {
   writeChatHeartbeat,
 } from "@/interaction";
 import type { Logger } from "@/logger";
+import { buildRunAskNotice } from "@/prompts";
 import type { ChatAskController } from "../ask-controller";
 import type { ChatChains } from "./chain-controller";
 import type { ChatJobs } from "./job-runner";
 import { jobAsksDir } from "./job-store";
 import type { ChatJob } from "./job-types";
+import { agentResponse } from "./run-ask-answer";
+import { routeRunAsk } from "./run-ask-route";
 
 export interface RunAskReply {
   readonly answer: string;
@@ -59,7 +62,7 @@ export const _runAsksDeps = {
   writeChatHeartbeat,
   writeChatAnswer,
 };
-interface HumanAsk {
+interface PendingAsk {
   readonly jobId: string;
   readonly dir: string;
   readonly secret: ChatAskSecret;
@@ -68,12 +71,16 @@ interface HumanAsk {
 }
 
 class RunAsks implements ChatRunAsks {
+  private agentStreak = 0;
+  private readonly agentWaiting = new Set<string>();
+  private readonly answering = new Set<string>();
+  private readonly notices = new Map<string, string>();
   private readonly seen = new Set<string>();
   private readonly settledSeen = new Set<string>();
   private readonly invalidFiles = new Set<string>();
   private readonly notes: string[] = [];
   private readonly lifetime = new AbortController();
-  private readonly open = new Map<string, HumanAsk>();
+  private readonly open = new Map<string, PendingAsk>();
   private readonly listeners = new Set<() => void>();
   private readonly unsubscribe: () => void;
   private timer?: TimerHandle;
@@ -107,6 +114,7 @@ class RunAsks implements ChatRunAsks {
   private recordSettlement(id: string, ask: ChatAskRecord, settled: ChatSettled): void {
     this.open.get(id)?.controller.abort();
     this.open.delete(id);
+    this.removeAgent(id);
     this.seen.add(id);
     if (this.settledSeen.has(id)) return;
     this.settledSeen.add(id);
@@ -134,6 +142,7 @@ class RunAsks implements ChatRunAsks {
       if (this.options.jobs.get(ask.jobId)?.state === "running") continue;
       ask.controller.abort();
       this.open.delete(id);
+      this.removeAgent(id);
     }
   }
 
@@ -193,13 +202,25 @@ class RunAsks implements ChatRunAsks {
       }
       if (!this.active(job.id)) return;
       this.seen.add(id);
-      const ask: HumanAsk = { jobId: job.id, dir, secret, record, controller: new AbortController() };
+      const ask: PendingAsk = { jobId: job.id, dir, secret, record, controller: new AbortController() };
       this.open.set(id, ask);
-      this.launchHuman(id, ask);
+      const route = routeRunAsk({
+        job,
+        request: record.request,
+        chainActive: !!job.chainId && this.options.chains.isActive(job.chainId),
+        agentStreak: this.agentStreak,
+      });
+      if (route === "human") this.launchHuman(id, ask);
+      else {
+        this.agentStreak++;
+        this.agentWaiting.add(id);
+        this.notices.set(id, buildRunAskNotice(id, record.request));
+        this.changed();
+      }
     }
   }
 
-  private launchHuman(id: string, ask: HumanAsk): void {
+  private launchHuman(id: string, ask: PendingAsk): void {
     // Never await a human card inside the scan: other asks and heartbeats must keep moving.
     let failed = false;
     void this.showHuman(ask)
@@ -216,7 +237,7 @@ class RunAsks implements ChatRunAsks {
     this.changed();
   }
 
-  private async showHuman(ask: HumanAsk): Promise<void> {
+  private async showHuman(ask: PendingAsk): Promise<void> {
     const { request } = ask.record;
     const signal = ask.controller.signal;
     const summary = `${ask.jobId}: ${request.summary}`;
@@ -248,7 +269,7 @@ class RunAsks implements ChatRunAsks {
     await this.deliver(ask, answer);
   }
 
-  private async deliver(ask: HumanAsk, answer: string): Promise<void> {
+  private async deliver(ask: PendingAsk, answer: string): Promise<void> {
     const { request, key } = ask.record;
     if (ask.controller.signal.aborted || !this.active(ask.jobId)) return;
     if (await _runAsksDeps.readChatSettled(ask.dir, key, ask.secret)) return;
@@ -276,19 +297,61 @@ class RunAsks implements ChatRunAsks {
     }
   }
 
-  peekNotice(): undefined {
-    return undefined;
+  private removeAgent(id: string): void {
+    this.agentWaiting.delete(id);
+    if (this.notices.delete(id)) this.changed();
   }
-  takeNotice(): undefined {
-    return undefined;
+
+  peekNotice(): string | undefined {
+    return this.notices.values().next().value;
+  }
+  takeNotice(): string | undefined {
+    const head = this.notices.entries().next().value;
+    if (!head) return undefined;
+    this.notices.delete(head[0]);
+    this.changed();
+    return head[1];
   }
   takeNotes(): readonly string[] {
     return this.notes.splice(0);
   }
-  async answer(askId: string, _reply: RunAskReply): Promise<RunAskResult> {
-    return { ok: false, message: `[chat] ask ${askId} is not waiting for the agent` };
+  async answer(askId: string, reply: RunAskReply): Promise<RunAskResult> {
+    const unavailable: RunAskResult = { ok: false, message: `[chat] ask ${askId} is not waiting for the agent` };
+    const ask = this.open.get(askId);
+    if (!ask || !this.agentWaiting.has(askId) || this.answering.has(askId) || !this.active(ask.jobId))
+      return unavailable;
+    this.answering.add(askId);
+    try {
+      const settled = await _runAsksDeps.readChatSettled(ask.dir, ask.record.key, ask.secret);
+      const answered = await _runAsksDeps.readChatAnswer(ask.dir, ask.record.key, ask.secret);
+      if (settled) this.recordSettlement(askId, ask.record, settled);
+      if (settled || answered || !this.active(ask.jobId) || !this.agentWaiting.has(askId)) {
+        this.removeAgent(askId);
+        return unavailable;
+      }
+      if (reply.answer === "escalate") {
+        this.removeAgent(askId);
+        this.launchHuman(askId, ask);
+        return { ok: true };
+      }
+      const response = agentResponse(ask.record, reply, this.options.now());
+      if (!response) return { ok: false, message: `[chat] invalid answer for ${askId}` };
+      await _runAsksDeps.writeChatAnswer(ask.dir, ask.record.key, response, ask.secret, ask.controller.signal);
+      if (!this.active(ask.jobId) || ask.controller.signal.aborted) return unavailable;
+      this.removeAgent(askId);
+      this.open.delete(askId);
+      this.note(`[${ask.jobId}] agent answered ${reply.answer}: ${reply.reason}`);
+      return { ok: true };
+    } catch (cause) {
+      this.warn(cause, ask.jobId);
+      return { ok: false, message: `[chat] could not write the answer for ${askId}` };
+    } finally {
+      this.answering.delete(askId);
+    }
   }
-  noteUserTurn(): void {}
+  noteUserTurn(): void {
+    this.agentStreak = 0;
+  }
   onChange(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => {
@@ -310,6 +373,8 @@ class RunAsks implements ChatRunAsks {
     this.timer = undefined;
     for (const ask of this.open.values()) ask.controller.abort();
     this.open.clear();
+    this.agentWaiting.clear();
+    this.notices.clear();
     this.listeners.clear();
   }
 }
