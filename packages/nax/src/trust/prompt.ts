@@ -11,6 +11,7 @@
  * choices, so it cannot express this question.
  */
 
+import type { Readable } from "node:stream";
 import type { TrustChoice } from "./types";
 
 /** The invariant half of the question, between the root and the choices. */
@@ -43,17 +44,46 @@ export async function promptTrustChoice(root: string, parent: string | null): Pr
   return "no";
 }
 
-/** One line from stdin without its terminator, or `null` at end of input. */
-async function readStdinLine(): Promise<string | null> {
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for await (const chunk of Bun.stdin.stream()) {
-    buffer += decoder.decode(chunk, { stream: true });
-    const newline = buffer.indexOf("\n");
-    if (newline !== -1) return stripCarriageReturn(buffer.slice(0, newline));
-  }
-  buffer += decoder.decode();
-  return buffer === "" ? null : stripCarriageReturn(buffer);
+/**
+ * One line from stdin without its terminator, or `null` at end of input.
+ *
+ * Reads through `process.stdin` -- the stream Ink reads later -- and leaves it as
+ * found: the listeners are removed and any bytes read past the newline are
+ * pushed back. Iterating `Bun.stdin.stream()` and returning early cancels that
+ * stream, after which Ink's raw-mode reads never receive data (#2733).
+ */
+export function readStdinLine(stdin: Readable = process.stdin): Promise<string | null> {
+  return new Promise((resolve) => {
+    // An already-ended stream emits no further `end`; waiting would hang.
+    if (stdin.readableEnded) {
+      resolve(null);
+      return;
+    }
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const finish = (line: string | null) => {
+      stdin.off("readable", onReadable);
+      stdin.off("end", onEnd);
+      resolve(line === null ? null : stripCarriageReturn(line));
+    };
+    const onEnd = () => {
+      buffer += decoder.decode();
+      finish(buffer === "" ? null : buffer);
+    };
+    const onReadable = () => {
+      for (let chunk = stdin.read(); chunk !== null; chunk = stdin.read()) {
+        buffer += typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
+        const newline = buffer.indexOf("\n");
+        if (newline === -1) continue;
+        const rest = buffer.slice(newline + 1);
+        if (rest !== "") stdin.unshift(rest);
+        finish(buffer.slice(0, newline));
+        return;
+      }
+    };
+    stdin.on("readable", onReadable);
+    stdin.once("end", onEnd);
+  });
 }
 
 /** A CRLF terminal sends `\r` before `\n`; the answer is the text before both. */
