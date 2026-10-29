@@ -3,7 +3,7 @@
   "feature": "chat-run-asks",
   "branchName": "feat/chat-run-asks",
   "createdAt": "2026-10-29T12:00:00.000Z",
-  "updatedAt": "2026-10-29T11:14:25.839Z",
+  "updatedAt": "2026-10-29T11:23:21.811Z",
   "userStories": [
     {
       "id": "US-001",
@@ -224,14 +224,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Concurrent approval channels and cancellation races control which authorization wins; security override applies."
+        "reasoning": "Concurrent approval channels and cancellation races control which authorization wins; security override applies.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/interaction/plugins/chat.ts",
@@ -249,7 +252,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "bb59f385e43a6acb36fa3a2c8c0771be8c1f6835"
     },
     {
       "id": "US-005",
