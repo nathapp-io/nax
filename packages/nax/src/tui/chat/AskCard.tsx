@@ -428,19 +428,33 @@ export function AskCard({
     if (choice === "deny") onDeclined?.();
   };
 
+  /** Bare arrows move either selectable card; shifted arrows belong to the viewport. */
+  const moveFromKey = (key: Key): void => {
+    if (key.shift) return;
+    if (key.upArrow) moveSelection(Math.max(0, latestSelected.current - 1));
+    else if (key.downArrow) moveSelection(Math.min(options.length - 1, latestSelected.current + 1));
+  };
+
+  /** Choice ids never pass through the approval decision shortcuts. */
+  const chooseFromKey = (input: string, key: Key): void => {
+    if (model.kind !== "choice") return;
+    if (key.escape) {
+      controller.resolveChoice(ask.requestId, model.fallback);
+      return;
+    }
+    if (key.ctrl || key.meta) return;
+    const option = key.return
+      ? model.options[latestSelected.current]
+      : model.options.find((option) => String(option.index) === input);
+    if (option) controller.resolveChoice(ask.requestId, option.id);
+    else moveFromKey(key);
+  };
+
   useInput(
     (input, key) => {
       if (model.kind === "question") return;
       if (model.kind === "choice") {
-        if (key.escape) controller.resolveChoice(ask.requestId, model.fallback);
-        else if (!key.ctrl && !key.meta) {
-          const option = key.return
-            ? model.options[latestSelected.current]
-            : model.options.find((option) => String(option.index) === input);
-          if (option) controller.resolveChoice(ask.requestId, option.id);
-          else if (!key.shift && key.upArrow) moveSelection(Math.max(0, latestSelected.current - 1));
-          else if (!key.shift && key.downArrow) moveSelection(Math.min(options.length - 1, latestSelected.current + 1));
-        }
+        chooseFromKey(input, key);
         return;
       }
       // ink reports a lone escape as `escape` *and* `meta`, so escape is taken first: the
@@ -454,10 +468,7 @@ export function AskCard({
         choose(choice);
         return;
       }
-      // A shifted arrow belongs to the transcript viewport, which keeps it in every state.
-      if (key.shift) return;
-      if (key.upArrow) moveSelection(Math.max(0, latestSelected.current - 1));
-      else if (key.downArrow) moveSelection(Math.min(options.length - 1, latestSelected.current + 1));
+      moveFromKey(key);
     },
     { isActive: active },
   );
