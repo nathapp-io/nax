@@ -76,6 +76,7 @@ export const _runSetupDeps = {
   // every story's package. Injected so tests can stub the build and observe
   // the arguments `setupRun` derives.
   buildApprovalsSeal,
+  initInteractionChain,
   // US-002 seams: `setupRun` acquires the checkout lock then the feature lock
   // through these injectable entries. Added so tests can force refusals /
   // record ordering; the acquisition sequence itself is the implementer's work.
@@ -119,6 +120,8 @@ export interface RunSetupOptions {
   startTime: number;
   skipPrecheck: boolean;
   headless: boolean;
+  chatAsksDir?: string;
+  chatAskSecret?: Uint8Array;
   formatterMode: "quiet" | "normal" | "verbose" | "json";
   getTotalCost: () => number;
   getIterations: () => number;
@@ -361,7 +364,11 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     const prd = await loadPRD(prdPath);
 
     // Initialize interaction chain (US-008) — do this BEFORE precheck so story size prompts can use it
-    const interactionChain = await initInteractionChain(config, headless);
+    const interactionChain = await _runSetupDeps.initInteractionChain(
+      config,
+      headless,
+      options.chatAsksDir ? { chatAsksDir: options.chatAsksDir, chatAskSecret: options.chatAskSecret } : undefined,
+    );
 
     // ── Prime StatusWriter with PRD so precheck-failed can be recorded ─────────
     statusWriter.setPrd(prd);

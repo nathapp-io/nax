@@ -109,6 +109,7 @@ import {
   initRunLogging,
   maybeRunPlanPhase,
   parseRunPreconditionFlags,
+  readRunChatAskSecret,
   resolveRunLogMode,
   resolveRunProjectContext,
   resolveRunScheduleAndPlanFlags,
@@ -234,6 +235,7 @@ program
   .option("--one-shot", "Skip interactive planning Q&A, use single LLM call (ACP only)", false)
   .option("--force", "Force overwrite existing prd.json when using --plan", false)
   .option("--headless", "Force headless mode (disable TUI, use pipe mode)", false)
+  .addOption(new Option("--chat-asks <dir>").hideHelp())
   .option("--verbose", "Enable verbose logging (debug level)", false)
   .option("--quiet", "Quiet mode (warnings and errors only)", false)
   .option("--silent", "Silent mode (errors only)", false)
@@ -260,7 +262,7 @@ program
   )
   .action(async (options) => {
     const workdir = resolveRunWorkdir(options);
-    const { maxIterationsFlag, parallel } = parseRunPreconditionFlags(options);
+    const { maxIterationsFlag, parallel, chatAsksDir } = parseRunPreconditionFlags(options);
     await validateBakeoffPreflight(options, workdir);
     const scheduleGate = resolveRunScheduleAndPlanFlags(options);
 
@@ -328,6 +330,7 @@ program
       formatterMode,
     });
 
+    const chatAskSecret = await readRunChatAskSecret(chatAsksDir);
     config = applyRunCliOverrides(config, options, maxIterationsFlag);
 
     const globalNaxDir = join(homedir(), ".nax");
@@ -381,6 +384,8 @@ program
       logFilePath,
       formatterMode,
       useHeadless,
+      chatAsksDir,
+      chatAskSecret,
       agentStreamEvents,
       tuiInstance,
     });

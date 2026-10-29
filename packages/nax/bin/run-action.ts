@@ -31,6 +31,7 @@ import { basename, join } from "node:path";
 
 import chalk from "chalk";
 import { planCommand, promptForConfirmation, resolveRunProfileOverride, runReplanLoop } from "../src/cli";
+import { CHAT_ASK_SECRET_READ_MS, parseChatAsksFlag, readChatAskSecret } from "../src/cli/run-chat-asks";
 import { resolveContextCliOverrides } from "../src/cli/run-context-overrides";
 import {
   applyMaxIterationsFlag,
@@ -64,6 +65,7 @@ export interface RunActionOptions {
   oneShot?: boolean;
   force?: boolean;
   headless?: boolean;
+  chatAsks?: string;
   verbose?: boolean;
   quiet?: boolean;
   silent?: boolean;
@@ -133,6 +135,7 @@ export function resolveRunWorkdir(options: RunActionOptions): string {
 export function parseRunPreconditionFlags(options: RunActionOptions): {
   maxIterationsFlag: ResolvedMaxIterationsFlag;
   parallel: number | undefined;
+  chatAsksDir: string | undefined;
 } {
   // US-001: validate -m before any config load, bake-off check or TUI mount.
   // The parsed value is applied to `config` below, once it is loaded.
@@ -149,7 +152,19 @@ export function parseRunPreconditionFlags(options: RunActionOptions): {
     console.error(chalk.red(parallelFlag.message));
     process.exit(1);
   }
-  return { maxIterationsFlag, parallel: parallelFlag.value };
+  const chatAsksFlag = parseChatAsksFlag(options.chatAsks);
+  if (!chatAsksFlag.ok) {
+    console.error(chalk.red(chatAsksFlag.message));
+    process.exit(1);
+  }
+  return { maxIterationsFlag, parallel: parallelFlag.value, chatAsksDir: chatAsksFlag.value };
+}
+
+/** Read once after logging is initialized so invalid secrets retain the warning path. */
+export async function readRunChatAskSecret(chatAsksDir: string | undefined): Promise<Uint8Array | undefined> {
+  if (!chatAsksDir) return undefined;
+  // The reader takes a Web stream; Bun exposes the same stdin fd natively.
+  return readChatAskSecret(Bun.stdin.stream(), CHAT_ASK_SECRET_READ_MS);
 }
 
 /**
