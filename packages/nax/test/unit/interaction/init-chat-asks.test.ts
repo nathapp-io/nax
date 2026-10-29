@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { makeLogger, makeNaxConfig } from "@test/helpers";
+import { assertDefined, makeLogger, makeNaxConfig } from "@test/helpers";
 import { _interactionInitDeps, initInteractionChain } from "@/interaction/init";
 import { ChatAskPlugin } from "@/interaction/plugins/chat";
 import type { InteractionPlugin } from "@/interaction/types";
@@ -43,6 +43,7 @@ describe("initInteractionChain chat asks", () => {
       const create = mock(() => plugin);
       _interactionInitDeps.createInteractionPlugin = create;
       const cfg = config(name);
+      assertDefined(cfg.interaction, "interaction fixture");
       const chain = await initInteractionChain(cfg, true, options);
       expect(create).toHaveBeenCalledWith(name);
       expect(plugin.init).toHaveBeenCalledTimes(1);
