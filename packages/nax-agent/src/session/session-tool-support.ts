@@ -4,7 +4,7 @@
  * buildCodingToolSupport takes, picks the embedder default protected-paths
  * policy, and enforces the sandbox floor for "full".
  */
-import { unsandboxedToolOptions } from "#src/coding-tools/coding-tool-extras";
+import { backgroundToolOptions, unsandboxedToolOptions } from "#src/coding-tools/coding-tool-extras";
 import { resolveSessionSandbox } from "#src/coding-tools/coding-tool-sandbox";
 import { buildCodingToolSupport, type CodingToolSupport } from "#src/coding-tools/coding-tool-support";
 import { UNIVERSAL_CODING_TOOLS } from "#src/coding-tools/universal-coding-tools";
@@ -15,6 +15,7 @@ import { DEFAULT_SANDBOX_CONFIG, type SandboxConfig } from "#src/config/schemas-
 import { credentialsConfig } from "#src/infra/credentials-config";
 import type { AskResolver } from "#src/permissions/index";
 import type { CommandLauncher, SandboxState } from "#src/sandbox/index";
+import type { BackgroundCommandPort } from "#src/tools/bash-background";
 import { EMPTY_OWNED_PATHS_POLICY } from "#src/tools/owned-paths";
 import type { ProtectedPathsPolicy } from "#src/tools/protected-paths";
 import type { ResolvedProviderTools } from "#src/tools/provider-advertise";
@@ -150,6 +151,7 @@ export interface SessionToolSupportArgs {
    * defaulting to off, so every existing caller keeps today's tool surface.
    */
   readonly unsandboxedCommands?: boolean;
+  readonly backgroundCommands?: BackgroundCommandPort;
   readonly providerTools?: ResolvedProviderTools;
   /**
    * Narrow the profile's built-in tools to these names; the universal scratchpad
@@ -235,6 +237,7 @@ export function buildSessionToolSupport(args: SessionToolSupportArgs): SessionTo
     ...(args.interceptor !== undefined ? { interceptor: args.interceptor } : {}),
     ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
     ...unsandboxedToolOptions(args),
+    ...backgroundToolOptions(args),
     ...postureToolOptions(args),
   });
   // Unreachable while the scratchpad trio is always declared and granted; kept for the type.

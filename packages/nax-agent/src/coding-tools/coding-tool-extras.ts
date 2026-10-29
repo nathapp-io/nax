@@ -6,9 +6,11 @@
  * source limit ahead of the P4 sandbox wiring. A pure move: every comment that
  * explains a field below travelled with it.
  */
+
 import type { BashApprovalMode } from "#src/config/bash-approval";
 import type { QualityCommandSpec } from "#src/internal/command-spec/index";
 import type { CommandLauncher } from "#src/sandbox/index";
+import type { BackgroundCommandPort } from "#src/tools/bash-background";
 import {
   type CodingTool,
   createBashTool,
@@ -46,6 +48,7 @@ export interface DeclaredCommandToolsArgs {
    * flag by name.
    */
   readonly unsandboxedCommands?: boolean;
+  readonly backgroundCommands?: BackgroundCommandPort;
 }
 
 /**
@@ -150,8 +153,23 @@ export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): Codin
             ...(args.humanApproval === true ? { humanApproval: true } : {}),
             ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
             ...unsandboxedToolOptions(args),
+            ...bashBackgroundOption(args),
           }),
         ]
       : []),
   ];
+}
+
+/** Preserve absence at every session/support forwarding hop. */
+export function backgroundToolOptions(args?: { readonly backgroundCommands?: BackgroundCommandPort }): {
+  readonly backgroundCommands?: BackgroundCommandPort;
+} {
+  return args?.backgroundCommands === undefined ? {} : { backgroundCommands: args.backgroundCommands };
+}
+
+/** Only Bash receives this capability; RunCommand's argv branch stays unchanged. */
+function bashBackgroundOption(args: { readonly backgroundCommands?: BackgroundCommandPort }): {
+  readonly background?: BackgroundCommandPort;
+} {
+  return args.backgroundCommands === undefined ? {} : { background: args.backgroundCommands };
 }

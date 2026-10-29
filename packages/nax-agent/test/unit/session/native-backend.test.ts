@@ -9,7 +9,12 @@ import {
   AgentSessionError,
   type AgentSessionProfile,
   type BackendOpenContext,
+  type BackgroundCommandEnd,
+  type BackgroundCommandHandle,
+  type BackgroundCommandPort,
+  type BackgroundCommandSink,
   createAgentSession,
+  type ForegroundCommand,
   type SessionEventBody,
 } from "@nathapp/nax-agent";
 import { _sessionSandboxDeps } from "#src/coding-tools/coding-tool-sandbox";
@@ -85,6 +90,77 @@ afterEach(async () => {
 });
 
 const IDLE = new AbortController().signal;
+
+/** Public-entry type contract plus an observable host port. */
+function backgroundPort() {
+  const handles: BackgroundCommandHandle[] = [];
+  const foregroundCalls: ForegroundCommand[] = [];
+  const endings: Promise<BackgroundCommandEnd>[] = [];
+  const sink: BackgroundCommandSink = { id: "bash-session", append() {} };
+  const port: BackgroundCommandPort = {
+    adopt(handle) {
+      handles.push(handle);
+      endings.push(handle.ended);
+      return sink;
+    },
+    foreground(call) {
+      foregroundCalls.push(call);
+      return () => {};
+    },
+  };
+  return { port, handles, foregroundCalls, endings };
+}
+
+describe("nativeBackend — backgroundCommands", () => {
+  withDepsRestore(_agentSessionDeps);
+  withDepsRestore(_sessionSandboxDeps);
+  withDepsRestore(_launcherDeps);
+  withSessionSandboxSeam(_sessionSandboxDeps);
+
+  test.each([true, false])("AC-3/4 full advertises background Bash only with a port: %s", async (enabled) => {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    const opened = await openBackend(
+      nativeBackend({ model: MODEL, ...(enabled ? { hostPorts: { backgroundCommands: backgroundPort().port } } : {}) }),
+      await ctx({ profile: "full" }),
+    );
+    const bash = opened.turnOpts().codingTools?.find((tool) => tool.name === "Bash");
+    expect(bash).toBeDefined();
+    expect(Object.keys(bash?.inputSchema.properties ?? {}).includes("runInBackground")).toBe(enabled);
+  });
+
+  test("AC-5/6 a model background Bash call adopts once through the public typed port", async () => {
+    installManualTimers();
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    _launcherDeps.runArgv = async () => ({
+      exitCode: 0,
+      stdout: "done",
+      stderr: "",
+      timedOut: false,
+      aborted: false,
+      orphansKilled: false,
+    });
+    const host = backgroundPort();
+    const provider = installScriptedProvider();
+    provider.push(
+      toolRound([{ id: "b1", name: "Bash", input: { command: "echo done", runInBackground: true } }]),
+      textRound("ok"),
+    );
+    const session = await createAgentSession(
+      sessionOptions({
+        profile: "full",
+        workdir: makeTestDir("nax-session-background-"),
+        backend: nativeBackend({ model: MODEL, bashApproval: "raw", hostPorts: { backgroundCommands: host.port } }),
+      }),
+    );
+    sessionCleanups.push(() => session.close());
+    expect(turnEndOf(await collect(session.send("run in background"))).status).toBe("completed");
+    expect(host.handles).toHaveLength(1);
+    expect(host.handles[0]).toMatchObject({ command: "echo done", origin: "agent" });
+    expect(await Promise.all(host.endings)).toEqual([{ exitCode: 0, timedOut: false, aborted: false }]);
+    expect(host.foregroundCalls).toEqual([]);
+    expect(JSON.stringify(provider.requests[1]?.messages)).toContain("started in the background as bash-session");
+  });
+});
 
 async function ctx(extra: Partial<BackendOpenContext> = {}): Promise<BackendOpenContext> {
   const workdir = makeTestDir("nax-native-backend-");

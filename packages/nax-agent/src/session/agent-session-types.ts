@@ -7,6 +7,7 @@ import type { CommandInterceptor } from "#src/command-interceptor/index";
 import type { CommandShadow } from "#src/command-safety/types";
 import type { TokenUsage } from "#src/cost/standard-types";
 import type { TranscriptStore } from "#src/native/session/transcript-types";
+import type { BackgroundCommandPort } from "#src/tools/bash-background";
 import type { ProtectedPathsPolicy } from "#src/tools/protected-paths";
 import type { BackendInfo, SessionBackend } from "./session-backend.ts";
 import type { JSONSchema } from "./tool-descriptor.ts";
@@ -50,6 +51,8 @@ export interface AgentSessionHostPorts {
   readonly protectedPaths?: ProtectedPathsPolicy;
   readonly commandInterceptor?: CommandInterceptor;
   readonly commandShadow?: CommandShadow;
+  /** Opt in to host-owned background Bash commands. */
+  readonly backgroundCommands?: BackgroundCommandPort;
 }
 
 export interface CreateAgentSessionOptions {
