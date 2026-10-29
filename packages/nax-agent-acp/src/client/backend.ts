@@ -40,6 +40,7 @@ import { createInboundRouter, type InboundRouter } from "#src/client/inbound";
 import { type LaunchFn, launchAgent } from "#src/client/launch";
 import { type OpenedAcp, openAcpSession } from "#src/client/open";
 import { type AcpBackendOptions, type ResolvedAcpOptions, resolveAcpOptions } from "#src/client/options";
+import { createOwnToolLedger } from "#src/client/own-tool-calls";
 import { decidePermission, type PermissionContext } from "#src/client/permissions";
 import { race } from "#src/client/race";
 import { canRestore, type Restore, storedSessionOf } from "#src/client/resume";
@@ -142,8 +143,10 @@ export function toolHostFor(
  * other, a policy there would approve an escalation the agent never sandboxed.
  * US-003: the agent's name (which raw field carries a shell command) and the
  * session's rules join it too, so review with no sandbox can adjudicate a command.
+ * US-004: an agent that reports MCP calls in structured fields (Codex, Cursor) gets a
+ * per-turn own-tool ledger, so a proven call to the session's own tool host is allowed once.
  */
-function routerFor(ctx: BackendOpenContext, options: ResolvedAcpOptions): InboundRouter {
+function routerFor(ctx: BackendOpenContext, options: ResolvedAcpOptions, serverName?: string): InboundRouter {
   const entry = options.entry;
   const sandbox = entry?.preApproval !== undefined && ctx.sandbox?.kind === "policy" ? ctx.sandbox.policy : undefined;
   const base: Omit<PermissionContext, "signal"> = {
@@ -171,9 +174,17 @@ function routerFor(ctx: BackendOpenContext, options: ResolvedAcpOptions): Inboun
           },
         }),
   };
+  const identityKind = entry?.mcpCallIdentity;
+  const toolNames = ctx.tools.map((t) => t.name);
+  const ownTools =
+    identityKind === undefined || serverName === undefined || toolNames.length === 0
+      ? undefined
+      : () => createOwnToolLedger({ kind: identityKind, serverName, toolNames });
   return createInboundRouter(
-    (request, signal) => decidePermission(request, { ...base, signal }),
+    (request, signal, isOwnToolCall) =>
+      decidePermission(request, { ...base, signal, ...(isOwnToolCall === undefined ? {} : { isOwnToolCall }) }),
     (request, signal) => answerElicitation(request, { ...base, signal }),
+    ownTools,
   );
 }
 
@@ -191,7 +202,7 @@ async function connect(
   const plan = await shellSandboxPlan(ctx.profile, tokenOptions, ctx.sandbox, ctx.workdir);
   const options = Object.freeze({ ...tokenOptions, ...(plan === undefined ? {} : { shellSandboxPlan: plan }) });
   const gone = new AbortController();
-  const router = routerFor(ctx, options);
+  const router = routerFor(ctx, options, serverName);
   const host = toolHostFor(ctx, router, options.secrets, token, serverName);
   const acp = await openAcpSession(options, ctx, router.handlers, _acpBackendDeps.launch, host, restore).catch(
     async (err: unknown) => {

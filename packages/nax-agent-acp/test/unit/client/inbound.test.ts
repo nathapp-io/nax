@@ -14,6 +14,7 @@ import {
   MAX_PENDING_DECISIONS,
   type PermissionDecider,
 } from "#src/client/inbound";
+import { createOwnToolLedger } from "#src/client/own-tool-calls";
 
 const IDLE = new AbortController().signal;
 
@@ -382,5 +383,68 @@ describe("denials are counted on the turn's collector (nax#2582)", () => {
     turn.abort();
     expect(await pending).toEqual(CANCELLED);
     expect(collector.denials()).toBe(0);
+  });
+});
+
+describe("createInboundRouter: own tool ledger (acp-tools-codex-cursor US-004)", () => {
+  const ownUpdate = (id: string) => ({
+    sessionUpdate: "tool_call_update" as const,
+    toolCallId: id,
+    rawInput: { providerIdentifier: "nax-0badc0de", toolName: "lookup", args: {} },
+  });
+  const newLedger = () => createOwnToolLedger({ kind: "cursor", serverName: "nax-0badc0de", toolNames: ["lookup"] });
+
+  function capturing() {
+    const predicates: ((id: string) => boolean)[] = [];
+    const decide: PermissionDecider = async (_request, _signal, isOwn) => {
+      if (isOwn !== undefined) predicates.push(isOwn);
+      return ALLOW;
+    };
+    return { decide, predicates };
+  }
+
+  test("AC-7: the decider's predicate is true for an id the attached turn's update proved own", async () => {
+    const { decide, predicates } = capturing();
+    const router = createInboundRouter(decide, undefined, newLedger);
+    const release = router.attach("a", createTurnCollector(undefined), IDLE);
+    router.handlers.onUpdate({ sessionId: "a", update: ownUpdate("t1") });
+    await router.handlers.onPermission(request("a"));
+    expect(predicates).toHaveLength(1);
+    expect(predicates[0]?.("t1")).toBe(true);
+    expect(predicates[0]?.("t2")).toBe(false);
+    await release();
+  });
+
+  test("an update for another session or sent before the turn is not observed", async () => {
+    const { decide, predicates } = capturing();
+    const router = createInboundRouter(decide, undefined, newLedger);
+    router.handlers.onUpdate({ sessionId: "a", update: ownUpdate("t1") });
+    const release = router.attach("a", createTurnCollector(undefined), IDLE);
+    router.handlers.onUpdate({ sessionId: "b", update: ownUpdate("t1") });
+    await router.handlers.onPermission(request("a"));
+    expect(predicates[0]?.("t1")).toBe(false);
+    await release();
+  });
+
+  test("each attach starts a fresh ledger: evidence from an earlier turn is gone", async () => {
+    const { decide, predicates } = capturing();
+    const router = createInboundRouter(decide, undefined, newLedger);
+    const first = router.attach("a", createTurnCollector(undefined), IDLE);
+    router.handlers.onUpdate({ sessionId: "a", update: ownUpdate("t1") });
+    await first();
+    const second = router.attach("a", createTurnCollector(undefined), IDLE);
+    await router.handlers.onPermission(request("a"));
+    expect(predicates[0]?.("t1")).toBe(false);
+    await second();
+  });
+
+  test("without a ledger factory the predicate is always false", async () => {
+    const { decide, predicates } = capturing();
+    const router = createInboundRouter(decide);
+    const release = router.attach("a", createTurnCollector(undefined), IDLE);
+    router.handlers.onUpdate({ sessionId: "a", update: ownUpdate("t1") });
+    await router.handlers.onPermission(request("a"));
+    expect(predicates[0]?.("t1")).toBe(false);
+    await release();
   });
 });

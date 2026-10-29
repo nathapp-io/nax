@@ -24,6 +24,7 @@ import type {
 import { getLogger } from "@nathapp/nax-agent";
 import type { InboundHandlers } from "#src/client/connection";
 import type { TurnCollector } from "#src/client/events";
+import type { OwnToolLedger } from "#src/client/own-tool-calls";
 import { isDenial, rejectLocally } from "#src/client/permissions";
 import { isRecord } from "#src/client/text";
 
@@ -33,6 +34,8 @@ export const MAX_PENDING_DECISIONS = 16;
 export type PermissionDecider = (
   request: RequestPermissionRequest,
   signal: AbortSignal,
+  /** True for a tool call id this turn's own-tool ledger proved is the session's own tool host's. */
+  isOwnToolCall?: (toolCallId: string) => boolean,
 ) => Promise<RequestPermissionResponse>;
 
 export type ElicitationHandler = (
@@ -67,6 +70,8 @@ interface Binding {
   /** The scope and the turn signal: what every request of this turn is given. */
   readonly signal: AbortSignal;
   readonly pending: Set<Promise<unknown>>;
+  /** This turn's own-tool evidence; dropped with the binding. Absent without a ledger factory. */
+  readonly ledger: OwnToolLedger | undefined;
 }
 
 const LOG_MESSAGES: Readonly<Record<RequestKind, string>> = {
@@ -95,6 +100,7 @@ function sessionOf(request: unknown): string | undefined {
 export function createInboundRouter(
   decide: PermissionDecider,
   elicit: ElicitationHandler = cancelElicitation,
+  ownTools?: () => OwnToolLedger,
 ): InboundRouter {
   let active: Binding | undefined;
   const logged = new Set<string>();
@@ -121,6 +127,7 @@ export function createInboundRouter(
     handlers: {
       onUpdate(notification) {
         if (active !== undefined && notification.sessionId === active.sessionId) {
+          active.ledger?.observe(notification.update);
           active.collector.onUpdate(notification.update);
         }
       },
@@ -133,9 +140,11 @@ export function createInboundRouter(
         }
         if (!admitted.signal.aborted) admitted.collector.announce(request.toolCall);
         let decided = true;
+        const ledger = admitted.ledger;
+        const isOwnToolCall = (toolCallId: string): boolean => ledger?.isOwn(toolCallId) ?? false;
         const answer = await track(
           admitted,
-          decide(request, admitted.signal).catch(() => {
+          decide(request, admitted.signal, isOwnToolCall).catch(() => {
             decided = false;
             return cancelled();
           }),
@@ -163,6 +172,7 @@ export function createInboundRouter(
         scope,
         signal: AbortSignal.any([scope.signal, turnSignal]),
         pending: new Set(),
+        ledger: ownTools?.(),
       };
       active = binding;
       return async () => {
