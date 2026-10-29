@@ -131,7 +131,10 @@ describe("ChatApp job close confirmation", () => {
     const ui = mount();
     const clock = makeFakeClock();
     _askControllerDeps.setTimeout = clock.setTimeout;
-    _askControllerDeps.clearTimeout = clock.clearTimeout;
+    _askControllerDeps.clearTimeout = (handle) => {
+      // The injected fake clock only creates numeric handles.
+      if (typeof handle === "number") clock.clearTimeout(handle);
+    };
     const stopAll = mock(async () => {});
     const confirm = createCloseConfirm({
       asks: ui.asks,

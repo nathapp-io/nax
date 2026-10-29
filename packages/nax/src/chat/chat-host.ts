@@ -201,12 +201,8 @@ class NativeChatHost implements ChatHost {
         : providers;
     }
     if (hostJobs || this.tasks) {
-      this.confirmBeforeClose = createCloseConfirm({
-        hostJobs,
-        tasks: this.tasks,
-        asks: this.asks,
-        logger: deps.logger,
-      });
+      const closeOptions = { hostJobs, tasks: this.tasks, asks: this.asks, logger: deps.logger };
+      this.confirmBeforeClose = createCloseConfirm(closeOptions);
     }
     this.fallback = createAskFallback({
       controller: this.asks,
