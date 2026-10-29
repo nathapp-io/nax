@@ -49,7 +49,8 @@ describe("chat host agents provider composition", () => {
   test("AC-2 start passes the resources' own providers when the catalog has no agents", async () => {
     const h = setup({ agents: [] });
     await h.host.start({ mode: "guarded", model: CHAT_MODEL });
-    expect(h.chatBackends.at(-1)?.toolProviders).toBe(h.resources.toolProviders);
+    expect(h.chatBackends.at(-1)?.toolProviders?.slice(0, -1)).toEqual([...h.resources.toolProviders]);
+    expect(h.chatBackends.at(-1)?.toolProviders?.at(-1)?.id).toBe("nax-tasks");
   });
 
   test("AC-3 resume attaches the nax-agents provider last", async () => {

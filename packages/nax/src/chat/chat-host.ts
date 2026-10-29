@@ -17,6 +17,7 @@ import { projectOutputDir } from "@/runtime";
 import { createAgentsProvider } from "./agents-provider";
 import { type ChatAskController, createChatAskController } from "./ask-controller";
 import { type AskFallback, createAskFallback } from "./ask-fallback";
+import { type ChatBackgroundTasks, createHostTasks } from "./background";
 import { type ChatAgentRow, listAgentRows } from "./chat-agents-listing";
 import { clampModelEffort, EFFORT_LEVELS, type EffortLevel, withEffort } from "./chat-effort";
 import { type ChatLedger, createChatLedger } from "./chat-ledger";
@@ -70,6 +71,7 @@ export interface ChatHost {
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   readonly jobs?: ChatJobs;
+  readonly tasks?: ChatBackgroundTasks;
   readonly confirmJobsBeforeClose?: () => Promise<void>;
   current(): ChatHostState;
   history?(): ChatHistory;
@@ -112,6 +114,7 @@ class NativeChatHost implements ChatHost {
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   readonly jobs?: ChatJobs;
+  readonly tasks?: ChatBackgroundTasks;
   readonly confirmJobsBeforeClose?: () => Promise<void>;
   private readonly hostJobs?: ReturnType<typeof createHostJobs>;
   private readonly fallback: AskFallback;
@@ -190,7 +193,9 @@ class NativeChatHost implements ChatHost {
         ledger: () => this.ledger,
         turnListener: () => this.turnListener,
       });
-      const providers = hostJobs ? [...resources.toolProviders, hostJobs.provider] : resources.toolProviders;
+      const hostTasks = createHostTasks({ outputDir: this.outputDir, now: deps.now, logger: deps.logger });
+      this.tasks = hostTasks.tasks;
+      const providers = [...resources.toolProviders, ...(hostJobs ? [hostJobs.provider] : []), hostTasks.provider];
       this.toolProviders = resources.catalog.agents.length
         ? [...providers, createAgentsProvider({ catalog: resources.catalog, run: this.runs.run })]
         : providers;
@@ -296,6 +301,7 @@ class NativeChatHost implements ChatHost {
       config: this.deps.config,
       loopHandlers: this.loopHandlers,
       ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
+      ...(this.tasks ? { backgroundCommands: this.tasks } : {}),
     });
     await this.replace(next);
     await this.jobs?.attach();
@@ -385,6 +391,7 @@ class NativeChatHost implements ChatHost {
           config: this.deps.config,
           loopHandlers: this.loopHandlers,
           ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
+          ...(this.tasks ? { backgroundCommands: this.tasks } : {}),
           resumeId: id,
         });
       } catch (error) {
@@ -425,6 +432,7 @@ class NativeChatHost implements ChatHost {
       config: this.deps.config,
       loopHandlers: this.loopHandlers,
       ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
+      ...(this.tasks ? { backgroundCommands: this.tasks } : {}),
     });
     return {
       ...next,
@@ -567,7 +575,11 @@ class NativeChatHost implements ChatHost {
       if (this.handle) await this.hygiene.close(this.handle);
     } finally {
       try {
-        await this.deps.resources?.teardown();
+        try {
+          await this.tasks?.stopAll();
+        } finally {
+          await this.deps.resources?.teardown();
+        }
       } finally {
         await this.deps.chain?.destroy();
       }

@@ -9,6 +9,7 @@ import {
   sessionTitleText,
   withEffort,
 } from "@/chat";
+import { formatTasksListing } from "@/chat/background";
 import { featureDir } from "@/config";
 import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing } from "@/resources";
@@ -121,7 +122,10 @@ function formatHelp(host: ChatHost): string {
 
 /** Keep the optional jobs capability's fallback separate from command dispatch. */
 function formatSessionJobs(host: ChatHost): string {
-  return host.jobs ? formatJobsListing(host.jobs.list()) : "jobs are not available in this session";
+  if (!host.jobs && !host.tasks) return "jobs are not available in this session";
+  return [host.jobs ? formatJobsListing(host.jobs.list()) : "", host.tasks ? formatTasksListing(host.tasks.list()) : ""]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function catalogCommand(command: SlashCommand, { host, show }: CommandContext): SlashOutcome | undefined {

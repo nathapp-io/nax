@@ -35,6 +35,9 @@ function chatState(current: Partial<ChatHostState> = {}): ChatHostState {
 }
 
 interface MountOptions {
+  readonly tasks?: ChatHost["tasks"];
+  readonly jobs?: ChatHost["jobs"];
+  readonly send?: ChatHost["send"];
   readonly models?: readonly string[];
   readonly effortLevels?: ChatHost["effortLevels"];
   readonly current?: Partial<ChatHostState>;
@@ -75,7 +78,9 @@ export function mount(options: MountOptions = {}) {
     asks: createChatAskController({ mode: "guarded", answer: () => {} }),
     current: () => current,
     notice: () => undefined,
-    send,
+    send: options.send ?? send,
+    tasks: options.tasks,
+    jobs: options.jobs,
     cancel: mock(() => {}),
     close: mock(async () => {}),
     start: async () => {},

@@ -378,6 +378,7 @@ export function ChatApp({
   async function submit(message: string): Promise<void> {
     const command = parseSlashCommand(message);
     if (!command) {
+      noteUserTurn();
       await sendTurn(message);
       return;
     }
@@ -429,7 +430,7 @@ export function ChatApp({
     }
   }
 
-  const jobs = useJobs(host, {
+  const { running: jobs, noteUserTurn } = useJobs(host, {
     idle: idleForJobNotice({
       turnRunning,
       bottomBlocked: bottomBlocked(ask, picker.model),

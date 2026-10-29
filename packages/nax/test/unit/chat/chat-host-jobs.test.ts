@@ -118,7 +118,7 @@ describe("createChatHost jobs", () => {
     await f.start();
     const request = f.open.mock.calls[0]?.[0];
     assertDefined(request, "open request");
-    expect(request.toolProviders?.slice(-2).map((p) => p.id)).toEqual(["nax-jobs", "nax-agents"]);
+    expect(request.toolProviders?.slice(-3).map((p) => p.id)).toEqual(["nax-jobs", "nax-tasks", "nax-agents"]);
     expect(Object.isFrozen(request.loopHandlers)).toBe(true);
     expect(request.loopHandlers.at(-1)).toMatchObject({ plugin: "nax-jobs", event: "before_tool" });
     const provider = request.toolProviders?.find((p) => p.id === "nax-jobs");
@@ -130,7 +130,8 @@ describe("createChatHost jobs", () => {
     await f.start();
     const request = f.open.mock.calls[0]?.[0];
     assertDefined(request, "open request");
-    expect(request.toolProviders).toBe(f.resources.toolProviders);
+    expect(request.toolProviders?.slice(0, -1)).toEqual([...f.resources.toolProviders]);
+    expect(request.toolProviders?.at(-1)?.id).toBe("nax-tasks");
     expect(request.toolProviders?.map((p) => p.id)).not.toContain("nax-jobs");
     expect(f.host.jobs).toBeUndefined();
     expect(f.host.confirmJobsBeforeClose).toBeUndefined();
