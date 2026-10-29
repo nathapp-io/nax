@@ -3,10 +3,13 @@ import {
   type ChatAnswer,
   type ChatAskRecord,
   type ChatAskSecret,
+  type ChatSettled,
   RUN_ASK_POLL_MS,
   readChatAnswer,
   readChatAsks,
   readChatSettled,
+  removeChatHeartbeat,
+  takeChatNotices,
   writeChatAnswer,
   writeChatHeartbeat,
 } from "@/interaction";
@@ -33,7 +36,7 @@ export interface ChatRunAsks {
 }
 export interface RunAsksOptions {
   readonly outputDir: string;
-  readonly jobs: Pick<ChatJobs, "running" | "get" | "onChange" | "askSecret">;
+  readonly jobs: Pick<ChatJobs, "running" | "get" | "onChange"> & Partial<Pick<ChatJobs, "askSecret">>;
   readonly chains: Pick<ChatChains, "isActive">;
   readonly asks: Pick<ChatAskController, "requestHostChoice" | "requestHostQuestion">;
   readonly now: () => Date;
@@ -50,6 +53,8 @@ export const _runAsksDeps = {
   clearTimeout: (handle: TimerHandle): void => globalThis.clearTimeout(handle),
   readChatAsks,
   readChatSettled,
+  removeChatHeartbeat,
+  takeChatNotices,
   readChatAnswer,
   writeChatHeartbeat,
   writeChatAnswer,
@@ -64,6 +69,10 @@ interface HumanAsk {
 
 class RunAsks implements ChatRunAsks {
   private readonly seen = new Set<string>();
+  private readonly settledSeen = new Set<string>();
+  private readonly invalidFiles = new Set<string>();
+  private readonly notes: string[] = [];
+  private readonly lifetime = new AbortController();
   private readonly open = new Map<string, HumanAsk>();
   private readonly listeners = new Set<() => void>();
   private readonly unsubscribe: () => void;
@@ -81,6 +90,33 @@ class RunAsks implements ChatRunAsks {
 
   private warn(cause: unknown, jobId?: string): void {
     this.options.logger.warn("chat", "[chat] Run ask processing failed", { jobId, error: errorMessage(cause) });
+  }
+
+  private note(line: string): void {
+    if (this.disposed) return;
+    this.notes.push(line);
+    this.changed();
+  }
+
+  private readonly invalid = (path: string): void => {
+    if (this.disposed || this.invalidFiles.has(path)) return;
+    this.invalidFiles.add(path);
+    this.options.logger.warn("chat", "[chat] Ignoring malformed run ask record", { path });
+  };
+
+  private recordSettlement(id: string, ask: ChatAskRecord, settled: ChatSettled): void {
+    this.open.get(id)?.controller.abort();
+    this.open.delete(id);
+    this.seen.add(id);
+    if (this.settledSeen.has(id)) return;
+    this.settledSeen.add(id);
+    if (["chat-user", "chat-agent", "cancelled"].includes(settled.by)) return;
+    const jobId = id.slice(0, id.indexOf("/"));
+    this.note(
+      settled.by === "timeout"
+        ? `[${jobId}] ask timed out: ${ask.request.summary}`
+        : `[${jobId}] ask settled by ${settled.by}: ${settled.value ?? settled.action}`,
+    );
   }
 
   private changed(): void {
@@ -134,16 +170,20 @@ class RunAsks implements ChatRunAsks {
     const secret = this.options.jobs.askSecret?.(job.id);
     if (!secret || job.state !== "running" || !this.active(job.id)) return;
     const dir = jobAsksDir(this.options.outputDir, job.id);
-    await _runAsksDeps.writeChatHeartbeat(dir, this.options.now());
-    const records = await _runAsksDeps.readChatAsks(dir, secret);
+    await _runAsksDeps.writeChatHeartbeat(dir, this.options.now(), this.lifetime.signal);
+    if (!this.active(job.id)) return;
+    const records = await _runAsksDeps.readChatAsks(dir, secret, this.invalid);
+    if (!this.active(job.id)) return;
+    const notices = await _runAsksDeps.takeChatNotices(dir, secret, this.invalid);
+    if (!this.active(job.id)) return;
+    for (const notice of notices) this.note(`[${job.id}] ${notice.request.summary}`);
     for (const record of records) {
       if (!this.active(job.id)) return;
       const id = `${job.id}/${record.key}`;
-      const settled = await _runAsksDeps.readChatSettled(dir, record.key, secret);
+      const settled = await _runAsksDeps.readChatSettled(dir, record.key, secret, this.invalid);
+      if (!this.active(job.id)) return;
       if (settled) {
-        this.seen.add(id);
-        this.open.get(id)?.controller.abort();
-        this.open.delete(id);
+        this.recordSettlement(id, record, settled);
         continue;
       }
       if (this.seen.has(id) || !this.active(job.id)) continue;
@@ -155,22 +195,25 @@ class RunAsks implements ChatRunAsks {
       this.seen.add(id);
       const ask: HumanAsk = { jobId: job.id, dir, secret, record, controller: new AbortController() };
       this.open.set(id, ask);
-      // Never await a human card inside the scan: other asks and heartbeats must keep moving.
-      let failed = false;
-      void this.showHuman(ask)
-        .catch((cause) => {
-          failed = true;
-          this.warn(cause, job.id);
-        })
-        .finally(() => {
-          this.open.delete(id);
-          // A rejected host request (or failed delivery) may be transient. Closed
-          // cards remain deduplicated; only failures of a still-live ask retry.
-          if (failed && this.active(job.id) && !ask.controller.signal.aborted) this.seen.delete(id);
-          this.changed();
-        });
-      this.changed();
+      this.launchHuman(id, ask);
     }
+  }
+
+  private launchHuman(id: string, ask: HumanAsk): void {
+    // Never await a human card inside the scan: other asks and heartbeats must keep moving.
+    let failed = false;
+    void this.showHuman(ask)
+      .catch((cause) => {
+        failed = true;
+        this.warn(cause, ask.jobId);
+      })
+      .finally(() => {
+        this.open.delete(id);
+        // Retry transient host/delivery failures only while this ask is live.
+        if (failed && this.active(ask.jobId) && !ask.controller.signal.aborted) this.seen.delete(id);
+        this.changed();
+      });
+    this.changed();
   }
 
   private async showHuman(ask: HumanAsk): Promise<void> {
@@ -225,7 +268,12 @@ class RunAsks implements ChatRunAsks {
       if (!request.options?.some((option) => option.key === answer)) return;
       response.action = "choose";
     }
-    await _runAsksDeps.writeChatAnswer(ask.dir, key, response, ask.secret);
+    try {
+      await _runAsksDeps.writeChatAnswer(ask.dir, key, response, ask.secret, ask.controller.signal);
+    } catch (cause) {
+      this.note(`[${ask.jobId}] could not deliver your answer for ${ask.jobId}/${key}`);
+      throw cause;
+    }
   }
 
   peekNotice(): undefined {
@@ -235,7 +283,7 @@ class RunAsks implements ChatRunAsks {
     return undefined;
   }
   takeNotes(): readonly string[] {
-    return [];
+    return this.notes.splice(0);
   }
   async answer(askId: string, _reply: RunAskReply): Promise<RunAskResult> {
     return { ok: false, message: `[chat] ask ${askId} is not waiting for the agent` };
@@ -248,7 +296,15 @@ class RunAsks implements ChatRunAsks {
     };
   }
   dispose(): void {
+    if (this.disposed) return;
     this.disposed = true;
+    this.lifetime.abort();
+    for (const job of this.options.jobs.running()) {
+      if (!this.options.jobs.askSecret?.(job.id)) continue;
+      void _runAsksDeps
+        .removeChatHeartbeat(jobAsksDir(this.options.outputDir, job.id))
+        .catch((cause) => this.warn(cause, job.id));
+    }
     this.unsubscribe();
     if (this.timer !== undefined) _runAsksDeps.clearTimeout(this.timer);
     this.timer = undefined;

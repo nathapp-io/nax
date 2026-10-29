@@ -143,10 +143,15 @@ function removeFile(path: string): void {
 }
 
 /** All writes publish via a unique sibling rename; failed writes never expose partial JSON. */
-async function atomicWrite(path: string, record: object): Promise<void> {
+async function atomicWrite(path: string, record: object, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return;
   const temp = `${path}.${_chatAskFileDeps.randomUUID()}.tmp`;
   try {
     await _chatAskFileDeps.write(temp, JSON.stringify(record));
+    if (signal?.aborted) {
+      removeFile(temp);
+      return;
+    }
     _chatAskFileDeps.rename(temp, path);
   } catch (cause) {
     let cleanupCause: unknown;
@@ -185,11 +190,20 @@ async function readJson(path: string, onInvalid?: () => void): Promise<unknown> 
   }
 }
 
-async function readSigned<T>(path: string, secret: ChatAskSecret, schema: z.ZodType<T>): Promise<T | undefined> {
-  const raw = await readJson(path);
-  if (!verifyChatRecord(secret, raw)) return undefined;
+async function readSigned<T>(
+  path: string,
+  secret: ChatAskSecret,
+  schema: z.ZodType<T>,
+  onInvalid?: (path: string) => void,
+): Promise<T | undefined> {
+  const raw = await readJson(path, () => onInvalid?.(path));
+  if (raw === undefined) return undefined;
   const parsed = schema.safeParse(raw);
-  return parsed.success ? parsed.data : undefined;
+  if (!verifyChatRecord(secret, raw) || !parsed.success) {
+    onInvalid?.(path);
+    return undefined;
+  }
+  return parsed.data;
 }
 
 function namesFor(dir: string, kind: string): string[] {
@@ -216,10 +230,14 @@ export async function writeChatAsk(
   return key;
 }
 
-export async function readChatAsks(dir: string, secret: ChatAskSecret): Promise<ChatAskRecord[]> {
+export async function readChatAsks(
+  dir: string,
+  secret: ChatAskSecret,
+  onInvalid?: (path: string) => void,
+): Promise<ChatAskRecord[]> {
   const records = await Promise.all(
     namesFor(dir, "ask").map(async (name) => {
-      const record = await readSigned(join(dir, name), secret, askSchema);
+      const record = await readSigned(join(dir, name), secret, askSchema, onInvalid);
       return record && record.key === chatAskKey(record.request.id) && name === `${record.key}.ask.json`
         ? record
         : undefined;
@@ -233,15 +251,16 @@ export async function writeChatAnswer(
   key: string,
   answer: ChatAnswer,
   secret: ChatAskSecret,
+  signal?: AbortSignal,
 ): Promise<void> {
   // Parent and child share this lock: settlement cannot publish between this
   // authenticated check and the atomic answer rename, even across processes.
   await _chatAskFileDeps.withFileLock(
     `${recordPath(dir, key, "settled")}.lock`,
     async () => {
-      if (await readChatSettled(dir, key, secret)) return;
+      if (signal?.aborted || (await readChatSettled(dir, key, secret))) return;
       const record = { ...answer, schemaVersion: 1 };
-      await atomicWrite(recordPath(dir, key, "answer"), { ...record, mac: signChatRecord(secret, record) });
+      await atomicWrite(recordPath(dir, key, "answer"), { ...record, mac: signChatRecord(secret, record) }, signal);
     },
     { lockName: "chat-ask", errorPrefix: "[chat-asks]" },
   );
@@ -284,8 +303,9 @@ export async function readChatSettled(
   dir: string,
   key: string,
   secret: ChatAskSecret,
+  onInvalid?: (path: string) => void,
 ): Promise<ChatSettled | undefined> {
-  const record = await readSigned(recordPath(dir, key, "settled"), secret, settledSchema);
+  const record = await readSigned(recordPath(dir, key, "settled"), secret, settledSchema, onInvalid);
   if (!record || chatAskKey(record.requestId) !== key) return undefined;
   const { schemaVersion: _version, mac: _mac, ...settled } = record;
   return settled;
@@ -303,11 +323,15 @@ export async function writeChatNotice(
 }
 
 /** A single parent consumes notices; unlink before returning so overlapping ticks cannot deliver twice. */
-export async function takeChatNotices(dir: string, secret: ChatAskSecret): Promise<ChatNoticeRecord[]> {
+export async function takeChatNotices(
+  dir: string,
+  secret: ChatAskSecret,
+  onInvalid?: (path: string) => void,
+): Promise<ChatNoticeRecord[]> {
   const records = await Promise.all(
     namesFor(dir, "notice").map(async (name) => {
       const path = join(dir, name);
-      const record = await readSigned(path, secret, noticeSchema);
+      const record = await readSigned(path, secret, noticeSchema, onInvalid);
       if (!record || record.key !== chatAskKey(record.request.id) || name !== `${record.key}.notice.json`)
         return undefined;
       try {
@@ -322,8 +346,8 @@ export async function takeChatNotices(dir: string, secret: ChatAskSecret): Promi
   return records.filter((record) => record !== undefined);
 }
 
-export async function writeChatHeartbeat(dir: string, now: Date): Promise<void> {
-  await atomicWrite(join(dir, "heartbeat.json"), { schemaVersion: 1, at: now.toISOString() });
+export async function writeChatHeartbeat(dir: string, now: Date, signal?: AbortSignal): Promise<void> {
+  await atomicWrite(join(dir, "heartbeat.json"), { schemaVersion: 1, at: now.toISOString() }, signal);
 }
 
 export async function chatHeartbeatFresh(dir: string, nowMs: number): Promise<boolean> {
