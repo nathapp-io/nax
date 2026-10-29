@@ -71,7 +71,8 @@ export function useJobs(
       try {
         delivered = await latestDeliver.current(notice);
         if (delivered) {
-          source?.takeNotice();
+          if (source === runAsks) runAsks?.takeNotice(notice);
+          else source?.takeNotice();
           if (source === tasks) taskTurns.current++;
         }
       } catch (error) {

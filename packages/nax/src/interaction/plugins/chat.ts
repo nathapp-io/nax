@@ -243,7 +243,8 @@ export class ChatAskPlugin implements InteractionPlugin {
       },
       (cause: unknown) => {
         this.pending.delete(requestId);
-        ask.reject?.(cause);
+        this.warn(requestId, "Settlement publication failed; preserving selected response", cause);
+        ask.resolve?.(response);
       },
     );
     return ask.settling;

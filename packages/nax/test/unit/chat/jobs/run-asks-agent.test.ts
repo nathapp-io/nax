@@ -5,7 +5,13 @@ import type { HostChoiceCard } from "@/chat/ask-controller";
 import { jobAsksDir } from "@/chat/jobs/job-store";
 import type { ChatJob } from "@/chat/jobs/job-types";
 import { _runAsksDeps, type ChatRunAsks, createRunAsks } from "@/chat/jobs/run-asks";
-import { RUN_ASK_POLL_MS, readChatAnswer, writeChatAsk, writeChatSettled } from "@/interaction/chat-ask-files";
+import {
+  _chatAskFileDeps,
+  RUN_ASK_POLL_MS,
+  readChatAnswer,
+  writeChatAsk,
+  writeChatSettled,
+} from "@/interaction/chat-ask-files";
 import type { InteractionRequest } from "@/interaction/types";
 import { buildRunAskNotice } from "@/prompts/builders/run-ask-builder";
 
@@ -223,6 +229,64 @@ describe("createRunAsks agent routing", () => {
     await registry.answer(id, { ...reply, answer: "escalate" });
     await publish({ id: "fourth" });
     expect(choice).toHaveBeenCalledTimes(2);
+  });
+  test.each(["before", "during-read", "during-publication"])("chain stops %s: approval is human-only", async (when) => {
+    const id = await publish();
+    if (when === "before") active = false;
+    if (when === "during-read") {
+      _runAsksDeps.readChatAnswer = async (...args) => {
+        active = false;
+        return original.readChatAnswer(...args);
+      };
+    }
+    if (when === "during-publication") {
+      _runAsksDeps.writeChatAnswer = async (...args) => {
+        active = false;
+        return original.writeChatAnswer(...args);
+      };
+    }
+    expect((await registry.answer(id, reply)).ok).toBe(false);
+    expect(await readChatAnswer(dir, key(id), secret)).toBeUndefined();
+    expect(registry.peekNotice()).toBeUndefined();
+    expect(choice).toHaveBeenCalledTimes(1);
+    expect(registry.takeNotes()).toEqual([]);
+  });
+  test("chain authorization is rechecked after the asynchronous temporary-file write", async () => {
+    const id = await publish();
+    const write = _chatAskFileDeps.write;
+    try {
+      _chatAskFileDeps.write = Object.assign(async (...args: Parameters<typeof write>) => {
+        const result = await write(...args);
+        if (String(args[0]).includes(".answer.json.")) active = false;
+        return result;
+      }, write);
+      expect((await registry.answer(id, reply)).ok).toBe(false);
+      expect(await readChatAnswer(dir, key(id), secret)).toBeUndefined();
+      expect(choice).toHaveBeenCalledTimes(1);
+      expect(registry.takeNotes()).toEqual([]);
+    } finally {
+      _chatAskFileDeps.write = write;
+    }
+  });
+  test("settlement wins publication lock without a false agent success", async () => {
+    const id = await publish();
+    _runAsksDeps.writeChatAnswer = async (...args) => {
+      await writeChatSettled(
+        dir,
+        key(id),
+        {
+          requestId: request.id,
+          by: "telegram",
+          action: "reject",
+          settledAt: new Date(0).toISOString(),
+        },
+        secret,
+      );
+      return original.writeChatAnswer(...args);
+    };
+    expect((await registry.answer(id, reply)).ok).toBe(false);
+    expect(await readChatAnswer(dir, key(id), secret)).toBeUndefined();
+    expect(registry.takeNotes()).toEqual([`[${job.id}] ask settled by telegram: reject`]);
   });
   test("AC-22 write failure resolves exact error and allows retry", async () => {
     const id = await publish();

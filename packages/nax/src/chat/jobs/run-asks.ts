@@ -30,7 +30,7 @@ export interface RunAskReply {
 export type RunAskResult = { readonly ok: true } | { readonly ok: false; readonly message: string };
 export interface ChatRunAsks {
   peekNotice(): string | undefined;
-  takeNotice(): string | undefined;
+  takeNotice(expected?: string): string | undefined;
   takeNotes(): readonly string[];
   answer(askId: string, reply: RunAskReply): Promise<RunAskResult>;
   noteUserTurn(): void;
@@ -71,6 +71,8 @@ interface PendingAsk {
 }
 
 class RunAsks implements ChatRunAsks {
+  private readonly owned = new Map<string, ChatJob>();
+  private readonly draining = new Map<string, ChatJob>();
   private agentStreak = 0;
   private readonly agentWaiting = new Set<string>();
   private readonly answering = new Set<string>();
@@ -92,6 +94,7 @@ class RunAsks implements ChatRunAsks {
       this.closeEnded();
       this.schedule();
     });
+    this.closeEnded();
     this.schedule();
   }
 
@@ -138,6 +141,15 @@ class RunAsks implements ChatRunAsks {
   }
 
   private closeEnded(): void {
+    for (const job of this.options.jobs.running()) {
+      if (this.options.jobs.askSecret?.(job.id)) this.owned.set(job.id, job);
+    }
+    for (const [id, job] of this.owned) {
+      if (this.options.jobs.get(id)?.state === "running") continue;
+      this.draining.set(id, job);
+      this.owned.delete(id);
+    }
+    for (const id of this.agentWaiting) this.agentAuthorized(id);
     for (const [id, ask] of this.open) {
       if (this.options.jobs.get(ask.jobId)?.state === "running") continue;
       ask.controller.abort();
@@ -147,7 +159,13 @@ class RunAsks implements ChatRunAsks {
   }
 
   private schedule(): void {
-    if (this.disposed || this.scanning || this.timer !== undefined || !this.options.jobs.running().length) return;
+    if (
+      this.disposed ||
+      this.scanning ||
+      this.timer !== undefined ||
+      (!this.options.jobs.running().length && !this.draining.size)
+    )
+      return;
     this.timer = _runAsksDeps.setTimeout(() => this.tick(), RUN_ASK_POLL_MS);
     if (typeof this.timer === "object" && "unref" in this.timer) this.timer.unref();
   }
@@ -158,6 +176,14 @@ class RunAsks implements ChatRunAsks {
     this.scanning = true;
     try {
       this.closeEnded();
+      for (const [id, job] of this.draining) {
+        try {
+          await this.scanJob(job, true);
+          this.draining.delete(id);
+        } catch (cause) {
+          this.warn(cause, id);
+        }
+      }
       for (const job of this.options.jobs.running()) {
         try {
           await this.scanJob(job);
@@ -175,34 +201,39 @@ class RunAsks implements ChatRunAsks {
     return !this.disposed && this.options.jobs.get(jobId)?.state === "running";
   }
 
-  private async scanJob(job: ChatJob): Promise<void> {
+  private async scanJob(job: ChatJob, terminal = false): Promise<void> {
     const secret = this.options.jobs.askSecret?.(job.id);
-    if (!secret || job.state !== "running" || !this.active(job.id)) return;
+    if (!secret || this.disposed || (!terminal && !this.active(job.id))) return;
+    const readable = () => !this.disposed && (terminal || this.active(job.id));
     const dir = jobAsksDir(this.options.outputDir, job.id);
-    await _runAsksDeps.writeChatHeartbeat(dir, this.options.now(), this.lifetime.signal);
-    if (!this.active(job.id)) return;
+    if (!terminal) await _runAsksDeps.writeChatHeartbeat(dir, this.options.now(), this.lifetime.signal);
+    if (!readable()) return;
     const records = await _runAsksDeps.readChatAsks(dir, secret, this.invalid);
-    if (!this.active(job.id)) return;
+    if (!readable()) return;
     const notices = await _runAsksDeps.takeChatNotices(dir, secret, this.invalid);
-    if (!this.active(job.id)) return;
+    if (this.disposed) return;
     for (const notice of notices) this.note(`[${job.id}] ${notice.request.summary}`);
     for (const record of records) {
-      if (!this.active(job.id)) return;
-      const id = `${job.id}/${record.key}`;
-      const settled = await _runAsksDeps.readChatSettled(dir, record.key, secret, this.invalid);
-      if (!this.active(job.id)) return;
-      if (settled) {
-        this.recordSettlement(id, record, settled);
-        continue;
-      }
-      if (this.seen.has(id) || !this.active(job.id)) continue;
-      if (await _runAsksDeps.readChatAnswer(dir, record.key, secret)) {
-        this.seen.add(id);
-        continue;
-      }
-      if (!this.active(job.id)) return;
-      this.routeAsk(job, { jobId: job.id, dir, secret, record, controller: new AbortController() });
+      if (!readable()) return;
+      await this.scanRecord({ jobId: job.id, dir, secret, record, controller: new AbortController() }, job, terminal);
     }
+  }
+
+  private async scanRecord(ask: PendingAsk, job: ChatJob, terminal: boolean): Promise<void> {
+    const { dir, secret, record } = ask;
+    const id = `${job.id}/${record.key}`;
+    const settled = await _runAsksDeps.readChatSettled(dir, record.key, secret, this.invalid);
+    if (this.disposed || (!terminal && !this.active(job.id))) return;
+    if (settled) {
+      this.recordSettlement(id, record, settled);
+      return;
+    }
+    if (terminal || this.seen.has(id)) return;
+    if (await _runAsksDeps.readChatAnswer(dir, record.key, secret)) {
+      this.seen.add(id);
+      return;
+    }
+    if (this.active(job.id)) this.routeAsk(job, ask);
   }
 
   private routeAsk(job: ChatJob, ask: PendingAsk): void {
@@ -306,12 +337,24 @@ class RunAsks implements ChatRunAsks {
     if (this.notices.delete(id)) this.changed();
   }
 
+  private agentAuthorized(id: string): boolean {
+    const ask = this.open.get(id);
+    const job = ask && this.options.jobs.get(ask.jobId);
+    if (job?.chainId && this.options.chains.isActive(job.chainId)) return true;
+    if (ask && this.agentWaiting.has(id)) {
+      this.removeAgent(id);
+      if (this.active(ask.jobId)) this.launchHuman(id, ask);
+    }
+    return false;
+  }
+
   peekNotice(): string | undefined {
+    for (const id of this.agentWaiting) this.agentAuthorized(id);
     return this.notices.values().next().value;
   }
-  takeNotice(): string | undefined {
+  takeNotice(expected?: string): string | undefined {
     const head = this.notices.entries().next().value;
-    if (!head) return undefined;
+    if (!head || (expected !== undefined && head[1] !== expected)) return undefined;
     this.notices.delete(head[0]);
     this.changed();
     return head[1];
@@ -322,14 +365,26 @@ class RunAsks implements ChatRunAsks {
   async answer(askId: string, reply: RunAskReply): Promise<RunAskResult> {
     const unavailable: RunAskResult = { ok: false, message: `[chat] ask ${askId} is not waiting for the agent` };
     const ask = this.open.get(askId);
-    if (!ask || !this.agentWaiting.has(askId) || this.answering.has(askId) || !this.active(ask.jobId))
+    if (
+      !ask ||
+      !this.agentWaiting.has(askId) ||
+      this.answering.has(askId) ||
+      !this.active(ask.jobId) ||
+      !this.agentAuthorized(askId)
+    )
       return unavailable;
     this.answering.add(askId);
     try {
       const settled = await _runAsksDeps.readChatSettled(ask.dir, ask.record.key, ask.secret);
       const answered = await _runAsksDeps.readChatAnswer(ask.dir, ask.record.key, ask.secret);
       if (settled) this.recordSettlement(askId, ask.record, settled);
-      if (settled || answered || !this.active(ask.jobId) || !this.agentWaiting.has(askId)) {
+      if (
+        settled ||
+        answered ||
+        !this.active(ask.jobId) ||
+        !this.agentWaiting.has(askId) ||
+        !this.agentAuthorized(askId)
+      ) {
         this.removeAgent(askId);
         return unavailable;
       }
@@ -340,13 +395,20 @@ class RunAsks implements ChatRunAsks {
       }
       const response = agentResponse(ask.record, reply, this.options.now());
       if (!response) return { ok: false, message: `[chat] invalid answer for ${askId}` };
-      await _runAsksDeps.writeChatAnswer(ask.dir, ask.record.key, response, ask.secret, ask.controller.signal);
-      if (!this.active(ask.jobId) || ask.controller.signal.aborted) return unavailable;
+      await _runAsksDeps.writeChatAnswer(ask.dir, ask.record.key, response, ask.secret, ask.controller.signal, () =>
+        this.agentAuthorized(askId),
+      );
+      if (!this.active(ask.jobId) || ask.controller.signal.aborted || !this.agentAuthorized(askId)) return unavailable;
       this.removeAgent(askId);
       this.open.delete(askId);
       this.note(`[${ask.jobId}] agent answered ${reply.answer}: ${reply.reason}`);
       return { ok: true };
     } catch (cause) {
+      const settled = await _runAsksDeps.readChatSettled(ask.dir, ask.record.key, ask.secret).catch(() => undefined);
+      if (settled) {
+        this.recordSettlement(askId, ask.record, settled);
+        return unavailable;
+      }
       this.warn(cause, ask.jobId);
       return { ok: false, message: `[chat] could not write the answer for ${askId}` };
     } finally {

@@ -154,6 +154,24 @@ describe("createRunAsks notes and resource ownership", () => {
     expect(registry.takeNotes()).toEqual(["[run-1a2b3c4d] advisor: ruling flagged for a human"]);
     expect(registry.takeNotes()).toEqual([]);
   });
+  test("job exit drains final notices and settlements without heartbeat or cards", async () => {
+    await tick();
+    await settle("timeout");
+    await writeChatNotice(dir, { ...request, type: "notify", summary: "final advisor" }, new Date(0), secret);
+    const heartbeat = mock(original.writeChatHeartbeat);
+    _runAsksDeps.writeChatHeartbeat = heartbeat;
+    jobs[0] = { ...firstJob(), state: "succeeded" };
+    change();
+    await tick();
+    expect(registry.takeNotes()).toEqual([
+      "[run-1a2b3c4d] final advisor",
+      "[run-1a2b3c4d] ask timed out: Cost limit exceeded",
+    ]);
+    expect(heartbeat).not.toHaveBeenCalled();
+    expect(choice).not.toHaveBeenCalled();
+    await tick();
+    expect(registry.takeNotes()).toEqual([]);
+  });
   test("AC-8 failed user answer adds delivery note", async () => {
     _runAsksDeps.writeChatAnswer = async () => {
       throw new Error("disk full");

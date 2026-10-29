@@ -169,6 +169,18 @@ describe("ChatAskPlugin fallback", () => {
     if (isFresh) expect(fallback.send).not.toHaveBeenCalled();
     else expect(fallback.send).toHaveBeenCalledWith(notice);
   });
+  test.each(["write", "directory"])("persistent %s failure preserves the fallback approval", async (failure) => {
+    if (failure === "write") failWrite();
+    else {
+      const blocked = `${dir}/blocked`;
+      await Bun.write(blocked, "not a directory");
+      plugin = new ChatAskPlugin({ dir: blocked, secret, fallback, logger });
+    }
+    fallback.receive.mockImplementation(async () => response());
+    await plugin.send(request);
+    expect(await plugin.receive(request.id)).toEqual(response());
+    expect(logger.warn).toHaveBeenCalled();
+  });
   test("AC-16 AC-17 write failure uses fallback only", async () => {
     await fresh();
     failWrite();

@@ -143,12 +143,17 @@ function removeFile(path: string): void {
 }
 
 /** All writes publish via a unique sibling rename; failed writes never expose partial JSON. */
-async function atomicWrite(path: string, record: object, signal?: AbortSignal): Promise<void> {
+async function atomicWrite(
+  path: string,
+  record: object,
+  signal?: AbortSignal,
+  authorized?: () => boolean,
+): Promise<void> {
   if (signal?.aborted) return;
   const temp = `${path}.${_chatAskFileDeps.randomUUID()}.tmp`;
   try {
     await _chatAskFileDeps.write(temp, JSON.stringify(record));
-    if (signal?.aborted) {
+    if (signal?.aborted || authorized?.() === false) {
       removeFile(temp);
       return;
     }
@@ -252,13 +257,20 @@ export async function writeChatAnswer(
   answer: ChatAnswer,
   secret: ChatAskSecret,
   signal?: AbortSignal,
+  authorized?: () => boolean,
 ): Promise<void> {
   // Parent and child share this lock: neither settlement nor another answer
   // can publish between these authenticated checks and the atomic answer rename.
   await _chatAskFileDeps.withFileLock(
     `${recordPath(dir, key, "settled")}.lock`,
     async () => {
-      if (signal?.aborted || (await readChatSettled(dir, key, secret))) return;
+      if (signal?.aborted) return;
+      if (await readChatSettled(dir, key, secret)) {
+        throw new NaxError(`[chat-asks] Ask already settled for ${key}`, "CHAT_ASK_ALREADY_SETTLED", {
+          stage: "chat-asks",
+          key,
+        });
+      }
       if (await readChatAnswer(dir, key, secret)) {
         throw new NaxError(`[chat-asks] Answer already exists for ${key}`, "CHAT_ASK_ALREADY_ANSWERED", {
           stage: "chat-asks",
@@ -266,7 +278,12 @@ export async function writeChatAnswer(
         });
       }
       const record = { ...answer, schemaVersion: 1 };
-      await atomicWrite(recordPath(dir, key, "answer"), { ...record, mac: signChatRecord(secret, record) }, signal);
+      await atomicWrite(
+        recordPath(dir, key, "answer"),
+        { ...record, mac: signChatRecord(secret, record) },
+        signal,
+        authorized,
+      );
     },
     { lockName: "chat-ask", errorPrefix: "[chat-asks]" },
   );

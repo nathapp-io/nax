@@ -76,7 +76,7 @@ describe("chat ask file protocol", () => {
       await entered.promise;
       delivery = files.writeChatAnswer(dir, key(), answer, secret);
       release.resolve();
-      await Promise.all([settlement, delivery]);
+      await Promise.all([settlement, expect(delivery).rejects.toMatchObject({ code: "CHAT_ASK_ALREADY_SETTLED" })]);
       expect(await files.readChatSettled(dir, key(), secret)).toEqual(settled);
       expect(await files.readChatAnswer(dir, key(), secret)).toBeUndefined();
     } finally {
