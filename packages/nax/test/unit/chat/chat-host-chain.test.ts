@@ -190,7 +190,8 @@ describe("createHostJobs chains", () => {
     await activate(f);
     const owned = spyOn(f.jobs, "owned").mockReturnValue([]);
     expect(await f.confirmClose()).toBe(true);
-    expect(owned).toHaveBeenCalledTimes(1);
+    // Inspect for the card, then re-read after fencing launches for cancellation.
+    expect(owned).toHaveBeenCalledTimes(2);
     expect(f.chains.summary()?.stopReason).toBe("the chat closed");
     expect(f.choice).not.toHaveBeenCalled();
     expect(f.chains.active()).toBeUndefined();

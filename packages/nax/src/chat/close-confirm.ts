@@ -7,6 +7,7 @@ interface CloseConfirmOptions {
     readonly jobs: {
       owned(): readonly { readonly id: string }[];
       cancel(id: string): Promise<unknown>;
+      stopLaunching(): Promise<void>;
     };
     readonly chains: { stop(reason: string): void };
   };
@@ -51,7 +52,8 @@ export function createCloseConfirm(options: CloseConfirmOptions): () => Promise<
         : "stop";
     if (decision !== "stop" && decision !== "leave") return false;
     options.hostJobs?.chains.stop("the chat closed");
-    if (decision === "stop") await cancelOwned(options, owned);
+    await options.hostJobs?.jobs.stopLaunching();
+    if (decision === "stop") await cancelOwned(options, options.hostJobs?.jobs.owned() ?? []);
     await options.tasks?.stopAll();
     return true;
   };

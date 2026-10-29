@@ -17,7 +17,8 @@ function fixture(jobIds: string[] = [], taskIds: string[] = []) {
     active = false;
   });
   let active = true;
-  const hostJobs = { jobs: { owned: () => jobIds.map((id) => ({ id })), cancel }, chains: { stop } };
+  const stopLaunching = mock(async () => {});
+  const hostJobs = { jobs: { owned: () => jobIds.map((id) => ({ id })), cancel, stopLaunching }, chains: { stop } };
   const stopAll = mock(async () => {});
   const tasks = { running: () => taskIds.map((id) => ({ id })), stopAll };
   const confirm = createCloseConfirm({ hostJobs, tasks, asks, logger });
@@ -27,7 +28,7 @@ function fixture(jobIds: string[] = [], taskIds: string[] = []) {
     asks.resolveChoice(card.requestId, id);
     return card;
   };
-  return { asks, logger, cancel, stop, stopAll, confirm, choose, active: () => active };
+  return { asks, logger, cancel, stop, stopLaunching, stopAll, confirm, choose, active: () => active };
 }
 
 describe("createCloseConfirm", () => {
@@ -95,6 +96,34 @@ describe("createCloseConfirm", () => {
     expect(f.stopAll).not.toHaveBeenCalled();
     expect(f.stop).not.toHaveBeenCalled();
     expect(f.active()).toBe(true);
+  });
+  test("AC-6 stop cancels jobs registered while the choice card waits", async () => {
+    const ids = ["run-12345678"];
+    const f = fixture(ids);
+    const result = f.confirm();
+    ids.push("plan-87654321");
+    f.choose("stop");
+    expect(await result).toBe(true);
+    expect(f.cancel.mock.calls.map(([id]) => id)).toEqual(ids);
+  });
+  test("AC-6 stop waits for admitted launches before collecting owned jobs", async () => {
+    const ids = ["run-12345678"];
+    const f = fixture(ids);
+    const settling = Promise.withResolvers<void>();
+    const fenced = Promise.withResolvers<void>();
+    f.stopLaunching.mockImplementation(async () => {
+      fenced.resolve();
+      await settling.promise;
+      ids.push("plan-87654321");
+    });
+    const result = f.confirm();
+    f.choose("stop");
+    await fenced.promise;
+    expect(f.active()).toBe(false);
+    expect(f.cancel).not.toHaveBeenCalled();
+    settling.resolve();
+    expect(await result).toBe(true);
+    expect(f.cancel.mock.calls.map(([id]) => id)).toEqual(ids);
   });
   test("AC-18 AC-19 cancellation failure warns once and still cancels the next job", async () => {
     const f = fixture(["run-12345678", "plan-12345678"]);

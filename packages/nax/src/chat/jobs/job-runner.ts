@@ -98,6 +98,8 @@ class DetachedJobs implements ChatJobs {
   private readonly mutations = new Map<string, Promise<void>>();
   private polling = false;
   private disposed = false;
+  private launchesClosed = false;
+  private readonly launches = new Set<Promise<ChatJob>>();
 
   constructor(private readonly options: JobRunnerOptions) {}
 
@@ -131,6 +133,23 @@ class DetachedJobs implements ChatJobs {
     }
   }
   async start(request: StartJobRequest): Promise<ChatJob> {
+    if (this.launchesClosed) {
+      throw new NaxError("[chat] the chat closed; cannot start a nax job", "CHAT_JOB_CLOSED", { stage: "chat" });
+    }
+    const launch = this.launch(request);
+    this.launches.add(launch);
+    try {
+      return await launch;
+    } finally {
+      this.launches.delete(launch);
+    }
+  }
+  /** Fence new starts before waiting for already admitted launches to finish registration. */
+  async stopLaunching(): Promise<void> {
+    this.launchesClosed = true;
+    await Promise.allSettled([...this.launches]);
+  }
+  private async launch(request: StartJobRequest): Promise<ChatJob> {
     const id = newJobId(request.kind);
     const logPath = jobLogPath(this.options.outputDir, id);
     let child: OwnedChild;
@@ -441,6 +460,6 @@ class DetachedJobs implements ChatJobs {
   }
 }
 
-export function createJobRunner(options: JobRunnerOptions): ChatJobs {
+export function createJobRunner(options: JobRunnerOptions): ChatJobs & { stopLaunching(): Promise<void> } {
   return new DetachedJobs(options);
 }
