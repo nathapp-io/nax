@@ -112,10 +112,16 @@ describe("createChainTools card and activation", () => {
       "Steps run in this order, each once. A failed step or check, a different step, the cost cap, a cancel or closing the chat stops the chain.",
     ],
     ["AC-10", "warning: step 1 replaces the existing prd.json for f1"],
-    ["AC-11", "warning: run steps have no channel for their own asks; they will time out"],
+    ["AC-11", "run steps' asks you do not answer in chat fall to their timeout defaults"],
   ])("%s includes reason line", async (_ac, line) => {
     await invoke();
     expect(card().reason.split("\n")).toContain(line);
+  });
+  test("telegram chain omits the cli timeout warning", async () => {
+    options = { ...options, interactionPlugin: "telegram" };
+    await invoke();
+    expect(card().reason).not.toContain("no channel");
+    expect(card().reason).not.toContain("run steps' asks you do not answer in chat fall to their timeout defaults");
   });
   test("AC-6 states the check prerequisite", async () => {
     await invoke({ steps: [steps[0], { ...steps[1], checkBefore: "PRD fidelity READY" }] });

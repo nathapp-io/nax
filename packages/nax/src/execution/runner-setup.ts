@@ -27,6 +27,8 @@ export interface RunnerSetupOptions {
   startTime: number;
   skipPrecheck?: boolean;
   headless?: boolean;
+  chatAsksDir?: string;
+  chatAskSecret?: Uint8Array;
   formatterMode?: "quiet" | "normal" | "verbose" | "json";
   getTotalCost: () => number;
   getIterations: () => number;
@@ -81,6 +83,8 @@ export async function runSetupPhase(options: RunnerSetupOptions): Promise<Runner
     startTime: options.startTime,
     skipPrecheck: options.skipPrecheck ?? false,
     headless: options.headless ?? false,
+    chatAsksDir: options.chatAsksDir,
+    chatAskSecret: options.chatAskSecret,
     formatterMode: options.formatterMode ?? "normal",
     getTotalCost: options.getTotalCost,
     getIterations: options.getIterations,

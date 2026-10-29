@@ -55,6 +55,7 @@ export interface ChatAskController {
   handle(event: SessionEvent): void;
   requestHostApproval(card: HostApprovalCard): Promise<"allow" | "deny">;
   requestHostChoice(card: HostChoiceCard): Promise<string>;
+  requestHostQuestion(card: { text: string; signal?: AbortSignal }): Promise<string | null>;
   resolveChoice(requestId: string, id: string): void;
   pending(): readonly ChatPendingAsk[];
   resolve(requestId: string, choice: AskChoice): void;
@@ -75,6 +76,13 @@ class AskController implements ChatAskController {
       readonly settle: (id: string) => void;
       readonly cleanup: () => void;
       readonly fallback: string;
+    }
+  >();
+  private readonly questions = new Map<
+    string,
+    {
+      readonly settle: (text: string | null) => void;
+      readonly cleanup: () => void;
     }
   >();
   private readonly memory = new Set<string>();
@@ -157,6 +165,45 @@ class AskController implements ChatAskController {
     return waiting.promise;
   }
 
+  requestHostQuestion(card: { text: string; signal?: AbortSignal }): Promise<string | null> {
+    if (card.signal?.aborted) return Promise.resolve(null);
+    const requestId = `host-question-${++nextHostRequestId}`;
+    const now = this.options.now?.() ?? new Date();
+    const timeout = this.options.approvalTimeoutMs ?? DEFAULT_HOST_APPROVAL_TIMEOUT_MS;
+    const waiting = Promise.withResolvers<string | null>();
+    const abort = () => this.settleHostQuestion(requestId, null);
+    const timer = _askControllerDeps.setTimeout(abort, timeout);
+    this.questions.set(requestId, {
+      settle: waiting.resolve,
+      cleanup: () => {
+        _askControllerDeps.clearTimeout(timer);
+        card.signal?.removeEventListener("abort", abort);
+      },
+    });
+    this.open.set(requestId, {
+      type: "question",
+      requestId,
+      sessionId: "host",
+      turnId: "host",
+      metadata: {},
+      text: card.text,
+      at: now.toISOString(),
+      expiresAt: new Date(now.getTime() + timeout).toISOString(),
+    });
+    card.signal?.addEventListener("abort", abort, { once: true });
+    this.changed();
+    return waiting.promise;
+  }
+
+  private settleHostQuestion(requestId: string, text: string | null): void {
+    const request = this.questions.get(requestId);
+    if (!request) return;
+    this.questions.delete(requestId);
+    request.cleanup();
+    request.settle(text);
+    this.remove(requestId);
+  }
+
   resolveChoice(requestId: string, id: string): void {
     const request = this.choices.get(requestId);
     const event = this.open.get(requestId);
@@ -222,6 +269,10 @@ class AskController implements ChatAskController {
 
   answerQuestion(requestId: string, text: string): void {
     if (this.open.get(requestId)?.type !== "question") return;
+    if (this.questions.has(requestId)) {
+      this.settleHostQuestion(requestId, text);
+      return;
+    }
     this.options.answer(requestId, { text });
     this.remove(requestId);
   }
@@ -233,6 +284,7 @@ class AskController implements ChatAskController {
   reset(): void {
     for (const requestId of [...this.hosts.keys()]) this.resolve(requestId, "deny");
     for (const [requestId, request] of [...this.choices]) this.resolveChoice(requestId, request.fallback);
+    for (const requestId of [...this.questions.keys()]) this.settleHostQuestion(requestId, null);
     this.memory.clear();
     if (this.open.size === 0) return;
     this.open.clear();

@@ -99,7 +99,9 @@ export interface Session {
   keepaliveTimer?: unknown;
 }
 
-export function deny(decidedBy: "human" | "timeout" | "unavailable" | "cancelled" | "unshowable"): AskLinkOutcome {
+export function deny(
+  decidedBy: "model" | "human" | "timeout" | "unavailable" | "cancelled" | "unshowable",
+): AskLinkOutcome {
   return { decision: "deny", decidedBy };
 }
 
@@ -220,11 +222,12 @@ export async function decideSessionOutcome(
   // (src/interaction/chain.ts:135), so at runtime it carries our keys.
   // Widen to string once, here.
   const action: string = response.action;
+  const decidedBy = response.respondedBy === "chat-agent" ? "model" : "human";
   if (!PERMITS.has(action)) {
-    return deny("human");
+    return deny(decidedBy);
   }
   // `opts.onRemember` repeats canRemember's check so the call below narrows.
-  if (action === "allow-remember" && canRemember(onRemember, req) && onRemember) {
+  if (decidedBy === "human" && action === "allow-remember" && canRemember(onRemember, req) && onRemember) {
     // Remembering is AUXILIARY: the human already approved this
     // exact call, so a failed persistence (lock timeout, disk)
     // must not revoke that approval. AWAITED so the approval is
@@ -241,5 +244,5 @@ export async function decideSessionOutcome(
       });
     }
   }
-  return { decision: "allow", decidedBy: "human" };
+  return { decision: "allow", decidedBy };
 }

@@ -112,6 +112,9 @@ export interface RunOptions {
   formatterMode?: "quiet" | "normal" | "verbose" | "json";
   /** Whether running in headless mode (vs TUI mode) */
   headless?: boolean;
+  /** Chat-launched run's ask directory and memory-only stdin secret. */
+  chatAsksDir?: string;
+  chatAskSecret?: Uint8Array;
   /** Skip precheck validations (for advanced users) */
   skipPrecheck?: boolean;
   /** Pre-built AgentStreamEventBus so the TUI can subscribe to live agent events. */
@@ -265,6 +268,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
       startTime,
       skipPrecheck,
       headless,
+      chatAsksDir: options.chatAsksDir,
+      chatAskSecret: options.chatAskSecret,
       formatterMode,
       agentStreamEvents,
       // #2006: the crash handlers must read a live total. `totalCost` here is

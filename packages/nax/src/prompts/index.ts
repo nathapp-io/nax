@@ -102,6 +102,7 @@ export {
   buildRulesIndexSection,
   toRulesIndexEntry,
 } from "./builders/rules-index-builder";
+export { buildRunAskNotice } from "./builders/run-ask-builder";
 // Setup prompt builder — LLM-driven nax init config generation.
 export { SetupPromptBuilder } from "./builders/setup-builder";
 export {

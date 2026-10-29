@@ -1,21 +1,33 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import type { AgentSession, SessionMeta } from "@nathapp/nax-agent";
-import { assertDefined, cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir, waitForCondition } from "@test/helpers";
+import {
+  assertDefined,
+  cleanupTempDir,
+  makeFakeClock,
+  makeLogger,
+  makeNaxConfig,
+  makeTempDir,
+  waitForCondition,
+} from "@test/helpers";
 import { type ChatResources, createChatHost, createChatStorage } from "@/chat";
 import { createChatAskController } from "@/chat/ask-controller";
 import { createCloseConfirm } from "@/chat/close-confirm";
 import { createHostJobs } from "@/chat/jobs";
 import { _chainStoreDeps, readChainRecord } from "@/chat/jobs/chain-store";
 import { _jobRunnerDeps } from "@/chat/jobs/job-runner";
+import { jobAsksDir } from "@/chat/jobs/job-store";
 import { _jobsLaunchDeps } from "@/chat/jobs/jobs-launch";
+import { _runAsksDeps } from "@/chat/jobs/run-asks";
 import type { OpenChatSessionRequest } from "@/chat/open-chat-session";
 import { featureDir } from "@/config";
+import { chatHeartbeatFresh, RUN_ASK_POLL_MS } from "@/interaction/chat-ask-files";
 import { buildResourceCatalog } from "@/resources";
 
 const dirs: string[] = [];
 const hosts: ReturnType<typeof createChatHost>[] = [];
 const compositions: ReturnType<typeof createHostJobs>[] = [];
+const originalAsks = { ..._runAsksDeps };
 const originalLaunch = { ..._jobsLaunchDeps };
 const originalRunner = { ..._jobRunnerDeps };
 const originalWrite = _chainStoreDeps.write;
@@ -27,9 +39,11 @@ afterEach(async () => {
     await host.close();
   }
   for (const composition of compositions.splice(0)) {
+    composition.close();
     composition.chains?.dispose();
     composition.jobs.dispose();
   }
+  Object.assign(_runAsksDeps, originalAsks);
   Object.assign(_jobsLaunchDeps, originalLaunch);
   Object.assign(_jobRunnerDeps, originalRunner);
   _chainStoreDeps.write = originalWrite;
@@ -67,6 +81,53 @@ async function activate(f: ReturnType<typeof compose>) {
 }
 
 describe("createHostJobs chains", () => {
+  test("US-014 AC-7/8 composes registry and close removes the live heartbeat", async () => {
+    const clock = makeFakeClock();
+    let scanned = Promise.resolve();
+    _runAsksDeps.setTimeout = (callback, ms) =>
+      clock.setTimeout(() => {
+        scanned = Promise.resolve(callback());
+      }, ms);
+    _runAsksDeps.clearTimeout = (handle) => {
+      if (typeof handle === "number") clock.clearTimeout(handle);
+    };
+    _jobRunnerDeps.spawn = mock(() => ({
+      pid: 4242,
+      exited: new Promise<number>(() => {}),
+      unref() {},
+      stdin: {
+        write() {
+          return 32;
+        },
+        end() {
+          return 0;
+        },
+      },
+    }));
+    const f = compose();
+    expect(f.runAsks).toBeDefined();
+    expect((await f.provider.tools(f.repoRoot)).map((t) => t.localName)).toContain("answer_ask");
+    const job = await f.jobs.start({
+      kind: "run",
+      target: "f1",
+      argv: ["bun", "/n.ts"],
+      sessionId: "chat",
+      approvedAt: now().toISOString(),
+    });
+    await clock.advance(RUN_ASK_POLL_MS);
+    await scanned;
+    const dir = jobAsksDir(f.outputDir, job.id);
+    expect(await chatHeartbeatFresh(dir, now().getTime())).toBe(true);
+    const removed = Promise.withResolvers<void>();
+    _runAsksDeps.removeChatHeartbeat = async (path) => {
+      await originalAsks.removeChatHeartbeat(path);
+      removed.resolve();
+    };
+    f.close();
+    await removed.promise;
+    expect(await chatHeartbeatFresh(dir, now().getTime())).toBe(false);
+    expect(clock.pending()).toBe(0);
+  });
   test("session replacement during activation cannot survive a session round trip", async () => {
     const f = compose();
     const writing = Promise.withResolvers<void>();
@@ -183,6 +244,7 @@ describe("createHostJobs chains", () => {
       "chain",
       "chain_check",
       "chain_stop",
+      "answer_ask",
     ]);
   });
   test("AC-15 stops before an empty close without asking", async () => {
@@ -354,6 +416,7 @@ describe("createChatHost chain composition", () => {
       "chain",
       "chain_check",
       "chain_stop",
+      "answer_ask",
     ]);
   });
   test("AC-18 full mode keeps the chain card pending until explicitly resolved", async () => {

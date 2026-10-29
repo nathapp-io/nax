@@ -8,6 +8,7 @@ import type { InteractionConfig } from "../config/selectors";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { InteractionChain } from "./chain";
+import { ChatAskPlugin } from "./plugins/chat";
 import { CLIInteractionPlugin } from "./plugins/cli";
 import { TelegramInteractionPlugin } from "./plugins/telegram";
 import { WebhookInteractionPlugin } from "./plugins/webhook";
@@ -40,6 +41,13 @@ export function createInteractionPlugin(pluginName: string): InteractionPlugin {
   }
 }
 
+export const _interactionInitDeps = { createInteractionPlugin, getSafeLogger };
+
+export interface InteractionInitOptions {
+  readonly chatAsksDir?: string;
+  readonly chatAskSecret?: Uint8Array;
+}
+
 /**
  * Initialize interaction chain from config
  *
@@ -50,8 +58,13 @@ export function createInteractionPlugin(pluginName: string): InteractionPlugin {
 export async function initInteractionChain(
   config: InteractionConfig,
   headless: boolean,
+  options: InteractionInitOptions = {},
 ): Promise<InteractionChain | null> {
-  const logger = getSafeLogger();
+  const logger = _interactionInitDeps.getSafeLogger();
+  const chatEnabled = options.chatAsksDir !== undefined && options.chatAskSecret !== undefined;
+  if (options.chatAsksDir !== undefined && !options.chatAskSecret) {
+    logger?.warn("interaction", "[interaction] Missing chat ask secret; using configured interaction plugin");
+  }
 
   // If no interaction config, skip
   if (!config.interaction) {
@@ -62,7 +75,7 @@ export async function initInteractionChain(
   // In headless mode, skip CLI plugin only — it requires stdin (TTY).
   // Telegram and Webhook plugins work via HTTP and don't need a TTY.
   const pluginName = config.interaction.plugin;
-  if (headless && pluginName === "cli") {
+  if (!chatEnabled && headless && pluginName === "cli") {
     logger?.debug("interaction", "Headless mode with CLI plugin - skipping interaction system (stdin unavailable)");
     return null;
   }
@@ -77,14 +90,25 @@ export async function initInteractionChain(
 
   // Create and register plugin
   try {
-    const plugin = createInteractionPlugin(pluginName);
-    chain.register(plugin, 100);
+    if (options.chatAsksDir !== undefined && options.chatAskSecret !== undefined) {
+      const fallback = pluginName === "cli" ? undefined : _interactionInitDeps.createInteractionPlugin(pluginName);
+      await fallback?.init?.(config.interaction.config ?? {});
+      chain.register(
+        new ChatAskPlugin({
+          dir: options.chatAsksDir,
+          secret: options.chatAskSecret,
+          fallback,
+          fallbackDelayMs: config.interaction.defaults.chatAskFallbackMs,
+        }),
+        100,
+      );
+    } else {
+      const plugin = _interactionInitDeps.createInteractionPlugin(pluginName);
+      chain.register(plugin, 100);
+      await chain.init({ [pluginName]: config.interaction.config ?? {} });
+    }
 
-    // Initialize plugin
-    const pluginConfig = config.interaction.config ?? {};
-    await chain.init({ [pluginName]: pluginConfig });
-
-    logger?.info("interaction", `Initialized ${pluginName} interaction plugin`, {
+    logger?.info("interaction", `Initialized ${chatEnabled ? "chat" : pluginName} interaction plugin`, {
       timeout: config.interaction.defaults.timeout,
       fallback: config.interaction.defaults.fallback,
     });

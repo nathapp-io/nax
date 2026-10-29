@@ -1,9 +1,10 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import type { Command } from "commander";
+import { type Command, Option } from "commander";
 import type { BotFixCycleResult, loadBotDecisions, runBotFix, runBotFixCycle, runBotReview } from "@/bot";
 import { parseProfileList } from "@/config";
 import { NaxError } from "@/errors";
 import { initLogger } from "@/logger";
+import { parseChatAsksFlag, readChatAskSecret } from "./run-chat-asks";
 
 export interface BotCliDeps {
   initLogger: (options: Parameters<typeof initLogger>[0]) => void;
@@ -11,6 +12,8 @@ export interface BotCliDeps {
   logErr: (message: string) => void;
   exit: (code: number) => void;
   isInteractive: () => boolean;
+  stdin: () => ReadableStream<Uint8Array>;
+  readChatAskSecret: typeof readChatAskSecret;
   runBotReview: typeof runBotReview;
   runBotFix: typeof runBotFix;
   runBotFixCycle: typeof runBotFixCycle;
@@ -21,6 +24,8 @@ export interface BotCliDeps {
 // not close a runtime cycle through bot -> workflow -> cli. Fix remains lazy too.
 export const _botCliDeps: BotCliDeps = {
   initLogger,
+  stdin: () => Bun.stdin.stream(),
+  readChatAskSecret,
   log: (message) => {
     process.stdout.write(`${message}\n`);
   },
@@ -38,6 +43,7 @@ export const _botCliDeps: BotCliDeps = {
 };
 
 export interface BotReviewOptions {
+  readonly chatAsks?: string;
   readonly pr: string;
   readonly dir: string;
   readonly profile?: string[];
@@ -68,6 +74,12 @@ async function withBotInput(
     if (!/^\d+$/.test(options.pr) || !Number.isSafeInteger(pr) || pr <= 0) {
       throw new NaxError("[bot] PR must be a positive integer", "BOT_PR_INVALID", { stage: "bot", pr: options.pr });
     }
+    const chatAsks = parseChatAsksFlag(options.chatAsks);
+    if (!chatAsks.ok) {
+      deps.logErr(chatAsks.message);
+      return 1;
+    }
+    const chatAskSecret = chatAsks.value === undefined ? undefined : await deps.readChatAskSecret(deps.stdin());
     const { parseModelOption } = await import("@/bot");
     const model = options.model === undefined ? undefined : parseModelOption(options.model);
     return await action({
@@ -76,6 +88,7 @@ async function withBotInput(
       profiles: parseProfileList(options.profile),
       model,
       interactive: deps.isInteractive(),
+      ...(chatAsks.value === undefined ? {} : { chatAsksDir: chatAsks.value, chatAskSecret }),
       ...(options.inPlace === true && { inPlace: true }),
     });
   } catch (err) {
@@ -166,6 +179,7 @@ function printFixCycle({ cycle, pr, deps }: { cycle: BotFixCycleResult; pr: numb
 
 function withBotOptions(command: Command): Command {
   return command
+    .addOption(new Option("--chat-asks <dir>").hideHelp())
     .option("-d, --dir <path>", "Project directory", process.cwd())
     .option(
       "--profile <name>",

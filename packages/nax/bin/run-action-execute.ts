@@ -138,6 +138,8 @@ export async function executeSingleAgentRun(params: {
   logFilePath: string;
   formatterMode: FormatterMode;
   useHeadless: boolean;
+  chatAsksDir?: string;
+  chatAskSecret?: Uint8Array;
   agentStreamEvents: AgentStreamEventBus | undefined;
   tuiInstance: TuiInstance | undefined;
 }): Promise<Awaited<ReturnType<typeof run>>> {
@@ -175,6 +177,8 @@ export async function executeSingleAgentRun(params: {
       logFilePath,
       formatterMode: useHeadless ? formatterMode : undefined,
       headless: useHeadless,
+      chatAsksDir: params.chatAsksDir,
+      chatAskSecret: params.chatAskSecret,
       skipPrecheck: options.skipPrecheck ?? false,
       agentStreamEvents,
       resumeMode: options.fresh === true || options.resume === false ? "fresh" : "auto",

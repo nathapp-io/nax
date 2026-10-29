@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { readdirSync, statSync } from "node:fs";
+import { mkdirSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import type { ChatJob } from "@/chat/jobs/job-types";
@@ -52,6 +52,11 @@ describe("jobsDir", () => {
 describe("jobLogPath", () => {
   test("AC-2 returns the job log path", () => {
     expect(store.jobLogPath("/o", "run-1a2b3c4d")).toBe("/o/chat-jobs/run-1a2b3c4d.log");
+  });
+});
+describe("jobAsksDir", () => {
+  test("US-008 AC-1 returns the per-job ask directory", () => {
+    expect(store.jobAsksDir("/out", "run-1a2b3c4d")).toBe("/out/chat-jobs/run-1a2b3c4d.asks");
   });
 });
 describe("newJobId", () => {
@@ -131,6 +136,11 @@ describe("writeJobRecord", () => {
   });
 });
 describe("readJobRecords", () => {
+  test("US-008 AC-13 ignores adjacent ask directories", async () => {
+    await store.writeJobRecord(dir, job());
+    mkdirSync(join(store.jobsDir(dir), "run-1a2b3c4d.asks"));
+    expect(await store.readJobRecords(dir)).toEqual([job()]);
+  });
   test("AC-8 sorts newest first", async () => {
     const older = job();
     const newer = job({ id: "plan-00000000", kind: "plan", startedAt: "2026-10-02T00:00:00Z" });

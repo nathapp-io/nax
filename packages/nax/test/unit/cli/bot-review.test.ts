@@ -63,6 +63,33 @@ async function run(...args: string[]): Promise<void> {
   await program.parseAsync(["bot", "review", ...args], { from: "user" });
 }
 afterEach(() => mock.restore());
+describe("botReviewCommand chat secret", () => {
+  test("reads the valid first stdin line before forwarding the 32-byte secret", async () => {
+    const { botReviewCommand } = await import("@/cli/bot");
+    const secret = new Uint8Array(32).fill(17);
+    const stdin = mock(
+      () =>
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(`${Buffer.from(secret).toString("hex")}\n`));
+            controller.close();
+          },
+        }),
+    );
+    await botReviewCommand(
+      { pr: "12", dir: "/repo", chatAsks: "/tmp/asks" },
+      {
+        ..._botCliDeps,
+        stdin,
+        runBotReview: review,
+        log: () => {},
+      },
+    );
+    expect(stdin).toHaveBeenCalledTimes(1);
+    expect(review).toHaveBeenCalledWith(expect.objectContaining({ chatAskSecret: secret }));
+  });
+});
+
 describe("registerBotCommand review decisions and readiness", () => {
   test("US-013 AC-1/2 forwards decisions loaded through the lazy dependency", async () => {
     await withTempDir(async (dir) => {

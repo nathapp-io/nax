@@ -179,7 +179,7 @@ async function prepareRun(
   if (overLimit)
     details.push(`warning: ${pending} stories pending but max iterations is ${limit}; pass maxIterations (nax#2706)`);
   if (options.interactionPlugin === "cli")
-    details.push("warning: this run has no channel for its own asks; they will time out");
+    details.push("asks you do not answer in chat fall to the run's timeout defaults");
   return { input, details, ...(overLimit ? { overLimit } : {}) };
 }
 

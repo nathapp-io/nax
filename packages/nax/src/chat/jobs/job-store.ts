@@ -27,6 +27,10 @@ export function jobLogPath(outputDir: string, id: string): string {
   return join(jobsDir(outputDir), `${id}.log`);
 }
 
+export function jobAsksDir(outputDir: string, jobId: string): string {
+  return join(jobsDir(outputDir), `${jobId}.asks`);
+}
+
 export function newJobId(kind: ChatJobKind): string {
   return `${kind}-${_jobStoreDeps.randomHex()}`;
 }

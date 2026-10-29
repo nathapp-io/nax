@@ -6,6 +6,7 @@ import { createChainTools } from "./chain-tools";
 import { type ChatJobs, JOB_LOG_TAIL_LINES } from "./job-runner";
 import { type ChatJob, type ChatJobKind, JOB_ID_PATTERN } from "./job-types";
 import { launchToolRun } from "./jobs-launch";
+import type { ChatRunAsks } from "./run-asks";
 
 export const JOBS_LIST_LIMIT = 20;
 
@@ -17,6 +18,7 @@ export interface JobsProviderOptions {
   readonly interactionPlugin: string;
   readonly jobs: ChatJobs;
   readonly chains?: ChatChains;
+  readonly runAsks?: ChatRunAsks;
   readonly approve: (card: HostApprovalCard) => Promise<"allow" | "deny">;
   readonly sessionId: () => string;
   readonly now: () => Date;
@@ -93,13 +95,33 @@ function inspectionTool(name: "list" | "cancel", options: JobsProviderOptions): 
   };
 }
 
+function answerAskTool(runAsks: ChatRunAsks): ProviderTool {
+  return {
+    localName: "answer_ask",
+    description: "Answer a queued run ask once, with a reason, or escalate it to the user. No approval card.",
+    inputSchema: {
+      type: "object",
+      properties: { ask: { type: "string" }, answer: { type: "string" }, reason: { type: "string" } },
+      required: ["ask", "answer", "reason"],
+      additionalProperties: false,
+    },
+    run: async ({ ask, answer, reason }) => {
+      if (typeof ask !== "string" || typeof answer !== "string" || typeof reason !== "string") {
+        return { isError: true, content: "[chat] answer_ask requires string ask, answer and reason" };
+      }
+      const result = await runAsks.answer(ask, { answer, reason });
+      return result.ok ? { content: `answered run ask ${ask}` } : { isError: true, content: result.message };
+    },
+  };
+}
+
 /** Repo-scoped static tools; billed launches require their own card or chain approval. */
 export function createJobsProvider(options: JobsProviderOptions): ToolProvider {
   return {
     id: "nax-jobs",
     kind: "static",
     stages: ["*"],
-    instructions: async () => buildJobsInstructions(),
+    instructions: async () => (options.runAsks ? buildJobsInstructions({ answerAsks: true }) : buildJobsInstructions()),
     tools: async () => [
       ...LAUNCH_KINDS.map((kind) => ({
         localName: kind,
@@ -115,6 +137,7 @@ export function createJobsProvider(options: JobsProviderOptions): ToolProvider {
       inspectionTool("list", options),
       inspectionTool("cancel", options),
       ...(options.chains ? createChainTools({ ...options, chains: options.chains }) : []),
+      ...(options.runAsks ? [answerAskTool(options.runAsks)] : []),
     ],
   };
 }

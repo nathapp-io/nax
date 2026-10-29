@@ -14,3 +14,10 @@ export { createJobWriteGuard } from "./job-write-guard";
 export { createHostJobs } from "./jobs-host";
 export { formatJobsListing } from "./jobs-listing";
 export { createJobsProvider, type JobsProviderOptions } from "./jobs-provider";
+export {
+  type ChatRunAsks,
+  createRunAsks,
+  type RunAskReply,
+  type RunAskResult,
+  type RunAsksOptions,
+} from "./run-asks";

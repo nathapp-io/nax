@@ -410,7 +410,7 @@ interface FakeRun {
   outcome: unknown;
   /** `defaultRewrite`'s own duration, measured inside the child. */
   elapsedMs: number;
-  /** Pid the fake recorded, or 0 when it never ran. */
+  /** Actual OS pid returned by the real spawn, or 0 when no child was spawned. */
   pid: number;
 }
 
@@ -418,6 +418,14 @@ interface FakeRun {
 function childCode(command: string, cwd: string): string {
   return [
     'const { defaultRewrite } = await import("@/execution/interceptors/rtk");',
+    'const { _argvExecDeps } = await import("@nathapp/nax-agent/internal");',
+    "const realSpawn = _argvExecDeps.spawn;",
+    "let pid = 0;",
+    "_argvExecDeps.spawn = (...args) => {",
+    "  const proc = realSpawn(...args);",
+    "  pid = proc.pid;",
+    "  return proc;",
+    "};",
     "const started = Date.now();",
     "try {",
     `  console.log(JSON.stringify(await defaultRewrite(${JSON.stringify(command)}, ${JSON.stringify(cwd)})));`,
@@ -425,6 +433,7 @@ function childCode(command: string, cwd: string): string {
     "  console.log(JSON.stringify({ rejected: true, message: String(err && err.message ? err.message : err) }));",
     "}",
     "console.log(JSON.stringify(Date.now() - started));",
+    "console.log(JSON.stringify(pid));",
   ].join("\n");
 }
 
@@ -447,26 +456,23 @@ async function runChild(command: string, cwd: string, pathValue: string): Promis
   if (exitCode !== 0) {
     throw new Error(`[rtk test] child bun exited ${exitCode}: ${stderr.trim() || stdout.trim()}`);
   }
-  const [outcomeLine, elapsedLine] = stdout.trim().split("\n");
+  const [outcomeLine, elapsedLine, pidLine] = stdout.trim().split("\n");
   return {
     outcome: JSON.parse(outcomeLine ?? "null"),
     elapsedMs: Number(JSON.parse(elapsedLine ?? "0")),
-    pid: 0,
+    pid: Number(JSON.parse(pidLine ?? "0")),
   };
 }
 
-/** `runChild` against an executable `rtk` first on PATH; `%PID%` becomes a pid-file path. */
+/** `runChild` against an executable `rtk` first on PATH. */
 async function runWithFakeRtk(body: string): Promise<FakeRun> {
   return withTempDir(async (dir) => {
-    const pidFile = join(dir, "pid");
     const binDir = join(dir, "bin");
     await mkdir(binDir, { recursive: true });
-    await writeFile(join(binDir, "rtk"), `#!/bin/sh\n${body.replaceAll("%PID%", pidFile)}\n`);
+    await writeFile(join(binDir, "rtk"), `#!/bin/sh\n${body}\n`);
     await chmod(join(binDir, "rtk"), 0o755);
 
-    const run = await runChild("bun test", dir, `${binDir}:${process.env.PATH ?? ""}`);
-    if (!(await Bun.file(pidFile).exists())) return run;
-    return { ...run, pid: Number((await Bun.file(pidFile).text()).trim()) };
+    return runChild("bun test", dir, `${binDir}:${process.env.PATH ?? ""}`);
   });
 }
 
@@ -475,25 +481,31 @@ describe("rtk defaultRewrite (US-002)", () => {
     expect(RTK_REWRITE_TIMEOUT_MS).toBe(2000);
   });
 
-  // These real-process deadline tests run serially: concurrent launches compete
-  // for startup time inside the fixed production deadline, before writing the PID.
-  test("US-002 AC22: a sleeping rtk is timed out within the bound, after really running", async () => {
-    const run = await runWithFakeRtk('echo $$ > "%PID%"\nexec sleep 8');
+  // Record the real spawn's PID through its deps seam: a deadline can expire
+  // before the child shell gets CPU time to write a marker under suite load.
+  test("US-002 AC22: a spawned sleeping rtk is timed out within the bound", async () => {
+    const run = await runWithFakeRtk("exec sleep 8");
     expect(run.outcome).toEqual({ exitCode: -1, stdout: "", timedOut: true });
     expect(run.elapsedMs).toBeLessThanOrEqual(RTK_REWRITE_TIMEOUT_MS + 1000);
-    // The recorded pid is what proves the fake really ran: an answer that never
-    // spawned a child would satisfy the shape above and fail here.
+    // The OS pid proves a real child was spawned: a fabricated timeout answer
+    // would satisfy the shape above but fail here.
     expect(run.pid).toBeGreaterThan(0);
   }, 20_000);
 
   test("US-002 AC23: the timed-out child is no longer a running process", async () => {
-    const run = await runWithFakeRtk('echo $$ > "%PID%"\nexec sleep 8');
+    const run = await runWithFakeRtk("exec sleep 8");
     expect(run.outcome).toEqual({ exitCode: -1, stdout: "", timedOut: true });
     expect(run.pid).toBeGreaterThan(0);
     // The signal may land a moment after the answer resolves, so poll rather
     // than sleep; the assertion below, not the helper, is the verdict.
     await waitForCondition(() => !isProcessAlive(run.pid), 3_000, 25).catch(() => {});
     expect(isProcessAlive(run.pid)).toBe(false);
+  }, 20_000);
+
+  test("F2 captures the spawned PID without requiring a child-written marker", async () => {
+    const run = await runWithFakeRtk("exit 0");
+    expect(run.outcome).toEqual({ exitCode: 0, stdout: "", timedOut: false });
+    expect(run.pid).toBeGreaterThan(0);
   }, 20_000);
 
   test("US-002 AC24: exit 3 and stdout are reported verbatim", async () => {

@@ -6,15 +6,16 @@ import { getLogger } from "@/logger";
 
 interface JobsOptions {
   readonly idle: boolean;
+  readonly note: (text: string) => void;
   readonly deliver: (notice: string) => Promise<boolean>;
 }
 
 export const MAX_CONSECUTIVE_TASK_NOTICE_TURNS = 3;
 
-/** Deliver job notices first, then bounded autonomous task turns, only while idle. */
+/** Deliver run asks before job notices, then bounded autonomous task turns, only while idle. */
 export function useJobs(
   host: ChatHost,
-  { idle, deliver }: JobsOptions,
+  { idle, deliver, note }: JobsOptions,
 ): {
   running: readonly ChatJob[];
   /** Foreground availability refreshed by the same task subscription as notices. */
@@ -23,6 +24,7 @@ export function useJobs(
 } {
   const jobs = host.jobs;
   const tasks = host.tasks;
+  const runAsks = host.runAsks;
   const taskTurns = useRef(0);
   const [, refresh] = useState(0);
   const latestDeliver = useRef(deliver);
@@ -35,20 +37,33 @@ export function useJobs(
     const changed = () => refresh((revision) => revision + 1);
     const unsubscribe = jobs?.onChange(changed);
     const unsubscribeTasks = tasks?.onChange(changed);
+    const unsubscribeAsks = runAsks?.onChange(changed);
     return () => {
       mounted.current = false;
       unsubscribe?.();
       unsubscribeTasks?.();
+      unsubscribeAsks?.();
     };
-  }, [jobs, tasks]);
+  }, [jobs, tasks, runAsks]);
+
+  useEffect(() => {
+    for (const line of runAsks?.takeNotes() ?? []) note(line);
+  });
 
   // Check on every render: an idle transition or a job notification can unblock the head.
   useEffect(() => {
     if (!idle || inFlight.current) return;
+    const askNotice = runAsks?.peekNotice();
     const jobNotice = jobs?.peekNotice();
     const source =
-      jobNotice !== undefined ? jobs : taskTurns.current < MAX_CONSECUTIVE_TASK_NOTICE_TURNS ? tasks : undefined;
-    const notice = jobNotice ?? source?.peekNotice();
+      askNotice !== undefined
+        ? runAsks
+        : jobNotice !== undefined
+          ? jobs
+          : taskTurns.current < MAX_CONSECUTIVE_TASK_NOTICE_TURNS
+            ? tasks
+            : undefined;
+    const notice = askNotice ?? jobNotice ?? source?.peekNotice();
     if (notice === undefined) return;
     inFlight.current = true;
     void (async () => {
@@ -56,7 +71,8 @@ export function useJobs(
       try {
         delivered = await latestDeliver.current(notice);
         if (delivered) {
-          source?.takeNotice();
+          if (source === runAsks) runAsks?.takeNotice(notice);
+          else source?.takeNotice();
           if (source === tasks) taskTurns.current++;
         }
       } catch (error) {
@@ -74,6 +90,7 @@ export function useJobs(
     backgroundable: tasks?.hasForeground() ?? false,
     noteUserTurn: () => {
       taskTurns.current = 0;
+      runAsks?.noteUserTurn();
     },
   };
 }

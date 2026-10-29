@@ -45,6 +45,7 @@ function fakeHost(overrides: Partial<ChatHostState> = {}, notice?: string) {
       canRemember: () => false,
       requestHostApproval: async () => "deny",
       requestHostChoice: async (card) => card.fallback,
+      requestHostQuestion: async () => null,
       resolveChoice: () => {},
       resolve: () => {},
       setMode: () => {},

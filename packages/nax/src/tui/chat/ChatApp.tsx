@@ -416,6 +416,7 @@ export function ChatApp({
       canControl: keys.canControl(),
     }),
     deliver: (text) => sendTurn(text),
+    note: (text) => append({ kind: "notice", text }),
   });
 
   // Use input bookkeeping so batched keys see completion and submission clears the draft.
@@ -427,11 +428,7 @@ export function ChatApp({
     inputHandle.current?.submit(`/${name}`);
   }
 
-  /**
-   * Every edit the input publishes, and the only way the prompt reaches this screen. The
-   * menu's claim is told in the same call: the re-render that would show the new text has not
-   * happened yet, and the next key of this batch must be resolved against it.
-   */
+  /** Publish edits and claim the menu together, before the next batched key or render. */
   function changeDraft(next: InputDraft): void {
     slashKeys.sawPrompt(next.editor.text);
     setDraft(next);
