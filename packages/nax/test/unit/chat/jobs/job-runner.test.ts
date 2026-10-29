@@ -162,13 +162,19 @@ describe("createJobRunner", () => {
       jobs.dispose();
     }
   });
-  test("pipe delivery failures keep the launched child managed and close stdin", async () => {
-    child.stdin.write = mock(() => {
+  test.each(["write", "end"] as const)("F1 secret %s failure surfaces a durable no-retry warning", async (phase) => {
+    child.stdin[phase] = mock(async () => {
       throw new Error("pipe closed");
     });
     const jobs = runner();
     try {
       const job = await jobs.start(request);
+      expect(job.note).toContain("asks will not reach the chat");
+      expect(job.note).toContain("secret delivery failed");
+      expect(job.note).toContain("do not retry");
+      expect(jobs.get(job.id)?.note).toBe(job.note);
+      expect((await readJobRecords(outputDir))[0]?.note).toBe(job.note);
+      expect(jobs.askSecret?.(job.id)).toBeUndefined();
       expect(jobs.owned()).toEqual([job]);
       expect(child.stdin.end).toHaveBeenCalledTimes(1);
       expect(_jobRunnerDeps.spawn).toHaveBeenCalledTimes(1);

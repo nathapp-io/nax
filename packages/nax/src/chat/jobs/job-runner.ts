@@ -192,10 +192,9 @@ class DetachedJobs implements ChatJobs {
     this.ownedIds.add(id);
     this.syncPoll();
     child.unref();
-    if (prepared.secret) this.deliverSecret(child, prepared.secret);
-    // Failure to save does not undo a launch or detach its exit observer.
+    // Failure to deliver or save does not undo a launch or detach its exit observer.
     // Polling, cancellation and exit finalization must not overtake the initial write.
-    const saved = this.mutate(id, () => this.persistRunning(job));
+    const saved = this.mutate(id, () => this.persistLaunch(job, child, prepared.secret));
     void child.exited
       .then(async (code) => {
         this.observedExits.set(job.id, code);
@@ -227,21 +226,34 @@ class DetachedJobs implements ChatJobs {
       return { argv, note: "asks will not reach the chat: ask transport could not be prepared" };
     }
   }
-  private deliverSecret(child: OwnedChild, secret: Uint8Array): void {
+  private async persistLaunch(job: ChatJob, child: OwnedChild, secret?: Uint8Array): Promise<ChatJob> {
+    let tracked = job;
+    if (secret && !(await this.deliverSecret(child, secret))) {
+      const note = "asks will not reach the chat: secret delivery failed; job already started; do not retry";
+      tracked = { ...job, note: [job.note, note].filter(Boolean).join("; ") };
+      this.records.set(job.id, tracked);
+      this.secrets.delete(job.id);
+    }
+    return this.persistRunning(tracked);
+  }
+  private async deliverSecret(child: OwnedChild, secret: Uint8Array): Promise<boolean> {
     // A post-spawn pipe error must not turn a managed launch into a retryable spawn failure.
-    void (async () => {
+    if (!child.stdin) return false;
+    let delivered = true;
+    try {
+      await child.stdin.write(`${Buffer.from(secret).toString("hex")}\n`);
+    } catch (cause) {
+      delivered = false;
+      this.warn(cause);
+    } finally {
       try {
-        await child.stdin?.write(`${Buffer.from(secret).toString("hex")}\n`);
+        await child.stdin.end();
       } catch (cause) {
+        delivered = false;
         this.warn(cause);
-      } finally {
-        try {
-          await child.stdin?.end();
-        } catch (cause) {
-          this.warn(cause);
-        }
       }
-    })();
+    }
+    return delivered;
   }
   askSecret(id: string): Uint8Array | undefined {
     return this.secrets.get(id)?.slice();
