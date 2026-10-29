@@ -10,7 +10,9 @@
  * are recorded with decidedBy "profile". Fail closed: a deny or deadline answers
  * reject_once; a turn abort, process death or ask-port failure answers
  * `cancelled`. Embedder tools are pre-approved at the adapter (S4-4), so they are
- * normally never asked about; if an agent asks anyway, the request is decided
+ * normally never asked about; an agent with no pre-approval channel (Codex, Cursor) is
+ * answered allow-once for a call its structured report proved is the session's own
+ * tool host's (US-004, before the profile decides); if an agent asks anyway, the request is decided
  * like any other, because its title is display data (S4-4 D4-c).
  */
 import type { RequestPermissionRequest, RequestPermissionResponse } from "@agentclientprotocol/sdk";
@@ -22,6 +24,8 @@ import { isSandboxWrapped } from "#src/client/shell-sandbox";
 import { isRecord } from "#src/client/text";
 import { describeToolCall, type ToolCallDisplay } from "#src/client/tool-display";
 
+/** US-004: the request names a call the turn's ledger proved is the session's own tool host's. */
+export const OWN_TOOL_REASON = "nax's own tool host call";
 export const NO_ALLOW_ONCE_REASON = "agent offered no allow-once option";
 export const UNSHOWABLE_REASON = "the request could not be shown safely";
 export const ASK_REASON = "the ACP agent asks permission";
@@ -69,6 +73,11 @@ export interface PermissionContext {
   /** nax's rules for this stage (US-003). Absent: no Bash rule allows anything. */
   readonly rules?: AcpPermissionRules;
   readonly shellSandbox?: { prefix: string; verify: boolean; onUnwrapped: "rules" | "deny" };
+  /**
+   * True for a tool call id the turn's own-tool ledger proved is a call to this session's
+   * tool host (US-004). Bound to the admitted turn's ledger; absent: nothing is own.
+   */
+  readonly isOwnToolCall?: (toolCallId: string) => boolean;
 }
 
 export interface OfferedOptions {
@@ -136,6 +145,11 @@ export async function decidePermission(
   const display = describeToolCall(request.toolCall, ctx.secrets);
   const auto: AutoDecide = (reason, decision) =>
     ctx.asks.recordAutoDecision({ ...eventFields(display), reason }, decision);
+  // US-004: a proven call to the session's own tool host is allowed once, in every profile.
+  if (offered.allowOnce !== undefined && ctx.isOwnToolCall?.(request.toolCall.toolCallId) === true) {
+    auto(OWN_TOOL_REASON, "allow");
+    return selected(offered.allowOnce);
+  }
   if (
     (ctx.profile === "review" || ctx.profile === "full") &&
     ctx.sandbox !== undefined &&

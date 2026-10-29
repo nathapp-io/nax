@@ -16,6 +16,7 @@ TOOL_HOST_SERVER_NAME
 acpBackend
 isAgentLaunchable
 launchCandidateKind
+parseToolHostToolName
 registryEntry
 
 [./server]

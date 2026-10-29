@@ -88,12 +88,27 @@ describe("createAuditRecorder (spec §7.4, D3-j)", () => {
 
   test("a loopback tool call is recorded with its provider and namespaced tool (nax#2410 adoption)", async () => {
     const audit = recorder();
-    audit.onEvent({ type: "tool_call", callId: "c9", name: "mcp__nax__codegraph__search_graph", input: { q: "x" } });
+    audit.onEvent({
+      type: "tool_call",
+      callId: "c9",
+      name: "mcp__nax-0badc0de__codegraph__search_graph",
+      input: { q: "x" },
+    });
     audit.onEvent({ type: "tool_result", callId: "c9", isError: false, preview: "hit", resultBytes: 3 });
     await audit.flush();
     const row = rows()[0];
     expect(row?.provider).toBe("codegraph");
     expect(row?.tool).toBe("codegraph__search_graph");
+  });
+
+  test("the fixed-name form no session produces stays raw and unattributed", async () => {
+    const audit = recorder();
+    audit.onEvent({ type: "tool_call", callId: "c9", name: "mcp__nax__codegraph__search_graph", input: { q: "x" } });
+    audit.onEvent({ type: "tool_result", callId: "c9", isError: false, preview: "hit", resultBytes: 3 });
+    await audit.flush();
+    const row = rows()[0];
+    expect(row?.tool).toBe("mcp__nax__codegraph__search_graph");
+    expect(row).not.toHaveProperty("provider");
   });
 
   test("a surface with zero calls still writes the file with the toolSurface block (nax#2410)", async () => {

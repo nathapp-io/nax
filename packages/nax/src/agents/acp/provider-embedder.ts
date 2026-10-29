@@ -1,7 +1,7 @@
 /**
  * nax#2444 D1/D3: provider tools cross the ACP boundary as EmbedderTools, and
  * only for agents whose registry entry declares a pre-approval channel
- * (claudeCode.allowedTools). Delivery is the deny/ask enforcement point on
+ * (claudeCode.allowedTools) or an MCP call identity (codex, cursor). Delivery is the deny/ask enforcement point on
  * that path, so the hop's already-filtered set is served as-is; everything
  * here is pure and null-safe so the adapter stays testable without a process.
  */
@@ -26,7 +26,7 @@ import type { AcpProfile } from "./profile-map";
  */
 const ACP_MCP_RESULT_MAX_BYTES = 1_048_576;
 
-/** A provider tool the agent calls as `mcp__nax__<name>`, pre-approved at open. */
+/** A provider tool the agent calls as `mcp__<session server name>__<name>`, pre-approved at open. */
 export function toEmbedderTools(tools: readonly CodingTool[], workdir: string): EmbedderTool[] {
   return tools.map((tool) => ({
     name: tool.name,
@@ -56,8 +56,8 @@ export function toEmbedderTools(tools: readonly CodingTool[], workdir: string): 
 type DeliveryOpts = Pick<OpenSessionOpts, "providerTools" | "toolSurface" | "workdir">;
 
 /**
- * The capability gate (D3): an agent without a pre-approval channel would fail
- * its open if handed tools (`AGENT_SESSION_CAPABILITY_UNSUPPORTED`), so the
+ * The capability gate (D3): an agent with neither a pre-approval channel nor an
+ * MCP call identity would fail its open if handed tools (`AGENT_SESSION_CAPABILITY_UNSUPPORTED`), so the
  * tools are dropped instead and the skip recorded in the surface. Pure — the
  * session and the open context may finalize independently and agree.
  */
@@ -92,5 +92,6 @@ export function finalizeAcpSurface(
 }
 
 function registryCapable(agent: AcpAgentName): boolean {
-  return registryEntry(agent)?.preApproval !== undefined;
+  const entry = registryEntry(agent);
+  return entry?.preApproval !== undefined || entry?.mcpCallIdentity !== undefined;
 }

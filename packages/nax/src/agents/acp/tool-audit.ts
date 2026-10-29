@@ -15,7 +15,7 @@ import {
   type ToolSurfaceRecord,
   type TurnEvent,
 } from "@nathapp/nax-agent";
-import { TOOL_HOST_SERVER_NAME } from "@nathapp/nax-agent-acp/client";
+import { parseToolHostToolName } from "@nathapp/nax-agent-acp/client";
 
 export interface ToolAuditTarget {
   readonly dir: string;
@@ -65,14 +65,13 @@ export function createAuditRecorder(
   /**
    * nax#2410 D6: the adoption summary counts calls per server via the row's
    * `provider` — the same field native rows carry. A loopback call reaches the
-   * recorder under the agent-visible name `mcp__<server>__<id>__<local>`; the
+   * recorder under the agent-visible name `mcp__nax-<8 hex>__<id>__<local>`; the
    * namespaced identity it was served under is `<id>__<local>`, so the row is
-   * recorded in that shape with `provider` set.
+   * recorded in that shape with `provider` set. Any other name stays raw.
    */
   const loopbackIdentityOf = (name: string): { tool: string; provider: string } | undefined => {
-    const prefix = `mcp__${TOOL_HOST_SERVER_NAME}__`;
-    if (!name.startsWith(prefix)) return undefined;
-    const namespaced = name.slice(prefix.length);
+    const namespaced = parseToolHostToolName(name);
+    if (namespaced === undefined) return undefined;
     const separator = namespaced.indexOf("__");
     if (separator <= 0) return undefined;
     return { tool: namespaced, provider: namespaced.slice(0, separator) };

@@ -108,6 +108,7 @@ describe("the options the backend hands the tool host (#2517)", () => {
   const seen: (ToolHostOptions | undefined)[] = [];
   const stub: ToolHost = {
     token: "stub-token",
+    serverName: "nax-0badc0de",
     start: async () => {
       throw new Error("the stub host is never started");
     },

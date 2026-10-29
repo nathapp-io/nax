@@ -1,0 +1,457 @@
+{
+  "project": "nax-monorepo",
+  "feature": "acp-tools-codex-cursor",
+  "branchName": "feat/acp-tools-codex-cursor",
+  "createdAt": "2026-10-29T00:00:00.000Z",
+  "updatedAt": "2026-10-29T15:50:36.740Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Give each backend session a random tool host server name",
+      "description": "**Goal** — Give every tool-bearing backend session its own random ACP MCP routing name, preserve it across reconnect, and expose a parser for that namespace.\n\n**Motivation** — The request title is agent-controlled display data (S4-4 D4-c) and must never be trusted.\n\n**Approach** — **Per-session server name.** The tool host's ACP MCP server name becomes `nax-<8 lowercase hex>`, generated once per backend session by `newToolHostServerName()` and kept across a reconnect after the agent process dies. Claude's pre-approval rules use it (`mcp__<serverName>__<tool>`). `parseToolHostToolName` recognises the agent-visible name `mcp__nax-<8 hex>__<tool>` so nax's tool audit keeps attributing loopback calls. `TOOL_HOST_SERVER_NAME` stays exported with value `\"nax\"` and now documents the name's prefix; the MCP `initialize` `serverInfo` name stays `\"nax\"`.\n\nIntegration targets (paths below are relative to packages/nax-agent-acp):\n- `src/client/tool-host.ts`: `ToolHostOptions` gains `readonly serverName?: string`; `ToolHost` gains `readonly serverName: string` (the option, else `newToolHostServerName()`); `start()` returns `name: host.serverName`. New export `newToolHostServerName(): string` (`\"nax-\"` + 8 lowercase hex from 4 random bytes).\n- `src/client/pre-approval.ts`: `mcpToolRule(serverName: string, toolName: string): string` returns `mcp__<serverName>__<toolName>`; `claudeSessionMeta(kind, serverName: string, toolNames, readOnly, extras = {})`. New export `parseToolHostToolName(name: string): string | undefined`: for `mcp__nax-<8 lowercase hex>__<rest>` with non-empty `<rest>`, returns `<rest>`; else undefined. Re-exported from `src/client/index.ts`.\n- `src/client/backend.ts`: `_acpBackendDeps` gains `newToolHostServerName: () => string` (production: `newToolHostServerName`). The backend session calls it once, at open, only when `ctx.tools.length > 0`, and keeps the name on the session. `connect(base, ctx, restore, retiredTokens, serverName?: string)`: the first open passes the session's name; `reconnect` passes the same stored name. `toolHostFor(ctx, router, secrets, token, serverName?: string)`: when `serverName` is undefined it passes exactly `toolHostOptions(ctx)` as today; otherwise it passes `{ ...(toolHostOptions(ctx) ?? {}), serverName }`.\n- `src/client/open.ts`: passes `o.host?.serverName ?? \"\"` to `claudeSessionMeta` (with no host the session has no tools, so no rule uses the name). The Codex/Cursor meta-free branch belongs to US-002.\n\n**Scope** — In: the name generator and injectable seam, ToolHost option/property/start name, backend-session storage and reconnect propagation, Claude rule signatures and call sites, parser and public export. Migrate pre-approval.test.ts's nine claudeSessionMeta calls and mcpToolRule call to nax-0badc0de while preserving the constant assertion; update tool-host.test.ts, backend-tools.test.ts and open.test.ts's name/rule fixtures; add serverName to tool-host-instructions.test.ts stubs; update backend.test.ts's exact export list; regenerate api/nax-agent-acp.api.txt with bun run api:update (only parseToolHostToolName added); change only README.md's documented namespace. Add test/unit/client/tool-host-server-name.test.ts and verify reconnect with the fake agent. Out: registry/capability relaxation (US-002), identity ledger (US-003), router/permission auto-allow (US-004), nax audit consumption and provider delivery (US-005), feature-level boundaries adjacent to this story:\n- Keeping a session's tool host server name across a resume in a new process; a resumed session gets a new name.\n- Changing the MCP `initialize` `serverInfo` name, which stays `\"nax\"`.\n- Changing the value of `TOOL_HOST_SERVER_NAME` or removing the export.\n\n**Interface** — `ToolHostOptions` gains `readonly serverName?: string`; `ToolHost` gains `readonly serverName: string`.\n```typescript\nnewToolHostServerName(): string\nmcpToolRule(serverName: string, toolName: string): string\nclaudeSessionMeta(kind, serverName: string, toolNames, readOnly, extras = {})\nparseToolHostToolName(name: string): string | undefined\nconnect(base, ctx, restore, retiredTokens, serverName?: string)\ntoolHostFor(ctx, router, secrets, token, serverName?: string)\n```\nUse the existing typed parameters/return types for signatures shown schematically by the spec; only the new serverName parameter changes. Keep bearer-token rotation/redaction and provider instructions unchanged. Tests pin and restore _acpBackendDeps.newToolHostServerName rather than relying on random concrete names.",
+      "acceptanceCriteria": [
+        "[unit] newToolHostServerName() returns a string made of \"nax-\" followed by exactly 8 lowercase hexadecimal characters.",
+        "[unit] Two calls to newToolHostServerName() return different strings.",
+        "[unit] createToolHost(calls, token, { serverName: \"nax-0badc0de\" }).serverName equals \"nax-0badc0de\".",
+        "[unit] start() on that host resolves to a server entry whose name is \"nax-0badc0de\".",
+        "[unit] createToolHost(calls, token) with no serverName option has a serverName of \"nax-\" followed by 8 lowercase hexadecimal characters.",
+        "[unit] mcpToolRule(\"nax-0badc0de\", \"lookup\") returns \"mcp__nax-0badc0de__lookup\".",
+        "[unit] claudeSessionMeta(\"claudeCode.allowedTools\", \"nax-0badc0de\", [\"lookup\"], undefined) returns { claudeCode: { options: { allowedTools: [\"mcp__nax-0badc0de__lookup\"] } } }.",
+        "[integration] With _acpBackendDeps.newToolHostServerName returning \"nax-0badc0de\", opening an acpBackend({ agent: \"claude\" }) session with one embedder tool lookup against the fake agent sends session/new whose mcpServers[0].name is \"nax-0badc0de\".",
+        "[integration] That session/new carries _meta.claudeCode.options.allowedTools equal to [\"mcp__nax-0badc0de__lookup\"].",
+        "[integration] When that session's fake agent process exits and the next prompt reconnects, the reconnect's session/resume or session/load request names the MCP server \"nax-0badc0de\".",
+        "[integration] Across that open and reconnect, _acpBackendDeps.newToolHostServerName is called exactly once.",
+        "[integration] Opening a claude session with no embedder tools never calls _acpBackendDeps.newToolHostServerName.",
+        "[unit] toolHostFor(ctx, router, [], \"token-1\", \"nax-0badc0de\") for a context whose provider instructions are \"X\" calls _acpBackendDeps.createToolHost with the options { instructions: \"X\", serverName: \"nax-0badc0de\" }.",
+        "[unit] parseToolHostToolName(\"mcp__nax-0badc0de__codegraph__search_graph\") returns \"codegraph__search_graph\".",
+        "[unit] parseToolHostToolName(\"mcp__nax__lookup\") returns undefined.",
+        "[unit] parseToolHostToolName(\"mcp__nax-0BADC0DE__lookup\") returns undefined.",
+        "[unit] parseToolHostToolName(\"mcp__nax-0badc0de__\") returns undefined.",
+        "[unit] parseToolHostToolName(\"Bash\") returns undefined.",
+        "[unit] parseToolHostToolName imported from the ./client entry (src/client/index.ts) returns \"lookup\" for \"mcp__nax-0badc0de__lookup\".",
+        "[unit] TOOL_HOST_SERVER_NAME imported from the ./client entry remains equal to \"nax\", preserving the existing exported prefix value.",
+        "[unit] When toolHostFor(ctx, router, [], \"token-1\") is called without serverName and ctx.providerInstructions is undefined, _acpBackendDeps.createToolHost receives undefined as its options argument, preserving the existing absent-options behavior."
+      ],
+      "tags": [
+        "feature",
+        "acp",
+        "security",
+        "session-identity",
+        "api"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Session identity crosses the loopback host, Claude pre-approval, public API and reconnect lifecycle; randomness and authorization-related identity require strict security TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/client/tool-host.ts",
+        "packages/nax-agent-acp/src/client/pre-approval.ts",
+        "packages/nax-agent-acp/src/client/backend.ts",
+        "packages/nax-agent-acp/src/client/open.ts",
+        "packages/nax-agent-acp/src/client/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent-acp/test/unit/client/tool-host-server-name.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When an MCP client sends initialize to a tool host whose start() advertised name nax-0badc0de, the host's initialize response still reports serverInfo.name equal to nax.",
+        "When two tool-bearing backend sessions open, each session advertises its own generated server name rather than reusing the other session's name.",
+        "parseToolHostToolName returns undefined for mcp__nax-0badc0d__lookup and mcp__nax-0badc0dee__lookup."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/pre-approval.test.ts",
+          "reason": "asserts `mcpToolRule(\"fetch_page\")` is `\"mcp__nax__fetch_page\"` and calls `claudeSessionMeta(kind, toolNames, readOnly, extras)` at every one of its nine call sites, expecting `mcp__nax__<tool>` rules. `mcpToolRule` now takes `(serverName, toolName)` and `claudeSessionMeta` takes the server name as its second argument; pass `\"nax-0badc0de\"` and expect `mcp__nax-0badc0de__<tool>` rules. The `TOOL_HOST_SERVER_NAME` is `\"nax\"` assertion is unchanged."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/tool-host.test.ts",
+          "reason": "the start test expects the returned server entry's `name` to be `\"nax\"`. The name is now the host's `serverName`; create that host with `{ serverName: \"nax-0badc0de\" }` and expect `name: \"nax-0badc0de\"`. Every other field of the entry is unchanged."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/backend-tools.test.ts",
+          "reason": "the Claude open test expects session/new `mcpServers[0].name` `\"nax\"` and `allowedTools: [\"mcp__nax__lookup\"]`. Set `_acpBackendDeps.newToolHostServerName` to return `\"nax-0badc0de\"` in that test (restored after) and expect `name: \"nax-0badc0de\"` and `allowedTools: [\"mcp__nax-0badc0de__lookup\"]`."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/open.test.ts",
+          "reason": "the `SERVER` fixture has `name: \"nax\"` and `stubHost` returns a `ToolHost` without `serverName`, and the Claude test expects `allowedTools: [\"mcp__nax__lookup\", \"mcp__nax__fetch_page\"]`. Give `stubHost` `serverName: \"nax-0badc0de\"` and `SERVER` the same name, and expect `[\"mcp__nax-0badc0de__lookup\", \"mcp__nax-0badc0de__fetch_page\"]`."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/backend.test.ts",
+          "reason": "the public-entry test lists exactly the ./client entry runtime exports. Insert `\"parseToolHostToolName\"` into the sorted list; the other names are unchanged."
+        },
+        {
+          "path": "packages/nax-agent-acp/api/nax-agent-acp.api.txt",
+          "reason": "the ./client entry snapshot gains the runtime export `parseToolHostToolName`; regenerate with `bun run api:update`. No other line changes."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/tool-host-instructions.test.ts",
+          "reason": "its stubbed `createToolHost` returns `ToolHost` objects without `serverName`, which no longer satisfy the interface. Add `serverName: \"nax-0badc0de\"` to each stub; no assertion changes."
+        },
+        {
+          "path": "packages/nax-agent-acp/README.md",
+          "reason": "documents embedder tools as `mcp__nax__<tool>`. Document the per-session name `mcp__nax-<8 hex>__<tool>`; no other text changes."
+        }
+      ],
+      "workdir": "packages/nax-agent-acp",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5cecf26ee4dd201cd5f8aab5877f6be493842b4d"
+    },
+    {
+      "id": "US-002",
+      "title": "Allow Codex and Cursor sessions to receive embedder tools",
+      "description": "**Goal** — Admit tool-bearing Codex and Cursor sessions when HTTP MCP is advertised, without pretending they support Claude pre-approval.\n\n**Motivation** — Codex and Cursor cannot receive any embedder tool today.\n\n**Approach** — **Codex and Cursor accept tools.** The registry gains `mcpCallIdentity`: the structured shape an agent reports MCP calls in (`\"codex\"`, `\"cursor\"`, else undefined). The capability record gains `ownToolCalls`. The tools requirement becomes HTTP MCP **and** (pre-approval **or** `ownToolCalls`). For an agent without pre-approval, `sessionSetup` sends the tool host entry with no `_meta` instead of throwing.\n\nIntegration targets (paths below are relative to packages/nax-agent-acp):\n- `src/client/registry.ts`: gains `readonly mcpCallIdentity: \"codex\" | \"cursor\" | undefined` — the structured `rawInput` shape the agent reports MCP tool calls in; undefined means none is known. `codex` → `\"codex\"`, `cursor` → `\"cursor\"`, every other agent undefined. The `entry()` helper's `policy` parameter type becomes `Pick<AgentRegistryEntry, \"readOnly\" | \"defaultMode\" | \"preApproval\" | \"mcpCallIdentity\">` and the frozen entry it returns carries `mcpCallIdentity: policy?.mcpCallIdentity`.\n- `src/client/capabilities.ts`: `CapabilityRecord` gains `readonly ownToolCalls: boolean` (`entry?.mcpCallIdentity !== undefined`); tools are refused unless `mcpHttp && (preApproval || ownToolCalls)`, reason `\"embedder tools need HTTP MCP support and adapter pre-approval or a known MCP call identity\"`.\n- `src/client/open.ts` `sessionSetup`: passes `o.host?.serverName ?? \"\"` to `claudeSessionMeta` (with no host the session has no tools, so no rule uses the name); when the meta is undefined and the entry has an `mcpCallIdentity`, returns `{ mcpServers: [server] }` with no `_meta`; keeps the throw otherwise.\n\n**Scope** — In: registry field and frozen-helper propagation, capability derivation and tools gate, non-pre-approval session setup, fake-agent integration and fixture migration. Add test/unit/client/backend-own-tools.test.ts. Update registry.test.ts's full Codex/Cursor expectations, capabilities.test.ts's full records with ownToolCalls: false and resume.test.ts's CapabilityRecord fixture. Replace backend-codex.test.ts's old read-profile tool refusal with successful one-http-server/no-_meta setup; retarget unsupported-Codex tests in backend-tools.test.ts and open.test.ts to Gemini, keeping the latter's zero host starts. Out: random-name generation (US-001), ledger implementation (US-003), permission auto-allow (US-004), provider delivery in nax (US-005), feature-level boundaries adjacent to this story:\n- Gemini, OpenCode and pi receiving embedder tools; they were not probed and keep today's refusal and today's `nax run` skip.\n- Letting Cursor call MCP tools under profiles `none`, `read` and `review`: `cursorCliConfig` keeps denying `Mcp(*:*)` there, so Cursor's tools are usable only under `ask` and `full`.\n- Probing Codex in its `read-only` mode (profiles `none`, `read`, `review`); whatever it does there is decided by the profile as today.\n\n**Interface**\n```typescript\nreadonly mcpCallIdentity: \"codex\" | \"cursor\" | undefined\nPick<AgentRegistryEntry, \"readOnly\" | \"defaultMode\" | \"preApproval\" | \"mcpCallIdentity\">\nreadonly ownToolCalls: boolean\n```\nThe new mcpCallIdentity field belongs to AgentRegistryEntry and ownToolCalls to CapabilityRecord. Preserve preApproval as Claude-only, preserve profile/resume requirement precedence and sandbox gating, and preserve failure before host start for unsupported agents. Cursor receives tools under every supported profile but its own permission file still prevents use under none/read/review. Use the existing fake-agent update/permission/mcpCall protocol and per-agent mode fixtures, never live adapters in CI.",
+      "acceptanceCriteria": [
+        "[unit] registryEntry(\"codex\")?.mcpCallIdentity is \"codex\".",
+        "[unit] registryEntry(\"cursor\")?.mcpCallIdentity is \"cursor\".",
+        "[unit] registryEntry(\"claude\")?.mcpCallIdentity is undefined.",
+        "[unit] registryEntry(\"gemini\")?.mcpCallIdentity is undefined.",
+        "[unit] registryEntry(\"opencode\")?.mcpCallIdentity is undefined.",
+        "[unit] registryEntry(\"pi\")?.mcpCallIdentity is undefined.",
+        "[unit] buildCapabilityRecord for an initialize response advertising HTTP MCP and registryEntry(\"cursor\") returns a record with ownToolCalls: true.",
+        "[unit] buildCapabilityRecord for the same response and registryEntry(\"gemini\") returns a record with ownToolCalls: false.",
+        "[unit] unmetRequirement for a record with mcpHttp: true, preApproval: false, ownToolCalls: true and requirements { profile: \"full\", toolCount: 1, resume: false } returns undefined.",
+        "[unit] unmetRequirement for a record with mcpHttp: false, preApproval: false, ownToolCalls: true and requirements { profile: \"full\", toolCount: 1, resume: false } returns capability: \"tools\".",
+        "[unit] unmetRequirement for a record with mcpHttp: true, preApproval: false, ownToolCalls: false and requirements { profile: \"full\", toolCount: 1, resume: false } returns capability: \"tools\".",
+        "[integration] An acpBackend({ agent: \"codex\" }) session under profile read with embedder tool lookup, against a fake agent advertising HTTP MCP, opens without error.",
+        "[integration] That session's session/new has exactly one mcpServers entry, of type http, whose name is \"nax-\" followed by 8 lowercase hexadecimal characters.",
+        "[integration] That session/new carries no _meta field.",
+        "[integration] An acpBackend({ agent: \"cursor\" }) session under profile full with embedder tool lookup opens without error.",
+        "[integration] Given that open Cursor session, a fake-agent mcpCall step for lookup records an mcp-result for lookup.",
+        "[integration] An acpBackend({ agent: \"gemini\" }) session with an embedder tool fails with AGENT_SESSION_CAPABILITY_UNSUPPORTED and capability: \"tools\".",
+        "[integration] An acpBackend({ agent: \"codex\" }) session with an embedder tool, against a fake agent that does not advertise HTTP MCP, fails with AGENT_SESSION_CAPABILITY_UNSUPPORTED and capability: \"tools\".",
+        "[integration] An acpBackend({ agent: \"cursor\" }) session with an embedder tool, against a fake agent that does not advertise HTTP MCP, fails with AGENT_SESSION_CAPABILITY_UNSUPPORTED and capability: \"tools\", as today.",
+        "[integration] For each agent opencode and pi, opening an acpBackend session with an embedder tool fails with AGENT_SESSION_CAPABILITY_UNSUPPORTED and capability: \"tools\", as today."
+      ],
+      "tags": [
+        "feature",
+        "acp",
+        "security",
+        "capabilities",
+        "codex",
+        "cursor"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A bounded registry/capability/session-setup change uses established patterns, but expands access to tool-bearing sessions and therefore requires the security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/client/registry.ts",
+        "packages/nax-agent-acp/src/client/capabilities.ts",
+        "packages/nax-agent-acp/src/client/open.ts",
+        "packages/nax-agent-acp/test/unit/client/backend-tools.test.ts",
+        "packages/nax-agent-acp/test/fixtures/fake-agent/script.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent-acp/test/unit/client/backend-own-tools.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a custom agent advertises HTTP MCP but has no registry entry, unmetRequirement with one embedder tool returns capability tools.",
+        "When an unsupported agent is handed an embedder tool, the supplied ToolHost.start is never called.",
+        "When unmetRequirement refuses a tool-bearing agent without a usable delivery channel, its reason equals embedder tools need HTTP MCP support and adapter pre-approval or a known MCP call identity."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/registry.test.ts",
+          "reason": "the `toEqual` assertions on the full `cursor` and `codex` entries lack `mcpCallIdentity`. Add `mcpCallIdentity: \"cursor\"` to the cursor expectation and `mcpCallIdentity: \"codex\"` to the codex expectation; the claude, pi, gemini and opencode expectations are unchanged (the field is undefined there)."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/capabilities.test.ts",
+          "reason": "the two `buildCapabilityRecord` `toEqual` expectations (Claude's full initialize, and an empty initialize with a custom agent) are full records without `ownToolCalls`. Add `ownToolCalls: false` to both (neither Claude nor a custom agent has an MCP call identity). The \"tools need HTTP MCP and pre-approval\" refusal builds its record from the custom one and is unchanged."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/resume.test.ts",
+          "reason": "its `CapabilityRecord` fixture lacks `ownToolCalls`, so it no longer type-checks. Add `ownToolCalls: false`; no assertion changes."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/backend-codex.test.ts",
+          "reason": "asserts Codex with tools under `read` fails `AGENT_SESSION_CAPABILITY_UNSUPPORTED` (`capability: \"tools\"`). Codex now accepts tools. Replace with: the session opens, and session/new carries one `http` MCP server and no `_meta`."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/backend-tools.test.ts",
+          "reason": "\"codex (no pre-approval): CAPABILITY_UNSUPPORTED tools\" now opens. Run the same refusal against `gemini` instead; the expectation (`capability: \"tools\"`) is unchanged."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/open.test.ts",
+          "reason": "\"an agent without pre-approval (codex): CAPABILITY_UNSUPPORTED tools; the host never starts\" now opens. Run it with `agent: \"gemini\"`; the expectations (capability `tools`, zero host starts) are unchanged."
+        }
+      ],
+      "workdir": "packages/nax-agent-acp",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "bead80eebc66811431f2ee8d6ba6efafe2142ffb"
+    },
+    {
+      "id": "US-003",
+      "title": "Extract structured MCP identities and track own-tool evidence",
+      "description": "**Goal** — Add a standalone structured MCP identity extractor and conflict-preserving own-tool ledger for Codex and Cursor reports.\n\n**Motivation** — The structured `rawInput` fields are set by the adapter's MCP routing.\n\n**Approach** — New `src/client/own-tool-calls.ts`: `mcpCallIdentityOf` reads the structured `rawInput` of a `tool_call` or `tool_call_update` (either update type, for either kind) and `createOwnToolLedger` records identities per `toolCallId`.\n\nThe identity a tool_call / tool_call_update reports in its structured rawInput: codex `{ server, tool }`, cursor `{ providerIdentifier, toolName }` (both string). Never reads the title. Undefined for any other update or shape.\n\nThe own-tool decision uses this design: A turn-scoped ledger records, per `toolCallId`, the identity read from the agent's structured `rawInput` (shape chosen by `mcpCallIdentity`). A permission request whose `toolCallId` the ledger marks as the session's own (server name equals the session's, tool name is one of the session's embedder tools, no conflicting identity seen) is answered with the agent's allow-once option before the profile decision, in every profile, and recorded as an auto decision with `OWN_TOOL_REASON`. Anything else goes through the profile decision unchanged (the user ruled 2026-10-29: a card per call is acceptable when nothing matches). This story implements only the extraction and ledger portion; US-004 owns the turn lifetime and permission answer.\n\nFailure semantics: A permission request whose `toolCallId` was never reported with structured fields → Profile decision, as today (a card under `ask`, a reject under `none`/`read`). The structured server name is not the session's (e.g. `\"nax\"` from a repo config) → Profile decision. The structured tool name is not one of the session's embedder tools → Profile decision. One `toolCallId` reported with two different identities → Never own; profile decision. Therefore the extractor requires nonempty strings, ignores title-only and unrelated updates, and the ledger must not let a later matching report erase conflicting identity evidence.\n\n**Scope** — In: new src/client/own-tool-calls.ts and test/unit/client/own-tool-calls.test.ts, structured-shape discrimination for both tool update variants, exact session-server/tool membership and sticky conflicting identities. No existing modules import it yet. Out: server name generation (US-001), registry/capability changes (US-002), router attachment and permission decisions (US-004), nax delivery/audit (US-005), trusting titles or agent-visible display names.\n- A size cap on the per-turn own-tool ledger; it lives for one turn only.\n\n**Interface**\n```typescript\nimport type { SessionUpdate } from \"@agentclientprotocol/sdk\";\n\nexport type McpCallIdentityKind = \"codex\" | \"cursor\";\n\nexport interface McpCallIdentity {\n  readonly toolCallId: string;\n  readonly server: string;\n  readonly tool: string;\n}\n\n/**\n * The identity a tool_call / tool_call_update reports in its structured rawInput:\n * codex `{ server, tool }`, cursor `{ providerIdentifier, toolName }` (both string).\n * Never reads the title. Undefined for any other update or shape.\n */\nexport function mcpCallIdentityOf(kind: McpCallIdentityKind, update: SessionUpdate): McpCallIdentity | undefined;\n\nexport interface OwnToolLedger {\n  observe(update: SessionUpdate): void;\n  /** True only when every identity seen for this id names serverName and a tool in toolNames. */\n  isOwn(toolCallId: string): boolean;\n}\n\nexport function createOwnToolLedger(input: {\n  readonly kind: McpCallIdentityKind;\n  readonly serverName: string;\n  readonly toolNames: readonly string[];\n}): OwnToolLedger;\n```\nThe interface comment states a necessary condition, not permission to accept multiple different identities: any two different identities for one id make it permanently non-own in this ledger, including a wrong-server report followed by the correct server. Keep this authorization evidence separate from tool-events.ts's scrubbed/capped presentation state.",
+      "acceptanceCriteria": [
+        "[unit] mcpCallIdentityOf(\"cursor\", update) for a tool_call_update with toolCallId: \"t1\" and rawInput: { providerIdentifier: \"nax-0badc0de\", toolName: \"lookup\", args: {} } returns { toolCallId: \"t1\", server: \"nax-0badc0de\", tool: \"lookup\" }.",
+        "[unit] mcpCallIdentityOf(\"cursor\", update) for a tool_call with toolCallId: \"t1\" and rawInput: { providerIdentifier: \"nax-0badc0de\", toolName: \"lookup\", args: {} } returns { toolCallId: \"t1\", server: \"nax-0badc0de\", tool: \"lookup\" }.",
+        "[unit] mcpCallIdentityOf(\"codex\", update) for a tool_call with toolCallId: \"t2\" and rawInput: { server: \"nax-0badc0de\", tool: \"lookup\", arguments: {} } returns { toolCallId: \"t2\", server: \"nax-0badc0de\", tool: \"lookup\" }.",
+        "[unit] mcpCallIdentityOf(\"codex\", update) for a tool_call_update with toolCallId: \"t2\" and rawInput: { server: \"nax-0badc0de\", tool: \"lookup\", arguments: {} } returns { toolCallId: \"t2\", server: \"nax-0badc0de\", tool: \"lookup\" }.",
+        "[unit] mcpCallIdentityOf(\"codex\", update) for a tool_call_update with toolCallId: \"t1\" and rawInput: { providerIdentifier: \"nax-0badc0de\", toolName: \"lookup\", args: {} } returns undefined.",
+        "[unit] mcpCallIdentityOf(\"cursor\", update) for a tool_call_update whose rawInput.providerIdentifier is the number 7 returns undefined.",
+        "[unit] mcpCallIdentityOf(\"cursor\", update) for a tool_call_update whose rawInput.providerIdentifier is the empty string returns undefined.",
+        "[unit] mcpCallIdentityOf(\"cursor\", update) for a tool_call_update whose rawInput is the string \"lookup\" returns undefined.",
+        "[unit] mcpCallIdentityOf(\"cursor\", update) for a tool_call_update whose rawInput is { providerIdentifier: \"nax-0badc0de\" } (no toolName) returns undefined.",
+        "[unit] mcpCallIdentityOf(\"codex\", update) for a tool_call whose rawInput is { server: \"nax-0badc0de\", tool: \"\" } returns undefined.",
+        "[unit] mcpCallIdentityOf(\"cursor\", update) for a tool_call_update with title: \"nax-0badc0de-lookup: lookup\" and no rawInput returns undefined.",
+        "[unit] mcpCallIdentityOf(\"cursor\", update) for an agent_message_chunk update returns undefined.",
+        "[unit] A ledger from createOwnToolLedger({ kind: \"cursor\", serverName: \"nax-0badc0de\", toolNames: [\"lookup\"] }) that observed a tool_call_update with toolCallId: \"t1\" and rawInput: { providerIdentifier: \"nax-0badc0de\", toolName: \"lookup\", args: {} } returns true from isOwn(\"t1\").",
+        "[unit] That ledger returns false from isOwn(\"t9\"), an id it never observed.",
+        "[unit] A cursor ledger for \"nax-0badc0de\" that observed t1 with providerIdentifier: \"nax\" returns false from isOwn(\"t1\").",
+        "[unit] A cursor ledger for \"nax-0badc0de\" with toolNames: [\"lookup\"] that observed t1 with toolName: \"other\" returns false from isOwn(\"t1\").",
+        "[unit] A cursor ledger that observed t1 first with toolName: \"lookup\" and then with toolName: \"other\" (same server) returns false from isOwn(\"t1\").",
+        "[unit] A cursor ledger for \"nax-0badc0de\" that observed t1 first with providerIdentifier: \"nax\" and then with providerIdentifier: \"nax-0badc0de\" (same tool) returns false from isOwn(\"t1\")."
+      ],
+      "tags": [
+        "feature",
+        "acp",
+        "security",
+        "identity",
+        "codex",
+        "cursor"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A small pure module introduces structured identity parsing and sticky conflict state used for authorization; the access-control security override requires strict test isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/client/registry.ts",
+        "packages/nax-agent-acp/src/client/tool-events.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent-acp/src/client/own-tool-calls.ts",
+        "packages/nax-agent-acp/test/unit/client/own-tool-calls.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a ledger observes the same own structured identity for t1 twice, isOwn(\"t1\") remains true.",
+        "When a ledger for tools lookup and other observes t1 with lookup and then other on the correct server, isOwn(\"t1\") returns false even though both tools are in the session's tool set.",
+        "When a ledger observes conflicting identities for t1 followed by the original matching identity, isOwn(\"t1\") remains false.",
+        "When a ledger observes a matching structured identity and then a title-only partial tool_call_update for the same id, isOwn returns true for that id.",
+        "mcpCallIdentityOf returns undefined when rawInput is null or an array rather than a structured MCP identity object."
+      ],
+      "workdir": "packages/nax-agent-acp",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6324f0cc54ecf72e5469d49d0b1021c9afc14149"
+    },
+    {
+      "id": "US-004",
+      "title": "Automatically approve proven own-tool calls within the active turn",
+      "description": "**Goal** — Wire the own-tool ledger into active-turn routing and auto-select allow-once for proven calls to the session's tool host before profile adjudication.\n\n**Motivation** — Codex and Cursor have no pre-approval channel like Claude's `allowedTools`.\n\n**Approach** — **Own-tool auto-allow.** A turn-scoped ledger records, per `toolCallId`, the identity read from the agent's structured `rawInput` (shape chosen by `mcpCallIdentity`). A permission request whose `toolCallId` the ledger marks as the session's own (server name equals the session's, tool name is one of the session's embedder tools, no conflicting identity seen) is answered with the agent's allow-once option before the profile decision, in every profile, and recorded as an auto decision with `OWN_TOOL_REASON`. Anything else goes through the profile decision unchanged (the user ruled 2026-10-29: a card per call is acceptable when nothing matches).\n\nIntegration targets (paths below are relative to packages/nax-agent-acp):\n- `src/client/inbound.ts`: `createInboundRouter(decide, elicit?, ownTools?: () => OwnToolLedger)`. Each `attach` creates a fresh ledger from `ownTools` (none when absent); `onUpdate` for the active binding calls `ledger.observe(update)` before `collector.onUpdate`; `onPermission` calls `decide(request, signal, (toolCallId) => ledger?.isOwn(toolCallId) ?? false)`. `PermissionDecider` gains the optional third parameter `isOwnToolCall?: (toolCallId: string) => boolean`.\n- `src/client/permissions.ts`: `PermissionContext` gains `readonly isOwnToolCall?: (toolCallId: string) => boolean`. New export `OWN_TOOL_REASON = \"nax's own tool host call\"`. After the abort check and before the network check: when `ctx.isOwnToolCall?.(request.toolCall.toolCallId)` is true and the agent offered an allow-once option, record an auto decision (`OWN_TOOL_REASON`, `\"allow\"`) and select that option. Otherwise continue exactly as today.\n- `src/client/backend.ts`: `routerFor(ctx, options, serverName?: string)`: passes the own-tool ledger factory (US-004) only when the entry has an `mcpCallIdentity`, `serverName` is defined and `ctx.tools.length > 0`, and its decider becomes `(request, signal, isOwnToolCall) => decidePermission(request, { ...base, signal, ...(isOwnToolCall === undefined ? {} : { isOwnToolCall }) })`.\n\n`backend.ts` passes `() => createOwnToolLedger({ kind: entry.mcpCallIdentity, serverName, toolNames: ctx.tools.map((t) => t.name) })` to `createInboundRouter` only when the entry has an `mcpCallIdentity` and the session has tools.\n\nFailure handling, preserving existing profile behavior: never-reported structured identity, a different server name (including fixed `\"nax\"`), a tool outside the session's embedder tool names, two different identities for the same id, or an identity seen only in an earlier turn is not own. A request without an allow-once option follows the profile; allow-always is never selected. An aborted turn returns cancelled before any auto-allow. Claude has no mcpCallIdentity, so even a Cursor-shaped report naming the right host must still take its profile path. Do not infer authorization from the request title or its own rawInput without an observed session update.\n\n**Scope** — In: optional factory/predicate interfaces, one ledger per attach, active-binding update ordering, backend wiring using US-001's stored name and US-002's registry shape, own-tool auto-decision and fake-agent ask-profile integrations. Create test/unit/client/permissions-own-tool.test.ts and test/unit/client/backend-own-tool-approval.test.ts; exercise the router predicate via existing inbound tests. Existing callers and fakes remain compatible because new parameters are optional. Out: identity extraction/ledger algorithm (US-003), random-name implementation (US-001), tool capability admission (US-002), nax provider delivery/audit (US-005), bypassing EmbedderTool approval always, and these feature-level boundaries:\n- Selecting an allow-always option for any permission request.\n- A size cap on the per-turn own-tool ledger; it lives for one turn only.\n- Letting Cursor call MCP tools under profiles `none`, `read` and `review`: `cursorCliConfig` keeps denying `Mcp(*:*)` there, so Cursor's tools are usable only under `ask` and `full`.\n- A Codex permission request for an MCP call that arrives before any structured report of that call; it is decided by the profile as today.\n- Running the real codex-acp or cursor-agent in CI; live verification stays a maintainer-run probe.\n\n**Interface**\n```typescript\ncreateInboundRouter(decide, elicit?, ownTools?: () => OwnToolLedger)\nisOwnToolCall?: (toolCallId: string) => boolean\nreadonly isOwnToolCall?: (toolCallId: string) => boolean\nOWN_TOOL_REASON = \"nax's own tool host call\"\nrouterFor(ctx, options, serverName?: string)\n```\nThe first optional predicate extends PermissionDecider's third argument; the readonly predicate belongs to PermissionContext. Keep current request/response and signal types. Bind the predicate to the admitted turn's ledger, never mutable global active state. Tests pin and restore _acpBackendDeps.newToolHostServerName, open registered Cursor and Codex backends under ask, send the structured report before permission for the same id, inspect fake permission answers and answerable event fields, and answer any human card so a negative test cannot stall. Use no real agents.",
+      "acceptanceCriteria": [
+        "[unit] decidePermission under profile read, with isOwnToolCall returning true for the request's toolCallId and options allow-once and reject-once, returns the allow-once option's optionId as selected.",
+        "[unit] In that decision, asks.recordAutoDecision is called with reason OWN_TOOL_REASON and decision \"allow\".",
+        "[unit] decidePermission under profile ask, with isOwnToolCall returning true and an allow-once option offered, never calls asks.requestApproval.",
+        "[unit] decidePermission under profile read, with isOwnToolCall returning true and only allow-always and reject-once offered, selects the reject-once option.",
+        "[unit] decidePermission under profile ask, with isOwnToolCall returning false, a non-aborted signal, a showable request and an offered allow-once option, calls asks.requestApproval once.",
+        "[unit] decidePermission with an aborted signal and isOwnToolCall returning true returns the outcome cancelled.",
+        "[unit] createInboundRouter(decide, undefined, () => ledger) passes decide a third argument that returns true for t1 after the router's onUpdate handler received, during the attached turn, a tool_call_update the ledger counts as own for t1.",
+        "[integration] With _acpBackendDeps.newToolHostServerName returning \"nax-0badc0de\", an acpBackend({ agent: \"cursor\" }) session under profile ask with embedder tool lookup, whose fake agent sends a tool_call_update for t1 with rawInput: { providerIdentifier: \"nax-0badc0de\", toolName: \"lookup\", args: {} } and then a permission request for t1 offering allow-once and reject-once, answers the request with the allow-once option.",
+        "[integration] In that turn the session emits no approval_requested event with answerable: true.",
+        "[integration] In that turn the session emits one approval_requested event with answerable: false and reason equal to OWN_TOOL_REASON.",
+        "[integration] The same Cursor session, when the update's providerIdentifier is \"nax\", emits one approval_requested event with answerable: true and reason equal to ASK_REASON.",
+        "[integration] The same Cursor session, when the update for t1 is sent in the first prompt and the permission request for t1 in the second prompt, emits one approval_requested event with answerable: true and reason equal to ASK_REASON in the second prompt.",
+        "[integration] With _acpBackendDeps.newToolHostServerName returning \"nax-0badc0de\", an acpBackend({ agent: \"codex\" }) session under profile ask with embedder tool lookup, whose fake agent sends a tool_call for t2 with rawInput: { server: \"nax-0badc0de\", tool: \"lookup\", arguments: {} } and then a permission request for t2 offering allow-once and reject-once, answers with the allow-once option.",
+        "[integration] That Codex turn emits no approval_requested event with answerable: true.",
+        "[integration] An acpBackend({ agent: \"claude\" }) session under profile ask with embedder tool lookup, whose fake agent sends a Cursor-shaped tool_call_update for t1 naming the session's server and then a permission request for t1, emits one approval_requested event with answerable: true and reason equal to ASK_REASON (Claude has no mcpCallIdentity, so no ledger is built).",
+        "[integration] When a Cursor ask-profile session receives a permission request offering allow-once for an id never reported with structured fields, it emits an approval_requested event with answerable: true and reason ASK_REASON, as today.",
+        "[unit] When a permission request for an id never reported with structured fields reaches a none- or read-profile decision with reject-once offered, decidePermission selects reject-once, as today.",
+        "[integration] When a Cursor ask-profile session reports its own server but toolName other instead of its only embedder tool lookup, a permission request for that id emits an approval_requested event with answerable: true and reason ASK_REASON.",
+        "[integration] When a Cursor ask-profile session reports two different structured identities for t1 before requesting permission for t1, that request emits an approval_requested event with answerable: true and reason ASK_REASON rather than being treated as own.",
+        "[unit] When an own-tool request offers only allow-always and reject-once under profile ask, decidePermission selects reject-once through the existing profile path and never selects allow-always.",
+        "[unit] When PermissionContext.isOwnToolCall is omitted under profile read with a non-aborted signal and reject-once offered, decidePermission selects reject-once, preserving existing callers' profile decision."
+      ],
+      "tags": [
+        "feature",
+        "acp",
+        "security",
+        "permissions",
+        "turn-lifecycle",
+        "codex",
+        "cursor"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Security-critical permission precedence integrates raw identity evidence with turn-scoped routing, abort behavior and observable approval events; strict three-session isolation is mandatory.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/client/inbound.ts",
+        "packages/nax-agent-acp/src/client/permissions.ts",
+        "packages/nax-agent-acp/src/client/backend.ts",
+        "packages/nax-agent-acp/src/client/own-tool-calls.ts",
+        "packages/nax-agent-acp/test/fixtures/fake-agent/script.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent-acp/test/unit/client/permissions-own-tool.test.ts",
+        "packages/nax-agent-acp/test/unit/client/backend-own-tool-approval.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a foreign-session update reports a matching own identity for t1, a later permission request for t1 in the active ask-profile session still produces an answerable approval card.",
+        "When a turn is released and a new turn attaches using the same toolCallId, the new turn's permission decision cannot use the released turn's identity evidence.",
+        "For each profile none, review and full, decidePermission selects offered allow-once for an own-tool request before the ordinary profile decision.",
+        "When an own-tool request resembles a sandbox network request, decidePermission records OWN_TOOL_REASON and selects allow-once before sandbox network adjudication.",
+        "When no ownTools factory is supplied, the predicate passed to the permission decider returns false for every toolCallId.",
+        "When an embedder tool has approval always, an adapter own-tool auto-allow does not prevent the host from requesting the embedder tool's own approval before running it."
+      ],
+      "workdir": "packages/nax-agent-acp",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0bde2fea678bb99f87909d1f1bf1f9903752b990"
+    },
+    {
+      "id": "US-005",
+      "title": "Deliver nax run provider tools to Codex and Cursor",
+      "description": "**Goal** — Stop dropping provider tools for Codex and Cursor in nax's ACP open path and preserve audit attribution for the new session-named loopback namespace.\n\n**Motivation** — `nax run` on Codex or Cursor loses its provider tools (for example the codebase-memory MCP tools) for the same reason.\n\n**Approach** — **nax run delivers.** `finalizeAcpSurface` delivers provider tools to any agent whose registry entry has a pre-approval channel or an `mcpCallIdentity`; others keep today's skip.\n\nIntegration targets:\n- `packages/nax/src/agents/acp/provider-embedder.ts`: true when the entry has a `preApproval` **or** an `mcpCallIdentity`. The skip reason for other agents stays `\"mcp-pre-approval-unsupported\"`.\n- `packages/nax/src/agents/acp/tool-audit.ts`: uses `parseToolHostToolName(name)` for the namespaced identity; the provider is the part before the first `__` as today.\n- Read only: `packages/nax/src/agents/acp/open-context.ts` — `openContext(input)` calls `finalizeAcpSurface(input.agent, opts, profile)` and puts `delivery.tools` on the context.\n\nSeams: `parseToolHostToolName` is called by `createAuditRecorder` (US-005 ACs drive `onEvent` with a session-named tool). `mcpCallIdentity` makes `finalizeAcpSurface` deliver (US-005 ACs at `openContext`, the `nax run` ACP open path).\n\n**Scope** — In: change only registryCapable's delivery predicate and the audit namespace recognition; update provider-embedder.ts comments to say `mcp__<session server name>__<name>` and that delivery covers agents with a pre-approval channel or an MCP call identity. Extend existing provider-embedder.test.ts with positive Codex/Cursor cases and move its previous Codex-drop regression to Gemini; change open-context.test.ts's Codex tool-less regression to Gemini and add positive Codex context delivery; change tool-audit.test.ts's loopback fixture to mcp__nax-0badc0de__codegraph__search_graph and prove fixed names stay raw/unattributed; change test/unit/mcp/provider-instructions.test.ts's row [\"AC-21\", \"codex\", false] to [\"AC-21\", \"gemini\", false], leaving its false expectation and Claude row unchanged. No new files are required. Out: host-name implementation and parser export (US-001), registry/capability admission (US-002), identity ledger and permission routing (US-003/US-004), feature-level boundaries adjacent to this story:\n- Any `nax chat` change: the chat ACP brain, adapting chat's workflow tool providers to embedder tools, and history carry-over are features F2 and F3 of the design.\n- Attributing Codex or Cursor loopback calls in nax's tool audit; their tool events carry names other than `mcp__<server>__<tool>`, and those rows keep the raw name.\n- Updating `docs/guides/mcp-and-interception.md` (it says only `claude` receives provider tools); a manual follow-up after merge, outside both story workdirs.\n- Gemini, OpenCode and pi receiving embedder tools; they were not probed and keep today's refusal and today's `nax run` skip.\n- Letting Cursor call MCP tools under profiles `none`, `read` and `review`: `cursorCliConfig` keeps denying `Mcp(*:*)` there, so Cursor's tools are usable only under `ask` and `full`.\n\n**Interface** — `registryCapable(agent)` is true when the entry has a `preApproval` **or** an `mcpCallIdentity`; consume `parseToolHostToolName(name: string): string | undefined` through `@nathapp/nax-agent-acp/client`. Keep the existing finalizeAcpSurface(agent, opts, profile) and createAuditRecorder/onEvent contracts. For a parsed tool name, preserve the first-__ provider split; if parsing fails, write the raw event name without a provider field. Do not add a legacy fixed-name alias. Keep tool filtering, approval never adaptation, cancellation signals, error-result conversion, surface metadata and providerInstructions behavior unchanged. Delivery makes tools available to Cursor but does not override its existing none/read/review MCP denial.",
+      "acceptanceCriteria": [
+        "[unit] finalizeAcpSurface(\"codex\", opts, \"full\"), with one provider tool context7__query-docs and a tool-surface draft, returns tools whose names are [\"context7__query-docs\"].",
+        "[unit] That result's surface.skippedProviders has no entry with id \"codex\".",
+        "[unit] finalizeAcpSurface(\"cursor\", opts, \"full\") with the same opts returns tools whose names are [\"context7__query-docs\"].",
+        "[unit] finalizeAcpSurface(\"gemini\", opts, \"full\") with the same opts returns tools equal to [].",
+        "[unit] That gemini result's surface.skippedProviders contains { id: \"gemini\", reason: \"mcp-pre-approval-unsupported\" }.",
+        "[integration] openContext for agent: \"codex\" with one provider tool returns a context whose tools names are that provider tool's name.",
+        "[unit] Given a createAuditRecorder recorder with a file-backed audit target, when onEvent receives a tool_call named \"mcp__nax-0badc0de__codegraph__search_graph\" and its matching tool_result and flush() completes, the written row's provider is \"codegraph\".",
+        "[unit] That row's tool is \"codegraph__search_graph\".",
+        "[unit] Given a createAuditRecorder recorder with a file-backed audit target, when onEvent receives a tool_call named \"mcp__nax__codegraph__search_graph\" and its matching tool_result and flush() completes, the written row's tool is \"mcp__nax__codegraph__search_graph\".",
+        "[unit] That row has no provider field.",
+        "[unit] For each agent opencode and pi, finalizeAcpSurface(agent, opts, \"full\") with the same provider tool and draft returns tools equal to [], preserving today's skip behavior.",
+        "[unit] For each agent opencode and pi, that result's surface.skippedProviders contains { id: agent, reason: \"mcp-pre-approval-unsupported\" }, as today."
+      ],
+      "tags": [
+        "feature",
+        "acp",
+        "security",
+        "provider-tools",
+        "audit",
+        "codex",
+        "cursor"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Two small production changes and existing test migrations use established delivery/audit contracts, but the tool-delivery capability gate affects permission-filtered access and invokes the security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/acp/provider-embedder.ts",
+        "packages/nax/src/agents/acp/tool-audit.ts",
+        "packages/nax/src/agents/acp/open-context.ts"
+      ],
+      "suggestedCriteria": [
+        "When openContext opens Codex or Cursor with delivered provider tools and providerInstructions, the context retains those providerInstructions.",
+        "When finalizeAcpSurface receives Codex or Cursor provider tools with no tool-surface draft, it returns the provider tools as EmbedderTools with surface undefined.",
+        "When a loopback event has a valid session server prefix but a tool name with no provider separator, createAuditRecorder writes the raw event name without a provider field.",
+        "When finalizeAcpSurface delivers tools for Codex or Cursor, its surface preserves the draft's advertised providers and existing unrelated skippedProviders."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/agents/acp/provider-embedder.test.ts",
+          "reason": "\"codex: no pre-approval channel — tools dropped, the skip recorded, advertised emptied\" now delivers. Run that test with `\"gemini\"` and expect the skip `{ id: \"gemini\", reason: \"mcp-pre-approval-unsupported\" }`; the other expectations are unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/agents/acp/open-context.test.ts",
+          "reason": "\"codex with provider tools: degrades to a tool-less open\" now delivers tools. Run it with `agent: \"gemini\"`; the expectation `ctx.tools` equals `[]` is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/agents/acp/tool-audit.test.ts",
+          "reason": "the loopback test uses the agent-visible name `\"mcp__nax__codegraph__search_graph\"`, which no session produces now. Use `\"mcp__nax-0badc0de__codegraph__search_graph\"`; the expected `provider` `\"codegraph\"` and `tool` `\"codegraph__search_graph\"` are unchanged."
+        },
+        {
+          "path": "packages/nax/src/agents/acp/provider-embedder.ts",
+          "reason": "the `toEmbedderTools` doc comment says the agent calls a provider tool as `mcp__nax__<name>` and the module comment says delivery is Claude-only. Say `mcp__<session server name>__<name>` and that delivery covers agents with a pre-approval channel or an MCP call identity; no code change beyond `registryCapable`."
+        },
+        {
+          "path": "packages/nax/test/unit/mcp/provider-instructions.test.ts",
+          "reason": "the `test.each` row `[\"AC-21\", \"codex\", false]` asserts `openContext` for codex delivers no tools and no `providerInstructions`; codex now receives both. Change that row's agent to `\"gemini\"`; the `false` expectation and the claude row are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ae4941f7be1366768b4291d8967bb13ec86cc0af"
+    }
+  ],
+  "analysis": "Feature classification and discovery: this is an enhancement of the existing ACP client and nax ACP adapter, not greenfield work. It implements F1 only of docs/superpowers/specs/2026-10-29-nax-chat-acp-agents-design.md. The supplied execution root was used; codebase-memory MCP tools were unavailable, so structural verification used direct file reads and targeted text searches. The repository matches the spec's baseline. Exactly five stories retain the supplied workdirs and dependency edges: US-001 and US-003 can start independently; US-002 follows US-001; US-004 follows US-001/002/003; US-005 follows US-001/002. No implementation changes or tests were executed while preparing this PRD.\n\nExisting architecture and ownership: packages/nax-agent-acp is a Node-targeted ESM library using the root @agentclientprotocol/sdk, @modelcontextprotocol/sdk, zod, node: builtins and the public @nathapp/nax-agent entry. Its source must not introduce Bun APIs, experimental ACP imports, deep nax-agent imports or dependencies on nax configuration. packages/nax is the Bun CLI; its only allowed ACP package import is @nathapp/nax-agent-acp/client. The public client entry currently exports TOOL_HOST_SERVER_NAME and registryEntry at packages/nax-agent-acp/src/client/index.ts:15-17. US-001 adds only parseToolHostToolName to the runtime public surface; newToolHostServerName and the ledger stay internal module exports. Preserve package boundaries and lockstep versions; this feature does not initiate a release or change dependency versions. Read docs/architecture/ARCHITECTURE.md before implementation, especially its conventions, DI, security and testing references (docs/architecture/ARCHITECTURE.md:12-46). Follow package-local rules and canonical .nax/rules rather than modifying generated agent files.\n\nUS-001 impact: packages/nax-agent-acp/src/client/tool-host.ts:13 already imports node:crypto randomBytes for bearer tokens. ToolHostOptions currently carries only instructions (:37-45), ToolHost exposes token/start/drain/stop (:47-60), and createToolHost (:215-252) returns the fixed ACP name at :240. Add the optional serverName and required host.serverName, with a four-random-byte lowercase-hex default; keep the token generator, HTTP gate, constant-time token comparison and MCP initialize SERVER_INFO (:35) unchanged. The random ACP routing name is a separate identity from the bearer token and MCP serverInfo. packages/nax-agent-acp/src/client/pre-approval.ts:16-19 hardcodes nax in mcpToolRule; claudeSessionMeta (:30-43) currently maps the one-argument helper directly. Change its call sites to pass the session server name explicitly, using a mapping closure rather than accidentally passing map's index as the new second argument. Preserve Claude read-only removals, sandbox extras and skip-permission lock. parseToolHostToolName must accept exactly mcp__nax-<8 lowercase hex>__<nonempty rest>, preserve embedded __ in the rest, and reject old fixed-name and uppercase variants. TOOL_HOST_SERVER_NAME remains exported as the prefix string nax.\n\nSession lifetime seam: packages/nax-agent-acp/src/client/backend.ts:53-57 defines _acpBackendDeps; :76-89 holds AcpSession; :111-130 builds the host; :140-169 builds the router; :173-219 connect creates a new token, router and host for each process; :222-237 openBackend creates the session; :289-313 reconnect replaces the process; :316-344 sendTurn attaches/releases a router binding per turn. Generate the server name once at backend open only when tools exist, store it on AcpSession, and pass it through initial connect and reconnect. Reconnect must still rotate bearer tokens and retain retired tokens in redaction, while reusing the routing name. A resume opened in a new backend session gets a new routing name. toolHostFor must pass exactly the historical toolHostOptions(ctx) value when serverName is absent, and merge { ...(toolHostOptions(ctx) ?? {}), serverName } only when supplied, preserving provider instructions and the undefined-options regression seam.\n\nUS-001 migration/tests: update every mcpToolRule and claudeSessionMeta call in test/unit/client/pre-approval.test.ts (nine claudeSessionMeta sites verified by search); keep its TOOL_HOST_SERVER_NAME === nax assertion. Use nax-0badc0de in tool-host.test.ts start fixtures, backend-tools.test.ts Claude session/new and allowedTools assertions, and open.test.ts SERVER/stubHost/allowedTools fixtures. Add required serverName to each ToolHost stub in tool-host-instructions.test.ts. Update backend.test.ts's exact runtime-export list and regenerate api/nax-agent-acp.api.txt with bun run api:update from packages/nax-agent-acp; only the parseToolHostToolName runtime line is added. README.md's mcp__nax__<tool> documentation becomes mcp__nax-<8 hex>__<tool> without unrelated edits. Create test/unit/client/tool-host-server-name.test.ts. Existing backend-tools.test.ts:26-38 captures/restores the launch seam; similarly restore the new name generator seam after every test. It currently expects the fixed name and rules at :133-152. Use test/helpers/in-memory-launch.ts:23-73, which records all launches and offers crash(), for reconnect/name-call-count assertions; no real adapter is needed.\n\nUS-002 impact: packages/nax-agent-acp/src/client/registry.ts:55-67 declares AgentRegistryEntry and :110-126 implements the freezing entry helper. Add the required union-with-undefined mcpCallIdentity property to the interface, the helper's Pick policy type and returned frozen object. Only codex (:151-170) and cursor (:180-194) receive known shapes; Claude/Gemini/OpenCode/pi/custom agents remain without one. The new field must not make Codex or Cursor preApproval-capable or start passing them Claude's embedder sandbox. packages/nax-agent-acp/src/client/capabilities.ts:17-30 defines the JSON-safe record, :53-71 derives it and :81-95 gates tools. Add ownToolCalls from entry?.mcpCallIdentity !== undefined and require HTTP MCP AND (preApproval OR ownToolCalls), retaining profile/resume check precedence and using the exact new refusal reason. packages/nax-agent-acp/src/client/open.ts:197-204 checks requirements before sessionSetup; :254-273 builds Claude metadata and starts the host. Pass o.host?.serverName ?? empty string to claudeSessionMeta; permit a meta-free MCP entry only for a known mcpCallIdentity, preserving refusal before host start for unsupported agents and preserving host-start error translation. sandboxFor (:243-250) must continue to rely only on preApproval. Existing restoreSession consumes SessionSetup and CapabilityRecord (packages/nax-agent-acp/src/client/resume.ts:17, :143); the same random host entry and appropriate metadata must flow through new/resume/load without changing restore identity checks.\n\nUS-002 migration/tests: create test/unit/client/backend-own-tools.test.ts. Extend registry.test.ts full Codex and Cursor equality expectations with their identities while preserving undefined identities on other entries. Add ownToolCalls: false to both full-record expectations in capabilities.test.ts and the CapabilityRecord fixture in resume.test.ts:32. Replace backend-codex.test.ts's old read-profile refusal with a successful HTTP-MCP/no-_meta open. Retarget the old unsupported-Codex tests in backend-tools.test.ts and open.test.ts to Gemini, retaining capability tools and zero-host-start assertions. Keep the custom-agent capability refusal in capabilities.test.ts and existing profile/mode tests intact. Use fake-agent/script.ts HTTP capability and per-agent config fixtures rather than mismatched mode offers. Codex read acceptance proves session setup only, not live read-only-mode tool usability. Cursor none/read/review policy still denies Mcp(*:*), as confirmed in packages/nax-agent-acp/src/client/rule-policy.ts:86-97; do not relax that policy to make an integration test pass.\n\nUS-003 new abstraction: create src/client/own-tool-calls.ts and test/unit/client/own-tool-calls.test.ts with no imports/wiring required in this story. packages/nax-agent-acp/src/client/tool-events.ts:1-14 documents how tool_call and tool_call_update merge and why display names/titles are not reliable identity. Its capped, scrubbed call IDs and inputs (:184-200) are presentation/event concerns, not an authorization source. The new extractor consumes the original typed SessionUpdate, accepting both tool update variants, nonempty string identifiers and only the registered kind's structured rawInput keys. Never read titles, infer from display names, or use cleaned/truncated event inputs. Keep the first structured identity per id and make any different identity permanently non-own for that ledger, even if a later report again matches the session. Repeated identical reports and title-only partial updates must not invent a new identity. The ledger matches exact serverName and exact tool membership; it remains uncapped and becomes turn-scoped only through US-004's attach factory. No registry changes or new public exports belong to US-003.\n\nUS-004 lifecycle and authorization: packages/nax-agent-acp/src/client/inbound.ts:31-35 currently defines a two-argument PermissionDecider; Binding (:62-70) is the correct owner for the optional ledger. createInboundRouter (:95-175) admits only an active matching session, limits pending decisions, forwards updates at :123-127, invokes the decider at :138-141, and creates/releases each binding at :159-172. Create a fresh ledger on every attach, observe active-session updates before the collector, and pass a predicate closing over the admitted binding, not the mutable global active binding. No-turn, foreign-session, pending-limit, abort, cancellation/drain and denial counting semantics remain unchanged. Wire the factory in backend.routerFor only for a known mcpCallIdentity, a defined session routing name and nonempty ctx.tools. The optional new predicate must be forwarded into PermissionContext only when defined, preserving compatibility with current callers/fakes.\n\nDecision ordering: packages/nax-agent-acp/src/client/permissions.ts:51-71 defines PermissionContext; :79-95 extracts only offered *_once IDs; :130-177 implements decidePermission. Insert the own-tool allow after the existing aborted-signal return and before network/profile adjudication. Require isOwnToolCall(request.toolCall.toolCallId) and an actual allow_once option. Record asks.recordAutoDecision with reason OWN_TOOL_REASON = nax's own tool host call and decision allow, then select only the offered allow-once ID. Absent, malformed, wrong-server, unknown-tool, conflicting, prior-turn and permission-before-update cases all retain normal profile handling. If allow_once is absent, continue the original profile path, never select allow_always. Do not bypass the tool host's independent EmbedderTool approval policy: tool-calls.ts:6-8 and :146-152 retains approval never/always behavior under the turn signal. The auto decision is for the adapter's permission request, not a grant for arbitrary MCP servers or workflow operations.\n\nUS-004 tests: create permissions-own-tool.test.ts and backend-own-tool-approval.test.ts, and use existing inbound.test.ts for the router predicate contract. fake-agent/script.ts:20-61 already supports arbitrary SessionUpdate, permission and real MCP-call steps; :78-90 allows explicit toolCallId and rawInput on permission requests; :123-139 supports ordered turns and relaunch. No fixture protocol redesign is necessary. Integration tests must open registered Cursor/Codex under ask, pin the name generator to nax-0badc0de, send structured update BEFORE permission for the same raw id, assert recorded permission answers and answerable true/false approval events, and answer human cards so tests cannot hang. Preserve the negative Claude test despite a Cursor-shaped report: no known identity means no ledger. Add behavioral criteria for failure-table rows not fully enumerated by the numbered ACs, especially absent reports, unknown tools and conflicting identities falling back to profile behavior. All five stories use strict three-session-tdd because each touches session identity, capability-based access control or delivery of permission-filtered tools.\n\nUS-005 integration: packages/nax/src/agents/acp/provider-embedder.ts:30-53 adapts CodingTool to EmbedderTool with approval never, signals and error results; :64-96 finalizes delivery and currently gates solely on preApproval at :94-95. Change only registryCapable's decision to preApproval OR mcpCallIdentity, retaining all adaptation, filtering, surface stamping, skips and error behavior. Update its Claude-only and fixed-name comments as specified. packages/nax/src/agents/acp/open-context.ts:182-208 already puts delivery.tools and conditional providerInstructions on BackendOpenContext, so no new production wiring there is expected. Both open-context.ts:188 and session.ts:248 call finalizeAcpSurface, and session.ts:249 uses its surface for the audit; preserving the pure shared gate keeps those paths consistent. packages/nax/src/agents/acp/tool-audit.ts:19 imports the fixed constant and :72-79 strips its fixed prefix. Import parseToolHostToolName from the public client entry instead, then retain the existing first-__ split for provider identity. New random-name Claude events remain attributed; old fixed names are deliberately raw/unattributed, not a backward-compatible alias. Codex/Cursor event-name attribution is explicitly deferred.\n\nUS-005 tests/migration: extend only existing files. provider-embedder.test.ts:14-34 already supplies context7__query-docs and a ToolSurfaceDraft; its old Codex-drop test (:81-91) becomes the Gemini-drop test, alongside positive Codex/Cursor delivery cases. open-context.test.ts:298's old Codex tool-less test becomes Gemini and gains a positive Codex context assertion. tool-audit.test.ts:90-99 drives onEvent plus flush; switch its loopback fixture to mcp__nax-0badc0de__codegraph__search_graph and add legacy-fixed-name raw-row assertions. test/unit/mcp/provider-instructions.test.ts:215 changes only the AC-21 negative row's agent from codex to gemini; Codex now receives tools and instructions through the existing conditional delivery. Do not change the manual-follow-up module map or docs/guides/mcp-and-interception.md.\n\nRisks and migration path: the security boundary is structured adapter routing data plus a per-session unpredictable name, never title text or a fixed nax alias. A random name is reused across a reconnect but not persisted across new-process resume; bearer-token rotation/redaction remain separate and unchanged. The ledger must preserve conflicting evidence and never survive a turn. Sparse or late reports must fail closed to the existing profile, not block sessions or silently auto-approve. HTTP support remains mandatory even for known identities. Gemini/OpenCode/pi/custom agents must not gain tools by accident. Coordinate required interface-field migrations with full-object fixtures and host stubs; coordinate the public parser export and generated runtime snapshot before US-005 consumes it. No data migration is required; historical audit rows remain historical, and future legacy-style events are intentionally raw. The default random-name test's uniqueness comparison is probabilistic over 32 bits per the spec, not a guarantee of global uniqueness. Existing _deps seams should be reset in test cleanup to prevent cross-test identity leakage. Keep production changes small and within each bound package workdir.\n\nValidation approach for implementers: use bun:test unit suites and the in-memory or subprocess fake only, with real loopback MCP calls for transport assertions. Run targeted tests with explicit paths, never bare bun test or bun run nax. Package commands are run in their package directories; normal lint/typecheck/test pipeline gates are not acceptance criteria. API snapshot regeneration is part of US-001's export change. Node smoke/build checks for the Node library and package-boundary checks protect portability and dependency direction. Do not run live codex-acp/cursor-agent in CI, do not claim tests were run during PRD generation, and do not run coverage inside NAX_SANDBOXED=1; use the established external CI coverage gate rather than adding a coverage story.\n\nRefine-pass adversarial audit: re-read all numbered spec ACs, the complete failure table, the 15 feature exclusions, explicit context lists and the live capability/router/permission/host/audit seams. Numbered-AC preservation ledger (spec number -> same-story acceptanceCriteria position): US-001 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15, 16->16, 17->17, 18->18, 19->19; US-002 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15/16 (split open success from MCP result), 16->17, 17->18; US-003 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15, 16->16, 17->17, 18->18; US-004 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15; US-005 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10. All 79 numbered assertions survive in their original stories, including US-003's same-server/same-tool qualifiers and US-004's Claude-has-no-identity parenthetical. No deprecated file-check tags occur. Every failure-table row remains represented: absent identity US-004/16-17; wrong server /11; unknown tool /18; conflicting identity /19; earlier turn /12; no allow-once /4 and /20; aborted signal /6; absent HTTP support US-002/18-19; unsupported agents US-002/17,20 and US-005/4-5,11-12. Every story has negative assertions and each assertion is observable through a return, exception, recorded call, event or flushed audit row.\n\nAudit corrections: capability refusal fixtures now pin full profile, one tool and no resume so earlier requirement checks cannot mask the intended tools failure (capabilities.ts:81-95). The unmatched ask decision now explicitly offers allow-once with a showable request and live signal, matching permissions.ts:160-167 rather than assuming every unmatched request becomes a card. Audit-row assertions explicitly provide a file-backed target, matching call/result ids and completed flush, matching tool-audit.ts:46-61, :110-128. Corrected the suggested MCP initialize direction: the client sends initialize and the host responds. Added spec-backed compatibility assertions that the exported prefix stays nax, toolHostFor's absent serverName still passes undefined options, and an omitted PermissionContext predicate retains the read-profile reject behavior. Removed the duplicate optional-options suggestion after promoting that specified regression contract. Restored verbatim adjacent exclusions inside the appropriate Scope Out sections; all 15 top-level exclusions were already present and remain unchanged. Descriptions still match their ACs. ContextFiles exactly match the spec lists, including US-004 reading the US-003-produced module, with no story listing its own new outputs as inputs. All bound workdirs and dependency arrays remain unchanged and reference existing story ids. Routing remains medium for US-002/003/005 and complex for reconnect/session-name propagation and turn-scoped authorization integration in US-001/004; strict three-session-tdd remains mandatory under the explicit security override, not an arbitrary heavier default. No production files, dependencies, helper names or source tests were added by this audit.",
+  "outOfScope": [
+    "Gemini, OpenCode and pi receiving embedder tools; they were not probed and keep today's refusal and today's `nax run` skip.",
+    "Any `nax chat` change: the chat ACP brain, adapting chat's workflow tool providers to embedder tools, and history carry-over are features F2 and F3 of the design.",
+    "Workflow tools on the `nax-agent` ACP server that koda connects to; a separate later feature.",
+    "Keeping a session's tool host server name across a resume in a new process; a resumed session gets a new name.",
+    "A size cap on the per-turn own-tool ledger; it lives for one turn only.",
+    "Attributing Codex or Cursor loopback calls in nax's tool audit; their tool events carry names other than `mcp__<server>__<tool>`, and those rows keep the raw name.",
+    "Changing the MCP `initialize` `serverInfo` name, which stays `\"nax\"`.",
+    "Changing the value of `TOOL_HOST_SERVER_NAME` or removing the export.",
+    "Selecting an allow-always option for any permission request.",
+    "A Codex permission request for an MCP call that arrives before any structured report of that call; it is decided by the profile as today.",
+    "Running the real codex-acp or cursor-agent in CI; live verification stays a maintainer-run probe.",
+    "Updating `.nax/mono/packages/nax-agent-acp/context.md` (the module map), which is read-only to the run; a manual follow-up after merge.",
+    "Updating `docs/guides/mcp-and-interception.md` (it says only `claude` receives provider tools); a manual follow-up after merge, outside both story workdirs.",
+    "Letting Cursor call MCP tools under profiles `none`, `read` and `review`: `cursorCliConfig` keeps denying `Mcp(*:*)` there, so Cursor's tools are usable only under `ask` and `full`.",
+    "Probing Codex in its `read-only` mode (profiles `none`, `read`, `review`); whatever it does there is decided by the profile as today."
+  ],
+  "routingProfile": "native-claude-opus"
+}

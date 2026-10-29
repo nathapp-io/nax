@@ -9,6 +9,17 @@ import {
 } from "#src/client/registry";
 
 describe("ACP agent registry (S4 spec §6.10)", () => {
+  test.each([
+    ["codex", "codex"],
+    ["cursor", "cursor"],
+    ["claude", undefined],
+    ["gemini", undefined],
+    ["opencode", undefined],
+    ["pi", undefined],
+  ] as const)("%s reports MCP calls with identity %p", (agent, identity) => {
+    expect(registryEntry(agent)?.mcpCallIdentity).toBe(identity);
+  });
+
   test("registers exactly the six agents, cursor after codex", () => {
     expect([...ACP_AGENT_NAMES]).toEqual(["claude", "codex", "cursor", "gemini", "opencode", "pi"]);
   });
@@ -27,6 +38,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
       },
       defaultMode: undefined,
       preApproval: undefined,
+      mcpCallIdentity: "cursor",
       authEnv: ["CURSOR_API_KEY"],
     });
   });
@@ -63,6 +75,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
       },
       defaultMode: { configId: "mode", value: "default" },
       preApproval: "claudeCode.allowedTools",
+      mcpCallIdentity: undefined,
       authEnv: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
     });
   });
@@ -83,6 +96,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
       },
       defaultMode: undefined,
       preApproval: undefined,
+      mcpCallIdentity: undefined,
       authEnv: [],
     });
   });
@@ -100,6 +114,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
       },
       defaultMode: undefined,
       preApproval: undefined,
+      mcpCallIdentity: undefined,
       authEnv: ["GEMINI_API_KEY"],
     });
   });
@@ -135,6 +150,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
       },
       defaultMode: undefined,
       preApproval: undefined,
+      mcpCallIdentity: "codex",
       authEnv: ["OPENAI_API_KEY"],
     });
   });
@@ -156,6 +172,7 @@ describe("ACP agent registry (S4 spec §6.10)", () => {
       },
       defaultMode: undefined,
       preApproval: undefined,
+      mcpCallIdentity: undefined,
       authEnv: [],
     });
   });

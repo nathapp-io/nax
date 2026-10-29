@@ -37,6 +37,7 @@ const RECORD: CapabilityRecord = {
   mcpHttp: false,
   readOnlyMode: true,
   preApproval: true,
+  ownToolCalls: false,
 };
 
 describe("storedSessionOf (spec §6.9 step 1, S4-6 D6-b, D6-c)", () => {

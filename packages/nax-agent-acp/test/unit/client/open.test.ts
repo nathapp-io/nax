@@ -233,7 +233,7 @@ describe("openAcpSession: openSignal (close() during open)", () => {
 describe("openAcpSession: the tool host (spec §6.3 steps 3-4, §6.6)", () => {
   const SERVER: HttpMcpServer = {
     type: "http",
-    name: "nax",
+    name: "nax-0badc0de",
     url: "http://127.0.0.1:1/mcp",
     headers: [{ name: "Authorization", value: "Bearer test-token-0123456789" }],
   };
@@ -250,6 +250,7 @@ describe("openAcpSession: the tool host (spec §6.3 steps 3-4, §6.6)", () => {
     const counts = { starts: 0 };
     const host: ToolHost = {
       token: "test-token-0123456789",
+      serverName: "nax-0badc0de",
       start: () => {
         counts.starts += 1;
         return start();
@@ -285,7 +286,7 @@ describe("openAcpSession: the tool host (spec §6.3 steps 3-4, §6.6)", () => {
         _meta: {
           claudeCode: {
             options: {
-              allowedTools: ["mcp__nax__lookup", "mcp__nax__fetch_page"],
+              allowedTools: ["mcp__nax-0badc0de__lookup", "mcp__nax-0badc0de__fetch_page"],
               allowDangerouslySkipPermissions: false,
             },
           },
@@ -306,10 +307,10 @@ describe("openAcpSession: the tool host (spec §6.3 steps 3-4, §6.6)", () => {
     expect(fake.kills()).toBe(1);
   });
 
-  test("an agent without pre-approval (codex): CAPABILITY_UNSUPPORTED tools; the host never starts", async () => {
+  test("an agent without pre-approval or MCP call identity (gemini): CAPABILITY_UNSUPPORTED tools; the host never starts", async () => {
     const { host, counts } = stubHost();
     const { opened } = await openWithTools({ capabilities: { mcpCapabilities: { http: true } } }, host, {
-      agent: "codex",
+      agent: "gemini",
     });
     expect(sessionError(await rejection(opened)).context).toMatchObject({ capability: "tools" });
     expect(counts.starts).toBe(0);

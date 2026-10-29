@@ -167,7 +167,7 @@ MCP server this client runs for the session.
   stored in the transcript.
 - **The name `nax` is reserved.** If your Claude user or project settings define an
   MCP server named `nax`, it can collide with this one. Rename yours.
-- **Pre-approved at the agent.** Claude is told to allow exactly `mcp__nax__<tool>`
+- **Pre-approved at the agent.** Claude is told to allow exactly `mcp__nax-<8 hex>__<tool>`
   for each of your tools, so it never asks permission for them. Your tool's own
   `approval` is the only gate: `"always"` asks you through `approval_requested` and
   `answer()` under every profile; `"never"` runs under every profile.
@@ -198,7 +198,7 @@ differences.
 - **Tool calls.** `tool_call` is sent when the agent uses the call: it asks
   permission for it, reports progress, or finishes. It is not sent when the call is
   first mentioned, because Claude fills in a call's input after mentioning it.
-  `name` is the agent's tool name (with Claude: `Read`, `Bash`, `mcp__nax__<tool>`).
+  `name` is the agent's tool name (with Claude: `Read`, `Bash`, `mcp__nax-<8 hex>__<tool>`).
   Every `tool_call` is followed by exactly one `tool_result`. A call still running
   when the turn ends gets `isError: true` and `"Not answered: the turn ended."`. A
   call the agent mentions but never uses produces no events.

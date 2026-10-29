@@ -366,6 +366,7 @@ describe("the public entry", () => {
       "acpBackend",
       "isAgentLaunchable",
       "launchCandidateKind",
+      "parseToolHostToolName",
       "registryEntry",
     ]);
   });
