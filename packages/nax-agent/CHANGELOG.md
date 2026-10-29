@@ -4,6 +4,10 @@ All notable changes to `@nathapp/nax-agent` are recorded here. The format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). While the version is `0.x`, a minor
 release may change the public API.
 
+## [0.91.7-canary.7] - 2026-10-29
+
+- No changes in this package. Released in lockstep with the other nax packages.
+
 ## [0.91.7-canary.6] - 2026-10-28
 
 - No changes in this package. Released in lockstep with the other nax packages.
