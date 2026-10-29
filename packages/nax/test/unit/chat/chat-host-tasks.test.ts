@@ -65,7 +65,12 @@ function fixture(resourcesEnabled = true, entry = false, agents = false) {
     now,
     logger,
     open,
-    storage: createChatStorage({ pid: process.pid, now, logger }),
+    storage: createChatStorage({
+      pid: process.pid,
+      now,
+      logger,
+      env: { NAX_AGENT_SESSIONS_DIR: join(dir, "sessions") },
+    }),
     ...(resourcesEnabled ? { resources } : {}),
     ...(entry ? { naxEntry: ["bun", "/n.ts"] } : {}),
   });
@@ -73,9 +78,14 @@ function fixture(resourcesEnabled = true, entry = false, agents = false) {
     await host.close();
     cleanupTempDir(dir);
   });
-  return { host, open, order };
+  return { host, open, order, dir };
 }
 describe("chat host tasks", () => {
+  test("fixture isolates session storage under its temporary directory", async () => {
+    const f = fixture();
+    await f.host.start({ mode: "full", model: "test" });
+    expect(f.open.mock.calls[0]?.[0].storage.dir).toBe(join(f.dir, "sessions"));
+  });
   test.each(["start", "resume", "switch"] as const)("AC-1/2/3 %s passes the host-owned port", async (method) => {
     const f = fixture();
     await f.host.start({ mode: "full", model: "test" });
