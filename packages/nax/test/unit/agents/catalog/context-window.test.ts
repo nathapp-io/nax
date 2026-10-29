@@ -67,12 +67,14 @@ describe("lookupContextWindow", () => {
 
   describe("lookupThinkingLevels", () => {
     test("US-001 AC-14 reads declared catalog levels", async () => {
-      const provider = rawProvider();
-      provider.id = "opencode-go";
-      const model = provider.models[0];
+      const base = rawProvider();
+      const model = base.models[0];
       if (!model) throw new Error("missing fixture model");
-      model.id = "deepseek-v4.1-flash";
-      model.thinkingLevels = ["low", "high", "max"];
+      const provider: RawProvider = {
+        ...base,
+        id: "opencode-go",
+        models: [{ ...model, id: "deepseek-v4.1-flash", thinkingLevels: ["low", "high", "max"] }],
+      };
       loadedFrom(async () => [provider]);
       expect(await lookupThinkingLevels("opencode-go", "deepseek-v4.1-flash")).toEqual(["low", "high", "max"]);
     });

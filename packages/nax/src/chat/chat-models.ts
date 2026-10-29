@@ -15,7 +15,7 @@ export async function chatEffortLevels(input: {
       if (split <= 0) return undefined;
       const provider = base.slice(0, split);
       const id = base.slice(split + 1);
-      const override = input.config.agent.native.catalogOverrides
+      const override = input.config.agent?.native?.catalogOverrides
         ?.find((entry) => entry.provider === provider)
         ?.models.find((model) => model.id === id);
       const supported = override?.thinkingLevels ?? (await input.lookupThinkingLevels(provider, id));

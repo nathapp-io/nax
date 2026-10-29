@@ -27,6 +27,14 @@ function config(supportsTools = true) {
   });
 }
 describe("chatEffortLevels", () => {
+  test.each([{}, { agent: {} }])("uses catalog metadata with omitted optional config: %j", async (value) => {
+    const levels = await chatEffortLevels({
+      config: value,
+      models: ["p/m"],
+      lookupThinkingLevels: async () => ["low"],
+    });
+    expect([...levels]).toEqual([["p/m", ["default", "low"]]]);
+  });
   test("US-001 AC-16 keys catalog levels by base model and deduplicates lookups", async () => {
     const lookupThinkingLevels = mock(async () => ["low", "max"] as const);
     const levels = await chatEffortLevels({ config: config(), models: ["p/m[high]", "p/m"], lookupThinkingLevels });
@@ -36,7 +44,7 @@ describe("chatEffortLevels", () => {
   });
   test("US-001 AC-17 override levels win over catalog levels", async () => {
     const value = config();
-    const provider = value.agent.native.catalogOverrides?.[0];
+    const provider = value.agent?.native?.catalogOverrides?.[0];
     if (!provider) throw new Error("missing fixture override");
     provider.provider = "p";
     const model = provider.models[0];
