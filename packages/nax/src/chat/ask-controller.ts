@@ -3,7 +3,23 @@ import type { ChatMode } from "./chat-mode";
 
 export type AskChoice = "allow_once" | "allow_session" | "deny";
 export type ChatApproval = Extract<SessionEvent, { type: "approval_requested" }>;
-export type ChatPendingAsk = Extract<SessionEvent, { type: "approval_requested" | "question" }>;
+export type ChatPendingAsk = Extract<SessionEvent, { type: "approval_requested" | "question" }> | HostChoiceAsk;
+
+export interface HostChoiceCard {
+  readonly tool: string;
+  readonly summary: string;
+  readonly reason: string;
+  readonly choices: readonly { readonly id: string; readonly label: string }[];
+  readonly fallback: string;
+  readonly signal?: AbortSignal;
+}
+
+export interface HostChoiceAsk extends Omit<HostChoiceCard, "signal"> {
+  readonly type: "host_choice";
+  readonly requestId: string;
+  readonly at: string;
+  readonly expiresAt: string;
+}
 
 export interface HostApprovalCard {
   readonly tool: string;
@@ -38,6 +54,8 @@ export interface ChatAskControllerOptions {
 export interface ChatAskController {
   handle(event: SessionEvent): void;
   requestHostApproval(card: HostApprovalCard): Promise<"allow" | "deny">;
+  requestHostChoice(card: HostChoiceCard): Promise<string>;
+  resolveChoice(requestId: string, id: string): void;
   pending(): readonly ChatPendingAsk[];
   resolve(requestId: string, choice: AskChoice): void;
   canRemember(event: ChatApproval): boolean;
@@ -51,6 +69,14 @@ class AskController implements ChatAskController {
   private mode: ChatMode;
   private readonly open = new Map<string, ChatPendingAsk>();
   private readonly hosts = new Map<string, HostRequest>();
+  private readonly choices = new Map<
+    string,
+    {
+      readonly settle: (id: string) => void;
+      readonly cleanup: () => void;
+      readonly fallback: string;
+    }
+  >();
   private readonly memory = new Set<string>();
   private readonly listeners = new Set<() => void>();
 
@@ -97,6 +123,49 @@ class AskController implements ChatAskController {
     card.signal?.addEventListener("abort", abort, { once: true });
     this.changed();
     return waiting.promise;
+  }
+
+  requestHostChoice(card: HostChoiceCard): Promise<string> {
+    if (card.signal?.aborted) return Promise.resolve(card.fallback);
+    const requestId = `host-choice-${++nextHostRequestId}`;
+    const now = this.options.now?.() ?? new Date();
+    const timeout = this.options.approvalTimeoutMs ?? DEFAULT_HOST_APPROVAL_TIMEOUT_MS;
+    const waiting = Promise.withResolvers<string>();
+    const abort = () => this.resolveChoice(requestId, card.fallback);
+    const timer = _askControllerDeps.setTimeout(abort, timeout);
+    this.choices.set(requestId, {
+      settle: waiting.resolve,
+      fallback: card.fallback,
+      cleanup: () => {
+        _askControllerDeps.clearTimeout(timer);
+        card.signal?.removeEventListener("abort", abort);
+      },
+    });
+    this.open.set(requestId, {
+      type: "host_choice",
+      requestId,
+      tool: card.tool,
+      summary: card.summary,
+      reason: card.reason,
+      choices: card.choices,
+      fallback: card.fallback,
+      at: now.toISOString(),
+      expiresAt: new Date(now.getTime() + timeout).toISOString(),
+    });
+    card.signal?.addEventListener("abort", abort, { once: true });
+    this.changed();
+    return waiting.promise;
+  }
+
+  resolveChoice(requestId: string, id: string): void {
+    const request = this.choices.get(requestId);
+    const event = this.open.get(requestId);
+    if (!request || event?.type !== "host_choice") return;
+    if (id !== request.fallback && !event.choices.some((choice) => choice.id === id)) return;
+    this.choices.delete(requestId);
+    request.cleanup();
+    request.settle(id);
+    this.remove(requestId);
   }
 
   handle(event: SessionEvent): void {
@@ -163,6 +232,7 @@ class AskController implements ChatAskController {
 
   reset(): void {
     for (const requestId of [...this.hosts.keys()]) this.resolve(requestId, "deny");
+    for (const [requestId, request] of [...this.choices]) this.resolveChoice(requestId, request.fallback);
     this.memory.clear();
     if (this.open.size === 0) return;
     this.open.clear();

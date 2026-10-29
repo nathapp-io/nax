@@ -26,7 +26,7 @@
 import { Box, type Key, useInput } from "ink";
 import { type ReactElement, useEffect, useRef, useState } from "react";
 import type { AskChoice, ChatAskController, ChatPendingAsk } from "@/chat";
-import type { AskCardApproval, AskCardModel, AskCardQuestion, AskOption } from "./ask-card";
+import type { AskCardApproval, AskCardChoice, AskCardModel, AskCardQuestion, AskOption } from "./ask-card";
 import { ChatInput, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
 import {
   type LayoutContext,
@@ -174,9 +174,10 @@ function optionalRows(
 }
 
 /** The title, with the attribution tag a subagent's ask carries behind it. */
-function titleRows(model: AskCardApproval, context: LayoutContext): readonly StyledLine[] {
+function titleRows(model: AskCardApproval | AskCardChoice, context: LayoutContext): readonly StyledLine[] {
   const title: Span = { text: model.title, bold: true };
-  const tag: readonly Span[] = model.tag === undefined ? [] : [{ text: `${SPACE}${model.tag}`, color: "muted" }];
+  const tag: readonly Span[] =
+    model.kind === "choice" || model.tag === undefined ? [] : [{ text: `${SPACE}${model.tag}`, color: "muted" }];
   return prefixedLine([title, ...tag], [], context);
 }
 
@@ -193,8 +194,12 @@ function optionPrefix(theme: ChatTheme, chosen: boolean): StyledLine {
 }
 
 /** One row per option, the number the card gives it and the pointer on the selected one. */
-function optionRows(model: AskCardApproval, selected: number, context: LayoutContext): readonly StyledLine[] {
-  return model.options.flatMap((option: AskOption, at: number) => {
+function optionRows(
+  model: AskCardApproval | AskCardChoice,
+  selected: number,
+  context: LayoutContext,
+): readonly StyledLine[] {
+  return model.options.flatMap((option, at: number) => {
     const chosen = at === selected;
     const text = `${option.index}. ${option.label}`;
     const style: SpanStyle = chosen ? { bold: true } : {};
@@ -231,22 +236,27 @@ function countdownRow(expiresAt: string, nowMs: number): StyledLine {
 }
 
 /** An approval's rows: what it wants to run, why, what it would change, and the choices. */
-function approvalBody(approval: AskCardApproval, options: AskCardLayoutOptions, context: LayoutContext): Card {
+function approvalBody(
+  approval: AskCardApproval | AskCardChoice,
+  options: AskCardLayoutOptions,
+  context: LayoutContext,
+): Card {
   const indent: StyledLine = [styled(SPACE.repeat(INDENT_COLUMNS))];
+  const border = approval.kind === "choice" ? "warning" : approval.border;
   return {
     head: [
-      ruleRow(context.theme, context.width, approval.border),
+      ruleRow(context.theme, context.width, border),
       ...titleRows(approval, context),
       CARD_BLANK,
-      ...optionalRows(approval.command, indent, { bold: true }, context),
+      ...optionalRows(approval.kind === "choice" ? undefined : approval.command, indent, { bold: true }, context),
       ...optionalRows(approval.summary, indent, { color: "muted" }, context),
       ...optionalRows(approval.reason, [], {}, context),
-      ...diffRows(approval.diff, context),
+      ...diffRows(approval.kind === "choice" ? [] : approval.diff, context),
     ],
     tail: [
       ...optionRows(approval, options.selected ?? 0, context),
       countdownRow(options.expiresAt, options.nowMs ?? _askCardDeps.now()),
-      ruleRow(context.theme, context.width, approval.border),
+      ruleRow(context.theme, context.width, border),
     ],
   };
 }
@@ -387,7 +397,7 @@ export function AskCard({
    * its draft.
    */
   const latestSelected = useRef(0);
-  const options = model.kind === "approval" ? model.options : [];
+  const options = model.kind === "question" ? [] : model.options;
 
   /** Move the pointer, publishing the move for the next render. A clamped move stays put. */
   const moveSelection = (next: number): void => {
@@ -420,14 +430,26 @@ export function AskCard({
 
   useInput(
     (input, key) => {
-      if (model.kind !== "approval") return;
+      if (model.kind === "question") return;
+      if (model.kind === "choice") {
+        if (key.escape) controller.resolveChoice(ask.requestId, model.fallback);
+        else if (!key.ctrl && !key.meta) {
+          const option = key.return
+            ? model.options[latestSelected.current]
+            : model.options.find((option) => String(option.index) === input);
+          if (option) controller.resolveChoice(ask.requestId, option.id);
+          else if (!key.shift && key.upArrow) moveSelection(Math.max(0, latestSelected.current - 1));
+          else if (!key.shift && key.downArrow) moveSelection(Math.min(options.length - 1, latestSelected.current + 1));
+        }
+        return;
+      }
       // ink reports a lone escape as `escape` *and* `meta`, so escape is taken first: the
       // ctrl/meta rule below is about letters, which must never answer an approval.
       if (key.escape) {
         choose("deny");
         return;
       }
-      const choice = chosenOption(input, key, options, latestSelected.current);
+      const choice = chosenOption(input, key, model.options, latestSelected.current);
       if (choice !== undefined) {
         choose(choice);
         return;

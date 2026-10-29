@@ -247,3 +247,34 @@ describe("askCardModel question", () => {
     expect(questionCard({ text: "which\u001b[0m package?" }).text).toBe("which package?");
   });
 });
+
+test("US-012 AC-9: host choice model carries numbered labels and opaque ids", () => {
+  const model = askCardModel(
+    {
+      type: "host_choice",
+      requestId: "host-choice-1",
+      tool: "nax-close",
+      summary: "Quit?",
+      reason: "Tasks are running",
+      fallback: "stay",
+      at: AT,
+      expiresAt: EXPIRES_AT,
+      choices: [
+        { id: "stop", label: "Quit and stop them" },
+        { id: "stay", label: "Stay in chat" },
+      ],
+    },
+    { canRemember: false, entries: [] },
+  );
+  expect(model).toEqual({
+    kind: "choice",
+    title: "nax-close",
+    summary: "Quit?",
+    reason: "Tasks are running",
+    fallback: "stay",
+    options: [
+      { index: 1, label: "Quit and stop them", id: "stop" },
+      { index: 2, label: "Stay in chat", id: "stay" },
+    ],
+  });
+});

@@ -43,6 +43,8 @@ function mount() {
       pending: () => [],
       canRemember: () => false,
       requestHostApproval: async () => "deny",
+      requestHostChoice: async (card) => card.fallback,
+      resolveChoice: () => {},
       resolve: () => {},
       setMode: () => {},
       reset: () => {},
