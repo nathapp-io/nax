@@ -201,22 +201,26 @@ class RunAsks implements ChatRunAsks {
         continue;
       }
       if (!this.active(job.id)) return;
-      this.seen.add(id);
-      const ask: PendingAsk = { jobId: job.id, dir, secret, record, controller: new AbortController() };
-      this.open.set(id, ask);
-      const route = routeRunAsk({
-        job,
-        request: record.request,
-        chainActive: !!job.chainId && this.options.chains.isActive(job.chainId),
-        agentStreak: this.agentStreak,
-      });
-      if (route === "human") this.launchHuman(id, ask);
-      else {
-        this.agentStreak++;
-        this.agentWaiting.add(id);
-        this.notices.set(id, buildRunAskNotice(id, record.request));
-        this.changed();
-      }
+      this.routeAsk(job, { jobId: job.id, dir, secret, record, controller: new AbortController() });
+    }
+  }
+
+  private routeAsk(job: ChatJob, ask: PendingAsk): void {
+    const id = `${job.id}/${ask.record.key}`;
+    this.seen.add(id);
+    this.open.set(id, ask);
+    const route = routeRunAsk({
+      job,
+      request: ask.record.request,
+      chainActive: !!job.chainId && this.options.chains.isActive(job.chainId),
+      agentStreak: this.agentStreak,
+    });
+    if (route === "human") this.launchHuman(id, ask);
+    else {
+      this.agentStreak++;
+      this.agentWaiting.add(id);
+      this.notices.set(id, buildRunAskNotice(id, ask.record.request));
+      this.changed();
     }
   }
 
