@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeFakeClock, makeTempDir } from "@test/helpers";
 import { _jobRunnerDeps, createJobRunner, JOB_POLL_MS, type StartJobRequest } from "@/chat/jobs/job-runner";
-import { _jobStoreDeps, jobLogPath, jobsDir, readJobRecords } from "@/chat/jobs/job-store";
+import { _jobStoreDeps, jobAsksDir, jobLogPath, jobsDir, readJobRecords } from "@/chat/jobs/job-store";
 import { featureDir } from "@/config";
 import { NaxError } from "@/errors";
+import { chatHeartbeatFresh } from "@/interaction/chat-ask-files";
 
 const originalDeps = { ..._jobRunnerDeps };
 const originalStoreDeps = { ..._jobStoreDeps };
@@ -13,7 +14,12 @@ let repoRoot: string;
 let outputDir: string;
 let clock: ReturnType<typeof makeFakeClock>;
 let exit: (code: number) => void;
-let child: { pid: number; exited: Promise<number>; unref: ReturnType<typeof mock> };
+let child: {
+  pid: number;
+  exited: Promise<number>;
+  unref: ReturnType<typeof mock>;
+  stdin: { write: ReturnType<typeof mock>; end: ReturnType<typeof mock> };
+};
 const request: StartJobRequest = {
   kind: "run",
   target: "f1",
@@ -28,7 +34,12 @@ beforeEach(() => {
   clock = makeFakeClock();
   const deferred = Promise.withResolvers<number>();
   exit = deferred.resolve;
-  child = { pid: 4242, exited: deferred.promise, unref: mock(() => {}) };
+  child = {
+    pid: 4242,
+    exited: deferred.promise,
+    unref: mock(() => {}),
+    stdin: { write: mock(() => 65), end: mock(() => 0) },
+  };
   Object.assign(_jobRunnerDeps, {
     spawn: mock(() => child),
     kill: mock(() => true),
@@ -59,6 +70,144 @@ function nextChange(jobs: ReturnType<typeof runner>): Promise<void> {
 }
 
 describe("createJobRunner", () => {
+  test.each(["run", "bot_review", "bot_fix"] as const)(
+    "US-008 AC-2/3/4/9/10/14/15/16/18 transports %s asks and memory-only secret",
+    async (kind) => {
+      const secret = new Uint8Array(32).fill(0xab);
+      _jobRunnerDeps.randomSecret = mock(() => secret);
+      const argv = [...request.argv];
+      const jobs = runner();
+      try {
+        const job = await jobs.start({ ...request, kind, argv });
+        const spawned = [...argv, "--chat-asks", jobAsksDir(outputDir, job.id)];
+        expect(_jobRunnerDeps.spawn).toHaveBeenCalledWith(spawned, expect.objectContaining({ stdin: "pipe" }));
+        expect(job.argv).toEqual(spawned);
+        expect(argv).toEqual([...request.argv]);
+        expect(child.stdin.write).toHaveBeenCalledWith(`${Buffer.from(secret).toString("hex")}\n`);
+        expect(child.stdin.end).toHaveBeenCalledTimes(1);
+        expect(child.stdin.write.mock.invocationCallOrder[0]).toBeLessThan(
+          child.stdin.end.mock.invocationCallOrder[0] ?? 0,
+        );
+        expect(jobs.askSecret?.(job.id)).toEqual(secret);
+        const record = await Bun.file(join(jobsDir(outputDir), `${job.id}.json`)).text();
+        expect(record).not.toContain(Buffer.from(secret).toString("hex"));
+      } finally {
+        jobs.dispose();
+      }
+    },
+  );
+  test("US-008 AC-5/6 plan keeps argv and ignored stdin without preparing asks", async () => {
+    _jobRunnerDeps.createAsksDir = mock(async () => {});
+    _jobRunnerDeps.randomSecret = mock(() => new Uint8Array(32));
+    const jobs = runner();
+    try {
+      const job = await jobs.start({ ...request, kind: "plan" });
+      expect(_jobRunnerDeps.spawn).toHaveBeenCalledWith(request.argv, expect.objectContaining({ stdin: "ignore" }));
+      expect(_jobRunnerDeps.createAsksDir).not.toHaveBeenCalled();
+      expect(_jobRunnerDeps.randomSecret).not.toHaveBeenCalled();
+      expect(child.stdin.write).not.toHaveBeenCalled();
+      expect(jobs.askSecret?.(job.id)).toBeUndefined();
+    } finally {
+      jobs.dispose();
+    }
+  });
+  test("US-008 AC-7 prepares asks with the clock Date before spawn", async () => {
+    const now = new Date("2026-10-27T00:00:00Z");
+    const events: string[] = [];
+    _jobRunnerDeps.createAsksDir = mock(async (_dir, date) => {
+      expect(date).toBe(now);
+      events.push("prepare");
+    });
+    _jobRunnerDeps.spawn = mock(() => {
+      events.push("spawn");
+      return child;
+    });
+    const jobs = createJobRunner({ repoRoot, outputDir, now: () => now });
+    try {
+      const job = await jobs.start(request);
+      expect(_jobRunnerDeps.createAsksDir).toHaveBeenCalledWith(jobAsksDir(outputDir, job.id), now);
+      expect(events).toEqual(["prepare", "spawn"]);
+    } finally {
+      jobs.dispose();
+    }
+  });
+  test("US-008 AC-8/19 real preparation publishes a fresh heartbeat and private directory before spawn", async () => {
+    const now = new Date("2026-10-27T00:00:00Z");
+    let freshness: Promise<boolean> | undefined;
+    _jobRunnerDeps.spawn = mock((argv) => {
+      const dir = argv.at(-1) ?? "";
+      freshness = chatHeartbeatFresh(dir, now.getTime());
+      expect(statSync(dir).mode & 0o777).toBe(0o700);
+      return child;
+    });
+    const jobs = createJobRunner({ repoRoot, outputDir, now: () => now });
+    try {
+      await jobs.start(request);
+      expect(await freshness).toBe(true);
+    } finally {
+      jobs.dispose();
+    }
+  });
+  test("US-008 AC-11/12 failed preparation launches unchanged argv with warning", async () => {
+    _jobRunnerDeps.createAsksDir = mock(async () => {
+      throw new Error("disk full");
+    });
+    const jobs = runner();
+    try {
+      const job = await jobs.start(request);
+      expect(_jobRunnerDeps.spawn).toHaveBeenCalledWith(request.argv, expect.anything());
+      expect(job.argv).toEqual(request.argv);
+      expect(job.note).toContain("asks will not reach the chat");
+    } finally {
+      jobs.dispose();
+    }
+  });
+  test("pipe delivery failures keep the launched child managed and close stdin", async () => {
+    child.stdin.write = mock(() => {
+      throw new Error("pipe closed");
+    });
+    const jobs = runner();
+    try {
+      const job = await jobs.start(request);
+      expect(jobs.owned()).toEqual([job]);
+      expect(child.stdin.end).toHaveBeenCalledTimes(1);
+      expect(_jobRunnerDeps.spawn).toHaveBeenCalledTimes(1);
+      expect(_jobRunnerDeps.kill).not.toHaveBeenCalled();
+    } finally {
+      jobs.dispose();
+    }
+  });
+  test("preparation and persistence failures preserve both warnings on the managed launch", async () => {
+    _jobRunnerDeps.createAsksDir = mock(async () => {
+      throw new Error("no heartbeat");
+    });
+    _jobStoreDeps.rename = mock(() => {
+      throw new Error("no record");
+    });
+    const jobs = runner();
+    try {
+      const job = await jobs.start(request);
+      expect(job.note).toContain("asks will not reach the chat");
+      expect(job.note).toContain("do not retry");
+      expect(jobs.owned()).toEqual([job]);
+    } finally {
+      jobs.dispose();
+    }
+  });
+  test("US-008 AC-17 attached jobs never recover secrets", async () => {
+    const jobs = runner();
+    const attached = runner();
+    try {
+      const job = await jobs.start(request);
+      await attached.attach();
+      expect(attached.get(job.id)?.id).toBe(job.id);
+      expect(typeof attached.askSecret).toBe("function");
+      expect(attached.askSecret?.(job.id)).toBeUndefined();
+    } finally {
+      jobs.dispose();
+      attached.dispose();
+    }
+  });
   test("stopLaunching fences new starts and settles admitted launches without cancelling them", async () => {
     const jobs = runner();
     try {
@@ -102,10 +251,10 @@ describe("createJobRunner", () => {
       events.push("close");
     });
     const job = await runner().start(request);
-    expect(_jobRunnerDeps.spawn).toHaveBeenCalledWith(request.argv, {
+    expect(_jobRunnerDeps.spawn).toHaveBeenCalledWith([...request.argv, "--chat-asks", jobAsksDir(outputDir, job.id)], {
       cwd: repoRoot,
       detached: true,
-      stdin: "ignore",
+      stdin: "pipe",
       stdout: 73,
       stderr: 73,
     });
@@ -115,13 +264,13 @@ describe("createJobRunner", () => {
     expect(child.unref).toHaveBeenCalledTimes(1);
   });
 
-  test("AC-3,15,17 registers synchronously, persists running identity and emits once", async () => {
+  test("AC-3,15,17 registers after transport preparation, persists running identity and emits once", async () => {
     const jobs = runner();
     const changed = mock(() => {});
     jobs.onChange(changed);
     const starting = jobs.start(request);
-    expect(jobs.running()).toHaveLength(1);
     const job = await starting;
+    expect(jobs.running()).toHaveLength(1);
     const records = await readJobRecords(outputDir);
     expect(records).toHaveLength(1);
     const record = records[0];
@@ -335,7 +484,7 @@ describe("createJobRunner", () => {
     const jobs = runner();
     const first = await jobs.start(request);
     Object.assign(first.argv, { 0: "mutated" });
-    expect(jobs.get(first.id)?.argv).toEqual(request.argv);
+    expect(jobs.get(first.id)?.argv).toEqual([...request.argv, "--chat-asks", jobAsksDir(outputDir, first.id)]);
     await clock.advance(1);
     const second = await jobs.start({ ...request, kind: "bot_review" });
     expect(jobs.list().map((job) => job.id)).toEqual([second.id, first.id]);

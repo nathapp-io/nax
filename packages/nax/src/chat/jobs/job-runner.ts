@@ -2,15 +2,17 @@
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
+import { CHAT_ASKS_FLAG, writeChatHeartbeat } from "@/interaction";
 import { getLogger } from "@/logger";
 import { buildJobNotice } from "@/prompts";
 import { readRunProgress, resolveJobOutcome } from "./job-outcome";
-import { jobLogPath, jobsDir, newJobId, readJobRecords, writeJobRecord } from "./job-store";
+import { jobAsksDir, jobLogPath, jobsDir, newJobId, readJobRecords, writeJobRecord } from "./job-store";
 import type { ChatJob, ChatJobKind } from "./job-types";
 
 export const JOB_POLL_MS = 2_000;
 export const CANCEL_GRACE_MS = 10_000;
 export const JOB_LOG_TAIL_LINES = 40;
+const ASK_SECRET_BYTES = 32;
 
 export interface JobRunnerOptions {
   readonly repoRoot: string;
@@ -32,6 +34,8 @@ export interface ChatJobs {
   /** Every job of this repo the runner knows, newest first. */
   list(): readonly ChatJob[];
   get(id: string): ChatJob | undefined;
+  /** Memory-only authentication for jobs launched by this chat, never recovered from records. */
+  askSecret?(id: string): Uint8Array | undefined;
   /** Jobs in state running, newest first. */
   running(): readonly ChatJob[];
   /** Running jobs this runner spawned (not re-attached ones). */
@@ -55,12 +59,13 @@ export interface ChatJobs {
 interface OwnedChild {
   readonly pid: number;
   readonly exited: Promise<number>;
+  readonly stdin?: { write(data: string): number | Promise<number>; end(): number | Promise<number> } | null;
   unref(): void;
 }
 interface SpawnOptions {
   cwd: string;
   detached: true;
-  stdin: "ignore";
+  stdin: "ignore" | "pipe";
   stdout: number;
   stderr: number;
 }
@@ -82,11 +87,17 @@ export const _jobRunnerDeps = {
   openLog: (path: string): number => openSync(path, "a"),
   closeLog: (fd: number): void => closeSync(fd),
   mkdir: mkdirSync,
+  createAsksDir: async (dir: string, now: Date): Promise<void> => {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    await writeChatHeartbeat(dir, now);
+  },
+  randomSecret: (): Uint8Array => crypto.getRandomValues(new Uint8Array(ASK_SECRET_BYTES)),
   readLog: (path: string): Promise<string> => Bun.file(path).text(),
 };
 
 class DetachedJobs implements ChatJobs {
   private readonly records = new Map<string, ChatJob>();
+  private readonly secrets = new Map<string, Uint8Array>();
   private readonly ownedIds = new Set<string>();
   private readonly observedExits = new Map<string, number>();
   private readonly pendingTerminals = new Map<string, ChatJob>();
@@ -116,7 +127,7 @@ class DetachedJobs implements ChatJobs {
     getLogger()?.warn("chat", "Job lifecycle callback failed", { error: errorMessage(cause) });
   }
   // nax-git-env-allow: helper declaration for detached nax CLI launches, not a Git invocation.
-  private spawn(request: StartJobRequest, logPath: string): OwnedChild {
+  private spawn(request: StartJobRequest, logPath: string, secret?: Uint8Array): OwnedChild {
     _jobRunnerDeps.mkdir(jobsDir(this.options.outputDir), { recursive: true });
     const fd = _jobRunnerDeps.openLog(logPath);
     try {
@@ -124,7 +135,7 @@ class DetachedJobs implements ChatJobs {
       return _jobRunnerDeps.spawn(request.argv, {
         cwd: this.options.repoRoot,
         detached: true,
-        stdin: "ignore",
+        stdin: secret ? "pipe" : "ignore",
         stdout: fd,
         stderr: fd,
       });
@@ -152,10 +163,11 @@ class DetachedJobs implements ChatJobs {
   private async launch(request: StartJobRequest): Promise<ChatJob> {
     const id = newJobId(request.kind);
     const logPath = jobLogPath(this.options.outputDir, id);
+    const prepared = await this.prepareAsks(request, id);
     let child: OwnedChild;
     try {
       // nax-git-env-allow: forwards a nax CLI job to the detached-launch helper, not git.
-      child = this.spawn(request, logPath);
+      child = this.spawn({ ...request, argv: prepared.argv }, logPath, prepared.secret);
     } catch (cause) {
       throw new NaxError(
         `[chat] could not start nax ${request.kind}: ${errorMessage(cause)}`,
@@ -165,7 +177,8 @@ class DetachedJobs implements ChatJobs {
     }
     const job: ChatJob = {
       ...request,
-      argv: [...request.argv],
+      argv: prepared.argv,
+      ...(prepared.note ? { note: prepared.note } : {}),
       schemaVersion: 1,
       id,
       logPath,
@@ -175,9 +188,11 @@ class DetachedJobs implements ChatJobs {
       state: "running",
     };
     this.records.set(id, job);
+    if (prepared.secret) this.secrets.set(id, prepared.secret);
     this.ownedIds.add(id);
     this.syncPoll();
     child.unref();
+    if (prepared.secret) this.deliverSecret(child, prepared.secret);
     // Failure to save does not undo a launch or detach its exit observer.
     // Polling, cancellation and exit finalization must not overtake the initial write.
     const saved = this.mutate(id, () => this.persistRunning(job));
@@ -193,13 +208,51 @@ class DetachedJobs implements ChatJobs {
     this.emit();
     return structuredClone(tracked);
   }
+  private async prepareAsks(
+    request: StartJobRequest,
+    id: string,
+  ): Promise<{
+    argv: string[];
+    secret?: Uint8Array;
+    note?: string;
+  }> {
+    const argv = [...request.argv];
+    if (request.kind === "plan") return { argv };
+    const dir = jobAsksDir(this.options.outputDir, id);
+    try {
+      await _jobRunnerDeps.createAsksDir(dir, this.options.now());
+      return { argv: [...argv, CHAT_ASKS_FLAG, dir], secret: _jobRunnerDeps.randomSecret() };
+    } catch (cause) {
+      this.warn(cause);
+      return { argv, note: "asks will not reach the chat: ask transport could not be prepared" };
+    }
+  }
+  private deliverSecret(child: OwnedChild, secret: Uint8Array): void {
+    // A post-spawn pipe error must not turn a managed launch into a retryable spawn failure.
+    void (async () => {
+      try {
+        await child.stdin?.write(`${Buffer.from(secret).toString("hex")}\n`);
+      } catch (cause) {
+        this.warn(cause);
+      } finally {
+        try {
+          await child.stdin?.end();
+        } catch (cause) {
+          this.warn(cause);
+        }
+      }
+    })();
+  }
+  askSecret(id: string): Uint8Array | undefined {
+    return this.secrets.get(id)?.slice();
+  }
   private async persistRunning(job: ChatJob): Promise<ChatJob> {
     try {
       await writeJobRecord(this.options.outputDir, job);
       return job;
     } catch (cause) {
       const note = `job ${job.id} started (pid ${job.pid}), but its running record could not be saved; do not retry; keep this chat open to track it`;
-      const tracked: ChatJob = { ...job, note };
+      const tracked: ChatJob = { ...job, note: [job.note, note].filter(Boolean).join("; ") };
       this.records.set(job.id, tracked);
       getLogger()?.warn("chat", note, { id: job.id, pid: job.pid, error: errorMessage(cause) });
       return tracked;
