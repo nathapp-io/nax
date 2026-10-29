@@ -95,6 +95,13 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
   async function switchMode(mode: ChatMode): Promise<void> {
     await runControl(() => host.switchTo({ mode }));
   }
+  function cycleModelEffort(): void {
+    const model = queued.current?.model ?? host.current().model;
+    const levels = host.effortLevels?.(model) ?? EFFORT_LEVELS;
+    const next = withEffort(model, cycleEffort(modelEffort(model), 1, levels));
+    if (running.current) queued.current = { ...queued.current, model: next };
+    else void runControl(() => host.switchTo({ model: next }));
+  }
   async function runControl(action: () => Promise<void>): Promise<boolean> {
     if (!canControl()) return false;
     setLocked(true);
@@ -157,11 +164,7 @@ export function useChatKeys({ host, running, refresh, onError }: ChatKeysOptions
         refresh();
       }
     } else if (key.ctrl && input === "t" && canControl()) {
-      const model = queued.current?.model ?? host.current().model;
-      const levels = host.effortLevels?.(model) ?? EFFORT_LEVELS;
-      const next = withEffort(model, cycleEffort(modelEffort(model), 1, levels));
-      if (running.current) queued.current = { ...queued.current, model: next };
-      else void runControl(() => host.switchTo({ model: next }));
+      cycleModelEffort();
     } else if (key.shift && key.tab && !key.ctrl && !key.meta && canControl()) {
       const mode = nextChatMode(queued.current?.mode ?? host.current().mode);
       if (running.current) queued.current = { ...queued.current, mode };
