@@ -295,7 +295,22 @@ describe("openContext: provider-tool delivery (nax#2444)", () => {
     expect(ctx.profile).toBe("read");
   });
 
-  test("codex with provider tools: degrades to a tool-less open (Review Focus 4)", () => {
+  test("gemini with provider tools: degrades to a tool-less open (Review Focus 4)", () => {
+    const slot = createTurnSlot();
+    const ctx = openContext({
+      name: "nax-s",
+      agent: "gemini",
+      opts: { ...OPTS, providerTools: [PROVIDER_TOOL] },
+      store: createMemoryTranscriptStore(),
+      resume: undefined,
+      asks: createAskPort(slot),
+      slot,
+      openSignal: new AbortController().signal,
+    });
+    expect(ctx.tools).toEqual([]);
+  });
+
+  test("codex with provider tools: the context opens with them", () => {
     const slot = createTurnSlot();
     const ctx = openContext({
       name: "nax-s",
@@ -307,7 +322,7 @@ describe("openContext: provider-tool delivery (nax#2444)", () => {
       slot,
       openSignal: new AbortController().signal,
     });
-    expect(ctx.tools).toEqual([]);
+    expect(ctx.tools.map((tool) => tool.name)).toEqual([PROVIDER_TOOL.name]);
   });
 
   test("no provider tools: the historical B5 shape (tools empty)", () => {

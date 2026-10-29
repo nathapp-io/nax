@@ -212,7 +212,7 @@ const codingTool: CodingTool = {
 };
 test.each([
   ["AC-20", "claude", true],
-  ["AC-21", "codex", false],
+  ["AC-21", "gemini", false],
 ] as const)("%s ACP instruction delivery", (_ac, agent, delivered) => {
   const slot = createTurnSlot();
   const context = openContext({

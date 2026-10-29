@@ -80,16 +80,47 @@ describe("finalizeAcpSurface (D3 claude-only delivery)", () => {
     expect(surface?.advertised).toEqual(DRAFT.advertised);
   });
 
-  test("codex: no pre-approval channel — tools dropped, the skip recorded, advertised emptied", () => {
+  test("codex: an MCP call identity — tools delivered, no skip recorded", () => {
     const { tools, surface } = finalizeAcpSurface(
       "codex",
       optsWith({ providerTools: [CODING_TOOL], toolSurface: DRAFT }),
       "full",
     );
+    expect(tools.map((tool) => tool.name)).toEqual(["context7__query-docs"]);
+    expect(surface?.skippedProviders.some((skip) => skip.id === "codex")).toBe(false);
+    expect(surface?.advertised).toEqual(DRAFT.advertised);
+  });
+
+  test("cursor: an MCP call identity — tools delivered", () => {
+    const { tools, surface } = finalizeAcpSurface(
+      "cursor",
+      optsWith({ providerTools: [CODING_TOOL], toolSurface: DRAFT }),
+      "full",
+    );
+    expect(tools.map((tool) => tool.name)).toEqual(["context7__query-docs"]);
+    expect(surface?.skippedProviders.some((skip) => skip.id === "cursor")).toBe(false);
+  });
+
+  test("gemini: no pre-approval channel — tools dropped, the skip recorded, advertised emptied", () => {
+    const { tools, surface } = finalizeAcpSurface(
+      "gemini",
+      optsWith({ providerTools: [CODING_TOOL], toolSurface: DRAFT }),
+      "full",
+    );
     expect(tools).toEqual([]);
     expect(surface?.advertised).toEqual([]);
-    expect(surface?.skippedProviders).toContainEqual({ id: "codex", reason: "mcp-pre-approval-unsupported" });
+    expect(surface?.skippedProviders).toContainEqual({ id: "gemini", reason: "mcp-pre-approval-unsupported" });
     expect(surface?.transport).toBe("acp");
+  });
+
+  test.each(["opencode", "pi"] as const)("%s: today's skip is preserved", (agent) => {
+    const { tools, surface } = finalizeAcpSurface(
+      agent,
+      optsWith({ providerTools: [CODING_TOOL], toolSurface: DRAFT }),
+      "full",
+    );
+    expect(tools).toEqual([]);
+    expect(surface?.skippedProviders).toContainEqual({ id: agent, reason: "mcp-pre-approval-unsupported" });
   });
 
   test("no draft: nothing delivered, nothing recorded", () => {
