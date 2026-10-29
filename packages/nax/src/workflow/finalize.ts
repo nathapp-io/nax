@@ -522,6 +522,7 @@ export async function publish(fc: FeatureContext, input: PublishInput): Promise<
     // its reason keeps the PR a draft and the advisor is never asked (reasons non-empty).
     ...(input.record.reviewUnread ? { branchReviewUnread: input.record.reviewUnread } : {}),
     ...(input.record.costLimited ? { costLimited: true } : {}),
+    ...(fc.iterationCap ? { iterationCap: fc.iterationCap } : {}),
     // nax#2550: fix commits no re-review looked at never go ready.
     ...(input.record.reReviewSkipped ? { reReviewSkipped: true } : {}),
   };

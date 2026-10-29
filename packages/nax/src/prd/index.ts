@@ -232,6 +232,30 @@ export function isComplete(prd: PRD): boolean {
 }
 
 /** Count stories by status */
+/** A story the run still has to attempt: not passed, and not in any terminal or parked status. */
+function isPendingStory(s: UserStory): boolean {
+  return (
+    !s.passes &&
+    s.status !== "passed" &&
+    s.status !== "failed" &&
+    s.status !== "skipped" &&
+    s.status !== "blocked" &&
+    s.status !== "paused" &&
+    s.status !== "regression-failed" &&
+    s.status !== "decomposed"
+  );
+}
+
+/** The stories `countStories` counts as pending, in PRD order. */
+export function pendingStories(prd: PRD): UserStory[] {
+  return prd.userStories.filter(isPendingStory);
+}
+
+/** Ids of the stories `countStories` counts as pending, in PRD order. */
+export function pendingStoryIds(prd: PRD): string[] {
+  return pendingStories(prd).map((s) => s.id);
+}
+
 export function countStories(prd: PRD): {
   total: number;
   passed: number;
@@ -246,17 +270,7 @@ export function countStories(prd: PRD): {
     total: prd.userStories.length,
     passed: prd.userStories.filter((s) => s.passes || s.status === "passed").length,
     failed: prd.userStories.filter((s) => s.status === "failed" || s.status === "regression-failed").length,
-    pending: prd.userStories.filter(
-      (s) =>
-        !s.passes &&
-        s.status !== "passed" &&
-        s.status !== "failed" &&
-        s.status !== "skipped" &&
-        s.status !== "blocked" &&
-        s.status !== "paused" &&
-        s.status !== "regression-failed" &&
-        s.status !== "decomposed",
-    ).length,
+    pending: prd.userStories.filter(isPendingStory).length,
     skipped: prd.userStories.filter((s) => s.status === "skipped").length,
     blocked: prd.userStories.filter((s) => s.status === "blocked").length,
     paused: prd.userStories.filter((s) => s.status === "paused").length,

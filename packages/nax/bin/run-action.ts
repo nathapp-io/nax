@@ -32,7 +32,12 @@ import { basename, join } from "node:path";
 import chalk from "chalk";
 import { planCommand, promptForConfirmation, resolveRunProfileOverride, runReplanLoop } from "../src/cli";
 import { resolveContextCliOverrides } from "../src/cli/run-context-overrides";
-import { applyMaxIterationsFlag, type MaxIterationsFlag, parseMaxIterationsFlag } from "../src/cli/run-max-iterations";
+import {
+  applyMaxIterationsFlag,
+  type MaxIterationsFlag,
+  maxIterationsIgnoredNotice,
+  parseMaxIterationsFlag,
+} from "../src/cli/run-max-iterations";
 import { resolveUseHeadless } from "../src/cli/run-mode";
 import { parseParallelFlag } from "../src/cli/run-parallel";
 import { findProjectDir, type NaxConfig, validateDirectory } from "../src/config";
@@ -480,6 +485,8 @@ export function applyRunCliOverrides(
   // US-001: override execution.maxIterations only when -m was passed, so a
   // configured value (or the schema default of 20) still takes effect.
   const overridden = applyMaxIterationsFlag(config, maxIterationsFlag.value);
+  const ignoredNotice = maxIterationsIgnoredNotice(overridden, maxIterationsFlag.value);
+  if (ignoredNotice) console.warn(chalk.yellow(ignoredNotice));
   if (options.maxCost !== undefined) {
     const maxCost = Number(options.maxCost);
     if (!Number.isFinite(maxCost) || maxCost <= 0) {

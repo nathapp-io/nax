@@ -103,6 +103,7 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
         ...DEFAULT_CONFIG,
         execution: {
           ...DEFAULT_CONFIG.execution,
+          mode: "pipeline",
           maxIterations: 1,
           costLimit: 100,
           iterationDelayMs: 0,

@@ -9,7 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeDispatchContext, makeMockRuntime, makePluginRegistry, makeStatusWriter } from "@test/helpers";
+import { makeDispatchContext, makeMockRuntime, makePluginRegistry, makeStatusWriter, withWarnSpy } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { _heartbeatDeps } from "@/execution/crash-heartbeat";
 import { stopHeartbeat } from "@/execution/crash-recovery";
@@ -61,7 +61,13 @@ function makeCtx(
     config: {
       ...DEFAULT_CONFIG,
       acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false },
-      execution: { ...DEFAULT_CONFIG.execution, maxIterations: 1, costLimit: 100, iterationDelayMs: 0 },
+      execution: {
+        ...DEFAULT_CONFIG.execution,
+        mode: "pipeline",
+        maxIterations: 1,
+        costLimit: 100,
+        iterationDelayMs: 0,
+      },
     },
     hooks: EMPTY_HOOKS,
     feature: "test-feature",
@@ -211,5 +217,158 @@ describe("1.2 — heartbeat cost during the post-iteration tail", () => {
     await executeUnified(makeCtx({ statusWriter: heartbeat.statusWriter, costAggregator }), prd);
 
     expect(heartbeat.costs).toEqual([12]);
+  });
+});
+
+function makeWorkflowCtx(maxIterations: number): SequentialExecutionContext {
+  const base = makeCtx();
+  return {
+    ...base,
+    config: { ...base.config, execution: { ...base.config.execution, mode: "workflow", maxIterations } },
+  };
+}
+
+describe("max-iterations exhaustion (nax#2706)", () => {
+  test("pipeline mode: warns with the cap and the ids of the stories still pending", async () => {
+    const story = makePendingStory("US-001");
+    const rest = makePendingStory("US-002");
+    const afterFirst = makePrd([{ ...story, status: "passed", passes: true }, rest]);
+    _unifiedExecutorDeps.preIterationTierCheck = mock(async () => ({
+      shouldSkipIteration: false,
+      prdDirty: false,
+      prd: afterFirst,
+    }));
+    _unifiedExecutorDeps.runIteration = mock(async () => ({
+      prd: afterFirst,
+      storiesCompletedDelta: 1,
+      costDelta: 0,
+      prdDirty: false,
+    }));
+
+    await withWarnSpy(async (warn) => {
+      const result = await executeUnified(makeCtx(), makePrd([story, rest]));
+
+      expect(result.exitReason).toBe("max-iterations");
+      const call = warn.mock.calls.find((c) => String(c[1]).includes("max-iterations"));
+      expect(call).toBeDefined();
+      expect(call?.[2]).toMatchObject({ maxIterations: 1, pendingStoryIds: ["US-002"] });
+    });
+  });
+});
+
+describe("workflow mode loop bound (nax#2706)", () => {
+  function settlingRunIteration(prd: PRD) {
+    let current = prd;
+    return mock(async () => {
+      const next = current.userStories.find((s) => s.status === "pending");
+      if (next) {
+        current = {
+          ...current,
+          userStories: current.userStories.map((s) =>
+            s.id === next.id ? { ...s, status: "passed", passes: true } : s,
+          ),
+        };
+      }
+      return { prd: current, storiesCompletedDelta: next ? 1 : 0, costDelta: 0, prdDirty: false };
+    });
+  }
+
+  function passThroughPreCheck(prd: PRD) {
+    return mock(async (..._args: unknown[]) => ({ shouldSkipIteration: false, prdDirty: false, prd }));
+  }
+
+  test("ignores execution.maxIterations: three stories finish under a cap of one", async () => {
+    const prd = makePrd([makePendingStory("US-001"), makePendingStory("US-002"), makePendingStory("US-003")]);
+    const runIteration = settlingRunIteration(prd);
+    _unifiedExecutorDeps.runIteration = runIteration;
+    _unifiedExecutorDeps.preIterationTierCheck = passThroughPreCheck(prd);
+
+    const result = await executeUnified(makeWorkflowCtx(1), prd);
+
+    expect(result.exitReason).toBe("completed");
+    expect(runIteration).toHaveBeenCalledTimes(3);
+    expect(result.storiesCompleted).toBe(3);
+  });
+
+  test("stops when an iteration makes no progress at all, and warns with the ids", async () => {
+    const prd = makePrd([makePendingStory("US-001"), makePendingStory("US-002")]);
+    const runIteration = mock(async () => ({ prd, storiesCompletedDelta: 0, costDelta: 0, prdDirty: false }));
+    _unifiedExecutorDeps.runIteration = runIteration;
+    _unifiedExecutorDeps.preIterationTierCheck = passThroughPreCheck(prd);
+
+    await withWarnSpy(async (warn) => {
+      const result = await executeUnified(makeWorkflowCtx(50), prd);
+
+      expect(result.exitReason).toBe("max-iterations");
+      expect(runIteration).toHaveBeenCalledTimes(1);
+      const call = warn.mock.calls.find((c) => String(c[1]).includes("max-iterations"));
+      expect(call?.[2]).toMatchObject({ pendingStoryIds: ["US-001", "US-002"] });
+      expect(String(call?.[1])).not.toContain("raise execution.maxIterations");
+      expect(String(call?.[1])).toContain("2 stories");
+    });
+  });
+
+  test("a failed story that the selector retries is counted: fail once, then all three complete", async () => {
+    const prd = makePrd([makePendingStory("US-001"), makePendingStory("US-002"), makePendingStory("US-003")]);
+    let current = prd;
+    let failedOnce = false;
+    const runIteration = mock(async (_ctx: unknown, _prd: PRD, selection: { story: UserStory }) => {
+      const id = selection.story.id;
+      const fail = id === "US-001" && !failedOnce;
+      failedOnce = failedOnce || fail;
+      current = {
+        ...current,
+        userStories: current.userStories.map((s) =>
+          s.id !== id
+            ? s
+            : fail
+              ? { ...s, status: "failed", passes: false, attempts: (s.attempts ?? 0) + 1 }
+              : { ...s, status: "passed", passes: true },
+        ),
+      };
+      return {
+        prd: current,
+        storiesCompletedDelta: fail ? 0 : 1,
+        costDelta: 0,
+        prdDirty: false,
+        finalAction: fail ? "fail" : "complete",
+      };
+    });
+    _unifiedExecutorDeps.runIteration = runIteration;
+    _unifiedExecutorDeps.preIterationTierCheck = passThroughPreCheck(prd);
+
+    const result = await executeUnified(makeWorkflowCtx(1), prd);
+
+    expect(result.exitReason).toBe("completed");
+    expect(runIteration).toHaveBeenCalledTimes(4);
+    expect(result.storiesCompleted).toBe(3);
+  });
+
+  test("a resumed story whose tier-budget escalation spends an iteration still completes", async () => {
+    const resumed: UserStory = { ...makePendingStory("US-001"), attempts: 2 };
+    const prd = makePrd([resumed, makePendingStory("US-002")]);
+    const escalated = makePrd([{ ...resumed, attempts: 0, escalations: [] }, makePendingStory("US-002")]);
+    let preChecks = 0;
+    _unifiedExecutorDeps.preIterationTierCheck = mock(async (..._args: unknown[]) => {
+      preChecks++;
+      return preChecks === 1
+        ? { shouldSkipIteration: true, prdDirty: false, prd: escalated }
+        : { shouldSkipIteration: false, prdDirty: false, prd: escalated };
+    });
+    let current = escalated;
+    _unifiedExecutorDeps.runIteration = mock(async (_ctx: unknown, _prd: PRD, selection: { story: UserStory }) => {
+      current = {
+        ...current,
+        userStories: current.userStories.map((s) =>
+          s.id === selection.story.id ? { ...s, status: "passed", passes: true } : s,
+        ),
+      };
+      return { prd: current, storiesCompletedDelta: 1, costDelta: 0, prdDirty: false };
+    });
+
+    const result = await executeUnified(makeWorkflowCtx(1), prd);
+
+    expect(result.exitReason).toBe("completed");
+    expect(result.storiesCompleted).toBe(2);
   });
 });

@@ -218,7 +218,7 @@ program
   .option("-a, --agent <name>", "Force a specific agent")
   // US-001: no Commander default — `undefined` means the flag was not passed,
   // so a configured execution.maxIterations is not silently replaced.
-  .option("-m, --max-iterations <n>", "Max iterations")
+  .option("-m, --max-iterations <n>", "Max iterations (pipeline mode only; workflow mode ignores it)")
   .option("--max-cost <usd>", "Override cost limit (USD) for this run — aborts execution when exceeded")
   .option("--dry-run", "Show plan without executing", false)
   .option("--no-context", "Disable context builder (skip file context in prompts)")

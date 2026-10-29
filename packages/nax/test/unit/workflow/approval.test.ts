@@ -317,3 +317,22 @@ describe("askApproval returns the advisor decision (US-001)", () => {
     expect("decisionId" in out).toBe(false);
   });
 });
+
+describe("readinessReasons — iteration cap (nax#2706)", () => {
+  test("names the iteration limit and the pending stories next to the not-run reason", () => {
+    const reasons = readinessReasons({
+      ...READY,
+      stories: [story("US-020"), story("US-021", { state: "not-run" }), story("US-022", { state: "not-run" })],
+      iterationCap: { pendingIds: ["US-021", "US-022"] },
+    });
+
+    expect(reasons).toEqual([
+      "iteration cap reached: the story loop hit its iteration limit with 2 stories pending (US-021, US-022)",
+      "stories not run: US-021, US-022",
+    ]);
+  });
+
+  test("no cap stop adds no reason", () => {
+    expect(readinessReasons({ ...READY, iterationCap: undefined })).toEqual([]);
+  });
+});

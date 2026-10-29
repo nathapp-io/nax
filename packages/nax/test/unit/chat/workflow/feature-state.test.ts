@@ -92,6 +92,11 @@ describe("readFeatureState", () => {
       "prd has 3 stories left but execution.maxIterations is 2; pass -m 3 to nax run (nax#2706)",
     ]);
   });
+  test("nax#2706 workflow mode has no iteration floor: no warning when maxIterations is undefined", async () => {
+    await prd(["pending", "pending", "pending"]);
+    const workflowOptions = { repoRoot: options.repoRoot, outputDir: options.outputDir };
+    expect((await readFeatureState("f1", workflowOptions)).warnings).toEqual([]);
+  });
   test("AC-9 does not count passed stories toward the iteration floor", async () => {
     await prd([...Array.from({ length: 24 }, () => "passed"), "pending"]);
     expect((await readFeatureState("f1", options)).warnings).toEqual([]);

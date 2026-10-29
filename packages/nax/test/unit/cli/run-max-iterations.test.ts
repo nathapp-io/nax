@@ -8,7 +8,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
-import { applyMaxIterationsFlag, parseMaxIterationsFlag } from "@/cli/run-max-iterations";
+import { applyMaxIterationsFlag, maxIterationsIgnoredNotice, parseMaxIterationsFlag } from "@/cli/run-max-iterations";
 
 describe("parseMaxIterationsFlag (US-001)", () => {
   test("AC-1: undefined — the flag was not passed — parses to undefined, not a default", () => {
@@ -53,5 +53,19 @@ describe("applyMaxIterationsFlag (US-001)", () => {
     applyMaxIterationsFlag(config, 5);
 
     expect(config.execution.maxIterations).toBe(3);
+  });
+});
+
+describe("maxIterationsIgnoredNotice (nax#2706)", () => {
+  test("workflow mode with -m: a notice that names the flag and the mode", () => {
+    const config = makeNaxConfig({ execution: { mode: "workflow" } });
+
+    expect(maxIterationsIgnoredNotice(config, 5)).toContain("--max-iterations");
+    expect(maxIterationsIgnoredNotice(config, 5)).toContain("workflow mode");
+  });
+
+  test("workflow mode without -m, or pipeline mode with -m: no notice", () => {
+    expect(maxIterationsIgnoredNotice(makeNaxConfig({ execution: { mode: "workflow" } }), undefined)).toBeUndefined();
+    expect(maxIterationsIgnoredNotice(makeNaxConfig({ execution: { mode: "pipeline" } }), 5)).toBeUndefined();
   });
 });

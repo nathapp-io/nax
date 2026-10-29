@@ -160,7 +160,7 @@ async function workflowFixture(dir: string) {
     makeNaxConfig({
       name: "proj-x",
       models: { native: { balanced: "test/model" } },
-      execution: { maxIterations: 2 },
+      execution: { mode: "pipeline", maxIterations: 2 },
     }),
   );
   await Bun.write(

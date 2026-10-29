@@ -94,6 +94,7 @@ function makeCtx(overrides: { parallelCount?: number } = {}): SequentialExecutio
       ...DEFAULT_CONFIG,
       execution: {
         ...DEFAULT_CONFIG.execution,
+        mode: "pipeline",
         maxIterations: 1,
         costLimit: 10,
         iterationDelayMs: 0,

@@ -327,3 +327,12 @@ export interface WorkflowFeatureRecord {
   readonly timings: Readonly<Record<string, number>>;
   readonly tokensByRole: Readonly<Record<string, RoleTokens>>;
 }
+
+/**
+ * nax#2706: the story loop ran out of iterations with stories still pending. Carried from the run
+ * into the feature workflow so the readiness reasons (and so the PR body and the run summary) say
+ * the loop bound stopped the run instead of only listing the stories that did not run.
+ */
+export interface IterationCapStop {
+  readonly pendingIds: readonly string[];
+}

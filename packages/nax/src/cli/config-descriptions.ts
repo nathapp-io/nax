@@ -117,7 +117,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   // Execution
   execution: "Execution limits and timeouts",
   "execution.maxIterations":
-    "Max iterations per feature run — each story attempt, parallel batch and the final completion pass counts one",
+    "Max iterations per feature run (pipeline mode only; each story attempt, parallel batch and the final completion pass counts one). Workflow mode ignores it and bounds the run by the story count; maxStoriesPerFeature is its size limit",
   "execution.mode":
     'Run mode: "workflow" (default) runs the A5 single-implementer review loop configured by `workflow`; "pipeline" (deprecated) runs the per-story pipeline. Root-only',
   "execution.iterationDelayMs": "Delay between iterations in milliseconds",

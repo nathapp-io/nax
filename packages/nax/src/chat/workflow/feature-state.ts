@@ -17,8 +17,8 @@ export interface FeatureStateOptions {
   readonly repoRoot: string;
   /** `~/.nax/<projectKey>` (or the configured outputDir). */
   readonly outputDir: string;
-  /** Resolved config.execution.maxIterations. */
-  readonly maxIterations: number;
+  /** config.execution.maxIterations in pipeline mode; undefined in workflow mode, which ignores it. */
+  readonly maxIterations?: number;
 }
 
 export interface FeatureState {
@@ -90,7 +90,7 @@ export async function readFeatureState(name: string, options: FeatureStateOption
     readPrd(join(dir, "prd.json"), warnings),
     readStatusFile(dir),
   ]);
-  if (prd && prd.pending > options.maxIterations) {
+  if (prd && options.maxIterations !== undefined && prd.pending > options.maxIterations) {
     warnings.push(
       `prd has ${prd.pending} stories left but execution.maxIterations is ${options.maxIterations}; pass -m ${prd.pending} to nax run (nax#2706)`,
     );

@@ -8,6 +8,7 @@ import type { PreflightFile } from "./preflight";
 import type {
   ApprovalOutcome,
   FeatureCiState,
+  IterationCapStop,
   RepoGateSummary,
   StoryState,
   StoryStateItem,
@@ -30,6 +31,8 @@ export interface ReadinessFacts {
   readonly branchReviewUnread?: readonly string[];
   /** nax#2550: the feature workflow skipped an agent step at the cost limit. */
   readonly costLimited?: boolean;
+  /** nax#2706: the story loop hit its iteration limit with stories still pending. */
+  readonly iterationCap?: IterationCapStop;
   /** nax#2550: a branch re-review did not run, so the fix commits went unreviewed. */
   readonly reReviewSkipped?: boolean;
 }
@@ -99,6 +102,12 @@ export function gateReasons(gates: RepoGateSummary | undefined): string[] {
 }
 
 const RE_REVIEW_SKIPPED = "branch re-review did not run: the fix commits are unreviewed";
+/** nax#2706: why stories did not run when the cap, not a failure, stopped the loop. */
+export function iterationCapReason(cap: IterationCapStop): string {
+  const n = cap.pendingIds.length;
+  return `iteration cap reached: the story loop hit its iteration limit with ${n} ${n === 1 ? "story" : "stories"} pending (${cap.pendingIds.join(", ")})`;
+}
+
 const COST_LIMITED = "cost limit reached: the feature workflow stopped before its review and fix steps finished";
 
 /**
@@ -112,6 +121,7 @@ export function readinessReasons(f: ReadinessFacts): string[] {
   return [
     ...gateReasons(f.finalGates),
     ...(ci === undefined ? [] : [ci]),
+    ...(f.iterationCap ? [iterationCapReason(f.iterationCap)] : []),
     ...storyReasons(f.stories),
     ...(f.flagged > 0 ? [`${f.flagged} ruling(s) flagged for a human`] : []),
     ...(f.branchReviewRan ? [] : ["branch review did not run"]),

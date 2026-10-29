@@ -1,4 +1,4 @@
-import type { NaxConfig } from "@/config";
+import { isWorkflowMode, type NaxConfig } from "@/config";
 import type { Logger } from "@/logger";
 import type { ChatAskController } from "../ask-controller";
 import { type ChatChains, createChainController } from "./chain-controller";
@@ -44,7 +44,7 @@ export function createHostJobs(options: HostJobsOptions): {
     jobs,
     chains,
     approve,
-    maxIterations: options.config.execution.maxIterations,
+    maxIterations: isWorkflowMode(options.config) ? undefined : options.config.execution.maxIterations,
     interactionPlugin: options.config.interaction?.plugin ?? "cli",
   });
   const close = (): void => {
