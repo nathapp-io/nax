@@ -3,7 +3,7 @@
   "feature": "acp-tools-codex-cursor",
   "branchName": "feat/acp-tools-codex-cursor",
   "createdAt": "2026-10-29T00:00:00.000Z",
-  "updatedAt": "2026-10-29T15:34:22.528Z",
+  "updatedAt": "2026-10-29T15:37:36.144Z",
   "userStories": [
     {
       "id": "US-001",
@@ -145,14 +145,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A bounded registry/capability/session-setup change uses established patterns, but expands access to tool-bearing sessions and therefore requires the security override."
+        "reasoning": "A bounded registry/capability/session-setup change uses established patterns, but expands access to tool-bearing sessions and therefore requires the security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/client/registry.ts",
@@ -199,7 +202,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "bead80eebc66811431f2ee8d6ba6efafe2142ffb"
     },
     {
       "id": "US-003",
