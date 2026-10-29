@@ -149,23 +149,29 @@ export function useChatKeys({ host, running, refresh, onError, onNotice }: ChatK
       onError(error);
     }
   }
+  function moveForeground(): void {
+    if (!host.tasks?.moveForeground()) onNotice?.("no running command to move to the background");
+  }
+  function interrupt(): void {
+    const now = _chatKeyDeps.now();
+    if (
+      !running.current ||
+      (interruptedAt.current !== undefined && now - interruptedAt.current <= DOUBLE_INTERRUPT_MS)
+    ) {
+      void close();
+    } else {
+      interruptedAt.current = now;
+      armQuit();
+      host.cancel();
+      refresh();
+    }
+  }
   useInput((input, key) => {
     if (closing.current) return;
     if (key.ctrl && input === "c") {
-      const now = _chatKeyDeps.now();
-      if (
-        !running.current ||
-        (interruptedAt.current !== undefined && now - interruptedAt.current <= DOUBLE_INTERRUPT_MS)
-      ) {
-        void close();
-      } else {
-        interruptedAt.current = now;
-        armQuit();
-        host.cancel();
-        refresh();
-      }
+      interrupt();
     } else if (key.ctrl && input === "b" && canControl()) {
-      if (!host.tasks?.moveForeground()) onNotice?.("no running command to move to the background");
+      moveForeground();
     } else if (key.ctrl && input === "t" && canControl()) {
       cycleModelEffort();
     } else if (key.shift && key.tab && !key.ctrl && !key.meta && canControl()) {

@@ -17,6 +17,8 @@ export function useJobs(
   { idle, deliver }: JobsOptions,
 ): {
   running: readonly ChatJob[];
+  /** Foreground availability refreshed by the same task subscription as notices. */
+  backgroundable: boolean;
   noteUserTurn(): void;
 } {
   const jobs = host.jobs;
@@ -69,6 +71,7 @@ export function useJobs(
   });
   return {
     running: jobs?.running() ?? [],
+    backgroundable: tasks?.hasForeground() ?? false,
     noteUserTurn: () => {
       taskTurns.current = 0;
     },

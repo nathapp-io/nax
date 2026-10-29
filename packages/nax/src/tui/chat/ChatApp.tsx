@@ -403,7 +403,11 @@ export function ChatApp({
     }
   }
 
-  const { running: jobs, noteUserTurn } = useJobs(host, {
+  const {
+    running: jobs,
+    backgroundable,
+    noteUserTurn,
+  } = useJobs(host, {
     idle: idleForJobNotice({
       turnRunning,
       bottomBlocked: bottomBlocked(ask, picker.model),
@@ -412,12 +416,7 @@ export function ChatApp({
     deliver: (text) => sendTurn(text),
   });
 
-  /**
-   * The menu's two actions go through the input's own bookkeeping: `complete` writes the
-   * same draft ref the next keystroke in a batch reduces, and `submit` disarms the clear and
-   * empties the prompt exactly as a typed return does. The menu is only ever drawn beside the
-   * input — an ask card hides it — so the handle is set whenever a menu key can run.
-   */
+  // Use input bookkeeping so batched keys see completion and submission clears the draft.
   function completeCommand(name: string): void {
     inputHandle.current?.complete(`/${name} `);
   }
@@ -451,7 +450,7 @@ export function ChatApp({
             clearArmed,
             busy: turnRunning,
             expanded,
-            backgroundable: host.tasks?.hasForeground() ?? false,
+            backgroundable,
             tmux,
           })
         : "copied",
