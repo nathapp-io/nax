@@ -75,11 +75,13 @@ describe("start(): the session/new server entry (spec §6.6)", () => {
   });
 
   test("the entry carries the token as an Authorization header", async () => {
-    const host = createToolHost(createToolCalls({ ...baseDeps(), tools: [echo] }));
+    const host = createToolHost(createToolCalls({ ...baseDeps(), tools: [echo] }), undefined, {
+      serverName: "nax-0badc0de",
+    });
     hosts.push(host);
     expect(await host.start()).toEqual({
       type: "http",
-      name: "nax",
+      name: "nax-0badc0de",
       url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/),
       headers: [{ name: "Authorization", value: `Bearer ${host.token}` }],
     });

@@ -23,16 +23,19 @@ import { mcpClient } from "#test/helpers/mcp-client";
 import { driveTurn, endOf, indexOfType } from "#test/helpers/session-events";
 
 const realLaunch = _acpBackendDeps.launch;
+const realServerName = _acpBackendDeps.newToolHostServerName;
 const sessions: AgentSession[] = [];
 let workdir: string;
 
 beforeEach(() => {
   workdir = makeTempDir("acp-tools-");
+  _acpBackendDeps.newToolHostServerName = () => "nax-0badc0de";
 });
 
 afterEach(async () => {
   for (const session of sessions.splice(0)) await session.close().catch(() => undefined);
   _acpBackendDeps.launch = realLaunch;
+  _acpBackendDeps.newToolHostServerName = realServerName;
   cleanupTempDir(workdir);
 });
 
@@ -138,12 +141,12 @@ describe("approval never (spec §6.6)", () => {
       mcpServers: [
         {
           type: "http",
-          name: "nax",
+          name: "nax-0badc0de",
           url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/),
           headers: [{ name: "Authorization", value: expect.stringMatching(/^Bearer [A-Za-z0-9_-]{43}$/) }],
         },
       ],
-      _meta: { claudeCode: { options: { allowedTools: ["mcp__nax__lookup"] } } },
+      _meta: { claudeCode: { options: { allowedTools: ["mcp__nax-0badc0de__lookup"] } } },
     });
     const events = await driveTurn(o.session, "look it up");
     expect(ran.map((r) => [r.input, r.ctx.sessionId, r.ctx.toolCallId])).toEqual([[{ q: "acp" }, "s-1", "mcp-1"]]);

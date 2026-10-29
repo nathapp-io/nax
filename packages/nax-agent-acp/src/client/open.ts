@@ -255,6 +255,7 @@ async function sessionSetup(o: Opening, sandbox: SandboxPolicy | undefined): Pro
   const kind = o.options.entry?.preApproval;
   const meta = claudeSessionMeta(
     kind,
+    o.host?.serverName ?? "",
     o.ctx.tools.map((tool) => tool.name),
     readOnlyFor(o.ctx.profile, o.options.entry),
     {

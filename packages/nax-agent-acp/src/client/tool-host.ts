@@ -42,11 +42,15 @@ export interface ToolHostOptions {
    * backend before it gets here.
    */
   readonly instructions?: string;
+  /** The ACP MCP server name; absent draws a fresh `newToolHostServerName()`. */
+  readonly serverName?: string;
 }
 
 export interface ToolHost {
   /** Known before start(), so every redaction set can include it. */
   readonly token: string;
+  /** The session/new entry's name, `nax-<8 hex>`; the agent calls tools as `mcp__<serverName>__<tool>`. */
+  readonly serverName: string;
   /** Listens on 127.0.0.1, an ephemeral port; returns the session/new server entry. */
   start(): Promise<HttpMcpServer>;
   /** Resolves once every call in flight has answered. */
@@ -81,6 +85,11 @@ type Body =
 
 export function newToolHostToken(): string {
   return randomBytes(32).toString("base64url");
+}
+
+/** `nax-` and 8 lowercase hex: routes a loopback tool call to its session, since the request title is agent-controlled. */
+export function newToolHostServerName(): string {
+  return `nax-${randomBytes(4).toString("hex")}`;
 }
 
 const digest = (value: string): Buffer => createHash("sha256").update(value).digest();
@@ -217,6 +226,7 @@ export function createToolHost(
   token: string = newToolHostToken(),
   opts: ToolHostOptions = {},
 ): ToolHost {
+  const serverName = opts.serverName ?? newToolHostServerName();
   const state: HostState = {
     token,
     calls,
@@ -230,6 +240,7 @@ export function createToolHost(
   let stopping: Promise<void> | undefined;
   return {
     token,
+    serverName,
     async start() {
       if (state.stopped.signal.aborted) {
         throw new NaxError("The MCP tool host was already stopped", "ACP_TOOL_HOST_STOPPED", { stage: "acp" });
@@ -237,7 +248,7 @@ export function createToolHost(
       state.port = await listen(http);
       return {
         type: "http",
-        name: TOOL_HOST_SERVER_NAME,
+        name: serverName,
         url: `http://${LOOPBACK}:${state.port}${TOOL_HOST_PATH}`,
         headers: [{ name: "Authorization", value: `${BEARER}${token}` }],
       };

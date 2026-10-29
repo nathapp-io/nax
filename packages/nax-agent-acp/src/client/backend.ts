@@ -45,14 +45,19 @@ import { race } from "#src/client/race";
 import { canRestore, type Restore, storedSessionOf } from "#src/client/resume";
 import { shellSandboxPlan } from "#src/client/shell-sandbox";
 import { createToolCalls } from "#src/client/tool-calls";
-import { createToolHost, newToolHostToken, type ToolHost } from "#src/client/tool-host";
+import { createToolHost, newToolHostServerName, newToolHostToken, type ToolHost } from "#src/client/tool-host";
 import { runPromptTurn, type TurnState } from "#src/client/turn";
 import { type CostMeter, createCostMeter } from "#src/client/usage";
 
-/** Test seam: the process launcher and the tool host factory. Production always uses launchAgent and createToolHost. */
-export const _acpBackendDeps: { launch: LaunchFn; createToolHost: typeof createToolHost } = {
+/** Test seam: the process launcher, the tool host factory and its server name. Production always uses launchAgent, createToolHost and newToolHostServerName. */
+export const _acpBackendDeps: {
+  launch: LaunchFn;
+  createToolHost: typeof createToolHost;
+  newToolHostServerName: () => string;
+} = {
   launch: launchAgent,
   createToolHost,
+  newToolHostServerName,
 };
 
 /** One agent process and everything bound to it. A reconnect replaces it whole (D6-g). */
@@ -77,6 +82,8 @@ interface Live {
 interface AcpSession {
   readonly base: ResolvedAcpOptions;
   readonly ctx: BackendOpenContext;
+  /** The tool host's ACP server name, drawn once at open and kept across reconnects; undefined without tools. */
+  readonly serverName: string | undefined;
   live: Live;
   closing: Promise<void> | undefined;
   instructionsSent: boolean;
@@ -113,6 +120,7 @@ export function toolHostFor(
   router: InboundRouter,
   secrets: readonly string[],
   token: string | undefined,
+  serverName?: string,
 ): ToolHost | undefined {
   if (token === undefined) return undefined;
   const calls = createToolCalls({
@@ -123,7 +131,8 @@ export function toolHostFor(
     turnSignal: () => router.activeSignal(),
     secrets,
   });
-  return _acpBackendDeps.createToolHost(calls, token, toolHostOptions(ctx));
+  const options = serverName === undefined ? toolHostOptions(ctx) : { ...(toolHostOptions(ctx) ?? {}), serverName };
+  return _acpBackendDeps.createToolHost(calls, token, options);
 }
 
 /**
@@ -174,6 +183,7 @@ async function connect(
   ctx: BackendOpenContext,
   restore: Restore | undefined,
   retiredTokens: readonly string[],
+  serverName?: string,
 ): Promise<Live> {
   const token = ctx.tools.length > 0 ? newToolHostToken() : undefined;
   const tokens = token === undefined ? retiredTokens : [...retiredTokens, token];
@@ -182,7 +192,7 @@ async function connect(
   const options = Object.freeze({ ...tokenOptions, ...(plan === undefined ? {} : { shellSandboxPlan: plan }) });
   const gone = new AbortController();
   const router = routerFor(ctx, options);
-  const host = toolHostFor(ctx, router, options.secrets, token);
+  const host = toolHostFor(ctx, router, options.secrets, token, serverName);
   const acp = await openAcpSession(options, ctx, router.handlers, _acpBackendDeps.launch, host, restore).catch(
     async (err: unknown) => {
       await host?.stop();
@@ -211,10 +221,12 @@ async function connect(
 async function openBackend(base: ResolvedAcpOptions, ctx: BackendOpenContext): Promise<OpenedBackend> {
   // §6.9 step 1 runs before anything is spawned.
   const restore = ctx.resume === undefined ? undefined : storedSessionOf(ctx.resume.doc, ctx, base);
-  const live = await connect(base, ctx, restore, []);
+  const serverName = ctx.tools.length > 0 ? _acpBackendDeps.newToolHostServerName() : undefined;
+  const live = await connect(base, ctx, restore, [], serverName);
   return assemble({
     base,
     ctx,
+    serverName,
     live,
     closing: undefined,
     // A restored agent already holds the instructions once a turn has run (D6-f).
@@ -285,7 +297,7 @@ async function reconnect(s: AcpSession, signal: AbortSignal): Promise<Live> {
   // close() aborts openSignal; cancel() and the turn timeout abort the turn signal.
   const ctx: BackendOpenContext = { ...s.ctx, openSignal: AbortSignal.any([s.ctx.openSignal, signal]) };
   try {
-    s.live = await connect(s.base, ctx, restore, old.tokens);
+    s.live = await connect(s.base, ctx, restore, old.tokens, s.serverName);
     return s.live;
   } catch (err) {
     if (!signal.aborted && !s.ctx.openSignal.aborted) s.lost = true;

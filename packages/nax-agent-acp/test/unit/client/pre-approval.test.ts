@@ -7,12 +7,14 @@ import { registryEntry } from "#src/client/registry";
 describe("pre-approval (spec R12, §6.6; D4-a)", () => {
   test("the server is named nax and each tool gets one exact rule", () => {
     expect(TOOL_HOST_SERVER_NAME).toBe("nax");
-    expect(mcpToolRule("fetch_page")).toBe("mcp__nax__fetch_page");
+    expect(mcpToolRule("nax-0badc0de", "fetch_page")).toBe("mcp__nax-0badc0de__fetch_page");
   });
 
   test("claude: _meta.claudeCode.options.allowedTools, one rule per tool, nothing else", () => {
-    expect(claudeSessionMeta(registryEntry("claude")?.preApproval, ["lookup", "fetch-page"], undefined)).toEqual({
-      claudeCode: { options: { allowedTools: ["mcp__nax__lookup", "mcp__nax__fetch-page"] } },
+    expect(
+      claudeSessionMeta(registryEntry("claude")?.preApproval, "nax-0badc0de", ["lookup", "fetch-page"], undefined),
+    ).toEqual({
+      claudeCode: { options: { allowedTools: ["mcp__nax-0badc0de__lookup", "mcp__nax-0badc0de__fetch-page"] } },
     });
   });
 });
@@ -29,11 +31,11 @@ describe("claude session _meta by profile (#2366)", () => {
   test("none and read: the removed tools and the settings lock, with or without tools", () => {
     for (const profile of ["none", "read", "review"] as const) {
       const readOnly = readOnlyFor(profile, claude);
-      expect(claudeSessionMeta(claude?.preApproval, [], readOnly)).toEqual({
+      expect(claudeSessionMeta(claude?.preApproval, "nax-0badc0de", [], readOnly)).toEqual({
         claudeCode: { options: READ_ONLY_OPTIONS },
       });
-      expect(claudeSessionMeta(claude?.preApproval, ["lookup"], readOnly)).toEqual({
-        claudeCode: { options: { allowedTools: ["mcp__nax__lookup"], ...READ_ONLY_OPTIONS } },
+      expect(claudeSessionMeta(claude?.preApproval, "nax-0badc0de", ["lookup"], readOnly)).toEqual({
+        claudeCode: { options: { allowedTools: ["mcp__nax-0badc0de__lookup"], ...READ_ONLY_OPTIONS } },
       });
     }
   });
@@ -42,17 +44,19 @@ describe("claude session _meta by profile (#2366)", () => {
     for (const profile of ["ask", "full"] as const) {
       const readOnly = readOnlyFor(profile, claude);
       expect(readOnly).toBeUndefined();
-      expect(claudeSessionMeta(claude?.preApproval, ["lookup"], readOnly)).toEqual({
-        claudeCode: { options: { allowedTools: ["mcp__nax__lookup"] } },
+      expect(claudeSessionMeta(claude?.preApproval, "nax-0badc0de", ["lookup"], readOnly)).toEqual({
+        claudeCode: { options: { allowedTools: ["mcp__nax-0badc0de__lookup"] } },
       });
-      expect(claudeSessionMeta(claude?.preApproval, [], readOnly)).toBeUndefined();
+      expect(claudeSessionMeta(claude?.preApproval, "nax-0badc0de", [], readOnly)).toBeUndefined();
     }
   });
 
   test("an agent that is not Claude gets no _meta under any profile", () => {
     const codex = registryEntry("codex");
-    expect(claudeSessionMeta(codex?.preApproval, ["lookup"], readOnlyFor("read", codex))).toBeUndefined();
-    expect(claudeSessionMeta(undefined, [], undefined)).toBeUndefined();
+    expect(
+      claudeSessionMeta(codex?.preApproval, "nax-0badc0de", ["lookup"], readOnlyFor("read", codex)),
+    ).toBeUndefined();
+    expect(claudeSessionMeta(undefined, "nax-0badc0de", [], undefined)).toBeUndefined();
   });
 });
 
@@ -60,11 +64,16 @@ describe("claude session _meta sandbox (nax#2500)", () => {
   test("review and full carry the sandbox; full also locks skip-permissions", () => {
     const claude = registryEntry("claude");
     const policy = { writeRoots: ["/r"], denyWrite: [], denyRead: [], network: {} };
-    const review = claudeSessionMeta(claude?.preApproval, [], readOnlyFor("review", claude), { sandbox: policy });
+    const review = claudeSessionMeta(claude?.preApproval, "nax-0badc0de", [], readOnlyFor("review", claude), {
+      sandbox: policy,
+    });
     expect((review?.claudeCode as { options: Record<string, unknown> } | undefined)?.options.sandbox).toEqual(
       claudeSandboxOptions(policy),
     );
-    const full = claudeSessionMeta(claude?.preApproval, [], undefined, { sandbox: policy, lockSkipPermissions: true });
+    const full = claudeSessionMeta(claude?.preApproval, "nax-0badc0de", [], undefined, {
+      sandbox: policy,
+      lockSkipPermissions: true,
+    });
     expect(full).toEqual({
       claudeCode: { options: { sandbox: claudeSandboxOptions(policy), allowDangerouslySkipPermissions: false } },
     });
