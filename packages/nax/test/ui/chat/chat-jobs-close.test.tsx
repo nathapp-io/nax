@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { makeFakeClock, makeLogger } from "@test/helpers";
 import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
 import { type ChatHost, type ChatHostState, createChatAskController } from "@/chat";
+import { _askControllerDeps, DEFAULT_HOST_APPROVAL_TIMEOUT_MS } from "@/chat/ask-controller";
+import { createCloseConfirm } from "@/chat/close-confirm";
 import { ChatApp } from "@/tui/chat";
 import { useChatKeys } from "@/tui/chat/useChatKeys";
 
@@ -22,7 +25,9 @@ const STATE: ChatHostState = {
     updatedAt: null,
   },
 };
+const originalTimers = { ..._askControllerDeps };
 afterEach(() => {
+  Object.assign(_askControllerDeps, originalTimers);
   cleanup();
   mock.restore();
 });
@@ -53,9 +58,9 @@ function fakeHost() {
   };
   return { host, close, asks };
 }
-function mount(confirm?: ChatHost["confirmJobsBeforeClose"]) {
+function mount(confirm?: ChatHost["confirmBeforeClose"]) {
   const fixture = fakeHost();
-  if (confirm) Object.assign(fixture.host, { confirmJobsBeforeClose: confirm });
+  if (confirm) Object.assign(fixture.host, { confirmBeforeClose: confirm });
   const ui = render(<ChatApp host={fixture.host} />);
   const press = (text: string): Promise<void> =>
     flush(() => {
@@ -71,10 +76,10 @@ function mount(confirm?: ChatHost["confirmJobsBeforeClose"]) {
 describe("ChatApp job close confirmation", () => {
   test.each(["/quit", CTRL_C])("US-015 AC-5 AC-6 confirms before closing via %s", async (gesture) => {
     const order: string[] = [];
-    const gate = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<boolean>();
     const confirm = mock(async () => {
       order.push("confirm");
-      await gate.promise;
+      return await gate.promise;
     });
     const ui = mount(confirm);
     ui.close.mockImplementation(async () => {
@@ -83,12 +88,12 @@ describe("ChatApp job close confirmation", () => {
     if (gesture === "/quit") await ui.quit();
     else await ui.press(gesture);
     expect(order).toEqual(["confirm"]);
-    await flush(() => gate.resolve());
+    await flush(() => gate.resolve(true));
     expect(order).toEqual(["confirm", "close"]);
   });
 
   test.each([CTRL_C, "/quit"])("US-015 AC-7 repeated %s does not duplicate pending confirmation", async (repeat) => {
-    const gate = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<boolean>();
     const confirm = mock(() => gate.promise);
     const ui = mount(confirm);
     await ui.press(CTRL_C);
@@ -96,7 +101,7 @@ describe("ChatApp job close confirmation", () => {
     else await ui.press(repeat);
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(ui.close).not.toHaveBeenCalled();
-    await flush(() => gate.resolve());
+    await flush(() => gate.resolve(true));
   });
 
   test("US-015 AC-8 AC-9 AC-15 rejection is shown, stays open and permits retry", async () => {
@@ -112,31 +117,50 @@ describe("ChatApp job close confirmation", () => {
     expect(ui.close).not.toHaveBeenCalled();
   });
 
-  test("US-015 AC-10 AC-11 AC-12 real approval stays interactive until yes closes", async () => {
+  test.each([false, true])("AC-20 AC-21 idle ctrl-c confirmation %s", async (answer) => {
+    const ui = mount(async () => answer);
+    await ui.press(CTRL_C);
+    expect(ui.close).toHaveBeenCalledTimes(answer ? 1 : 0);
+    if (!answer) {
+      await ui.press("still chatting");
+      expect(ui.lastFrame()).toContain("still chatting");
+    }
+  });
+
+  test.each(["timeout", "escape", "stop"])("AC-21 AC-22 AC-23 real quit card %s", async (action) => {
     const ui = mount();
-    const decisions: string[] = [];
+    const clock = makeFakeClock();
+    _askControllerDeps.setTimeout = clock.setTimeout;
+    _askControllerDeps.clearTimeout = clock.clearTimeout;
+    const stopAll = mock(async () => {});
+    const confirm = createCloseConfirm({
+      asks: ui.asks,
+      logger: makeLogger(),
+      tasks: { running: () => [{ id: "bash-1a2b3c4d" }], stopAll },
+    });
+    const decisions: boolean[] = [];
     Object.assign(ui.host, {
-      confirmJobsBeforeClose: async () => {
-        decisions.push(
-          await ui.asks.requestHostApproval({
-            tool: "nax-jobs__close",
-            summary: "Cancel owned jobs before quitting?",
-            reason: "Yes cancels. No keeps running.",
-          }),
-        );
+      confirmBeforeClose: async () => {
+        const result = await confirm();
+        decisions.push(result);
+        return result;
       },
     });
-    await ui.quit();
-    expect(ui.lastFrame()).toContain("Cancel owned jobs before quitting?");
-    expect(ui.lastFrame()).toContain("1. Yes");
+    await ui.press(CTRL_C);
+    expect(ui.lastFrame()).toContain("1. Quit and stop them");
+    expect(ui.lastFrame()).toContain("2. Stay in chat");
     expect(ui.asks.pending()).toHaveLength(1);
     expect(ui.close).not.toHaveBeenCalled();
-    await ui.press(CTRL_C);
-    expect(ui.asks.pending()).toHaveLength(1);
-    await ui.press("1");
-    expect(decisions).toEqual(["allow"]);
-    expect(ui.asks.pending()).toHaveLength(0);
-    expect(ui.close).toHaveBeenCalledTimes(1);
+    if (action === "timeout") await flush(() => clock.advance(DEFAULT_HOST_APPROVAL_TIMEOUT_MS));
+    else await ui.press(action === "escape" ? "\x1b" : "1");
+    expect(decisions).toEqual([action === "stop"]);
+    expect(ui.asks.pending()).toEqual([]);
+    expect(ui.close).toHaveBeenCalledTimes(action === "stop" ? 1 : 0);
+    expect(stopAll).toHaveBeenCalledTimes(action === "stop" ? 1 : 0);
+    if (action !== "stop") {
+      await ui.press("still chatting");
+      expect(ui.lastFrame()).toContain("still chatting");
+    }
   });
 
   test("US-015 AC-13 host without confirmation still closes on quit", async () => {

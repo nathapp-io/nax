@@ -1,4 +1,3 @@
-import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "@/config";
 import type { Logger } from "@/logger";
 import type { ChatAskController } from "../ask-controller";
@@ -24,7 +23,6 @@ export function createHostJobs(options: HostJobsOptions): {
   chains: ChatChains;
   provider: ReturnType<typeof createJobsProvider>;
   guard: ReturnType<typeof createJobWriteGuard>;
-  confirmClose: () => Promise<void>;
   close: () => void;
   sessionChanged: () => void;
 } {
@@ -57,30 +55,11 @@ export function createHostJobs(options: HostJobsOptions): {
     sessionGeneration++;
     chains.stop("chat session changed");
   };
-  const confirmClose = async (): Promise<void> => {
-    close();
-    const owned = jobs.owned();
-    if (!owned.length) return;
-    const decision = await approve({
-      tool: "nax-jobs__close",
-      summary: `${owned.length} nax job(s) still running: ${owned.map((job) => job.id).join(", ")}`,
-      reason: "Yes cancels them. No keeps them running in the background; a later nax chat in this repo picks them up.",
-    });
-    if (decision !== "allow") return;
-    for (const job of owned) {
-      try {
-        await jobs.cancel(job.id);
-      } catch (cause) {
-        options.logger.warn("chat", "Failed to cancel nax job on close", { jobId: job.id, error: errorMessage(cause) });
-      }
-    }
-  };
   return {
     jobs,
     chains,
     provider,
     guard: createJobWriteGuard(jobs, options.repoRoot),
-    confirmClose,
     close,
     sessionChanged,
   };

@@ -122,11 +122,11 @@ export function useChatKeys({ host, running, refresh, onError, onNotice }: ChatK
   }
   async function close(): Promise<void> {
     if (closing.current || confirming.current) return;
-    if (host.confirmJobsBeforeClose) {
+    if (host.confirmBeforeClose) {
       confirming.current = true;
       try {
         // Keep the ask card answerable: closing/locked are only set after confirmation.
-        await host.confirmJobsBeforeClose();
+        if ((await host.confirmBeforeClose()) === false) return;
       } catch (error) {
         onError(error);
         return;

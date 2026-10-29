@@ -23,6 +23,7 @@ import { clampModelEffort, EFFORT_LEVELS, type EffortLevel, withEffort } from ".
 import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import { type ChatMode, chatModeOfMeta } from "./chat-mode";
 import { tierModels } from "./chat-models";
+import { createCloseConfirm } from "./close-confirm";
 import { type ChatJobs, createHostJobs } from "./jobs";
 import { type ChatHistory, type ChatSessionHandle, openChatSession } from "./open-chat-session";
 import type { ChatResources } from "./resources";
@@ -72,7 +73,7 @@ export interface ChatHost {
   readonly asks: ChatAskController;
   readonly jobs?: ChatJobs;
   readonly tasks?: ChatBackgroundTasks;
-  readonly confirmJobsBeforeClose?: () => Promise<void>;
+  readonly confirmBeforeClose?: () => Promise<boolean>;
   current(): ChatHostState;
   history?(): ChatHistory;
   effortLevels?(model: string): readonly EffortLevel[];
@@ -115,7 +116,7 @@ class NativeChatHost implements ChatHost {
   readonly asks: ChatAskController;
   readonly jobs?: ChatJobs;
   readonly tasks?: ChatBackgroundTasks;
-  readonly confirmJobsBeforeClose?: () => Promise<void>;
+  readonly confirmBeforeClose?: () => Promise<boolean>;
   private readonly hostJobs?: ReturnType<typeof createHostJobs>;
   private readonly fallback: AskFallback;
   private readonly hygiene: ReturnType<typeof createSessionHygiene>;
@@ -168,7 +169,6 @@ class NativeChatHost implements ChatHost {
         : undefined;
     this.hostJobs = hostJobs;
     this.jobs = hostJobs?.jobs;
-    this.confirmJobsBeforeClose = hostJobs?.confirmClose;
     const rules = deps.config.context.rules;
     this.loopHandlers = Object.freeze([
       ...(deps.resources?.pluginHandlers ?? []),
@@ -199,6 +199,14 @@ class NativeChatHost implements ChatHost {
       this.toolProviders = resources.catalog.agents.length
         ? [...providers, createAgentsProvider({ catalog: resources.catalog, run: this.runs.run })]
         : providers;
+    }
+    if (hostJobs || this.tasks) {
+      this.confirmBeforeClose = createCloseConfirm({
+        hostJobs,
+        tasks: this.tasks,
+        asks: this.asks,
+        logger: deps.logger,
+      });
     }
     this.fallback = createAskFallback({
       controller: this.asks,
