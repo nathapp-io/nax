@@ -307,10 +307,10 @@ describe("openAcpSession: the tool host (spec §6.3 steps 3-4, §6.6)", () => {
     expect(fake.kills()).toBe(1);
   });
 
-  test("an agent without pre-approval (codex): CAPABILITY_UNSUPPORTED tools; the host never starts", async () => {
+  test("an agent without pre-approval or MCP call identity (gemini): CAPABILITY_UNSUPPORTED tools; the host never starts", async () => {
     const { host, counts } = stubHost();
     const { opened } = await openWithTools({ capabilities: { mcpCapabilities: { http: true } } }, host, {
-      agent: "codex",
+      agent: "gemini",
     });
     expect(sessionError(await rejection(opened)).context).toMatchObject({ capability: "tools" });
     expect(counts.starts).toBe(0);

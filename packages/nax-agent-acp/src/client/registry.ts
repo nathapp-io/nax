@@ -62,6 +62,11 @@ export interface AgentRegistryEntry {
   readonly defaultMode: ModeSetting | undefined;
   /** How embedder tools are pre-approved at the adapter (R12); undefined means tools are unsupported. */
   readonly preApproval: "claudeCode.allowedTools" | undefined;
+  /**
+   * The structured `rawInput` shape this agent reports MCP tool calls in, so nax can
+   * recognise its own tool host's calls (acp-tools-codex-cursor). Undefined: no known shape.
+   */
+  readonly mcpCallIdentity: "codex" | "cursor" | undefined;
   /** Variables passed through the env allowlist so the adapter can authenticate itself (§6.2). */
   readonly authEnv: readonly string[];
 }
@@ -110,7 +115,7 @@ function entry(
   name: AcpAgentName,
   launch: LaunchCandidate[],
   authEnv: string[],
-  policy?: Pick<AgentRegistryEntry, "readOnly" | "defaultMode" | "preApproval">,
+  policy?: Pick<AgentRegistryEntry, "readOnly" | "defaultMode" | "preApproval" | "mcpCallIdentity">,
 ): AgentRegistryEntry {
   return Object.freeze({
     name,
@@ -118,6 +123,7 @@ function entry(
     readOnly: freezeReadOnly(policy?.readOnly),
     defaultMode: policy?.defaultMode === undefined ? undefined : Object.freeze({ ...policy.defaultMode }),
     preApproval: policy?.preApproval,
+    mcpCallIdentity: policy?.mcpCallIdentity,
     authEnv: Object.freeze([...authEnv]),
   });
 }
@@ -142,6 +148,7 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
         },
         defaultMode: { configId: "mode", value: "default" },
         preApproval: "claudeCode.allowedTools",
+        mcpCallIdentity: undefined,
       },
     ),
   ],
@@ -161,6 +168,7 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
       },
       defaultMode: undefined,
       preApproval: undefined,
+      mcpCallIdentity: "codex",
     }),
   ],
   // nax#2372: cursor's own modes do not enforce anything (probed: mode `ask` let a forced
@@ -183,6 +191,7 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
       },
       defaultMode: undefined,
       preApproval: undefined,
+      mcpCallIdentity: "cursor",
     }),
   ],
   // nax#2372: gemini's `plan` mode is its read-only mode (read tools only, no shell
@@ -200,6 +209,7 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
       },
       defaultMode: undefined,
       preApproval: undefined,
+      mcpCallIdentity: undefined,
     }),
   ],
   // nax#2372: opencode has no read-only mode (its `plan` agent still runs shell and web
@@ -225,6 +235,7 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
       },
       defaultMode: undefined,
       preApproval: undefined,
+      mcpCallIdentity: undefined,
     }),
   ],
   // Exact pin: a tilde range does not pin 0.0.x.
@@ -245,6 +256,7 @@ const REGISTRY: ReadonlyMap<AcpAgentName, AgentRegistryEntry> = new Map([
       },
       defaultMode: undefined,
       preApproval: undefined,
+      mcpCallIdentity: undefined,
     }),
   ],
 ]);

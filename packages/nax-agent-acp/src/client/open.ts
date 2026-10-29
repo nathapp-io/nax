@@ -264,10 +264,15 @@ async function sessionSetup(o: Opening, sandbox: SandboxPolicy | undefined): Pro
     },
   );
   if (o.host === undefined) return meta === undefined ? { mcpServers: [] } : { mcpServers: [], _meta: { ...meta } };
-  if (meta === undefined) throw capabilityUnsupported("tools", "the agent has no way to pre-approve embedder tools");
+  // An agent with no pre-approval channel but a known MCP call identity (codex, cursor) gets the
+  // host entry alone: nax recognises its calls by their shape, not by an adapter-side allow rule.
+  if (meta === undefined && o.options.entry?.mcpCallIdentity === undefined) {
+    throw capabilityUnsupported("tools", "the agent has no way to pre-approve embedder tools");
+  }
   const server = await o.host.start().catch((err: unknown) => {
     throw backendUnavailable(`the tool host could not start: ${err instanceof Error ? err.message : String(err)}`);
   });
+  if (meta === undefined) return { mcpServers: [server] };
   return { mcpServers: [server], _meta: { ...meta } };
 }
 

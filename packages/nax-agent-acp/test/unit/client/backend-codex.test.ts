@@ -214,25 +214,14 @@ describe("codex runs the read-only profiles on its own read-only mode (nax#2372)
     expect(fake.kills()).toBe(1);
   });
 
-  test("read with an embedder tool is still refused: codex has no pre-approval channel", async () => {
-    const fake = inMemoryAgent({
-      configOptions: CODEX_CONFIG_OPTIONS,
-      capabilities: { mcpCapabilities: { http: true } },
+  test("read with an embedder tool opens: one http MCP server, no _meta (codex has no pre-approval channel)", async () => {
+    const o = await open("read", {
+      tools: [LOOKUP],
+      script: { capabilities: { mcpCapabilities: { http: true } } },
     });
-    _acpBackendDeps.launch = fake.launch;
-    const err = sessionError(
-      await rejection(
-        createAgentSession({
-          backend: acpBackend({ agent: "codex", allowUnsandboxed: true, command: "fake-codex" }),
-          profile: "read",
-          workdir,
-          tools: [LOOKUP],
-          transcriptStore: createMemoryTranscriptStore(),
-        }),
-      ),
-    );
-    expect(err.code).toBe("AGENT_SESSION_CAPABILITY_UNSUPPORTED");
-    expect(err.context).toMatchObject({ capability: "tools" });
+    const [created] = o.fake.callsTo("session/new") as { mcpServers: { type: string }[]; _meta?: unknown }[];
+    expect(created?.mcpServers.map((server) => server.type)).toEqual(["http"]);
+    expect(created !== undefined && "_meta" in created).toBe(false);
   });
 });
 

@@ -317,8 +317,8 @@ describe("agents that cannot take tools (D4-j)", () => {
     expect(fake.callsTo("session/new")).toEqual([]);
   });
 
-  test("codex (no pre-approval): CAPABILITY_UNSUPPORTED tools", async () => {
-    const { err } = await refused("codex", { capabilities: { mcpCapabilities: { http: true } } });
+  test("gemini (no pre-approval, no MCP call identity): CAPABILITY_UNSUPPORTED tools", async () => {
+    const { err } = await refused("gemini", { capabilities: { mcpCapabilities: { http: true } } });
     expect(err.context).toMatchObject({ capability: "tools" });
   });
 

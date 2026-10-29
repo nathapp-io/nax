@@ -45,6 +45,7 @@ describe("buildCapabilityRecord (spec §6.3 step 2)", () => {
       mcpHttp: true,
       readOnlyMode: true,
       preApproval: true,
+      ownToolCalls: false,
     });
   });
 
@@ -57,6 +58,7 @@ describe("buildCapabilityRecord (spec §6.3 step 2)", () => {
       mcpHttp: false,
       readOnlyMode: false,
       preApproval: false,
+      ownToolCalls: false,
     });
   });
 
@@ -107,9 +109,37 @@ describe("unmetRequirement (spec §6.3 step 2, §6.4 enforceability)", () => {
     expect(unmetRequirement(customRecord, { profile: "ask", toolCount: 0, resume: false })).toBeUndefined();
   });
 
-  test("tools need HTTP MCP and pre-approval", () => {
+  test("tools need HTTP MCP and pre-approval or a known MCP call identity", () => {
     const httpOnly = { ...customRecord, mcpHttp: true };
     expect(unmetRequirement(httpOnly, { profile: "full", toolCount: 1, resume: false })?.capability).toBe("tools");
+  });
+
+  test("AC-7: HTTP MCP and the cursor entry: ownToolCalls is true", () => {
+    expect(buildCapabilityRecord(FULL_INIT, registryEntry("cursor")).ownToolCalls).toBe(true);
+  });
+
+  test("AC-8: HTTP MCP and the gemini entry: ownToolCalls is false", () => {
+    expect(buildCapabilityRecord(FULL_INIT, registryEntry("gemini")).ownToolCalls).toBe(false);
+  });
+
+  const FULL_ONE_TOOL = { profile: "full", toolCount: 1, resume: false } as const;
+
+  test("AC-9: HTTP MCP, no pre-approval, own tool calls: tools are met", () => {
+    const own = { ...customRecord, mcpHttp: true, preApproval: false, ownToolCalls: true };
+    expect(unmetRequirement(own, FULL_ONE_TOOL)).toBeUndefined();
+  });
+
+  test("AC-10: own tool calls without HTTP MCP: tools are unmet", () => {
+    const own = { ...customRecord, mcpHttp: false, preApproval: false, ownToolCalls: true };
+    expect(unmetRequirement(own, FULL_ONE_TOOL)).toMatchObject({
+      capability: "tools",
+      reason: "embedder tools need HTTP MCP support and adapter pre-approval or a known MCP call identity",
+    });
+  });
+
+  test("AC-11: HTTP MCP with neither pre-approval nor own tool calls: tools are unmet", () => {
+    const neither = { ...customRecord, mcpHttp: true, preApproval: false, ownToolCalls: false };
+    expect(unmetRequirement(neither, FULL_ONE_TOOL)?.capability).toBe("tools");
   });
 
   test("resume needs session/resume or loadSession", () => {

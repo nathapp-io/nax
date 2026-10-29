@@ -26,6 +26,8 @@ export type CapabilityRecord = {
   readonly readOnlyMode: boolean;
   /** The registry knows how to pre-approve embedder tools at the adapter (R12). */
   readonly preApproval: boolean;
+  /** The registry knows the structured shape this agent reports MCP tool calls in. */
+  readonly ownToolCalls: boolean;
 };
 
 export interface Requirements {
@@ -67,6 +69,7 @@ export function buildCapabilityRecord(
     mcpHttp: caps.mcpCapabilities?.http === true,
     readOnlyMode: entry?.readOnly !== undefined,
     preApproval: entry?.preApproval !== undefined,
+    ownToolCalls: entry?.mcpCallIdentity !== undefined,
   });
 }
 
@@ -85,8 +88,11 @@ export function unmetRequirement(record: CapabilityRecord, req: Requirements): U
       reason: `profile "${req.profile}" needs read-only enforcement; this agent has none`,
     };
   }
-  if (req.toolCount > 0 && !(record.mcpHttp && record.preApproval)) {
-    return { capability: "tools", reason: "embedder tools need HTTP MCP support and adapter pre-approval" };
+  if (req.toolCount > 0 && !(record.mcpHttp && (record.preApproval || record.ownToolCalls))) {
+    return {
+      capability: "tools",
+      reason: "embedder tools need HTTP MCP support and adapter pre-approval or a known MCP call identity",
+    };
   }
   if (req.resume && !(record.resume || record.loadSession)) {
     return { capability: "resume", reason: "the agent supports neither session/resume nor session/load" };
