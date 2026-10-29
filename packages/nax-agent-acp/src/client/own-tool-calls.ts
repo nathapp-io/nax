@@ -48,6 +48,13 @@ export interface OwnToolLedger {
   isOwn(toolCallId: string): boolean;
 }
 
+/** At most this many distinct tool call ids are tracked per turn (the ledger lives for one turn). */
+export const MAX_OWN_TOOL_CALLS = 512;
+/** An id longer than this is never tracked, so never own. */
+export const MAX_OWN_TOOL_CALL_ID_CHARS = 256;
+/** A server or tool name longer than this is stored as a conflict (never own), not kept. */
+export const MAX_OWN_TOOL_FIELD_CHARS = 256;
+
 /** An id's evidence: its one identity, or `conflict` once two different ones were reported. */
 type Evidence = { readonly server: string; readonly tool: string } | "conflict";
 
@@ -64,7 +71,11 @@ export function createOwnToolLedger(input: {
       if (identity === undefined) return;
       const known = seen.get(identity.toolCallId);
       if (known === undefined) {
-        seen.set(identity.toolCallId, { server: identity.server, tool: identity.tool });
+        // Fail closed at the bounds: an id never stored is never own.
+        if (seen.size >= MAX_OWN_TOOL_CALLS || identity.toolCallId.length > MAX_OWN_TOOL_CALL_ID_CHARS) return;
+        const oversized =
+          identity.server.length > MAX_OWN_TOOL_FIELD_CHARS || identity.tool.length > MAX_OWN_TOOL_FIELD_CHARS;
+        seen.set(identity.toolCallId, oversized ? "conflict" : { server: identity.server, tool: identity.tool });
       } else if (known !== "conflict" && (known.server !== identity.server || known.tool !== identity.tool)) {
         seen.set(identity.toolCallId, "conflict");
       }

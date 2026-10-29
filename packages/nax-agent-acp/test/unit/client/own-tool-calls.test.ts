@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { SessionUpdate } from "@agentclientprotocol/sdk";
-import { createOwnToolLedger, mcpCallIdentityOf } from "#src/client/own-tool-calls";
+import {
+  createOwnToolLedger,
+  MAX_OWN_TOOL_CALL_ID_CHARS,
+  MAX_OWN_TOOL_CALLS,
+  MAX_OWN_TOOL_FIELD_CHARS,
+  mcpCallIdentityOf,
+} from "#src/client/own-tool-calls";
 
 const SERVER = "nax-0badc0de";
 
@@ -172,6 +178,30 @@ describe("createOwnToolLedger", () => {
     ledger.observe(patchUpdate("c2", cursorRaw()));
     expect(ledger.isOwn("c1")).toBe(true);
     expect(ledger.isOwn("c2")).toBe(false);
+  });
+
+  test("past MAX_OWN_TOOL_CALLS distinct ids, new ids are never own; tracked ids still update", () => {
+    const ledger = cursorLedger();
+    for (let i = 0; i < MAX_OWN_TOOL_CALLS; i++) ledger.observe(patchUpdate(`id${i}`, cursorRaw()));
+    ledger.observe(patchUpdate("overflow", cursorRaw()));
+    expect(ledger.isOwn("overflow")).toBe(false);
+    expect(ledger.isOwn("id0")).toBe(true);
+    ledger.observe(patchUpdate("id0", cursorRaw({ toolName: "other" })));
+    expect(ledger.isOwn("id0")).toBe(false);
+  });
+
+  test("an id longer than MAX_OWN_TOOL_CALL_ID_CHARS is never tracked", () => {
+    const ledger = cursorLedger();
+    const long = "x".repeat(MAX_OWN_TOOL_CALL_ID_CHARS + 1);
+    ledger.observe(patchUpdate(long, cursorRaw()));
+    expect(ledger.isOwn(long)).toBe(false);
+  });
+
+  test("an oversized server or tool name is never own, even if it is in toolNames", () => {
+    const long = "y".repeat(MAX_OWN_TOOL_FIELD_CHARS + 1);
+    const ledger = createOwnToolLedger({ kind: "cursor", serverName: long, toolNames: [long] });
+    ledger.observe(patchUpdate("t1", { providerIdentifier: long, toolName: long }));
+    expect(ledger.isOwn("t1")).toBe(false);
   });
 
   test("ids are tracked independently", () => {
