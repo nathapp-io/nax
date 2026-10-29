@@ -9,9 +9,21 @@ interface JobsOptions {
   readonly deliver: (notice: string) => Promise<boolean>;
 }
 
-/** Subscribe to jobs and acknowledge FIFO notices only after a turn really started. */
-export function useJobs(host: ChatHost, { idle, deliver }: JobsOptions): readonly ChatJob[] {
+export const MAX_CONSECUTIVE_TASK_NOTICE_TURNS = 3;
+
+/** Deliver job notices first, then bounded autonomous task turns, only while idle. */
+export function useJobs(
+  host: ChatHost,
+  { idle, deliver }: JobsOptions,
+): {
+  running: readonly ChatJob[];
+  /** Foreground availability refreshed by the same task subscription as notices. */
+  backgroundable: boolean;
+  noteUserTurn(): void;
+} {
   const jobs = host.jobs;
+  const tasks = host.tasks;
+  const taskTurns = useRef(0);
   const [, refresh] = useState(0);
   const latestDeliver = useRef(deliver);
   latestDeliver.current = deliver;
@@ -20,26 +32,35 @@ export function useJobs(host: ChatHost, { idle, deliver }: JobsOptions): readonl
 
   useEffect(() => {
     mounted.current = true;
-    const unsubscribe = jobs?.onChange(() => refresh((revision) => revision + 1));
+    const changed = () => refresh((revision) => revision + 1);
+    const unsubscribe = jobs?.onChange(changed);
+    const unsubscribeTasks = tasks?.onChange(changed);
     return () => {
       mounted.current = false;
       unsubscribe?.();
+      unsubscribeTasks?.();
     };
-  }, [jobs]);
+  }, [jobs, tasks]);
 
   // Check on every render: an idle transition or a job notification can unblock the head.
   useEffect(() => {
-    if (!idle || !jobs || inFlight.current) return;
-    const notice = jobs.peekNotice();
+    if (!idle || inFlight.current) return;
+    const jobNotice = jobs?.peekNotice();
+    const source =
+      jobNotice !== undefined ? jobs : taskTurns.current < MAX_CONSECUTIVE_TASK_NOTICE_TURNS ? tasks : undefined;
+    const notice = jobNotice ?? source?.peekNotice();
     if (notice === undefined) return;
     inFlight.current = true;
     void (async () => {
       let delivered = false;
       try {
         delivered = await latestDeliver.current(notice);
-        if (delivered) jobs.takeNotice();
+        if (delivered) {
+          source?.takeNotice();
+          if (source === tasks) taskTurns.current++;
+        }
       } catch (error) {
-        getLogger()?.warn("chat", "Job notice delivery failed; notice retained", { error: errorMessage(error) });
+        getLogger()?.warn("chat", "Background notice delivery failed; notice retained", { error: errorMessage(error) });
       } finally {
         inFlight.current = false;
         // Drain the next head even when the turn's final render preceded this continuation.
@@ -48,5 +69,11 @@ export function useJobs(host: ChatHost, { idle, deliver }: JobsOptions): readonl
       }
     })();
   });
-  return jobs?.running() ?? [];
+  return {
+    running: jobs?.running() ?? [],
+    backgroundable: tasks?.hasForeground() ?? false,
+    noteUserTurn: () => {
+      taskTurns.current = 0;
+    },
+  };
 }

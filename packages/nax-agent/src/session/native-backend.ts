@@ -4,6 +4,7 @@
  * with built-in and embedder tools, the NativeSessionAdapter, loop handlers
  * and the resume model check.
  */
+import { backgroundToolOptions } from "#src/coding-tools/coding-tool-extras";
 import { getLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { DEFAULT_SPIN_BREAKER_SETTINGS } from "#src/infra/spin-breaker/index";
@@ -122,6 +123,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     askOnUnsandboxed: posture.askOnUnsandboxed,
     askDiscoveredTools: posture.askDiscoveredTools,
     commandShadow: raw.hostPorts?.commandShadow,
+    ...backgroundToolOptions(raw.hostPorts),
     // US-003: the profile's validated opt-in, so an interactive "full" session
     // can offer Bash's per-call escape without turning the sandbox off.
     ...(allowUnsandboxedCommands ? { unsandboxedCommands: true } : {}),

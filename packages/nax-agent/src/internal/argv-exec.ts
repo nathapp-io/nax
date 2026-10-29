@@ -37,6 +37,10 @@ export interface RunArgvOptions {
    * and the result resolves with `aborted: true`. US-001.
    */
   readonly signal?: AbortSignal;
+  /** Abort to remove only the deadline, without cancelling the command. */
+  readonly releaseDeadline?: AbortSignal;
+  /** Observes every read chunk before capture; observer exceptions are ignored. */
+  readonly onOutput?: (stream: "stdout" | "stderr", chunk: Uint8Array) => void;
 }
 
 export interface ArgvExecResult {
@@ -125,7 +129,11 @@ interface StreamDrain {
  * after a process-group kill: a child that ignores the kill cannot pin
  * runArgv forever on its still-open pipe.
  */
-async function drainToEof(stream: ReadableStream<Uint8Array>, signal?: AbortSignal): Promise<StreamDrain> {
+async function drainToEof(
+  stream: ReadableStream<Uint8Array>,
+  signal?: AbortSignal,
+  onChunk?: (chunk: Uint8Array) => void,
+): Promise<StreamDrain> {
   const reader = stream.getReader();
   const capture = new BoundedCapture(_argvExecDeps.streamCaptureBytes);
   const onAbort = (): void => {
@@ -140,7 +148,15 @@ async function drainToEof(stream: ReadableStream<Uint8Array>, signal?: AbortSign
     while (true) {
       const { done, value } = await reader.read();
       if (done === true) break;
-      if (value !== undefined) capture.push(value);
+      if (value !== undefined) {
+        try {
+          // Copy even Buffer-backed chunks: observers must not mutate captured bytes.
+          onChunk?.(Uint8Array.from(value));
+        } catch {
+          // Observers are best-effort: never let one truncate capture or stop draining.
+        }
+        capture.push(value);
+      }
     }
   } catch {
     // Stream cancelled by SIGKILL on the process group; the partial text
@@ -212,6 +228,24 @@ class BoundedCapture {
   }
 }
 
+/** The deadline is releasable independently of command cancellation and drain grace. */
+function armDeadline(options: RunArgvOptions, onTimeout: () => void): () => void {
+  let timerId: unknown;
+  const release = (): void => {
+    if (timerId !== undefined) _argvExecDeps.clearTimeout(timerId);
+    timerId = undefined;
+  };
+  if (options.releaseDeadline?.aborted !== true) {
+    // A cancellable timer: releaseDeadline and settlement both clear it mid-flight.
+    timerId = _argvExecDeps.setTimeout(onTimeout, options.timeoutMs);
+    options.releaseDeadline?.addEventListener("abort", release, { once: true });
+  }
+  return () => {
+    release();
+    options.releaseDeadline?.removeEventListener("abort", release);
+  };
+}
+
 export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> {
   const signal = options.signal;
   // Already-aborted signal: never spawn. The caller gets `aborted: true` with
@@ -253,14 +287,14 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
   // BUG-13: unlike every git call (routed through gitWithTimeout), a spawn
   // with no deadline can block its caller forever on a hung install
   // (registry/NFS stall).
-  const timerId = _argvExecDeps.setTimeout(() => {
+  const clearDeadline = armDeadline(options, () => {
     timedOut = true;
     // MEM-4: proc.kill() reaches only the direct child, orphaning postinstall
     // grandchildren. killProcessGroup(pid, "SIGKILL") kills the whole group
     // (negative pid), falling back to the single process on ESRCH.
     killGroup();
     stopReaders();
-  }, options.timeoutMs);
+  });
 
   // US-001: an abort races the timeout. One listener, removed on every settle
   // path so a never-aborted signal never leaks a registration (AC10).
@@ -278,60 +312,62 @@ export async function runArgv(options: RunArgvOptions): Promise<ArgvExecResult> 
   // to settle (via reader.cancel()) after we kill the process group. US-001
   // requires that settlement stay bounded even when a background process
   // inherits the pipe and ignores the SIGKILL.
-  const stdoutPromise = drainToEof(proc.stdout, stdoutController.signal);
-  const stderrPromise = drainToEof(proc.stderr, stderrController.signal);
-  const exitCode = await proc.exited;
+  try {
+    const stdoutPromise = drainToEof(proc.stdout, stdoutController.signal, options.onOutput?.bind(undefined, "stdout"));
+    const stderrPromise = drainToEof(proc.stderr, stderrController.signal, options.onOutput?.bind(undefined, "stderr"));
+    const exitCode = await proc.exited;
 
-  // Post-exit drain grace. After exit, the streams MUST close — they were
-  // owned by the shell, which is now dead. Background processes that
-  // inherited the pipe (the `&` case) keep it open: that's the orphan.
-  const graceMs = _argvExecDeps.drainGraceMs;
-  // Cleared on every settle path: a successful command whose readers close
-  // before the grace elapses would otherwise leave a pending timer whose
-  // callback fires 500ms later and resolves an orphaned promise. Under load
-  // the leaked registrations accumulate in the timer wheel for nothing.
-  let graceTimerId: unknown;
-  const gracePromise = new Promise<"expired">((resolve) => {
-    graceTimerId = _argvExecDeps.setTimeout(() => resolve("expired"), graceMs);
-  });
-  const stdoutSettled = await Promise.race([
-    stdoutPromise,
-    gracePromise.then((): StreamDrain | "expired" => "expired"),
-  ]);
-  const stderrSettled = await Promise.race([
-    stderrPromise,
-    gracePromise.then((): StreamDrain | "expired" => "expired"),
-  ]);
-  if (graceTimerId !== undefined) _argvExecDeps.clearTimeout(graceTimerId);
+    // Post-exit drain grace. After exit, the streams MUST close — they were
+    // owned by the shell, which is now dead. Background processes that
+    // inherited the pipe (the `&` case) keep it open: that's the orphan.
+    const graceMs = _argvExecDeps.drainGraceMs;
+    // Cleared on every settle path: a successful command whose readers close
+    // before the grace elapses would otherwise leave a pending timer whose
+    // callback fires 500ms later and resolves an orphaned promise. Under load
+    // the leaked registrations accumulate in the timer wheel for nothing.
+    let graceTimerId: unknown;
+    const gracePromise = new Promise<"expired">((resolve) => {
+      graceTimerId = _argvExecDeps.setTimeout(() => resolve("expired"), graceMs);
+    });
+    const stdoutSettled = await Promise.race([
+      stdoutPromise,
+      gracePromise.then((): StreamDrain | "expired" => "expired"),
+    ]);
+    const stderrSettled = await Promise.race([
+      stderrPromise,
+      gracePromise.then((): StreamDrain | "expired" => "expired"),
+    ]);
+    if (graceTimerId !== undefined) _argvExecDeps.clearTimeout(graceTimerId);
 
-  const stdoutClosed = stdoutSettled !== "expired";
-  const stderrClosed = stderrSettled !== "expired";
+    const stdoutClosed = stdoutSettled !== "expired";
+    const stderrClosed = stderrSettled !== "expired";
 
-  if (!stdoutClosed || !stderrClosed) {
-    orphansKilled = true;
-    killGroup();
-    // The OS should close the pipes once the group dies; race that against
-    // a small post-kill budget. If a holdout somehow ignores SIGKILL or is
-    // not yet reaped, abort the matching reader controller — that drives
-    // `reader.cancel()` in drainToEof, which forces the pending `read()` to
-    // resolve with `done: true` and bounds settlement.
-    if (!stdoutClosed) stdoutController.abort();
-    if (!stderrClosed) stderrController.abort();
+    if (!stdoutClosed || !stderrClosed) {
+      orphansKilled = true;
+      killGroup();
+      // The OS should close the pipes once the group dies; race that against
+      // a small post-kill budget. If a holdout somehow ignores SIGKILL or is
+      // not yet reaped, abort the matching reader controller — that drives
+      // `reader.cancel()` in drainToEof, which forces the pending `read()` to
+      // resolve with `done: true` and bounds settlement.
+      if (!stdoutClosed) stdoutController.abort();
+      if (!stderrClosed) stderrController.abort();
+    }
+
+    // Always await the readers to harvest whatever they captured.
+    const stdoutFinal = stdoutClosed ? (stdoutSettled as StreamDrain) : await stdoutPromise;
+    const stderrFinal = stderrClosed ? (stderrSettled as StreamDrain) : await stderrPromise;
+
+    return {
+      exitCode,
+      stdout: stdoutFinal.text,
+      stderr: stderrFinal.text,
+      timedOut,
+      aborted,
+      orphansKilled,
+    };
+  } finally {
+    clearDeadline();
+    signal?.removeEventListener("abort", onAbort);
   }
-
-  // Always await the readers to harvest whatever they captured.
-  const stdoutFinal = stdoutClosed ? (stdoutSettled as StreamDrain) : await stdoutPromise;
-  const stderrFinal = stderrClosed ? (stderrSettled as StreamDrain) : await stderrPromise;
-
-  _argvExecDeps.clearTimeout(timerId);
-  signal?.removeEventListener("abort", onAbort);
-
-  return {
-    exitCode,
-    stdout: stdoutFinal.text,
-    stderr: stderrFinal.text,
-    timedOut,
-    aborted,
-    orphansKilled,
-  };
 }

@@ -8,10 +8,23 @@ export {
   createChatAskController,
   DEFAULT_HOST_APPROVAL_TIMEOUT_MS,
   type HostApprovalCard,
+  type HostChoiceAsk,
+  type HostChoiceCard,
 } from "./ask-controller";
 export { _askFallbackDeps, type AskFallback, type AskFallbackOptions, createAskFallback } from "./ask-fallback";
 export { type ChatAgentRow, formatAgentsListing } from "./chat-agents-listing";
-export { cycleEffort, EFFORT_LEVELS, type EffortLevel, isEffortLevel, modelEffort, withEffort } from "./chat-effort";
+export {
+  clampEffort,
+  clampModelEffort,
+  cycleEffort,
+  EFFORT_LEVELS,
+  type EffortLevel,
+  effortLevelsFor,
+  isEffortLevel,
+  modelEffort,
+  type SupportedEffort,
+  withEffort,
+} from "./chat-effort";
 export {
   _chatHostDeps,
   type ChatHost,
@@ -39,7 +52,7 @@ export {
   chatSessionSettings,
   nextChatMode,
 } from "./chat-mode";
-export { type ChatModelChoicesInput, chatModelChoices, tierModels } from "./chat-models";
+export { type ChatModelChoicesInput, chatEffortLevels, chatModelChoices, tierModels } from "./chat-models";
 export { type ChatJob, type ChatJobs, formatJobsListing } from "./jobs";
 export {
   _openChatSessionDeps,

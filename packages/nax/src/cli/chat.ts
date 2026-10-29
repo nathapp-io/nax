@@ -4,11 +4,12 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import chalk from "chalk";
 import type { Command } from "commander";
 import type { Instance } from "ink";
-import { listCatalogModels } from "@/agents/catalog";
+import { listCatalogModels, lookupThinkingLevels } from "@/agents/catalog";
 import {
   type ChatHost,
   type ChatHostState,
   type ChatResources,
+  chatEffortLevels,
   chatModelChoices,
   createChatHost,
   createChatMcp,
@@ -45,6 +46,7 @@ export const _chatCommandDeps = {
   naxEntry: (): readonly string[] | undefined =>
     process.argv[1] === undefined ? undefined : [process.execPath, process.argv[1]],
   listCatalogModels,
+  lookupThinkingLevels,
   stdinIsTTY: (): boolean => process.stdin.isTTY === true,
   ensureTrusted: async (cwd: string): Promise<void> => {
     await ensureProjectTrusted(await normalizeTrustPath(resolveTrustRoot(cwd)), { interactive: true });
@@ -245,6 +247,11 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
     : await deps.loadConfig(naxDir ?? undefined);
   const repoRoot = naxDir ? dirname(naxDir) : cwd;
   const models = await discoverModels(config, deps);
+  const effortLevels = await chatEffortLevels({
+    config,
+    models: options.model === undefined ? models : [...models, options.model],
+    lookupThinkingLevels: deps.lookupThinkingLevels,
+  });
   const resources = await chatResources(repoRoot, config, deps);
   const log = (stage: string, message: string): void => deps.writeErr(`[${stage}] ${message}`);
   const logger = getSafeLogger() ?? { warn: log, error: log, info: log, debug: log };
@@ -255,6 +262,7 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
   try {
     host = deps.createChatHost({
       models,
+      effortLevels,
       ...(naxEntry === undefined ? {} : { naxEntry }),
       config,
       cwd,

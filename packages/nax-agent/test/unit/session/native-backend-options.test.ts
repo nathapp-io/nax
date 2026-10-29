@@ -18,6 +18,29 @@ function code(fn: () => unknown): string | undefined {
   return undefined;
 }
 
+describe("parseNativeBackendOptions: backgroundCommands", () => {
+  test("AC-1 accepts adopt and foreground, preserving port identity", () => {
+    const backgroundCommands = { adopt() {}, foreground() {} };
+    const input = { model: "openai/x", hostPorts: { backgroundCommands } };
+    expect(() => parseNativeBackendOptions(input)).not.toThrow();
+    expect(parseNativeBackendOptions(input).raw).toBe<unknown>(input);
+  });
+
+  test.each(
+    [{ adopt() {} }, { adopt: true, foreground() {} }, null, []].map((backgroundCommands) => ({ backgroundCommands })),
+  )("AC-2 rejects malformed background port %j with its exact path", ({ backgroundCommands }) => {
+    expect(() => parseNativeBackendOptions({ model: "openai/x", hostPorts: { backgroundCommands } })).toThrow(
+      "backend.hostPorts.backgroundCommands",
+    );
+  });
+
+  test("unknown host port keys remain rejected", () => {
+    expect(code(() => parseNativeBackendOptions({ model: "openai/x", hostPorts: { unknownPort: {} } }))).toBe(
+      "AGENT_SESSION_INVALID_OPTIONS",
+    );
+  });
+});
+
 describe("parseNativeBackendOptions", () => {
   test("accepts a provider/model and derives the provider", () => {
     expect(parseNativeBackendOptions({ model: "openai/gpt-5.4-mini" }).provider).toBe("openai");

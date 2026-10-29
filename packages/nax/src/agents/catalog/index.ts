@@ -26,7 +26,7 @@
  * (`../../*` and `../../**`) does not flag it.
  */
 
-import type { Catalog, Pricing, RawProvider } from "@nathapp/nax-ai";
+import type { Catalog, Pricing, RawProvider, ThinkingLevel } from "@nathapp/nax-ai";
 import { defaultProviders, normaliseCatalog } from "@nathapp/nax-ai";
 import pkg from "@/_pkg";
 
@@ -169,6 +169,21 @@ export async function lookupContextWindow(provider: string, model: string): Prom
   } catch {
     // Fail-open per AC-4: a misbehaving `catalog.model()` is reported as an
     // unknown context window, never as a rejected lookup.
+    return undefined;
+  }
+}
+
+/** Declared effort capabilities; unknown metadata must not block chat. */
+export async function lookupThinkingLevels(
+  provider: string,
+  model: string,
+): Promise<readonly ThinkingLevel[] | undefined> {
+  const catalog = await loadCatalog(_catalogDeps.loadProviders);
+  if (catalog === null) return undefined;
+  try {
+    return catalog.model(provider, model)?.thinkingLevels;
+  } catch {
+    // Fail-open like context-window lookup: a broken catalog leaves capabilities unknown.
     return undefined;
   }
 }

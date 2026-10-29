@@ -71,6 +71,10 @@ BASH_TIMEOUT_MS
 BASH_TOOL_NAME
 type BackendInfo
 type BackendOpenContext
+type BackgroundCommandEnd
+type BackgroundCommandHandle
+type BackgroundCommandPort
+type BackgroundCommandSink
 type BashLexResult
 type BashRedirect
 type BashSegment
@@ -129,6 +133,7 @@ type ExecTarget
 type ExternalHandlerOf
 type FailedTurnSpend
 type FinalOutcome
+type ForegroundCommand
 GIT_ESCAPE_FLAGS
 GIT_READ_VERBS
 type GitLayout

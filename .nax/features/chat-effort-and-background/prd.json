@@ -1,0 +1,930 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-effort-and-background",
+  "branchName": "feat/chat-effort-and-background",
+  "createdAt": "2026-10-29T00:00:00.000Z",
+  "updatedAt": "2026-10-29T06:09:04.041Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Resolve and clamp chat effort levels per model",
+      "description": "**Goal** — Make chat effort capabilities follow model metadata from catalog discovery through session switching.\n\n**Motivation** — The catalog marks `medium` unsupported for several models (`deepseek-v4.1-flash`, `glm-5.3`, `hy3`, ...).\n\n**Approach** — `src/chat/chat-effort.ts` — read-only: `EFFORT_LEVELS` (all eight, canonical order), `isEffortLevel`, `modelEffort`, `withEffort`.\n- Target: `cycleEffort(level: EffortLevel, step: 1 | -1, levels: readonly EffortLevel[] = EFFORT_LEVELS): EffortLevel` steps within `levels`. When `level` is not in `levels`, step `1` returns the first entry whose `EFFORT_LEVELS` rank is higher than `level`'s (wrapping to `levels[0]`); step `-1` returns the last entry with a lower rank (wrapping to the last entry).\n- New `export type SupportedEffort = Exclude<EffortLevel, \"default\">` (derived from nax-agent's `THINKING_LEVELS`, already imported here). `ThinkingLevel` from `@nathapp/nax-ai` may be named only under `src/agents/catalog/` (`check:nax-ai-imports`), so every chat-side signature below uses `SupportedEffort`; nax-ai's `ThinkingLevel` is structurally the same union.\n- New `effortLevelsFor(supported: readonly SupportedEffort[] | undefined): readonly EffortLevel[]`: `[\"default\", ...entries of supported in EFFORT_LEVELS order]`; `EFFORT_LEVELS` when `undefined`; `[\"default\"]` for `[]`.\n- New `clampEffort(level, levels)`: `level` when listed (`default` always is); otherwise the listed non-default level nearest in `EFFORT_LEVELS` rank, a tie going to the lower one (mirrors nax-ai's `clampThinkingLevel`); `default` when no non-default level is listed.\n- New `clampModelEffort(model: string, levels: readonly EffortLevel[]): string` = `withEffort(model, clampEffort(modelEffort(model), levels))`.\n- All exported from `src/chat/index.ts` beside the existing effort exports.\n`src/agents/catalog/index.ts` (the only nax-ai importer): new `lookupThinkingLevels(provider: string, model: string): Promise<readonly ThinkingLevel[] | undefined>` (the one site that names nax-ai's `ThinkingLevel`), same fail-open contract as `lookupContextWindow`: `catalog.model(provider, model)?.thinkingLevels`, `undefined` on miss, load failure or throw.\n`src/chat/chat-models.ts`: new `chatEffortLevels(input: { config; models: readonly string[]; lookupThinkingLevels }): Promise<ReadonlyMap<string, readonly EffortLevel[]>>` keyed by base model (`provider/id`, no effort suffix); a `config.agent.native.catalogOverrides` entry's `thinkingLevels` wins over the catalog; a model that neither declares is left out.\n`src/cli/chat.ts`: `_chatCommandDeps` gains `lookupThinkingLevels`; the command composes the map for the model choices plus the session's starting model (when `--model` names one) and passes it as `ChatHostDeps.effortLevels`. A model outside the map (for example a resumed session's model that is not among the choices) falls back to `EFFORT_LEVELS`; that is intended.\n`src/chat/chat-host.ts`: `ChatHostDeps` gains `readonly effortLevels?: ReadonlyMap<string, readonly EffortLevel[]>`. `ChatHost` gains the **optional** method `effortLevels?(model: string): readonly EffortLevel[]` (optional like `agents?` and `history?`, so inline test hosts keep compiling); the native host returns the map entry for the base model, else `EFFORT_LEVELS`. Callers read `host.effortLevels?.(model) ?? EFFORT_LEVELS`. `switchTo({ model })` passes the requested model through `clampModelEffort`.\n\n**Scope** — In: effort algorithms, catalog seam, override precedence, CLI composition, optional host capability and switch clamp. Out: picker/slash/key consumers belong to US-002; Changing nax-ai's `clampThinkingLevel` or the pi-ai catalog data. Changing effort handling in `nax run` / `nax plan` profiles: only the chat TUI changes. Extend chat-effort, chat-models, CLI chat, host switch and existing catalog context-window tests; existing two-argument cycleEffort tables continue passing. Exact createChatHost deps assertions accept the new map while models remains unchanged.\n\n**Interface** — `export type SupportedEffort = Exclude<EffortLevel, \"default\">`; `cycleEffort(level: EffortLevel, step: 1 | -1, levels: readonly EffortLevel[] = EFFORT_LEVELS): EffortLevel`; `effortLevelsFor(supported: readonly SupportedEffort[] | undefined): readonly EffortLevel[]`; `clampModelEffort(model: string, levels: readonly EffortLevel[]): string`; `lookupThinkingLevels(provider: string, model: string): Promise<readonly ThinkingLevel[] | undefined>`; `chatEffortLevels(input: { config; models: readonly string[]; lookupThinkingLevels }): Promise<ReadonlyMap<string, readonly EffortLevel[]>>`.",
+      "acceptanceCriteria": [
+        "[unit] effortLevelsFor([\"low\", \"high\", \"max\"]) returns [\"default\", \"low\", \"high\", \"max\"].",
+        "[unit] effortLevelsFor([\"max\", \"low\"]) returns [\"default\", \"low\", \"max\"].",
+        "[unit] effortLevelsFor(undefined) returns EFFORT_LEVELS.",
+        "[unit] effortLevelsFor([]) returns [\"default\"].",
+        "[unit] cycleEffort(\"max\", 1, [\"default\", \"low\", \"high\", \"max\"]) returns \"default\".",
+        "[unit] cycleEffort(\"default\", 1, [\"default\", \"low\", \"high\", \"max\"]) returns \"low\".",
+        "[unit] cycleEffort(\"medium\", 1, [\"default\", \"low\", \"high\", \"max\"]) returns \"high\".",
+        "[unit] cycleEffort(\"medium\", -1, [\"default\", \"low\", \"high\", \"max\"]) returns \"low\".",
+        "[unit] cycleEffort(\"high\", 1) with no third argument returns \"xhigh\".",
+        "[unit] clampEffort(\"medium\", [\"default\", \"low\", \"high\", \"max\"]) returns \"low\".",
+        "[unit] clampEffort(\"xhigh\", [\"default\", \"low\", \"high\", \"max\"]) returns \"high\".",
+        "[unit] clampEffort(\"high\", [\"default\"]) returns \"default\".",
+        "[unit] clampModelEffort(\"p/m[medium]\", [\"default\", \"low\", \"high\"]) returns \"p/m[low]\".",
+        "[unit] With _catalogDeps.loadProviders resolving a catalog whose opencode-go/deepseek-v4.1-flash has thinkingLevels [\"low\", \"high\", \"max\"], lookupThinkingLevels(\"opencode-go\", \"deepseek-v4.1-flash\") resolves [\"low\", \"high\", \"max\"].",
+        "[unit] With _catalogDeps.loadProviders rejecting, lookupThinkingLevels(\"p\", \"m\") resolves undefined.",
+        "[unit] chatEffortLevels for models [\"p/m[high]\"] with lookupThinkingLevels resolving [\"low\", \"max\"] returns a map whose \"p/m\" entry is [\"default\", \"low\", \"max\"].",
+        "[unit] chatEffortLevels with config.agent.native.catalogOverrides [{ provider: \"p\", models: [{ id: \"m\", thinkingLevels: [\"high\"], ... }] }] and lookupThinkingLevels resolving [\"low\"] maps \"p/m\" to [\"default\", \"high\"].",
+        "[unit] A native chat host created with effortLevels mapping \"p/m\" to [\"default\", \"low\", \"high\", \"max\"] returns that list from effortLevels(\"p/m[high]\").",
+        "[unit] A native chat host created with effortLevels mapping only \"p/m\" returns EFFORT_LEVELS from effortLevels(\"p/other\").",
+        "[unit] A native chat host whose effortLevels maps \"p/m\" to [\"default\", \"low\", \"high\", \"max\"], on switchTo({ model: \"p/m[medium]\" }), opens the next session with model \"p/m[low]\".",
+        "[integration] Seam: the nax chat command composition, with _chatCommandDeps.listCatalogModels returning [\"p/m\"] and _chatCommandDeps.lookupThinkingLevels returning [\"low\", \"max\"] for p/m, calls createChatHost with deps whose effortLevels maps \"p/m\" to [\"default\", \"low\", \"max\"].",
+        "[unit] lookupThinkingLevels(\"p\", \"unknown\") resolves undefined when the model is missing from the catalog.",
+        "[unit] lookupThinkingLevels(\"p\", \"m\") resolves undefined when catalog.model throws."
+      ],
+      "tags": [
+        "chat",
+        "effort",
+        "catalog",
+        "session"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module catalog/CLI composition and session reopen behavior; strict strategy applies because this story modifies sessions.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/chat-effort.ts",
+        "packages/nax/src/agents/catalog/index.ts",
+        "packages/nax/src/chat/chat-models.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/cli/chat.ts"
+      ],
+      "suggestedCriteria": [
+        "chatEffortLevels maps an explicit override thinkingLevels: [] to [\"default\"] even when the catalog lists levels.",
+        "The nax chat command resolves effortLevels for an explicit --model absent from model choices without changing the models array.",
+        "clampEffort(\"default\", [\"default\", \"low\"]) returns \"default\"."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/chat-effort.test.ts",
+          "reason": "the `cycleEffort` table calls the two-argument form; it keeps passing because `levels` defaults to `EFFORT_LEVELS`, and new rows add the three-argument form."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/chat.test.ts",
+          "reason": "composition tests that pin the exact `createChatHost` deps object must accept the new `effortLevels` map; the invariant is that `models` is unchanged and `effortLevels` holds an entry per model whose levels are known."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f0d1d692d14a2464b3c42c3e3ec07df60da91eae"
+    },
+    {
+      "id": "US-002",
+      "title": "Use model effort levels in pickers, slash commands and ctrl+t",
+      "description": "**Goal** — Offer only supported effort in chat controls and add a one-key effort cycle with queued combined switches.\n\n**Motivation** — Switching effort today needs `/effort` plus a picker; the user wants one key.\n\n**Approach** — `src/tui/chat/picker-model.ts`: `PickerModelInput` gains `readonly effortLevels?: readonly EffortLevel[]` (absent = `EFFORT_LEVELS`); the `\"effort\"` picker lists those entries.\n`src/tui/chat/useChatPicker.ts`: `modelOf` passes the current model's levels; `cycle` passes the entry model's levels to `cycleEffort`.\n`src/tui/chat/slash-commands.ts`: `effortCommand` validates against the current model's levels.\nctrl+t (ink: `key.ctrl` and `input === \"t\"`): next = `cycleEffort(modelEffort(model), 1, levels)`. Idle → `runControl(() => host.switchTo({ model: withEffort(model, next) }))`. During a turn → queued; repeated presses advance from the queued model. `queued` becomes `{ mode?: ChatMode; model?: string }`, and `finishTurn` applies a queued mode and a queued effort as **one** `host.switchTo(...)` call whose argument omits absent keys (a mode-only queue still calls `switchTo({ mode })`).\nCallers read `host.effortLevels?.(model) ?? EFFORT_LEVELS`.\nFailure messages: `/effort <level>` not offered by the model → `effort \"<level>\" is not available for <model>; use one of: <levels>`; no switch. `/effort <word>` not a level → `unknown effort \"<word>\"; use one of: <model's levels>`; no switch.\n\n**Scope** — In: picker rows and left/right cycles, /effort validation, ctrl+t, object queue and one combined finishTurn switch. Out: core lookup/clamp belongs to US-001; ctrl+b/footer belongs to US-011; close-confirm rename belongs to US-013. Keep existing all-eight UI fixtures working when effortLevels is absent. Extend effort-command.test.tsx and picker-effort.test.tsx; create effort-keys.test.tsx with a fixture switchTo that updates current().\n\n**Interface** — `readonly effortLevels?: readonly EffortLevel[]`; `queued` becomes `{ mode?: ChatMode; model?: string }`; `host.effortLevels?.(model) ?? EFFORT_LEVELS`; `cycleEffort(modelEffort(model), 1, levels)`.",
+      "acceptanceCriteria": [
+        "[integration] With the session on p/m and host.effortLevels returning [\"default\", \"low\", \"high\", \"max\"], /effort opens an effort picker whose entry values are exactly [\"default\", \"low\", \"high\", \"max\"].",
+        "[integration] With the session on p/m and those levels, /effort medium shows effort \"medium\" is not available for p/m; use one of: default, low, high, max.",
+        "[integration] With the session on p/m and those levels, /effort medium does not call host.switchTo.",
+        "[integration] With the session on p/m and those levels, /effort bogus shows unknown effort \"bogus\"; use one of: default, low, high, max.",
+        "[integration] With the session on p/m and those levels, /effort bogus does not call host.switchTo.",
+        "[integration] In the model picker, pressing right on entry p/m with effort max and host.effortLevels returning [\"default\", \"low\", \"high\", \"max\"] sets that entry's effort label to default.",
+        "[integration] With the session idle on p/m[max] and those levels, pressing ctrl+t calls host.switchTo with { model: \"p/m\" }.",
+        "[integration] With the session idle on p/m, those levels, and a fixture switchTo that updates current(), pressing ctrl+t calls host.switchTo with { model: \"p/m[low]\" }.",
+        "[integration] With a turn running on p/m[low] and those levels, pressing ctrl+t twice makes no host.switchTo call before the turn ends.",
+        "[integration] With a turn running on p/m[low] and those levels, pressing ctrl+t twice leads, after the turn ends, to exactly one host.switchTo call, with { model: \"p/m[max]\" }.",
+        "[integration] With a turn running on p/m in mode guarded and those levels, pressing shift+tab then ctrl+t leads, after the turn ends, to exactly one host.switchTo call, with { mode: \"full\", model: \"p/m[low]\" }.",
+        "[integration] With a turn running in mode guarded, pressing only shift+tab leads, after the turn ends, to exactly one host.switchTo call, with { mode: \"full\" } and no model key.",
+        "[integration] With host.effortLevels absent, /effort opens a picker whose entry values equal EFFORT_LEVELS in the existing canonical order, preserving the all-eight-level fixture behavior."
+      ],
+      "tags": [
+        "chat",
+        "effort",
+        "tui",
+        "session"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Several UI consumers plus batched controls and session/permission-mode switching require strict session isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/picker-model.ts",
+        "packages/nax/src/tui/chat/useChatPicker.ts",
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/tui/chat/useChatKeys.ts",
+        "packages/nax/test/helpers/chat-picker.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/effort-keys.test.tsx"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/effort-command.test.tsx",
+          "reason": "\"AC-7 AC-8 AC-9 shows eight ordered levels with current marked\" asserts the picker always lists all of `EFFORT_LEVELS`; the picker now lists the model's levels, so that fixture's host leaves `effortLevels` undefined (falling back to all eight) for the expectation to hold."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/picker-effort.test.tsx",
+          "reason": "the model-picker cycle test expects `cycleEffort(\"high\", 1)` over all eight levels; cycling steps within the entry model's levels, so the expectation passes the same `levels` the fixture host returns (all eight when it defines none)."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e70304f36ba230f9e29e410e8c3a230cabaf97f1"
+    },
+    {
+      "id": "US-003",
+      "title": "Release argv deadlines and tee output through the sandbox launcher",
+      "description": "**Goal** — Extend command execution with a releasable deadline and a resilient per-chunk output observer.\n\n**Motivation** — A long test suite, build or dev server blocks the conversation for the whole `Bash` call (up to `BASH_TIMEOUT_MS`, 300 s), and a dev server cannot run at all.\n\n**Approach** — `src/internal/argv-exec.ts` — `RunArgvOptions` gains:\n- `readonly releaseDeadline?: AbortSignal` — on abort the deadline timer is cleared; already aborted at spawn means no deadline timer is armed; `timedOut` then stays `false`. Its listener is removed on every settle path.\n- `readonly onOutput?: (stream: \"stdout\" | \"stderr\", chunk: Uint8Array) => void` — called with every chunk `drainToEof` reads, in read order, before capture; a throwing callback is swallowed and the drain continues.\n`src/sandbox/types.ts`: `LaunchRequest` gains both fields; `src/sandbox/launcher.ts` forwards both to `runArgv` on the wrapped and the unwrapped path, as it forwards `signal`.\n\n**Scope** — In: additive executor and LaunchRequest options, both launcher paths, timer/listener cleanup and output callback exception isolation. Out: Bash background handles and migration of cancellation ownership belong to US-004/005; no change to ordinary timeout, cancellation, bounded capture or orphan cleanup. Extend argv-exec.test.ts and launcher.test.ts with _argvExecDeps timers; retain existing no-options behavior.\n\n**Interface** — `readonly releaseDeadline?: AbortSignal`; `readonly onOutput?: (stream: \"stdout\" | \"stderr\", chunk: Uint8Array) => void`.",
+      "acceptanceCriteria": [
+        "[unit] runArgv with timeoutMs 1000 and a releaseDeadline signal aborted before the fake clock reaches 1000 ms does not kill the command at 1000 ms.",
+        "[unit] runArgv with timeoutMs 1000 and a releaseDeadline aborted before 1000 ms resolves with timedOut: false.",
+        "[unit] runArgv with an already-aborted releaseDeadline never calls _argvExecDeps.setTimeout with timeoutMs as the delay.",
+        "[unit] runArgv with a releaseDeadline that never aborts removes its abort listener from that signal by the time it resolves.",
+        "[unit] runArgv with an onOutput spy, for a command printing a to stdout, calls the spy with \"stdout\" and the bytes of a.",
+        "[unit] runArgv with an onOutput spy, for a command printing b to stderr, calls the spy with \"stderr\" and the bytes of b.",
+        "[unit] runArgv with an onOutput that throws on every call still resolves the full stdout of the command.",
+        "[unit] runArgv with neither option kills a hung command at timeoutMs and resolves timedOut: true.",
+        "[unit] The sandbox launcher's run with releaseDeadline and onOutput set calls _launcherDeps.runArgv with both fields on the wrapped path.",
+        "[unit] The sandbox launcher's run with unwrapped: true and both fields set calls _launcherDeps.runArgv with both fields on the unwrapped path."
+      ],
+      "tags": [
+        "exec",
+        "sandbox",
+        "background"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Two optional executor hooks extend the existing timer and drain implementation and are forwarded through two launcher paths; the scope is bounded, but sandbox/process-cancellation safety requires strict TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/internal/argv-exec.ts",
+        "packages/nax-agent/src/sandbox/launcher.ts",
+        "packages/nax-agent/src/sandbox/types.ts",
+        "packages/nax-agent/test/unit/internal/argv-exec.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Aborting the ordinary signal after releaseDeadline was aborted still kills the process group and resolves aborted: true.",
+        "runArgv removes the releaseDeadline abort listener when proc.exited rejects."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "013c0d131c70677bc1e8f391f2cb7a44aa271e80"
+    },
+    {
+      "id": "US-004",
+      "title": "Add opt-in runInBackground to Bash with nonrejecting handles",
+      "description": "**Goal** — Let a host-enabled Bash call return a task id immediately while the existing launch path keeps running.\n\n**Motivation** — The user wants to keep chatting while it runs and be told when it ends (user, 2026-10-29).\n\n**Approach** — Background commands run **inside the nax chat process**, through the same `Bash` tool path as a foreground command: command policy, approval card, OS sandbox, interceptor rewrite. Detached commands that outlive the chat were rejected because they cannot be sandboxed.\n`src/tools/bash.ts`: `BashToolOptions` gains `readonly background?: BackgroundCommandPort`.\n- Absent: schema, description and behaviour exactly as today.\n- Present: `bashToolInputSchema` adds `runInBackground: { type: \"boolean\" }`; the description appends one sentence saying the call returns at once with a task id and a notice arrives when the command ends. Use this exact appended sentence: `Set \"runInBackground\": true to return at once with a task id; a notice arrives when the command ends.`\n- `runInBackground: true`: the tool starts `launchIntercepted` without awaiting it, with a tool-owned `AbortController` (never `ctx.signal`) and an already-aborted `releaseDeadline`; adopts the handle with `origin: \"agent\"`; forwards every `onOutput` chunk to the sink; returns `{ content: \"started in the background as <id>\", isError: false }`. If the launch promise rejects, `ended` resolves `{ exitCode: -1, timedOut: false, aborted: false, launchError: <message> }` — never an unhandled rejection.\n- The interceptor's `postProcess` is not applied to background output.\n- New logic lives in `bash-background.ts` helpers so `createBashTool.run` stays within its `check:complexity` baseline.\n`nax-tasks__stop` needs no approval card: it only stops a command this chat started. Stopping is immediate: the process group is SIGKILLed, as a turn cancel does today.\n\n**Scope** — In: new port contracts/helpers, optional Bash schema/description, explicit background execution, streaming sink and launch-failure settlement. Out: foreground movement/replay belongs to US-005; session port threading and public exports to US-006; registry/provider to US-007..009. Background commands that survive quitting `nax chat`: rejected by the user, because detached commands cannot run in the OS sandbox. Background support for the `RunCommand` tool's argv branch: only `Bash` gains `runInBackground`. Interceptor `postProcess` rewriting of background command output. Create bash-background.test.ts using _bashToolDeps.runArgv; preserve existing Bash tests with no background option.\n\n**Interface** — New `src/tools/bash-background.ts`:\n```ts\nexport type BackgroundStream = \"stdout\" | \"stderr\";\nexport interface BackgroundCommandEnd {\n  readonly exitCode: number;     // -1 when the launch itself failed\n  readonly timedOut: boolean;\n  readonly aborted: boolean;\n  /** Set when the launch rejected (sandbox wrap failure, interceptor throw, spawn failure). */\n  readonly launchError?: string;\n}\nexport interface BackgroundCommandHandle {\n  readonly command: string;\n  readonly description?: string;\n  readonly origin: \"agent\" | \"moved\";\n  readonly ended: Promise<BackgroundCommandEnd>;   // never rejects\n  /** Immediately SIGKILLs the process group; `ended` then resolves with `aborted: true`. */\n  stop(): void;\n}\nexport interface BackgroundCommandSink {\n  readonly id: string;\n  append(stream: BackgroundStream, chunk: Uint8Array): void;\n}\nexport interface ForegroundCommand {\n  readonly command: string;\n  moveToBackground(): void;\n}\nexport interface BackgroundCommandPort {\n  adopt(handle: BackgroundCommandHandle): BackgroundCommandSink;\n  /** A foreground Bash call registers while it runs; the returned function unregisters it. */\n  foreground(call: ForegroundCommand): () => void;\n}\n```",
+      "acceptanceCriteria": [
+        "[unit] createBashTool({}) returns an input schema with no runInBackground property.",
+        "[unit] createBashTool({}) returns a description byte-for-byte identical to today's pre-feature description on the same platform, preserving the existing no-background tool wording.",
+        "[unit] createBashTool({ background: port }) returns an input schema with a boolean runInBackground property.",
+        "[unit] createBashTool({ background: port }) returns a description ending with the background sentence: Set \"runInBackground\": true to return at once with a task id; a notice arrives when the command ends.",
+        "[unit] With background: port whose adopt returns sink id bash-1a2b3c4d, run({ command: \"sleep 9\", runInBackground: true }) resolves with content started in the background as bash-1a2b3c4d while the stubbed runArgv promise is still pending.",
+        "[unit] With background: port, run({ command: \"sleep 9\", runInBackground: true }) resolves with isError false.",
+        "[unit] With background: port, a runInBackground: true call passes runArgv an already-aborted releaseDeadline.",
+        "[unit] With background: port, a runInBackground: true call passes runArgv a signal that is not ctx.signal.",
+        "[unit] With background: port, a runInBackground: true call for sleep 9 adopts a handle whose origin is \"agent\".",
+        "[unit] With background: port, a runInBackground: true call for sleep 9 adopts a handle whose command is \"sleep 9\".",
+        "[unit] With background: port, aborting ctx.signal after a runInBackground: true call returned does not abort the signal passed to runArgv.",
+        "[unit] With background: port, calling the adopted handle's stop() aborts the signal passed to runArgv.",
+        "[unit] With background: port, when the stubbed runArgv invokes onOutput(\"stdout\", chunk) with a Uint8Array encoding x for a runInBackground: true call, the sink's append receives \"stdout\" and the same bytes of x.",
+        "[unit] With background: port, when runArgv resolves { exitCode: 3, timedOut: false } for a runInBackground: true call, the handle's ended resolves with exitCode 3.",
+        "[unit] With background: port, when the stubbed runArgv rejects with Error(\"wrap failed\") for a runInBackground: true call, the handle's ended resolves { exitCode: -1, timedOut: false, aborted: false, launchError: \"wrap failed\" }.",
+        "[unit] With background: port, when the stubbed runArgv rejects for a runInBackground: true call, no unhandled promise rejection is raised."
+      ],
+      "tags": [
+        "bash",
+        "background",
+        "sandbox",
+        "api"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New asynchronous process-lifetime abstraction must preserve command policy, approvals and sandbox execution.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/tools/bash.ts",
+        "packages/nax-agent/src/internal/exec-framing.ts",
+        "packages/nax-agent/test/unit/tools/bash.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/tools/bash-background.ts",
+        "packages/nax-agent/test/unit/tools/bash-background.test.ts"
+      ],
+      "suggestedCriteria": [
+        "A runInBackground call with a configured launcher reaches launcher.run rather than bypassing the launcher.",
+        "A runInBackground call does not invoke interceptor.postProcess when its command ends."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "912938f63c04e22e113ca83a78eb6f779a347cbb"
+    },
+    {
+      "id": "US-005",
+      "title": "Move active foreground Bash calls into the background",
+      "description": "**Goal** — Release a pending Bash tool result while retaining its running command, replay tail and future streamed output.\n\n**Motivation** — A long test suite, build or dev server blocks the conversation for the whole `Bash` call (up to `BASH_TIMEOUT_MS`, 300 s), and a dev server cannot run at all.\n\n**Approach** — Foreground call while the port is present: launch with a tool-owned controller that `ctx.signal` aborts, register `port.foreground({ command, moveToBackground })`, keep the most recent `FOREGROUND_REPLAY_BYTES` of `onOutput` chunks, unregister when the call settles. `moveToBackground()` (1) aborts the call's `releaseDeadline`, (2) detaches `ctx.signal` so a later turn cancel no longer kills the command, (3) adopts with `origin: \"moved\"`, replays the kept chunks to the sink in order, then forwards later ones, and (4) resolves the pending Bash tool call with `{ content: \"moved to the background as <id>\", isError: false }`; the `moveToBackground(): void` callback itself returns no tool result. `moveToBackground()` after the call settled does nothing.\nThe interceptor's `postProcess` is not applied to background output. New logic lives in `bash-background.ts` helpers so `createBashTool.run` stays within its `check:complexity` baseline.\nBackground commands have no deadline; a command moved with ctrl+b drops its 300 s deadline.\nResource caps, named constants beside the code that uses them: `FOREGROUND_REPLAY_BYTES` (1 MiB, the pre-move output kept for replay; oldest bytes dropped first).\n\n**Scope** — In: foreground registration/unregistration, move signal ownership, deadline release, one adoption, ordered bounded replay and early tool return. Out: explicit background launch contract belongs to US-004; session forwarding to US-006; ctrl+b binding and footer to US-011. Preserve no-port foreground behavior. Extend upstream bash-background.ts and create bash-background-move.test.ts with deferred launch settlement and cancellation spies.\n\n**Interface** — `export interface ForegroundCommand { readonly command: string; moveToBackground(): void; }`; `foreground(call: ForegroundCommand): () => void`; `moveToBackground()` releases the tool result with `{ content: \"moved to the background as <id>\", isError: false }`, while its public method returns void.",
+      "acceptanceCriteria": [
+        "[unit] With background: port, a foreground run({ command: \"bun test\" }) calls port.foreground once with command: \"bun test\".",
+        "[unit] With background: port, when a foreground run({ command: \"bun test\" }) settles, the function port.foreground returned is called once.",
+        "[unit] With background: port whose adopt returns sink id bash-1a2b3c4d, calling the registered call's moveToBackground() while runArgv is pending resolves the tool call with content moved to the background as bash-1a2b3c4d.",
+        "[unit] With background: port, a tool call moved by moveToBackground() resolves with isError false.",
+        "[unit] With background: port, moveToBackground() aborts the releaseDeadline passed to runArgv.",
+        "[unit] With background: port, moveToBackground() adopts a handle whose origin is \"moved\".",
+        "[unit] With background: port, chunks emitted through onOutput before moveToBackground() are appended to the sink in emission order before any later chunk.",
+        "[unit] With background: port, when FOREGROUND_REPLAY_BYTES plus 10 bytes are emitted before the move, the replay appended to the sink is at most FOREGROUND_REPLAY_BYTES long.",
+        "[unit] With background: port, when more than FOREGROUND_REPLAY_BYTES are emitted before the move, the replay appended to the sink ends with the last emitted byte.",
+        "[unit] With background: port, aborting ctx.signal after moveToBackground() does not abort the signal passed to runArgv.",
+        "[unit] With background: port, aborting ctx.signal on a foreground call before any move aborts the signal passed to runArgv.",
+        "[unit] With background: port, calling moveToBackground() after the foreground call resolved does not call port.adopt.",
+        "[unit] Without a background port, a foreground Bash call still forwards ctx.signal unchanged to runArgv, preserving the existing turn-cancellation path.",
+        "[unit] With background: port but no move, a foreground Bash call whose launch resolves exitCode 0, stdout x, stderr empty and timedOut false returns content \"exit 0\\nx\\n\", preserving the existing formatExecBody framing."
+      ],
+      "tags": [
+        "bash",
+        "background",
+        "cancellation",
+        "sandbox"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Racing foreground completion, process-group cancellation and sandboxed output handoff is security-sensitive lifecycle work.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/tools/bash.ts",
+        "packages/nax-agent/src/tools/bash-background.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/tools/bash-background-move.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Calling moveToBackground twice on the same registered call invokes port.adopt exactly once.",
+        "When a moved launch rejects, its adopted handle's ended resolves a launchError without an unhandled rejection."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "039bd89729c7eea2388fda8aef49b6164face2e5"
+    },
+    {
+      "id": "US-006",
+      "title": "Thread background commands through native sessions and export port types",
+      "description": "**Goal** — Connect the public session host port to the opt-in Bash capability without changing sessions that omit it.\n\n**Motivation** — The user wants to keep chatting while it runs and be told when it ends (user, 2026-10-29).\n\n**Approach** — `src/session/agent-session-types.ts`: `AgentSessionHostPorts` gains `readonly backgroundCommands?: BackgroundCommandPort`.\n`src/session/native-backend-options.ts`: the `hostPorts` strict schema accepts `backgroundCommands` validated with `hasMethods([\"adopt\", \"foreground\"])`, message `\"must implement adopt and foreground\"`.\nThreading, mirroring `unsandboxedCommands`: `native-backend.ts` passes `raw.hostPorts?.backgroundCommands` into `buildSessionToolSupport` as `backgroundCommands` → `session-tool-support.ts` → `buildCodingToolSupport` → `coding-tool-extras.ts` → `createBashTool({ background })`. Each hop omits the key when absent, through a spread helper like `unsandboxedToolOptions`, so `coding-tool-support.ts` stays within its complexity baseline.\nThe five port types are exported from the package entry `@nathapp/nax-agent`; the API snapshot `packages/nax-agent/api/nax-agent.api.txt` is regenerated with `bun run api:update`.\n\n**Scope** — In: host-port type and strict schema, complete production threading, named package exports and API snapshot, session-level advertisement/adoption regressions. Out: tool algorithms belong to US-004/005; chat host wiring belongs to US-010; only Bash gains background support, not RunCommand's argv branch. Extend native-backend-options.test.ts and existing native-backend tests; strict unknown hostPorts rejection remains. New _deps hooks, if needed, are internal exports only.\n\n**Interface** — `readonly backgroundCommands?: BackgroundCommandPort`; `BackgroundCommandPort`, `BackgroundCommandHandle`, `BackgroundCommandSink`, `BackgroundCommandEnd` and `ForegroundCommand` are named type exports from `@nathapp/nax-agent`.",
+      "acceptanceCriteria": [
+        "[unit] parseNativeBackendOptions({ model: \"openai/x\", hostPorts: { backgroundCommands: { adopt() {}, foreground() {} } } }) does not throw.",
+        "[unit] parseNativeBackendOptions({ model: \"openai/x\", hostPorts: { backgroundCommands: { adopt() {} } } }) throws an error whose message contains backend.hostPorts.backgroundCommands.",
+        "[integration] Seam: a session opened with nativeBackend({ model, hostPorts: { backgroundCommands: port } }) and profile full advertises a Bash tool whose input schema has runInBackground.",
+        "[integration] A session opened with nativeBackend({ model }) and profile full, without the port, advertises Bash without runInBackground.",
+        "[integration] In a session opened with nativeBackend({ model, hostPorts: { backgroundCommands: port } }), a model Bash call with runInBackground: true reaches port.adopt once.",
+        "[unit] BackgroundCommandPort, BackgroundCommandHandle, BackgroundCommandSink, BackgroundCommandEnd and ForegroundCommand are importable as types from @nathapp/nax-agent, and an object { adopt, foreground } type-checks as BackgroundCommandPort."
+      ],
+      "tags": [
+        "session",
+        "api",
+        "background",
+        "sandbox"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "This is additive port/schema/export forwarding along the existing unsandboxedToolOptions pattern, not a new runtime abstraction; the public session capability boundary still requires strict TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/session/agent-session-types.ts",
+        "packages/nax-agent/src/session/native-backend-options.ts",
+        "packages/nax-agent/src/session/native-backend.ts",
+        "packages/nax-agent/src/session/session-tool-support.ts",
+        "packages/nax-agent/src/coding-tools/coding-tool-support.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/unit/session/native-backend-options.test.ts",
+          "reason": "any test pinning the accepted `hostPorts` keys as exactly `protectedPaths`, `commandShadow`, `commandInterceptor` must accept `backgroundCommands` as a fourth; unknown `hostPorts` keys are still rejected."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "the public API snapshot gains the five exported port types; regenerate with `bun run api:update` so `check:api` and the public-surface test pass."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "17efc95751948222c64a269cfc410cc83b74f9ef"
+    },
+    {
+      "id": "US-007",
+      "title": "Create host-owned background task records, bounded logs and output",
+      "description": "**Goal** — Track adopted command handles and bounded machine-local logs independently of session lifetime.\n\n**Motivation** — The user wants to keep chatting while it runs and be told when it ends (user, 2026-10-29).\n\n**Approach** — New `src/chat/background/` — `task-types.ts`, `task-registry.ts` and `index.ts`.\nState from `BackgroundCommandEnd`: `aborted` → `stopped`; `launchError` → `failed` with `note`; `exitCode === 0` and not `timedOut` → `succeeded`; otherwise `failed`.\nWhen a task ends by itself, the log gets a final line `[nax] exit code <n>` (or `[nax] launch failed: <launchError>`).\n`_backgroundTaskDeps` exposes `randomHex`, `mkdir`, `appendLog`, `readLog` for tests.\nResource caps, named constants beside the code that uses them: `TASK_LOG_MAX_BYTES` (50 MiB, after which one line `[nax] log limit reached; further output dropped` is written and later chunks are dropped), `TASK_OUTPUT_MAX_LINES` (500, the most lines `output` returns).\nLog append fails → Task keeps running and its state still updates; one `logger.warn`; later chunks dropped. Log reaches `TASK_LOG_MAX_BYTES` → One limit line written; later chunks dropped; task keeps running.\nBackground tasks belong to the chat host, not one session: `/clear`, `/resume`, ctrl+t, shift+tab and `/model` reopen the session and leave tasks running; notices go to the current session.\n\n**Scope** — In: record types/interface, id/path generation, adoption, ordered writes, byte cap/error isolation, state mapping, newest-first list/get/running and bounded tail output. Out: notice consumption, stop/stopAll, foreground tracking and change events are completed in US-008; provider/prompt composition in US-009; host/session lifecycle in US-010. Persisting background task records across chat processes: tasks are in-memory; only logs stay on disk. Pruning old task log files under `<outputDir>/chat-tasks/`, which, like nax job logs, are machine-local and kept. A cap on the number of concurrently running background commands. Create task-registry.test.ts; use dependency seams and controlled handles rather than spawn a detached process. The full target interface below spans this story and US-008.\n\n**Interface** —\n```ts\nexport type BackgroundTaskState = \"running\" | \"succeeded\" | \"failed\" | \"stopped\";\nexport interface BackgroundTask {\n  readonly id: string;               // `bash-<8 lowercase hex>`\n  readonly command: string;\n  readonly description?: string;\n  readonly origin: \"agent\" | \"moved\";\n  readonly startedAt: string;\n  readonly endedAt?: string;\n  readonly state: BackgroundTaskState;\n  readonly exitCode?: number;\n  readonly note?: string;            // launchError, when the launch failed\n  readonly logPath: string;          // <outputDir>/chat-tasks/<id>.log, machine-local\n}\nexport const TASK_ID_PATTERN = /^bash-[0-9a-f]{8}$/;\nexport interface ChatBackgroundTasks extends BackgroundCommandPort {\n  list(): readonly BackgroundTask[];                 // newest first\n  get(id: string): BackgroundTask | undefined;\n  running(): readonly BackgroundTask[];\n  output(id: string, lines?: number): Promise<string>; // last `lines` log lines, default 40\n  stop(id: string): BackgroundTask;                  // NaxError CHAT_TASK_NOT_RUNNING when not running\n  stopAll(): Promise<void>;                          // stops every running task; resolves when all ended\n  moveForeground(): boolean;                         // newest registered foreground call; false when none\n  hasForeground(): boolean;\n  peekNotice(): string | undefined;                  // one coalesced notice for every un-noticed ended task\n  takeNotice(): string | undefined;                  // returns the peeked text; clears exactly those tasks\n  onChange(listener: () => void): () => void;        // adopt, end, foreground register/unregister\n}\nexport function createBackgroundTasks(options: { outputDir: string; now: () => Date; logger: Pick<Logger, \"warn\"> }): ChatBackgroundTasks;\n```",
+      "acceptanceCriteria": [
+        "[unit] With _backgroundTaskDeps.randomHex returning 1a2b3c4d, adopt(handle) returns sink id bash-1a2b3c4d.",
+        "[unit] After adopt returned bash-1a2b3c4d, get(\"bash-1a2b3c4d\") has state running.",
+        "[unit] After adopt returned bash-1a2b3c4d with output dir /o, get(\"bash-1a2b3c4d\") has logPath /o/chat-tasks/bash-1a2b3c4d.log.",
+        "[unit] Chunks passed to a task sink's append are written to that task's log in order.",
+        "[unit] output(\"bash-1a2b3c4d\") for a task whose log holds 50 lines returns the last 40.",
+        "[unit] When an adopted handle's ended resolves exitCode 0 and timedOut false, the task's state becomes succeeded.",
+        "[unit] When an adopted handle's ended resolves exitCode 0, the task's endedAt is set.",
+        "[unit] When an adopted handle's ended resolves exitCode 2, the task's state becomes failed.",
+        "[unit] When an adopted handle's ended resolves exitCode 2, the task log's last line is [nax] exit code 2.",
+        "[unit] When an adopted handle's ended resolves with launchError \"wrap failed\", the task's state becomes failed.",
+        "[unit] When an adopted handle's ended resolves with launchError \"wrap failed\", the task's note is \"wrap failed\".",
+        "[unit] When an adopted handle's ended resolves aborted: true, the task's state becomes stopped.",
+        "[unit] When _backgroundTaskDeps.appendLog rejects, the task still reaches succeeded when its ended resolves exitCode 0.",
+        "[unit] When _backgroundTaskDeps.appendLog rejects on every call, the logger's warn is called exactly once.",
+        "[unit] After TASK_LOG_MAX_BYTES of appended output, the log's next line is [nax] log limit reached; further output dropped.",
+        "[unit] After the log limit line has been written, a later appended chunk is not written to the log.",
+        "[unit] After a task's log append fails, later output chunks are dropped rather than appended.",
+        "[unit] A running task remains running when its log reaches TASK_LOG_MAX_BYTES."
+      ],
+      "tags": [
+        "chat",
+        "background",
+        "logging",
+        "registry"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New asynchronous registry coordinates bounded ordered file output and independent command lifecycle state.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/job-runner.ts",
+        "packages/nax/src/chat/jobs/job-store.ts",
+        "packages/nax/src/chat/jobs/job-types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/background/task-types.ts",
+        "packages/nax/src/chat/background/task-registry.ts",
+        "packages/nax/src/chat/background/index.ts",
+        "packages/nax/test/unit/chat/background/task-registry.test.ts"
+      ],
+      "suggestedCriteria": [
+        "A handle ending with exitCode 0 and timedOut: true produces state failed.",
+        "list() returns tasks in newest-first order."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6c623d0bed60ac1771279db9a19a9568e6aed33c"
+    },
+    {
+      "id": "US-008",
+      "title": "Add coalesced task notices, shutdown and foreground tracking",
+      "description": "**Goal** — Complete the task registry's notice, cancellation and active-foreground control surfaces.\n\n**Motivation** — The user wants to keep chatting while it runs and be told when it ends (user, 2026-10-29).\n\n**Approach** — Only a task that ended by itself (`succeeded` or `failed`) queues a notice; a stopped task does not.\n`peekNotice(): string | undefined` — one coalesced notice for every un-noticed ended task. `takeNotice(): string | undefined` — returns the peeked text; clears exactly those tasks.\n`stop(id: string): BackgroundTask` — NaxError CHAT_TASK_NOT_RUNNING when not running. `stopAll(): Promise<void>` — stops every running task; resolves when all ended. `moveForeground(): boolean` — newest registered foreground call; false when none. `hasForeground(): boolean`. `onChange(listener: () => void): () => void` — adopt, end, foreground register/unregister.\nOnce `stopAll()` has begun, `adopt` stops the new handle at once and records the task as `stopped`.\n`nax-tasks__stop` needs no approval card: it only stops a command this chat started. Stopping is immediate: the process group is SIGKILLed, as a turn cancel does today.\nBackground tasks belong to the chat host, not one session: `/clear`, `/resume`, ctrl+t, shift+tab and `/model` reopen the session and leave tasks running; notices go to the current session.\n\n**Scope** — In: completion snapshots/coalescing, task stop/stopAll including late adoption, latest foreground registration and unregister, lifecycle subscriptions. Out: log/state core belongs to US-007, canonical prompt text/provider to US-009, idle notice delivery/loop guard to US-010. Do not create detached jobs or approval cards. Create task-registry-notices.test.ts using the registry produced by US-007.\n\n**Interface** — `stop(id: string): BackgroundTask`; `stopAll(): Promise<void>`; `moveForeground(): boolean`; `hasForeground(): boolean`; `peekNotice(): string | undefined`; `takeNotice(): string | undefined`; `onChange(listener: () => void): () => void`; `foreground(call: ForegroundCommand): () => void`.",
+      "acceptanceCriteria": [
+        "[unit] A task whose ended resolved aborted: true leaves peekNotice() returning undefined.",
+        "[unit] After two tasks end, one succeeded and one failed, peekNotice() returns one text naming both task ids.",
+        "[unit] After two tasks end, takeNotice() returns the same text peekNotice() returned.",
+        "[unit] After takeNotice() with no further ended task, peekNotice() returns undefined.",
+        "[unit] A task that ends between peekNotice() and takeNotice() stays pending, so the next peekNotice() names only that task.",
+        "[unit] stop(\"bash-1a2b3c4d\") on a running task calls that task handle's stop().",
+        "[unit] stop on a task in state succeeded throws a NaxError with code CHAT_TASK_NOT_RUNNING.",
+        "[unit] stopAll() calls stop() on every running task handle.",
+        "[unit] stopAll() resolves only after every running task's ended has settled.",
+        "[unit] adopt(handle) called after stopAll() has begun calls that handle's stop() immediately.",
+        "[unit] A handle adopted after stopAll() has begun ends as a task with state stopped.",
+        "[unit] moveForeground() calls moveToBackground() on the most recently registered foreground call.",
+        "[unit] moveForeground() with a foreground call registered returns true.",
+        "[unit] moveForeground() with no foreground call registered returns false.",
+        "[unit] hasForeground() is true while a foreground call is registered.",
+        "[unit] hasForeground() is false after that registration's unregister function runs.",
+        "[unit] An onChange listener fires when a handle is adopted.",
+        "[unit] An onChange listener fires when a task ends.",
+        "[unit] An onChange listener fires when a foreground call registers.",
+        "[unit] An onChange listener fires when a foreground call unregisters."
+      ],
+      "tags": [
+        "chat",
+        "background",
+        "notices",
+        "cancellation"
+      ],
+      "dependencies": [
+        "US-007"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Snapshot acknowledgement, late adoption during stopAll and foreground-stack races require isolated lifecycle tests.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/background/task-registry.ts",
+        "packages/nax/src/chat/jobs/job-runner.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/background/task-registry-notices.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Unsubscribing an onChange listener prevents it receiving later registry changes.",
+        "Unregistering the newest foreground call makes moveForeground target the previously registered call."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6d0f949b840ef9eae24460ce34e1c2f95899e8f3"
+    },
+    {
+      "id": "US-009",
+      "title": "Expose nax-tasks tools, task listings and agent prompt builders",
+      "description": "**Goal** — Give the agent bounded inspection and stopping tools plus explicit instructions for background-task outcomes.\n\n**Motivation** — The user wants to keep chatting while it runs and be told when it ends (user, 2026-10-29).\n\n**Approach** — `tasks-provider.ts` — static `ToolProvider`, id `nax-tasks`, stages `[\"*\"]`, `instructions` from the prompt builder below:\n- `list` (no input) → JSON `{ tasks: [{ id, command, state, startedAt, endedAt, exitCode }] }`.\n- `output` (`{ task, lines? }`) → JSON of the task plus `output`; `lines` must be an integer 1..`TASK_OUTPUT_MAX_LINES`.\n- `stop` (`{ task }`) → `stopped task <id>`.\n- Errors: id failing `TASK_ID_PATTERN` → `{ isError: true, content: \"[chat] invalid task id <id>\" }`; unknown → `\"[chat] unknown task <id>\"`; not running → `\"[chat] task <id> is not running\"`; bad `lines` → `\"[chat] lines must be an integer from 1 to 500\"`.\n`host-tasks.ts` — `createHostTasks({ outputDir, now, logger })` returns `{ tasks, provider }`; US-010 wires this into `chat-host.ts`, which stays under the 600-line source limit (it is at 572; any composition that does not fit moves into `host-tasks.ts`).\nNew `src/prompts/builders/background-builder.ts`, exported from `src/prompts/index.ts`:\n- `buildBackgroundTasksInstructions()` — names `Bash` `runInBackground`, `nax-tasks__list`, `nax-tasks__output`, `nax-tasks__stop`, and says a `[nax-tasks]` notice arrives when a background command ends.\n- `buildBackgroundTaskNotice(tasks)` — one line per task `[nax-tasks] background command <id> (<command>) ended: <state>, exit code <n>, log <logPath>`, then `Read its output with `nax-tasks__output`, report the outcome to the user and propose the next step.`\n`tasks-listing.ts` supplies `formatTasksListing(tasks)`: one line per task `<id> <state> <command>`; nothing when there are no tasks. US-010, not this story, connects this formatter to `/jobs`.\n`nax-tasks__stop` needs no approval card: it only stops a command this chat started.\n\n**Scope** — In: provider validation/results, tasks listing, registry/provider composition and prompt builders/exports; connect canonical notice formatting to the registry. Out: host calls, provider ordering and /jobs dispatch belong to US-010; quit confirmation to US-013. A dedicated TUI panel for background tasks: `/jobs` lists them and notices report their end. An approval card for `nax-tasks__stop`. Create tasks-provider.test.ts and background-builder.test.ts, including createHostTasks provider-to-registry seam.\n\n**Interface** — `createHostTasks({ outputDir, now, logger })` returns `{ tasks, provider }`; `buildBackgroundTasksInstructions()`; `buildBackgroundTaskNotice(tasks)`; `formatTasksListing` returns one line per task `<id> <state> <command>`.",
+      "acceptanceCriteria": [
+        "[unit] The nax-tasks provider's output tool with { task: \"../x\" } returns { isError: true, content: \"[chat] invalid task id ../x\" }.",
+        "[unit] The nax-tasks provider's output tool with { task: \"bash-00000000\" } for an unknown id returns { isError: true, content: \"[chat] unknown task bash-00000000\" }.",
+        "[unit] The nax-tasks provider's output tool with lines 501 returns { isError: true, content: \"[chat] lines must be an integer from 1 to 500\" }.",
+        "[unit] The nax-tasks provider's output tool for a known task returns JSON whose output is the registry's output(id, lines) result.",
+        "[unit] The nax-tasks provider's stop tool on a finished task returns { isError: true, content: \"[chat] task bash-1a2b3c4d is not running\" }.",
+        "[unit] The nax-tasks provider's stop tool on a running task returns stopped task bash-1a2b3c4d.",
+        "[unit] The nax-tasks provider's list tool returns JSON whose tasks[0] has id, command, state and startedAt.",
+        "[unit] The nax-tasks provider's instructions() resolves the text of buildBackgroundTasksInstructions().",
+        "[unit] buildBackgroundTaskNotice for one failed task bash-1a2b3c4d running bun test with exit code 1 and log /o/chat-tasks/bash-1a2b3c4d.log returns text whose first line is [nax-tasks] background command bash-1a2b3c4d (bun test) ended: failed, exit code 1, log /o/chat-tasks/bash-1a2b3c4d.log.",
+        "[unit] buildBackgroundTasksInstructions() returns text naming runInBackground, nax-tasks__output and nax-tasks__stop.",
+        "[unit] formatTasksListing for one running task bash-1a2b3c4d running bun dev returns bash-1a2b3c4d running bun dev.",
+        "[unit] createHostTasks(...) returns a provider with id nax-tasks whose stop tool stops a task in the returned tasks."
+      ],
+      "tags": [
+        "chat",
+        "background",
+        "tools",
+        "prompts"
+      ],
+      "dependencies": [
+        "US-008"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The completed registry supplies lifecycle behavior; this story follows jobs-provider's established static-tool validation/results pattern plus pure listing/prompt builders and a small composition helper, without changing permission decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/jobs-provider.ts",
+        "packages/nax/src/chat/jobs/jobs-listing.ts",
+        "packages/nax/src/prompts/builders/workflow-builder.ts",
+        "packages/nax/src/chat/background/task-registry.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/background/tasks-provider.ts",
+        "packages/nax/src/chat/background/tasks-listing.ts",
+        "packages/nax/src/chat/background/host-tasks.ts",
+        "packages/nax/src/prompts/builders/background-builder.ts",
+        "packages/nax/test/unit/chat/background/tasks-provider.test.ts",
+        "packages/nax/test/unit/prompts/builders/background-builder.test.ts"
+      ],
+      "suggestedCriteria": [
+        "The output tool rejects lines values 0, -1 and 1.5 with [chat] lines must be an integer from 1 to 500.",
+        "formatTasksListing([]) returns an empty string."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/prompts/index.ts",
+          "reason": "gains the exports `buildBackgroundTaskNotice` and `buildBackgroundTasksInstructions`; no existing export changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "efefec54f1b7197d0d5dd3dfe075aeac8a1023b3"
+    },
+    {
+      "id": "US-010",
+      "title": "Wire host tasks into sessions, autonomous notices and /jobs",
+      "description": "**Goal** — Enable production chat background tasks across session changes and deliver bounded autonomous completion turns.\n\n**Motivation** — The user wants to keep chatting while it runs and be told when it ends (user, 2026-10-29).\n\n**Approach** — Tasks are created only when the host has `deps.resources` (the same condition as nax jobs and the agents provider); production `nax chat` always passes resources. Nax jobs additionally retain their existing naxEntry requirement.\n`src/chat/chat-host.ts`:\n- `ChatHost` gains `readonly tasks?: ChatBackgroundTasks`, set when `deps.resources` is present.\n- All three session-open sites — `startSession` (~line 284), `resumeSession` (~line 374) and `reopen` (~line 412) — pass `backgroundCommands: this.tasks` when tasks exist.\n- `toolProviders` order: resource providers, then `nax-jobs` (when present), then `nax-tasks`, then `nax-agents` (when present).\n- `src/chat/chat-mcp.ts`: `\"nax-tasks\"` joins `RESERVED_SERVER_IDS`, so a user MCP server cannot shadow the built-in provider.\n- `teardown()` awaits `tasks.stopAll()` **after** `hygiene.close(handle)` (inside `closeSessionAndResources`, before `resources.teardown()`), so no in-flight `Bash` call can adopt a task afterwards. Once `stopAll()` has begun, `adopt` stops the new handle at once and records the task as `stopped`.\n`src/chat/open-chat-session.ts`: the request gains `readonly backgroundCommands?: BackgroundCommandPort`; `nativeBackend(...)` receives `hostPorts: { ...(commandShadow), ...(backgroundCommands) }`, each key only when present.\n`src/tui/chat/use-jobs.ts`: also subscribes to `host.tasks.onChange` (and works when `host.jobs` is absent). When idle, a queued job notice is delivered first; otherwise `host.tasks.peekNotice()` with the same deliver-then-take protocol. A running turn is never interrupted: notices wait for idle. `useJobs` now returns `{ running: readonly ChatJob[]; noteUserTurn(): void }`; it counts consecutive task-notice turns, and at `MAX_CONSECUTIVE_TASK_NOTICE_TURNS` stops delivering task notices until `noteUserTurn()` is called. `ChatApp.tsx`'s `submit` (the user-typed path) calls `noteUserTurn()` before `sendTurn`. Job-notice turns neither count nor reset.\nLoop guard: after `MAX_CONSECUTIVE_TASK_NOTICE_TURNS` (3) task-notice turns in a row with no user-typed message between them, further task notices stay queued until the user sends a message.\n`src/tui/chat/slash-commands.ts`: `/jobs` appends `formatTasksListing(host.tasks.list())`, one line per task `<id> <state> <command>`; nothing when there are no tasks. When `host.jobs` is undefined but tasks exist, `/jobs` shows only the task lines; with neither, today's `jobs are not available in this session`.\nBackground tasks belong to the chat host, not one session: `/clear`, `/resume`, ctrl+t, shift+tab and `/model` reopen the session and leave tasks running; notices go to the current session. When a background command ends by itself, the agent takes a turn to react. A running turn is never interrupted: the notice waits for it. Several ended tasks coalesce into one notice.\n\n**Scope** — In: resources-gated host tasks, all opens and hostPorts merge, provider order/reserved id, teardown, idle subscriptions, job priority, loop guard and user reset, /jobs task listing. Out: ctrl+b/footer belongs to US-011; close choice belongs to US-012/013. Background commands from subagent sessions: only the parent chat session receives the `backgroundCommands` port. Keeping a background command's session-scoped sandbox state (its `TMPDIR` and command shadow) alive after `/clear`, `/resume` or a model switch closes that session: a command that depends on its session `TMPDIR` after the switch may fail. Keep chat-host.ts at or under 600 lines by moving composition into background/host-tasks.ts. Update chat-host-jobs, chat-host-resources and host-subagents provider assertions from array identity/old tails to ordered resource prefixes plus nax-tasks; add chat-mcp reserved-id expectations. Create chat-host-tasks.test.ts using chat-host-jobs fixtures and task-notices.test.tsx.\n\n**Interface** — `readonly tasks?: ChatBackgroundTasks`; `readonly backgroundCommands?: BackgroundCommandPort`; `useJobs` returns `{ running: readonly ChatJob[]; noteUserTurn(): void }`; `MAX_CONSECUTIVE_TASK_NOTICE_TURNS` (3).",
+      "acceptanceCriteria": [
+        "[integration] Seam: a chat host created with resources calls the open dependency on start with a request whose backgroundCommands is host.tasks.",
+        "[integration] Seam: a chat host created with resources, on resume({ id }), calls open with backgroundCommands equal to host.tasks.",
+        "[integration] Seam: a chat host created with resources, on switchTo({ model: \"p/other\" }), calls open with backgroundCommands equal to host.tasks.",
+        "[integration] A chat host with a nax entry, resources and catalog agents opens with toolProviders ids ending in [\"nax-jobs\", \"nax-tasks\", \"nax-agents\"].",
+        "[integration] A chat host created without resources has tasks undefined.",
+        "[integration] A chat host created without resources sends an open request with no backgroundCommands.",
+        "[integration] Seam: openChatSession given a request with backgroundCommands: port calls its nativeBackend dependency with hostPorts.backgroundCommands equal to port.",
+        "[integration] openChatSession given backgroundCommands: port and a configured command shadow calls nativeBackend with hostPorts.commandShadow still set.",
+        "[unit] host.close() on a host with one running task calls that task handle's stop() after the session handle was closed.",
+        "[integration] With the screen idle, host.jobs undefined and one ended task in host.tasks, the chat sends one turn whose text is the task notice, without any keypress after the task ended.",
+        "[integration] With the screen idle and one ended task, the task notice is taken only after its turn started.",
+        "[integration] With a turn running when a task ends, no task-notice turn is sent until that turn ends.",
+        "[integration] With both a job notice and a task notice queued on an idle screen, the job notice's turn is sent first.",
+        "[integration] After three task-notice turns in a row with no user-typed message, a fourth ended task's notice is not sent.",
+        "[integration] After notices were held by the three-turn guard, a user-typed message whose turn then ends lets the held task notice be sent.",
+        "[integration] /jobs with one running task bash-1a2b3c4d running bun dev shows a line bash-1a2b3c4d running bun dev.",
+        "[integration] /jobs on a host with tasks but no host.jobs shows the task lines and not jobs are not available in this session.",
+        "[unit] A configured MCP server with id nax-tasks is not attached and yields the diagnostic [resources] mcp server id nax-tasks is reserved.",
+        "[integration] With neither host.jobs nor host.tasks, /jobs shows jobs are not available in this session, preserving the existing unavailable-capability response.",
+        "[integration] A host with resources but no nax entry opens with the resource providers first in their original order followed by nax-tasks, preserving resource providers while omitting nax-jobs."
+      ],
+      "tags": [
+        "chat",
+        "session",
+        "background",
+        "notices",
+        "integration"
+      ],
+      "dependencies": [
+        "US-009"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Existing session-operation draining and useJobs deliver-then-take hooks can be extended rather than redesigned; task lifetime, three open sites and autonomous-turn ordering remain cross-module session-safety work requiring strict TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/chat/open-chat-session.ts",
+        "packages/nax/src/tui/chat/use-jobs.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/chat/background/host-tasks.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/chat-host-tasks.test.ts",
+        "packages/nax/test/ui/chat/task-notices.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "A task remains running after /clear and its eventual notice is delivered to the replacement session.",
+        "A declined task-notice delivery leaves the notice queued.",
+        "A job-notice turn between task-notice turns neither resets nor increments the task-notice guard.",
+        "Closing a host waits for tasks.stopAll before calling resources.teardown."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-jobs.test.ts",
+          "reason": "\"AC-1/4/5/23 composes ordered provider instructions\" asserts `toolProviders.slice(-2)` is `[\"nax-jobs\", \"nax-agents\"]`; with `nax-tasks` between them the expected tail is `[\"nax-jobs\", \"nax-tasks\", \"nax-agents\"]`. \"AC-2/3/24 no entry preserves resource providers\" asserts `request.toolProviders` is the resource array itself; with resources present the host appends `nax-tasks`, so the invariant becomes: the resource providers come first, in order, `nax-tasks` follows, and `nax-jobs` is absent."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-resources.test.ts",
+          "reason": "asserts `request.toolProviders` `toBe(f.resources.toolProviders)` across start, switch and resume (~line 131) and `objectContaining({ toolProviders: f.resources.toolProviders })` (~line 248); with resources present the host appends `nax-tasks`, so the invariant becomes: the request's providers begin with the resource providers in order, followed by `nax-tasks`."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/host-subagents.test.ts",
+          "reason": "\"AC-2 start passes the resources' own providers when the catalog has no agents\" asserts `toolProviders` `toBe(h.resources.toolProviders)`; the invariant becomes: the resource providers in order, followed by `nax-tasks`, and no `nax-agents`."
+        },
+        {
+          "path": "packages/nax/src/chat/chat-host.ts",
+          "reason": "gains `tasks`, `backgroundCommands` at the three open sites, provider order and `stopAll` in teardown; it must stay at or under 600 lines, moving composition into the US-009 host-tasks module under src/chat/background as needed."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/ChatApp.tsx",
+          "reason": "reads `useJobs`'s new return shape and calls `noteUserTurn()` in `submit` before `sendTurn`; no other change."
+        },
+        {
+          "path": "packages/nax/src/chat/chat-mcp.ts",
+          "reason": "`\"nax-tasks\"` is added to `RESERVED_SERVER_IDS` so a user MCP server cannot shadow the new built-in provider."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-mcp.test.ts",
+          "reason": "any assertion pinning the reserved-id set must include `nax-tasks`; the invariant stays that a reserved id is rejected with `[resources] mcp server id <id> is reserved`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "43339e128b6abc6e440e219c06516814705c7e66"
+    },
+    {
+      "id": "US-011",
+      "title": "Background active Bash with ctrl+b and show tmux-aware hints",
+      "description": "**Goal** — Connect ctrl+b to foreground movement and expose the appropriate footer hint while Bash is backgroundable.\n\n**Motivation** — A long test suite, build or dev server blocks the conversation for the whole `Bash` call (up to `BASH_TIMEOUT_MS`, 300 s), and a dev server cannot run at all.\n\n**Approach** — `src/tui/chat/useChatKeys.ts`: ctrl+b (`key.ctrl`, `input === \"b\"`): `host.tasks?.moveForeground()`; when that returns `false` or there are no tasks, calls the new **optional** option `onNotice?: (text: string) => void` with `\"no running command to move to the background\"` (skipped when `onNotice` is absent; `ChatApp` always passes it).\n`src/tui/chat/chat-status.ts`: `FooterHint` gains `\"background\"` → `\"esc to interrupt · ctrl+b to background\"` and `\"backgroundTmux\"` → `\"esc to interrupt · ctrl+b ctrl+b to background\"`.\n`src/tui/chat/use-clipboard-feedback.ts`: `footerHint`'s input gains `backgroundable: boolean` and `tmux: boolean`; `busy && backgroundable` → `\"backgroundTmux\"` under tmux, else `\"background\"`; quit and clear still win. `ChatApp.tsx` passes `backgroundable: host.tasks?.hasForeground() ?? false` and `tmux` read once from `TMUX` through an injectable deps object.\nWhile the agent waits on an ordinary `Bash` call, the user presses **ctrl+b** to move that call to the background (inside tmux, whose prefix is ctrl+b, the user presses it twice; tmux's default `send-prefix` passes one ctrl+b through).\n\n**Scope** — In: ctrl+b dispatch/notice, footer kinds/precedence, injectable TMUX read, reactive host.tasks state wiring. Out: ctrl+t/combined queue comes from US-002; movement implementation from US-005/008; quit guards/confirmation from US-013. A configurable ctrl+t or ctrl+b binding, or any tmux configuration change. Create background-keys.test.tsx; add two HINT_CASES rows and footerHint unit cases in chat-status.test.ts; update old footerHint call fixtures for the additive inputs.\n\n**Interface** — `onNotice?: (text: string) => void`; `backgroundable: boolean`; `tmux: boolean`; `host.tasks?.moveForeground()`; `host.tasks?.hasForeground() ?? false`.",
+      "acceptanceCriteria": [
+        "[integration] Seam: with a turn running and host.tasks.moveForeground stubbed to return true, pressing ctrl+b calls moveForeground once.",
+        "[integration] With a turn running and host.tasks.moveForeground stubbed to return true, pressing ctrl+b appends no notice.",
+        "[integration] With host.tasks.moveForeground returning false, pressing ctrl+b appends the notice no running command to move to the background.",
+        "[integration] With host.tasks undefined, pressing ctrl+b appends the notice no running command to move to the background.",
+        "[unit] footerHint with busy: true, backgroundable: true, tmux: false and no armed quit or clear returns \"background\".",
+        "[unit] footerHint with busy: true, backgroundable: true, tmux: true and no armed quit or clear returns \"backgroundTmux\".",
+        "[unit] footerHint with busy: true and backgroundable: false returns \"busy\".",
+        "[unit] footerHint with quitArmed: true and backgroundable: true returns \"quit\".",
+        "[unit] The footer line built with hint \"background\" ends with esc to interrupt · ctrl+b to background.",
+        "[unit] The footer line built with hint \"backgroundTmux\" ends with esc to interrupt · ctrl+b ctrl+b to background.",
+        "[integration] With a turn running, host.tasks.hasForeground() true and TMUX unset, the footer shows esc to interrupt · ctrl+b to background.",
+        "[integration] With a turn running, host.tasks.hasForeground() true and TMUX set, the footer shows esc to interrupt · ctrl+b ctrl+b to background.",
+        "[integration] When host.tasks fires onChange after hasForeground() turns false, the footer shows esc to interrupt without a keypress."
+      ],
+      "tags": [
+        "chat",
+        "background",
+        "tui",
+        "keyboard"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-010"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "UI-level binding and footer wiring consume completed host capabilities without changing session or permission decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/useChatKeys.ts",
+        "packages/nax/src/tui/chat/use-clipboard-feedback.ts",
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/background-keys.test.tsx"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/ChatApp.tsx",
+          "reason": "passes `onNotice` to `useChatKeys` and `backgroundable`/`tmux` to `footerHint`; no other change."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "99ccf82fe4316cc114dd94e27acce1feabf94459"
+    },
+    {
+      "id": "US-012",
+      "title": "Add host-owned multi-choice asks and choice cards",
+      "description": "**Goal** — Add a host choice request and keyboard-answerable card that returns ids instead of approval decisions.\n\n**Motivation** — The user wants to keep chatting while it runs and be told when it ends (user, 2026-10-29).\n\n**Approach** — `src/chat/ask-controller.ts`:\n- New `HostChoiceCard { tool; summary; reason; choices: readonly { id: string; label: string }[]; fallback: string; signal? }`.\n- New `requestHostChoice(card): Promise<string>` — resolves the chosen id; `fallback` on timeout, on abort and on `reset()`. Request ids are `host-choice-<n>`, so the existing `startsWith(\"host-\")` guards in `handle()` and `canRemember` skip them; pending choices live in their own map, which `reset()` settles with each card's `fallback`.\n- Pending variant `{ type: \"host_choice\", requestId, tool, summary, reason, choices, fallback, at, expiresAt }` appears in `pending()`; `ChatPendingAsk` widens to include it; `resolveChoice(requestId, id)` answers it.\n`src/tui/chat/ask-card.ts`, `AskCard.tsx`: `askCardModel` maps `host_choice` to `AskCardChoice { kind: \"choice\"; title; summary; reason; fallback; options: { index; label; id }[] }`. A number key or Return on the selection resolves that id; escape resolves `fallback`.\n\n**Scope** — In: host-choice interface/pending storage/fallbacks, controller exports, pure card model, layout and keyboard selection, typed fake-controller compatibility. Out: quit policy and jobs-host confirm removal belong to US-013. Existing approvals/questions and memory guards must keep their behavior. Extend ask-controller and ask-card units, create choice-card.test.tsx; add inert requestHostChoice/resolveChoice stubs to typed controllers in UI ask-card, slash-commands and chat-app tests without changing their assertions.\n\n**Interface** — `HostChoiceCard { tool; summary; reason; choices: readonly { id: string; label: string }[]; fallback: string; signal? }`; `requestHostChoice(card): Promise<string>`; `resolveChoice(requestId, id)`; pending `{ type: \"host_choice\", requestId, tool, summary, reason, choices, fallback, at, expiresAt }`; `AskCardChoice { kind: \"choice\"; title; summary; reason; fallback; options: { index; label; id }[] }`.",
+      "acceptanceCriteria": [
+        "[unit] requestHostChoice with choices stop and stay and fallback \"stay\" adds one pending ask of type host_choice carrying both choices.",
+        "[unit] The pending host_choice ask carries fallback \"stay\".",
+        "[unit] The pending host_choice ask's requestId starts with host-choice-.",
+        "[unit] resolveChoice(requestId, \"stop\") on a pending host_choice ask resolves its promise with \"stop\".",
+        "[unit] resolveChoice(requestId, \"stop\") removes the pending host_choice ask.",
+        "[unit] requestHostChoice with fallback \"stay\" resolves \"stay\" when its timeout fires (driven by _askControllerDeps timers).",
+        "[unit] requestHostChoice with fallback \"stay\" resolves \"stay\" when its signal aborts.",
+        "[unit] requestHostChoice with fallback \"stay\" resolves \"stay\" when reset() runs.",
+        "[unit] askCardModel for a host_choice ask with choices stop / Quit and stop them and stay / Stay in chat returns kind choice with options [{ index: 1, label: \"Quit and stop them\", id: \"stop\" }, { index: 2, label: \"Stay in chat\", id: \"stay\" }].",
+        "[integration] On a shown choice card with choices stop and stay, pressing 2 resolves stay.",
+        "[integration] On a shown choice card with fallback \"stay\", pressing escape resolves stay.",
+        "[integration] On a shown choice card with choices stop and stay, pressing Return on the first option resolves stop.",
+        "[unit] For an existing requestHostApproval card, resolve(requestId, \"allow_once\") still resolves its promise with \"allow\", preserving host approval behavior independently of host_choice cards."
+      ],
+      "tags": [
+        "chat",
+        "approval",
+        "tui",
+        "session"
+      ],
+      "dependencies": [
+        "US-011"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Host/session ask isolation, approval-memory guards, timer/abort settlement and interactive card routing are security-sensitive.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/ask-controller.ts",
+        "packages/nax/src/tui/chat/ask-card.ts",
+        "packages/nax/src/tui/chat/AskCard.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/choice-card.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "requestHostChoice with an already-aborted signal resolves its fallback without adding a pending card.",
+        "A host_choice request in full mode remains pending until explicitly chosen or its fallback is triggered.",
+        "Resolving a host_choice clears its timeout and abort listener."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/ask-card.test.tsx",
+          "reason": "its `fakeController` builds a fully typed `ChatAskController` literal; the interface gains `requestHostChoice` and `resolveChoice`, so the fake gains inert stubs for both (the test typecheck); no assertion changes."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/slash-commands.test.tsx",
+          "reason": "its typed `ChatAskController` literal gains inert `requestHostChoice` and `resolveChoice` stubs for the same reason; no assertion changes."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/chat-app.test.tsx",
+          "reason": "its typed `ChatAskController` literal gains inert `requestHostChoice` and `resolveChoice` stubs for the same reason; no assertion changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9e1611d5276c621e85b371002c7655de149f6a99"
+    },
+    {
+      "id": "US-013",
+      "title": "Confirm quit with stop, leave jobs or stay choices",
+      "description": "**Goal** — Replace binary job-close approval with a safe close policy covering both jobs and background commands.\n\n**Motivation** — The user wants to keep chatting while it runs and be told when it ends (user, 2026-10-29).\n\n**Approach** — New `src/chat/close-confirm.ts` — `createCloseConfirm({ hostJobs?, tasks?, asks, logger }): () => Promise<boolean>`:\n- Nothing running (no owned jobs, no running tasks) → `true`, no card. Preserve the specified empty-close regression: chains stop with reason `the chat closed`, without asking.\n- Otherwise `requestHostChoice` with `tool: \"nax-close\"`, `fallback: \"stay\"`, summary `\"<j> nax job(s) and <t> background command(s) still running: <ids>\"`, and choices `stop` \"Quit and stop them\"; `leave` \"Quit and leave nax jobs running (background commands stop)\" (only when owned jobs exist); `stay` \"Stay in chat\".\n- `stop`: `chains.stop(\"the chat closed\")`, cancel each owned job (warn and continue on a failed cancel), await `tasks.stopAll()`, → `true`.\n- `leave`: `chains.stop(\"the chat closed\")`, await `tasks.stopAll()`, → `true`.\n- `stay`: stops nothing (chains stay active), → `false`.\n- It never calls `createHostJobs().close()` (its `AbortController` abort is irreversible); the host's own `close()` still calls it after a quitting choice.\n`src/chat/jobs/jobs-host.ts`: `confirmClose` is removed from `createHostJobs`'s return value; its behaviour moves to `close-confirm.ts`. `ChatHost.confirmJobsBeforeClose` is renamed `confirmBeforeClose?: () => Promise<boolean>`, set when jobs or tasks exist.\n`close()` keeps today's `if (host.confirmBeforeClose)` guard: a host without it closes synchronously as now (the existing \"US-015 AC-14 no-confirmation close synchronously disables controls\" test keeps passing unchanged); with it, `close()` awaits it and returns without closing when it resolves exactly `false`.\nQuit card times out or is escaped → Resolves `stay`; the chat stays open.\nSo background commands always stop when the chat quits; only the existing detached nax jobs (`plan`, `run`, `bot_review`, `bot_fix`) can be left running.\n\n**Scope** — In: close-confirm composition, guarded boolean confirmation, owned-job cancellation with warn-and-continue, chain stop only on quitting, task shutdown for every quitting choice, rename and affected consumers/tests. Out: host_choice protocol/card comes from US-012; registry stop implementation from US-008; graceful host teardown remains US-010. Killing background commands when the nax chat process itself crashes or is SIGKILLed: only graceful exits (quit, SIGTERM, SIGHUP through `cli/chat.ts`) stop them; a crash can orphan their process groups. Background commands that survive quitting `nax chat`: rejected by the user, because detached commands cannot run in the OS sandbox. Create close-confirm.test.ts; update chat-host-jobs tests to resolve nax-close choices (stop replaces allow; leave replaces deny), and rename assertions so resources-only hosts have confirmation but no-resource hosts do not. Update chat-host-chain tests: empty closes stop without asking, leave stops chain but retains job, stay preserves chain; retain no-active-chain guarantee for activation racing a quitting close. Update chat-jobs-close.test.tsx to boolean confirmBeforeClose and leave mounted on false. Remove unused errorMessage import from jobs-host; close() and sessionChanged() stay.\n\n**Interface** — `createCloseConfirm({ hostJobs?, tasks?, asks, logger }): () => Promise<boolean>`; `confirmBeforeClose?: () => Promise<boolean>`.",
+      "acceptanceCriteria": [
+        "[unit] createCloseConfirm(...)() with no owned jobs and no running tasks resolves true.",
+        "[unit] createCloseConfirm(...)() with no owned jobs and no running tasks adds no pending ask.",
+        "[unit] With one running task bash-1a2b3c4d and no owned jobs, the close card's choice ids are exactly [\"stop\", \"stay\"].",
+        "[unit] With one running task bash-1a2b3c4d and no owned jobs, the close card's summary is 0 nax job(s) and 1 background command(s) still running: bash-1a2b3c4d.",
+        "[unit] With one owned job and one running task, the close card's choice ids are exactly [\"stop\", \"leave\", \"stay\"].",
+        "[unit] Answering stop on the close card cancels every owned job.",
+        "[unit] Answering stop on the close card awaits tasks.stopAll().",
+        "[unit] Answering stop on the close card stops an active chain with reason the chat closed.",
+        "[unit] Answering stop on the close card resolves true.",
+        "[unit] Answering leave on the close card awaits tasks.stopAll().",
+        "[unit] Answering leave on the close card stops an active chain with reason the chat closed.",
+        "[unit] Answering leave on the close card cancels no job.",
+        "[unit] Answering leave on the close card resolves true.",
+        "[unit] Answering stay on the close card cancels no job.",
+        "[unit] Answering stay on the close card does not call tasks.stopAll().",
+        "[unit] After answering stay on the close card, an active chain is still active.",
+        "[unit] Answering stay on the close card resolves false.",
+        "[unit] Answering stop when cancelling the first of two owned jobs rejects still cancels the second job.",
+        "[unit] Answering stop when cancelling the first of two owned jobs rejects calls the logger's warn once.",
+        "[integration] With host.confirmBeforeClose resolving false, ctrl-c on an idle screen leaves the app mounted and does not call host.close().",
+        "[integration] With host.confirmBeforeClose resolving true, ctrl-c on an idle screen calls host.close().",
+        "[integration] When the quit card times out, it resolves stay and the chat stays open.",
+        "[integration] When the quit card is escaped, it resolves stay and the chat stays open.",
+        "[integration] With host.confirmBeforeClose absent, calling useChatKeys.close() makes canControl() return false synchronously before awaiting the returned promise, preserving the existing US-015 AC-14 no-confirmation close behavior unchanged."
+      ],
+      "tags": [
+        "chat",
+        "background",
+        "jobs",
+        "approval",
+        "session"
+      ],
+      "dependencies": [
+        "US-012"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Close confirmation coordinates irreversible session/job-chain shutdown, task cancellation, approval fallbacks and synchronous control guards.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/jobs-host.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/tui/chat/useChatKeys.ts",
+        "packages/nax/test/unit/chat/chat-host-chain.test.ts",
+        "packages/nax/test/unit/chat/chat-host-jobs.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/close-confirm.ts",
+        "packages/nax/test/unit/chat/close-confirm.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-jobs.test.ts",
+          "reason": "\"AC-12\", \"AC-13/14/16\" and \"AC-15\" call `confirmJobsBeforeClose` and answer a `nax-jobs__close` allow/deny card; they move to `confirmBeforeClose` and a `nax-close` choice card, `stop` replacing allow and `leave` replacing deny, keeping the cancel-each-owned-job and warn-and-continue assertions. \"AC-2/3/24\" and \"without resources an entry alone registers no jobs\" assert `confirmJobsBeforeClose` is `undefined`; the field is renamed `confirmBeforeClose`, defined when tasks exist (resources present) and `undefined` without resources."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-chain.test.ts",
+          "reason": "\"AC-15 stops before an empty close without asking\" and \"AC-16 stops before one close approval and keeps a declined job running\" assert chains stop before the ask through `createHostJobs().confirmClose`; `confirmClose` is removed and chains stop only after a quitting choice, so these tests drive `createCloseConfirm` and assert: empty close → chain stopped with reason `the chat closed` and no card; `leave` → chain stopped and the job kept running; `stay` → chain still active. The close-race test keys its stub on `card.tool === \"nax-jobs__close\"`; the card is now `requestHostChoice` with tool `nax-close`, and the invariant stays that a chain activation racing a quitting close ends with no active chain."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/chat-jobs-close.test.tsx",
+          "reason": "mounts with `confirmJobsBeforeClose` and expects `decisions` `[\"allow\"]`; it moves to `confirmBeforeClose` resolving `true`/`false`, and `false` leaves the app mounted."
+        },
+        {
+          "path": "packages/nax/src/chat/jobs/jobs-host.ts",
+          "reason": "`confirmClose` and its now-unused `errorMessage` import are removed from `createHostJobs`; `close()` and `sessionChanged()` stay."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4da2e455895470ab96485638fb294c58af25d68c"
+    }
+  ],
+  "analysis": "Repository exploration used direct Read/Grep/Glob because the codebase-memory MCP server is not exposed in this host. This is an enhancement of existing native chat, not greenfield. Preserve the thirteen binding story ids, workdirs and dependency edges; the effort branch (US-001/002) and exec/background branch (US-003..010) meet at US-011, followed by choice cards and close confirmation. No nax-ai or ACP implementation change or release bump is required.\n\nArchitecture and boundaries: packages/nax/src/chat/chat-effort.ts:1-29 derives EffortLevel and canonical order from nax-agent's THINKING_LEVELS; model parsing already removes effort suffixes, but cycleEffort currently always cycles the global list. packages/nax/src/chat/index.ts:14 is the effort barrel consumed by the UI. Only packages/nax/src/agents/catalog/index.ts:28-29 may import nax-ai in nax. Its loadCatalog cache (index.ts:91-120) is keyed by loader reference and deduplicates in-flight loads; lookupContextWindow (index.ts:165-176) supplies the fail-open pattern for lookupThinkingLevels. Reuse this cache, not another catalog loader. Chat-side SupportedEffort must be Exclude<EffortLevel, \"default\">, not a forbidden ThinkingLevel import. packages/nax/src/chat/chat-models.ts:20-33 composes tiers, tool-capable overrides and catalog choices; add a separate base-model-keyed effort map without changing choice ordering or filtering. Override thinkingLevels, including an explicit empty array, wins over catalog data. packages/nax/src/cli/chat.ts:41-75 exposes injectable command seams, discoverModels at :225-243 discovers choices, and composeChat at :245-300 passes them into createChatHost. Include an explicit --model in effort discovery without inserting it into models. Unknown resumed models deliberately retain all-eight fallback.\n\nUS-001 host seam: packages/nax/src/chat/chat-host.ts:63-100 defines optional host capabilities and composition deps; the native host constructor is at :133-205. Add optional ChatHost.effortLevels(model) while the native implementation always supplies it. switchSession at :439-472 computes the target and reopens with rollback; clamp the requested suffix using the requested base model's levels before comparing/reopening, retaining rollback and storage semantics. Keep modelEffort, withEffort, isEffortLevel and EFFORT_LEVELS semantics unchanged. Extend test/unit/chat/chat-effort.test.ts, chat-models.test.ts, cli/chat.test.ts, and the existing test/unit/agents/catalog/context-window.test.ts (lookup tests at :49-88), plus host effort-switch cases.\n\nUS-002 UI: packages/nax/src/tui/chat/picker-model.ts:73-88 defines PickerModelInput and :153-163 hardcodes all effort entries. useChatPicker.ts:67-79 assembles picker input and :155-168 cycles pending entry efforts; current model levels are for the effort picker, entry-model levels are for model-row cycling. slash-commands.ts:135-152 currently validates only global membership; distinguish unknown words from recognized-but-unavailable levels and never switch on either failure. useChatKeys.ts:49 currently queues only ChatMode, :85-103 serializes controls, :134-151 handles ctrl-c and shift+tab, and :160-167 flushes mode at turn end. Change the queue to an object so repeated ctrl+t advances from its queued model and finishTurn performs one combined switch with no undefined keys. test/helpers/chat-picker.tsx:57-95 supplies typed fake hosts whose default switchTo does not update current(); the new effort-key fixture must update current() to test repeated idle presses. Existing effort-command and picker-effort tests retain all-eight fallback when the fixture omits effortLevels.\n\nUS-003 exec: packages/nax-agent/src/internal/argv-exec.ts:22-41 defines RunArgvOptions, :129-160 drains streams, :227-337 owns spawn, kill, deadline, concurrent readers and post-exit drain grace. Preserve bounded capture (8 MB per stream), env overlays, no-spawn on pre-aborted cancellation, SIGKILL of the process group, orphan cleanup, and existing timeout behavior. Add tee callbacks before capture, isolating callback exceptions; do not let callback errors enter the stream-cancellation catch and truncate output. releaseDeadline is distinct from signal: it only disarms the deadline and never sets aborted or timedOut. Remove listeners on every settlement including failures; pre-aborted releaseDeadline must skip timeout creation without skipping drain-grace timers. packages/nax-agent/src/sandbox/types.ts:102-115 defines LaunchRequest. launcher.ts:112-124 and :153-162 are the unwrapped and wrapped runArgv calls; forward both additive fields through both paths, preserving afterWrapped, commandFinished, sandbox records and caller env. Extend test/unit/internal/argv-exec.test.ts (existing timeout and abort regressions at :13-73) and test/unit/sandbox/launcher.test.ts using _argvExecDeps fake timers rather than long sleeps.\n\nUS-004/005 Bash: packages/nax-agent/src/tools/bash.ts:40 sets the 300000 ms deadline, :48-91 defines BashToolOptions, :272-341 implements launchIntercepted, :376-397 builds the input schema, and :400-446 owns execution/framing. The policy gate lives above this tool; do not add a second authorization path. Retain interception, sandbox launcher, stripped env, command-root cwd and existing foreground audit/framing. Background must use launchIntercepted, never a new spawn site or detached-job runner. New helpers in tools/bash-background.ts own tool-scoped cancellation, nonrejecting ended promises, sink adoption, output tee, move races and the 1 MiB replay tail to avoid raising createBashTool.run's complexity. Background output is raw streamed output without interceptor postProcess. Explicit background calls use an already-released deadline and ignore turn cancellation; foreground calls relay ctx.signal until moved, then detach it and release the deadline. Adoption must tolerate synchronous output or rejection before sink assignment; settled moves and repeated moves must not duplicate adoption. Regression tests belong in the two specified new Bash background test files, with _bashToolDeps.runArgv held pending, and existing bash.test.ts must remain unchanged without a port.\n\nUS-006 threading: packages/nax-agent/src/session/agent-session-types.ts:49-54 owns public host ports. native-backend-options.ts:81-83 has hasMethods and :121-137 validates the strict hostPorts object, preserving caller object identity rather than zod copies. native-backend.ts:109-127 builds session tools. session-tool-support.ts:135-163 defines args and :203-247 composes buildCodingToolSupport; coding-tools/coding-tool-support.ts:71 and :297 own the next hop; coding-tool-extras.ts:53-57 shows the spread-helper pattern and :140-153 constructs Bash. Add backgroundCommands only when present at every hop, pass it only to Bash, and do not expose it to RunCommand. Named public exports belong in src/index.ts; any new _deps seam belongs only in src/internal.ts. Regenerate api/nax-agent.api.txt with bun run api:update. Extend native-backend-options.test.ts and existing native-backend.test.ts/session fixtures to exercise schema advertisement and actual port.adopt across the facade, not merely each helper in isolation. Session, sandbox and approval paths require three-session-tdd. nax-agent source must remain Node-compatible: use the runtime slot, #src imports and .ts extensions for relative source imports, never Bun APIs.\n\nUS-007/008 registry: packages/nax/src/chat/jobs/job-runner.ts:31-55 documents the analogous jobs interface and :98-111 shows record/listener ownership; :230-259 implements newest-first listing and FIFO notice helpers. Do not reuse its detached spawn/unref implementation (:121-173) for Bash tasks. Background tasks instead adopt tool-owned handles, remain in-memory across session changes, and keep only logs on disk. IDs validate as bash-<8 lowercase hex>; paths derive from trusted outputDir plus validated/generated ids. Use _backgroundTaskDeps randomHex/mkdir/appendLog/readLog; serialize per-task append operations to preserve order even under asynchronous I/O and ensure output sees flushed writes. Cap task output at 50 MiB with one marker, warn once and stop logging on append failure, and keep lifecycle state independent of log success. State precedence is aborted, launchError, successful non-timeout exit, failed. Store peeked notice membership so takeNotice acknowledges exactly that snapshot, not tasks ending during delivery. Stopped tasks never notify. stopAll marks closing before signaling and covers late adoption; new handles adopted during shutdown are immediately stopped and recorded stopped. Foreground registrations are stack-like (newest wins) with precise unregister functions and onChange for footer updates. New unit registry files exercise deferred ended promises, log failure and cap boundaries, stop/late-adopt races and notice snapshots.\n\nUS-009 providers/prompts: packages/nax/src/chat/jobs/jobs-provider.ts:59-89 demonstrates validation and ToolResult errors and :95-119 the static ToolProvider shape. Keep the new nax-tasks provider separate: list/output/stop, stages [\"*\"], no approval for stopping a command this chat owns. Implement prompt text under src/prompts/builders/background-builder.ts and export from src/prompts/index.ts, following the prompt-builder boundary in docs/architecture/ARCHITECTURE.md:110. tasks-listing formats only id/state/command; host-tasks composes registry/provider and is the extraction destination for host-size pressure. US-008 establishes notice semantics; US-009 connects its formatting to buildBackgroundTaskNotice, avoiding any dependency on a file not yet created by an upstream story.\n\nUS-010 host and notices: chat-host.ts currently has exactly 572 lines. Its three opens are startSession (:282-295), resumeSession (:368-383), and reopen (:408-423); every one must pass the same host-owned task registry. Constructor provider composition at :182-199 currently appends jobs then agents, while subagents receive only resources.toolProviders (:176-180); preserve that exclusion and insert tasks only for the parent. Tasks require resources, not naxEntry; jobs still require both. Extract composition into background/host-tasks.ts to stay within the required 600-line host limit. open-chat-session.ts:41-51 defines requests and :173-190 composes nativeBackend; merge commandShadow and backgroundCommands into one hostPorts object so neither overwrites the other. chat-host.ts:529-572 marks closed, drains session operations and nested runs, then closes session/resources/interaction chain: await tasks.stopAll after hygiene.close and before resources.teardown, including finally paths. cli/chat.ts:140-172 already routes SIGTERM/SIGHUP through awaited host.close, so these graceful exits inherit task cleanup. chat-mcp.ts:27 and :96 reserve built-in ids; add nax-tasks.\n\nuse-jobs.ts:12-52 currently subscribes only to jobs and acknowledges delivery after deliver returns true. Broaden subscriptions to tasks even without jobs, preserve idle blocking and the deliver-then-take protocol, prefer job notices, and add a three-consecutive-task-notice-turn counter reset only by user-typed submit. Job notices neither increment nor reset it. ChatApp.tsx:378-394 owns user submit, :396-430 owns sendTurn and finishes queued controls, :432-439 invokes useJobs, :470-478 feeds footerModel; update its useJobs return-shape consumer and reset guard before user sendTurn, never for auto notices. A task ending while a turn runs waits for the current session's next idle turn; /clear, /resume, /model and effort/mode switches do not kill tasks. slash-commands.ts:123-125 currently falls back when host.jobs is absent; /jobs must also list tasks without that fallback. Update exact-provider-array identity tests: chat-host-jobs.test.ts:116-140, chat-host-resources.test.ts and host-subagents.test.ts currently pin old arrays/tails. The preserved invariant is ordered resource prefixes, then nax-jobs if present, nax-tasks, then nax-agents if present, not resource-array identity. New host-tasks and task-notices tests must cover all three opens, forwarding through openChatSession, close ordering, no-resource omission, autonomous notices, priority and loop guard.\n\nUS-011 keys/footer: useChatKeys.ts remains the single owner of ctrl chords; ctrl+b invokes tasks.moveForeground without approval and reports the exact no-command notice only on failure. Add optional onNotice so old inline callers compile; ChatApp supplies its existing notice append path. use-clipboard-feedback.ts:11-23 has footer precedence quit > clear > busy > expanded > idle. Insert background and backgroundTmux within busy only; chat-status.ts:159-170 owns FooterHint/HINT_TEXT. Read TMUX once via an injectable deps object, not directly throughout render. Task onChange must redraw hasForeground changes independently of keypresses; useJobs' task subscription supplies that reactivity. Extend HINT_CASES and footerHint cases, add background-keys UI tests.\n\nUS-012 choice cards: ask-controller.ts:5 defines ChatPendingAsk as session events only; :35-46 defines the controller interface; :67-104 provides host approvals; :108-110 and :133-140 skip host-owned ids for transport and remembering; :164-171 resets host approvals. Add an independent choice pending map, requestHostChoice and resolveChoice with host-choice- prefix, card fallback on timeout/abort/reset, and listener/timer cleanup. Full mode must not auto-allow choices. ask-card.ts:79-96 defines models and :168-188 assumes every non-question ask is approval; add a discriminated choice model before approval narrowing. AskCard.tsx:322-332 routes all non-question layouts through approvalBody and :391-445 handles approval-only selection/keys: extend both rendering and keyboard routing, retaining number/Return/escape semantics and sanitizeText for untrusted command/summary text. The typed controller literals in test/ui/chat/ask-card.test.tsx, slash-commands.test.tsx and chat-app.test.tsx require inert new stubs. ask-fallback.ts:89-93 explicitly filters approval_requested and can continue to ignore host_choice rather than forwarding it as a yes/no interaction. Extend unit ask-controller and ask-card tests plus new choice-card UI tests; session/approval state mandates strict three-session-tdd.\n\nUS-013 quit migration: jobs/jobs-host.ts:24-29 currently returns confirmClose; :62-80 calls irreversible close before a binary approval, so deny means leave, not stay. Move confirmation to chat/close-confirm.ts and retain jobs-host.close/sessionChanged. Only an actual quitting choice stops chains; stay, escape or timeout must not abort jobs-host's controller or disable controls. An empty close returns true without a card but still stops chains with reason \"the chat closed\" to preserve the explicitly specified empty-close regression. createCloseConfirm must never call hostJobs.close; NativeChatHost.close still calls it once quitting proceeds. chain-controller.ts:119-149 checks closeSignal around asynchronous chain activation; retain the host-close race guarantee so late activation cannot leave an active chain after quit. Rename confirmJobsBeforeClose?: () => Promise<void> to confirmBeforeClose?: () => Promise<boolean> everywhere in the same story, including host-jobs, chain and chat-jobs-close tests. useChatKeys.ts:105-133 currently keeps close synchronous until its optional confirmation await: preserve the guarded await (no new unconditional await) so the existing US-015 AC-14 no-confirmation synchronous-disable test remains unchanged. Exactly false means stay; confirmation errors surface and do not close. Stop cancels every owned job with warn-and-continue then awaits tasks.stopAll; leave preserves jobs but awaits task shutdown; no leave option when no owned jobs exist. Existing detached jobs and reattachment stay unchanged.\n\nValidation/migration: All changes except the intentional close-confirm rename and useJobs return shape are opt-in/additive. Preserve inline fake hosts through optional effortLevels/tasks/onNotice and existing no-port Bash behavior. Update affected in-repo consumers atomically within their assigned story; no persistent task-record migration is needed. Existing nax job records/logs and model choices are unchanged. Use mirrored bun:test units, ink-testing-library UI fixtures, deferred promises, _deps restoration, shared test helpers and fake clocks. Show regression tests fail against old behavior before implementing. Run targeted package-scoped test paths; never bare bun test or bun run nax. Pipeline runs lint/typecheck/tests automatically; do not add quality-gate ACs. Outside a sandboxed nax session, per-file coverage gates matter when moving/adding tests; never run nax coverage inside NAX_SANDBOXED=1. Read docs/architecture/ARCHITECTURE.md and relevant .nax/rules before implementation. Main risks are deadline-vs-cancellation races, double adoption, output ordering/cap boundary and append-failure isolation, delivering notices against the wrong/active session, clearing unacknowledged completions, loop-guard resets, and irreversible chain shutdown on a stay choice. Graceful teardown owns background lifetime; crash-orphan cleanup and preservation of old session TMPDIR/shadow are deliberately excluded.\n\nRefine-pass adversarial audit: manually enumerated all 186 acceptance bullets in spec.md:700-923 and checked their assertions against this PRD. Coverage by original spec ordinal -> acceptanceCriteria ordinal is US-001 1..21 -> 1..21; US-002 1 -> 1, 2 -> 2/3, 3 -> 4/5, 4 -> 6, 5 -> 7, 6 -> 8, 7 -> 9, 8 -> 10, 9 -> 11, 10 -> 12; US-003 1..10 -> 1..10; US-004 1..16 -> 1..16; US-005 1..12 -> 1..12; US-006 1..6 -> 1..6; US-007 1..16 -> 1..16; US-008 1..20 -> 1..20; US-009 1..12 -> 1..12; US-010 1..4 -> 1..4, 5 -> 5/6, 6..17 -> 7..18; US-011 1..13 -> 1..13; US-012 1..12 -> 1..12; US-013 1..21 -> 1..21. Splits only separate independent assertions; none moves to another story. Regression anchors retained include no third cycle argument, identical no-port Bash wording, pending launch at immediate return, current()-updating key fixture, exactly one combined switch with omitted model key, commandShadow still set, no keypress for notices/footer, and _askControllerDeps-driven timeouts. The type-only public-port criterion remains a specific consumer contract assertion, not a generic build/typecheck gate.\n\nEvery story already has a negative-path acceptance assertion: US-001 catalog miss/rejection; US-002 unsupported/unknown effort; US-003 throwing output callback; US-004 launch rejection; US-005 settled move no-op and pre-move cancellation; US-006 missing foreground method; US-007 append failure; US-008 stopping a finished task; US-009 invalid id/lines; US-010 missing resources and reserved MCP id; US-011 absent foreground task; US-012 timeout/abort/reset fallback; US-013 failed cancellation and stay. All ten failure-table rows in spec.md:357-368 are represented; the log-cap row now also explicitly asserts that reaching the cap does not stop a running task. Added compatibility assertions cover all-eight UI fallback, no-port signal forwarding and unchanged foreground framing, jobs-unavailable fallback/resource provider prefix, existing host approval resolution, and synchronous no-confirmation control disabling.\n\nSemantic corrections: US-004's output seam passes Uint8Array bytes, not a string, matching RunArgvOptions.onOutput. Its previously unspecified description suffix now has concrete wording for the same required semantics, while the absent-port description remains byte-identical. US-005's moveToBackground(): void resolves the pending tool call; it does not itself return a ToolResult. US-009 implements the formatter/composer but US-010 performs /jobs dispatch and host integration, eliminating conflicting scope instructions. No unsupported files or new dependency edges were introduced. All thirteen contextFiles arrays match the spec's recommended lists exactly and stay within five entries; upstream-created files occur only after their declared dependencies. All fourteen feature-level exclusions match spec.md:372-385 verbatim; no story-local exclusion was hoisted. Binding ids/workdirs/dependencies are unchanged.\n\nRouting was reduced where existing code supplies a bounded pattern: US-003 is medium (two optional hooks plus launcher forwarding), US-006 is medium (existing optional-field spread/schema/export pattern), and US-009 is medium/tdd-simple (static provider plus pure formatting/composition, no new permission decision). US-010 is complex rather than expert because existing session-operation draining and useJobs delivery hooks are extended, not replaced. Security/session/sandbox stories retain three-session-tdd regardless of lower complexity. Other complexities remain justified by deferred completion, signal ownership, notice snapshots or approval-state races. Rechecked evidence includes bash.ts:272-341, exec-framing.ts:11-32, native-backend.ts:109-127, coding-tool-extras.ts:53-57/140-153, ask-controller.ts:69-104/141-169, jobs-host.ts:62-80, useChatKeys.ts:105-133 and the unchanged synchronous-close regression in test/ui/chat/chat-jobs-close.test.tsx:148-166.",
+  "outOfScope": [
+    "Background commands that survive quitting `nax chat`: rejected by the user, because detached commands cannot run in the OS sandbox.",
+    "Killing background commands when the nax chat process itself crashes or is SIGKILLed: only graceful exits (quit, SIGTERM, SIGHUP through `cli/chat.ts`) stop them; a crash can orphan their process groups.",
+    "Keeping a background command's session-scoped sandbox state (its `TMPDIR` and command shadow) alive after `/clear`, `/resume` or a model switch closes that session: a command that depends on its session `TMPDIR` after the switch may fail.",
+    "A cap on the number of concurrently running background commands.",
+    "Pruning old task log files under `<outputDir>/chat-tasks/`, which, like nax job logs, are machine-local and kept.",
+    "Background commands from subagent sessions: only the parent chat session receives the `backgroundCommands` port.",
+    "Background support for the `RunCommand` tool's argv branch: only `Bash` gains `runInBackground`.",
+    "Interceptor `postProcess` rewriting of background command output.",
+    "A dedicated TUI panel for background tasks: `/jobs` lists them and notices report their end.",
+    "An approval card for `nax-tasks__stop`.",
+    "Persisting background task records across chat processes: tasks are in-memory; only logs stay on disk.",
+    "Changing nax-ai's `clampThinkingLevel` or the pi-ai catalog data.",
+    "Changing effort handling in `nax run` / `nax plan` profiles: only the chat TUI changes.",
+    "A configurable ctrl+t or ctrl+b binding, or any tmux configuration change."
+  ],
+  "routingProfile": "native-codex"
+}

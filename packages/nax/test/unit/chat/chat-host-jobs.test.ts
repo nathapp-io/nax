@@ -108,7 +108,7 @@ function fixture(entry = true, agents = true, resourcesEnabled = true) {
 function closeCard(host: ReturnType<typeof createChatHost>) {
   const card = host.asks.pending()[0];
   assertDefined(card, "close approval");
-  expect(card).toMatchObject({ tool: "nax-jobs__close" });
+  expect(card).toMatchObject({ tool: "nax-close" });
   return card;
 }
 
@@ -118,22 +118,23 @@ describe("createChatHost jobs", () => {
     await f.start();
     const request = f.open.mock.calls[0]?.[0];
     assertDefined(request, "open request");
-    expect(request.toolProviders?.slice(-2).map((p) => p.id)).toEqual(["nax-jobs", "nax-agents"]);
+    expect(request.toolProviders?.slice(-3).map((p) => p.id)).toEqual(["nax-jobs", "nax-tasks", "nax-agents"]);
     expect(Object.isFrozen(request.loopHandlers)).toBe(true);
     expect(request.loopHandlers.at(-1)).toMatchObject({ plugin: "nax-jobs", event: "before_tool" });
     const provider = request.toolProviders?.find((p) => p.id === "nax-jobs");
     assertDefined(provider, "jobs provider");
     expect(await provider.instructions?.(f.repoRoot)).toContain("nax-jobs__run");
   });
-  test("AC-2/3/24 no entry preserves resource providers and plugin/rule handler ordering", async () => {
+  test("resources-only host has confirmation and preserves provider/handler ordering", async () => {
     const f = fixture(false, false);
     await f.start();
     const request = f.open.mock.calls[0]?.[0];
     assertDefined(request, "open request");
-    expect(request.toolProviders).toBe(f.resources.toolProviders);
+    expect(request.toolProviders?.slice(0, -1)).toEqual([...f.resources.toolProviders]);
+    expect(request.toolProviders?.at(-1)?.id).toBe("nax-tasks");
     expect(request.toolProviders?.map((p) => p.id)).not.toContain("nax-jobs");
     expect(f.host.jobs).toBeUndefined();
-    expect(f.host.confirmJobsBeforeClose).toBeUndefined();
+    expect(f.host.confirmBeforeClose).toBeDefined();
     expect(Object.isFrozen(request.loopHandlers)).toBe(true);
     expect(request.loopHandlers[0]).toBe(f.resources.pluginHandlers[0]);
     expect(request.loopHandlers.slice(1).map((h) => [h.plugin, h.event])).toEqual(
@@ -144,7 +145,7 @@ describe("createChatHost jobs", () => {
     const f = fixture(true, false, false);
     await f.start();
     expect(f.host.jobs).toBeUndefined();
-    expect(f.host.confirmJobsBeforeClose).toBeUndefined();
+    expect(f.host.confirmBeforeClose).toBeUndefined();
     expect(f.open.mock.calls[0]?.[0].toolProviders).toBeUndefined();
   });
   test("AC-6 actual last guard blocks writes while an owned run is running", async () => {
@@ -205,25 +206,24 @@ describe("createChatHost jobs", () => {
   test("AC-12 empty close confirmation does not ask", async () => {
     const f = fixture();
     await f.start();
-    assertDefined(f.host.confirmJobsBeforeClose, "confirmClose");
-    await f.host.confirmJobsBeforeClose();
+    assertDefined(f.host.confirmBeforeClose, "confirmClose");
+    await f.host.confirmBeforeClose();
     expect(f.host.asks.pending()).toEqual([]);
   });
-  test.each(["allow_once", "deny"] as const)("AC-13/14/16 close confirmation %s", async (choice) => {
+  test.each(["stop", "leave"] as const)("AC-13/14/16 close confirmation %s", async (choice) => {
     const f = fixture();
     await f.start();
     const job = await f.owned();
     const cancel = spyOn(f.jobs(), "cancel").mockResolvedValue(job);
-    assertDefined(f.host.confirmJobsBeforeClose, "confirmClose");
-    const pending = f.host.confirmJobsBeforeClose();
+    assertDefined(f.host.confirmBeforeClose, "confirmClose");
+    const pending = f.host.confirmBeforeClose();
     const card = closeCard(f.host);
     expect(card).toMatchObject({
-      summary: `1 nax job(s) still running: ${job.id}`,
-      reason: "Yes cancels them. No keeps them running in the background; a later nax chat in this repo picks them up.",
+      summary: `1 nax job(s) and 0 background command(s) still running: ${job.id}`,
     });
-    f.host.asks.resolve(card.requestId, choice);
+    f.host.asks.resolveChoice(card.requestId, choice);
     await pending;
-    if (choice === "allow_once") expect(cancel).toHaveBeenCalledWith(job.id);
+    if (choice === "stop") expect(cancel).toHaveBeenCalledWith(job.id);
     else expect(cancel).not.toHaveBeenCalled();
   });
   test("AC-15 cancellation failure logs warn and still cancels the second owned job", async () => {
@@ -237,9 +237,9 @@ describe("createChatHost jobs", () => {
       .map((j) => j.id);
     const cancel = spyOn(f.jobs(), "cancel").mockRejectedValueOnce(new Error("cancel failed")).mockResolvedValue(job);
     const warn = spyOn(f.logger, "warn");
-    assertDefined(f.host.confirmJobsBeforeClose, "confirmClose");
-    const pending = f.host.confirmJobsBeforeClose();
-    f.host.asks.resolve(closeCard(f.host).requestId, "allow_once");
+    assertDefined(f.host.confirmBeforeClose, "confirmClose");
+    const pending = f.host.confirmBeforeClose();
+    f.host.asks.resolveChoice(closeCard(f.host).requestId, "stop");
     await pending;
     expect(cancel.mock.calls.map(([id]) => id)).toEqual(ids);
     expect(warn).toHaveBeenCalledTimes(1);

@@ -59,6 +59,24 @@ function nextChange(jobs: ReturnType<typeof runner>): Promise<void> {
 }
 
 describe("createJobRunner", () => {
+  test("stopLaunching fences new starts and settles admitted launches without cancelling them", async () => {
+    const jobs = runner();
+    try {
+      const changed = mock(() => {});
+      jobs.onChange(changed);
+      const starting = jobs.start(request);
+      expect(changed).not.toHaveBeenCalled();
+      const stopped = jobs.stopLaunching();
+      await expect(jobs.start(request)).rejects.toMatchObject({ code: "CHAT_JOB_CLOSED" });
+      await stopped;
+      expect(changed).toHaveBeenCalledTimes(1);
+      expect(jobs.owned()).toEqual([await starting]);
+      expect(_jobRunnerDeps.spawn).toHaveBeenCalledTimes(1);
+      expect(_jobRunnerDeps.kill).not.toHaveBeenCalled();
+    } finally {
+      jobs.dispose();
+    }
+  });
   test("US-006 AC-20 persists chain identity from start request", async () => {
     const jobs = runner();
     try {

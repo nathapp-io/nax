@@ -9,7 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { Catalog, Pricing, RawProvider, ResolvedModel } from "@nathapp/nax-ai";
-import { _catalogDeps, lookupContextWindow } from "@/agents/catalog";
+import { _catalogDeps, lookupContextWindow, lookupThinkingLevels } from "@/agents/catalog";
 
 const CONTEXT_WINDOW = 200_000;
 
@@ -64,6 +64,36 @@ describe("lookupContextWindow", () => {
   function loadedFrom(load: () => Promise<RawProvider[]>): void {
     _catalogDeps.loadProviders = mock(load);
   }
+
+  describe("lookupThinkingLevels", () => {
+    test("US-001 AC-14 reads declared catalog levels", async () => {
+      const base = rawProvider();
+      const model = base.models[0];
+      if (!model) throw new Error("missing fixture model");
+      const provider: RawProvider = {
+        ...base,
+        id: "opencode-go",
+        models: [{ ...model, id: "deepseek-v4.1-flash", thinkingLevels: ["low", "high", "max"] }],
+      };
+      loadedFrom(async () => [provider]);
+      expect(await lookupThinkingLevels("opencode-go", "deepseek-v4.1-flash")).toEqual(["low", "high", "max"]);
+    });
+    test("US-001 AC-15 fails open on load rejection", async () => {
+      loadedFrom(async () => {
+        throw new Error("offline");
+      });
+      expect(await lookupThinkingLevels("p", "m")).toBeUndefined();
+    });
+    test("US-001 AC-22 fails open on missing model", async () => {
+      loadedFrom(async () => [rawProvider()]);
+      expect(await lookupThinkingLevels("p", "unknown")).toBeUndefined();
+    });
+    test("US-001 AC-23 fails open on model lookup throw", async () => {
+      loadedFrom(async () => [rawProvider()]);
+      _catalogDeps.normalise = () => throwingCatalog();
+      expect(await lookupThinkingLevels("p", "m")).toBeUndefined();
+    });
+  });
 
   test("AC-1 resolves a model's contextWindow from the normalised catalog", async () => {
     loadedFrom(async () => [rawProvider()]);

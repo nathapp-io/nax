@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   type AgentSession,
+  type BackgroundCommandPort,
   buildCommandShadow,
   type CommandShadow,
   type CreateAgentSessionOptions,
@@ -39,6 +40,7 @@ export const _openChatSessionDeps = {
 };
 
 export interface OpenChatSessionRequest {
+  readonly backgroundCommands?: BackgroundCommandPort;
   readonly toolProviders?: readonly ToolProvider[];
   readonly storage: SessionStorage;
   readonly cwd: string;
@@ -173,7 +175,14 @@ async function sessionOptions(
   return {
     backend: deps.nativeBackend({
       ...chatBackendPosture(mode, request.config, posture),
-      ...(commandShadow !== undefined ? { hostPorts: { commandShadow } } : {}),
+      ...(commandShadow !== undefined || request.backgroundCommands !== undefined
+        ? {
+            hostPorts: {
+              ...(commandShadow !== undefined ? { commandShadow } : {}),
+              ...(request.backgroundCommands !== undefined ? { backgroundCommands: request.backgroundCommands } : {}),
+            },
+          }
+        : {}),
       model: meta.model,
       bashApproval: meta.bashApproval,
       allowUnsandboxed: true,

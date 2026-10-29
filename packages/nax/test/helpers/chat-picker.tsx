@@ -35,7 +35,11 @@ function chatState(current: Partial<ChatHostState> = {}): ChatHostState {
 }
 
 interface MountOptions {
+  readonly tasks?: ChatHost["tasks"];
+  readonly jobs?: ChatHost["jobs"];
+  readonly send?: ChatHost["send"];
   readonly models?: readonly string[];
+  readonly effortLevels?: ChatHost["effortLevels"];
   readonly current?: Partial<ChatHostState>;
   /** Absent: `listSessions()` resolves to no rows at once. */
   readonly sessions?: () => Promise<readonly ChatSessionRow[]>;
@@ -70,10 +74,13 @@ export function mount(options: MountOptions = {}) {
   const fake: ChatHost = {
     repoRoot: "/repo",
     models: options.models ?? MODELS,
+    ...(options.effortLevels === undefined ? {} : { effortLevels: options.effortLevels }),
     asks: createChatAskController({ mode: "guarded", answer: () => {} }),
     current: () => current,
     notice: () => undefined,
-    send,
+    send: options.send ?? send,
+    tasks: options.tasks,
+    jobs: options.jobs,
     cancel: mock(() => {}),
     close: mock(async () => {}),
     start: async () => {},

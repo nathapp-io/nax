@@ -69,6 +69,23 @@ describe("pickerModel effort rows", () => {
 });
 
 describe("mounted model effort", () => {
+  test.each([
+    [RIGHT, "max", "default"],
+    [LEFT, "default", "max"],
+    [RIGHT, "high", "max"],
+  ])("US-002 AC-6 cycles %s within the entry model's levels", async (key, initial, expected) => {
+    const ui = mount({
+      models: [`p/m[${initial}]`],
+      current: { model: "q/other" },
+      effortLevels: (model) => (model === "p/m" ? ["default", "low", "high", "max"] : ["default"]),
+    });
+    await ui.submit("/model");
+    ui.press(key);
+    expect(entries(ui)).toEqual([`❯ p/m  effort ${expected}`]);
+    ui.press(RETURN);
+    await ui.settle();
+    expect(ui.switchTo).toHaveBeenCalledWith({ model: withEffort("p/m", expected === "max" ? "max" : "default") });
+  });
   test("AC-8 preserves an uncycled unknown suffix", async () => {
     const ui = await open(["m/x[turbo]"]);
     ui.press(RETURN);

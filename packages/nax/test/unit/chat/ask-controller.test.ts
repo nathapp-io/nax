@@ -334,3 +334,105 @@ describe("host approvals (US-008)", () => {
     expect(await result).toBe("deny");
   });
 });
+
+describe("host choices (US-012)", () => {
+  const original = { ...hostAsks._askControllerDeps };
+  const card = {
+    tool: "nax-close",
+    summary: "Quit?",
+    reason: "Tasks are running",
+    choices: [
+      { id: "stop", label: "Quit and stop them" },
+      { id: "stay", label: "Stay in chat" },
+    ],
+    fallback: "stay",
+  };
+  let clock: ReturnType<typeof makeFakeClock>;
+  beforeEach(() => {
+    clock = makeFakeClock();
+    hostAsks._askControllerDeps.setTimeout = clock.setTimeout;
+    hostAsks._askControllerDeps.clearTimeout = (handle) => clock.clearTimeout(Number(handle));
+  });
+  afterEach(() => Object.assign(hostAsks._askControllerDeps, original));
+  test("AC-1/2/3: queues a host choice with ids, fallback and expiry", async () => {
+    const { asks, answer } = setup("full");
+    const result = asks.requestHostChoice(card);
+    expect(asks.pending()).toHaveLength(1);
+    expect(asks.pending()[0]).toMatchObject({ ...card, type: "host_choice" });
+    expect(asks.pending()[0]?.requestId.startsWith("host-choice-")).toBe(true);
+    expect(Number.isFinite(Date.parse(asks.pending()[0]?.expiresAt ?? ""))).toBe(true);
+    expect(answer).not.toHaveBeenCalled();
+    asks.reset();
+    expect(await result).toBe("stay");
+  });
+  test("AC-4/5: resolves an id, removes the ask and cancels its timer", async () => {
+    const { asks, answer } = setup();
+    const result = asks.requestHostChoice(card);
+    const id = asks.pending()[0]?.requestId ?? "missing";
+    const changed = mock(() => {});
+    asks.onChange(changed);
+    asks.resolveChoice(id, "stop");
+    expect(await result).toBe("stop");
+    expect(asks.pending()).toEqual([]);
+    expect(clock.pending()).toBe(0);
+    expect(changed).toHaveBeenCalledTimes(1);
+    asks.resolveChoice(id, "stay");
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(answer).not.toHaveBeenCalled();
+  });
+  test("choice ids reject invalid and wrong-kind answers and ignore session resolutions", async () => {
+    const { asks, answer } = setup();
+    const abort = new AbortController();
+    const result = asks.requestHostChoice({ ...card, signal: abort.signal });
+    const id = asks.pending()[0]?.requestId ?? "missing";
+    const changed = mock(() => {});
+    asks.onChange(changed);
+    asks.resolveChoice("missing", "stop");
+    asks.resolveChoice(id, "unknown");
+    asks.resolve(id, "allow_once");
+    asks.answerQuestion(id, "stop");
+    asks.handle({ ...base, type: "approval_resolved", requestId: id, decision: "allow", decidedBy: "timeout" });
+    expect(asks.pending()).toHaveLength(1);
+    expect(changed).not.toHaveBeenCalled();
+    asks.resolveChoice(id, "stop");
+    abort.abort();
+    expect(await result).toBe("stop");
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(clock.pending()).toBe(0);
+    expect(answer).not.toHaveBeenCalled();
+  });
+  test("AC-6: timeout returns the fallback at the configured deadline", async () => {
+    const asks = chat.createChatAskController({ mode: "full", answer: () => {}, approvalTimeoutMs: 200 });
+    const result = asks.requestHostChoice(card);
+    await clock.advance(199);
+    expect(asks.pending()).toHaveLength(1);
+    await clock.advance(1);
+    expect(await result).toBe("stay");
+    expect(asks.pending()).toEqual([]);
+    expect(clock.pending()).toBe(0);
+  });
+  test.each([false, true])("AC-7: abort returns fallback (already aborted: %s)", async (already) => {
+    const { asks } = setup();
+    const abort = new AbortController();
+    if (already) abort.abort();
+    const result = asks.requestHostChoice({ ...card, signal: abort.signal });
+    abort.abort();
+    expect(await result).toBe("stay");
+    expect(asks.pending()).toEqual([]);
+    expect(clock.pending()).toBe(0);
+  });
+  test("AC-8/13: reset settles each fallback independently of host approvals", async () => {
+    const { asks } = setup();
+    const first = asks.requestHostChoice(card);
+    const second = asks.requestHostChoice({ ...card, fallback: "stop" });
+    const approval = asks.requestHostApproval({ tool: "Bash", summary: "Run", reason: "r" });
+    const id = asks.pending().find((ask) => ask.type === "approval_requested")?.requestId ?? "missing";
+    asks.resolve(id, "allow_once");
+    expect(await approval).toBe("allow");
+    expect(asks.pending()).toHaveLength(2);
+    asks.reset();
+    expect(await Promise.all([first, second])).toEqual(["stay", "stop"]);
+    expect(asks.pending()).toEqual([]);
+    expect(clock.pending()).toBe(0);
+  });
+});

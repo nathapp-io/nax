@@ -120,6 +120,8 @@ function fakeController(canRemember: boolean) {
     resolve,
     canRemember: () => canRemember,
     requestHostApproval: async () => "deny",
+    requestHostChoice: async (card) => card.fallback,
+    resolveChoice: () => {},
     answerQuestion,
     setMode: () => {},
     reset: () => {},

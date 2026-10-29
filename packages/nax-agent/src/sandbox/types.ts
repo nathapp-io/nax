@@ -113,6 +113,10 @@ export interface LaunchRequest {
   readonly unwrapped?: true;
   /** Aborts the run: forwarded to runArgv, which SIGKILLs the process group. US-001. */
   readonly signal?: AbortSignal;
+  /** Releases the deadline without cancelling the run. Forwarded to runArgv. */
+  readonly releaseDeadline?: AbortSignal;
+  /** Best-effort per-chunk observer, forwarded before bounded output capture. */
+  readonly onOutput?: (stream: "stdout" | "stderr", chunk: Uint8Array) => void;
 }
 
 export interface LaunchResult extends ArgvExecResult {

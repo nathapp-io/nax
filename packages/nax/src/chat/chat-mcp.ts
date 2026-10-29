@@ -24,7 +24,13 @@ import {
 export const CHAT_MCP_RETRY = { maxAttempts: 1, baseDelayMs: 0 } as const;
 
 /** Built-in provider ids; an MCP server may not shadow them. */
-const RESERVED_SERVER_IDS: ReadonlySet<string> = new Set(["nax-skills", "nax-agents", "nax-workflow", "nax-jobs"]);
+const RESERVED_SERVER_IDS: ReadonlySet<string> = new Set([
+  "nax-skills",
+  "nax-agents",
+  "nax-workflow",
+  "nax-jobs",
+  "nax-tasks",
+]);
 
 export interface ChatMcpServerRow {
   readonly id: string;

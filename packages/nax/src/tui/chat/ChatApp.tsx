@@ -63,6 +63,9 @@ export interface ChatAppProps {
   readonly home?: string;
 }
 
+/** Environment seam; sampled once per mounted screen. */
+export const _chatAppDeps = { tmux: (): string | undefined => Bun.env.TMUX };
+
 const FRAME_SLACK_ROWS = 1; // Keep Ink below its full-terminal clear threshold.
 const HEADER_ROWS = 3;
 /** Rows the footer always claims. */
@@ -128,10 +131,7 @@ function stopTurn(status: TurnStatus): TurnStatus {
   return status.running ? { ...status, running: false } : status;
 }
 
-/**
- * Where a slash command's shown text goes: a listing entry per run for the commands that
- * list, one notice entry per statement for everything else.
- */
+/** Slash output is one listing per run, or one notice per statement. */
 interface SlashSink {
   show(text: string): void;
   flush(): void;
@@ -168,6 +168,7 @@ export function ChatApp({
   home = "",
 }: ChatAppProps): ReactElement {
   const { stdout } = useStdout();
+  const [tmux] = useState(() => Boolean(_chatAppDeps.tmux()));
   const { copiedChars, onCopy } = useClipboardFeedback(mouse);
   const [size, setSize] = useState<TerminalSize>(() => terminalSize(stdout));
   const state = host.current();
@@ -196,7 +197,13 @@ export function ChatApp({
     setEntries((rows) => [...rows, entry]);
   }, []);
   const showError = useCallback((error: unknown) => append({ kind: "error", text: errorMessage(error) }), [append]);
-  const keys = useChatKeys({ host, running: sending, refresh: update, onError: showError });
+  const keys = useChatKeys({
+    host,
+    running: sending,
+    refresh: update,
+    onError: showError,
+    onNotice: (text) => append({ kind: "notice", text }),
+  });
   /** The picker a `picker` outcome opens (US-027): the list, and what its keys do. */
   const picker = useChatPicker({ host, runControl: keys.runControl, onError: showError });
   const ask = host.asks.pending()[0];
@@ -205,35 +212,21 @@ export function ChatApp({
   // The menu offers what the host's catalogue adds to the built-ins. A session's catalogue is
   // fixed for its life, so the items are built once per host rather than on every tick.
   const menuItems = useMemo(() => slashMenuItems(host), [host]);
-  /**
-   * The slash menu's claim on the navigation keys, read at key time. A terminal can deliver a
-   * tab, its argument and a return before React redraws, so both the input and the menu ask
-   * this instead of the render's `open`: after the tab the prompt is no longer a query, and
-   * that return submits `/resume <id>` rather than running the row the menu still shows.
-   */
+  // Read menu ownership at key time: batched tab/argument/return can precede React's redraw.
   const slashKeys = useSlashMenuKeys({
     items: menuItems,
     initialQuery: draft.editor.text,
     initialDismissal: dismissedQuery,
     blocked: bottomBlocked(ask, picker.model),
   });
-  /**
-   * The slash menu is open while the prompt holds a `/` query that matches something, while
-   * no ask card owns the bottom of the screen (a card's keys are its own), and while no
-   * escape has put this prompt's menu away. A dismissal lasts only until the text next
-   * changes, so the remembered query is dropped as soon as the prompt holds anything else.
-   */
+  // Escape suppresses matching slash queries until the prompt changes; cards take precedence.
   const menu = slashMenuQueryState({
     items: menuItems,
     query: draft.editor.text,
     dismissed: dismissedQuery,
     blocked: bottomBlocked(ask, picker.model),
   });
-  // The working line and the rows the bottom region may claim are settled here, above the key
-  // handlers, because the rows the menu gets decide whether it owns a key at all: a terminal
-  // too short to leave the menu a row (`menuRowsFor`) draws none of it, and a menu nobody can
-  // see must not take the arrows or the return — that key would run a row the user never saw
-  // (`/co` silently running `/cost` on an eight-row terminal).
+  // Measure first: an invisible menu must not claim navigation or run unseen commands.
   const working = workingLine(status, nowMs, theme.glyphs);
   const usableRows = size.rows - FRAME_SLACK_ROWS;
   const bottomBudget = Math.max(
@@ -241,22 +234,11 @@ export function ChatApp({
     usableRows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
   );
   const menuRows = menuRowsFor({ rows: menu.rows, budget: bottomBudget });
-  /**
-   * Whether the menu is on screen: its query keeps matches (`menu.open`) and the bottom region
-   * has a row to draw them in. Zero rows is a menu the terminal cannot show, so the surface
-   * there is the input alone.
-   */
+  /** A menu with no row budget cannot own keys. */
   function menuShown(): boolean {
     return menu.open && menuRows > 0;
   }
-  /**
-   * Whether the slash menu owns a navigation key, asked at key time by both the input and the
-   * menu. It takes three things: the menu has to be on screen — a `/quit` typed and returned in
-   * one batch reaches the input before the menu it opens is mounted, and a key yielded to a
-   * component that is not there is a key nobody handles — it has to have a row to draw that
-   * key's effect in, and it has to still own the prompt as the newest key left it, so the return
-   * after a completion is the prompt's.
-   */
+  /** Check visibility and the newest prompt, not the render preceding a batched key. */
   function menuOwnsKeys(): boolean {
     return menuShown() && slashKeys.ownsKeys();
   }
@@ -265,16 +247,7 @@ export function ChatApp({
     setDismissedQuery(undefined);
   }
 
-  /**
-   * The two keys the screen itself owns, in every state: ctrl+o toggles collapsed detail, and
-   * escape interrupts a running turn. Escape is claimed only when no ask card is up — the card
-   * owns it, and a card's escape must never reach `host.cancel()` — only while no picker is
-   * shown (a picker's escape cancels the list), only while no slash menu is open (the menu's
-   * escape puts the menu away and nothing else), only while a turn runs, and only while the
-   * hook's control guard is open: on an idle screen the input owns it (where a first escape
-   * arms the clear), and once close has begun the host is already closed, so a late escape
-   * would throw instead of letting teardown finish.
-   */
+  // Ctrl+o toggles detail; escape interrupts only when no bottom surface or control owns it.
   useInput((input, key) => {
     if (key.ctrl && input === CTRL_O) {
       setExpanded((current) => !current);
@@ -357,6 +330,7 @@ export function ChatApp({
       return;
     }
     if (outcome.kind === "send") {
+      noteUserTurn();
       await sendTurn(outcome.message, undefined, `/${command.name}${command.rest}`);
       return;
     }
@@ -371,6 +345,7 @@ export function ChatApp({
         const { command: failed, reason } = expandedLines.failed;
         return { notice: `command /${name} not sent: !\`${failed}\` failed: ${reason}` };
       }
+      noteUserTurn();
       return { message: buildCommandMessage(expandedLines.text, rest) };
     });
   }
@@ -378,6 +353,7 @@ export function ChatApp({
   async function submit(message: string): Promise<void> {
     const command = parseSlashCommand(message);
     if (!command) {
+      noteUserTurn();
       await sendTurn(message);
       return;
     }
@@ -429,7 +405,11 @@ export function ChatApp({
     }
   }
 
-  const jobs = useJobs(host, {
+  const {
+    running: jobs,
+    backgroundable,
+    noteUserTurn,
+  } = useJobs(host, {
     idle: idleForJobNotice({
       turnRunning,
       bottomBlocked: bottomBlocked(ask, picker.model),
@@ -438,12 +418,7 @@ export function ChatApp({
     deliver: (text) => sendTurn(text),
   });
 
-  /**
-   * The menu's two actions go through the input's own bookkeeping: `complete` writes the
-   * same draft ref the next keystroke in a batch reduces, and `submit` disarms the clear and
-   * empties the prompt exactly as a typed return does. The menu is only ever drawn beside the
-   * input — an ask card hides it — so the handle is set whenever a menu key can run.
-   */
+  // Use input bookkeeping so batched keys see completion and submission clears the draft.
   function completeCommand(name: string): void {
     inputHandle.current?.complete(`/${name} `);
   }
@@ -472,7 +447,14 @@ export function ChatApp({
     status,
     hint:
       copiedChars === undefined
-        ? footerHint({ quitArmed: keys.quitArmed(), clearArmed, busy: turnRunning, expanded })
+        ? footerHint({
+            quitArmed: keys.quitArmed(),
+            clearArmed,
+            busy: turnRunning,
+            expanded,
+            backgroundable,
+            tmux,
+          })
         : "copied",
     copiedChars,
     glyphs: theme.glyphs,
@@ -540,16 +522,7 @@ export function ChatApp({
           <StyledLineView line={working} theme={theme} />
         </FixedRow>
       ) : null}
-      {/*
-        The bottom region is clipped to the rows reserved above: a row that ever measured short
-        loses its tail rather than growing the frame, so the footer stays on the screen's last
-        row whatever the terminal, the draft or an ask does. The ask card is measured by
-        `askCardLayout` — every row it draws, the wrapped elision label and the countdown
-        included — and its own budget already drops the middle of an oversized card, so the
-        clipping only ever trims a card on a terminal too short for its answer box. A picker
-        replaces the input entirely, its frame and rows measured by `pickerRows`; a card that
-        arrives while one is open takes the region back, because its question comes first.
-      */}
+      {/* Clip measured rows to preserve the footer. Cards take precedence over pickers and input. */}
       {ask !== undefined && askModel !== undefined ? (
         <Box height={bottomRows} overflow="hidden" flexDirection="column">
           <AskCard

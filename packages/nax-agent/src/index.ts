@@ -515,3 +515,11 @@ export {
   type OwnedBashCandidate,
   type OwnedPathsPolicy,
 } from "#src/tools/owned-paths";
+
+export type {
+  BackgroundCommandPort,
+  BackgroundCommandHandle,
+  BackgroundCommandSink,
+  BackgroundCommandEnd,
+  ForegroundCommand,
+} from "#src/tools/bash-background";

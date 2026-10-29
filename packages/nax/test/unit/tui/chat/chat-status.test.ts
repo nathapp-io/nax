@@ -17,6 +17,31 @@ import {
 } from "@/tui/chat/chat-status";
 import { plainText } from "@/tui/chat/styled-line";
 import { type ChatColorToken, resolveChatTheme } from "@/tui/chat/theme";
+import { footerHint } from "@/tui/chat/use-clipboard-feedback";
+
+describe("footerHint", () => {
+  test.each([
+    ["AC-5", {}, "background"],
+    ["AC-6", { tmux: true }, "backgroundTmux"],
+    ["AC-7", { backgroundable: false }, "busy"],
+    ["AC-8", { quitArmed: true }, "quit"],
+    ["clear wins", { clearArmed: true }, "clear"],
+    ["idle foreground", { busy: false }, "idle"],
+    ["expanded foreground", { busy: false, expanded: true }, "expanded"],
+  ] as const)("%s with %j selects %s", (_ac, overrides, expected) => {
+    expect(
+      footerHint({
+        quitArmed: false,
+        clearArmed: false,
+        busy: true,
+        expanded: false,
+        backgroundable: true,
+        tmux: false,
+        ...overrides,
+      }),
+    ).toBe(expected);
+  });
+});
 
 const AT = "2026-10-26T00:00:00.000Z";
 const LATER = "2026-10-26T00:00:04.000Z";
@@ -414,6 +439,8 @@ describe("footerModel left", () => {
   const HINT_CASES: Array<[FooterHint, string]> = [
     ["clear", "esc again to clear"],
     ["busy", "esc to interrupt"],
+    ["background", "esc to interrupt · ctrl+b to background"],
+    ["backgroundTmux", "esc to interrupt · ctrl+b ctrl+b to background"],
     ["expanded", "ctrl+o to collapse"],
   ];
 

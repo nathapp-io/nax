@@ -16,6 +16,7 @@ import { getSafeLogger, NaxError } from "#src/infra/index";
 import type { QualityCommandSpec } from "#src/internal/command-spec/index";
 import type { AskResolver } from "#src/permissions/index";
 import type { CommandLauncher } from "#src/sandbox/index";
+import type { BackgroundCommandPort } from "#src/tools/bash-background";
 import {
   advertisedSchemaBytes,
   BASH_TOOL_NAME,
@@ -37,7 +38,12 @@ import {
 } from "#src/tools/index";
 import type { OwnedPathsPolicy } from "#src/tools/owned-paths";
 import { resolveBashSupport } from "./coding-tool-bash.ts";
-import { buildDeclaredCommandTools, unsandboxedRuntimeOption, unsandboxedToolOptions } from "./coding-tool-extras.ts";
+import {
+  backgroundToolOptions,
+  buildDeclaredCommandTools,
+  unsandboxedRuntimeOption,
+  unsandboxedToolOptions,
+} from "./coding-tool-extras.ts";
 import { isTempConfined, rawScreenOptionsFor } from "./coding-tool-sandbox.ts";
 
 export interface CodingToolSupport {
@@ -173,6 +179,7 @@ export function buildCodingToolSupport(args: {
    * the runtime's own reading of the field is a later story.
    */
   unsandboxedCommands?: boolean;
+  backgroundCommands?: BackgroundCommandPort;
   askOnUnsandboxed?: boolean;
   /** US-001: forwarded into ToolRunContext so Bash/Exec can SIGKILL on cancel. */
   abortSignal?: AbortSignal;
@@ -295,6 +302,7 @@ export function buildCodingToolSupport(args: {
         ...(args.shell !== undefined ? { shell: args.shell } : {}),
         ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
         ...unsandboxedToolOptions(args),
+        ...backgroundToolOptions(args),
       }),
     ],
     ...(args.providerIdByTool !== undefined ? { providerIdByTool: args.providerIdByTool } : {}),

@@ -86,7 +86,16 @@ export interface AskCardQuestion {
   readonly border: AskBorder;
 }
 
-export type AskCardModel = AskCardApproval | AskCardQuestion;
+export interface AskCardChoice {
+  readonly kind: "choice";
+  readonly title: string;
+  readonly summary: string;
+  readonly reason: string;
+  readonly fallback: string;
+  readonly options: readonly { readonly index: number; readonly label: string; readonly id: string }[];
+}
+
+export type AskCardModel = AskCardApproval | AskCardQuestion | AskCardChoice;
 
 /** The card's title: what the tool does, plus the sandbox note when it wants out. */
 function askTitle(ask: ChatApproval, tool: string): string {
@@ -171,6 +180,20 @@ function askOptions(canRemember: boolean): readonly AskOption[] {
 export function askCardModel(ask: ChatPendingAsk, options: AskCardOptions): AskCardModel {
   if (ask.type === "question") {
     return { kind: "question", title: ASK_QUESTION_TITLE, text: sanitizeText(ask.text), border: "warning" };
+  }
+  if (ask.type === "host_choice") {
+    return {
+      kind: "choice",
+      title: sanitizeText(ask.tool),
+      summary: sanitizeText(ask.summary),
+      reason: sanitizeText(ask.reason),
+      fallback: ask.fallback,
+      options: ask.choices.map((choice, index) => ({
+        index: index + 1,
+        label: sanitizeText(choice.label),
+        id: choice.id,
+      })),
+    };
   }
   const tool = sanitizeText(ask.tool);
   const said = attribution(sanitizeText(ask.reason));

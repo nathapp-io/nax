@@ -6,6 +6,7 @@ import {
   type ChatHostState,
   type ChatMode,
   cycleEffort,
+  EFFORT_LEVELS,
   type EffortLevel,
   isEffortLevel,
   withEffort,
@@ -65,12 +66,13 @@ function heldWarning(sessionId: string, pid: number): string {
 }
 
 /** The model one picker state draws, read against the session it is shown over. */
-function modelOf(state: PickerState, current: ChatHostState, models: readonly string[]): PickerModel {
+function modelOf(state: PickerState, current: ChatHostState, host: ChatHost): PickerModel {
   return pickerModel({
     kind: state.kind,
     query: state.query,
     pending: state.pending,
-    models,
+    models: host.models,
+    effortLevels: host.effortLevels?.(current.model) ?? EFFORT_LEVELS,
     currentModel: current.model,
     currentMode: current.mode,
     ...(state.sessions === undefined ? {} : { sessions: state.sessions }),
@@ -150,7 +152,7 @@ export function useChatPicker({ host, runControl, onError }: ChatPickerOptions):
   );
 
   const current = state === undefined ? undefined : host.current();
-  const model = state === undefined || current === undefined ? undefined : modelOf(state, current, host.models);
+  const model = state === undefined || current === undefined ? undefined : modelOf(state, current, host);
   const setQuery = useCallback((query: string): void => {
     setState((current) => (current?.kind === "model" ? { ...current, query } : current));
   }, []);
@@ -160,11 +162,11 @@ export function useChatPicker({ host, runControl, onError }: ChatPickerOptions):
       const initial = entry.effortLabel ?? "default";
       const level = pending.current.get(entry.value) ?? (isEffortLevel(initial) ? initial : "default");
       const next = new Map(pending.current);
-      next.set(entry.value, cycleEffort(level, step));
+      next.set(entry.value, cycleEffort(level, step, host.effortLevels?.(entry.value) ?? EFFORT_LEVELS));
       pending.current = next;
       setState((current) => (current?.kind === "model" ? { ...current, pending: next } : current));
     },
-    [state?.kind],
+    [state?.kind, host],
   );
   return { model, open, cancel, choose, setQuery, cycle };
 }

@@ -29,6 +29,12 @@ import { formatExecBody } from "#src/internal/exec-framing";
 import type { BashApprovalMode } from "../config/bash-approval.ts";
 import type { SandboxRecord } from "../sandbox/index.ts";
 import { type CommandLauncher, rawBashRefusalReason, sandboxSentence, unsandboxedSentence } from "../sandbox/index.ts";
+import {
+  type BackgroundCommandPort,
+  type BackgroundLaunchOptions,
+  runBashWithBackground,
+  withBackgroundSentence,
+} from "./bash-background.ts";
 import type { CodingTool, ToolRunContext } from "./registry.ts";
 import { cutToByteCap, READ_CEILING } from "./truncate.ts";
 import { BASH_TOOL_NAME } from "./types.ts";
@@ -48,6 +54,7 @@ const MIN_BASH_TIMEOUT_MS = 1_000;
 export const DEFAULT_BASH_SHELL = "/bin/sh";
 
 export interface BashToolOptions {
+  readonly background?: BackgroundCommandPort;
   /** `quality.shell`. */
   readonly shell?: string;
   /** `quality.stripEnvVars` — secrets removed before the spawn. */
@@ -257,6 +264,8 @@ interface BashLaunchRequest {
   readonly timeoutMs: number;
   /** US-003: the call asked for exactly `unsandboxed: true`, so run it outside the sandbox. */
   readonly unwrapped: boolean;
+  readonly backgroundLaunch?: BackgroundLaunchOptions;
+  readonly isForeground?: () => boolean;
 }
 
 /**
@@ -276,6 +285,8 @@ async function launchIntercepted({
   ctx,
   timeoutMs,
   unwrapped,
+  backgroundLaunch,
+  isForeground,
 }: BashLaunchRequest): Promise<{ launched: BashLaunch; stdout: string }> {
   // The run's interceptor arrives on the context (S1 spec port 7), immutable
   // for this call, so the launch below and `postProcess` see the same object.
@@ -296,6 +307,7 @@ async function launchIntercepted({
     stripEnvVars: [...(opts.stripEnvVars ?? [])],
     ...(agentOverlay !== undefined ? { env: agentOverlay } : {}),
     ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
+    ...backgroundLaunch,
   };
   const launched: BashLaunch =
     opts.launcher !== undefined
@@ -308,7 +320,9 @@ async function launchIntercepted({
           ...(unwrapped ? { unwrapped: true } : {}),
         })
       : { ...(await _bashToolDeps.runArgv({ argv: executed, ...common })), executed, sandbox: undefined };
-  if (!intercepted.rewritten) return { launched, stdout: launched.stdout };
+  if (!intercepted.rewritten || (backgroundLaunch !== undefined && isForeground?.() !== true)) {
+    return { launched, stdout: launched.stdout };
+  }
 
   // The request describes the command the MODEL wrote — the same shape
   // `interceptShell` sent — so post-processing stays keyed to the original,
@@ -364,6 +378,7 @@ function bashToolInputSchema(opts: BashToolOptions): CodingTool["inputSchema"] {
         description: `Deadline in milliseconds (default and maximum ${BASH_TIMEOUT_MS}).`,
       },
       description: { type: "string", description: "One short line on what this command is for." },
+      ...(opts.background !== undefined ? { runInBackground: { type: "boolean" } } : {}),
       ...(opts.unsandboxedCommands === true
         ? { unsandboxed: { type: "boolean" }, unsandboxedReason: { type: "string" } }
         : {}),
@@ -380,7 +395,10 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
     // not a fault worth an operator's attention — the same reason RunCommand
     // sets this.
     routineErrors: true,
-    description: withUnsandboxedSentence(bashToolDescription(shell, opts), opts),
+    description: withBackgroundSentence(
+      withUnsandboxedSentence(bashToolDescription(shell, opts), opts),
+      opts.background,
+    ),
     inputSchema: bashToolInputSchema(opts),
     // `commandField` is what routes this call to the Bash branch of the policy
     // (src/tools/policy-bash.ts). No pathFields: the paths are inside the
@@ -405,7 +423,17 @@ export function createBashTool(opts: BashToolOptions = {}): CodingTool {
         // here: whether the argument is ADVERTISED is the option's business, and what a
         // given call asked for is the call's.
         const unwrapped = input.unsandboxed === true;
-        const { launched, stdout } = await launchIntercepted({ command, shell, opts, ctx, timeoutMs, unwrapped });
+        const request = { command, shell, opts, ctx, timeoutMs, unwrapped };
+        const result = await runBashWithBackground({
+          port: opts.background,
+          runInBackground: input.runInBackground,
+          command,
+          description: input.description,
+          signal: ctx.signal,
+          launch: (backgroundLaunch, isForeground) => launchIntercepted({ ...request, backgroundLaunch, isForeground }),
+        });
+        if ("content" in result) return result;
+        const { launched, stdout } = result;
         // Same framing ladder as RunCommand (Exec) via the shared
         // `formatExecBody`: an aborted call opens with the cancellation line
         // and surfaces whatever partial output the readers captured before the

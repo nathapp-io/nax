@@ -128,6 +128,9 @@ const OptionsSchema = z.strictObject({
       commandShadow: z
         .custom(hasMethods(["observe", "settle", "drain"]), "must implement observe, settle and drain")
         .optional(),
+      backgroundCommands: z
+        .custom(hasMethods(["adopt", "foreground"]), "must implement adopt and foreground")
+        .optional(),
       commandInterceptor: z.custom(hasMethods(["intercept"]), "must implement intercept").optional(),
     })
     .optional(),

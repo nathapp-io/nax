@@ -4,6 +4,7 @@ import type { AgentSession, SessionMeta } from "@nathapp/nax-agent";
 import { assertDefined, cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir, waitForCondition } from "@test/helpers";
 import { type ChatResources, createChatHost, createChatStorage } from "@/chat";
 import { createChatAskController } from "@/chat/ask-controller";
+import { createCloseConfirm } from "@/chat/close-confirm";
 import { createHostJobs } from "@/chat/jobs";
 import { _chainStoreDeps, readChainRecord } from "@/chat/jobs/chain-store";
 import { _jobRunnerDeps } from "@/chat/jobs/job-runner";
@@ -57,7 +58,9 @@ function compose() {
   const approve = spyOn(asks, "requestHostApproval").mockResolvedValue("deny");
   const composed = createHostJobs({ ...options, asks });
   compositions.push(composed);
-  return { ...options, ...composed, approve };
+  const choice = spyOn(asks, "requestHostChoice").mockResolvedValue("leave");
+  const confirmClose = createCloseConfirm({ hostJobs: composed, asks, logger: options.logger });
+  return { ...options, ...composed, approve, choice, confirmClose };
 }
 async function activate(f: ReturnType<typeof compose>) {
   await f.chains.activate({ steps: [{ kind: "run", argv: ["bun", "/n.ts", "run", "f1"], target: "f1" }] });
@@ -87,7 +90,7 @@ describe("createHostJobs chains", () => {
     const f = compose();
     const writing = Promise.withResolvers<void>();
     const releaseWrite = Promise.withResolvers<void>();
-    const closeDecision = Promise.withResolvers<"allow" | "deny">();
+    const closeDecision = Promise.withResolvers<string>();
     const stoppedRecord = Promise.withResolvers<void>();
     _chainStoreDeps.rename = (from, to) => {
       originalRename(from, to);
@@ -117,8 +120,9 @@ describe("createHostJobs chains", () => {
         },
       ]);
     }
-    f.approve.mockImplementation((card) =>
-      card.tool === "nax-jobs__close" ? closeDecision.promise : Promise.resolve("allow"),
+    f.approve.mockResolvedValue("allow");
+    f.choice.mockImplementation((card) =>
+      card.tool === "nax-close" ? closeDecision.promise : Promise.resolve("stay"),
     );
     _jobsLaunchDeps.git = async () => ({ exitCode: 0, stdout: "feat/f1\n", stderr: "" });
     const chainTool = (await f.provider.tools(f.repoRoot)).find((t) => t.localName === "chain");
@@ -133,7 +137,11 @@ describe("createHostJobs chains", () => {
       },
     );
     await writing.promise;
-    const closing = f.confirmClose();
+    const closing = f.confirmClose().then((quit) => {
+      if (quit) f.close();
+    });
+    closeDecision.resolve("leave");
+    await closing;
     try {
       releaseWrite.resolve();
       const result = await activation;
@@ -149,10 +157,11 @@ describe("createHostJobs chains", () => {
         stopReason: "the chat closed",
       });
       await expect(activate(f)).rejects.toMatchObject({ code: "CHAT_CHAIN_CLOSED" });
-      expect(f.approve).toHaveBeenCalledTimes(owned ? 2 : 1);
+      expect(f.approve).toHaveBeenCalledTimes(1);
+      expect(f.choice).toHaveBeenCalledTimes(owned ? 1 : 0);
     } finally {
       releaseWrite.resolve();
-      closeDecision.resolve("deny");
+      closeDecision.resolve("stay");
       await closing;
     }
   });
@@ -179,16 +188,16 @@ describe("createHostJobs chains", () => {
   test("AC-15 stops before an empty close without asking", async () => {
     const f = compose();
     await activate(f);
-    const owned = spyOn(f.jobs, "owned").mockImplementation(() => {
-      expect(f.chains.summary()?.stopReason).toBe("the chat closed");
-      return [];
-    });
-    await f.confirmClose();
-    expect(owned).toHaveBeenCalledTimes(1);
+    const owned = spyOn(f.jobs, "owned").mockReturnValue([]);
+    expect(await f.confirmClose()).toBe(true);
+    // Inspect for the card, then re-read after fencing launches for cancellation.
+    expect(owned).toHaveBeenCalledTimes(2);
+    expect(f.chains.summary()?.stopReason).toBe("the chat closed");
+    expect(f.choice).not.toHaveBeenCalled();
     expect(f.chains.active()).toBeUndefined();
     expect(f.approve).not.toHaveBeenCalled();
   });
-  test("AC-16 stops before one close approval and keeps a declined job running", async () => {
+  test.each(["leave", "stay"])("close choice %s retains the job and only leave stops chains", async (choice) => {
     const f = compose();
     await activate(f);
     const job = {
@@ -207,12 +216,14 @@ describe("createHostJobs chains", () => {
     };
     spyOn(f.jobs, "owned").mockReturnValue([job]);
     const cancel = spyOn(f.jobs, "cancel");
-    f.approve.mockImplementation(async () => {
-      expect(f.chains.summary()?.stopReason).toBe("the chat closed");
-      return "deny";
+    f.choice.mockImplementation(async () => {
+      expect(f.chains.active()).toBeDefined();
+      return choice;
     });
-    await f.confirmClose();
-    expect(f.approve).toHaveBeenCalledTimes(1);
+    expect(await f.confirmClose()).toBe(choice === "leave");
+    expect(f.choice).toHaveBeenCalledTimes(1);
+    expect(Boolean(f.chains.active())).toBe(choice === "stay");
+    if (choice === "leave") expect(f.chains.summary()?.stopReason).toBe("the chat closed");
     expect(cancel).not.toHaveBeenCalled();
     expect(job.state).toBe("running");
   });

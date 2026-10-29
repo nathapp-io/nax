@@ -17,10 +17,13 @@ import { projectOutputDir } from "@/runtime";
 import { createAgentsProvider } from "./agents-provider";
 import { type ChatAskController, createChatAskController } from "./ask-controller";
 import { type AskFallback, createAskFallback } from "./ask-fallback";
+import { type ChatBackgroundTasks, createHostTasks } from "./background";
 import { type ChatAgentRow, listAgentRows } from "./chat-agents-listing";
+import { clampModelEffort, EFFORT_LEVELS, type EffortLevel, withEffort } from "./chat-effort";
 import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import { type ChatMode, chatModeOfMeta } from "./chat-mode";
 import { tierModels } from "./chat-models";
+import { createCloseConfirm } from "./close-confirm";
 import { type ChatJobs, createHostJobs } from "./jobs";
 import { type ChatHistory, type ChatSessionHandle, openChatSession } from "./open-chat-session";
 import type { ChatResources } from "./resources";
@@ -69,9 +72,11 @@ export interface ChatHost {
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   readonly jobs?: ChatJobs;
-  readonly confirmJobsBeforeClose?: () => Promise<void>;
+  readonly tasks?: ChatBackgroundTasks;
+  readonly confirmBeforeClose?: () => Promise<boolean>;
   current(): ChatHostState;
   history?(): ChatHistory;
+  effortLevels?(model: string): readonly EffortLevel[];
   /** One row per catalog agent in catalog order, resolved against the chat session's current model. */
   agents?(): readonly ChatAgentRow[];
   start(input: { mode: ChatMode; model: string }): Promise<void>;
@@ -91,6 +96,7 @@ export interface ChatHostDeps {
   readonly naxEntry?: readonly string[];
   readonly resources?: ChatResources;
   readonly models?: readonly string[];
+  readonly effortLevels?: ReadonlyMap<string, readonly EffortLevel[]>;
   readonly config: NaxConfig;
   readonly cwd: string;
   readonly repoRoot: string;
@@ -109,7 +115,8 @@ class NativeChatHost implements ChatHost {
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   readonly jobs?: ChatJobs;
-  readonly confirmJobsBeforeClose?: () => Promise<void>;
+  readonly tasks?: ChatBackgroundTasks;
+  readonly confirmBeforeClose?: () => Promise<boolean>;
   private readonly hostJobs?: ReturnType<typeof createHostJobs>;
   private readonly fallback: AskFallback;
   private readonly hygiene: ReturnType<typeof createSessionHygiene>;
@@ -162,7 +169,6 @@ class NativeChatHost implements ChatHost {
         : undefined;
     this.hostJobs = hostJobs;
     this.jobs = hostJobs?.jobs;
-    this.confirmJobsBeforeClose = hostJobs?.confirmClose;
     const rules = deps.config.context.rules;
     this.loopHandlers = Object.freeze([
       ...(deps.resources?.pluginHandlers ?? []),
@@ -187,10 +193,16 @@ class NativeChatHost implements ChatHost {
         ledger: () => this.ledger,
         turnListener: () => this.turnListener,
       });
-      const providers = hostJobs ? [...resources.toolProviders, hostJobs.provider] : resources.toolProviders;
+      const hostTasks = createHostTasks({ outputDir: this.outputDir, now: deps.now, logger: deps.logger });
+      this.tasks = hostTasks.tasks;
+      const providers = [...resources.toolProviders, ...(hostJobs ? [hostJobs.provider] : []), hostTasks.provider];
       this.toolProviders = resources.catalog.agents.length
         ? [...providers, createAgentsProvider({ catalog: resources.catalog, run: this.runs.run })]
         : providers;
+    }
+    if (hostJobs || this.tasks) {
+      const closeOptions = { hostJobs, tasks: this.tasks, asks: this.asks, logger: deps.logger };
+      this.confirmBeforeClose = createCloseConfirm(closeOptions);
     }
     this.fallback = createAskFallback({
       controller: this.asks,
@@ -208,6 +220,10 @@ class NativeChatHost implements ChatHost {
     this.assertOpen();
     if (!this.handle) throw new NaxError("[chat] no session is open", "CHAT_SESSION_NOT_OPEN", { stage: "chat" });
     return this.handle;
+  }
+
+  effortLevels(model: string): readonly EffortLevel[] {
+    return this.deps.effortLevels?.get(withEffort(model, "default")) ?? EFFORT_LEVELS;
   }
 
   history(): ChatHistory {
@@ -289,6 +305,7 @@ class NativeChatHost implements ChatHost {
       config: this.deps.config,
       loopHandlers: this.loopHandlers,
       ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
+      ...(this.tasks ? { backgroundCommands: this.tasks } : {}),
     });
     await this.replace(next);
     await this.jobs?.attach();
@@ -378,6 +395,7 @@ class NativeChatHost implements ChatHost {
           config: this.deps.config,
           loopHandlers: this.loopHandlers,
           ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
+          ...(this.tasks ? { backgroundCommands: this.tasks } : {}),
           resumeId: id,
         });
       } catch (error) {
@@ -418,6 +436,7 @@ class NativeChatHost implements ChatHost {
       config: this.deps.config,
       loopHandlers: this.loopHandlers,
       ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
+      ...(this.tasks ? { backgroundCommands: this.tasks } : {}),
     });
     return {
       ...next,
@@ -438,7 +457,9 @@ class NativeChatHost implements ChatHost {
   private async switchSession(input: { mode?: ChatMode; model?: string }): Promise<void> {
     const previous = this.requireHandle();
     const from = this.current();
-    const target = { mode: input.mode ?? from.mode, model: input.model ?? from.model };
+    const model =
+      input.model === undefined ? from.model : clampModelEffort(input.model, this.effortLevels(input.model));
+    const target = { mode: input.mode ?? from.mode, model };
     if (target.mode === from.mode && target.model === from.model) return;
     try {
       await previous.session.close();
@@ -558,7 +579,11 @@ class NativeChatHost implements ChatHost {
       if (this.handle) await this.hygiene.close(this.handle);
     } finally {
       try {
-        await this.deps.resources?.teardown();
+        try {
+          await this.tasks?.stopAll();
+        } finally {
+          await this.deps.resources?.teardown();
+        }
       } finally {
         await this.deps.chain?.destroy();
       }

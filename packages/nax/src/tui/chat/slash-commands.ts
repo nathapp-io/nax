@@ -9,6 +9,7 @@ import {
   sessionTitleText,
   withEffort,
 } from "@/chat";
+import { formatTasksListing } from "@/chat/background";
 import { featureDir } from "@/config";
 import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing } from "@/resources";
@@ -121,7 +122,10 @@ function formatHelp(host: ChatHost): string {
 
 /** Keep the optional jobs capability's fallback separate from command dispatch. */
 function formatSessionJobs(host: ChatHost): string {
-  return host.jobs ? formatJobsListing(host.jobs.list()) : "jobs are not available in this session";
+  if (!host.jobs && !host.tasks) return "jobs are not available in this session";
+  return [host.jobs ? formatJobsListing(host.jobs.list()) : "", host.tasks ? formatTasksListing(host.tasks.list()) : ""]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function catalogCommand(command: SlashCommand, { host, show }: CommandContext): SlashOutcome | undefined {
@@ -139,12 +143,18 @@ async function effortCommand(command: SlashCommand, { host, show }: CommandConte
   }
   const arg = command.args[0];
   if (arg === undefined) return { kind: "picker", picker: "effort" };
+  const model = host.current().model;
+  const levels = host.effortLevels?.(model) ?? EFFORT_LEVELS;
   const level = arg.toLowerCase();
   if (!isEffortLevel(level)) {
-    show(`unknown effort "${arg}"; use one of: ${EFFORT_LEVELS.join(", ")}`);
+    show(`unknown effort "${arg}"; use one of: ${levels.join(", ")}`);
     return;
   }
-  await host.switchTo({ model: withEffort(host.current().model, level) });
+  if (!levels.includes(level)) {
+    show(`effort "${arg}" is not available for ${model}; use one of: ${levels.join(", ")}`);
+    return;
+  }
+  await host.switchTo({ model: withEffort(model, level) });
 }
 
 /**

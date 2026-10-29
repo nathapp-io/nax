@@ -16,6 +16,38 @@ const available = { kind: "available", backend: "srt", network: "open" } as cons
 describe("createCommandLauncher", () => {
   withDepsRestore(_launcherDeps);
 
+  test.each([false, true])(
+    "AC-9/10: forwards deadline release and output observer (unwrapped=%s)",
+    async (unwrapped) => {
+      const releaseDeadline = new AbortController().signal;
+      const onOutput = (_stream: "stdout" | "stderr", _chunk: Uint8Array): void => {};
+      const calls: Parameters<typeof _launcherDeps.runArgv>[0][] = [];
+      _launcherDeps.runArgv = async (options) => {
+        calls.push(options);
+        return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+      };
+      const launcher = createCommandLauncher({
+        state: available,
+        backend: makeFakeSandboxBackend("enforce"),
+        policyFor: async (r) => policy(r),
+      });
+      const request = {
+        spec: { kind: "shell", shell: "/bin/sh", command: "echo hi" } as const,
+        root,
+        cwd: root,
+        timeoutMs: 1000,
+        stripEnvVars: [],
+        releaseDeadline,
+        onOutput,
+        ...(unwrapped ? { unwrapped: true as const } : {}),
+      };
+      const result = await launcher.run(request);
+      expect(result.sandbox.wrapped).toBe(!unwrapped);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual(expect.objectContaining({ releaseDeadline, onOutput }));
+    },
+  );
+
   test("marker AC-8/9: public exports agree", () => {
     expect("SANDBOXED_ENV" in packageRoot).toBe(true);
     expect("SANDBOXED_ENV" in sandboxBarrel).toBe(true);

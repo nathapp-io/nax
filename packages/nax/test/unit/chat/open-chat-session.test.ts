@@ -102,6 +102,21 @@ async function seed(overrides: Partial<SessionMeta> = {}) {
 }
 
 describe("openChatSession", () => {
+  test.each(["full", "guarded"] as const)("US-010 AC-7/8 merges background port with %s shadow", async (mode) => {
+    const port = { adopt: mock(), foreground: () => () => {} };
+    const native = mock(deps.nativeBackend);
+    deps.nativeBackend = native;
+    const shadow: CommandShadow = { observe() {}, settle() {}, drain: async () => {} };
+    deps.buildCommandShadow = mock(() => shadow);
+    await open({
+      mode,
+      backgroundCommands: port,
+      config: makeNaxConfig({ execution: { commandSafety: { shadow: { url: "http://127.0.0.1:9999" } } } }),
+    });
+    expect(native.mock.calls[0]?.[0].hostPorts?.backgroundCommands).toBe(port);
+    if (mode === "guarded") expect(native.mock.calls[0]?.[0].hostPorts?.commandShadow).toBe(shadow);
+    else expect(native.mock.calls[0]?.[0].hostPorts).not.toHaveProperty("commandShadow");
+  });
   test("history AC-1 new session exposes empty opening history", async () => {
     expect((await open()).history).toEqual({ messages: [] });
   });
