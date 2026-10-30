@@ -200,6 +200,39 @@ describe("recordAcpTurns recording", () => {
     expect(closed).toBe(true);
   });
 
+  test("close() during event forwarding waits for the append the ending iteration then starts", async () => {
+    let releaseEnd: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (releaseEnd = resolve));
+    async function* gated(): AsyncGenerator<SessionEvent> {
+      yield text("ok");
+      yield turnEnd();
+      await gate;
+    }
+    let releaseAppend: () => void = () => {};
+    append.mockImplementation(() => new Promise<void>((resolve) => (releaseAppend = resolve)));
+    const { session } = stub([{ events: [] }]);
+    session.send = () => gated();
+    const wrapper = wrap(session);
+    const consumed = drain(wrapper.send("hi"));
+    // Events are forwarded; the wrapped iteration is still open, so no append has started yet.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(append).not.toHaveBeenCalled();
+    let closed = false;
+    const closing = wrapper.close().then(() => {
+      closed = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(closed).toBe(false);
+    releaseEnd();
+    while (append.mock.calls.length === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(closed).toBe(false);
+    releaseAppend();
+    await closing;
+    await consumed;
+    expect(closed).toBe(true);
+  });
+
   test("close() resolves after the wrapped close even when the append rejected", async () => {
     append.mockImplementation(async () => {
       throw new Error("save failed");

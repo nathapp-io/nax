@@ -58,21 +58,47 @@ function showsAgentWork(event: SessionEvent): boolean {
  * before this iteration completes, so a consumer that drains the send sees the
  * turn recorded. A throw from the wrapped iteration propagates untouched and
  * `onWorked` does not run.
+ *
+ * Each wait on the wrapped iteration, together with the recording that follows its
+ * end, runs inside `track`, so `close()` cannot report done while an append is still
+ * to start. Time spent suspended at a yield (the consumer not pulling) is not tracked.
  */
 async function* forwarded(
   events: AsyncIterable<SessionEvent>,
   onWorked: (seen: readonly SessionEvent[]) => Promise<void>,
+  track: (work: Promise<void>) => Promise<void>,
 ): AsyncGenerator<SessionEvent, void, undefined> {
+  const iterator = events[Symbol.asyncIterator]();
   const seen: SessionEvent[] = [];
   let worked = false;
   let ended = false;
-  for await (const event of events) {
-    seen.push(event);
-    if (event.type === "turn_end") ended = true;
-    else if (showsAgentWork(event)) worked = true;
-    yield event;
+  let finished = false;
+  try {
+    while (true) {
+      let step: IteratorResult<SessionEvent> | undefined;
+      await track(
+        (async (): Promise<void> => {
+          try {
+            step = await iterator.next();
+          } catch (error) {
+            finished = true;
+            throw error;
+          }
+          if (step.done === true) {
+            finished = true;
+            if (ended && worked) await onWorked(seen);
+          }
+        })(),
+      );
+      if (step === undefined || step.done === true) return;
+      seen.push(step.value);
+      if (step.value.type === "turn_end") ended = true;
+      else if (showsAgentWork(step.value)) worked = true;
+      yield step.value;
+    }
+  } finally {
+    if (!finished) await iterator.return?.();
   }
-  if (ended && worked) await onWorked(seen);
 }
 
 /** Test seam. */
@@ -111,16 +137,18 @@ export function recordAcpTurns(session: AgentSession, input: RecordAcpTurnsInput
       const payload = pendingHandoff === undefined ? message : `${pendingHandoff}${HANDOFF_SEPARATOR}${message}`;
       // Called here, not inside the generator: the wrapped send claims its turn slot (and throws when busy) synchronously.
       const events = session.send(payload);
-      return forwarded(events, async (seen) => {
-        pendingHandoff = undefined;
-        await track(
-          _acpRecorderDeps.appendNativeTurn(
+      return forwarded(
+        events,
+        async (seen) => {
+          pendingHandoff = undefined;
+          await _acpRecorderDeps.appendNativeTurn(
             input.store,
             input.sessionId,
             acpTurnMessages({ message, events: seen, acp: input.acp }),
-          ),
-        );
-      });
+          );
+        },
+        track,
+      );
     },
     answer(requestId: string, reply: AnswerReply): AnswerStatus {
       return session.answer(requestId, reply);
