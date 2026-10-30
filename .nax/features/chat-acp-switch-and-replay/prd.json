@@ -3,7 +3,7 @@
   "feature": "chat-acp-switch-and-replay",
   "branchName": "feat/chat-acp-switch-and-replay",
   "createdAt": "2026-10-30T00:00:00.000Z",
-  "updatedAt": "2026-10-30T10:15:39.267Z",
+  "updatedAt": "2026-10-30T10:21:33.270Z",
   "userStories": [
     {
       "id": "US-001",
@@ -272,14 +272,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Pure comparison plus an additive bound forwarding getter follow established patterns; session capability forwarding requires the strict security override."
+        "reasoning": "Pure comparison plus an additive bound forwarding getter follow established patterns; session capability forwarding requires the strict security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/acp/acp-model.ts",
@@ -309,7 +312,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9bad15eabe24c682e90978cb43d9c432f1633beb"
     },
     {
       "id": "US-005",
