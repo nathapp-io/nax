@@ -12,7 +12,6 @@ export { type ChatJobs, createJobRunner, type JobRunnerOptions, type StartJobReq
 export type { ChatJob, ChatJobKind, ChatJobState } from "./job-types";
 export { createJobWriteGuard } from "./job-write-guard";
 export { createHostJobs } from "./jobs-host";
-export { formatJobsListing } from "./jobs-listing";
 export { createJobsProvider, type JobsProviderOptions } from "./jobs-provider";
 export {
   type ChatRunAsks,

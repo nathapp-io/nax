@@ -65,7 +65,7 @@ export {
   nextChatMode,
 } from "./chat-mode";
 export { type ChatModelChoicesInput, chatEffortLevels, chatModelChoices, tierModels } from "./chat-models";
-export { type ChatJob, type ChatJobs, formatJobsListing } from "./jobs";
+export type { ChatJob, ChatJobs } from "./jobs";
 export {
   _openChatSessionDeps,
   type ChatHistory,
