@@ -3,7 +3,7 @@
   "feature": "chat-acp-history",
   "branchName": "feat/chat-acp-history",
   "createdAt": "2026-10-29T00:00:00.000Z",
-  "updatedAt": "2026-10-30T05:41:20.561Z",
+  "updatedAt": "2026-10-30T05:47:24.132Z",
   "userStories": [
     {
       "id": "US-001",
@@ -362,14 +362,17 @@
         "US-004",
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Extend the existing wrapper by composing upstream message conversion and nonthrowing append through one deps seam, awaiting persistence after a worked terminal iteration; session persistence requires strict test isolation."
+        "reasoning": "Extend the existing wrapper by composing upstream message conversion and nonthrowing append through one deps seam, awaiting persistence after a worked terminal iteration; session persistence requires strict test isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/turn-runner.ts",
@@ -388,7 +391,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ca0010b72546fc793c836e12b4f53eb717278a2a"
     },
     {
       "id": "US-007",
