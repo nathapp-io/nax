@@ -1,6 +1,7 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { useEffect, useRef, useState } from "react";
 import type { ChatHost } from "@/chat";
+import type { BackgroundTask } from "@/chat/background/task-types";
 import type { ChatJob } from "@/chat/jobs/job-types";
 import { getLogger } from "@/logger";
 
@@ -18,6 +19,8 @@ export function useJobs(
   { idle, deliver, note }: JobsOptions,
 ): {
   running: readonly ChatJob[];
+  /** Running host-owned background tasks, refreshed by the task subscription. */
+  tasks: readonly BackgroundTask[];
   /** Foreground availability refreshed by the same task subscription as notices. */
   backgroundable: boolean;
   noteUserTurn(): void;
@@ -87,6 +90,7 @@ export function useJobs(
   });
   return {
     running: jobs?.running() ?? [],
+    tasks: tasks?.running() ?? [],
     backgroundable: tasks?.hasForeground() ?? false,
     noteUserTurn: () => {
       taskTurns.current = 0;

@@ -387,6 +387,7 @@ export function ChatApp({
 
   const {
     running: jobs,
+    tasks,
     backgroundable,
     noteUserTurn,
   } = useJobs(host, {
@@ -420,6 +421,7 @@ export function ChatApp({
   const header = headerLines({ state, version, cwd, home, width: columns, glyphs: theme.glyphs });
   const footer = footerModel({
     jobs,
+    tasks,
     state,
     status,
     hint:
