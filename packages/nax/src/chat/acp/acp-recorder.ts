@@ -21,6 +21,7 @@ import type {
   AnswerReply,
   AnswerStatus,
   CommandRunResult,
+  SessionConfigureInput,
   SessionEvent,
   TranscriptStore,
 } from "@nathapp/nax-agent";
@@ -132,6 +133,11 @@ export function recordAcpTurns(session: AgentSession, input: RecordAcpTurnsInput
       if (run === undefined) return undefined;
       return (command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult> =>
         run.call(session, command, onEvent);
+    },
+    get configure(): AgentSession["configure"] {
+      const set = session.configure;
+      if (set === undefined) return undefined;
+      return (change: SessionConfigureInput): Promise<void> => set.call(session, change);
     },
     send(message: string): AsyncIterable<SessionEvent> {
       const payload = pendingHandoff === undefined ? message : `${pendingHandoff}${HANDOFF_SEPARATOR}${message}`;
