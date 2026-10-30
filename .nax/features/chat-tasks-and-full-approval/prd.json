@@ -3,7 +3,7 @@
   "feature": "chat-tasks-and-full-approval",
   "branchName": "feat/chat-tasks-and-full-approval",
   "createdAt": "2026-10-30T00:00:00Z",
-  "updatedAt": "2026-10-30T13:15:31.943Z",
+  "updatedAt": "2026-10-30T13:27:11.970Z",
   "userStories": [
     {
       "id": "US-001",
@@ -202,14 +202,17 @@
         "background-tasks"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure union/model extension with standard combined sorting and formatting; existing time, sanitization and warning conventions provide the needed seams."
+        "reasoning": "Pure union/model extension with standard combined sorting and formatting; existing time, sanitization and warning conventions provide the needed seams.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/picker-model.ts",
@@ -231,7 +234,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "308d454cdaa4840b19a7da24c7f43a952875315b"
     },
     {
       "id": "US-005",
