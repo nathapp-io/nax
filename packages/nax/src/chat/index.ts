@@ -2,6 +2,7 @@ export {
   ACP_RUN_COMMAND_UNSUPPORTED,
   type AcpCatalog,
   type AcpChatAgent,
+  type AcpRefreshResult,
   acpAgentLabel,
   acpAgentOfMessage,
   acpModelLabel,

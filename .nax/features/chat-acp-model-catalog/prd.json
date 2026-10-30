@@ -1,0 +1,320 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-acp-model-catalog",
+  "branchName": "feat/chat-acp-model-catalog",
+  "createdAt": "2026-10-30T00:00:00.000Z",
+  "updatedAt": "2026-10-30T15:30:46.310Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Save and load each ACP agent's offer",
+      "description": "**Goal** — Persist each ACP agent's last known model/effort offer and load it before composing the chat host.\n\n**Motivation** — `/model` shows only the bare rows `acp:claude`, `acp:codex`, `acp:cursor` until that agent has been opened once in the current chat process.\n\n**Approach** — Add `acp-offer-store.ts` (load and atomic save of `acp-offers.json`), give `createAcpCatalog` optional `sessionsDir` and `logger`, add `AcpCatalog.load()`, have `opened()` save the offers, and have `composeChat` create the catalog with the sessions dir and await `load()` before creating the host.\n\nWithout `sessionsDir` nothing is loaded or saved (the existing tests' `createAcpCatalog({ env: {} })` keeps today's memory-only behaviour). With it, the catalog builds its store with `_acpCatalogDeps.createAcpOfferStore({ path: acpOffersPath(sessionsDir), logger })`.\n\n`opened(model, capabilities)`: the same, then, when the catalog has a store and either list was reported, saves every agent's current offer through the store without awaiting it. Preserve existing nonempty-list learning semantics, failure clearing, and retention after empty/malformed reports.\n\n`composeChat`: `const acp = deps.createAcpCatalog({ env: deps.env, sessionsDir: resolveChatSessionsDir(deps.env), logger })`, then `await acp.load()` before `createChatHost` (US-001), then `acp` is passed as the host's `acp`.\n\nFile Format — `<sessionsDir>/acp-offers.json`:\n```json\n{\n  \"version\": 1,\n  \"agents\": {\n    \"codex\": { \"models\": [\"gpt-6.1-codex\", \"gpt-6.1-codex-mini\"], \"efforts\": [\"low\", \"medium\", \"high\"] },\n    \"claude\": { \"models\": [\"default\", \"opus\", \"sonnet\"], \"efforts\": [] }\n  }\n}\n```\n- `version` must be `1`. Keys under `agents` that are not in `ACP_CHAT_AGENTS` are ignored. An agent entry whose `models` is not an array is ignored; non-string elements of `models` or `efforts` are dropped; a missing or non-array `efforts` reads as `[]`.\n- The model ids are the agent's offered ids as `offeredChoices` already cleaned them (secret-redacted, length-capped) before they reached `capabilities`; the store writes them unchanged.\n\nCatalog composition:\n1. **Learned this process**: `opened()` after a real open, or a successful probe. This always wins.\n2. **Saved**: `load()` never rejects (a store error is logged as one `warn` on stage `chat` and supplies no saved offers; already learned offers are not cleared) and fills an agent from the file only when nothing has been learned for it yet in this process.\n\nAn agent **has a known offer** when its models list is non-empty; an offer with no models counts as none, so such an agent is probed again at the next start. A save writes only agents with a known offer. Saves are serialised: a save starts only after the previous one has settled, so an older snapshot can never land last.\n\nUse the atomic write pattern in `packages/nax/src/chat/jobs/job-store.ts` (`writeJobRecord`): write `<name>.<uuid>.tmp` with `Bun.write`, then `renameSync` onto the final name, with the file system calls behind a `_jobStoreDeps` object. In this new store place effects behind `_acpOfferStoreDeps` and propagate the original save error rather than the job store's wrapped error.\n\nFailure Handling:\n- `acp-offers.json` missing: `load()` resolves an empty map; no log.\n- `acp-offers.json` unreadable, not JSON, or `version` other than `1`: `load()` resolves an empty map and logs one `warn` on stage `chat` naming the path; the file is left as it is and is overwritten by the next save.\n- A save fails (write or rename throws): The rejection is logged as one `warn` on stage `chat`; `opened()` and probe handling never throw because of it; the temp file is removed on a best-effort basis.\nThe store's `save` rejects; the catalog owns handling that rejection and warning, including serialization recovery. The store handles and warns its own load errors; the catalog additionally handles an unexpectedly rejecting injected store without duplicate warning for normally handled store errors.\n\nFixture migration: in `test/unit/cli/chat.test.ts`, make the default `createAcpCatalog` return `stubAcpCatalog()` instead of inheriting the real factory from `_chatCommandDeps`. Replace the US-008 AC-1 exact `{ env: f.deps.env }` assertion with env identity plus `sessionsDir === resolveChatSessionsDir(f.deps.env)`. Add `load: async () => {}` to `stubAcpCatalog()` and to closed catalog literals in `test/unit/chat/chat-host-acp.test.ts`, `chat-host-acp-models.test.ts`, `chat-host-acp-switch.test.ts`, and `test/unit/chat/acp/acp-host.test.ts`. Override the real factory in `test/unit/cli/chat-resources.test.ts` with a local no-op catalog stub as well. Extend catalog tests for saved offers, load/open ordering, save serialization and error isolation; add CLI composition seam tests for resolved sessionsDir and awaited load. Keep existing memory-only cases unchanged.\n\n**Scope** — In: offer-store module, catalog persistence and load ordering, CLI composition, associated behavioral tests and required fake-interface updates. Out: startup session probing, warm/close lifecycle additions (US-002); manual refresh and slash dispatch (US-003). Merging the offers file across concurrent chat processes: each save rewrites the whole file atomically, and the last writer wins. Expiry or a time-to-live on saved offers: a saved offer stays until a later open, probe or refresh replaces it. Native model discovery (`discoverModels`, `chatModelChoices`) is unchanged.\n\n**Interface** — New module `packages/nax/src/chat/acp/acp-offer-store.ts`:\n```ts\nexport interface AcpOffer {\n  readonly models: readonly string[];\n  readonly efforts: readonly string[];\n}\nexport interface AcpOfferStore {\n  load(): Promise<ReadonlyMap<AcpChatAgent, AcpOffer>>;\n  save(offers: ReadonlyMap<AcpChatAgent, AcpOffer>): Promise<void>;\n}\nexport const ACP_OFFERS_FILE = \"acp-offers.json\";\nexport function acpOffersPath(sessionsDir: string): string; // join(sessionsDir, ACP_OFFERS_FILE)\nexport function createAcpOfferStore(input: { readonly path: string; readonly logger?: Pick<Logger, \"warn\"> }): AcpOfferStore;\nexport const _acpOfferStoreDeps = { /* read, write, rename, mkdir, randomUUID */ };\n```\n`createAcpCatalog` accepts `{ readonly env: Readonly<Record<string, string | undefined>>; readonly sessionsDir?: string; readonly logger?: Pick<Logger, \"warn\" | \"debug\"> }` and returns `AcpCatalog`. Add `load(): Promise<void>` to the existing six-member `AcpCatalog`. `_acpCatalogDeps` gains `createAcpOfferStore`; keep `launchCandidateKind`. Include best-effort temp removal among the store's injectable effects.",
+      "acceptanceCriteria": [
+        "[unit] acpOffersPath(\"/s\") returns the path /s/acp-offers.json, joined with the platform separator.",
+        "[unit] createAcpOfferStore({ path }).load() resolves an empty map when no file exists at path, and calls no logger method.",
+        "[unit] load() on a file holding {\"version\":1,\"agents\":{\"codex\":{\"models\":[\"m1\",\"m2\"],\"efforts\":[\"high\"]}}} resolves a map whose codex entry is { models: [\"m1\",\"m2\"], efforts: [\"high\"] } and which has no other entry.",
+        "[unit] load() ignores an agents key that is not claude, codex or cursor, drops non-string elements of models and efforts, ignores an agent entry whose models is not an array, and reads a missing efforts as [].",
+        "[unit] load() on a file that is not valid JSON resolves an empty map and calls logger.warn once with stage chat and a message naming the path.",
+        "[unit] load() on a file whose version is 2 resolves an empty map and calls logger.warn once with stage chat.",
+        "[unit] save(new Map([[\"cursor\", { models: [\"a\"], efforts: [] }]])) writes a temp file in the same directory whose name ends in .tmp, then renames it onto path, and a following load() on the same path resolves cursor as { models: [\"a\"], efforts: [] }.",
+        "[unit] save creates the parent directory of path when it does not exist.",
+        "[unit] When the rename throws, save rejects with that error and the temp file it wrote no longer exists.",
+        "[unit] With createAcpCatalog({ env, sessionsDir }) whose store's load resolves codex as { models: [\"m1\"], efforts: [\"high\"] }, after await catalog.load() rows() includes acp:codex/m1 and effortLevels(\"acp:codex\") includes high, with no opened() call.",
+        "[unit] When opened(\"acp:codex\", { offeredModels: [\"live\"] }) runs before load() resolves a saved codex offer of [\"saved\"], rows() includes acp:codex/live and not acp:codex/saved.",
+        "[unit] opened(\"acp:claude\", { offeredModels: [\"opus\"], offeredEfforts: [] }) on a catalog with a sessionsDir calls the store's save once with a map whose claude entry is { models: [\"opus\"], efforts: [] } and which also carries every other agent's offer known at that moment.",
+        "[unit] opened(\"acp:claude\", {}) with neither list reported does not call the store's save.",
+        "[unit] When the store's save rejects, opened() returns normally and logger.warn is called once with stage chat; no unhandled rejection is raised.",
+        "[unit] createAcpCatalog({ env }) with no sessionsDir never creates a store: load() resolves without reading a file and opened() never saves.",
+        "[integration] Running chatCommand with a stub createAcpCatalog calls it once with env equal to the command's env and sessionsDir equal to resolveChatSessionsDir(env).",
+        "[unit] Two opened() calls that each learn models start their saves in order: the second save's write does not begin until the first save has settled.",
+        "[unit] A save made when codex has a known offer and cursor has only efforts reported with no models writes codex and no cursor entry.",
+        "[unit] When the store's load rejects, catalog.load() resolves, logger.warn is called once with stage chat, and rows() still lists the bare acp:<agent> rows.",
+        "[integration] Running chatCommand with a stub catalog whose load is a spy calls load once, and that call happens before createChatHost is called.",
+        "[unit] When acp-offers.json is unreadable, store.load() resolves an empty map and logs one warn on stage chat naming the path.",
+        "[unit] When load() encounters unreadable content, invalid JSON or a version other than 1, the offers file is left unchanged until the next successful save overwrites it.",
+        "[unit] When a write throws after creating a temporary file and cleanup succeeds, save rejects with the original write error and the temporary file no longer exists.",
+        "[unit] When temporary-file cleanup throws after a write or rename failure, save rejects with the original write or rename error rather than the cleanup error."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "persistence"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New durable store plus catalog/CLI integration, racing load versus learned state, serialized asynchronous saves and structural fake migration; strict isolation applies because chat session composition and stored session-directory state are involved.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/acp/acp-catalog.ts",
+        "packages/nax/src/chat/jobs/job-store.ts",
+        "packages/nax/src/chat/open-chat-session.ts",
+        "packages/nax/src/cli/chat.ts",
+        "packages/nax/test/unit/chat/acp/acp-catalog.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-offer-store.ts",
+        "packages/nax/test/unit/chat/acp/acp-offer-store.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the first queued save rejects, a second queued save still runs after it settles and persists the newer known offers.",
+        "When a saved agent entry has non-array efforts, load() returns that entry with efforts [].",
+        "When opened(\"acp:codex\", {}) runs while a saved codex offer is loading, the saved offer does not override the agent's process-learned state."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/cli/chat.test.ts",
+          "reason": "the fixture spreads `api._chatCommandDeps`, so every `chatCommand` test would use the real `createAcpCatalog` and read the real sessions dir; make the fixture's default `createAcpCatalog` return `stubAcpCatalog()`. Separately, the test \"US-008 AC-1\" asserts `createAcpCatalog` was called with exactly `{ env: f.deps.env }`; `composeChat` now also passes `sessionsDir` and `logger`. Replace it with an assertion that the call's `env` is `f.deps.env` and its `sessionsDir` equals `resolveChatSessionsDir(f.deps.env)`. `stubAcpCatalog()` must also gain `load: async () => {}` to satisfy the widened `AcpCatalog` interface, and the file gains the US-001 AC-16 and AC-20 tests."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-acp.test.ts",
+          "reason": "`stubCatalog()` builds a closed `AcpCatalog` literal; add `load: async () => {}` so it satisfies the widened interface. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-acp-models.test.ts",
+          "reason": "its local `AcpCatalog` fake is a closed literal; add `load: async () => {}` so it satisfies the widened interface. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-acp-switch.test.ts",
+          "reason": "its local `AcpCatalog` fake is a closed literal; add `load: async () => {}` so it satisfies the widened interface. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/acp/acp-host.test.ts",
+          "reason": "its local `AcpCatalog` fake is a closed literal; add `load: async () => {}` so it satisfies the widened interface. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/chat-resources.test.ts",
+          "reason": "its fixture spreads `_chatCommandDeps`, so it would use the real `createAcpCatalog`, read the real sessions dir and (after US-002) probe real agents. Override `createAcpCatalog` in the fixture with a local stub catalog whose new members are no-ops (`load`). No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/acp/acp-catalog.test.ts",
+          "reason": "gains the new `load`, saved-offer and save-on-open cases (US-001 AC-10 to AC-15, AC-17 to AC-19); existing cases keep `createAcpCatalog({ env })` without `sessionsDir` and are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a421fdd6880ad6a5b1a359a9764cdbc6b83b1288"
+    },
+    {
+      "id": "US-002",
+      "title": "Probe agents with no known offer at chat start",
+      "description": "**Goal** — Discover missing ACP offers in the background after chat startup using short tool-less sessions, dropping late outcomes on shutdown.\n\n**Motivation** — A user who wants to start on, or switch to, a specific ACP model cannot see or pick it first.\n\n**Approach** — Add `acp-probe.ts` (`probeAcpAgent`), add `AcpCatalog.warm(cwd)` and `AcpCatalog.close()` with the one-probe-per-agent rule, call `acp.warm(cwd)` from `composeChat` after `startHost` has resolved, and call `acp.close()` from `NativeChatHost.teardown()`. `_acpCatalogDeps` also gains `probeAcpAgent` (US-002), the seam through which the catalog probes.\n\nProbe at start: `warm(cwd)` probes each agent that is installed and still has no models after offers learned in this process and saved offers have been applied. An agent with a saved or learned offer is not probed. In this skip rule, an offer means a known offer with non-empty models; saved or learned efforts alone do not suppress warming. User rulings (2026-10-30): save the offer and also probe in the background, probing at chat start only installed agents that have no known offer (at most once per agent per start; an agent that keeps reporting no models or failing is probed again at each start), and add a manual re-probe command. The manual command belongs to US-003.\n\nAn agent **has a known offer** when its models list is non-empty; an offer with no models counts as none, so such an agent is probed again at the next start. A save writes only agents with a known offer. Saves are serialised: a save starts only after the previous one has settled, so an older snapshot can never land last.\n\nAt most one probe per agent is in flight: a `warm` or `refresh` that finds a probe for that agent already running reuses it rather than starting another. A probe that succeeds is handled exactly as `opened(`acp:<agent>`, capabilities)`. A probe that fails is handled exactly as `failed(`acp:<agent>`, error)` and logged at debug. After `close()`, a probe that settles is not learned, not recorded as a failure, and not saved.\n\n`ACP_PROBE_TIMEOUT_MS` is a named constant, not a config key: it bounds a background probe nobody waits on, and the chat open path keeps its own configured timeouts.\n\n`composeChat`: then `acp.warm(cwd)` once `startHost` has resolved (US-002), so the chat's own first open has already learned its agent and that agent is not probed alongside it, and `acp` is passed as the host's `acp`.\n\n`NativeChatHost.teardown()`: calls `this.deps.acp?.close()` before draining the session operations (US-002).\n\nFailure Handling:\n- A probe's open fails: Handled as `failed(`acp:<agent>`, error)`: an `AGENT_SESSION_AUTH_REQUIRED` error makes `unavailable` report `not logged in` and a backend-unavailable error its first line, as today; any other error records nothing. The error is logged at debug and never reaches the caller of `warm`.\n- A probe's open succeeds but its close throws: The capabilities are still returned; the close error is swallowed.\n- A probe never settles: It is bounded by `ACP_PROBE_TIMEOUT_MS` per open step through `initializeTimeoutMs`.\n- The chat closes while a probe runs: `close()` does not wait; the late result is dropped.\n- A save fails (write or rename throws): The rejection is logged as one `warn` on stage `chat`; `opened()` and probe handling never throw because of it; the temp file is removed on a best-effort basis. Reuse US-001's save queue and rejection handling.\n\nMirror `packages/nax/src/chat/subagent-session.ts`'s `createMemoryTranscriptStore()` pattern and the existing chat ACP backend factory call. Return the session capabilities and close in finally; do not send a turn, add tools/instructions, or write a durable transcript. Use public `@nathapp/nax-agent` exports and `@nathapp/nax-agent-acp/client` only. Keep normal ACP open timeout behavior unchanged. An attempted-start set and the in-flight map serve different purposes: clearing a settled in-flight entry enables future US-003 refresh, while retaining attempted-start membership prevents repeated warm probes after an empty/failing result.\n\nFixture migration: add `warm: () => {}` and `close: () => {}` to the catalog fakes in `test/unit/cli/chat.test.ts`, `test/unit/cli/chat-resources.test.ts`, `test/unit/chat/chat-host-acp-models.test.ts`, `chat-host-acp-switch.test.ts`, and `test/unit/chat/acp/acp-host.test.ts`. In `test/unit/chat/chat-host-acp.test.ts`, make close a mock and assert a real host closes its catalog only once. Keep CLI fixtures on the stub factory from US-001 so no real agents are probed. Extend existing catalog tests with warm/close cases; extend CLI tests with success/startup-rejection ordering.\n\n**Scope** — In: probe module, catalog warm/close and in-flight sharing groundwork, post-start CLI wiring, host teardown, tests/fake updates. Out: persistence format redesign (US-001); public refresh result API and slash UI (US-003). An open `/model` picker does not re-render when a probe finishes; the new rows appear the next time the picker opens (`ChatHost.models` already reads the catalog live). Hiding the probe's session from the agent's own session or resume list: an agent such as Claude Code or Codex may list the short probe session as one of its sessions. Killing an in-flight probe's agent process when the chat quits; `close()` only drops the probe's result, and the process ends when its open settles or the nax process exits. Re-checking whether an agent's binary is installed during a chat: the install probe runs once per catalog, so an agent installed mid-chat reads `not installed` in `/model refresh` until the next chat. Probing on a schedule, or probing again during a chat other than through `/model refresh`.\n\n**Interface** — Add `warm(cwd: string): void` and `close(): void` to `AcpCatalog`; keep all earlier members. New module `packages/nax/src/chat/acp/acp-probe.ts`:\n```ts\nexport const ACP_PROBE_TIMEOUT_MS = 20_000;\nexport const _acpProbeDeps = { createAgentSession, acpBackend, createMemoryTranscriptStore };\n/** Opens a tool-less ACP session on the agent, returns its backend capabilities, and closes it. */\nexport async function probeAcpAgent(input: { readonly agent: AcpChatAgent; readonly cwd: string }): Promise<Readonly<Record<string, unknown>>> {\n  const session = await _acpProbeDeps.createAgentSession({\n    backend: _acpProbeDeps.acpBackend({ agent: input.agent, allowUnsandboxed: true, inheritEnv: true, initializeTimeoutMs: ACP_PROBE_TIMEOUT_MS }),\n    profile: \"ask\",\n    workdir: input.cwd,\n    tools: [],\n    transcriptStore: _acpProbeDeps.createMemoryTranscriptStore(),\n  });\n  try {\n    return session.backend.capabilities;\n  } finally {\n    await session.close().catch(() => undefined);\n  }\n}\n```",
+      "acceptanceCriteria": [
+        "[unit] probeAcpAgent({ agent: \"codex\", cwd: \"/r\" }) calls _acpProbeDeps.acpBackend once with { agent: \"codex\", allowUnsandboxed: true, inheritEnv: true, initializeTimeoutMs: 20000 }.",
+        "[unit] probeAcpAgent calls _acpProbeDeps.createAgentSession once with profile ask, workdir /r, tools [], a transcriptStore from _acpProbeDeps.createMemoryTranscriptStore, and the backend returned by acpBackend.",
+        "[unit] When the created session's backend.capabilities is { offeredModels: [\"m\"] }, probeAcpAgent resolves that record and the session's close was called once.",
+        "[unit] When the session's close rejects, probeAcpAgent still resolves the capabilities.",
+        "[unit] When createAgentSession rejects with an error, probeAcpAgent rejects with that same error.",
+        "[unit] catalog.warm(\"/r\") with codex installed and nothing known for it calls _acpCatalogDeps.probeAcpAgent once with { agent: \"codex\", cwd: \"/r\" }, and returns before that probe settles.",
+        "[unit] warm does not probe an agent whose binary does not resolve, when launchCandidateKind returns undefined.",
+        "[unit] warm does not probe an agent that has a saved offer with non-empty models from load() or a learned offer with non-empty models from opened().",
+        "[unit] When the probe for codex resolves { offeredModels: [\"m1\"], offeredEfforts: [\"low\"] }, rows() then includes acp:codex/m1, effortLevels(\"acp:codex\") includes low, and the store's save is called with codex as { models: [\"m1\"], efforts: [\"low\"] }.",
+        "[unit] When the probe for codex rejects with a NaxError whose code is AGENT_SESSION_AUTH_REQUIRED, unavailable(\"acp:codex\") returns not logged in, logger.debug is called, and no unhandled rejection is raised.",
+        "[unit] Calling warm(\"/r\") twice while the first probe for codex is still pending calls probeAcpAgent for codex only once.",
+        "[unit] After catalog.close(), a pending probe that then resolves { offeredModels: [\"m1\"] } adds no acp:codex/m1 row and does not call the store's save; one that then rejects with AGENT_SESSION_AUTH_REQUIRED leaves unavailable(\"acp:codex\") undefined.",
+        "[integration] Running chatCommand with a stub catalog calls its warm once with the command's cwd, after the stub host's start has resolved.",
+        "[integration] Running chatCommand with a stub catalog whose warm is a spy and a stub host whose start rejects never calls warm.",
+        "[unit] close() on a NativeChatHost built with a stub catalog calls the catalog's close once, and a second close() on the host does not call it again.",
+        "[unit] When codex's warm probe rejects with a NaxError coded AGENT_SESSION_BACKEND_UNAVAILABLE whose message is \"spawn failed\\ndetail\", unavailable(\"acp:codex\") returns \"spawn failed\" and logger.debug records the failure without an unhandled rejection.",
+        "[unit] Given an installed agent with no recorded failure, when its warm probe rejects with an error other than AGENT_SESSION_AUTH_REQUIRED or AGENT_SESSION_BACKEND_UNAVAILABLE, unavailable for that agent remains undefined and logger.debug records the error without an unhandled rejection.",
+        "[unit] When probeAcpAgent constructs its backend, acpBackend receives initializeTimeoutMs equal to ACP_PROBE_TIMEOUT_MS (20_000), applying the existing backend deadline to each open step rather than imposing a total probe-duration deadline.",
+        "[unit] When catalog.close() is called while a probe is pending, close() returns without waiting for that probe.",
+        "[unit] When persistence of a successful probe's offer rejects, the offer remains learned and one chat warn is emitted without an unhandled rejection."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "sessions",
+        "lifecycle"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Creates short-lived external agent sessions, handles authentication/backend failures, coordinates per-agent asynchronous work and shutdown across CLI/catalog/host; session and permission-profile involvement requires strict isolated TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/acp/acp-catalog.ts",
+        "packages/nax/src/chat/acp/acp-session-options.ts",
+        "packages/nax/src/chat/subagent-session.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/cli/chat.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-probe.ts",
+        "packages/nax/test/unit/chat/acp/acp-probe.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When warm is called again after an empty or failed startup probe has settled, the same agent is not probed again during that catalog's lifetime.",
+        "When a new catalog is created at a subsequent chat start without saved models for a previously failing or empty-offer agent, warm probes that agent again."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/cli/chat.test.ts",
+          "reason": "`stubAcpCatalog()` must gain `warm: () => {}` and `close: () => {}` to satisfy the widened `AcpCatalog` interface, and the file gains the US-002 AC-13 and AC-14 tests. Existing assertions unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-acp.test.ts",
+          "reason": "`stubCatalog()` must gain `warm: () => {}` and `close: mock(() => {})` to satisfy the widened `AcpCatalog` interface, and the file gains the US-002 AC-15 test. Existing assertions unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-acp-models.test.ts",
+          "reason": "its local `AcpCatalog` fake is a closed literal; add `warm: () => {}` and `close: () => {}` so it satisfies the widened interface. `chat-host-acp-models` and `chat-host-acp-switch` close real hosts, so without `close` their teardown throws. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-acp-switch.test.ts",
+          "reason": "its local `AcpCatalog` fake is a closed literal; add `warm: () => {}` and `close: () => {}` so it satisfies the widened interface. `chat-host-acp-models` and `chat-host-acp-switch` close real hosts, so without `close` their teardown throws. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/acp/acp-host.test.ts",
+          "reason": "its local `AcpCatalog` fake is a closed literal; add `warm: () => {}` and `close: () => {}` so it satisfies the widened interface. `chat-host-acp-models` and `chat-host-acp-switch` close real hosts, so without `close` their teardown throws. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/chat-resources.test.ts",
+          "reason": "its fixture spreads `_chatCommandDeps`, so it would use the real `createAcpCatalog`, read the real sessions dir and (after US-002) probe real agents. Override `createAcpCatalog` in the fixture with a local stub catalog whose new members are no-ops (`warm`, `close`). No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/acp/acp-catalog.test.ts",
+          "reason": "gains the `warm` and `close` cases (US-002 AC-6 to AC-12); existing cases unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9bc6b8440ba0ff5b2e2c01d0808e8e1275f05457"
+    },
+    {
+      "id": "US-003",
+      "title": "Refresh every installed ACP agent with /model refresh",
+      "description": "**Goal** — Let users explicitly re-probe every installed ACP agent and see one ordered transcript result per agent.\n\n**Motivation** — A user who wants to start on, or switch to, a specific ACP model cannot see or pick it first.\n\n**Approach** — Add `AcpRefreshResult` and `AcpCatalog.refresh(cwd)`, add optional `ChatHost.refreshAcpModels()` implemented by `NativeChatHost`, and make `/model refresh` print one line per agent.\n\nManual: `refresh(cwd)` probes every installed agent regardless of learned, saved or warm-probed offers.\n\nAt most one probe per agent is in flight: a `warm` or `refresh` that finds a probe for that agent already running reuses it rather than starting another. A probe that succeeds is handled exactly as `opened(`acp:<agent>`, capabilities)`. A probe that fails is handled exactly as `failed(`acp:<agent>`, error)` and logged at debug. After `close()`, a probe that settles is not learned, not recorded as a failure, and not saved.\n\n`ChatHost` interface (`chat-host.ts`). Target: gains optional `refreshAcpModels?(): Promise<readonly AcpRefreshResult[]>`; `NativeChatHost` implements it as `this.deps.acp?.refresh(this.deps.cwd)`, or `[]` without a catalog (US-003).\n\n`runSlashCommand` `case \"model\"` (`slash-commands.ts`). Target: the argument `refresh` runs the refresh (US-003); every other argument still switches.\n\n`/model refresh` runs when the first argument is exactly the lowercase `refresh` (further arguments are ignored); any other first argument, including `Refresh`, is still a model switch, so a model whose id is literally `refresh` cannot be picked by name (it remains pickable in the picker).\n\nA refresh result's `models` is the number of model ids the probe reported, not the number of rows the picker shows. A refresh result's `failed` reason is the catalog's existing open-failure reason (`not logged in` for `AGENT_SESSION_AUTH_REQUIRED`, the message's first line for `AGENT_SESSION_BACKEND_UNAVAILABLE`); for any other error it is the error message's first line cut to 120 characters, and `probe failed` when that is empty.\n\nReturn results in `ACP_CHAT_AGENTS` order (`claude`, `codex`, `cursor`) after all probes settle, including not-installed results without launching those agents. Success with no models still returns learned with models 0. Keep using the memoized binary discovery from the catalog rather than rescanning installations. Reuse US-002's in-flight probes and its late-result shutdown guards and US-001's safe persistence path. Existing NaxError auth/backend reason behavior remains authoritative; generic probe failures do not set unavailable.\n\nWhen the host returns learned 3 for claude, not installed for codex, and failed with not logged in for cursor, call `show` separately in that order with `Claude Code: 3 models`, `Codex: not installed`, `Cursor: failed: not logged in`. Use `acpAgentLabel` and singular `1 model` versus `0 models`/`N models`. A missing optional host method or [] result prints `no ACP agents to refresh`. Return no picker outcome and never switch the session for refresh.\n\nFixture migration: add `refresh: async () => []` to catalog stubs in `test/unit/cli/chat.test.ts`, `test/unit/cli/chat-resources.test.ts`, `test/unit/chat/chat-host-acp-models.test.ts`, `chat-host-acp-switch.test.ts`, and `test/unit/chat/acp/acp-host.test.ts`; use `refresh: mock(async () => [])` in `test/unit/chat/chat-host-acp.test.ts` and add delegation/absent-catalog cases there. Existing assertions remain unchanged. Add dedicated `test/unit/chat/acp/acp-catalog-refresh.test.ts` for result order, counts, failure reasons and warm/refresh sharing, and `test/unit/tui/chat/slash-commands-model-refresh.test.ts` mirroring the fake-host style of `slash-commands-acp.test.ts`. Use fake probes/sessions only.\n\n**Scope** — In: catalog refresh and exported result union, optional host method and delegation, exact refresh slash dispatch, result formatting, tests and structural fake updates. Out: offer-store implementation (US-001); probe factory and startup lifecycle implementation (US-002). A progress note while `/model refresh` waits on its probes; the result lines appear when every probe has settled. Re-checking whether an agent's binary is installed during a chat: the install probe runs once per catalog, so an agent installed mid-chat reads `not installed` in `/model refresh` until the next chat. The `/help` text and `COMMAND_DESCRIPTIONS.model` are unchanged; `/model refresh` is not listed separately in the slash menu. Changing how an ACP open applies a requested model or effort, or how `acpModelRows` / `acpEffortLevels` filter offered ids.\n\n**Interface** — `AcpRefreshResult` (US-003, exported from `acp-catalog.ts` and the `@/chat/acp` barrel):\n```ts\nexport type AcpRefreshResult =\n  | { readonly agent: AcpChatAgent; readonly outcome: \"learned\"; readonly models: number }\n  | { readonly agent: AcpChatAgent; readonly outcome: \"not installed\" }\n  | { readonly agent: AcpChatAgent; readonly outcome: \"failed\"; readonly reason: string };\n```\nAdd `refresh(cwd: string): Promise<readonly AcpRefreshResult[]>` to `AcpCatalog` and `refreshAcpModels?(): Promise<readonly AcpRefreshResult[]>` to `ChatHost`. `NativeChatHost.refreshAcpModels()` delegates with its cwd and returns an empty list without a catalog. Forward the type through the umbrella chat barrel if needed by consumers while keeping named barrel imports.",
+      "acceptanceCriteria": [
+        "[unit] catalog.refresh(\"/r\") with every agent installed calls probeAcpAgent once per agent with cwd /r, including an agent that already has a saved or learned offer.",
+        "[unit] refresh resolves one result per agent in the order claude, codex, cursor.",
+        "[unit] For an agent whose probe resolves { offeredModels: [\"a\", \"b\"] }, its result is { agent, outcome: \"learned\", models: 2 } and rows() then includes acp:<agent>/a and acp:<agent>/b.",
+        "[unit] For an agent whose binary does not resolve, its result is { agent, outcome: \"not installed\" } and no probe runs for it.",
+        "[unit] For an agent whose probe rejects with a NaxError coded AGENT_SESSION_AUTH_REQUIRED, its result is { agent, outcome: \"failed\", reason: \"not logged in\" }; for one that rejects with a plain Error(\"boom\\nmore\"), its result is { agent, outcome: \"failed\", reason: \"boom\" }.",
+        "[unit] refresh called while a warm probe for codex is pending reuses that probe: probeAcpAgent is called for codex only once and the codex result reflects that probe's outcome.",
+        "[unit] NativeChatHost.refreshAcpModels() calls its catalog's refresh once with the host's cwd and resolves what refresh resolves.",
+        "[unit] NativeChatHost.refreshAcpModels() on a host built without a catalog resolves [].",
+        "[unit] /model refresh with a host whose refreshAcpModels resolves [{ agent: \"claude\", outcome: \"learned\", models: 3 }, { agent: \"codex\", outcome: \"not installed\" }, { agent: \"cursor\", outcome: \"failed\", reason: \"not logged in\" }] shows Claude Code: 3 models, Codex: not installed and Cursor: failed: not logged in as three transcript notes in that order, and does not call host.switchTo.",
+        "[unit] /model refresh calls host.refreshAcpModels exactly once and returns no picker outcome.",
+        "[unit] /model refresh with a host that has no refreshAcpModels, or whose refreshAcpModels resolves [], shows no ACP agents to refresh.",
+        "[unit] A learned result with models: 1 shows 1 model (singular), for example Codex: 1 model.",
+        "[unit] For an agent whose probe resolves { offeredEfforts: [\"low\"] } with no models, its result is { agent, outcome: \"learned\", models: 0 } and /model refresh shows <Label>: 0 models for it.",
+        "[unit] For an agent whose probe rejects with a NaxError coded AGENT_SESSION_BACKEND_UNAVAILABLE and message \"spawn failed\\ndetail\" (a newline between the two lines), its result's reason is spawn failed; for one that rejects with new Error(\"\"), its reason is probe failed.",
+        "[unit] /model Refresh calls host.switchTo({ model: \"Refresh\" }) and not refreshAcpModels; /model refresh extra calls refreshAcpModels once and not switchTo.",
+        "[unit] A probe that rejects with an error whose first line is 200 characters long gives a failed reason of exactly its first 120 characters.",
+        "[unit] /model acp:codex/m1 still calls host.switchTo({ model: \"acp:codex/m1\" }), and /model with no argument still returns the model picker outcome."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "tui",
+        "refresh"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Adds a result union, catalog batch refresh, host delegation and slash formatting across existing modules, reusing US-002's probe lifecycle and in-flight sharing; strict TDD remains required by the session/authentication security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/acp/acp-catalog.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/chat/acp/index.ts",
+        "packages/nax/test/unit/tui/chat/slash-commands-acp.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/acp/acp-catalog-refresh.test.ts",
+        "packages/nax/test/unit/tui/chat/slash-commands-model-refresh.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When two refresh calls overlap for an agent, both receive the same probe outcome and only one probe runs for that agent.",
+        "When one refresh has completed and a later refresh begins, the later refresh re-probes every installed agent rather than reusing settled outcomes.",
+        "When refresh reports model ids that acpModelRows deduplicates or filters, the learned models count still equals the number of ids the probe reported."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/cli/chat.test.ts",
+          "reason": "`stubAcpCatalog()` must gain `refresh: async () => []` to satisfy the widened `AcpCatalog` interface. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-acp.test.ts",
+          "reason": "`stubCatalog()` must gain `refresh: mock(async () => [])` to satisfy the widened `AcpCatalog` interface, and the file gains the US-003 AC-7 and AC-8 tests. Existing assertions unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-acp-models.test.ts",
+          "reason": "its local `AcpCatalog` fake is a closed literal; add `refresh: async () => []` so it satisfies the widened interface. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-acp-switch.test.ts",
+          "reason": "its local `AcpCatalog` fake is a closed literal; add `refresh: async () => []` so it satisfies the widened interface. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/acp/acp-host.test.ts",
+          "reason": "its local `AcpCatalog` fake is a closed literal; add `refresh: async () => []` so it satisfies the widened interface. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/chat-resources.test.ts",
+          "reason": "its fixture spreads `_chatCommandDeps`, so it would use the real `createAcpCatalog`, read the real sessions dir and (after US-002) probe real agents. Override `createAcpCatalog` in the fixture with a local stub catalog whose new members are no-ops (`refresh`). No assertion changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "325ab326ea5d0ee776c1c679fa11b6a8b1f63b4e"
+    }
+  ],
+  "analysis": "Goal and delivery: close #2746 by making each installed ACP agent's models and efforts discoverable before its first real open in a chat process. Deliver exactly US-001 persistence, US-002 startup probing, and US-003 explicit refresh, in that dependency order, entirely within packages/nax. This is an enhancement, not greenfield development. No dependency, release, configuration-schema or cross-package implementation change is needed. Navigation used direct reads and text searches because the codebase-memory MCP is unavailable in this session.\n\nVerified architecture and current behavior: packages/nax/src/chat/acp/acp-catalog.ts:21 exposes _acpCatalogDeps with launchCandidateKind; :23 defines the six-member AcpCatalog; :61 maps authentication/backend failures; :69 creates process-local model, effort and failure maps. Its installedAgents closure at :75 memoizes binary discovery once per catalog using the supplied env. rows at :83 always emits bare agent rows, including unavailable agents, and appends acpModelRows output. opened at :102 updates reported lists and clears a failure, while failed at :113 records only recognized NaxError codes. packages/nax/src/chat/acp/acp-model.ts:13 fixes agent order to claude, codex, cursor; :29 provides labels Claude Code, Codex, Cursor; :108 filters/deduplicates picker rows and applies Cursor-specific bracket disambiguation, while :118 filters effort names into canonical order. Keep these helpers unchanged: refresh model counts measure reported ids, not picker row counts. packages/nax/src/chat/acp/acp-host.ts:26 wraps the existing session opener; :38 reports the successful session's actual model and backend capabilities, so retaining this wrapper automatically makes real opens persistent after US-001. It must continue forwarding/rethrowing existing behavior unchanged.\n\nComposition/lifetime integration: packages/nax/src/cli/chat.ts:249 composeChat discovers native models and resources, builds a logger at :263, and currently creates the ACP catalog inline at :271. Extract one catalog, pass env, resolveChatSessionsDir(env), and this same logger, await its load before createChatHost, then pass the same instance to the host. startHost at packages/nax/src/cli/chat.ts:107 supports both new sessions and resume/switch; the await at :292 must finish before warm(cwd), and startup failure must never warm. The shell starts at :301; warming is fire-and-forget and must not delay it. packages/nax/src/chat/open-chat-session.ts:91 resolves the sessions directory from NAX_AGENT_SESSIONS_DIR or defaultSessionsDir(globalConfigDir()), and the chat barrel already exports it at packages/nax/src/chat/index.ts:77. Do not change directory resolution or native discoverModels. packages/nax/src/chat/chat-host.ts:79 defines ChatHost and :112 ChatHostDeps already accepts an optional catalog. The constructor at :163 wraps opens with reportAcpOpens; models at :257 reads catalog rows live, so future picker opens naturally observe saved/probed models without a subscription or picker rerender. close at :547 memoizes teardown; teardown at :557 must synchronously call catalog.close before awaiting the sessionOperations drain at :560. Add optional ChatHost.refreshAcpModels and implement delegation using deps.cwd, returning [] without a catalog.\n\nPersistence design: create acp-offer-store.ts and its mirrored unit test. Mirror the injectable Bun.write plus sibling UUID temp path and renameSync pattern in packages/nax/src/chat/jobs/job-store.ts:15 and :40, including recursive parent creation and best-effort unlink on failure; unlike writeJobRecord, the new store's save must reject with the original write/rename error (US-001 AC-9), not wrap it. Store file is acp-offers.json with version 1 and an agents object; accept only known agent keys, require an array of models per entry, discard non-strings, default malformed/missing efforts to []. Preserve agent-provided id bytes rather than applying picker filtering to storage. _acpOfferStoreDeps must expose all external effects, including temp cleanup. Missing file is silent; unreadable/invalid JSON/unsupported-version input returns an empty map, logs one chat warn naming the path, and is not deleted. Avoid duplicate warnings: production store load handles its own errors; catalog.load catches an unexpectedly rejecting injected store and warns once. Catalog catches save rejections once, without affecting opened or causing unhandled rejections. Optional sessionsDir preserves existing memory-only consumers. Serialize fire-and-forget snapshot saves across settlements, recovering after rejection; include all currently known nonempty-model offers, omit efforts-only agents. Mark process-learned agents independently of nonempty-model status so late load cannot override a real opened report. Saved data only fills agents not learned in this process.\n\nImportant regression detail: packages/nax/src/chat/acp/acp-catalog.ts:49 reportedStrings currently returns undefined for empty or non-array reports. Existing tests at packages/nax/test/unit/chat/acp/acp-catalog.test.ts:49, :57, :65 and :99 explicitly require retaining prior models/efforts for absent/empty reports. The target says opened keeps the same behavior and adds saving; do not silently clear prior nonempty lists. Presence of a reported array for save triggering and tracking process learning is separate from whether that array contributes nonempty strings. A fresh agent reporting only efforts still has no known offer, is not saved, and can be probed next start; refresh returns learned with models 0 based on that probe's report, not any retained older rows.\n\nProbe boundary: create acp-probe.ts and its mirrored unit test. packages/nax/src/chat/acp/acp-session-options.ts:55 already uses acpBackend through @nathapp/nax-agent-acp/client with allowUnsandboxed and inheritEnv true. packages/nax/src/chat/subagent-session.ts:44 and :89 demonstrate injectable createAgentSession/createMemoryTranscriptStore. The public CreateAgentSessionOptions at packages/nax-agent/src/session/agent-session-types.ts:58 requires backend, profile and transcriptStore, allows workdir/tools, and does not require instructions or sessionId. Probe with profile ask, workdir cwd, tools [], a memory transcript, and initializeTimeoutMs 20_000. Never send a prompt or attach chat workflow tools. Return session.backend.capabilities and swallow close rejection in finally; creation rejection must propagate unchanged. packages/nax-agent-acp/src/client/options.ts:23 sets the normal 60_000 ms default, and packages/nax-agent-acp/src/client/open.ts:169 applies the supplied initialize timeout per open step; this feature uses that existing bounded mechanism, not a new total-duration timer/config key or cancellation facility. packages/nax-agent-acp/src/client/offered-choices.ts:22 sanitizes/deduplicates/caps reported ids and :53 returns them in capabilities; the cache must not alter them. These library files are read-only context, not work targets.\n\nConcurrency and lifetime risks: warm must remember startup attempts independently of in-flight state, so an agent reporting no models or failing is not repeatedly warmed in one start, but is retried next process start. Use a per-agent in-flight probe shared by warm and refresh; clear it when settled so later manual refresh can actually re-probe. Handle every failure and attach rejection handling immediately. Success routes through opened; failure routes through failed plus debug logging. Generic errors do not mark unavailable. A terminal closed flag must suppress both success and failure state changes and persistence for late probes without awaiting or killing those probes. Track process learning separately from saved fills to resolve load/open races. Refresh must await all outcomes, not reject the whole batch for an agent failure, and return claude/codex/cursor order even if settlements differ. Existing backend/auth failure reasons take priority; otherwise use the first message line capped at 120 characters or probe failed for empty text. Concurrent real opens and probes are both learned-this-process events; the spec does not introduce a new priority between these two sources.\n\nUI integration: packages/nax/src/tui/chat/slash-commands.ts:87 parses arguments without lowercasing; :246 currently returns the model picker on no argument and otherwise switches by the first argument. Branch only on the exact first argument refresh; ignore additional arguments for this branch, retain ordinary switch behavior for Refresh and acp:codex/m1. Await optional host.refreshAcpModels once, print one show call per agent result using acpAgentLabel and singular/plural model counts, or exactly no ACP agents to refresh when the method is absent/empty. Do not modify help/menu descriptions. Export AcpRefreshResult from acp-catalog and packages/nax/src/chat/acp/index.ts:1; the umbrella packages/nax/src/chat/index.ts:1 is the import boundary used by slash commands and may forward the type if needed. Preserve named barrel imports and existing package boundaries: nax-agent public entry for session primitives, ACP client subpath for backend construction; never import nax-ai for this work.\n\nTests and migration: packages/nax/test/unit/chat/acp/acp-catalog.test.ts:16 injects binary discovery and restores only its original seam today; extend restoration for newly patched seams, keeping old memory-only tests unchanged. The tests already cover model retention, canonical effort levels, binary memoization, auth/backend reason mapping, and failure reset. Add store tests using temp directories and controlled read/write/rename seams, plus deferred promises for load/open races and serialized saves. CLI tests at packages/nax/test/unit/cli/chat.test.ts:36 spread _chatCommandDeps, :100 defines stubAcpCatalog, and :145 has the exact { env } call assertion. Override default createAcpCatalog with the stub before loading is introduced, update that assertion to env identity plus resolved sessionsDir, and assert awaited load-before-create and start-resolution-before-warm order with deferred promises. packages/nax/test/unit/cli/chat-resources.test.ts:33 also spreads real deps and needs its own default stub to prevent real file access and later ACP launches. Widen all closed catalog fakes incrementally in packages/nax/test/unit/chat/chat-host-acp.test.ts:90, packages/nax/test/unit/chat/chat-host-acp-models.test.ts:31, packages/nax/test/unit/chat/chat-host-acp-switch.test.ts:82, and packages/nax/test/unit/chat/acp/acp-host.test.ts:24; add load in US-001, warm/close in US-002, refresh in US-003. Tests closing real hosts need a callable close or teardown will throw. Add host close-once and refresh-delegation tests alongside the existing host ACP tests. packages/nax/test/unit/tui/chat/slash-commands-acp.test.ts:80 builds a structural fake host and :100 collects show output; optional refreshAcpModels preserves compatibility with those existing fake hosts. Add dedicated acp-catalog-refresh and slash-commands-model-refresh test files, using mocked factories only and never launching a real ACP adapter. Use bun:test, _deps seams, shared helpers, event-driven deferred promises rather than sleeps, and demonstrate regression tests failing against old behavior. Package gates/test execution belong to the normal implementation pipeline, not extra stories; never run bare bun test or sandbox coverage.\n\nRollout and exclusions: no data migration is required; absent cache is a normal first start and invalid cache remains until overwritten by a later atomic save. Existing createAcpCatalog({ env }) remains memory-only, and existing hosts without a catalog retain native-only behavior. Version 1 is the sole readable format. Cache writes are whole snapshots with last-writer-wins across processes; no locking, TTL, picker subscription, install rescan, prompt, or probe-process kill is added. Startup first opens its chosen agent normally, allowing that offer to prevent a duplicate warm probe. All three stories use strict three-session-tdd because the work touches chat session lifecycle and/or authentication failure behavior under the required security override, despite being catalog functionality rather than an authentication redesign.\n\nRefine audit: compared all 52 explicit spec acceptance criteria against the draft: US-001 AC-1 through AC-20 map one-for-one to its first 20 acceptanceCriteria; US-002 AC-1 through AC-15 map to its first 15; US-003 AC-1 through AC-17 map to its first 17. All original assertions and regression qualifiers remain. Failure-table supplements follow the original criteria, not replace them. All seven failure-table rows have acceptance assertions, and all 11 feature-level exclusions are retained verbatim. All 5/5/4 spec-recommended context files are included for US-001/002/003; the fifth US-003 context is its existing ACP barrel. Required story ids, workdirs and dependencies are unchanged. No new helper or implementation file beyond the spec's Creates is required. Re-reading reportedStrings and its retention tests confirms the memory-only backward-compatibility anchors; no existing model/effort filtering or failure-clearing behavior should be removed. Refine corrections clarify that only nonempty-model saved/learned offers skip warming, load errors cannot erase live learned offers, and generic probe failures leave an initially clear unavailable reason unchanged. Cleanup expectations now expose original-error identity and actual temp-file removal, including cleanup failure, instead of an unobservable best-effort label. Probe timeout behavior is asserted through captured initializeTimeoutMs options, not by sleeping for 20 seconds or expecting a patched never-settling createAgentSession to time itself out. US-003 is medium complexity because US-002 supplies the session lifecycle and in-flight machinery; its strict three-session-tdd still follows the explicit session/authentication override.",
+  "outOfScope": [
+    "An open `/model` picker does not re-render when a probe finishes; the new rows appear the next time the picker opens (`ChatHost.models` already reads the catalog live).",
+    "Hiding the probe's session from the agent's own session or resume list: an agent such as Claude Code or Codex may list the short probe session as one of its sessions.",
+    "Killing an in-flight probe's agent process when the chat quits; `close()` only drops the probe's result, and the process ends when its open settles or the nax process exits.",
+    "Re-checking whether an agent's binary is installed during a chat: the install probe runs once per catalog, so an agent installed mid-chat reads `not installed` in `/model refresh` until the next chat.",
+    "A progress note while `/model refresh` waits on its probes; the result lines appear when every probe has settled.",
+    "Merging the offers file across concurrent chat processes: each save rewrites the whole file atomically, and the last writer wins.",
+    "Expiry or a time-to-live on saved offers: a saved offer stays until a later open, probe or refresh replaces it.",
+    "Probing on a schedule, or probing again during a chat other than through `/model refresh`.",
+    "Changing how an ACP open applies a requested model or effort, or how `acpModelRows` / `acpEffortLevels` filter offered ids.",
+    "Native model discovery (`discoverModels`, `chatModelChoices`) is unchanged.",
+    "The `/help` text and `COMMAND_DESCRIPTIONS.model` are unchanged; `/model refresh` is not listed separately in the slash menu."
+  ],
+  "routingProfile": "native-codex"
+}

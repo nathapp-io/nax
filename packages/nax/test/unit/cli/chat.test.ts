@@ -5,6 +5,7 @@ import { makeInteractionChain, makeLogger, makeNaxConfig, withTempDir } from "@t
 import chalk from "chalk";
 import { Command } from "commander";
 import { type AcpCatalog, type ChatHostState, type ChatMcp, createChatHost, createChatStorage } from "@/chat";
+import { resolveChatSessionsDir } from "@/chat/open-chat-session";
 import { registerStatusCommand } from "@/cli/status-dispatch";
 import { NaxError } from "@/errors";
 import { PluginRegistry } from "@/plugins";
@@ -66,6 +67,7 @@ async function fixture() {
       ): Promise<ReturnType<typeof makeInteractionChain> | null> => null,
     ),
     createChatStorage: mock(() => storage),
+    createAcpCatalog: (_input: Parameters<typeof api._chatCommandDeps.createAcpCatalog>[0]) => stubAcpCatalog(),
     createChatHost: mock((_input: Parameters<typeof createChatHost>[0]) => host),
     renderChat: mock((_props: Parameters<typeof api._chatCommandDeps.renderChat>[0]) => {
       rendered.resolve();
@@ -99,6 +101,10 @@ async function fixture() {
 
 function stubAcpCatalog(): AcpCatalog {
   return {
+    load: async () => {},
+    warm: () => {},
+    refresh: async () => [],
+    close: () => {},
     rows: () => [],
     effortLevels: () => ["default"],
     installed: () => true,
@@ -128,6 +134,37 @@ const EXIT_STATE: ChatHostState = {
 const EXIT_SUMMARY = "✻ nax chat session abc123 · $0.88\n  resume with: nax chat --resume abc123";
 
 describe("chatCommand", () => {
+  test("probe AC-13 warms once with cwd only after start resolves", async () => {
+    const f = await fixture();
+    const catalog = stubAcpCatalog();
+    const warm = mock((_cwd: string) => {});
+    catalog.warm = warm;
+    const pending = Promise.withResolvers<void>();
+    const entered = Promise.withResolvers<void>();
+    f.host.start.mockImplementation(() => {
+      entered.resolve();
+      return pending.promise;
+    });
+    const running = f.chatCommand({ dir: "/r" }, { ...f.deps, createAcpCatalog: () => catalog });
+    await Promise.race([entered.promise, running]);
+    expect(warm).not.toHaveBeenCalled();
+    pending.resolve();
+    await running;
+    expect(warm).toHaveBeenCalledTimes(1);
+    expect(warm).toHaveBeenCalledWith("/r");
+  });
+  test("probe AC-14 startup rejection never warms", async () => {
+    const f = await fixture();
+    const catalog = stubAcpCatalog();
+    const warm = mock(() => {});
+    catalog.warm = warm;
+    f.host.start.mockRejectedValue(new Error("start failed"));
+    await f.chatCommand({ dir: "/r" }, { ...f.deps, createAcpCatalog: () => catalog });
+    expect(f.host.start).toHaveBeenCalledTimes(1);
+    expect(f.host.close).toHaveBeenCalledTimes(1);
+    expect(warm).not.toHaveBeenCalled();
+  });
+
   test("US-001 AC-21 composes effort metadata without changing choices, including --model", async () => {
     const f = await fixture();
     f.config.models.native = { balanced: "openai/gpt-6" };
@@ -145,10 +182,30 @@ describe("chatCommand", () => {
   test("US-008 AC-1 builds the ACP catalog once from the deps' env", async () => {
     const f = await fixture();
     const catalog = stubAcpCatalog();
-    const createAcpCatalog = mock((_input: { readonly env: Readonly<Record<string, string | undefined>> }) => catalog);
+    const createAcpCatalog = mock((_input: Parameters<typeof f.deps.createAcpCatalog>[0]) => catalog);
     await f.chatCommand({}, { ...f.deps, createAcpCatalog });
     expect(createAcpCatalog).toHaveBeenCalledTimes(1);
-    expect(createAcpCatalog).toHaveBeenCalledWith({ env: f.deps.env });
+    expect(createAcpCatalog.mock.calls[0]?.[0].env).toBe(f.deps.env);
+    expect(createAcpCatalog.mock.calls[0]?.[0].sessionsDir).toBe(resolveChatSessionsDir(f.deps.env));
+  });
+  test("offer persistence AC-20 awaits load before creating the host", async () => {
+    const f = await fixture();
+    const pending = Promise.withResolvers<void>();
+    const entered = Promise.withResolvers<void>();
+    const catalog = stubAcpCatalog();
+    const load = mock(() => {
+      entered.resolve();
+      return pending.promise;
+    });
+    catalog.load = load;
+    const running = f.chatCommand({}, { ...f.deps, createAcpCatalog: () => catalog });
+    // Also detects the old composition without hanging on an uncalled load.
+    await Promise.race([entered.promise, running]);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(f.deps.createChatHost).not.toHaveBeenCalled();
+    pending.resolve();
+    await running;
+    expect(f.deps.createChatHost).toHaveBeenCalledTimes(1);
   });
   test("US-008 AC-2 hands the catalog to createChatHost as acp", async () => {
     const f = await fixture();
