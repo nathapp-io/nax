@@ -3,7 +3,7 @@
   "feature": "chat-tasks-and-full-approval",
   "branchName": "feat/chat-tasks-and-full-approval",
   "createdAt": "2026-10-30T00:00:00Z",
-  "updatedAt": "2026-10-30T13:44:50.658Z",
+  "updatedAt": "2026-10-30T13:52:33.861Z",
   "userStories": [
     {
       "id": "US-001",
@@ -428,14 +428,17 @@
         "US-003",
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "One small opener hook and screen call site reuse Ink useInput, the existing MouseEvents subscription/ref gesture pattern and the upstream picker; inclusive geometry and blocked/live-turn cases are standard mounted tests, not new terminal infrastructure."
+        "reasoning": "One small opener hook and screen call site reuse Ink useInput, the existing MouseEvents subscription/ref gesture pattern and the upstream picker; inclusive geometry and blocked/live-turn cases are standard mounted tests, not new terminal infrastructure.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -459,7 +462,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "2d2591672da91614410f21a4e24ce6b6917d83ae"
     },
     {
       "id": "US-008",
