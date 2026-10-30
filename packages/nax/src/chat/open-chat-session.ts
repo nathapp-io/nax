@@ -229,7 +229,8 @@ interface OpenedBrain {
 }
 
 /**
- * Create or resume the agent's own session over its own transcript document. A stored
+ * Create or resume the agent's own session over its own transcript document. Only a document
+ * with a `turn` marker is resumed; a turn-less one is deleted and replaced silently. A stored
  * document the agent can no longer use is retained and replaced; any other failure propagates.
  */
 async function openAcpBrain(
@@ -251,7 +252,12 @@ async function openAcpBrain(
   };
   let unusable = false;
   try {
-    if ((await store.load(meta.sessionId)) !== null) {
+    const stored = await store.load(meta.sessionId);
+    // A document without a turn marker is a session the agent never prompted: resuming it would
+    // fail the same way, so drop it and create a fresh one (nothing was lost, so no notice).
+    if (stored?.turn === undefined) {
+      if (stored !== null) await store.delete(meta.sessionId);
+    } else {
       return { session: await deps.resumeAgentSession(meta.sessionId, options), fresh: false };
     }
   } catch (error) {

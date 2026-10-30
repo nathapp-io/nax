@@ -20,6 +20,8 @@
  * is written to the transcript document after each priced turn, so a resume in a
  * new process prices its first turn from it (D6-a).
  */
+
+import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import {
   type AgentSessionAdapter,
   type BackendInfo,
@@ -29,6 +31,7 @@ import {
   type OpenedBackend,
   type SendTurnOpts,
   type SessionBackend,
+  type SessionConfigureInput,
   type SessionHandle,
   type TranscriptStore,
   type TurnResult,
@@ -44,6 +47,7 @@ import { createOwnToolLedger } from "#src/client/own-tool-calls";
 import { decidePermission, type PermissionContext } from "#src/client/permissions";
 import { race } from "#src/client/race";
 import { canRestore, type Restore, storedSessionOf } from "#src/client/resume";
+import { configureAcpSession } from "#src/client/session-configure";
 import { shellSandboxPlan } from "#src/client/shell-sandbox";
 import { createToolCalls } from "#src/client/tool-calls";
 import { createToolHost, newToolHostServerName, newToolHostToken, type ToolHost } from "#src/client/tool-host";
@@ -81,7 +85,10 @@ interface Live {
 
 /** The session across its agent processes. */
 interface AcpSession {
-  readonly base: ResolvedAcpOptions;
+  /** The options a reconnect opens with; `configure` updates its model and effort as the agent accepts them. */
+  base: ResolvedAcpOptions;
+  /** The config options the live agent last reported (open, reconnect, configure); `configure` resolves against them. */
+  configOptions: readonly SessionConfigOption[];
   readonly ctx: BackendOpenContext;
   /** The tool host's ACP server name, drawn once at open and kept across reconnects; undefined without tools. */
   readonly serverName: string | undefined;
@@ -236,6 +243,7 @@ async function openBackend(base: ResolvedAcpOptions, ctx: BackendOpenContext): P
   const live = await connect(base, ctx, restore, [], serverName);
   return assemble({
     base,
+    configOptions: live.acp.configOptions,
     ctx,
     serverName,
     live,
@@ -275,6 +283,7 @@ function assemble(s: AcpSession): OpenedBackend {
       return infoOf(s);
     },
     turnOpts: () => ({ interactionHandler: NO_OP_INTERACTION_HANDLER }),
+    configure: (change) => configure(s, change),
     close: () => {
       s.closing ??= shutdown(s);
       return s.closing;
@@ -314,11 +323,34 @@ async function reconnect(s: AcpSession, signal: AbortSignal): Promise<Live> {
   const ctx: BackendOpenContext = { ...s.ctx, openSignal: AbortSignal.any([s.ctx.openSignal, signal]) };
   try {
     s.live = await connect(s.base, ctx, restore, old.tokens, s.serverName);
+    s.configOptions = s.live.acp.configOptions;
     return s.live;
   } catch (err) {
     if (!signal.aborted && !s.ctx.openSignal.aborted) s.lost = true;
     throw err;
   }
+}
+
+/** US-002: model and effort set on the live process; each accepted part is recorded for a reconnect. */
+async function configure(s: AcpSession, change: SessionConfigureInput): Promise<void> {
+  const live = await liveFor(s, s.ctx.openSignal);
+  await configureAcpSession(
+    {
+      link: live.acp.link,
+      agentSessionId: live.acp.agentSessionId,
+      agentName: s.base.agentName,
+      secrets: live.options.secrets,
+      timeoutMs: s.base.initializeTimeoutMs,
+      signal: s.ctx.openSignal,
+      sessionId: s.ctx.sessionId,
+      configOptions: s.configOptions,
+      change,
+    },
+    (part, configOptions) => {
+      s.base = Object.freeze({ ...s.base, ...part });
+      s.configOptions = configOptions;
+    },
+  );
 }
 
 async function sendTurn(s: AcpSession, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {

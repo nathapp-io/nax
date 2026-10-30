@@ -10,7 +10,7 @@ import type { TranscriptDoc, TranscriptStore } from "#src/native/session/transcr
 import type { SandboxState } from "#src/sandbox/types";
 import { claimCommand } from "./agent-session-command.ts";
 import { _agentSessionDeps } from "./agent-session-deps.ts";
-import { AgentSessionError } from "./agent-session-errors.ts";
+import { AgentSessionError, type AgentSessionErrorCode } from "./agent-session-errors.ts";
 import { type ResolvedAgentSessionOptions, resolveAgentSessionOptions } from "./agent-session-options.ts";
 import { checkBackendKind, interruptedTurnOf, loadResumable, resumeInput } from "./agent-session-resume.ts";
 import { type ClaimedTurn, claimTurn, type LiveTurn, type TurnRunContext } from "./agent-session-turn.ts";
@@ -20,6 +20,7 @@ import type {
   AnswerStatus,
   CommandRunResult,
   CreateAgentSessionOptions,
+  SessionConfigureInput,
   SessionEvent,
   TurnEndStatus,
 } from "./agent-session-types.ts";
@@ -72,6 +73,8 @@ class FacadeAgentSession implements AgentSession {
   private active: Pick<ClaimedTurn, "turnId" | "settled" | "cancel"> | undefined;
   private last: LastTurn | undefined;
   private closing: Promise<void> | undefined;
+  /** True while the backend's configure is pending: send, runCommand and configure refuse BUSY. */
+  private configuring = false;
 
   constructor(
     private readonly parts: SessionParts,
@@ -108,6 +111,11 @@ class FacadeAgentSession implements AgentSession {
         sessionId: this.id,
       });
     }
+    if (this.configuring) {
+      throw new AgentSessionError(`Session "${this.id}" is being configured`, "AGENT_SESSION_BUSY", {
+        sessionId: this.id,
+      });
+    }
     const turn = claimTurn(this.parts.ctx, message, {
       onStart: (live) => {
         this.parts.slot.turn = live;
@@ -122,11 +130,40 @@ class FacadeAgentSession implements AgentSession {
     return turn.iterable;
   }
 
+  async configure(input: SessionConfigureInput): Promise<void> {
+    const refusal = this.configureRefusal(input);
+    if (refusal !== undefined) throw refusal;
+    const configure = this.parts.opened.configure;
+    if (configure === undefined)
+      throw this.refusal("AGENT_SESSION_CAPABILITY_UNSUPPORTED", { capability: "configure" });
+    this.configuring = true;
+    try {
+      await configure.call(this.parts.opened, input);
+    } finally {
+      this.configuring = false;
+    }
+  }
+
+  /** The refusals that precede the backend call, in the documented order; the backend check is last and separate. */
+  private configureRefusal(input: SessionConfigureInput): AgentSessionError | undefined {
+    if (this.closing !== undefined) return this.refusal("AGENT_SESSION_CLOSED");
+    if (this.active !== undefined || this.configuring) return this.refusal("AGENT_SESSION_BUSY");
+    const { model, effort } = input;
+    if ((model === undefined && effort === undefined) || model === "" || effort === "") {
+      return this.refusal("AGENT_SESSION_INVALID_OPTIONS", { path: "configure" });
+    }
+    return undefined;
+  }
+
+  private refusal(code: AgentSessionErrorCode, context: Record<string, unknown> = {}): AgentSessionError {
+    return new AgentSessionError(`Session "${this.id}" cannot be configured`, code, { sessionId: this.id, ...context });
+  }
+
   async runCommand(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult> {
     const code =
       this.closing !== undefined
         ? "AGENT_SESSION_CLOSED"
-        : this.active !== undefined
+        : this.active !== undefined || this.configuring
           ? "AGENT_SESSION_BUSY"
           : this.parts.opened.runCommand === undefined
             ? "AGENT_SESSION_CAPABILITY_UNSUPPORTED"

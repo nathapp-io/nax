@@ -325,6 +325,8 @@ export function buildFakeAgent(script: FakeScript, hooks: FakeHooks): AgentApp {
       })
       .onRequest(methods.agent.session.setConfigOption, async (ctx) => {
         hooks.record("session/set_config_option", ctx.params);
+        if (script.setConfigOptionHang === true) return never();
+        if (script.setConfigOptionFailure !== undefined) throw rpcError(script.setConfigOptionFailure);
         if (!configOptions.some((option) => option.id === ctx.params.configId)) {
           throw RequestError.invalidParams(undefined, `unknown config option ${ctx.params.configId}`);
         }

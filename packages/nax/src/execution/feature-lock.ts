@@ -198,6 +198,116 @@ function emptyHolder(feature: string): FeatureLockRecord {
 }
 
 /**
+ * Reclaim a parsed record: refuse when its holder is live, otherwise tombstone
+ * it (race-safe) and return null so the caller proceeds to the exclusive create.
+ */
+async function reclaimRecord(
+  lockPath: string,
+  feature: string,
+  existing: FeatureLockRecord,
+): Promise<FeatureLockResult | null> {
+  const reclaimable = isLockReclaimable(existing, Date.now());
+  if (!reclaimable) {
+    return { acquired: false, holder: existing };
+  }
+
+  // Race-safe reclaim: rename the existing record to a tombstone so only
+  // one racer can claim exclusive rights to clean it up. A second racer's
+  // rename returns ENOENT and they back off.
+  const tombstonePath = `${lockPath}.stale.${process.pid}.${Date.now()}`;
+  try {
+    await _featureLockDeps.rename(lockPath, tombstonePath);
+  } catch (renameErr) {
+    if ((renameErr as NodeJS.ErrnoException).code === "ENOENT") {
+      // Another racer won the rename race and the tombstone is already gone.
+      // Re-read whoever currently holds the lock and report a refusal.
+      const currentContent = await Bun.file(lockPath)
+        .text()
+        .catch(() => null);
+      return {
+        acquired: false,
+        holder: parseHolder(currentContent) ?? emptyHolder(feature),
+      };
+    }
+    throw renameErr;
+  }
+
+  // Verify the tombstone content still matches the stale PID we read. If
+  // a third process slipped a fresh live lock in between our read and our
+  // rename, restore it rather than destroying their lock.
+  const tombstoneContent = await Bun.file(tombstonePath)
+    .text()
+    .catch(() => null);
+  let tombstonePid: number | undefined;
+  try {
+    tombstonePid = tombstoneContent === null ? undefined : (JSON.parse(tombstoneContent) as { pid: number }).pid;
+  } catch {
+    tombstonePid = undefined;
+  }
+
+  if (tombstonePid !== existing.pid) {
+    const restored =
+      tombstoneContent !== null && (await _featureLockDeps.tryExclusiveCreate(lockPath, tombstoneContent));
+    await _featureLockDeps.unlink(tombstonePath).catch(() => {});
+    if (!restored) {
+      const logger = getSafeLogger();
+      logger?.warn("feature-lock", "Stolen feature lock could not be restored — a newer lock already exists", {
+        lockPath,
+        feature,
+      });
+    }
+    const currentContent = await Bun.file(lockPath)
+      .text()
+      .catch(() => null);
+    return {
+      acquired: false,
+      holder: parseHolder(currentContent) ?? emptyHolder(feature),
+    };
+  }
+
+  // Tombstone is ours — log and discard.
+  const logger = getSafeLogger();
+  logger?.warn("feature-lock", "Removing stale feature lock", {
+    pid: existing.pid,
+    feature,
+  });
+  await _featureLockDeps.unlink(tombstonePath).catch(() => {});
+  return null;
+}
+
+/**
+ * Handle a lock file that already exists: refuse when its holder is live, or
+ * reclaim it (corrupt / stale record) and return null so the caller proceeds to
+ * the exclusive create.
+ */
+async function reclaimExisting(lockPath: string, feature: string): Promise<FeatureLockResult | null> {
+  // The record can vanish between the caller's exists() check and this read when
+  // a racer renames it to a tombstone. Treat that as absent: the exclusive
+  // create below arbitrates the race.
+  let existingContent: string;
+  try {
+    existingContent = await _featureLockDeps.readLockText(lockPath);
+  } catch (readErr) {
+    if ((readErr as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw readErr;
+  }
+  const existing = parseHolder(existingContent);
+
+  if (existing === null) {
+    // Corrupt / unparseable lock file — warn and treat as stale.
+    const logger = getSafeLogger();
+    logger?.warn("feature-lock", "Corrupt feature lock file detected, removing", {
+      lockPath,
+      feature,
+    });
+    await _featureLockDeps.unlink(lockPath).catch(() => {});
+  } else {
+    return reclaimRecord(lockPath, feature, existing);
+  }
+  return null;
+}
+
+/**
  * Acquire the feature lock. Creates `<outputDir>/features/<feature>/` when
  * missing. Mirrors the checkout lock's stale-reclaim flow: rename the existing
  * record to a tombstone, verify the tombstone's PID matches the stale PID we
@@ -216,87 +326,9 @@ export async function acquireFeatureLock(args: {
 
   await mkdir(featureDir, { recursive: true });
 
-  const lockFile = Bun.file(lockPath);
-  if (await lockFile.exists()) {
-    const existingContent = await lockFile.text();
-    const existing = parseHolder(existingContent);
-
-    if (existing === null) {
-      // Corrupt / unparseable lock file — warn and treat as stale.
-      const logger = getSafeLogger();
-      logger?.warn("feature-lock", "Corrupt feature lock file detected, removing", {
-        lockPath,
-        feature: args.feature,
-      });
-      await _featureLockDeps.unlink(lockPath).catch(() => {});
-    } else {
-      const reclaimable = isLockReclaimable(existing, Date.now());
-      if (!reclaimable) {
-        return { acquired: false, holder: existing };
-      }
-
-      // Race-safe reclaim: rename the existing record to a tombstone so only
-      // one racer can claim exclusive rights to clean it up. A second racer's
-      // rename returns ENOENT and they back off.
-      const tombstonePath = `${lockPath}.stale.${process.pid}.${Date.now()}`;
-      try {
-        await _featureLockDeps.rename(lockPath, tombstonePath);
-      } catch (renameErr) {
-        if ((renameErr as NodeJS.ErrnoException).code === "ENOENT") {
-          // Another racer won the rename race and the tombstone is already gone.
-          // Re-read whoever currently holds the lock and report a refusal.
-          const currentContent = await Bun.file(lockPath)
-            .text()
-            .catch(() => null);
-          return {
-            acquired: false,
-            holder: parseHolder(currentContent) ?? emptyHolder(args.feature),
-          };
-        }
-        throw renameErr;
-      }
-
-      // Verify the tombstone content still matches the stale PID we read. If
-      // a third process slipped a fresh live lock in between our read and our
-      // rename, restore it rather than destroying their lock.
-      const tombstoneContent = await Bun.file(tombstonePath)
-        .text()
-        .catch(() => null);
-      let tombstonePid: number | undefined;
-      try {
-        tombstonePid = tombstoneContent === null ? undefined : (JSON.parse(tombstoneContent) as { pid: number }).pid;
-      } catch {
-        tombstonePid = undefined;
-      }
-
-      if (tombstonePid !== existing.pid) {
-        const restored =
-          tombstoneContent !== null && (await _featureLockDeps.tryExclusiveCreate(lockPath, tombstoneContent));
-        await _featureLockDeps.unlink(tombstonePath).catch(() => {});
-        if (!restored) {
-          const logger = getSafeLogger();
-          logger?.warn("feature-lock", "Stolen feature lock could not be restored — a newer lock already exists", {
-            lockPath,
-            feature: args.feature,
-          });
-        }
-        const currentContent = await Bun.file(lockPath)
-          .text()
-          .catch(() => null);
-        return {
-          acquired: false,
-          holder: parseHolder(currentContent) ?? emptyHolder(args.feature),
-        };
-      }
-
-      // Tombstone is ours — log and discard.
-      const logger = getSafeLogger();
-      logger?.warn("feature-lock", "Removing stale feature lock", {
-        pid: existing.pid,
-        feature: args.feature,
-      });
-      await _featureLockDeps.unlink(tombstonePath).catch(() => {});
-    }
+  if (await Bun.file(lockPath).exists()) {
+    const refusal = await reclaimExisting(lockPath, args.feature);
+    if (refusal) return refusal;
   }
 
   // Build the new record and exclusive-create it. If create fails (EEXIST) a
@@ -398,6 +430,7 @@ export const _featureLockDeps = {
   featureLockPath: featureLockPath as typeof featureLockPath,
   host: (): string => hostname(),
   isProcessAlive: isProcessAlive as typeof isProcessAlive,
+  readLockText: (lockPath: string): Promise<string> => Bun.file(lockPath).text(),
   rename: rename as typeof rename,
   tryExclusiveCreate: tryExclusiveCreate as typeof tryExclusiveCreate,
   unlink: unlink as typeof unlink,

@@ -89,8 +89,50 @@ describe("acpTurnMessages", () => {
     expect(messages[1].role).toBe("assistant");
   });
 
-  test("prefers the turn_end output over the deltas", () => {
-    expect(assistantContent([textDelta("x"), turnEnd("Hello world")])).toBe("Hello world");
+  test("AC-15: records the deltas rather than the turn_end output", () => {
+    expect(assistantContent([textDelta("x"), turnEnd("Hello world")])).toBe("x");
+  });
+
+  test("AC-2: joins deltas with no tool call into one text", () => {
+    expect(assistantContent([textDelta("Hel"), textDelta("lo"), turnEnd("Hello")])).toBe("Hello");
+  });
+
+  test("AC-5: falls back to the turn_end output when there are no text deltas", () => {
+    expect(assistantContent([turnEnd("Hi")])).toBe("Hi");
+  });
+
+  test("falls back to the turn_end output when the deltas hold only empty text", () => {
+    expect(assistantContent([textDelta(""), turnEnd("Hi")])).toBe("Hi");
+  });
+
+  test("AC-1: separates the text around a tool call with a blank line", () => {
+    const events = [
+      textDelta("Creating."),
+      toolCall("c1", "Edit"),
+      textDelta("Created."),
+      turnEnd("Creating.Created."),
+    ];
+    expect(assistantContent(events)).toBe("Creating.\n\nCreated.\n[tool] Edit");
+  });
+
+  test("AC-3: a tool call before any text leaves no leading blank line", () => {
+    const events = [toolCall("c1", "Read"), textDelta("done"), turnEnd("done")];
+    expect(assistantContent(events)).toBe("done\n[tool] Read");
+  });
+
+  test("AC-4: consecutive tool calls between two texts leave exactly one blank line", () => {
+    const events = [textDelta("a"), toolCall("c1", "Read"), toolCall("c2", "Edit"), textDelta("b"), turnEnd("ab")];
+    expect(assistantContent(events)).toBe("a\n\nb\n[tool] Read\n[tool] Edit");
+  });
+
+  test("AC-6: drops text before a stream_reset but still lists its tool call", () => {
+    const events = [textDelta("a"), toolCall("c1", "X"), reset, textDelta("b"), turnEnd("")];
+    expect(assistantContent(events)).toBe("b\n[tool] X");
+  });
+
+  test("a tool call after a stream_reset splits only the text that follows the reset", () => {
+    const events = [textDelta("a"), reset, textDelta("b"), toolCall("c1", "X"), textDelta("c"), turnEnd("")];
+    expect(assistantContent(events)).toBe("b\n\nc\n[tool] X");
   });
 
   test("concatenates text deltas when the output is empty", () => {

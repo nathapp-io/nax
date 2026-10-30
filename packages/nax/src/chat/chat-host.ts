@@ -32,10 +32,16 @@ import type { ChatMode } from "./chat-mode";
 import { tierModels } from "./chat-models";
 import { createCloseConfirm } from "./close-confirm";
 import { type ChatJobs, type ChatRunAsks, createHostJobs } from "./jobs";
-import { type ChatHistory, type ChatSessionHandle, openChatSession } from "./open-chat-session";
+import {
+  type ChatHistory,
+  type ChatSessionHandle,
+  type OpenChatSessionRequest,
+  openChatSession,
+} from "./open-chat-session";
 import type { ChatResources } from "./resources";
 import { closeChatResources, createSessionHygiene, resumableRows } from "./session-hygiene";
 import { latestResumableId, listCwdSessions } from "./session-listing";
+import { switchChatSession } from "./session-switch";
 import { createSubagentRuns, type SubagentRuns } from "./subagent-runs";
 import { routeAskEvent, runChatTurn } from "./turn-runner";
 
@@ -332,20 +338,23 @@ class NativeChatHost implements ChatHost {
   private async startSession(input: { mode: ChatMode; model: string }): Promise<void> {
     this.assertOpen();
     assertAcpInstalled(this.deps.acp, input.model);
-    const next = await this.open({
-      ...input,
-      storage: this.deps.storage,
+    const next = await this.open({ ...input, storage: this.deps.storage, ...this.openArgs() });
+    await this.replace(next);
+    await this.jobs?.attach();
+    this.resumeNotice = undefined;
+    await this.primeContextWindow(next.meta.model);
+  }
+
+  /** The open arguments every session open shares; the storage and the resume id vary per site. */
+  private openArgs(): Omit<OpenChatSessionRequest, "storage"> {
+    return {
       cwd: this.deps.cwd,
       repoRoot: this.repoRoot,
       config: this.deps.config,
       loopHandlers: this.loopHandlers,
       ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
       ...(this.tasks ? { backgroundCommands: this.tasks } : {}),
-    });
-    await this.replace(next);
-    await this.jobs?.attach();
-    this.resumeNotice = undefined;
-    await this.primeContextWindow(next.meta.model);
+    };
   }
 
   private async replace(next: ChatSessionHandle): Promise<void> {
@@ -392,16 +401,7 @@ class NativeChatHost implements ChatHost {
     if (this.handle?.meta.sessionId !== id) {
       let next: ChatSessionHandle;
       try {
-        next = await this.open({
-          storage: this.deps.storage,
-          cwd: this.deps.cwd,
-          repoRoot: this.repoRoot,
-          config: this.deps.config,
-          loopHandlers: this.loopHandlers,
-          ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
-          ...(this.tasks ? { backgroundCommands: this.tasks } : {}),
-          resumeId: id,
-        });
+        next = await this.open({ storage: this.deps.storage, ...this.openArgs(), resumeId: id });
       } catch (error) {
         if (error instanceof Error && "code" in error && error.code === "SESSION_LOCKED") {
           const holder = await this.deps.storage.readLockHolder(id);
@@ -431,17 +431,7 @@ class NativeChatHost implements ChatHost {
     // Reopens own per-open cleanup, but share the original storage lock. Even a
     // failed open must drain its shadow without releasing the active host's lock.
     const storage: SessionStorage = { ...this.deps.storage, acquireLock: async () => async () => {} };
-    const next = await this.open({
-      ...input,
-      storage,
-      resumeId: previous.meta.sessionId,
-      cwd: this.deps.cwd,
-      repoRoot: this.repoRoot,
-      config: this.deps.config,
-      loopHandlers: this.loopHandlers,
-      ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
-      ...(this.tasks ? { backgroundCommands: this.tasks } : {}),
-    });
+    const next = await this.open({ ...input, storage, resumeId: previous.meta.sessionId, ...this.openArgs() });
     return {
       ...next,
       release: async (options) => {
@@ -466,29 +456,22 @@ class NativeChatHost implements ChatHost {
     const target = { mode: input.mode ?? from.mode, model };
     if (target.mode === from.mode && target.model === from.model) return;
     assertAcpInstalled(this.deps.acp, target.model);
-    try {
-      await previous.session.close();
-    } finally {
-      await previous.release({ retainLock: true });
+    const outcome = await switchChatSession({
+      previous,
+      from: { mode: from.mode, model: from.model },
+      target,
+      reopen: (to) => this.reopen(to, previous),
+      openFresh: (to) => this.open({ ...to, storage: this.deps.storage, ...this.openArgs() }),
+      writeMeta: (meta) => this.deps.storage.writeMeta(meta),
+    });
+    this.handle = outcome.handle;
+    if (outcome.handle.meta.sessionId !== previous.meta.sessionId) {
+      this.hostJobs?.sessionChanged();
+      this.resumeNotice = outcome.notice;
     }
-    let next: ChatSessionHandle | undefined;
-    try {
-      next = await this.reopen(target, previous);
-      await this.deps.storage.writeMeta(next.meta);
-    } catch (error) {
-      if (next) {
-        try {
-          await next.session.close();
-        } finally {
-          await next.release({ retainLock: true });
-        }
-      }
-      this.handle = await this.reopen(from, previous);
-      throw error;
-    }
-    this.handle = next;
-    this.asks.setMode(target.mode);
-    await this.primeContextWindow(next.meta.model);
+    this.asks.setMode(outcome.handle.meta.mode === "full" ? "full" : "guarded");
+    await this.primeContextWindow(outcome.handle.meta.model);
+    if (outcome.error !== undefined) throw outcome.error;
   }
 
   async clear(): Promise<void> {

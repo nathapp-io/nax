@@ -329,6 +329,7 @@ export type {
   EmbedderTool,
   EmbedderToolContext,
   EmbedderToolResult,
+  SessionConfigureInput,
   SessionEvent,
   SessionEventBase,
   SessionEventBody,

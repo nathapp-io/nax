@@ -163,6 +163,34 @@ describe("recordAcpTurns forwarding", () => {
     expect(wrap(stub([{ events: [] }]).session).runCommand).toBeUndefined();
   });
 
+  test("configure forwards its input once to the wrapped session, bound to it", async () => {
+    const seen: unknown[] = [];
+    const inner: AgentSession = {
+      ...stub([{ events: [] }]).session,
+      configure(input) {
+        seen.push(this, input);
+        return Promise.resolve();
+      },
+    };
+    const input = { effort: "high" };
+    await wrap(inner).configure?.(input);
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBe(inner);
+    expect(seen[1]).toBe(input);
+  });
+
+  test("configure rejection from the wrapped session propagates", async () => {
+    const inner: AgentSession = {
+      ...stub([{ events: [] }]).session,
+      configure: () => Promise.reject(new Error("refused")),
+    };
+    await expect(wrap(inner).configure?.({ model: "m2" })).rejects.toThrow("refused");
+  });
+
+  test("configure is undefined when the wrapped session has none", () => {
+    expect(wrap(stub([{ events: [] }]).session).configure).toBeUndefined();
+  });
+
   test("AC-9: send yields every wrapped event unchanged and in order", async () => {
     const events = [turnStart, text("a"), thinking("b"), toolCall(), usage(), turnEnd()];
     const got = await drain(wrap(stub([{ events }]).session).send("hi"));

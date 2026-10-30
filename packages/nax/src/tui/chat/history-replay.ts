@@ -1,7 +1,7 @@
 /** Pure opening-snapshot replay. Tool data uses the same masking and caps as live turns. */
 import { displayToolInput, toolResultPreview } from "@nathapp/nax-agent";
 import { COMPACTION_SUMMARY_PREFIX } from "@nathapp/nax-agent/internal";
-import { type ChatHistory, parseSkillInvocation } from "@/chat";
+import { acpAgentOfMessage, type ChatHistory, parseSkillInvocation } from "@/chat";
 import type { TranscriptEntry } from "./transcript-model";
 
 type Message = ChatHistory["messages"][number];
@@ -39,6 +39,39 @@ function replayCall(
   };
 }
 
+const ACP_TOOL_PREFIX = "[tool] ";
+const ACP_ERROR_SUFFIX = " (error)";
+const ACP_OVERFLOW = /^… and (\d+) more$/;
+
+function replayAcpLine(line: string, n: number, timing: { turnId: string; timestamp: string }): TranscriptEntry {
+  const body = line.slice(ACP_TOOL_PREFIX.length);
+  const overflow = ACP_OVERFLOW.exec(body);
+  if (overflow) return { kind: "notice", text: `… and ${overflow[1]} more tool calls` };
+  const failed = body.endsWith(ACP_ERROR_SUFFIX);
+  return {
+    kind: "tool",
+    turnId: timing.turnId,
+    callId: `${timing.turnId}-acp-${n}`,
+    name: failed ? body.slice(0, -ACP_ERROR_SUFFIX.length) : body,
+    input: {},
+    status: failed ? "error" : "ok",
+    startedAt: timing.timestamp,
+    endedAt: timing.timestamp,
+    children: [],
+  };
+}
+
+/** An ACP reply is its text followed by the trailing run of `[tool] ` lines the recorder wrote. */
+function replayAcpAssistant(content: string, timing: { turnId: string; timestamp: string }): TranscriptEntry[] {
+  const lines = content.split("\n");
+  let start = lines.length;
+  while (start > 0 && lines[start - 1].startsWith(ACP_TOOL_PREFIX)) start--;
+  const text = lines.slice(0, start).join("\n");
+  const entries: TranscriptEntry[] = text === "" ? [] : [{ kind: "reply", turnId: timing.turnId, text }];
+  for (const [n, line] of lines.slice(start).entries()) entries.push(replayAcpLine(line, n, timing));
+  return entries;
+}
+
 function replayMessage(
   message: Message,
   results: ReadonlyMap<string, StoredResult>,
@@ -48,6 +81,7 @@ function replayMessage(
     case "user":
       return replayUser(message.content);
     case "assistant": {
+      if (acpAgentOfMessage(message) !== undefined) return replayAcpAssistant(message.content, timing);
       const entries: TranscriptEntry[] = [];
       if (message.content !== "") entries.push({ kind: "reply", turnId: timing.turnId, text: message.content });
       for (const call of message.toolCalls ?? []) entries.push(replayCall(call, results.get(call.id), timing));

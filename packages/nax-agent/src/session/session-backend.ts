@@ -7,7 +7,13 @@
  */
 import type { TranscriptDoc, TranscriptStore } from "#src/native/session/transcript-types";
 import type { SandboxState } from "#src/sandbox/types";
-import type { AgentSessionProfile, ApprovalDecidedBy, CommandRunResult, EmbedderTool } from "./agent-session-types.ts";
+import type {
+  AgentSessionProfile,
+  ApprovalDecidedBy,
+  CommandRunResult,
+  EmbedderTool,
+  SessionConfigureInput,
+} from "./agent-session-types.ts";
 import type { AgentSessionAdapter, SendTurnOpts, SessionHandle } from "./session-types.ts";
 
 export interface BackendInfo {
@@ -91,6 +97,8 @@ export interface BackendOpenContext {
 }
 
 export interface OpenedBackend {
+  /** Absent on a backend that cannot change model or effort on a live session. The facade validates `input` first. */
+  configure?(input: SessionConfigureInput): Promise<void>;
   /** Absent on a backend that cannot run a host-side command (ACP). */
   runCommand?(request: { command: string; callId: string; signal: AbortSignal }): Promise<CommandRunResult>;
   readonly adapter: AgentSessionAdapter;

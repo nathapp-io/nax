@@ -35,5 +35,6 @@ export {
   acpTranscriptDir,
   isFreshFallback,
 } from "./acp-session-options";
+export { acpInPlaceChange } from "./acp-switch";
 export { appendNativeTurn } from "./acp-transcript-append";
 export { ACP_WRITE_KINDS, acpRefusal, acpWriteRefusal } from "./acp-write-guard";

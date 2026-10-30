@@ -13,6 +13,7 @@ import { mkdirSync, statSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, withWarnSpy } from "@test/helpers";
+import { NaxError } from "@/errors";
 import * as executionBarrel from "@/execution";
 import type { FeatureLockRecord } from "@/execution/feature-lock";
 import {
@@ -242,6 +243,46 @@ describe("acquireFeatureLock", () => {
     expect(result.acquired).toBe(true);
     expect(dirExists(featureDir)).toBe(true);
   });
+
+  test("acquires when the existing lock vanishes between exists() and the initial read", async () => {
+    const args = { outputDir: dir, feature: "f", workdir: join(dir, "checkout-a"), runId: "run-new" };
+    await acquireFeatureLock({ ...args, runId: "run-old" });
+    const recordPath = lockPath(dir, "f");
+    let reads = 0;
+    _featureLockDeps.readLockText = async (observedPath) => {
+      reads++;
+      expect(observedPath).toBe(recordPath);
+      // Reaching this seam means exists() observed the old lock. Remove it
+      // now, forcing the real Bun read to reject with ENOENT.
+      await _featureLockDeps.unlink(observedPath);
+      return Bun.file(observedPath).text();
+    };
+
+    const result = await acquireFeatureLock(args);
+
+    expect(reads).toBe(1);
+    expect(result).toEqual({ acquired: true });
+    const record: FeatureLockRecord = await Bun.file(recordPath).json();
+    expect(record.runId).toBe("run-new");
+    expect(record.pid).toBe(process.pid);
+  });
+
+  test.each(["EACCES", "EIO"])(
+    "propagates %s from the initial lock read without replacing the holder",
+    async (code) => {
+      const args = { outputDir: dir, feature: "f", workdir: join(dir, "checkout-a"), runId: "run-old" };
+      await acquireFeatureLock(args);
+      const recordPath = lockPath(dir, "f");
+      const originalContent = await Bun.file(recordPath).text();
+      const error = new NaxError("[feature-lock] simulated read failure", code, { stage: "feature-lock" });
+      _featureLockDeps.readLockText = async () => {
+        throw error;
+      };
+
+      await expect(acquireFeatureLock({ ...args, runId: "run-new" })).rejects.toBe(error);
+      expect(await Bun.file(recordPath).text()).toBe(originalContent);
+    },
+  );
 
   test("US-001 AC12: refuses the same feature from a different workdir while isLockReclaimable is false", async () => {
     _featureLockDeps.isProcessAlive = () => true; // the holder PID is the live test process

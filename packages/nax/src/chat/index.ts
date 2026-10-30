@@ -3,6 +3,7 @@ export {
   type AcpCatalog,
   type AcpChatAgent,
   acpAgentLabel,
+  acpAgentOfMessage,
   acpModelLabel,
   type ChatAcpModel,
   createAcpCatalog,

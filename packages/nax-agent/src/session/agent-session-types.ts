@@ -173,7 +173,20 @@ export interface CommandRunResult {
   readonly isError: boolean;
 }
 
+/** What `AgentSession.configure` changes on a live session; at least one field, never an empty string. */
+export interface SessionConfigureInput {
+  readonly model?: string;
+  readonly effort?: string;
+}
+
 export interface AgentSession {
+  /**
+   * Sets the model and/or effort on the live session without a new process. Refuses, in order:
+   * `AGENT_SESSION_CLOSED`, `AGENT_SESSION_BUSY` (a turn, a command or another configure is in
+   * flight), `AGENT_SESSION_INVALID_OPTIONS` (neither field, or an empty string), then
+   * `AGENT_SESSION_CAPABILITY_UNSUPPORTED` (the backend cannot). The facade always provides this method.
+   */
+  configure?(input: SessionConfigureInput): Promise<void>;
   /** Run through the session's Bash tool without a model turn. The facade always provides this method. */
   runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>;
   readonly id: string;

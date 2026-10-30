@@ -20,6 +20,7 @@ export const ACP_TOOL_NAME_MAX_CHARS = 80;
 
 const ORIGIN_PREFIX = "acp:";
 const DEFAULT_MODEL = "default";
+const SEGMENT_SEPARATOR = "\n\n";
 
 /** `{ provider: "acp:<agent>", model: acp.model ?? "default" }`; the effort is not part of it. */
 export function acpOrigin(acp: ChatAcpModel): { readonly provider: string; readonly model: string } {
@@ -46,14 +47,28 @@ interface ToolCallRecord {
   readonly name: string;
 }
 
-function replyText(events: readonly SessionEvent[], turnEnd: TurnEndEvent | undefined): string {
-  if (turnEnd !== undefined && turnEnd.output !== "") return turnEnd.output;
-  let text = "";
+/** The turn's `text_delta` text after the last `stream_reset`, split at each `tool_call`. */
+function replySegments(events: readonly SessionEvent[]): string[] {
+  let segments: string[] = [];
+  let current = "";
   for (const event of events) {
-    if (event.type === "text_delta") text += event.text;
-    else if (event.type === "stream_reset") text = "";
+    if (event.type === "text_delta") current += event.text;
+    else if (event.type === "stream_reset") {
+      segments = [];
+      current = "";
+    } else if (event.type === "tool_call") {
+      segments.push(current);
+      current = "";
+    }
   }
-  return text;
+  segments.push(current);
+  return segments.filter((segment) => segment !== "");
+}
+
+/** The reply segments joined with a blank line; `turn_end.output` only when the deltas hold no text. */
+function replyText(events: readonly SessionEvent[], turnEnd: TurnEndEvent | undefined): string {
+  const segments = replySegments(events);
+  return segments.length > 0 ? segments.join(SEGMENT_SEPARATOR) : (turnEnd?.output ?? "");
 }
 
 function toolCallsOf(events: readonly SessionEvent[]): ToolCallRecord[] {
