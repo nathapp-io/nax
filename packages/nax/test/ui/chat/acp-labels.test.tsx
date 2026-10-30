@@ -130,21 +130,11 @@ function noticesFor(from: string, to: string): string[] {
 
 describe("US-011 useSwitchNotices brain changes", () => {
   test.each([
-    ["AC-10 native to ACP", "openai/gpt-6", "acp:codex", ["model: Codex", "Codex does not see gpt-6's turns"]],
+    ["AC-10 native to ACP", "openai/gpt-6", "acp:codex", ["model: Codex"]],
     ["AC-11 same agent, new model", "acp:codex", "acp:codex/gpt-5.4", ["model: Codex · gpt-5.4"]],
     ["AC-12 same agent, new effort", "acp:codex", "acp:codex[high]", ["model: Codex[high]"]],
-    [
-      "AC-13 ACP to native",
-      "acp:codex",
-      "openai/gpt-6[high]",
-      ["model: gpt-6[high]", "gpt-6[high] does not see Codex's turns"],
-    ],
-    [
-      "AC-14 one agent to another",
-      "acp:codex",
-      "acp:claude",
-      ["model: Claude Code", "Claude Code does not see Codex's turns"],
-    ],
+    ["AC-13 ACP to native", "acp:codex", "openai/gpt-6[high]", ["model: gpt-6[high]"]],
+    ["AC-14 one agent to another", "acp:codex", "acp:claude", ["model: Claude Code"]],
     ["AC-15 native effort change", "openai/gpt-6", "openai/gpt-6[high]", ["model: gpt-6[high]"]],
   ])("%s", (_name, from, to, expected) => {
     expect(noticesFor(from, to)).toEqual(expected);

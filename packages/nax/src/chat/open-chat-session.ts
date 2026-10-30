@@ -23,15 +23,19 @@ import {
 import { globalConfigDir, type NaxConfig, resolveTuiPermissions, type TuiPermissions } from "@/config";
 import { resolveRuleSet } from "@/context/rules/rule-set";
 import { NaxError } from "@/errors";
-import { buildChatInstructions, toRulesIndexEntry } from "@/prompts";
+import { buildChatHandoff, buildChatInstructions, toRulesIndexEntry } from "@/prompts";
 import {
   ACP_FRESH_SESSION_NOTICE,
+  ACP_HANDOFF_TRIMMED_NOTICE,
   acpAgentLabel,
+  acpHandoff,
   acpSessionOptions,
   acpTranscriptDir,
   type ChatAcpModel,
   isFreshFallback,
   parseChatAcpModel,
+  recordAcpTurns,
+  unseenMessages,
 } from "./acp";
 import { type ChatMode, chatBackendPosture, chatModeOfMeta, chatSessionSettings } from "./chat-mode";
 
@@ -71,7 +75,10 @@ export interface ChatSessionHandle {
   readonly history?: ChatHistory;
   readonly session: AgentSession;
   readonly meta: SessionMeta;
-  /** Set when an ACP brain's stored agent session was unusable and a fresh one replaced it. */
+  /**
+   * Set when an ACP brain's stored agent session was unusable and a fresh one replaced it, or when
+   * its handoff of earlier messages had to be trimmed; both are joined with "; ". Absent otherwise.
+   */
   readonly notice?: string;
   /** Retire per-open work; reopens retain the host's shared storage lock. */
   readonly release: (options?: { readonly retainLock?: boolean }) => Promise<void>;
@@ -217,6 +224,8 @@ async function sessionOptions(
 interface OpenedBrain {
   readonly session: AgentSession;
   readonly notice?: string;
+  /** True when the agent session was created (with or without the fallback), so it has seen none of the document. */
+  readonly fresh: boolean;
 }
 
 /**
@@ -243,7 +252,7 @@ async function openAcpBrain(
   let unusable = false;
   try {
     if ((await store.load(meta.sessionId)) !== null) {
-      return { session: await deps.resumeAgentSession(meta.sessionId, options) };
+      return { session: await deps.resumeAgentSession(meta.sessionId, options), fresh: false };
     }
   } catch (error) {
     if (!isFreshFallback(error)) throw error;
@@ -251,7 +260,36 @@ async function openAcpBrain(
   }
   if (unusable) await store.retainFailed(meta.sessionId);
   const session = await deps.createAgentSession(options);
-  return unusable ? { session, notice: ACP_FRESH_SESSION_NOTICE(acpAgentLabel(acp.agent)) } : { session };
+  return unusable
+    ? { session, notice: ACP_FRESH_SESSION_NOTICE(acpAgentLabel(acp.agent)), fresh: true }
+    : { session, fresh: true };
+}
+
+/**
+ * Hand the opened agent the conversation it has not seen and record its turns into the native
+ * document. The notice joins the fallback notice and the trimmed-handoff notice; absent when neither applies.
+ */
+function withAcpHistory(
+  opened: OpenedBrain,
+  context: {
+    readonly meta: SessionMeta;
+    readonly acp: ChatAcpModel;
+    readonly history: ChatHistory;
+    readonly transcripts: TranscriptStore;
+  },
+): { readonly session: AgentSession; readonly notice?: string } {
+  const { meta, acp, history, transcripts } = context;
+  const handoff = acpHandoff(unseenMessages(history.messages, acp.agent, opened.fresh));
+  const session = recordAcpTurns(opened.session, {
+    store: transcripts,
+    sessionId: meta.sessionId,
+    acp,
+    handoff: buildChatHandoff(handoff),
+  });
+  const trimmed =
+    handoff.omitted > 0 ? ACP_HANDOFF_TRIMMED_NOTICE(acpAgentLabel(acp.agent), handoff.omitted) : undefined;
+  const notice = [opened.notice, trimmed].filter((part) => part !== undefined).join("; ");
+  return notice === "" ? { session } : { session, notice };
 }
 
 /** The shadow's drain is total and bounded; retain lock ownership until it settles. */
@@ -334,7 +372,7 @@ export async function openChatSession(
     }
     const history = historyOf(await transcripts.load(meta.sessionId));
     const opened = await openAcpBrain(request, { meta, acp }, deps);
-    return { ...opened, meta, release, history };
+    return { ...withAcpHistory(opened, { meta, acp, history, transcripts }), meta, release, history };
   } catch (error) {
     await release();
     throw error;
