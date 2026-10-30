@@ -143,6 +143,7 @@ async function seedAgentDoc(agent = "codex"): Promise<void> {
   await createFileTranscriptStore(join(storage.dir, `acp-${agent}`)).save(ID, {
     savedAt: NOW.toISOString(),
     messages: [],
+    turn: { turnId: "t1", state: "ended" },
   });
 }
 

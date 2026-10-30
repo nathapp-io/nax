@@ -25,6 +25,8 @@ import {
 import { NaxError } from "@/errors";
 
 const ID = "acp-session-id";
+/** A stored agent document only resumes once its agent ran a turn. */
+const ENDED_TURN: NonNullable<TranscriptDoc["turn"]> = { turnId: "t1", state: "ended" };
 const NOW = new Date("2026-10-01T00:00:00.000Z");
 const acpBackendStub: SessionBackend = {
   kind: "acp:test",
@@ -160,7 +162,7 @@ function agentError(code: AgentSessionErrorCode, context: Record<string, unknown
 /** A stored agent document for `agent` and a resume that fails with `error`. */
 async function resumeFailing(error: unknown, agent = "codex"): Promise<void> {
   await seed(`acp:${agent}`);
-  docs.set(agentDir(agent), { savedAt: NOW.toISOString(), messages: [] });
+  docs.set(agentDir(agent), { savedAt: NOW.toISOString(), messages: [], turn: ENDED_TURN });
   resumeMock.mockImplementation(async () => {
     throw error;
   });
@@ -279,7 +281,7 @@ describe("openChatSession on an ACP model: new session", () => {
 describe("openChatSession on an ACP model: resume", () => {
   test("AC-6 resumes the agent document with the session id and the agent store", async () => {
     await seed("acp:codex");
-    docs.set(agentDir("codex"), { savedAt: NOW.toISOString(), messages: [] });
+    docs.set(agentDir("codex"), { savedAt: NOW.toISOString(), messages: [], turn: ENDED_TURN });
     const handle = await open({ resumeId: ID, model: undefined });
     expect(createMock).not.toHaveBeenCalled();
     const [id, options] = resumeMock.mock.calls[0] ?? [];
@@ -377,7 +379,11 @@ describe("openChatSession on an ACP model: history", () => {
       { role: "assistant", content: "hi" },
     ];
     docs.set(storage.dir, { savedAt: "2026-10-28T01:00:00.000Z", messages });
-    docs.set(agentDir("codex"), { savedAt: NOW.toISOString(), messages: [{ role: "user", content: "agent-only" }] });
+    docs.set(agentDir("codex"), {
+      savedAt: NOW.toISOString(),
+      messages: [{ role: "user", content: "agent-only" }],
+      turn: ENDED_TURN,
+    });
     const handle = await open({ resumeId: ID, model: undefined });
     expect(handle.history?.messages).toEqual(messages);
   });
