@@ -1,3 +1,14 @@
+export {
+  ACP_RUN_COMMAND_UNSUPPORTED,
+  type AcpCatalog,
+  type AcpChatAgent,
+  acpAgentLabel,
+  acpModelLabel,
+  type ChatAcpModel,
+  createAcpCatalog,
+  isChatAcpModel,
+  parseChatAcpModel,
+} from "./acp";
 export { type AgentsProviderOptions, createAgentsProvider } from "./agents-provider";
 export {
   type AskChoice,

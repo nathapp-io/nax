@@ -552,3 +552,63 @@ describe("host choices (US-012)", () => {
     expect(clock.pending()).toBe(0);
   });
 });
+
+describe("refuse hook (US-010)", () => {
+  function refusing(mode: chat.ChatMode, refuse: (event: Approval) => string | undefined) {
+    const answer = mock((_id: string, _reply: AnswerReply) => "accepted" as const);
+    return { asks: chat.createChatAskController({ mode, answer, refuse }), answer };
+  }
+  test("AC-11: a refused answerable approval is answered deny", () => {
+    const { asks, answer } = refusing("guarded", () => "no");
+    asks.handle(approval());
+    expect(answer.mock.calls).toEqual([["r1", { decision: "deny" }]]);
+  });
+  test("AC-12: a refused approval never becomes pending", () => {
+    const { asks } = refusing("guarded", () => "no");
+    asks.handle(approval());
+    expect(asks.pending()).toEqual([]);
+  });
+  test("AC-13: refusal wins over full mode", () => {
+    const { asks, answer } = refusing("full", () => "no");
+    asks.handle(approval());
+    expect(answer.mock.calls).toEqual([["r1", { decision: "deny" }]]);
+  });
+  test("refusal wins over a remembered allow", () => {
+    let refused = false;
+    const { asks, answer } = refusing("guarded", () => (refused ? "no" : undefined));
+    asks.handle(approval());
+    asks.resolve("r1", "allow_session");
+    refused = true;
+    asks.handle(approval("r2"));
+    expect(answer.mock.calls).toEqual([
+      ["r1", { decision: "allow" }],
+      ["r2", { decision: "deny" }],
+    ]);
+  });
+  test("AC-14: a refuse returning undefined leaves the approval pending in guarded mode", () => {
+    const { asks, answer } = refusing("guarded", () => undefined);
+    const event = approval();
+    asks.handle(event);
+    expect(asks.pending()).toEqual([event]);
+    expect(answer).not.toHaveBeenCalled();
+  });
+  test("AC-15: without refuse, full mode still allows", () => {
+    const { asks, answer } = setup("full");
+    asks.handle(approval());
+    expect(answer.mock.calls).toEqual([["r1", { decision: "allow" }]]);
+  });
+  test("AC-16: refuse is never called for a host- request id", () => {
+    const refuse = mock((_event: Approval) => "no" as string | undefined);
+    const { asks, answer } = refusing("guarded", refuse);
+    asks.handle(approval("host-1"));
+    expect(refuse).not.toHaveBeenCalled();
+    expect(answer).not.toHaveBeenCalled();
+  });
+  test("refuse is not called for informational approvals", () => {
+    const refuse = mock((_event: Approval) => "no" as string | undefined);
+    const { asks, answer } = refusing("guarded", refuse);
+    asks.handle(approval("r1", { answerable: false }));
+    expect(refuse).not.toHaveBeenCalled();
+    expect(answer).not.toHaveBeenCalled();
+  });
+});

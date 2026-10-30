@@ -328,7 +328,10 @@ export function buildFakeAgent(script: FakeScript, hooks: FakeHooks): AgentApp {
         if (!configOptions.some((option) => option.id === ctx.params.configId)) {
           throw RequestError.invalidParams(undefined, `unknown config option ${ctx.params.configId}`);
         }
-        return { configOptions };
+        return {
+          configOptions:
+            script.setConfigOptionsAnswer === undefined ? configOptions : [...script.setConfigOptionsAnswer],
+        };
       })
       .onRequest(methods.agent.session.setMode, async (ctx) => {
         hooks.record("session/set_mode", ctx.params);

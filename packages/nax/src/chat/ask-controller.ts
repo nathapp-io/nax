@@ -49,6 +49,8 @@ export interface ChatAskControllerOptions {
   readonly now?: () => Date;
   /** The host supplies a closure targeting its current session, not a bound old session. */
   readonly answer: (requestId: string, reply: AnswerReply) => void;
+  /** A string rejects an answerable approval before it becomes a card, in every mode; the answer is a plain deny. */
+  readonly refuse?: (event: ChatApproval) => string | undefined;
 }
 
 export interface ChatAskController {
@@ -225,6 +227,10 @@ class AskController implements ChatAskController {
     if (event.type !== "approval_requested" && event.type !== "question") return;
     if (event.answerable === false) return;
     if (event.type === "approval_requested") {
+      if (this.options.refuse?.(event) !== undefined) {
+        this.options.answer(event.requestId, { decision: "deny" });
+        return;
+      }
       const key = approvalMemoryKey(event);
       const remembered = !event.unsandboxed && key !== undefined && this.memory.has(key);
       if (this.mode === "full" || (remembered && approvalMemoryApplies(event, "allow"))) {

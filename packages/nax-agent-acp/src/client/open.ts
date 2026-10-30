@@ -43,6 +43,7 @@ import {
   rpcErrorOf,
 } from "#src/client/errors";
 import { agentGoneError, type LaunchedAgent, type LaunchFn, pickCandidate } from "#src/client/launch";
+import { type OfferedChoices, offeredChoices } from "#src/client/offered-choices";
 import type { AcpProcessHooks, ResolvedAcpOptions } from "#src/client/options";
 import { claudeSessionMeta } from "#src/client/pre-approval";
 import { race } from "#src/client/race";
@@ -71,6 +72,8 @@ export interface OpenedAcp {
   readonly restoredWith?: RestoredWith;
   /** The startup banner session/new announced (nax#2591); turns drop it from their output. */
   readonly startupBanner?: string;
+  /** The models and efforts the agent offered once the mode and model were applied. */
+  readonly offered: OfferedChoices;
 }
 
 interface Opening {
@@ -207,7 +210,7 @@ async function establish(o: Opening): Promise<OpenedAcp> {
     o.restore === undefined
       ? await newSession(o, setup)
       : await restoreSession(o.restore, record, setup, o.link, (label, request) => step(o, label, request));
-  await applyConfig(o, session.agentSessionId, session.offers);
+  const finalOffers = await applyConfig(o, session.agentSessionId, session.offers);
   if (o.restore === undefined) {
     await o.ctx.transcriptStore.save(o.ctx.sessionId, initialDoc(o, record, session.agentSessionId));
   }
@@ -217,6 +220,7 @@ async function establish(o: Opening): Promise<OpenedAcp> {
     record,
     agentSessionId: session.agentSessionId,
     cwd: session.cwd,
+    offered: offeredChoices(finalOffers, o.options.agentName, o.options.secrets),
     ...(session.restoredWith === undefined ? {} : { restoredWith: session.restoredWith }),
     ...(session.startupBanner === undefined ? {} : { startupBanner: session.startupBanner }),
   };
@@ -277,10 +281,11 @@ async function sessionSetup(o: Opening, sandbox: SandboxPolicy | undefined): Pro
 }
 
 /** §6.3 step 5: the profile's mode, then the model, then the effort (S4b). Only values the agent offered are set. */
-async function applyConfig(o: Opening, sessionId: string, offers: SessionOffers): Promise<void> {
+async function applyConfig(o: Opening, sessionId: string, offers: SessionOffers): Promise<SessionOffers> {
   const afterMode = await applyMode(o, sessionId, offers);
   const afterModel = await applyModel(o, sessionId, afterMode);
   await applyEffort(o, sessionId, afterModel);
+  return afterModel;
 }
 
 /**

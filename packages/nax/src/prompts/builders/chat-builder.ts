@@ -32,6 +32,26 @@ export function buildChatInstructions(input: ChatInstructionsInput): string {
   return sections.join("\n\n");
 }
 
+export interface ChatAcpInstructionsInput {
+  /** Display name of the ACP agent, e.g. "Codex". */
+  readonly agentLabel: string;
+  /** Rendered instructions of the nax tools delivered to the agent. */
+  readonly toolInstructions?: string;
+}
+
+/**
+ * System instructions for an ACP chat brain. An ACP session receives them once
+ * and a resume does not resend them, so they never state the permission mode.
+ */
+export function buildChatAcpInstructions(input: ChatAcpInstructionsInput): string {
+  const sections = [
+    `You are ${input.agentLabel}, working as the coding agent inside nax chat, an interactive session in this repository with the person.`,
+    "Use your own tools and skills for the work itself. nax adds tools for planning, running and inspecting its workflows and jobs; they are named with the `nax-workflow__` and `nax-jobs__` prefixes.",
+  ];
+  if (input.toolInstructions !== undefined && input.toolInstructions !== "") sections.push(input.toolInstructions);
+  return sections.join("\n\n");
+}
+
 const MIN_FENCE_LENGTH = 3;
 
 /** Longer fences keep Markdown examples in a spec from closing its outer block. */

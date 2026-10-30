@@ -2,7 +2,6 @@ import type {
   CommandRunResult,
   SandboxState,
   SessionEvent,
-  SessionListEntry,
   SessionMeta,
   SessionStorage,
   ToolProvider,
@@ -14,6 +13,14 @@ import { NaxError } from "@/errors";
 import type { InteractionChain } from "@/interaction";
 import type { Logger } from "@/logger";
 import { projectOutputDir } from "@/runtime";
+import {
+  ACP_RUN_COMMAND_UNSUPPORTED,
+  type AcpCatalog,
+  acpRefusal,
+  assertAcpInstalled,
+  isChatAcpModel,
+  reportAcpOpens,
+} from "./acp";
 import { createAgentsProvider } from "./agents-provider";
 import { type ChatAskController, createChatAskController } from "./ask-controller";
 import { type AskFallback, createAskFallback } from "./ask-fallback";
@@ -21,13 +28,14 @@ import { type ChatBackgroundTasks, createHostTasks } from "./background";
 import { type ChatAgentRow, listAgentRows } from "./chat-agents-listing";
 import { clampModelEffort, EFFORT_LEVELS, type EffortLevel, withEffort } from "./chat-effort";
 import { type ChatLedger, createChatLedger } from "./chat-ledger";
-import { type ChatMode, chatModeOfMeta } from "./chat-mode";
+import type { ChatMode } from "./chat-mode";
 import { tierModels } from "./chat-models";
 import { createCloseConfirm } from "./close-confirm";
 import { type ChatJobs, type ChatRunAsks, createHostJobs } from "./jobs";
 import { type ChatHistory, type ChatSessionHandle, openChatSession } from "./open-chat-session";
 import type { ChatResources } from "./resources";
-import { createSessionHygiene, hasHadTurn, resumableRows } from "./session-hygiene";
+import { closeChatResources, createSessionHygiene, resumableRows } from "./session-hygiene";
+import { latestResumableId, listCwdSessions } from "./session-listing";
 import { createSubagentRuns, type SubagentRuns } from "./subagent-runs";
 import { routeAskEvent, runChatTurn } from "./turn-runner";
 
@@ -78,6 +86,8 @@ export interface ChatHost {
   current(): ChatHostState;
   history?(): ChatHistory;
   effortLevels?(model: string): readonly EffortLevel[];
+  /** Why the model cannot be used right now (an ACP agent that is not installed or not logged in), if it cannot. */
+  modelNote?(model: string): string | undefined;
   /** One row per catalog agent in catalog order, resolved against the chat session's current model. */
   agents?(): readonly ChatAgentRow[];
   start(input: { mode: ChatMode; model: string }): Promise<void>;
@@ -97,6 +107,8 @@ export interface ChatHostDeps {
   readonly naxEntry?: readonly string[];
   readonly resources?: ChatResources;
   readonly models?: readonly string[];
+  /** The ACP agents offered as chat models; absent on a host that offers native models only. */
+  readonly acp?: AcpCatalog;
   readonly effortLevels?: ReadonlyMap<string, readonly EffortLevel[]>;
   readonly config: NaxConfig;
   readonly cwd: string;
@@ -113,7 +125,7 @@ class NativeChatHost implements ChatHost {
   readonly catalog?: ChatResources["catalog"];
   readonly naxPlugins?: ChatResources["naxPlugins"];
   readonly mcp?: ChatResources["mcp"];
-  readonly models: readonly string[];
+  private readonly nativeModels: readonly string[];
   readonly asks: ChatAskController;
   readonly jobs?: ChatJobs;
   readonly runAsks?: ChatRunAsks;
@@ -122,6 +134,7 @@ class NativeChatHost implements ChatHost {
   private readonly hostJobs?: ReturnType<typeof createHostJobs>;
   private readonly fallback: AskFallback;
   private readonly hygiene: ReturnType<typeof createSessionHygiene>;
+  private readonly open: typeof openChatSession;
   private readonly loopHandlers: ReturnType<typeof createRuleDeliveryHandlers>;
   private readonly projectKey: string;
   private readonly outputDir: string;
@@ -141,11 +154,12 @@ class NativeChatHost implements ChatHost {
 
   constructor(private readonly deps: ChatHostDeps) {
     this.hygiene = createSessionHygiene(deps);
+    this.open = reportAcpOpens(deps.open ?? openChatSession, deps.acp);
     this.repoRoot = deps.repoRoot;
     this.catalog = deps.resources?.catalog;
     this.naxPlugins = deps.resources?.naxPlugins;
     this.mcp = deps.resources?.mcp;
-    this.models = deps.models ?? tierModels(deps.config);
+    this.nativeModels = deps.models ?? tierModels(deps.config);
     this.projectKey = getProjectKey(deps.config, deps.repoRoot);
     this.outputDir = projectOutputDir(this.projectKey, deps.config.outputDir);
     this.asks = createChatAskController({
@@ -155,6 +169,11 @@ class NativeChatHost implements ChatHost {
       answer: (id, reply) => {
         (this.runs?.sessionFor(id) ?? this.requireHandle().session).answer(id, reply);
       },
+      refuse: acpRefusal({
+        jobs: () => this.jobs,
+        repoRoot: deps.repoRoot,
+        model: () => this.handle?.meta.model ?? "",
+      }),
     });
     const hostJobs =
       deps.resources && deps.naxEntry
@@ -225,8 +244,19 @@ class NativeChatHost implements ChatHost {
     return this.handle;
   }
 
+  /** The native models followed by the catalog's rows, read live: the catalog learns rows as agents open. */
+  get models(): readonly string[] {
+    const acp = this.deps.acp;
+    return acp ? [...this.nativeModels, ...acp.rows()] : this.nativeModels;
+  }
+
   effortLevels(model: string): readonly EffortLevel[] {
+    if (isChatAcpModel(model)) return this.deps.acp?.effortLevels(model) ?? ["default"];
     return this.deps.effortLevels?.get(withEffort(model, "default")) ?? EFFORT_LEVELS;
+  }
+
+  modelNote(model: string): string | undefined {
+    return this.deps.acp?.unavailable(model);
   }
 
   history(): ChatHistory {
@@ -259,8 +289,9 @@ class NativeChatHost implements ChatHost {
    */
   private async primeContextWindow(model: string): Promise<void> {
     if (this.contextWindows.has(model)) return;
+    // An ACP model names no nax-ai catalog entry: the agent owns its context window.
     const split = model.indexOf("/");
-    if (split <= 0) {
+    if (split <= 0 || isChatAcpModel(model)) {
       this.contextWindows.set(model, undefined);
       return;
     }
@@ -300,7 +331,8 @@ class NativeChatHost implements ChatHost {
 
   private async startSession(input: { mode: ChatMode; model: string }): Promise<void> {
     this.assertOpen();
-    const next = await (this.deps.open ?? openChatSession)({
+    assertAcpInstalled(this.deps.acp, input.model);
+    const next = await this.open({
       ...input,
       storage: this.deps.storage,
       cwd: this.deps.cwd,
@@ -338,7 +370,7 @@ class NativeChatHost implements ChatHost {
   }
 
   notice(): string | undefined {
-    return this.resumeNotice;
+    return this.resumeNotice ?? this.handle?.notice;
   }
 
   resourceNotice(): string | undefined {
@@ -348,50 +380,19 @@ class NativeChatHost implements ChatHost {
     return count > 0 ? `hooks declared by ${count} package(s) are not executed by nax` : undefined;
   }
 
-  /**
-   * Every session this cwd has, in the store's newest-first order — not just its first page.
-   * The store hands sessions back `LIST_PAGE_SIZE` at a time with a cursor, so a read that
-   * stopped at the first page would hide every session past the fiftieth from `/resume`: the
-   * picker's list is exactly this list, and an older free session is as resumable as a new
-   * one. Both readers below go through here, so neither can forget the cursor.
-   */
-  private async allSessions(): Promise<readonly SessionListEntry[]> {
-    const sessions: SessionListEntry[] = [];
-    let cursor: string | undefined;
-    do {
-      const page = await this.deps.storage.list({ cwd: this.deps.cwd, ...(cursor ? { cursor } : {}) });
-      sessions.push(...page.sessions);
-      cursor = page.nextCursor;
-    } while (cursor !== undefined);
-    return sessions;
-  }
-
-  private async latestId(): Promise<string> {
-    for (const { sessionId } of await this.allSessions()) {
-      try {
-        const meta = await this.deps.storage.readMeta(sessionId);
-        if (meta === null || !hasHadTurn(meta) || meta.sessionId !== sessionId || chatModeOfMeta(meta.mode) === null)
-          continue;
-        if ((await this.deps.storage.readLockHolder(sessionId))?.state !== "live") return sessionId;
-      } catch (error) {
-        if (!(error instanceof Error && "code" in error && error.code === "SESSION_META_UNREADABLE")) throw error;
-        this.deps.logger.warn("chat", "skipping unreadable session metadata", { sessionId, cause: error });
-      }
-    }
-    throw new NaxError(`no resumable session for ${this.deps.cwd}`, "CHAT_SESSION_NOT_FOUND", { stage: "chat" });
-  }
-
   async resume(input: { id?: string }): Promise<void> {
     await this.withSessionOperation(() => this.resumeSession(input));
   }
 
   private async resumeSession(input: { id?: string }): Promise<void> {
     this.assertOpen();
-    const id = input.id ?? (await this.latestId());
+    const id =
+      input.id ??
+      (await latestResumableId({ storage: this.deps.storage, cwd: this.deps.cwd, logger: this.deps.logger }));
     if (this.handle?.meta.sessionId !== id) {
       let next: ChatSessionHandle;
       try {
-        next = await (this.deps.open ?? openChatSession)({
+        next = await this.open({
           storage: this.deps.storage,
           cwd: this.deps.cwd,
           repoRoot: this.repoRoot,
@@ -430,7 +431,7 @@ class NativeChatHost implements ChatHost {
     // Reopens own per-open cleanup, but share the original storage lock. Even a
     // failed open must drain its shadow without releasing the active host's lock.
     const storage: SessionStorage = { ...this.deps.storage, acquireLock: async () => async () => {} };
-    const next = await (this.deps.open ?? openChatSession)({
+    const next = await this.open({
       ...input,
       storage,
       resumeId: previous.meta.sessionId,
@@ -464,6 +465,7 @@ class NativeChatHost implements ChatHost {
       input.model === undefined ? from.model : clampModelEffort(input.model, this.effortLevels(input.model));
     const target = { mode: input.mode ?? from.mode, model };
     if (target.mode === from.mode && target.model === from.model) return;
+    assertAcpInstalled(this.deps.acp, target.model);
     try {
       await previous.session.close();
     } finally {
@@ -536,7 +538,8 @@ class NativeChatHost implements ChatHost {
   }
 
   async runCommand(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult> {
-    const { session } = this.requireHandle();
+    const { session, meta } = this.requireHandle();
+    if (isChatAcpModel(meta.model)) return { isError: true, content: ACP_RUN_COMMAND_UNSUPPORTED };
     if (!session.runCommand) return { isError: true, content: "this session cannot run commands" };
     return session.runCommand(command, (event) => {
       routeAskEvent(event, this.asks);
@@ -551,7 +554,7 @@ class NativeChatHost implements ChatHost {
   }
 
   async listSessions(): Promise<readonly ChatSessionRow[]> {
-    const sessions = await this.allSessions();
+    const sessions = await listCwdSessions(this.deps.storage, this.deps.cwd);
     return resumableRows({ ...this.deps, sessions, currentId: this.handle?.meta.sessionId });
   }
 
@@ -573,23 +576,13 @@ class NativeChatHost implements ChatHost {
     try {
       await this.runs?.closeAll();
     } finally {
-      await this.closeSessionAndResources();
-    }
-  }
-
-  private async closeSessionAndResources(): Promise<void> {
-    try {
-      if (this.handle) await this.hygiene.close(this.handle);
-    } finally {
-      try {
-        try {
-          await this.tasks?.stopAll();
-        } finally {
-          await this.deps.resources?.teardown();
-        }
-      } finally {
-        await this.deps.chain?.destroy();
-      }
+      await closeChatResources({
+        hygiene: this.hygiene,
+        handle: this.handle,
+        tasks: this.tasks,
+        resources: this.deps.resources,
+        chain: this.deps.chain,
+      });
     }
   }
 }

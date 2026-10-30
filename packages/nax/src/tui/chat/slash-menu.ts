@@ -16,7 +16,7 @@
  */
 import type { ChatHost } from "@/chat";
 import { oneLine } from "./layout-lines";
-import { COMMAND_DESCRIPTIONS, COMMANDS } from "./slash-commands";
+import { acpBrainOf, acpBrainOfModel, COMMAND_DESCRIPTIONS, COMMANDS } from "./slash-commands";
 import { sanitizeText } from "./styled-line";
 
 /** One row of the menu: the command's name without its slash, and what it does. */
@@ -25,8 +25,11 @@ export interface SlashMenuItem {
   readonly description: string;
 }
 
-/** What the items are built from — a host whose catalog is absent offers the built-ins alone. */
-export type SlashMenuHost = Pick<ChatHost, "catalog">;
+/**
+ * What the items are built from — a host whose catalog is absent offers the built-ins alone. `current`
+ * is optional: without it, or before a session is open, the menu offers the catalog as well.
+ */
+export type SlashMenuHost = Pick<ChatHost, "catalog"> & Partial<Pick<ChatHost, "current">>;
 
 const WHITESPACE = /\s/;
 
@@ -41,11 +44,20 @@ function builtinItems(): readonly SlashMenuItem[] {
 
 /**
  * Every item the menu can offer: the built-ins in `COMMANDS` order, then the catalog's
- * commands as `(command) <description>`, then its skills as `(skill) <description>`.
+ * commands as `(command) <description>`, then its skills as `(skill) <description>`. On an ACP
+ * brain the built-ins alone: the agent has its own commands and skills.
  */
 export function slashMenuItems(host: SlashMenuHost): readonly SlashMenuItem[] {
-  const catalog = host.catalog;
-  const resources = [
+  return acpBrainOf(host) ? builtinItems() : [...builtinItems(), ...catalogItems(host.catalog)];
+}
+
+/** The same items for a model string the caller already read, so a memo can depend on the model alone. */
+export function slashMenuItemsForModel(catalog: SlashMenuHost["catalog"], model: string): readonly SlashMenuItem[] {
+  return acpBrainOfModel(model) ? builtinItems() : [...builtinItems(), ...catalogItems(catalog)];
+}
+
+function catalogItems(catalog: SlashMenuHost["catalog"]): readonly SlashMenuItem[] {
+  return [
     ...(catalog?.commands ?? []).map((entry) => ({
       name: displayText(entry.name),
       description: displayText(`(command) ${entry.description ?? ""}`),
@@ -55,7 +67,6 @@ export function slashMenuItems(host: SlashMenuHost): readonly SlashMenuItem[] {
       description: displayText(`(skill) ${entry.description}`),
     })),
   ];
-  return [...builtinItems(), ...resources];
 }
 
 /**

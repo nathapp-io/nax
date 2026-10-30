@@ -1,0 +1,796 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-acp-brain",
+  "branchName": "feat/chat-acp-brain",
+  "createdAt": "2026-10-30T00:00:00.000Z",
+  "updatedAt": "2026-10-30T03:23:40.799Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Report the models and efforts an ACP agent offers",
+      "description": "**Goal** — Expose sanitized, ordered model and effort offers from each live ACP backend process.\n\n**Motivation** — The user wants to use the subscriptions already paid for (Claude, Codex, Cursor) and each agent's own skills from inside the nax chat TUI, while keeping nax's plan / run / bot tools and the job list (design §1, G1–G5).\n\n**Approach** — After an agent session opens, the backend reports the model ids and effort values the agent offers in `AgentSession.backend.capabilities` (`offeredModels`, `offeredEfforts`), so nax never starts an agent just to list them.\n\n`applyConfig` returns the offers after the mode and model steps (`Promise<SessionOffers>`); `OpenedAcp` gains `readonly offered: OfferedChoices` = `offeredChoices(thoseOffers, options.agentName, options.secrets)`. `infoOf(s)` also reports `offeredModels: s.live.acp.offered.models` and `offeredEfforts: s.live.acp.offered.efforts` (a reconnect's process reports its own). Apply effort as today but return the post-model offers.\n\n`FakeScript` gains `readonly setConfigOptionsAnswer?: readonly SessionConfigOption[]`; when set, the handler returns it as `configOptions` (still refusing an unknown `configId` as today). The set_config_option handler returns `{ configOptions: script.setConfigOptionsAnswer }` when that field is set, and `{ configOptions }` exactly as today otherwise; the unknown-`configId` refusal is unchanged.\n\n**Scope** — In: offered-choices module, open/applyConfig and backend capability additions, optional fake-agent answer override. Out: chat catalog, parsing and picker wiring (US-003/007/008/011); launching agents just to discover choices.\n\n**Interface**\n```ts\nimport type { SessionOffers } from \"#src/client/session-offers\";\n\nexport interface OfferedChoices {\n  readonly models: readonly string[];\n  readonly efforts: readonly string[];\n}\n\n/** At most this many ids per list. */\nexport const MAX_OFFERED_CHOICES = 50;\n\n/**\n * Models: every category \"model\" config option's values in offer order, then offers.modelIds.\n * Efforts: the first category \"thought_level\" option's values, else the values of the option\n * whose id is EFFORT_FALLBACK_IDS[agentName], else none. Both lists drop duplicates (first kept)\n * and any id that cleanLabel(id, secrets, MODEL_ID_MAX_CHARS) does not return unchanged, then cap.\n * cleanLabel scrubs only secrets of at least MIN_SECRET_LENGTH (8) characters (text.ts).\n */\nexport function offeredChoices(offers: SessionOffers, agentName: string, secrets: readonly string[]): OfferedChoices;\n```",
+      "acceptanceCriteria": [
+        "[unit] offeredChoices for offers whose config options are one category \"model\" select option with values \"a\" and \"b\" and whose modelIds are [\"c\"] returns models equal to [\"a\", \"b\", \"c\"].",
+        "[unit] offeredChoices for config model values [\"a\"] and modelIds [\"a\"] returns models equal to [\"a\"].",
+        "[unit] offeredChoices for a category \"thought_level\" select option with values \"low\" and \"high\" returns efforts equal to [\"low\", \"high\"].",
+        "[unit] offeredChoices for agent \"codex\" with no \"thought_level\" option and an option with id \"reasoning_effort\" and values \"low\", \"medium\" returns efforts equal to [\"low\", \"medium\"].",
+        "[unit] offeredChoices for agent \"cursor\" with no \"thought_level\" option and an option with id \"reasoning_effort\" returns efforts equal to [].",
+        "[unit] offeredChoices drops a model id containing a newline character and keeps the others.",
+        "[unit] offeredChoices with secrets [\"s3cret-value\"] drops the model id \"x-s3cret-value\".",
+        "[unit] offeredChoices drops a model id longer than MODEL_ID_MAX_CHARS characters.",
+        "[unit] offeredChoices for 60 distinct offered model ids returns exactly MAX_OFFERED_CHOICES (50) models, the first 50 in offer order.",
+        "[unit] offeredChoices for offers with no config options and no model ids returns { models: [], efforts: [] }.",
+        "[integration] An acpBackend({ agent: \"codex\" }) session against a fake agent whose session/new offers CODEX_CONFIG_OPTIONS (the fixture's mode option) plus a \"model\" option with values \"gpt-5.5\" and \"gpt-5.4\" reports backend.capabilities.offeredModels equal to [\"gpt-5.5\", \"gpt-5.4\"].",
+        "[integration] That session, whose session/new also offers a \"thought_level\" option with values \"low\" and \"high\", reports backend.capabilities.offeredEfforts equal to [\"low\", \"high\"].",
+        "[integration] A codex session opened with model: \"gpt-5.4\" against a fake agent whose setConfigOptionsAnswer carries the mode option plus a \"model\" option with the single value \"gpt-5.4\" reports offeredModels equal to [\"gpt-5.4\"] (the offers after the model step).",
+        "[integration] A fake agent with setConfigOptionsAnswer set answers set_config_option with exactly those options.",
+        "[integration] A fake agent without setConfigOptionsAnswer answers set_config_option with its session/new options, as today.",
+        "[integration] A session against a fake agent offering no config options reports offeredModels equal to [].",
+        "[integration] A session against a fake agent offering no config options reports offeredEfforts equal to []."
+      ],
+      "tags": [
+        "feature",
+        "acp",
+        "security",
+        "capabilities"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Adds a pure offer extractor and fields to existing open/info paths plus one optional fake answer; existing mechanisms make complexity medium, while secret sanitation and session handling require strict three-session isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/client/open.ts",
+        "packages/nax-agent-acp/src/client/backend.ts",
+        "packages/nax-agent-acp/src/client/capabilities.ts",
+        "packages/nax-agent-acp/test/fixtures/fake-agent/agent.ts",
+        "packages/nax-agent-acp/test/fixtures/fake-agent/script.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent-acp/src/client/offered-choices.ts",
+        "packages/nax-agent-acp/test/unit/client/offered-choices.test.ts",
+        "packages/nax-agent-acp/test/unit/client/backend-offered-choices.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent-acp/test/fixtures/fake-agent/script.ts",
+          "reason": "`FakeScript` gains the optional field `setConfigOptionsAnswer?: readonly SessionConfigOption[]` (the configOptions a set_config_option answer returns). No existing field or default changes."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/fixtures/fake-agent/agent.ts",
+          "reason": "the set_config_option handler returns `{ configOptions: script.setConfigOptionsAnswer }` when that field is set, and `{ configOptions }` exactly as today otherwise; the unknown-`configId` refusal is unchanged."
+        }
+      ],
+      "workdir": "packages/nax-agent-acp",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "80863ed030b7d67ed4996aab2c8396702b3858d0"
+    },
+    {
+      "id": "US-002",
+      "title": "Make room in the chat host without changing behavior",
+      "description": "**Goal** — Extract session listing and final resource close so the host has space for ACP glue.\n\n**Motivation** — The user wants to use the subscriptions already paid for (Claude, Codex, Cursor) and each agent's own skills from inside the nax chat TUI, while keeping nax's plan / run / bot tools and the job list (design §1, G1–G5).\n\n**Approach** — Two pure moves out of `chat-host.ts`: `allSessions` / `latestId` become `listCwdSessions(storage, cwd)` and `latestResumableId({ storage, cwd, logger })` in new `src/chat/session-listing.ts`, and `closeSessionAndResources` becomes `closeChatResources({ hygiene, handle, tasks, resources, chain })` in `src/chat/session-hygiene.ts`. The host calls them; behaviour is unchanged and `chat-host.ts` ends at most 560 lines.\n\n`packages/nax/src/chat/chat-host.ts` is at the 600-line limit and must stay at or under it (`check:file-sizes`). US-002 first makes room with two pure moves: the session listing (`allSessions` / `latestId`) into new `session-listing.ts`, and the final resource close (`closeSessionAndResources`) into `session-hygiene.ts` as `closeChatResources`, bringing the file to at most 560 lines. `primeContextWindow` and `_chatHostDeps` stay in the host (`chat-host-context-window.test.ts` stubs that seam).\n\nPreserve pagination in page order, cwd/cursor arguments, metadata identity and mode validation, live-lock exclusion, unreadable-metadata warning/rethrow distinctions and nested finally cleanup ordering/error precedence.\n\n**Scope** — In: pure extraction plus host call-site replacement and behavioral regressions. Out: catalog getters (US-008), ACP opener/refusal wiring (US-009/010), changing session eligibility or cleanup semantics.\n\n**Interface** — `listCwdSessions(storage, cwd)`; `latestResumableId({ storage, cwd, logger })`; `closeChatResources({ hygiene, handle, tasks, resources, chain })`.",
+      "acceptanceCriteria": [
+        "[unit] listCwdSessions(storage, \"/repo\") for a storage whose list returns two pages joined by a nextCursor returns the sessions of both pages in page order.",
+        "[unit] listCwdSessions passes { cwd: \"/repo\" } on the first list call.",
+        "[unit] listCwdSessions passes { cwd: \"/repo\", cursor } on the second list call.",
+        "[unit] latestResumableId returns the first listed session whose metadata has updatedAt set, whose mode is ask or full, and whose lock holder is not live.",
+        "[unit] latestResumableId skips a session whose lock holder state is live.",
+        "[unit] latestResumableId skips a session whose metadata updatedAt is null.",
+        "[unit] latestResumableId skips a session whose readMeta returns null.",
+        "[unit] latestResumableId skips a session whose metadata sessionId differs from the listed id.",
+        "[unit] latestResumableId skips a session whose readMeta throws SESSION_META_UNREADABLE.",
+        "[unit] latestResumableId calls logger.warn with \"chat\", \"skipping unreadable session metadata\" when readMeta throws SESSION_META_UNREADABLE.",
+        "[unit] latestResumableId rethrows an error from readMeta whose code is not SESSION_META_UNREADABLE.",
+        "[unit] latestResumableId with no resumable session throws NaxError CHAT_SESSION_NOT_FOUND whose message names the cwd.",
+        "[unit] closeChatResources with a hygiene.close that rejects still calls tasks.stopAll, resources.teardown and chain.destroy.",
+        "[unit] closeChatResources with a hygiene.close that rejects rejects with the hygiene.close error after cleanup.",
+        "[unit] closeChatResources with no handle calls tasks.stopAll, then resources.teardown, then chain.destroy, in that order.",
+        "[integration] host.resume({}) on a host whose storage lists three sessions, the first held live, resumes the second.",
+        "[integration] host.listSessions() on a host whose storage lists 60 sessions across two pages returns rows for sessions on both pages.",
+        "[integration] host.close() on a host with an open session closes that session.",
+        "[integration] host.close() on a host with an open session calls the resources' teardown once."
+      ],
+      "tags": [
+        "refactor",
+        "chat",
+        "sessions"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Two bounded structural extractions preserve behavior, but resumability, lock ownership and session cleanup trigger the session security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/chat/session-hygiene.ts",
+        "packages/nax/test/unit/chat/chat-host.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/session-listing.ts",
+        "packages/nax/test/unit/chat/session-listing.test.ts",
+        "packages/nax/test/unit/chat/close-chat-resources.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ee6225a2c3be9cf65f398fc8c64fdb3d6d880804"
+    },
+    {
+      "id": "US-003",
+      "title": "Define chat ACP model strings and display helpers",
+      "description": "**Goal** — Add the ACP chat namespace, strict parser, safe labels, selectable rows and canonical effort filtering.\n\n**Motivation** — The user wants to use the subscriptions already paid for (Claude, Codex, Cursor) and each agent's own skills from inside the nax chat TUI, while keeping nax's plan / run / bot tools and the job list (design §1, G1–G5).\n\n**Approach** — An ACP brain is named `acp:<agent>` or `acp:<agent>/<model>`, optionally followed by nax's effort suffix `[<effort>]` (`parseModelSpec`). `<agent>` is `claude`, `codex` or `cursor`. The `acp:` prefix cannot collide with a native `<provider>/<model>` string.\n\n`acpModelLabel` names an ACP model as `<agent label>`, then ` · <model>` when there is one, then the effort suffix `[<effort>]` when there is one (`\"Codex · gpt-5.5[high]\"`, `\"Codex[high]\"`). It never throws: a malformed `acp:` string is labelled as the raw string, because labels are drawn at render time from stored metadata.\n\nPicker rows from offered ids (`acpModelRows`), duplicates removed (first kept), in offer order:\n\n- **Cursor** (its ids carry their settings, e.g. `gpt-5.5[context=272k,reasoning=medium]`): an offered id loses one trailing `[...]` group and becomes `acp:cursor/<bare>`; the backend resolves a bare name to the unique offered id starting `<bare>[` (`resolveModelValue`). A bare name that two or more distinct offered ids share is not listed: the backend refuses it as ambiguous, and the bracketed form collides with nax's effort suffix.\n- **Claude and Codex**: `resolveModelValue` resolves nothing for them, so an offered id containing `[` or `]` is not listed, and every bracket-free offered id is listed exactly as offered.\n\n`acp:claude` -> { agent: \"claude\" }; `acp:codex/gpt-5.5` -> { agent: \"codex\", model: \"gpt-5.5\" }; `acp:codex/gpt-5.5[high]` -> { agent: \"codex\", model: \"gpt-5.5\", effort: \"high\" }; `acp:codex[high]` -> { agent: \"codex\", effort: \"high\" }; `openai/gpt-6` -> undefined. `acp:gemini`, `acp:`, `acp:claude/`, `acp:claude/x]y` throw CHAT_ACP_MODEL_INVALID. A model string starts `acp:` but names another agent, no model after `/`, or a model with `[` / `]`: `parseChatAcpModel` throws `NaxError` `CHAT_ACP_MODEL_INVALID` (`stage: \"chat\"`).\n\n**Scope** — In: acp-model.ts and ACP/chat barrel exports; effort filtering yields default plus recognized offered levels in canonical order. Out: catalog discovery (US-007), session dispatch (US-005/006), UI wiring (US-011). Applying the 50-id cap after Cursor's bare-name reduction; the cap applies to the offered ids, so a Cursor offer with many settings variants may list few rows. Cursor models whose bare name several offered ids share; they are not listed as rows. Gemini, OpenCode and pi as chat brains; not listed.\n\n**Interface**\n```ts\nexport const ACP_CHAT_AGENTS = [\"claude\", \"codex\", \"cursor\"] as const;\nexport type AcpChatAgent = (typeof ACP_CHAT_AGENTS)[number];\nexport interface ChatAcpModel { readonly agent: AcpChatAgent; readonly model?: string; readonly effort?: string }\nexport function isChatAcpModel(model: string): boolean;               // starts with \"acp:\"\nexport function parseChatAcpModel(model: string): ChatAcpModel | undefined; // throws CHAT_ACP_MODEL_INVALID\nexport function acpAgentLabel(agent: AcpChatAgent): string;          // \"Claude Code\" | \"Codex\" | \"Cursor\"\nexport function acpModelLabel(model: string): string;                // \"Claude Code\", \"Codex · gpt-5.5\"\nexport function acpModelRows(agent: AcpChatAgent, offeredModels: readonly string[]): readonly string[];\nexport function acpEffortLevels(offeredEfforts: readonly string[]): readonly EffortLevel[];\n/** What a `!` command on an ACP brain returns. */\nexport const ACP_RUN_COMMAND_UNSUPPORTED =\n  \"! commands run on nax's own models only; the agent runs commands with its own tools\";\n```\n`index.ts` — barrel; `@/chat` re-exports `isChatAcpModel`, `parseChatAcpModel`, `acpAgentLabel`, `acpModelLabel`, `ACP_RUN_COMMAND_UNSUPPORTED` and the `AcpChatAgent` / `ChatAcpModel` types here; catalog exports follow in US-007.",
+      "acceptanceCriteria": [
+        "[unit] parseChatAcpModel(\"acp:claude\") returns { agent: \"claude\" }.",
+        "[unit] parseChatAcpModel(\"acp:codex/gpt-5.5\") returns { agent: \"codex\", model: \"gpt-5.5\" }.",
+        "[unit] parseChatAcpModel(\"acp:codex/gpt-5.5[high]\") returns { agent: \"codex\", model: \"gpt-5.5\", effort: \"high\" }.",
+        "[unit] parseChatAcpModel(\"acp:codex[high]\") returns { agent: \"codex\", effort: \"high\" }.",
+        "[unit] parseChatAcpModel(\"openai/gpt-6\") returns undefined.",
+        "[unit] parseChatAcpModel(\"acp:gemini\") throws NaxError with code CHAT_ACP_MODEL_INVALID.",
+        "[unit] parseChatAcpModel(\"acp:claude/\") throws CHAT_ACP_MODEL_INVALID.",
+        "[unit] parseChatAcpModel(\"acp:claude/x]y\") throws CHAT_ACP_MODEL_INVALID.",
+        "[unit] isChatAcpModel(\"acp:cursor\") returns true; and isChatAcpModel(\"anthropic/claude-sonnet-4-5\") returns false.",
+        "[unit] acpAgentLabel(\"codex\") returns \"Codex\"; and acpAgentLabel(\"cursor\") returns \"Cursor\".",
+        "[unit] acpModelLabel(\"acp:claude\") returns \"Claude Code\".",
+        "[unit] acpModelLabel(\"acp:codex/gpt-5.5[high]\") returns \"Codex · gpt-5.5[high]\".",
+        "[unit] acpModelLabel(\"acp:codex[high]\") returns \"Codex[high]\".",
+        "[unit] acpModelLabel(\"acp:gemini\") returns \"acp:gemini\" without throwing.",
+        "[unit] acpModelRows(\"codex\", [\"gpt-5.5\", \"gpt-5.4\"]) returns [\"acp:codex/gpt-5.5\", \"acp:codex/gpt-5.4\"].",
+        "[unit] acpModelRows(\"claude\", [\"sonnet\", \"sonnet[1m]\", \"opus\"]) returns [\"acp:claude/sonnet\", \"acp:claude/opus\"].",
+        "[unit] acpModelRows(\"cursor\", [\"default[]\", \"sonnet-4.5[thinking=true]\", \"auto\", \"auto\"]) returns [\"acp:cursor/default\", \"acp:cursor/sonnet-4.5\", \"acp:cursor/auto\"].",
+        "[unit] acpModelRows(\"cursor\", [\"gpt-5.5[reasoning=low]\", \"gpt-5.5[reasoning=high]\", \"auto\"]) returns [\"acp:cursor/auto\"].",
+        "[unit] acpEffortLevels([\"low\", \"high\", \"turbo\"]) returns [\"default\", \"low\", \"high\"] (unknown values dropped, canonical order).",
+        "[unit] acpEffortLevels([]) returns [\"default\"].",
+        "[unit] acpModelLabel imported from @/chat returns \"Cursor\" for \"acp:cursor\".",
+        "[unit] parseChatAcpModel(\"acp:\") throws NaxError CHAT_ACP_MODEL_INVALID with stage \"chat\".",
+        "[unit] parseChatAcpModel throws CHAT_ACP_MODEL_INVALID with stage \"chat\" when a remaining model id contains [ or ] after parsing its optional effort suffix."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "models"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure namespace/parser/label transformations with explicit grammar and no process or session lifecycle changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/chat-effort.ts",
+        "packages/nax/src/chat/index.ts",
+        "packages/nax-agent/src/cost/model-spec.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-model.ts",
+        "packages/nax/src/chat/acp/index.ts",
+        "packages/nax/test/unit/chat/acp/acp-model.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "109de55d24cd7b5593526efa601af970d349eb04"
+    },
+    {
+      "id": "US-004",
+      "title": "Deliver workflow tools and mode-neutral ACP instructions",
+      "description": "**Goal** — Adapt only chat workflow/jobs providers into ACP embedder tools and add a separate mode-neutral prompt builder.\n\n**Motivation** — The user wants to use the subscriptions already paid for (Claude, Codex, Cursor) and each agent's own skills from inside the nax chat TUI, while keeping nax's plan / run / bot tools and the job list (design §1, G1–G5).\n\n**Approach** — Of the chat's tool providers, only `nax-workflow` and `nax-jobs` are delivered, resolved with nax-agent's `resolveProviderTools` and turned into embedder tools with nax's existing `toEmbedderTools` (`approval: \"never\"`: the jobs tools already ask the person themselves through `ChatAskController.requestHostApproval`). Their instructions are rendered with `renderProviderInstructions` into the ACP brain's system instructions.\n\nThe ACP brain's system instructions are mode-neutral: an ACP session receives them once (a reopen by resume does not resend them, `instructionsSent` in nax-agent-acp's `backend.ts`), so a mode toggle must not leave them stating the wrong mode.\n\nUse stage `\"chat\"` for provider resolution; a provider whose `tools()` rejects is dropped. Omit `instructions` when absent. Leave buildChatInstructions and its output unchanged. `toEmbedderTools` already uses `approval: \"never\"`; a throw becomes an `isError` result. Verification note: `bun run check:import-cycles` stays green with `@/chat` importing `@/agents/acp`.\n\n**Scope** — In: acp-tools.ts, toEmbedderTools re-export from agents/acp, buildChatAcpInstructions and prompts barrel export. Out: building/opening sessions (US-005/006), attaching catalog/host glue (US-007–010). Bridging nax's background Bash and ctrl+b, nax subagents, the nax skill loader, nax's MCP pool, nax compaction, the command shadow or nax's rules delivery to an ACP brain; they step aside (the agent's own equivalents apply). Workflow tools on the `nax-agent` ACP server that koda connects to; a separate later feature. Resending the ACP brain's system instructions on a reopen; they are mode-neutral, so nothing in them goes stale.\n\n**Interface**\n```ts\nexport const ACP_CHAT_PROVIDER_IDS: readonly string[]; // [\"nax-workflow\", \"nax-jobs\"]\nexport interface ChatAcpTools { readonly tools: readonly EmbedderTool[]; readonly instructions?: string }\nexport function chatAcpTools(providers: readonly ToolProvider[], workdir: string): Promise<ChatAcpTools>;\n\nexport function buildChatAcpInstructions(input: { agentLabel: string; toolInstructions?: string }): string;\n```\nExisting adapter to re-export: `toEmbedderTools(tools: readonly CodingTool[], workdir: string): EmbedderTool[]`.",
+      "acceptanceCriteria": [
+        "[unit] chatAcpTools([workflowProvider, jobsProvider, skillsProvider], \"/repo\"), where the providers have ids nax-workflow, nax-jobs and nax-skills, returns tools whose names all start with nax-workflow__ or nax-jobs__.",
+        "[unit] That result contains the tool nax-workflow__state.",
+        "[unit] Every tool in that result has approval equal to \"never\".",
+        "[unit] A nax-workflow provider whose stages is [\"chat\"] still contributes its tools (the stage passed to resolveProviderTools is \"chat\").",
+        "[unit] Running the returned nax-workflow__state tool calls the provider tool's run with the given input and a context whose root is \"/repo\".",
+        "[unit] A returned tool whose provider tool throws new Error(\"boom\") resolves to { content: \"boom\", isError: true }.",
+        "[unit] chatAcpTools with a nax-jobs provider whose tools() rejects returns only the nax-workflow tools.",
+        "[unit] chatAcpTools for providers whose instructions() return \"W\" and \"J\" returns instructions that contain \"W\" and \"J\".",
+        "[unit] chatAcpTools for providers with no instructions returns a result without an instructions field.",
+        "[unit] chatAcpTools([], \"/repo\") returns { tools: [] }.",
+        "[unit] buildChatAcpInstructions({ agentLabel: \"Codex\" }) returns text naming \"Codex\" and \"nax chat\".",
+        "[unit] buildChatAcpInstructions({ agentLabel: \"Codex\" }) names neither \"guarded\" nor \"full\" and never mentions unsandboxed.",
+        "[unit] buildChatAcpInstructions({ agentLabel: \"Codex\", toolInstructions: \"T\" }) ends with \"T\".",
+        "[unit] buildChatAcpInstructions imported from @/prompts returns the same text as the builder module's export.",
+        "[unit] toEmbedderTools imported from @/agents/acp turns one CodingTool named x__y into one embedder tool named x__y.",
+        "[unit] Given unchanged native ChatInstructionsInput values for guarded and full modes, buildChatInstructions returns the same text as before, including the existing permission-mode, commands-outside-the-sandbox and applicable rules-index sections."
+      ],
+      "tags": [
+        "feature",
+        "acp",
+        "tools",
+        "security",
+        "prompts"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Standard existing provider adapters and prompt construction, but provider whitelisting and approval bypass boundaries are access-control decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/acp/provider-embedder.ts",
+        "packages/nax/src/agents/acp/index.ts",
+        "packages/nax/src/prompts/builders/chat-builder.ts",
+        "packages/nax/src/prompts/index.ts",
+        "packages/nax/src/chat/jobs/jobs-provider.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-tools.ts",
+        "packages/nax/test/unit/chat/acp/acp-tools.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5d0225a18d09e75825f09c4e34e9c3a46d410aeb"
+    },
+    {
+      "id": "US-005",
+      "title": "Build ACP chat session options and fresh-fallback policy",
+      "description": "**Goal** — Centralize ACP options, transcript paths, unusable-session classification and fresh-session notices.\n\n**Motivation** — The user wants to use the subscriptions already paid for (Claude, Codex, Cursor) and each agent's own skills from inside the nax chat TUI, while keeping nax's plan / run / bot tools and the job list (design §1, G1–G5).\n\n**Approach** — The agent gets the whole environment (`inheritEnv: true`), no nax sandbox, no nax rules, no command shadow, no background-command port and no nax loop handlers. Guarded mode opens ACP profile `ask`, full mode ACP profile `full`.\n\n`_acpSessionDeps.acpBackend` is `acpBackend` from `@nathapp/nax-agent-acp/client`. Resolve the selected workflow tools through chatAcpTools and construct instructions with buildChatAcpInstructions({ agentLabel, toolInstructions }); return sessionId/workdir/approvalTimeoutMs with the session backend/profile/tools/instructions. Omit model and effort keys when absent.\n\nA resume of the agent document that fails with an error `isFreshFallback` accepts (code `AGENT_SESSION_NOT_FOUND`, `AGENT_SESSION_BACKEND_MISMATCH` or `TRANSCRIPT_CORRUPT`, or `AGENT_SESSION_CAPABILITY_UNSUPPORTED` whose `context.capability` is `\"resume\"`: the stored agent session is unusable) retains the document (`retainFailed`), creates a fresh agent session, and returns a handle whose new optional `notice` is `ACP_FRESH_SESSION_NOTICE(label)`; any other failure propagates. This story defines that predicate and notice; US-006 performs the fallback. The ACP brain's system instructions are mode-neutral.\n\n**Scope** — In: acp-session-options.ts and injectable ACP/tools seam. Out: acquiring locks or retaining/creating/resuming documents (US-006); host availability/auth reporting (US-007/009). Changing an agent's model when its restored session offers no model option: nax-agent-acp refuses (`capability: \"model\"`), the error propagates and the switch rolls back; nax does not start a fresh agent session for it. A nax sandbox or nax permission rules around an ACP brain; the agent's own settings apply (user ruling 2026-10-29).\n\n**Interface**\n```ts\n/** True for an error that means the stored agent session is unusable (see open-chat-session Target). */\nexport function isFreshFallback(error: unknown): boolean;\nexport function ACP_FRESH_SESSION_NOTICE(label: string): string;\n//   `${label}'s earlier session could not be resumed; it starts a new one`\nexport const _acpSessionDeps: { acpBackend: typeof acpBackend; chatAcpTools: typeof chatAcpTools };\nexport function acpTranscriptDir(sessionsDir: string, agent: AcpChatAgent): string; // join(sessionsDir, `acp-${agent}`)\nexport function acpSessionOptions(input: {\n  readonly acp: ChatAcpModel;\n  readonly mode: ChatMode;\n  readonly sessionId: string;\n  readonly cwd: string;\n  readonly toolProviders: readonly ToolProvider[];\n  readonly approvalTimeoutMs?: number;\n}): Promise<Omit<CreateAgentSessionOptions, \"transcriptStore\">>;\n```",
+      "acceptanceCriteria": [
+        "[unit] acpTranscriptDir(\"/s\", \"codex\") returns \"/s/acp-codex\".",
+        "[unit] acpSessionOptions(input) with input.acp equal to { agent: \"codex\", model: \"gpt-5.5\", effort: \"high\" } calls _acpSessionDeps.acpBackend with { agent: \"codex\", allowUnsandboxed: true, inheritEnv: true, model: \"gpt-5.5\", effort: \"high\" }.",
+        "[unit] acpSessionOptions(input) with input.acp equal to { agent: \"claude\" } calls _acpSessionDeps.acpBackend with { agent: \"claude\", allowUnsandboxed: true, inheritEnv: true } (no model, no effort key).",
+        "[unit] acpSessionOptions with mode guarded returns profile: \"ask\".",
+        "[unit] acpSessionOptions with mode full returns profile: \"full\".",
+        "[unit] acpSessionOptions returns the tools _acpSessionDeps.chatAcpTools resolved for the given providers and cwd.",
+        "[unit] acpSessionOptions returns instructions equal to buildChatAcpInstructions({ agentLabel, toolInstructions }) for the agent's label and the tools' instructions.",
+        "[unit] acpSessionOptions returns sessionId from its input.",
+        "[unit] acpSessionOptions returns approvalTimeoutMs from its input.",
+        "[unit] acpSessionOptions returns workdir equal to the input cwd.",
+        "[unit] isFreshFallback returns true for an AgentSessionError with code AGENT_SESSION_NOT_FOUND.",
+        "[unit] isFreshFallback returns true for an AgentSessionError with code AGENT_SESSION_BACKEND_MISMATCH.",
+        "[unit] isFreshFallback returns true for a NaxError with code TRANSCRIPT_CORRUPT.",
+        "[unit] isFreshFallback returns true for AGENT_SESSION_CAPABILITY_UNSUPPORTED with context.capability \"resume\".",
+        "[unit] isFreshFallback returns false for AGENT_SESSION_CAPABILITY_UNSUPPORTED with context.capability \"model\".",
+        "[unit] isFreshFallback returns false for AGENT_SESSION_AUTH_REQUIRED.",
+        "[unit] isFreshFallback returns false for AGENT_SESSION_BACKEND_UNAVAILABLE.",
+        "[unit] ACP_FRESH_SESSION_NOTICE(\"Codex\") returns \"Codex's earlier session could not be resumed; it starts a new one\"."
+      ],
+      "tags": [
+        "feature",
+        "acp",
+        "sessions",
+        "security"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Session profiles, environment inheritance and the exact resume failure allowlist define security-sensitive session policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/client/options.ts",
+        "packages/nax-agent-acp/src/client/errors.ts",
+        "packages/nax/src/chat/chat-mode.ts",
+        "packages/nax/src/chat/acp/acp-tools.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-session-options.ts",
+        "packages/nax/test/unit/chat/acp/acp-session-options.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "bd59edbf0d25dabad5058183a50da8aadef944e8"
+    },
+    {
+      "id": "US-006",
+      "title": "Open chat on an ACP brain with per-agent transcripts",
+      "description": "**Goal** — Select ACP session creation/resume from metadata without changing native chat behavior.\n\n**Motivation** — A stored session document refuses to reopen on another backend (`checkBackendKind` in `packages/nax-agent/src/session/agent-session-resume.ts`, `AGENT_SESSION_BACKEND_MISMATCH`), and the chat keeps one session id across model switches. So each brain keeps its own transcript document: the native one where it is today, each agent's under `<sessions dir>/acp-<agent>/`. Carrying the conversation from one brain to the next is F3.\n\n**Approach** — `openChatSession` reads the session's model. For an ACP model it opens `acpBackend` with a file transcript store in `<sessions dir>/acp-<agent>/` (same session id), creating the agent session when that store has no document and resuming it otherwise. The handle's `history` is always the native document's messages, so `/resume` keeps replaying what the native brain said.\n\nFor an ACP model (US-006) the options come from `acpSessionOptions`, the agent store is `createFileTranscriptStore(acpTranscriptDir(storage.dir, agent))`, no command shadow is built, and `history` is read from the native store. `parseChatAcpModel(meta.model)` runs before the storage lock is acquired, so an invalid model string never holds the lock. A resume of the agent document that fails with an error `isFreshFallback` accepts (code `AGENT_SESSION_NOT_FOUND`, `AGENT_SESSION_BACKEND_MISMATCH` or `TRANSCRIPT_CORRUPT`, or `AGENT_SESSION_CAPABILITY_UNSUPPORTED` whose `context.capability` is `\"resume\"`: the stored agent session is unusable) retains the document (`retainFailed`), creates a fresh agent session, and returns a handle whose new optional `notice` is `ACP_FRESH_SESSION_NOTICE(label)`; any other failure propagates. `ChatSessionHandle` gains `readonly notice?: string`.\n\nResuming it fails with any other error (`AGENT_SESSION_AUTH_REQUIRED`, `AGENT_SESSION_BACKEND_UNAVAILABLE`, a timeout, or `AGENT_SESSION_CAPABILITY_UNSUPPORTED` for `\"model\"` when the restored session offers no model option): the error propagates and the document is kept; a switch rolls back to the previous brain (`switchSession`). Any other ACP open failure (`AGENT_SESSION_CAPABILITY_UNSUPPORTED` on a new session, `AGENT_SESSION_MODEL_MISMATCH`, a timeout) propagates; the catalog records nothing (US-007/009). Keep the native branch of openChatSession as it is (its options, its single native transcript store call and its history), and the ACP seams live on the new _acpSessionDeps. Preserve release/lock cleanup on every error.\n\n**Scope** — In: ACP branch, separate agent store, native history, invalid-before-lock validation, retained-and-fresh fallback and optional notice. Out: host reporting/rollback changes (US-009). Carrying the conversation across a brain switch, recording ACP turns in nax's transcript, and replaying earlier turns into a newly opened agent; feature F3. Until then each brain sees only its own turns. Showing an ACP brain's own earlier turns when a session is resumed; `history` replays the native document only (F3). Removing an empty session's ACP transcript document or the agent's own session when the empty chat session's metadata is removed. Changing an agent's model when its restored session offers no model option: nax-agent-acp refuses (`capability: \"model\"`), the error propagates and the switch rolls back; nax does not start a fresh agent session for it.\n\n**Interface** — `ChatSessionHandle` gains `readonly notice?: string`; retain `openChatSession(request: OpenChatSessionRequest, deps = _openChatSessionDeps): Promise<ChatSessionHandle>` and use US-005's `acpSessionOptions`, `acpTranscriptDir`, `isFreshFallback` and `ACP_FRESH_SESSION_NOTICE`.",
+      "acceptanceCriteria": [
+        "[integration] openChatSession for a new session with model \"acp:codex/gpt-5.5\" and mode guarded calls createAgentSession once with a backend from _acpSessionDeps.acpBackend and profile: \"ask\".",
+        "[integration] That open never calls _openChatSessionDeps.nativeBackend; and That open never calls _openChatSessionDeps.buildCommandShadow.",
+        "[integration] That open passes createAgentSession the file transcript store created for <storage dir>/acp-codex.",
+        "[integration] That open passes createAgentSession instructions that contain \"Codex\" and the nax-workflow provider's instructions text.",
+        "[integration] openChatSession with model \"acp:codex\" passes createAgentSession tools whose names start with nax-workflow__ or nax-jobs__ only, for toolProviders that also include a nax-skills provider.",
+        "[integration] openChatSession resuming a session whose metadata model is \"acp:codex\" and whose acp-codex store has a document calls resumeAgentSession(sessionId, options), with that session id as the first argument and options.transcriptStore equal to the acp-codex store.",
+        "[integration] Resuming a session whose metadata model is \"acp:claude\", whose acp-claude store has no document, calls createAgentSession with the same session id.",
+        "[integration] A resume whose resumeAgentSession rejects with AGENT_SESSION_NOT_FOUND calls retainFailed(sessionId) on the acp-codex store and then createAgentSession once.",
+        "[integration] That fallback returns a handle whose notice is ACP_FRESH_SESSION_NOTICE(\"Codex\").",
+        "[integration] A resume whose resumeAgentSession rejects with AGENT_SESSION_CAPABILITY_UNSUPPORTED and context.capability \"resume\" takes the same fallback (retained, then created).",
+        "[integration] A resume whose resumeAgentSession rejects with AGENT_SESSION_CAPABILITY_UNSUPPORTED and context.capability \"model\" rejects with that error; and A resume whose resumeAgentSession rejects with AGENT_SESSION_CAPABILITY_UNSUPPORTED and context.capability \"model\" never calls retainFailed.",
+        "[integration] A resume whose resumeAgentSession rejects with AGENT_SESSION_BACKEND_UNAVAILABLE rejects with that error; and A resume whose resumeAgentSession rejects with AGENT_SESSION_BACKEND_UNAVAILABLE never calls createAgentSession; and When resuming an ACP document fails with AGENT_SESSION_BACKEND_UNAVAILABLE, openChatSession never calls retainFailed.",
+        "[integration] A resume whose resumeAgentSession rejects with AGENT_SESSION_AUTH_REQUIRED rejects with that error; and A resume whose resumeAgentSession rejects with AGENT_SESSION_AUTH_REQUIRED never calls retainFailed.",
+        "[integration] A handle opened without a fallback has no notice.",
+        "[integration] openChatSession with model \"acp:codex\" for a session whose native store holds a document with two messages returns history.messages equal to those two messages.",
+        "[integration] openChatSession for a new session with model \"acp:gemini\" rejects with CHAT_ACP_MODEL_INVALID; and openChatSession for a new session with model \"acp:gemini\" never calls storage.acquireLock.",
+        "[integration] openChatSession with a native model \"openai/gpt-6\" still calls _openChatSessionDeps.nativeBackend; and openChatSession with a native model \"openai/gpt-6\" never calls _acpSessionDeps.acpBackend.",
+        "[integration] When resuming an ACP document fails with AGENT_SESSION_BACKEND_MISMATCH or TRANSCRIPT_CORRUPT, openChatSession retains the failed agent document before creating a fresh session with the same session id; and When resuming an ACP document fails with AGENT_SESSION_BACKEND_MISMATCH or TRANSCRIPT_CORRUPT, the returned handle.notice equals ACP_FRESH_SESSION_NOTICE for that agent label.",
+        "[integration] When resuming an ACP document fails with a timeout, openChatSession rejects with that error without replacing the stored document.",
+        "[integration] When a new ACP session open fails with AGENT_SESSION_CAPABILITY_UNSUPPORTED, AGENT_SESSION_MODEL_MISMATCH or a timeout, openChatSession propagates that error without taking a fresh-session fallback.",
+        "[integration] When a nax-workflow or nax-jobs provider's tools() rejects, openChatSession still opens the ACP session with no tools from that provider."
+      ],
+      "tags": [
+        "feature",
+        "acp",
+        "sessions",
+        "security",
+        "storage"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Integrates backend dispatch, locks, dual transcript stores and narrowly permitted resume recovery; security-sensitive session persistence requires strict isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/open-chat-session.ts",
+        "packages/nax/test/unit/chat/open-chat-session.test.ts",
+        "packages/nax/src/chat/acp/acp-session-options.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/open-chat-session-acp.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9fe7ccec2dcb581ee2170fc69be696c3379dc786"
+    },
+    {
+      "id": "US-007",
+      "title": "Catalog ACP agents, learned choices and availability",
+      "description": "**Goal** — Provide a process-local catalog for the three chat agents, learned model/effort offers and launch/auth notes.\n\n**Motivation** — Rulings 2026-10-30 (this spec): the picker shows the models (and effort levels) an agent offers after its first open; an agent whose binary is missing is shown as unavailable with the reason; while a chat-started `nax plan` / `nax run` job holds the checkout, guarded mode rejects the agent's file-edit permission requests (full mode cannot be guarded, because the agent never asks).\n\n**Approach** — A new chat-side catalog lists the three agent rows, learns each agent's offered models and effort levels from a successful open, remembers an auth or launch failure, and knows whether each agent's binary resolves on this machine (`launchCandidateKind`). The host exposes it through `models`, `effortLevels` and a new optional `modelNote`.\n\n`rows()` lists, for each agent in `ACP_CHAT_AGENTS` order, `acp:<agent>` followed by that agent's learned `acpModelRows`. A catalog learns from `opened` only `offeredModels` / `offeredEfforts` entries that are arrays, keeping their string elements, and only when at least one string remains: an absent, non-array or empty report keeps that agent's previous list (a `session/resume` or `session/load` answer often carries no config options, so a reopen reports none).\n\nAn ACP open fails with `AGENT_SESSION_AUTH_REQUIRED`: the catalog records `not logged in`; the error propagates as today (a switch reopens the previous brain, `switchSession`'s rollback). An ACP open fails with `AGENT_SESSION_BACKEND_UNAVAILABLE`: the catalog records the first line of the message, at most 120 characters (the picker shows it as `unavailable: <reason>`); the error propagates. A later open of that agent succeeds: the recorded failure is cleared. Any other ACP open failure (`AGENT_SESSION_CAPABILITY_UNSUPPORTED` on a new session, `AGENT_SESSION_MODEL_MISMATCH`, a timeout) propagates; the catalog records nothing. Probe launchCandidateKind once per agent using the supplied env, with both local and npx meaning installed; unavailable for an uninstalled agent is `not installed`.\n\n**Scope** — In: acp-catalog.ts, new deps seam, ACP/chat exports for createAcpCatalog and AcpCatalog. Out: CLI/host composition (US-008), reporting opens (US-009), UI details (US-011). Starting an agent only to list its models; rows fill in after the agent's first open in this chat process and are not persisted. Shrinking an agent's learned effort or model list when a later report is empty; the previous list is kept. Detecting an auth failure that first appears at a turn rather than at open; the catalog records only open failures.\n\n**Interface**\n```ts\nexport const _acpCatalogDeps: { launchCandidateKind: typeof launchCandidateKind };\nexport interface AcpCatalog {\n  rows(): readonly string[];\n  effortLevels(model: string): readonly EffortLevel[];\n  installed(model: string): boolean;\n  unavailable(model: string): string | undefined;\n  opened(model: string, capabilities: Readonly<Record<string, unknown>>): void;\n  failed(model: string, error: unknown): void;\n}\nexport function createAcpCatalog(input: { readonly env: Readonly<Record<string, string | undefined>> }): AcpCatalog;\n```",
+      "acceptanceCriteria": [
+        "[unit] With _acpCatalogDeps.launchCandidateKind returning \"local\" for every agent, rows() returns [\"acp:claude\", \"acp:codex\", \"acp:cursor\"].",
+        "[unit] After opened(\"acp:codex\", { offeredModels: [\"gpt-5.5\", \"gpt-5.4\"] }), rows() returns [\"acp:claude\", \"acp:codex\", \"acp:codex/gpt-5.5\", \"acp:codex/gpt-5.4\", \"acp:cursor\"].",
+        "[unit] After opened(\"acp:codex/gpt-5.5\", { offeredModels: [\"gpt-5.5\"] }) and then opened(\"acp:codex\", { offeredModels: [\"gpt-5.4\"] }), rows() lists acp:codex/gpt-5.4 and not acp:codex/gpt-5.5 (a non-empty report replaces the agent's rows).",
+        "[unit] After opened(\"acp:codex\", { offeredModels: [\"gpt-5.5\"] }) and then opened(\"acp:codex\", { offeredModels: \"gpt-5.4\" }) (not an array), rows() still lists acp:codex/gpt-5.5.",
+        "[unit] After opened(\"acp:codex\", { offeredModels: [\"gpt-5.5\"], offeredEfforts: [\"high\"] }) and then opened(\"acp:codex\", { offeredModels: [], offeredEfforts: [] }), rows() still lists acp:codex/gpt-5.5.",
+        "[unit] After opened(\"acp:codex\", { offeredModels: [\"gpt-5.5\"], offeredEfforts: [\"high\"] }) and then opened(\"acp:codex\", { offeredModels: [], offeredEfforts: [] }), effortLevels(\"acp:codex\") is still [\"default\", \"high\"].",
+        "[unit] Given a fresh catalog, opened(\"acp:codex\", { offeredModels: [\"gpt-5.5\", 7] }) makes rows() return [\"acp:claude\", \"acp:codex\", \"acp:codex/gpt-5.5\", \"acp:cursor\"], learning only the string gpt-5.5.",
+        "[unit] effortLevels(\"acp:codex\") before any open returns [\"default\"].",
+        "[unit] After opened(\"acp:codex\", { offeredEfforts: [\"low\", \"high\"] }), effortLevels(\"acp:codex/gpt-5.5[high]\") returns [\"default\", \"low\", \"high\"].",
+        "[unit] With launchCandidateKind returning undefined for cursor, installed(\"acp:cursor\") is false.",
+        "[unit] With launchCandidateKind returning undefined for cursor, unavailable(\"acp:cursor\") is \"not installed\".",
+        "[unit] With launchCandidateKind returning \"npx\" for claude, installed(\"acp:claude\") is true.",
+        "[unit] createAcpCatalog({ env }) passes env to launchCandidateKind, calling it exactly once per agent across repeated rows(), installed and unavailable calls.",
+        "[unit] After failed(\"acp:codex\", error) with an AgentSessionError of code AGENT_SESSION_AUTH_REQUIRED, unavailable(\"acp:codex/gpt-5.5\") is \"not logged in\".",
+        "[unit] After failed(\"acp:codex\", error) with code AGENT_SESSION_BACKEND_UNAVAILABLE and message \"spawn failed\nmore\", unavailable(\"acp:codex\") is \"spawn failed\".",
+        "[unit] For an AGENT_SESSION_BACKEND_UNAVAILABLE message whose first line is 200 characters, unavailable returns its first 120 characters.",
+        "[unit] After failed(\"acp:codex\", error) with code AGENT_SESSION_MODEL_MISMATCH, unavailable(\"acp:codex\") is undefined.",
+        "[unit] After failed with AGENT_SESSION_AUTH_REQUIRED and then opened(\"acp:codex\", {}), unavailable(\"acp:codex\") is undefined.",
+        "[unit] unavailable(\"openai/gpt-6\") is undefined.",
+        "[unit] installed(\"openai/gpt-6\") is true.",
+        "[unit] Given an installed codex agent with no recorded failure, failed(\"acp:codex\", error) for AGENT_SESSION_CAPABILITY_UNSUPPORTED or a timeout leaves unavailable(\"acp:codex\") undefined."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "models",
+        "security"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A bounded process-local catalog with dependency injection; authentication/launch failure classification invokes the security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/client/launchable.ts",
+        "packages/nax/src/chat/acp/acp-model.ts",
+        "packages/nax-agent-acp/src/client/offered-choices.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-catalog.ts",
+        "packages/nax/test/unit/chat/acp/acp-catalog.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c6c4434c4cf4002ec7c11b8af98fa4f2c7139f60"
+    },
+    {
+      "id": "US-008",
+      "title": "Expose ACP choices through the host and chat CLI",
+      "description": "**Goal** — Compose the ACP catalog into chat and expose live models, efforts and availability notes.\n\n**Motivation** — Rulings 2026-10-29: an ACP agent is a main model choice in the chat picker; Claude Code, Codex and Cursor ship together; each loads its own full setup (its own allow rules and hooks act without a nax card); koda's ACP-server side is a separate feature.\n\n**Approach** — `ChatHostDeps.acp?: AcpCatalog`; `models` is a getter returning the deps' models followed by `acp.rows()`; `effortLevels(model)` for an ACP model returns `acp.effortLevels(model)` (`[\"default\"]` without a catalog); new `modelNote(model)` returns `acp?.unavailable(model)`. Preserve tierModels fallback for native models when deps.models is absent. `ChatHostDeps.acp` and `ChatHost.modelNote` are optional, and a host without a catalog keeps today's models list, so the existing CLI and host model assertions hold.\n\n`packages/nax/src/cli/chat.ts` — `_chatCommandDeps.createAcpCatalog` (production `createAcpCatalog`); `composeChat` passes `acp: deps.createAcpCatalog({ env: deps.env })` to `createChatHost`. The host exposes it through `models`, `effortLevels` and a new optional `modelNote`.\n\nUS-007 → US-008: `createAcpCatalog` is built by `chatCommand` (US-008 AC stubs `_chatCommandDeps.createAcpCatalog` and observes `createChatHost`'s input).\n\n**Scope** — In: host optional catalog field, dynamic getters and effort/note methods, injected CLI catalog factory. Out: open reporting/availability refusal/context/commands (US-009), guarded write hook (US-010), labels (US-011) and slash step-aside (US-012). Keep the room made by US-002; glue belongs outside the host.\n\n**Interface** — `ChatHostDeps` gains `readonly acp?: AcpCatalog`; `ChatHost` gains the optional `modelNote?(model: string): string | undefined`. Existing host `models` remains `readonly string[]` at its interface, backed by a getter. `effortLevels(model)` delegates only ACP models to the catalog and otherwise preserves the deps map or EFFORT_LEVELS.",
+      "acceptanceCriteria": [
+        "[unit] chatCommand with _chatCommandDeps.createAcpCatalog stubbed calls it once with { env: deps.env }.",
+        "[unit] That chatCommand passes the stub's return value as acp to createChatHost.",
+        "[integration] A host created with models: [\"openai/gpt-6\"] and a catalog whose rows() returns [\"acp:claude\"] has models equal to [\"openai/gpt-6\", \"acp:claude\"].",
+        "[integration] A host created without acp and with models: [\"openai/gpt-6\"] has models equal to [\"openai/gpt-6\"].",
+        "[integration] A host whose catalog's rows() changes between two reads of host.models returns the new rows on the second read.",
+        "[integration] host.effortLevels(\"acp:codex\") returns the catalog's effortLevels(\"acp:codex\").",
+        "[integration] host.effortLevels(\"acp:codex\") on a host without a catalog returns [\"default\"].",
+        "[integration] host.effortLevels(\"openai/gpt-6\") on a host with a catalog returns what it returns today (the deps' map, else EFFORT_LEVELS).",
+        "[integration] host.modelNote(\"acp:cursor\") returns the catalog's unavailable(\"acp:cursor\").",
+        "[integration] host.modelNote(\"acp:cursor\") on a host without a catalog returns undefined.",
+        "[integration] When the catalog reports unavailable(\"acp:cursor\") as \"not installed\", host.modelNote(\"acp:cursor\") returns \"not installed\"."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "cli",
+        "models"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-007"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive catalog composition/getters and dependency forwarding; no session authorization or lifecycle policy changes in this story.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/cli/chat.ts",
+        "packages/nax/src/chat/acp/acp-catalog.ts",
+        "packages/nax/test/unit/chat/chat-host.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/chat-host-acp-models.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5926cd7fe02ee85556d5d11dc0a0f8a26cc64245"
+    },
+    {
+      "id": "US-009",
+      "title": "Open, refuse and report ACP brains through the host",
+      "description": "**Goal** — Connect host lifecycle to ACP availability and open reporting while preserving rollback and session identity.\n\n**Motivation** — Rulings 2026-10-30 (this spec): the picker shows the models (and effort levels) an agent offers after its first open; an agent whose binary is missing is shown as unavailable with the reason; while a chat-started `nax plan` / `nax run` job holds the checkout, guarded mode rejects the agent's file-edit permission requests (full mode cannot be guarded, because the agent never asks).\n\n**Approach** — Every open goes through `reportAcpOpens` (reports `acp.opened` / `acp.failed` for ACP models); start and switch to an ACP model whose agent is not installed throw `CHAT_ACP_AGENT_UNAVAILABLE` (via `assertAcpInstalled`) before the current session is closed; `primeContextWindow` never looks up an ACP model; `runCommand` on an ACP model returns `ACP_RUN_COMMAND_UNSUPPORTED`; `notice()` returns the resume notice, else the current handle's `notice`. The file stays at or under 600 lines.\n\nUS-008, US-009 and US-010 then put the ACP glue in `src/chat/acp/acp-host.ts` and `acp-write-guard.ts`, leaving one-line call sites in the host: the host wraps its opener once (`this.open = reportAcpOpens(...)`, replacing the three `this.deps.open ?? openChatSession` sites), calls `assertAcpInstalled` before opening or closing anything, and passes `acpRefusal(...)` as the ask controller's `refuse` (US-010). `primeContextWindow` and `_chatHostDeps` stay in the host (`chat-host-context-window.test.ts` stubs that seam).\n\nStart or switch to an ACP model whose agent's binary does not resolve: `CHAT_ACP_AGENT_UNAVAILABLE` (`stage: \"chat\"`, message names the agent label and `not installed`); the current session stays open and unchanged. An ACP open fails with `AGENT_SESSION_AUTH_REQUIRED`: the catalog records `not logged in`; the error propagates as today (a switch reopens the previous brain, `switchSession`'s rollback). Other failures propagate through the existing rollback. `reportAcpOpens` forwards every open's arguments unchanged, so existing assertions on the open stub's calls hold.\n\nUS-001 → US-007 → US-009: the capability report's `offeredModels` / `offeredEfforts` reach the catalog through the host's open reporting (US-009 ACs open a stubbed ACP session whose `backend.capabilities` carries them and read `host.models`).\n\n**Scope** — In: acp-host helpers and thin host lifecycle call sites, availability preflight, context skip, run-command refusal and notice precedence. Out: session-store/fresh-fallback implementation (US-006), catalog state policy (US-007), ask refusal (US-010), pid registry integration or history carry.\n\n**Interface**\n```ts\n/**\n * Wraps an opener, forwarding (request, deps) unchanged. On success it reports\n * catalog.opened(handle.meta.model, handle.session.backend.capabilities) when that model is an\n * ACP model; on failure it reports catalog.failed(request.model, error) when request.model is an\n * ACP model (a resume request carries no model, so its failure is not recorded), then rethrows.\n */\nexport function reportAcpOpens(open: typeof openChatSession, catalog: AcpCatalog | undefined): typeof openChatSession;\n/** Throws CHAT_ACP_AGENT_UNAVAILABLE for an ACP model whose agent is not installed; no-op otherwise or without a catalog. */\nexport function assertAcpInstalled(catalog: AcpCatalog | undefined, model: string): void;\n```",
+      "acceptanceCriteria": [
+        "[integration] host.start({ mode: \"guarded\", model: \"acp:codex\" }) with an open stub whose session's backend.capabilities is { offeredModels: [\"gpt-5.5\"] } calls the catalog's opened(\"acp:codex\", { offeredModels: [\"gpt-5.5\"] }).",
+        "[integration] With a real catalog (launchCandidateKind stubbed \"local\"), after that start host.models includes \"acp:codex/gpt-5.5\".",
+        "[integration] host.switchTo({ model: \"acp:claude\" }) whose open rejects with AGENT_SESSION_AUTH_REQUIRED calls the catalog's failed(\"acp:claude\", error).",
+        "[integration] That failed switch rejects with the open's error; and After that failed switch, host.current().model is the model the host was on before.",
+        "[integration] host.switchTo({ model: \"acp:cursor\" }) on a catalog where installed(\"acp:cursor\") is false rejects with NaxError CHAT_ACP_AGENT_UNAVAILABLE whose message contains \"Cursor\" and \"not installed\".",
+        "[integration] That refused switch calls neither the current session's close nor open.",
+        "[integration] host.start({ mode: \"guarded\", model: \"acp:cursor\" }) on that catalog rejects with CHAT_ACP_AGENT_UNAVAILABLE; and host.start({ mode: \"guarded\", model: \"acp:cursor\" }) on that catalog never calls open.",
+        "[integration] Starting a host on \"acp:codex/gpt-5.5\" never calls _chatHostDeps.lookupContextWindow.",
+        "[integration] After that start host.current() has no contextWindow.",
+        "[integration] host.runCommand(\"ls\", onEvent) on a session whose model is \"acp:codex\" resolves to { isError: true, content: ACP_RUN_COMMAND_UNSUPPORTED }; and host.runCommand(\"ls\", onEvent) on a session whose model is \"acp:codex\" never calls the session's runCommand.",
+        "[integration] host.switchTo({ model: \"openai/gpt-6\" }) from \"acp:codex\" calls open with model \"openai/gpt-6\" and the same session id.",
+        "[integration] host.notice() after a start whose open stub returns a handle with notice: \"N\" returns \"N\".",
+        "[integration] host.resume({ id }) whose open rejects calls neither the catalog's failed nor opened; and host.resume({ id }) whose open rejects rejects with the open's error.",
+        "[unit] assertAcpInstalled(catalog, \"openai/gpt-6\") returns without throwing for a catalog whose installed returns false.",
+        "[unit] assertAcpInstalled(undefined, \"acp:cursor\") returns without throwing.",
+        "[unit] reportAcpOpens(open, catalog) for a native model resolves the opener's handle; and reportAcpOpens(open, catalog) for a native model calls neither catalog.opened nor catalog.failed.",
+        "[unit] reportAcpOpens(open, catalog) calls open with exactly the request and deps it was given.",
+        "[integration] When an ACP open fails with AGENT_SESSION_BACKEND_UNAVAILABLE, host.start propagates that error after reporting it to catalog.failed.",
+        "[integration] When switching to ACP fails with a timeout or AGENT_SESSION_CAPABILITY_UNSUPPORTED for capability \"model\", host.switchTo restores the previous brain before propagating the error.",
+        "[unit] assertAcpInstalled throws CHAT_ACP_AGENT_UNAVAILABLE with stage \"chat\" when an ACP model's agent is not installed."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "sessions",
+        "security"
+      ],
+      "dependencies": [
+        "US-006",
+        "US-008"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module host lifecycle, availability preflight, auth reporting and rollback must preserve active-session and lock invariants.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/chat/open-chat-session.ts",
+        "packages/nax/src/chat/acp/acp-catalog.ts",
+        "packages/nax/test/unit/chat/chat-host-context-window.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-host.ts",
+        "packages/nax/test/unit/chat/chat-host-acp.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b70399f9cf7fd7f07cc3f2d0f30a6497d59076fb"
+    },
+    {
+      "id": "US-010",
+      "title": "Refuse guarded ACP writes while plan or run owns the checkout",
+      "description": "**Goal** — Deny answerable ACP file-write approvals before a card or remembered/full-mode allowance when a chat job owns this checkout.\n\n**Motivation** — Rulings 2026-10-30 (this spec): the picker shows the models (and effort levels) an agent offers after its first open; an agent whose binary is missing is shown as unavailable with the reason; while a chat-started `nax plan` / `nax run` job holds the checkout, guarded mode rejects the agent's file-edit permission requests (full mode cannot be guarded, because the agent never asks).\n\n**Approach** — A new optional `refuse` hook on `ChatAskController` rejects an approval before it becomes a card. The host wires it so that, on an ACP brain, an approval for an ACP `edit`, `delete` or `move` tool call is rejected while a chat-started plan or run job is running in this checkout — the same condition `createJobWriteGuard` uses for the native brain.\n\n`ChatAskControllerOptions` gains `readonly refuse?: (event: ChatApproval) => string | undefined`. In `handle`, an answerable `approval_requested` (not host-owned) for which `refuse` returns a string is answered `{ decision: \"deny\" }` and never becomes pending; this check runs before the full-mode and remembered-allow paths. US-010 passes `acpRefusal(...)` as `refuse`. The host's call site stays one line and chat-host.ts stays at or under 600 lines.\n\n`createJobWriteGuard(jobs, repoRoot)`: the newest running job with `cwd === repoRoot` and kind `plan` or `run` blocks, message `[nax-jobs] <tool> refused: nax <kind> job <id> is running in this checkout; wait for it to end or cancel it`. Sharing the newest-blocking-job selection between `createJobWriteGuard` and `acpWriteRefusal` is out of scope; the ACP guard repeats the same three-condition selection.\n\nA guarded ACP brain asks to edit, delete or move while a chat-started plan or run job holds this checkout: answered `deny` without a card (the refusal text is not delivered to the agent; the answer carries no reason). The same request in full mode: not seen by nax (the ACP `full` profile allows); not guarded. Here \"not seen\" means no answerable approval reaches the chat guard: existing ACP recordAutoDecision telemetry may emit approval_requested with answerable: false, which the controller already ignores. Preserve that telemetry; do not require the transport to emit no events. This does not exempt an artificial answerable event from the controller's refuse-before-full ordering. Use lazy jobs/model callbacks so constructor order does not capture absent jobs or a stale model. US-009 → US-010: the host passes `refuse` to its ask controller (US-010 ACs drive `host.send` with a stubbed session emitting an approval).\n\n**Scope** — In: acp-write-guard.ts, optional controller refusal, host wiring and host.send integration. Out: native guard changes. Guarding an ACP brain's writes in full mode, and guarding writes done through a shell command (`execute` kind) or a tool call of kind `other` in either mode. Delivering a write refusal's reason text to the agent; it receives a plain deny. Sharing the newest-blocking-job selection between `createJobWriteGuard` and `acpWriteRefusal`; the ACP guard repeats the same three-condition selection.\n\n**Interface**\n```ts\nexport const ACP_WRITE_KINDS: readonly string[]; // [\"edit\", \"delete\", \"move\"]\nexport function acpWriteRefusal(jobs: Pick<ChatJobs, \"running\">, repoRoot: string, event: ChatApproval): string | undefined;\n/** The host's `refuse`: acpWriteRefusal while the current model is an ACP model and jobs exist, else undefined. */\nexport function acpRefusal(input: {\n  readonly jobs: () => Pick<ChatJobs, \"running\"> | undefined;\n  readonly repoRoot: string;\n  readonly model: () => string;\n}): (event: ChatApproval) => string | undefined;\n```",
+      "acceptanceCriteria": [
+        "[unit] acpWriteRefusal(jobs, \"/repo\", event) for an approval whose tool is \"edit\", with a running run job j1 whose cwd is \"/repo\", returns \"[nax-jobs] edit refused: nax run job j1 is running in this checkout; wait for it to end or cancel it\".",
+        "[unit] acpWriteRefusal returns a refusal for tool \"delete\" under the same job.",
+        "[unit] acpWriteRefusal returns a refusal for tool \"move\" under the same job.",
+        "[unit] acpWriteRefusal returns undefined for tool \"execute\" under the same job.",
+        "[unit] acpWriteRefusal returns undefined for tool \"other\" under the same job.",
+        "[unit] acpWriteRefusal returns undefined for tool \"edit\" when the only running job's cwd is \"/other\".",
+        "[unit] acpWriteRefusal returns undefined for tool \"edit\" when the only running job's kind is bot_review.",
+        "[unit] With two running plan / run jobs in \"/repo\", the refusal names the one with the latest startedAt.",
+        "[unit] acpRefusal({ jobs, repoRoot: \"/repo\", model: () => \"openai/gpt-6\" }) returns undefined for an edit approval under a running run job in /repo.",
+        "[unit] acpRefusal with jobs returning undefined returns undefined for an edit approval on an ACP model.",
+        "[unit] A ChatAskController whose refuse returns a string, handed an answerable approval_requested event, calls answer(requestId, { decision: \"deny\" }).",
+        "[unit] A ChatAskController whose refuse returns a string, handed an answerable approval_requested event, keeps pending() empty.",
+        "[unit] That controller in mode full still answers { decision: \"deny\" } for the refused event.",
+        "[unit] A controller whose refuse returns undefined puts the event in pending() in mode guarded.",
+        "[unit] A controller without refuse behaves as today: in mode full an answerable approval is answered { decision: \"allow\" }.",
+        "[unit] refuse is never called for an event whose requestId starts with \"host-\".",
+        "[integration] On a host created with resources and a naxEntry (as chat-host-jobs.test.ts builds one) whose job runner reports a running run job in repoRoot, a session on \"acp:codex\" whose send emits an answerable approval_requested with tool: \"edit\" gets answer called with { decision: \"deny\" } during host.send.",
+        "[integration] The same approval on that host with model \"openai/gpt-6\" (native) becomes pending in guarded mode.",
+        "[integration] The same approval on that host with model \"openai/gpt-6\" (native) is not answered.",
+        "[integration] The same approval on an ACP host with no running job becomes pending in guarded mode."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "security",
+        "permissions",
+        "jobs"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-009"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Reuses the existing job selection and ask-controller early-return structure with one lazy host callback; the patch is bounded, but approval ordering and write exclusion are access control and require strict three-session isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/ask-controller.ts",
+        "packages/nax/src/chat/jobs/job-write-guard.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/test/unit/chat/chat-host-jobs.test.ts",
+        "packages/nax-agent-acp/src/client/tool-display.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-write-guard.ts",
+        "packages/nax/test/unit/chat/acp/acp-write-guard.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f6ebbd16053000b44f4ea158efd348a36993b658"
+    },
+    {
+      "id": "US-011",
+      "title": "Name ACP brains in the picker, status and switch notices",
+      "description": "**Goal** — Render human-readable ACP names and availability details, and warn when switching to a brain that cannot see prior turns.\n\n**Motivation** — The user wants to use the subscriptions already paid for (Claude, Codex, Cursor) and each agent's own skills from inside the nax chat TUI, while keeping nax's plan / run / bot tools and the job list (design §1, G1–G5).\n\n**Approach** — `packages/nax/src/tui/chat/chat-status.ts` — `modelParts(raw)` names an ACP model by `acpModelLabel` (name = the label without its effort suffix, suffix = `[<effort>]`), so `shortModel` and the header use it.\n\n`packages/nax/src/tui/chat/picker-model.ts` — `PickerModelInput` gains `modelNote?: (model: string) => string | undefined`; an ACP row's label is `acpModelLabel(base)`; a row with a note shows `unavailable: <note>` as its detail. `useChatPicker` passes `modelNote: (model) => host.modelNote?.(model)` (a bound call, never the bare method).\n\n`packages/nax/src/tui/chat/use-switch-notices.ts` — the model notice names a model as `shortModel` does (an ACP model by `acpModelLabel`, a native one by its name after the last `/`, effort suffix kept); a brain change (native to ACP, ACP to native, or one agent to another) adds a second notice `<new name> does not see <old name>'s turns`.\n\nUS-008 → US-011: `host.modelNote` reaches the picker through `useChatPicker` (US-011 AC renders the picker through the hook for a host built by `createChatHost`). Preserve existing native labels, details, notices and filtering; malformed acp metadata labels must not throw at render time. Same-agent model/effort changes are not brain changes; existing same-session comparison suppresses mount/resume notices.\n\n**Scope** — In: modelParts/shortModel/header labels, picker note callback and labels, bound hook forwarding, brain-change notices. Out: catalog/host models policy (US-007/008), slash menu/commands (US-012), conversation transfer or ACP history replay.\n\n**Interface** — `PickerModelInput` gains `modelNote?: (model: string) => string | undefined`; consume `ChatHost.modelNote?(model: string): string | undefined` with a closure. Preserve `shortModel(model: string): string` and `useSwitchNotices(state: ChatHostState, append: (entry: TranscriptEntry) => void): void`.",
+      "acceptanceCriteria": [
+        "[unit] shortModel(\"acp:claude\") returns \"Claude Code\".",
+        "[unit] shortModel(\"acp:codex/gpt-5.5[high]\") returns \"Codex · gpt-5.5[high]\".",
+        "[unit] shortModel(\"openai/gpt-6\") returns \"gpt-6\" as today.",
+        "[unit] shortModel(\"acp:gemini\") returns without throwing.",
+        "[unit] pickerModel of kind model with models [\"openai/gpt-6\", \"acp:codex/gpt-5.5\"] gives the second row the label \"Codex · gpt-5.5\".",
+        "[unit] pickerModel with modelNote returning \"not installed\" for \"acp:cursor\" gives that row the detail \"unavailable: not installed\".",
+        "[unit] A row whose modelNote returns undefined keeps the detail \"effort <level>\", with <level> equal to that row's effortLabel (for example, \"effort high\" for effortLabel \"high\"), preserving the existing effort detail.",
+        "[unit] pickerModel filtering with the query \"codex\" matches the row \"acp:codex/gpt-5.5\".",
+        "[integration] The model picker rendered through useChatPicker for a host built by createChatHost with a catalog whose installed(\"acp:cursor\") is false draws a row containing \"unavailable: not installed\".",
+        "[integration] useSwitchNotices after the model changes from \"openai/gpt-6\" to \"acp:codex\" on the same session appends the notices \"model: Codex\" and \"Codex does not see gpt-6's turns\".",
+        "[integration] After the model changes from \"acp:codex\" to \"acp:codex/gpt-5.4\" (same agent) useSwitchNotices appends \"model: Codex · gpt-5.4\" only.",
+        "[integration] After the model changes from \"acp:codex\" to \"acp:codex[high]\" useSwitchNotices appends \"model: Codex[high]\" only.",
+        "[integration] After the model changes from \"acp:codex\" to \"openai/gpt-6[high]\" useSwitchNotices appends \"model: gpt-6[high]\" and \"gpt-6[high] does not see Codex's turns\".",
+        "[integration] After the model changes from \"acp:codex\" to \"acp:claude\" useSwitchNotices appends \"model: Claude Code\" and \"Claude Code does not see Codex's turns\".",
+        "[integration] After the model changes from \"openai/gpt-6\" to \"openai/gpt-6[high]\" useSwitchNotices appends \"model: gpt-6[high]\" only, as today."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "acp",
+        "models"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-008"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Existing pure row/status builders and a small comparison hook need ACP branches and one bound callback; the existing picker render helper supports ordinary TDD without changing session or authorization policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/src/tui/chat/picker-model.ts",
+        "packages/nax/src/tui/chat/useChatPicker.ts",
+        "packages/nax/src/tui/chat/use-switch-notices.ts",
+        "packages/nax/src/chat/acp/acp-model.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/tui/chat/acp-labels.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fc6f24a7fd488c3075f4d0694fb527ca904b3917"
+    },
+    {
+      "id": "US-012",
+      "title": "Make native-only slash features step aside on ACP",
+      "description": "**Goal** — Keep built-in chat controls while handing non-built-in slash text to the ACP agent's own command system.\n\n**Motivation** — Rulings 2026-10-29: an ACP agent is a main model choice in the chat picker; Claude Code, Codex and Cursor ship together; each loads its own full setup (its own allow rules and hooks act without a nax card); koda's ACP-server side is a separate feature.\n\n**Approach** — On an ACP brain `/skills`, `/mcp` and `/agents` say they are not available, any slash command that is not a built-in is sent to the agent as typed (agents have their own commands), `/help` and the slash menu list built-ins only, and `!` commands say they run on native models only (US-009 owns the ! refusal).\n\n`packages/nax/src/tui/chat/slash-commands.ts`, `packages/nax/src/tui/chat/slash-menu.ts` — the ACP step-aside (US-012). `SlashMenuHost` becomes `Pick<ChatHost, \"catalog\"> & Partial<Pick<ChatHost, \"current\">>`; when `current` is absent or throws (no session open yet), the menu offers built-ins plus the catalog, as today.\n\n`packages/nax/src/tui/chat/ChatApp.tsx` — the memo also depends on the session's current model, so the menu changes when the brain switches between native and ACP. The baseline `const menuItems = useMemo(() => slashMenuItems(host), [host]);` is replaced with a memo that follows current model as well as host.\n\n`/skills`, `/mcp`, `/agents`, unknown slash commands, `/help` and the slash menu on an ACP brain, and `ChatApp`'s menu memo following the current model. Every other built-in (`/plugins`, `/feature`, `/jobs`, `/cost`, `/sessions`, `/resume`, `/clear`, `/mode`, `/model`, `/effort`, `/quit`) behaves on an ACP brain as it does today. US-008 → US-012: the host's current model reaches the slash menu through `ChatApp` (US-012 AC renders `ChatApp` and switches the model). Preserve native labels, details, notices, commands and menu.\n\n**Scope** — In: ACP slash notices/dispatch/help/menu, optional-current fallback and model-dependent ChatApp memo. Out: catalog/host lifecycle (US-007–009), ! command implementation (US-009), picker/status labels (US-011), loading nax skills/MCP/subagents into ACP or ACP history carry.\n\n**Interface**\n```ts\nexport type SlashMenuHost = Pick<ChatHost, \"catalog\"> & Partial<Pick<ChatHost, \"current\">>;\n```\nNon-built-in ACP outcomes retain `SlashOutcome`'s `{ kind: \"send\"; message: string }`, preserving the slash invocation and arguments exactly as typed.",
+      "acceptanceCriteria": [
+        "[unit] runSlashCommand for /skills on a host whose current model is \"acp:codex\" shows \"/skills is not available on Codex: it uses its own skills\".",
+        "[unit] /mcp on that host shows \"/mcp is not available on Codex: it uses its own MCP servers\".",
+        "[unit] /agents on that host shows \"/agents is not available on Codex: it uses its own subagents\".",
+        "[unit] /review the diff on that host, where review is a catalog command, returns { kind: \"send\", message: \"/review the diff\" }.",
+        "[unit] /brainstorming on that host, where brainstorming is a catalog skill, returns { kind: \"send\", message: \"/brainstorming\" }.",
+        "[unit] /unknownthing x on that host returns { kind: \"send\", message: \"/unknownthing x\" }.",
+        "[unit] /help on that host shows the built-in commands and no catalog command or skill line.",
+        "[unit] /model with no argument on that host still returns { kind: \"picker\", picker: \"model\" }.",
+        "[unit] /jobs on that host shows the same output as on a native host.",
+        "[unit] /cost on that host shows the same output as on a native host.",
+        "[unit] /skills on a host whose current model is \"openai/gpt-6\" shows the skills listing as today.",
+        "[unit] /unknownthing on a native host shows \"unknown command /unknownthing\" as today.",
+        "[unit] slashMenuItems for a host whose current model is \"acp:codex\" and whose catalog has one command and one skill returns exactly the built-in items in COMMANDS order.",
+        "[unit] slashMenuItems for a host with only a catalog (no current) returns the built-ins followed by the catalog's command and skill, as today.",
+        "[unit] slashMenuItems for a host whose current() throws CHAT_SESSION_NOT_OPEN returns the built-ins followed by the catalog's entries.",
+        "[integration] ChatApp rendered for a host with one catalog skill, after its session switches from \"openai/gpt-6\" to \"acp:codex\", shows a slash menu (typed /) that lists no catalog skill."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "acp",
+        "commands"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-008"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Bounded changes to existing command dispatch, menu filtering and one React memo dependency, preserving all native behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/tui/chat/slash-menu.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/chat/acp/acp-model.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/tui/chat/slash-commands-acp.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b16c70aaa19dc2416cd7032ac875d5f427e38979"
+    }
+  ],
+  "analysis": "Refine audit: manually mapped all 187 numbered spec acceptance criteria (US-001:16, US-002:15, US-003:21, US-004:15, US-005:13, US-006:17, US-007:17, US-008:10, US-009:17, US-010:16, US-011:15, US-012:15) to their original stories, retaining split assertions and regression qualifiers. All 21 feature exclusions remain verbatim; all 12 binding ids, workdirs, dependencies, expected outputs and spec context-file lists are unchanged. Negative cases exist in every story; explicit unavailable-note forwarding now anchors US-008's failure path, and native prompt output is anchored in US-004. No speculative helpers or package changes were introduced. Corrections: acpSessionOptions receives nested input.acp; resumeAgentSession receives (sessionId, options) with the store on options.transcriptStore; catalog learning is asserted through rows(), and ignored failures through unavailable(). ACP full-profile auto-decisions must stay allowed rather than be job-guarded, but do not assert transport event absence: packages/nax-agent-acp/src/client/permissions.ts:140-171 records profile auto-decisions, and packages/nax/src/chat/ask-controller.ts:226 ignores answerable:false events before full-mode allowance. Preserve informational telemetry and refuse-before-full ordering for artificial answerable approvals. US-001 and US-010 are bounded medium patches with strict security TDD; US-011 is medium presentation logic with ordinary TDD. US-006/009 remain complex due to dual-store recovery and lifecycle rollback. This is a static manual audit, not an executed test or JSON-parser validation.\n\nFeature F2 adds Claude Code, Codex and Cursor as selectable ACP brains to the existing native chat; F1's embedder-tool support is already present, and F3's cross-brain history is deliberately deferred. Exploration used direct reads and text searches because codebase-memory MCP is unavailable in this host. No implementation changes or executable validation were performed while drafting this PRD.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:17 links the dependency-injection, errors and constants conventions; :151-152 documents the 600-line source hard limit and test-size rules. nax is Bun/React/Ink, while nax-agent-acp is a Node-compatible library: keep Bun APIs out of its source, use #src imports there, and consume nax-agent only through its public entry. nax consumes ACP only through @nathapp/nax-agent-acp/client. Keep prompts in the prompt builder, preserve barrel boundaries, use injectable _deps seams and fake ACP agents, and do not launch installed agents in CI. No package version bumps, nax-agent changes or nax-ai changes are required.\n\nUS-001/backend offers: packages/nax-agent-acp/src/client/session-offers.ts:14 defines configOptions/modeIds/modelIds. capabilities.ts:104 flattens grouped select values, :119 sets MODEL_ID_MAX_CHARS=100, :129 resolves Cursor bare names, and :148 defines effort fallback ids (Cursor has none). text.ts:10 sets the minimum redacted secret length to 8; :62 cleanLabel removes controls/invisible characters, normalizes whitespace, scrubs secrets and caps code points. New offer extraction must accept an id only when cleaning returns it unchanged, deduplicate before capping to 50, preserve offer order and use the first thought_level option before the per-agent fallback. open.ts:63 defines OpenedAcp; :210 currently discards applyConfig's return; :280 applies mode, then model, then effort. applyMode/applyModel already return updated configOptions from set_config_option; return the post-model offers after applying effort, rather than the session/new snapshot or the effort answer. backend.ts:251 builds public BackendInfo from s.live.acp, and :269 exposes it through a getter, so reconnect must report the replacement process's offers. backend.ts:244 tracks instructionsSent across restores, and :319 sends instructions once. The fake script at test/fixtures/fake-agent/script.ts:105 has configOptions; agent.ts:327 validates configId and currently returns those original options. Add only the optional answer override, retaining that validation and default. Existing backend-codex.test.ts:74 opens the actual session facade with an in-memory agent and explicit fake command; test/helpers/in-memory-launch.ts:24 supplies launch/relaunch and process accounting. Mirror these fixtures for the new backend-offered-choices integration tests. Existing backend/open/capabilities/session-offers/reconnect tests provide regression coverage; additive capability fields must not disturb existing toMatchObject assertions.\n\nUS-002/host refactor: packages/nax/src/chat/chat-host.ts is exactly 600 lines. allSessions at :358 paginates the cwd list; latestId at :370 filters metadata identity, non-empty/allowed mode and live locks, skipping only SESSION_META_UNREADABLE with a warning. Move them without semantic changes to session-listing.ts. closeSessionAndResources at :576 uses nested finally blocks to close the handle, stop tasks, tear down resources and destroy the chain even on error; move that unchanged control flow to closeChatResources in session-hygiene.ts. session-hygiene.ts:63 already owns close/release/empty-metadata removal. Preserve host teardown's operation draining (:562), close idempotence, lock-retention ordering and error precedence. Keep primeContextWindow and _chatHostDeps in the host; chat-host-context-window.test.ts:16 and :33 stub that exact seam. The refactor must bring the host to <=560 lines before glue is added; subsequent work must keep <=600. Existing chat-host.test.ts, chat-host-resume.test.ts and session-hygiene.test.ts cover public lifecycle behavior.\n\nUS-003/model namespace: packages/nax-agent/src/cost/model-spec.ts:31 accepts only one well-formed trailing effort suffix; malformed brackets are otherwise left as raw model text. Add chat-specific validation around that shared parser instead of changing native parsing. packages/nax/src/chat/chat-effort.ts:8 defines canonical order, :22 strips/adds suffixes, :29 filters supported efforts, and :64 clamps switch efforts. ACP strings are acp:<claude|codex|cursor>[/<model>][<effort>], with brackets forbidden in the remaining model id. Labels must never throw on malformed stored strings. Cursor offer reduction must deduplicate exact offered ids first, strip one trailing settings group, and omit ambiguous bare names; Claude/Codex bracketed offers cannot be selected and must be omitted. Do not cap again after reduction. Export the required public helpers through chat/acp/index.ts and chat/index.ts:1, preserving existing exports.\n\nUS-004/tools and prompts: packages/nax-agent/src/tools/provider-advertise.ts:113 resolves providers for a stage, namespaces/adapts tools and drops a provider whose tools() rejects (:139-164); instructions are optional and rendered separately. packages/nax/src/agents/acp/provider-embedder.ts:30 already converts CodingTool to EmbedderTool with approval never, root/workdir and signal forwarding, and converts thrown tool errors to isError results. Re-export it from agents/acp/index.ts, currently only three exports. Filter provider ids to nax-workflow/nax-jobs before resolveProviderTools(..., 'chat', workdir), and renderProviderInstructions only when present. The existing chat builder at prompts/builders/chat-builder.ts:24 embeds native mode/rules/sandbox content; leave buildChatInstructions byte-for-byte behavior unchanged and add a separate mode-neutral builder exported beside it in prompts/index.ts:52. Jobs tools already own host approvals, so adding embedder approval would double-prompt. New chat->agents/acp barrel imports could introduce cycles: verify check:import-cycles during implementation, not as a product AC.\n\nUS-005/006/opening and storage: open-chat-session.ts:28 exposes the existing deps; :60 defines the handle; :84 reads/validates resume metadata; :120 creates metadata; :152 builds exclusively native backend options with rules, host ports, compaction and loop handlers; :206 releases shadow and lock idempotently. The current open at :226 constructs one native transcript store, validates metadata/mode, resolves posture and locks at :239, then builds shadow, writes metadata, loads the document and creates/resumes (:251-257). Preserve that native path and its single store call exactly. Parse meta.model before acquireLock, bypass shadow/native rules and native session options for ACP, use a separate agent store under acp-<agent> with the same id, but always load history from the native store. packages/nax-agent/src/session/agent-session-resume.ts:59 forbids backend changes in a document (absent backend means native), explaining why shared metadata/id cannot imply a shared transcript. Catch only unusable ACP-document resume failures: NOT_FOUND, BACKEND_MISMATCH, TRANSCRIPT_CORRUPT and CAPABILITY_UNSUPPORTED for resume. Ensure corrupt-load failures also reach this policy; retainFailed before creating fresh, and do not erase documents on auth/backend/model/timeout failures. ACP options use allowUnsandboxed and inheritEnv true, profile ask/full, no sandbox/rules/command shadow/background port/loop handlers, only selected workflow tools and mode-neutral instructions. options.ts:41-49 already supports agent/model/effort/inheritEnv; :238 derives secret scrubbing from the resolved environment. Keep ACP seams on the new _acpSessionDeps, not the existing native seam. open-chat-session.test.ts:48 uses injected stores, backends and real metadata storage; :61 counts native calls and exposes retainFailed, so mirror it with distinct native/agent stores for ACP tests. A handle notice is optional and exists only after fresh fallback.\n\nUS-007/008/catalog and composition: launchable.ts:12 delegates launch availability to the registry candidate resolver using env.PATH; npx is considered installed/launchable without spawning. Probe exactly once per supported agent per catalog. Lists remain process-local and learned only from successful opens, with independent non-empty string-array updates for offeredModels and offeredEfforts; malformed/empty updates must retain previous data. Failure notes are agent-scoped, not model-scoped; record only auth required or backend unavailable, prefer missing-binary reason, and clear recorded failures on any later successful open. chat-host.ts:70 and :117 currently declare models as fixed arrays; :148 assigns the native choices. Change implementation to a getter that retains deps.models or tierModels and appends current catalog rows, while preserving behavior without a catalog. effortLevels at :228 currently uses deps map or EFFORT_LEVELS; ACP must instead use catalog or default only. cli/chat.ts:44 provides the composition deps and env (:57), :247 composeChat builds resources/storage/chain, and :267 calls createChatHost; inject a catalog factory and pass its result from that composition root. No eager ACP launches or persisted catalog migration.\n\nUS-009/host lifecycle: chat-host.ts:303, :394 and :433 are the three opener sites, for start/resume/reopen respectively. Wrap the selected opener once and forward both request and optional deps unchanged; report success using the returned handle model and backend capabilities, failure only using an explicit request.model (resume failure cannot be attributed). Start/switch availability refusal must occur before open or closing the previous handle. switchSession at :460 currently closes/releases the previous session then reopens and rolls back on failure; retain its rollback, same-id behavior and locking. Ignore ACP in primeContextWindow (:264), including agent/model strings that contain a slash; do not relocate its test seam. runCommand (:535) must reject ACP before inspecting the optional session.runCommand. notice (:340) currently returns only resumeNotice; give it priority over handle.notice. Keep ACP glue in acp-host.ts and avoid growing the host above its limit. Existing host context-window, run-command, resume, resources and rollback tests must continue to pass without an ACP catalog.\n\nUS-010/write guard: ask-controller.ts:47 defines options; :218 handle ignores host-owned request ids, resolved/non-ask events and unanswerable approvals before full/remembered allow (:231). Insert optional refuse for answerable non-host approvals before any allow or pending-card creation; denial carries only decision, not the refusal reason. The check must precede full-mode logic even though actual ACP full-profile writes do not ask at all. jobs/job-write-guard.ts:6 is the native guard; :14-17 selects the newest running same-repo plan/run job. Repeat this selection for lowercase ACP edit/delete/move kinds, not native uppercase tool names or shell execute/other. Host constructor (:151) constructs asks before jobs; use lazy jobs/model callbacks to read current state, rather than capturing undefined jobs or a previous brain. chat-host-jobs.test.ts:115 covers composition and host-owned cards, :152 native exclusion, :184 full-mode host approval; add real host.send integration to prove the new refusal path is connected and host-owned jobs cards remain unaffected.\n\nUS-011/UI naming: chat-status.ts:147 modelParts currently drops provider text for both shortModel (:157) and headerModel (:485); branch ACP labels while preserving suffix/elision and native output. picker-model.ts:72 defines input and :96 builds deduplicated model rows with effort detail; add modelNote and change only ACP labels plus rows with a note. useChatPicker.ts:68 modelOf reads host.models and host.effortLevels; pass a closure to host.modelNote to preserve this binding. use-switch-notices.ts:6 compares same-session model/mode and currently slices after the last slash (:13). Use ACP labels and native short names with effort, announcing isolation only for native<->ACP or agent changes, not same-agent model/effort changes or native model changes. Existing unit chat-status/header/slash-menu tests and UI picker/picker-effort tests provide regressions; test/helpers/chat-picker.tsx is available for hook rendering.\n\nUS-012/native features step aside: slash-commands.ts:43 defines built-in order; :114 formats help; :131 expands catalog commands/skills; :169 dispatches built-ins. Preserve all ordinary built-ins and native catalog behavior. On ACP, skills/MCP/subagents list their own-setup notice and unknown/non-built-in slash invocations are sent as typed instead of expanded or rejected. slash-menu.ts:29 currently requires only catalog and :47 appends its commands/skills; optionally inspect current, falling back to existing rows when absent/throwing. ChatApp.tsx:174 reads host.current but :214 memoizes menuItems with only [host]; add current model dependency to update menus on switches. submit (:353) delegates slash commands and sendTurn (:373) sends prepared messages; avoid accidentally rewriting the forwarded agent command text. Existing test/ui/chat/slash-commands.test.tsx, slash-resources.test.tsx, slash-menu.test.tsx and unit slash-menu tests anchor native behavior.\n\nDelivery and risks: implement exactly the binding twelve-story DAG. Independent US-001/002/003 establish backend offers, host space and namespace; tools->options->opener and offers->catalog->host converge at US-009, followed by refusal, labels and slash behavior. APIs are additive, optional fields preserve older callers/test doubles, metadata schema/id stay unchanged, and native transcript location is unchanged; no data migration is needed. Cross-brain switches deliberately do not carry turns, and native-only replay must not be mistaken for ACP history. Main risks are losing an active brain before availability validation, overly broad resume fallback destroying usable agent state, stale learned offers after resume, ambiguous Cursor settings ids, secret/control leakage into picker rows, forgotten mode-neutral instructions, ask-memory/full-mode bypass of job exclusion, barrel cycles and resource/lock leaks during rollback/close. Test error boundaries and seam connections with deterministic fake launches and restore all seams. Security-sensitive session, credential sanitation, availability/auth, tool approval and access-control stories use three-session-tdd. The pure-move story still has specified behavioral regression tests. Run targeted bun:test paths from the relevant package with explicit timeouts, never bare bun test or bun run nax; implementation quality gates include typecheck/check:all, package boundaries/import cycles/file sizes and applicable API/coverage checks, but those are not acceptance criteria. Never run nax coverage inside NAX_SANDBOXED=1. Do not edit generated agent context, the read-only package context sources, or release versions.",
+  "outOfScope": [
+    "Carrying the conversation across a brain switch, recording ACP turns in nax's transcript, and replaying earlier turns into a newly opened agent; feature F3. Until then each brain sees only its own turns.",
+    "Showing an ACP brain's own earlier turns when a session is resumed; `history` replays the native document only (F3).",
+    "Gemini, OpenCode and pi as chat brains; not listed.",
+    "Workflow tools on the `nax-agent` ACP server that koda connects to; a separate later feature.",
+    "Guarding an ACP brain's writes in full mode, and guarding writes done through a shell command (`execute` kind) or a tool call of kind `other` in either mode.",
+    "Changing an agent's model when its restored session offers no model option: nax-agent-acp refuses (`capability: \"model\"`), the error propagates and the switch rolls back; nax does not start a fresh agent session for it.",
+    "Shrinking an agent's learned effort or model list when a later report is empty; the previous list is kept.",
+    "Applying the 50-id cap after Cursor's bare-name reduction; the cap applies to the offered ids, so a Cursor offer with many settings variants may list few rows.",
+    "Bridging nax's background Bash and ctrl+b, nax subagents, the nax skill loader, nax's MCP pool, nax compaction, the command shadow or nax's rules delivery to an ACP brain; they step aside (the agent's own equivalents apply).",
+    "Cursor models whose bare name several offered ids share; they are not listed as rows.",
+    "Removing an empty session's ACP transcript document or the agent's own session when the empty chat session's metadata is removed.",
+    "A nax sandbox or nax permission rules around an ACP brain; the agent's own settings apply (user ruling 2026-10-29).",
+    "Starting an agent only to list its models; rows fill in after the agent's first open in this chat process and are not persisted.",
+    "Running the real claude-agent-acp, codex-acp or cursor-agent in CI; live checks stay a maintainer-run probe.",
+    "Registering the chat ACP agent's pid with a pid registry (`onPidSpawned`): `nax chat` has no run runtime; the process is closed with the session, and one left by a SIGKILL of nax is not reaped.",
+    "Detecting an auth failure that first appears at a turn rather than at open; the catalog records only open failures.",
+    "An agent that supports neither `session/resume` nor `session/load`: each reopen of it (mode toggle, effort or model change, `/resume`) starts a fresh agent session with the `ACP_FRESH_SESSION_NOTICE` notice.",
+    "Resending the ACP brain's system instructions on a reopen; they are mode-neutral, so nothing in them goes stale.",
+    "Sharing the newest-blocking-job selection between `createJobWriteGuard` and `acpWriteRefusal`; the ACP guard repeats the same three-condition selection.",
+    "Delivering a write refusal's reason text to the agent; it receives a plain deny.",
+    "Updating `.nax/mono/packages/nax/context.md` or `.nax/mono/packages/nax-agent-acp/context.md`, which are read-only to the run; a manual follow-up after merge."
+  ],
+  "routingProfile": "native-claude-opus"
+}

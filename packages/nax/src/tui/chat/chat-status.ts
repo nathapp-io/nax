@@ -11,7 +11,7 @@
  * object, so a component that compares by reference does no needless work.
  */
 import { parseModelSpec, type SessionEvent } from "@nathapp/nax-agent";
-import { type ChatHostState, sessionTitleText } from "@/chat";
+import { acpModelLabel, type ChatHostState, isChatAcpModel, sessionTitleText } from "@/chat";
 import { oneLine, resolveWidth } from "./layout-lines";
 import { displayWidth, type Span, type StyledLine, sanitizeText } from "./styled-line";
 import { type ChatColorToken, type ChatGlyphs, resolveChatTheme } from "./theme";
@@ -140,8 +140,15 @@ export function formatTokens(n: number): string {
   return `${(rounded / TOKEN_UNIT).toFixed(TOKEN_DECIMALS)}${TOKEN_SUFFIX}`;
 }
 
-/** Display parts retain even unknown effort levels without treating their text as a path. */
+/**
+ * Display parts retain even unknown effort levels without treating their text as a path.
+ * An ACP brain is named by its agent label (`Codex · gpt-5.5`), never as a path.
+ */
 function modelParts(raw: string): { name: string; suffix: string } {
+  if (isChatAcpModel(raw)) {
+    const { model: name, effort } = parseModelSpec(acpModelLabel(raw));
+    return { name, suffix: effort === undefined ? "" : `[${effort}]` };
+  }
   const { model, effort } = parseModelSpec(raw);
   return {
     name: model.slice(model.lastIndexOf(PATH_SEPARATOR) + 1),

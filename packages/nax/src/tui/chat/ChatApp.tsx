@@ -38,7 +38,7 @@ import { Picker, useChatPicker } from "./Picker";
 import { SlashMenu } from "./SlashMenu";
 import { sessionTranscript } from "./session-transcript";
 import { parseSlashCommand, runSlashCommand, type SlashCommand, type SlashOutcome } from "./slash-commands";
-import { slashMenuItems, slashMenuQueryState } from "./slash-menu";
+import { slashMenuItemsForModel, slashMenuQueryState } from "./slash-menu";
 import { StyledLineView } from "./styled-line";
 import { TranscriptViewport } from "./TranscriptViewport";
 import { type ChatTheme, resolveChatTheme } from "./theme";
@@ -209,9 +209,11 @@ export function ChatApp({
   const ask = host.asks.pending()[0];
   /** A turn is in flight from the send until its stream settles — the footer's busy rule. */
   const turnRunning = busy || status.running;
-  // The menu offers what the host's catalogue adds to the built-ins. A session's catalogue is
-  // fixed for its life, so the items are built once per host rather than on every tick.
-  const menuItems = useMemo(() => slashMenuItems(host), [host]);
+  // The menu offers what the host's catalogue adds to the built-ins, except on an ACP brain, which
+  // has its own commands. The catalogue is fixed for a session's life, so the items follow the
+  // host and the current model rather than being rebuilt on every tick.
+  const catalog = host.catalog;
+  const menuItems = useMemo(() => slashMenuItemsForModel(catalog, state.model), [catalog, state.model]);
   // Read menu ownership at key time: batched tab/argument/return can precede React's redraw.
   const slashKeys = useSlashMenuKeys({
     items: menuItems,
