@@ -3,7 +3,7 @@
   "feature": "chat-acp-switch-and-replay",
   "branchName": "feat/chat-acp-switch-and-replay",
   "createdAt": "2026-10-30T00:00:00.000Z",
-  "updatedAt": "2026-10-30T10:21:33.270Z",
+  "updatedAt": "2026-10-30T10:32:38.902Z",
   "userStories": [
     {
       "id": "US-001",
@@ -348,14 +348,17 @@
         "US-001",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "New orchestration state machine crosses optional configuration, metadata persistence, retained locks, rollback, fresh recovery and host/TUI state; session and mode handling require strict security-override TDD."
+        "reasoning": "New orchestration state machine crosses optional configuration, metadata persistence, retained locks, rollback, fresh recovery and host/TUI state; session and mode handling require strict security-override TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/chat-host.ts",
@@ -383,7 +386,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b81cd6b83310d3d18b925291b2e371c18db78c58"
     },
     {
       "id": "US-006",
