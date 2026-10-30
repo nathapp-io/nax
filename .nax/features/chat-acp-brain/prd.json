@@ -3,7 +3,7 @@
   "feature": "chat-acp-brain",
   "branchName": "feat/chat-acp-brain",
   "createdAt": "2026-10-30T00:00:00.000Z",
-  "updatedAt": "2026-10-30T03:04:03.652Z",
+  "updatedAt": "2026-10-30T03:13:31.581Z",
   "userStories": [
     {
       "id": "US-001",
@@ -677,14 +677,17 @@
         "US-003",
         "US-008"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Existing pure row/status builders and a small comparison hook need ACP branches and one bound callback; the existing picker render helper supports ordinary TDD without changing session or authorization policy."
+        "reasoning": "Existing pure row/status builders and a small comparison hook need ACP branches and one bound callback; the existing picker render helper supports ordinary TDD without changing session or authorization policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/chat-status.ts",
@@ -700,7 +703,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fc6f24a7fd488c3075f4d0694fb527ca904b3917"
     },
     {
       "id": "US-012",
