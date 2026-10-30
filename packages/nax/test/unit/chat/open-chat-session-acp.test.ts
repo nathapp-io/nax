@@ -210,16 +210,23 @@ describe("openChatSession on an ACP model: new session", () => {
     for (const name of names) expect(/^(nax-workflow|nax-jobs)__/.test(name)).toBe(true);
   });
 
-  test("AC-21 a rejecting workflow or jobs provider contributes no tools but the session opens", async () => {
-    const broken = provider("nax-jobs", {
-      tools: async () => {
-        throw new Error("jobs unavailable");
-      },
-    });
-    await open({ toolProviders: [provider("nax-workflow"), broken] });
-    const names = (createdOptions().tools ?? []).map((t) => t.name);
-    expect(names).toEqual(["nax-workflow__state"]);
-  });
+  test.each([
+    ["nax-workflow", "nax-jobs"],
+    ["nax-jobs", "nax-workflow"],
+  ] as const)(
+    "AC-21 a rejecting %s provider contributes no tools but the session opens",
+    async (brokenId, healthyId) => {
+      const broken = provider(brokenId, {
+        tools: async () => {
+          throw new Error(`${brokenId} unavailable`);
+        },
+      });
+      await open({ toolProviders: [broken, provider(healthyId)] });
+      expect(createMock).toHaveBeenCalledTimes(1);
+      const names = (createdOptions().tools ?? []).map((t) => t.name);
+      expect(names).toEqual([`${healthyId}__state`]);
+    },
+  );
 
   test("AC-14 a handle opened without a fallback has no notice", async () => {
     const handle = await open();
