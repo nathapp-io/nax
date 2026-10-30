@@ -217,6 +217,18 @@ describe("slash command routing", () => {
     await ui.line("/unknown");
     expect(ui.lastFrame()).toContain("unknown command /unknown");
   });
+  test("US-002 AC-5 /help renders exactly one listing titled Commands", async () => {
+    const ui = mount();
+    await ui.line("/help");
+    const frame = ui.lastFrame() ?? "";
+    expect(frame.split("Commands").length - 1).toBe(1);
+    expect(frame).toContain("/help  ");
+  });
+  test("US-002 AC-6 /nope reports the unknown command notice", async () => {
+    const ui = mount();
+    await ui.line("/nope");
+    expect(ui.lastFrame()).toContain("unknown command /nope");
+  });
   test.each(COMMANDS.filter((name) => name !== "quit"))("AC-19 blocks /%s during turn", async (name) => {
     const ui = mount();
     await ui.line("hello");

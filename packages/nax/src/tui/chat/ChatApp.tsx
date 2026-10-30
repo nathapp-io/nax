@@ -39,6 +39,7 @@ import { SlashMenu } from "./SlashMenu";
 import { sessionTranscript } from "./session-transcript";
 import { parseSlashCommand, runSlashCommand, type SlashCommand, type SlashOutcome } from "./slash-commands";
 import { slashMenuItemsForModel, slashMenuQueryState } from "./slash-menu";
+import { slashSink } from "./slash-sink";
 import { StyledLineView } from "./styled-line";
 import { TranscriptViewport } from "./TranscriptViewport";
 import { type ChatTheme, resolveChatTheme } from "./theme";
@@ -129,29 +130,6 @@ function terminalSize(stdout: { columns?: number; rows?: number }): TerminalSize
  */
 function stopTurn(status: TurnStatus): TurnStatus {
   return status.running ? { ...status, running: false } : status;
-}
-
-/** Slash output is one listing per run, or one notice per statement. */
-interface SlashSink {
-  show(text: string): void;
-  flush(): void;
-}
-
-function slashSink(title: string | undefined, append: (entry: TranscriptEntry) => void): SlashSink {
-  const rows: string[] = [];
-  return {
-    show(text) {
-      if (title === undefined) {
-        append({ kind: "notice", text });
-        return;
-      }
-      rows.push(text);
-    },
-    flush() {
-      if (title === undefined || rows.length === 0) return;
-      append({ kind: "listing", title, text: rows.join("\n") });
-    },
-  };
 }
 
 /** Notices wait until neither a turn, a bottom-region surface nor host control owns the screen. */
