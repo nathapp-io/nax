@@ -1,0 +1,485 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-tasks-and-full-approval",
+  "branchName": "feat/chat-tasks-and-full-approval",
+  "createdAt": "2026-10-30T00:00:00Z",
+  "updatedAt": "2026-10-30T12:45:47.402Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Full mode approves nax-jobs cards without asking",
+      "description": "**Goal** \u2014 Make all nax-jobs host approvals obey the current chat mode at their shared composition seam.\n\n**Motivation** \u2014 A full-mode user driving `nax bot review` / `nax bot fix` from chat is stopped on every launch.\n\n**Approach** \u2014 `createHostJobs` takes a required `mode: () => ChatMode` option and its `approve` resolves `\"allow\"` without a card when the mode is full at call time (or `\"deny\"` when the card's signal is already aborted). In guarded mode it keeps calling `asks.requestHostApproval`. `ChatHost` passes a getter over the open session's meta mode (`\"guarded\"` without a session, kept as a code comment; no public path reaches the getter before `start`). This covers launch (`plan`, `run`, `bot_review`, `bot_fix`), `chain` and `cancel`, because all three go through the same `approve`.\n\n`HostJobsOptions` gains required `readonly mode: () => ChatMode`. `approve(card)` reads `options.mode()` at call time: when it returns `\"full\"`, it resolves `\"allow\"` without calling `requestHostApproval` (or `\"deny\"` when `card.signal` is already aborted); otherwise it calls `options.asks.requestHostApproval(card)` as today.\n\n`ChatHost` constructor's `createHostJobs({...})` call (`chat-host.ts`). Target: passes `mode: () => (this.handle?.meta.mode === \"full\" ? \"full\" : \"guarded\")`. Without an open session the getter returns `\"guarded\"`, so the card is shown (fail closed).\n\nFull mode, card signal already aborted: `approve` resolves `\"deny\"` without a card.\n\nFixture migration: in `test/unit/chat/chat-host-jobs.test.ts`, replace the test \"AC-9/10/11 full mode launch waits on a real expiring host card and deny declines\". The expiring-card-and-deny assertions run with the host started in guarded mode, which needs no posture here because the fixture injects a mock `open`: make that mock return `meta.mode` `\"ask\"` or `\"full\"` from the request's mode instead of the hard-coded `\"full\"` (so `switchTo({ mode })` reopens), and a full-mode launch asserts that no card is pending and the job is spawned. In `test/unit/chat/chat-host-chain.test.ts`, supply `mode` in `compose()` (`() => \"guarded\"` wherever a test expects the spied `requestHostApproval` to be called). Parametrise `parentHost` by mode (its mock `open` returning `meta.mode` from the request mode) and run `approveChain` and every card-expecting test in guarded mode. Replace AC-18 with: in full mode the chain tool activates without a pending card.\n\nLaunch ACs use a feature with a pending story in `prd.json` and the `_jobsLaunchDeps.git` stub returning branch `feat/f1`, as the existing `chat-host-jobs.test.ts` launch test does. The integration seam enters at the nax-jobs provider tool registered on the session open request; do not prove this solely by calling a detached approval helper.\n\n**Scope** \u2014 In: jobs-host approval composition, the ChatHost mode getter and affected approval fixtures. Out: footer and picker work (US-003 through US-007); changing `ChatAskController.requestHostApproval`; changing run questions, `nax-close` confirmation, agent-facing nax-jobs wording or chain cost policy. The adjacent feature boundaries remain:\n- Questions a running job asks (run asks routed to chat cards) still show in full mode; only nax-jobs host approval cards are skipped.\n- `ChatAskController.requestHostApproval` keeps its current behaviour (always a card); the full-mode decision lives in `createHostJobs`'s `approve`.\n- The close confirmation card (`nax-close`, raised through `asks` directly, not through `createHostJobs`) still shows in full mode.\n- The agent-facing nax-jobs wording (`buildJobsInstructions` in `workflow-builder.ts`, tool descriptions in `jobs-provider.ts` saying a call shows or asks for an approval card) is kept as is; in full mode the card is simply not shown and the call proceeds.\n- With full mode, the agent can start a billed `chain` (and its `costCap`) without a human yes; this follows the user's ruling and is called out in the PR description, not changed in code.\n\n**Interface** \u2014 Required option: `readonly mode: () => ChatMode`. Host getter: `mode: () => (this.handle?.meta.mode === \"full\" ? \"full\" : \"guarded\")`. Existing primitive, unchanged: `ChatAskController.requestHostApproval(card: HostApprovalCard): Promise<\"allow\" | \"deny\">` and `HostApprovalCard { tool, summary, command?, reason, signal? }`.",
+      "acceptanceCriteria": [
+        "[unit] Given createHostJobs with mode: () => \"full\", when the composed nax-jobs run tool is called, then the job starts.",
+        "[unit] Given createHostJobs with mode: () => \"full\", when the composed nax-jobs run tool is called, then asks.requestHostApproval is never called.",
+        "[unit] Given createHostJobs with mode: () => \"guarded\", when the composed nax-jobs run tool is called, then asks.requestHostApproval is called once with a card whose tool is nax-jobs__run.",
+        "[unit] Given createHostJobs with mode: () => \"full\", when its nax-jobs run tool is called with an already-aborted ctx.signal that is forwarded as the card signal, then the tool returns isError: true for the composed approve decision \"deny\".",
+        "[unit] Given mode: () => \"full\" and an already-aborted card signal, when the nax-jobs tool requests approval, then asks.requestHostApproval is never called.",
+        "[unit] Given a mode getter returning \"guarded\" on its first call and \"full\" on its second, when two launches request approval, then only the first launch calls asks.requestHostApproval, demonstrating that mode is read at call time.",
+        "[integration] Given a ChatHost started in full mode, when the run tool from the nax-jobs provider on the session open request is called, then _jobRunnerDeps.spawn is called once.",
+        "[integration] Given a ChatHost started in full mode, when the run tool from the nax-jobs provider on the session open request is called, then host.asks.pending() stays empty.",
+        "[integration] Given a ChatHost started in full mode, when the nax-jobs chain tool is called, then its proposal becomes active.",
+        "[integration] Given a ChatHost started in full mode, when the nax-jobs chain tool activates its proposal, then host.asks.pending() remains empty throughout.",
+        "[integration] Given a ChatHost started in full mode with a running owned job, when the nax-jobs cancel tool is called, then the job record gets cancelRequested.",
+        "[integration] Given a ChatHost started in full mode with a running owned job, when the nax-jobs cancel tool is called, then host.asks.pending() stays empty.",
+        "[integration] Given a ChatHost started in guarded mode, when the nax-jobs run tool is called, then exactly one pending ask has tool nax-jobs__run.",
+        "[integration] Given the pending nax-jobs__run ask on a guarded ChatHost, when the user resolves it deny, then the tool result has isError: true and content containing declined.",
+        "[integration] Given a ChatHost started in guarded mode and then switched with host.switchTo({ mode: \"full\" }), when the next nax-jobs run tool is called, then the job spawns without a pending ask."
+      ],
+      "tags": [
+        "chat",
+        "jobs",
+        "approval",
+        "security"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Small composition and call-site change with fixture migration, but changes the approval/access-control boundary and must preserve fail-closed abort and guarded behavior. Security override requires strict isolation."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/jobs-host.ts",
+        "packages/nax/src/chat/ask-controller.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/test/unit/chat/chat-host-jobs.test.ts",
+        "packages/nax/test/unit/chat/chat-host-chain.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-jobs.test.ts",
+          "reason": "the test \"AC-9/10/11 full mode launch waits on a real expiring host card and deny declines\" pins the old rule that a full-mode launch shows a card. Replace it: the expiring-card-and-deny assertions run with the host started in guarded mode, which needs no posture here because the fixture injects a mock `open`: make that mock return `meta.mode` `\"ask\"` or `\"full\"` from the request's mode instead of the hard-coded `\"full\"` (so `switchTo({ mode })` reopens), and a full-mode launch asserts that no card is pending and the job is spawned."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-chain.test.ts",
+          "reason": "`compose()` calls `createHostJobs` without the new required `mode` option, and the test \"AC-18 full mode keeps the chain card pending until explicitly resolved\", the `approveChain` helper and the `parentHost` fixture rely on a full-mode chain card. Supply `mode` in `compose()` (`() => \"guarded\"` wherever a test expects the spied `requestHostApproval` to be called). Parametrise `parentHost` by mode (its mock `open` returning `meta.mode` from the request mode) and run `approveChain` and every card-expecting test in guarded mode. Replace AC-18 with: in full mode the chain tool activates without a pending card."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Move the slash sink out of ChatApp",
+      "description": "**Goal** \u2014 Extract the slash transcript sink unchanged so subsequent chat wiring fits within ChatApp's source limit.\n\n**Motivation** \u2014 While the agent runs long work the transcript only says that something is running.\n\n**Approach** \u2014 Pure move, no behaviour change: `SlashSink` and `slashSink(title, append)` move from `ChatApp.tsx` to new `slash-sink.ts` and are exported from there. `ChatApp.tsx` imports them. This frees room under the 600-line source convention for US-003, US-005, US-006 and US-007. Verification note: `check:file-sizes` scans only `.ts` files, so the implementer confirms by line count that `ChatApp.tsx` stays under 600 lines.\n\nImport the exported `SlashSink` type into ChatApp only if a real type annotation needs it; the moved function's return annotation consumes that type in the new module.\n\n`slashSink` is file-local to `ChatApp.tsx` and no test imports it; UI tests reach it only through rendered output, which does not change. Retain the immediate notice path for an undefined title, buffered newline-preserving listing path for a defined title, and empty flush behavior. Add the specified sink unit tests and keep mounted /help and unknown-command output unchanged.\n\n**Scope** \u2014 In: extraction, exports/imports and unchanged transcript behavior. Out: jobs/task footer (US-003), jobs model (US-004), /jobs behavior and output selection (US-005), stop and openers (US-006/US-007). The `check:file-sizes` baseline is not edited by any story.\n\n**Interface** \u2014 Move this existing implementation unchanged, adding exports in `slash-sink.ts`:\n```typescript\ninterface SlashSink {\n  show(text: string): void;\n  flush(): void;\n}\n\nfunction slashSink(title: string | undefined, append: (entry: TranscriptEntry) => void): SlashSink {\n  const rows: string[] = [];\n  return {\n    show(text) {\n      if (title === undefined) {\n        append({ kind: \"notice\", text });\n        return;\n      }\n      rows.push(text);\n    },\n    flush() {\n      if (title === undefined || rows.length === 0) return;\n      append({ kind: \"listing\", title, text: rows.join(\"\\n\") });\n    },\n  };\n}\n```",
+      "acceptanceCriteria": [
+        "[unit] When slashSink(undefined, append) imported from slash-sink.ts receives show(text), then append immediately receives one { kind: \"notice\", text } entry for each call.",
+        "[unit] Given slashSink(\"Skills\", append), when show is called twice before flush(), then append has received no entries.",
+        "[unit] Given slashSink(\"Skills\", append) with two shown strings, when flush() is called, then append receives one { kind: \"listing\", title: \"Skills\", text: \"<first>\\n<second>\" } entry.",
+        "[unit] Given slashSink(\"Skills\", append) with no show calls, when flush() is called, then append receives no entries.",
+        "[integration] On a mounted ChatApp, when /help is submitted, then one listing titled Commands appears in the frame.",
+        "[integration] On a mounted ChatApp, when /nope is submitted, then the notice unknown command /nope appears in the frame."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "refactor"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Mechanical extraction across the screen and new sink module with explicit unit and mounted rendering contracts; standard patterns and no runtime behavior change."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/transcript-model.ts",
+        "packages/nax/test/ui/chat/slash-commands.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/slash-sink.ts",
+        "packages/nax/test/unit/tui/chat/slash-sink.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Show background tasks beside jobs in the footer",
+      "description": "**Goal** \u2014 Include running host-owned Bash tasks in the footer strip and expose its measured width for later click handling.\n\n**Motivation** \u2014 The footer strip (`formatJobStrip` in `packages/nax/src/tui/chat/chat-status.ts`) lists nax jobs only; background Bash tasks (ctrl+b, `nax-tasks`) appear only in the `/jobs` text listing.\n\n**Approach** \u2014 `formatJobStrip(jobs: readonly FooterJob[], tasks: readonly FooterTask[] = []): string`, with exported `interface FooterTask { readonly command: string }`; `footerModel` input gains `tasks?: readonly FooterTask[]`; its result gains `stripWidth: number`, the display width of the strip text (0 when no strip is drawn). Jobs come first, then tasks; at most `JOB_STRIP_LIMIT` (2) parts are shown and the rest are counted as ` +N`. A task part is `bash <command>`: the command reduced to one row, cut to `JOB_TARGET_LIMIT` (16) display columns, measured with `displayWidth` (`styled-line.tsx`) so a wide character counts two columns, with `\u2026` in the last column when longer.\n\n`useJobs` also returns `tasks: readonly BackgroundTask[]`, equal to `host.tasks?.running() ?? []`, refreshed by the existing `tasks.onChange` subscription. `useJobs` returns the running tasks, and `ChatApp` passes them to `footerModel`.\n\nNew tests go in a new file, because `chat-status.test.ts` is at 658 of 800 lines. `tasks` is an optional new input of `formatJobStrip` / `footerModel`, so the existing `chat-status.test.ts` calls and their `.left` / `.right` assertions keep their results. Preserve existing job-part formatting and status/notice behavior. Reuse the existing one-row sanitization and display-column elision helpers where applicable; a wide command must never split a character to fill an otherwise unused column. `stripWidth` measures the strip only, not its separator or the rest of the footer's right spans. Keep ChatApp below 600 lines without changing a size baseline.\n\n**Scope** \u2014 In: FooterTask, combined strip and overflow, footer width, useJobs task return and ChatApp footer wiring. Out: jobs picker model (US-004), /jobs output (US-005), stop/highlight (US-006), footer hit testing and input openers (US-007); no task registry changes. The adjacent feature boundaries remain:\n- An ACP brain's own background shells (Claude Code, Codex or Cursor running a command in the background inside the agent) are not shown: nax never sees them. Only host-owned Bash tasks (`nax-tasks`) and nax jobs are listed.\n- Background task records stay in memory only; nothing new is persisted across chats.\n- The `check:file-sizes` baseline is not edited by any story.\n\n**Interface** \u2014 `formatJobStrip(jobs: readonly FooterJob[], tasks: readonly FooterTask[] = []): string`; exported `interface FooterTask { readonly command: string }`; `footerModel` input gains `tasks?: readonly FooterTask[]`; result gains `stripWidth: number`; `useJobs` also returns `tasks: readonly BackgroundTask[]`.",
+      "acceptanceCriteria": [
+        "[unit] formatJobStrip([], [{ command: \"bun run test\" }]) returns bash bun run test.",
+        "[unit] formatJobStrip([{ kind: \"plan\", target: \"f1\" }], [{ command: \"ls\" }]) returns plan f1 \u00b7 bash ls, preserving jobs-before-tasks order.",
+        "[unit] Given two jobs and one task, formatJobStrip returns the two job parts followed by +1 with the specified leading space.",
+        "[unit] Given command a-very-long-command-line, formatJobStrip returns bash a-very-long-com\u2026, cutting the command to 16 display columns ending in \u2026.",
+        "[unit] Given a command of nine two-column characters, formatJobStrip cuts the command to seven of those characters plus \u2026, never splitting a character.",
+        "[unit] Given a task command containing a line break, formatJobStrip replaces the break with a space before cutting it, drawing the command on one row.",
+        "[unit] Given tasks: [{ command: \"ls\" }] and no jobs, footerModel returns right[0].text equal to bash ls.",
+        "[unit] Given tasks: [{ command: \"ls\" }] and no jobs, footerModel returns stripWidth equal to displayWidth(\"bash ls\").",
+        "[unit] Given neither jobs nor tasks, footerModel returns stripWidth === 0.",
+        "[unit] Given neither jobs nor tasks, footerModel returns the same right spans as a call without the tasks field.",
+        "[unit] Given one plan job targeting f1 and no tasks, footerModel returns stripWidth === 7, the display width of plan f1.",
+        "[unit] Given a host whose tasks.running() returns one task, useJobs returns that task in tasks.",
+        "[unit] Given useJobs over a host whose tasks.running() becomes empty, when the registry's onChange fires, then the next render returns tasks as an empty array.",
+        "[integration] Given a mounted ChatApp with one running background task whose command is sleep 60 and no jobs, then the footer row draws bash sleep 60."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "background-tasks",
+        "footer"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive formatter, hook return and screen wiring using existing display-width helpers and registry subscription; no new lifecycle abstraction."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/src/tui/chat/use-jobs.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/chat/background/task-types.ts",
+        "packages/nax/test/unit/tui/chat/chat-status.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/tui/chat/chat-status-tasks.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Build the jobs and tasks picker model",
+      "description": "**Goal** \u2014 Add the jobs picker kind and its deterministic, live-registry-compatible row model.\n\n**Motivation** \u2014 While the agent runs long work the transcript only says that something is running.\n\n**Approach** \u2014 **Jobs picker rows** (`pickerModel` for kind `jobs`):\n\n- Title: `Jobs and tasks \u00b7 enter output \u00b7 ctrl+x stop`.\n- Rows: every job from `jobs` and every task from `tasks`. Running rows first, then the rest; within each group newest `startedAt` first, and rows with equal `startedAt` ordered by `value` ascending. At most 20 rows (`MAX_JOB_PICKER_ROWS`).\n- Job row: `value` = job id; `label` = `<kind> <target>`, with `#` before the target for `bot_review` / `bot_fix`; `detail` = `<state> \u00b7 <relativeTime(startedAt, now)>` (the time part and its separator are omitted when `relativeTime` returns an empty string), then ` \u00b7 <passed>/<total>` when `progress` is present, then ` \u00b7 $<cost to 2 decimals>` when `cost` is present.\n- Task row: `value` = task id; `label` = `bash <command>` (one row); `detail` = `<state> \u00b7 <relativeTime(startedAt, now)>`.\n- No row is marked `current`. No query filtering (typing does nothing, as in the mode picker).\n- Note row: the picker's warning (`PickerState.warning`) when one is set, shown with tone `warning`; otherwise `no jobs or tasks` (muted) when there are no rows; otherwise none. A successful stop clears the warning.\n\n`PickerKind` gains `\"jobs\"`, and `pickerModel` builds the jobs rows, title and empty note described above from `PickerModelInput.jobs` and `.tasks`. Existing kinds' rows are unchanged. The successful-stop warning clear is implemented by US-006; this story only renders the supplied warning. Read the clock from `nowMs` or the existing `_pickerDeps.now` seam and use `relativeTime`; keep the combined data cap separate from Picker's existing viewport row cap.\n\n**Scope** \u2014 In: PickerKind extension, exhaustive title map, optional jobs/tasks inputs, pure entries, sort/cap and warning/empty note. Out: live host wiring and Enter (US-005), stop and value-based highlight (US-006), keyboard/mouse openers (US-007). The adjacent feature boundaries remain:\n- The jobs picker does not filter by typed text.\n- The ACP `/model` picker showing agents' advertised models before first open (#2746) is a separate feature.\n\n**Interface** \u2014 `PickerKind`: `\"model\" | \"resume\" | \"mode\" | \"effort\" | \"jobs\"`. `PickerModelInput` gains `jobs?: readonly ChatJob[]` and `tasks?: readonly BackgroundTask[]`; `pickerModel({ kind: \"jobs\", ... })` returns the jobs rows described above. Existing read-only helpers: `relativeTime(iso, nowMs)` and `BackgroundTask` / `ChatJob` registry record types.",
+      "acceptanceCriteria": [
+        "[unit] pickerModel({ kind: \"jobs\", jobs: [], tasks: [] }) with the existing required base inputs returns title Jobs and tasks \u00b7 enter output \u00b7 ctrl+x stop.",
+        "[unit] pickerModel for jobs with empty jobs and tasks returns no entries.",
+        "[unit] pickerModel for jobs with empty jobs and tasks returns note { text: \"no jobs or tasks\", tone: \"muted\" }.",
+        "[unit] Given no rows and warning job is not owned by this chat, pickerModel returns note { text: \"job is not owned by this chat\", tone: \"warning\" }.",
+        "[unit] Given running task bash-1a2b3c4d with command bun run test, pickerModel returns an entry with value bash-1a2b3c4d, label bash bun run test and detail.startsWith(\"running \u00b7 \") === true.",
+        "[unit] Given run job run-0000aaaa targeting f1 with progress { passed: 3, total: 7 } and cost 1.2, pickerModel returns label run f1.",
+        "[unit] Given run job run-0000aaaa targeting f1 with progress { passed: 3, total: 7 } and cost 1.2, pickerModel returns detail.endsWith(\" \u00b7 3/7 \u00b7 $1.20\") === true, including the leading separator space.",
+        "[unit] Given a bot_review job targeting 42, pickerModel returns label bot_review #42.",
+        "[unit] Given startedAt and input nowMs, pickerModel uses relativeTime(startedAt, nowMs) as the detail's time part.",
+        "[unit] Given a running task started earlier than an ended job, pickerModel lists the running task first, regardless of their start times.",
+        "[unit] Within each running and ended group, pickerModel orders jobs and tasks together by newest startedAt first.",
+        "[unit] Given two rows with equal startedAt, pickerModel orders them by value ascending.",
+        "[unit] Given 25 rows across jobs and tasks, pickerModel returns 20 entries, bounded by MAX_JOB_PICKER_ROWS.",
+        "[unit] Given jobs entries, pickerModel marks none current: true.",
+        "[unit] Given additional jobs and tasks inputs, pickerModel for each existing model, mode, effort and resume kind returns the same model as before."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "picker",
+        "jobs",
+        "background-tasks"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure union/model extension with standard combined sorting and formatting; existing time, sanitization and warning conventions provide the needed seams."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/picker-model.ts",
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/tui/chat/relative-time.ts",
+        "packages/nax/src/chat/jobs/job-types.ts",
+        "packages/nax/src/chat/background/task-types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/tui/chat/picker-model-jobs.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Given a jobs picker query that does not match any label or id, pickerModel returns the same entries as with an empty query.",
+        "Given a job with an unparseable startedAt, pickerModel omits both the relative-time text and its separator from that job's detail.",
+        "Given a bot_fix job targeting 42, pickerModel returns label bot_fix #42.",
+        "Given a job with cost 0, pickerModel includes \u00b7 $0.00 in its detail."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Open /jobs and print a selected output snapshot",
+      "description": "**Goal** \u2014 Replace /jobs text output with the shared picker and show selected task/job output locally in the transcript.\n\n**Motivation** \u2014 The strip is plain text: no click, no key, no output view, no stop.\n\n**Approach** \u2014 `runSlashCommand` `jobs` case (`slash-commands.ts`). Target: returns `{ kind: \"picker\", picker: \"jobs\" }` when `host.jobs` or `host.tasks` is present, ignoring any arguments (`/jobs foo` opens the same picker); otherwise shows `jobs are not available in this session` as today. `COMMAND_DESCRIPTIONS.jobs` becomes `Show nax jobs and background tasks`.\n\n`useChatPicker`: `ChatPickerOptions` gains `show(entry: TranscriptEntry): void`; `choose` for the jobs kind shows output instead of calling a host action; `modelOf` passes `host.jobs?.list()` and `host.tasks?.list()` read at render time. `ChatApp` passes `show` (appending the entry).\n\n**Enter on a jobs row** (`useChatPicker.choose`): the picker closes. The row's id is looked up first in `host.tasks` (`get`), then in `host.jobs` (`get`). The output is read with `host.tasks.output(id, 40)` or `host.jobs.logTail(id, 40)`, then shown, through the `show` option `ChatApp` supplies (which appends the entry), as one `listing` entry whose title is `<label> \u00b7 <state>` and whose text is the output, or `(no output yet)` when the output is empty. The listing is local to the TUI: it is never sent to the agent.\n\n**No host control.** Enter and ctrl+x in the jobs picker do not go through `runControl`: they act on jobs and tasks, not on the session, so they work while a turn is running. An open picker still holds back job and task notices (`bottomBlocked`), as every picker does today. This story implements Enter only; ctrl+x is US-006.\n\nFailure handling: Enter on a row whose id neither `host.tasks.get` nor `host.jobs.get` knows any more: notice `<id> is no longer listed`; no listing. `tasks.output` / `jobs.logTail` rejects: the picker is already closed; the error goes to the picker's existing `onError` (`ChatApp`'s `showError`), which appends an `error` entry with the error's message.\n\nThe file-local `formatSessionJobs` and its `formatJobsListing` / `formatTasksListing` imports in `slash-commands.ts` are deleted in this story so lint stays clean. All ACs run on a mounted `ChatApp` (the `mount` export of `test/helpers/chat-picker.tsx`), opening the picker with `/jobs`.\n\nUpdate the existing direct `useChatPicker` harness in `test/ui/chat/picker.test.tsx:220-227` to supply the new required `show` option; retain its existing model query/cancel/reopen assertions. The only production caller is ChatApp, but that test harness is another required-option call site.\n\nMigrate `test/ui/chat/slash-commands.test.tsx`: the help listing assertion becomes `/jobs  Show nax jobs and background tasks`; replace \"US-015 AC-1 AC-2 lists jobs locally without a model call\" with /jobs opening the jobs picker without a model call. \"US-015 AC-3 reports jobs unavailable\" stays. Remove the `formatJobsListing` import and use, since US-008 deletes that function. Migrate `test/ui/chat/task-notices.test.tsx`: replace \"AC-16/17 /jobs lists tasks\" with /jobs opening the picker and the frame showing label `bash bun dev`, detail starting `running`; \"AC-19\" stays. The test \"a rejected task notice stays queued without using a guard turn\" uses /jobs only to force a re-render; use a non-picker local command such as /mcp for that nudge, because an open picker blocks delivery. Make the same /mcp nudge replacement in `test/ui/chat/run-ask-notices.test.tsx`. Keep ChatApp below 600 lines.\n\n**Scope** \u2014 In: /jobs picker outcome and help, live lists, show callback, Enter snapshot/error/missing-id behavior and affected slash/notice tests. Out: stop and identity pointer (US-006), ctrl+g/footer click (US-007), deleting old formatter modules/exports/tests (US-008); no agent turn or session switch/resume for a jobs choice. The adjacent feature boundaries remain:\n- A live, continuously tailing output panel is not built; Enter prints one snapshot of the last 40 lines.\n- An output listing keeps the existing listing colouring (`listingTone` in `layout-listing.ts`), so log lines containing words such as `failed` may be coloured.\n- The `check:file-sizes` baseline is not edited by any story.\n\n**Interface** \u2014 `ChatPickerOptions` gains `show(entry: TranscriptEntry): void`; `modelOf` passes `host.jobs?.list()` and `host.tasks?.list()` read at render time. Existing transcript variant: `{ kind: \"listing\"; title: string; text: string }`. Existing read ports: `output(id, lines?): Promise<string>` and `logTail(id, lines?): Promise<string>`; both are called with 40 lines.",
+      "acceptanceCriteria": [
+        "[integration] On a mounted ChatApp with a host that has jobs, when /jobs is submitted, then the picker titled Jobs and tasks \u00b7 enter output \u00b7 ctrl+x stop opens.",
+        "[integration] On a mounted ChatApp, when /jobs opens the picker, then the session's send is not called.",
+        "[integration] On a mounted ChatApp, when /jobs foo is submitted, then the same jobs picker opens.",
+        "[integration] On a mounted ChatApp whose host has neither jobs nor tasks, when /jobs is submitted, then the notice jobs are not available in this session appears.",
+        "[integration] On a mounted ChatApp whose host has neither jobs nor tasks, when /jobs is submitted, then no picker opens.",
+        "[integration] On a mounted ChatApp, when /help is submitted, then it lists /jobs  Show nax jobs and background tasks.",
+        "[integration] Given a mounted /jobs picker with task bash-1a2b3c4d whose tasks.output(\"bash-1a2b3c4d\", 40) resolves \"line1\\nline2\", when Enter chooses that task, then the picker closes.",
+        "[integration] Given that task row labeled bash bun run test in state running, when Enter chooses it from mounted /jobs, then the frame shows one listing titled bash bun run test \u00b7 running whose text is line1 followed by line2 on separate lines.",
+        "[integration] Given a mounted /jobs picker highlighting a job, when Enter is pressed, then host.jobs.logTail(<id>, 40) is called.",
+        "[integration] Given a mounted /jobs picker highlighting a job, when Enter is pressed, then the frame shows a listing titled <label> \u00b7 <state> with the returned log text.",
+        "[integration] Given an empty output result, when Enter chooses the row in mounted /jobs, then its listing text is (no output yet).",
+        "[integration] Given a mounted /jobs row whose id is unknown to both host.tasks.get and host.jobs.get, when Enter is pressed, then the notice <id> is no longer listed appears.",
+        "[integration] Given a mounted /jobs row whose id is unknown to both host.tasks.get and host.jobs.get, when Enter is pressed, then no listing is appended.",
+        "[integration] Given tasks.output rejects with message boom, when Enter chooses that row in mounted /jobs, then the picker is closed.",
+        "[integration] Given tasks.output rejects with message boom, when Enter chooses that row in mounted /jobs, then the frame shows an error entry boom through the existing onError/showError path.",
+        "[integration] Given jobs.logTail rejects with message boom, when Enter chooses that row in mounted /jobs, then the picker is already closed when the failure is reported.",
+        "[integration] Given jobs.logTail rejects with message boom, when Enter chooses that row in mounted /jobs, then the frame shows an error entry boom through the existing onError/showError path.",
+        "[integration] Given a mounted jobs picker opened with /jobs, when Escape is pressed, then the picker closes.",
+        "[integration] Given a mounted jobs picker opened with /jobs, when Escape is pressed, then neither tasks.output nor jobs.logTail is called.",
+        "[integration] Given a mounted jobs picker opened with /jobs, when Enter is pressed on a row, then neither host.switchTo nor host.resume is called.",
+        "[integration] Given a mounted jobs picker opened with /jobs, when a task changes from running to succeeded and its registry onChange fires, then the next render shows that row's detail starting succeeded without reopening the picker."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "picker",
+        "jobs",
+        "output"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three existing production modules gain a jobs branch and a transcript callback, using established picker lifecycle, registry read ports and mounted helpers; standard async error handling and fixture migrations fit tdd-simple without a new abstraction or session-policy change."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/tui/chat/useChatPicker.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/chat/jobs/job-runner.ts",
+        "packages/nax/test/helpers/chat-picker.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/jobs-picker.test.tsx"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/slash-commands.test.tsx",
+          "reason": "the help listing assertion pins the line \"/jobs  List nax jobs\"; it becomes \"/jobs  Show nax jobs and background tasks\". The test \"US-015 AC-1 AC-2 lists jobs locally without a model call\" pins the /jobs text listing; replace it with: /jobs with a host that has jobs opens the jobs picker (title \"Jobs and tasks \u00b7 enter output \u00b7 ctrl+x stop\") without a model call. \"US-015 AC-3 reports jobs unavailable\" stays. Remove the test file's `formatJobsListing` import and use with it, since US-008 deletes that function."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/task-notices.test.tsx",
+          "reason": "\"AC-16/17 /jobs lists tasks\" pins the /jobs text row \"bash-1a2b3c4d running bun dev\"; replace it with: /jobs opens the jobs picker and the frame shows the task row (label \"bash bun dev\", detail starting \"running\"). \"a rejected task notice stays queued without using a guard turn\" submits /jobs only to force a re-render that retries notice delivery; an open picker now blocks delivery, so use a non-picker local command such as /mcp for the nudge. \"AC-19\" stays."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/run-ask-notices.test.tsx",
+          "reason": "a test submits /jobs only to force a re-render that retries run-ask notice delivery; an open picker now blocks delivery, so use a non-picker local command such as /mcp for the nudge."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/picker.test.tsx",
+          "reason": "the direct `useChatPicker` harness (the US-007 hook query state test) calls `useChatPicker({ host, runControl, onError })`; supply the new required `show` option (a no-op) and keep its model query, cancel and reopen assertions unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Stop jobs and tasks while preserving the highlighted row",
+      "description": "**Goal** \u2014 Let ctrl+x stop/cancel the highlighted jobs-picker row without closing the picker or moving selection to another process.\n\n**Motivation** \u2014 The strip is plain text: no click, no key, no output view, no stop.\n\n**Approach** \u2014 `Picker` gains optional `onStop?: (entry: PickerEntry) => void`. For `model.kind === \"jobs\"`: `ownsPickerKey` owns ctrl+x, which is handled before the chord early return and calls `onStop` with the highlighted entry; and the pointer stores the highlighted entry's `value` (in `latest` too, so batched keys see it), deriving the index from `model.entries` on each render and falling back to index 0 only when that value is no longer listed. Other kinds keep the index pointer.\n\n**Highlight.** The jobs list is live and regroups as rows change state, so the jobs picker keeps its highlight by the highlighted entry's `value`, not by its index (owned by `Picker`): after a re-render the same row stays highlighted wherever it moved (falling back to the first row only when that row is gone). Other picker kinds keep their index highlight.\n\n**ctrl+x on a jobs row** (`useChatPicker.stop`): the picker stays open. A running task is stopped with `host.tasks.stop(id)`. For a running job, `host.jobs.canCancel(id)` is checked first; on `ok` it calls `host.jobs.cancel(id)`, otherwise the picker shows the returned `message` as its warning row. A row that is not running shows `<id> is not running` as the warning row. No approval card is shown: the user chose the action themself. Rows reflect the new state on the next render, because the screen re-renders on `jobs.onChange` / `tasks.onChange` and the picker reads the lists at render time.\n\n**No host control.** Enter and ctrl+x in the jobs picker do not go through `runControl`: they act on jobs and tasks, not on the session, so they work while a turn is running. An open picker still holds back job and task notices (`bottomBlocked`), as every picker does today.\n\n`useChatPicker` gains `stop(entry)`, which stops a running task or cancels a running job with the warnings in Failure Handling, bypassing `runControl`. `ChatApp` passes `onStop={picker.stop}`. All ACs run on a mounted `ChatApp`, opening the picker with `/jobs`.\n\nFailure handling: ctrl+x on a row that is not running: picker warning row `<id> is not running`; nothing is stopped. ctrl+x on a job whose `canCancel` returns `{ ok: false, message }`: picker warning row shows `message`; `cancel` is not called. `tasks.stop` throws (the task ended between render and key) or `jobs.cancel` rejects: picker warning row shows the error's message; the picker stays open. A successful stop clears the warning. Preserve existing model/resume/mode/effort key and index-pointer behavior. Keep ChatApp below 600 lines.\n\n**Scope** \u2014 In: jobs-only ctrl+x ownership, optional onStop callback, synchronous value-based pointer, safe registry stop/cancel, warnings and ChatApp wiring. Out: Enter/output/slash behavior already delivered by US-005, opener hook and click geometry (US-007), formatter deletion (US-008); no direct process signals, registry policy changes or session control. ctrl+x in the jobs picker never shows a confirmation card, in either mode. The `check:file-sizes` baseline is not edited by any story.\n\n**Interface** \u2014 `onStop?: (entry: PickerEntry) => void`; `ChatPicker` gains `stop(entry: PickerEntry): void`. Existing read-only lifecycle ports: `stop(id): BackgroundTask`, `canCancel(id): Promise<{ ok: true } | { ok: false; message: string }>`, `cancel(id): Promise<ChatJob>`, `onChange(listener)`.",
+      "acceptanceCriteria": [
+        "[integration] Given a mounted jobs picker opened with /jobs and highlighting running task bash-1a2b3c4d, when ctrl+x is pressed, then host.tasks.stop(\"bash-1a2b3c4d\") is called once.",
+        "[integration] Given a mounted jobs picker opened with /jobs, when ctrl+x stops its running task, then the jobs picker remains open.",
+        "[integration] Given a mounted /jobs picker highlighting a running job whose canCancel resolves { ok: true }, when ctrl+x is pressed, then host.jobs.cancel(<id>) is called once.",
+        "[integration] Given a mounted /jobs picker highlighting a running job whose canCancel resolves { ok: true }, when ctrl+x cancels that job, then the jobs picker remains open.",
+        "[integration] Given a mounted /jobs picker highlighting a running job whose canCancel resolves { ok: false, message: \"job is not owned by this chat\" }, when ctrl+x is pressed, then cancel is not called.",
+        "[integration] Given that canCancel refusal in a mounted /jobs picker, when ctrl+x is pressed, then the picker's note row reads job is not owned by this chat.",
+        "[integration] Given a mounted /jobs picker highlighting an ended row, when ctrl+x is pressed, then neither stop nor cancel is called.",
+        "[integration] Given a mounted /jobs picker highlighting an ended row, when ctrl+x is pressed, then its note row reads <id> is not running.",
+        "[integration] Given tasks.stop throws a NaxError with message [chat] task bash-1a2b3c4d is not running, when ctrl+x is pressed on that row in mounted /jobs, then the note row shows that message.",
+        "[integration] Given tasks.stop throws that NaxError during mounted /jobs ctrl+x, then the picker remains open.",
+        "[integration] Given jobs.cancel rejects with message kill failed, when ctrl+x is pressed on that row in mounted /jobs, then the note row shows kill failed.",
+        "[integration] Given jobs.cancel rejects during mounted /jobs ctrl+x, then the picker remains open.",
+        "[integration] Given a warning is visible in a mounted /jobs picker, when ctrl+x successfully stops a running row, then the warning note is cleared.",
+        "[integration] Given a mounted /jobs picker, when a task changes from running to stopped and its registry onChange fires, then the next render shows that row with detail.startsWith(\"stopped \u00b7 \") === true.",
+        "[integration] Given two running tasks A highlighted and B in a mounted /jobs picker, when ctrl+x stops A and A moves to the ended group, then A remains the highlighted row.",
+        "[integration] Given stopped A remains highlighted after moving below running B in mounted /jobs, when a second ctrl+x is pressed, then stop is not called for B.",
+        "[integration] Given stopped A remains highlighted after moving below running B in mounted /jobs, when a second ctrl+x is pressed, then the note row reads <A> is not running.",
+        "[integration] Given a mounted model picker, when ctrl+x is pressed, then no task or job is stopped.",
+        "[integration] Given a mounted model picker, when ctrl+x is pressed, then the model picker remains open with its rows unchanged."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "picker",
+        "cancellation",
+        "security"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Combines live identity-preserving selection, batched key handling and asynchronous cancellation races. User-driven cancellation consumes an ownership/access-control preflight, so security override requires strict three-session TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/Picker.tsx",
+        "packages/nax/src/tui/chat/useChatPicker.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/chat/jobs/job-runner.ts",
+        "packages/nax/src/chat/background/task-types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/jobs-picker-stop.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "Given a jobs picker whose highlighted id disappears from the latest entries, when it rerenders, then its first remaining entry is highlighted.",
+        "Given a mounted jobs picker with two running tasks, when Down and ctrl+x are delivered in one input batch, then only the newly highlighted task receives stop.",
+        "Given a mounted jobs picker in either guarded or full mode, when ctrl+x stops a running task or cancels an eligible job, then host.asks.pending() remains empty."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "Open the jobs picker with ctrl+g or a footer click",
+      "description": "**Goal** \u2014 Connect keyboard and footer gestures to the same jobs picker, including while a chat turn is running.\n\n**Motivation** \u2014 The strip is plain text: no click, no key, no output view, no stop.\n\n**Approach** \u2014 **Openers.** All three open the same picker through `picker.open(\"jobs\")`. `/jobs` returns the `{ kind: \"picker\", picker: \"jobs\" }` slash outcome (US-005). A slash command typed during a turn only prints the busy notice, so during a turn the picker is opened with ctrl+g or the footer click. ctrl+g and the footer click are handled by one hook, `useJobsOpener({ host, mouse, blocked, footer, size, open, note })`, in new `packages/nax/src/tui/chat/use-jobs-opener.ts`, so `ChatApp` gains one call site (US-007); the hook derives the footer row as `size.rows - FRAME_SLACK_ROWS`, and `rightWidth` and `stripWidth` from `footer`. `FRAME_SLACK_ROWS` moves from `ChatApp.tsx` into `use-jobs-opener.ts` (exported), and `ChatApp.tsx` imports it from there, so no import cycle forms. `ChatApp` passes `blocked` as `bottomBlocked(ask, picker.model) || menuShown()`:\n\n- ctrl+g (`JOBS_KEY = \"g\"`), only while no ask card, no picker and no slash menu is shown (`blocked` false). ctrl+j is not used: terminals send it as a line feed. When the host has neither jobs nor tasks, ctrl+g shows the notice `jobs are not available in this session`.\n- A left-button press and release on the same cell of the footer strip, only while `blocked` is false. The hit test is the pure exported function `footerStripHit(input: { x: number; y: number; footerRow: number; columns: number; rightWidth: number; stripWidth: number }): boolean`. It is true when `stripWidth > 0`, `y === footerRow`, and `x` is from `columns - rightWidth + 1` to `columns - rightWidth + stripWidth` inclusive. The footer's right line is drawn flush right, so its first column is `columns - rightWidth + 1`. `rightWidth` is `spansWidth(footer.right)` and `stripWidth` is `footerModel(...).stripWidth`.\n\nFailure handling: ctrl+g or footer click while an ask card, a picker or the slash menu is shown: ignored. ctrl+g with neither `host.jobs` nor `host.tasks`: notice `jobs are not available in this session`.\n\nExtend `test/helpers/chat-picker.tsx`: `mount` renders `ChatApp` without a `mouse` prop; add an optional `mouse` mount option passed through to `ChatApp`, so the footer-click ACs can emit fake mouse events. Existing callers are unchanged. Reuse the existing synchronous press/release mouse pattern and clean up the hook's mouse subscription; keep latest gesture/blocked data safe for batched events. Do not add turn-running to blocked or route output/stop through runControl. Keep ChatApp below 600 lines without a baseline edit.\n\nSeams: `footerModel(...).stripWidth` feeds `footerStripHit` through `useJobsOpener`; the seam AC drives a real `ChatApp` with a running task and clicks the strip. `picker.open(\"jobs\")` is the picker every opener opens; US-005 and US-006 enter at `/jobs`, this story enters at ctrl+g and a mouse click, all on a mounted `ChatApp`.\n\n**Scope** \u2014 In: exported pure hit test, combined opener hook, moved frame slack constant, single ChatApp call site and optional mouse harness support. Out: changing the task strip (US-003), row formatting (US-004), /jobs or Enter semantics (US-005), stop semantics (US-006), old listing deletion (US-008); no clipped-footer geometry redesign or ctrl+j shortcut. The adjacent feature boundaries remain:\n- The footer click hit test assumes the footer's right line is drawn flush right; when the left and right lines together are wider than the terminal and the right line is clipped, a click may miss the strip.\n- The `check:file-sizes` baseline is not edited by any story.\n\n**Interface** \u2014 `useJobsOpener({ host, mouse, blocked, footer, size, open, note })`; `footerStripHit(input: { x: number; y: number; footerRow: number; columns: number; rightWidth: number; stripWidth: number }): boolean`; exported `FRAME_SLACK_ROWS = 1`; `JOBS_KEY = \"g\"`. Existing `MouseEvents.subscribe(listener)` and `MouseEvent { kind, button, x, y }` use 1-based columns and rows.",
+      "acceptanceCriteria": [
+        "[unit] footerStripHit({ x: 61, y: 23, footerRow: 23, columns: 80, rightWidth: 20, stripWidth: 7 }) returns true, including the first strip column 80 - 20 + 1.",
+        "[unit] Given that same geometry with x: 67, footerStripHit returns true, including the last strip column 80 - 20 + 7.",
+        "[unit] Given that same geometry with x: 60 or x: 68, footerStripHit returns false.",
+        "[unit] Given that same geometry with y: 22, footerStripHit returns false.",
+        "[unit] Given stripWidth: 0, footerStripHit returns false for every x on the footer row.",
+        "[integration] Given a mounted ChatApp whose host has a running task, when ctrl+g is pressed, then the jobs picker opens.",
+        "[integration] Given a mounted ChatApp with the model picker open, when ctrl+g is pressed, then the model picker remains open rather than the jobs picker.",
+        "[integration] Given a mounted ChatApp with an approval ask card pending, when ctrl+g is pressed, then no picker opens.",
+        "[integration] Given a mounted ChatApp whose slash menu is shown because the draft is /, when ctrl+g is pressed, then no picker opens.",
+        "[integration] Given a mounted ChatApp whose host has neither jobs nor tasks, when ctrl+g is pressed, then the notice jobs are not available in this session appears.",
+        "[integration] Given a mounted ChatApp at terminal columns \u00d7 rows with fake mouse events and one running task, when a left press and release occur at the strip's first column on row rows - 1, then the jobs picker opens.",
+        "[integration] Given a mounted ChatApp with a drawn strip, when a left press and release occur on the footer row one column left of the strip, then no picker opens.",
+        "[integration] Given a mounted ChatApp with a drawn strip, when a press on the strip is followed by a release on a different cell, then no picker opens.",
+        "[integration] Given a mounted ChatApp with a drawn strip, when a right-button press and release occur on the strip, then no picker opens.",
+        "[integration] Given a mounted ChatApp with an approval ask card pending, when a left click occurs on the strip, then no picker opens.",
+        "[integration] Given a mounted ChatApp with a picker already open, when a left click occurs on the strip, then the existing picker remains open rather than opening the jobs picker.",
+        "[integration] Given a mounted ChatApp with the slash menu shown, when a left click occurs on the strip, then no picker opens.",
+        "[integration] Given a mounted ChatApp while the host's send has not settled, when ctrl+g is pressed, then the jobs picker opens while the turn is running.",
+        "[integration] Given a mounted ChatApp while send has not settled and ctrl+g has opened the jobs picker, when Enter chooses a task, then its output listing appears in the transcript.",
+        "[integration] Given a mounted ChatApp while send has not settled, when ctrl+g then ctrl+x are pressed on a running task row, then tasks.stop is called for that task."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "keyboard",
+        "mouse",
+        "jobs"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-006"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One small opener hook and screen call site reuse Ink useInput, the existing MouseEvents subscription/ref gesture pattern and the upstream picker; inclusive geometry and blocked/live-turn cases are standard mounted tests, not new terminal infrastructure."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/mouse-input.ts",
+        "packages/nax/src/tui/chat/use-mouse-selection.ts",
+        "packages/nax/test/helpers/chat-picker.tsx",
+        "packages/nax/test/ui/chat/mouse.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/use-jobs-opener.ts",
+        "packages/nax/test/unit/tui/chat/use-jobs-opener.test.ts",
+        "packages/nax/test/ui/chat/jobs-opener.test.tsx"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/helpers/chat-picker.tsx",
+          "reason": "`mount` renders `ChatApp` without a `mouse` prop; add an optional `mouse` mount option passed through to `ChatApp`, so the footer-click ACs can emit fake mouse events. Existing callers are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-008",
+      "title": "Remove the replaced /jobs text listing",
+      "description": "**Goal** \u2014 Delete the unused jobs/task text-listing implementation and its obsolete export surfaces after the picker replaces its only production caller.\n\n**Motivation** \u2014 The footer strip (`formatJobStrip` in `packages/nax/src/tui/chat/chat-status.ts`) lists nax jobs only; background Bash tasks (ctrl+b, `nax-tasks`) appear only in the `/jobs` text listing.\n\n**Approach** \u2014 Deletion only. Once `/jobs` opens the picker (US-005, which already deleted the file-local `formatSessionJobs`), `formatTasksListing` (`packages/nax/src/chat/background/tasks-listing.ts`, plus its `background/index.ts` export) and `formatJobsListing` (`packages/nax/src/chat/jobs/jobs-listing.ts`, plus its exports in `chat/jobs/index.ts` and `chat/index.ts`) have no production caller. Delete them and their unit tests `test/unit/chat/background/tasks-listing.test.ts` and `test/unit/chat/jobs/jobs-listing.test.ts`.\n\nUS-005 already removes the `formatJobsListing` import/use in `test/ui/chat/slash-commands.test.tsx`, replaces text-list UI expectations and deletes `formatSessionJobs` and both formatter imports from `slash-commands.ts`. Confirm these upstream removals before deleting the modules; do not retain a compatibility shim or recreate the old listing interface.\n\n**Scope** \u2014 In: deleting the two formatter modules, their three re-exports and two unit-test files. Out: any new picker, footer, approval or input behavior; changing the existing transcript listing entry/rendering used for output snapshots. The `check:file-sizes` baseline is not edited by any story.\n\n**Interface** \u2014 Remove `formatTasksListing` and `formatJobsListing`; no new interface. All existing `ChatJobs` and `ChatBackgroundTasks` lifecycle/read ports remain unchanged.\n\n**Verification note** \u2014 The spec assigns this deletion-only story no runtime scenarios and verifies removal with package-scoped `bun run typecheck` and `bun run lint`. Retain that verification. The three [review] criteria record the removed exports and are checked by story review, without adding tests, source stubs or new files. Existing /jobs picker and unavailable-capability regressions remain in US-005 rather than being duplicated here.",
+      "acceptanceCriteria": [
+        "[review] When the runtime module namespace for packages/nax/src/chat/background/index.ts is inspected after removal, then Object.hasOwn(namespace, \"formatTasksListing\") is false.",
+        "[review] When the runtime module namespace for packages/nax/src/chat/jobs/index.ts is inspected after removal, then Object.hasOwn(namespace, \"formatJobsListing\") is false.",
+        "[review] When the runtime module namespace for packages/nax/src/chat/index.ts is inspected after removal, then Object.hasOwn(namespace, \"formatJobsListing\") is false."
+      ],
+      "tags": [
+        "chat",
+        "cleanup",
+        "refactor"
+      ],
+      "dependencies": [
+        "US-007"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "no-test",
+        "reasoning": "Several files are removed or edited, but all changes are mechanical unused-code deletion with an enumerated consumer migration already completed upstream.",
+        "noTestJustification": "Deletion-only cleanup of two unused internal formatters, their re-exports and their obsolete tests after US-005 migrates all production usage. The negative module-namespace criteria describe reviewable export removal; no new runtime feature or test files are needed. Retain the spec's package-scoped typecheck/lint verification and upstream UI regressions."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/background/tasks-listing.ts",
+        "packages/nax/src/chat/jobs/jobs-listing.ts",
+        "packages/nax/src/chat/background/index.ts",
+        "packages/nax/src/chat/jobs/index.ts",
+        "packages/nax/src/chat/index.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/background/tasks-listing.test.ts",
+          "reason": "tests `formatTasksListing`, which this story deletes; delete the file."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/jobs-listing.test.ts",
+          "reason": "tests `formatJobsListing`, which this story deletes; delete the file."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Repository exploration: codebase-memory MCP is not exposed in this session, so findings below come from direct source reads and repository text searches rooted at /Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax. This is an enhancement to existing native-chat functionality, not greenfield work. All eight binding stories operate exclusively in packages/nax; no nax-agent, nax-agent-acp, nax-ai, dependency, release, or persistence changes are needed. The feature closes #2747 and #2748.\n\nArchitecture and conventions: packages/nax/package.json:2 identifies @nathapp/nax; packages/nax/package.json:9-15 define the Bun build, typecheck and lint scripts, and its dependencies include React 19 and Ink 6.7. docs/architecture/ARCHITECTURE.md:164-182 sets the 600-line source hard limit, 800-line test hard limit, injected external dependencies, named constants, strict types and cause-aware errors. Read that index and applicable .nax/rules before implementation. Tests use bun:test, ink-testing-library and React act; reuse shared helpers through @test/helpers rather than inventing mock config, logger, clock or temporary-directory factories. .nax/rules/test-architecture.md:47-79 describes mirrored unit tests, mounted UI tests and concern-based splits. Package commands run from packages/nax. Never run bare bun test or bun run nax. This PRD only plans implementation; no implementation or validation commands were executed while drafting it.\n\nUS-001 approval seam: HostJobsOptions currently has no mode input (packages/nax/src/chat/jobs/jobs-host.ts:10-19). createHostJobs composes the runner, chains, run asks, provider and guard, and its single approve callback unconditionally calls asks.requestHostApproval at jobs-host.ts:44-45. The production constructor call is packages/nax/src/chat/chat-host.ts:186-195; the only additional direct createHostJobs call found is the composition fixture in packages/nax/test/unit/chat/chat-host-chain.test.ts:69-74. A required mode getter must be added at both call sites. The constructor can close over this.handle without invoking current(): current requires an open session and maps meta.mode full to full, everything else to guarded (chat-host.ts:272-282). switchTo updates the handle and the ask controller mode (chat-host.ts:447-473), so reading the handle at approval call time avoids a stale captured mode. Keep the guarded-without-session fallback and its explanatory comment; no public path reaches it before start.\n\nThe reason to change composition rather than the primitive is verified: requestHostApproval always creates an expiring host card and denies an already-aborted card (packages/nax/src/chat/ask-controller.ts:107-138), whereas normal tool approvals already auto-allow in full mode in handle (ask-controller.ts:222-250). Launch approval is forwarded through options.approve in packages/nax/src/chat/jobs/jobs-launch.ts:247-274; chain approval does the same in chain-tools.ts:180-185; cancel preflights canCancel then uses options.approve in jobs-provider.ts:45-60. One mode-aware callback therefore covers plan, run, bot_review, bot_fix, chain and cancel without editing those consumers or their agent-facing descriptions. Leave requestHostApproval, close-confirm and run-ask questions unchanged. The billed-chain/costCap consequence of full-mode auto-approval must be called out in the PR description. Treat this as an access-control-sensitive change and use strict three-session TDD.\n\nApproval fixture migration is required, not optional: packages/nax/test/unit/chat/chat-host-jobs.test.ts:41-66 hard-codes full session metadata and its start helper at line 91 always starts full. Its old card-and-deny test at lines 184-206 explicitly pins the superseded rule. Make mock open reflect the request mode (ask for guarded, full for full), allow starting guarded, retain expiration/deny assertions under guarded, and add full-mode spawn/no-card and guarded-to-full integration assertions through the provider registered on the session open request. Launch cases require a feature prd.json containing a pending story and _jobsLaunchDeps.git returning feat/f1, as the existing fixture does at lines 74-76 and 187-190. In chat-host-chain.test.ts:69-74 supply a guarded getter where the approval spy is expected; parentHost at lines 294-340 and approveChain at lines 345-354 must become mode-aware. Move every card-expecting case to guarded and replace the old AC-18 card test at lines 422-447 with full-mode activation and no pending card. Preserve chain generation, stop-on-session-change, close and heartbeat behavior. Restore injected deps and dispose hosts/runners to avoid real child processes or timers.\n\nUS-002 composition capacity: ChatApp.tsx currently has 599 lines and owns the file-local SlashSink and slashSink at packages/nax/src/tui/chat/ChatApp.tsx:134-155. Its runCommand creates the sink and flushes it after runControl; listed slash commands aggregate text while other commands append notices immediately. Extract the interface and implementation unchanged into slash-sink.ts, export both, and import the function into ChatApp. This is prerequisite space for later wiring, not a behavior change. Keep LISTING_TITLES and transcript ownership in ChatApp. Verify /help and unknown-command rendering on a mounted screen, plus the sink's immediate, buffered and empty cases in its new unit test. Confirm ChatApp remains below 600 lines by actual line count after each wiring story; check:file-sizes does not scan .tsx and its baseline must not change.\n\nUS-003 footer and subscriptions: packages/nax/src/tui/chat/chat-status.ts:273-299 defines FooterJob, JOB_TARGET_LIMIT=16, JOB_STRIP_LIMIT=2 and the jobs-only strip. footerModel at chat-status.ts:314-340 prefixes jobs to the right-hand model/context/cost spans. Add optional running tasks after jobs, count the combined overflow and return stripWidth excluding the following separator. Existing omitted-tasks calls must preserve their left/right spans. The file already has singleRow sanitization at line 204, displayWidth imported, and display-column-aware headColumns/elideEnd helpers at lines 435-487; reuse these for task command elision, not JS string slicing, while preserving existing job formatting. displayWidth is defined at packages/nax/src/tui/chat/styled-line.tsx:45; spansWidth is at wrap.ts:88. Wide characters can leave one unused column before the ellipsis: nine two-column characters become seven plus an ellipsis, never half a character.\n\npackages/nax/src/tui/chat/use-jobs.ts:16-24 returns running jobs and backgroundable, already subscribes to jobs, tasks and run asks at lines 35-47, and reads running jobs in its return at lines 88-95. Add tasks from tasks.running() on every render; do not replace the existing notice-delivery scheduling or add a redundant registry subscription. ChatApp destructures useJobs at lines 410-423 and calls footerModel at lines 443-463, so both need tasks wiring. Add the new chat-status-tasks.test.ts instead of extending the existing chat-status.test.ts, which the spec identifies as 658/800 lines. The mounted task-only footer regression proves wiring, not just formatter output. BackgroundTask and ChatBackgroundTasks are already specified in packages/nax/src/chat/background/task-types.ts:1-35; these are read-only integration ports for this feature.\n\nUS-004 model: PickerKind currently contains four members (packages/nax/src/tui/chat/slash-commands.ts:22). TITLES is exhaustive over that union at picker-model.ts:21-26, so add the jobs title and jobs branch in the same story to keep intermediate code coherent. PickerModelInput at picker-model.ts:74-92 already supplies nowMs and warning, displayText at lines 95-97 sanitizes one-row text, and _pickerDeps.now at line 38 provides the default clock. pickerModel at line 163 currently falls through to resume after the other branches: insert a distinct jobs branch, never let jobs fall through. Combine ChatJob and BackgroundTask rows, rank running before all ended states, then newest startedAt, then value ascending, and cap the combined result at MAX_JOB_PICKER_ROWS=20. Keep this cap distinct from Picker's eight visible rows/windowing (Picker.tsx:43,94-101). Jobs use ids as values, bot target # prefixes, optional progress and two-decimal costs including zero; no current flags or query filtering. relativeTime at relative-time.ts:35-48 returns an empty string for absent/invalid timestamps, requiring the job time separator to be omitted too. Existing model/mode/effort/resume results must remain unchanged when the new optional inputs are supplied. ChatJob fields and states are in packages/nax/src/chat/jobs/job-types.ts:1-31.\n\nUS-005 slash and local transcript flow: slash-commands.ts currently imports both formatters at lines 8,15, uses a private formatSessionJobs at lines 180-185, and calls it in the jobs case at lines 246-248. Return the jobs picker outcome whenever either capability exists, including task-only hosts and /jobs arguments, and keep the exact unavailable notice when neither exists. Update COMMAND_DESCRIPTIONS.jobs at line 82. Delete the private helper and its imports here, but defer deleting formatter modules/exports/tests to US-008. useChatPicker defines options at useChatPicker.ts:30-35, ChatPicker at lines 38-49, modelOf at lines 69-85, and choose at lines 132-154. modelOf must read registry lists at render time, not snapshot them into PickerState, so the screen rerenders already driven by useJobs reflect completions. Add show(TranscriptEntry) supplied by ChatApp's append at ChatApp.tsx:193-196,208. Branch jobs choices away from actionFor, whose current fallback resumes a session (useChatPicker.ts:52-60). Close the picker before resolving output, look up tasks before jobs, read 40 lines, and show a local listing or the missing-id notice; catch read rejections through onError so ChatApp appends the existing error entry. A listing preserves multiline text (transcript-model.ts:41), unlike notices; do not send listings to the agent.\n\nAll US-005 acceptance tests must use a mounted ChatApp opened with /jobs, not isolated handler calls. The reusable mount is packages/nax/test/helpers/chat-picker.tsx:63-144 and is exported as mountChatPicker with frame/row helpers from test/helpers/index.ts:23-26. It supplies typed host action spies, deferred send, submit, press, settle and settleAfter. Existing picker UI regressions live in test/ui/chat/picker.test.tsx (649 lines) and picker-effort.test.tsx; keep new behavior in jobs-picker.test.tsx. Update existing /jobs expectations in packages/nax/test/ui/chat/slash-commands.test.tsx:345-350,411-450, removing its formatter import at line 6. In task-notices.test.tsx:177-191 replace text-list assertions with the picker title and bash bun dev/running row. A retry nudge at task-notices.test.tsx:173 and run-ask-notices.test.tsx:189 currently submits /jobs; switch both to /mcp so the new picker does not block queued notice delivery. Retain unavailable tests.\n\nUS-006 input, selection identity and safe cancellation: ownsPickerKey at packages/nax/src/tui/chat/Picker.tsx:175-179 currently owns no chord and the early return at line 303 discards all ctrl keys. Pass the input into the ownership decision as needed, recognize ctrl+x only for jobs and dispatch onStop before the general chord return. PickerSelection at lines 182-186, state/latest at lines 254-259, pointer at line 267 and move at lines 269-278 currently keep only an index. Jobs must hold highlighted value in state AND latest, deriving its index from current rows each render and defaulting to the first only when absent; preserve index/query handling for every other kind. This prevents a stopped task regrouping below another running task from redirecting the next ctrl+x to the wrong process, including batched input. Add ChatPicker.stop, keep the picker open, clear warnings on success, surface exceptions/refusals as warning notes, and do not use runControl or approval cards.\n\nCancellation consumes the existing ownership boundary, not a new policy: ChatJobs.canCancel is explicitly the running-state and owned/verified-identity preflight (job-runner.ts:46,342-355,386-389); cancel serializes mutations and rechecks authorization before persisting cancelRequested and signalling (job-runner.ts:357-384). Never signal processes directly from the TUI or bypass canCancel. ChatBackgroundTasks.stop throws CHAT_TASK_NOT_RUNNING on ended tasks (task-registry.ts:123-131), and completion can race with user input. Show the thrown message unchanged and keep the picker open. The registries' onChange drives the next render; do not modify their lifecycle APIs for this feature. Because this story connects user cancellation to an ownership check, use strict three-session TDD. Test entirely through mounted /jobs and real keys in jobs-picker-stop.test.tsx, including regrouping, a second ctrl+x, model-picker isolation and warning clearing.\n\nUS-007 openers and geometry: ChatApp defines FRAME_SLACK_ROWS=1 at ChatApp.tsx:69 and usableRows at line 233; move the constant into use-jobs-opener.ts and import it back to avoid an import cycle. The footer renders its right spans flush right at ChatApp.tsx:593-596. The hook receives footer and size, computes spansWidth(footer.right) and stripWidth, and uses the exact inclusive 1-based hit test with footer row size.rows-FRAME_SLACK_ROWS. Only a same-cell left press/release opens the picker. MouseEvents uses subscribe/unsubscribe with 1-based x/y (mouse-input.ts:8-17); reuse the ref-backed gesture pattern in use-mouse-selection.ts:44-52,68-97, and clean up subscriptions. test/ui/chat/mouse.ts:4-21 supplies fakeMouse with explicit button options; default emitted button is none, so click tests must supply left. Extend mount options and its render at test/helpers/chat-picker.tsx:37-56,102 to accept and pass optional mouse.\n\nctrl+g must use g plus key.ctrl (not ctrl+j/linefeed). ChatApp passes blocked as bottomBlocked(ask,picker.model)||menuShown(); bottomBlocked is the existing ask-or-picker predicate at bottom-region.ts:32-34. Do not include turn-running in blocked: /jobs typed during a turn remains busy per ChatApp.tsx:357-378, but ctrl+g and clicks must open the picker while send is unsettled and Enter/ctrl+x must work there. Existing open-picker notice suppression remains intact through ChatApp.tsx:414-420 and useJobs idle handling. Do not route these job/task operations through useChatKeys.runControl, which is for serialized host/session control (useChatKeys.ts:46-56,106-120). Pure geometry tests cover both inclusive endpoints and negatives, while mounted jobs-opener tests prove the stripWidth-to-hit-test seam, blocked states and live-turn output/stop. The known clipping limitation when left and right spans exceed terminal width remains unchanged.\n\nUS-008 deletion and migration order: a repository search found production formatter use only in slash-commands.ts:8,15,180-185, plus exports in background/index.ts:5, jobs/index.ts:15 and chat/index.ts:68. Formatter implementations are background/tasks-listing.ts:4 and jobs/jobs-listing.ts:15; their unit tests are test/unit/chat/background/tasks-listing.test.ts and test/unit/chat/jobs/jobs-listing.test.ts. Once US-005 removes the helper/imports and updates slash UI tests, these functions have no production consumers. Delete both modules, those three re-exports and both unit tests only after US-007. No replacement listing API or additional behavior belongs in this deletion story. Verification note: run package bun run typecheck and bun run lint to confirm no remaining references; do not turn these gates into acceptance criteria.\n\nSequencing and risk summary: preserve exactly US-001..US-008 with the specified dependencies. US-001 and US-004 can proceed independently of the structural US-002. US-003 uses its capacity; US-005 joins US-002 and US-004; US-006 layers stop and stable identity over US-005; US-007 joins the task footer and interactive picker; US-008 removes the replaced formatters last. Highest risks are broadening approval at the wrong layer, stale session mode, stale/positional highlights killing a different task, accidentally resuming a job id, treating inspection as a host control action during a turn, lost multiline output/error handling, blocked notice retries in old tests, off-by-one footer geometry and exceeding ChatApp's source limit. No data migration is necessary: existing job records remain compatible, tasks remain in memory, optional footer/model inputs preserve callers, and required HostJobsOptions.mode has a small, enumerated call-site migration. Tests should exercise public provider composition and mounted UI seams, restore deps, use deferred promises/fake clocks rather than sleeps, and leave file-size/coverage/escape-hatch baselines untouched. Coverage is a separate CI floor; do not run test:coverage in NAX_SANDBOXED=1. Full-mode auto-approval intentionally reverses the prior slice-2 rule only for nax-jobs host cards; run questions, close confirmation, native permission resolution, other pickers and agent transports are not redesigned.\n\nAdversarial refinement audit: re-read the repository spec's complete Acceptance Criteria and Failure Handling sections and the affected source/harness interfaces. All 83 numbered spec ACs remain assigned to their original stories, including regression qualifiers (jobs-before-tasks, no character splitting, omitted-tasks right-span equality, existing picker models as before, registry onChange/next render without reopening, unchanged model-picker rows, and inclusive footer endpoints). Enumeration below maps each original AC number to the 1-based acceptanceCriteria positions in its story; ranges include both endpoints. US-001: 1->1,2; 2->3; 3->4,5; 4->6; 5->7,8; 6->9,10; 7->11,12; 8->13,14; 9->15. US-002: 1->1; 2->2,3; 3->4; 4->5,6. US-003: 1->1; 2->2; 3->3; 4->4; 5->5; 6->6; 7->7,8; 8->9,10; 9->11; 10->12,13; 11->14. US-004: 1->1-3; 2->4; 3->5; 4->6,7; 5->8; 6->9; 7->10; 8->11; 9->12; 10->13; 11->14; 12->15. US-005: 1->1; 2->2; 3->3; 4->4,5; 5->6; 6->7; 7->8; 8->9,10; 9->11; 10->12,13; 11->14,15; 12->18; 13->19; 14->20; 15->21. US-006: 1->1; 2->2; 3->3,4; 4->5; 5->6; 6->7; 7->8; 8->9,10; 9->11,12; 10->13; 11->14; 12->15; 13->16; 14->17; 15->18,19. US-007: 1->1; 2->2; 3->3; 4->4; 5->5; 6->6; 7->7; 8->8; 9->9; 10->10; 11->11; 12->12; 13->13; 14->14; 15->15; 16->18,19; 17->20. US-008 has no numbered spec runtime ACs; the refinement request for a negative path in every story adds only three observable absent-export assertions within its existing deletion scope, retaining static-gate verification and no-test routing.\n\nFailure-table audit: aborted full approval is US-001 positions 4-5; missing output id is US-005 positions 12-13; task output rejection is positions 14-15 and job log rejection is positions 16-17; ended-row stop is US-006 positions 7-8; canCancel refusal is positions 5-6; stop throw/cancel rejection is positions 9-12; blocked ctrl+g/click cases are US-007 positions 7-9 and 15-17; missing capabilities is position 10. US-002 already has unknown-command and empty-flush negatives, US-003 has newline/wide-character inputs and the absent-strip path, and US-004 has warning/empty input paths. Every story has an observable negative case without inventing new runtime scope.\n\nRefinement corrections: make the private approve denial observable through run tool ctx.signal forwarding and isError (jobs-launch.ts:247-282), spell out whitespace-sensitive detail prefix/suffix assertions, and include the previously omitted direct useChatPicker call site at packages/nax/test/ui/chat/picker.test.tsx:220-227 in the required show-option migration. Current spec-recommended context files are all included within the five-file per-story cap; expectedFiles are only new outputs. All eight binding ids, workdirs and dependency arrays remain unchanged, and all 14 feature-level exclusions remain verbatim at top level with adjacent boundaries echoed in story scopes. US-005 and US-007 use medium/tdd-simple because existing picker, transcript, event and test-harness seams already supply their abstractions. US-006 retains complex/strict three-session routing for synchronous identity tracking across live regrouping and ownership-sensitive cancellation; US-001 retains the security override. No source implementation, test execution or command-based JSON validation was performed during this audit.",
+  "outOfScope": [
+    "An ACP brain's own background shells (Claude Code, Codex or Cursor running a command in the background inside the agent) are not shown: nax never sees them. Only host-owned Bash tasks (`nax-tasks`) and nax jobs are listed.",
+    "A live, continuously tailing output panel is not built; Enter prints one snapshot of the last 40 lines.",
+    "The jobs picker does not filter by typed text.",
+    "ctrl+x in the jobs picker never shows a confirmation card, in either mode.",
+    "Questions a running job asks (run asks routed to chat cards) still show in full mode; only nax-jobs host approval cards are skipped.",
+    "`ChatAskController.requestHostApproval` keeps its current behaviour (always a card); the full-mode decision lives in `createHostJobs`'s `approve`.",
+    "Background task records stay in memory only; nothing new is persisted across chats.",
+    "The ACP `/model` picker showing agents' advertised models before first open (#2746) is a separate feature.",
+    "The `check:file-sizes` baseline is not edited by any story.",
+    "The close confirmation card (`nax-close`, raised through `asks` directly, not through `createHostJobs`) still shows in full mode.",
+    "The agent-facing nax-jobs wording (`buildJobsInstructions` in `workflow-builder.ts`, tool descriptions in `jobs-provider.ts` saying a call shows or asks for an approval card) is kept as is; in full mode the card is simply not shown and the call proceeds.",
+    "The footer click hit test assumes the footer's right line is drawn flush right; when the left and right lines together are wider than the terminal and the right line is clipped, a click may miss the strip.",
+    "An output listing keeps the existing listing colouring (`listingTone` in `layout-listing.ts`), so log lines containing words such as `failed` may be coloured.",
+    "With full mode, the agent can start a billed `chain` (and its `costCap`) without a human yes; this follows the user's ruling and is called out in the PR description, not changed in code."
+  ],
+  "routingProfile": "native-claude-opus"
+}
