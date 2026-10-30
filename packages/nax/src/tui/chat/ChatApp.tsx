@@ -47,6 +47,7 @@ import { toggleTranscriptLine } from "./transcript-click";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
 import { useJobs } from "./use-jobs";
+import { FRAME_SLACK_ROWS, useJobsOpener } from "./use-jobs-opener";
 import { useSlashMenuKeys } from "./use-slash-menu-keys";
 import { useSwitchNotices } from "./use-switch-notices";
 import { useChatKeys } from "./useChatKeys";
@@ -67,7 +68,6 @@ export interface ChatAppProps {
 /** Environment seam; sampled once per mounted screen. */
 export const _chatAppDeps = { tmux: (): string | undefined => Bun.env.TMUX };
 
-const FRAME_SLACK_ROWS = 1; // Keep Ink below its full-terminal clear threshold.
 const HEADER_ROWS = 3;
 /** Rows the footer always claims. */
 const FOOTER_ROWS = 1;
@@ -135,6 +135,11 @@ function stopTurn(status: TurnStatus): TurnStatus {
 /** Notices wait until neither a turn, a bottom-region surface nor host control owns the screen. */
 function idleForJobNotice(input: { turnRunning: boolean; bottomBlocked: boolean; canControl: boolean }): boolean {
   return !input.turnRunning && !input.bottomBlocked && input.canControl;
+}
+
+/** An ask card, a picker or the slash menu is drawn in the bottom region. */
+function surfaceShown(cardOrPicker: boolean, menu: boolean): boolean {
+  return cardOrPicker || menu;
 }
 
 export function ChatApp({
@@ -438,6 +443,16 @@ export function ChatApp({
     copiedChars,
     glyphs: theme.glyphs,
   });
+  useJobsOpener({
+    host,
+    mouse,
+    blocked: surfaceShown(bottomBlocked(ask, picker.model), menuShown()),
+    footer,
+    size,
+    open: picker.open,
+    note: (text) => append({ kind: "notice", text }),
+  });
+
   // The bottom budget and the menu's share of it are measured above the key handlers, beside
   // the claim that reads them; the input is measured against what those two leave.
   const inputBudget = Math.max(1, bottomBudget - INPUT_RULE_ROWS - menuRows);
