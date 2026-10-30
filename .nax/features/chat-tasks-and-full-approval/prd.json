@@ -3,7 +3,7 @@
   "feature": "chat-tasks-and-full-approval",
   "branchName": "feat/chat-tasks-and-full-approval",
   "createdAt": "2026-10-30T00:00:00Z",
-  "updatedAt": "2026-10-30T13:01:34.337Z",
+  "updatedAt": "2026-10-30T13:07:48.065Z",
   "userStories": [
     {
       "id": "US-001",
@@ -87,14 +87,17 @@
         "refactor"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Mechanical extraction across the screen and new sink module with explicit unit and mounted rendering contracts; standard patterns and no runtime behavior change."
+        "reasoning": "Mechanical extraction across the screen and new sink module with explicit unit and mounted rendering contracts; standard patterns and no runtime behavior change.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -109,7 +112,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c4aaa34f92bbed8d747c193de12d70964a77d83e"
     },
     {
       "id": "US-003",
