@@ -4,6 +4,7 @@ import { render } from "ink-testing-library";
 import { act } from "react";
 import { type ChatHost, type ChatHostState, type ChatSessionRow, createChatAskController } from "@/chat";
 import { ChatApp } from "@/tui/chat";
+import type { MouseEvents } from "@/tui/chat/mouse-input";
 
 const MODELS = ["model-a", "model-b", "model-c"] as const;
 const RETURN = "\r";
@@ -47,6 +48,8 @@ interface MountOptions {
   /** Absent: every host action succeeds at once. */
   readonly switchTo?: ChatHost["switchTo"];
   readonly resume?: ChatHost["resume"];
+  /** Absent: the screen mounts without a mouse source. */
+  readonly mouse?: MouseEvents;
   /**
    * A host the case builds itself — a real one over a real session store. The fake below,
    * and the mocks returned with it, are then created and unused: what the case observes is
@@ -92,7 +95,7 @@ export function mount(options: MountOptions = {}) {
     listSessions,
   };
   const host = options.host ?? fake;
-  const ui = render(<ChatApp host={host} />);
+  const ui = render(<ChatApp host={host} {...(options.mouse === undefined ? {} : { mouse: options.mouse })} />);
   /** The frame's rows as the terminal shows them: no escape codes, no trailing blanks. */
   const rows = (): string[] =>
     Bun.stripANSI(ui.lastFrame() ?? "")

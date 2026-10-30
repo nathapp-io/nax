@@ -170,11 +170,11 @@ describe("background task notices", () => {
     await ui.endTask();
     expect(ui.take).not.toHaveBeenCalled();
     expect(ui.tasks.peekNotice()).toBeDefined();
-    await ui.submit("/jobs");
+    await ui.submit("/mcp");
     await ui.finishTurn(0);
     expect(ui.take).toHaveBeenCalledTimes(1);
   });
-  test.each([true, false])("AC-16/17 /jobs lists tasks (jobs=%s)", async (withJobs) => {
+  test.each([true, false])("AC-16/17 /jobs opens the picker with the task row (jobs=%s)", async (withJobs) => {
     const ui = mount(withJobs);
     spyOn(_backgroundTaskDeps, "randomHex").mockReturnValue("1a2b3c4d");
     const end = Promise.withResolvers<BackgroundCommandEnd>();
@@ -187,7 +187,10 @@ describe("background task notices", () => {
       },
     });
     await ui.submit("/jobs");
-    expect(ui.ui.lastFrame()).toContain("bash-1a2b3c4d running bun dev");
+    const frame = ui.ui.lastFrame() ?? "";
+    expect(frame).toContain("Jobs and tasks · enter output · ctrl+x stop");
+    expect(frame).toContain("bash bun dev");
+    expect(frame).toMatch(/bash bun dev\s+running/);
     expect(ui.ui.lastFrame()).not.toContain("jobs are not available in this session");
   });
   test("AC-19 /jobs preserves unavailable response with neither capability", async () => {

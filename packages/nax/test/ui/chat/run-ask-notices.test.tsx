@@ -186,7 +186,7 @@ describe("run ask notices in ChatApp", () => {
     expect(ui.runAsks.peekNotice()).toBe("run ask notice");
     expect(ui.runAsks.takeNotice).not.toHaveBeenCalled();
     expect(ui.runAsks.noteUserTurn).not.toHaveBeenCalled();
-    await ui.submit("/jobs");
+    await ui.submit("/mcp");
     expect(ui.send.mock.calls[1]?.[0]).toBe("run ask notice");
     await ui.finish(0);
     expect(ui.runAsks.takeNotice).toHaveBeenCalledTimes(1);

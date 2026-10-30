@@ -39,6 +39,7 @@ import { SlashMenu } from "./SlashMenu";
 import { sessionTranscript } from "./session-transcript";
 import { parseSlashCommand, runSlashCommand, type SlashCommand, type SlashOutcome } from "./slash-commands";
 import { slashMenuItemsForModel, slashMenuQueryState } from "./slash-menu";
+import { slashSink } from "./slash-sink";
 import { StyledLineView } from "./styled-line";
 import { TranscriptViewport } from "./TranscriptViewport";
 import { type ChatTheme, resolveChatTheme } from "./theme";
@@ -46,6 +47,7 @@ import { toggleTranscriptLine } from "./transcript-click";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
 import { useJobs } from "./use-jobs";
+import { FRAME_SLACK_ROWS, useJobsOpener } from "./use-jobs-opener";
 import { useSlashMenuKeys } from "./use-slash-menu-keys";
 import { useSwitchNotices } from "./use-switch-notices";
 import { useChatKeys } from "./useChatKeys";
@@ -66,7 +68,6 @@ export interface ChatAppProps {
 /** Environment seam; sampled once per mounted screen. */
 export const _chatAppDeps = { tmux: (): string | undefined => Bun.env.TMUX };
 
-const FRAME_SLACK_ROWS = 1; // Keep Ink below its full-terminal clear threshold.
 const HEADER_ROWS = 3;
 /** Rows the footer always claims. */
 const FOOTER_ROWS = 1;
@@ -131,32 +132,14 @@ function stopTurn(status: TurnStatus): TurnStatus {
   return status.running ? { ...status, running: false } : status;
 }
 
-/** Slash output is one listing per run, or one notice per statement. */
-interface SlashSink {
-  show(text: string): void;
-  flush(): void;
-}
-
-function slashSink(title: string | undefined, append: (entry: TranscriptEntry) => void): SlashSink {
-  const rows: string[] = [];
-  return {
-    show(text) {
-      if (title === undefined) {
-        append({ kind: "notice", text });
-        return;
-      }
-      rows.push(text);
-    },
-    flush() {
-      if (title === undefined || rows.length === 0) return;
-      append({ kind: "listing", title, text: rows.join("\n") });
-    },
-  };
-}
-
 /** Notices wait until neither a turn, a bottom-region surface nor host control owns the screen. */
 function idleForJobNotice(input: { turnRunning: boolean; bottomBlocked: boolean; canControl: boolean }): boolean {
   return !input.turnRunning && !input.bottomBlocked && input.canControl;
+}
+
+/** An ask card, a picker or the slash menu is drawn in the bottom region. */
+function surfaceShown(cardOrPicker: boolean, menu: boolean): boolean {
+  return cardOrPicker || menu;
 }
 
 export function ChatApp({
@@ -205,7 +188,7 @@ export function ChatApp({
     onNotice: (text) => append({ kind: "notice", text }),
   });
   /** The picker a `picker` outcome opens (US-027): the list, and what its keys do. */
-  const picker = useChatPicker({ host, runControl: keys.runControl, onError: showError });
+  const picker = useChatPicker({ host, runControl: keys.runControl, onError: showError, show: append });
   const ask = host.asks.pending()[0];
   /** A turn is in flight from the send until its stream settles — the footer's busy rule. */
   const turnRunning = busy || status.running;
@@ -409,6 +392,7 @@ export function ChatApp({
 
   const {
     running: jobs,
+    tasks,
     backgroundable,
     noteUserTurn,
   } = useJobs(host, {
@@ -442,6 +426,7 @@ export function ChatApp({
   const header = headerLines({ state, version, cwd, home, width: columns, glyphs: theme.glyphs });
   const footer = footerModel({
     jobs,
+    tasks,
     state,
     status,
     hint:
@@ -458,6 +443,16 @@ export function ChatApp({
     copiedChars,
     glyphs: theme.glyphs,
   });
+  useJobsOpener({
+    host,
+    mouse,
+    blocked: surfaceShown(bottomBlocked(ask, picker.model), menuShown()),
+    footer,
+    size,
+    open: picker.open,
+    note: (text) => append({ kind: "notice", text }),
+  });
+
   // The bottom budget and the menu's share of it are measured above the key handlers, beside
   // the claim that reads them; the input is measured against what those two leave.
   const inputBudget = Math.max(1, bottomBudget - INPUT_RULE_ROWS - menuRows);
@@ -548,6 +543,7 @@ export function ChatApp({
             active={!keys.locked}
             onChoose={picker.choose}
             onCycle={picker.cycle}
+            onStop={picker.stop}
             onCancel={picker.cancel}
             onQuery={picker.setQuery}
             query={picker.model.query}

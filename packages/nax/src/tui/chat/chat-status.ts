@@ -292,10 +292,23 @@ function jobPart(job: FooterJob): string {
   return part;
 }
 
-/** Compact, independent job ledger for the one-row footer. */
-export function formatJobStrip(jobs: readonly FooterJob[]): string {
-  const strip = jobs.slice(0, JOB_STRIP_LIMIT).map(jobPart).join(SEPARATOR);
-  return jobs.length > JOB_STRIP_LIMIT ? `${strip} +${jobs.length - JOB_STRIP_LIMIT}` : strip;
+/** A running host-owned background command, as the footer strip needs it. */
+export interface FooterTask {
+  readonly command: string;
+}
+
+/** `bash <command>`: the command on one row, cut to the target limit in display columns. */
+function taskPart(task: FooterTask): string {
+  return `bash ${elideEnd(singleRow(task.command), JOB_TARGET_LIMIT, ELLIPSIS)}`;
+}
+
+/** Compact, independent ledger of jobs then background tasks for the one-row footer. */
+export function formatJobStrip(jobs: readonly FooterJob[], tasks: readonly FooterTask[] = []): string {
+  const total = jobs.length + tasks.length;
+  const shown = [...jobs.slice(0, JOB_STRIP_LIMIT).map(jobPart)];
+  for (const task of tasks.slice(0, Math.max(0, JOB_STRIP_LIMIT - jobs.length))) shown.push(taskPart(task));
+  const strip = shown.join(SEPARATOR);
+  return total > JOB_STRIP_LIMIT ? `${strip} +${total - JOB_STRIP_LIMIT}` : strip;
 }
 
 function rightLine(state: ChatHostState, status: TurnStatus): StyledLine {
@@ -318,18 +331,21 @@ export function footerModel(input: {
   copiedChars?: number;
   glyphs?: ChatGlyphs;
   jobs?: readonly FooterJob[];
+  tasks?: readonly FooterTask[];
 }): {
   left: StyledLine;
   right: StyledLine;
+  /** Display width of the job and task strip alone; 0 when none is drawn. */
+  stripWidth: number;
 } {
+  const strip = formatJobStrip(input.jobs ?? [], input.tasks ?? []);
   return {
     left: leftLine({ ...input, glyphs: input.glyphs ?? GLYPHS }),
     right: [
-      ...(input.jobs?.length
-        ? [{ text: formatJobStrip(input.jobs) }, { text: SEPARATOR, color: "muted" as const }]
-        : []),
+      ...(strip === "" ? [] : [{ text: strip }, { text: SEPARATOR, color: "muted" as const }]),
       ...rightLine(input.state, input.status),
     ],
+    stripWidth: displayWidth(strip),
   };
 }
 
