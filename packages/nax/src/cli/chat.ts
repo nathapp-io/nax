@@ -11,6 +11,7 @@ import {
   type ChatResources,
   chatEffortLevels,
   chatModelChoices,
+  createAcpCatalog,
   createChatHost,
   createChatMcp,
   createChatStorage,
@@ -59,6 +60,7 @@ export const _chatCommandDeps = {
   findProjectDir,
   initInteractionChain,
   createChatStorage,
+  createAcpCatalog,
   createChatHost,
   renderChat: (props: ChatAppProps): ChatShell => renderChat(props),
   onSignal: (signal: ChatSignal, handler: () => Promise<void>): (() => void) => {
@@ -266,6 +268,7 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
   try {
     host = deps.createChatHost({
       models,
+      acp: deps.createAcpCatalog({ env: deps.env }),
       effortLevels,
       ...(naxEntry === undefined ? {} : { naxEntry }),
       config,

@@ -4,7 +4,7 @@ import { createSessionStorage } from "@nathapp/nax-agent";
 import { makeInteractionChain, makeLogger, makeNaxConfig, withTempDir } from "@test/helpers";
 import chalk from "chalk";
 import { Command } from "commander";
-import { type ChatHostState, type ChatMcp, createChatHost, createChatStorage } from "@/chat";
+import { type AcpCatalog, type ChatHostState, type ChatMcp, createChatHost, createChatStorage } from "@/chat";
 import { registerStatusCommand } from "@/cli/status-dispatch";
 import { NaxError } from "@/errors";
 import { PluginRegistry } from "@/plugins";
@@ -97,6 +97,17 @@ async function fixture() {
   };
 }
 
+function stubAcpCatalog(): AcpCatalog {
+  return {
+    rows: () => [],
+    effortLevels: () => ["default"],
+    installed: () => true,
+    unavailable: () => undefined,
+    opened: () => {},
+    failed: () => {},
+  };
+}
+
 const EXIT_STATE: ChatHostState = {
   sessionId: "abc123",
   mode: "guarded",
@@ -130,6 +141,20 @@ describe("chatCommand", () => {
     expect(input?.effortLevels?.get("p/m")).toEqual(["default", "low", "max"]);
     expect(input?.effortLevels?.get("p/extra")).toEqual(["default"]);
     expect(input?.effortLevels?.has("openai/gpt-6")).toBe(false);
+  });
+  test("US-008 AC-1 builds the ACP catalog once from the deps' env", async () => {
+    const f = await fixture();
+    const catalog = stubAcpCatalog();
+    const createAcpCatalog = mock((_input: { readonly env: Readonly<Record<string, string | undefined>> }) => catalog);
+    await f.chatCommand({}, { ...f.deps, createAcpCatalog });
+    expect(createAcpCatalog).toHaveBeenCalledTimes(1);
+    expect(createAcpCatalog).toHaveBeenCalledWith({ env: f.deps.env });
+  });
+  test("US-008 AC-2 hands the catalog to createChatHost as acp", async () => {
+    const f = await fixture();
+    const catalog = stubAcpCatalog();
+    await f.chatCommand({}, { ...f.deps, createAcpCatalog: () => catalog });
+    expect(f.deps.createChatHost.mock.calls[0]?.[0].acp).toBe(catalog);
   });
   test("AC-1/19: non-TTY refuses before opening any session", async () => {
     const f = await fixture();

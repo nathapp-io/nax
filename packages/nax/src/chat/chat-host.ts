@@ -13,6 +13,7 @@ import { NaxError } from "@/errors";
 import type { InteractionChain } from "@/interaction";
 import type { Logger } from "@/logger";
 import { projectOutputDir } from "@/runtime";
+import { type AcpCatalog, isChatAcpModel } from "./acp";
 import { createAgentsProvider } from "./agents-provider";
 import { type ChatAskController, createChatAskController } from "./ask-controller";
 import { type AskFallback, createAskFallback } from "./ask-fallback";
@@ -78,6 +79,8 @@ export interface ChatHost {
   current(): ChatHostState;
   history?(): ChatHistory;
   effortLevels?(model: string): readonly EffortLevel[];
+  /** Why the model cannot be used right now (an ACP agent that is not installed or not logged in), if it cannot. */
+  modelNote?(model: string): string | undefined;
   /** One row per catalog agent in catalog order, resolved against the chat session's current model. */
   agents?(): readonly ChatAgentRow[];
   start(input: { mode: ChatMode; model: string }): Promise<void>;
@@ -97,6 +100,8 @@ export interface ChatHostDeps {
   readonly naxEntry?: readonly string[];
   readonly resources?: ChatResources;
   readonly models?: readonly string[];
+  /** The ACP agents offered as chat models; absent on a host that offers native models only. */
+  readonly acp?: AcpCatalog;
   readonly effortLevels?: ReadonlyMap<string, readonly EffortLevel[]>;
   readonly config: NaxConfig;
   readonly cwd: string;
@@ -113,7 +118,7 @@ class NativeChatHost implements ChatHost {
   readonly catalog?: ChatResources["catalog"];
   readonly naxPlugins?: ChatResources["naxPlugins"];
   readonly mcp?: ChatResources["mcp"];
-  readonly models: readonly string[];
+  private readonly nativeModels: readonly string[];
   readonly asks: ChatAskController;
   readonly jobs?: ChatJobs;
   readonly runAsks?: ChatRunAsks;
@@ -145,7 +150,7 @@ class NativeChatHost implements ChatHost {
     this.catalog = deps.resources?.catalog;
     this.naxPlugins = deps.resources?.naxPlugins;
     this.mcp = deps.resources?.mcp;
-    this.models = deps.models ?? tierModels(deps.config);
+    this.nativeModels = deps.models ?? tierModels(deps.config);
     this.projectKey = getProjectKey(deps.config, deps.repoRoot);
     this.outputDir = projectOutputDir(this.projectKey, deps.config.outputDir);
     this.asks = createChatAskController({
@@ -225,8 +230,19 @@ class NativeChatHost implements ChatHost {
     return this.handle;
   }
 
+  /** The native models followed by the catalog's rows, read live: the catalog learns rows as agents open. */
+  get models(): readonly string[] {
+    const acp = this.deps.acp;
+    return acp ? [...this.nativeModels, ...acp.rows()] : this.nativeModels;
+  }
+
   effortLevels(model: string): readonly EffortLevel[] {
+    if (isChatAcpModel(model)) return this.deps.acp?.effortLevels(model) ?? ["default"];
     return this.deps.effortLevels?.get(withEffort(model, "default")) ?? EFFORT_LEVELS;
+  }
+
+  modelNote(model: string): string | undefined {
+    return this.deps.acp?.unavailable(model);
   }
 
   history(): ChatHistory {
