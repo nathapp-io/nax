@@ -80,6 +80,16 @@ export const _acpRecorderDeps: { appendNativeTurn: typeof appendNativeTurn } = {
 
 export function recordAcpTurns(session: AgentSession, input: RecordAcpTurnsInput): AgentSession {
   let pendingHandoff = input.handoff === undefined || input.handoff === "" ? undefined : input.handoff;
+  // Appends still awaiting the store; close() drains them so the host cannot release the storage lock under one.
+  const outstanding = new Set<Promise<void>>();
+  const track = (work: Promise<void>): Promise<void> => {
+    outstanding.add(work);
+    const forget = (): void => {
+      outstanding.delete(work);
+    };
+    work.then(forget, forget);
+    return work;
+  };
 
   return {
     get id(): string {
@@ -103,10 +113,12 @@ export function recordAcpTurns(session: AgentSession, input: RecordAcpTurnsInput
       const events = session.send(payload);
       return forwarded(events, async (seen) => {
         pendingHandoff = undefined;
-        await _acpRecorderDeps.appendNativeTurn(
-          input.store,
-          input.sessionId,
-          acpTurnMessages({ message, events: seen, acp: input.acp }),
+        await track(
+          _acpRecorderDeps.appendNativeTurn(
+            input.store,
+            input.sessionId,
+            acpTurnMessages({ message, events: seen, acp: input.acp }),
+          ),
         );
       });
     },
@@ -116,8 +128,13 @@ export function recordAcpTurns(session: AgentSession, input: RecordAcpTurnsInput
     cancel(reason?: string): void {
       session.cancel(reason);
     },
-    close(): Promise<void> {
-      return session.close();
+    async close(): Promise<void> {
+      try {
+        await session.close();
+      } finally {
+        // Closing can end an in-flight send, which then starts its append; wait until none is left.
+        while (outstanding.size > 0) await Promise.allSettled([...outstanding]);
+      }
     },
   };
 }

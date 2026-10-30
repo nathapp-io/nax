@@ -181,6 +181,35 @@ describe("recordAcpTurns recording", () => {
     expect(finished).toBe(true);
   });
 
+  test("close() waits for a delayed append before resolving", async () => {
+    let release: () => void = () => {};
+    append.mockImplementation(() => new Promise<void>((resolve) => (release = resolve)));
+    const { session } = stub([{ events: [text("ok"), turnEnd()] }]);
+    const wrapper = wrap(session);
+    const consumed = drain(wrapper.send("hi"));
+    while (append.mock.calls.length === 0) await Promise.resolve();
+    let closed = false;
+    const closing = wrapper.close().then(() => {
+      closed = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(closed).toBe(false);
+    release();
+    await closing;
+    await consumed;
+    expect(closed).toBe(true);
+  });
+
+  test("close() resolves after the wrapped close even when the append rejected", async () => {
+    append.mockImplementation(async () => {
+      throw new Error("save failed");
+    });
+    const { session } = stub([{ events: [text("ok"), turnEnd()] }]);
+    const wrapper = wrap(session);
+    await expect(drain(wrapper.send("hi"))).rejects.toThrow("save failed");
+    await wrapper.close();
+  });
+
   const statuses: readonly EndStatus[] = ["cancelled", "timed_out", "interrupted", "errored"];
   const cases = statuses.flatMap((status) => [
     { status, events: [text("so far"), turnEnd(status)], reply: "so far" },
