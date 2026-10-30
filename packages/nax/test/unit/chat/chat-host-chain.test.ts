@@ -12,6 +12,7 @@ import {
 } from "@test/helpers";
 import { type ChatResources, createChatHost, createChatStorage } from "@/chat";
 import { createChatAskController } from "@/chat/ask-controller";
+import type { ChatMode } from "@/chat/chat-mode";
 import { createCloseConfirm } from "@/chat/close-confirm";
 import { createHostJobs } from "@/chat/jobs";
 import { _chainStoreDeps, readChainRecord } from "@/chat/jobs/chain-store";
@@ -66,11 +67,11 @@ function fixture() {
     sessionId: () => "chat-chain",
   };
 }
-function compose() {
+function compose(mode: () => ChatMode = () => "guarded") {
   const options = fixture();
   const asks = createChatAskController({ mode: "full", approvalTimeoutMs: 30_000, now, answer: () => {} });
   const approve = spyOn(asks, "requestHostApproval").mockResolvedValue("deny");
-  const composed = createHostJobs({ ...options, asks });
+  const composed = createHostJobs({ ...options, asks, mode });
   compositions.push(composed);
   const choice = spyOn(asks, "requestHostChoice").mockResolvedValue("leave");
   const confirmClose = createCloseConfirm({ hostJobs: composed, asks, logger: options.logger });
@@ -291,13 +292,13 @@ describe("createHostJobs chains", () => {
   });
 });
 
-async function parentHost() {
+async function parentHost(mode: ChatMode = "guarded") {
   const f = fixture();
   const meta: SessionMeta = {
     schemaVersion: 1,
     sessionId: "chat-chain",
     cwd: f.repoRoot,
-    mode: "full",
+    mode: "ask",
     model: "test",
     bashApproval: "gated",
     title: null,
@@ -316,7 +317,11 @@ async function parentHost() {
   let generation = 0;
   const open = mock(async (request: OpenChatSessionRequest) => {
     const sessionId = request.resumeId ?? (generation++ === 0 ? meta.sessionId : `chat-new-${generation}`);
-    return { session: { ...session, id: sessionId }, meta: { ...meta, sessionId }, release: async () => {} };
+    return {
+      session: { ...session, id: sessionId },
+      meta: { ...meta, sessionId, mode: request.mode === "full" ? ("full" as const) : ("ask" as const) },
+      release: async () => {},
+    };
   });
   const resources: ChatResources = {
     catalog: buildResourceCatalog([]),
@@ -334,7 +339,7 @@ async function parentHost() {
     open,
   });
   hosts.push(host);
-  await host.start({ mode: "full", model: "test" });
+  await host.start({ mode, model: "test" });
   const provider = open.mock.calls[0]?.[0].toolProviders?.find((p) => p.id === "nax-jobs");
   assertDefined(provider, "parent jobs provider");
   return { ...f, host, tools: await provider.tools(f.repoRoot) };
@@ -419,15 +424,12 @@ describe("createChatHost chain composition", () => {
       "answer_ask",
     ]);
   });
-  test("AC-18 full mode keeps the chain card pending until explicitly resolved", async () => {
-    const f = await parentHost();
+  test("AC-18 guarded mode keeps the chain card pending until explicitly resolved", async () => {
+    const f = await parentHost("guarded");
     _jobsLaunchDeps.git = async () => ({ exitCode: 0, stdout: "feat/f1\n", stderr: "" });
     const tool = f.tools.find((t) => t.localName === "chain");
     assertDefined(tool, "chain tool");
-    const pending = tool.run(
-      { steps: [{ kind: "run", input: { feature: "f1" } }] },
-      { root: f.repoRoot, resolvedPaths: [], maxBytes: 300_000, maxFileBytes: 300_000 },
-    );
+    const pending = tool.run({ steps: [{ kind: "run", input: { feature: "f1" } }] }, context(f));
     await waitForCondition(() => f.host.asks.pending().length === 1);
     const card = f.host.asks.pending()[0];
     assertDefined(card, "chain approval");
@@ -436,12 +438,20 @@ describe("createChatHost chain composition", () => {
     f.host.asks.resolve(card.requestId, "allow_once");
     expect((await pending).isError).not.toBe(true);
     expect(f.host.asks.pending()).toEqual([]);
-    const list = f.tools.find((t) => t.localName === "list");
-    assertDefined(list, "list tool");
-    const result = await list.run(
-      {},
-      { root: f.repoRoot, resolvedPaths: [], maxBytes: 300_000, maxFileBytes: 300_000 },
-    );
-    expect(JSON.parse(String(result.content)).chain.state).toBe("active");
+    expect((await chainSummary(f)).state).toBe("active");
+  });
+  test("AC-9/10 full mode activates the chain without a pending card", async () => {
+    const f = await parentHost("full");
+    _jobsLaunchDeps.git = async () => ({ exitCode: 0, stdout: "feat/f1\n", stderr: "" });
+    const tool = f.tools.find((t) => t.localName === "chain");
+    assertDefined(tool, "chain tool");
+    const observed: number[] = [];
+    const stop = f.host.asks.onChange(() => observed.push(f.host.asks.pending().length));
+    const result = await tool.run({ steps: [{ kind: "run", input: { feature: "f1" } }] }, context(f));
+    stop();
+    expect(result.isError).not.toBe(true);
+    expect(f.host.asks.pending()).toEqual([]);
+    expect(observed.every((count) => count === 0)).toBe(true);
+    expect((await chainSummary(f)).state).toBe("active");
   });
 });

@@ -1,6 +1,7 @@
 import { isWorkflowMode, type NaxConfig } from "@/config";
 import type { Logger } from "@/logger";
 import type { ChatAskController } from "../ask-controller";
+import type { ChatMode } from "../chat-mode";
 import { type ChatChains, createChainController } from "./chain-controller";
 import { createJobRunner } from "./job-runner";
 import { createJobWriteGuard } from "./job-write-guard";
@@ -13,6 +14,8 @@ interface HostJobsOptions {
   readonly naxEntry: readonly string[];
   readonly config: NaxConfig;
   readonly asks: ChatAskController;
+  /** Read at each approval, never cached: the user can switch mode mid-session. */
+  readonly mode: () => ChatMode;
   readonly sessionId: () => string;
   readonly now: () => Date;
   readonly logger: Pick<Logger, "warn">;
@@ -41,7 +44,11 @@ export function createHostJobs(options: HostJobsOptions): {
     now: options.now,
   });
   const runAsks = createRunAsks({ ...options, jobs, chains });
-  const approve: ChatAskController["requestHostApproval"] = (card) => options.asks.requestHostApproval(card);
+  // Full mode skips the card for every nax-jobs approval (launch, chain, cancel); guarded keeps it.
+  const approve: ChatAskController["requestHostApproval"] = (card) => {
+    if (options.mode() !== "full") return options.asks.requestHostApproval(card);
+    return Promise.resolve(card.signal?.aborted ? "deny" : "allow");
+  };
   const provider = createJobsProvider({
     ...options,
     jobs,

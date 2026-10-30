@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import type { AgentSession, SessionMeta } from "@nathapp/nax-agent";
+import type { AgentSession, SessionMeta, ToolProvider } from "@nathapp/nax-agent";
 import {
   assertDefined,
   cleanupTempDir,
@@ -62,7 +62,11 @@ function fixture(entry = true, agents = true, resourcesEnabled = true) {
     cancel() {},
     close: async () => {},
   };
-  const open = mock(async (_request: OpenChatSessionRequest) => ({ session, meta, release: async () => {} }));
+  const open = mock(async (request: OpenChatSessionRequest) => ({
+    session,
+    meta: { ...meta, mode: request.mode === "guarded" ? ("ask" as const) : ("full" as const) },
+    release: async () => {},
+  }));
   const catalog = { ...buildResourceCatalog([]), agents: agents ? [makeAgentResource({ name: "reviewer" })] : [] };
   const resources: ChatResources = {
     catalog,
@@ -88,7 +92,12 @@ function fixture(entry = true, agents = true, resourcesEnabled = true) {
   });
   hosts.push(host);
   const outputDir = projectOutputDir(getProjectKey(config, repoRoot), config.outputDir);
-  const start = () => host.start({ mode: "full", model: "test" });
+  const start = (mode: "full" | "guarded" = "full") => host.start({ mode, model: "test" });
+  const runTool = async () => {
+    const provider = open.mock.calls[0]?.[0].toolProviders?.find((p) => p.id === "nax-jobs");
+    assertDefined(provider, "provider");
+    return jobsTool(provider, repoRoot);
+  };
   const jobs = () => {
     const value = host.jobs;
     assertDefined(value, "host jobs runner");
@@ -102,7 +111,23 @@ function fixture(entry = true, agents = true, resourcesEnabled = true) {
       sessionId: meta.sessionId,
       approvedAt: now().toISOString(),
     });
-  return { host, open, repoRoot, outputDir, start, jobs, owned, resources, logger, now };
+  return { host, open, repoRoot, outputDir, start, jobs, owned, resources, logger, now, runTool };
+}
+
+const toolContext = (root: string) => ({ root, resolvedPaths: [], maxBytes: 300_000, maxFileBytes: 300_000 });
+async function jobsTool(provider: ToolProvider, root: string) {
+  const tools = await provider.tools(root);
+  return (name: string) => {
+    const tool = tools.find((t) => t.localName === name);
+    assertDefined(tool, `${name} tool`);
+    return (input: Record<string, unknown>) => tool.run(input, toolContext(root));
+  };
+}
+async function writePendingPrd(repoRoot: string) {
+  await Bun.write(
+    join(featureDir(repoRoot, "f1"), "prd.json"),
+    JSON.stringify(makePRD({ userStories: [makeStory({ status: "pending", passes: false })] })),
+  );
 }
 
 function closeCard(host: ReturnType<typeof createChatHost>) {
@@ -181,28 +206,54 @@ describe("createChatHost jobs", () => {
     expect(f.jobs().list()).toHaveLength(1);
     expect(f.jobs().list()[0]?.state).not.toBe("running");
   });
-  test("AC-9/10/11 full mode launch waits on a real expiring host card and deny declines", async () => {
+  test("AC-7/8 full mode launch spawns the job without a pending card", async () => {
     const f = fixture();
-    await f.start();
-    await Bun.write(
-      join(featureDir(f.repoRoot, "f1"), "prd.json"),
-      JSON.stringify(makePRD({ userStories: [makeStory({ status: "pending", passes: false })] })),
-    );
-    const provider = f.open.mock.calls[0]?.[0].toolProviders?.find((p) => p.id === "nax-jobs");
-    assertDefined(provider, "provider");
-    const tool = (await provider.tools(f.repoRoot)).find((t) => t.localName === "run");
-    assertDefined(tool, "run tool");
-    const pending = tool.run(
-      { feature: "f1" },
-      { root: f.repoRoot, resolvedPaths: [], maxBytes: 300_000, maxFileBytes: 300_000 },
-    );
+    await f.start("full");
+    await writePendingPrd(f.repoRoot);
+    const tool = await f.runTool();
+    const result = await tool("run")({ feature: "f1" });
+    expect(result.isError).not.toBe(true);
+    expect(_jobRunnerDeps.spawn).toHaveBeenCalledTimes(1);
+    expect(f.host.asks.pending()).toEqual([]);
+  });
+  test("AC-11/12 full mode cancel sends the cancel without a pending card", async () => {
+    const f = fixture();
+    await f.start("full");
+    _jobRunnerDeps.kill = mock(() => true);
+    const job = await f.owned();
+    const tool = await f.runTool();
+    const result = await tool("cancel")({ job: job.id });
+    expect(result.isError).not.toBe(true);
+    expect(f.jobs().get(job.id)?.cancelRequested).toBe(true);
+    expect(f.host.asks.pending()).toEqual([]);
+  });
+  test("AC-13/14 guarded mode launch waits on a real expiring host card and deny declines", async () => {
+    const f = fixture();
+    await f.start("guarded");
+    await writePendingPrd(f.repoRoot);
+    const tool = await f.runTool();
+    const pending = tool("run")({ feature: "f1" });
     await waitForCondition(() => f.host.asks.pending().length === 1);
+    expect(f.host.asks.pending()).toHaveLength(1);
     const card = f.host.asks.pending()[0];
     assertDefined(card, "launch card");
     expect(card).toMatchObject({ tool: "nax-jobs__run", expiresAt: "2026-10-27T10:00:30.000Z" });
     f.host.asks.resolve(card.requestId, "deny");
     expect(await pending).toMatchObject({ isError: true, content: expect.stringContaining("declined") });
     expect(_jobRunnerDeps.spawn).not.toHaveBeenCalled();
+  });
+  test("AC-15 switching a guarded host to full stops the next launch asking", async () => {
+    const f = fixture();
+    await f.start("guarded");
+    await writePendingPrd(f.repoRoot);
+    await f.host.switchTo({ mode: "full" });
+    expect(f.host.current().mode).toBe("full");
+    // The provider registered on the first open reads the host's live mode.
+    const tool = await f.runTool();
+    const result = await tool("run")({ feature: "f1" });
+    expect(result.isError).not.toBe(true);
+    expect(_jobRunnerDeps.spawn).toHaveBeenCalledTimes(1);
+    expect(f.host.asks.pending()).toEqual([]);
   });
   test("AC-12 empty close confirmation does not ask", async () => {
     const f = fixture();

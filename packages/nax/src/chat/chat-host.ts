@@ -189,6 +189,9 @@ class NativeChatHost implements ChatHost {
             naxEntry: deps.naxEntry,
             config: deps.config,
             asks: this.asks,
+            // Without an open session the getter reads "guarded" (fail closed: the card is shown). No public
+            // path reaches it before start().
+            mode: () => (this.handle?.meta.mode === "full" ? "full" : "guarded"),
             now: deps.now,
             logger: deps.logger,
             sessionId: () => this.current().sessionId,
