@@ -3,7 +3,7 @@
   "feature": "chat-acp-history",
   "branchName": "feat/chat-acp-history",
   "createdAt": "2026-10-29T00:00:00.000Z",
-  "updatedAt": "2026-10-30T05:34:15.196Z",
+  "updatedAt": "2026-10-30T05:41:20.561Z",
   "userStories": [
     {
       "id": "US-001",
@@ -301,14 +301,17 @@
         "handoff"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "One wrapper over the existing AgentSession contract forwards members and tracks one pending handoff; synchronous send/busy behavior and iterable completion are the main risks, with strict isolation required by the session security override."
+        "reasoning": "One wrapper over the existing AgentSession contract forwards members and tracks one pending handoff; synchronous send/busy behavior and iterable completion are the main risks, with strict isolation required by the session security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/session/agent-session-types.ts",
@@ -328,7 +331,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9060de2254ab2ba8be371d7a7179409ac010e17c"
     },
     {
       "id": "US-006",
