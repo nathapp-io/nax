@@ -30,6 +30,7 @@ afterEach(async () => {
 /** A catalog whose answers are scripted; unset members answer nothing. */
 function stubCatalog(overrides: Partial<AcpCatalog> = {}): AcpCatalog {
   return {
+    load: async () => {},
     rows: () => [],
     effortLevels: () => ["default"],
     installed: () => true,

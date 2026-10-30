@@ -89,6 +89,7 @@ async function open(request: OpenChatSessionRequest): Promise<ChatSessionHandle>
 
 function stubCatalog(overrides: Partial<AcpCatalog> = {}): AcpCatalog {
   return {
+    load: async () => {},
     rows: () => [],
     effortLevels: () => ["default"],
     installed: () => true,

@@ -16,6 +16,7 @@ import {
   createChatMcp,
   createChatStorage,
   createWorkflowProvider,
+  resolveChatSessionsDir,
   tierModels,
 } from "@/chat";
 import { findProjectDir, getProjectKey, globalConfigDir, isWorkflowMode, loadConfig, type NaxConfig } from "@/config";
@@ -266,9 +267,11 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
   const naxEntry = deps.naxEntry();
   let host: ChatHost;
   try {
+    const acp = deps.createAcpCatalog({ env: deps.env, sessionsDir: resolveChatSessionsDir(deps.env), logger });
+    await acp.load();
     host = deps.createChatHost({
       models,
-      acp: deps.createAcpCatalog({ env: deps.env }),
+      acp,
       effortLevels,
       ...(naxEntry === undefined ? {} : { naxEntry }),
       config,

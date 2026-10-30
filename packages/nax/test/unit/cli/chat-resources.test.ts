@@ -32,6 +32,15 @@ function fixture() {
   const order: string[] = [];
   const deps = {
     ..._chatCommandDeps,
+    createAcpCatalog: (): import("@/chat").AcpCatalog => ({
+      load: async () => {},
+      rows: () => [],
+      effortLevels: () => ["default"],
+      installed: () => true,
+      unavailable: () => undefined,
+      opened: () => {},
+      failed: () => {},
+    }),
     collectAuthList: mock(
       async (_ids: readonly string[]): Promise<import("@/cli/auth-list").AuthListReport> => ({
         source: "file",

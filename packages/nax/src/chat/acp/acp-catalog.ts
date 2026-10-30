@@ -1,13 +1,14 @@
 /**
  * The ACP agents a chat can pick, as the picker sees them.
  *
- * Process-local and not persisted: each agent's offered models and effort
+ * Persisted offers seed the catalog; each agent's offered models and effort
  * levels are learned from a successful open, an open that fails on login or
  * launch is remembered until the agent next opens, and whether the agent's
  * binary resolves on this machine is probed once.
  */
 import { launchCandidateKind } from "@nathapp/nax-agent-acp/client";
 import { NaxError } from "@/errors";
+import type { Logger } from "@/logger";
 import type { EffortLevel } from "../chat-effort";
 import {
   ACP_CHAT_AGENTS,
@@ -17,11 +18,14 @@ import {
   type ChatAcpModel,
   parseChatAcpModel,
 } from "./acp-model";
+import { type AcpOffer, acpOffersPath, createAcpOfferStore } from "./acp-offer-store";
 
 /** Seam for tests: the binary probe. */
-export const _acpCatalogDeps = { launchCandidateKind };
+export const _acpCatalogDeps = { launchCandidateKind, createAcpOfferStore };
 
 export interface AcpCatalog {
+  /** Seed offers without replacing anything learned in this process. */
+  load(): Promise<void>;
   /** `acp:<agent>` then that agent's learned `acp:<agent>/<model>` rows, per agent in picker order. */
   rows(): readonly string[];
   /** The levels the model's agent offers; `["default"]` until it reports some or for a non-ACP model. */
@@ -73,11 +77,38 @@ function failureReason(error: unknown): string | undefined {
   return undefined;
 }
 
-export function createAcpCatalog(input: { readonly env: Readonly<Record<string, string | undefined>> }): AcpCatalog {
+export function createAcpCatalog(input: {
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly sessionsDir?: string;
+  readonly logger?: Pick<Logger, "warn" | "debug">;
+}): AcpCatalog {
   const models = new Map<AcpChatAgent, readonly string[]>();
   const efforts = new Map<AcpChatAgent, readonly string[]>();
   const failures = new Map<AcpChatAgent, string>();
   let probed: ReadonlyMap<AcpChatAgent, boolean> | undefined;
+  const learned = new Set<AcpChatAgent>();
+  const store =
+    input.sessionsDir === undefined
+      ? undefined
+      : _acpCatalogDeps.createAcpOfferStore({
+          path: acpOffersPath(input.sessionsDir),
+          logger: input.logger,
+        });
+  let saving = Promise.resolve();
+
+  function saveOffers(): void {
+    if (!store) return;
+    const snapshot = new Map<AcpChatAgent, AcpOffer>();
+    for (const agent of ACP_CHAT_AGENTS) {
+      const offered = models.get(agent);
+      if (offered?.length) snapshot.set(agent, { models: [...offered], efforts: [...(efforts.get(agent) ?? [])] });
+    }
+    saving = saving
+      .then(() => store.save(snapshot))
+      .catch((error) => {
+        input.logger?.warn("chat", "Failed to save ACP offers", { error });
+      });
+  }
 
   function installedAgents(): ReadonlyMap<AcpChatAgent, boolean> {
     probed ??= new Map(
@@ -87,6 +118,18 @@ export function createAcpCatalog(input: { readonly env: Readonly<Record<string, 
   }
 
   return {
+    async load() {
+      if (!store) return;
+      try {
+        for (const [agent, offer] of await store.load()) {
+          if (learned.has(agent)) continue;
+          models.set(agent, offer.models);
+          efforts.set(agent, offer.efforts);
+        }
+      } catch (error) {
+        input.logger?.warn("chat", "Failed to load ACP offers", { error });
+      }
+    },
     rows() {
       installedAgents();
       return ACP_CHAT_AGENTS.flatMap((agent) => [`acp:${agent}`, ...acpModelRows(agent, models.get(agent) ?? [])]);
@@ -112,7 +155,9 @@ export function createAcpCatalog(input: { readonly env: Readonly<Record<string, 
       if (offeredModels) models.set(target.agent, offeredModels);
       const offeredEfforts = reportedStrings(capabilities.offeredEfforts);
       if (offeredEfforts) efforts.set(target.agent, offeredEfforts);
+      if (offeredModels || offeredEfforts) learned.add(target.agent);
       failures.delete(target.agent);
+      if (Array.isArray(capabilities.offeredModels) || Array.isArray(capabilities.offeredEfforts)) saveOffers();
     },
     failed(model, error) {
       const target = acpTarget(model);

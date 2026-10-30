@@ -81,6 +81,7 @@ function stubSession(id: string): Stub {
 
 function catalog(): AcpCatalog {
   return {
+    load: async () => {},
     rows: () => [],
     effortLevels: () => ["default", "high"],
     installed: () => true,
