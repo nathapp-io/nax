@@ -16,6 +16,7 @@ import { projectOutputDir } from "@/runtime";
 import {
   ACP_RUN_COMMAND_UNSUPPORTED,
   type AcpCatalog,
+  acpRefusal,
   assertAcpInstalled,
   isChatAcpModel,
   reportAcpOpens,
@@ -168,6 +169,11 @@ class NativeChatHost implements ChatHost {
       answer: (id, reply) => {
         (this.runs?.sessionFor(id) ?? this.requireHandle().session).answer(id, reply);
       },
+      refuse: acpRefusal({
+        jobs: () => this.jobs,
+        repoRoot: deps.repoRoot,
+        model: () => this.handle?.meta.model ?? "",
+      }),
     });
     const hostJobs =
       deps.resources && deps.naxEntry

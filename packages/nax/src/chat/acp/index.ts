@@ -19,3 +19,4 @@ export {
   acpTranscriptDir,
   isFreshFallback,
 } from "./acp-session-options";
+export { ACP_WRITE_KINDS, acpRefusal, acpWriteRefusal } from "./acp-write-guard";
