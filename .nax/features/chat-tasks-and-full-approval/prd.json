@@ -3,7 +3,7 @@
   "feature": "chat-tasks-and-full-approval",
   "branchName": "feat/chat-tasks-and-full-approval",
   "createdAt": "2026-10-30T00:00:00Z",
-  "updatedAt": "2026-10-30T13:35:36.348Z",
+  "updatedAt": "2026-10-30T13:44:50.658Z",
   "userStories": [
     {
       "id": "US-001",
@@ -357,14 +357,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Combines live identity-preserving selection, batched key handling and asynchronous cancellation races. User-driven cancellation consumes an ownership/access-control preflight, so security override requires strict three-session TDD."
+        "reasoning": "Combines live identity-preserving selection, batched key handling and asynchronous cancellation races. User-driven cancellation consumes an ownership/access-control preflight, so security override requires strict three-session TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/Picker.tsx",
@@ -385,7 +388,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "43cff8d1795598af147c575713b22a8b0b210964"
     },
     {
       "id": "US-007",
