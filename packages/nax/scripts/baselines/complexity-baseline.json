@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-29T07:48:53.076Z",
+  "updatedAt": "2026-10-30T10:50:55.824Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -62,7 +62,6 @@
     "src/execution/build-plan-for-strategy.ts": { "buildPlanForStrategy": 56 },
     "src/execution/checkpoint/reader.ts": { "loadCheckpoints": 22 },
     "src/execution/escalation/tier-escalation.ts": { "=>": 30, "handleTierEscalation": 21 },
-    "src/execution/feature-lock.ts": { "acquireFeatureLock": 32 },
     "src/execution/iteration-runner.ts": { "runIteration": 40 },
     "src/execution/lifecycle/acceptance-helpers.ts": { "regenerateAcceptanceTest": 38 },
     "src/execution/lifecycle/acceptance-loop.ts": { "runAcceptanceLoop": 51 },
