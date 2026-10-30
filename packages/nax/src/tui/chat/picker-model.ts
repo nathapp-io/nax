@@ -10,6 +10,8 @@ import {
   modelEffort,
   sessionTitleText,
 } from "@/chat";
+import type { BackgroundTask } from "@/chat/background/task-types";
+import type { ChatJob } from "@/chat/jobs/job-types";
 import { oneLine } from "./layout-lines";
 import { relativeTime } from "./relative-time";
 import type { PickerKind } from "./slash-commands";
@@ -17,12 +19,16 @@ import { sanitizeText } from "./styled-line";
 
 const LOADING = "loading…";
 const NO_SESSIONS = "no saved sessions";
+const NO_JOBS = "no jobs or tasks";
+/** The most jobs-picker rows built from the registries; the Picker's viewport cap is separate. */
+export const MAX_JOB_PICKER_ROWS = 20;
 /** The title each kind of picker draws, in the words the design fixes. */
 const TITLES = {
   model: "Switch model",
   resume: "Resume a session",
   mode: "Permission mode",
   effort: "Reasoning effort",
+  jobs: "Jobs and tasks · enter output · ctrl+x stop",
 } as const satisfies Record<PickerKind, string>;
 
 /** The permission modes in the order the picker offers them, with what each one means. */
@@ -87,6 +93,10 @@ export interface PickerModelInput {
   /** What a choice warned about — a session another process holds. */
   readonly warning?: string;
   readonly nowMs?: number;
+  /** The chat's jobs — the jobs picker's rows. */
+  readonly jobs?: readonly ChatJob[];
+  /** The host's background tasks — the jobs picker's rows alongside the jobs. */
+  readonly tasks?: readonly BackgroundTask[];
   /** Why a model's row cannot be used right now (an ACP agent that is not installed), if it cannot. */
   readonly modelNote?: (model: string) => string | undefined;
 }
@@ -159,8 +169,86 @@ function resumeNote(input: PickerModelInput): PickerNote | undefined {
   return input.sessions.length === 0 ? { text: NO_SESSIONS, tone: "muted" } : undefined;
 }
 
+/** The time part of a jobs row's detail, with its separator, or nothing when there is no time. */
+function ageSuffix(startedAt: string, nowMs: number): string {
+  const age = relativeTime(startedAt, nowMs);
+  return age === "" ? "" : ` · ${age}`;
+}
+
+/** One job: `<kind> <target>` (a bot job's target is a PR number), its state, age, progress and cost. */
+function jobEntry(job: ChatJob, nowMs: number): PickerEntry {
+  const target = job.kind === "bot_review" || job.kind === "bot_fix" ? `#${job.target}` : job.target;
+  const progress = job.progress === undefined ? "" : ` · ${job.progress.passed}/${job.progress.total}`;
+  const cost = job.cost === undefined ? "" : ` · $${job.cost.toFixed(2)}`;
+  return {
+    value: job.id,
+    label: displayText(`${job.kind} ${target}`),
+    detail: `${job.state}${ageSuffix(job.startedAt, nowMs)}${progress}${cost}`,
+  };
+}
+
+/** One background task: its command on a single row, its state and age. */
+function taskEntry(task: BackgroundTask, nowMs: number): PickerEntry {
+  return {
+    value: task.id,
+    label: displayText(`bash ${task.command}`),
+    detail: `${task.state}${ageSuffix(task.startedAt, nowMs)}`,
+  };
+}
+
+interface JobRow {
+  readonly running: boolean;
+  readonly startedMs: number;
+  readonly entry: PickerEntry;
+}
+
+/** Running rows first, then newest `startedAt` first, then `value` ascending. */
+function compareJobRows(a: JobRow, b: JobRow): number {
+  if (a.running !== b.running) return a.running ? -1 : 1;
+  if (a.startedMs !== b.startedMs) return a.startedMs > b.startedMs ? -1 : 1;
+  if (a.entry.value === b.entry.value) return 0;
+  return a.entry.value < b.entry.value ? -1 : 1;
+}
+
+/** Jobs and tasks merged into one deterministic, capped list; an unreadable start sorts oldest. */
+function jobEntries(input: PickerModelInput, nowMs: number): readonly PickerEntry[] {
+  const startedMs = (iso: string): number => {
+    const ms = Date.parse(iso);
+    return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms;
+  };
+  const rows: JobRow[] = [
+    ...(input.jobs ?? []).map((job) => ({
+      running: job.state === "running",
+      startedMs: startedMs(job.startedAt),
+      entry: jobEntry(job, nowMs),
+    })),
+    ...(input.tasks ?? []).map((task) => ({
+      running: task.state === "running",
+      startedMs: startedMs(task.startedAt),
+      entry: taskEntry(task, nowMs),
+    })),
+  ];
+  return rows
+    .sort(compareJobRows)
+    .slice(0, MAX_JOB_PICKER_ROWS)
+    .map((row) => row.entry);
+}
+
+/** The jobs picker: no filtering, no current row; a warning outranks the empty note. */
+function jobsPickerModel(input: PickerModelInput): PickerModel {
+  const entries = jobEntries(input, input.nowMs ?? _pickerDeps.now());
+  const note: PickerNote | undefined =
+    input.warning !== undefined
+      ? { text: input.warning, tone: "warning" }
+      : entries.length === 0
+        ? { text: NO_JOBS, tone: "muted" }
+        : undefined;
+  return { kind: "jobs", title: TITLES.jobs, entries, ...(note === undefined ? {} : { note }) };
+}
+
 /** The rows one kind of picker offers. */
 export function pickerModel(input: PickerModelInput): PickerModel {
+  if (input.kind === "jobs") return jobsPickerModel(input);
   if (input.kind === "mode") return { kind: "mode", title: TITLES.mode, entries: modeEntries(input) };
   if (input.kind === "effort") {
     const current = modelEffort(input.currentModel);

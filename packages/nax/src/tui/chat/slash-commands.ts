@@ -19,7 +19,7 @@ import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts"
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing } from "@/resources";
 
 /** The no-argument commands whose argument is chosen in a picker rather than typed. */
-export type PickerKind = "model" | "resume" | "mode" | "effort";
+export type PickerKind = "model" | "resume" | "mode" | "effort" | "jobs";
 
 export type SlashOutcome =
   | { kind: "send"; message: string }
