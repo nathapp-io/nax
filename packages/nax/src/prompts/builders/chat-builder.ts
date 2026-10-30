@@ -52,6 +52,32 @@ export function buildChatAcpInstructions(input: ChatAcpInstructionsInput): strin
   return sections.join("\n\n");
 }
 
+export interface ChatHandoffInput {
+  readonly entries: readonly { readonly speaker: string; readonly text: string }[];
+  /** Earlier entries left out; shown only when entries are present. */
+  readonly omitted: number;
+}
+
+const HANDOFF_CLOSE_TAG = "</conversation-so-far>";
+const HANDOFF_ESCAPED_CLOSE_TAG = "<\\/conversation-so-far>";
+const HANDOFF_INTRO =
+  "These turns happened in this nax chat before this message, while you were not the model answering. Use them as context. Tool calls are listed by name only.";
+
+/**
+ * The conversation-so-far block put in front of the first message an ACP agent
+ * receives after a brain switch. Empty when there are no entries. An entry's
+ * text cannot close the block: its closing tag is written with an escaped slash.
+ */
+export function buildChatHandoff(input: ChatHandoffInput): string {
+  if (input.entries.length === 0) return "";
+  const lines = ["<conversation-so-far>", HANDOFF_INTRO];
+  if (input.omitted > 0) lines.push(`[${input.omitted} older messages omitted]`);
+  const body = input.entries
+    .map((entry) => `${entry.speaker}: ${entry.text.replaceAll(HANDOFF_CLOSE_TAG, HANDOFF_ESCAPED_CLOSE_TAG)}`)
+    .join("\n\n");
+  return `${lines.join("\n")}\n\n${body}\n${HANDOFF_CLOSE_TAG}`;
+}
+
 const MIN_FENCE_LENGTH = 3;
 
 /** Longer fences keep Markdown examples in a spec from closing its outer block. */

@@ -47,9 +47,11 @@ export { buildBotRulingReadPrompt } from "./builders/bot-ruling-builder";
 export {
   buildChatAcpInstructions,
   buildChatFeatureMessage,
+  buildChatHandoff,
   buildChatInstructions,
   type ChatAcpInstructionsInput,
   type ChatFeatureMessageInput,
+  type ChatHandoffInput,
   type ChatInstructionsInput,
 } from "./builders/chat-builder";
 export type { DecomposePromptInput } from "./builders/decompose-builder";

@@ -1,0 +1,506 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-acp-history",
+  "branchName": "feat/chat-acp-history",
+  "createdAt": "2026-10-29T00:00:00.000Z",
+  "updatedAt": "2026-10-30T05:55:26.412Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Record an ACP turn as native messages",
+      "description": "**Goal** — Add pure conversion functions that represent one ACP turn as a native user/assistant message pair with ACP origin and bounded tool-name summaries.\n\n**Motivation** — Resuming a chat session that ran on an agent replays only the native document (`ChatSessionHandle.history`), so an agent's earlier turns are missing from the resumed TUI transcript.\n\n**Approach** — `acpTurnMessages` builds the assistant `content` as: the reply text — the `turn_end` event's `output` when it is non-empty, else the `text_delta` texts concatenated in order (a `stream_reset` discards the text collected so far) — then one line per `tool_call` in call order, `[tool] <name>`, or `[tool] <name> (error)` when the `tool_result` with the same `callId` has `isError: true`, with the name cut to `ACP_TOOL_NAME_MAX_CHARS` code points. At most `ACP_TOOL_SUMMARY_LIMIT` lines are written, then `[tool] … and <n> more`. Text and the first line are separated by one newline (no leading newline when there is no text). With neither text nor tool calls the content is `(no reply; turn <status>)` from the `turn_end` event. `thinking_delta` text and tool inputs and previews are never recorded. The assistant message has `origin` and no `toolCalls` or `thinking`.\n\n`origin` is nax-ai's existing \"who wrote this message\" field (`ConversationMessage` in `packages/nax-ai/src/protocols/types.ts`): pi-ai treats a message from another provider as another model's, and the recorded message has no thinking to drop. Tool calls are summaries, not structured `toolCalls` / `tool-result` messages, because the native model has no such tools to pair them with.\n\n**Scope** — In: create `packages/nax/src/chat/acp/acp-history.ts` and its unit tests; derive ChatMessage from TranscriptDoc via @nathapp/nax-agent, not a forbidden nax-ai import. Out: unseen-message selection/entries (US-002), bounds/prompt (US-003), store writes (US-004), wrapping (US-005/006) and opener/barrel/TUI wiring (US-007). Recording an ACP turn's tool calls as structured native `toolCalls` / `tool-result` messages, or carrying tool inputs, results or thinking; a turn's tools are recorded as one `[tool] <name>` line each.\n\n**Interface** — verbatim TypeScript:\n```ts\nexport type ChatMessage = TranscriptDoc[\"messages\"][number];\nexport const ACP_TOOL_SUMMARY_LIMIT = 20;\nexport const ACP_TOOL_NAME_MAX_CHARS = 80;\n/** `{ provider: \"acp:<agent>\", model: acp.model ?? \"default\" }`; the effort is not part of it. */\nexport function acpOrigin(acp: ChatAcpModel): { readonly provider: string; readonly model: string };\n/** The ACP chat agent that wrote an assistant message, from `origin.provider`; undefined otherwise. */\nexport function acpAgentOfMessage(message: ChatMessage): AcpChatAgent | undefined;\n/** The user message and the assistant message that record one ACP turn. */\nexport function acpTurnMessages(input: {\n  readonly message: string;\n  readonly events: readonly SessionEvent[];\n  readonly acp: ChatAcpModel;\n}): readonly [ChatMessage, ChatMessage];\n```",
+      "acceptanceCriteria": [
+        "[unit] AC-1: acpOrigin({ agent: \"codex\", model: \"gpt-5.5\" }) returns { provider: \"acp:codex\", model: \"gpt-5.5\" }.",
+        "[unit] AC-2: acpOrigin({ agent: \"claude\" }) returns { provider: \"acp:claude\", model: \"default\" }.",
+        "[unit] AC-3: acpOrigin({ agent: \"codex\", model: \"gpt-5.5\", effort: \"high\" }) returns { provider: \"acp:codex\", model: \"gpt-5.5\" }.",
+        "[unit] AC-4: acpAgentOfMessage of an assistant message with origin: { provider: \"acp:cursor\", model: \"default\" } returns \"cursor\".",
+        "[unit] AC-5: acpAgentOfMessage of a user message returns undefined.",
+        "[unit] AC-6: acpAgentOfMessage of an assistant message with no origin returns undefined.",
+        "[unit] AC-7: acpAgentOfMessage of an assistant message with origin.provider \"openai\" returns undefined.",
+        "[unit] AC-8: acpAgentOfMessage of an assistant message with origin.provider \"acp:gemini\" returns undefined.",
+        "[unit] AC-9: acpTurnMessages({ message: \"hi\", events, acp }) returns an array of length 2 whose first element is { role: \"user\", content: \"hi\" }.",
+        "[unit] AC-10: For events text_delta \"x\" and turn_end { status: \"completed\", output: \"Hello world\" }, acpTurnMessages returns assistant content \"Hello world\".",
+        "[unit] AC-11: For events text_delta \"Hel\", text_delta \"lo\" and turn_end { output: \"\" }, acpTurnMessages returns assistant content \"Hello\".",
+        "[unit] AC-12: For events text_delta \"a\", stream_reset, text_delta \"b\" and turn_end { output: \"\" }, acpTurnMessages returns assistant content \"b\".",
+        "[unit] AC-13: For events text_delta \"ok\", thinking_delta \"secret plan\" and turn_end { output: \"\" }, acpTurnMessages returns assistant content \"ok\".",
+        "[unit] AC-14: For text_delta \"done\", tool_call { callId: \"1\", name: \"Read\" }, tool_result { callId: \"1\", isError: false }, tool_call { callId: \"2\", name: \"Bash\" }, tool_result { callId: \"2\", isError: false } and turn_end { output: \"\" }, acpTurnMessages returns assistant content \"done\\n[tool] Read\\n[tool] Bash\".",
+        "[unit] AC-15: A tool_call named \"Bash\" whose tool_result has isError: true is written as the line [tool] Bash (error).",
+        "[unit] AC-16: With 23 tool calls and no text, acpTurnMessages returns assistant content with 21 lines: the first 20 [tool] <name> lines in call order, then [tool] … and 3 more.",
+        "[unit] AC-17: A tool name of 100 characters is written as its first 80 code points.",
+        "[unit] AC-18: With no text and one tool_call named Read with input: { token: \"abc\" } whose result preview is \"abc\", acpTurnMessages returns assistant content exactly \"[tool] Read\".",
+        "[unit] AC-19: For events thinking_delta \"hm\" and turn_end { status: \"cancelled\", output: \"\" }, acpTurnMessages returns assistant content \"(no reply; turn cancelled)\".",
+        "[unit] AC-20: The assistant message returned by acpTurnMessages has exactly the keys role, content and origin, with origin equal to acpOrigin(acp)."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "history"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Pure event aggregation has clear requirements but multiple truncation/reset/error rules; strict isolation applies because this defines persisted session transcript contents and excludes private thinking/tool payloads.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/acp/acp-model.ts",
+        "packages/nax-agent/src/session/agent-session-types.ts",
+        "packages/nax-agent/src/native/session/transcript-types.ts",
+        "packages/nax-ai/src/protocols/types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-history.ts",
+        "packages/nax/test/unit/chat/acp/acp-history.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a tool name contains 100 supplementary Unicode characters, its recorded summary name contains exactly the first 80 complete code points.",
+        "When error results arrive in a different order from their tool calls, acpTurnMessages attaches (error) to the summary whose callId matches the error result."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1d0ed710d329658d2b40d992c4c0691f87b34777"
+    },
+    {
+      "id": "US-002",
+      "title": "Select unseen messages and create handoff entries",
+      "description": "**Goal** — Compute an opening agent's unseen native-history suffix and convert it into capped speaker/text handoff entries.\n\n**Motivation** — User ruling 2026-10-29 (design §6.4): history carries over on a switch, in every direction (native to ACP, ACP to native, ACP to another ACP agent), the same experience as switching native models today.\n\n**Approach** — Hand an opening agent the turns it has not seen. When the ACP branch opens an agent:\n- a fresh agent session (no agent document, or the F2 fallback after an unusable one) has seen none of the native document;\n- a resumed agent session has seen everything up to and including the last assistant message whose `origin.provider` is `acp:<that agent>`; it has not seen what follows. With no such message (a session from before this feature), it has seen none.\n\nOne entry per user message and per assistant message (tool-result messages are dropped; an assistant message with neither text nor tool calls is dropped; `thinking` is ignored). Lengths are JavaScript string lengths (UTF-16 code units). An entry's text longer than `ACP_HANDOFF_ENTRY_MAX_CHARS` (4,000) is cut to its first 4,000 units followed by `…`.\n\nSpeakers: `User`; `nax` for an assistant message with no `origin`; `nax (<origin.model>)` for an `origin` whose provider does not start with `acp:`; the agent label (`Claude Code`, `Codex`, `Cursor`) for `acp:<agent>`; the raw provider for an `acp:` provider naming another agent.\n\n`handoffEntries` maps a user message to speaker `User`; an assistant message to the speaker of \"Handoff text\" above, with text = its `content`, then one `[tool] <name>` line per `toolCalls` entry (one newline between, no leading newline when `content` is empty).\n\n**Scope** — In: new `packages/nax/src/chat/acp/acp-handoff-entries.ts`, reusing US-001 ChatMessage/origin recognition and existing agent labels. Out: overall 40,000-character suffix bound, notices and prompt rendering (US-003), wrapper/delivery/recording (US-005/006), opener freshness decisions and wiring (US-007). A dedicated speaker for a native compaction summary (a user message starting with `COMPACTION_SUMMARY_PREFIX`); it is handed over as a `User:` entry. Keeping UTF-16 surrogate pairs whole when an entry is cut at 4,000 units. Native compaction that summarises away every message an agent wrote: that agent's next reopen is then handed the whole native history again, including turns it already saw. An agent session opened before this feature has no recorded turns of its own, so its first reopen is handed the whole native history, possibly repeating what it saw.\n\n**Interface** — verbatim TypeScript:\n```ts\nexport const ACP_HANDOFF_ENTRY_MAX_CHARS = 4_000;\nexport interface HandoffEntry { readonly speaker: string; readonly text: string }\n/** The messages an opening agent has not seen (see Approach 3). */\nexport function unseenMessages(\n  messages: readonly ChatMessage[],\n  agent: AcpChatAgent,\n  fresh: boolean,\n): readonly ChatMessage[];\n/** One entry per user / assistant message (Approach 4), each text cut to the entry cap; no total bound. */\nexport function handoffEntries(messages: readonly ChatMessage[]): readonly HandoffEntry[];\n```",
+      "acceptanceCriteria": [
+        "[unit] AC-1: unseenMessages(messages, \"codex\", true) returns every message of messages, in order.",
+        "[unit] AC-2: For [user u1, assistant a1 (origin acp:codex), user u2, assistant a2 (no origin)], unseenMessages(..., \"codex\", false) returns [u2, a2].",
+        "[unit] AC-3: For messages with no assistant message whose origin is acp:codex, unseenMessages(..., \"codex\", false) returns every message.",
+        "[unit] AC-4: When the last message is an assistant message with origin acp:codex, unseenMessages(..., \"codex\", false) returns an empty array.",
+        "[unit] AC-5: For [user u1, assistant a1 (origin acp:cursor)], unseenMessages(..., \"codex\", false) returns both messages.",
+        "[unit] AC-6: handoffEntries([{ role: \"user\", content: \"plan it\" }]) returns [{ speaker: \"User\", text: \"plan it\" }].",
+        "[unit] AC-7: handoffEntries maps an assistant message with no origin to an entry with speaker \"nax\".",
+        "[unit] AC-8: handoffEntries maps an assistant message with origin: { provider: \"openai\", model: \"gpt-6\" } to an entry with speaker \"nax (gpt-6)\".",
+        "[unit] AC-9: handoffEntries maps an assistant message with origin: { provider: \"acp:codex\", model: \"default\" } to an entry with speaker \"Codex\".",
+        "[unit] AC-10: handoffEntries maps an assistant message with origin: { provider: \"acp:gemini\", model: \"x\" } to an entry with speaker \"acp:gemini\".",
+        "[unit] AC-11: handoffEntries maps an assistant message with content: \"ok\" and toolCalls named Read then Bash to an entry with text \"ok\\n[tool] Read\\n[tool] Bash\".",
+        "[unit] AC-12: handoffEntries maps an assistant message with content: \"\" and one toolCalls entry named Read to an entry with text \"[tool] Read\".",
+        "[unit] AC-13: A tool-result message produces no handoffEntries entry.",
+        "[unit] AC-14: An assistant message with empty content and no toolCalls produces no handoffEntries entry.",
+        "[unit] AC-15: handoffEntries maps an assistant message with content: \"a\" and thinking blocks to an entry with text \"a\".",
+        "[unit] AC-16: handoffEntries maps a user message of 5,000 characters to an entry whose text is its first 4,000 characters followed by … (length 4,001).",
+        "[unit] AC-17: handoffEntries maps a user message of exactly 4,000 characters to an entry whose text is the message unchanged.",
+        "[unit] AC-18: For [user \"q\", assistant \"a\"], handoffEntries returns entries in message order: User then nax."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "history",
+        "handoff"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One additive pure helper module performs a reverse origin-marker scan and entry mapping with existing message/agent types; retain the required session security override for selection of prior session turns.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/acp/acp-model.ts",
+        "packages/nax/src/chat/acp/acp-history.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-handoff-entries.ts",
+        "packages/nax/test/unit/chat/acp/acp-handoff-entries.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When history contains several acp:codex assistant messages separated by native and other-agent turns, unseenMessages(messages, \"codex\", false) returns only messages after the last acp:codex assistant.",
+        "handoffEntries maps acp:claude and acp:cursor assistant origins to speakers Claude Code and Cursor respectively."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2f0f47b2dc40a74b1e8cae6ef338a0c5b23af072"
+    },
+    {
+      "id": "US-003",
+      "title": "Build the bounded handoff and its prompt",
+      "description": "**Goal** — Bound handoff entries to a newest contiguous suffix and render the exact conversation-so-far prompt with trimming notice support.\n\n**Motivation** — User ruling 2026-10-29 (design §6.4): history carries over on a switch, in every direction (native to ACP, ACP to native, ACP to another ACP agent), the same experience as switching native models today.\n\n**Approach** — Bounded handoff. One entry per user message and per assistant message (tool-result messages are dropped; an assistant message with neither text nor tool calls is dropped; `thinking` is ignored). Lengths are JavaScript string lengths (UTF-16 code units). An entry's text longer than `ACP_HANDOFF_ENTRY_MAX_CHARS` (4,000) is cut to its first 4,000 units followed by `…`. The entries kept are the longest contiguous newest suffix whose `speaker.length + text.length` (text after the cut) sum to at most `ACP_HANDOFF_MAX_CHARS` (40,000); the count of earlier entries dropped is reported. When any were dropped, the handle's `notice` says so.\n\nUse US-002 handoffEntries for per-message conversion/capping; this story adds the total bound and notice function, while US-007 attaches notices to handles. The bracketed omitted line appears only when entries were dropped. An entry's text containing `</conversation-so-far>` is written as `<\\/conversation-so-far>` so it cannot close the block. No unseen messages means no handoff. `buildChatHandoff` returns the empty string whenever entries is empty, even with nonzero omitted. The exact INTRO is: These turns happened in this nax chat before this message, while you were not the model answering. Use them as context. Tool calls are listed by name only.\n\nHandoff text:\n```text\n<conversation-so-far>\nThese turns happened in this nax chat before this message, while you were not the model answering. Use them as context. Tool calls are listed by name only.\n[2 older messages omitted]\n\nUser: plan the cache layer\n\nnax (gpt-6): Here is a plan ...\n[tool] Read\n\nCodex: I changed the store ...\n</conversation-so-far>\n```\n\n**Scope** — In: new `packages/nax/src/chat/acp/acp-handoff.ts`; add `ChatHandoffInput` and `buildChatHandoff` to `packages/nax/src/prompts/builders/chat-builder.ts`; re-export both from `packages/nax/src/prompts/index.ts` beside buildChatAcpInstructions; existing builders unchanged. Out: entry generation/unseen selection (US-002), prepending prompts to sends (US-005), recording (US-004/006), handle notices/opener integration/ACP barrel (US-007). Making the handoff bounds configurable; they are constants. Showing the handoff text in the TUI transcript.\n\n**Interface** — verbatim TypeScript:\n```ts\nexport const ACP_HANDOFF_MAX_CHARS = 40_000;\nexport interface AcpHandoff { readonly entries: readonly HandoffEntry[]; readonly omitted: number }\n/** handoffEntries(messages), bounded to the newest contiguous suffix within ACP_HANDOFF_MAX_CHARS. */\nexport function acpHandoff(messages: readonly ChatMessage[]): AcpHandoff;\nexport function ACP_HANDOFF_TRIMMED_NOTICE(label: string, omitted: number): string;\n//   `${label} was not given the ${omitted} oldest earlier message(s); the handoff is capped`\n\nexport interface ChatHandoffInput { entries: readonly { speaker: string; text: string }[]; omitted: number }\nexport function buildChatHandoff(input: ChatHandoffInput): string;\n```",
+      "acceptanceCriteria": [
+        "[unit] AC-1: For two short user messages, acpHandoff returns both entries in order with omitted: 0.",
+        "[unit] AC-2: For 12 user messages of 4,000 characters each, acpHandoff returns entries equal to the last 9 of handoffEntries(messages) (9 × 4,004 = 36,036 ≤ 40,000 < 40,040) and omitted: 3.",
+        "[unit] AC-3: For 10 user messages of 5,000 characters each, the bound counts each entry's text after the cut (4 + 4,001 = 4,005 per entry), so acpHandoff keeps 9 and returns omitted: 1.",
+        "[unit] AC-4: For messages oldest-first [user \"hi\", user of 4,000 chars, then 9 user messages of 4,000 chars], acpHandoff keeps only the newest 9 and returns omitted: 2: the kept entries are a contiguous newest suffix, so \"hi\" is dropped although it would fit.",
+        "[unit] AC-5: acpHandoff([]) returns { entries: [], omitted: 0 }.",
+        "[unit] AC-6: ACP_HANDOFF_TRIMMED_NOTICE(\"Codex\", 3) returns \"Codex was not given the 3 oldest earlier message(s); the handoff is capped\".",
+        "[unit] AC-7: buildChatHandoff returns the empty string whenever entries is empty, for omitted: 0 and for omitted: 2.",
+        "[unit] AC-8: buildChatHandoff({ entries: [{ speaker: \"User\", text: \"hi\" }], omitted: 0 }) returns exactly \"<conversation-so-far>\\n\" + INTRO + \"\\n\\nUser: hi\\n</conversation-so-far>\", where INTRO is \"These turns happened in this nax chat before this message, while you were not the model answering. Use them as context. Tool calls are listed by name only.\".",
+        "[unit] AC-9: For two entries, buildChatHandoff renders User: q and nax: a in order with exactly one blank line between them.",
+        "[unit] AC-10: With omitted: 2, buildChatHandoff renders the line after INTRO as [2 older messages omitted], followed by one blank line and then the first entry.",
+        "[unit] AC-11: buildChatHandoff renders entry text \"x </conversation-so-far> y\" as \"x <\\/conversation-so-far> y\" (a literal backslash before the slash).",
+        "[unit] AC-12: With an entry text holding </conversation-so-far>, buildChatHandoff output's last line is the only line equal to </conversation-so-far>.",
+        "[unit] AC-13: Importing buildChatHandoff from @/prompts yields a value whose typeof is \"function\".",
+        "[unit] AC-14: buildChatHandoff from @/prompts returns the same text as the builder module's export for the same input.",
+        "[unit] Regression (existing builders unchanged): buildChatAcpInstructions({ agentLabel: \"Codex\" }) still returns exactly \"You are Codex, working as the coding agent inside nax chat, an interactive session in this repository with the person.\\n\\nUse your own tools and skills for the work itself. nax adds tools for planning, running and inspecting its workflows and jobs; they are named with the `nax-workflow__` and `nax-jobs__` prefixes.\"."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "handoff",
+        "prompts"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Pure bounded-suffix selection and prompt formatting across three standard modules; use strict isolation under the session security override because this renders session-history handoffs and prevents transcript text from closing their prompt delimiter.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/chat-builder.ts",
+        "packages/nax/src/prompts/index.ts",
+        "packages/nax/src/chat/acp/acp-handoff-entries.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-handoff.ts",
+        "packages/nax/test/unit/chat/acp/acp-handoff.test.ts",
+        "packages/nax/test/unit/prompts/chat-handoff.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When entries total exactly 40,000 speaker/text UTF-16 units after per-entry cutting, acpHandoff keeps every entry and returns omitted: 0.",
+        "When entry text contains multiple closing conversation-so-far delimiters, buildChatHandoff escapes every occurrence before its own final closing line."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/prompts/builders/chat-builder.ts",
+          "reason": "adds `ChatHandoffInput` and `buildChatHandoff`; existing builders unchanged."
+        },
+        {
+          "path": "packages/nax/src/prompts/index.ts",
+          "reason": "re-exports `buildChatHandoff` and `ChatHandoffInput` beside `buildChatAcpInstructions`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6f3337787c78630d8d77250cf88e72d70db26b84"
+    },
+    {
+      "id": "US-004",
+      "title": "Append turns to the native chat document without failing sends",
+      "description": "**Goal** — Persist ACP message pairs in the native transcript with field-preserving load/merge/save and nonthrowing warning-only failure handling.\n\n**Motivation** — The ACP backend stores only its ACP record and cost baseline there, never the messages (`packages/nax-agent-acp/src/client/backend.ts` `saveBaseline` / `saveFinal`), so nobody owns an ACP brain's message history yet.\n\n**Approach** — Append messages to the native chat document: load, then save `{ ...doc, savedAt, messages: [...doc.messages, ...messages] }`, or `{ savedAt, messages }` when there is no document. Never throws: a load or save rejection is logged with `getLogger().warn(\"chat\", \"could not record the ACP turn\", { sessionId, error: errorMessage(error) })`.\n\nThe native brain needs no change. The native backend already carries history across models (`carryHistoryAcrossModels: true`, `transcript-identity.ts` keeps another model's document), and a document with no `backend` field reads as native (`checkBackendKind`). A session started on an agent gets a native document created by the recorder (`{ savedAt, messages }`), so a later switch to a native model resumes it rather than creating a new session.\n\n**Scope** — In: new `packages/nax/src/chat/acp/acp-transcript-append.ts` and its tests; inject now for deterministic ISO savedAt and use existing logger/errorMessage helpers. Out: message conversion (US-001), wrapper delivery (US-005), invoking append and await-before-completion (US-006), choosing the root transcript store and opener integration (US-007). Writing ACP turns into the agent's own transcript document under `acp-<agent>/`; that document keeps only the ACP record and cost baseline. Retrying, or showing in the TUI, a failed recording; it is logged as a warning only.\n\n**Interface** — verbatim TypeScript:\n```ts\n/**\n * Append messages to the native chat document: load, then save\n * `{ ...doc, savedAt, messages: [...doc.messages, ...messages] }`, or `{ savedAt, messages }` when\n * there is no document. Never throws: a load or save rejection is logged with\n * getLogger().warn(\"chat\", \"could not record the ACP turn\", { sessionId, error: errorMessage(error) }).\n */\nexport function appendNativeTurn(\n  store: TranscriptStore,\n  sessionId: string,\n  messages: readonly ChatMessage[],\n  now?: () => Date,\n): Promise<void>;\n```",
+      "acceptanceCriteria": [
+        "[unit] AC-1: appendNativeTurn(store, \"s1\", [u, a]) with no stored document saves a document with exactly the keys savedAt and messages.",
+        "[unit] AC-2: When store.load(\"s1\") returns null, appendNativeTurn(store, \"s1\", [u, a]) saves a document whose messages is [u, a].",
+        "[unit] AC-3: With no stored document, appendNativeTurn(store, \"s1\", [u, a], now) saves savedAt equal to the injected now() as an ISO string.",
+        "[unit] AC-4: With a stored document holding messages [m1], appendNativeTurn saves messages [m1, u, a].",
+        "[unit] AC-5: appendNativeTurn saves a stored document's model unchanged.",
+        "[unit] AC-6: appendNativeTurn saves a stored document's owner unchanged.",
+        "[unit] AC-7: appendNativeTurn saves a stored document's turn unchanged.",
+        "[unit] AC-8: appendNativeTurn saves a stored document's instructionSources unchanged.",
+        "[unit] AC-9: appendNativeTurn calls store.save once, with \"s1\" as the session id.",
+        "[unit] AC-10: When store.save rejects, appendNativeTurn resolves.",
+        "[unit] AC-11: When store.save rejects, the logger's warn (observed with spyOn(getLogger(), \"warn\") or a sink added with addSink) is called with \"chat\", \"could not record the ACP turn\" and data whose sessionId is \"s1\".",
+        "[unit] AC-12: When store.load rejects, appendNativeTurn resolves and store.save is not called.",
+        "[unit] AC-13: When store.load rejects, the logger's warn (observed the same way) is called with \"chat\", \"could not record the ACP turn\" and data whose sessionId is \"s1\".",
+        "[unit] Failure handling: When store.load or store.save rejects with an error, appendNativeTurn logs warning data whose error is errorMessage(error)."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "history",
+        "persistence"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One small additive helper uses the existing TranscriptStore and logger to load/merge/save inside a catch, with an injected clock; persisted session documents still require the mandated session security override.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/native/session/transcript-types.ts",
+        "packages/nax/src/chat/session-hygiene.ts",
+        "packages/nax/src/chat/acp/acp-history.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-transcript-append.ts",
+        "packages/nax/test/unit/chat/acp/acp-transcript-append.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a stored native document has schemaVersion, backend and instructionDirectories fields, appendNativeTurn preserves those fields unchanged.",
+        "When appendNativeTurn appends a pair, the original loaded document and its messages array remain unchanged."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7666b3fb7399d583f5c870440bef983a969b7a86"
+    },
+    {
+      "id": "US-005",
+      "title": "Wrap ACP sessions and deliver a pending history handoff",
+      "description": "**Goal** — Introduce an AgentSession-preserving wrapper that synchronously forwards sends and prefixes a handoff until a terminal turn shows agent work.\n\n**Motivation** — User ruling 2026-10-29 (design §6.4): history carries over on a switch, in every direction (native to ACP, ACP to native, ACP to another ACP agent), the same experience as switching native models today.\n\n**Approach** — `recordAcpTurns` returns an `AgentSession` that reads `id`, `backend` and `lastTurn` from the wrapped session when they are read (getters, so a stub without them still wraps), forwards `answer`, `cancel`, `close` and (when present) `runCommand`, and implements `send(message)` by calling the wrapped session's `send` synchronously with `handoff + \"\\n\\n\" + message` while a handoff is pending (else `message`), forwarding every event unchanged and in order.\n\nThe handoff is cleared once a send reaches `turn_end` having shown agent work. This is a deliberately narrower evidence set than the one the ACP backend uses to mark its instructions delivered (#2364: `receipt()` in `events.ts` also fires on usage, plan and tool-update updates and on settle); a turn the backend counts as delivered but that showed no text, thinking or tool call keeps the handoff pending and is not recorded (accepted, Out of Scope). A turn with no agent work (an auth or quota failure before the agent saw the prompt) is not recorded either, so the agent's last-seen point never moves past turns it was not given.\n\nAgent work means a non-empty `text_delta`, a non-empty `thinking_delta` or a `tool_call`. The wrapped `send` throws, or its iteration ends without `turn_end`: The error (if any) propagates; nothing is recorded; a pending handoff stays pending for the next send. With no handoff, the first message is sent as typed. ACP sends the session's system instructions only on the first prompt of a new session (`instructionsSent` in `backend.ts`), so a fresh agent receives instructions, then the handoff, then the message; a resumed one receives the handoff and the message.\n\n**Scope** — In: create `packages/nax/src/chat/acp/acp-recorder.ts` with forwarding, pending-handoff state and worked-terminal detection; create forwarding/handoff tests. Preserve receiver binding and synchronous busy errors. Out: actual conversion/appending and `_acpRecorderDeps = { appendNativeTurn }` (US-006), which extends this file after US-004 exists; history selection/rendering (US-002/003); opener/store wiring (US-007). This story has no dependencies: its final interface accepts store/sessionId/acp but must not import modules only created by other independent stories. Recording, or clearing the handoff for, a turn the ACP backend counts as delivered (usage or plan updates only) but that showed no text, thinking or tool call; such a turn keeps the handoff pending and is not recorded. Showing the handoff text in the TUI transcript.\n\n**Interface** — verbatim TypeScript (recording seam added by US-006):\n```ts\nexport interface RecordAcpTurnsInput {\n  /** The native chat transcript store (the one at the sessions dir), not the agent's. */\n  readonly store: TranscriptStore;\n  readonly sessionId: string;\n  readonly acp: ChatAcpModel;\n  /** Rendered handoff, put in front of the first message sent; empty or absent means none. */\n  readonly handoff?: string;\n}\nexport function recordAcpTurns(session: AgentSession, input: RecordAcpTurnsInput): AgentSession;\n```",
+      "acceptanceCriteria": [
+        "[unit] AC-1: The wrapper's id equals the wrapped session's id.",
+        "[unit] AC-2: The wrapper's backend equals the wrapped session's backend.",
+        "[unit] AC-3: The wrapper's lastTurn returns the wrapped session's current lastTurn, read again on each access after the wrapped value changes.",
+        "[unit] AC-4: answer(\"r1\", { decision: \"allow\" }) on the wrapper calls the wrapped answer with the same arguments and returns its result.",
+        "[unit] AC-5: cancel(\"why\") on the wrapper calls the wrapped cancel with \"why\".",
+        "[unit] AC-6: close() on the wrapper calls the wrapped close and resolves when it does.",
+        "[unit] AC-7: When the wrapped session has runCommand, the wrapper's runCommand forwards its arguments and returns its result.",
+        "[unit] AC-8: When the wrapped session has no runCommand, the wrapper's runCommand is undefined.",
+        "[unit] AC-9: send(\"hi\") yields every event of the wrapped send unchanged and in order.",
+        "[unit] AC-10: With handoff: \"H\", the first send(\"hi\") calls the wrapped send with \"H\\n\\nhi\".",
+        "[unit] AC-11: After a send that ended with turn_end following a text_delta \"ok\", a second send(\"next\") calls the wrapped send with \"next\".",
+        "[unit] AC-12: With handoff absent or \"\", send(\"hi\") calls the wrapped send with \"hi\".",
+        "[unit] AC-13: When the first wrapped iteration throws before turn_end, the error reaches the caller of the iteration and the next send(\"again\") calls the wrapped send with \"H\\n\\nagain\".",
+        "[unit] AC-14: Calling the wrapper's send twice without consuming the first calls the wrapped send twice, both synchronously within the send calls.",
+        "[unit] AC-15: When the wrapped session's second send throws (busy), the wrapper's second send call throws that same error."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "session",
+        "handoff"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One wrapper over the existing AgentSession contract forwards members and tracks one pending handoff; synchronous send/busy behavior and iterable completion are the main risks, with strict isolation required by the session security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/session/agent-session-types.ts",
+        "packages/nax-agent/src/session/agent-session.ts",
+        "packages/nax/src/chat/acp/acp-model.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-recorder.ts",
+        "packages/nax/test/unit/chat/acp/acp-recorder.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the wrapped session's first send throws synchronously, the wrapper propagates the identical error and prefixes the pending handoff on the next accepted send.",
+        "When id and backend change on the wrapped session after wrapping, later wrapper property reads return the new values.",
+        "When wrapped methods read this, calling wrapper answer, cancel, close and runCommand preserves the wrapped session as their receiver."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9060de2254ab2ba8be371d7a7179409ac010e17c"
+    },
+    {
+      "id": "US-006",
+      "title": "Record each terminal ACP turn that shows agent work",
+      "description": "**Goal** — Extend the US-005 wrapper to append each terminal worked turn before iteration completion while retaining pending handoff on unworked or incomplete turns.\n\n**Motivation** — The ACP backend stores only its ACP record and cost baseline there, never the messages (`packages/nax-agent-acp/src/client/backend.ts` `saveBaseline` / `saveFinal`), so nobody owns an ACP brain's message history yet.\n\n**Approach** — Record every ACP turn in the native document. `openChatSession` wraps an ACP brain's session (`recordAcpTurns`). After each turn that reaches `turn_end` having shown agent work (a non-empty `text_delta`, a non-empty `thinking_delta` or a `tool_call`), the wrapper appends two messages to the native chat transcript document (the store at `request.storage.dir`, the one the native brain resumes from): the person's message as typed, and one assistant message holding the agent's reply text (`turn_end.output`, or the concatenated `text_delta` texts when it is empty), a one-line `[tool] <name>` summary per tool call, and `origin: { provider: \"acp:<agent>\", model: <model or \"default\"> }`.\n\nWhen the wrapped iteration ends with a `turn_end` and showed agent work, it clears the handoff and awaits `_acpRecorderDeps.appendNativeTurn(store, sessionId, acpTurnMessages({ message, events, acp }))` before its own iteration completes, so `runChatTurn` (which consumes the whole iteration before writing session metadata) sees the turn recorded.\n\nFailure handling:\n- The native store's `load` or `save` rejects while recording a turn: `appendNativeTurn` resolves; `getLogger().warn(\"chat\", \"could not record the ACP turn\", { sessionId, error })`; the send completes normally with every event delivered; the turn is missing from the native document.\n- The wrapped `send` throws, or its iteration ends without `turn_end`: The error (if any) propagates; nothing is recorded; a pending handoff stays pending for the next send.\n- A turn reaches `turn_end` with no agent work (no non-empty `text_delta`, no non-empty `thinking_delta`, no `tool_call`): Not recorded; a pending handoff stays pending.\n- A turn with agent work ends `cancelled`, `timed_out`, `interrupted` or `errored`: It is recorded like a completed turn (the reply so far, or `(no reply; turn <status>)` for thinking only).\n\nThis is a deliberately narrower evidence set than the one the ACP backend uses to mark its instructions delivered (#2364: `receipt()` in `events.ts` also fires on usage, plan and tool-update updates and on settle); a turn the backend counts as delivered but that showed no text, thinking or tool call keeps the handoff pending and is not recorded (accepted, Out of Scope).\n\n**Scope** — In: extend `packages/nax/src/chat/acp/acp-recorder.ts` with US-001 acpTurnMessages, US-004 appendNativeTurn and the exported test seam; create `acp-recorder-record.test.ts` and preserve US-005 forwarding behavior. The original typed message, never the handoff-prefixed input, is recorded. Out: changes to message conversion/store append implementations (US-001/004), prompt building (US-003) and opener/barrel/TUI integration (US-007). Recording a turn that throws or ends without `turn_end`. Retrying, or showing in the TUI, a failed recording; it is logged as a warning only. Recording, or clearing the handoff for, a turn the ACP backend counts as delivered (usage or plan updates only) but that showed no text, thinking or tool call; such a turn keeps the handoff pending and is not recorded.\n\n**Interface** — verbatim TypeScript (extend the existing US-005 file):\n```ts\nexport interface RecordAcpTurnsInput {\n  /** The native chat transcript store (the one at the sessions dir), not the agent's. */\n  readonly store: TranscriptStore;\n  readonly sessionId: string;\n  readonly acp: ChatAcpModel;\n  /** Rendered handoff, put in front of the first message sent; empty or absent means none. */\n  readonly handoff?: string;\n}\n/** Test seam. */\nexport const _acpRecorderDeps: { appendNativeTurn: typeof appendNativeTurn };\nexport function recordAcpTurns(session: AgentSession, input: RecordAcpTurnsInput): AgentSession;\n```\n\nSeam verification: The seam AC stubs `_acpRecorderDeps.appendNativeTurn` and asserts its arguments. Use a deferred append promise for the AC that gates iteration completion, not timing sleeps.",
+      "acceptanceCriteria": [
+        "[unit] AC-1: When the wrapped iteration ends without a turn_end and without throwing, _acpRecorderDeps.appendNativeTurn is not called and the next send(\"again\") is still prefixed with \"H\\n\\n\".",
+        "[unit] AC-2: When the wrapped iteration yields only turn_end { status: \"errored\", output: \"\" }, appendNativeTurn is not called and the next send(\"again\") is still prefixed with \"H\\n\\n\".",
+        "[unit] AC-3: When the wrapped iteration throws before turn_end, appendNativeTurn is not called.",
+        "[unit] AC-4: With handoff: \"H\" and a wrapped send yielding text_delta \"ok\" and turn_end, _acpRecorderDeps.appendNativeTurn is called once with the store, the session id and acpTurnMessages({ message: \"hi\", events, acp }), where events are the yielded events (the user message is \"hi\", not the prefixed text).",
+        "[unit] AC-5: A turn with agent work ending turn_end { status: \"errored\" } is recorded (appendNativeTurn is called once).",
+        "[unit] AC-6: When a turn reaches turn_end and its only work is a non-empty thinking_delta, recordAcpTurns calls _acpRecorderDeps.appendNativeTurn once.",
+        "[unit] AC-7: When appendNativeTurn returns a promise that resolves later, the consumer's for await over send(\"hi\") does not finish before that promise resolves.",
+        "[unit] Failure handling: When a worked turn ends cancelled, timed_out, interrupted or errored, recordAcpTurns appends the same message pair acpTurnMessages produces for that status, including reply-so-far text or the status-specific no-reply placeholder for thinking-only work.",
+        "[unit] Failure handling: When a terminal turn contains only empty text_delta, empty thinking_delta and non-work updates, recordAcpTurns leaves the handoff pending for the next send.",
+        "[unit] Failure handling: When the native store's load or save rejects during a worked terminal send, consuming recordAcpTurns.send completes normally with every original event delivered unchanged and in order."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "session",
+        "history",
+        "persistence"
+      ],
+      "dependencies": [
+        "US-004",
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Extend the existing wrapper by composing upstream message conversion and nonthrowing append through one deps seam, awaiting persistence after a worked terminal iteration; session persistence requires strict test isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/turn-runner.ts",
+        "packages/nax/src/chat/acp/acp-history.ts",
+        "packages/nax/src/chat/acp/acp-transcript-append.ts",
+        "packages/nax/src/chat/acp/acp-recorder.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/acp/acp-recorder-record.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a turn's only agent work is a tool_call followed by turn_end, recordAcpTurns records the tool summary and sends the next message without the pending handoff.",
+        "When two terminal worked turns are consumed sequentially, recordAcpTurns appends each original user/assistant pair once in conversation order."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ca0010b72546fc793c836e12b4f53eb717278a2a"
+    },
+    {
+      "id": "US-007",
+      "title": "Carry conversation history into and out of ACP chat brains",
+      "description": "**Goal** — Integrate unseen-history handoff and ACP recording into openChatSession and remove obsolete cross-brain history-loss notices.\n\n**Motivation** — User ruling 2026-10-29 (design §6.4): history carries over on a switch, in every direction (native to ACP, ACP to native, ACP to another ACP agent), the same experience as switching native models today.\n\n**Approach** — `openAcpBrain` also reports whether the agent session is fresh (created, with or without the fallback). The ACP branch computes `unseenMessages(history.messages, acp.agent, fresh)`, then `acpHandoff(...)`, renders it with `buildChatHandoff`, and returns `session: recordAcpTurns(opened.session, { store: transcripts, sessionId: meta.sessionId, acp, handoff })`. Its `notice` is the fallback notice and `ACP_HANDOFF_TRIMMED_NOTICE(label, omitted)` (when `omitted > 0`), joined by `\"; \"` when both exist, undefined when neither does. When neither exists the handle has no `notice` key at all (the existing `open-chat-session-acp.test.ts` asserts `\"notice\" in handle` is false). The `ChatSessionHandle.notice` doc comment is updated to cover the trimmed-handoff case. The native branch is unchanged and its session is not wrapped.\n\nWhen the ACP branch opens an agent:\n- a fresh agent session (no agent document, or the F2 fallback after an unusable one) has seen none of the native document;\n- a resumed agent session has seen everything up to and including the last assistant message whose `origin.provider` is `acp:<that agent>`; it has not seen what follows. With no such message (a session from before this feature), it has seen none.\n\nThe unseen messages become handoff entries (`acpHandoff`), rendered by the new prompt builder `buildChatHandoff`, and the wrapper puts that text in front of the first message it sends: `<handoff>\\n\\n<message>`. ACP sends the session's system instructions only on the first prompt of a new session (`instructionsSent` in `backend.ts`), so a fresh agent receives instructions, then the handoff, then the message; a resumed one receives the handoff and the message.\n\nThe native brain needs no change. The native backend already carries history across models (`carryHistoryAcrossModels: true`, `transcript-identity.ts` keeps another model's document), and a document with no `backend` field reads as native (`checkBackendKind`). A session started on an agent gets a native document created by the recorder (`{ savedAt, messages }`), so a later switch to a native model resumes it rather than creating a new session.\n\nThe new ACP-branch logic (unseen messages, handoff, wrapping, notice) goes in a small helper in `open-chat-session.ts` rather than inline in `openChatSession`, which `check:complexity` already scores at 11 of 20. `packages/nax/src/chat/chat-host.ts` is at 593 of 600 lines and is not changed: all wiring sits in `open-chat-session.ts` (342 lines) and five new modules under `src/chat/acp/`.\n\nThe brain-change notice goes. `useSwitchNotices` no longer adds `<new> does not see <old>'s turns`; a model change shows only `model: <name>`, as for a native model change. `modelNotices(to)` takes only the new model and returns only `model: <name>` (the call site passes only `model`); `brainOf` and the then-unused `parseChatAcpModel` import are removed (build gate).\n\n**Scope** — In: modify `packages/nax/src/chat/open-chat-session.ts`, `packages/nax/src/chat/acp/index.ts` (re-export public names from history, handoff entries, handoff, transcript append and recorder beside existing exports), and `packages/nax/src/tui/chat/use-switch-notices.ts`. Update the `US-011 useSwitchNotices brain changes` AC-10, AC-13 and AC-14 expectations in `packages/nax/test/ui/chat/acp-labels.test.tsx` to the single notices `[\"model: Codex\"]`, `[\"model: gpt-6[high]\"]`, `[\"model: Claude Code\"]`; retain same-agent and native effort expectations. Add the two specified integration test files. Out: reimplementing helper algorithms (US-001–006), changing `chat-host.ts`, the native backend, nax-agent or nax-agent-acp, and showing handoff text in the TUI transcript. Handing history to an agent through its own history import (`session/load` replay or an agent-specific API); the handoff is text in front of the first prompt. Writing ACP turns into the agent's own transcript document under `acp-<agent>/`; that document keeps only the ACP record and cost baseline. Updating `.nax/mono/packages/nax/context.md`, which is read-only to the run; a manual follow-up after merge.\n\n**Interface** — Existing entry points and target return contract:\n```ts\nopenAcpBrain(request, { meta, acp }, deps): Promise<OpenedBrain>\n```\nOpenedBrain continues to contain session and optional notice and additionally reports a boolean fresh. ChatSessionHandle retains session/meta/release/history and optional notice, with no notice property emitted when neither fallback nor trimming occurs.\n\nSeams: US-007 consumes `recordAcpTurns` (US-005, US-006), `acpHandoff` (US-003), `buildChatHandoff` (US-003) and `unseenMessages` (US-002). Entry point: `openChatSession` on an `acp:` model, which `ChatHost.start`, `switchTo` and `resume` reach through the host's opener. The ACs that check the first prompt, the resumed suffix and the recorded pair drive `openChatSession` and then the returned `handle.session.send`, and assert on what the stubbed agent session received and what the native store holds; the host-level AC enters one level higher, through `createChatHost(...).send`. Keep the real createFileTranscriptStore in the host-level test; stub only the session/backend seams, never launch a real ACP adapter. `runChatTurn` consumes the whole wrapper iterable before writing metadata, so store assertions immediately after host.send resolves must already see the pair. Verification note: `bun run typecheck` and `bun run check:all` stay green with `brainOf` and its import removed; these are pipeline gates, not additional acceptance criteria.",
+      "acceptanceCriteria": [
+        "[integration] AC-1: openChatSession on acp:codex for a new agent session (no agent document), with a native document holding [user \"plan it\", assistant \"ok\"], returns a handle whose first session.send(\"go\") calls the created agent session's send once with the single string argument buildChatHandoff(acpHandoff(those messages)) + \"\\n\\n\" + \"go\".",
+        "[integration] AC-2: On acp:codex with no native document, the first send(\"go\") calls the agent session's send with \"go\".",
+        "[integration] AC-3: On acp:codex resuming the agent document, where the native document's last message is an assistant message with origin acp:codex, the first send(\"go\") calls the agent session's send with \"go\".",
+        "[integration] AC-4: On acp:codex resuming the agent document, with native messages [u1, a1 (origin acp:codex), u2 \"native q\", a2 \"native a\"], the first send is prefixed with the handoff of [u2, a2] only.",
+        "[integration] AC-5: When resuming the agent document fails with AGENT_SESSION_NOT_FOUND (the F2 fallback), the first send is prefixed with the handoff of every native message.",
+        "[integration] AC-6: In that fallback, handle.notice begins with ACP_FRESH_SESSION_NOTICE(\"Codex\").",
+        "[integration] AC-7: After handle.session.send(\"go\") is consumed on acp:codex/gpt-5.5 with the agent session yielding text_delta \"done\" and turn_end { status: \"completed\", output: \"done\" }, the native store (request.storage.dir) holds a document whose last two messages are { role: \"user\", content: \"go\" } and an assistant message with content: \"done\" and origin: { provider: \"acp:codex\", model: \"gpt-5.5\" }.",
+        "[integration] AC-8: When the handoff drops 3 entries (a new agent session and 12 native user messages of 4,000 characters each), handle.notice is ACP_HANDOFF_TRIMMED_NOTICE(\"Codex\", 3).",
+        "[integration] AC-9: When the fallback runs with those 12 native messages, handle.notice is `${ACP_FRESH_SESSION_NOTICE(\"Codex\")}; ${ACP_HANDOFF_TRIMMED_NOTICE(\"Codex\", 3)}`.",
+        "[integration] AC-10: With no fallback and nothing dropped, the handle has no notice key (\"notice\" in handle is false).",
+        "[integration] AC-11: openChatSession on a native model returns handle.session identical to the session createAgentSession returned (regression pin: the native brain is not wrapped).",
+        "[integration] AC-12: After an ACP turn is recorded in a session that started on acp:codex (no native document before), openChatSession with resumeId and a native model calls resumeAgentSession (not createAgentSession) with the session id.",
+        "[integration] AC-13: After recording an ACP turn in a chat that started on acp:codex with no native document before, reopening that session with resumeId and a native model returns handle.history.messages holding the recorded user and assistant messages.",
+        "[unit] AC-14: useSwitchNotices for a change from openai/gpt-6 to acp:codex appends only model: Codex.",
+        "[unit] AC-15: useSwitchNotices for a change from acp:codex to openai/gpt-6[high] appends only model: gpt-6[high].",
+        "[unit] AC-16: useSwitchNotices for a change from acp:codex to acp:claude appends only model: Claude Code.",
+        "[integration] AC-17: Through createChatHost whose opener is the real openChatSession (with _openChatSessionDeps patched so createAgentSession returns a stub agent session yielding text_delta \"done\" and a turn_end carrying status, output, usage and costUsd, the real createFileTranscriptStore kept, and _acpSessionDeps.acpBackend stubbed as in open-chat-session-acp.test.ts), start({ mode: \"guarded\", model: \"acp:codex\" }) then send(\"go\", onEvent) resolves with the native store already holding the recorded go / done messages."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "session",
+        "history",
+        "integration",
+        "tui"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Integrates freshness/resume/fallback, root versus agent stores, bounded prompt handoff, transparent recording, native migration behavior and TUI notices; session lifecycle and persistence require strict test isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/open-chat-session.ts",
+        "packages/nax/test/unit/chat/open-chat-session-acp.test.ts",
+        "packages/nax/src/tui/chat/use-switch-notices.ts",
+        "packages/nax/src/chat/acp/acp-handoff.ts",
+        "packages/nax/src/chat/acp/acp-recorder.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/open-chat-session-acp-history.test.ts",
+        "packages/nax/test/unit/chat/chat-host-acp-history.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a resumed agent has an old agent document but no matching ACP-origin assistant in native history, its first send receives the complete bounded native-history handoff.",
+        "When an ACP turn is recorded and the chat switches to a different ACP agent, the second agent's first prompt includes the first agent's recorded user/reply entries.",
+        "When a native store is readable on open but fails saving during a worked ACP send, the handle's send still completes with the original event sequence."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/chat/open-chat-session.ts",
+          "reason": "the ACP branch wraps the agent session with `recordAcpTurns`, hands it the unseen messages and combines the fallback and trimmed notices, leaving the `notice` key absent when there is neither; the `ChatSessionHandle.notice` doc comment is updated to name the trimmed-handoff case; the native branch is unchanged."
+        },
+        {
+          "path": "packages/nax/src/chat/acp/index.ts",
+          "reason": "re-exports the public names of the five new modules of this feature (history, handoff entries, handoff, transcript append, recorder) beside the existing exports."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/use-switch-notices.ts",
+          "reason": "`modelNotices(to)` takes only the new model and returns only the `model: <name>` notice; `brainOf` and the then-unused `parseChatAcpModel` import are deleted."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/acp-labels.test.tsx",
+          "reason": "the `US-011 useSwitchNotices brain changes` cases `AC-10 native to ACP`, `AC-13 ACP to native` and `AC-14 one agent to another` expect a second `<new> does not see <old>'s turns` notice; replace each expectation with the single `model: <name>` notice (`[\"model: Codex\"]`, `[\"model: gpt-6[high]\"]`, `[\"model: Claude Code\"]`), because a brain change now carries the conversation."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0c5893aab087c1795ae0cd857dacdf2c57f10ec8"
+    }
+  ],
+  "analysis": "Second-pass adversarial audit: re-read the repository spec at .nax/features/chat-acp-history/spec.md:402-520 and the session, transcript, opener, prompt and TUI interfaces. All 104 numbered spec criteria remain in their original stories, with their qualifying clauses. Inventory by original AC number: US-001 1 explicit model origin, 2 default origin, 3 effort excluded, 4 known ACP author, 5 user not ACP, 6 absent origin, 7 native provider, 8 unknown ACP agent, 9 two-message pair/original user, 10 terminal output wins, 11 delta concatenation, 12 stream reset, 13 thinking omitted, 14 call order, 15 error marker, 16 20-tool cap/overflow line, 17 80-code-point name cap, 18 inputs/previews omitted, 19 cancelled thinking-only placeholder, 20 exact assistant keys/origin; US-002 1 fresh gets all, 2 resumed suffix, 3 missing marker gets all, 4 latest own marker gets none, 5 other agent not own marker, 6 User label, 7 nax label, 8 native model label, 9 Codex label, 10 raw unknown ACP label, 11 content plus tools, 12 tools-only entry, 13 tool-result excluded, 14 empty assistant excluded, 15 thinking ignored, 16 oversize cut plus ellipsis, 17 exact-cap text unchanged, 18 order; US-003 1 short history, 2 12x4000 keeps 9/omits 3 with comparison to upstream entries, 3 post-cut lengths, 4 contiguous suffix despite older fitting entry, 5 empty history, 6 exact notice, 7 empty entries even with omitted, 8 exact single-entry prompt/INTRO, 9 blank-line separators, 10 omitted line position, 11 closing-tag escaping, 12 unique closing line, 13 callable barrel export, 14 barrel/direct equivalence; US-004 1 minimal document keys, 2 pair contents, 3 injected ISO time, 4 append order, 5 model unchanged, 6 owner unchanged, 7 turn unchanged, 8 instructionSources unchanged, 9 one save/session id, 10 save rejection resolves, 11 save warning, 12 load rejection resolves/no save, 13 load warning; US-005 1 id, 2 backend, 3 live lastTurn getter, 4 answer forwarding/result, 5 cancel, 6 awaited close, 7 runCommand forwarding/result, 8 absent runCommand, 9 identical ordered events, 10 handoff prefix, 11 handoff cleared after worked terminal turn, 12 absent/empty handoff, 13 iteration error/pending handoff, 14 synchronous send calls, 15 identical synchronous busy error; US-006 1 incomplete iteration/no append/pending, 2 unworked terminal/no append/pending, 3 thrown iteration/no append, 4 exact seam arguments including original unprefixed message and yielded events, 5 errored worked turn recorded once, 6 thinking-only worked turn recorded, 7 deferred append gates iteration completion; US-007 1 fresh agent receives one concatenated prompt string, 2 no native history, 3 no unseen suffix, 4 resumed suffix only, 5 F2 missing-agent fallback/full handoff, 6 fallback notice, 7 native root-store pair/origin, 8 trim notice, 9 combined notice, 10 absent notice key, 11 native session identity/unwrapped regression, 12 native resume rather than create after ACP-first chat, 13 replayed recorded messages, 14 native-to-ACP single notice, 15 ACP-to-native single notice, 16 cross-agent single notice, 17 real host/opener/file-store durability with complete terminal events.\n\nAudit checks: negative-path ACs already exist in every story (US-001 5-8/15/19; US-002 3/13/14/16; US-003 2-4/7/11; US-004 10-13; US-005 13/15; US-006 1-3/5; US-007 5-6/9). Each failure-table row is covered: store failures by US-004 10-13 and US-006 failure handling; send/incomplete iteration by US-005 13/15 and US-006 1/3; no work by US-006 2 and its empty-update case; noncompleted worked statuses by US-006 status cases; total bound by US-003 2-4 and US-007 8-9; entry bound by US-002 16-17; delimiter escaping by US-003 11-12; no unseen history by US-007 2-3. All 15 feature-level out-of-scope items remain verbatim, with nearby boundaries echoed in descriptions; no story-local exclusion was hoisted. All spec-recommended context files are present within the five-file cap, and every future context file comes from a transitive binding dependency. All seven ids/workdirs and the exact binding graph are unchanged.\n\nCorrections from the draft: make the export check observable through typeof, disambiguate US-007's first send as one string argument rather than separate sends/parameters, make standalone persistence/reopen criteria self-contained, add a concrete unchanged existing-builder output pin from the spec's existing-builders-unchanged requirement, correct agent-label source citations, and distinguish new-behavior red tests from unchanged compatibility pins that necessarily also pass the old code. Reduce US-002/004 complexity to simple and US-005/006 to medium because these use existing contracts and upstream helpers rather than inventing subsystems. Retain three-session-tdd under the explicit session security override, not because all stories are architecturally complex. No description requires the behavior an AC forbids; US-005 introduces forwarding only and US-006 later supplies recording.\n\nGoal and baseline: F3 extends merged F1/F2 so nax chat remains one conversation when switching native→ACP, ACP→native, or ACP→another agent, and recorded ACP turns reappear on resume. This is an enhancement, not greenfield. All implementation changes belong in packages/nax; the agent, ACP and AI packages are read-only references. Graph-first navigation was unavailable because this host exposes no codebase-memory MCP tools; findings below come from direct reads and text search. No implementation or test execution is part of this PRD task.\n\nExisting opening architecture: packages/nax/src/chat/open-chat-session.ts:38 exposes _openChatSessionDeps for backend factories, session create/resume, transcript stores, time and UUID injection. ChatSessionHandle.notice currently describes only unusable-agent fallback at :74. Native sessionOptions already sets carryHistoryAcrossModels: true at :202. OpenedBrain at :217 currently has only session and optional notice; openAcpBrain at :226 uses a distinct file store under acpTranscriptDir, resumes if an agent document exists, retains unusable documents before a fresh create, and leaves unrelated failures propagating. historyOf at :277 reads only messages/savedAt. openNativeBrain at :282 loads the root native document and chooses create versus resume from its presence. openChatSession at :304 validates model input before taking the shared storage lock and has a separate ACP branch near :333 which loads native history then returns an unwrapped ACP session. Target: report fresh on ACP opens, factor the new ACP history/handoff/notice/wrapper integration into a small helper in this file, and retain existing native behavior and cleanup. The specification places this function at complexity 11/20; do not pile new branches inline.\n\nPublic contracts and import boundaries: packages/nax-agent/src/session/agent-session-types.ts:84 defines all five TurnEndStatus values; :103 defines SessionEventBody, including text_delta, thinking_delta, stream_reset, tool_call, tool_result and terminal turn_end; :176 defines AgentSession with optional runCommand, live id/backend/lastTurn, synchronous turn-slot claiming in send, answer/cancel/close. packages/nax-agent/src/session/agent-session.ts:71 implements the facade; its send at :102 rejects closed/busy synchronously before returning an iterable. A wrapper implemented as an async generator send would defer this and break compatibility: invoke inner send immediately and return a separate forwarding iterable. Getter delegation must not snapshot properties or eagerly require them on stubs. Forward methods with their original receiver. packages/nax-agent/src/native/session/transcript-types.ts:30 defines optional backend/owner/model/turn/instruction audit fields and messages; :51 defines load/save/retainFailed/delete/markTurn. Both TranscriptDoc and TranscriptStore are publicly exported at packages/nax-agent/src/index.ts:141, and AgentSession/SessionEvent at :320/:332. Use ChatMessage = TranscriptDoc[\"messages\"][number]; do not import nax-ai into chat. ConversationMessage already supports assistant origin at packages/nax-ai/src/protocols/types.ts:122/:135. No shared-package API/schema change is needed.\n\nNative compatibility and migration: packages/nax-agent/src/session/agent-session-resume.ts:59 treats an absent backend as native and rejects a mismatched backend. packages/nax-agent/src/native/session/transcript-identity.ts:46 preserves another model's history when carryAcrossModels is true; :79 validates documents before identity filtering. A chat that starts on ACP must get a minimal root native document { savedAt, messages } from its first recorded turn, enabling a later native switch to resume rather than create. Existing native documents must be load-merged, preserving every unrelated field, including model, owner, turn, schema, backend and instruction audit. Agent documents under acp-<agent>/ continue to own only ACP lifecycle/cost data, never copied history. No migration/backfill or one-time rewrite: an old resumed agent with no acp:<agent> origin marker receives the entire native history; a fresh or fallback-created agent also receives everything. Resumed agents receive only the suffix after their last assistant origin marker. Compaction can erase markers, causing acceptable repeated handoff. Recorded origin is per agent/model, not effort, and the last-seen scan is per agent rather than per model.\n\nExisting ACP naming and backend behavior: packages/nax/src/chat/acp/acp-model.ts:12 limits chat agents to claude/codex/cursor and :72 supplies Claude Code/Codex/Cursor labels. Unknown acp: providers are not recognized chat-agent markers, but remain raw speaker labels in handoffs. packages/nax/src/chat/acp/acp-session-options.ts:21 defines existing unusable-session codes; :30 also restricts unsupported-capability fallback to resume; :36 formats ACP_FRESH_SESSION_NOTICE; :41 selects the acp-<agent> directory. Keep this fallback policy unchanged. Its _acpSessionDeps at :18 lets tests stub acpBackend without launching real agents. packages/nax-agent-acp/src/client/backend.ts:324 prepends instructions when not yet delivered; :356 load-merges only the cost baseline and :390 updates final savedAt. packages/nax-agent-acp/src/client/events.ts:144 tracks receipt, :183 accepts broader receipt updates and :195 marks receipt on settle. Recorder delivery evidence deliberately differs: only non-empty text_delta, non-empty thinking_delta or tool_call plus turn_end qualifies. Usage/plan-only receipt does not record or clear a pending handoff. ACP deltas are already secret-scrubbed (events.ts:2); do not start recording thinking, tool inputs or result previews.\n\nModules and algorithms: add exactly five small modules beneath packages/nax/src/chat/acp/. US-001 supplies pure ACP-origin recognition and event→user/assistant conversion with authoritative nonempty turn_end.output, reset-aware text fallback, call-order tool summaries, error lookup by callId, 20-call summary limit and 80-code-point name cap. US-002 computes unseen suffixes and maps user/assistant messages to entries, skipping tool results and empty assistants while ignoring thinking; truncate each rendered text at 4,000 JavaScript UTF-16 units then append an ellipsis. US-003 keeps the longest contiguous newest entry suffix whose post-cut speaker.length + text.length total is ≤40,000, counts dropped entries, formats the exact notice and prompt. It must stop at the first nonfitting older entry rather than selecting arbitrary older entries that fit. Prompt framing/intro/blank lines and escaped closing delimiter are wire text, not approximate formatting; bounds count entry text/speaker only, not prompt framing or escaping overhead. US-004 does best-effort load/save with injected now and structured warn/errorMessage on failure. US-005 first introduces the forwarding wrapper and pending handoff with no dependency on US-001/004; US-006 extends that same file with the append seam and turn recording only after terminal worked iterations. Keep this inter-story boundary: US-005 cannot import the not-yet-created append module. US-007 consumes all pieces and exports their public names via the existing ACP barrel (packages/nax/src/chat/acp/index.ts:1). Do not create extra stories or change the binding dependency graph.\n\nPrompt/TUI impact: packages/nax/src/prompts/builders/chat-builder.ts:35 already defines ChatAcpInstructionsInput and :46 builds instructions; add ChatHandoffInput/buildChatHandoff beside the chat builders without changing existing functions. packages/nax/src/prompts/index.ts:47 exports chat builders; add value/type exports there so chat code imports from @/prompts rather than internal builder paths. packages/nax/src/tui/chat/use-switch-notices.ts:3 imports parseChatAcpModel, :12 defines brainOf, :22 adds the obsolete does-not-see notice and :37 calls modelNotices(last.model, model). Delete brainOf and that unused import, change modelNotices(to) and its call to one argument, retain existing model label formatting and mount/session-change/mode behavior. packages/nax/test/ui/chat/acp-labels.test.tsx:131 contains three now-obsolete expectations at :133, :140 and :146; replace them with [\"model: Codex\"], [\"model: gpt-6[high]\"] and [\"model: Claude Code\"], leaving same-agent/model/effort cases intact. packages/nax/src/tui/chat/session-transcript.ts:26 already replays host.history through replayHistory; no change needed because opening history will now include recorded ACP messages. Handoff text itself must never be emitted into TUI history or persisted as the user's message.\n\nCallers and completion ordering: packages/nax/src/chat/chat-host.ts:157 chooses reportAcpOpens(deps.open ?? openChatSession, deps.acp); :262 exposes opening history; :457 switches brains by closing/reopening the same session; :499 delegates sends to runChatTurn. It is 593/600 lines and MUST NOT change. packages/nax/src/chat/turn-runner.ts:54 consumes the complete session iterable before settleNested/ledger drain/metadata write, so yielding turn_end and then awaiting append before iterable completion gives the required durability point without host changes. packages/nax/src/chat/session-hygiene.ts:94 owns close/release sequencing under the lock; recorder close must transparently delegate and integration must preserve release/error paths. Do not change native backend wiring, commands, permissions, ledger or fallback semantics.\n\nRisks and failure contracts: the two stores share a session id but not document content; pass the root store to the recorder, never acp-<agent>/. Preserve all event objects and ordering even if recording later fails. Recording must use the original typed message, not handoff-prefixed text. Do not clear the pending handoff merely because send was invoked, turn_end arrived without work, usage arrived or inner iteration failed; clear only for terminal worked iterations. A thinking-only worked turn is recorded with the no-reply status placeholder; cancelled/timed_out/interrupted/errored worked turns are still recorded. stream_reset clears text accumulation only; tools remain call-ordered and tool name length uses code points, unlike UTF-16 handoff limits. Store load/save failures are logged and swallowed; no retry/UI notice. A missing turn_end never advances history. Resume origin markers and bounded handoff intentionally trade complete replay for bounded size and may repeat old context on prefeature sessions/compaction. Notice absence is a structural contract: omit the key, do not assign undefined. A fallback notice and trim notice must join in that order with '; '. Maintain scope limits and use named constants/helpers.\n\nVerification and test seams: packages/nax/test/unit/chat/open-chat-session-acp.test.ts:62 provides per-directory fake stores and :96 builds injected dependencies; :227 asserts the notice key is absent, :279 exercises resume/fallback errors and :372 proves history comes from the native store. Retain these regression tests. Existing native opening coverage is in packages/nax/test/unit/chat/open-chat-session.test.ts, host switching/resume in chat-host-resume.test.ts and ACP lifecycle in chat-host-acp.test.ts:103; chat-host.test.ts:77/:123 shows a real opener with patched session factory and real storage. New open-history integration tests should call the returned session.send and inspect received agent prompts and native documents, not merely helper invocations. US-007 AC-17 must use createChatHost with the real opener and real createFileTranscriptStore, patch _openChatSessionDeps.createAgentSession and _acpSessionDeps.acpBackend, emit a fully formed turn_end including usage/costUsd, and assert store state before send resolves. It must not substitute a fake opener or launch an installed ACP agent. Use _acpRecorderDeps.appendNativeTurn to assert original-message/event arguments and deferred append completion. Use logger warn spy/addSink to observe real logging; shared makeTempDir/cleanupTempDir/makeLogger/makeNaxConfig/withDepsRestore helpers and restore every patched seam. Tests for newly added history/handoff behavior should fail against the prior implementation; unchanged native-session and forwarding compatibility pins should pass both the prior and revised implementations. Test files mirror source under test/unit, with the specified UI expectation updates under test/ui. Run targeted bun test paths with --timeout=30000 from packages/nax; the pipeline owns typecheck/check:all/full tests. Never bare bun test, never bun run nax, and never coverage inside NAX_SANDBOXED=1. Read docs/architecture/ARCHITECTURE.md and applicable .nax/rules before implementation. No release/version bump, dependency change, generated context edit, or cross-package migration is required.",
+  "outOfScope": [
+    "Recording an ACP turn's tool calls as structured native `toolCalls` / `tool-result` messages, or carrying tool inputs, results or thinking; a turn's tools are recorded as one `[tool] <name>` line each.",
+    "Writing ACP turns into the agent's own transcript document under `acp-<agent>/`; that document keeps only the ACP record and cost baseline.",
+    "Recording a turn that throws or ends without `turn_end`.",
+    "Retrying, or showing in the TUI, a failed recording; it is logged as a warning only.",
+    "Native compaction that summarises away every message an agent wrote: that agent's next reopen is then handed the whole native history again, including turns it already saw.",
+    "An agent session opened before this feature has no recorded turns of its own, so its first reopen is handed the whole native history, possibly repeating what it saw.",
+    "Handing history to an agent through its own history import (`session/load` replay or an agent-specific API); the handoff is text in front of the first prompt.",
+    "Making the handoff bounds configurable; they are constants.",
+    "Recording, or clearing the handoff for, a turn the ACP backend counts as delivered (usage or plan updates only) but that showed no text, thinking or tool call; such a turn keeps the handoff pending and is not recorded.",
+    "A dedicated speaker for a native compaction summary (a user message starting with `COMPACTION_SUMMARY_PREFIX`); it is handed over as a `User:` entry.",
+    "Keeping UTF-16 surrogate pairs whole when an entry is cut at 4,000 units.",
+    "Showing the handoff text in the TUI transcript.",
+    "Changing `chat-host.ts`, the native backend, nax-agent or nax-agent-acp.",
+    "Workflow tools on the `nax-agent` ACP server that koda connects to; a separate later feature.",
+    "Updating `.nax/mono/packages/nax/context.md`, which is read-only to the run; a manual follow-up after merge."
+  ],
+  "routingProfile": "native-claude-opus"
+}
