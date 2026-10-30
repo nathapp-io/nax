@@ -3,7 +3,7 @@
   "feature": "chat-acp-brain",
   "branchName": "feat/chat-acp-brain",
   "createdAt": "2026-10-30T00:00:00.000Z",
-  "updatedAt": "2026-10-30T02:07:51.902Z",
+  "updatedAt": "2026-10-30T02:14:15.957Z",
   "userStories": [
     {
       "id": "US-001",
@@ -297,14 +297,17 @@
         "US-003",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Session profiles, environment inheritance and the exact resume failure allowlist define security-sensitive session policy."
+        "reasoning": "Session profiles, environment inheritance and the exact resume failure allowlist define security-sensitive session policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/client/options.ts",
@@ -320,7 +323,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "bd59edbf0d25dabad5058183a50da8aadef944e8"
     },
     {
       "id": "US-006",
