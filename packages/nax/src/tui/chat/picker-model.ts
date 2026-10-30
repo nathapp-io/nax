@@ -1,10 +1,12 @@
 /** Pure picker rows, filtering, and host-choice metadata. */
 import { parseModelSpec } from "@nathapp/nax-agent";
 import {
+  acpModelLabel,
   type ChatMode,
   type ChatSessionRow,
   EFFORT_LEVELS,
   type EffortLevel,
+  isChatAcpModel,
   modelEffort,
   sessionTitleText,
 } from "@/chat";
@@ -85,6 +87,8 @@ export interface PickerModelInput {
   /** What a choice warned about — a session another process holds. */
   readonly warning?: string;
   readonly nowMs?: number;
+  /** Why a model's row cannot be used right now (an ACP agent that is not installed), if it cannot. */
+  readonly modelNote?: (model: string) => string | undefined;
 }
 
 /** Display-safe single-row text: a model string and a session's title are not the theme's. */
@@ -104,12 +108,13 @@ function modelEntries(input: PickerModelInput): readonly PickerEntry[] {
     const current = base === currentBase;
     const original = current ? input.currentModel : first;
     const effortLabel = input.pending?.get(base) ?? parseModelSpec(original).effort ?? "default";
+    const note = input.modelNote?.(base);
     return {
       value: base,
-      label: displayText(base),
+      label: displayText(isChatAcpModel(base) ? acpModelLabel(base) : base),
       original,
       effortLabel,
-      detail: displayText(`effort ${effortLabel}`),
+      detail: displayText(note === undefined ? `effort ${effortLabel}` : `unavailable: ${note}`),
       current,
     };
   });

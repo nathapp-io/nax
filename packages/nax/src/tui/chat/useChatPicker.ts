@@ -75,6 +75,8 @@ function modelOf(state: PickerState, current: ChatHostState, host: ChatHost): Pi
     effortLevels: host.effortLevels?.(current.model) ?? EFFORT_LEVELS,
     currentModel: current.model,
     currentMode: current.mode,
+    // A bound call: `modelNote` is a method on the host, so the bare reference would lose `this`.
+    modelNote: (model) => host.modelNote?.(model),
     ...(state.sessions === undefined ? {} : { sessions: state.sessions }),
     ...(state.warning === undefined ? {} : { warning: state.warning }),
   });
