@@ -171,10 +171,20 @@ export function pickerLayout(model: PickerModel, options: PickerLayoutOptions): 
   return { selected, first, rows: lines.length, lines };
 }
 
+/** ctrl+x: the jobs picker's stop key. */
+function isStopKey(input: string, key: Key, kind: PickerKind): boolean {
+  return kind === "jobs" && key.ctrl && input === "x";
+}
+
 /** The keys the picker owns, and no others. */
-function ownsPickerKey(key: Key, kind: PickerKind): boolean {
+function ownsPickerKey(input: string, key: Key, kind: PickerKind): boolean {
   return Boolean(
-    key.escape || key.return || key.upArrow || key.downArrow || (kind === "model" && (key.leftArrow || key.rightArrow)),
+    key.escape ||
+      key.return ||
+      key.upArrow ||
+      key.downArrow ||
+      (kind === "model" && (key.leftArrow || key.rightArrow)) ||
+      isStopKey(input, key, kind),
   );
 }
 
@@ -183,6 +193,8 @@ interface PickerSelection {
   readonly kind: PickerKind;
   readonly query?: string;
   readonly index: number;
+  /** The jobs picker's highlight: the row's value, so it follows the row as the list regroups. */
+  readonly value?: string;
 }
 
 export interface PickerProps {
@@ -197,6 +209,8 @@ export interface PickerProps {
   readonly active?: boolean;
   readonly onChoose: (entry: PickerEntry) => void;
   readonly onCycle?: (entry: PickerEntry, step: 1 | -1) => void;
+  /** ctrl+x on the jobs picker's highlighted entry. */
+  readonly onStop?: (entry: PickerEntry) => void;
   readonly onCancel: () => void;
 }
 
@@ -247,6 +261,7 @@ export function Picker({
   active = true,
   onChoose,
   onCycle,
+  onStop,
   onCancel,
   query = model.query ?? "",
   onQuery,
@@ -257,6 +272,11 @@ export function Picker({
   if (latest.current.kind !== model.kind || latest.current.query !== query) {
     latest.current = { kind: model.kind, query, index: FIRST_ENTRY };
   }
+  // The jobs list regroups as rows change state: the highlight is the row's value, and falls
+  // back to the first row only when that row is no longer listed (or nothing was chosen yet).
+  if (model.kind === "jobs" && !model.entries.some((entry) => entry.value === latest.current.value)) {
+    latest.current = { ...latest.current, index: FIRST_ENTRY, value: model.entries[FIRST_ENTRY]?.value };
+  }
   const queryRef = useRef(query);
   queryRef.current = query;
   /** Resolve against the synchronous query, not the previous render's filtered rows. */
@@ -264,13 +284,23 @@ export function Picker({
     model.kind === "model" ? matchingEntries(model.allEntries ?? model.entries, queryRef.current) : model.entries;
   const last = (): number => Math.max(FIRST_ENTRY, entries().length - 1);
   /** The newest pointer, clamped to the latest query's matches even within one input batch. */
-  const pointer = (): number => Math.min(Math.max(latest.current.index, FIRST_ENTRY), last());
+  const pointer = (): number => {
+    if (model.kind === "jobs") {
+      return Math.max(
+        FIRST_ENTRY,
+        model.entries.findIndex((entry) => entry.value === latest.current.value),
+      );
+    }
+    return Math.min(Math.max(latest.current.index, FIRST_ENTRY), last());
+  };
 
   const move = (delta: number): void => {
+    const index = Math.min(Math.max(pointer() + delta, FIRST_ENTRY), last());
     const value: PickerSelection = {
       kind: model.kind,
       query: queryRef.current,
-      index: Math.min(Math.max(pointer() + delta, FIRST_ENTRY), last()),
+      index,
+      ...(model.kind === "jobs" ? { value: entries()[index]?.value } : {}),
     };
     latest.current = value;
     setSelection(value);
@@ -293,15 +323,20 @@ export function Picker({
   useInput(
     (input, key) => {
       if (editQuery(input, key)) return;
-      if (!ownsPickerKey(key, model.kind)) return;
+      if (!ownsPickerKey(input, key, model.kind)) return;
       // ink reports a lone escape as `escape` *and* `meta`, so escape is taken first: the
       // chord rule below is about shifted and ctrl keys, which belong to other surfaces.
       if (key.escape) {
         onCancel();
         return;
       }
-      if (key.shift || key.ctrl || key.meta) return;
       const entry = entries()[pointer()];
+      // ctrl+x is the one chord the jobs picker owns, so it is taken before the chord rule.
+      if (isStopKey(input, key, model.kind)) {
+        if (entry !== undefined) onStop?.(entry);
+        return;
+      }
+      if (key.shift || key.ctrl || key.meta) return;
       if (entry === undefined) return;
       applyEntryKey(key, entry, { onChoose, onCycle, move });
     },

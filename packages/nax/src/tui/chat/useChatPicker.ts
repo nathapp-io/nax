@@ -1,4 +1,5 @@
 /** Picker lifecycle and synchronous pending effort state. */
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { useCallback, useRef, useState } from "react";
 import type { ChatSessionRow } from "@/chat";
 import {
@@ -53,6 +54,8 @@ export interface ChatPicker {
   /** Return: the host action the chosen entry names, or the warning an in-use session earns. */
   choose(entry: PickerEntry): void;
   cycle(entry: PickerEntry, step: 1 | -1): void;
+  /** ctrl+x on a jobs row: stop a running task or cancel a running job; the picker stays open. */
+  stop(entry: PickerEntry): void;
 }
 
 /** The host action a choice names, decided by which picker asked. */
@@ -77,6 +80,11 @@ function outputOf(host: ChatHost, id: string): { state: string; read: () => Prom
   const job = jobs?.get(id);
   if (jobs === undefined || job === undefined) return undefined;
   return { state: job.state, read: () => jobs.logTail(id, OUTPUT_TAIL_LINES) };
+}
+
+/** The warning a row earns when ctrl+x names something that is not running. */
+function notRunning(id: string): string {
+  return `${id} is not running`;
 }
 
 /** The warning a held session earns: choosing it again would run two processes at once. */
@@ -199,6 +207,58 @@ export function useChatPicker({ host, runControl, onError, show }: ChatPickerOpt
     [state, host, runControl, showOutput],
   );
 
+  /** Draw `warning` (or clear it) on the picker that is open now; a picker closed since is left alone. */
+  const warn = useCallback((opening: number, warning: string | undefined): void => {
+    if (openings.current !== opening) return;
+    setState((current) => {
+      if (current === undefined) return current;
+      const { warning: _previous, ...rest } = current;
+      return warning === undefined ? rest : { ...rest, warning };
+    });
+  }, []);
+
+  /** Cancel a running job once the registry says this chat may; a refusal or failure becomes the warning. */
+  const cancelJob = useCallback(
+    async (id: string, opening: number): Promise<void> => {
+      const jobs = host.jobs;
+      if (jobs === undefined) return;
+      try {
+        const verdict = await jobs.canCancel(id);
+        if (verdict.ok) await jobs.cancel(id);
+        warn(opening, verdict.ok ? undefined : verdict.message);
+      } catch (error) {
+        warn(opening, errorMessage(error));
+      }
+    },
+    [host, warn],
+  );
+
+  // No host control: a stop acts on jobs and tasks, not on the session, so it works mid-turn.
+  const stop = useCallback(
+    (entry: PickerEntry): void => {
+      if (state?.kind !== "jobs") return;
+      const opening = openings.current;
+      const id = entry.value;
+      const found = host.tasks?.get(id);
+      if (host.tasks !== undefined && found !== undefined) {
+        if (found.state !== "running") {
+          warn(opening, notRunning(id));
+          return;
+        }
+        try {
+          host.tasks.stop(id);
+          warn(opening, undefined);
+        } catch (error) {
+          warn(opening, errorMessage(error));
+        }
+        return;
+      }
+      if (host.jobs?.get(id)?.state === "running") void cancelJob(id, opening);
+      else warn(opening, notRunning(id));
+    },
+    [state?.kind, host, warn, cancelJob],
+  );
+
   const current = state === undefined ? undefined : host.current();
   const model = state === undefined || current === undefined ? undefined : modelOf(state, current, host);
   const setQuery = useCallback((query: string): void => {
@@ -216,5 +276,5 @@ export function useChatPicker({ host, runControl, onError, show }: ChatPickerOpt
     },
     [state?.kind, host],
   );
-  return { model, open, cancel, choose, setQuery, cycle };
+  return { model, open, cancel, choose, setQuery, cycle, stop };
 }
