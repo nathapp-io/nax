@@ -3,7 +3,7 @@
   "feature": "chat-acp-history",
   "branchName": "feat/chat-acp-history",
   "createdAt": "2026-10-29T00:00:00.000Z",
-  "updatedAt": "2026-10-30T05:11:23.332Z",
+  "updatedAt": "2026-10-30T05:20:31.122Z",
   "userStories": [
     {
       "id": "US-001",
@@ -105,14 +105,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "three-session-tdd",
-        "reasoning": "One additive pure helper module performs a reverse origin-marker scan and entry mapping with existing message/agent types; retain the required session security override for selection of prior session turns."
+        "reasoning": "One additive pure helper module performs a reverse origin-marker scan and entry mapping with existing message/agent types; retain the required session security override for selection of prior session turns.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/chat/acp/acp-model.ts",
@@ -130,7 +133,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "2f0f47b2dc40a74b1e8cae6ef338a0c5b23af072"
     },
     {
       "id": "US-003",
