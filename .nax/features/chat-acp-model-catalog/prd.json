@@ -3,7 +3,7 @@
   "feature": "chat-acp-model-catalog",
   "branchName": "feat/chat-acp-model-catalog",
   "createdAt": "2026-10-30T00:00:00.000Z",
-  "updatedAt": "2026-10-30T15:09:49.242Z",
+  "updatedAt": "2026-10-30T15:20:01.150Z",
   "userStories": [
     {
       "id": "US-001",
@@ -143,14 +143,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Creates short-lived external agent sessions, handles authentication/backend failures, coordinates per-agent asynchronous work and shutdown across CLI/catalog/host; session and permission-profile involvement requires strict isolated TDD."
+        "reasoning": "Creates short-lived external agent sessions, handles authentication/backend failures, coordinates per-agent asynchronous work and shutdown across CLI/catalog/host; session and permission-profile involvement requires strict isolated TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/acp/acp-catalog.ts",
@@ -201,7 +204,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9bc6b8440ba0ff5b2e2c01d0808e8e1275f05457"
     },
     {
       "id": "US-003",
