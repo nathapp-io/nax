@@ -3,7 +3,7 @@
   "feature": "chat-acp-history",
   "branchName": "feat/chat-acp-history",
   "createdAt": "2026-10-29T00:00:00.000Z",
-  "updatedAt": "2026-10-30T05:26:09.200Z",
+  "updatedAt": "2026-10-30T05:34:15.196Z",
   "userStories": [
     {
       "id": "US-001",
@@ -240,14 +240,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "three-session-tdd",
-        "reasoning": "One small additive helper uses the existing TranscriptStore and logger to load/merge/save inside a catch, with an injected clock; persisted session documents still require the mandated session security override."
+        "reasoning": "One small additive helper uses the existing TranscriptStore and logger to load/merge/save inside a catch, with an injected clock; persisted session documents still require the mandated session security override.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax-agent/src/native/session/transcript-types.ts",
@@ -266,7 +269,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7666b3fb7399d583f5c870440bef983a969b7a86"
     },
     {
       "id": "US-005",
