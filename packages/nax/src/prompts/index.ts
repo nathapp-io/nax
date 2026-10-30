@@ -45,8 +45,10 @@ export {
 } from "./builders/bot-pr-review-builder";
 export { buildBotRulingReadPrompt } from "./builders/bot-ruling-builder";
 export {
+  buildChatAcpInstructions,
   buildChatFeatureMessage,
   buildChatInstructions,
+  type ChatAcpInstructionsInput,
   type ChatFeatureMessageInput,
   type ChatInstructionsInput,
 } from "./builders/chat-builder";

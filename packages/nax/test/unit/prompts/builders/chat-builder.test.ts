@@ -77,6 +77,19 @@ describe("buildChatInstructions", () => {
   test("AC-9: omits the rules section for an empty index", () => {
     expect(guarded()).not.toContain("## Rules index");
   });
+  test("AC-16: native guarded and full instructions keep their exact text", () => {
+    const commands =
+      "## Commands outside the sandbox\n\nSet `unsandboxed: true` with an `unsandboxedReason` only when a command needs the network, the Docker socket, a local port or a device the sandbox blocks.";
+    const intro = "You are an interactive coding agent working in this repository with the person.";
+    const rules = prompts.buildRulesIndexSection({ entries: [rule], shownAutomatically: true });
+    const withRules = (mode: "guarded" | "full") => prompts.buildChatInstructions({ mode, rulesIndex: [rule] });
+    expect(guarded()).toBe(`${intro}\n\n## Permission mode\n\n${chatPermissionParagraph("guarded")}\n\n${commands}`);
+    expect(prompts.buildChatInstructions({ mode: "full", rulesIndex: [] })).toBe(
+      `${intro}\n\n## Permission mode\n\nIn full mode, tools run without asking.\n\n${commands}`,
+    );
+    expect(withRules("guarded")).toBe(`${guarded()}\n\n${rules}`);
+    expect(withRules("full")).toEndWith(`\n\n${rules}`);
+  });
   test("introduces an interactive repository coding partner", () => {
     expect(guarded().split("\n\n")[0]).toBe(
       "You are an interactive coding agent working in this repository with the person.",
