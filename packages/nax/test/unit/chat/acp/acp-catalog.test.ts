@@ -240,6 +240,17 @@ describe("AcpCatalog persistence", () => {
     expect(acp.rows()).toContain("acp:codex/live");
     expect(acp.rows()).not.toContain("acp:codex/saved");
   });
+  test("a live open that reports no lists still wins a racing saved load", async () => {
+    const { acp, store } = fixture();
+    const pending = Promise.withResolvers<ReadonlyMap<AcpChatAgent, AcpOffer>>();
+    store.load = () => pending.promise;
+    const loading = acp.load();
+    acp.opened("acp:codex", {});
+    pending.resolve(new Map([["codex", { models: ["saved"], efforts: ["high"] }]]));
+    await loading;
+    expect(acp.rows()).not.toContain("acp:codex/saved");
+    expect(acp.effortLevels("acp:codex")).not.toContain("high");
+  });
   test("AC-12 saves a snapshot of every known agent", async () => {
     const { acp, store } = fixture(saved());
     await acp.load();

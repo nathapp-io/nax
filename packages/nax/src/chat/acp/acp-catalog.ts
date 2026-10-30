@@ -211,7 +211,9 @@ export function createAcpCatalog(input: {
       if (offeredModels) models.set(target.agent, offeredModels);
       const offeredEfforts = reportedStrings(capabilities.offeredEfforts);
       if (offeredEfforts) efforts.set(target.agent, offeredEfforts);
-      if (offeredModels || offeredEfforts) learned.add(target.agent);
+      // Any successful open is this process's knowledge, even when it reported no lists, so a pending
+      // saved load must not overwrite it (spec: learned always wins, and an empty offer still warms later).
+      learned.add(target.agent);
       failures.delete(target.agent);
       if (Array.isArray(capabilities.offeredModels) || Array.isArray(capabilities.offeredEfforts)) saveOffers();
     },
