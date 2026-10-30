@@ -114,6 +114,8 @@ export interface FakeScript {
   /** Default "fake-session-1". */
   readonly sessionId?: string;
   readonly configOptions?: readonly SessionConfigOption[];
+  /** The `configOptions` every session/set_config_option answer returns; absent: the session/new options. */
+  readonly setConfigOptionsAnswer?: readonly SessionConfigOption[];
   /** The legacy `modes` block session/new and the restore answers return (session/set_mode, Gemini). */
   readonly modes?: SessionModeState;
   /** The legacy `models` block session/new and the restore answers return: outside the SDK's schemas, so a plain record. */

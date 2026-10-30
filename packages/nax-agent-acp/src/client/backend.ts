@@ -249,8 +249,13 @@ async function openBackend(base: ResolvedAcpOptions, ctx: BackendOpenContext): P
 
 /** D6-h: the live process's capability record; a restored process adds restoredWith. */
 function infoOf(s: AcpSession): BackendInfo {
-  const { record, restoredWith } = s.live.acp;
-  const capabilities = restoredWith === undefined ? { ...record } : { ...record, restoredWith };
+  const { record, restoredWith, offered } = s.live.acp;
+  const capabilities = {
+    ...record,
+    offeredModels: offered.models,
+    offeredEfforts: offered.efforts,
+    ...(restoredWith === undefined ? {} : { restoredWith }),
+  };
   return Object.freeze({ kind: s.base.kind, capabilities: Object.freeze(capabilities) });
 }
 
