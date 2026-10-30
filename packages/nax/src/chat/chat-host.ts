@@ -13,7 +13,13 @@ import { NaxError } from "@/errors";
 import type { InteractionChain } from "@/interaction";
 import type { Logger } from "@/logger";
 import { projectOutputDir } from "@/runtime";
-import { type AcpCatalog, isChatAcpModel } from "./acp";
+import {
+  ACP_RUN_COMMAND_UNSUPPORTED,
+  type AcpCatalog,
+  assertAcpInstalled,
+  isChatAcpModel,
+  reportAcpOpens,
+} from "./acp";
 import { createAgentsProvider } from "./agents-provider";
 import { type ChatAskController, createChatAskController } from "./ask-controller";
 import { type AskFallback, createAskFallback } from "./ask-fallback";
@@ -127,6 +133,7 @@ class NativeChatHost implements ChatHost {
   private readonly hostJobs?: ReturnType<typeof createHostJobs>;
   private readonly fallback: AskFallback;
   private readonly hygiene: ReturnType<typeof createSessionHygiene>;
+  private readonly open: typeof openChatSession;
   private readonly loopHandlers: ReturnType<typeof createRuleDeliveryHandlers>;
   private readonly projectKey: string;
   private readonly outputDir: string;
@@ -146,6 +153,7 @@ class NativeChatHost implements ChatHost {
 
   constructor(private readonly deps: ChatHostDeps) {
     this.hygiene = createSessionHygiene(deps);
+    this.open = reportAcpOpens(deps.open ?? openChatSession, deps.acp);
     this.repoRoot = deps.repoRoot;
     this.catalog = deps.resources?.catalog;
     this.naxPlugins = deps.resources?.naxPlugins;
@@ -275,8 +283,9 @@ class NativeChatHost implements ChatHost {
    */
   private async primeContextWindow(model: string): Promise<void> {
     if (this.contextWindows.has(model)) return;
+    // An ACP model names no nax-ai catalog entry: the agent owns its context window.
     const split = model.indexOf("/");
-    if (split <= 0) {
+    if (split <= 0 || isChatAcpModel(model)) {
       this.contextWindows.set(model, undefined);
       return;
     }
@@ -316,7 +325,8 @@ class NativeChatHost implements ChatHost {
 
   private async startSession(input: { mode: ChatMode; model: string }): Promise<void> {
     this.assertOpen();
-    const next = await (this.deps.open ?? openChatSession)({
+    assertAcpInstalled(this.deps.acp, input.model);
+    const next = await this.open({
       ...input,
       storage: this.deps.storage,
       cwd: this.deps.cwd,
@@ -354,7 +364,7 @@ class NativeChatHost implements ChatHost {
   }
 
   notice(): string | undefined {
-    return this.resumeNotice;
+    return this.resumeNotice ?? this.handle?.notice;
   }
 
   resourceNotice(): string | undefined {
@@ -376,7 +386,7 @@ class NativeChatHost implements ChatHost {
     if (this.handle?.meta.sessionId !== id) {
       let next: ChatSessionHandle;
       try {
-        next = await (this.deps.open ?? openChatSession)({
+        next = await this.open({
           storage: this.deps.storage,
           cwd: this.deps.cwd,
           repoRoot: this.repoRoot,
@@ -415,7 +425,7 @@ class NativeChatHost implements ChatHost {
     // Reopens own per-open cleanup, but share the original storage lock. Even a
     // failed open must drain its shadow without releasing the active host's lock.
     const storage: SessionStorage = { ...this.deps.storage, acquireLock: async () => async () => {} };
-    const next = await (this.deps.open ?? openChatSession)({
+    const next = await this.open({
       ...input,
       storage,
       resumeId: previous.meta.sessionId,
@@ -449,6 +459,7 @@ class NativeChatHost implements ChatHost {
       input.model === undefined ? from.model : clampModelEffort(input.model, this.effortLevels(input.model));
     const target = { mode: input.mode ?? from.mode, model };
     if (target.mode === from.mode && target.model === from.model) return;
+    assertAcpInstalled(this.deps.acp, target.model);
     try {
       await previous.session.close();
     } finally {
@@ -521,7 +532,8 @@ class NativeChatHost implements ChatHost {
   }
 
   async runCommand(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult> {
-    const { session } = this.requireHandle();
+    const { session, meta } = this.requireHandle();
+    if (isChatAcpModel(meta.model)) return { isError: true, content: ACP_RUN_COMMAND_UNSUPPORTED };
     if (!session.runCommand) return { isError: true, content: "this session cannot run commands" };
     return session.runCommand(command, (event) => {
       routeAskEvent(event, this.asks);

@@ -1,4 +1,5 @@
 export { _acpCatalogDeps, type AcpCatalog, createAcpCatalog } from "./acp-catalog";
+export { assertAcpInstalled, reportAcpOpens } from "./acp-host";
 export {
   ACP_CHAT_AGENTS,
   ACP_RUN_COMMAND_UNSUPPORTED,
