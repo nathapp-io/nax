@@ -249,6 +249,7 @@ type SecretSpan
 type SendTurnOpts
 type SessionAskPort
 type SessionBackend
+type SessionConfigureInput
 type SessionEvent
 type SessionEventBase
 type SessionEventBody
