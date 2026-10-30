@@ -555,6 +555,7 @@ class NativeChatHost implements ChatHost {
   }
 
   private async teardown(): Promise<void> {
+    this.deps.acp?.close();
     // closed blocks new operations. Drain existing opens, replacements and rollback
     // reopens (including late-handle cleanup) before releasing the final handle.
     await Promise.all(this.sessionOperations);

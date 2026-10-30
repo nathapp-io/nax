@@ -102,6 +102,8 @@ async function fixture() {
 function stubAcpCatalog(): AcpCatalog {
   return {
     load: async () => {},
+    warm: () => {},
+    close: () => {},
     rows: () => [],
     effortLevels: () => ["default"],
     installed: () => true,
@@ -131,6 +133,37 @@ const EXIT_STATE: ChatHostState = {
 const EXIT_SUMMARY = "✻ nax chat session abc123 · $0.88\n  resume with: nax chat --resume abc123";
 
 describe("chatCommand", () => {
+  test("probe AC-13 warms once with cwd only after start resolves", async () => {
+    const f = await fixture();
+    const catalog = stubAcpCatalog();
+    const warm = mock((_cwd: string) => {});
+    catalog.warm = warm;
+    const pending = Promise.withResolvers<void>();
+    const entered = Promise.withResolvers<void>();
+    f.host.start.mockImplementation(() => {
+      entered.resolve();
+      return pending.promise;
+    });
+    const running = f.chatCommand({ dir: "/r" }, { ...f.deps, createAcpCatalog: () => catalog });
+    await Promise.race([entered.promise, running]);
+    expect(warm).not.toHaveBeenCalled();
+    pending.resolve();
+    await running;
+    expect(warm).toHaveBeenCalledTimes(1);
+    expect(warm).toHaveBeenCalledWith("/r");
+  });
+  test("probe AC-14 startup rejection never warms", async () => {
+    const f = await fixture();
+    const catalog = stubAcpCatalog();
+    const warm = mock(() => {});
+    catalog.warm = warm;
+    f.host.start.mockRejectedValue(new Error("start failed"));
+    await f.chatCommand({ dir: "/r" }, { ...f.deps, createAcpCatalog: () => catalog });
+    expect(f.host.start).toHaveBeenCalledTimes(1);
+    expect(f.host.close).toHaveBeenCalledTimes(1);
+    expect(warm).not.toHaveBeenCalled();
+  });
+
   test("US-001 AC-21 composes effort metadata without changing choices, including --model", async () => {
     const f = await fixture();
     f.config.models.native = { balanced: "openai/gpt-6" };

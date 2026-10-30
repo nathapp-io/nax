@@ -303,3 +303,91 @@ describe("AcpCatalog persistence", () => {
     expect(acp.rows()).toEqual(["acp:claude", "acp:codex", "acp:cursor"]);
   });
 });
+
+describe("AcpCatalog warm and close", () => {
+  function fixture(offers: ReadonlyMap<AcpChatAgent, AcpOffer> = new Map()) {
+    stubProbe({ claude: undefined, cursor: undefined });
+    const pending = Promise.withResolvers<Readonly<Record<string, unknown>>>();
+    const discover = mock(() => pending.promise);
+    _acpCatalogDeps.probeAcpAgent = discover;
+    const logger = makeLogger();
+    const save = mock(async (_offers: ReadonlyMap<AcpChatAgent, AcpOffer>) => {});
+    _acpCatalogDeps.createAcpOfferStore = () => ({ load: async () => offers, save });
+    const acp = createAcpCatalog({ env: ENV, sessionsDir: "/s", logger });
+    return { acp, pending, discover, logger, save };
+  }
+
+  test("AC-6/7/11 starts only installed missing agents without waiting, once per start", async () => {
+    const f = fixture();
+    expect(f.acp.warm("/r")).toBeUndefined();
+    f.acp.warm("/r");
+    expect(f.discover).toHaveBeenCalledTimes(1);
+    expect(f.discover).toHaveBeenCalledWith({ agent: "codex", cwd: "/r" });
+    f.pending.resolve({});
+    await f.pending.promise;
+    await Promise.resolve();
+    f.acp.warm("/r");
+    expect(f.discover).toHaveBeenCalledTimes(1);
+  });
+  test.each(["saved", "learned"])("AC-8 skips %s nonempty models", async (source) => {
+    const f = fixture(source === "saved" ? new Map([["codex", { models: ["m"], efforts: [] }]]) : new Map());
+    await f.acp.load();
+    if (source === "learned") f.acp.opened("acp:codex", { offeredModels: ["m"] });
+    f.acp.warm("/r");
+    expect(f.discover).not.toHaveBeenCalled();
+  });
+  test.each(["saved", "learned"])("efforts-only %s offers do not suppress warming", async (source) => {
+    const f = fixture(source === "saved" ? new Map([["codex", { models: [], efforts: ["low"] }]]) : new Map());
+    await f.acp.load();
+    if (source === "learned") f.acp.opened("acp:codex", { offeredEfforts: ["low"] });
+    f.acp.warm("/r");
+    expect(f.discover).toHaveBeenCalledTimes(1);
+    f.pending.resolve({});
+  });
+  test("AC-9 learns and saves a successful probe", async () => {
+    const f = fixture();
+    f.acp.warm("/r");
+    f.pending.resolve({ offeredModels: ["m1"], offeredEfforts: ["low"] });
+    await waitForCondition(() => f.save.mock.calls.length === 1);
+    expect(f.acp.rows()).toContain("acp:codex/m1");
+    expect(f.acp.effortLevels("acp:codex")).toContain("low");
+    expect(f.save.mock.calls[0]?.[0].get("codex")).toEqual({ models: ["m1"], efforts: ["low"] });
+  });
+  test.each([
+    ["AGENT_SESSION_AUTH_REQUIRED", "login", "not logged in"],
+    ["AGENT_SESSION_BACKEND_UNAVAILABLE", "spawn failed\ndetail", "spawn failed"],
+    ["AGENT_SESSION_TIMEOUT", "timeout", undefined],
+  ] as const)("AC-10/16/17 handles %s without rejecting warm", async (code, message, reason) => {
+    const f = fixture();
+    f.acp.warm("/r");
+    const error = sessionError(code, message);
+    f.pending.reject(error);
+    await waitForCondition(() => f.logger.debug.mock.calls.length === 1);
+    expect(f.acp.unavailable("acp:codex")).toBe(reason);
+    expect(f.logger.debug).toHaveBeenCalledWith("chat", expect.any(String), { agent: "codex", error });
+  });
+  test.each(["resolve", "reject"])("AC-12/19 close drops late %s without waiting", async (outcome) => {
+    const f = fixture();
+    f.acp.warm("/r");
+    expect(f.acp.close()).toBeUndefined();
+    if (outcome === "resolve") f.pending.resolve({ offeredModels: ["m1"] });
+    else f.pending.reject(sessionError("AGENT_SESSION_AUTH_REQUIRED"));
+    await f.pending.promise.catch(() => {});
+    await Promise.resolve();
+    expect(f.acp.rows()).not.toContain("acp:codex/m1");
+    expect(f.save).not.toHaveBeenCalled();
+    expect(f.acp.unavailable("acp:codex")).toBeUndefined();
+    f.acp.warm("/r");
+    expect(f.discover).toHaveBeenCalledTimes(1);
+  });
+  test("AC-20 failed persistence retains the learned probe and warns once", async () => {
+    const f = fixture();
+    f.save.mockRejectedValue(new Error("write failed"));
+    f.acp.warm("/r");
+    f.pending.resolve({ offeredModels: ["m1"] });
+    await waitForCondition(() => f.logger.warn.mock.calls.length === 1);
+    expect(f.acp.rows()).toContain("acp:codex/m1");
+    expect(f.logger.warn).toHaveBeenCalledTimes(1);
+    expect(f.logger.warn.mock.calls[0]?.[0]).toBe("chat");
+  });
+});

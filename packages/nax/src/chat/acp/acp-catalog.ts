@@ -19,13 +19,18 @@ import {
   parseChatAcpModel,
 } from "./acp-model";
 import { type AcpOffer, acpOffersPath, createAcpOfferStore } from "./acp-offer-store";
+import { probeAcpAgent } from "./acp-probe";
 
 /** Seam for tests: the binary probe. */
-export const _acpCatalogDeps = { launchCandidateKind, createAcpOfferStore };
+export const _acpCatalogDeps = { launchCandidateKind, createAcpOfferStore, probeAcpAgent };
 
 export interface AcpCatalog {
   /** Seed offers without replacing anything learned in this process. */
   load(): Promise<void>;
+  /** Discover installed agents without a known offer, once per chat start. */
+  warm(cwd: string): void;
+  /** Drop late discovery outcomes without waiting for pending probes. */
+  close(): void;
   /** `acp:<agent>` then that agent's learned `acp:<agent>/<model>` rows, per agent in picker order. */
   rows(): readonly string[];
   /** The levels the model's agent offers; `["default"]` until it reports some or for a non-ACP model. */
@@ -87,6 +92,9 @@ export function createAcpCatalog(input: {
   const failures = new Map<AcpChatAgent, string>();
   let probed: ReadonlyMap<AcpChatAgent, boolean> | undefined;
   const learned = new Set<AcpChatAgent>();
+  const attemptedStart = new Set<AcpChatAgent>();
+  const inFlight = new Map<AcpChatAgent, Promise<void>>();
+  let closed = false;
   const store =
     input.sessionsDir === undefined
       ? undefined
@@ -117,7 +125,36 @@ export function createAcpCatalog(input: {
     return probed;
   }
 
-  return {
+  function probeAgent(agent: AcpChatAgent, cwd: string): Promise<void> {
+    const running = inFlight.get(agent);
+    if (running) return running;
+    const probing = (async () => {
+      try {
+        const capabilities = await _acpCatalogDeps.probeAcpAgent({ agent, cwd });
+        if (!closed) catalog.opened(`acp:${agent}`, capabilities);
+      } catch (error) {
+        if (!closed) {
+          catalog.failed(`acp:${agent}`, error);
+          input.logger?.debug("chat", "ACP offer probe failed", { agent, error });
+        }
+      }
+    })().finally(() => inFlight.delete(agent));
+    inFlight.set(agent, probing);
+    return probing;
+  }
+
+  const catalog: AcpCatalog = {
+    warm(cwd) {
+      if (closed) return;
+      for (const agent of ACP_CHAT_AGENTS) {
+        if (!installedAgents().get(agent) || models.get(agent)?.length || attemptedStart.has(agent)) continue;
+        attemptedStart.add(agent);
+        void probeAgent(agent, cwd);
+      }
+    },
+    close() {
+      closed = true;
+    },
     async load() {
       if (!store) return;
       try {
@@ -165,4 +202,5 @@ export function createAcpCatalog(input: {
       if (target && reason !== undefined) failures.set(target.agent, reason);
     },
   };
+  return catalog;
 }

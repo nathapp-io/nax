@@ -6,6 +6,7 @@ import type { Command } from "commander";
 import type { Instance } from "ink";
 import { listCatalogModels, lookupThinkingLevels } from "@/agents/catalog";
 import {
+  type AcpCatalog,
   type ChatHost,
   type ChatHostState,
   type ChatResources,
@@ -266,8 +267,9 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
   const chain = await interactionChain(config, deps);
   const naxEntry = deps.naxEntry();
   let host: ChatHost;
+  let acp: AcpCatalog;
   try {
-    const acp = deps.createAcpCatalog({ env: deps.env, sessionsDir: resolveChatSessionsDir(deps.env), logger });
+    acp = deps.createAcpCatalog({ env: deps.env, sessionsDir: resolveChatSessionsDir(deps.env), logger });
     await acp.load();
     host = deps.createChatHost({
       models,
@@ -301,6 +303,7 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
     }
     throw error;
   }
+  acp.warm(cwd);
   await runShell(host, deps, cwd);
 }
 

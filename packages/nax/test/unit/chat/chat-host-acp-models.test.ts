@@ -31,6 +31,8 @@ afterEach(async () => {
 function stubCatalog(overrides: Partial<AcpCatalog> = {}): AcpCatalog {
   return {
     load: async () => {},
+    warm: () => {},
+    close: () => {},
     rows: () => [],
     effortLevels: () => ["default"],
     installed: () => true,

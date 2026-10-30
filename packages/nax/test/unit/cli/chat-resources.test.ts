@@ -34,6 +34,8 @@ function fixture() {
     ..._chatCommandDeps,
     createAcpCatalog: (): import("@/chat").AcpCatalog => ({
       load: async () => {},
+      warm: () => {},
+      close: () => {},
       rows: () => [],
       effortLevels: () => ["default"],
       installed: () => true,

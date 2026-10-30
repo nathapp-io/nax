@@ -90,6 +90,8 @@ async function open(request: OpenChatSessionRequest): Promise<ChatSessionHandle>
 function stubCatalog(overrides: Partial<AcpCatalog> = {}): AcpCatalog {
   return {
     load: async () => {},
+    warm: () => {},
+    close: mock(() => {}),
     rows: () => [],
     effortLevels: () => ["default"],
     installed: () => true,
@@ -139,6 +141,17 @@ describe("chat host ACP lifecycle", () => {
   afterEach(async () => {
     await Promise.all(hosts.map((host) => host.close()));
     cleanupTempDir(dir);
+  });
+
+  test("probe AC-15 closes the catalog once across repeated host close", async () => {
+    const catalog = stubCatalog();
+    const host = makeHost(catalog);
+    await host.start({ mode: "guarded", model: NATIVE });
+    const first = host.close();
+    expect(catalog.close).toHaveBeenCalledTimes(1);
+    await first;
+    await host.close();
+    expect(catalog.close).toHaveBeenCalledTimes(1);
   });
 
   describe("open reporting", () => {
