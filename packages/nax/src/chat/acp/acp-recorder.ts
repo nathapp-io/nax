@@ -11,6 +11,10 @@
  * deliberately narrower than the evidence the ACP backend uses to mark its own
  * instructions delivered: a turn that failed before the agent saw the prompt
  * (an auth or quota failure) must not consume the handoff.
+ *
+ * Each such turn is also appended to the native chat document (the person's
+ * message as typed, never the handoff-prefixed text, and one assistant message),
+ * because the ACP backend stores no messages of its own.
  */
 import type {
   AgentSession,
@@ -20,7 +24,9 @@ import type {
   SessionEvent,
   TranscriptStore,
 } from "@nathapp/nax-agent";
+import { acpTurnMessages } from "./acp-history";
 import type { ChatAcpModel } from "./acp-model";
+import { appendNativeTurn } from "./acp-transcript-append";
 
 export interface RecordAcpTurnsInput {
   /** The native chat transcript store (the one at the sessions dir), not the agent's. */
@@ -47,24 +53,30 @@ function showsAgentWork(event: SessionEvent): boolean {
 }
 
 /**
- * Forward the wrapped iteration unchanged and in order. When it reaches
- * `turn_end` after agent work, `onWorked` runs. A throw from the wrapped
- * iteration propagates to the caller untouched.
+ * Forward the wrapped iteration unchanged and in order, collecting what it yields.
+ * When it ends having reached `turn_end` after agent work, `onWorked` is awaited
+ * before this iteration completes, so a consumer that drains the send sees the
+ * turn recorded. A throw from the wrapped iteration propagates untouched and
+ * `onWorked` does not run.
  */
 async function* forwarded(
   events: AsyncIterable<SessionEvent>,
-  onWorked: () => void,
+  onWorked: (seen: readonly SessionEvent[]) => Promise<void>,
 ): AsyncGenerator<SessionEvent, void, undefined> {
+  const seen: SessionEvent[] = [];
   let worked = false;
+  let ended = false;
   for await (const event of events) {
-    if (event.type === "turn_end") {
-      if (worked) onWorked();
-    } else if (showsAgentWork(event)) {
-      worked = true;
-    }
+    seen.push(event);
+    if (event.type === "turn_end") ended = true;
+    else if (showsAgentWork(event)) worked = true;
     yield event;
   }
+  if (ended && worked) await onWorked(seen);
 }
+
+/** Test seam. */
+export const _acpRecorderDeps: { appendNativeTurn: typeof appendNativeTurn } = { appendNativeTurn };
 
 export function recordAcpTurns(session: AgentSession, input: RecordAcpTurnsInput): AgentSession {
   let pendingHandoff = input.handoff === undefined || input.handoff === "" ? undefined : input.handoff;
@@ -89,8 +101,13 @@ export function recordAcpTurns(session: AgentSession, input: RecordAcpTurnsInput
       const payload = pendingHandoff === undefined ? message : `${pendingHandoff}${HANDOFF_SEPARATOR}${message}`;
       // Called here, not inside the generator: the wrapped send claims its turn slot (and throws when busy) synchronously.
       const events = session.send(payload);
-      return forwarded(events, () => {
+      return forwarded(events, async (seen) => {
         pendingHandoff = undefined;
+        await _acpRecorderDeps.appendNativeTurn(
+          input.store,
+          input.sessionId,
+          acpTurnMessages({ message, events: seen, acp: input.acp }),
+        );
       });
     },
     answer(requestId: string, reply: AnswerReply): AnswerStatus {
