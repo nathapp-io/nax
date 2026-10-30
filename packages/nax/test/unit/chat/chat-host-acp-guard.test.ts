@@ -74,8 +74,10 @@ function fixture(model: string) {
         at: NOW.toISOString(),
         metadata: {},
         status: "completed",
+        output: "",
+        usage: { inputTokens: 0, outputTokens: 0 },
         costUsd: 0,
-      } as SessionEvent;
+      };
     },
     answer,
     cancel() {},
