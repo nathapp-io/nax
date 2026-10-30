@@ -11,7 +11,7 @@
  * bounded by initializeTimeoutMs (D-c) and by openSignal: close() during open
  * rejects AGENT_SESSION_CLOSED.
  */
-import { type ClientCapabilities, PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
+import { type ClientCapabilities, PROTOCOL_VERSION, type SessionConfigOption } from "@agentclientprotocol/sdk";
 import {
   type AgentSessionProfile,
   type BackendOpenContext,
@@ -74,6 +74,11 @@ export interface OpenedAcp {
   readonly startupBanner?: string;
   /** The models and efforts the agent offered once the mode and model were applied. */
   readonly offered: OfferedChoices;
+  /**
+   * The config options the agent last reported: the answer to the last config request open
+   * sent, else the session/new or restore answer's. `configure` resolves against them.
+   */
+  readonly configOptions: readonly SessionConfigOption[];
 }
 
 interface Opening {
@@ -210,7 +215,7 @@ async function establish(o: Opening): Promise<OpenedAcp> {
     o.restore === undefined
       ? await newSession(o, setup)
       : await restoreSession(o.restore, record, setup, o.link, (label, request) => step(o, label, request));
-  const finalOffers = await applyConfig(o, session.agentSessionId, session.offers);
+  const applied = await applyConfig(o, session.agentSessionId, session.offers);
   if (o.restore === undefined) {
     await o.ctx.transcriptStore.save(o.ctx.sessionId, initialDoc(o, record, session.agentSessionId));
   }
@@ -220,7 +225,8 @@ async function establish(o: Opening): Promise<OpenedAcp> {
     record,
     agentSessionId: session.agentSessionId,
     cwd: session.cwd,
-    offered: offeredChoices(finalOffers, o.options.agentName, o.options.secrets),
+    offered: offeredChoices(applied.offers, o.options.agentName, o.options.secrets),
+    configOptions: applied.configOptions,
     ...(session.restoredWith === undefined ? {} : { restoredWith: session.restoredWith }),
     ...(session.startupBanner === undefined ? {} : { startupBanner: session.startupBanner }),
   };
@@ -281,11 +287,15 @@ async function sessionSetup(o: Opening, sandbox: SandboxPolicy | undefined): Pro
 }
 
 /** §6.3 step 5: the profile's mode, then the model, then the effort (S4b). Only values the agent offered are set. */
-async function applyConfig(o: Opening, sessionId: string, offers: SessionOffers): Promise<SessionOffers> {
+async function applyConfig(
+  o: Opening,
+  sessionId: string,
+  offers: SessionOffers,
+): Promise<{ readonly offers: SessionOffers; readonly configOptions: readonly SessionConfigOption[] }> {
   const afterMode = await applyMode(o, sessionId, offers);
   const afterModel = await applyModel(o, sessionId, afterMode);
-  await applyEffort(o, sessionId, afterModel);
-  return afterModel;
+  const afterEffort = await applyEffort(o, sessionId, afterModel);
+  return { offers: afterModel, configOptions: afterEffort.configOptions };
 }
 
 /**
@@ -312,13 +322,13 @@ async function applyMode(o: Opening, sessionId: string, offers: SessionOffers): 
 const MAX_OFFERED_MODELS = 50;
 
 /** The model ids the config options offer, raw: category "model" values in offer order. */
-function configModelIds(offers: SessionOffers): string[] {
-  return offers.configOptions.filter((option) => option.category === "model").flatMap((option) => selectValues(option));
+export function configModelIds(options: readonly SessionConfigOption[]): string[] {
+  return options.filter((option) => option.category === "model").flatMap((option) => selectValues(option));
 }
 
 /** The model ids a refusal names: the config options' ids first, then the legacy `models` block's, capped. */
 function offeredModels(offers: SessionOffers, secrets: readonly string[]): string[] {
-  return [...configModelIds(offers), ...offers.modelIds]
+  return [...configModelIds(offers.configOptions), ...offers.modelIds]
     .slice(0, MAX_OFFERED_MODELS)
     .map((id) => cleanLabel(id, secrets, MODEL_ID_MAX_CHARS) ?? "")
     .filter((id) => id !== "");
@@ -335,7 +345,7 @@ function offeredModels(offers: SessionOffers, secrets: readonly string[]): strin
 async function applyModel(o: Opening, sessionId: string, offers: SessionOffers): Promise<SessionOffers> {
   const requested = o.options.model;
   if (requested === undefined) return offers;
-  const fromOptions = configModelIds(offers);
+  const fromOptions = configModelIds(offers.configOptions);
   const model = resolveModelValue(
     o.options.agentName,
     fromOptions.length > 0 ? fromOptions : offers.modelIds,
@@ -364,18 +374,23 @@ async function applyModel(o: Opening, sessionId: string, offers: SessionOffers):
 }
 
 /** S4b spec §6.7: an effort the agent does not offer is skipped with a warning, as acpx does. */
-async function applyEffort(o: Opening, sessionId: string, offers: SessionOffers): Promise<void> {
+async function applyEffort(o: Opening, sessionId: string, offers: SessionOffers): Promise<SessionOffers> {
   const effort = o.options.effort;
-  if (effort === undefined) return;
+  if (effort === undefined) return offers;
   const configId = effortOptionId(offers.configOptions, o.options.agentName, effort);
   if (configId === undefined) {
     getLogger().warn("acp", "The agent offers no effort option for this value; effort skipped", {
       agent: o.options.agentName,
       effort,
     });
-    return;
+    return offers;
   }
-  await step(o, "session/set_config_option", o.link.setConfigOption({ sessionId, configId, value: effort }));
+  const set = await step(
+    o,
+    "session/set_config_option",
+    o.link.setConfigOption({ sessionId, configId, value: effort }),
+  );
+  return { ...offers, configOptions: set.configOptions ?? offers.configOptions };
 }
 
 function initialDoc(o: Opening, record: CapabilityRecord, agentSessionId: string): TranscriptDoc {

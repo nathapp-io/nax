@@ -122,6 +122,10 @@ export interface FakeScript {
   readonly models?: Readonly<Record<string, unknown>>;
   /** session/set_mode fails with this JSON-RPC error. */
   readonly setModeFailure?: RpcFailure;
+  /** Every session/set_config_option request fails with this JSON-RPC error (after it is recorded). */
+  readonly setConfigOptionFailure?: RpcFailure;
+  /** Every session/set_config_option request is recorded and never answered. */
+  readonly setConfigOptionHang?: boolean;
   /** session/set_model fails with this JSON-RPC error. */
   readonly setModelFailure?: RpcFailure;
   /** Turns in order; the last repeats. Default: one turn replying "ok". */
