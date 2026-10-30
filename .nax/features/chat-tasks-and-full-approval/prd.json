@@ -3,7 +3,7 @@
   "feature": "chat-tasks-and-full-approval",
   "branchName": "feat/chat-tasks-and-full-approval",
   "createdAt": "2026-10-30T00:00:00Z",
-  "updatedAt": "2026-10-30T13:27:11.970Z",
+  "updatedAt": "2026-10-30T13:35:36.348Z",
   "userStories": [
     {
       "id": "US-001",
@@ -275,14 +275,17 @@
         "US-002",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Three existing production modules gain a jobs branch and a transcript callback, using established picker lifecycle, registry read ports and mounted helpers; standard async error handling and fixture migrations fit tdd-simple without a new abstraction or session-policy change."
+        "reasoning": "Three existing production modules gain a jobs branch and a transcript callback, using established picker lifecycle, registry read ports and mounted helpers; standard async error handling and fixture migrations fit tdd-simple without a new abstraction or session-policy change.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/slash-commands.ts",
@@ -316,7 +319,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4d903c31b33bd3d802ef0fe088ffb8f0498ae534"
     },
     {
       "id": "US-006",
