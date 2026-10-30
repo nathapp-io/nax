@@ -3,7 +3,7 @@
   "feature": "chat-tasks-and-full-approval",
   "branchName": "feat/chat-tasks-and-full-approval",
   "createdAt": "2026-10-30T00:00:00Z",
-  "updatedAt": "2026-10-30T13:07:48.065Z",
+  "updatedAt": "2026-10-30T13:15:31.943Z",
   "userStories": [
     {
       "id": "US-001",
@@ -144,14 +144,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive formatter, hook return and screen wiring using existing display-width helpers and registry subscription; no new lifecycle abstraction."
+        "reasoning": "Additive formatter, hook return and screen wiring using existing display-width helpers and registry subscription; no new lifecycle abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/chat-status.ts",
@@ -167,7 +170,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "2a807b5e25797883f0a9c84bfdb5ef82c935bd16"
     },
     {
       "id": "US-004",
