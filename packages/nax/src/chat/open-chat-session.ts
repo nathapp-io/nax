@@ -18,11 +18,21 @@ import {
   type SessionStorageDeps,
   type ToolProvider,
   type TranscriptDoc,
+  type TranscriptStore,
 } from "@nathapp/nax-agent";
 import { globalConfigDir, type NaxConfig, resolveTuiPermissions, type TuiPermissions } from "@/config";
 import { resolveRuleSet } from "@/context/rules/rule-set";
 import { NaxError } from "@/errors";
 import { buildChatInstructions, toRulesIndexEntry } from "@/prompts";
+import {
+  ACP_FRESH_SESSION_NOTICE,
+  acpAgentLabel,
+  acpSessionOptions,
+  acpTranscriptDir,
+  type ChatAcpModel,
+  isFreshFallback,
+  parseChatAcpModel,
+} from "./acp";
 import { type ChatMode, chatBackendPosture, chatModeOfMeta, chatSessionSettings } from "./chat-mode";
 
 export const _openChatSessionDeps = {
@@ -61,6 +71,8 @@ export interface ChatSessionHandle {
   readonly history?: ChatHistory;
   readonly session: AgentSession;
   readonly meta: SessionMeta;
+  /** Set when an ACP brain's stored agent session was unusable and a fresh one replaced it. */
+  readonly notice?: string;
   /** Retire per-open work; reopens retain the host's shared storage lock. */
   readonly release: (options?: { readonly retainLock?: boolean }) => Promise<void>;
 }
@@ -202,6 +214,46 @@ async function sessionOptions(
   };
 }
 
+interface OpenedBrain {
+  readonly session: AgentSession;
+  readonly notice?: string;
+}
+
+/**
+ * Create or resume the agent's own session over its own transcript document. A stored
+ * document the agent can no longer use is retained and replaced; any other failure propagates.
+ */
+async function openAcpBrain(
+  request: OpenChatSessionRequest,
+  { meta, acp }: { readonly meta: SessionMeta; readonly acp: ChatAcpModel },
+  deps: typeof _openChatSessionDeps,
+): Promise<OpenedBrain> {
+  const store = deps.createFileTranscriptStore(acpTranscriptDir(request.storage.dir, acp.agent));
+  const options = {
+    ...(await acpSessionOptions({
+      acp,
+      mode: meta.mode === "full" ? "full" : "guarded",
+      sessionId: meta.sessionId,
+      cwd: request.cwd,
+      toolProviders: request.toolProviders ?? [],
+      approvalTimeoutMs: request.config.execution.approvalTimeout,
+    })),
+    transcriptStore: store,
+  };
+  let unusable = false;
+  try {
+    if ((await store.load(meta.sessionId)) !== null) {
+      return { session: await deps.resumeAgentSession(meta.sessionId, options) };
+    }
+  } catch (error) {
+    if (!isFreshFallback(error)) throw error;
+    unusable = true;
+  }
+  if (unusable) await store.retainFailed(meta.sessionId);
+  const session = await deps.createAgentSession(options);
+  return unusable ? { session, notice: ACP_FRESH_SESSION_NOTICE(acpAgentLabel(acp.agent)) } : { session };
+}
+
 /** The shadow's drain is total and bounded; retain lock ownership until it settles. */
 function sessionRelease(
   unlock: () => Promise<void>,
@@ -222,7 +274,33 @@ function sessionRelease(
   };
 }
 
-/** Open the shared native session while holding its store lock until the host releases it. */
+function historyOf(doc: TranscriptDoc | null): ChatHistory {
+  return doc === null ? { messages: [] } : { messages: doc.messages, savedAt: doc.savedAt };
+}
+
+/** Open the native brain's session over the shared transcript store. */
+async function openNativeBrain(
+  request: OpenChatSessionRequest,
+  state: {
+    readonly meta: SessionMeta;
+    readonly posture: TuiPermissions | undefined;
+    readonly commandShadow: CommandShadow | undefined;
+  },
+  transcripts: TranscriptStore,
+  deps: typeof _openChatSessionDeps,
+): Promise<{ readonly session: AgentSession; readonly history: ChatHistory }> {
+  const { meta, posture } = state;
+  const options = {
+    ...(await sessionOptions(request, { meta, posture, commandShadow: state.commandShadow }, deps)),
+    transcriptStore: transcripts,
+  };
+  const doc = await transcripts.load(meta.sessionId);
+  const session =
+    doc === null ? await deps.createAgentSession(options) : await deps.resumeAgentSession(meta.sessionId, options);
+  return { session, history: historyOf(doc) };
+}
+
+/** Open the shared chat session while holding its store lock until the host releases it. */
 export async function openChatSession(
   request: OpenChatSessionRequest,
   deps = _openChatSessionDeps,
@@ -236,11 +314,13 @@ export async function openChatSession(
   const mode = request.mode ?? storedMode ?? "guarded";
   const posture = mode === "guarded" ? deps.resolveTuiPermissions(request.config) : undefined;
   const meta = sessionMeta(request, { mode, posture, stored }, deps);
+  // An invalid ACP model string must refuse before the storage lock is taken.
+  const acp = parseChatAcpModel(meta.model);
   const unlock = await request.storage.acquireLock(meta.sessionId);
   let commandShadow: CommandShadow | undefined;
   const release = sessionRelease(unlock, () => commandShadow);
   try {
-    if (mode === "guarded")
+    if (acp === undefined && mode === "guarded")
       commandShadow = deps.buildCommandShadow({
         config: request.config.execution.commandSafety,
         outputDir: request.storage.dir,
@@ -248,19 +328,13 @@ export async function openChatSession(
         env: deps.env,
       });
     if (request.resumeId === undefined) await request.storage.writeMeta(meta);
-    const options = {
-      ...(await sessionOptions(request, { meta, posture, commandShadow }, deps)),
-      transcriptStore: transcripts,
-    };
-    const doc = await transcripts.load(meta.sessionId);
-    const session =
-      doc === null ? await deps.createAgentSession(options) : await deps.resumeAgentSession(meta.sessionId, options);
-    return {
-      session,
-      meta,
-      release,
-      history: doc === null ? { messages: [] } : { messages: doc.messages, savedAt: doc.savedAt },
-    };
+    if (acp === undefined) {
+      const opened = await openNativeBrain(request, { meta, posture, commandShadow }, transcripts, deps);
+      return { session: opened.session, meta, release, history: opened.history };
+    }
+    const history = historyOf(await transcripts.load(meta.sessionId));
+    const opened = await openAcpBrain(request, { meta, acp }, deps);
+    return { ...opened, meta, release, history };
   } catch (error) {
     await release();
     throw error;

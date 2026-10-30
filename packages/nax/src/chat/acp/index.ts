@@ -10,3 +10,10 @@ export {
   isChatAcpModel,
   parseChatAcpModel,
 } from "./acp-model";
+export {
+  ACP_FRESH_SESSION_NOTICE,
+  type AcpSessionOptionsInput,
+  acpSessionOptions,
+  acpTranscriptDir,
+  isFreshFallback,
+} from "./acp-session-options";
