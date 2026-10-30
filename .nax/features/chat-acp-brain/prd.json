@@ -3,7 +3,7 @@
   "feature": "chat-acp-brain",
   "branchName": "feat/chat-acp-brain",
   "createdAt": "2026-10-30T00:00:00.000Z",
-  "updatedAt": "2026-10-30T02:00:37.486Z",
+  "updatedAt": "2026-10-30T02:07:51.902Z",
   "userStories": [
     {
       "id": "US-001",
@@ -233,14 +233,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Standard existing provider adapters and prompt construction, but provider whitelisting and approval bypass boundaries are access-control decisions."
+        "reasoning": "Standard existing provider adapters and prompt construction, but provider whitelisting and approval bypass boundaries are access-control decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/agents/acp/provider-embedder.ts",
@@ -257,7 +260,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5d0225a18d09e75825f09c4e34e9c3a46d410aeb"
     },
     {
       "id": "US-005",
