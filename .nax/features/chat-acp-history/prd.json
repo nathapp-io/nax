@@ -3,7 +3,7 @@
   "feature": "chat-acp-history",
   "branchName": "feat/chat-acp-history",
   "createdAt": "2026-10-29T00:00:00.000Z",
-  "updatedAt": "2026-10-30T04:33:03.177Z",
+  "updatedAt": "2026-10-30T05:11:23.332Z",
   "userStories": [
     {
       "id": "US-001",
@@ -38,14 +38,17 @@
         "history"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Pure event aggregation has clear requirements but multiple truncation/reset/error rules; strict isolation applies because this defines persisted session transcript contents and excludes private thinking/tool payloads."
+        "reasoning": "Pure event aggregation has clear requirements but multiple truncation/reset/error rules; strict isolation applies because this defines persisted session transcript contents and excludes private thinking/tool payloads.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/acp/acp-model.ts",
@@ -62,7 +65,11 @@
         "When error results arrive in a different order from their tool calls, acpTurnMessages attaches (error) to the summary whose callId matches the error result."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1d0ed710d329658d2b40d992c4c0691f87b34777"
     },
     {
       "id": "US-002",
@@ -120,7 +127,10 @@
         "handoffEntries maps acp:claude and acp:cursor assistant origins to speakers Claude Code and Cursor respectively."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -187,7 +197,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -242,7 +255,10 @@
         "When appendNativeTurn appends a pair, the original loaded document and its messages array remain unchanged."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -297,7 +313,10 @@
         "When wrapped methods read this, calling wrapper answer, cancel, close and runCommand preserves the wrapped session as their receiver."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -350,7 +369,10 @@
         "When two terminal worked turns are consumed sequentially, recordAcpTurns appends each original user/assistant pair once in conversation order."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -432,7 +454,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Second-pass adversarial audit: re-read the repository spec at .nax/features/chat-acp-history/spec.md:402-520 and the session, transcript, opener, prompt and TUI interfaces. All 104 numbered spec criteria remain in their original stories, with their qualifying clauses. Inventory by original AC number: US-001 1 explicit model origin, 2 default origin, 3 effort excluded, 4 known ACP author, 5 user not ACP, 6 absent origin, 7 native provider, 8 unknown ACP agent, 9 two-message pair/original user, 10 terminal output wins, 11 delta concatenation, 12 stream reset, 13 thinking omitted, 14 call order, 15 error marker, 16 20-tool cap/overflow line, 17 80-code-point name cap, 18 inputs/previews omitted, 19 cancelled thinking-only placeholder, 20 exact assistant keys/origin; US-002 1 fresh gets all, 2 resumed suffix, 3 missing marker gets all, 4 latest own marker gets none, 5 other agent not own marker, 6 User label, 7 nax label, 8 native model label, 9 Codex label, 10 raw unknown ACP label, 11 content plus tools, 12 tools-only entry, 13 tool-result excluded, 14 empty assistant excluded, 15 thinking ignored, 16 oversize cut plus ellipsis, 17 exact-cap text unchanged, 18 order; US-003 1 short history, 2 12x4000 keeps 9/omits 3 with comparison to upstream entries, 3 post-cut lengths, 4 contiguous suffix despite older fitting entry, 5 empty history, 6 exact notice, 7 empty entries even with omitted, 8 exact single-entry prompt/INTRO, 9 blank-line separators, 10 omitted line position, 11 closing-tag escaping, 12 unique closing line, 13 callable barrel export, 14 barrel/direct equivalence; US-004 1 minimal document keys, 2 pair contents, 3 injected ISO time, 4 append order, 5 model unchanged, 6 owner unchanged, 7 turn unchanged, 8 instructionSources unchanged, 9 one save/session id, 10 save rejection resolves, 11 save warning, 12 load rejection resolves/no save, 13 load warning; US-005 1 id, 2 backend, 3 live lastTurn getter, 4 answer forwarding/result, 5 cancel, 6 awaited close, 7 runCommand forwarding/result, 8 absent runCommand, 9 identical ordered events, 10 handoff prefix, 11 handoff cleared after worked terminal turn, 12 absent/empty handoff, 13 iteration error/pending handoff, 14 synchronous send calls, 15 identical synchronous busy error; US-006 1 incomplete iteration/no append/pending, 2 unworked terminal/no append/pending, 3 thrown iteration/no append, 4 exact seam arguments including original unprefixed message and yielded events, 5 errored worked turn recorded once, 6 thinking-only worked turn recorded, 7 deferred append gates iteration completion; US-007 1 fresh agent receives one concatenated prompt string, 2 no native history, 3 no unseen suffix, 4 resumed suffix only, 5 F2 missing-agent fallback/full handoff, 6 fallback notice, 7 native root-store pair/origin, 8 trim notice, 9 combined notice, 10 absent notice key, 11 native session identity/unwrapped regression, 12 native resume rather than create after ACP-first chat, 13 replayed recorded messages, 14 native-to-ACP single notice, 15 ACP-to-native single notice, 16 cross-agent single notice, 17 real host/opener/file-store durability with complete terminal events.\n\nAudit checks: negative-path ACs already exist in every story (US-001 5-8/15/19; US-002 3/13/14/16; US-003 2-4/7/11; US-004 10-13; US-005 13/15; US-006 1-3/5; US-007 5-6/9). Each failure-table row is covered: store failures by US-004 10-13 and US-006 failure handling; send/incomplete iteration by US-005 13/15 and US-006 1/3; no work by US-006 2 and its empty-update case; noncompleted worked statuses by US-006 status cases; total bound by US-003 2-4 and US-007 8-9; entry bound by US-002 16-17; delimiter escaping by US-003 11-12; no unseen history by US-007 2-3. All 15 feature-level out-of-scope items remain verbatim, with nearby boundaries echoed in descriptions; no story-local exclusion was hoisted. All spec-recommended context files are present within the five-file cap, and every future context file comes from a transitive binding dependency. All seven ids/workdirs and the exact binding graph are unchanged.\n\nCorrections from the draft: make the export check observable through typeof, disambiguate US-007's first send as one string argument rather than separate sends/parameters, make standalone persistence/reopen criteria self-contained, add a concrete unchanged existing-builder output pin from the spec's existing-builders-unchanged requirement, correct agent-label source citations, and distinguish new-behavior red tests from unchanged compatibility pins that necessarily also pass the old code. Reduce US-002/004 complexity to simple and US-005/006 to medium because these use existing contracts and upstream helpers rather than inventing subsystems. Retain three-session-tdd under the explicit session security override, not because all stories are architecturally complex. No description requires the behavior an AC forbids; US-005 introduces forwarding only and US-006 later supplies recording.\n\nGoal and baseline: F3 extends merged F1/F2 so nax chat remains one conversation when switching native→ACP, ACP→native, or ACP→another agent, and recorded ACP turns reappear on resume. This is an enhancement, not greenfield. All implementation changes belong in packages/nax; the agent, ACP and AI packages are read-only references. Graph-first navigation was unavailable because this host exposes no codebase-memory MCP tools; findings below come from direct reads and text search. No implementation or test execution is part of this PRD task.\n\nExisting opening architecture: packages/nax/src/chat/open-chat-session.ts:38 exposes _openChatSessionDeps for backend factories, session create/resume, transcript stores, time and UUID injection. ChatSessionHandle.notice currently describes only unusable-agent fallback at :74. Native sessionOptions already sets carryHistoryAcrossModels: true at :202. OpenedBrain at :217 currently has only session and optional notice; openAcpBrain at :226 uses a distinct file store under acpTranscriptDir, resumes if an agent document exists, retains unusable documents before a fresh create, and leaves unrelated failures propagating. historyOf at :277 reads only messages/savedAt. openNativeBrain at :282 loads the root native document and chooses create versus resume from its presence. openChatSession at :304 validates model input before taking the shared storage lock and has a separate ACP branch near :333 which loads native history then returns an unwrapped ACP session. Target: report fresh on ACP opens, factor the new ACP history/handoff/notice/wrapper integration into a small helper in this file, and retain existing native behavior and cleanup. The specification places this function at complexity 11/20; do not pile new branches inline.\n\nPublic contracts and import boundaries: packages/nax-agent/src/session/agent-session-types.ts:84 defines all five TurnEndStatus values; :103 defines SessionEventBody, including text_delta, thinking_delta, stream_reset, tool_call, tool_result and terminal turn_end; :176 defines AgentSession with optional runCommand, live id/backend/lastTurn, synchronous turn-slot claiming in send, answer/cancel/close. packages/nax-agent/src/session/agent-session.ts:71 implements the facade; its send at :102 rejects closed/busy synchronously before returning an iterable. A wrapper implemented as an async generator send would defer this and break compatibility: invoke inner send immediately and return a separate forwarding iterable. Getter delegation must not snapshot properties or eagerly require them on stubs. Forward methods with their original receiver. packages/nax-agent/src/native/session/transcript-types.ts:30 defines optional backend/owner/model/turn/instruction audit fields and messages; :51 defines load/save/retainFailed/delete/markTurn. Both TranscriptDoc and TranscriptStore are publicly exported at packages/nax-agent/src/index.ts:141, and AgentSession/SessionEvent at :320/:332. Use ChatMessage = TranscriptDoc[\"messages\"][number]; do not import nax-ai into chat. ConversationMessage already supports assistant origin at packages/nax-ai/src/protocols/types.ts:122/:135. No shared-package API/schema change is needed.\n\nNative compatibility and migration: packages/nax-agent/src/session/agent-session-resume.ts:59 treats an absent backend as native and rejects a mismatched backend. packages/nax-agent/src/native/session/transcript-identity.ts:46 preserves another model's history when carryAcrossModels is true; :79 validates documents before identity filtering. A chat that starts on ACP must get a minimal root native document { savedAt, messages } from its first recorded turn, enabling a later native switch to resume rather than create. Existing native documents must be load-merged, preserving every unrelated field, including model, owner, turn, schema, backend and instruction audit. Agent documents under acp-<agent>/ continue to own only ACP lifecycle/cost data, never copied history. No migration/backfill or one-time rewrite: an old resumed agent with no acp:<agent> origin marker receives the entire native history; a fresh or fallback-created agent also receives everything. Resumed agents receive only the suffix after their last assistant origin marker. Compaction can erase markers, causing acceptable repeated handoff. Recorded origin is per agent/model, not effort, and the last-seen scan is per agent rather than per model.\n\nExisting ACP naming and backend behavior: packages/nax/src/chat/acp/acp-model.ts:12 limits chat agents to claude/codex/cursor and :72 supplies Claude Code/Codex/Cursor labels. Unknown acp: providers are not recognized chat-agent markers, but remain raw speaker labels in handoffs. packages/nax/src/chat/acp/acp-session-options.ts:21 defines existing unusable-session codes; :30 also restricts unsupported-capability fallback to resume; :36 formats ACP_FRESH_SESSION_NOTICE; :41 selects the acp-<agent> directory. Keep this fallback policy unchanged. Its _acpSessionDeps at :18 lets tests stub acpBackend without launching real agents. packages/nax-agent-acp/src/client/backend.ts:324 prepends instructions when not yet delivered; :356 load-merges only the cost baseline and :390 updates final savedAt. packages/nax-agent-acp/src/client/events.ts:144 tracks receipt, :183 accepts broader receipt updates and :195 marks receipt on settle. Recorder delivery evidence deliberately differs: only non-empty text_delta, non-empty thinking_delta or tool_call plus turn_end qualifies. Usage/plan-only receipt does not record or clear a pending handoff. ACP deltas are already secret-scrubbed (events.ts:2); do not start recording thinking, tool inputs or result previews.\n\nModules and algorithms: add exactly five small modules beneath packages/nax/src/chat/acp/. US-001 supplies pure ACP-origin recognition and event→user/assistant conversion with authoritative nonempty turn_end.output, reset-aware text fallback, call-order tool summaries, error lookup by callId, 20-call summary limit and 80-code-point name cap. US-002 computes unseen suffixes and maps user/assistant messages to entries, skipping tool results and empty assistants while ignoring thinking; truncate each rendered text at 4,000 JavaScript UTF-16 units then append an ellipsis. US-003 keeps the longest contiguous newest entry suffix whose post-cut speaker.length + text.length total is ≤40,000, counts dropped entries, formats the exact notice and prompt. It must stop at the first nonfitting older entry rather than selecting arbitrary older entries that fit. Prompt framing/intro/blank lines and escaped closing delimiter are wire text, not approximate formatting; bounds count entry text/speaker only, not prompt framing or escaping overhead. US-004 does best-effort load/save with injected now and structured warn/errorMessage on failure. US-005 first introduces the forwarding wrapper and pending handoff with no dependency on US-001/004; US-006 extends that same file with the append seam and turn recording only after terminal worked iterations. Keep this inter-story boundary: US-005 cannot import the not-yet-created append module. US-007 consumes all pieces and exports their public names via the existing ACP barrel (packages/nax/src/chat/acp/index.ts:1). Do not create extra stories or change the binding dependency graph.\n\nPrompt/TUI impact: packages/nax/src/prompts/builders/chat-builder.ts:35 already defines ChatAcpInstructionsInput and :46 builds instructions; add ChatHandoffInput/buildChatHandoff beside the chat builders without changing existing functions. packages/nax/src/prompts/index.ts:47 exports chat builders; add value/type exports there so chat code imports from @/prompts rather than internal builder paths. packages/nax/src/tui/chat/use-switch-notices.ts:3 imports parseChatAcpModel, :12 defines brainOf, :22 adds the obsolete does-not-see notice and :37 calls modelNotices(last.model, model). Delete brainOf and that unused import, change modelNotices(to) and its call to one argument, retain existing model label formatting and mount/session-change/mode behavior. packages/nax/test/ui/chat/acp-labels.test.tsx:131 contains three now-obsolete expectations at :133, :140 and :146; replace them with [\"model: Codex\"], [\"model: gpt-6[high]\"] and [\"model: Claude Code\"], leaving same-agent/model/effort cases intact. packages/nax/src/tui/chat/session-transcript.ts:26 already replays host.history through replayHistory; no change needed because opening history will now include recorded ACP messages. Handoff text itself must never be emitted into TUI history or persisted as the user's message.\n\nCallers and completion ordering: packages/nax/src/chat/chat-host.ts:157 chooses reportAcpOpens(deps.open ?? openChatSession, deps.acp); :262 exposes opening history; :457 switches brains by closing/reopening the same session; :499 delegates sends to runChatTurn. It is 593/600 lines and MUST NOT change. packages/nax/src/chat/turn-runner.ts:54 consumes the complete session iterable before settleNested/ledger drain/metadata write, so yielding turn_end and then awaiting append before iterable completion gives the required durability point without host changes. packages/nax/src/chat/session-hygiene.ts:94 owns close/release sequencing under the lock; recorder close must transparently delegate and integration must preserve release/error paths. Do not change native backend wiring, commands, permissions, ledger or fallback semantics.\n\nRisks and failure contracts: the two stores share a session id but not document content; pass the root store to the recorder, never acp-<agent>/. Preserve all event objects and ordering even if recording later fails. Recording must use the original typed message, not handoff-prefixed text. Do not clear the pending handoff merely because send was invoked, turn_end arrived without work, usage arrived or inner iteration failed; clear only for terminal worked iterations. A thinking-only worked turn is recorded with the no-reply status placeholder; cancelled/timed_out/interrupted/errored worked turns are still recorded. stream_reset clears text accumulation only; tools remain call-ordered and tool name length uses code points, unlike UTF-16 handoff limits. Store load/save failures are logged and swallowed; no retry/UI notice. A missing turn_end never advances history. Resume origin markers and bounded handoff intentionally trade complete replay for bounded size and may repeat old context on prefeature sessions/compaction. Notice absence is a structural contract: omit the key, do not assign undefined. A fallback notice and trim notice must join in that order with '; '. Maintain scope limits and use named constants/helpers.\n\nVerification and test seams: packages/nax/test/unit/chat/open-chat-session-acp.test.ts:62 provides per-directory fake stores and :96 builds injected dependencies; :227 asserts the notice key is absent, :279 exercises resume/fallback errors and :372 proves history comes from the native store. Retain these regression tests. Existing native opening coverage is in packages/nax/test/unit/chat/open-chat-session.test.ts, host switching/resume in chat-host-resume.test.ts and ACP lifecycle in chat-host-acp.test.ts:103; chat-host.test.ts:77/:123 shows a real opener with patched session factory and real storage. New open-history integration tests should call the returned session.send and inspect received agent prompts and native documents, not merely helper invocations. US-007 AC-17 must use createChatHost with the real opener and real createFileTranscriptStore, patch _openChatSessionDeps.createAgentSession and _acpSessionDeps.acpBackend, emit a fully formed turn_end including usage/costUsd, and assert store state before send resolves. It must not substitute a fake opener or launch an installed ACP agent. Use _acpRecorderDeps.appendNativeTurn to assert original-message/event arguments and deferred append completion. Use logger warn spy/addSink to observe real logging; shared makeTempDir/cleanupTempDir/makeLogger/makeNaxConfig/withDepsRestore helpers and restore every patched seam. Tests for newly added history/handoff behavior should fail against the prior implementation; unchanged native-session and forwarding compatibility pins should pass both the prior and revised implementations. Test files mirror source under test/unit, with the specified UI expectation updates under test/ui. Run targeted bun test paths with --timeout=30000 from packages/nax; the pipeline owns typecheck/check:all/full tests. Never bare bun test, never bun run nax, and never coverage inside NAX_SANDBOXED=1. Read docs/architecture/ARCHITECTURE.md and applicable .nax/rules before implementation. No release/version bump, dependency change, generated context edit, or cross-package migration is required.",
