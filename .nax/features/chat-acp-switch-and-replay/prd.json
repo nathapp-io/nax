@@ -1,0 +1,447 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-acp-switch-and-replay",
+  "branchName": "feat/chat-acp-switch-and-replay",
+  "createdAt": "2026-10-30T00:00:00.000Z",
+  "updatedAt": "2026-10-30T09:39:36.429Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add optional AgentSession.configure with ordered refusals and a busy guard",
+      "description": "**Goal** — Add the backend-neutral configure contract and implement it safely on the agent session facade.\n\n**Motivation** — An effort bump does not need a new process at all: ACP sets model and effort on a live session with `session/set_config_option`, which nax-agent-acp already sends at open (`packages/nax-agent-acp/src/client/open.ts` `applyModel` / `applyEffort`) but has no way to send later, because `AgentSession` exposes only `send`, `answer`, `cancel`, `close` and `runCommand`.\n\n**Approach** — **configure (nax-agent).** `AgentSession.configure?(input: SessionConfigureInput): Promise<void>`\nmirrors `runCommand`: optional on the interface, implemented by the session class. Refusals, checked\nin this order: `AgentSessionError` `AGENT_SESSION_CLOSED` when closing/closed; `AGENT_SESSION_BUSY`\nwhen a turn, a command or another configure is in flight; `AGENT_SESSION_INVALID_OPTIONS` when the\ninput names neither `model` nor `effort` (or names one as an empty string);\n`AGENT_SESSION_CAPABILITY_UNSUPPORTED` (context `{ capability: \"configure\" }`) when the opened\nbackend has no `configure`. Otherwise it delegates to `OpenedBackend.configure(input)`. While that\ncall is pending, `send` and `runCommand` throw `AGENT_SESSION_BUSY`. A backend error propagates\nunchanged and the busy guard is released, so the session stays usable. `close()` during a pending\nconfigure proceeds as usual; the pending configure settles with what the backend returns (the ACP\nbackend rejects with `AGENT_SESSION_CLOSED`; US-002).\n\n**Scope** — In: modify `agent-session-types.ts`, `session-backend.ts`, `agent-session.ts`, the named export in `src/index.ts`, and regenerate `api/nax-agent.api.txt`; create `test/unit/session/agent-session-configure.test.ts`, mirroring the existing runCommand tests. Out: ACP protocol implementation and reconnection (US-002), zero-turn reopen (US-003), recorder forwarding/detection (US-004), host switching (US-005), history (US-006). In-place switching for the native brain: its reopen is an in-process transcript resume.\n\n**Interface** — verbatim target declarations:\n```ts\nexport interface SessionConfigureInput { readonly model?: string; readonly effort?: string }\n```\n`AgentSession.configure?(input: SessionConfigureInput): Promise<void>`\n`OpenedBackend.configure?(input: SessionConfigureInput): Promise<void>`\nExport `SessionConfigureInput` as a named type from `@nathapp/nax-agent`. Optional interface members preserve existing backend implementations; the facade implements configure even when it must reject unsupported. Verification note: `bun run check:api` passes after `bun run api:update`. Use strict three-session TDD; regression tests must fail against the old behavior.",
+      "acceptanceCriteria": [
+        "[unit] A session whose opened backend has configure: session.configure({ effort: \"high\" }) resolves and the backend's configure was called once with { effort: \"high\" }.",
+        "[unit] session.configure({ model: \"m2\", effort: \"low\" }) passes { model: \"m2\", effort: \"low\" } to the backend's configure unchanged.",
+        "[unit] A session whose opened backend has no configure: session.configure({ effort: \"high\" }) rejects with AgentSessionError code AGENT_SESSION_CAPABILITY_UNSUPPORTED and context capability \"configure\".",
+        "[unit] session.configure({}) rejects with code AGENT_SESSION_INVALID_OPTIONS and the backend's configure is not called.",
+        "[unit] session.configure({ model: \"\" }) rejects with code AGENT_SESSION_INVALID_OPTIONS.",
+        "[unit] session.configure({}) on a session whose backend has no configure rejects with AGENT_SESSION_INVALID_OPTIONS (input is checked before backend support).",
+        "[unit] After session.close() resolved, session.configure({ effort: \"high\" }) rejects with code AGENT_SESSION_CLOSED.",
+        "[unit] While a send turn is in flight, session.configure({ effort: \"high\" }) rejects with code AGENT_SESSION_BUSY and the backend's configure is not called.",
+        "[unit] While the backend's configure promise is pending, session.send(\"hi\") throws code AGENT_SESSION_BUSY.",
+        "[unit] While the backend's configure promise is pending, a second session.configure({ effort: \"low\" }) rejects with code AGENT_SESSION_BUSY.",
+        "[unit] While the backend's configure promise is pending, session.runCommand(\"ls\", onEvent) on a backend with runCommand rejects with code AGENT_SESSION_BUSY.",
+        "[unit] When the backend's configure rejects with an AgentSessionError code AGENT_SESSION_BACKEND_UNAVAILABLE, session.configure rejects with that same error object.",
+        "[unit] After the backend's configure rejected, session.send(\"hi\") starts a turn (the busy guard is released on failure).",
+        "[unit] After the backend's configure resolved, session.send(\"hi\") starts a turn.",
+        "[unit] session.close() called while the backend's configure promise is pending resolves, and the session is closed afterwards (send throws AGENT_SESSION_CLOSED).",
+        "[unit] SessionConfigureInput is importable as a type from @nathapp/nax-agent and an object { model: \"m\", effort: \"e\" } satisfies it.",
+        "[unit] While session.close() is pending, session.configure({ effort: \"high\" }) rejects with AGENT_SESSION_CLOSED.",
+        "[unit] While a runCommand command is in flight, session.configure({ effort: \"high\" }) rejects with AGENT_SESSION_BUSY.",
+        "[unit] session.configure({ effort: \"\" }) rejects with AGENT_SESSION_INVALID_OPTIONS."
+      ],
+      "tags": [
+        "feature",
+        "api",
+        "sessions",
+        "concurrency"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The optional method and pending guard extend the existing runCommand/active/closing pattern without a new subsystem; medium scope is sufficient, while session lifecycle still requires strict security-override TDD."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/session/agent-session.ts",
+        "packages/nax-agent/src/session/agent-session-types.ts",
+        "packages/nax-agent/src/session/session-backend.ts",
+        "packages/nax-agent/src/session/agent-session-errors.ts",
+        "packages/nax-agent/test/unit/session/agent-session-run-command.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/session/agent-session-configure.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/session/agent-session-types.ts",
+          "reason": "adds `SessionConfigureInput` and the optional `AgentSession.configure`."
+        },
+        {
+          "path": "packages/nax-agent/src/session/session-backend.ts",
+          "reason": "adds the optional `OpenedBackend.configure`."
+        },
+        {
+          "path": "packages/nax-agent/src/session/agent-session.ts",
+          "reason": "implements `configure` and makes `send` and `runCommand` refuse `AGENT_SESSION_BUSY` while a configure is pending."
+        },
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "exports the `SessionConfigureInput` type beside `AgentSession`."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerated by `bun run api:update` for the new type."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Configure model and effort on the live ACP session and retain applied state",
+      "description": "**Goal** — Implement the optional OpenedBackend.configure contract over ACP set_config_option with current response tracking, bounded requests and reconnect-safe partial application.\n\n**Motivation** — An effort bump does not need a new process at all: ACP sets model and effort on a live session with `session/set_config_option`, which nax-agent-acp already sends at open (`packages/nax-agent-acp/src/client/open.ts` `applyModel` / `applyEffort`) but has no way to send later, because `AgentSession` exposes only `send`, `answer`, `cancel`, `close` and `runCommand`.\n\n**Approach** — **configure (nax-agent-acp).** A new module `src/client/session-configure.ts` exports\n`configureAcpSession(input: { link: AcpLink; agentSessionId: string; agentName: string; secrets:\nreadonly string[]; timeoutMs: number; signal: AbortSignal; sessionId: string; configOptions: readonly\nSessionConfigOption[]; change: SessionConfigureInput }): Promise<readonly SessionConfigOption[]>`\n(the config options after the last request it sent), plus an `onApplied(part, configOptions)`\ncallback it calls right after each request succeeds. `assemble` gives the ACP `OpenedBackend` a\n`configure` that calls it with the live process's link and session id, `live.options.secrets` (the\ntoken-augmented set, so tool-host tokens are redacted from errors), `base.initializeTimeoutMs` and\n`ctx.openSignal`, recording each applied part through `onApplied` (step 5). Together they:\n\n1. gets the live process through `liveFor` (reconnecting once after a crash, as a turn does);\n2. when `model` is given: resolves it with `resolveModelValue(agentName, ids, model, secrets)`, where\n   `ids` are the model option values of the session's current config options (`configModelIds`,\n   now exported from `open.ts` with a signature taking `readonly SessionConfigOption[]`), finds `modelOptionId`, and sends\n   `session/set_config_option { sessionId: agentSessionId, configId, value }`; no model option\n   offering it -> `AGENT_SESSION_CAPABILITY_UNSUPPORTED` (context `{ capability: \"model\" }`), no\n   request sent;\n3. then, when `effort` is given: finds `effortOptionId(configOptions, agentName, effort)` in the\n   config options **returned by step 2** (or the current ones when no model was set) and sends\n   `session/set_config_option`; no option -> `AGENT_SESSION_CAPABILITY_UNSUPPORTED` (context\n   `{ capability: \"effort\" }`), no request sent (unlike open, which skips an unoffered effort with a\n   warning);\n4. each request is raced against `initializeTimeoutMs` and the session's `openSignal` with `race`:\n   a timeout throws `AGENT_SESSION_BACKEND_UNAVAILABLE`, an abort (the session is closing) throws\n   `closedDuringOpen(sessionId)` (`AGENT_SESSION_CLOSED`), a JSON-RPC error is mapped by\n   `openRequestError` with step label `session/set_config_option`;\n5. records each part as soon as its request succeeds, so a later reconnect re-applies exactly what\n   the live agent holds: the `AcpSession` gains a mutable `base` (replacing `readonly base`) updated\n   to `{ ...base, model }` after the model request and `{ ...base, effort }` after the effort\n   request, and a mutable `configOptions` set to each response's `configOptions`. When the model\n   request succeeds and the effort step then fails, the model stays recorded and `configure`\n   rejects with the effort failure.\n\nThe session's config options come from a new `OpenedAcp.configOptions` field. Today `applyEffort`\nreturns `void` and `applyConfig` returns the post-model offers, dropping the effort response; the\ntarget: `applyEffort` returns the offers carrying the `set_config_option` response's\n`configOptions` (or its input offers when it sent nothing), and `applyConfig` returns `{ offers:\n<post-model offers>, configOptions: <post-effort offers' configOptions> }`. `OpenedAcp.offered` stays\ncomputed from the post-model offers exactly as today (`backend-offered-choices.test.ts` pins that);\n`OpenedAcp.configOptions` is the post-effort `configOptions` — the response to the last config\nrequest open sent, else the `session/new` or restore response's options. It is copied to\n`AcpSession.configOptions` at open and at every reconnect. The legacy `session/set_model` path is\nnot used by `configure`.\n\n**Scope** — In: create session-configure.ts and backend-configure.test.ts; modify open.ts and backend.ts; add optional setConfigOptionFailure (every request returns its JSON-RPC error) and setConfigOptionHang (never answers) beside setModeFailure in fake-agent/script.ts and honor them in fake-agent/agent.ts after recording the request, absent by default so existing scripts remain unchanged. Regenerate api/nax-agent-acp.api.txt only if the public surface changes. Out: facade contract (US-001), chat lifecycle and wrappers (US-003–US-005), history recording/replay (US-006). The legacy ACP `session/set_model` path in `configure`: only config options are used; an agent that offers its model only through the legacy block falls back to reopen. Refreshing `BackendInfo.capabilities.offeredModels` / `offeredEfforts` after `configure` (they stay as reported at open).\n\n**Interface** — verbatim signatures:\n```ts\nconfigureAcpSession(input: { link: AcpLink; agentSessionId: string; agentName: string; secrets: readonly string[]; timeoutMs: number; signal: AbortSignal; sessionId: string; configOptions: readonly SessionConfigOption[]; change: SessionConfigureInput }): Promise<readonly SessionConfigOption[]>\nconfigModelIds(options: readonly SessionConfigOption[]): string[]\n```\nAlso provide the `onApplied(part, configOptions)` callback described above; it reports each applied part immediately, including when the next part fails. `OpenedAcp` adds `readonly configOptions: readonly SessionConfigOption[]`; `AcpSession.base` becomes mutable and gains `configOptions: readonly SessionConfigOption[]`. Open's callers of configModelIds pass offers.configOptions. applyEffort returns Promise<SessionOffers>; applyConfig returns { offers, configOptions }, preserving post-model offers separately from post-effort options. Drive integration tests through createAgentSession({ backend: acpBackend(...) }).configure against the in-memory fake launcher; never launch real ACP adapters. Preserve backend-offered-choices.test.ts regressions and use strict three-session TDD.",
+      "acceptanceCriteria": [
+        "[integration] Against the in-memory fake ACP agent offering a model config option with values a and b, createAgentSession({ backend: acpBackend(...) }) then session.configure({ model: \"b\" }) sends session/set_config_option with configId the model option's id and value \"b\" for the session's agent session id.",
+        "[integration] session.configure({ effort: \"high\" }) on an agent offering a thought_level option with high sends session/set_config_option with that option's id and value \"high\".",
+        "[integration] session.configure({ model: \"b\", effort: \"high\" }) sends the model request first and resolves the effort option from the configOptions the model response returned: with a fake whose initial thought_level option lacks high and whose setConfigOptionsAnswer adds it, the effort request is still sent.",
+        "[integration] For Codex (no thought_level category), configure({ effort: \"high\" }) sets the option with id reasoning_effort when it offers high.",
+        "[integration] For Cursor offering gpt-5.5[context=272k], configure({ model: \"gpt-5.5\" }) sends value \"gpt-5.5[context=272k]\" (resolved by resolveModelValue).",
+        "[integration] configure({ model: \"zzz\" }) with no model option offering zzz rejects with code AGENT_SESSION_CAPABILITY_UNSUPPORTED and context capability \"model\", and no session/set_config_option request is recorded.",
+        "[integration] configure({ effort: \"max\" }) with no option offering max rejects with code AGENT_SESSION_CAPABILITY_UNSUPPORTED and context capability \"effort\", and no request is recorded.",
+        "[integration] On Codex with profile: \"full\" and no model or effort at open (so open sends no session/set_config_option), with the fake's setConfigOptionHang set and initializeTimeoutMs 50, configure({ model: \"b\" }) rejects with code AGENT_SESSION_BACKEND_UNAVAILABLE.",
+        "[integration] On Codex with profile: \"full\" and no model or effort at open, with the fake's setConfigOptionFailure set to a JSON-RPC internal error (-32603), configure({ model: \"b\" }) rejects with code AGENT_SESSION_BACKEND_UNAVAILABLE and context step \"session/set_config_option\".",
+        "[integration] On Codex with profile: \"full\" and no model or effort at open and setConfigOptionHang set, session.close() while configure({ model: \"b\" }) is pending makes that configure reject with code AGENT_SESSION_CLOSED.",
+        "[integration] After configure({ model: \"b\" }) resolved and the agent process exited, the next send reconnects and the reconnect's open sends session/set_config_option setting the model option to \"b\".",
+        "[integration] After configure({ effort: \"high\" }) resolved and the agent process exited, the reconnect's open sets the effort option to \"high\".",
+        "[integration] After configure({ model: \"b\" }) resolved, send(\"hi\") runs a turn on the same agent process (one launch in total).",
+        "[integration] When the agent process has exited before configure is called, configure({ model: \"b\" }) reconnects once and sends the request on the new process.",
+        "[integration] After an open that set an effort, a following configure({ model: \"b\" }) resolves the model from the config options the open's effort response returned (OpenedAcp.configOptions holds the last open response, not the post-model one).",
+        "[integration] configure({ model: \"b\", effort: \"max\" }) on an agent offering model b but no max effort sends the model request, then rejects with code AGENT_SESSION_CAPABILITY_UNSUPPORTED (context capability \"effort\"); after the agent process exits, the reconnect's open sets the model option to \"b\".",
+        "[unit] configModelIds(options) returns the values of every model-category select option in offer order and ignores options of other categories.",
+        "[integration] When session/set_config_option returns a JSON-RPC error, configure rejects with the error classification produced by openRequestError(\"session/set_config_option\", rpcError, secrets).",
+        "[integration] When open sets model gpt-5.4 and the model's session/set_config_option response offers only gpt-5.4, session.backend.capabilities.offeredModels equals [\"gpt-5.4\"], preserving the existing post-model offered-choice behavior pinned by backend-offered-choices.test.ts."
+      ],
+      "tags": [
+        "feature",
+        "acp",
+        "sessions",
+        "reconnection",
+        "security"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module protocol integration includes partial-success state, reconnection, timeouts, cancellation and token-redacted errors; session/token handling invokes the strict security override."
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/client/backend.ts",
+        "packages/nax-agent-acp/src/client/open.ts",
+        "packages/nax-agent-acp/src/client/capabilities.ts",
+        "packages/nax-agent-acp/src/client/errors.ts",
+        "packages/nax-agent-acp/test/unit/client/backend-offered-choices.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent-acp/src/client/session-configure.ts",
+        "packages/nax-agent-acp/test/unit/client/backend-configure.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a set_config_option JSON-RPC error message contains the current tool-host token, the configure rejection message does not contain that token.",
+        "When a Cursor bare model name matches multiple offered settings-carrying model ids, configure rejects with AGENT_SESSION_CAPABILITY_UNSUPPORTED and sends no configuration request."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent-acp/src/client/open.ts",
+          "reason": "exports `configModelIds` taking `readonly SessionConfigOption[]`; `applyEffort` returns the offers carrying the effort response; `applyConfig` returns `{ offers, configOptions }` with `offers` the post-model offers (so `OpenedAcp.offered` is unchanged) and `configOptions` the post-effort ones; `OpenedAcp` gains `configOptions`."
+        },
+        {
+          "path": "packages/nax-agent-acp/src/client/backend.ts",
+          "reason": "`AcpSession.base` becomes mutable, `AcpSession` gains `configOptions` (set at open and at each reconnect from `live.acp.configOptions`), and `assemble` adds `configure` calling `configureAcpSession`."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/fixtures/fake-agent/script.ts",
+          "reason": "adds optional `setConfigOptionFailure` (a JSON-RPC error answered to every set-config-option request) and `setConfigOptionHang` (never answers), beside the existing `setModeFailure`; existing scripts are unaffected because both default to absent."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/fixtures/fake-agent/agent.ts",
+          "reason": "the set-config-option request handler honours `setConfigOptionFailure` and `setConfigOptionHang` after recording the request, like the `setModeFailure` handling of the set-mode request."
+        },
+        {
+          "path": "packages/nax-agent-acp/api/nax-agent-acp.api.txt",
+          "reason": "regenerated by `bun run api:update` only if the public surface changes."
+        }
+      ],
+      "workdir": "packages/nax-agent-acp",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Create a fresh ACP agent when the stored session never started a turn",
+      "description": "**Goal** — Avoid restoring a never-prompted ACP session while retaining native chat history for a fresh handoff.\n\n**Motivation** — The rollback resumes the same never-prompted session, fails the same way, and `this.handle` stays on the closed session.\n\n**Approach** — **Zero-turn guard (nax).** `openAcpBrain` resumes only a stored agent document that carries a\n`turn` marker (`TranscriptDoc.turn`, written by the first `send`). A document without one is a\nsession the agent never prompted: it is deleted with `store.delete(sessionId)` and a fresh agent\nsession is created, with no notice (nothing was lost) and `fresh: true`.\n\n**Scope** — In: modify openAcpBrain in `src/chat/open-chat-session.ts`, create `test/unit/chat/open-chat-session-acp-zero-turn.test.ts`, and update existing resume fixtures in `open-chat-session-acp.test.ts` and `open-chat-session-acp-history.test.ts`. Specifically, resumeFailing, 'AC-6 resumes the agent document with the session id and the agent store', the history seed containing agent-only, and seedAgentDoc must carry `turn: { turnId: \"t1\", state: \"ended\" }` because they expect resume or resume failure; keep their existing expectations unchanged. Out: configure (US-001/US-002), in-place detection/forwarding (US-004), host rollback/new-chat recovery (US-005), recording/replay (US-006). A first send that fails before the agent received the prompt still leaves a `turn` marker (`markTurn(running)` is written first), so a later resume of that agent session can fail as before; the zero-turn guard covers only sessions that never started a turn.\n\n**Interface** — Existing `TranscriptDoc.turn?: TurnMarker` and `TranscriptStore.delete(sessionId)` (\"Missing is not an error\") are used without a public contract change. `openAcpBrain` continues returning an OpenedBrain; its fresh result is `{ session, fresh: true }`, with no zero-turn notice. Load the agent-specific document, delete it before createAgentSession when turn is absent, and do not call retainFailed for that case. Documents with ended or running markers resume as before; a missing document creates without delete. Preserve native open and the existing recognized-error retainFailed fallback. Use the real record/handoff path to verify all native messages reach the fresh agent's first send. Keep whole-history/no-notice fixtures within the existing handoff budgets so unrelated trimming does not interfere; the existing trimming policy and its independent notice remain unchanged. Preserve the non-fallback authentication error path for a marked document, as already covered by open-chat-session-acp.test.ts. Session lifecycle requires strict three-session TDD.",
+      "acceptanceCriteria": [
+        "[unit] openChatSession resuming a chat on acp:codex whose agent store holds a document without turn calls the agent store's delete with the session id and then createAgentSession, and never calls resumeAgentSession.",
+        "[unit] Given openChatSession resumes a chat on acp:codex whose agent store holds a document without turn, the returned handle has no notice.",
+        "[unit] Given openChatSession resumes a chat on acp:codex whose agent store holds a document without turn, the agent store's retainFailed is not called.",
+        "[unit] Given openChatSession resumes a chat on acp:codex whose agent store holds a document without turn, the agent session receives the whole native history as its handoff (it is treated as fresh): its first send is prefixed with the <conversation-so-far> handoff of every native message.",
+        "[unit] A stored agent document with turn: { turnId: \"t1\", state: \"ended\" } is resumed with resumeAgentSession(sessionId, options) and delete is not called.",
+        "[unit] A stored agent document with turn: { turnId: \"t1\", state: \"running\" } (an interrupted turn) is resumed, not deleted.",
+        "[unit] With no stored agent document, createAgentSession is called and delete is not called.",
+        "[unit] The native brain's open is unchanged: a native session whose transcript document has no turn is resumed with resumeAgentSession.",
+        "[unit] Given a stored ACP document with turn: { turnId: \"t1\", state: \"ended\" }, when resumeAgentSession rejects with AGENT_SESSION_AUTH_REQUIRED, openChatSession rejects with that same error object rather than creating a fresh agent, preserving the existing non-fallback error behavior."
+      ],
+      "tags": [
+        "bugfix",
+        "acp",
+        "sessions",
+        "history"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Localized open-path change plus existing fixture migration, but deletion/resume and session handoff invoke the strict session security override."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/open-chat-session.ts",
+        "packages/nax-agent/src/native/session/transcript-types.ts",
+        "packages/nax/test/unit/chat/open-chat-session-acp.test.ts",
+        "packages/nax/test/unit/chat/open-chat-session-acp-history.test.ts",
+        "packages/nax/src/chat/acp/acp-session-options.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/open-chat-session-acp-zero-turn.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/chat/open-chat-session.ts",
+          "reason": "`openAcpBrain` resumes only a stored agent document with `turn`, deletes a turn-less one and creates."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/open-chat-session-acp.test.ts",
+          "reason": "the seeded agent documents in `resumeFailing`, `AC-6 resumes the agent document with the session id and the agent store` and the history test that seeds `agent-only` gain `turn: { turnId: \"t1\", state: \"ended\" }`, because only a document that ran a turn is resumed now; their expectations are unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/open-chat-session-acp-history.test.ts",
+          "reason": "`seedAgentDoc` saves `turn: { turnId: \"t1\", state: \"ended\" }` with the document, because its callers expect the stored agent session to be resumed (or its resume to fail) and a turn-less document is now deleted instead; their expectations are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Detect eligible ACP changes and forward configure through the recorder",
+      "description": "**Goal** — Identify same-agent explicit model/effort changes and expose configure through the real ACP recording wrapper.\n\n**Motivation** — An effort bump does not need a new process at all: ACP sets model and effort on a live session with `session/set_config_option`, which nax-agent-acp already sends at open (`packages/nax-agent-acp/src/client/open.ts` `applyModel` / `applyEffort`) but has no way to send later, because `AgentSession` exposes only `send`, `answer`, `cancel`, `close` and `runCommand`.\n\n**Approach** — `acpInPlaceChange(from, to): SessionConfigureInput | undefined` (new, `packages/nax/src/chat/acp/acp-switch.ts`)\nparses both with `parseChatAcpModel` (a string that throws on parse counts as not ACP) and returns\na change only when both are ACP models of the same agent and something differs. When the model part\ndiffers it returns `{ model }` plus `effort` whenever the target names one (an agent may reset effort\non a model change); when only the effort differs it returns `{ effort }`. It returns `undefined` when\neither string is not a valid ACP model, the agents differ, nothing differs, or a differing part's\ntarget value is absent (the agent's own default: `acp:codex` with no model, or no `[effort]`) — ACP\nhas no value that means \"your default\", so those reopen.\n\n**Recorder pass-through (nax).** Every ACP agent session reaches the host wrapped by\n`recordAcpTurns` (`acp-recorder.ts`), whose hand-built object forwards only `id`, `backend`,\n`lastTurn`, `runCommand`, `send`, `answer`, `cancel` and `close`. It gains a `configure` getter\nmodelled on the `runCommand` getter: the wrapped session's `configure` bound to it, or `undefined`\nwhen the wrapped session has none. Without it the in-place path is unreachable in production.\n\n**Scope** — In: create `src/chat/acp/acp-switch.ts` and its unit tests, export acpInPlaceChange from `src/chat/acp/index.ts`, and add configure getter/forwarding cases in `acp-recorder.ts`/`acp-recorder.test.ts` beside runCommand without changing existing cases. Out: facade implementation (US-001), protocol requests/reconnect (US-002), zero-turn guard (US-003), host switch state machine (US-005), segmented recording/replay (US-006). Switching between two ACP agents in place: a different agent is a different process. Restoring an agent's own default model or effort in place: a switch to `acp:<agent>` with no model, or to no `[effort]`, reopens. The recorder's `origin.model` after an in-place model change: messages keep the model the recorder was built with until the next reopen.\n\n**Interface** — verbatim design signature: `acpInPlaceChange(from, to): SessionConfigureInput | undefined`. Both arguments are model strings; reuse `parseChatAcpModel`. Wrapped `AgentSession.configure?(input: SessionConfigureInput): Promise<void>` must retain the wrapped session as `this`; absent capability stays undefined. Drive recordAcpTurns(session, …).configure directly to prove the seam, not merely the helper's return values. Strict three-session TDD applies to the session wrapper.",
+      "acceptanceCriteria": [
+        "[unit] acpInPlaceChange(\"acp:codex/gpt-5.5\", \"acp:codex/gpt-5.5[high]\") returns { effort: \"high\" }.",
+        "[unit] acpInPlaceChange(\"acp:codex/gpt-5.5\", \"acp:codex/gpt-6-luna\") returns { model: \"gpt-6-luna\" }.",
+        "[unit] acpInPlaceChange(\"acp:codex/gpt-5.5[low]\", \"acp:codex/gpt-6-luna[high]\") returns { model: \"gpt-6-luna\", effort: \"high\" }.",
+        "[unit] acpInPlaceChange(\"acp:codex/gpt-5.5[high]\", \"acp:codex/gpt-6[high]\") returns { model: \"gpt-6\", effort: \"high\" } (a model change carries the target's effort).",
+        "[unit] acpInPlaceChange(\"acp:codex/gpt-5.5[high]\", \"acp:codex/gpt-5.5\") returns undefined (the target effort is the agent default).",
+        "[unit] acpInPlaceChange(\"acp:codex/gpt-5.5\", \"acp:codex\") returns undefined (the target model is the agent default).",
+        "[unit] acpInPlaceChange(\"acp:claude\", \"acp:codex/gpt-5.5\") returns undefined (different agents).",
+        "[unit] acpInPlaceChange(\"openai/gpt-6\", \"acp:codex/gpt-5.5\") and acpInPlaceChange(\"acp:codex/gpt-5.5\", \"openai/gpt-6\") both return undefined.",
+        "[unit] acpInPlaceChange(\"acp:codex/gpt-5.5\", \"acp:codex/gpt-5.5\") returns undefined.",
+        "[unit] acpInPlaceChange(\"acp:gemini/x\", \"acp:codex/gpt-5.5\") returns undefined instead of throwing (a malformed ACP string counts as not ACP).",
+        "[unit] recordAcpTurns(session, …).configure({ effort: \"high\" }) on a wrapped session with configure calls the wrapped session's configure once with { effort: \"high\" }, with this the wrapped session.",
+        "[unit] recordAcpTurns(session, …).configure is undefined when the wrapped session has no configure.",
+        "[unit] recordAcpTurns(session, …).runCommand(\"ls\", onEvent) still returns the wrapped runCommand's result with the wrapped session as this and the same command and callback arguments, preserving the existing runCommand forwarding behavior."
+      ],
+      "tags": [
+        "feature",
+        "acp",
+        "sessions",
+        "adapter"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Pure comparison plus an additive bound forwarding getter follow established patterns; session capability forwarding requires the strict security override."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/acp/acp-model.ts",
+        "packages/nax/src/chat/acp/acp-recorder.ts",
+        "packages/nax/test/unit/chat/acp/acp-recorder.test.ts",
+        "packages/nax/src/chat/acp/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-switch.ts",
+        "packages/nax/test/unit/chat/acp/acp-switch.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/chat/acp/acp-recorder.ts",
+          "reason": "the session `recordAcpTurns` returns gains a `configure` getter forwarding the wrapped session's `configure` bound to it, `undefined` when it has none."
+        },
+        {
+          "path": "packages/nax/src/chat/acp/index.ts",
+          "reason": "re-exports `acpInPlaceChange`."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/acp/acp-recorder.test.ts",
+          "reason": "adds the `configure` forwarding cases beside the existing `runCommand` forwarding cases; existing cases are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Switch chat in place with reopen, rollback and fresh-session recovery",
+      "description": "**Goal** — Extract the chat switch state machine, configure eligible live sessions, and recover failed reopen/rollback onto a usable new chat before surfacing the original failure.\n\n**Motivation** — The rollback resumes the same never-prompted session, fails the same way, and `this.handle` stays on the closed session.\n\n**Approach** — **Switch (nax).** `ChatHost.switchSession` delegates to a new `switchChatSession` in\n`packages/nax/src/chat/session-switch.ts`:\n\n```ts\nexport interface SwitchTarget {\n  readonly mode: ChatMode;\n  readonly model: string;\n}\nexport interface SwitchInput {\n  readonly previous: ChatSessionHandle;      // the open handle being switched away from\n  readonly from: SwitchTarget;               // its mode and model\n  readonly target: SwitchTarget;             // the requested mode and model\n  readonly reopen: (to: SwitchTarget) => Promise<ChatSessionHandle>;    // resume previous.meta.sessionId\n  readonly openFresh: (to: SwitchTarget) => Promise<ChatSessionHandle>; // a new chat session, as start opens one\n  readonly writeMeta: (meta: SessionMeta) => Promise<void>;\n}\nexport interface SwitchOutcome {\n  readonly handle: ChatSessionHandle;\n  readonly error?: unknown;   // the switch failure to rethrow after applying the outcome\n  readonly notice?: string;   // set only on the new-session path\n}\nexport async function switchChatSession(input: SwitchInput): Promise<SwitchOutcome>;\n```\n\n1. **In place.** When `target.mode === from.mode` and `acpInPlaceChange(from.model, target.model)`\n   returns a change and `previous.session.configure` is defined, call it with the change, then\n   `writeMeta({ ...previous.meta, model: target.model })` and return `{ handle: { ...previous, meta:\n   <that meta> } }`. Any error from `configure` (including `AGENT_SESSION_CAPABILITY_UNSUPPORTED`)\n   or from that `writeMeta` falls through to step 2 with the previous session still open (step 2's\n   reopen applies the target from scratch and writes the meta again).\n2. **Close and reopen** (today's path, moved): close `previous.session`, `previous.release({\n   retainLock: true })`, `reopen(target)`, `writeMeta(next.meta)`; return `{ handle: next }`.\n3. **Rollback.** If step 2 fails after closing: close/release the half-opened `next` as today, then\n   `reopen(from)`; success returns `{ handle, error }` with the original error.\n4. **New session.** If the rollback reopen also fails: `previous.release()` (no `retainLock`, so the\n   old session's lock is freed), `openFresh(from)` (a new chat session on the original mode and\n   model, as `start` opens one), and return `{ handle, error, notice }` with notice\n   `ROLLBACK_NEW_SESSION_NOTICE(oldId, reason)` = `could not reopen session <oldId> after the failed\n   switch (<reason>); started a new session (/resume <oldId> retries it)`, where `reason` is the\n   first line of `errorMessage(E)`. The reason is in the notice because the TUI rebuilds its\n   transcript on the new session id and drops the error entry it appended for the rejected switch. If `openFresh` fails too, `switchChatSession`\n   throws `new NaxError(<message naming both failures>, \"CHAT_SESSION_REOPEN_FAILED\", { stage:\n   \"chat\", sessionId: <oldId>, switchError: errorMessage(E), cause: <openFresh error> })`. The new\n   session deliberately bypasses `replace()`: no `asks.reset()` is needed (the old session was\n   closed with no pending asks) and its hygiene is skipped: the old session stays on disk so the notice's\n   `/resume` can retry it.\n\n`acpInPlaceChange(from, to): SessionConfigureInput | undefined` (new, `packages/nax/src/chat/acp/acp-switch.ts`)\nparses both with `parseChatAcpModel` (a string that throws on parse counts as not ACP) and returns\na change only when both are ACP models of the same agent and something differs. When the model part\ndiffers it returns `{ model }` plus `effort` whenever the target names one (an agent may reset effort\non a model change); when only the effort differs it returns `{ effort }`. It returns `undefined` when\neither string is not a valid ACP model, the agents differ, nothing differs, or a differing part's\ntarget value is absent (the agent's own default: `acp:codex` with no model, or no `[effort]`) — ACP\nhas no value that means \"your default\", so those reopen.\n\nThe host applies the outcome: `this.handle = outcome.handle`; when the session id changed it calls\n`this.hostJobs?.sessionChanged()` and sets `this.resumeNotice = outcome.notice`; then\n`asks.setMode(outcome.handle.meta.mode === \"full\" ? \"full\" : \"guarded\")` (`SessionMeta.mode` is `\"full\" | \"ask\"`, `ChatMode` is `\"full\" | \"guarded\"`), `primeContextWindow(model)`, and rethrows `outcome.error`\nwhen present. To keep `chat-host.ts` within its 600-line cap (593 today), a private\n`openArgs()` helper builds the open arguments that `startSession`, `resumeSession` and `reopen`\neach spell out today (`cwd`, `repoRoot`, `config`, `loopHandlers`, `toolProviders`,\n`backgroundCommands`), and those three sites and `openFresh` use it. The TUI needs no change: a new\n`sessionId` already rebuilds the transcript and appends `host.notice()` (`ChatApp.tsx`), and the\nreason the switch failed reaches the user through the notice.\n\n**Scope** — In: create `src/chat/session-switch.ts`, `test/unit/chat/session-switch.test.ts` and `test/unit/chat/chat-host-acp-switch.test.ts`; modify chat-host.ts to use the new state machine and openArgs(). Consume acpInPlaceChange and recorder forwarding from US-004 and the configure type from US-001, not a duplicate implementation. Out: ACP request plumbing (US-002), zero-turn guard (US-003), detection/recorder implementation (US-004), history (US-006), and TUI changes. Changing the guarded/full mode in place: a mode change keeps close-and-reopen. In-place switching for the native brain: its reopen is an in-process transcript resume. Switching between two ACP agents in place: a different agent is a different process. Restoring an agent's own default model or effort in place: a switch to `acp:<agent>` with no model, or to no `[effort]`, reopens. Removing the old session from disk on the new-session path: it is kept so `/resume <oldId>` can retry it. Cursor's own permission behaviour in guarded mode (file edits without a nax card).\n\n**Interface** — Use the verbatim SwitchTarget, SwitchInput, SwitchOutcome and switchChatSession declarations above; export `ROLLBACK_NEW_SESSION_NOTICE(oldId, reason)` from the same module with the exact notice text. Bind reopen to resume previous.meta.sessionId using the existing retained-lock storage facade; bind openFresh to the same real open path as start, with a new session id and no resumeId. Apply the outcome even when it carries an error before rethrowing that original error. The integration seam must use createChatHost(...).switchTo({ model }) over real openChatSession, `_openChatSessionDeps.createAgentSession` returning a stub with configure, and an ACP catalog stub whose effortLevels returns [\"default\", \"high\"]; otherwise effort clamping makes the switch a no-op. Prove configure crosses recordAcpTurns and no second create/resume occurs. Verify double-failure recovery with createAgentSession resolving on call 1, rejecting on calls 2 and 3 and resolving on call 4 with fresh UUIDs. Verification note: `bun run check:file-sizes` passes with chat-host.ts at or under 600 lines. Strict three-session TDD applies to session/lock/mode lifecycle.",
+      "acceptanceCriteria": [
+        "[unit] switchChatSession with an in-place change and a configure that resolves calls writeMeta once with the previous meta and model set to the target, never closes the previous session, never calls reopen, and returns a handle whose session is the previous session and whose meta.model is the target.",
+        "[unit] switchChatSession whose configure rejects with AGENT_SESSION_CAPABILITY_UNSUPPORTED closes the previous session, calls reopen(target), and returns { handle: <reopened> } with no error.",
+        "[unit] switchChatSession whose configure resolves but whose first writeMeta rejects closes the previous session, calls reopen(target), and returns the reopened handle.",
+        "[unit] switchChatSession with a mode change (target.mode !== from.mode) never calls configure and takes the close-and-reopen path.",
+        "[unit] switchChatSession whose previous session has no configure takes the close-and-reopen path.",
+        "[unit] switchChatSession whose reopen(target) rejects with error E and whose reopen(from) resolves returns { handle: <rolled back>, error: E } and no notice.",
+        "[unit] switchChatSession whose reopen(target) rejects with E and whose reopen(from) also rejects calls previous.release() with no retainLock, then openFresh(from), and returns { handle: <fresh>, error: E, notice: ROLLBACK_NEW_SESSION_NOTICE(<old session id>, <first line of E's message>) }.",
+        "[unit] ROLLBACK_NEW_SESSION_NOTICE(\"abc\", \"agent gone\") equals \"could not reopen session abc after the failed switch (agent gone); started a new session (/resume abc retries it)\".",
+        "[unit] When reopen(target), reopen(from) and openFresh(from) all reject, switchChatSession rejects with a NaxError code CHAT_SESSION_REOPEN_FAILED whose cause is openFresh's error.",
+        "[unit] That CHAT_SESSION_REOPEN_FAILED error's context has stage \"chat\", sessionId the old session id, and switchError the message of E.",
+        "[unit] On the close-and-reopen path switchChatSession calls previous.release({ retainLock: true }) after closing the previous session and before reopen(target).",
+        "[integration] A host built over the real openChatSession on acp:codex/gpt-5.5 (stub agent session with configure from _openChatSessionDeps.createAgentSession, and an acp catalog stub whose effortLevels returns [\"default\", \"high\"]): switchTo({ model: \"acp:codex/gpt-5.5[high]\" }) calls the stub's configure once with { effort: \"high\" }, and host.current().model is acp:codex/gpt-5.5[high].",
+        "[integration] In that switch createAgentSession and resumeAgentSession are not called again after the initial open, and the stored meta read back from the session storage has model acp:codex/gpt-5.5[high].",
+        "[integration] A host over the real openChatSession whose _openChatSessionDeps.createAgentSession resolves on call 1, rejects on calls 2 and 3 (switch reopen and rollback reopen) and resolves on call 4, and whose randomUUID returns a new id on its later calls: switchTo rejects with the switch error, then host.current().sessionId differs from the old id, host.notice() is ROLLBACK_NEW_SESSION_NOTICE(<old id>, <first line of the call-2 error>), and host.send(\"hi\", onEvent) runs a turn without throwing AGENT_SESSION_CLOSED.",
+        "[integration] A host whose switch reopen fails and rollback succeeds: switchTo rejects with the switch error and host.current() reports the original model and session id.",
+        "[unit] When configure throws an error other than AGENT_SESSION_CAPABILITY_UNSUPPORTED, switchChatSession falls back to close-and-reopen."
+      ],
+      "tags": [
+        "feature",
+        "bugfix",
+        "acp",
+        "sessions",
+        "recovery"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New orchestration state machine crosses optional configuration, metadata persistence, retained locks, rollback, fresh recovery and host/TUI state; session and mode handling require strict security-override TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/chat/open-chat-session.ts",
+        "packages/nax/test/unit/chat/chat-host-acp.test.ts",
+        "packages/nax/test/unit/chat/chat-host-acp-history.test.ts",
+        "packages/nax/src/chat/acp/acp-switch.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/session-switch.ts",
+        "packages/nax/test/unit/chat/session-switch.test.ts",
+        "packages/nax/test/unit/chat/chat-host-acp-switch.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When writeMeta rejects after target reopen succeeded, the half-opened target session is closed and released with retainLock: true before rollback starts.",
+        "When fresh-session recovery succeeds, the old session metadata and transcript remain readable for a later /resume retry."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/chat/chat-host.ts",
+          "reason": "`switchSession` delegates to `switchChatSession` and applies its outcome (handle, `sessionChanged`, `resumeNotice`, mode, context window, rethrow); the inline close/reopen/rollback body is removed; a private `openArgs()` replaces the open-argument blocks repeated in `startSession`, `resumeSession` and `reopen`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Preserve ACP reply segments and replay recorded tool suffixes as rows",
+      "description": "**Goal** — Record blank-line-separated ACP reply segments and replay ACP tool suffix lines as tool/notice entries without changing native history behavior.\n\n**Motivation** — A Cursor turn \"text, Edit File, text\" is recorded as `Creating hello.txt with the content hi.Created hello.txt with hi.` (no break), which is also what the next brain receives in its handoff; on `--resume` it renders as `…hi. [tool] Edit File` on one line.\n\n**Approach** — **Reply segments (nax).** `acpTurnMessages`' reply text becomes: the turn's `text_delta` text after\nthe last `stream_reset`, split into segments at each `tool_call` event, empty segments dropped, the\nrest joined with a blank line (`\\n\\n`); `turn_end.output` only when that is empty. The ACP client\nflushes its text stream at every tool event and at turn end, so the deltas hold the whole scrubbed\nreply. The tool lines are unchanged: `toolLines` still lists every `tool_call` of the turn,\nincluding those before a `stream_reset`, while the text keeps only what follows the reset.\n\n**Replay (nax).** `replayHistory` treats an assistant message whose `acpAgentOfMessage` is defined\nas `<reply text>` followed by the trailing run of lines that start with `[tool] `: the text (if\nnon-empty) becomes one `reply` entry; each `[tool] <name>` line becomes a `tool` entry (`name` =\nthe line after `[tool] ` with a trailing ` (error)` removed, `status` `\"error\"` when that suffix was\npresent else `\"ok\"`, `input` `{}`, no `preview`, `children` `[]`, `callId`\n`history-<index>-acp-<n>` with `n` the 0-based line index in the run); a `[tool] … and <N> more`\nline becomes a `notice` entry `… and <N> more tool calls`. Native assistant messages replay exactly\nas today.\n\n**Scope** — In: modify replyText in `src/chat/acp/acp-history.ts`, replayMessage in `src/tui/chat/history-replay.ts`, and re-export acpAgentOfMessage from `src/chat/index.ts` through the ACP barrel. Create `test/unit/tui/chat/history-replay-acp.test.ts`; extend `test/unit/chat/acp/acp-history.test.ts`, replacing 'prefers the turn_end output over the deltas' with delta-first and empty-delta fallback assertions. Preserve the existing history-replay.test.ts behavior for native messages. Out: configure and session lifecycle (US-001–US-005), changes to transcript-model's public union, and ACP client turn_end.output. Changing `turn_end.output` in nax-agent-acp (`parts.join(\"\")`); the segment fix is in nax's recorder only. Recording ACP tool inputs or results in the native document, or replaying ACP tool calls with arguments. An ACP reply whose own last lines start with `[tool] ` replays those lines as tool rows; the recorded text is not escaped.\n\n**Interface** — Existing acpTurnMessages and replayHistory signatures remain unchanged; `acpAgentOfMessage` becomes importable from `@/chat`. Reuse TranscriptEntry tool/reply/notice types, existing index-derived history turnId and replay timestamp. ACP tool rows have input {}, absent preview, children [], status ok/error and deterministic history-<index>-acp-<n> callId. Only parse the trailing run of exact '[tool] ' line prefixes for ACP-origin assistant messages; native text and structured tool calls replay exactly as before. No storage schema migration or rewrite of old recordings. Use failing unit regressions for reset retention, consecutive calls, tool-only replies, summary/error suffixes and native messages. This is pure recording/replay presentation work, not session lifecycle modification, so tdd-simple is appropriate.",
+      "acceptanceCriteria": [
+        "[unit] acpTurnMessages for events [textDelta(\"Creating.\"), toolCall(\"c1\", \"Edit\"), textDelta(\"Created.\"), turnEnd(\"Creating.Created.\")] records assistant content \"Creating.\\n\\nCreated.\\n[tool] Edit\".",
+        "[unit] Deltas [textDelta(\"Hel\"), textDelta(\"lo\"), turnEnd(\"Hello\")] with no tool call record \"Hello\".",
+        "[unit] A tool call before any text ([toolCall(\"c1\", \"Read\"), textDelta(\"done\"), turnEnd(\"done\")]) records \"done\\n[tool] Read\" (no leading blank line).",
+        "[unit] Two consecutive tool calls between two texts record the two texts separated by exactly one blank line.",
+        "[unit] A turn with no text deltas and turn_end.output \"Hi\" records \"Hi\".",
+        "[unit] Text before a stream_reset is discarded while its tool call is still listed: [textDelta(\"a\"), toolCall(\"c1\", \"X\"), reset, textDelta(\"b\"), turnEnd(\"\")] records \"b\\n[tool] X\".",
+        "[unit] replayHistory of an assistant message { role: \"assistant\", content: \"Done.\\n[tool] Read\\n[tool] Edit\", origin: { provider: \"acp:cursor\", model: \"default\" } } returns a reply entry with text \"Done.\" followed by two tool entries named Read and Edit with status \"ok\".",
+        "[unit] A replayed ACP line '[tool] Edit (error)' becomes a tool entry named Edit with status \"error\".",
+        "[unit] A replayed ACP line '[tool] … and 3 more' becomes a notice entry with text '… and 3 more tool calls'.",
+        "[unit] Replayed ACP tool entries carry input {}, no preview, children [], and callId history-<message index>-acp-<n> (for the message at index 1: history-1-acp-0, history-1-acp-1).",
+        "[unit] An ACP-origin assistant message with only tool lines ('[tool] Read') replays no reply entry and one tool entry.",
+        "[unit] An ACP-origin assistant message 'Use [tool] syntax here.\\n[tool] Read' replays a reply with 'Use [tool] syntax here.' and one tool entry (only the trailing run of '[tool] ' lines is parsed).",
+        "[unit] A native assistant message (no origin) whose content is 'x\\n[tool] Read' replays as one reply entry with that exact text and no tool entry.",
+        "[unit] acpAgentOfMessage is importable from @/chat and returns \"cursor\" for an assistant message with origin provider acp:cursor.",
+        "[unit] When textDelta('x') is followed by turnEnd('Hello world'), acpTurnMessages records assistant content 'x' rather than 'Hello world', replacing the old turn_end-first behavior as required by the spec's acp-history.test.ts modification."
+      ],
+      "tags": [
+        "bugfix",
+        "acp",
+        "history",
+        "tui"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure bounded message transformation and replay parsing across existing modules and a barrel export; no authentication, permissions, tokens or session lifecycle behavior changes."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/acp/acp-history.ts",
+        "packages/nax/src/tui/chat/history-replay.ts",
+        "packages/nax/src/tui/chat/transcript-model.ts",
+        "packages/nax/test/unit/tui/chat/history-replay.test.ts",
+        "packages/nax/test/unit/chat/acp/acp-history.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/tui/chat/history-replay-acp.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When an ACP assistant message has a '[tool] Read' line followed by an ordinary text line, replayHistory preserves both lines as reply text rather than extracting that non-trailing tool line."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/chat/acp/acp-history.ts",
+          "reason": "`replyText` builds the reply from delta segments split at tool calls and uses `turn_end.output` only when that is empty."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/history-replay.ts",
+          "reason": "`replayMessage` splits ACP-origin assistant content into reply, tool and notice entries."
+        },
+        {
+          "path": "packages/nax/src/chat/index.ts",
+          "reason": "re-exports `acpAgentOfMessage` from the chat ACP barrel."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/acp/acp-history.test.ts",
+          "reason": "`prefers the turn_end output over the deltas` expects `\"Hello world\"` from `[textDelta(\"x\"), turnEnd(\"Hello world\")]`; replace it with a test that the deltas win (`\"x\"`) and that `turn_end.output` is used only when the deltas hold no text, because the reply is now built from segmented deltas."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Enhancement and regression fix for nax chat, closing #2743 and #2744 after the v0.91.7-canary.9 smoke. No greenfield architecture or data migration is needed. Goal: same-agent/same-mode ACP model and effort switches configure the live process; reopening never resumes an ACP session that has never started a turn; failed switch plus failed rollback recovers onto a usable new chat; recording and replay preserve reply segmentation and ACP tool rows. The six specified stories, workdirs and dependency edges are binding.\n\nNavigation and guidance: codebase-memory MCP is unavailable in this tool set, so discovery used direct file reads and targeted text searches, not another repository's index. Read the root architecture index at docs/architecture/ARCHITECTURE.md:13 and its package/boundary overview at docs/architecture/ARCHITECTURE.md:146. Follow scoped AGENTS.md instructions. nax is Bun/TypeScript with React/Ink presentation; nax-agent and nax-agent-acp ship Node-compatible ESM TypeScript, use explicit .ts relative source imports and #src aliases, and expose public types through named exports. ACP may import nax-agent only through @nathapp/nax-agent, never /internal or a deep path. nax imports ACP only through @nathapp/nax-agent-acp/client. Use existing _deps seams and fake launchers, not real agents, monkey-patched globals or billed smoke fixtures. Do not change nax-ai. Releases remain maintainer-initiated and lockstep; no version bumps are part of this feature.\n\nUS-001 findings and impact: packages/nax-agent/src/session/agent-session.ts:71 defines FacadeAgentSession, whose active slot currently tracks claimed turns/commands; send at :102 claims synchronously, runCommand at :125 checks closing before active before capability, and shutdown at :174 aborts closeController before cancelling/waiting for active work. Configure requires its own pending guard or equivalent state that blocks send/runCommand/configure but does not cause close to await an arbitrary backend configure promise. Guard acquisition must precede delegation and release must occur in finally, preserving rejection identity. Do not accidentally clear another operation's active slot. Public AgentSession currently ends with runCommand/send/answer/cancel/close in packages/nax-agent/src/session/agent-session-types.ts:172; OpenedBackend has no configure in packages/nax-agent/src/session/session-backend.ts:92. Modify those two contracts and agent-session.ts; export SessionConfigureInput beside AgentSession in packages/nax-agent/src/index.ts:317 and regenerate api/nax-agent.api.txt. Optional additions preserve structural compatibility for native backends, server consumers and session stubs; the facade still provides configure and reports unsupported for a backend without it. Existing error codes can be reused through agent-session-errors.ts. Mirror refusal and lifecycle testing in packages/nax-agent/test/unit/session/agent-session-run-command.test.ts:49 and add agent-session-configure.test.ts. Security/session lifecycle scope requires three-session-tdd, including tests demonstrating regression against old code.\n\nUS-002 findings and impact: packages/nax-agent-acp/src/client/backend.ts:83 stores readonly base and lacks current configOptions. withTokens at :103 builds the token-augmented redaction set; openBackend at :232 initializes state; assemble at :262 returns the OpenedBackend; liveFor at :286 reconnects when disconnected; reconnect at :302 replaces live using base. The new configure must obtain live through liveFor, use live.options.secrets rather than unaugmented base.secrets, use ctx.openSignal, and update mutable base and configOptions after EACH successful request, not only after the whole change. Otherwise a successful model followed by failed effort is lost on reconnect. Set configOptions from each new live.acp.configOptions at initial open and reconnect. packages/nax-agent-acp/src/client/open.ts:64 defines OpenedAcp; establish at :188 currently feeds finalOffers to offeredChoices; applyConfig at :284 returns post-model offers after dropping applyEffort's response; configModelIds at :315 accepts SessionOffers; applyEffort at :367 returns void. Preserve the distinction between post-model offers for the public offered choices and post-effort configOptions for future mutations. Change applyEffort to return SessionOffers, applyConfig to return { offers, configOptions }, add OpenedAcp.configOptions, export configModelIds(options), and update its open callers. Existing selectors in capabilities.ts:103/:113/:128/:166 flatten grouped options, resolve Cursor bare names, and select thought_level or Codex reasoning_effort. Reuse them, not custom matching. errors.ts:46/:57/:63/:86 already supplies unsupported, unavailable, closedDuringOpen and redacted openRequestError; race.ts:18 handles timeout/abort and observes late rejections. New session-configure.ts uses only set_config_option, model before effort, effort against the model response, and onApplied immediately after each success. Keep open's legacy set_model fallback and warning-only unoffered effort behavior unchanged. FakeScript in test/fixtures/fake-agent/script.ts:103 already has setConfigOptionsAnswer and relaunch; agent.ts:326 records set-config-option and returns the configured response, while setModeFailure is honored at :338. Add absent-by-default setConfigOptionFailure/setConfigOptionHang and honor them AFTER request recording. backend-offered-choices.test.ts:65 pins post-model public offers; retain it as regression coverage. New backend-configure.test.ts must exercise createAgentSession({ backend: acpBackend(...) }).configure through the public facade with the in-memory fake, including timeout, close, reconnection, response evolution and partial application. Regenerate the ACP API snapshot only if its public entry surface changes; internal exports alone need not change that surface.\n\nUS-003 findings and impact: packages/nax/src/chat/open-chat-session.ts:235 opens the ACP brain over an agent-specific store; :254 resumes every non-null document today. TranscriptDoc.turn is optional at packages/nax-agent/src/native/session/transcript-types.ts:45 and store.delete is available at :59. Load once, resume only if turn is present (ended OR running), otherwise delete the agent document before createAgentSession so the facade does not reject AGENT_SESSION_EXISTS. No notice or retainFailed for this zero-turn path; it is fresh, so withAcpHistory at open-chat-session.ts:272 passes all native history through unseenMessages/acpHandoff/buildChatHandoff. Missing documents are created without delete. Preserve native behavior in openNativeBrain at :320 and the existing recognized-error ACP retainFailed fallback; do not broadly classify JSON-RPC internal failures as fresh fallback. Fixture migration is essential: resumeFailing and AC-6/agent-only seeds in test/unit/chat/open-chat-session-acp.test.ts:163/:280/:380 and seedAgentDoc in test/unit/chat/open-chat-session-acp-history.test.ts:142 must gain turn: { turnId: 't1', state: 'ended' } while preserving their existing expectations. Add open-chat-session-acp-zero-turn.test.ts. Old persisted zero-turn ACP documents are safely replaced on the next open; shared native chat history is retained, not deleted. Failed first sends with an already-written turn marker remain outside this fix.\n\nUS-004 findings and impact: packages/nax/src/chat/acp/acp-model.ts:54 parses known ACP agents (Claude, Codex, Cursor), returns undefined for native strings and throws for malformed ACP strings. New acp-switch.ts must catch parse errors and return undefined, distinguish target defaults from explicit values, and carry target effort on every explicit model change even if effort did not change. Export acpInPlaceChange through chat/acp/index.ts. recordAcpTurns at acp-recorder.ts:107 manually constructs an AgentSession; its runCommand getter at :130 is the binding pattern for configure. Without this getter, US-005 cannot reach the real agent even if its unit helper is correct. Forward the existing function bound to the wrapped session or expose undefined without introducing a throwing fake method. Extend acp-recorder.test.ts:147/:162 beside existing forwarding tests and create acp-switch.test.ts. Do not alter handoff consumption, append draining, recorder origin.model or backend configuration here.\n\nUS-005 findings and impact: packages/nax/src/chat/chat-host.ts is currently exactly 593 lines. effortLevels at :253 defaults ACP effort to ['default']; switchSession at :461 clamps requested effort before switching and today closes/releases, reopens, writes meta, then directly assigns the rollback reopen in a catch. If rollback rejects, the prior handle is closed. Extract session-switch.ts with injected reopen/openFresh/writeMeta functions and explicit outcome so handle replacement occurs before rethrowing the switch error. startSession at :332, resumeSession at :387 and reopen at :427 repeat the open arguments; factor private openArgs() so adding recovery stays within 600 lines. reopen uses a storage facade whose acquireLock is a no-op and chains release back to previous: preserve this lock ownership behavior. sessionRelease at open-chat-session.ts:296 separately memoizes drain and unlock, so release({ retainLock: true }) followed later by release() frees the original lock. On target reopen/writeMeta failure, close/release half-opened next before rollback; if rollback fails, fully release previous before opening a new chat on the ORIGINAL mode/model with real storage, no resumeId and a new id. Do not call replace(): chat-host.ts:351 resets asks and invokes hygiene, which could remove the old session that /resume must be able to retry. Apply handle, call hostJobs.sessionChanged and set resumeNotice only on changed id, set ask mode from returned meta (full versus ask -> guarded), prime returned model's context window and only then rethrow the original error. Preserve host operation tracking and shutdown draining. ChatApp.tsx:274 already rebuilds on session id and :285 reads host.notice(), so no TUI change is needed for recovery. The exact notice includes the first line of the ORIGINAL switch failure because the rebuilt transcript discards its error row. A terminal recovery failure is NaxError CHAT_SESSION_REOPEN_FAILED with stage/chat, old id, full original switchError and fresh-open cause. Test new session-switch.test.ts plus chat-host-acp-switch.test.ts. Mirror test/unit/chat/chat-host-acp-history.test.ts:34/:56/:81 to cross real openChatSession and recorder with a stub createAgentSession; provide an ACP catalog effortLevels returning ['default', 'high'] or the host silently clamps high and no configure call occurs. Preserve existing chat-host-acp.test.ts behavior.\n\nUS-006 findings and impact: packages/nax/src/chat/acp/acp-history.ts:49 currently prefers turn_end.output and otherwise concatenates deltas; toolLines at :75 records all calls, error suffixes and a count after 20 without regard to resets. Replace only replyText: discard pre-last-reset text, split at tool_call, drop empty segments, join with two newlines, use output only if segmented deltas are empty. Keep toolLines and message origin representation unchanged. acpAgentOfMessage already exists at :34 and is exported from chat/acp/index.ts:12, but not chat/index.ts:1; re-export it there for the TUI barrel consumer. history-replay.ts:42 currently emits every assistant content as a single reply; :63 supplies index-derived turnId and savedAt/fallback timestamp. Parse ONLY the trailing run of '[tool] ' lines on recognized ACP assistant origins; keep native replies, native structured toolCalls/results and all existing user/skill/compaction handling unchanged. Use existing TranscriptEntry tool fields at transcript-model.ts:19, blank input, absent preview, empty children, error suffix removal, deterministic history-<index>-acp-<n> ids and notice summary. No disk schema change or history rewrite is needed: existing ACP suffix lines can replay immediately; only future recordings gain blank-line segmentation and existing glued text cannot be reconstructed. Replace the old output-precedence test at test/unit/chat/acp/acp-history.test.ts:92 with delta-first/fallback cases; extend that file and create test/unit/tui/chat/history-replay-acp.test.ts, preserving history-replay.test.ts regressions.\n\nImplementation order: US-001 unlocks US-002 and US-004; US-004 plus US-001 unlock US-005. US-003 and US-006 are independent and can proceed in parallel. Risks concentrate in mutual exclusion and close races, response-order/configOptions correctness, token redaction after reconnect, partial configuration success, chained lock cleanup, metadata failure recovery, mode normalization, and ACP-only suffix parsing. Optional configure preserves existing backend/session object compatibility; no new dependencies, permission profile changes, disk schema versions or model-catalog refreshes are needed. Validation belongs in each implementation story, not separate test stories: targeted bun test paths from each package, appropriate package build/typecheck/check:all/test gates, nax-agent api:update then check:api, ACP offered-choice regressions and conditional API update, and nax check:file-sizes for the host. Never run bare bun test or bun run nax. Show regression tests fail against old code; security/session-related stories use strict three-session-tdd. Run coverage only outside a nax sandboxed agent session, following scoped package instructions. This planning task does not execute validation suites or change source code.\n\nRefine-pass adversarial audit: re-read spec.md:260-513 against all story criteria and re-read the existing facade, ACP open, chat opener, recorder, switch and replay paths. All 82 numbered spec ACs remain in their original stories. Enumerated mapping (spec AC -> PRD AC): US-001 [1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15, 16->16]; US-002 [1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15, 16->16, 17->17]; US-003 [1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8]; US-004 [1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12]; US-005 [1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15]; US-006 [1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14]. Each maps to the same observable result, error, call arguments/order or persisted state; the SessionConfigureInput type import/satisfies criterion remains a type-consumer assertion rather than a generic build gate. No deprecated grep/file/verbatim AC tags occur. Qualifying anchors retained include unchanged configuration input, validation-before-support, busy-guard release on failure, close aftermath, post-model versus last-response configOptions, the same process/one launch, fresh whole-history handoff, interrupted-turn resume, unchanged native open, default model/effort refusal, model changes carrying effort, malformed parse returning undefined, wrapped this binding, retainLock ordering, catalog effort fixture, no second open with stored meta, first-line recovery reason, no leading blank line, tool retention across reset, exact historical call ids, trailing-run-only parsing and native text unchanged.\n\nFailure-table accounting in table order: row 1 maps to US-001 AC-7/17; row 2 to US-001 AC-8/10/18; row 3 to US-001 AC-4/5/6/19; row 4 to US-001 AC-3; row 5 to US-001 AC-15 plus US-002 AC-10; row 6 to US-002 AC-6/7; row 7 to US-002 AC-16; row 8 to US-002 AC-8; row 9 to US-002 AC-9/18; row 10 to US-005 AC-2/16; row 11 to US-005 AC-3; row 12 to US-005 AC-6/15; row 13 to US-005 AC-7/14; row 14 to US-005 AC-9/10; row 15 to US-003 AC-1/2. Negative paths exist per story: unsupported/closed/busy for US-001; unoffered/timeouts/RPC/abort for US-002; existing marked-session authentication failure for US-003 AC-9; malformed/non-ACP/absent configure for US-004; failed configure/reopen/rollback/fresh open for US-005; replayed tool error status for US-006 AC-8.\n\nAudit corrections: made US-003 AC-2/3/4 self-contained without dropping their fresh/handoff assertions, and added an explicit negative/error-preservation AC anchored to test/unit/chat/open-chat-session-acp.test.ts:333 and isFreshFallback in src/chat/acp/acp-session-options.ts:29. Clarified small handoff fixtures so unrelated existing trim notices do not masquerade as zero-turn failures. Added the existing post-model offeredModels regression as US-002 AC-19, anchored to test/unit/client/backend-offered-choices.test.ts:65; its fixture needs no invented per-request answer sequence. Added the unchanged runCommand wrapper regression as US-004 AC-13, anchored to acp-recorder.test.ts:147. Promoted the spec-required x-versus-Hello world recording regression from optional hardening to US-006 AC-15, matching spec Modifies and acp-history.test.ts:92. All other extras derive from the failure table or explicitly retained behavior; genuinely additional edge cases remain suggestedCriteria. US-001 is medium rather than complex because it extends existing runCommand/active/closing patterns; strict three-session-tdd remains mandatory for US-001 through US-005 under the session/token security override. US-002/005 remain complex integrations, US-003/004 medium, and pure US-006 medium/tdd-simple.\n\nContext/dependency audit: every spec-recommended context file is included, with a maximum of five per story. All entries exist now except US-005's acp-switch.ts, which its binding upstream US-004 creates; no story lists its own outputs as context. No invented helper or new dependency was introduced. Exactly six story ids and all binding workdirs/edges remain unchanged, including US-005's deliberately fixed dependency set without US-002 or US-003. Regression anchors cover US-001's usable send after configure settles, US-002's open offered choices, US-003's native and marked-session paths, US-004's existing runCommand forwarding, US-005's mode/no-configure reopen and successful rollback, and US-006's unchanged native replay and removal of turn_end-first recording.\n\nOut-of-scope accounting: all 14 feature exclusions remain verbatim at the top level, in spec order: (1) guarded/full in place, (2) native in place, (3) cross-agent in place, (4) legacy set_model in configure, (5) offered-choice refresh, (6) restoring agent defaults in place, (7) failed first send with a turn marker, (8) recorder origin.model refresh, (9) deleting the old recovery session, (10) escaping a reply's own trailing tool lines, (11) storing/replaying tool arguments/results, (12) ACP turn_end.output changes, (13) label filtering, (14) Cursor guarded permission behavior. No story-local deferral was hoisted. US-005 now also echoes the cross-agent/default/permission exclusions near its switch scope. Descriptions still carry the spec algorithms and interfaces and do not conflict with their ACs; scopes include the source, helper, export, fixture and test changes they describe. Review used file tools only; no claim of executed tests or automated JSON/schema validation is made.",
+  "outOfScope": [
+    "Changing the guarded/full mode in place: a mode change keeps close-and-reopen.",
+    "In-place switching for the native brain: its reopen is an in-process transcript resume.",
+    "Switching between two ACP agents in place: a different agent is a different process.",
+    "The legacy ACP `session/set_model` path in `configure`: only config options are used; an agent that offers its model only through the legacy block falls back to reopen.",
+    "Refreshing `BackendInfo.capabilities.offeredModels` / `offeredEfforts` after `configure` (they stay as reported at open).",
+    "Restoring an agent's own default model or effort in place: a switch to `acp:<agent>` with no model, or to no `[effort]`, reopens.",
+    "A first send that fails before the agent received the prompt still leaves a `turn` marker (`markTurn(running)` is written first), so a later resume of that agent session can fail as before; the zero-turn guard covers only sessions that never started a turn.",
+    "The recorder's `origin.model` after an in-place model change: messages keep the model the recorder was built with until the next reopen.",
+    "Removing the old session from disk on the new-session path: it is kept so `/resume <oldId>` can retry it.",
+    "An ACP reply whose own last lines start with `[tool] ` replays those lines as tool rows; the recorded text is not escaped.",
+    "Recording ACP tool inputs or results in the native document, or replaying ACP tool calls with arguments.",
+    "Changing `turn_end.output` in nax-agent-acp (`parts.join(\"\")`); the segment fix is in nax's recorder only.",
+    "`/model` filtering on the displayed label (\"Codex · gpt-…\") instead of the model id.",
+    "Cursor's own permission behaviour in guarded mode (file edits without a nax card)."
+  ],
+  "routingProfile": "native-claude-opus"
+}
