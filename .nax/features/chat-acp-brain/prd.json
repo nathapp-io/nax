@@ -3,7 +3,7 @@
   "feature": "chat-acp-brain",
   "branchName": "feat/chat-acp-brain",
   "createdAt": "2026-10-30T00:00:00.000Z",
-  "updatedAt": "2026-10-30T02:44:33.333Z",
+  "updatedAt": "2026-10-30T02:56:01.414Z",
   "userStories": [
     {
       "id": "US-001",
@@ -548,14 +548,17 @@
         "US-006",
         "US-008"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module host lifecycle, availability preflight, auth reporting and rollback must preserve active-session and lock invariants."
+        "reasoning": "Cross-module host lifecycle, availability preflight, auth reporting and rollback must preserve active-session and lock invariants.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/chat-host.ts",
@@ -571,7 +574,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b70399f9cf7fd7f07cc3f2d0f30a6497d59076fb"
     },
     {
       "id": "US-010",
