@@ -1,16 +1,20 @@
 import { join } from "node:path";
 import {
+  acpAgentLabel,
+  type ChatAcpModel,
   type ChatHost,
   EFFORT_LEVELS,
   formatAgentsListing,
   formatJobsListing,
   formatMcpListing,
   isEffortLevel,
+  parseChatAcpModel,
   sessionTitleText,
   withEffort,
 } from "@/chat";
 import { formatTasksListing } from "@/chat/background";
 import { featureDir } from "@/config";
+import { NaxError } from "@/errors";
 import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing } from "@/resources";
 
@@ -112,9 +116,61 @@ interface CommandContext {
   show(text: string): void;
 }
 
-function formatHelp(host: ChatHost): string {
+/** The ACP brain a model string names, or `undefined` for a native model or a malformed `acp:` string. */
+export function acpBrainOfModel(model: string): ChatAcpModel | undefined {
+  try {
+    return parseChatAcpModel(model);
+  } catch {
+    // A malformed `acp:` string never opened a session; treat it as native rather than fail a menu draw.
+    return undefined;
+  }
+}
+
+/** The ACP brain the session is on, or `undefined` for a native model or when no session is open yet. */
+export function acpBrainOf(host: { readonly current?: ChatHost["current"] }): ChatAcpModel | undefined {
+  let model: string | undefined;
+  try {
+    model = host.current?.().model;
+  } catch (error) {
+    if (error instanceof NaxError && error.code === "CHAT_SESSION_NOT_OPEN") return undefined;
+    throw error;
+  }
+  return model === undefined ? undefined : acpBrainOfModel(model);
+}
+
+/** What each native-only built-in says on an ACP brain, after `/<name> is not available on <agent>: it uses its own `. */
+const ACP_OWN_FEATURES: Readonly<Record<string, string>> = {
+  skills: "skills",
+  mcp: "MCP servers",
+  agents: "subagents",
+};
+
+function isBuiltin(name: string): boolean {
+  return COMMANDS.some((builtin) => builtin === name);
+}
+
+/**
+ * What an ACP brain does with a slash line before the built-in switch sees it: the native-only
+ * built-ins say they are not available, and a line that is not a built-in goes to the agent as typed.
+ * `undefined` means the line is an ordinary built-in and runs as on a native brain.
+ */
+function acpDispatch(
+  command: SlashCommand,
+  brain: ChatAcpModel,
+  show: (text: string) => void,
+): { readonly outcome: SlashOutcome | undefined } | undefined {
+  if (!isBuiltin(command.name)) return { outcome: { kind: "send", message: `/${command.name}${command.rest}` } };
+  const own = ACP_OWN_FEATURES[command.name];
+  if (own === undefined) return undefined;
+  show(`/${command.name} is not available on ${acpAgentLabel(brain.agent)}: it uses its own ${own}`);
+  return { outcome: undefined };
+}
+
+function formatHelp(host: ChatHost, brain: ChatAcpModel | undefined): string {
+  const builtins = COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`);
+  if (brain) return builtins.join("\n");
   return [
-    ...COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`),
+    ...builtins,
     ...(host.catalog?.commands ?? []).map((entry) => `/${entry.name} - ${entry.description ?? ""}`),
     ...(host.catalog?.skills ?? []).map((entry) => `/${entry.name} - ${entry.description}`),
   ].join("\n");
@@ -168,9 +224,12 @@ export async function runSlashCommand(
   { host, show }: CommandContext,
 ): Promise<SlashOutcome | undefined> {
   const arg = command.args[0];
+  const brain = acpBrainOf(host);
+  const stepped = brain ? acpDispatch(command, brain, show) : undefined;
+  if (stepped) return stepped.outcome;
   switch (command.name) {
     case "help":
-      show(formatHelp(host));
+      show(formatHelp(host, brain));
       break;
     case "skills":
       show(formatSkillsListing(host.catalog ?? buildResourceCatalog([])));
