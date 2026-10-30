@@ -5,14 +5,12 @@ import {
   type ChatHost,
   EFFORT_LEVELS,
   formatAgentsListing,
-  formatJobsListing,
   formatMcpListing,
   isEffortLevel,
   parseChatAcpModel,
   sessionTitleText,
   withEffort,
 } from "@/chat";
-import { formatTasksListing } from "@/chat/background";
 import { featureDir } from "@/config";
 import { NaxError } from "@/errors";
 import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts";
@@ -24,7 +22,7 @@ export type PickerKind = "model" | "resume" | "mode" | "effort" | "jobs";
 export type SlashOutcome =
   | { kind: "send"; message: string }
   | { kind: "command"; name: string; template: string; rest: string }
-  /** `/model`, `/resume`, `/mode` and `/effort` without arguments open the named picker. */
+  /** `/model`, `/resume`, `/mode` and `/effort` without arguments, and `/jobs`, open the named picker. */
   | { kind: "picker"; picker: PickerKind };
 
 export interface SlashCommand {
@@ -79,7 +77,7 @@ export const COMMAND_DESCRIPTIONS = {
   plugins: "List plugins and what they provide",
   mcp: "List MCP servers",
   agents: "List agents",
-  jobs: "List nax jobs",
+  jobs: "Show nax jobs and background tasks",
   quit: "Quit nax chat",
 } satisfies Record<SlashCommandName, string>;
 
@@ -176,12 +174,10 @@ function formatHelp(host: ChatHost, brain: ChatAcpModel | undefined): string {
   ].join("\n");
 }
 
-/** Keep the optional jobs capability's fallback separate from command dispatch. */
-function formatSessionJobs(host: ChatHost): string {
-  if (!host.jobs && !host.tasks) return "jobs are not available in this session";
-  return [host.jobs ? formatJobsListing(host.jobs.list()) : "", host.tasks ? formatTasksListing(host.tasks.list()) : ""]
-    .filter(Boolean)
-    .join("\n");
+/** `/jobs` opens the jobs picker, ignoring any argument, when the host has jobs or tasks. */
+function jobsCommand({ host, show }: CommandContext): SlashOutcome | undefined {
+  if (host.jobs || host.tasks) return { kind: "picker", picker: "jobs" };
+  show("jobs are not available in this session");
 }
 
 function catalogCommand(command: SlashCommand, { host, show }: CommandContext): SlashOutcome | undefined {
@@ -244,8 +240,7 @@ export async function runSlashCommand(
       show(formatAgentsListing(host.agents?.() ?? []));
       break;
     case "jobs":
-      show(formatSessionJobs(host));
-      break;
+      return jobsCommand({ host, show });
     case "mode":
       if (!arg) return { kind: "picker", picker: "mode" };
       if (arg === "full" || arg === "guarded") await host.switchTo({ mode: arg });

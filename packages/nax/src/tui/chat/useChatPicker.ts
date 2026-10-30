@@ -13,6 +13,11 @@ import {
 } from "@/chat";
 import { type PickerEntry, type PickerModel, pickerModel } from "./picker-model";
 import type { PickerKind } from "./slash-commands";
+import type { TranscriptEntry } from "./transcript-model";
+
+/** How many trailing lines of a task's or job's output the listing shows. */
+const OUTPUT_TAIL_LINES = 40;
+const NO_OUTPUT = "(no output yet)";
 
 function pickerMode(value: string): ChatMode {
   return value === "full" ? "full" : "guarded";
@@ -32,6 +37,8 @@ export interface ChatPickerOptions {
   /** `useChatKeys.runControl`: every host action a choice names goes through the guard. */
   runControl(task: () => Promise<void>): Promise<boolean>;
   onError(error: unknown): void;
+  /** Append a local transcript entry: what a jobs choice shows, never sent to the agent. */
+  show(entry: TranscriptEntry): void;
 }
 
 /** What the screen holds while a picker is open. */
@@ -60,6 +67,18 @@ function actionFor(host: ChatHost, kind: PickerKind, entry: PickerEntry): Promis
   return host.resume({ id: entry.value });
 }
 
+/** The state and output read of the row `id` names: a task first, then a job; undefined once neither knows it. */
+function outputOf(host: ChatHost, id: string): { state: string; read: () => Promise<string> } | undefined {
+  const { tasks, jobs } = host;
+  const task = tasks?.get(id);
+  if (tasks !== undefined && task !== undefined) {
+    return { state: task.state, read: () => tasks.output(id, OUTPUT_TAIL_LINES) };
+  }
+  const job = jobs?.get(id);
+  if (jobs === undefined || job === undefined) return undefined;
+  return { state: job.state, read: () => jobs.logTail(id, OUTPUT_TAIL_LINES) };
+}
+
 /** The warning a held session earns: choosing it again would run two processes at once. */
 function heldWarning(sessionId: string, pid: number): string {
   return `session ${sessionId} is in use by pid ${pid}`;
@@ -77,6 +96,8 @@ function modelOf(state: PickerState, current: ChatHostState, host: ChatHost): Pi
     currentMode: current.mode,
     // A bound call: `modelNote` is a method on the host, so the bare reference would lose `this`.
     modelNote: (model) => host.modelNote?.(model),
+    ...(state.kind === "jobs" && host.jobs ? { jobs: host.jobs.list() } : {}),
+    ...(state.kind === "jobs" && host.tasks ? { tasks: host.tasks.list() } : {}),
     ...(state.sessions === undefined ? {} : { sessions: state.sessions }),
     ...(state.warning === undefined ? {} : { warning: state.warning }),
   });
@@ -92,7 +113,7 @@ function modelOf(state: PickerState, current: ChatHostState, host: ChatHost): Pi
  * rejection after an escape — or after a second `/resume` — neither an error the user never
  * asked about nor a stale list over the wrong picker.
  */
-export function useChatPicker({ host, runControl, onError }: ChatPickerOptions): ChatPicker {
+export function useChatPicker({ host, runControl, onError, show }: ChatPickerOptions): ChatPicker {
   const [state, setState] = useState<PickerState | undefined>(undefined);
   /** Counts openings, so a `listSessions()` that settles late is dropped rather than drawn. */
   const openings = useRef(0);
@@ -128,10 +149,35 @@ export function useChatPicker({ host, runControl, onError }: ChatPickerOptions):
     [host, onError],
   );
 
+  /** One listing with the row's output, or a notice when the row has gone; a failed read is an error entry. */
+  const showOutput = useCallback(
+    async (entry: PickerEntry): Promise<void> => {
+      const found = outputOf(host, entry.value);
+      if (found === undefined) {
+        show({ kind: "notice", text: `${entry.value} is no longer listed` });
+        return;
+      }
+      try {
+        const output = await found.read();
+        show({ kind: "listing", title: `${entry.label} · ${found.state}`, text: output === "" ? NO_OUTPUT : output });
+      } catch (error) {
+        onError(error);
+      }
+    },
+    [host, show, onError],
+  );
+
   const choose = useCallback(
     (entry: PickerEntry): void => {
       const kind = state?.kind;
       if (kind === undefined) return;
+      // Output is read from the registries, not the session: no host control, so it works mid-turn.
+      if (kind === "jobs") {
+        openings.current += 1;
+        setState(undefined);
+        void showOutput(entry);
+        return;
+      }
       // A session another process holds is not resumed from here: the row warns instead, and
       // the list stays open so the user can pick another one. The authoritative lock is the
       // host's (`host.resume`), which is why this is only what the storage layer reported.
@@ -150,7 +196,7 @@ export function useChatPicker({ host, runControl, onError }: ChatPickerOptions):
       pending.current = new Map();
       void runControl(() => actionFor(host, kind, chosen));
     },
-    [state, host, runControl],
+    [state, host, runControl, showOutput],
   );
 
   const current = state === undefined ? undefined : host.current();

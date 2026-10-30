@@ -224,6 +224,7 @@ describe("US-007 hook query state", () => {
           return true;
         },
         onError: () => {},
+        show: () => {},
       });
       return null;
     }

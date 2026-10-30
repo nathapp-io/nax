@@ -183,7 +183,7 @@ export function ChatApp({
     onNotice: (text) => append({ kind: "notice", text }),
   });
   /** The picker a `picker` outcome opens (US-027): the list, and what its keys do. */
-  const picker = useChatPicker({ host, runControl: keys.runControl, onError: showError });
+  const picker = useChatPicker({ host, runControl: keys.runControl, onError: showError, show: append });
   const ask = host.asks.pending()[0];
   /** A turn is in flight from the send until its stream settles — the footer's busy rule. */
   const turnRunning = busy || status.running;

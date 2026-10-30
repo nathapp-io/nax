@@ -3,7 +3,7 @@ import { CHAT_MODEL, makeAgentResource, makeSubagentHostHarness } from "@test/he
 import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
 import type { ChatHost, ChatHostState, ChatMcpState } from "@/chat";
-import { type ChatJob, type ChatJobs, formatJobsListing, formatMcpListing } from "@/chat";
+import { type ChatJob, type ChatJobs, formatMcpListing } from "@/chat";
 import { featureDir } from "@/config";
 import { buildChatFeatureMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing, type SkillResource } from "@/resources";
@@ -358,7 +358,7 @@ describe("agents command", () => {
     const ui = mount();
     await ui.line("/help");
     expect(ui.lastFrame()).toContain(
-      "/mcp  List MCP servers\n/agents  List agents\n/jobs  List nax jobs\n/quit  Quit nax chat",
+      "/mcp  List MCP servers\n/agents  List agents\n/jobs  Show nax jobs and background tasks\n/quit  Quit nax chat",
     );
   });
 
@@ -420,7 +420,7 @@ describe("agents command", () => {
   });
 });
 describe("jobs command", () => {
-  test("US-015 AC-1 AC-2 lists jobs locally without a model call", async () => {
+  test("US-015 AC-1 AC-2 opens the jobs picker without a model call", async () => {
     const ui = mount();
     const job: ChatJob = {
       schemaVersion: 1,
@@ -453,7 +453,8 @@ describe("jobs command", () => {
     };
     Object.assign(ui.host, { jobs });
     await ui.line("/jobs");
-    expect(ui.lastFrame()).toContain(formatJobsListing([job]));
+    expect(ui.lastFrame()).toContain("Jobs and tasks · enter output · ctrl+x stop");
+    expect(ui.lastFrame()).toContain("run f1");
     expect(ui.send).not.toHaveBeenCalled();
   });
   test("US-015 AC-3 reports jobs unavailable", async () => {
