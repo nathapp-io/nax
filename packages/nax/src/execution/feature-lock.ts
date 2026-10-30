@@ -284,10 +284,13 @@ async function reclaimExisting(lockPath: string, feature: string): Promise<Featu
   // The record can vanish between the caller's exists() check and this read when
   // a racer renames it to a tombstone. Treat that as absent: the exclusive
   // create below arbitrates the race.
-  const existingContent = await Bun.file(lockPath)
-    .text()
-    .catch(() => null);
-  if (existingContent === null) return null;
+  let existingContent: string;
+  try {
+    existingContent = await _featureLockDeps.readLockText(lockPath);
+  } catch (readErr) {
+    if ((readErr as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw readErr;
+  }
   const existing = parseHolder(existingContent);
 
   if (existing === null) {
@@ -427,6 +430,7 @@ export const _featureLockDeps = {
   featureLockPath: featureLockPath as typeof featureLockPath,
   host: (): string => hostname(),
   isProcessAlive: isProcessAlive as typeof isProcessAlive,
+  readLockText: (lockPath: string): Promise<string> => Bun.file(lockPath).text(),
   rename: rename as typeof rename,
   tryExclusiveCreate: tryExclusiveCreate as typeof tryExclusiveCreate,
   unlink: unlink as typeof unlink,
