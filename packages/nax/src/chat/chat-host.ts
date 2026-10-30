@@ -2,7 +2,6 @@ import type {
   CommandRunResult,
   SandboxState,
   SessionEvent,
-  SessionListEntry,
   SessionMeta,
   SessionStorage,
   ToolProvider,
@@ -21,13 +20,14 @@ import { type ChatBackgroundTasks, createHostTasks } from "./background";
 import { type ChatAgentRow, listAgentRows } from "./chat-agents-listing";
 import { clampModelEffort, EFFORT_LEVELS, type EffortLevel, withEffort } from "./chat-effort";
 import { type ChatLedger, createChatLedger } from "./chat-ledger";
-import { type ChatMode, chatModeOfMeta } from "./chat-mode";
+import type { ChatMode } from "./chat-mode";
 import { tierModels } from "./chat-models";
 import { createCloseConfirm } from "./close-confirm";
 import { type ChatJobs, type ChatRunAsks, createHostJobs } from "./jobs";
 import { type ChatHistory, type ChatSessionHandle, openChatSession } from "./open-chat-session";
 import type { ChatResources } from "./resources";
-import { createSessionHygiene, hasHadTurn, resumableRows } from "./session-hygiene";
+import { closeChatResources, createSessionHygiene, resumableRows } from "./session-hygiene";
+import { latestResumableId, listCwdSessions } from "./session-listing";
 import { createSubagentRuns, type SubagentRuns } from "./subagent-runs";
 import { routeAskEvent, runChatTurn } from "./turn-runner";
 
@@ -348,46 +348,15 @@ class NativeChatHost implements ChatHost {
     return count > 0 ? `hooks declared by ${count} package(s) are not executed by nax` : undefined;
   }
 
-  /**
-   * Every session this cwd has, in the store's newest-first order — not just its first page.
-   * The store hands sessions back `LIST_PAGE_SIZE` at a time with a cursor, so a read that
-   * stopped at the first page would hide every session past the fiftieth from `/resume`: the
-   * picker's list is exactly this list, and an older free session is as resumable as a new
-   * one. Both readers below go through here, so neither can forget the cursor.
-   */
-  private async allSessions(): Promise<readonly SessionListEntry[]> {
-    const sessions: SessionListEntry[] = [];
-    let cursor: string | undefined;
-    do {
-      const page = await this.deps.storage.list({ cwd: this.deps.cwd, ...(cursor ? { cursor } : {}) });
-      sessions.push(...page.sessions);
-      cursor = page.nextCursor;
-    } while (cursor !== undefined);
-    return sessions;
-  }
-
-  private async latestId(): Promise<string> {
-    for (const { sessionId } of await this.allSessions()) {
-      try {
-        const meta = await this.deps.storage.readMeta(sessionId);
-        if (meta === null || !hasHadTurn(meta) || meta.sessionId !== sessionId || chatModeOfMeta(meta.mode) === null)
-          continue;
-        if ((await this.deps.storage.readLockHolder(sessionId))?.state !== "live") return sessionId;
-      } catch (error) {
-        if (!(error instanceof Error && "code" in error && error.code === "SESSION_META_UNREADABLE")) throw error;
-        this.deps.logger.warn("chat", "skipping unreadable session metadata", { sessionId, cause: error });
-      }
-    }
-    throw new NaxError(`no resumable session for ${this.deps.cwd}`, "CHAT_SESSION_NOT_FOUND", { stage: "chat" });
-  }
-
   async resume(input: { id?: string }): Promise<void> {
     await this.withSessionOperation(() => this.resumeSession(input));
   }
 
   private async resumeSession(input: { id?: string }): Promise<void> {
     this.assertOpen();
-    const id = input.id ?? (await this.latestId());
+    const id =
+      input.id ??
+      (await latestResumableId({ storage: this.deps.storage, cwd: this.deps.cwd, logger: this.deps.logger }));
     if (this.handle?.meta.sessionId !== id) {
       let next: ChatSessionHandle;
       try {
@@ -551,7 +520,7 @@ class NativeChatHost implements ChatHost {
   }
 
   async listSessions(): Promise<readonly ChatSessionRow[]> {
-    const sessions = await this.allSessions();
+    const sessions = await listCwdSessions(this.deps.storage, this.deps.cwd);
     return resumableRows({ ...this.deps, sessions, currentId: this.handle?.meta.sessionId });
   }
 
@@ -573,23 +542,13 @@ class NativeChatHost implements ChatHost {
     try {
       await this.runs?.closeAll();
     } finally {
-      await this.closeSessionAndResources();
-    }
-  }
-
-  private async closeSessionAndResources(): Promise<void> {
-    try {
-      if (this.handle) await this.hygiene.close(this.handle);
-    } finally {
-      try {
-        try {
-          await this.tasks?.stopAll();
-        } finally {
-          await this.deps.resources?.teardown();
-        }
-      } finally {
-        await this.deps.chain?.destroy();
-      }
+      await closeChatResources({
+        hygiene: this.hygiene,
+        handle: this.handle,
+        tasks: this.tasks,
+        resources: this.deps.resources,
+        chain: this.deps.chain,
+      });
     }
   }
 }

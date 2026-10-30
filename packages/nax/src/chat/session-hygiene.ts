@@ -56,6 +56,34 @@ export async function removeIfEmpty(input: {
   }
 }
 
+/**
+ * The host's final close: the open session first, then background tasks, resource
+ * teardown and the interaction chain. Each step runs even when an earlier one rejects,
+ * and the earliest rejection is the one the caller sees.
+ */
+export async function closeChatResources(input: {
+  readonly hygiene: { close(handle: ChatSessionHandle): Promise<void> };
+  readonly handle?: ChatSessionHandle;
+  readonly tasks?: { stopAll(): Promise<void> };
+  readonly resources?: { teardown(): Promise<void> };
+  readonly chain?: { destroy(): Promise<void> } | null;
+}): Promise<void> {
+  const { hygiene, handle, tasks, resources, chain } = input;
+  try {
+    if (handle) await hygiene.close(handle);
+  } finally {
+    try {
+      try {
+        await tasks?.stopAll();
+      } finally {
+        await resources?.teardown();
+      }
+    } finally {
+      await chain?.destroy();
+    }
+  }
+}
+
 /** Host-lifetime sent tracking survives same-id reopens, including failed first turns. */
 export function createSessionHygiene(deps: HygieneDeps): {
   markSent(sessionId: string): void;
