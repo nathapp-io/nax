@@ -101,6 +101,42 @@ describe("closeChatResources", () => {
     expect(f.chain.destroy).toHaveBeenCalledTimes(1);
   });
 
+  test("when several steps reject, the earliest rejection is the one the caller sees and later steps still run", async () => {
+    const first = new Error("close failed");
+    const f = fixture(async () => {
+      throw first;
+    });
+    f.tasks.stopAll.mockImplementation(async () => {
+      throw new Error("stop failed");
+    });
+    f.resources.teardown.mockImplementation(async () => {
+      throw new Error("teardown failed");
+    });
+    f.chain.destroy.mockImplementation(async () => {
+      throw new Error("destroy failed");
+    });
+    await expect(closeChatResources({ ...f, handle: handle() })).rejects.toBe(first);
+    expect(f.tasks.stopAll).toHaveBeenCalledTimes(1);
+    expect(f.resources.teardown).toHaveBeenCalledTimes(1);
+    expect(f.chain.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  test("a stopAll rejection is not replaced by a later teardown or destroy rejection", async () => {
+    const stopFailure = new Error("stop failed");
+    const f = fixture();
+    f.tasks.stopAll.mockImplementation(async () => {
+      throw stopFailure;
+    });
+    f.resources.teardown.mockImplementation(async () => {
+      throw new Error("teardown failed");
+    });
+    f.chain.destroy.mockImplementation(async () => {
+      throw new Error("destroy failed");
+    });
+    await expect(closeChatResources({ ...f })).rejects.toBe(stopFailure);
+    expect(f.chain.destroy).toHaveBeenCalledTimes(1);
+  });
+
   test("accepts absent tasks, resources and chain", async () => {
     const f = fixture();
     await closeChatResources({ hygiene: f.hygiene, chain: null });

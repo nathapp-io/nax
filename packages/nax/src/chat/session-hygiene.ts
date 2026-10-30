@@ -69,19 +69,25 @@ export async function closeChatResources(input: {
   readonly chain?: { destroy(): Promise<void> } | null;
 }): Promise<void> {
   const { hygiene, handle, tasks, resources, chain } = input;
-  try {
-    if (handle) await hygiene.close(handle);
-  } finally {
+  const steps: Array<() => Promise<void> | undefined> = [
+    () => (handle ? hygiene.close(handle) : undefined),
+    () => tasks?.stopAll(),
+    () => resources?.teardown(),
+    () => chain?.destroy(),
+  ];
+  let failed = false;
+  let firstFailure: unknown;
+  for (const step of steps) {
     try {
-      try {
-        await tasks?.stopAll();
-      } finally {
-        await resources?.teardown();
+      await step();
+    } catch (err) {
+      if (!failed) {
+        failed = true;
+        firstFailure = err;
       }
-    } finally {
-      await chain?.destroy();
     }
   }
+  if (failed) throw firstFailure;
 }
 
 /** Host-lifetime sent tracking survives same-id reopens, including failed first turns. */
