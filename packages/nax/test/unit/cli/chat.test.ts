@@ -103,6 +103,7 @@ function stubAcpCatalog(): AcpCatalog {
   return {
     load: async () => {},
     warm: () => {},
+    refresh: async () => [],
     close: () => {},
     rows: () => [],
     effortLevels: () => ["default"],

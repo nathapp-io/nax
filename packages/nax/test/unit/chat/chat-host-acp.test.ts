@@ -91,6 +91,7 @@ function stubCatalog(overrides: Partial<AcpCatalog> = {}): AcpCatalog {
   return {
     load: async () => {},
     warm: () => {},
+    refresh: mock(async () => []),
     close: mock(() => {}),
     rows: () => [],
     effortLevels: () => ["default"],
@@ -102,7 +103,7 @@ function stubCatalog(overrides: Partial<AcpCatalog> = {}): AcpCatalog {
   };
 }
 
-function makeHost(acp: AcpCatalog): ChatHost {
+function makeHost(acp?: AcpCatalog): ChatHost {
   const host = createChatHost({
     models: [NATIVE],
     acp,
@@ -141,6 +142,19 @@ describe("chat host ACP lifecycle", () => {
   afterEach(async () => {
     await Promise.all(hosts.map((host) => host.close()));
     cleanupTempDir(dir);
+  });
+
+  test("refresh AC-7 delegates once with cwd and returns the catalog results", async () => {
+    const results = [{ agent: "codex", outcome: "learned", models: 2 }] as const;
+    const refresh = mock(async () => results);
+    const host = makeHost(stubCatalog({ refresh }));
+    expect(await host.refreshAcpModels?.()).toBe(results);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledWith(dir);
+  });
+
+  test("refresh AC-8 returns an empty list without a catalog", async () => {
+    expect(await makeHost().refreshAcpModels?.()).toEqual([]);
   });
 
   test("probe AC-15 closes the catalog once across repeated host close", async () => {

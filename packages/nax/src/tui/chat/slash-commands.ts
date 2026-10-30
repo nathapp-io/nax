@@ -209,6 +209,20 @@ async function effortCommand(command: SlashCommand, { host, show }: CommandConte
   await host.switchTo({ model: withEffort(model, level) });
 }
 
+async function refreshModels({ host, show }: CommandContext): Promise<void> {
+  const results = (await host.refreshAcpModels?.()) ?? [];
+  if (results.length === 0) show("no ACP agents to refresh");
+  for (const result of results) {
+    const detail =
+      result.outcome === "learned"
+        ? `${result.models} ${result.models === 1 ? "model" : "models"}`
+        : result.outcome === "failed"
+          ? `failed: ${result.reason}`
+          : result.outcome;
+    show(`${acpAgentLabel(result.agent)}: ${detail}`);
+  }
+}
+
 /**
  * Built-ins take precedence; catalog commands remain distinct from explicit skill turns.
  *
@@ -248,7 +262,8 @@ export async function runSlashCommand(
       break;
     case "model":
       if (!arg) return { kind: "picker", picker: "model" };
-      await host.switchTo({ model: arg });
+      if (arg === "refresh") await refreshModels({ host, show });
+      else await host.switchTo({ model: arg });
       break;
     case "effort":
       return effortCommand(command, { host, show });

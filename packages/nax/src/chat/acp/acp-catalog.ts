@@ -6,6 +6,7 @@
  * launch is remembered until the agent next opens, and whether the agent's
  * binary resolves on this machine is probed once.
  */
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { launchCandidateKind } from "@nathapp/nax-agent-acp/client";
 import { NaxError } from "@/errors";
 import type { Logger } from "@/logger";
@@ -24,7 +25,14 @@ import { probeAcpAgent } from "./acp-probe";
 /** Seam for tests: the binary probe. */
 export const _acpCatalogDeps = { launchCandidateKind, createAcpOfferStore, probeAcpAgent };
 
+export type AcpRefreshResult =
+  | { readonly agent: AcpChatAgent; readonly outcome: "learned"; readonly models: number }
+  | { readonly agent: AcpChatAgent; readonly outcome: "not installed" }
+  | { readonly agent: AcpChatAgent; readonly outcome: "failed"; readonly reason: string };
+
 export interface AcpCatalog {
+  /** Re-probe every installed agent, sharing any running discovery. */
+  refresh(cwd: string): Promise<readonly AcpRefreshResult[]>;
   /** Seed offers without replacing anything learned in this process. */
   load(): Promise<void>;
   /** Discover installed agents without a known offer, once per chat start. */
@@ -93,7 +101,7 @@ export function createAcpCatalog(input: {
   let probed: ReadonlyMap<AcpChatAgent, boolean> | undefined;
   const learned = new Set<AcpChatAgent>();
   const attemptedStart = new Set<AcpChatAgent>();
-  const inFlight = new Map<AcpChatAgent, Promise<void>>();
+  const inFlight = new Map<AcpChatAgent, Promise<AcpRefreshResult>>();
   let closed = false;
   const store =
     input.sessionsDir === undefined
@@ -125,18 +133,21 @@ export function createAcpCatalog(input: {
     return probed;
   }
 
-  function probeAgent(agent: AcpChatAgent, cwd: string): Promise<void> {
+  function probeAgent(agent: AcpChatAgent, cwd: string): Promise<AcpRefreshResult> {
     const running = inFlight.get(agent);
     if (running) return running;
-    const probing = (async () => {
+    const probing = (async (): Promise<AcpRefreshResult> => {
       try {
         const capabilities = await _acpCatalogDeps.probeAcpAgent({ agent, cwd });
         if (!closed) catalog.opened(`acp:${agent}`, capabilities);
+        return { agent, outcome: "learned", models: reportedStrings(capabilities.offeredModels)?.length ?? 0 };
       } catch (error) {
         if (!closed) {
           catalog.failed(`acp:${agent}`, error);
           input.logger?.debug("chat", "ACP offer probe failed", { agent, error });
         }
+        const reason = failureReason(error) ?? errorMessage(error).split(LINE_BREAK)[0]?.slice(0, REASON_MAX_CHARS);
+        return { agent, outcome: "failed", reason: reason || "probe failed" };
       }
     })().finally(() => inFlight.delete(agent));
     inFlight.set(agent, probing);
@@ -144,6 +155,14 @@ export function createAcpCatalog(input: {
   }
 
   const catalog: AcpCatalog = {
+    async refresh(cwd) {
+      if (closed) return [];
+      return Promise.all(
+        ACP_CHAT_AGENTS.map((agent): AcpRefreshResult | Promise<AcpRefreshResult> =>
+          installedAgents().get(agent) ? probeAgent(agent, cwd) : { agent, outcome: "not installed" },
+        ),
+      );
+    },
     warm(cwd) {
       if (closed) return;
       for (const agent of ACP_CHAT_AGENTS) {

@@ -16,6 +16,7 @@ import { projectOutputDir } from "@/runtime";
 import {
   ACP_RUN_COMMAND_UNSUPPORTED,
   type AcpCatalog,
+  type AcpRefreshResult,
   acpRefusal,
   assertAcpInstalled,
   isChatAcpModel,
@@ -92,6 +93,7 @@ export interface ChatHost {
   current(): ChatHostState;
   history?(): ChatHistory;
   effortLevels?(model: string): readonly EffortLevel[];
+  refreshAcpModels?(): Promise<readonly AcpRefreshResult[]>;
   /** Why the model cannot be used right now (an ACP agent that is not installed or not logged in), if it cannot. */
   modelNote?(model: string): string | undefined;
   /** One row per catalog agent in catalog order, resolved against the chat session's current model. */
@@ -157,6 +159,10 @@ class NativeChatHost implements ChatHost {
   private closed = false;
   private closing?: Promise<void>;
   private readonly sessionOperations = new Set<Promise<void>>();
+
+  async refreshAcpModels(): Promise<readonly AcpRefreshResult[]> {
+    return this.deps.acp?.refresh(this.deps.cwd) ?? [];
+  }
 
   constructor(private readonly deps: ChatHostDeps) {
     this.hygiene = createSessionHygiene(deps);

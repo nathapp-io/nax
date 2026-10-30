@@ -32,6 +32,7 @@ function stubCatalog(overrides: Partial<AcpCatalog> = {}): AcpCatalog {
   return {
     load: async () => {},
     warm: () => {},
+    refresh: async () => [],
     close: () => {},
     rows: () => [],
     effortLevels: () => ["default"],
