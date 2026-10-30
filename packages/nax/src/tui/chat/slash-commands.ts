@@ -209,6 +209,13 @@ async function effortCommand(command: SlashCommand, { host, show }: CommandConte
   await host.switchTo({ model: withEffort(model, level) });
 }
 
+async function modelCommand(command: SlashCommand, context: CommandContext): Promise<SlashOutcome | undefined> {
+  const model = command.args[0];
+  if (!model) return { kind: "picker", picker: "model" };
+  if (model === "refresh") await refreshModels(context);
+  else await context.host.switchTo({ model });
+}
+
 async function refreshModels({ host, show }: CommandContext): Promise<void> {
   const results = (await host.refreshAcpModels?.()) ?? [];
   if (results.length === 0) show("no ACP agents to refresh");
@@ -261,10 +268,7 @@ export async function runSlashCommand(
       else show(`unknown mode ${arg}; expected full or guarded`);
       break;
     case "model":
-      if (!arg) return { kind: "picker", picker: "model" };
-      if (arg === "refresh") await refreshModels({ host, show });
-      else await host.switchTo({ model: arg });
-      break;
+      return modelCommand(command, { host, show });
     case "effort":
       return effortCommand(command, { host, show });
     case "sessions":
