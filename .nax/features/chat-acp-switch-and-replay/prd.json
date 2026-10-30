@@ -3,7 +3,7 @@
   "feature": "chat-acp-switch-and-replay",
   "branchName": "feat/chat-acp-switch-and-replay",
   "createdAt": "2026-10-30T00:00:00.000Z",
-  "updatedAt": "2026-10-30T10:08:52.233Z",
+  "updatedAt": "2026-10-30T10:15:39.267Z",
   "userStories": [
     {
       "id": "US-001",
@@ -201,14 +201,17 @@
         "history"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Localized open-path change plus existing fixture migration, but deletion/resume and session handoff invoke the strict session security override."
+        "reasoning": "Localized open-path change plus existing fixture migration, but deletion/resume and session handoff invoke the strict session security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/open-chat-session.ts",
@@ -238,7 +241,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "45876d06f39fee7b31541500ee8787c742ff988e"
     },
     {
       "id": "US-004",
