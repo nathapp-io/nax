@@ -360,7 +360,7 @@ describe("AcpCatalog warm and close", () => {
   ] as const)("AC-10/16/17 handles %s without rejecting warm", async (code, message, reason) => {
     const f = fixture();
     f.acp.warm("/r");
-    const error = sessionError(code, message);
+    const error = code === "AGENT_SESSION_TIMEOUT" ? new Error(message) : sessionError(code, message);
     f.pending.reject(error);
     await waitForCondition(() => f.logger.debug.mock.calls.length === 1);
     expect(f.acp.unavailable("acp:codex")).toBe(reason);
