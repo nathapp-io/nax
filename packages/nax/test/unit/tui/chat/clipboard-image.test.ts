@@ -23,6 +23,21 @@ function isAlive(pid: number): boolean {
   }
 }
 
+/**
+ * The pid a child writes about itself, read with a bounded wait. `NaN` when the
+ * file never appears or holds no number — the caller's `strays` cleanup skips it
+ * (an unusable pid must never reach `process.kill`, which would signal pid 0's
+ * whole process group).
+ */
+async function announcedPid(path: string): Promise<number> {
+  try {
+    await waitForFile(path);
+    return Number((await Bun.file(path).text()).trim());
+  } catch {
+    return Number.NaN;
+  }
+}
+
 const bytesOf = (text: string): Uint8Array => new TextEncoder().encode(text);
 const exited = (stdout: Uint8Array | string, exitCode = 0): ClipboardRun => ({
   kind: "exited",
@@ -228,13 +243,14 @@ describe("the default runner", () => {
     // its own pid is gone by the time `run` resolves. (`sleep 5` cannot be
     // observed this way — its pid never leaves the runner.)
     const pidFile = join(dir, "child.pid");
-    await expect(defaultRun(["sh", "-c", `echo $$ > '${pidFile}'; sleep 5`], 50)).resolves.toEqual({
-      kind: "timed-out",
-    });
-    await waitForFile(pidFile);
-    const pid = Number((await Bun.file(pidFile).text()).trim());
+    const pending = defaultRun(["sh", "-c", `echo $$ > '${pidFile}'; sleep 5`], 50);
+    // Read and register the pid *before* asserting anything about the run, so a
+    // failing assertion below still leaves afterEach a pid it can kill. Without
+    // this order a broken kill plus a failing run assertion leaks the child.
+    const pid = await announcedPid(pidFile);
     strays.push(pid);
     expect(Number.isInteger(pid) && pid > 1).toBe(true);
+    await expect(pending).resolves.toEqual({ kind: "timed-out" });
     expect(isAlive(pid)).toBe(false);
   });
 
