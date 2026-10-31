@@ -171,6 +171,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
   return {
     adapter,
     handle,
+    acceptsImages: () => adapter.imageInput(handle),
     runCommand: async ({ command, callId, signal }) => {
       try {
         const response = await interactionHandler.onInteraction({

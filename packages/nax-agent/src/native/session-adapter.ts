@@ -8,7 +8,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { Client } from "@nathapp/nax-ai";
+import type { Client, ResolvedModel } from "@nathapp/nax-ai";
 import { priceCall } from "#src/cost/core/index";
 import { getSafeLogger, NaxError } from "#src/infra/index";
 import {
@@ -80,6 +80,16 @@ function perTurnDeps(opts: SendTurnOpts): Pick<TurnDeps, "loopHandlers" | "loopH
     ...(opts.loopHandlerContext !== undefined ? { loopHandlerContext: opts.loopHandlerContext } : {}),
     ...(opts.onTurnEvent !== undefined ? { onTurnEvent: opts.onTurnEvent } : {}),
   };
+}
+
+function assertImageInput(handle: SessionHandle, resolved: ResolvedModel, images: SendTurnOpts["images"]): void {
+  if (images?.length && resolved.input?.includes("image") !== true) {
+    throw new NaxError(
+      `Native model "${resolved.provider}/${resolved.id}" does not support image input`,
+      "NATIVE_IMAGE_INPUT_UNSUPPORTED",
+      { stage: "native-session", sessionName: handle.id, provider: resolved.provider, model: resolved.id },
+    );
+  }
 }
 
 const adapterStates = new WeakMap<NativeSessionAdapter, NativeSessionState>();
@@ -179,11 +189,21 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
     return openNativeSession(this.state, name, opts);
   }
 
+  /** Resolve the current handle's model; absent input metadata is text-only. */
+  async imageInput(handle: SessionHandle): Promise<boolean> {
+    const { provider, model } = parseNativeModel(handle.modelDef?.model ?? "");
+    const client = await this.client();
+    const resolved = await client.model(provider, model);
+    return resolved.input?.includes("image") === true;
+  }
+
   async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
     const { provider, model, effort } = parseNativeModel(handle.modelDef?.model ?? "");
     const thinking = toThinkingLevel(effort);
     const client = await this.client();
     const resolved = await client.model(provider, model);
+    // Refuse before runNativeTurn: its error path deliberately saves history.
+    assertImageInput(handle, resolved, opts.images);
     const contextWindow = resolveContextWindow(handle.modelDef?.contextWindow, resolved.contextWindow);
     this.state.repositoryInstructions
       .get(handle.id)

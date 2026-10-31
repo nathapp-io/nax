@@ -54,15 +54,21 @@ import { recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types.ts";
 function beforeTurnSeed(
   patch: readonly NativeTranscriptMessage[] | undefined,
   prompt: string,
+  images: SendTurnOpts["images"],
 ): NativeTranscriptMessage[] {
-  if (patch === undefined) return [{ role: "user", content: prompt }];
+  const seed: NativeTranscriptMessage = {
+    role: "user",
+    content: prompt,
+    ...(images?.length ? { images } : {}),
+  };
+  if (patch === undefined) return [seed];
   if (patch.length > 0 && patch.every((m) => m.role === "user")) return [...patch];
   getSafeLogger()?.warn(
     "native-loop-events",
     "before_turn seed patch rejected: seed must be a non-empty user-role array",
     { seedLength: patch.length },
   );
-  return [{ role: "user", content: prompt }];
+  return [seed];
 }
 
 /** Keep billed spend on the original error for both loop and persistence failures. */
@@ -152,7 +158,7 @@ export async function runNativeTurn(
       event: "before_turn",
     }).messages,
   ];
-  messages.push(...beforeTurnSeed(turnStart.seed, prompt));
+  messages.push(...beforeTurnSeed(turnStart.seed, prompt, opts.images));
 
   const codingTools = opts.codingTools ?? [];
   const codingToolNames = new Set(codingTools.map((t) => t.name));

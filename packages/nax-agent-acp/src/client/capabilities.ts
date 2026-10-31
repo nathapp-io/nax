@@ -22,6 +22,7 @@ export type CapabilityRecord = {
   readonly resume: boolean;
   readonly close: boolean;
   readonly mcpHttp: boolean;
+  readonly image: boolean;
   /** The registry can enforce profiles none/read on this agent. */
   readonly readOnlyMode: boolean;
   /** The registry knows how to pre-approve embedder tools at the adapter (R12). */
@@ -67,6 +68,7 @@ export function buildCapabilityRecord(
     resume: isObject(caps.sessionCapabilities?.resume),
     close: isObject(caps.sessionCapabilities?.close),
     mcpHttp: caps.mcpCapabilities?.http === true,
+    image: caps.promptCapabilities?.image === true,
     readOnlyMode: entry?.readOnly !== undefined,
     preApproval: entry?.preApproval !== undefined,
     ownToolCalls: entry?.mcpCallIdentity !== undefined,

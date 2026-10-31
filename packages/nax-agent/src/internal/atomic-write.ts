@@ -13,7 +13,11 @@ import { randomUUID } from "node:crypto";
 import { rename, rm, writeFile } from "node:fs/promises";
 
 /** The one `writeFile` shape this module uses; narrower than the overloaded node signature so stubs type-check. */
-type WriteText = (path: string, content: string, options: { encoding: "utf8"; mode?: number }) => Promise<void>;
+type WriteText = (
+  path: string,
+  content: string | Uint8Array,
+  options: { encoding: "utf8"; mode?: number },
+) => Promise<void>;
 
 /** Injectable for tests that simulate a write dying part-way. */
 export const _atomicWriteDeps: { writeFile: WriteText; rename: typeof rename; rm: typeof rm } = {
@@ -22,7 +26,11 @@ export const _atomicWriteDeps: { writeFile: WriteText; rename: typeof rename; rm
   rm,
 };
 
-export async function writeFileAtomic(path: string, content: string, options: { mode?: number } = {}): Promise<void> {
+export async function writeFileAtomic(
+  path: string,
+  content: string | Uint8Array,
+  options: { mode?: number } = {},
+): Promise<void> {
   // Ends in `.tmp`, not `.json`, so directory sweeps that match `*.json` never see it.
   const staged = `${path}.${randomUUID()}.tmp`;
   try {

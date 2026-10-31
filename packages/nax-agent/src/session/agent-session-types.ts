@@ -9,6 +9,7 @@ import type { TokenUsage } from "#src/cost/standard-types";
 import type { TranscriptStore } from "#src/native/session/transcript-types";
 import type { BackgroundCommandPort } from "#src/tools/bash-background";
 import type { ProtectedPathsPolicy } from "#src/tools/protected-paths";
+import type { SendInput } from "./image-input.ts";
 import type { BackendInfo, SessionBackend } from "./session-backend.ts";
 import type { JSONSchema } from "./tool-descriptor.ts";
 
@@ -195,7 +196,9 @@ export interface AgentSession {
   /** Set after each `turn_end`; on resume, `interrupted` when a dead process left a turn running. Undefined otherwise. */
   readonly lastTurn: { readonly turnId: string; readonly status: TurnEndStatus } | undefined;
   /** Claims the session's single turn slot synchronously; the turn starts on the first `next()`. */
-  send(message: string): AsyncIterable<SessionEvent>;
+  send(message: string, input?: SendInput): AsyncIterable<SessionEvent>;
+  /** Whether the current backend/model reads images. The facade always provides this method. */
+  acceptsImages?(): Promise<boolean>;
   answer(requestId: string, reply: AnswerReply): AnswerStatus;
   /** Aborts the running turn; a no-op when none runs. */
   cancel(reason?: string): void;

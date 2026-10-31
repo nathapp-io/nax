@@ -76,6 +76,8 @@ export interface CatalogModelOverride {
    * than the newer model's real one (nax-ai 0.1.11, nax#1982).
    */
   maxTokens?: number;
+  /** Accepted input modalities; omit to inherit known catalog metadata. */
+  input?: ("text" | "image")[];
   supportsTools: boolean;
   thinkingLevels: ThinkingLevel[];
   pricing: CatalogPricing;

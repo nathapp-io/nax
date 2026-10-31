@@ -27,6 +27,7 @@ import {
   type BackendInfo,
   type BackendOpenContext,
   getLogger,
+  NaxError,
   NO_OP_INTERACTION_HANDLER,
   type OpenedBackend,
   type SendTurnOpts,
@@ -283,6 +284,7 @@ function assemble(s: AcpSession): OpenedBackend {
       return infoOf(s);
     },
     turnOpts: () => ({ interactionHandler: NO_OP_INTERACTION_HANDLER }),
+    acceptsImages: async () => s.live.acp.record.image,
     configure: (change) => configure(s, change),
     close: () => {
       s.closing ??= shutdown(s);
@@ -356,6 +358,9 @@ async function configure(s: AcpSession, change: SessionConfigureInput): Promise<
 async function sendTurn(s: AcpSession, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
   const signal = opts.signal ?? s.ctx.turnSignal();
   const live = await liveFor(s, signal);
+  if (opts.images?.length && !live.acp.record.image) {
+    throw new NaxError("[acp] The agent does not support image input", "ACP_IMAGE_INPUT_UNSUPPORTED", { stage: "acp" });
+  }
   const instructions = s.instructionsSent ? undefined : s.ctx.instructions;
   const text = instructions === undefined || instructions === "" ? prompt : `${instructions}\n\n${prompt}`;
   // #2364: delivered once the agent shows it has the prompt, not when it is sent.
@@ -373,7 +378,12 @@ async function sendTurn(s: AcpSession, prompt: string, opts: SendTurnOpts): Prom
   });
   const release = live.router.attach(live.acp.agentSessionId, collector, AbortSignal.any([signal, live.gone.signal]));
   try {
-    return await runPromptTurn(live.state, { text, signal, collector });
+    return await runPromptTurn(live.state, {
+      text,
+      signal,
+      collector,
+      ...(opts.images === undefined ? {} : { images: opts.images }),
+    });
   } finally {
     await release();
     // The release aborted this turn's tool calls; wait for their answers (D4-f).

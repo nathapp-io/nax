@@ -77,6 +77,7 @@ export async function defaultProviders(ids?: readonly string[]): Promise<RawProv
       const supportsStrictToolSampling = explicitStrictToolSamplingDeclaration(model);
       return {
         id: model.id,
+        input: model.input,
         protocol: model.api,
         pricing: {
           input: model.cost.input,

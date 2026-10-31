@@ -7,6 +7,7 @@ import { NaxError } from "#src/infra/nax-error";
 
 export type AgentSessionErrorCode =
   | "AGENT_SESSION_INVALID_OPTIONS"
+  | "AGENT_SESSION_INVALID_INPUT"
   | "AGENT_SESSION_EXISTS"
   | "AGENT_SESSION_BUSY"
   | "AGENT_SESSION_CLOSED"

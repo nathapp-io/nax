@@ -145,7 +145,20 @@ function toPiMessages(messages: readonly ConversationMessage[], model: Model<Api
 
   for (const message of messages) {
     if (message.role === "user") {
-      out.push({ role: "user", content: message.content, timestamp: NO_TIMESTAMP });
+      out.push({
+        role: "user",
+        content: message.images?.length
+          ? [
+              ...message.images.map((image) => ({
+                type: "image" as const,
+                data: image.data,
+                mimeType: image.mimeType,
+              })),
+              ...(message.content === "" ? [] : [{ type: "text" as const, text: message.content }]),
+            ]
+          : message.content,
+        timestamp: NO_TIMESTAMP,
+      });
       continue;
     }
 
@@ -632,6 +645,7 @@ function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
 
   return {
     ...template,
+    input: model.input !== undefined ? [...model.input] : template.input,
     id: model.id,
     // ResolvedModel has no display name and pi's is required. The id is the
     // only honest value: a template's name would name a different model.
@@ -818,7 +832,7 @@ function synthesiseIntroducedModel(override: ProviderOverride, model: ResolvedMo
     api: model.protocol,
     provider: override.provider,
     baseUrl,
-    input: ["text"],
+    input: model.input !== undefined ? [...model.input] : ["text"],
     contextWindow: model.contextWindow,
     maxTokens: model.maxTokens,
     cost: toPiCost(model.pricing),

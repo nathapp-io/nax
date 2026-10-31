@@ -24,6 +24,7 @@ import type {
   SessionEvent,
   TurnEndStatus,
 } from "./agent-session-types.ts";
+import { type SendInput, validateImageAttachments } from "./image-input.ts";
 import { createPendingAskTable, type PendingAskTable } from "./pending-asks.ts";
 import { createSessionAskPort } from "./session-ask-port.ts";
 import type { BackendInfo, OpenedBackend } from "./session-backend.ts";
@@ -102,7 +103,14 @@ class FacadeAgentSession implements AgentSession {
     return this.last;
   }
 
-  send(message: string): AsyncIterable<SessionEvent> {
+  async acceptsImages(): Promise<boolean> {
+    if (this.closing !== undefined) {
+      throw new AgentSessionError(`Session "${this.id}" is closed`, "AGENT_SESSION_CLOSED", { sessionId: this.id });
+    }
+    return this.parts.opened.acceptsImages?.() ?? false;
+  }
+
+  send(message: string, input?: SendInput): AsyncIterable<SessionEvent> {
     if (this.closing !== undefined) {
       throw new AgentSessionError(`Session "${this.id}" is closed`, "AGENT_SESSION_CLOSED", { sessionId: this.id });
     }
@@ -116,7 +124,23 @@ class FacadeAgentSession implements AgentSession {
         sessionId: this.id,
       });
     }
+    const images = input?.images;
+    const reason = images === undefined ? undefined : validateImageAttachments(images);
+    if (reason !== undefined) {
+      throw new AgentSessionError(reason, "AGENT_SESSION_INVALID_INPUT", { sessionId: this.id });
+    }
+    if (images?.length && this.parts.opened.acceptsImages === undefined) {
+      throw new AgentSessionError(
+        `Session "${this.id}" cannot receive images`,
+        "AGENT_SESSION_CAPABILITY_UNSUPPORTED",
+        {
+          sessionId: this.id,
+          capability: "images",
+        },
+      );
+    }
     const turn = claimTurn(this.parts.ctx, message, {
+      images,
       onStart: (live) => {
         this.parts.slot.turn = live;
       },

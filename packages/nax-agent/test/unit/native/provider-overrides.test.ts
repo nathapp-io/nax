@@ -40,6 +40,18 @@ afterEach(() => {
 });
 
 describe("toProviderOverrides", () => {
+  test("image AC-15 forwards declared model input", () => {
+    const override = strata();
+    override.models = override.models.map((model) => ({ ...model, input: ["text", "image"] }));
+    expect(toProviderOverrides([override])[0]?.models?.[0]?.input).toEqual(["text", "image"]);
+  });
+
+  test("image AC-16 omits undeclared model input", () => {
+    const model = toProviderOverrides([strata()])[0]?.models?.[0];
+    expect(model).toBeDefined();
+    expect(Object.hasOwn(model ?? {}, "input")).toBe(false);
+  });
+
   test("AC-1 forwards custom provider authEnv", () => {
     const result = toProviderOverrides([strata()]);
     expect(result).toHaveLength(1);

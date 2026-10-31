@@ -111,6 +111,10 @@ export const CatalogModelOverrideSchema = z
     // Stated explicitly rather than left to the sibling, or a newer model with a
     // larger ceiling is silently truncated at the wire.
     maxTokens: z.number().int().positive().optional(),
+    input: z
+      .array(z.enum(["text", "image"]))
+      .min(1)
+      .optional(),
     supportsTools: z.boolean(),
     thinkingLevels: z.array(ThinkingLevelSchema),
     pricing: CatalogPricingSchema,

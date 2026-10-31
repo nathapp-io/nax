@@ -21,6 +21,7 @@
 
 import { getSafeLogger } from "#src/infra/index";
 import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction.ts";
+import { capRequestImages } from "./image-context.ts";
 import { applyHistoryPatch } from "./loop-events/cache-boundary.ts";
 import type { CompleteCallOptions, LoopEventRegistry } from "./loop-events/index.ts";
 import { takePartialSpend } from "./partial-spend.ts";
@@ -162,7 +163,9 @@ export async function completeWithRecovery(args: CompleteStepArgs): Promise<Comp
     // successful attempt is the last one to reach this line — `honoured`
     // describes the wire the provider actually answered (spec 3.6).
     honoured = wire.honoured;
-    return deps.complete(wire.messages, tools, options, turnEvents.deltaSink(roundTrip));
+    // Cap after history patches, on every attempt; saved history stays untouched.
+    // Dropping an image may stale the prompt-cache prefix/anchor estimate.
+    return deps.complete(capRequestImages(wire.messages), tools, options, turnEvents.deltaSink(roundTrip));
   };
   // A failed round trip was still billed for what it streamed. Folding it in
   // here, per attempt, is what makes a retry count both attempts and an

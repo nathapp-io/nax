@@ -11,7 +11,7 @@
  * `InvalidToolCallDetail`) imports it from `@nathapp/nax-agent` directly.
  */
 
-import type { Pricing, PricingRates, TokenUsage } from "#src/cost/standard-types";
+import type { ImageAttachment, Pricing, PricingRates, TokenUsage } from "#src/cost/standard-types";
 import type { ResolvedPermissions } from "#src/permissions/index";
 import type { ProtocolIds } from "#src/session/protocol-types";
 import type { AdapterFailure } from "./adapter-failure.ts";
@@ -238,6 +238,8 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
 
 /** Options for sendTurn(). */
 export interface SendTurnOpts {
+  /** Images accompanying this turn's prompt; omitted for text-only turns. */
+  images?: readonly ImageAttachment[];
   /** Unified callback for context-tool calls and agent questions. */
   interactionHandler: import("./interaction-handler.ts").InteractionHandler;
   /** Native-only in-process loop-event registrations for this turn. ACP ignores this. */

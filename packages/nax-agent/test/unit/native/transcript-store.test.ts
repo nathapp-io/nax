@@ -8,6 +8,7 @@ import type { ConversationMessage } from "@nathapp/nax-ai";
 import { _atomicWriteDeps } from "#src/internal/atomic-write";
 import {
   _resetTranscriptTruncationWarningForTests,
+  _transcriptLifecycleDeps,
   createFileTranscriptStore,
   deleteTranscript,
   loadTranscript,
@@ -32,6 +33,70 @@ const msgs: ConversationMessage[] = [
   { role: "user", content: "hello" },
   { role: "assistant", content: "hi", thinking: [{ text: "pondering", signature: "sig-1" }] },
 ];
+
+describe("transcript image folder lifecycle", () => {
+  const images: ConversationMessage[] = [
+    { role: "user", content: "x", images: [{ mimeType: "image/png", data: "AAAA" }] },
+  ];
+
+  test("AC-14: delete removes the live image folder", async () => {
+    const store = createFileTranscriptStore(dir);
+    await store.save("s", { savedAt: "t", messages: images });
+    await store.delete("s");
+    expect(await readdir(dir)).toEqual([]);
+  });
+
+  test("AC-15: retainFailed uses the JSON stamp for the folder", async () => {
+    const store = createFileTranscriptStore(dir);
+    await store.save("s", { savedAt: "t", messages: images });
+    await store.retainFailed("s");
+    const names = await readdir(dir);
+    const json = names.find((name) => name.endsWith(".json"));
+    expect(json).toMatch(/^s\.transcript\.failed-.*\.json$/);
+    expect(names).toContain((json ?? "missing").replace(/\.json$/, ".images"));
+    expect(names).not.toContain("s.transcript.images");
+  });
+
+  test("B2: failed sidecar retention rolls back JSON and can be retried", async () => {
+    const store = createFileTranscriptStore(dir);
+    await store.save("s", { savedAt: "t", messages: images });
+    const realRename = _transcriptLifecycleDeps.rename;
+    _transcriptLifecycleDeps.rename = async (from, to) => {
+      if (String(from).endsWith(".images")) throw Object.assign(new Error("denied"), { code: "EACCES" });
+      return realRename(from, to);
+    };
+    try {
+      await expect(store.retainFailed("s")).rejects.toMatchObject({ code: "EACCES" });
+    } finally {
+      _transcriptLifecycleDeps.rename = realRename;
+    }
+    expect((await store.load("s"))?.messages).toEqual(images);
+    expect((await readdir(dir)).sort()).toEqual(["s.transcript.images", "s.transcript.json"]);
+    await store.retainFailed("s");
+    const json = (await readdir(dir)).find((name) => name.endsWith(".json"));
+    // Retained transcripts use their exact disk path rather than a live session name.
+    const { rehydrateTranscriptImages } = await import("#src/native/session/transcript-images");
+    const path = join(dir, json ?? "missing");
+    expect((await rehydrateTranscriptImages(path, JSON.parse(await readFile(path, "utf8")))).messages).toEqual(images);
+    await store.delete("s");
+    expect((await rehydrateTranscriptImages(path, JSON.parse(await readFile(path, "utf8")))).messages).toEqual(images);
+  });
+
+  test("AC-16/17: pruning removes only the deleted JSON's sidecar", async () => {
+    for (const [i, session] of ["old", "new"].entries()) {
+      await saveTranscript(dir, session, images);
+      await retainTranscript(dir, session);
+      const json = (await readdir(dir)).find((name) => name.startsWith(`${session}.`) && name.endsWith(".json"));
+      const time = new Date(2026, 0, i + 1);
+      await utimes(join(dir, json ?? "missing"), time, time);
+    }
+    expect(await pruneRetainedTranscripts(dir, 1)).toBe(1);
+    const names = await readdir(dir);
+    expect(names).toHaveLength(2);
+    expect(names.every((name) => name.startsWith("new.transcript.failed-"))).toBe(true);
+    expect(names.filter((name) => name.endsWith(".images"))).toHaveLength(1);
+  });
+});
 
 describe("transcript store", () => {
   test("a session with no transcript loads as empty", async () => {
