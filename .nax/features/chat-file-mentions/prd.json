@@ -3,7 +3,7 @@
   "feature": "chat-file-mentions",
   "branchName": "feat/chat-file-mentions",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T07:11:43.133Z",
+  "updatedAt": "2026-10-31T07:28:39.309Z",
   "userStories": [
     {
       "id": "US-001",
@@ -183,14 +183,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "This extends one existing injected expander with specified byte/line limits and directory-listing fallback, without changing US-002's access-control policy; medium/tdd-simple exercises the classifications and caps with deterministic fakes."
+        "reasoning": "This extends one existing injected expander with specified byte/line limits and directory-listing fallback, without changing US-002's access-control policy; medium/tdd-simple exercises the classifications and caps with deterministic fakes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/mentions/mention-expand.ts",
@@ -211,7 +214,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c5667f7f135e75a799b04b91f922334ddca6ab6c"
     },
     {
       "id": "US-004",
