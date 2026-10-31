@@ -480,6 +480,11 @@ export function ChatApp({
    * One composed message out. A message carrying images hands them over with its title; a
    * message that is only the typed text keeps today's two-argument call, and an expanded one
    * keeps the typed text as its title.
+   *
+   * The draft that composed the message is spent the moment the message reaches the host, so
+   * it is emptied here — before the call rather than after it. A turn that rejects, or one
+   * still in flight, must not keep the numbers of the pictures it already took: the next
+   * ctrl+v starts again at `[Image #1]`.
    */
   async function sendMessage(
     prepared: ComposedSend,
@@ -487,6 +492,7 @@ export function ChatApp({
     onEvent: (event: SessionEvent) => void,
   ): Promise<void> {
     const images = prepared.images ?? [];
+    imageAttach.reset();
     if (images.length > 0) await host.send(prepared.message, onEvent, { title, images });
     else if (prepared.message === title) await host.send(prepared.message, onEvent);
     else await host.send(prepared.message, onEvent, { title });
@@ -503,7 +509,7 @@ export function ChatApp({
         append({ kind: "notice", text: prepared.notice });
         return false;
       }
-      appendAll(sentEntries(prepared.message));
+      appendAll(sentEntries(prepared.message, prepared.images));
       setFollowToken((token) => token + 1);
       const onEvent = (event: SessionEvent): void => {
         if (event.type === "turn_start") started = true;
