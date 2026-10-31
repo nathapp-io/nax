@@ -105,8 +105,13 @@ export interface ImageAttach {
   attach(path?: string): Promise<void>;
   /** Put a draft back, as a refused send does. */
   restore(draft: ImageDraft): void;
-  /** Start over with no images, as a completed send does. */
-  reset(): void;
+  /**
+   * Empty the draft of the images a send consumed. `consumed` is the draft as it stood when
+   * the message was submitted, so a picture attached while that send was still being prepared
+   * — a draft the user started afterwards — stays behind with the number it already holds.
+   * Absent, or the draft as it stands, empties everything: the plain "start over" reset.
+   */
+  reset(consumed?: ImageDraft): void;
 }
 
 /** A file to read, named in a notice the way the user gave it. */
@@ -248,11 +253,27 @@ export function useImageAttach(options: ImageAttachOptions): ImageAttach {
     return true;
   }
 
+  /**
+   * Empty the draft of the images the send consumed, keeping the ones attached since. The two
+   * are told apart by identity: `attachToDraft` only ever appends, so every image the send took
+   * is still one of the live draft's own entries, and anything else is a picture the user
+   * asked for while the send was still preparing. A number is never reused, so a survivor
+   * keeps the number it holds — `imagesForSend` renumbers on the way out.
+   */
+  function resetImages(consumed: ImageDraft = current.current): void {
+    const remaining = current.current.images.filter((draftImage) => !consumed.images.includes(draftImage));
+    if (remaining.length === 0) {
+      publish(EMPTY_IMAGE_DRAFT);
+      return;
+    }
+    publish({ next: current.current.next, images: remaining });
+  }
+
   return {
     current: () => current.current,
     onPaste,
     attach,
     restore: publish,
-    reset: () => publish(EMPTY_IMAGE_DRAFT),
+    reset: resetImages,
   };
 }

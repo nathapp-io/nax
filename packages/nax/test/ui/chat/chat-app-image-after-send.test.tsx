@@ -215,6 +215,7 @@ function mount(options: HostOptions = {}) {
     promptRow,
     press,
     pressAndSettle,
+    settle,
     type,
     submit,
     pasteImage,
@@ -302,6 +303,31 @@ describe("a send empties the image draft", () => {
     expect(ui.frame()).toContain(TURN_FAILED);
     await ui.pasteImage(png(2, 4));
     expect(ui.promptRow()).toBe("> [Image #1]");
+  });
+
+  test("F6 an image attached while the send is still preparing survives that send", async () => {
+    // The capability probe holds the send mid-preparation: the prompt and ctrl+v stay live.
+    const capability = Promise.withResolvers<boolean>();
+    const ui = mount({ accepts: () => capability.promise });
+    await ui.pasteImage(png(2, 3));
+    ui.type(" look");
+    await ui.pressAndSettle(RETURN);
+    expect(ui.send).not.toHaveBeenCalled();
+    await ui.pasteImage(png(2, 4));
+    expect(ui.promptRow()).toBe("> [Image #2]");
+    capability.resolve(true);
+    await ui.settle();
+    expect(ui.send).toHaveBeenCalledTimes(1);
+    // Only the picture the message was composed from travelled.
+    expect(sentImages(ui.send)).toHaveLength(1);
+    expect(sentImages(ui.send)[0]?.height).toBe(3);
+    // The later one is a draft of its own, and the next send still carries it.
+    await ui.pressAndSettle(RETURN);
+    expect(ui.send).toHaveBeenCalledTimes(2);
+    const second = callAt(ui.send, 1);
+    expect(second[0]).toBe("[Image #1]");
+    expect(second[2]?.images).toHaveLength(1);
+    expect(second[2]?.images?.[0]?.height).toBe(4);
   });
 });
 

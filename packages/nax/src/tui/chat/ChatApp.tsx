@@ -32,7 +32,7 @@ import {
   workingLine,
 } from "./chat-status";
 import { FixedRow } from "./FixedRow";
-import { imagesForSend } from "./image-draft";
+import { type ImageDraft, imagesForSend } from "./image-draft";
 import { prepareImageSend } from "./image-send";
 import { layoutTranscript } from "./layout";
 import { type EditorState, EMPTY_EDITOR } from "./line-editor";
@@ -122,12 +122,15 @@ interface QuestionAnswer {
 const NO_ANSWER: QuestionAnswer = { requestId: "", draft: EMPTY_DRAFT };
 
 /**
- * A message composed for `host.send`: the text the brain reads, and the images that travel
- * with it — absent or empty when the message carries none.
+ * A message composed for `host.send`: the text the brain reads, the images that travel with it
+ * — absent or empty when the message carries none — and the image draft the message was
+ * submitted with, so the send empties exactly the pictures it took and leaves a draft the user
+ * started while it was preparing (see `sendMessage`).
  */
 interface ComposedSend {
   readonly message: string;
   readonly images?: readonly ImageAttachment[];
+  readonly draft?: ImageDraft;
 }
 
 /**
@@ -384,11 +387,11 @@ export function ChatApp({
     }
     if (outcome.kind === "send") {
       noteUserTurn();
-      await sendTurn(outcome.message, undefined, `/${command.name}${command.rest}`);
+      await sendTurn({ message: outcome.message }, undefined, `/${command.name}${command.rest}`);
       return;
     }
     const { name, template, rest } = outcome;
-    await sendTurn(`/${name}${rest}`, async () => {
+    await sendTurn({ message: `/${name}${rest}` }, async () => {
       const expandedLines = await runCommandShellLines(template, (cmd) =>
         host.runCommand
           ? host.runCommand(cmd, () => update())
@@ -422,12 +425,16 @@ export function ChatApp({
    * The prepare step for a message that carries a placeholder image or a mention: the image-send
    * module decides what travels and asks the brain's capability once. The screen only restores a
    * refused line — the text and the draft — and hands a composed message on to `host.send`.
+   *
+   * `draft` is the draft the message was submitted with, not the draft as it stands when the
+   * preparation settles: the prompt and ctrl+v stay live while the capability is asked, and an
+   * image attached in that window belongs to the *next* message.
    */
-  function imagePrepare(text: string): () => Promise<PreparedSend> {
+  function imagePrepare(text: string, draft: ImageDraft): () => Promise<PreparedSend> {
     return async () => {
       const result = await prepareImageSend({
         text,
-        draft: imageAttach.current(),
+        draft,
         where: { cwd, repoRoot: host.repoRoot },
         expand: _chatAppDeps.expandMentions,
         // Optional so a hand-built host still typechecks: one without it cannot read images.
@@ -438,7 +445,7 @@ export function ChatApp({
         restorePrompt(text);
         return { notice: result.notice };
       }
-      return { message: result.message, images: result.images };
+      return { message: result.message, images: result.images, draft };
     };
   }
 
@@ -446,18 +453,20 @@ export function ChatApp({
    * A non-slash message's send. One that carries a placeholder image or a mention is prepared —
    * expanded once against the cwd the screen was handed and the repo the host reports, with the
    * images its placeholders still name — while a plain one keeps today's exact call; either way
-   * the typed text stays the title and the draft history.
+   * the typed text stays the title and the draft history. The draft is read once here, so what
+   * the send consumed is what the reset takes back however long the preparation takes.
    */
   async function submit(message: string): Promise<void> {
     const command = parseSlashCommand(message);
-    const images = imagesForSend(imageAttach.current(), message).images;
+    const submitted = imageAttach.current();
+    const images = imagesForSend(submitted, message).images;
     if (!command) {
       noteUserTurn();
       if (images.length === 0 && !needsMentionExpansion(message)) {
-        await sendTurn(message);
+        await sendTurn({ message, draft: submitted });
         return;
       }
-      await sendTurn(message, imagePrepare(message));
+      await sendTurn({ message, draft: submitted }, imagePrepare(message, submitted));
       return;
     }
     if (command.name === QUIT) {
@@ -485,6 +494,10 @@ export function ChatApp({
    * it is emptied here — before the call rather than after it. A turn that rejects, or one
    * still in flight, must not keep the numbers of the pictures it already took: the next
    * ctrl+v starts again at `[Image #1]`.
+   *
+   * Only the submitted draft goes: the prompt stays live while a send is prepared, so a picture
+   * attached in that window is a draft the user started for the next message, and wiping it
+   * here would delete an image nothing had even tried to send.
    */
   async function sendMessage(
     prepared: ComposedSend,
@@ -492,19 +505,23 @@ export function ChatApp({
     onEvent: (event: SessionEvent) => void,
   ): Promise<void> {
     const images = prepared.images ?? [];
-    imageAttach.reset();
+    imageAttach.reset(prepared.draft);
     if (images.length > 0) await host.send(prepared.message, onEvent, { title, images });
     else if (prepared.message === title) await host.send(prepared.message, onEvent);
     else await host.send(prepared.message, onEvent, { title });
   }
 
-  async function sendTurn(message: string, prepare?: () => Promise<PreparedSend>, title = message): Promise<boolean> {
+  async function sendTurn(
+    composed: ComposedSend,
+    prepare?: () => Promise<PreparedSend>,
+    title = composed.message,
+  ): Promise<boolean> {
     if (sending.current) return false;
     sending.current = true;
     setBusy(true);
     let started = false;
     try {
-      const prepared = prepare ? await prepare() : { message };
+      const prepared = prepare ? await prepare() : composed;
       if ("notice" in prepared) {
         append({ kind: "notice", text: prepared.notice });
         return false;
@@ -539,7 +556,7 @@ export function ChatApp({
       bottomBlocked: bottomBlocked(ask, picker.model),
       canControl: keys.canControl(),
     }),
-    deliver: (text) => sendTurn(text),
+    deliver: (text) => sendTurn({ message: text }),
     note: (text) => append({ kind: "notice", text }),
   });
 
