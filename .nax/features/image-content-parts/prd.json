@@ -3,7 +3,7 @@
   "feature": "image-content-parts",
   "branchName": "feat/image-content-parts",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T10:46:06.693Z",
+  "updatedAt": "2026-10-31T10:50:36.907Z",
   "userStories": [
     {
       "id": "US-001",
@@ -105,14 +105,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Straightforward validator and public exports, with strict isolation because this validator guards session input and resource limits."
+        "reasoning": "Straightforward validator and public exports, with strict isolation because this validator guards session input and resource limits.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/cost/standard-types.ts",
@@ -140,7 +143,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "aa732f9982f6c6e862f4aef271404938d626daab"
     },
     {
       "id": "US-003",
