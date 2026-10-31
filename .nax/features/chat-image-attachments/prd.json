@@ -3,7 +3,7 @@
   "feature": "chat-image-attachments",
   "branchName": "feat/chat-image-attachments",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T16:04:32.058Z",
+  "updatedAt": "2026-10-31T16:22:05.766Z",
   "userStories": [
     {
       "id": "US-001",
@@ -613,14 +613,17 @@
         "US-004",
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "New stateful effect hook coordinates serialized asynchronous reads, batched-key refs, latest cursor insertion, paste fallback and screen ownership across established modules."
+        "reasoning": "New stateful effect hook coordinates serialized asynchronous reads, batched-key refs, latest cursor insertion, paste fallback and screen ownership across established modules.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -646,7 +649,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4d06e7b241673d41aa595764460c9a1e73d63e54"
     },
     {
       "id": "US-011",
