@@ -3,7 +3,7 @@
   "feature": "chat-image-attachments",
   "branchName": "feat/chat-image-attachments",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T15:37:37.914Z",
+  "updatedAt": "2026-10-31T15:52:45.981Z",
   "userStories": [
     {
       "id": "US-001",
@@ -456,14 +456,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Three existing ACP modules require standard optional-input forwarding, bound capability delegation and user-text serialization, without a new abstraction; session-wrapper changes retain the mandatory strict isolation strategy."
+        "reasoning": "Three existing ACP modules require standard optional-input forwarding, bound capability delegation and user-text serialization, without a new abstraction; session-wrapper changes retain the mandatory strict isolation strategy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/acp/acp-recorder.ts",
@@ -492,7 +495,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e60552582bc614f5930711731039eafa253e8158"
     },
     {
       "id": "US-009",
