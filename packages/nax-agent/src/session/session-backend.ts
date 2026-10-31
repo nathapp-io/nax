@@ -97,6 +97,8 @@ export interface BackendOpenContext {
 }
 
 export interface OpenedBackend {
+  /** Absent on a backend that cannot receive image input. Re-read the current model/agent on each query. */
+  acceptsImages?(): Promise<boolean>;
   /** Absent on a backend that cannot change model or effort on a live session. The facade validates `input` first. */
   configure?(input: SessionConfigureInput): Promise<void>;
   /** Absent on a backend that cannot run a host-side command (ACP). */

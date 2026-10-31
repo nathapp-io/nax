@@ -13,6 +13,7 @@ import type { TranscriptStore } from "#src/native/session/transcript-types";
 import { _agentSessionDeps } from "./agent-session-deps.ts";
 import { AgentSessionError } from "./agent-session-errors.ts";
 import type { CostSource, SessionEvent, SessionEventBody, TurnEndStatus } from "./agent-session-types.ts";
+import type { SendInput } from "./image-input.ts";
 import type { TurnContribution } from "./session-backend.ts";
 import { createSessionEventChannel } from "./session-event-channel.ts";
 import { type AgentSessionAdapter, type SessionHandle, SessionTurnError, type TurnResult } from "./session-types.ts";
@@ -54,7 +55,7 @@ export interface ClaimedTurn {
   cancel(reason: string): void;
 }
 
-export interface ClaimTurnHooks {
+export interface ClaimTurnHooks extends SendInput {
   readonly onStart: (live: LiveTurn) => void;
   /** Runs before turn_end is emitted. `status` is undefined for a voided claim. */
   readonly onSettle: (turnId: string, status: TurnEndStatus | undefined) => void;
@@ -146,9 +147,10 @@ function fromError(err: unknown, signal: AbortSignal): TurnEndBody {
   return { ...base, status: "errored", error: errorOf(err) };
 }
 
-function sendTurn(ctx: TurnRunContext, live: LiveTurn, message: string): Promise<TurnResult> {
-  return ctx.adapter.sendTurn(ctx.handle, message, {
+function sendTurn(ctx: TurnRunContext, live: LiveTurn, input: SendInput & { message: string }): Promise<TurnResult> {
+  return ctx.adapter.sendTurn(ctx.handle, input.message, {
     ...ctx.turnOpts(),
+    ...(input.images?.length ? { images: input.images } : {}),
     maxInteractions: ASK_HUMAN_BUDGET,
     turnId: live.turnId,
     signal: live.signal,
@@ -173,13 +175,17 @@ async function markTurn(
   }
 }
 
-async function runTurn(ctx: TurnRunContext, live: LiveTurn, message: string): Promise<TurnEndBody> {
+async function runTurn(
+  ctx: TurnRunContext,
+  live: LiveTurn,
+  input: SendInput & { message: string },
+): Promise<TurnEndBody> {
   live.emit({ type: "turn_start" });
   const started = await markTurn(ctx, live.turnId, "running");
   if (started !== undefined) return fromError(started.error, live.signal);
   let end: TurnEndBody;
   try {
-    end = turnEndFromResult(await sendTurn(ctx, live, message));
+    end = turnEndFromResult(await sendTurn(ctx, live, input));
   } catch (err) {
     end = fromError(err, live.signal);
   }
@@ -240,7 +246,7 @@ export function claimTurn(ctx: TurnRunContext, message: string, hooks: ClaimTurn
       ctx.turnTimeoutSeconds * 1000,
     );
     hooks.onStart(live);
-    void runTurn(ctx, live, message)
+    void runTurn(ctx, live, { message, images: hooks.images })
       .catch((err: unknown) => fromError(err, controller.signal))
       .then((end) => {
         _agentSessionDeps.clearTimeout(timer);
