@@ -64,9 +64,8 @@ function nonEmptyBytes(stdout: Uint8Array): Uint8Array | undefined {
 
 function pngDataBytes(stdout: Uint8Array): Uint8Array | undefined {
   const hex = PNG_DATA_PATTERN.exec(new TextDecoder().decode(stdout))?.[1];
-  if (hex === undefined) return undefined;
-  const bytes = new Uint8Array(Buffer.from(hex, "hex"));
-  return bytes.length > 0 ? bytes : undefined;
+  // The pattern's `+` guarantees at least one hex digit, so a match is never empty.
+  return hex === undefined ? undefined : new Uint8Array(Buffer.from(hex, "hex"));
 }
 
 function isMissingExecutable(err: unknown): boolean {
