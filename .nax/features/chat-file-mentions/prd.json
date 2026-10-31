@@ -3,7 +3,7 @@
   "feature": "chat-file-mentions",
   "branchName": "feat/chat-file-mentions",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T07:28:39.309Z",
+  "updatedAt": "2026-10-31T07:47:24.839Z",
   "userStories": [
     {
       "id": "US-001",
@@ -250,14 +250,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Extends a discriminated union, shared layout/cache, wrapped span matching and click-to-expand behavior across modules. Unit span/cache tests and UI click tests verify compatibility with existing transcript rendering."
+        "reasoning": "Extends a discriminated union, shared layout/cache, wrapped span matching and click-to-expand behavior across modules. Unit span/cache tests and UI click tests verify compatibility with existing transcript rendering.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/transcript-model.ts",
@@ -305,7 +308,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "239d850d27a5f7140620bcfef984844da513c568"
     },
     {
       "id": "US-005",
