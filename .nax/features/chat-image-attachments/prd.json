@@ -3,7 +3,7 @@
   "feature": "chat-image-attachments",
   "branchName": "feat/chat-image-attachments",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T15:01:21.289Z",
+  "updatedAt": "2026-10-31T15:11:04.317Z",
   "userStories": [
     {
       "id": "US-001",
@@ -261,14 +261,17 @@
         "draft"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure draft state transformations with code-point insertion, present-only limits and collision-free placeholder renumbering."
+        "reasoning": "Pure draft state transformations with code-point insertion, present-only limits and collision-free placeholder renumbering.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/line-editor.ts",
@@ -282,7 +285,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7e7fec5be5fbe0328f41a533d99132d0907af1cb"
     },
     {
       "id": "US-006",
