@@ -369,3 +369,8 @@ advertise `promptCapabilities.image`.
 - 2026-10-31 **user**: images are a separate feature after `@` mentions.
 - 2026-10-31 **user**: the goal is parity with Claude Code and Codex; Claude
   Code's behaviour is the reference.
+- 2026-10-31 **Claude** (spec-writing, feature 1): images ride as an optional
+  `images: ImageAttachment[]` field beside the user message's `content: string`
+  instead of the §6.1 `string | parts[]` union. Same wire shape (images first,
+  then text), and no `userText` sweep: every existing reader of user `content`
+  keeps working. Spec: `.nax/features/image-content-parts/spec.md`.
