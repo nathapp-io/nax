@@ -30,6 +30,7 @@ import {
   type TranscriptMessage as NativeTranscriptMessage,
   prepareCompaction,
 } from "./compaction.ts";
+import { imagesAsNotes } from "./image-context.ts";
 import type { LoopEventRegistry } from "./loop-events/index.ts";
 import { type TurnAccumulator, usageBeat } from "./turn-accumulator.ts";
 import type { NativeSummaryResponse, TurnDeps } from "./turn-types.ts";
@@ -113,7 +114,7 @@ async function summarizeAndApply(
   const summary =
     source.replacementSummary !== undefined
       ? { text: source.replacementSummary, usage: { inputTokens: 0, outputTokens: 0 }, costUsd: 0 }
-      : await deps.summarize(plan.toSummarize, plan.previousSummary);
+      : await deps.summarize(imagesAsNotes(plan.toSummarize), plan.previousSummary);
   // Rebound, not spliced in place: `messages` is a local accumulator and
   // rebinding it keeps the compacted array a fresh value.
   const compacted = applyCompaction(messages, plan, summary.text);

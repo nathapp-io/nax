@@ -9,6 +9,7 @@
  */
 
 import type { ConversationMessage } from "@nathapp/nax-ai";
+import { IMAGE_TOKEN_ESTIMATE } from "#src/session/image-input";
 import type { AdapterInteractionResponse } from "#src/session/interaction-handler";
 
 /**
@@ -49,9 +50,16 @@ const CHARS_PER_TOKEN = 4;
  */
 export function estimateTokens(message: TranscriptMessage): number {
   let chars = 0;
+  let imageTokens = 0;
   switch (message.role) {
     case "user":
       chars = message.content.length;
+      for (const image of message.images ?? []) {
+        imageTokens +=
+          image.width !== undefined && image.height !== undefined
+            ? Math.min(IMAGE_TOKEN_ESTIMATE, Math.ceil((image.width * image.height) / 750))
+            : IMAGE_TOKEN_ESTIMATE;
+      }
       break;
     case "assistant":
       chars = message.content.length;
@@ -62,7 +70,7 @@ export function estimateTokens(message: TranscriptMessage): number {
       chars = message.content.length;
       break;
   }
-  return Math.ceil(chars / CHARS_PER_TOKEN);
+  return Math.ceil(chars / CHARS_PER_TOKEN) + imageTokens;
 }
 
 /**

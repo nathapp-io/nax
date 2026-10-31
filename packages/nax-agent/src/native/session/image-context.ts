@@ -1,6 +1,21 @@
 import { MAX_REQUEST_IMAGE_BASE64_CHARS, MAX_REQUEST_IMAGES } from "#src/session/image-input";
 import type { TranscriptMessage } from "./compaction.ts";
 
+/** Text-only summary input view; never rewrite the image-bearing transcript. */
+export function imagesAsNotes(messages: readonly TranscriptMessage[]): readonly TranscriptMessage[] {
+  return messages.map((message) => {
+    if (message.role !== "user" || message.images === undefined) return message;
+    const { images, ...textMessage } = message;
+    const notes = images.map((image) => {
+      const dimensions =
+        image.width !== undefined && image.height !== undefined ? ` ${image.width}x${image.height}` : "";
+      return `[image: ${image.mimeType}${dimensions}]`;
+    });
+    const content = [...(message.content === "" ? [] : [message.content]), ...notes].join("\n");
+    return { ...textMessage, content };
+  });
+}
+
 /** Bound only the wire copy, preserving transcript data and dormant array identity. */
 export function capRequestImages(messages: readonly TranscriptMessage[]): readonly TranscriptMessage[] {
   let count = 0;

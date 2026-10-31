@@ -12,6 +12,56 @@ import {
 const cfg: ResolvedCompaction = { enabled: true, compactAtPercent: 90, keepRecentPercent: 30 };
 
 describe("estimateTokens", () => {
+  test.each([
+    {
+      label: "AC-7 unknown dimensions",
+      content: "",
+      images: [{ mimeType: "image/png", data: "AAAA" }],
+      expected: 1600,
+    },
+    {
+      label: "AC-8 small image",
+      content: "",
+      images: [{ mimeType: "image/png", data: "AAAA", width: 100, height: 75 }],
+      expected: 10,
+    },
+    {
+      label: "AC-9 capped image",
+      content: "",
+      images: [{ mimeType: "image/png", data: "AAAA", width: 4000, height: 3000 }],
+      expected: 1600,
+    },
+    {
+      label: "AC-10 text and two images",
+      content: "12345678",
+      images: [
+        { mimeType: "image/png", data: "AAAA" },
+        { mimeType: "image/png", data: "BBBB" },
+      ],
+      expected: 3202,
+    },
+    {
+      label: "ceil fractional pixels and text separately",
+      content: "a",
+      images: [{ mimeType: "image/png", data: "AAAA", width: 101, height: 75 }],
+      expected: 12,
+    },
+    {
+      label: "missing height",
+      content: "",
+      images: [{ mimeType: "image/png", data: "AAAA", width: 100 }],
+      expected: 1600,
+    },
+    {
+      label: "missing width",
+      content: "",
+      images: [{ mimeType: "image/png", data: "AAAA", height: 75 }],
+      expected: 1600,
+    },
+  ])("counts image tokens: $label", ({ content, images, expected }) => {
+    expect(estimateTokens({ role: "user", content, images })).toBe(expected);
+  });
+
   test("counts user content as characters over four", () => {
     expect(estimateTokens({ role: "user", content: "a".repeat(400) })).toBe(100);
   });
