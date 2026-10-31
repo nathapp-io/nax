@@ -77,6 +77,7 @@ export {
   type ModelSpec,
   parseModelSpec,
 } from "#src/cost/model-spec";
+export type { ImageAttachment } from "#src/cost/standard-types";
 export type { AgentLogger, CredentialAuthConfig, CredentialsConfig } from "#src/infra/index";
 export { configureCredentials, getLogger, setAgentLogger } from "#src/infra/index";
 export { createStderrTail, type StderrTail } from "#src/infra/stderr-tail";
@@ -347,6 +348,16 @@ export type {
   AgentToolCallUpdateEvent,
   AgentUsageUpdateEvent,
 } from "#src/session/agent-stream-events";
+export {
+  IMAGE_MIME_TYPES,
+  IMAGE_TOKEN_ESTIMATE,
+  MAX_IMAGE_BASE64_CHARS,
+  MAX_IMAGES_PER_MESSAGE,
+  MAX_REQUEST_IMAGE_BASE64_CHARS,
+  MAX_REQUEST_IMAGES,
+  type SendInput,
+  validateImageAttachments,
+} from "#src/session/image-input";
 export {
   type AdapterInteraction,
   type AdapterInteractionResponse,

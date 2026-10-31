@@ -6,4 +6,4 @@
  * keeps a single allow-listed file. In S1-5 this becomes a re-export in
  * packages/nax-agent and the allow-list entry is removed.
  */
-export type { Pricing, PricingRates, PricingTier, TokenUsage } from "@nathapp/nax-ai";
+export type { ImageAttachment, Pricing, PricingRates, PricingTier, TokenUsage } from "@nathapp/nax-ai";

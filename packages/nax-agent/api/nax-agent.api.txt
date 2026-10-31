@@ -142,6 +142,9 @@ type GuardInput
 HARM_OPTIONS
 HARM_QUESTION_ID
 type HarmOption
+IMAGE_MIME_TYPES
+IMAGE_TOKEN_ESTIMATE
+type ImageAttachment
 type ImportOutcome
 type InteractionExchange
 type InteractionHandler
@@ -162,8 +165,12 @@ type LoopEventMap
 type LoopHandlerContext
 type LoopHandlerEntry
 type LoopHandlerSet
+MAX_IMAGES_PER_MESSAGE
+MAX_IMAGE_BASE64_CHARS
 MAX_PROVIDER_DESCRIPTION_BYTES
 MAX_PROVIDER_SCHEMA_BYTES
+MAX_REQUEST_IMAGES
+MAX_REQUEST_IMAGE_BASE64_CHARS
 MAX_RETAINED_TRANSCRIPTS
 MCP_INSTRUCTIONS_MAX_CHARS_PER_SERVER
 MCP_INSTRUCTIONS_MAX_CHARS_TOTAL
@@ -246,6 +253,7 @@ type SandboxRecord
 type SandboxState
 type SandboxWrapRequest
 type SecretSpan
+type SendInput
 type SendTurnOpts
 type SessionAskPort
 type SessionBackend
@@ -479,6 +487,7 @@ truncateForModel
 truncationDirectionFor
 unregisterToolAuditSink
 unsandboxedSentence
+validateImageAttachments
 validateProviderId
 warnSandboxUnavailableOnce
 writeApprovalsFile
