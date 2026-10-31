@@ -1,6 +1,6 @@
 {
   "name": "@nathapp/nax",
-  "version": "0.91.7-canary.10",
+  "version": "0.91.7-canary.11",
   "description": "AI Coding Agent Orchestrator — loops until done",
   "type": "module",
   "bin": {
@@ -86,7 +86,7 @@
     "@agentclientprotocol/sdk": "~1.7.0",
     "@anthropic-ai/sandbox-runtime": "0.0.77",
     "@modelcontextprotocol/sdk": "^1.32.1",
-    "@nathapp/nax-ai": "0.91.7-canary.10",
+    "@nathapp/nax-ai": "0.91.7-canary.11",
     "chalk": "^5.6.2",
     "commander": "^13.1.0",
     "highlight.js": "^11.12.0",
