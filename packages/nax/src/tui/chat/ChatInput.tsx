@@ -101,6 +101,14 @@ export interface ChatInputProps {
   readonly onClearArmedChange?: (armed: boolean) => void;
   /** The most text rows the screen has room for; absent means the input's own cap. */
   readonly maxRows?: number;
+  /**
+   * A paste offered to the owner before it is inserted. Returning `true` means the owner took
+   * the chunk — an image file's path is attached rather than typed — and nothing is inserted.
+   * Only a chunk of more than one code point reaches it: a typed character is never a paste,
+   * and a chord or a return is the editor's own. The owner must not throw; the input runs it
+   * inside the key handler.
+   */
+  readonly onPaste?: (chunk: string) => boolean;
 }
 
 /**
@@ -437,6 +445,16 @@ function historyDirection(key: Key): "previous" | "next" | undefined {
   return undefined;
 }
 
+/**
+ * Whether a key carries a paste — a chunk of more than one code point. A single character is
+ * always typed, and a chord (ctrl/meta) or a return belongs to the editor or the submit, so
+ * none of them is ever offered to `onPaste`.
+ */
+function isPasteChunk(input: string, key: Key): boolean {
+  if (key.ctrl || key.meta || key.return) return false;
+  return Array.from(input).length > 1;
+}
+
 /** An editor holding `text` with the cursor at its end — what recalling a history entry shows. */
 function atEnd(text: string): EditorState {
   return { text, cursor: Array.from(text).length };
@@ -496,6 +514,7 @@ export function ChatInput({
   handle,
   onClearArmedChange,
   maxRows,
+  onPaste,
 }: ChatInputProps): ReactElement {
   // The rows wrap to the container the input is drawn into, which is the terminal's width
   // rather than the frame's when a host frames a narrower prompt.
@@ -623,6 +642,9 @@ export function ChatInput({
         if (browsed !== undefined) publish(browsed);
         return;
       }
+      // A pasted chunk is offered to the owner before the editor sees it: a path to an image
+      // is attached rather than typed, and an owner that declines it gets the normal insert.
+      if (onPaste !== undefined && isPasteChunk(input, key) && onPaste(input)) return;
       const result = editLine(current.editor, { input, key });
       if (result.kind === "submit") submit(result.text);
       else if (result.kind === "edit") publish(edited(current, result.state));
