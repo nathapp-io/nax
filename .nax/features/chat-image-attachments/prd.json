@@ -3,7 +3,7 @@
   "feature": "chat-image-attachments",
   "branchName": "feat/chat-image-attachments",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T14:20:49.245Z",
+  "updatedAt": "2026-10-31T14:50:16.095Z",
   "userStories": [
     {
       "id": "US-001",
@@ -146,14 +146,17 @@
         "process"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A single additive clipboard module follows the existing injected Bun.spawn pattern with a specified platform table and cancellable timeout; unit cases plus real default-runner integration cases fit simple TDD."
+        "reasoning": "A single additive clipboard module follows the existing injected Bun.spawn pattern with a specified platform table and cancellable timeout; unit cases plus real default-runner integration cases fit simple TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/clipboard.ts",
@@ -167,7 +170,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8deb911d8237182f36e15b565bf7558faaa17c3c"
     },
     {
       "id": "US-004",
