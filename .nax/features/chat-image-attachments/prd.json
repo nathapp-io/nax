@@ -3,7 +3,7 @@
   "feature": "chat-image-attachments",
   "branchName": "feat/chat-image-attachments",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T13:44:12.662Z",
+  "updatedAt": "2026-10-31T14:11:07.604Z",
   "userStories": [
     {
       "id": "US-001",
@@ -31,14 +31,17 @@
         "parsing"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "One pure module, but four bounded binary-header parsers including JPEG marker walking require careful offset validation."
+        "reasoning": "One pure module, but four bounded binary-header parsers including JPEG marker walking require careful offset validation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "expectedFiles": [
         "packages/nax/src/chat/images/image-sniff.ts",
@@ -49,7 +52,11 @@
         "sniffImage returns a recognized WebP format without dimensions when the VP8, VP8L or VP8X dimension bytes are truncated."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "900192a8c94fa14e7e0d6e58d95a51f04492146d"
     },
     {
       "id": "US-002",
@@ -103,7 +110,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -150,7 +160,10 @@
         "packages/nax/test/unit/tui/chat/clipboard-image.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -203,7 +216,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -251,7 +267,10 @@
         "packages/nax/test/unit/tui/chat/image-draft.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -323,7 +342,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -375,7 +397,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -440,7 +465,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-009",
@@ -509,7 +537,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-010",
@@ -580,7 +611,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-011",
@@ -646,7 +680,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-012",
@@ -693,7 +730,10 @@
         "prepareImageSend returns the model's cannot-read-images refusal instead of rejecting when acceptsImages rejects and a known placeholder is present."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-013",
@@ -751,7 +791,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-014",
@@ -802,7 +845,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This is an additive enhancement to existing nax chat, not a greenfield agent/image stack. Graph-first navigation was attempted but codebase-memory MCP is not exposed in this session; findings below come from direct reads and text searches rooted at /Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax. All fourteen binding stories run in packages/nax, with exactly the supplied dependency graph. No changes to nax-agent, nax-agent-acp or nax-ai, no releases and no new dependencies are required. The lower image-content-parts feature (#2758) is already present: packages/nax-agent/src/session/image-input.ts:4-13 defines MIME types, MAX_IMAGES_PER_MESSAGE=10, MAX_IMAGE_BASE64_CHARS=5_242_880, MAX_REQUEST_IMAGE_BASE64_CHARS=20_971_520 and SendInput; its validateImageAttachments at :36 returns the first failure in count, image-order, total-size order. The count reason for eleven images is 'Image count exceeds the limit of 10 images per message'. AgentSession already accepts send(message, input?) and optional acceptsImages at packages/nax-agent/src/session/agent-session-types.ts:199-201. Missing persisted images already append exact trailing '[image missing]' lines at packages/nax-agent/src/native/session/transcript-images.ts:193-200. Treat those APIs and storage conventions as read-only integration dependencies; import image types, validation and constants from @nathapp/nax-agent's root, never nax-ai directly.\n\nArchitecture and implementation sequence: US-001 creates a pure magic/header sniffer; US-002 layers validation, byte encoding and display labels on it and exports the images barrel through src/chat/index.ts. US-003 clipboard effects, US-004 pure pasted-path parsing/input interception, US-005 immutable image draft and US-007 host plumbing can start independently. US-006 extends existing mentions only after US-002; US-008 extends ACP recording/handoff after US-002; US-009 adds transcript/replay rows after US-002/006. US-010 composes US-002/003/004/005 into the effectful hook and minimal ChatApp wiring; US-011 connects /image to that hook; US-012 composes draft and mention results; US-013 connects preparation, capability checks and host calls after US-007/008/010/012; US-014 connects sent-image rows and reset/history behavior after US-009/013. Binding dependencies are not to be expanded just to serialize shared files: coordinate narrowly scoped edits to ChatApp.tsx among US-010/011/013/014 and to chat/index.ts among host/image work. New source modules keep the heavy logic out of already-large components.\n\nExisting input path: packages/nax/src/tui/chat/ChatInput.tsx:44-52 holds InputDraft with editor, string history and optional browse, which stays unchanged. Its handle at :118-133 already supports complete/edit/submit. The latest draft ref at :510-515 and publish at :527-530 protect batched keypresses. submit at :581-589 clears the editor and records history BEFORE notifying ChatApp; refusal must therefore write submitted text back through handle.edit with a code-point end cursor, not merely leave React state unchanged. The useInput reducer at :613-633 presently calls editLine without a paste interceptor. Add the optional onPaste before editLine for multi-code-point unmodified non-return chunks; never route individual typed characters through it. packages/nax/src/tui/chat/line-editor.ts:137-152 ignores ctrl+v and :174-187 keeps editLine pure; do not add filesystem/clipboard operations there. Its cursor is a code-point index, so placeholders and fallback text must use code-point splicing, not UTF-16 slice offsets. US-004 trims before rejecting internal newlines: '/tmp/a.PNG \\n' is accepted after trimming. file:// parsing and percent decoding must never escape as exceptions from the key handler; do not expand '~'.\n\nScreen path: packages/nax/src/tui/chat/ChatApp.tsx:80-86 exposes _chatAppDeps.expandMentions. The screen owns draft, entries, input handle and sending ref at :169-185; ask/picker ownership and menu claims are computed at :205-266, and useInput at :269-281 currently handles ctrl+o and interrupt escape. Hook activation must honor ask cards, pickers and control locking without stealing unrelated keys. changeDraft at :440-444 must also update a latest-editor ref synchronously. useImageAttach owns separate ImageDraft state plus a ref and a serialized attachment queue. Resolve each asynchronous attachment against the newest editor after the read, preventing stale-cursor text loss and duplicate numbers under batched keys. Deps members must be looked up at call time for spyOn replacement. File reads cap allocation at 3_932_161 bytes and reject missing, unreadable and nonregular files as undefined. A pasted candidate that is missing or non-image must reinsert its original chunk, whereas slash/clipboard invalid-image flows produce notices. Avoid introducing a broad catch that converts an oversized pasted PNG into text; only missing/non-image falls back. Keep clipboard write behavior in clipboard.ts separate from the new read module (packages/nax/src/tui/chat/clipboard.ts:1-33).\n\nSend path and compatibility: submit currently distinguishes slash/plain at packages/nax/src/tui/chat/ChatApp.tsx:363-380 and prepares mentions through mentionPrepare; sendTurn at :383-419 locks the turn, prepares, appends sentEntries and calls host.send with two arguments unless a distinct title requires options. mention-send.ts:28-56 contains needsMentionExpansion and existing mentionPrepare, and :59-62 parses skills and mentions for transcript rows. New preparation must preserve exact existing calls for text-only messages, including expandMentions(text, { cwd, repoRoot }) on text-only or capability-absent hosts. Only present known placeholders carry images; deleted placeholders do not count toward attachment limits or send payload. Deduplicate repeated placeholders, order by first appearance and rewrite all occurrences with a single consistent renumbering map; unknown/history-only placeholders remain literal. Mention attachments follow placeholder attachments. Capability is queried once per prepared send, with rejection/absence treated as false; placeholder images refuse while mentions degrade to path-only. Refusal restores original submitted text and the same image draft, not renumbered/expanded text. A slash-prefixed submitted line with a present image is refused before parsing dispatch, including /quit and ACP/catalog commands; with no present image command behavior remains unchanged. Plain-message sends reset the image draft whenever they reach host.send, even if all placeholders were deleted; do not reset on preparation refusal. US-013 handles preparation/restore/payload; US-014 owns image-row wiring and universal plain-send reset. The existing title/history remain the user's submitted text.\n\nHost integration: packages/nax/src/chat/chat-host.ts:86-88 has title-only ChatSendOptions; :91-121 defines ChatHost. Despite the spec's illustrative ChatHostImpl name, the actual implementation is the unexported NativeChatHost at :142, constructed via createChatHost. Do not rename it or invent an exported ChatHostImpl: modify that implementation and test via createChatHost. send at :491-529 delegates to runChatTurn at :506 while maintaining listener, ledger, nested work and metadata. Limit this 586-line file's edits to ImageAttachment import, optional interface fields, a one-line capability delegation (and necessary helper import), and options.images pass-through; stay at or below 600 lines. Add sessionAcceptsImages separately, preserving the wrapped method's receiver and returning false without an open session. packages/nax/src/chat/turn-runner.ts:9-27 defines RunChatTurnOptions and :53-76 consumes session.send(message), records usage, handles asks, drains ledger and writes metadata. Select the two-argument call only for nonempty images; do not alter streaming/meta semantics. Optional members keep existing hand-built fake hosts compatible.\n\nMentions: packages/nax/src/chat/mentions/types.ts:10 defines the status union and :42 ExpandedMentions; mention-envelope.ts:28 and :105-117 allowlist parsed statuses. mention-expand.ts:25-28 defines MentionWhere; :121-135 builds ordered records; :138-150 resolves/deduplicates/bounds/ignore-checks before contentRecord at :195-202. Preserve realpath containment, .git exclusion, ignored-file behavior, folder handling and the existing 8 MiB read limit. Insert image recognition after readBytes but before isBinary, using the images/index barrel from inside chat to avoid importing the chat root back into itself. Carry an ordered attachment collection through expansion and omit images when empty. Attachment source is located.path (typed path), not the canonical read path. Misnamed text .png files remain text and actual JPEG .dat files are images. layout-attachment.ts:49-50 currently enables only attached/cut/folder expansion; add image's label switch arm at :63-74 but leave it unexpandable. Its formatMentionToken call means the authoritative AC expects 'attached @shot.png', not prose shorthand 'attached shot.png'. mention-entries.ts:18-30 already highlights all non-refused records, so image highlighting should need no special case. US-006 touches a repo-boundary-sensitive path; use strict isolated TDD and preserve boundary regression assertions.\n\nACP: packages/nax/src/chat/open-chat-session.ts:289 wraps opened ACP sessions with recordAcpTurns, so new capability support must survive this wrapper, not only the transport. acp-recorder.ts:108-174 returns a manual forwarding object; send at :137-154 synchronously claims the underlying turn, prepends pending handoff, and records only after worked+ended evidence through forwarded at :63-103. Preserve this successful-work condition, pending handoff consumption, original user text storage, tracked appends and close drain. Add a bound acceptsImages getter, optional SendInput forwarding only with nonempty images, and acpTurnMessages images. acp-history.ts:111-121 currently builds a user/assistant pair; add images only on the nonempty user message, leaving assistant origin/tool summary untouched. acp-handoff-entries.ts:58-74 joins/caps entry text; join content and ordered image notes before capped. Its cap preserves the existing first 4,000 UTF-16 units plus ellipsis behavior. acp-handoff.ts:26 consumes handoffEntries for its overall suffix bound. Do not carry image bytes across brain switches or change storage schema; feature 1's append/store path handles image persistence. Host and ACP stories involve sessions and therefore use three-session-tdd under the supplied security override.\n\nTranscript: transcript-model.ts:24 includes attachment entries but no image entry. layout.ts dispatches the union and renders attachments via layout-attachment.ts; add a small layout-image.ts using cardRows/resultPrefix/muted style. transcript-click.ts:35-46 only toggles recognized collapsible kinds and checks attachmentExpandable, so a new image entry naturally stays inert. sentEntries must append only the first max(0, images.length - parsed-image-record-count) image labels; mentioned images already have attachment rows. history-replay.ts:16-27 currently reconstructs skills/mentions independently, and :89 calls replayUser(message.content), dropping images. Pass stored images into the shared sentEntries path after stripping only exact trailing '[image missing]' lines; keep compaction notices at :18-20 and assistant/tool replay untouched. Content exactly '[image missing]' must not create a blank user row. Missing images can shrink the displayed nonmention count on resume; this is explicitly accepted, and the missing row must remain visible.\n\nCommand integration: slash-commands.ts:22-26 defines SlashOutcome; COMMANDS at :45-61 has 15 entries and plugins immediately precedes mcp, descriptions at :66-83 drive both help and menu. ACP_OWN_FEATURES at :157-161 must not gain image, since /image is a host builtin on every brain. runSlashCommand at :255 onward should return attach using command.rest.trim(), retaining internal spaces rather than args splitting. ChatApp runCommand at :323-356 needs the new outcome branch before destructuring command outcomes. The turn-busy command guard remains in force. Existing UI tests in slash-menu.test.tsx:394-407 pin the fifteen-builtins overflow; change that test title to sixteen and only its corresponding overflow to '  … 9 more', not unrelated fixture-based '8 more' assertions at :257-296. slash-commands.test.tsx:102 iterates COMMANDS, so its mount at :17 must stub _imageAttachDeps.readClipboard to none and restore it, preventing real OS clipboard commands in all-command tests. :232 already verifies builtin commands are blocked during a turn. Insertion after plugins leaves skills navigation and mcp-through-quit ordering intact.\n\nTests and regression path: existing unit coverage includes test/unit/chat/turn-runner.test.ts, chat-host.test.ts and ACP host suites; test/unit/chat/acp/acp-recorder.test.ts, acp-recorder-record.test.ts, acp-history.test.ts, acp-handoff-entries.test.ts and acp-handoff.test.ts; test/unit/chat/mentions/mention-envelope.test.ts, mention-expand.test.ts and mention-expand-limits.test.ts; test/unit/tui/chat/clipboard.test.ts, line-editor.test.ts, mention-send.test.ts, mention-entries.test.ts, layout-attachment.test.ts, layout.test.ts, history-replay.test.ts and history-replay-acp.test.ts. New pure-module tests belong under test/unit/ mirroring source; mounted screen tests under test/ui/chat/ must enter at stdin ctrl+v/paste/return, not invoke hook internals as substitutes. packages/nax/test/ui/chat/chat-app-mentions.test.tsx:68-130 provides the fake-host, ink-testing-library and act pattern; :158-177 pins expansion arguments, title and exact two-argument no-mention calls. Also preserve test/ui/chat/chat-input.test.tsx, slash-commands.test.tsx, slash-menu.test.tsx, chat-asks-keys.test.tsx and chat-transcript-click.test.tsx behavior. Use existing shared helpers/_deps seams, no mock.module or monkey-patched globals. Clipboard process integration cases exercise the default runner (missing executable, 50ms killed sleep, captured printf) while all screen clipboard calls are stubbed. A cancelled timeout must be cleaned up on every exit; drain stdout while waiting for child completion, kill on timeout and classify ENOENT as missing. Security-sensitive paths receive strict isolation; other asynchronous cross-module UI integration uses three-session-tdd-lite.\n\nMigration/risk: all types are optional additions or new union arms, with empty-image calls intentionally retaining one/two argument shapes; there is no transcript migration, package API update or permission-policy change. Old history placeholders carry no image bytes. Main risks are stale closures and pending attachments overwriting new input, attachment queue races, repeated-placeholder renumbering collisions, leaked clipboard children/timers, header-bound reads on truncated JPEG/WebP, mentioning images bypassing repo checks, capability loss through ACP wrappers, mention-row double counting and late failure after ChatInput has cleared text. Suggested hardening criteria are kept separate from spec ACs. Respect docs/architecture/ARCHITECTURE.md:170-188 and package AGENTS.md: Bun-native I/O through injected effects, barrel boundaries, short helpers, no any and no new thrown errors for attachment failures. ChatApp.tsx has 621 lines and ChatInput.tsx 643; keep new algorithms in the dedicated modules rather than expanding their ownership. The .ts file gate is 600 hard/400 soft per architecture, irrespective of older generated prose. Run targeted bun test paths from packages/nax during implementation, never bare bun test or bun run nax; pipeline handles normal gates, and coverage must not be manually run inside NAX_SANDBOXED=1. This planning task writes only the PRD; it does not execute implementation or tests.\n\nRefine-pass audit: enumerated and retained all 155 numbered spec ACs in their original stories and order, including the qualifying regression clauses about existing behavior, unchanged arguments, code-point cursors, source-of-format, count-check precedence, image-order and reset explanations. The 10 additional acceptance entries cover the failure table, direct host rejection, recorder transport-failure propagation, existing command busy/menu regressions and resetting a sent draft even when host.send rejects. Total acceptance entries are 165; no original criterion was removed. Made mention scenarios independently specified rather than referring to a previous criterion, made true capability an explicit setup for the combined-image preparation case, replaced placeholder count-error text with the current validator's exact reason and identified the actual host through createChatHost rather than assuming an exported ChatHostImpl. Preserved all thirteen feature-level exclusions verbatim and all fourteen binding IDs/workdirs/dependency arrays; every contextFiles list retains the spec's supplied recommendations within the five-file limit and no story lists its own output as context. Re-read ChatApp submit/sendTurn, ChatInput input/edit behavior, host interfaces, turn runner, mention boundaries, recorder forwarding, handoff capping, replay, validator and command/menu regressions against the draft. Clipboard reading, mention expansion and ACP wrapper changes are standard additive work and were reduced to medium complexity; clipboard uses tdd-simple, while boundary/session stories retain the mandatory strict TDD override. Stateful attachment serialization and screen submission remain complex for their actual asynchronous integration risks. Resolved the draft's universal-refusal-notice wording against the authoritative paste AC: a pasted non-image reinserts the original chunk without a notice; clipboard and /image non-images still produce the refusal notice. Each story now contains an explicit negative-path criterion, and every changed existing behavior has a regression anchor. Source and tests remain untouched. No command runner or JSON parser is exposed in this session, so this audit is based on direct file inspection rather than claiming an executed validation.",
