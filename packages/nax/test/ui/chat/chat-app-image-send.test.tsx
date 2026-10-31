@@ -45,6 +45,8 @@ const NOT_SENT = "images not sent: Image count exceeds the limit of 10 images pe
 const TOO_MANY = "image not attached: at most 10 images per message";
 /** The error glyph, so "a notice, not an error row" can be asserted on the frame. */
 const ERROR_GLYPH = "✗";
+/** What a refusal names a line it could not put back into a prompt the user has since edited. */
+const DROPPED = "not sent: ";
 
 /** The code points one `[Image #N]` placeholder occupies. */
 const PLACEHOLDER_CHARS = "[Image #1]".length;
@@ -221,6 +223,7 @@ function mount(options: HostOptions = {}) {
     promptRow,
     press,
     pressAndSettle,
+    settle,
     type,
     submit,
     pasteImage,
@@ -355,6 +358,37 @@ describe("a refused send puts the line back", () => {
     expect(ui.switches.count).toBe(0);
     expect(ui.send).not.toHaveBeenCalled();
     expect(ui.promptRow()).toBe("> /model [Image #1]");
+  });
+
+  test("B2 a refusal that lands after an edit keeps the newer prompt and names the line it dropped", async () => {
+    // The capability probe holds the send mid-preparation: the prompt stays live while it runs.
+    const capability = Promise.withResolvers<boolean>();
+    let accepts = capability.promise;
+    const ui = mount({ accepts: () => accepts });
+    await ui.pasteImage(png(2, 3));
+    ui.type(" look");
+    await ui.pressAndSettle(RETURN);
+    expect(ui.send).not.toHaveBeenCalled();
+    // While the probe is out, the user starts the next message and attaches a picture to it.
+    ui.type("next ");
+    await ui.pasteImage(png(2, 4));
+    expect(ui.promptRow()).toBe("> next [Image #2]");
+    capability.resolve(false);
+    await ui.settle();
+    expect(ui.send).not.toHaveBeenCalled();
+    expect(ui.frame()).toContain(CANNOT_READ);
+    // The newer draft survives: the refused line never overwrites it.
+    expect(ui.promptRow()).toBe("> next [Image #2]");
+    // And the line the refusal could not put back is named rather than silently dropped.
+    expect(ui.frame()).toContain(`${DROPPED}[Image #1] look`);
+    // The draft still holds both pictures: the newer one travels once the brain reads images.
+    accepts = Promise.resolve(true);
+    await ui.pressAndSettle(RETURN);
+    const [message] = firstCall(ui.send, "host.send");
+    expect(message).toBe("next [Image #1]");
+    const images = sentImages(ui.send);
+    expect(images).toHaveLength(1);
+    expect(images[0]?.height).toBe(4);
   });
 
   test("AC-9 eleven images across the draft and the mentions are refused by the validator's reason", async () => {

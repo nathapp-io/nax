@@ -22,6 +22,7 @@ import { assertDefined, firstCall } from "@test/helpers";
 import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
 import { type ChatHost, type ChatHostState, type ChatSendOptions, createChatAskController } from "@/chat";
+import type { ChatJobs } from "@/chat/jobs/job-runner";
 import { _chatAppDeps, ChatApp } from "@/tui/chat/ChatApp";
 import { _imageAttachDeps } from "@/tui/chat/use-image-attach";
 
@@ -42,6 +43,8 @@ const PLACEHOLDER_CHARS = "[Image #1]".length;
 const LABEL = "image 1 · png · 2×3 · 1 KB · clipboard";
 /** What a case's turn rejection says, so the error row can be read off the frame. */
 const TURN_FAILED = "turn failed";
+/** The notice a background job delivers, which consumes no picture from the prompt. */
+const JOB_NOTICE = "[nax-jobs] job run-1 (run f1) ended: succeeded";
 /** The bytes a sniffer reads as a PNG: signature, then an IHDR carrying width and height. */
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
@@ -111,6 +114,8 @@ interface HostOptions {
   readonly accepts?: () => Promise<boolean>;
   /** Absent: the turn settles at once. Present: `host.send` rejects with it. */
   readonly reject?: Error;
+  /** Absent: the screen has no background jobs, so nothing is delivered behind the prompt. */
+  readonly jobs?: ChatHost["jobs"];
 }
 
 /**
@@ -136,8 +141,51 @@ function fakeHost(options: HostOptions = {}) {
     listSessions: async () => [],
     close: async () => {},
     ...(options.accepts === undefined ? {} : { acceptsImages: options.accepts }),
+    ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
   };
   return { host, send };
+}
+
+/**
+ * Background jobs holding one notice queue. `peekNotice` leaves the head in place and
+ * `takeNotice` removes it, as the runner does, so the screen's own delivery path — deliver,
+ * then acknowledge — is what a case exercises.
+ */
+function fakeJobs() {
+  const listeners = new Set<() => void>();
+  const notices: string[] = [];
+  const jobs: ChatJobs = {
+    list: () => [],
+    running: () => [],
+    owned: () => [],
+    get: () => undefined,
+    start: async () => {
+      throw new Error("unused");
+    },
+    cancel: async () => {
+      throw new Error("unused");
+    },
+    canCancel: async () => ({ ok: true }),
+    attach: async () => {},
+    logTail: async () => "",
+    peekNotice: () => notices[0],
+    takeNotice: () => notices.shift(),
+    onChange: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    dispose: () => {},
+  };
+  return {
+    jobs,
+    /** Queue a notice and wake the screen the way a finished job does. */
+    queue: (text: string): void => {
+      notices.push(text);
+      for (const listener of listeners) listener();
+    },
+  };
 }
 
 /** The mounted screen, with its frame rows and the verbs a case drives it with. */
@@ -189,6 +237,13 @@ function mount(options: HostOptions = {}) {
     );
     await settle();
   };
+  /** Run an action the screen subscribes to — a job finishing — inside the act that redraws. */
+  const settleAfter = (action: () => void): Promise<void> =>
+    Promise.resolve(
+      act(async () => {
+        action();
+      }),
+    );
   /** A line typed one code point at a time, so no chunk counts as a paste. */
   const type = (text: string): void => {
     for (const char of text) press(char);
@@ -216,6 +271,7 @@ function mount(options: HostOptions = {}) {
     press,
     pressAndSettle,
     settle,
+    settleAfter,
     type,
     submit,
     pasteImage,
@@ -328,6 +384,26 @@ describe("a send empties the image draft", () => {
     expect(second[0]).toBe("[Image #1]");
     expect(second[2]?.images).toHaveLength(1);
     expect(second[2]?.images?.[0]?.height).toBe(4);
+  });
+});
+
+describe("a background notice leaves the pending image alone", () => {
+  test("B1 a delivered job notice consumes no image, so the draft survives it", async () => {
+    const { jobs, queue } = fakeJobs();
+    const ui = mount({ accepts: async () => true, jobs });
+    await ui.pasteImage(png(2, 3));
+    ui.type(" look");
+    expect(ui.promptRow()).toBe("> [Image #1] look");
+    await ui.settleAfter(() => queue(JOB_NOTICE));
+    await ui.settle();
+    // The notice took the turn, and it took nothing from the prompt.
+    expect(firstCall(ui.send, "host.send")[0]).toBe(JOB_NOTICE);
+    expect(ui.promptRow()).toBe("> [Image #1] look");
+    await ui.pressAndSettle(RETURN);
+    const second = callAt(ui.send, 1);
+    expect(second[0]).toBe("[Image #1] look");
+    expect(second[2]?.images).toHaveLength(1);
+    expect(second[2]?.images?.[0]?.height).toBe(3);
   });
 });
 

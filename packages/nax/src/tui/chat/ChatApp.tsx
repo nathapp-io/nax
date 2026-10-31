@@ -103,6 +103,12 @@ const TURN_BUSY_NOTICE = "wait for the turn to finish (Ctrl-C to interrupt)";
 const QUIT = "quit";
 /** What a slash line with a picture attached is told: an image travels with a plain message only. */
 const IMAGES_PLAIN_ONLY = "images can only be sent with a plain message";
+/**
+ * What the transcript says about a refused line that could not go back into the prompt: the
+ * user edited it while the send was being prepared, so the newer draft stays and the refused
+ * line is named here rather than silently overwritten (see `imagePrepare`).
+ */
+const LINE_NOT_SENT = "not sent: ";
 /** What the input offers after a declined ask, until the next submit says what to do instead. */
 const TELL_NAX_HINT = "tell nax what to do instead";
 /** ink reports ctrl+o as the letter `o` with the ctrl modifier, so the key is its `input`. */
@@ -135,9 +141,10 @@ interface ComposedSend {
 
 /**
  * What a send's prepare step resolves: the composed message to send, or the notice that says
- * why the line goes nowhere.
+ * why the line goes nowhere — carrying the line itself when the prompt moved on while the
+ * preparation ran and the line could not go back into it (see `imagePrepare`).
  */
-type PreparedSend = ComposedSend | { readonly notice: string };
+type PreparedSend = ComposedSend | { readonly notice: string; readonly dropped?: string };
 
 interface TerminalSize {
   readonly columns: number;
@@ -204,6 +211,12 @@ export function ChatApp({
    * its placeholder at the cursor as it stands then, not the one the keypress saw.
    */
   const editorRef = useRef<EditorState>(EMPTY_EDITOR);
+  /**
+   * How many times the prompt has changed. A send that can only be refused after an `await`
+   * — the capability probe — reads it again when the answer lands: the same number means the
+   * prompt is still the line it submitted, and a different one means the user has moved on.
+   */
+  const promptRevision = useRef(0);
   const sending = useRef(false);
   const [, refresh] = useState(0);
 
@@ -429,8 +442,14 @@ export function ChatApp({
    * `draft` is the draft the message was submitted with, not the draft as it stands when the
    * preparation settles: the prompt and ctrl+v stay live while the capability is asked, and an
    * image attached in that window belongs to the *next* message.
+   *
+   * A refusal puts the line back only while the prompt still holds it. `revision` is the prompt's
+   * count when the line was submitted, so the user may have typed, deleted or attached a picture
+   * for the next message by the time the answer lands; overwriting that draft would delete an
+   * edit the refusal never saw. The newer prompt then stays, and the refused line travels with
+   * the notice as `dropped` so it is named in the transcript instead of vanishing.
    */
-  function imagePrepare(text: string, draft: ImageDraft): () => Promise<PreparedSend> {
+  function imagePrepare(text: string, draft: ImageDraft, revision: number): () => Promise<PreparedSend> {
     return async () => {
       const result = await prepareImageSend({
         text,
@@ -442,8 +461,11 @@ export function ChatApp({
         model: host.current().model,
       });
       if (result.kind === "refuse") {
-        restorePrompt(text);
-        return { notice: result.notice };
+        if (promptRevision.current === revision) {
+          restorePrompt(text);
+          return { notice: result.notice };
+        }
+        return { notice: result.notice, dropped: text };
       }
       return { message: result.message, images: result.images, draft };
     };
@@ -466,7 +488,9 @@ export function ChatApp({
         await sendTurn({ message, draft: submitted });
         return;
       }
-      await sendTurn({ message, draft: submitted }, imagePrepare(message, submitted));
+      // The prompt's count as the line leaves it, so a refusal that lands later can tell
+      // whether the user has redrawn the prompt since (see `imagePrepare`).
+      await sendTurn({ message, draft: submitted }, imagePrepare(message, submitted, promptRevision.current));
       return;
     }
     if (command.name === QUIT) {
@@ -495,9 +519,10 @@ export function ChatApp({
    * still in flight, must not keep the numbers of the pictures it already took: the next
    * ctrl+v starts again at `[Image #1]`.
    *
-   * Only the submitted draft goes: the prompt stays live while a send is prepared, so a picture
-   * attached in that window is a draft the user started for the next message, and wiping it
-   * here would delete an image nothing had even tried to send.
+   * Only a message the screen composed from the prompt owns a draft, and only that draft is
+   * emptied. A picture attached while a send was being prepared is a draft the user started for
+   * the next message, and a background notice — a job's, a task's — was never composed from the
+   * prompt at all: it carries no draft, so the pending pictures stay exactly where they are.
    */
   async function sendMessage(
     prepared: ComposedSend,
@@ -505,7 +530,7 @@ export function ChatApp({
     onEvent: (event: SessionEvent) => void,
   ): Promise<void> {
     const images = prepared.images ?? [];
-    imageAttach.reset(prepared.draft);
+    if (prepared.draft !== undefined) imageAttach.reset(prepared.draft);
     if (images.length > 0) await host.send(prepared.message, onEvent, { title, images });
     else if (prepared.message === title) await host.send(prepared.message, onEvent);
     else await host.send(prepared.message, onEvent, { title });
@@ -524,6 +549,9 @@ export function ChatApp({
       const prepared = prepare ? await prepare() : composed;
       if ("notice" in prepared) {
         append({ kind: "notice", text: prepared.notice });
+        if (prepared.dropped !== undefined) {
+          append({ kind: "notice", text: `${LINE_NOT_SENT}${prepared.dropped}` });
+        }
         return false;
       }
       appendAll(sentEntries(prepared.message, prepared.images));
@@ -574,6 +602,10 @@ export function ChatApp({
     // The image hook reads this instead of a rendered draft: a read that lands after an
     // `await` inserts into the text as it stands then, not as it stood at the key press.
     editorRef.current = next.editor;
+    // And a refusal that lands after an `await` reads this count to see whether the prompt the
+    // refused line came from is still the one standing: an attach or a typed key moves it too,
+    // since both write through this handle.
+    promptRevision.current += 1;
     slashKeys.sawPrompt(next.editor.text);
     mention.sawEditor(next.editor);
     setDraft(next);

@@ -109,9 +109,11 @@ export interface ImageAttach {
    * Empty the draft of the images a send consumed. `consumed` is the draft as it stood when
    * the message was submitted, so a picture attached while that send was still being prepared
    * — a draft the user started afterwards — stays behind with the number it already holds.
-   * Absent, or the draft as it stands, empties everything: the plain "start over" reset.
+   * Required, not optional: only a message the screen composed from the prompt has a draft to
+   * spend, and a caller with nothing to spend (a background notice) must leave the draft alone
+   * rather than wipe pictures nothing was asked to send.
    */
-  reset(consumed?: ImageDraft): void;
+  reset(consumed: ImageDraft): void;
 }
 
 /** A file to read, named in a notice the way the user gave it. */
@@ -260,7 +262,7 @@ export function useImageAttach(options: ImageAttachOptions): ImageAttach {
    * asked for while the send was still preparing. A number is never reused, so a survivor
    * keeps the number it holds — `imagesForSend` renumbers on the way out.
    */
-  function resetImages(consumed: ImageDraft = current.current): void {
+  function resetImages(consumed: ImageDraft): void {
     const remaining = current.current.images.filter((draftImage) => !consumed.images.includes(draftImage));
     if (remaining.length === 0) {
       publish(EMPTY_IMAGE_DRAFT);
