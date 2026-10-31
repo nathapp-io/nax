@@ -20,6 +20,7 @@ type GitFake = (args: string[], cwd: string) => Promise<GitResult>;
 interface FakeRepo {
   readonly candidates: Map<string, string>;
   readonly contents: Map<string, string>;
+  readonly sizes: Map<string, number>;
 }
 
 const originalDeps = { ...chat._mentionExpandDeps };
@@ -31,6 +32,7 @@ let gitFake: GitFake;
 function addFile(candidate: string, realPath: string, text: string): void {
   repo.candidates.set(candidate, realPath);
   repo.contents.set(realPath, text);
+  repo.sizes.set(realPath, new TextEncoder().encode(text).length);
 }
 
 function expand(text: string): Promise<{ message: string; records: readonly chat.MentionRecord[] }> {
@@ -42,7 +44,7 @@ function notesOf(records: readonly chat.MentionRecord[]): string[] {
 }
 
 beforeEach(() => {
-  repo = { candidates: new Map(), contents: new Map() };
+  repo = { candidates: new Map(), contents: new Map(), sizes: new Map() };
   repo.candidates.set(REPO, REPO);
   gitCalls = [];
   gitFake = async () => NOT_IGNORED;
@@ -50,6 +52,11 @@ beforeEach(() => {
     const real = repo.candidates.get(path);
     if (real === undefined) throw new Error(`ENOENT: no such file or directory, realpath '${path}'`);
     return real;
+  };
+  chat._mentionExpandDeps.stat = async (path) => {
+    const size = repo.sizes.get(path);
+    if (size === undefined) throw new Error(`ENOENT: no such file or directory, stat '${path}'`);
+    return { isDirectory: false, size };
   };
   chat._mentionExpandDeps.readBytes = async (path) => {
     const text = repo.contents.get(path);
