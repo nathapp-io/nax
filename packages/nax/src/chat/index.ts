@@ -69,11 +69,14 @@ export { type ChatModelChoicesInput, chatEffortLevels, chatModelChoices, tierMod
 export type { ChatJob, ChatJobs } from "./jobs";
 export {
   _mentionExpandDeps,
+  _mentionFilesDeps,
+  createMentionFileIndex,
   type ExpandedMentions,
   expandChatMentions,
   findMentionTokens,
   formatMentionMessage,
   formatMentionToken,
+  listMentionFiles,
   MENTION_BINARY_PROBE_BYTES,
   MENTION_FILE_INDEX_MAX_AGE_MS,
   MENTION_FILE_MAX_CHARS,
