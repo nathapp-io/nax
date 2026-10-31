@@ -27,6 +27,7 @@ import {
   type MentionFileRow,
 } from "@/chat";
 import { _chatAppDeps, ChatApp } from "@/tui/chat/ChatApp";
+import { SLASH_MENU_MAX_ROWS } from "@/tui/chat/slash-menu";
 
 /** The keys the picker owns, as ink parses the sequences a terminal sends. */
 const RETURN = "\r";
@@ -259,6 +260,17 @@ describe("the picker opens on a mention query", () => {
     await ui.settle();
     expect(ui.frame()).not.toContain("chat-host.ts");
     expect(ui.rows()).toContain("> see @chh");
+  });
+
+  test("draws no more rows than the slash menu's cap", async () => {
+    const many = Array.from({ length: 20 }, (_unused, index) => row(`file-${String(index).padStart(2, "0")}.ts`));
+    scriptIndex(listed(many));
+    const ui = mount();
+    ui.type("@file");
+    await ui.settle();
+    const drawn = ui.rows().filter((line) => line.startsWith("❯ ") || /^ {2}file-/.test(line));
+    expect(drawn.length).toBe(SLASH_MENU_MAX_ROWS);
+    expect(drawn[0]).toBe("❯ file-00.ts");
   });
 });
 

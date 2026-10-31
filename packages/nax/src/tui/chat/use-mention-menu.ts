@@ -30,6 +30,7 @@ import { menuRowsFor } from "./bottom-region";
 import type { ChatInputHandle } from "./ChatInput";
 import type { EditorState } from "./line-editor";
 import { applyMentionRow, filterMentionRows, type MentionQuery, mentionQueryAt } from "./mention-menu";
+import { SLASH_MENU_MAX_ROWS } from "./slash-menu";
 
 /** The pointer's first row: every new query starts there, as the slash menu's does. */
 const FIRST_ROW = 0;
@@ -154,8 +155,12 @@ export function useMentionMenu(options: MentionMenuOptions): MentionMenuControll
     void index.get().then(settle, () => settle(NO_LIST));
   }, [index, options.editor]);
 
-  /** The rows the picker may draw for `count` matches: its share of the bottom region. */
-  const shareOf = (count: number): number => menuRowsFor({ rows: count, budget: latest.current.budget });
+  /**
+   * The rows the picker may draw for `count` matches: at most the slash menu's own cap, and
+   * never more than its share of the bottom region the screen can spare.
+   */
+  const shareOf = (count: number): number =>
+    menuRowsFor({ rows: Math.min(count, SLASH_MENU_MAX_ROWS), budget: latest.current.budget });
 
   /** The mention being typed right now, and the rows the loaded list keeps for it. */
   const claim = (): MentionClaim | undefined => {
