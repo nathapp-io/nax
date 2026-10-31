@@ -3,7 +3,7 @@
   "feature": "chat-file-mentions",
   "branchName": "feat/chat-file-mentions",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T06:49:10.954Z",
+  "updatedAt": "2026-10-31T07:11:43.133Z",
   "userStories": [
     {
       "id": "US-001",
@@ -113,14 +113,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "One new expander and an additive barrel export follow the existing injected git wrapper, making scope medium; canonical containment, symlink/.git exclusion and fail-closed ignore checks enforce access control, so the security override requires three-session-tdd."
+        "reasoning": "One new expander and an additive barrel export follow the existing injected git wrapper, making scope medium; canonical containment, symlink/.git exclusion and fail-closed ignore checks enforce access control, so the security override requires three-session-tdd.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/mentions/mention-envelope.ts",
@@ -144,7 +147,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "64facd7230733961c94333dd99c4f477191b20db"
     },
     {
       "id": "US-003",
