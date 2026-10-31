@@ -13,6 +13,7 @@ import type { ConversationMessage } from "@nathapp/nax-ai";
 import { getLogger, NaxError } from "#src/infra/index";
 import { writeFileAtomic } from "#src/internal/atomic-write";
 import { historyFromTranscript, type TranscriptIdentity, transcriptDocFor } from "./transcript-identity.ts";
+import { rehydrateTranscriptImages, splitTranscriptImages } from "./transcript-images.ts";
 import type { TranscriptDoc, TranscriptStore, TurnMarker } from "./transcript-types.ts";
 
 export { type TranscriptIdentity, transcriptModelIdentity } from "./transcript-identity.ts";
@@ -59,14 +60,16 @@ export async function readTranscriptDoc(dir: string, sessionName: string): Promi
   }
   if (Array.isArray(parsed)) return { savedAt: LEGACY_SAVED_AT, messages: parsed as ConversationMessage[] };
   if (typeof parsed !== "object" || parsed === null) throw corruptTranscript(sessionName, "not a transcript document");
-  const doc = parsed as TranscriptDoc;
+  const doc = await rehydrateTranscriptImages(transcriptPath(dir, sessionName), parsed);
   return { ...doc, messages: doc.messages ?? [] };
 }
 
 async function writeTranscriptDoc(dir: string, sessionName: string, doc: TranscriptDoc): Promise<void> {
+  const path = transcriptPath(dir, sessionName);
+  const stored = await splitTranscriptImages(path, doc);
   await mkdir(dir, { recursive: true });
-  // Atomic (#3): a torn transcript is unrecoverable — every later load throws TRANSCRIPT_CORRUPT.
-  await writeFileAtomic(transcriptPath(dir, sessionName), JSON.stringify(doc, null, 2));
+  // Publish JSON only after all image files have been published successfully.
+  await writeFileAtomic(path, JSON.stringify(stored, null, 2));
 }
 
 /**

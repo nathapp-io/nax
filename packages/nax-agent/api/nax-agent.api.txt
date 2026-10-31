@@ -806,6 +806,7 @@ _srtBackendDeps
 _systemOneClientDeps
 _terminalPromptDeps
 _transcriptArchiveDeps
+_transcriptImagesDeps
 abortableSleep
 adaptProviderTool
 advertisedSchemaBytes
