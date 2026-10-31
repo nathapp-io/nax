@@ -3,7 +3,7 @@
   "feature": "image-content-parts",
   "branchName": "feat/image-content-parts",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T11:02:19.235Z",
+  "updatedAt": "2026-10-31T11:06:13.540Z",
   "userStories": [
     {
       "id": "US-001",
@@ -315,14 +315,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A bounded pure selection algorithm plus a request-wrapper integration, but session-context/resource boundary behavior requires security-isolated TDD."
+        "reasoning": "A bounded pure selection algorithm plus a request-wrapper integration, but session-context/resource boundary behavior requires security-isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/native/session/turn-complete-step.ts",
@@ -343,7 +346,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "62b6b2b33fde95b586c55170b7a0c0e4eabbad5b"
     },
     {
       "id": "US-006",
