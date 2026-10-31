@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type ForgeDeps, withNaxBotMarker } from "@/forge";
 import { itemKey, renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
+import type { LiveStatus } from "@/workflow/live-status";
 import type { OpenItem } from "@/workflow/types";
 
 const item: OpenItem = { id: "D-1", kind: "advisor", issue: "needs a change" };
@@ -28,6 +29,18 @@ function readStage(argv: readonly string[]): Options["fail"] | "other" {
   if (endpoint.includes("/issues/7/comments?")) return "comments";
   if (endpoint.includes("/reviews?")) return "reviews";
   return "other";
+}
+
+function indexComments(key: string, mode: Options["index"]) {
+  if (mode === "missing") return [];
+  return [
+    {
+      id: 9,
+      user: { login: "nax" },
+      created_at: "2026-10-13T09:12:00Z",
+      body: withNaxBotMarker(renderItemIndex({ keys: mode === "empty" ? [] : [key] }), "w-index"),
+    },
+  ];
 }
 
 function fixture(options: Options = {}) {
@@ -72,6 +85,31 @@ function fixture(options: Options = {}) {
       comments: { nodes: comments },
     },
   ];
+  const ok = (data: unknown) => ({ exitCode: 0, stdout: JSON.stringify(data), stderr: "" });
+  function answer(argv: readonly string[], stage: ReturnType<typeof readStage>) {
+    if (stage === "resolve")
+      return {
+        exitCode: 0,
+        stdout: options.undetected ? "git@unknown.test:o/r.git" : "git@github.com:o/r.git",
+        stderr: "",
+      };
+    if (argv.includes("--version")) return { exitCode: 1, stdout: "", stderr: "not installed" };
+    if (stage === "state") return ok({ isDraft: options.isDraft ?? false, body: "" });
+    if (stage === "user") return ok({ login: "nax", id: 1 });
+    if (stage === "threads")
+      return ok({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: { nodes, pageInfo: { hasNextPage: false, endCursor: null } },
+            },
+          },
+        },
+      });
+    if (stage === "comments") return ok(indexComments(key, options.index));
+    if (stage === "reviews") return ok([]);
+    throw new Error(`unexpected argv: ${argv.join(" ")}`);
+  }
   const deps: ForgeDeps = {
     readText: async () => null,
     run: async (argv) => {
@@ -89,45 +127,11 @@ function fixture(options: Options = {}) {
         if (options.throws) throw new Error(`${stage} offline`);
         return { exitCode: 1, stdout: "", stderr: `${stage} offline` };
       }
-      const ok = (data: unknown) => ({ exitCode: 0, stdout: JSON.stringify(data), stderr: "" });
-      if (stage === "resolve")
-        return {
-          exitCode: 0,
-          stdout: options.undetected ? "git@unknown.test:o/r.git" : "git@github.com:o/r.git",
-          stderr: "",
-        };
-      if (argv.includes("--version")) return { exitCode: 1, stdout: "", stderr: "not installed" };
-      if (stage === "state") return ok({ isDraft: options.isDraft ?? false, body: "" });
-      if (stage === "user") return ok({ login: "nax", id: 1 });
-      if (stage === "threads")
-        return ok({
-          data: {
-            repository: {
-              pullRequest: {
-                reviewThreads: { nodes, pageInfo: { hasNextPage: false, endCursor: null } },
-              },
-            },
-          },
-        });
-      if (stage === "comments")
-        return ok(
-          options.index === "missing"
-            ? []
-            : [
-                {
-                  id: 9,
-                  user: { login: "nax" },
-                  created_at: "2026-10-13T09:12:00Z",
-                  body: withNaxBotMarker(renderItemIndex({ keys: options.index === "empty" ? [] : [key] }), "w-index"),
-                },
-              ],
-        );
-      if (stage === "reviews") return ok([]);
       if (endpoint.endsWith("/permission")) {
         if (options.permission === "throws") throw new Error("permission offline");
         return ok({ permission: options.permission ?? "read" });
       }
-      throw new Error(`unexpected argv: ${argv.join(" ")}`);
+      return answer(argv, stage);
     },
   };
   return { deps, calls, mutations };
@@ -139,7 +143,10 @@ async function read(options: Options = {}, items: readonly OpenItem[] = [item]) 
   const { readLiveStatus } = await import("@/workflow/live-status");
   return { ...fx, result: await readLiveStatus({ url, cwd, deps: fx.deps, items }) };
 }
-const live = (settled: readonly { id: string; disposition: string }[] = [], awaitingFix: readonly string[] = []) => ({
+const live = (
+  settled: readonly { id: string; disposition: string }[] = [],
+  awaitingFix: readonly string[] = [],
+): Extract<LiveStatus, { source: "live" }> => ({
   source: "live",
   isDraft: false,
   settled,
