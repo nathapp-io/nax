@@ -3,7 +3,7 @@
   "feature": "image-content-parts",
   "branchName": "feat/image-content-parts",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T11:20:25.160Z",
+  "updatedAt": "2026-10-31T11:28:34.397Z",
   "userStories": [
     {
       "id": "US-001",
@@ -517,14 +517,17 @@
       "dependencies": [
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Coordinates private schema decoding, path-safe file reads, legacy session resume and paired artifact lifecycle; filesystem and session security require strict isolation."
+        "reasoning": "Coordinates private schema decoding, path-safe file reads, legacy session resume and paired artifact lifecycle; filesystem and session security require strict isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/native/session/transcript-store.ts",
@@ -551,7 +554,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "812fcea76500febfa2f2431cacbf3208f7778889"
     },
     {
       "id": "US-009",
