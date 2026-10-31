@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { NaxError } from "@/errors";
@@ -284,6 +284,22 @@ describe("captureForgeIdentity", () => {
     });
 
     expect(identity).toEqual({ token: TOKEN, login: LOGIN });
+  });
+
+  test("a symlinked token file is unlinked and its target is left to the caller", async () => {
+    const target = join(dir, "target-token");
+    writeFileSync(target, `${TOKEN}\n`);
+    const link = join(dir, "token-link");
+    symlinkSync(target, link);
+
+    const identity = await captureForgeIdentity({
+      [FORGE_IDENTITY_ENV.tokenFile]: link,
+      [FORGE_IDENTITY_ENV.login]: LOGIN,
+    });
+
+    expect(identity).toEqual({ token: TOKEN, login: LOGIN });
+    expect(existsSync(link)).toBe(false);
+    expect(existsSync(target)).toBe(true);
   });
 
   test("a rejected capture leaves no identity captured", async () => {
