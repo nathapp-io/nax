@@ -3,7 +3,7 @@
   "feature": "image-content-parts",
   "branchName": "feat/image-content-parts",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T11:06:13.540Z",
+  "updatedAt": "2026-10-31T11:10:29.268Z",
   "userStories": [
     {
       "id": "US-001",
@@ -376,14 +376,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Adds a pure view transformation and bounded image estimate at existing compaction seams; session data and preventing image-byte disclosure to summary calls trigger the security override."
+        "reasoning": "Adds a pure view transformation and bounded image estimate at existing compaction seams; session data and preventing image-byte disclosure to summary calls trigger the security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/native/session/compaction.ts",
@@ -405,7 +408,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4ee21828d9d071992252d3b348216b623e53149c"
     },
     {
       "id": "US-007",
