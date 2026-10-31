@@ -3,7 +3,7 @@
   "feature": "chat-image-attachments",
   "branchName": "feat/chat-image-attachments",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T16:43:05.192Z",
+  "updatedAt": "2026-10-31T16:56:37.727Z",
   "userStories": [
     {
       "id": "US-001",
@@ -809,14 +809,17 @@
         "US-010",
         "US-012"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Integrates session capability and image payloads with asynchronous screen submission, slash dispatch suppression and input restoration; session involvement invokes strict isolation."
+        "reasoning": "Integrates session capability and image payloads with asynchronous screen submission, slash dispatch suppression and input restoration; session involvement invokes strict isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -838,7 +841,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "cc50953351e76957b56227785dcc0d5cda37239e"
     },
     {
       "id": "US-014",
