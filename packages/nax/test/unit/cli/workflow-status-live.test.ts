@@ -65,55 +65,62 @@ function thread(item: OpenItem, disposition?: "fixed" | "confirmed") {
   };
 }
 
+function reviewThreadsResponse(options: Options) {
+  return {
+    data: {
+      repository: {
+        pullRequest: {
+          reviewThreads: {
+            nodes: [
+              thread(CV, options.cvRuled === false ? undefined : "fixed"),
+              thread(ADVISOR, options.advisorRuling ?? "fixed"),
+            ],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+        },
+      },
+    },
+  };
+}
+
+function indexComments(options: Options) {
+  if (options.failure === "missing-index") return [];
+  return [
+    {
+      id: 9,
+      user: { login: "nax" },
+      created_at: NOW,
+      body: withNaxBotMarker(renderItemIndex({ keys: [itemKey(CV), itemKey(ADVISOR)] }), "w-index"),
+    },
+  ];
+}
+
+function forgeResponse(argv: readonly string[], options: Options) {
+  const ok = (data: unknown) => ({ exitCode: 0, stdout: JSON.stringify(data), stderr: "" });
+  if (argv[0] === "git")
+    return {
+      exitCode: 0,
+      stdout: options.failure === "undetected" ? "git@unknown.test:o/r.git" : "git@github.com:o/r.git",
+      stderr: "",
+    };
+  if (options.failure === "offline") throw new Error("forge offline");
+  if (argv.includes("--version")) return { exitCode: 1, stdout: "", stderr: "unavailable" };
+  if (argv.includes("view")) return ok({ isDraft: options.isDraft ?? false, body: "" });
+  if (argv.includes("graphql")) return ok(reviewThreadsResponse(options));
+  const endpoint = argv.at(-1) ?? "";
+  if (endpoint === "user") return ok({ login: "nax", id: 1 });
+  if (endpoint.includes("/issues/7/comments?")) return ok(indexComments(options));
+  if (endpoint.includes("/reviews?")) return ok([]);
+  throw new Error(`Unexpected forge command: ${argv.join(" ")}`);
+}
+
 function forge(options: Options) {
   const calls: string[][] = [];
-  const ok = (data: unknown) => ({ exitCode: 0, stdout: JSON.stringify(data), stderr: "" });
   const deps: ForgeDeps = {
     readText: async () => null,
     run: async (argv) => {
       calls.push(argv);
-      if (argv[0] === "git")
-        return {
-          exitCode: 0,
-          stdout: options.failure === "undetected" ? "git@unknown.test:o/r.git" : "git@github.com:o/r.git",
-          stderr: "",
-        };
-      if (options.failure === "offline") throw new Error("forge offline");
-      if (argv.includes("--version")) return { exitCode: 1, stdout: "", stderr: "unavailable" };
-      if (argv.includes("view")) return ok({ isDraft: options.isDraft ?? false, body: "" });
-      if (argv.includes("graphql"))
-        return ok({
-          data: {
-            repository: {
-              pullRequest: {
-                reviewThreads: {
-                  nodes: [
-                    thread(CV, options.cvRuled === false ? undefined : "fixed"),
-                    thread(ADVISOR, options.advisorRuling ?? "fixed"),
-                  ],
-                  pageInfo: { hasNextPage: false, endCursor: null },
-                },
-              },
-            },
-          },
-        });
-      const endpoint = argv.at(-1) ?? "";
-      if (endpoint === "user") return ok({ login: "nax", id: 1 });
-      if (endpoint.includes("/issues/7/comments?"))
-        return ok(
-          options.failure === "missing-index"
-            ? []
-            : [
-                {
-                  id: 9,
-                  user: { login: "nax" },
-                  created_at: NOW,
-                  body: withNaxBotMarker(renderItemIndex({ keys: [itemKey(CV), itemKey(ADVISOR)] }), "w-index"),
-                },
-              ],
-        );
-      if (endpoint.includes("/reviews?")) return ok([]);
-      throw new Error(`Unexpected forge command: ${argv.join(" ")}`);
+      return forgeResponse(argv, options);
     },
   };
   return { deps, calls };
