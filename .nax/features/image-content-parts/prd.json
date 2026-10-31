@@ -3,7 +3,7 @@
   "feature": "image-content-parts",
   "branchName": "feat/image-content-parts",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T11:28:34.397Z",
+  "updatedAt": "2026-10-31T11:32:48.574Z",
   "userStories": [
     {
       "id": "US-001",
@@ -589,14 +589,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Adds one initialize capability, a live-record query and initial-prompt blocks within three existing client modules, retaining the current reconnect/continuation machinery; session security mandates strict three-session isolation."
+        "reasoning": "Adds one initialize capability, a live-record query and initial-prompt blocks within three existing client modules, retaining the current reconnect/continuation machinery; session security mandates strict three-session isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/client/capabilities.ts",
@@ -626,7 +629,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ed228ae0acde0e6a3f447cca5a1654da5d69cfd0"
     },
     {
       "id": "US-010",
