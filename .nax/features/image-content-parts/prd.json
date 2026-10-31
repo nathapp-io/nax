@@ -3,7 +3,7 @@
   "feature": "image-content-parts",
   "branchName": "feat/image-content-parts",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T10:50:36.907Z",
+  "updatedAt": "2026-10-31T10:55:34.579Z",
   "userStories": [
     {
       "id": "US-001",
@@ -177,14 +177,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Extends existing optional facade/backend contracts and threads an input field through the established turn helpers without adding lifecycle states; the session security override still requires strict three-session isolation."
+        "reasoning": "Extends existing optional facade/backend contracts and threads an input field through the established turn helpers without adding lifecycle states; the session security override still requires strict three-session isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/session/agent-session.ts",
@@ -211,7 +214,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a1395b61b76d582106f0312a827521b96c07cf06"
     },
     {
       "id": "US-004",
