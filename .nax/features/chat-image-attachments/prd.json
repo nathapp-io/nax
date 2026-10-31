@@ -3,7 +3,7 @@
   "feature": "chat-image-attachments",
   "branchName": "feat/chat-image-attachments",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T15:26:03.718Z",
+  "updatedAt": "2026-10-31T15:37:37.914Z",
   "userStories": [
     {
       "id": "US-001",
@@ -388,14 +388,17 @@
         "api"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Small optional plumbing and helper changes, but directly touches AgentSession send/capability behavior; sessions trigger the required strict strategy."
+        "reasoning": "Small optional plumbing and helper changes, but directly touches AgentSession send/capability behavior; sessions trigger the required strict strategy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/chat-host.ts",
@@ -420,7 +423,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "67f7e6cd13815b910fb2efe42534e0d2b89bbd1f"
     },
     {
       "id": "US-008",
