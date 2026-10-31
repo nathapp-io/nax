@@ -13,7 +13,14 @@ import { makeFakeClock } from "@test/helpers";
 import chalk from "chalk";
 import { cleanup, render } from "ink-testing-library";
 import { act, type ReactElement, useState } from "react";
-import { _chatInputDeps, ChatInput, DOUBLE_ESCAPE_MS, EMPTY_DRAFT, type InputDraft } from "@/tui/chat/ChatInput";
+import {
+  _chatInputDeps,
+  ChatInput,
+  type ChatInputHandle,
+  DOUBLE_ESCAPE_MS,
+  EMPTY_DRAFT,
+  type InputDraft,
+} from "@/tui/chat/ChatInput";
 import { type EditorState, EMPTY_EDITOR } from "@/tui/chat/line-editor";
 import { resolveChatTheme } from "@/tui/chat/theme";
 
@@ -74,6 +81,8 @@ function mount(options: MountOptions = {}) {
   const drafts: InputDraft[] = [];
   const onSubmit = mock((_text: string) => {});
   const onClearArmedChange = mock((_armed: boolean) => {});
+  /** The handle the input publishes, so a case can drive the verbs the slash menu and the mention picker use. */
+  const handle: { current: ChatInputHandle | undefined } = { current: undefined };
   if (colored) chalk.level = FULL_COLOR;
 
   function Owner(): ReactElement {
@@ -93,6 +102,7 @@ function mount(options: MountOptions = {}) {
         busy={busy}
         hint={hint}
         yieldNavigation={yieldNavigation}
+        handle={handle}
         onClearArmedChange={onClearArmedChange}
       />
     );
@@ -122,7 +132,20 @@ function mount(options: MountOptions = {}) {
     });
   };
   const editor = (): EditorState => drafts.at(-1)?.editor ?? initialDraft.editor;
-  return { ui, drafts, onSubmit, onClearArmedChange, rows, rawFrame, textRows, cursorCell, type, typeBatch, editor };
+  return {
+    ui,
+    drafts,
+    onSubmit,
+    onClearArmedChange,
+    handle,
+    rows,
+    rawFrame,
+    textRows,
+    cursorCell,
+    type,
+    typeBatch,
+    editor,
+  };
 }
 
 describe("ChatInput frame", () => {
@@ -432,6 +455,36 @@ describe("ChatInput batching", () => {
     input.typeBatch("hi", RETURN, "x");
     expect(input.onSubmit).toHaveBeenCalledWith("hi");
     expect(input.textRows()).toEqual(["> x"]);
+  });
+});
+
+describe("ChatInput handle", () => {
+  test("AC-1 an edit writes the text and leaves the cursor where the caller put it", () => {
+    const input = mount();
+    act(() => {
+      input.handle.current?.edit({ text: "abc", cursor: 1 });
+    });
+    expect(input.textRows()).toEqual(["> abc"]);
+    input.type("X");
+    expect(input.textRows()).toEqual(["> aXbc"]);
+  });
+
+  test("AC-23 complete still writes the text with the cursor at its end", () => {
+    const input = mount();
+    act(() => {
+      input.handle.current?.complete("abc");
+    });
+    input.type("X");
+    expect(input.textRows()).toEqual(["> abcX"]);
+  });
+
+  test("AC-24 submit still hands the line to the owner's onSubmit", () => {
+    const input = mount();
+    act(() => {
+      input.handle.current?.submit("hello");
+    });
+    expect(input.onSubmit).toHaveBeenCalledWith("hello");
+    expect(input.textRows()).toEqual([`> ${PLACEHOLDER}`]);
   });
 });
 

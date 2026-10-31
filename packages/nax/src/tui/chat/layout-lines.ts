@@ -1,7 +1,8 @@
 /**
  * Transcript line primitives — the columns engine every entry renderer lays its text out
  * with: `layout.ts` (messages and tool cards), `layout-status.ts` (the welcome banner and
- * the status lines) and `layout-listing.ts` (a titled listing).
+ * the status lines), `layout-listing.ts` (a titled listing) and `layout-attachment.ts` (a
+ * mention's row).
  *
  * Every measurement here is in terminal columns (`displayWidth`), never in code units, so a
  * CJK message or an emoji never overflows the frame: a line wider than the layout is
@@ -34,6 +35,11 @@ export const GUTTER = " ".repeat(GUTTER_WIDTH);
 
 /** One column of space: a glyph's separator, and the gap before a thinking hint. */
 export const SPACE = " ";
+
+/** What a collapsed entry's header promises: the key that reveals its body. */
+export const SHOW_HINT = "(ctrl+o to show)";
+/** What an expanded entry's header promises: the key that hides its body again. */
+export const HIDE_HINT = "(ctrl+o to hide)";
 
 const TRAILING_NEWLINE = "\n";
 export const SOURCE_LINE_BREAK = /\r\n|[\r\n]/;
@@ -215,4 +221,28 @@ export function oneLine(text: string): string {
 /** `  ⎿  ` — the gutter, the result glyph, and the two columns that follow it. */
 export function resultPrefix(theme: ChatTheme): string {
   return `${GUTTER}${theme.glyphs.result}${SPACE}${SPACE}`;
+}
+
+/** Where a card's later summary lines, its diff lines and its expand hint start. */
+export function cardIndent(theme: ChatTheme): string {
+  return SPACE.repeat(displayWidth(resultPrefix(theme)));
+}
+
+/**
+ * One card line's rows: its text split at its own line breaks, the first physical line
+ * behind `head` and every later one behind `rest`. A summary that interpolates a path
+ * carrying a newline would otherwise draw a terminal row with no card indent at all, which
+ * the row-based viewport would count as nothing.
+ */
+export function cardRows(
+  text: string,
+  prefixes: { readonly head: string; readonly rest: string },
+  style: SpanStyle,
+  context: LayoutContext,
+): readonly StyledLine[] {
+  return sanitizeText(text)
+    .split(SOURCE_LINE_BREAK)
+    .flatMap((physical, index) =>
+      prefixedLine([styled(physical, style)], [styled(index === 0 ? prefixes.head : prefixes.rest, style)], context),
+    );
 }

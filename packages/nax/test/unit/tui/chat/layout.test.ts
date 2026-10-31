@@ -154,6 +154,42 @@ describe("layoutTranscript: user entries", () => {
     for (const span of line) expect(span.background).toBe("userBand");
   });
 
+  /** A message as `mentionTranscriptEntries` builds it: the typed text and the paths it carried. */
+  function mentionEntry(text: string, mentions: readonly string[]): TranscriptEntry {
+    return { kind: "user", text, mentions };
+  }
+
+  /** Every span drawn accent on the entry's first row: the marker, and any highlighted mention. */
+  function accentTexts(entry: TranscriptEntry): readonly string[] {
+    return onlyLine([entry])
+      .filter((span) => span.color === "accent")
+      .map((span) => span.text);
+  }
+
+  test("AC-11 highlights a mentioned path in accent inside the user band", () => {
+    const line = onlyLine([mentionEntry("see @a.ts now", ["a.ts"])]);
+    const mention = spanWith(line, "@a.ts");
+    expect(mention.color).toBe("accent");
+    expect(mention.background).toBe("userBand");
+  });
+
+  test("AC-12 highlights a mention that prose follows with punctuation", () => {
+    expect(spanWith(onlyLine([mentionEntry("see (@a.ts).", ["a.ts"])]), "@a.ts").color).toBe("accent");
+  });
+
+  test("AC-13 draws no accent span for a path that is only part of a longer one", () => {
+    expect(accentTexts(mentionEntry("see @a.tsx", ["a.ts"]))).toEqual([">"]);
+  });
+
+  test("AC-14 draws no accent span when the message lists no mentions", () => {
+    expect(accentTexts(mentionEntry("see @a.ts now", []))).toEqual([">"]);
+    expect(accentTexts(userEntry("see @a.ts now"))).toEqual([">"]);
+  });
+
+  test("keeps the text of a message with mentions exactly as it was typed", () => {
+    expect(texts(layout([mentionEntry("see @a.ts now", ["a.ts"])]))).toEqual(["> see @a.ts now"]);
+  });
+
   test("prefixes the first source line with the marker and the rest with two spaces", () => {
     expect(texts(layout([userEntry("a\nb")]))).toEqual(["> a", "  b"]);
   });

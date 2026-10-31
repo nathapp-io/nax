@@ -1,0 +1,582 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-file-mentions",
+  "branchName": "feat/chat-file-mentions",
+  "createdAt": "2026-10-31T00:00:00.000Z",
+  "updatedAt": "2026-10-31T08:54:58.516Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Mention grammar and message envelope",
+      "description": "**Goal** — Add pure mention types, token grammar and a length-addressed, reversible message envelope exported through @/chat.\n\n**Motivation** — Every chat message is a plain string end to end (`ChatHost.send(message: string, ...)`, the ACP client sends one `{ type: \"text\" }` block in `nax-agent-acp/src/client/turn.ts`), so expanding mentions into that string reaches every brain with no brain, store or protocol change.\n\n**Approach** — Add `src/chat/mentions/` with `types.ts`, `mention-tokens.ts` (`findMentionTokens`, `formatMentionToken`), `mention-envelope.ts` (`formatMentionMessage`, `parseMentionMessage`) and a barrel, and re-export the barrel from `src/chat/index.ts`. Pure string code, no I/O.\n\n### Mention grammar\n- A mention starts with `@` at index 0 or right after a whitespace character.\n- Unquoted: the path runs from after `@` to the next whitespace or the end of the text. An empty path (a bare `@`, or `@\"\"`) is not a token.\n- Quoted: `@\"` starts a quoted path that runs to the next `\"`; the token ends after that `\"`. An unclosed quote is not a token. Quoted paths have no escape sequences.\n- `findMentionTokens` is purely textual; whether a token resolves is decided by `expandChatMentions`.\n\n### Envelope format\n`formatMentionMessage(text, records)`:\n- With `records` empty and `text` not containing `</nax-mentions`, it returns `text` unchanged.\n- Otherwise it returns `text + \"\\n\\n\" + block + trailer`, where:\n  - `block` = `\"<nax-mentions>\\n\"` followed, per record in order, by `<mention path=\"P\" status=\"S\" note=\"N\" length=\"L\">` + `\"\\n\"` + body + `\"\\n</mention>\\n\"`. `P` and `N` are attribute-escaped (`&` → `&amp;`, `\"` → `&quot;`, `<` → `&lt;`, `>` → `&gt;`, newline → `&#10;`). `L` is the body's JavaScript string length.\n  - `trailer` = `</nax-mentions length=\"T\">`, where `T` is the string length of `block`.\n- The trailer is always the last line, and nothing follows it.\n\nWorked example (`text` = `why @src/a.ts`, one attached record with body `x\\n`):\n```\nwhy @src/a.ts\n\n<nax-mentions>\n<mention path=\"src/a.ts\" status=\"attached\" note=\"1 lines\" length=\"2\">\nx\n\n</mention>\n</nax-mentions length=\"99\">\n```\nThe worked example string has no newline after the trailer.\n\n`parseMentionMessage(message)`:\n- Reads the last line. If it is not `</nax-mentions length=\"T\">` with `T` a decimal integer, returns `undefined`.\n- The block is the `T` characters before the trailer; it must start with `<nax-mentions>\\n` and be preceded by `\\n\\n`, else `undefined`.\n- Records are read in order using each header's `length`; any header that does not match, a body that does not end where its `length` says, or leftover characters return `undefined`.\n- Returns `{ text: message.slice(0, blockStart - 2), records }` with attributes unescaped.\n- Because the trailer is located from the end and bodies are read by length, file contents never affect parsing. Because `formatMentionMessage` appends an (empty) block whenever the typed text contains `</nax-mentions`, typed or pasted text can never parse as records nax did not make.\n\nConstants (in `chat/mentions/types.ts` or a `constants.ts` beside it, builder's choice of file): `MENTION_FILE_MAX_CHARS = 100_000`, `MENTION_TOTAL_MAX_CHARS = 400_000`, `MENTION_READ_MAX_BYTES = 8 * 1024 * 1024`, `MENTION_BINARY_PROBE_BYTES = 8_000`, `MENTION_FILE_INDEX_MAX_AGE_MS = 5_000`. These limits are fixed by design (user-confirmed defaults in the source design), not config; they bound content size and cache age, not a timeout. Use types.ts for these constants so no extra output file is needed.\n\n**Scope** — In: shared types/constants, token discovery/formatting, envelope format/parse, unit tests, and only the new re-export in src/chat/index.ts. Out: path resolution and I/O (US-002/US-003), transcript rendering (US-004), sending/replay (US-005), file index/model (US-006), input picker integration (US-007). Escaping or re-quoting paths that contain a `\"` character; such a path can only be mentioned unquoted if it has no whitespace.\n\n**Interface** —\n```ts\nexport type MentionStatus = \"attached\" | \"cut\" | \"folder\" | \"path-only\" | \"refused\";\n\nexport interface MentionRecord {\n  readonly path: string;    // as typed, without \"@\" or quotes\n  readonly status: MentionStatus;\n  readonly note: string;    // see §Notes\n  readonly body: string;    // file text, cut prefix, or folder listing; \"\" for path-only and refused\n}\n\nexport interface MentionToken {\n  readonly start: number;   // index of \"@\"\n  readonly end: number;     // index after the token\n  readonly path: string;    // without \"@\" and quotes\n  readonly quoted: boolean;\n}\n\nexport interface ParsedMentionMessage {\n  readonly text: string;    // what the user typed\n  readonly records: readonly MentionRecord[];\n}\n\nexport interface ExpandedMentions {\n  readonly message: string; // what host.send receives\n  readonly records: readonly MentionRecord[];\n}\n\nexport interface MentionFileRow { readonly path: string; readonly folder: boolean } // folder paths end with \"/\"\nexport interface MentionFileList { readonly git: boolean; readonly rows: readonly MentionFileRow[] }\nexport interface MentionFileIndex { get(): Promise<MentionFileList> }\n\n// mention-tokens.ts\nexport function findMentionTokens(text: string): readonly MentionToken[];\nexport function formatMentionToken(path: string): string; // \"@\" + path, or '@\"' + path + '\"' when path has whitespace\n\n// mention-envelope.ts\nexport function formatMentionMessage(text: string, records: readonly MentionRecord[]): string;\nexport function parseMentionMessage(message: string): ParsedMentionMessage | undefined;\n```",
+      "acceptanceCriteria": [
+        "[unit] findMentionTokens(\"see @src/a.ts now\") returns [{ start: 4, end: 13, path: \"src/a.ts\", quoted: false }].",
+        "[unit] findMentionTokens(\"@a.ts\") returns one token whose start is 0.",
+        "[unit] findMentionTokens(\"mail a@b.com\") returns an empty array, because the @ is not at the start or after whitespace.",
+        "[unit] findMentionTokens(\"a @ b\") returns an empty array, because a bare @ has an empty path.",
+        "[unit] findMentionTokens('see @\"\" now') returns an empty array.",
+        "[unit] findMentionTokens('open @\"my dir/x.ts\" please') returns [{ start: 5, end: 19, path: \"my dir/x.ts\", quoted: true }].",
+        "[unit] findMentionTokens('open @\"my dir/x.ts') returns an empty array, because the quote is unclosed.",
+        "[unit] findMentionTokens(\"@a.ts and\\n@b.ts\") returns tokens whose paths in order are [\"a.ts\", \"b.ts\"].",
+        "[unit] formatMentionToken(\"src/a.ts\") returns \"@src/a.ts\".",
+        "[unit] formatMentionToken(\"my dir/x.ts\") returns '@\"my dir/x.ts\"'.",
+        "[unit] formatMentionMessage(\"hello\", []) returns \"hello\".",
+        "[unit] formatMentionMessage(\"why @src/a.ts\", [{ path: \"src/a.ts\", status: \"attached\", note: \"1 lines\", body: \"x\\n\" }]) returns exactly 'why @src/a.ts\\n\\n<nax-mentions>\\n<mention path=\"src/a.ts\" status=\"attached\" note=\"1 lines\" length=\"2\">\\nx\\n\\n</mention>\\n</nax-mentions length=\"99\">', the worked example string of Envelope format.",
+        "[unit] parseMentionMessage on that worked example string returns { text: \"why @src/a.ts\", records: [{ path: \"src/a.ts\", status: \"attached\", note: \"1 lines\", body: \"x\\n\" }] }.",
+        "[unit] For records whose bodies contain the strings </mention> and </nax-mentions length=\"5\"> and end with a newline, parseMentionMessage(formatMentionMessage(text, records)) returns { text, records }.",
+        "[unit] For a record whose path and note contain the characters `\"`, `<`, `>`, `&` and a newline, parseMentionMessage(formatMentionMessage(\"t\", [record])) returns { text: \"t\", records: [record] }.",
+        "[unit] parseMentionMessage(\"just text\") returns undefined.",
+        "[unit] parseMentionMessage on the worked example with its trailer's length value increased by one returns undefined.",
+        "[unit] parseMentionMessage on the worked example with its record's length attribute decreased by one returns undefined.",
+        "[unit] formatMentionMessage(t, []), where t is the worked example string itself (a user pasting an expanded message), returns a string different from t.",
+        "[unit] parseMentionMessage(formatMentionMessage(t, [])) for that same t returns { text: t, records: [] }.",
+        "[unit] When findMentionTokens, formatMentionMessage and parseMentionMessage are imported from @/chat, calling them as [findMentionTokens(\"hello\"), formatMentionMessage(\"hello\", []), parseMentionMessage(\"hello\")] returns [[], \"hello\", undefined], proving those barrel exports are callable."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "mentions",
+        "serialization"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The tokenizer, escaping and exact-length inverse parser are pure package-local string functions with a fully specified format, so medium/tdd-simple covers round-trip and malformed-input behavior without integration or access-control complexity.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/skill-invocation.ts",
+        "packages/nax/src/chat/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/mentions/types.ts",
+        "packages/nax/src/chat/mentions/mention-tokens.ts",
+        "packages/nax/src/chat/mentions/mention-envelope.ts",
+        "packages/nax/src/chat/mentions/index.ts",
+        "packages/nax/test/unit/chat/mentions/mention-tokens.test.ts",
+        "packages/nax/test/unit/chat/mentions/mention-envelope.test.ts"
+      ],
+      "suggestedCriteria": [
+        "parseMentionMessage returns undefined when a valid envelope has any characters after its final trailer.",
+        "parseMentionMessage(formatMentionMessage(text, records)) returns the same text and records when a body contains non-BMP Unicode characters.",
+        "parseMentionMessage returns undefined when a record header has an unknown status or the length-delimited block has leftover characters."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/chat/index.ts",
+          "reason": "re-export the new mentions barrel. No other change."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6a08bfa1ad0d00daeaf6a7449f007b5efb02c1b1"
+    },
+    {
+      "id": "US-002",
+      "title": "Resolve mentions to records",
+      "description": "**Goal** — Resolve typed mention paths safely into ordered whole-file or refusal records and an expanded message.\n\n**Motivation** — Today the user must name a file in prose and wait for the agent to spend a turn reading it. The user ruled (2026-10-31) that a mention sends the contents, like Claude Code.\n\n**Approach** — Add `src/chat/mentions/mention-expand.ts` with `_mentionExpandDeps` and `expandChatMentions`, implementing §Resolution steps 1 to 4 (locate, dedup, boundary, `.git`, ignored) and the whole-file case of step 8 (a text file at or under `MENTION_FILE_MAX_CHARS` becomes an `attached` record). Export `expandChatMentions` and `_mentionExpandDeps` from the mentions barrel `src/chat/mentions/index.ts` that US-001 created.\n\n### Resolution and expansion — this story's pipeline\n`expandChatMentions(text, { cwd, repoRoot })` walks `findMentionTokens(text)` in order and builds one record per token that resolves. The ordered pipeline per token:\n1. **Locate.** `candidate = resolve(cwd, path)`. If `realpath(candidate)` rejects and the token is unquoted, retry once with trailing `.,;:!?)` characters stripped from the path; if that also rejects (or nothing was stripped), the token gets no record and stays plain text. A stripped path is the record's `path`.\n2. **Dedup.** A token whose real path was already recorded in this message gets no second record.\n3. **Boundary.** If the real path is neither equal to `realpath(repoRoot)` nor starts with `realpath(repoRoot)` followed by the path separator, record `refused` with note `not attached: outside the repo`. A real path whose part below the repo root has a segment equal to `.git` (compared case-insensitively) records `refused` with note `not attached: inside .git`.\n4. **Ignored.** `git --literal-pathspecs check-ignore -q -- <path>` run in `cwd`, where `<path>` is the record's `path` (the candidate as typed, relative to `cwd`, never the real path). A timed-out call records `refused` with note `not attached: git timed out`. Otherwise exit code 0 records `refused` with note `not attached: ignored by git`, exit code 1 means \"not ignored\", and any other exit code records `refused` with note `not attached: git check-ignore failed (exit <code>)`.\n\nWhole-file portion of step 8: Decode as UTF-8. Let `M` be the line count (newline count, plus 1 if the text is non-empty and does not end with a newline; an empty file has 0 lines). If the text length is at most `MENTION_FILE_MAX_CHARS`, the body is the whole text with status `attached` and note `<M> lines`.\n\nAny rejection from `stat`, `readBytes`, `readdir` or `git` while handling a token records `refused` with note `not attached: <error message>`; `expandChatMentions` itself never rejects. The result is `{ message: formatMentionMessage(text, records), records }`.\n\nMirror `_auditDeps.git` over `gitWithTimeout` and `GIT_TIMEOUT_MS`; this feature's wrapper also passes `timedOut` through. The existing helper omits timedOut on non-timeout returns (packages/nax-agent/src/internal/git-exec.ts:64-84), so normalize it to `r.timedOut === true` in the new wrapper to satisfy the declared required boolean; do not change the shared helper. All filesystem/git calls go through the declared seam. Do not weaken canonical containment or use a plain string-prefix check that admits /repo-other. The created module must be extensible by US-003 without changing its public result/signatures.\n\n**Scope** — In: locate/punctuation retry, canonical dedup, real repo boundary, .git protection, literal-pathspec ignore checks, ordinary whole-text records, per-token failure isolation and envelope round-trip. Out: folder listing, oversized/binary detection, truncation and total cap (US-003), transcript (US-004), submit/replay (US-005), index/picker (US-006/US-007). Any change to `packages/nax/src/chat/chat-host.ts`, the `ChatHost` interface, the session store, `nax-agent`, `nax-agent-acp` or koda.\n\n**Interface** —\n```ts\nexport const _mentionExpandDeps: {\n  realpath(path: string): Promise<string>;                 // rejects when the path does not exist\n  stat(path: string): Promise<{ isDirectory: boolean; size: number }>;\n  readBytes(path: string): Promise<Uint8Array>;\n  readdir(path: string): Promise<readonly { name: string; isDirectory: boolean }[]>;\n  git(args: string[], cwd: string): Promise<{ stdout: string; exitCode: number; timedOut: boolean }>; // timedOut from gitWithTimeout\n};\nexport function expandChatMentions(text: string, where: { cwd: string; repoRoot: string }): Promise<ExpandedMentions>;\n```",
+      "acceptanceCriteria": [
+        "[unit] Given cwd and repoRoot /repo and fake git check-ignore exitCode 1 with timedOut false, with src/a.ts holding \"x\\ny\\n\", expandChatMentions(\"see @src/a.ts\", { cwd: \"/repo\", repoRoot: \"/repo\" }) returns records equal to [{ path: \"src/a.ts\", status: \"attached\", note: \"2 lines\", body: \"x\\ny\\n\" }].",
+        "[unit] In that same src/a.ts case, the returned message equals formatMentionMessage(\"see @src/a.ts\", records).",
+        "[unit] In that same src/a.ts case, parseMentionMessage(result.message) returns { text: \"see @src/a.ts\", records: result.records }.",
+        "[unit] With cwd and repoRoot /repo, expanding \"see @missing.ts\", where realpath rejects for that path, returns { message: \"see @missing.ts\", records: [] }.",
+        "[unit] With cwd and repoRoot /repo and check-ignore exitCode 1/timedOut false, expanding \"look at @src/a.ts.\", where only src/a.ts exists, returns records whose paths are [\"src/a.ts\"].",
+        "[unit] With cwd and repoRoot /repo and check-ignore exitCode 1/timedOut false, expanding \"@src/a.ts and @./src/a.ts\", both resolving to the same real path, returns exactly one record.",
+        "[unit] With cwd and repoRoot /repo, expanding \"@../outside.ts\", whose real path is /outside.ts, returns records equal to [{ path: \"../outside.ts\", status: \"refused\", note: \"not attached: outside the repo\", body: \"\" }].",
+        "[unit] With cwd and repoRoot /repo, expanding \"@link.ts\", a symlink whose real path is /etc/hosts, returns records equal to [{ path: \"link.ts\", status: \"refused\", note: \"not attached: outside the repo\", body: \"\" }].",
+        "[unit] With cwd and repoRoot /repo, expanding \"@../repo-other/x.ts\", whose real path is /repo-other/x.ts, returns records whose notes are [\"not attached: outside the repo\"].",
+        "[unit] With cwd and repoRoot /repo, expanding \"@.git/config\", whose real path is /repo/.git/config, returns records equal to [{ path: \".git/config\", status: \"refused\", note: \"not attached: inside .git\", body: \"\" }].",
+        "[unit] With cwd and repoRoot /repo, expanding \"@.GIT/config\", whose real path is /repo/.GIT/config, returns records whose notes are [\"not attached: inside .git\"].",
+        "[unit] With cwd and repoRoot /repo, expanding \"@dist/out.js\", where fake git answers that path's check-ignore with exitCode 0 and timedOut false, returns records equal to [{ path: \"dist/out.js\", status: \"refused\", note: \"not attached: ignored by git\", body: \"\" }].",
+        "[unit] In that ignored dist/out.js case, fake git was called with args [\"--literal-pathspecs\", \"check-ignore\", \"-q\", \"--\", \"dist/out.js\"] and cwd \"/repo\".",
+        "[unit] With cwd and repoRoot /repo, expanding \"@a.ts\", where fake git answers check-ignore with timedOut true and exitCode 1, returns records whose notes are [\"not attached: git timed out\"].",
+        "[unit] With cwd and repoRoot /repo, expanding \"@a.ts\", where fake git answers check-ignore with exitCode 128 and timedOut false, returns records whose notes are [\"not attached: git check-ignore failed (exit 128)\"].",
+        "[unit] With cwd and repoRoot /repo, expanding \"@a.ts @b.ts\", where fake git rejects for a.ts with Error(\"spawn failed\") and b.ts holds \"y\\n\" with check-ignore exitCode 1/timedOut false, returns records whose [status, note] pairs in order are [[\"refused\", \"not attached: spawn failed\"], [\"attached\", \"1 lines\"]]."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "mentions",
+        "security",
+        "filesystem"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One new expander and an additive barrel export follow the existing injected git wrapper, making scope medium; canonical containment, symlink/.git exclusion and fail-closed ignore checks enforce access control, so the security override requires three-session-tdd.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/mentions/mention-envelope.ts",
+        "packages/nax/src/chat/mentions/mention-tokens.ts",
+        "packages/nax/src/chat/mentions/types.ts",
+        "packages/nax/src/advisor/audit.ts",
+        "packages/nax/src/utils/git.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/mentions/mention-expand.ts",
+        "packages/nax/test/unit/chat/mentions/mention-expand.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Given cwd /repo/pkg and repoRoot /repo, expandChatMentions(\"@../a.ts\", where) attaches an existing /repo/a.ts and checks git ignores using path ../a.ts in cwd /repo/pkg.",
+        "When a quoted path ends in punctuation and only the punctuation-stripped path exists, expandChatMentions returns no record for that quoted token.",
+        "When stat rejects for a.ts and b.ts is readable, expandChatMentions(\"@a.ts @b.ts\", where) returns a refused a.ts record followed by an attached b.ts record.",
+        "When a path resolves outside repoRoot, expandChatMentions returns its refusal without reading that path's bytes.",
+        "When realpath(repoRoot) rejects, expandChatMentions resolves without attaching any file contents."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "64facd7230733961c94333dd99c4f477191b20db"
+    },
+    {
+      "id": "US-003",
+      "title": "Folder listings and content limits",
+      "description": "**Goal** — Extend the expander with direct folder listings, binary/read guards, deterministic truncation, aggregate limits and isolated read failures.\n\n**Motivation** — Today the user must name a file in prose and wait for the agent to spend a turn reading it. The user ruled (2026-10-31) that a mention sends the contents, like Claude Code.\n\n**Approach** — Extend `expandChatMentions` in `src/chat/mentions/mention-expand.ts` (created by US-002) with §Resolution steps 5 to 9 (folder, too large to read, binary, cut, total cap), §Folder listing, and the read-error `refused` record. Keep locate/dedup/boundary/.git/ignored checks from US-002 before this pipeline.\n\n5. **Folder.** If `stat` says directory, record `folder` with a listing body (§Folder listing) and note `<N> entries`.\n6. **Too large to read.** If `size > MENTION_READ_MAX_BYTES`, record `path-only` with note `path only: file too large`.\n7. **Binary.** Read the bytes; a NUL byte within the first `MENTION_BINARY_PROBE_BYTES` records `path-only` with note `path only: binary`.\n8. **Cut.** Decode as UTF-8. Let `M` be the line count (newline count, plus 1 if the text is non-empty and does not end with a newline; an empty file has 0 lines). If the text length is at most `MENTION_FILE_MAX_CHARS`, the body is the whole text with status `attached` and note `<M> lines`. Otherwise the body is the longest prefix made of whole lines (each including its newline) whose length is at most `MENTION_FILE_MAX_CHARS`, with status `cut` and note `first <n> of <M> lines`, where `n` is the number of lines in that prefix. If even the first line is longer than the cap, the body is the first `MENTION_FILE_MAX_CHARS` characters and `n` is 1.\n9. **Total cap.** If the sum of earlier records' body lengths plus this body's length exceeds `MENTION_TOTAL_MAX_CHARS`, record `path-only` with note `path only: message too large` and an empty body instead. A `folder` record is subject to the same cap: an over-cap listing becomes a `path-only` record with note `path only: message too large`.\n\nAny rejection from `stat`, `readBytes`, `readdir` or `git` while handling a token records `refused` with note `not attached: <error message>`; `expandChatMentions` itself never rejects. The result is `{ message: formatMentionMessage(text, records), records }`.\n\n### Folder listing\nThe folder's direct entries, one per line, sorted ascending by code unit, subfolders with a trailing `/`. The folder is first normalised to its cwd-relative path with exactly one trailing `/` (`src`, `./src` and `src/` all become `src/`). For the cwd itself the pathspec is `.`, and each listed path's first segment is an entry. In a git checkout the source is `git --literal-pathspecs ls-files -z --cached --others --exclude-standard -- <folder>` run in `cwd`: each listed path's first segment below the normalised folder is an entry (a segment followed by more path is a subfolder). When that command exits non-zero, the source is `readdir(folder)`. `N` is the number of entries.\n\n### Notes\nThe `note` per status is fixed by §Resolution step: `attached` → `<M> lines`; `cut` → `first <n> of <M> lines`; `folder` → `<N> entries`; `path-only` → `path only: binary` | `path only: file too large` | `path only: message too large`; `refused` → `not attached: outside the repo` | `not attached: ignored by git` | `not attached: <error message>`. US-002's explicit .git, git timeout and git exit-error notes also remain unchanged.\n\nConstants (in types.ts from US-001): `MENTION_FILE_MAX_CHARS = 100_000`, `MENTION_TOTAL_MAX_CHARS = 400_000`, `MENTION_READ_MAX_BYTES = 8 * 1024 * 1024`, `MENTION_BINARY_PROBE_BYTES = 8_000`. These limits are fixed by design (user-confirmed defaults in the source design), not config; they bound content size and cache age, not a timeout.\n\n**Scope** — In: extend the existing expander and add limit/folder tests; record path remains as typed (or punctuation-stripped by US-002), while listing pathspec normalization is separate. Out: changing US-002's containment/ignore policy, envelope/grammar (US-001), transcript (US-004), sending/replay (US-005), file index/picker (US-006/US-007). Re-reading a mentioned file later in the conversation; contents are a snapshot at send time.\n\n**Interface** — Keep the existing interface:\n```ts\nexport const _mentionExpandDeps: {\n  realpath(path: string): Promise<string>;                 // rejects when the path does not exist\n  stat(path: string): Promise<{ isDirectory: boolean; size: number }>;\n  readBytes(path: string): Promise<Uint8Array>;\n  readdir(path: string): Promise<readonly { name: string; isDirectory: boolean }[]>;\n  git(args: string[], cwd: string): Promise<{ stdout: string; exitCode: number; timedOut: boolean }>; // timedOut from gitWithTimeout\n};\nexport function expandChatMentions(text: string, where: { cwd: string; repoRoot: string }): Promise<ExpandedMentions>;\n```",
+      "acceptanceCriteria": [
+        "[unit] With cwd and repoRoot /repo and fake check-ignore exitCode 1/timedOut false, expanding \"@src/\", a directory whose fake git answers its ls-files call with the NUL-delimited paths src/a.ts, src/b/c.ts and src/b/d.ts, returns records equal to [{ path: \"src/\", status: \"folder\", note: \"2 entries\", body: \"a.ts\\nb/\" }].",
+        "[unit] In that directory case, the ls-files call's args are [\"--literal-pathspecs\", \"ls-files\", \"-z\", \"--cached\", \"--others\", \"--exclude-standard\", \"--\", \"src/\"].",
+        "[unit] With cwd and repoRoot /repo and check-ignore exitCode 1/timedOut false, expanding \"@src\" (no trailing slash) for that same directory and listing returns records whose bodies are [\"a.ts\\nb/\"].",
+        "[unit] With cwd and repoRoot /repo and check-ignore exitCode 1/timedOut false, expanding \"@src/\" when its ls-files call exits non-zero lists the folder through readdir, so a readdir returning b (directory) and a.ts (file) yields records whose bodies are [\"a.ts\\nb/\"].",
+        "[unit] With cwd and repoRoot /repo and check-ignore exitCode 1/timedOut false, expanding \"@big.bin\" whose stat size is MENTION_READ_MAX_BYTES + 1 returns records equal to [{ path: \"big.bin\", status: \"path-only\", note: \"path only: file too large\", body: \"\" }].",
+        "[unit] In that oversized big.bin case, readBytes is not called.",
+        "[unit] With cwd and repoRoot /repo and check-ignore exitCode 1/timedOut false, expanding \"@img.png\" whose bytes contain a NUL within the first MENTION_BINARY_PROBE_BYTES returns records equal to [{ path: \"img.png\", status: \"path-only\", note: \"path only: binary\", body: \"\" }].",
+        "[unit] With cwd and repoRoot /repo and check-ignore exitCode 1/timedOut false, expanding \"@long.txt\", a file of 30 000 lines of 9 characters plus a newline (300 000 characters), returns records whose notes are [\"first 10000 of 30000 lines\"].",
+        "[unit] In that long.txt case, the record's body is exactly the file's first 100 000 characters.",
+        "[unit] With cwd and repoRoot /repo and check-ignore exitCode 1/timedOut false, expanding \"@wide.txt\", a file of one line of MENTION_FILE_MAX_CHARS + 50 characters with no newline, returns records whose notes are [\"first 1 of 1 lines\"].",
+        "[unit] In that wide.txt case, the record's body is exactly the file's first MENTION_FILE_MAX_CHARS characters.",
+        "[unit] With cwd and repoRoot /repo and check-ignore exitCode 1/timedOut false, expanding \"@empty.ts\", an empty file, returns records equal to [{ path: \"empty.ts\", status: \"attached\", note: \"0 lines\", body: \"\" }].",
+        "[unit] With cwd and repoRoot /repo and check-ignore exitCode 1/timedOut false, expanding \"@a.txt @b.txt @c.txt @d.txt @e.txt\", each a 90 000-character text file, returns records whose statuses in order are [\"attached\", \"attached\", \"attached\", \"attached\", \"path-only\"].",
+        "[unit] In that five-file case, the last record's note is path only: message too large.",
+        "[unit] With cwd and repoRoot /repo and check-ignore exitCode 1/timedOut false, expanding \"@a.txt @b.txt @c.txt @d.txt @src/\", four 90 000-character files and then a folder whose listing body is 50 000 characters, returns records whose statuses in order are [\"attached\", \"attached\", \"attached\", \"attached\", \"path-only\"].",
+        "[unit] With cwd and repoRoot /repo and check-ignore exitCode 1/timedOut false, expanding \"@a.ts @b.ts\", where readBytes rejects for a.ts with Error(\"EACCES: permission denied\") and b.ts holds \"y\\n\", returns records whose [status, note] pairs in order are [[\"refused\", \"not attached: EACCES: permission denied\"], [\"attached\", \"1 lines\"]].",
+        "[unit] Given cwd and repoRoot /repo, check-ignore exitCode 1/timedOut false and a.ts holding the small text file body \"x\\ny\\n\", expandChatMentions(\"see @a.ts\", { cwd: \"/repo\", repoRoot: \"/repo\" }) still returns records [{ path: \"a.ts\", status: \"attached\", note: \"2 lines\", body: \"x\\ny\\n\" }], preserving the whole-file behavior introduced by US-002."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "mentions",
+        "filesystem",
+        "content-limits"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This extends one existing injected expander with specified byte/line limits and directory-listing fallback, without changing US-002's access-control policy; medium/tdd-simple exercises the classifications and caps with deterministic fakes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/mentions/mention-expand.ts",
+        "packages/nax/src/chat/mentions/types.ts",
+        "packages/nax/test/unit/chat/mentions/mention-expand.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/mentions/mention-expand-limits.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a text file is exactly MENTION_FILE_MAX_CHARS characters, expandChatMentions returns status attached with the whole text.",
+        "When earlier body lengths plus the next body length equal MENTION_TOTAL_MAX_CHARS exactly, expandChatMentions preserves the next body rather than making it path-only.",
+        "When a NUL occurs only after the first MENTION_BINARY_PROBE_BYTES, expandChatMentions does not classify the file as binary on that basis.",
+        "When cwd itself is mentioned as @., expandChatMentions uses pathspec . and returns a code-unit-sorted listing of its direct entries.",
+        "When readdir rejects after a nonzero directory ls-files result, expandChatMentions returns a refused folder record and continues to the next token."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c5667f7f135e75a799b04b91f922334ddca6ab6c"
+    },
+    {
+      "id": "US-004",
+      "title": "Attachment entries in the transcript",
+      "description": "**Goal** — Add attachment transcript entries and accent-highlighted user mentions with per-entry expansion.\n\n**Motivation** — The user ruled (2026-10-31) that a mention sends the contents, like Claude Code.\n\n**Approach** — Add the `attachment` entry kind and `user.mentions`, `tui/chat/mention-entries.ts` (`mentionTranscriptEntries`), `tui/chat/layout-attachment.ts` (`attachmentLabel`, `attachmentLines`), the `layoutEntry` / `cachedLines` / `userLines` changes and the `toggleTranscriptLine` change.\n\n`TranscriptEntry` (`tui/chat/transcript-model.ts`)\n- Target: `| { kind: \"user\"; text: string; mentions?: readonly string[] }` and a new member `| { kind: \"attachment\"; path: string; status: MentionStatus; note: string; body: string; open?: boolean }`.\n\n`layoutEntry` (`tui/chat/layout.ts`): Target adds `case \"attachment\"` delegating to `attachmentLines` in a new `tui/chat/layout-attachment.ts`; `cachedLines` treats `attachment` as collapsible (`open ?? expanded`) like `thinking`, `tool`, `skill`; `userLines` styles each mention token.\n\n`toggleTranscriptLine` (`tui/chat/transcript-click.ts`)\n- Target: also toggles an `attachment` entry whose `status` is `attached`, `cut` or `folder`, on its first line.\n\n`mentionTranscriptEntries(parsed)` returns `[{ kind: \"user\", text: parsed.text, mentions }, ...one attachment entry per record]`, where `mentions` lists the paths of the records whose status is not `refused`, and each attachment entry copies `path`, `status`, `note`, `body` with no `open`.\n\n### Transcript layout\n- `userLines` draws each `@<path>` / `@\"<path>\"` occurrence of a listed mention that sits wholly inside one wrapped line as its own span with colour `accent` (keeping the user band). An occurrence split by wrapping stays unstyled, every whole occurrence is styled, and an occurrence followed directly by a non-whitespace character (`@a.ts` inside `@a.tsx`) is not an occurrence, except that a run of `.,;:!?)` characters followed by whitespace or the end of the text does not disqualify it (`(@a.ts).` highlights `@a.ts`).\n- `attachmentLines` draws one muted card row with `attachmentLabel(entry)` behind the result prefix, followed, for `attached`, `cut` and `folder`, by the existing `(ctrl+o to show)` / `(ctrl+o to hide)` hint. When expanded (`open ?? expanded`), the body follows as indented muted rows, the way `skillLines` draws a skill body. `path-only` and `refused` entries draw the label row only and never expand.\n\n`attachmentLabel(entry)` composes the transcript line: `attached`, `cut`, `folder` → `attached @<path> · <note>`; `path-only` → `attached @<path> as <note>`; `refused` → `@<path> <note>`.\n\nKeep the transcript reducer and existing assertions unchanged. Modify layout.test.ts for mention-span cases and chat-transcript-click.test.tsx for attachment toggles; use the two new unit files for helper and renderer cases. Display matching for a listed path must honor the explicit `see (@a.ts).` AC even though the textual send-token grammar is stricter at the leading boundary.\n\n**Scope** — In: transcript types/helpers, attachment labels/body rows, user spans, cache effective expansion, click behavior. Out: envelope/token changes (US-001), file reads/resolution (US-002/US-003), send/replay parsing (US-005), picker model/UI (US-006/US-007).\n\n**Interface** —\n```ts\n// TranscriptEntry target members\n| { kind: \"user\"; text: string; mentions?: readonly string[] }\n| { kind: \"attachment\"; path: string; status: MentionStatus; note: string; body: string; open?: boolean }\n\n// mention-entries.ts\nexport function mentionTranscriptEntries(parsed: ParsedMentionMessage): readonly TranscriptEntry[];\n\n// layout-attachment.ts\nexport function attachmentLabel(entry: { path: string; status: MentionStatus; note: string }): string;\n```\nAlso export attachmentLines from the new renderer with an entry/LayoutContext shape consistent with existing layout renderers; that signature is builder-owned.",
+      "acceptanceCriteria": [
+        "[unit] mentionTranscriptEntries({ text: \"see @a.ts @b.png\", records: [attachedA, pathOnlyB] }) returns, in order, a user entry { kind: \"user\", text: \"see @a.ts @b.png\", mentions: [\"a.ts\", \"b.png\"] } and attachment entries for a.ts and b.png, where attachedA is an attached record for a.ts and pathOnlyB is a path-only record for b.png.",
+        "[unit] mentionTranscriptEntries of a parse holding one refused record for ../x returns a user entry whose mentions is [] and one attachment entry whose status is refused.",
+        "[unit] attachmentLabel({ path: \"a.ts\", status: \"attached\", note: \"2 lines\" }) returns \"attached @a.ts · 2 lines\".",
+        "[unit] attachmentLabel({ path: \"big.ts\", status: \"cut\", note: \"first 10 of 99 lines\" }) returns \"attached @big.ts · first 10 of 99 lines\".",
+        "[unit] attachmentLabel({ path: \"src/\", status: \"folder\", note: \"2 entries\" }) returns \"attached @src/ · 2 entries\".",
+        "[unit] attachmentLabel({ path: \"b.png\", status: \"path-only\", note: \"path only: binary\" }) returns \"attached @b.png as path only: binary\".",
+        "[unit] attachmentLabel({ path: \"../x\", status: \"refused\", note: \"not attached: outside the repo\" }) returns \"@../x not attached: outside the repo\".",
+        "[unit] layoutTranscript of an attached attachment entry with body \"one\\ntwo\\n\" and expanded false draws exactly one row, which ends with (ctrl+o to show).",
+        "[unit] layoutTranscript of that attached entry with expanded true draws three rows, the last two ending with one and two.",
+        "[unit] layoutTranscript of a path-only attachment entry with expanded true draws exactly one row.",
+        "[unit] layoutTranscript of a user entry { text: \"see @a.ts now\", mentions: [\"a.ts\"] } draws a span whose text is @a.ts and whose colour is accent.",
+        "[unit] layoutTranscript of a user entry { text: \"see (@a.ts).\", mentions: [\"a.ts\"] } draws a span whose text is @a.ts and whose colour is accent.",
+        "[unit] layoutTranscript of a user entry { text: \"see @a.tsx\", mentions: [\"a.ts\"] } draws no accent span other than the user marker.",
+        "[unit] layoutTranscript of a user entry { text: \"see @a.ts now\" } with no mentions draws no accent span other than the user marker.",
+        "[integration] In a rendered transcript holding a collapsed attached attachment entry, clicking its label row shows its body rows.",
+        "[integration] Clicking that label row a second time hides the body rows again.",
+        "[integration] Clicking the label row of a refused attachment entry leaves the transcript unchanged."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "mentions",
+        "tui",
+        "transcript"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Extends a discriminated union, shared layout/cache, wrapped span matching and click-to-expand behavior across modules. Unit span/cache tests and UI click tests verify compatibility with existing transcript rendering.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/transcript-model.ts",
+        "packages/nax/src/tui/chat/layout.ts",
+        "packages/nax/src/tui/chat/transcript-click.ts",
+        "packages/nax/test/ui/chat/chat-transcript-click.test.tsx",
+        "packages/nax/src/chat/mentions/types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/mention-entries.ts",
+        "packages/nax/src/tui/chat/layout-attachment.ts",
+        "packages/nax/test/unit/tui/chat/mention-entries.test.ts",
+        "packages/nax/test/unit/tui/chat/layout-attachment.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a listed quoted mention appears twice wholly within wrapped rows, layoutTranscript draws both complete @\"path with spaces\" occurrences in accent with userBand background.",
+        "When a listed mention is split across wrapped rows, layoutTranscript leaves both pieces unaccented apart from the user marker.",
+        "When an attachment has open false and global expanded true, layoutTranscript keeps its body hidden.",
+        "When an attachment has open true and global expanded false, layoutTranscript shows its body.",
+        "Clicking the label row of a path-only attachment leaves the transcript unchanged."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/transcript-model.ts",
+          "reason": "`TranscriptEntry` gains `mentions?` on `user` and the `attachment` member. No reducer change."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/layout.ts",
+          "reason": "`layoutEntry` gains `case \"attachment\"`, `cachedLines` treats `attachment` as collapsible, `userLines` styles mention tokens."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/transcript-click.ts",
+          "reason": "`toggleTranscriptLine` also toggles expandable `attachment` entries."
+        },
+        {
+          "path": "packages/nax/test/unit/tui/chat/layout.test.ts",
+          "reason": "gains the `userLines` mention-span cases; existing assertions unchanged."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/chat-transcript-click.test.tsx",
+          "reason": "gains the attachment toggle cases; existing assertions unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "239d850d27a5f7140620bcfef984844da513c568"
+    },
+    {
+      "id": "US-005",
+      "title": "Send expanded messages and replay them",
+      "description": "**Goal** — Expand plain typed messages once in the TUI prepare step and render the same mention entries live and from stored history.\n\n**Motivation** — Every chat message is a plain string end to end (`ChatHost.send(message: string, ...)`, the ACP client sends one `{ type: \"text\" }` block in `nax-agent-acp/src/client/turn.ts`), so expanding mentions into that string reaches every brain with no brain, store or protocol change.\n\n**Approach** — Add `_chatAppDeps.expandMentions`, the `submit` branch and the `sendTurn` mention parse in `ChatApp.tsx`, and the `replayUser` parse in `history-replay.ts`.\n\n### Send path\nIn `ChatApp` `submit`, for a non-slash message whose text contains `@` or `</nax-mentions`, call `sendTurn(message, prepare)` where `prepare` resolves `{ message: (await _chatAppDeps.expandMentions(message, { cwd, repoRoot: host.repoRoot })).message }`. A message containing neither keeps today's exact call (`sendTurn(message)`), so the existing `host.send(\"hello\", fn)` two-argument expectations hold. `sendTurn`'s default `title = message` keeps the typed text as the title.\n\nIn `sendTurn`, after the skill check, `parseMentionMessage(prepared.message)` that succeeds appends `mentionTranscriptEntries(parsed)` instead of a plain `user` entry.\n\n`mentionTranscriptEntries(parsed)` returns `[{ kind: \"user\", text: parsed.text, mentions }, ...one attachment entry per record]`, where `mentions` lists the paths of the records whose status is not `refused`, and each attachment entry copies `path`, `status`, `note`, `body` with no `open`.\n\n`replayUser` (`tui/chat/history-replay.ts`): Target tries `parseMentionMessage(content)` after the compaction and skill checks; a parse returns `[...mentionTranscriptEntries(parsed)]`.\n\nRead-only baseline (the submit branch above intentionally adds prepare only for mention-triggering messages): `submit(message)`: a non-slash message calls `noteUserTurn()` then `sendTurn(message)`. `sendTurn(message, prepare?, title = message)`: awaits `prepare()` when given (`{ message } | { notice }`; a notice is appended and nothing is sent), appends `parseSkillInvocation(prepared.message)` as a `skill` entry or else `{ kind: \"user\", text: prepared.message }`, then calls `host.send(prepared.message, onEvent)` when `prepared.message === title`, else `host.send(prepared.message, onEvent, { title })`. Replace only the non-skill plain-entry alternative with mention parse/fallback; retain busy serialization, notices, event flow and finalization.\n\n`_chatAppDeps` (`tui/chat/ChatApp.tsx`)\n- Baseline: `{ tmux }`.\n- Target for this story: add `expandMentions: expandChatMentions`; US-007 later adds `mentionFileIndex: createMentionFileIndex`.\n\nUse `ChatAppProps.cwd` (defaults to `host.repoRoot`); `ChatHost.repoRoot`. `packages/nax/src/cli/chat.ts` `screenProps(host, deps, cwd)` passes the process `cwd` to `ChatAppProps.cwd`; `composeChat` sets `repoRoot = dirname(findProjectDir(cwd))` or `cwd`. Do not change the CLI or host for this feature. Retain the typed draft history so up recalls the original input, not the prepared string. The expansion runs once in the TUI's `sendTurn` `prepare` step, so every brain (native, Claude Code, Codex, Cursor) gets the same string and the session store saves it; `chat/chat-host.ts` does not change. Stored message that does not parse: rendered as a plain `user` entry, as today.\n\n**Scope** — In: prepare injection, plain submit branch, live parsed-entry rendering, replay parse, typed title/history preservation, one integration using the default expander. Out: expander limits/folders (US-003), renderer implementation (US-004), picker/index (US-006/US-007). Expanding mentions inside slash commands (`/skill foo @x`, `/plan ...`) or in job-delivered messages; only a plain typed chat message expands. Any change to `packages/nax/src/chat/chat-host.ts`, the `ChatHost` interface, the session store, `nax-agent`, `nax-agent-acp` or koda. Sending attachments to ACP brains as ACP `resource` content blocks; every brain receives the expanded text.\n\n**Interface** —\n```ts\nexport function expandChatMentions(text: string, where: { cwd: string; repoRoot: string }): Promise<ExpandedMentions>;\nexport function parseMentionMessage(message: string): ParsedMentionMessage | undefined;\nexport function mentionTranscriptEntries(parsed: ParsedMentionMessage): readonly TranscriptEntry[];\n```\nExisting sendTurn signature remains `sendTurn(message, prepare?, title = message)` with prepare returning `Promise<{ message: string } | { notice: string }>`.",
+      "acceptanceCriteria": [
+        "[integration] Rendering ChatApp with cwd prop /repo/pkg, a fake host whose repoRoot is /repo, and _chatAppDeps.expandMentions spied to return { message: \"EXPANDED\", records: [] }, then typing see @a.ts and pressing return, calls the spy once with (\"see @a.ts\", { cwd: \"/repo/pkg\", repoRoot: \"/repo\" }).",
+        "[integration] In that expanded-send case, host.send is called with \"EXPANDED\", a function, and { title: \"see @a.ts\" }.",
+        "[integration] Typing hello (no @) and pressing return calls host.send with (\"hello\", <function>) and two arguments only.",
+        "[integration] In that hello case, _chatAppDeps.expandMentions is not called.",
+        "[integration] Typing /help @a.ts and pressing return does not call _chatAppDeps.expandMentions.",
+        "[integration] Typing x </nax-mentions y (no @) and pressing return calls _chatAppDeps.expandMentions once with that text.",
+        "[integration] When expandMentions returns a message built by formatMentionMessage(\"see @a.ts\", [{ path: \"a.ts\", status: \"attached\", note: \"2 lines\", body: \"x\\ny\\n\" }]), the transcript shows a row ending with see @a.ts.",
+        "[integration] In that rendered-expanded-message case, the next transcript row contains attached @a.ts · 2 lines.",
+        "[integration] After sending see @a.ts, pressing up in the empty input recalls see @a.ts, not the expanded message.",
+        "[integration] With _chatAppDeps.expandMentions left at its default, cwd prop and host repoRoot both /repo, and _mentionExpandDeps faked so /repo/a.ts holds \"x\\n\" and git answers check-ignore with exitCode 1/timedOut false, typing see @a.ts and pressing return calls host.send with a message that parseMentionMessage parses to { text: \"see @a.ts\", records: [{ path: \"a.ts\", status: \"attached\", note: \"1 lines\", body: \"x\\n\" }] }.",
+        "[unit] replayHistory of a history whose user message is formatMentionMessage(\"see @a.ts\", [attachedA]) returns entries equal to mentionTranscriptEntries of that message's parse, where attachedA is an attached record for a.ts.",
+        "[unit] replayHistory of a history whose user message is \"see @a.ts\" (not expanded) returns one entry equal to { kind: \"user\", text: \"see @a.ts\" }.",
+        "[unit] Given a nonempty stored user message content that is neither a compaction summary nor a skill invocation and has a malformed mention envelope that parseMentionMessage returns undefined for, replayHistory returns [{ kind: \"user\", text: content }], preserving today's plain-user fallback."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "mentions",
+        "tui",
+        "history"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two existing TUI files already provide async prepare, typed titles and inverse-envelope replay; adding a submit guard and parser branches reuses those seams without changing session lifecycle, so medium/tdd-simple with host spies and one default-expander integration is sufficient.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/history-replay.ts",
+        "packages/nax/src/tui/chat/mention-entries.ts",
+        "packages/nax/test/ui/chat/chat-app.test.tsx",
+        "packages/nax/src/chat/mentions/mention-expand.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/chat-app-mentions.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "When a job delivers text containing @a.ts, host.send receives the unexpanded job text and _chatAppDeps.expandMentions is not called.",
+        "When a plain typed message's expansion is still pending, a second submit does not start a second expansion or host.send.",
+        "When all resolved mentions are refused, ChatApp still calls host.send with the refusal records in its expanded message.",
+        "When the user submits a pasted earlier expanded message with no resolvable mentions, the live transcript renders the pasted text as typed with no forged attachment entries."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/ChatApp.tsx",
+          "reason": "`_chatAppDeps.expandMentions`, the `submit` branch and the `sendTurn` mention parse."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/history-replay.ts",
+          "reason": "`replayUser` parses mention messages."
+        },
+        {
+          "path": "packages/nax/test/unit/tui/chat/history-replay.test.ts",
+          "reason": "gains the mention replay cases; existing assertions unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4d0eff9132a22020fb98fe6fa5ae378c3647974c"
+    },
+    {
+      "id": "US-006",
+      "title": "File list and picker model",
+      "description": "**Goal** — Add cached git-backed file/folder rows and pure cursor-query, fuzzy ranking and replacement functions for the picker.\n\n**Motivation** — The coding-agent roadmap lists \"`@` file mention / image paste\" as an open chat-input item. The user chose `@` mentions first (2026-10-31); images need content-part plumbing through every layer and are a separate later feature.\n\n**Approach** — Add `src/chat/mentions/mention-files.ts` (`_mentionFilesDeps`, `listMentionFiles`, `createMentionFileIndex`) and `src/tui/chat/mention-menu.ts` (`mentionQueryAt`, `filterMentionRows`, `applyMentionRow`). Export `listMentionFiles`, `createMentionFileIndex` and `_mentionFilesDeps` from the mentions barrel `src/chat/mentions/index.ts` that US-001 created.\n\n### Picker model and index\n- `mentionQueryAt(editor)` returns `null` when `editor.text` starts with `/`. Otherwise it finds the `@` strictly before `editor.cursor` (index less than the cursor) that starts a mention per §Mention grammar with no whitespace between it and the cursor (or, for a quoted token, no closing `\"` between them). `query` is the text between `@` (or `@\"`) and the cursor; `end` is the token's end (next whitespace after the cursor, or after the closing quote, or the text end).\n- `filterMentionRows(rows, query)`: `prefix` = `query` up to and including its last `/` (or `\"\"`), `rest` = the remainder. Candidates are rows whose `path` starts with `prefix` and differs from it. With `rest` empty, only the direct children of `prefix` are kept (no further `/` after `prefix`, except a folder's own trailing one). With `rest` non-empty, a candidate is kept when `rest` is a case-insensitive subsequence of its path after `prefix`. Ranking (a row's basename is its last path segment, with a folder's trailing `/` removed first): basename starts with `rest` (case-insensitive), then path-after-prefix starts with `rest`, then other matches; ties by shorter path, then code-unit order.\n- `applyMentionRow(editor, at, row, key)` replaces `editor.text.slice(at.start, at.end)` with `formatMentionToken(row.path)`. For a folder row with `key` `\"tab\"`, the inserted text is the token without a trailing space, and for a path with whitespace without the closing `\"` (so the picker stays open inside the folder). Otherwise a single space follows the token, unless the character at `at.end` is already whitespace, in which case no space is inserted and the cursor moves past that existing whitespace character. Text after `at.end` is kept; otherwise the cursor sits right after the inserted text.\n- `createMentionFileIndex(cwd).get()` reuses its last list while it is younger than `MENTION_FILE_INDEX_MAX_AGE_MS` (by `_mentionFilesDeps.now()`), otherwise re-lists; concurrent calls share one in-flight listing.\n- `listMentionFiles(cwd)` runs `git ls-files -z --cached --others --exclude-standard` in `cwd`. A zero exit returns `git: true` and one file row per listed path plus one folder row per distinct ancestor folder (`a/`, `a/b/`), all sorted ascending by `path` in code-unit order. A non-zero exit returns `{ git: false, rows: [] }`.\n\nFailure handling: `git ls-files` fails (not a repo, error, timeout) → `{ git: false, rows: [] }`; US-007 owns showing the `no file list from git` line. Use the existing timeout wrapper for the default dependency; normalize failed/timed-out calls to the failure result. `MENTION_FILE_INDEX_MAX_AGE_MS = 5_000` is a fixed cache age, not config or a command timeout.\n\nMention grammar shared with US-001: A mention starts with `@` at index 0 or right after a whitespace character. Unquoted: the path runs from after `@` to the next whitespace or the end of the text. An empty path (a bare `@`, or `@\"\"`) is not a token. Quoted: `@\"` starts a quoted path that runs to the next `\"`; the token ends after that `\"`. An unclosed quote is not a token. Quoted paths have no escape sequences. Picker queries deliberately allow incomplete/bare mentions so completion can begin.\n\nExisting EditorState.cursor uses code-point indices; internally translate to/from raw string offsets for substring replacement, retaining all ASCII examples and the editor's Unicode contract. Do not change line-editor.ts's cursor semantics.\n\n**Scope** — In: file/folder row listing, deterministic cache and in-flight sharing, cursor query detection, fuzzy ranking, quoted insertion and folder drill-down state transformation, public exports and unit tests. Out: resolving/reading mentioned content (US-002/US-003), transcript (US-004), sends (US-005), mounted menu/key ownership/diagnostic view (US-007). Listing submodule contents in the picker; a typed submodule path still resolves under the repo-root boundary. Escaping or re-quoting paths that contain a `\"` character; such a path can only be mentioned unquoted if it has no whitespace.\n\n**Interface** —\n```ts\n// mention-files.ts\nexport const _mentionFilesDeps: {\n  git(args: string[], cwd: string): Promise<{ stdout: string; exitCode: number }>;\n  now(): number;\n};\nexport function listMentionFiles(cwd: string): Promise<MentionFileList>;\nexport function createMentionFileIndex(cwd: string): MentionFileIndex;\n\n// mention-menu.ts\nexport interface MentionQuery { readonly start: number; readonly end: number; readonly query: string; readonly quoted: boolean }\nexport function mentionQueryAt(editor: EditorState): MentionQuery | null;\nexport function filterMentionRows(rows: readonly MentionFileRow[], query: string): readonly MentionFileRow[];\nexport function applyMentionRow(editor: EditorState, at: MentionQuery, row: MentionFileRow, key: \"tab\" | \"return\"): EditorState;\n```",
+      "acceptanceCriteria": [
+        "[unit] listMentionFiles(\"/repo\"), with fake git answering ls-files -z --cached --others --exclude-standard with exitCode 0 and \"src/b/c.ts\\0a.ts\\0\", returns git true.",
+        "[unit] In that listing case, the rows' paths in order are [\"a.ts\", \"src/\", \"src/b/\", \"src/b/c.ts\"].",
+        "[unit] In that listing case, the rows whose folder is true are exactly src/ and src/b/.",
+        "[unit] listMentionFiles(\"/repo\") with fake git exiting 128 (or the git dependency rejecting with a spawn error) returns { git: false, rows: [] }.",
+        "[unit] createMentionFileIndex(\"/repo\").get() called twice with now() advanced by MENTION_FILE_INDEX_MAX_AGE_MS - 1 between the calls lists files once.",
+        "[unit] createMentionFileIndex(\"/repo\").get() called twice with now() advanced by MENTION_FILE_INDEX_MAX_AGE_MS between the calls lists files twice.",
+        "[unit] Two concurrent get() calls before the first listing settles list files once and resolve to the same list.",
+        "[unit] mentionQueryAt({ text: \"see @src/ch\", cursor: 11 }) returns { start: 4, end: 11, query: \"src/ch\", quoted: false }.",
+        "[unit] mentionQueryAt({ text: \"see @src/ch now\", cursor: 8 }) returns { start: 4, end: 11, query: \"src\", quoted: false }.",
+        "[unit] mentionQueryAt({ text: \"see @a.ts now\", cursor: 13 }) returns null, because whitespace separates the @ from the cursor.",
+        "[unit] mentionQueryAt({ text: \"see @a.ts\", cursor: 4 }) returns null, because the cursor sits on the @ itself.",
+        "[unit] mentionQueryAt({ text: \"/skill @a\", cursor: 9 }) returns null.",
+        "[unit] mentionQueryAt({ text: 'see @\"my d', cursor: 10 }) returns { start: 4, end: 10, query: \"my d\", quoted: true }.",
+        "[unit] filterMentionRows(rows, \"\") over rows a.ts, src/, src/b.ts returns rows whose paths are exactly a.ts and src/.",
+        "[unit] filterMentionRows(rows, \"src/\") over rows a.ts, src/, src/b.ts, src/c/, src/c/d.ts returns rows whose paths are exactly src/b.ts and src/c/.",
+        "[unit] filterMentionRows(rows, \"chh\") over rows chat-host.ts, x/chat-host.ts, cheap.txt returns rows whose paths in order are [\"chat-host.ts\", \"x/chat-host.ts\"].",
+        "[unit] filterMentionRows(rows, \"host\") over rows ghost-x.ts and src/host.ts returns src/host.ts first, because its basename starts with the query.",
+        "[unit] filterMentionRows(rows, \"src\") over rows x/src.ts and folder src/ returns src/ first, because a folder's basename is taken without its trailing /.",
+        "[unit] filterMentionRows(rows, \"CHAT\") over row chat.ts returns that row.",
+        "[unit] applyMentionRow({ text: \"see @ch now\", cursor: 7 }, query, fileRow(\"chat.ts\"), \"return\") returns { text: \"see @chat.ts now\", cursor: 13 }, where query is mentionQueryAt of that editor and fileRow creates { path, folder: false }.",
+        "[unit] applyMentionRow({ text: \"@sr\", cursor: 3 }, query, folderRow(\"src/\"), \"tab\") returns { text: \"@src/\", cursor: 5 }, where query is mentionQueryAt of that editor and folderRow creates { path, folder: true }.",
+        "[unit] applyMentionRow({ text: \"@sr\", cursor: 3 }, query, folderRow(\"src/\"), \"return\") returns { text: \"@src/ \", cursor: 6 }, where query is mentionQueryAt of that editor.",
+        "[unit] applyMentionRow({ text: \"@my\", cursor: 3 }, query, fileRow(\"my file.ts\"), \"return\") returns { text: '@\"my file.ts\" ', cursor: 14 }, where query is mentionQueryAt of that editor.",
+        "[unit] applyMentionRow({ text: \"@my\", cursor: 3 }, query, folderRow(\"my dir/\"), \"tab\") returns { text: '@\"my dir/', cursor: 9 }, where query is mentionQueryAt of that editor."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "mentions",
+        "picker",
+        "cache"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two new package-local modules implement a single-list TTL/in-flight cache and fully specified pure picker transformations using existing editor/menu conventions; injected clocks, deferred git results and exact editor outputs make medium/tdd-simple realistic.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/mentions/mention-tokens.ts",
+        "packages/nax/src/tui/chat/line-editor.ts",
+        "packages/nax/src/tui/chat/slash-menu.ts",
+        "packages/nax/src/context/greenfield.ts",
+        "packages/nax/src/utils/git.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/mentions/mention-files.ts",
+        "packages/nax/src/tui/chat/mention-menu.ts",
+        "packages/nax/test/unit/chat/mentions/mention-files.test.ts",
+        "packages/nax/test/unit/tui/chat/mention-menu.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When two matching rows have equal ranking and length, filterMentionRows returns them in ascending code-unit path order.",
+        "When mentionQueryAt receives an editor containing non-BMP characters before the active mention, applying a selected row preserves those characters and returns a code-point cursor immediately after the completion.",
+        "When a quoted mention is completed in the middle of a prompt, applyMentionRow preserves all text after the closing quote and skips only one existing whitespace character.",
+        "When the cached git:false list expires and the next listing succeeds, the next get() returns git:true rows.",
+        "When repeated listed paths share ancestor folders, listMentionFiles returns only one row for each ancestor folder."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0e1af0e62ea5d9920f7ae464f01c72dda7c41045"
+    },
+    {
+      "id": "US-007",
+      "title": "The `@` picker in the chat input",
+      "description": "**Goal** — Mount the mention picker under chat input with cursor-preserving edits, asynchronous file rows and key-time ownership coordinated with every bottom surface.\n\n**Motivation** — The coding-agent roadmap lists \"`@` file mention / image paste\" as an open chat-input item. The user chose `@` mentions first (2026-10-31); images need content-part plumbing through every layer and are a separate later feature.\n\n**Approach** — Add `ChatInputHandle.edit`, `tui/chat/MentionMenu.tsx`, `tui/chat/use-mention-menu.ts`, `_chatAppDeps.mentionFileIndex`, and the `ChatApp` wiring: key ownership read at key time, escape dismissal, the escape handler, jobs-opener and row-budget sites, and the `no file list from git` line.\n\n`ChatInputHandle` (`tui/chat/ChatInput.tsx`)\n- Baseline: `{ complete(text: string): void; submit(text: string): void }`.\n- Target: adds `edit(state: EditorState): void` — write `state.text` into the prompt with the cursor at `state.cursor`, through the same draft ref and clear-arm bookkeeping `complete` uses.\n\n`_chatAppDeps` (`tui/chat/ChatApp.tsx`)\n- Target: `{ tmux, expandMentions: expandChatMentions, mentionFileIndex: createMentionFileIndex }`.\n\n### Picker\n- The view: under the input, styled like the slash menu, at most `SLASH_MENU_MAX_ROWS` rows (capped by the bottom-region budget the slash menu uses), the selected row highlighted. Up/down move; tab and return apply the selected row through `ChatInputHandle.edit`; escape closes it until the prompt text next changes. Return while the picker is open never submits. Ownership is read at key time, not from the last render (the `use-slash-menu-keys.ts` pattern), so once rows are loaded, a batch of keys in one terminal write that types a query and then presses tab and return is handled by the picker. A batch arriving before the rows load follows the pending rule below (return submits).\n- The picker opens when `mentionQueryAt` returns a query, no other surface owns the bottom region (`bottomBlocked`), and the slash menu is not shown. It is shown, and owns up, down, tab, return and escape, only while `filterMentionRows` returns at least one row and its row budget is above zero (the slash menu's `matches.length > 0` and `menuRows > 0` rule). With zero rows, or while a `get()` is pending, nothing is drawn and every key behaves as if no picker existed, so return submits. It reads rows from one `_chatAppDeps.mentionFileIndex(cwd)` created once when the screen mounts, calling `get()` whenever `mentionQueryAt` turns from `null` to a query. While a `get()` is pending it shows no rows.\n- The picker's shown-state and rows join the slash menu's at every `ChatApp` site that reads `menuShown()` or `menuRows`: the screen-level escape handler (escape while the picker is shown closes the picker and never cancels a running turn), the jobs opener's `blocked` input, and the bottom-region row budget (`inputBudget`, the bottom rows).\n- When the list's `git` is `false` (not a repo, or `git ls-files` failed or timed out), the picker draws one dim line `no file list from git` and owns no keys.\n- `createMentionFileIndex(cwd).get()` reuses its last list while it is younger than `MENTION_FILE_INDEX_MAX_AGE_MS` (by `_mentionFilesDeps.now()`), otherwise re-lists; concurrent calls share one in-flight listing.\n\nUse the US-006 model verbatim for query filtering and apply semantics; this story owns no second ranking/replacement implementation. Preserve the loaded-rows batched-key AC: query, folder tab, then return must use current query/current selection even before React redraw. A menu view that only mounts after a render must not be the sole owner of the key subscription needed for that batch. On a new pending get(), no rows or keys are claimed; on already loaded cached rows ensure synchronous ownership can satisfy the specified batch. Read row-budget visibility at key time too. Every draft edit and dismissal must synchronously update the live claim. Keep shifted navigation, existing slash behavior, ask/full-screen picker precedence, draft history and clear-arm behavior unchanged.\n\nFailure handling: `git ls-files` fails (not a repo, error, timeout) → `{ git: false, rows: [] }`; picker shows the `no file list from git` line. The diagnostic is display-only and must not intercept return.\n\n**Scope** — In: edit handle, picker view/hook, one screen-mounted index, null-to-query loading, loaded/pending/empty/failed visibility, selection/dismissal, live navigation ownership, escape/jobs/budget coordination, real-default-index integration. Out: file-index/query/fuzzy/replacement internals (US-006), expansion/limits (US-002/US-003), transcript renderer (US-004), send/replay behavior (US-005). Expanding mentions inside slash commands (`/skill foo @x`, `/plan ...`) or in job-delivered messages; only a plain typed chat message expands. Images, screenshots and any non-text prompt content in chat; a later, separate feature.\n\n**Interface** — Add the following method to the existing ChatInputHandle while retaining complete/submit:\n```ts\nedit(state: EditorState): void\n```\nConsume these existing interfaces from US-006:\n```ts\nexport interface MentionFileIndex { get(): Promise<MentionFileList> }\nexport function createMentionFileIndex(cwd: string): MentionFileIndex;\nexport interface MentionQuery { readonly start: number; readonly end: number; readonly query: string; readonly quoted: boolean }\nexport function mentionQueryAt(editor: EditorState): MentionQuery | null;\nexport function filterMentionRows(rows: readonly MentionFileRow[], query: string): readonly MentionFileRow[];\nexport function applyMentionRow(editor: EditorState, at: MentionQuery, row: MentionFileRow, key: \"tab\" | \"return\"): EditorState;\n```\n`MentionMenu.tsx`, `use-mention-menu.ts` — the picker view and its state/keys hook (shapes are the builder's). Modify chat-input.test.tsx to add the edit-handle case while leaving existing assertions unchanged.",
+      "acceptanceCriteria": [
+        "[integration] Calling edit({ text: \"abc\", cursor: 1 }) on the ChatInputHandle published by ChatInput, then typing X, makes the prompt read aXbc.",
+        "[integration] With _chatAppDeps.expandMentions spied to return { message: its input, records: [] }, rendering ChatApp with _chatAppDeps.mentionFileIndex spied to return an index whose get() resolves { git: true, rows: [file \"chat-host.ts\", file \"cheap.txt\"] }, then typing see @chh, shows a picker row chat-host.ts under the input.",
+        "[integration] In that picker case, _chatAppDeps.mentionFileIndex was called exactly once, with the screen's cwd.",
+        "[integration] In that picker case, the index's get() was called at least once after the @ was typed.",
+        "[integration] With that picker shown and expansion spied to return its input, pressing return makes the prompt read \"see @chat-host.ts \".",
+        "[integration] In that picker-return case, host.send is not called.",
+        "[integration] With that picker shown and expansion spied to return its input, pressing tab makes the prompt read \"see @chat-host.ts \".",
+        "[integration] With rows src/ (folder) and src/a.ts and expansion spied to return its input, typing @sr then pressing tab makes the prompt read @src/ and shows the picker row src/a.ts.",
+        "[integration] With rows a.ts and b.ts and expansion spied to return its input, typing @ then pressing down then return makes the prompt read \"@b.ts \".",
+        "[integration] With the picker shown and expansion spied to return its input, pressing escape closes it and leaves the prompt text unchanged.",
+        "[integration] After that escape, typing one more character that still matches shows the picker again.",
+        "[integration] With a turn running (a host.send that has not settled), the picker shown and expansion spied to return its input, pressing escape closes the picker and does not call host.cancel.",
+        "[integration] With expansion spied to return its input, typing /he shows the slash menu and no mention picker.",
+        "[integration] With an ask card pending on the host and expansion spied to return its input, typing @ shows no mention picker.",
+        "[integration] With get() resolving { git: false, rows: [] } and expansion spied to return its input, typing @ shows the line no file list from git.",
+        "[integration] In that git:false state, pressing return calls host.send.",
+        "[integration] With rows a.ts only and expansion spied to return its input, typing thanks @bob (no row matches) and pressing return calls host.send.",
+        "[integration] With get() never settling and expansion spied to return its input, typing see @a and pressing return calls host.send.",
+        "[integration] With rows src/ (folder) and src/a.ts loaded (type @, wait for the row, then clear the prompt) and expansion spied to return its input, writing @sr, tab and return in one input chunk leaves the prompt reading \"@src/a.ts \".",
+        "[integration] In that loaded-rows batched-key case, host.send is not called.",
+        "[integration] With _chatAppDeps.mentionFileIndex left at its default, expansion spied to return its input, and _mentionFilesDeps.git faked to answer ls-files with exitCode 0 and \"chat-host.ts\\0\", typing @chh shows a picker row chat-host.ts.",
+        "[integration] When the real file index receives a failed or timed-out git ls-files result, typing @ in ChatApp shows no file list from git instead of selectable rows.",
+        "[integration] Calling the existing ChatInputHandle.complete(\"abc\") and then typing X makes the prompt read abcX, preserving completion's cursor-at-end behavior after edit(state) is added.",
+        "[integration] Given an active idle ChatInput, calling the existing ChatInputHandle.submit(\"hello\") calls onSubmit with \"hello\", preserving the existing submit-handle behavior after edit(state) is added."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "mentions",
+        "tui",
+        "picker",
+        "concurrency"
+      ],
+      "dependencies": [
+        "US-005",
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Async index loading and React state must synchronize with ref-based key-time ownership, cursor edits, escape cancellation and shared bottom-region budgets. Tests must drive terminal keys, including a single batched write and a real-default-index seam, rather than directly invoking picker handlers.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/ChatInput.tsx",
+        "packages/nax/src/tui/chat/SlashMenu.tsx",
+        "packages/nax/src/tui/chat/use-slash-menu-keys.ts",
+        "packages/nax/src/tui/chat/mention-menu.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/MentionMenu.tsx",
+        "packages/nax/src/tui/chat/use-mention-menu.ts",
+        "packages/nax/test/ui/chat/chat-mention-picker.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "When the bottom-region budget leaves zero menu rows, a matching mention query draws no picker and return submits the typed message.",
+        "When a short terminal has less than SLASH_MENU_MAX_ROWS available for the picker, the picker shows only its budgeted rows and keeps the footer visible.",
+        "When the mention picker is shown, activating the jobs opener does not replace it with the jobs surface.",
+        "When a get() resolves after the prompt no longer contains a mention query, ChatApp does not reopen the picker.",
+        "When a mention picker is dismissed and return arrives in the same terminal write, return submits the unchanged typed prompt.",
+        "When edit(state) is invoked while input history exists, recalling history still returns the original submitted messages."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/ChatInput.tsx",
+          "reason": "`ChatInputHandle` gains `edit(state)`; the published handle implements it."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/ChatApp.tsx",
+          "reason": "`_chatAppDeps.mentionFileIndex`, the picker under the input, `yieldNavigation`, the escape handler, the jobs opener `blocked` input and the row budget include the picker."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/chat-input.test.tsx",
+          "reason": "gains the `edit` handle case; existing assertions unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6ee2de3518c4cafba4d4a3846b64f5d3582fbb0e"
+    }
+  ],
+  "analysis": "This is an additive enhancement to the existing @nathapp/nax React/Ink chat TUI, not a greenfield project. All seven stories are scoped to packages/nax; no dependency, protocol, manifest, version or storage-schema changes are needed. Codebase-memory MCP is unavailable in this tool session, so navigation used direct source reads and text searches. The approved source design exists at docs/superpowers/specs/2026-10-31-nax-chat-file-mentions-design.md:1; use the supplied implementation spec and its ACs over older design-draft details such as repo-root versus cwd listing, unresolved versus refused paths, and approximate limits.\n\nArchitecture and conventions: packages/nax/package.json:2 identifies @nathapp/nax; its scripts at :14-18 and :61-75 provide Bun typecheck, lint and targeted UI/unit test commands. This package uses bun:test, ink-testing-library and React act, as demonstrated by packages/nax/test/ui/chat/chat-app.test.tsx:1-8. Read docs/architecture/ARCHITECTURE.md before implementation; :168-186 gives file/function limits, external-call injection, path-security and test constraints. Follow _deps seams, Bun-native byte reads/writes, strict TypeScript, existing barrel imports and display sanitization. Use existing gitWithTimeout/GIT_TIMEOUT_MS rather than a new subprocess implementation or arbitrary timeout. Run scoped tests with explicit paths; never bare bun test, bun run nax, or nax plan/run. Pipeline quality gates are not story ACs. Do not run coverage inside NAX_SANDBOXED=1.\n\nUS-001 foundation: packages/nax/src/chat/skill-invocation.ts:12-27 demonstrates the inverse-envelope parser already consumed by live and replay paths. packages/nax/src/chat/index.ts:81 exports that parser and is the public @/chat barrel to extend, only with the mentions barrel export. Create pure shared mention types/constants, textual tokenizer, formatter and strict length-addressed envelope parser. Bodies and envelope offsets use JavaScript UTF-16 string lengths, not bytes or code points. The final trailer and exact per-record lengths must prevent embedded closing markers from affecting parsing. Empty-record wrapping when typed text contains </nax-mentions prevents pasted envelopes from becoming forged attachments. Reject malformed/truncated envelopes rather than partially parsing. Types must cover all records before downstream parallel stories start.\n\nUS-002 and US-003 resolution: packages/nax/src/utils/git.ts:15 re-exports gitWithTimeout and GIT_TIMEOUT_MS. packages/nax/src/advisor/audit.ts:43-47 is the injectable wrapper precedent, but the expander must additionally preserve timedOut. New mention-expand.ts resolves typed paths against cwd, canonicalizes the repo root and candidates, deduplicates canonical paths in mention order, rejects outside-root siblings/symlinks and case-insensitive .git segments, and checks ignores with literal pathspecs against the typed cwd-relative path rather than canonical path. This is a security-sensitive disclosure/access boundary: US-002 uses strict three-session-tdd. Missing realpaths are silent, except one unquoted trailing-punctuation retry. Stat/read/readdir/git exceptions become per-token refused records, never stop subsequent mentions. Content snapshots are sent once at submission; folder listings expose only direct entries, not recursive file contents. US-003 layers directory normalization, NUL probing, read-size guard, UTF-8 decoding, whole-line truncation and total-body accounting onto the same expander. Constants are fixed limits, not configuration knobs. Git listing nonzero falls back to readdir for folders, whereas check-ignore errors/timeouts fail closed. Preserve typed record paths; folder normalization is for listing/pathspec calculation. An unavailable repoRoot realpath must not cause expansion to reject or bypass containment; select a safe refused outcome under the never-reject contract. Watch stat/read races and memory bounds; the design's size check precedes byte reads but does not create a hardened OS-level sandbox or an atomic filesystem snapshot.\n\nUS-004 transcript impact: packages/nax/src/tui/chat/transcript-model.ts:19-42 defines the discriminated union; user currently has only text and there is no attachment kind. Keep the event reducer unchanged and add user.mentions plus the new attachment record. packages/nax/src/tui/chat/layout.ts:112-126 wraps/bands user text, :176-192 renders the skill card/body precedent, :283-309 dispatches entry kinds, and :351-363 caches by identity/width/effective expansion. Add layout-attachment.ts and mention-entries.ts; retain userBand, sanitized display, wrapping, theme glyphs and cache identity. Highlight every complete listed mention occurrence on a wrapped row but not split tokens or prefixes of longer names. The explicit (@a.ts). AC is authoritative for display matching even though the send tokenizer starts mentions only at start/after whitespace: display highlighting and expansion token discovery are distinct operations. packages/nax/src/tui/chat/transcript-click.ts:10-27 maps rows to entries and toggles current collapsible headers; extend only expandable attachment statuses and preserve original-array no-op behavior elsewhere. User/attachment entries remain separate and layoutTranscript currently inserts empty separators (:370-383); account for the spec's adjacent user/attachment-row AC without changing unrelated transcript spacing. Other union consumers located by text search include ask-card.ts:128, useChatPicker.ts:42, layout-listing.ts:32, layout-status.ts:21, tool-card.ts:13, use-switch-notices.ts:11 and session-transcript.ts:26; they narrow kinds rather than needing new feature logic.\n\nUS-005 live/replay seams: packages/nax/src/tui/chat/ChatApp.tsx:69 exposes only tmux today; :150 defaults cwd to host.repoRoot; :338-343 calls noteUserTurn then sendTurn for plain messages; :357-391 serializes prepare under sending.current, appends the parsed skill/plain user entry, conditionally preserves the two-argument host.send call and handles errors/finalization. Extend submit only for plain typed text containing @ or </nax-mentions. Do not expand slash outcomes (:303-335) or background job deliveries (:404). Parse mentions after skills inside sendTurn, append the helper's entire entry sequence, then send the exact prepared string with typed title. Input history already captures typed text in ChatInput.tsx:545-552, before prepare; preserve this instead of storing expanded text in the draft. packages/nax/src/tui/chat/history-replay.ts:14-21 checks empty content, compaction then skill; insert mentions after those checks and keep malformed/plain content raw. Replay is consumed on mount/resume through session-transcript.ts:26-33. ChatHost.send remains string-based at packages/nax/src/chat/chat-host.ts:107 and forwards title at :510; it is read-only for this feature. No migration: existing stored strings still render unchanged; newly stored expanded strings replay via their envelope and retain the original content snapshot without new I/O. Host, adapters and session storage save/forward exactly the expanded string using the existing path.\n\nUS-006 model/cache: packages/nax/src/tui/chat/slash-menu.ts:111 defines SLASH_MENU_MAX_ROWS=8; :126-176 implements row/window/query-state modeling to mirror. packages/nax/src/context/greenfield.ts:57-70 is an existing git listing example, but its raw-spawn/newline parser is not this feature's required timeout-aware/NUL-delimited implementation. listMentionFiles must use cwd, tracked plus nonignored untracked files, unique ancestor folders, code-unit ordering and a git:false fallback on command failure/timeout/rejection. The index must share in-flight work and expire at exactly 5000ms, not extend cache freshness accidentally. mention-menu.ts owns query detection, deterministic subsequence ranking, replacement and folder drilling. Important existing contract: packages/nax/src/tui/chat/line-editor.ts:4-10 says EditorState.cursor is a code-point index, while MentionToken and envelope string offsets are UTF-16. Keep the public editor contract; translate offsets internally when querying/editing non-BMP text rather than changing line-editor or cutting surrogate pairs. The spec's ASCII cursor ACs must remain exact; add Unicode behavior only as suggested hardening criteria.\n\nUS-007 integration is the highest UI concurrency risk: ChatApp.tsx:200-233 uses live slash-menu ownership; :236-244 protects escape from cancelling under bottom surfaces; :419-422 synchronously records draft changes; :449 blocks jobs opening under menus; :458 subtracts menu rows from inputBudget; :484 measures bottom rows; :567 yields navigation; :571-589 draws SlashMenu. Integrate mention shown-state/rows at all equivalent sites, preserving asks > full-screen picker > input menu precedence. packages/nax/src/tui/chat/bottom-region.ts:29-66 centralizes blocking and budget arithmetic; reuse its minimum input reserve, not a second inconsistent budget. ChatInput.tsx:108-113 publishes only complete/submit; :494-501 keeps the latest draft ahead of React; :576-578 complete writes through that ref; :589 publishes the handle; :593-619 yields navigation before editing. Add edit(state) using the same synchronous publication/history/clear-arm bookkeeping, preserving cursor position. packages/nax/src/tui/chat/use-slash-menu-keys.ts:50-69 demonstrates the key-time ref claim, and SlashMenu.tsx:177-216 demonstrates latest selection and five-key handling. The mention hook must remain able to own keys after loaded rows and a newly typed query arrive before a rerender, including folder tab followed by return in one terminal write; do not rely on mounting a view or captured render matches to install key ownership. Keep cached rows available for the loaded-batch AC while pending get() calls show no rows and return submits. Avoid stale asynchronous get results reopening dismissed/blocked/unmounted surfaces. Create exactly one index per screen mount. A git:false diagnostic consumes its budgeted display row but owns no keys; pending, zero matches and zero budget also own no keys. Escape dismissal must be visible immediately to both input and screen cancel handlers.\n\nTests and regression anchors: packages/nax/test/ui/chat/chat-app.test.tsx:15-90 provides a typed fake host, deferred send, mount and act helpers; existing two-argument plain send behavior must stay. chat-transcript-click.test.tsx:43-127 supplies fakeMouse, terminal sizing, row lookup and click/send helpers to mirror. test/unit/tui/chat/history-replay.test.ts:22-82 covers raw users, skills, malformed envelopes and compaction; preserve these assertions while adding mention cases. test/unit/tui/chat/layout.test.ts:1-69 supplies structured span/colour and layout helpers and currently has 650 lines, so make only targeted additions and keep the new renderer tests in the declared new file. test/ui/chat/chat-input.test.tsx:12-27 and :74-80 provides controlled drafts, fake clocks and cursor-visible assertions. test/ui/chat/slash-menu.test.tsx:520-578 exercises batched input and :580-687 short/zero row budgets, both valuable patterns for the new picker tests. Use _mentionExpandDeps, _mentionFilesDeps and _chatAppDeps fakes/restoration rather than global module mocks, real git/network, or timing sleeps. Include one real default expander integration and one real default index integration to verify wiring, not only spies.\n\nDependency order is binding: US-001 first; US-002, US-004 and US-006 can follow; US-003 extends US-002; US-005 follows US-002 and US-004; US-007 follows US-005 and US-006. Dependencies intentionally do not add US-003 to US-005/US-007. Shared-barrel edits by US-002 and US-006 and shared ChatApp work by US-005/US-007 need coordinated additive changes; US-003 extends US-002's module rather than recreating it. Every acceptance criterion from the supplied numbered lists is retained in its owning story; the failure table additionally requires explicit malformed-stored-message and git listing failure/timeout behavior criteria. Only proposed extra edge behaviors appear as suggestedCriteria. No releases or unrelated refactors are part of this PRD.\n\nRefine self-audit: enumerated all 127 numbered source ACs against the corresponding first criteria in each story: US-001 #1-21, US-002 #1-16, US-003 #1-16, US-004 #1-17, US-005 #1-12, US-006 #1-24, US-007 #1-21. Every source assertion remains in its original story, including empty-path/email/unclosed-quote reasons, trailing-newline envelope bodies, punctuation and canonical-alias qualifiers, no-trailing-slash folders, no-mentions/unchanged transcript behavior, exact two-argument sends, unexpanded history, cursor-on-@/whitespace reasons, basename-ranking reasons, and loaded-row/default-index qualifiers. Runtime barrel-call outputs now make US-001 #21 directly observable. Failure-path coverage is present in every story: invalid tokens/envelopes; missing/outside/ignored/git-failed paths; oversized/binary/read-error content; refused nonexpandable transcript cards; malformed stored-message fallback; failed git lists and invalid queries; pending/empty/blocked picker states. The malformed replay extra explicitly excludes empty, compaction and skill inputs to respect current replay precedence. All 10 feature-level exclusions are verbatim; all context-file sets include every spec-recommended input within five files, and no story lists its own output as context. Dependency arrays remain exactly binding. Routing was reduced to medium for US-002/003/005/006 based on existing seams and bounded module scope; only the access-control expander retains the strict security strategy, while transcript cross-module row/cache/click work and asynchronous batched picker integration retain complex/lite. Extra regression ACs preserve US-002 ordinary file attachments through US-003 and the pre-existing complete/submit handles through US-007. gitWithTimeout actually returns optional timedOut (packages/nax-agent/src/internal/git-exec.ts:64-84); the new required-boolean wrapper must normalize absence to false, not alter the shared API. All added failure/regression criteria follow the original numbered ACs rather than replacing or moving them.",
+  "outOfScope": [
+    "Images, screenshots and any non-text prompt content in chat; a later, separate feature.",
+    "Line-range mentions such as `@file#L10-40`.",
+    "Mentions of anything that is not a repo path: URLs, symbols, MCP resources, agents, sessions.",
+    "Expanding mentions inside slash commands (`/skill foo @x`, `/plan ...`) or in job-delivered messages; only a plain typed chat message expands.",
+    "Mentions in `nax run`, `nax plan` or bot prompts.",
+    "Re-reading a mentioned file later in the conversation; contents are a snapshot at send time.",
+    "Sending attachments to ACP brains as ACP `resource` content blocks; every brain receives the expanded text.",
+    "Any change to `packages/nax/src/chat/chat-host.ts`, the `ChatHost` interface, the session store, `nax-agent`, `nax-agent-acp` or koda.",
+    "Listing submodule contents in the picker; a typed submodule path still resolves under the repo-root boundary.",
+    "Escaping or re-quoting paths that contain a `\"` character; such a path can only be mentioned unquoted if it has no whitespace."
+  ],
+  "routingProfile": "native-codex-ds"
+}

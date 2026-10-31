@@ -1,7 +1,8 @@
 /** Pure opening-snapshot replay. Tool data uses the same masking and caps as live turns. */
 import { displayToolInput, toolResultPreview } from "@nathapp/nax-agent";
 import { COMPACTION_SUMMARY_PREFIX } from "@nathapp/nax-agent/internal";
-import { acpAgentOfMessage, type ChatHistory, parseSkillInvocation } from "@/chat";
+import { acpAgentOfMessage, type ChatHistory, parseMentionMessage, parseSkillInvocation } from "@/chat";
+import { mentionTranscriptEntries } from "./mention-entries";
 import type { TranscriptEntry } from "./transcript-model";
 
 type Message = ChatHistory["messages"][number];
@@ -17,7 +18,11 @@ function replayUser(content: string): TranscriptEntry[] {
     return [{ kind: "notice", text: "earlier conversation compacted" }];
   }
   const skill = parseSkillInvocation(content);
-  return [skill ? { kind: "skill", ...skill } : { kind: "user", text: content }];
+  if (skill) return [{ kind: "skill", ...skill }];
+  // A stored message nax expanded replays as the same rows a live turn drew for it; one that
+  // does not parse — a message typed before mentions existed — stays the plain message.
+  const mention = parseMentionMessage(content);
+  return mention === undefined ? [{ kind: "user", text: content }] : [...mentionTranscriptEntries(mention)];
 }
 
 function replayCall(

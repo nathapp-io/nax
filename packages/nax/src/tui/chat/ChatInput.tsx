@@ -86,14 +86,15 @@ export interface ChatInputProps {
   /** Shown in place of the placeholder while the editor is empty. */
   readonly hint?: string;
   /**
-   * The slash menu is open and owns up, down, return, tab and escape. A boolean is the claim
-   * as of the last render; a function is read at key time, so a batch that completes a name
-   * and then returns hands that return to this editor rather than to the menu's stale row.
+   * A menu beneath the input — the slash menu or the mention picker — is open and owns up,
+   * down, return, tab and escape. A boolean is the claim as of the last render; a function is
+   * read at key time, so a batch that completes a name and then returns hands that return to
+   * this editor rather than to the menu's stale row.
    */
   readonly yieldNavigation?: boolean | (() => boolean);
   /**
-   * The owner's handle on the two things the slash menu does to a line. They must go through
-   * the input, not the owner's state: the draft the next keypress reduces lives in a ref this
+   * The owner's handle on the things a menu does to a line. They must go through the input,
+   * not the owner's state: the draft the next keypress reduces lives in a ref this
    * component owns, and the clear-arm timer does too.
    */
   readonly handle?: RefObject<ChatInputHandle | undefined>;
@@ -103,13 +104,20 @@ export interface ChatInputProps {
 }
 
 /**
- * What the owner may ask the input to do for a line the slash menu produced. The menu's tab
- * and return bypass the editor, so they would otherwise skip its bookkeeping — the draft ref
- * a keypress in the same batch reduces, and the clear-arm a submit disarms.
+ * What the owner may ask the input to do for a line the slash menu or the mention picker
+ * produced. The menu's tab and return bypass the editor, so they would otherwise skip its
+ * bookkeeping — the draft ref a keypress in the same batch reduces, and the clear-arm a
+ * submit disarms.
  */
 export interface ChatInputHandle {
   /** Write a completed line into the prompt, cursor after it — what tab does. */
   complete(text: string): void;
+  /**
+   * Write an editor state into the prompt and leave the cursor where it says — what choosing
+   * a mention row does, since the row replaces the token under the cursor rather than
+   * appending to the line.
+   */
+  edit(state: EditorState): void;
   /** Submit a line exactly as return does: disarm the clear, empty the prompt, keep the history. */
   submit(text: string): void;
 }
@@ -581,6 +589,14 @@ export function ChatInput({
   };
 
   /**
+   * Write an editor state into the prompt, cursor where it says — a mention row replaces the
+   * token under the cursor, so the caret lands inside the line rather than after it.
+   */
+  const edit = (state: EditorState): void => {
+    publish({ editor: state, history: latest.current.history });
+  };
+
+  /**
    * Whether the slash menu owns a navigation key right now. The owner may hand over a claim
    * to read instead of a flag, because the flag is the last render's: a tab and the return
    * after it can arrive before any re-render, and after that tab the prompt is no longer a
@@ -589,9 +605,9 @@ export function ChatInput({
   const yieldsNavigation = (): boolean => (typeof yieldNavigation === "function" ? yieldNavigation() : yieldNavigation);
 
   // The owner's handle is refreshed every render, so the callbacks it runs are this frame's:
-  // a menu row completes and runs through the same draft ref and the same clear-arm that a
-  // typed key and a typed return use.
-  if (handle !== undefined) handle.current = { complete, submit };
+  // a menu row completes, edits and runs through the same draft ref and the same clear-arm
+  // that a typed key and a typed return use.
+  if (handle !== undefined) handle.current = { complete, edit, submit };
 
   useInput(
     (input, key) => {
