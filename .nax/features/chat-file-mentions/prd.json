@@ -3,7 +3,7 @@
   "feature": "chat-file-mentions",
   "branchName": "feat/chat-file-mentions",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T06:18:53.588Z",
+  "updatedAt": "2026-10-31T06:49:10.954Z",
   "userStories": [
     {
       "id": "US-001",
@@ -39,14 +39,17 @@
         "serialization"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The tokenizer, escaping and exact-length inverse parser are pure package-local string functions with a fully specified format, so medium/tdd-simple covers round-trip and malformed-input behavior without integration or access-control complexity."
+        "reasoning": "The tokenizer, escaping and exact-length inverse parser are pure package-local string functions with a fully specified format, so medium/tdd-simple covers round-trip and malformed-input behavior without integration or access-control complexity.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/skill-invocation.ts",
@@ -72,7 +75,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6a08bfa1ad0d00daeaf6a7449f007b5efb02c1b1"
     },
     {
       "id": "US-002",
@@ -134,7 +141,10 @@
         "When realpath(repoRoot) rejects, expandChatMentions resolves without attaching any file contents."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -194,7 +204,10 @@
         "When readdir rejects after a nonzero directory ls-files result, expandChatMentions returns a refused folder record and continues to the next token."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -281,7 +294,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -353,7 +369,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -425,7 +444,10 @@
         "When repeated listed paths share ancestor folders, listMentionFiles returns only one row for each ancestor folder."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -513,7 +535,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This is an additive enhancement to the existing @nathapp/nax React/Ink chat TUI, not a greenfield project. All seven stories are scoped to packages/nax; no dependency, protocol, manifest, version or storage-schema changes are needed. Codebase-memory MCP is unavailable in this tool session, so navigation used direct source reads and text searches. The approved source design exists at docs/superpowers/specs/2026-10-31-nax-chat-file-mentions-design.md:1; use the supplied implementation spec and its ACs over older design-draft details such as repo-root versus cwd listing, unresolved versus refused paths, and approximate limits.\n\nArchitecture and conventions: packages/nax/package.json:2 identifies @nathapp/nax; its scripts at :14-18 and :61-75 provide Bun typecheck, lint and targeted UI/unit test commands. This package uses bun:test, ink-testing-library and React act, as demonstrated by packages/nax/test/ui/chat/chat-app.test.tsx:1-8. Read docs/architecture/ARCHITECTURE.md before implementation; :168-186 gives file/function limits, external-call injection, path-security and test constraints. Follow _deps seams, Bun-native byte reads/writes, strict TypeScript, existing barrel imports and display sanitization. Use existing gitWithTimeout/GIT_TIMEOUT_MS rather than a new subprocess implementation or arbitrary timeout. Run scoped tests with explicit paths; never bare bun test, bun run nax, or nax plan/run. Pipeline quality gates are not story ACs. Do not run coverage inside NAX_SANDBOXED=1.\n\nUS-001 foundation: packages/nax/src/chat/skill-invocation.ts:12-27 demonstrates the inverse-envelope parser already consumed by live and replay paths. packages/nax/src/chat/index.ts:81 exports that parser and is the public @/chat barrel to extend, only with the mentions barrel export. Create pure shared mention types/constants, textual tokenizer, formatter and strict length-addressed envelope parser. Bodies and envelope offsets use JavaScript UTF-16 string lengths, not bytes or code points. The final trailer and exact per-record lengths must prevent embedded closing markers from affecting parsing. Empty-record wrapping when typed text contains </nax-mentions prevents pasted envelopes from becoming forged attachments. Reject malformed/truncated envelopes rather than partially parsing. Types must cover all records before downstream parallel stories start.\n\nUS-002 and US-003 resolution: packages/nax/src/utils/git.ts:15 re-exports gitWithTimeout and GIT_TIMEOUT_MS. packages/nax/src/advisor/audit.ts:43-47 is the injectable wrapper precedent, but the expander must additionally preserve timedOut. New mention-expand.ts resolves typed paths against cwd, canonicalizes the repo root and candidates, deduplicates canonical paths in mention order, rejects outside-root siblings/symlinks and case-insensitive .git segments, and checks ignores with literal pathspecs against the typed cwd-relative path rather than canonical path. This is a security-sensitive disclosure/access boundary: US-002 uses strict three-session-tdd. Missing realpaths are silent, except one unquoted trailing-punctuation retry. Stat/read/readdir/git exceptions become per-token refused records, never stop subsequent mentions. Content snapshots are sent once at submission; folder listings expose only direct entries, not recursive file contents. US-003 layers directory normalization, NUL probing, read-size guard, UTF-8 decoding, whole-line truncation and total-body accounting onto the same expander. Constants are fixed limits, not configuration knobs. Git listing nonzero falls back to readdir for folders, whereas check-ignore errors/timeouts fail closed. Preserve typed record paths; folder normalization is for listing/pathspec calculation. An unavailable repoRoot realpath must not cause expansion to reject or bypass containment; select a safe refused outcome under the never-reject contract. Watch stat/read races and memory bounds; the design's size check precedes byte reads but does not create a hardened OS-level sandbox or an atomic filesystem snapshot.\n\nUS-004 transcript impact: packages/nax/src/tui/chat/transcript-model.ts:19-42 defines the discriminated union; user currently has only text and there is no attachment kind. Keep the event reducer unchanged and add user.mentions plus the new attachment record. packages/nax/src/tui/chat/layout.ts:112-126 wraps/bands user text, :176-192 renders the skill card/body precedent, :283-309 dispatches entry kinds, and :351-363 caches by identity/width/effective expansion. Add layout-attachment.ts and mention-entries.ts; retain userBand, sanitized display, wrapping, theme glyphs and cache identity. Highlight every complete listed mention occurrence on a wrapped row but not split tokens or prefixes of longer names. The explicit (@a.ts). AC is authoritative for display matching even though the send tokenizer starts mentions only at start/after whitespace: display highlighting and expansion token discovery are distinct operations. packages/nax/src/tui/chat/transcript-click.ts:10-27 maps rows to entries and toggles current collapsible headers; extend only expandable attachment statuses and preserve original-array no-op behavior elsewhere. User/attachment entries remain separate and layoutTranscript currently inserts empty separators (:370-383); account for the spec's adjacent user/attachment-row AC without changing unrelated transcript spacing. Other union consumers located by text search include ask-card.ts:128, useChatPicker.ts:42, layout-listing.ts:32, layout-status.ts:21, tool-card.ts:13, use-switch-notices.ts:11 and session-transcript.ts:26; they narrow kinds rather than needing new feature logic.\n\nUS-005 live/replay seams: packages/nax/src/tui/chat/ChatApp.tsx:69 exposes only tmux today; :150 defaults cwd to host.repoRoot; :338-343 calls noteUserTurn then sendTurn for plain messages; :357-391 serializes prepare under sending.current, appends the parsed skill/plain user entry, conditionally preserves the two-argument host.send call and handles errors/finalization. Extend submit only for plain typed text containing @ or </nax-mentions. Do not expand slash outcomes (:303-335) or background job deliveries (:404). Parse mentions after skills inside sendTurn, append the helper's entire entry sequence, then send the exact prepared string with typed title. Input history already captures typed text in ChatInput.tsx:545-552, before prepare; preserve this instead of storing expanded text in the draft. packages/nax/src/tui/chat/history-replay.ts:14-21 checks empty content, compaction then skill; insert mentions after those checks and keep malformed/plain content raw. Replay is consumed on mount/resume through session-transcript.ts:26-33. ChatHost.send remains string-based at packages/nax/src/chat/chat-host.ts:107 and forwards title at :510; it is read-only for this feature. No migration: existing stored strings still render unchanged; newly stored expanded strings replay via their envelope and retain the original content snapshot without new I/O. Host, adapters and session storage save/forward exactly the expanded string using the existing path.\n\nUS-006 model/cache: packages/nax/src/tui/chat/slash-menu.ts:111 defines SLASH_MENU_MAX_ROWS=8; :126-176 implements row/window/query-state modeling to mirror. packages/nax/src/context/greenfield.ts:57-70 is an existing git listing example, but its raw-spawn/newline parser is not this feature's required timeout-aware/NUL-delimited implementation. listMentionFiles must use cwd, tracked plus nonignored untracked files, unique ancestor folders, code-unit ordering and a git:false fallback on command failure/timeout/rejection. The index must share in-flight work and expire at exactly 5000ms, not extend cache freshness accidentally. mention-menu.ts owns query detection, deterministic subsequence ranking, replacement and folder drilling. Important existing contract: packages/nax/src/tui/chat/line-editor.ts:4-10 says EditorState.cursor is a code-point index, while MentionToken and envelope string offsets are UTF-16. Keep the public editor contract; translate offsets internally when querying/editing non-BMP text rather than changing line-editor or cutting surrogate pairs. The spec's ASCII cursor ACs must remain exact; add Unicode behavior only as suggested hardening criteria.\n\nUS-007 integration is the highest UI concurrency risk: ChatApp.tsx:200-233 uses live slash-menu ownership; :236-244 protects escape from cancelling under bottom surfaces; :419-422 synchronously records draft changes; :449 blocks jobs opening under menus; :458 subtracts menu rows from inputBudget; :484 measures bottom rows; :567 yields navigation; :571-589 draws SlashMenu. Integrate mention shown-state/rows at all equivalent sites, preserving asks > full-screen picker > input menu precedence. packages/nax/src/tui/chat/bottom-region.ts:29-66 centralizes blocking and budget arithmetic; reuse its minimum input reserve, not a second inconsistent budget. ChatInput.tsx:108-113 publishes only complete/submit; :494-501 keeps the latest draft ahead of React; :576-578 complete writes through that ref; :589 publishes the handle; :593-619 yields navigation before editing. Add edit(state) using the same synchronous publication/history/clear-arm bookkeeping, preserving cursor position. packages/nax/src/tui/chat/use-slash-menu-keys.ts:50-69 demonstrates the key-time ref claim, and SlashMenu.tsx:177-216 demonstrates latest selection and five-key handling. The mention hook must remain able to own keys after loaded rows and a newly typed query arrive before a rerender, including folder tab followed by return in one terminal write; do not rely on mounting a view or captured render matches to install key ownership. Keep cached rows available for the loaded-batch AC while pending get() calls show no rows and return submits. Avoid stale asynchronous get results reopening dismissed/blocked/unmounted surfaces. Create exactly one index per screen mount. A git:false diagnostic consumes its budgeted display row but owns no keys; pending, zero matches and zero budget also own no keys. Escape dismissal must be visible immediately to both input and screen cancel handlers.\n\nTests and regression anchors: packages/nax/test/ui/chat/chat-app.test.tsx:15-90 provides a typed fake host, deferred send, mount and act helpers; existing two-argument plain send behavior must stay. chat-transcript-click.test.tsx:43-127 supplies fakeMouse, terminal sizing, row lookup and click/send helpers to mirror. test/unit/tui/chat/history-replay.test.ts:22-82 covers raw users, skills, malformed envelopes and compaction; preserve these assertions while adding mention cases. test/unit/tui/chat/layout.test.ts:1-69 supplies structured span/colour and layout helpers and currently has 650 lines, so make only targeted additions and keep the new renderer tests in the declared new file. test/ui/chat/chat-input.test.tsx:12-27 and :74-80 provides controlled drafts, fake clocks and cursor-visible assertions. test/ui/chat/slash-menu.test.tsx:520-578 exercises batched input and :580-687 short/zero row budgets, both valuable patterns for the new picker tests. Use _mentionExpandDeps, _mentionFilesDeps and _chatAppDeps fakes/restoration rather than global module mocks, real git/network, or timing sleeps. Include one real default expander integration and one real default index integration to verify wiring, not only spies.\n\nDependency order is binding: US-001 first; US-002, US-004 and US-006 can follow; US-003 extends US-002; US-005 follows US-002 and US-004; US-007 follows US-005 and US-006. Dependencies intentionally do not add US-003 to US-005/US-007. Shared-barrel edits by US-002 and US-006 and shared ChatApp work by US-005/US-007 need coordinated additive changes; US-003 extends US-002's module rather than recreating it. Every acceptance criterion from the supplied numbered lists is retained in its owning story; the failure table additionally requires explicit malformed-stored-message and git listing failure/timeout behavior criteria. Only proposed extra edge behaviors appear as suggestedCriteria. No releases or unrelated refactors are part of this PRD.\n\nRefine self-audit: enumerated all 127 numbered source ACs against the corresponding first criteria in each story: US-001 #1-21, US-002 #1-16, US-003 #1-16, US-004 #1-17, US-005 #1-12, US-006 #1-24, US-007 #1-21. Every source assertion remains in its original story, including empty-path/email/unclosed-quote reasons, trailing-newline envelope bodies, punctuation and canonical-alias qualifiers, no-trailing-slash folders, no-mentions/unchanged transcript behavior, exact two-argument sends, unexpanded history, cursor-on-@/whitespace reasons, basename-ranking reasons, and loaded-row/default-index qualifiers. Runtime barrel-call outputs now make US-001 #21 directly observable. Failure-path coverage is present in every story: invalid tokens/envelopes; missing/outside/ignored/git-failed paths; oversized/binary/read-error content; refused nonexpandable transcript cards; malformed stored-message fallback; failed git lists and invalid queries; pending/empty/blocked picker states. The malformed replay extra explicitly excludes empty, compaction and skill inputs to respect current replay precedence. All 10 feature-level exclusions are verbatim; all context-file sets include every spec-recommended input within five files, and no story lists its own output as context. Dependency arrays remain exactly binding. Routing was reduced to medium for US-002/003/005/006 based on existing seams and bounded module scope; only the access-control expander retains the strict security strategy, while transcript cross-module row/cache/click work and asynchronous batched picker integration retain complex/lite. Extra regression ACs preserve US-002 ordinary file attachments through US-003 and the pre-existing complete/submit handles through US-007. gitWithTimeout actually returns optional timedOut (packages/nax-agent/src/internal/git-exec.ts:64-84); the new required-boolean wrapper must normalize absence to false, not alter the shared API. All added failure/regression criteria follow the original numbered ACs rather than replacing or moving them.",
