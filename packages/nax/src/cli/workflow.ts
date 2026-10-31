@@ -15,8 +15,10 @@
 import { relative } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Command } from "commander";
+import { prNumberFromUrl } from "@/forge";
 import type { FeatureCiState, FeatureOutcome, FeatureStep, OpenItem } from "@/workflow";
-import { buildVerdict } from "../workflow/open-items";
+import { readLiveStatus } from "../workflow/live-status";
+import { buildVerdict, CI_ITEM_ID } from "../workflow/open-items";
 import { fillStoryStates, type LoadedRun, loadRunVerdict } from "../workflow/run-verdict";
 import { _workflowForgeDeps, type WorkflowForgeDeps } from "./workflow-forge";
 import { workflowPromoteCommand } from "./workflow-promote";
@@ -49,6 +51,9 @@ export interface WorkflowStatusOptions {
 
 /** What `--json` prints. `outcome`, `ci`, `url` and `workflowPassed` are absent before publish. */
 export interface WorkflowStatusReport {
+  readonly source: "live" | "run-record";
+  readonly liveError?: string;
+  readonly settledItems: readonly { id: string; disposition: string }[];
   readonly feature: string;
   readonly runId: string;
   /** The run directory, relative to the project directory. */
@@ -77,6 +82,8 @@ function reportFor(dir: string, feature: string, loaded: LoadedRun): WorkflowSta
   const { record } = loaded;
   const verdict = buildVerdict(fillStoryStates(record, loaded.result));
   return {
+    source: "run-record",
+    settledItems: [],
     feature,
     runId: loaded.runId,
     runDir: relative(dir, loaded.runDir),
@@ -92,7 +99,20 @@ function reportFor(dir: string, feature: string, loaded: LoadedRun): WorkflowSta
 
 /** The verdict of the newest readable run, or the error that says why there is none. */
 async function buildReport(dir: string, feature: string, forgeDeps: WorkflowForgeDeps): Promise<WorkflowStatusReport> {
-  return reportFor(dir, feature, await loadRunVerdict(dir, feature, forgeDeps.resolveOutputDir));
+  const loaded = await loadRunVerdict(dir, feature, forgeDeps.resolveOutputDir);
+  const report = reportFor(dir, feature, loaded);
+  const { outcome, url } = loaded.record;
+  if (outcome !== "draft" || !url || prNumberFromUrl(url) === null) return report;
+  const live = await readLiveStatus({ url, cwd: dir, deps: forgeDeps.forge, items: report.openItems });
+  if (live.source === "run-record") return { ...report, liveError: live.error };
+  const settled = new Set(live.settled.map((item) => item.id));
+  return {
+    ...report,
+    source: "live",
+    outcome: live.isDraft ? "draft" : "ready",
+    settledItems: live.settled,
+    openItems: report.openItems.filter((item) => !settled.has(item.id) && (live.isDraft || item.id !== CI_ITEM_ID)),
+  };
 }
 
 /** 0 only when the feature is ready with nothing open; anything else needs a human. */
@@ -105,6 +125,7 @@ const itemLine = (item: OpenItem): string => `- [${item.kind}] ${item.id} — ${
 function printPlain(report: WorkflowStatusReport, deps: WorkflowCliDeps): void {
   const outcome = report.outcome ?? NOT_PUBLISHED;
   deps.log(`${report.feature}: ${outcome}${report.url ? ` ${report.url}` : ""}`);
+  if (report.liveError !== undefined) deps.log(`(run record only: ${report.liveError})`);
   if (report.openItems.length === 0) deps.log(NO_ITEMS);
   for (const item of report.openItems) deps.log(itemLine(item));
   if (report.supplementaryItems.length === 0) return;
