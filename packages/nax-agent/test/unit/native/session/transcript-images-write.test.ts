@@ -6,6 +6,7 @@ import type { ImageAttachment } from "#src/cost/standard-types";
 import { NaxError } from "#src/infra/index";
 import { _atomicWriteDeps } from "#src/internal/atomic-write";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
+import { _transcriptImagesDeps } from "#src/native/session/transcript-images";
 import { createFileTranscriptStore, saveTranscript, transcriptPath } from "#src/native/session/transcript-store";
 import type { TranscriptDoc } from "#src/native/session/transcript-types";
 import { cleanupTempDir, makeTempDir, withDepsRestore } from "#test/helpers/index";
@@ -36,6 +37,66 @@ afterEach(() => {
 
 describe("file transcript image writes", () => {
   withDepsRestore(_atomicWriteDeps);
+  withDepsRestore(_transcriptImagesDeps);
+
+  test("AC9 concurrent saves never replace a published image", async () => {
+    const finalPath = join(folder(), `${hash}.png`);
+    const bothMissing = Promise.withResolvers<void>();
+    const realStat = _transcriptImagesDeps.stat;
+    let misses = 0;
+    _transcriptImagesDeps.stat = async (path) => {
+      try {
+        return await realStat(path);
+      } catch (error) {
+        if (path !== finalPath || !(error instanceof Error) || !("code" in error) || error.code !== "ENOENT")
+          throw error;
+        misses++;
+        if (misses === 2) bothMissing.resolve();
+        await bothMissing.promise;
+        throw error;
+      }
+    };
+    const realRename = _atomicWriteDeps.rename;
+    let replacements = 0;
+    let publication = Promise.resolve();
+    _atomicWriteDeps.rename = async (from, to) => {
+      if (String(to) !== finalPath) return realRename(from, to);
+      // Serialize final renames to make replacement observable, rather than timing-dependent.
+      const previous = publication;
+      const done = Promise.withResolvers<void>();
+      publication = done.promise;
+      await previous;
+      try {
+        try {
+          await realStat(finalPath);
+          replacements++;
+        } catch (error) {
+          if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
+        }
+        await realRename(from, to);
+      } finally {
+        done.resolve();
+      }
+    };
+    const realLink = _transcriptImagesDeps.link;
+    let linkAttempts = 0;
+    let publications = 0;
+    _transcriptImagesDeps.link = async (from, to) => {
+      linkAttempts++;
+      await realLink(from, to);
+      publications++;
+    };
+    const store = createFileTranscriptStore(dir);
+    await Promise.all([store.save("s", doc()), createFileTranscriptStore(dir).save("s", doc())]);
+    expect(misses).toBe(2);
+    expect(replacements).toBe(0);
+    expect(linkAttempts).toBe(2);
+    expect(publications).toBe(1);
+    expect((await realStat(finalPath)).nlink).toBe(1);
+    expect(await readdir(folder())).toEqual([`${hash}.png`]);
+    expect(await readFile(finalPath)).toEqual(bytes);
+    expect(await store.load("s")).toEqual(doc());
+  });
   test.each([
     ["AC1 content-addressed PNG", async () => expect(await readdir(folder())).toEqual([`${hash}.png`])],
     ["AC2 raw bytes", async () => expect(await readFile(join(folder(), `${hash}.png`))).toEqual(bytes)],

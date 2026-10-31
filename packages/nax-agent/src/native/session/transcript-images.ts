@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, stat } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { link, mkdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { ConversationMessage, ImageAttachment } from "@nathapp/nax-ai";
 import { NaxError } from "#src/infra/index";
@@ -7,7 +7,14 @@ import { writeFileAtomic } from "#src/internal/atomic-write";
 import type { TranscriptDoc } from "./transcript-types.ts";
 
 /** Filesystem operations separate from the atomic writer's write/rename seam. */
-export const _transcriptImagesDeps = { mkdir, readFile, stat, writeFileAtomic };
+export const _transcriptImagesDeps = {
+  link,
+  mkdir,
+  readFile,
+  rm,
+  stat: (path: string) => stat(path),
+  writeFileAtomic,
+};
 
 const extensions: Readonly<Record<string, string>> = {
   "image/png": "png",
@@ -38,6 +45,23 @@ function extension(mimeType: string): string {
   });
 }
 
+/** A hard link publishes complete bytes atomically, failing rather than replacing a winner. */
+async function publishImageOnce(path: string, bytes: Uint8Array): Promise<void> {
+  const staged = `${path}.${randomUUID()}.tmp`;
+  try {
+    // Keep atomic staging (and its rename seam), but never rename over the final name.
+    await _transcriptImagesDeps.writeFileAtomic(staged, bytes);
+    try {
+      await _transcriptImagesDeps.link(staged, path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      // Another writer published this content-addressed image first; leave it untouched.
+    }
+  } finally {
+    await _transcriptImagesDeps.rm(staged, { force: true });
+  }
+}
+
 async function publishImage(folder: string, image: ImageAttachment): Promise<StoredImage> {
   const bytes = Buffer.from(image.data, "base64");
   const ref = createHash("sha256").update(bytes).digest("hex");
@@ -46,7 +70,7 @@ async function publishImage(folder: string, image: ImageAttachment): Promise<Sto
     await _transcriptImagesDeps.stat(path);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    await _transcriptImagesDeps.writeFileAtomic(path, bytes);
+    await publishImageOnce(path, bytes);
   }
   const { data: _data, ...metadata } = image;
   return { ...metadata, ref };
