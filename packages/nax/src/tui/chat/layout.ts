@@ -31,6 +31,7 @@
  */
 
 import { attachmentLines } from "./layout-attachment";
+import { imageLines } from "./layout-image";
 import {
   cardIndent,
   cardRows,
@@ -265,6 +266,8 @@ function layoutEntry(entry: TranscriptEntry, context: LayoutContext): readonly S
       return userLines(entry, context);
     case "attachment":
       return attachmentLines(entry, context);
+    case "image":
+      return imageLines(entry, context);
     case "skill":
       return skillLines(entry, context);
     case "reply":

@@ -1,8 +1,17 @@
-/** Pure opening-snapshot replay. Tool data uses the same masking and caps as live turns. */
-import { displayToolInput, toolResultPreview } from "@nathapp/nax-agent";
+/**
+ * Pure opening-snapshot replay. Tool data uses the same masking and caps as live turns.
+ *
+ * A stored user message replays exactly as a live turn drew it — `sentEntries` is that one
+ * rule — except for one thing the store did: when an image it saved could not be read back,
+ * it appends a `[image missing]` line to the content instead (feature 1's load note). Those
+ * lines are stripped from the trailing run and each becomes an `image · missing` row, so a
+ * resumed transcript says an image was sent and is gone rather than showing the note as if
+ * the user had typed it.
+ */
+import { displayToolInput, type ImageAttachment, toolResultPreview } from "@nathapp/nax-agent";
 import { COMPACTION_SUMMARY_PREFIX } from "@nathapp/nax-agent/internal";
-import { acpAgentOfMessage, type ChatHistory, parseMentionMessage, parseSkillInvocation } from "@/chat";
-import { mentionTranscriptEntries } from "./mention-entries";
+import { acpAgentOfMessage, type ChatHistory } from "@/chat";
+import { sentEntries } from "./mention-send";
 import type { TranscriptEntry } from "./transcript-model";
 
 type Message = ChatHistory["messages"][number];
@@ -11,18 +20,39 @@ type StoredCall = NonNullable<Extract<Message, { role: "assistant" }>["toolCalls
 
 const FALLBACK_TIMESTAMP = "1970-01-01T00:00:00.000Z";
 const NO_RESULT_TEXT = "No result was recorded for this call.";
+const SOURCE_LINE_BREAK = /\r\n|[\r\n]/;
+/** The line feature 1's load writes in place of an image it could not read back. */
+const MISSING_IMAGE_NOTE = "[image missing]";
+/** What a stripped note becomes: a row saying the image the message named is gone. */
+const MISSING_IMAGE_LABEL = "image · missing";
 
-function replayUser(content: string): TranscriptEntry[] {
-  if (content === "") return [];
-  if (content.startsWith(COMPACTION_SUMMARY_PREFIX)) {
+/** A stored message without its trailing `[image missing]` lines, and how many were taken. */
+interface StrippedImageNotes {
+  readonly text: string;
+  readonly missing: number;
+}
+
+function stripMissingImageNotes(content: string): StrippedImageNotes {
+  const lines = content.split(SOURCE_LINE_BREAK);
+  let end = lines.length;
+  while (end > 0 && lines[end - 1] === MISSING_IMAGE_NOTE) end -= 1;
+  // Content with no note replays byte for byte; only a stripped one is split and rejoined.
+  if (end === lines.length) return { text: content, missing: 0 };
+  return { text: lines.slice(0, end).join("\n"), missing: lines.length - end };
+}
+
+function missingImageRows(count: number): readonly TranscriptEntry[] {
+  return Array.from({ length: count }, () => ({ kind: "image", label: MISSING_IMAGE_LABEL }));
+}
+
+function replayUser(content: string, images: readonly ImageAttachment[] | undefined): readonly TranscriptEntry[] {
+  const { text, missing } = stripMissingImageNotes(content);
+  const stripped = missingImageRows(missing);
+  if (text === "") return stripped;
+  if (text.startsWith(COMPACTION_SUMMARY_PREFIX)) {
     return [{ kind: "notice", text: "earlier conversation compacted" }];
   }
-  const skill = parseSkillInvocation(content);
-  if (skill) return [{ kind: "skill", ...skill }];
-  // A stored message nax expanded replays as the same rows a live turn drew for it; one that
-  // does not parse — a message typed before mentions existed — stays the plain message.
-  const mention = parseMentionMessage(content);
-  return mention === undefined ? [{ kind: "user", text: content }] : [...mentionTranscriptEntries(mention)];
+  return [...sentEntries(text, images), ...stripped];
 }
 
 function replayCall(
@@ -81,10 +111,10 @@ function replayMessage(
   message: Message,
   results: ReadonlyMap<string, StoredResult>,
   timing: { turnId: string; timestamp: string },
-): TranscriptEntry[] {
+): readonly TranscriptEntry[] {
   switch (message.role) {
     case "user":
-      return replayUser(message.content);
+      return replayUser(message.content, message.images);
     case "assistant": {
       if (acpAgentOfMessage(message) !== undefined) return replayAcpAssistant(message.content, timing);
       const entries: TranscriptEntry[] = [];
