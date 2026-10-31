@@ -33,6 +33,7 @@ import {
 } from "./chat-status";
 import { FixedRow } from "./FixedRow";
 import { layoutTranscript } from "./layout";
+import { type EditorState, EMPTY_EDITOR } from "./line-editor";
 import { MentionMenu } from "./MentionMenu";
 import { mentionPrepare, sentEntries } from "./mention-send";
 import type { MouseEvents } from "./mouse-input";
@@ -54,6 +55,7 @@ import { type ChatTheme, resolveChatTheme } from "./theme";
 import { toggleTranscriptLine } from "./transcript-click";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
+import { useImageAttach } from "./use-image-attach";
 import { useJobs } from "./use-jobs";
 import { FRAME_SLACK_ROWS, useJobsOpener } from "./use-jobs-opener";
 import { useMentionMenu } from "./use-mention-menu";
@@ -101,6 +103,8 @@ const QUIT = "quit";
 const TELL_NAX_HINT = "tell nax what to do instead";
 /** ink reports ctrl+o as the letter `o` with the ctrl modifier, so the key is its `input`. */
 const CTRL_O = "o";
+/** And ctrl+v as `v` with the ctrl modifier: the clipboard image's key. */
+const CTRL_V = "v";
 /** The theme a caller that passes none gets; resolved once, since it is a pure constant. */
 const DEFAULT_THEME = resolveChatTheme({ env: {}, colorLevel: 0 });
 
@@ -173,6 +177,11 @@ export function ChatApp({
   const [followToken, setFollowToken] = useState(0);
   /** The input's handle: the draft ref and the clear-arm the menu's two actions share. */
   const inputHandle = useRef<ChatInputHandle | undefined>(undefined);
+  /**
+   * The newest editor state, ahead of React: an image read that lands after an `await` puts
+   * its placeholder at the cursor as it stands then, not the one the keypress saw.
+   */
+  const editorRef = useRef<EditorState>(EMPTY_EDITOR);
   const sending = useRef(false);
   const [, refresh] = useState(0);
 
@@ -249,11 +258,25 @@ export function ChatApp({
     slashKeys.sawDismissal(undefined);
     setDismissedQuery(undefined);
   }
+  // The image draft lives beside the prompt, not inside it: this hook reads the clipboard on
+  // ctrl+v, takes a pasted image path and writes the placeholder back through the handle.
+  const imageAttach = useImageAttach({
+    cwd,
+    input: inputHandle,
+    editor: () => editorRef.current,
+    notice: (text) => append({ kind: "notice", text }),
+    active: () => !bottomBlocked(ask, picker.model),
+  });
 
-  // Ctrl+o toggles detail; escape interrupts only when no bottom surface or control owns it.
+  // Ctrl+o toggles detail; ctrl+v attaches a clipboard image; escape interrupts only when no
+  // bottom surface or control owns it. The hook decides whether the key is theirs to answer.
   useInput((input, key) => {
     if (key.ctrl && input === CTRL_O) {
       setExpanded((current) => !current);
+      return;
+    }
+    if (key.ctrl && input === CTRL_V) {
+      void imageAttach.attach();
       return;
     }
     // The picker's own claim closes it on escape, so that escape must never reach the turn.
@@ -440,6 +463,9 @@ export function ChatApp({
 
   /** Publish edits and claim the menus together, before the next batched key or render. */
   function changeDraft(next: InputDraft): void {
+    // The image hook reads this instead of a rendered draft: a read that lands after an
+    // `await` inserts into the text as it stands then, not as it stood at the key press.
+    editorRef.current = next.editor;
     slashKeys.sawPrompt(next.editor.text);
     mention.sawEditor(next.editor);
     setDraft(next);
@@ -579,6 +605,7 @@ export function ChatApp({
           <ChatInput
             draft={draft}
             onDraftChange={changeDraft}
+            onPaste={imageAttach.onPaste}
             onSubmit={(message) => {
               setHint(undefined);
               void submit(message);
