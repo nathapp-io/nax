@@ -97,6 +97,7 @@ import { registerResumeCommand } from "../src/commands/resume";
 import { runsCommand } from "../src/commands/runs";
 import { unlockCommand } from "../src/commands/unlock";
 import { configureNaxCredentials, DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
+import { captureForgeIdentity } from "../src/forge";
 import { loadHooksConfig } from "../src/hooks";
 import { getSafeLogger, initLogger, resetLogger } from "../src/logger";
 import { countStories, loadPRD } from "../src/prd";
@@ -125,6 +126,17 @@ import {
   runBakeoffMode,
   waitForScheduledRun,
 } from "./run-action-execute";
+
+// US-002: capture the forge identity the caller injected before the command
+// tree exists. The token file is read and deleted here, so nothing nax spawns
+// can inherit a token from the environment and the token never stays on disk;
+// a refused injection stops the process before any command runs.
+try {
+  await captureForgeIdentity(process.env);
+} catch (err) {
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
+}
 
 const program = new Command();
 
