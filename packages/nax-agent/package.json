@@ -1,6 +1,6 @@
 {
   "name": "@nathapp/nax-agent",
-  "version": "0.91.7-canary.10",
+  "version": "0.91.7-canary.11",
   "private": true,
   "description": "nax's native coding agent: session contract, native loop, tools, permissions, sandbox, command-safety.",
   "type": "module",
@@ -38,7 +38,7 @@
   "dependencies": {
     "@anthropic-ai/sandbox-runtime": "0.0.77",
     "@modelcontextprotocol/sdk": "^1.32.1",
-    "@nathapp/nax-ai": "0.91.7-canary.10",
+    "@nathapp/nax-ai": "0.91.7-canary.11",
     "zod": "^4.3.6"
   },
   "devDependencies": {
