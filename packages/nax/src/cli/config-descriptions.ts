@@ -387,6 +387,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     "Explicitly allow remote plaintext http endpoints. WARNING: sends this provider's credential unencrypted; inert for https and loopback.",
   "agent.native.catalogOverrides.headers":
     "Provider-wide extra request headers. REPLACES the provider's headers rather than merging; omit the key to leave them unchanged. May carry credentials, so values are masked in this output.",
+  "agent.native.catalogOverrides.input":
+    'Model input modalities: a non-empty array of "text" and/or "image"; omit to inherit catalog capabilities.',
   "agent.native.catalogOverrides.thinkingFormat":
     "Per-model thinking wire format (openai-completions only). Omit to inherit the provider format; 'openrouter' sends reasoning.effort (including 'none' at off); use 'qwen-chat-template' for self-hosted servers honouring chat_template_kwargs.enable_thinking.",
   "agent.native.catalogOverrides.openRouterRouting":

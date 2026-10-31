@@ -8,8 +8,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
 import { NaxConfigSchema } from "@/config";
 import type { ProviderCatalogOverride } from "@/config/schema-types";
+import { CatalogModelOverrideSchema } from "@/config/schemas-model";
 
 const VALID_OVERRIDE: ProviderCatalogOverride = {
   provider: "opencode-go",
@@ -28,6 +30,49 @@ const VALID_OVERRIDE: ProviderCatalogOverride = {
 function parseNative(native: unknown) {
   return NaxConfigSchema.parse({ agent: { native } });
 }
+
+describe("catalog model input modalities", () => {
+  test("AC-1 accepts and retains text and image input", () => {
+    const parsed = CatalogModelOverrideSchema.parse({ ...VALID_OVERRIDE.models[0], input: ["text", "image"] });
+    expect(parsed).toHaveProperty("input", ["text", "image"]);
+  });
+
+  test("AC-2 keeps input absent when undeclared", () => {
+    const parsed = CatalogModelOverrideSchema.parse(VALID_OVERRIDE.models[0]);
+    expect(parsed).not.toHaveProperty("input");
+  });
+
+  test("AC-3 rejects an unknown input modality", () => {
+    const result = CatalogModelOverrideSchema.safeParse({ ...VALID_OVERRIDE.models[0], input: ["video"] });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toContainEqual(expect.objectContaining({ path: ["input", 0] }));
+    }
+  });
+
+  test("AC-4 rejects an empty input declaration", () => {
+    const result = CatalogModelOverrideSchema.safeParse({ ...VALID_OVERRIDE.models[0], input: [] });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toContainEqual(expect.objectContaining({ path: ["input"], code: "too_small" }));
+    }
+  });
+
+  test("AC-5 describes the input declaration in the CLI", () => {
+    expect(FIELD_DESCRIPTIONS["agent.native.catalogOverrides.input"]?.trim().length).toBeGreaterThan(0);
+  });
+
+  test("AC-6 root config accepts and retains declared input", () => {
+    const model = { ...VALID_OVERRIDE.models[0], input: ["text", "image"] };
+    const result = NaxConfigSchema.safeParse({
+      agent: { native: { catalogOverrides: [{ ...VALID_OVERRIDE, models: [model] }] } },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.agent?.native?.catalogOverrides?.[0]?.models[0]).toHaveProperty("input", ["text", "image"]);
+    }
+  });
+});
 
 describe("agent.native.catalogOverrides", () => {
   test("defaults to an empty array when agent.native is omitted", () => {
