@@ -11,7 +11,7 @@ import type { BotChecks } from "./checks";
 import { earlierCounts, earlierIssue, effectiveEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
 import { commentKey, findingKey, threadKey } from "./render";
 import { renderFindingComment, renderReviewSummary, renderThreadReply } from "./render-comments";
-import type { BotReviewScope, ItemStatus } from "./review-rulings";
+import type { BotReviewScope, ConfirmedItem, ItemStatus } from "./review-rulings";
 
 interface AgreedBase {
   readonly key: string;
@@ -79,6 +79,7 @@ export interface PostReviewInput {
   readonly ci?: CiWaitResult;
   readonly earlier?: readonly PrThread[];
   readonly itemEarlier?: readonly PrThread[];
+  readonly itemConfirmed?: readonly ConfirmedItem[];
   /** Fail closed on fixed workflow items when the review read non-writer comments. */
   readonly itemFixedBlocked?: boolean;
   readonly rulings?: { recorded: number; open: number; asked: number };
@@ -161,11 +162,21 @@ function agreedItems(input: PostReviewInput): AgreedItem[] {
 
 function mergeEarlier(input: PostReviewInput, items: AgreedItem[]): AgreedItem[] {
   const seen = new Set(items.map(({ key }) => key));
-  for (const { thread, key, verdict } of effectiveEarlier(input)) {
+  for (const { thread, key, verdict, confirmed, reason } of effectiveEarlier(input)) {
     if (verdict?.status !== undefined && verdict.status !== "open") continue;
     if (seen.has(key)) continue;
     seen.add(key);
     const issue = earlierIssue(thread);
+    if (confirmed) {
+      items.push({
+        kind: "finding",
+        key,
+        issue,
+        severity: "important",
+        ...(reason !== undefined && reason !== "confirmed" ? { suggestion: reason } : {}),
+      });
+      continue;
+    }
     const severity = issue.startsWith("**Critical**")
       ? "critical"
       : issue.startsWith("**Minor**")

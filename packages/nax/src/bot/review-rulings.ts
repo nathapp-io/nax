@@ -11,6 +11,11 @@ import { earlierIssue } from "./post-earlier";
 import { rulingModelReader } from "./ruling-reader";
 import type { RecordRulingsInput, RecordRulingsOutcome, recordPrRulings } from "./rulings";
 
+export interface ConfirmedItem {
+  readonly thread: PrThread;
+  readonly reason: string;
+}
+
 export interface ItemStatus {
   readonly recorded: readonly {
     readonly id: string;
@@ -32,12 +37,23 @@ function itemStatus(outcome: RecordRulingsOutcome): ItemStatus | undefined {
   };
 }
 
+/** Confirmation is already authorized by the recorder; do not carry third-party replies into fix input. */
+function confirmedItems(outcome: RecordRulingsOutcome, login: string): ConfirmedItem[] {
+  return (outcome.confirmedWork ?? []).map(({ thread, ruling }) => ({
+    reason: ruling.reason,
+    thread: {
+      ...thread,
+      comments: thread.comments.filter((comment, index) => index === 0 || comment.author === login),
+    },
+  }));
+}
+
 /** Ruling reads are privileged and best-effort; an absent outcome must not invent counts. */
 export async function readReviewRulings(
   input: Omit<RecordRulingsInput, "readModel"> & { staticMode: boolean; ctx: PrStepContext },
   record: typeof recordPrRulings,
 ): Promise<
-  Pick<PostReviewInput, "itemEarlier" | "rulings" | "itemStatus"> & {
+  Pick<PostReviewInput, "itemEarlier" | "itemConfirmed" | "rulings" | "itemStatus"> & {
     reviewedIndex?: ItemIndex;
     settled?: BotSettledRuling[];
   }
@@ -52,7 +68,8 @@ export async function readReviewRulings(
     return {
       reviewedIndex: outcome.index,
       ...(outcome.index === undefined ? {} : { itemStatus: itemStatus(outcome) }),
-      settled: outcome.settled.map((item) => ({
+      ...(outcome.confirmedWork?.length ? { itemConfirmed: confirmedItems(outcome, raw.login) } : {}),
+      settled: [...outcome.settled, ...(outcome.confirmedWork ?? [])].map((item) => ({
         id: item.itemId,
         kind: item.kind,
         issue: parseItemOpener(item.thread.comments[0]?.body ?? "")?.issue ?? earlierIssue(item.thread),
@@ -61,7 +78,11 @@ export async function readReviewRulings(
         ...(item.ruling.sha !== undefined && { sha: item.ruling.sha }),
       })),
       itemEarlier: rulingEarlier(outcome, raw.login),
-      rulings: { recorded: outcome.recorded.length, open: outcome.open.length, asked: outcome.asked },
+      rulings: {
+        recorded: outcome.recorded.length,
+        open: outcome.open.length + (outcome.confirmedWork?.length ?? 0),
+        asked: outcome.asked,
+      },
     };
   } catch (error) {
     getLogger().warn("bot", "Could not record PR rulings", { pr: raw.ref.number, error: errorMessage(error) });

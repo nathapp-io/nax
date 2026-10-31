@@ -273,7 +273,7 @@ async function reviewEnvironment(
       ].map((thread) => [thread.id, thread]),
     ).values(),
   ];
-  const { reviewedIndex, settled, ...recorded } = await readReviewRulings(
+  const { reviewedIndex, settled, itemConfirmed, ...recorded } = await readReviewRulings(
     {
       ref,
       info,
@@ -340,6 +340,8 @@ async function reviewEnvironment(
       info,
       ...triaged,
       ...recorded,
+      // Confirmed advisor work is fix input, not an invitation for the review model to reconsider it.
+      ...(itemConfirmed === undefined ? {} : { itemConfirmed }),
       ...((recorded.itemEarlier?.length ?? 0) > 0 && {
         itemFixedBlocked: await hasNonWriterAuthor(
           [

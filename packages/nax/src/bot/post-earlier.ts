@@ -18,7 +18,13 @@ import { renderEarlierReply } from "./render-comments";
 
 function combinedEarlier(input: PostReviewInput): PrThread[] {
   return [
-    ...new Map([...(input.earlier ?? []), ...(input.itemEarlier ?? [])].map((thread) => [thread.id, thread])).values(),
+    ...new Map(
+      [
+        ...(input.earlier ?? []),
+        ...(input.itemEarlier ?? []),
+        ...(input.itemConfirmed ?? []).map(({ thread }) => thread),
+      ].map((thread) => [thread.id, thread]),
+    ).values(),
   ];
 }
 
@@ -26,6 +32,8 @@ interface EarlierEntry {
   readonly thread: PrThread;
   readonly key: string;
   readonly blocked?: true;
+  readonly confirmed?: true;
+  readonly reason?: string;
   readonly verdict?: NonNullable<PostReviewInput["verdict"]["earlier"]>[number];
 }
 
@@ -41,6 +49,8 @@ export function effectiveEarlier(input: PostReviewInput): EarlierEntry[] {
       (input.login !== undefined && first?.author !== input.login)
     )
       return [];
+    const confirmed = input.itemConfirmed?.find((item) => item.thread.id === thread.id);
+    if (confirmed) return [{ thread, key, confirmed: true, reason: confirmed.reason }];
     const verdict = raised.has(key) ? undefined : input.verdict.earlier?.find(({ id }) => id === thread.id);
     if (key.startsWith("w-") && verdict?.status === "fixed" && input.itemFixedBlocked === true)
       return [{ thread, key, verdict: { ...verdict, status: "open" }, blocked: true }];
