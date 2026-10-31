@@ -339,6 +339,7 @@ async function reviewEnvironment(
       ref,
       info,
       ...triaged,
+      // Includes itemConfirmed for fixes; the explicit review input above excludes it.
       ...recorded,
       ...((recorded.itemEarlier?.length ?? 0) > 0 && {
         itemFixedBlocked: await hasNonWriterAuthor(

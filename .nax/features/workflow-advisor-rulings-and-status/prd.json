@@ -1,0 +1,445 @@
+{
+  "project": "nax-monorepo",
+  "feature": "workflow-advisor-rulings-and-status",
+  "branchName": "feat/workflow-advisor-rulings-and-status",
+  "createdAt": "2026-10-23T00:00:00.000Z",
+  "updatedAt": "2026-10-31T04:25:11.184Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Track fix-closing replies without hiding item rulings",
+      "description": "**Goal** — Preserve an item's ruling after a bot fix reply and expose whether that reply answered it.\n\n**Motivation** — On PR #2750 the advisor held `D-1` with a concrete required change; a `confirm: <evidence>` reply settled the item and `nax bot fix` reported `nothing to fix`, so the PR was marked ready with the defect still present.\n\n**Approach** — In `readThread` (`item-thread-state.ts`), take the ruling echo (and the `pendingReopens` comparison) from the last own comment whose marker key does not start with `fix-`, leave `replies` as the non-own comments after the last own comment of any kind, and set `fixClosed: true` on the `ItemThread` when an own `fix-<itemKey>` comment follows the echo.\n\n`ItemThread` in `item-thread-state.ts`\n- Baseline: `{ key, itemId, kind, thread, ruling?, replies }`; `ruling` is parsed only when the thread's last own comment is a `wr-` ruling echo.\n- Target: adds `fixClosed?: true`, present only when the item has a parsed `ruling` and an own `fix-<key>` comment follows the ruling echo. The ruling echo is the last own comment whose marker key does not start with `fix-`, so a `fix-` reply never hides a ruling; the `pendingReopens` check compares against that echo comment's id. `replies` is unchanged: the non-own comments after the last own comment of any kind, so a `fix-` reply answers every writer reply before it. `fixClosed` is set for any parsed ruling followed by an own `fix-<key>` comment; the consumers filter on kind `advisor` and disposition `confirmed`. The reopen reader in `item-threads-reopen.ts` still compares against the last own comment of any kind; that mismatch is unreachable because `confirmed` is not a re-raise reopen disposition.\n\n**Scope** — In: thread reading, ruling/pending boundaries, optional fixClosed derivation, and new fix-closed unit fixtures. Out: recorder partitioning (US-002), readiness (US-003), review/fix handoff (US-004/005), live reads/status (US-006/007), and changes to local promote/record settlement policy. Preserve generic settleItemThreads behavior and existing own-marker provenance.\n\n**Interface** — `ItemThread` adds `fixClosed?: true`. `readItemThreads(threads, comments, login)` and `settleItemThreads(read, canRule)` in `packages/nax/src/workflow/item-thread-state.ts`; `ItemThread` has `key`, `itemId`, `kind`, `thread`, optional `ruling`, `replies`. An item with a ruling and no kept reply is settled; any kept writer reply puts it in `open`.",
+      "acceptanceCriteria": [
+        "[unit] readItemThreads returns an advisor D-1 item with ruling.disposition confirmed and no fixClosed property when its thread contains the opener followed by an own wr-confirmed-<key> echo only.",
+        "[unit] readItemThreads returns ruling.disposition confirmed and fixClosed true for the same thread when an own fix-<key> comment follows the echo.",
+        "[unit] readItemThreads does not set fixClosed when an own fix-<key> comment precedes the ruling echo.",
+        "[unit] readItemThreads does not set fixClosed when the comment after the echo has marker fix-<key2> for a different item key.",
+        "[unit] readItemThreads does not set fixClosed when the fix-<key> comment is authored by a login other than the bot login.",
+        "[unit] readItemThreads returns neither ruling nor fixClosed for a thread containing an own fix-<key> comment but no ruling echo.",
+        "[unit] readItemThreads includes a non-own writer reply after the fix-<key> comment in the item's replies.",
+        "[unit] settleItemThreads returns that item in open with the post-fix writer reply in kept.",
+        "[unit] readItemThreads returns empty replies when a non-own reply lies between the echo and the later own fix-<key> comment, because the bot comment came after it.",
+        "[unit] settleItemThreads returns that item as settled when the non-own reply precedes the later own fix-<key> comment.",
+        "[unit] readItemThreads returns ruling and replies exactly as before this change for the existing thread consisting of an opener and one echo only."
+      ],
+      "tags": [
+        "workflow",
+        "rulings",
+        "bot",
+        "ownership"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One existing production reader gains an optional field and separate comment boundaries using existing parsers; retain the security override because only a bot-owned matching marker may authorize fix closure.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/item-thread-state.ts",
+        "packages/nax/src/workflow/item-threads.ts",
+        "packages/nax/src/bot/fix-report.ts",
+        "packages/nax/test/unit/workflow/item-thread-state.test.ts",
+        "packages/nax/src/workflow/item-threads-reopen.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/item-thread-state-fix-closed.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4a4bbf182b0cac920a2ceece33fd0ab5f33d65e1"
+    },
+    {
+      "id": "US-002",
+      "title": "Keep confirmed advisor rulings as outstanding fix work",
+      "description": "**Goal** — Record advisor confirmations durably without closing their required work.\n\n**Motivation** — A ruled item is in `RecordRulingsOutcome.settled` and its thread is resolved by `recordPrRulings` (`packages/nax/src/bot/rulings.ts`); `agreedItems` (`packages/nax/src/bot/post.ts`) therefore never sees it.\n\n**Approach** — Change `recordPrRulings` (`bot/rulings.ts`) so an advisor item with a `confirmed` ruling that is not fix-closed is returned in `outcome.confirmedWork` instead of `settled`, is never resolved by the recorder, is left out of the PR body checklist ticks, and is left out of the settled count written to the `w-index` comment.\n\n`RecordRulingsOutcome` in `bot/rulings.ts`\n- Baseline: `{ index?, unindexed?, recorded, settled, open, asked, failed }`.\n- Target: adds optional `confirmedWork?: readonly (ItemThread & { readonly ruling: PrRuling })[]`, absent when empty. Outstanding confirmed work is in `confirmedWork` and in `recorded` when its echo was posted by this call; it is in neither `settled` nor `open`. A fix-closed confirmed item is in `settled`.\n\n**Confirmed advisor item**: an indexed item thread whose item kind is `advisor` and whose current ruling echo has disposition `confirmed`.\n**Fix-closed**: a confirmed advisor item is fix-closed when the bot's own comment with marker key `fix-<itemKey>` follows the ruling echo in its thread. `<itemKey>` is the thread's `w-<id>.<hash>` key. `nax bot fix` already uses `fix-<key>` for the reply it posts on an agreed finding thread.\n**Outstanding confirmed work**: a confirmed advisor item that is not fix-closed. A later writer reply (for example `fixed <sha>`) reopens the item through the existing reply rules and supersedes the confirmation.\n\nApply the partition both to existing echoes and successfully posted new echoes. A newly posted confirmation starts a new confirmation cycle; an older fix marker cannot answer that new echo.\n\nFailure handling: The recorder echoing a `confirm` ruling fails (`replyToThread` throws): the item stays in `open`, `failed` is incremented, as today. `resolveThread` fails for an item that is closed: logged, as today. An outstanding confirmed item is never resolved by the recorder. A confirmed advisor item whose thread was already resolved by an older nax stays outstanding confirmed work; `nax bot fix` posts its reply and does not try to resolve it again.\n\n**Scope** — In: RecordRulingsOutcome, existing/new echo partition, body/index counts, recorder idempotence and failure behavior. Out: readiness reasons (US-003), review queue/artifact construction (US-004), fix replies (US-005), and live status (US-006/007). A `confirm` reply on a non-advisor item kind (`finding`, `ruling`, `cannot-verify`, `gate`, `story`, `ci`, `reason`) is handled exactly as today; only the `advisor` kind gains the queued-work meaning. `nax workflow promote` and `nax workflow record` still treat a `confirmed` advisor ruling as a closed item; holding promotion on outstanding confirmed advisor work in the local flow is deferred to a follow-up.\n\n**Interface** — `confirmedWork?: readonly (ItemThread & { readonly ruling: PrRuling })[]` is optional and absent when empty; other RecordRulingsOutcome fields remain backward-compatible.",
+      "acceptanceCriteria": [
+        "[unit] recordPrRulings posts one wr-confirmed-<key> echo for indexed advisor D-1 whose newest writer reply is confirm: change X.",
+        "[unit] recordPrRulings does not call resolveThread for that newly confirmed outstanding advisor item.",
+        "[unit] recordPrRulings returns confirmedWork containing one entry with itemId D-1 and ruling.reason change X for that call.",
+        "[unit] recordPrRulings returns neither settled nor open containing D-1 for that call.",
+        "[unit] recordPrRulings returns recorded containing one entry for D-1 for that call.",
+        "[unit] A second recordPrRulings call over the same threads now carrying the echo returns D-1 in confirmedWork.",
+        "[unit] That second recordPrRulings call posts no second echo.",
+        "[unit] That second recordPrRulings call does not call resolveThread.",
+        "[unit] recordPrRulings returns D-1 in settled and omits confirmedWork when an own fix-<key> comment follows the echo on the unresolved thread.",
+        "[unit] recordPrRulings calls resolveThread once for that fix-closed unresolved thread.",
+        "[unit] recordPrRulings returns an advisor item ruled fixed <sha>, waive: <reason>, override: <reason> or verified in settled, as before this change.",
+        "[unit] recordPrRulings resolves the advisor thread for each of those non-confirm rulings, as before this change.",
+        "[unit] recordPrRulings returns cannot-verify and finding items ruled confirm in settled, as before this change.",
+        "[unit] recordPrRulings resolves those confirmed cannot-verify and finding threads, as before this change.",
+        "[unit] recordPrRulings returns a confirmed advisor item whose thread is already resolved in confirmedWork.",
+        "[unit] recordPrRulings does not call resolveThread for that already-resolved outstanding confirmed advisor item.",
+        "[unit] recordPrRulings returns D-1 in open when replyToThread throws while echoing its confirm.",
+        "[unit] recordPrRulings returns failed 1 and no confirmedWork property when that confirm echo fails.",
+        "[unit] recordPrRulings issues no PR body checklist edit when the only settled-or-confirmed item is outstanding confirmed work, leaving D-1 unticked.",
+        "[unit] recordPrRulings edits w-index with a settled count excluding D-1 while it is outstanding and including it once fix-closed.",
+        "[unit] When a writer reply fixed <sha> follows a fix-closed confirmation, the item reopens and the next recordPrRulings call returns it in settled with disposition fixed and no confirmedWork property.",
+        "[unit] recordPrRulings logs a resolveThread failure for a closed item, as today, without undoing its recorded settlement."
+      ],
+      "tags": [
+        "bot",
+        "workflow",
+        "rulings",
+        "writer-authorization"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Recorder partitioning is localized but controls writer-authorized durable PR mutations and must preserve failure and retrigger semantics, warranting the security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/rulings.ts",
+        "packages/nax/src/workflow/item-thread-state.ts",
+        "packages/nax/src/bot/finding-rulings.ts",
+        "packages/nax/test/unit/bot/rulings.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/bot/rulings-confirmed-work.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1fea1ecb3a9d69ad99fc21a36d9758aaa548318b"
+    },
+    {
+      "id": "US-003",
+      "title": "Hold readiness until confirmed advisor work is fixed",
+      "description": "**Goal** — Prevent workflow readiness from releasing a PR with outstanding confirmed advisor work.\n\n**Motivation** — `workflowPrReadiness` (`packages/nax/src/bot/workflow-ready.ts`) readies on `outcome.open` being empty whatever the disposition.\n\n**Approach** — In `workflowPrReadiness` (`bot/workflow-ready.ts`) treat `confirmedWork` keys as having a thread, and return `{ ready: false, reason }` naming each outstanding confirmed item and the next step when `confirmedWork` is non-empty and no item is open.\n\nRetain the existing outcome/index/unindexed/missing-thread checks. Include confirmedWork in the present-key set. Preserve the existing open item(s) reason when open is nonempty; otherwise test confirmedWork before CI. The exact hold format is `<count> confirmed advisor item(s) awaiting a fix: <ids joined by comma and space>; run nax bot review, then nax bot fix`, preserving confirmedWork order. No confirmedWork and successful CI still returns `{ ready: true }`.\n\n**Scope** — In: pure readiness membership and hold precedence, with tests in the existing readiness suite. Out: recorder partitioning (US-002), artifact handoff (US-004), fix reply/idempotence (US-005), live status (US-006/007), and changing local workflow promote/record behavior.\n\n**Interface** — Consume optional `confirmedWork?: readonly (ItemThread & { readonly ruling: PrRuling })[]` from RecordRulingsOutcome. Preserve WorkflowPrReadiness's existing `{ ready: true } | { ready: false; reason: string }` result.",
+      "acceptanceCriteria": [
+        "[unit] workflowPrReadiness returns { ready: false, reason: \"1 confirmed advisor item(s) awaiting a fix: D-1; run nax bot review, then nax bot fix\" } when confirmedWork contains D-1, open is empty, the index is complete and CI succeeds.",
+        "[unit] workflowPrReadiness returns { ready: false, reason: \"2 confirmed advisor item(s) awaiting a fix: D-1, D-2; run nax bot review, then nax bot fix\" } with a complete index, empty open and successful CI for confirmedWork D-1 then D-2, in confirmedWork order.",
+        "[unit] workflowPrReadiness returns the existing reason \"1 open item(s): F-1\" when open contains F-1, confirmedWork contains D-1 and the index has a thread for every key.",
+        "[unit] workflowPrReadiness returns reason \"1 confirmed advisor item(s) awaiting a fix: D-1; run nax bot review, then nax bot fix\" rather than the CI reason when the index is complete, open is empty, confirmedWork contains D-1 and CI fails.",
+        "[unit] workflowPrReadiness does not report an index key found only in confirmedWork as an item without a thread.",
+        "[unit] workflowPrReadiness returns { ready: true } with confirmedWork absent, open empty and CI success."
+      ],
+      "tags": [
+        "bot",
+        "workflow",
+        "readiness"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A single pure decision function gains a membership source and an ordered hold branch; no new integration or authorization policy.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/workflow-ready.ts",
+        "packages/nax/src/bot/rulings.ts",
+        "packages/nax/test/unit/bot/workflow-ready.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d1782f8851f494ba9da29776bc377120479a6152"
+    },
+    {
+      "id": "US-004",
+      "title": "Queue confirmed advisor items in the review fix artifact",
+      "description": "**Goal** — Carry outstanding confirmed advisor work through review to bot-review.json as agreed fixes without asking the review model to reconsider it.\n\n**Motivation** — `rulingEarlier` (`packages/nax/src/bot/review-rulings.ts`) exposes only item kinds `finding` and `ruling` to the review; `agreedItems` (`packages/nax/src/bot/post.ts`) therefore never sees the confirmed advisor item.\n\n**Approach** — Return `itemConfirmed` from `readReviewRulings`, list the items in its `settled` and count them in `itemStatus.open`, pass `itemConfirmed` to `post` but not to the review model's `earlier` in `review-run.ts`, and emit them as agreed `finding` items in `bot-review.json` through `combinedEarlier` and `mergeEarlier`.\n\n`readReviewRulings` in `bot/review-rulings.ts`\n- Baseline: returns `{ itemEarlier?, rulings?, itemStatus?, reviewedIndex?, settled? }`.\n- Target: also returns optional `itemConfirmed?: readonly ConfirmedItem[]` where `ConfirmedItem = { readonly thread: PrThread; readonly reason: string }`. Each `thread` keeps its first comment and the bot's own comments only. `settled` also lists each outstanding confirmed item with its disposition `confirmed`, so the review does not raise the advisor issue again. `itemStatus.open` and `rulings.open` count an outstanding confirmed item as open.\n\n`PostReviewInput` in `bot/post.ts`\n- Baseline: has `earlier?` and `itemEarlier?`.\n- Target: adds optional `itemConfirmed?: readonly ConfirmedItem[]`. `combinedEarlier` also includes these threads, and `effectiveEarlier` ignores any review verdict for them (they are always open), so the post step never replies to or resolves them. For each, `effectiveEarlier` marks entries that came from `itemConfirmed` with `confirmed: true` (and the reason), and `mergeEarlier` emits for them an agreed `finding` item with the thread's key, `earlierIssue(thread)` as `issue`, severity `important`, no `file` or `line` (an advisor item's thread anchor is not where the change belongs), and `suggestion` set to the confirmation reason unless it is the default `confirmed`.\n\n`effectiveEarlier` and `combinedEarlier` in `packages/nax/src/bot/post-earlier.ts` already accept `w-` thread keys; an earlier thread with no review verdict is treated as open and `mergeEarlier` in `post.ts` turns it into an agreed `finding` item. Retain deduplication and ensure confirmed provenance dominates any same-thread fixed/withdrawn verdict. Exercise the entry-point seam: stub `_botReviewDeps.recordPrRulings` to produce confirmedWork, execute runBotReview through actual post persistence, and inspect bot-review.json and the model input.\n\n**Scope** — In: readReviewRulings, review-run routing, PostReviewInput, post-earlier and artifact merging, unit tests and the runBotReview integration seam. Out: recorder semantics (US-002), readiness holds (US-003), fix execution/replies (US-005), and live status (US-006/007). Do not widen rulingEarlier to advisor items or expose third-party replies in itemConfirmed. The `nax-finish` skill wording (Step 3, advisor row) lives in the separate `nax-toolkit-skills` repository and is not edited here; aligning it with \"confirm queues the change for `nax bot fix`\" is a manual follow-up after this lands.\n\n**Interface** — `ConfirmedItem = { readonly thread: PrThread; readonly reason: string }`; `itemConfirmed?: readonly ConfirmedItem[]` is optional in both the reader result and PostReviewInput, absent when empty. Static mode still returns `{}`.",
+      "acceptanceCriteria": [
+        "[unit] readReviewRulings returns itemConfirmed with one entry whose reason equals D-1's ruling reason when the recorded workflow PR outcome contains D-1 in confirmedWork.",
+        "[unit] readReviewRulings returns that entry's thread with its opener and the bot's own comments only, excluding comments from other authors.",
+        "[unit] readReviewRulings omits itemConfirmed when confirmedWork is absent.",
+        "[unit] readReviewRulings still returns {} for staticMode.",
+        "[unit] readReviewRulings includes D-1 with kind advisor and disposition confirmed in the returned settled list.",
+        "[unit] readReviewRulings returns itemStatus.open 1 and itemStatus.total 2 when two items are indexed, one is fix-closed and D-1 is outstanding, preserving the existing itemStatus.recorded field.",
+        "[unit] readReviewRulings returns rulings.open equal to outcome.open.length plus (outcome.confirmedWork?.length ?? 0), counting each outstanding confirmed advisor item as open.",
+        "[unit] rulingEarlier still returns no thread for an open advisor item.",
+        "[unit] postPrReview writes bot-review.json with an agreed finding keyed w-D-1.<hash>, severity important and suggestion change X when itemConfirmed contains that thread with reason change X and the verdict has no earlier verdict for it.",
+        "[unit] postPrReview emits that agreed item without a suggestion property when the confirmation reason is the default confirmed.",
+        "[unit] postPrReview emits that agreed item without file or line properties even when its thread carries path and line.",
+        "[unit] postPrReview emits that agreed item's issue as the opener's first line beginning Open item **D-1** (advisor):.",
+        "[unit] postPrReview posts no earlier-thread reply for an itemConfirmed thread even when verdict.earlier contains fixed or withdrawn for its id.",
+        "[unit] postPrReview does not resolve that itemConfirmed thread even when verdict.earlier contains fixed or withdrawn for its id.",
+        "[unit] postPrReview still emits that itemConfirmed thread as an agreed item despite the fixed or withdrawn earlier verdict.",
+        "[unit] earlierCounts counts an itemConfirmed thread as open.",
+        "[integration] runBotReview writes bot-review.json whose agreed list contains the w-D-1 item when _botReviewDeps.recordPrRulings is stubbed to return D-1 in confirmedWork.",
+        "[integration] In that runBotReview call, the review model's input earlier list contains no thread for D-1."
+      ],
+      "tags": [
+        "bot",
+        "review",
+        "workflow",
+        "artifacts",
+        "writer-authorization"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Four existing production modules extend established optional-input and artifact-merging seams without a new subsystem; retain strict isolation because the new channel filters authors and suppresses verdict-driven thread mutations.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/review-rulings.ts",
+        "packages/nax/src/bot/review-run.ts",
+        "packages/nax/src/bot/post.ts",
+        "packages/nax/src/bot/post-earlier.ts",
+        "packages/nax/test/unit/bot/review-rulings.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/bot/review-rulings-confirmed.test.ts",
+        "packages/nax/test/unit/bot/post-confirmed-work.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the recorder rejects, readReviewRulings logs Could not record PR rulings and returns {}, preserving the existing best-effort failure behavior.",
+        "When itemConfirmed is absent and an ordinary itemEarlier thread has a fixed verdict, postPrReview still posts its wr-fixed echo and resolves that thread, preserving the existing non-confirmed path."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "51a8e2dbb0e07d41e9c14c7265cb5fd121e2e347"
+    },
+    {
+      "id": "US-005",
+      "title": "Reply to and close advisor work after a fix push",
+      "description": "**Goal** — Let bot fix answer agreed advisor w-items with an idempotent fix-closing reply after pushing.\n\n**Motivation** — A `confirm: <evidence>` reply settled the advisor item and `nax bot fix` reported `nothing to fix`, so the PR was marked ready with the defect still present.\n\n**Approach** — In `resolveOwnFindings` (`bot/fix-report.ts`) stop skipping an agreed `w-` key whose thread opener parses as an `advisor` item, so the bot posts the `Fixed in <sha>` reply with marker `fix-<key>` and resolves the thread; for these advisor items only, skip the reply when an own `fix-<key>` comment already follows the thread's latest own `wr-` echo.\n\n`resolveOwnFindings` in `packages/nax/src/bot/fix-report.ts` replies `Fixed in <sha>: <summary>` with marker `fix-<key>` and resolves the thread, but skips every agreed key that starts with `w-`. Narrow the skip, do not remove it: a w-key with any non-advisor opener remains skipped. Parse the owned opener with parseItemOpener; preserve bot ownership, summary sanitization, seven-character SHA display, reply-before-resolve ordering and existing f-item behavior. A subsequent confirmation echo after an earlier fix marker requires a new fix reply.\n\nFailure handling: A confirmed advisor item whose thread was already resolved by an older nax stays outstanding confirmed work; `nax bot fix` posts its reply and does not try to resolve it again. `nax bot fix` runs right after a `confirm` with no `nax bot review` in between: it echoes the ruling but reads the saved `bot-review.json`, so it reports `Nothing to fix`; the PR stays held and the readiness reason says to run `nax bot review` first. `nax bot fix` pushes nothing for an agreed confirmed item: no `fix-` reply is posted, the item stays outstanding, and readiness holds with its reason.\n\n**Scope** — In: resolveOwnFindings/replyStep advisor admission and duplicate guard, reply/resolve failures, pushed versus unpushed closure behavior, and regression checks for no-review/no-push holds using the existing fix entry points and readiness result. The graph already requires pushedSha before entering reply; a no-change check routes directly to report, so do not add a new reply/ready transition or demand replyStep with an undefined SHA to enforce the no-push guard. For the no-change path, verify the item remains outstanding and a subsequent explicit readiness evaluation returns the confirmed-work hold; do not invent a graph evaluation that the current no-change route does not perform. Out: creating the agreed artifact (US-004), recorder classification implementation (US-002), readiness policy implementation (US-003), and live status (US-006/007). When `nax bot fix` agrees to a confirmed item but its fix session makes no change, there is no automatic retry or escalation; the PR stays draft with the readiness reason. Do not change non-advisor w-item behavior or f-finding duplicate policy.\n\n**Interface** — Consume the agreed `finding` item's original `w-<id>.<hash>` key in env.review.agreed through replyStep(env, state). Use parseItemOpener(body), which returns `{ id, kind, issue }` for an owned item opener. A successful pushed reply uses `fix-<key>` and `Fixed in <first 7 characters of the sha>: <summary>`; no new artifact format is introduced.",
+      "acceptanceCriteria": [
+        "[unit] replyStep calls replyToThread once for an agreed finding keyed w-D-1.<hash> with an own parsed advisor opener and state.pushedSha set, using a body starting Fixed in <first 7 characters of the sha>: and marker fix-w-D-1.<hash>.",
+        "[unit] replyStep calls resolveThread once for that successfully answered unresolved advisor thread.",
+        "[unit] replyStep calls neither replyToThread nor resolveThread for an agreed w-key whose opener parses as a finding item.",
+        "[unit] replyStep posts the fix reply for an already-resolved advisor thread.",
+        "[unit] replyStep does not call resolveThread for that already-resolved thread.",
+        "[unit] replyStep does not resolve the advisor thread when replyToThread throws.",
+        "[unit] replyStep logs a warning naming the thread id when that replyToThread call throws.",
+        "[unit] replyStep posts no reply on a repeated run over an advisor thread already containing an own fix-<key> comment after its latest wr-confirmed echo.",
+        "[unit] replyStep posts a new Fixed in reply when a second wr-confirmed echo follows an earlier fix-<key> comment on a reopened and re-confirmed item.",
+        "[unit] replyStep logs a warning naming the thread id when resolveThread throws for the fix-closed thread.",
+        "[unit] replyStep fulfills with exit ready rather than rejecting when resolveThread throws after the successful fix reply for the advisor thread.",
+        "When nax bot fix runs immediately after confirm with no intervening nax bot review, it echoes the ruling while consuming the saved bot-review.json rather than generating a new agreed item.",
+        "When that saved review contains no agreed work, nax bot fix reports Nothing to fix.",
+        "When readiness is evaluated after that no-review fix call, the PR remains held with a reason naming the confirmed item and instructing nax bot review before nax bot fix.",
+        "When nax bot fix pushes nothing for an agreed confirmed advisor item, it posts no fix- reply.",
+        "When that no-push item's state is read again, it remains outstanding confirmed work and readiness holds with its confirmed-work reason."
+      ],
+      "tags": [
+        "bot",
+        "fix",
+        "workflow",
+        "idempotence",
+        "ownership"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Localized post-push mutation changes reuse established seams but depend on bot ownership and trusted marker provenance; strict isolation protects closure authorization and retrigger behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/fix-report.ts",
+        "packages/nax/src/workflow/item-threads.ts",
+        "packages/nax/test/integration/bot/fix-report.test.ts",
+        "packages/nax/src/bot/fix-run.ts",
+        "packages/nax/src/bot/post.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/bot/fix-report-advisor.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a0909eaebbb6323229c44971fd8a7e4e76513703"
+    },
+    {
+      "id": "US-006",
+      "title": "Read live workflow PR ruling state without mutation",
+      "description": "**Goal** — Provide a never-throwing read-only live PR status reader sharing existing thread and writer policy.\n\n**Motivation** — `workflowStatusCommand` (`packages/nax/src/cli/workflow.ts`) reads only the run's `result.json`, written at publish time; rulings live on the PR.\n\n**Approach** — Add `workflow/live-status.ts` with `readLiveStatus`, export `canRule` from `workflow/promote-rulings.ts`, and reuse `readPrState`, `readItemThreads` and `settleItemThreads`.\n\nAn item is matched to its thread by `ItemThread.itemId` (the id parsed from the thread opener) for threads in the PR's `w-index`; no `itemKey` hash comparison is done, so a run-record item whose `kind` or `issue` differs from the published opener still matches by id. The `items` input limits the returned ids to those present in the run record. A PR with no `w-index` comment returns `{ source: \"run-record\", error: \"no nax item index on this PR\" }`. It never throws and never writes to the forge. `canRule` in `promote-rulings.ts` is exported so both readers share one writer check.\n\n`readPromoteRulings` in `packages/nax/src/workflow/promote-rulings.ts` already performs the read-only PR read this feature needs for status: `prNumberFromUrl`, `resolvePrRef`, `readCurrentUser`, `listReviewThreads`, `listPrComments`, then `readItemThreads` and `settleItemThreads` with a `hasWriteAccess`-backed `canRule`. `readPrState(forge, prRef, deps, cwd)` in `packages/nax/src/workflow/pr-state.ts` returns `{ isDraft, body, url? }` and throws `WORKFLOW_PR_READ_FAILED`.\n\nPartition the shared settled items: a confirmed advisor with no fixClosed goes into awaitingFix, not settled; a fix-closed one goes into settled with disposition confirmed. A kept writer reply reopens either through the existing reply rules.\n\nFailure handling: The run record's url carries no PR number (`prNumberFromUrl` returns null): no live read is attempted and no forge command runs; `nax workflow status` reports the run record with `source` `run-record` and no `liveError`. `readLiveStatus` cannot detect a forge, or any forge read throws: it returns `{ source: \"run-record\", error }`, and `nax workflow status` reports the run record and `liveError`. At this reader boundary, a URL without a PR number returns the run-record error union before any forge invocation; the CLI's no-liveError eligibility guard belongs to US-007. Forge-state read failures that propagate to readLiveStatus produce the error union. Permission lookup exceptions already caught by the shared canRule remain denied replies, preserving that helper's existing fail-closed behavior rather than converting them into fatal status-read errors. The no-write test must assert both a live result for successful read fixtures and an empty mutation-call list: catching a fake write exception into run-record fallback would not prove read-only behavior.\n\n**Scope** — In: new reader, exported shared canRule, read-only PR state/index/ownership/permission settlement, id matching, and fake-forge tests. Out: CLI report formatting/eligibility (US-007), bot recorder/review/fix changes (US-002 through US-005), and changing local workflow promote/record confirmation semantics.\n\n**Interface** — Verbatim new module contract:\n```ts\nexport type LiveStatus =\n  | {\n      readonly source: \"live\";\n      readonly isDraft: boolean;\n      /** Item ids whose thread carries a ruling that closes the item. */\n      readonly settled: readonly { readonly id: string; readonly disposition: string }[];\n      /** Item ids that are confirmed advisor items with no fix-closing reply. */\n      readonly awaitingFix: readonly string[];\n    }\n  | { readonly source: \"run-record\"; readonly error: string };\n\nexport function readLiveStatus(input: {\n  readonly url: string;\n  readonly cwd: string;\n  readonly deps: ForgeDeps;\n  readonly items: readonly OpenItem[];\n}): Promise<LiveStatus>;\n```",
+      "acceptanceCriteria": [
+        "[unit] readLiveStatus returns source live, isDraft false and settled containing { id: \"D-1\", disposition: \"fixed\" } for a PR URL whose fake ForgeDeps reports a non-draft PR and an indexed D-1 thread with a fixed echo.",
+        "[unit] readLiveStatus returns neither settled nor awaitingFix containing an item whose thread has no ruling echo.",
+        "[unit] readLiveStatus returns a confirmed advisor item without a fix- comment in awaitingFix and not in settled.",
+        "[unit] readLiveStatus returns the same item in settled with disposition confirmed and not in awaitingFix when a matching own fix- comment follows the echo.",
+        "[unit] readLiveStatus keeps an echoed item in settled when a later reply's author hasWriteAccess is false.",
+        "[unit] readLiveStatus removes that item from settled when the same later reply comes from a writer.",
+        "[unit] readLiveStatus returns an item in neither settled nor awaitingFix when its only thread key is absent from the PR's w-index, even if the input items include that id.",
+        "[unit] readLiveStatus returns a ruled indexed thread's id in settled when its run-record item's kind and issue differ from the published opener, so itemKey differs but id matches.",
+        "[unit] readLiveStatus returns { source: \"run-record\", error: \"no nax item index on this PR\" } for a PR containing item threads but no w-index comment.",
+        "[unit] readLiveStatus returns _run:cv1 in settled when it has an indexed ruling thread.",
+        "[unit] readLiveStatus returns an input item id with no thread in neither settled nor awaitingFix.",
+        "[unit] readLiveStatus completes with source live for successful PR/index/thread read fixtures when fake ForgeDeps.run throws on any argv that posts, edits or resolves a comment or thread, or marks a PR ready; the recorded argv contain no such mutation call.",
+        "[unit] readLiveStatus returns source run-record with a nonempty error and does not throw for a URL without a PR number.",
+        "[unit] readLiveStatus runs no forge command for that URL without a PR number.",
+        "[unit] readLiveStatus returns source run-record with error carrying the failure message when readPrState fails.",
+        "[unit] readLiveStatus returns source run-record with error carrying the failure message when a thread read throws.",
+        "When readLiveStatus cannot detect a forge, it returns { source: \"run-record\", error } instead of throwing.",
+        "When a forge read failure propagates from resolving the PR, reading the current user, listing PR comments, listing review threads or reading PR state, readLiveStatus returns { source: \"run-record\", error } carrying the failure message instead of throwing."
+      ],
+      "tags": [
+        "workflow",
+        "status",
+        "forge",
+        "read-only",
+        "writer-authorization"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A new read-only leaf reuses existing forge readers, but exports and shares hasWriteAccess-backed role checks; security override requires strict test isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/promote-rulings.ts",
+        "packages/nax/src/workflow/pr-state.ts",
+        "packages/nax/src/workflow/item-thread-state.ts",
+        "packages/nax/test/unit/cli/workflow-promote-rulings.test.ts",
+        "packages/nax/src/workflow/open-items.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/live-status.ts",
+        "packages/nax/test/unit/workflow/live-status.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When hasWriteAccess throws for a reply after a valid ruling echo, readLiveStatus returns source live with that item still settled because the shared canRule denies the reply, preserving the existing writer-check fallback.",
+        "Exporting canRule leaves readPromoteRulings returning the same entries and prRulings report for existing indexed fixed-ruling fixtures."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1070edd423789532f90f51c8792d0e65ba37abe9"
+    },
+    {
+      "id": "US-007",
+      "title": "Overlay live PR readiness and rulings in workflow status",
+      "description": "**Goal** — Report live draft state and item rulings for eligible draft workflow runs while preserving snapshot fallback and exit semantics.\n\n**Motivation** — After `nax bot review 2750` and `nax bot fix 2750` ruled both items and marked the PR ready, `nax workflow status -f chat-acp-model-catalog --json` still reported `outcome: \"draft\"` with both items open, and exited 2.\n\n**Approach** — In `buildReport` (`cli/workflow.ts`) call `readLiveStatus` when the run record's `outcome` is `draft` and its `url` names a PR number (`prNumberFromUrl`), then overlay `outcome` and `openItems`, and add `source`, `liveError` and `settledItems` to the report.\n\n`WorkflowStatusReport` in `cli/workflow.ts`\n- Baseline: `{ feature, runId, runDir, step, outcome?, ci?, url?, workflowPassed?, reasons, openItems, supplementaryItems }`.\n- Target: adds `source: \"live\" | \"run-record\"`, `liveError?: string` (only when `source` is `run-record` because a live read was tried and failed) and `settledItems: readonly { id: string; disposition: string }[]` (empty unless `source` is `live`).\n\nBuild the existing run-record report first. On source live, preserve the PR's draft outcome until isDraft is false, then use outcome ready; filter openItems by live settled ids, never removing an outstanding confirmed advisor merely because its echo exists. A non-draft PR can therefore report ready with D-1 still open and exit 2. Preserve exitCodeFor's condition of ready plus no openItems.\n\nFailure handling: The run record's url carries no PR number (`prNumberFromUrl` returns null): no live read is attempted and no forge command runs; `nax workflow status` reports the run record with `source` `run-record` and no `liveError`. `readLiveStatus` cannot detect a forge, or any forge read throws: it returns `{ source: \"run-record\", error }`, and `nax workflow status` reports the run record and `liveError`. Failed reads preserve the snapshot's exit code and fields; plain output prints `(run record only: <error>)` immediately after the first line, JSON exposes the diagnostic, and a successful live read has no such fallback line.\n\nThe `DRAFT` fixture in `workflow-status.test.ts` has `outcome` `draft` and `url` `https://gh/pr/7`, which carries no PR number, so it never triggers a live read and its plain-output assertions hold; the new tests in `workflow-status-live.test.ts` use `.../pull/<n>` urls and a fake `ForgeDeps`, and no test may reach the real `gh` or `git`.\n\n**Scope** — In: report source/settled fields, eligible live overlay, read-failure diagnostic, output and exit behavior, and repeated read-only command tests. Out: constructing the live reader (US-006), bot confirmation/fix/readiness policy (US-002 through US-005), and rewriting run artifacts or sidecars. The `ci` field, `reasons` and `supplementaryItems` in `nax workflow status` stay the publish-time snapshot; only the draft state and the item rulings behind `openItems` are read live, and the `_run:ci` item is dropped once the PR is no longer a draft because readiness only marks a PR ready when CI allows it. Preserve workflowPassed and step too. Import the live-status leaf by relative path to avoid the documented cli/workflow-barrel cycle.\n\n**Interface** — Add `source: \"live\" | \"run-record\"`, `liveError?: string`, and `settledItems: readonly { id: string; disposition: string }[]` to WorkflowStatusReport. Consume `readLiveStatus(input: { readonly url: string; readonly cwd: string; readonly deps: ForgeDeps; readonly items: readonly OpenItem[]; }): Promise<LiveStatus>` through the existing WorkflowForgeDeps.forge injection; retain workflowStatusCommand as the command/test entry point.",
+      "acceptanceCriteria": [
+        "[unit] workflowStatusCommand returns exit code 0 for a draft run with a PR URL and open _run:cv1 and D-1 when the fake forge reports a non-draft PR and rulings on both items.",
+        "[unit] That command prints outcome ready, empty openItems, source live and settledItems holding both ids.",
+        "[unit] workflowStatusCommand prints only _run:cv1 in openItems when the live PR stays draft, D-1 is ruled and _run:cv1 has no ruling.",
+        "[unit] That still-draft command reports outcome draft and returns exit code 2.",
+        "[unit] workflowStatusCommand keeps outcome draft and returns exit code 2 when the PR is still draft even if every item is ruled.",
+        "[unit] workflowStatusCommand keeps a confirmed advisor item without a fix- comment in openItems.",
+        "[unit] workflowStatusCommand reports outcome ready with D-1 still open and exit code 2 when a non-draft PR has that outstanding confirmed advisor item.",
+        "[unit] workflowStatusCommand preserves the run-record report's existing values on live-read failure, adding source run-record, liveError equal to the failure message and empty settledItems.",
+        "[unit] workflowStatusCommand returns the run-record exit code on that live-read failure.",
+        "[unit] workflowStatusCommand never calls the fake forge's run for a ready record, a draft record with no url, or a draft record whose url carries no PR number, such as https://gh/pr/7.",
+        "[unit] For each such ineligible record, workflowStatusCommand reports source run-record with no liveError.",
+        "[unit] For each such ineligible record, workflowStatusCommand's plain output has no (run record only: line.",
+        "[unit] workflowStatusCommand preserves supplementaryItems equal to the run record's supplementary items after a live read.",
+        "[unit] workflowStatusCommand preserves workflowPassed, reasons, ci and step equal to the run record's values after the live overlay.",
+        "[unit] workflowStatusCommand removes an open _run:ci item when the live PR is non-draft.",
+        "[unit] workflowStatusCommand keeps that _run:ci item listed when the live PR is draft.",
+        "[unit] workflowStatusCommand's --json report for a readable run includes source for both live and run-record results.",
+        "[unit] workflowStatusCommand's --json report for a readable run includes liveError only on a failed live read.",
+        "[unit] workflowStatusCommand's plain output places (run record only: <error>) immediately after the first line on a failed live read.",
+        "[unit] workflowStatusCommand's plain output prints no such fallback line on a live read.",
+        "[unit] workflowStatusCommand prints the same report on two calls over the same fakes.",
+        "[unit] Those repeated workflowStatusCommand calls invoke no forge command that writes."
+      ],
+      "tags": [
+        "workflow",
+        "cli",
+        "status",
+        "forge",
+        "read-only"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded CLI report overlay consumes an upstream reader through existing dependency injection; eligibility, snapshot preservation and output/exit behavior are clear and do not introduce a new authorization policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/workflow.ts",
+        "packages/nax/src/workflow/live-status.ts",
+        "packages/nax/src/workflow/open-items.ts",
+        "packages/nax/test/unit/cli/workflow-status.test.ts",
+        "packages/nax/src/cli/workflow-forge.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/cli/workflow-status-live.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0c55c41c590b7070a84268dc230f857d83f52fde"
+    }
+  ],
+  "analysis": "This is an existing-code bug fix/enhancement closing #2751 and #2752, wholly inside @nathapp/nax (packages/nax), not a new workflow engine or a cross-package API change. Navigation: codebase-memory MCP is unavailable in this host, so findings below come from direct reads and text search. Read docs/architecture/ARCHITECTURE.md:15 (conventions and dependency injection), :27 (testing and logging), and :160 (quick-reference constraints) before implementation. Use TypeScript ESM, Bun-native runtime APIs, bun:test, injected ForgeDeps/_deps, and existing logger/error helpers. No new package, dependency, release bump, credentials, or data migration is needed. All seven binding story ids, workdirs, and dependency edges are preserved. Source files must change notwithstanding the spec's 'Modifies: None' metadata; that paragraph explains why existing closed-world test assertions need not change, not a prohibition on editing the named production symbols.\n\nCurrent state and US-001: packages/nax/src/workflow/item-thread-state.ts:6 defines ItemThread; :26 readThread uses the last own marked comment for both ruling recognition/pendingReopens and reply boundaries, so a subsequent fix marker currently hides the ruling. :52 readItemThreads obtains the latest own w-index and all owned parsed item threads. :87 settleItemThreads limits participation to index keys, accepts only canRule-approved replies, and settles a ruling only with no kept reply. Preserve this generic settlement contract: it is intentionally NOT changed to globally hold advisor confirmations, because local promote/record behavior is deferred. Split only the ruling boundary (last own non-fix marker) from the reply boundary (last own marker of any kind), and derive optional fixClosed only from a matching own fix marker after a valid echo. Own means authored by the authenticated bot AND carrying a valid nax marker, not merely the same author: packages/nax/src/forge/marker.ts:27. Comment-array order, not timestamp sorting or string-id ordering, determines 'after'. packages/nax/src/workflow/item-threads.ts:62 hashes kind/issue into itemKey, :93 parses opener identity, :126 parses validated wr echoes, and :53 REOPENED_BY_RERAISE excludes confirmed. Its wire formats need no redesign. packages/nax/src/workflow/item-threads-reopen.ts:27 and :54 deliberately still use the last own comment of any kind; do not broaden this story into rewriting reopen policy. ReadItemThreads consumers include bot/rulings.ts:20, workflow/promote-rulings.ts:17, workflow/item-threads-post.ts:20, workflow/item-threads-index.ts:6, and workflow/item-threads-reopen.ts:14. Existing coverage at packages/nax/test/unit/workflow/item-thread-state.test.ts:47, :88, :158 pins pending invalidation, ownership, malformed echoes, unindexed closures, and writer reply settlement; the new fix-closed suite must retain these anchors.\n\nUS-002/003: packages/nax/src/bot/rulings.ts:48 defines RecordRulingsOutcome and :229 recordPrRulings currently copies every settled echo into settled, resolves it, records fresh echoes, and treats every new disposition as settled. :76 permissionReader delegates to writerCheck and caches checks; preserve that authorization route. :87 resolve logs failures; :99 postEcho returns false on failure; :120 tickBody and :209 refreshIndex derive presentation solely from settled. Partition existing settled confirmations AND newly successfully echoed advisor confirmations into optional confirmedWork when not fixClosed. A newly echoed ruling must supersede any stale prior fixClosed from an earlier confirmation cycle; do not carry an old fix closure forward when recording a new confirm. Only successful echo posting creates recorded/confirmed work; failure stays open and increments failed. Do not include confirmedWork in generic open or settled, body ticks, evidence, or settled index counts. Preserve all non-advisor confirm and other-disposition behavior. Existing tests packages/nax/test/unit/bot/rulings.test.ts:59 expose _rulingsDeps fixtures; :92 onwards cover recording, reply authorization, echo failure, resolution, checklist and index behavior. packages/nax/src/bot/finding-rulings.ts:98 already demonstrates keeping confirmation work separate, but it uses f-/fr- semantics and is a reference, not a module to change. packages/nax/src/bot/workflow-ready.ts:7 checks outcome/index/incomplete publication, then missing threads, open items, and CI; add confirmedWork to present keys and a hold after the open-items check and before CI. Preserve exact error precedence and item order in the reason. Its caller packages/nax/src/bot/fix-report.ts:174 performs an item-only preflight and re-reads after CI, so the pure readiness change protects both passes without a new readiness subsystem. Existing tests packages/nax/test/unit/bot/workflow-ready.test.ts:22 cover missing/open/CI/success.\n\nUS-004: packages/nax/src/bot/review-rulings.ts:24 derives itemStatus from settled indexed keys, :36 readReviewRulings skips static/non-workflow mode and maps settled rulings and open counts, and :73 rulingEarlier filters to finding/ruling with authorized replies. Keep that filter intact. Add ConfirmedItem as the explicit post-only channel, sanitize each thread to opener plus own marked comments, include confirmed work in settled prompt summaries to prevent re-raising and in open counts to preserve operational truth. packages/nax/src/bot/review-run.ts:247 reviewEnvironment obtains both finding and workflow rulings; :346 assembles model input and :369 post input. Route itemConfirmed to post, never review.earlier. packages/nax/src/bot/post.ts:69 PostReviewInput, :129 agreedItems, :169 mergeEarlier, :188 persistArtifact, and :323 postPrReview are the artifact seam. packages/nax/src/bot/post-earlier.ts:19 combinedEarlier already deduplicates threads by id, :33 effectiveEarlier accepts f-/w- markers and checks ownership, :105 postEarlier acts on verdicts, and :164 earlierCounts computes summary counts. Include confirmed threads in the deduped list and make their confirmed provenance/reason dominate any conflicting fixed/withdrawn review verdict. Emit one agreed finding with original w-key, important severity, earlierIssue(thread), and nondefault reason as suggestion; omit file/line entirely because the opener anchor is not a fix target. No artifact version bump is specified; keep current version 3 and existing f-/w- handling. Risks are accidental model re-evaluation, leaking writer replies into the post-only channel, stale verdict resolution, duplicate agreed items, and copying the advisor anchor. Existing tests packages/nax/test/unit/bot/review-rulings.test.ts:82, packages/nax/test/unit/bot/post-rulings.test.ts:87 and packages/nax/test/integration/bot/review-run-rulings.test.ts:62 provide record stubs, real post artifact interception, fake forge calls, and entry-point wiring fixtures. The US-004 integration acceptance must execute runBotReview and the real post artifact path, not merely assert a detached helper's return.\n\nUS-005: packages/nax/src/bot/fix-report.ts:74 resolveOwnFindings looks up agreed findings by opener key, checks bot ownership, then skips every w-key. Narrow only that skip to admit a parsed advisor opener; other w-kinds remain skipped. :85 already renders Fixed in <7-char sha> with fix-<key>, replies before resolving, skips resolution of already-resolved threads, and logs reply/resolve failures. Add advisor-only idempotence relative to the latest own wr echo so a second confirmation after an old fix gets another reply; foreign markers cannot close work. Do not impose the new dedup behavior on existing f-findings. packages/nax/src/bot/fix-run.ts:109 BOT_FIX_GRAPH reaches reply only after push (:188) and declares pushedSha a reply need (:193); check no-change routes directly to report (:155). :238 recordFixRulings echoes replies before execution but does not regenerate the saved review artifact. Preserve that distinction: confirm followed immediately by fix without review can still report Nothing to fix, while readiness must hold and instruct review then fix. A no-change/no-push attempt must not fabricate closure; do not add automatic retry/escalation or change unrelated graph routes. Existing tests packages/nax/test/integration/bot/fix-report.test.ts:18, :105 use makeBotFixEnv/makeBotFixDraftEnv, _fixReportDeps spies, short-sha markers and ordered reply/resolve assertions; preserve safety/sanitization and non-advisor skip assertions.\n\nUS-006: add workflow/live-status.ts as a read-only leaf. packages/nax/src/workflow/promote-rulings.ts:26 canRule performs hasWriteAccess with fail-closed logging and :59 readPromoteRulings demonstrates number parsing, resolvePrRef, concurrent user/thread/comment reads and shared settlement. Export and reuse canRule rather than adding a separate writer policy; do not reuse entriesFor's itemKey equality (:38), which would fail when run-record issue/kind differs from the published opener. Match allowed run-record ids to indexed ItemThread.itemId instead, include _run:cv1, and ignore unindexed threads. Read generic settled state, then partition outstanding confirmed advisors into awaitingFix and all other settled rulings into settled; writer replies still reopen via settleItemThreads. readLiveStatus must return a discriminated union and catch all read/detection failures, including absent index (exact message), without any mutation. packages/nax/src/workflow/pr-state.ts:85 readPrState normalizes GitHub/GitLab draft flags and throws WORKFLOW_PR_READ_FAILED; resolvePrRef in packages/nax/src/forge/pr-read.ts:20 detects forge from checkout origin and can throw if unavailable. packages/nax/src/forge/ci-failures.ts:42-52 recognizes /pull/<n> and /merge_requests/<n>, not /pr/7; validate number before any forge call. Reuse ForgeDeps and existing forge barrel exports. packages/nax/test/unit/cli/workflow-promote-rulings.test.ts:36 demonstrates real-shaped fake GraphQL threads/index/permission payloads. Reader tests must reject any write argv and exercise permissions with fakes, never invoke actual git, gh or glab.\n\nUS-007: packages/nax/src/cli/workflow.ts:51 WorkflowStatusReport currently contains only snapshot fields; :76 reportFor uses loadRunVerdict/buildVerdict, :94 buildReport only returns that snapshot, :99 exitCodeFor returns 0 iff outcome ready and no openItems, :105 printPlain prints the header then items, and :117 workflowStatusCommand is the injectable command entry point. Add source and settledItems on all successful reports, liveError only on attempted failed live reads. Only draft records with a URL carrying a recognized PR number attempt the reader. Overlay outcome using PR isDraft and filter openItems by live settled ids (outstanding confirmed advisors remain open); drop _run:ci only for a non-draft live PR. Do not recompute workflowPassed or rewrite result.json/sidecars. Preserve ci, reasons, step and supplementaryItems as snapshot values. Even a live non-draft PR remains exit 2 if outstanding items remain. Failed reads must retain every snapshot value and exit code, with source run-record/empty settledItems and a diagnostic; ineligible records get no liveError and no forge call. packages/nax/src/cli/workflow-forge.ts:20 already injects forge plus output resolver, clock and CI wait; use forgeDeps.forge with cwd rather than adding real CLI dependencies in tests. Avoid value-importing the workflow barrel: packages/nax/src/cli/workflow.ts:8 documents the step-context -> cli cycle. Import the new leaf by relative path and keep forge reads out of run-verdict loading. WorkflowStatusReport is re-exported by packages/nax/src/cli/index.ts:238. Existing tests packages/nax/test/unit/cli/workflow-status.test.ts:38-78 build filesystem fixtures with https://gh/pr/7, intentionally ineligible for live reads; preserve their plain output. New command-level tests use /pull/<n> URLs and fake WorkflowForgeDeps, asserting printed JSON/plain output, exit code, read-only repetition, and retained snapshot fields.\n\nImplementation order follows the binding DAG: US-001 before recorder and live reader; US-002 before readiness and review handoff; US-004 before fix replies; US-006 before CLI overlay. Validate the producer-consumer seams with real thread fixtures for fixClosed, record stubs for confirmedWork, postPrReview artifact reads for itemConfirmed, replyStep for agreed w-items, and workflowStatusCommand with fake ForgeDeps for live status. Optional fixClosed/confirmedWork/itemConfirmed must be absent rather than false/empty when unset; source and settledItems are intentionally required additions to status JSON. Existing PRs already resolved by old nax need no migration: confirmation remains outstanding until a matching bot fix marker, and fix replies skip duplicate resolve operations. Existing run artifacts remain readable unchanged, with the live overlay providing freshness rather than rewriting history. Main compatibility risks are marker-boundary mistakes, bypassed writer provenance, double echoes/fix replies on retrigger, status reads mutating the forge, snapshot fields being unintentionally recomputed, and adding live calls for synthetic/non-PR URLs. Preserve local workflow promote/record confirmation semantics, other item kinds, and historical spec/skills documents. Run targeted bun test <path> --timeout=30000 from packages/nax during iteration; never bare bun test or bun run nax. Pipeline owns normal gates; do not run coverage inside NAX_SANDBOXED=1.\n\nRefine-pass audit: enumerated all 73 spec acceptance bullets (US-001: 9; US-002: 12; US-003: 6; US-004: 14; US-005: 8; US-006: 12; US-007: 12) against the story criteria, retaining every assertion and its existing/as-before/already/ordering qualifiers. Compound bullets remain represented by multiple observable assertions in the same story. Every story has a negative path. All six feature-level exclusions remain verbatim, all context lists include the spec recommendations within the five-file limit, and the binding DAG/workdirs/created-file lists are unchanged. Tightened readiness fixture preconditions, clarified that ItemStatus retains recorded rather than becoming a two-property object, and made the async fix-resolution-failure result observable. The read-only fake must return source live for valid reads and record no mutation argv; merely swallowing a forbidden-write exception would not satisfy it. Shared canRule already catches permission errors and returns false (packages/nax/src/workflow/promote-rulings.ts:26-36), so the live-read failure union applies to propagated forge-state failures, not those handled permission exceptions. Existing no-change routing goes to report rather than ready (packages/nax/src/bot/fix-run.ts:150-156); preserve that route and test outstanding work plus a subsequent readiness evaluation instead of inventing an extra graph transition. US-001 is simple because only one existing production reader changes; US-004 is medium because four established production seams change without a new subsystem. Security overrides remain explicit for bot/writer provenance. Additional backward-compatibility assertions not explicitly enumerated in the spec are separated into suggestedCriteria rather than silently presented as spec requirements.",
+  "outOfScope": [
+    "The `nax-finish` skill wording (Step 3, advisor row) lives in the separate `nax-toolkit-skills` repository and is not edited here; aligning it with \"confirm queues the change for `nax bot fix`\" is a manual follow-up after this lands.",
+    "`nax workflow promote` and `nax workflow record` still treat a `confirmed` advisor ruling as a closed item; holding promotion on outstanding confirmed advisor work in the local flow is deferred to a follow-up.",
+    "A `confirm` reply on a non-advisor item kind (`finding`, `ruling`, `cannot-verify`, `gate`, `story`, `ci`, `reason`) is handled exactly as today; only the `advisor` kind gains the queued-work meaning.",
+    "`docs/specs/SPEC-workflow-pr-rulings-review-split.md` is not edited; its \"an advisor hold is cleared only by a collaborator reply\" note is left as the historical record.",
+    "US-005 only: when `nax bot fix` agrees to a confirmed item but its fix session makes no change, there is no automatic retry or escalation; the PR stays draft with the readiness reason.",
+    "US-007 only: the `ci` field, `reasons` and `supplementaryItems` in `nax workflow status` stay the publish-time snapshot; only the draft state and the item rulings behind `openItems` are read live, and the `_run:ci` item is dropped once the PR is no longer a draft because readiness only marks a PR ready when CI allows it."
+  ],
+  "routingProfile": "native-claude"
+}

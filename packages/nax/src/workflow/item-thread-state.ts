@@ -3,12 +3,19 @@ import type { PrComment, PrThread } from "@/forge/pr-types";
 import type { ItemIndex, PrRuling } from "./item-threads";
 import { closedKey, parseItemIndex, parseItemOpener, parseRulingEcho } from "./item-threads";
 
+/** Marker key prefix of a `nax bot fix` reply that answers an item. */
+const FIX_KEY_PREFIX = "fix-";
+/** Marker key prefix of the echo that records an item's ruling. */
+const RULING_ECHO_PREFIX = "wr-";
+
 export interface ItemThread {
   readonly key: string;
   readonly itemId: string;
   readonly kind: string;
   readonly thread: PrThread;
   readonly ruling?: PrRuling;
+  /** Set when an own `fix-<key>` reply answered this thread after its ruling echo. */
+  readonly fixClosed?: true;
   readonly replies: readonly PrComment[];
 }
 
@@ -29,20 +36,27 @@ function readThread(thread: PrThread, login: string, index?: ItemIndex): ItemThr
   if (!opener || opener.comment !== thread.comments[0] || !opener.key.startsWith("w-")) return null;
   const identity = parseItemOpener(opener.comment.body);
   if (!identity) return null;
-  const last = own.at(-1);
+  // A `fix-` reply answers work already recorded; it must not hide the ruling echo it answers.
+  const echoAt = own.findLastIndex(({ key }) => !key.startsWith(FIX_KEY_PREFIX));
+  const echo = echoAt < 0 ? undefined : own[echoAt];
   const pending = index?.pendingReopens?.some(
-    ({ key, commentId }) => key === opener.key && commentId === last?.comment.id,
+    ({ key, commentId }) => key === opener.key && commentId === echo?.comment.id,
   );
-  const parsed = !pending && last?.key.startsWith("wr-") ? parseRulingEcho(last.key, last.comment.body) : null;
+  const parsed =
+    !pending && echo?.key.startsWith(RULING_ECHO_PREFIX) ? parseRulingEcho(echo.key, echo.comment.body) : null;
   const ruling = parsed?.itemKey === opener.key && parsed.itemId === identity.id ? parsed : undefined;
+  const last = own.at(-1);
   const boundary = last ? thread.comments.indexOf(last.comment) : 0;
   const owned = new Set(own.map(({ comment }) => comment));
+  const fixClosed =
+    ruling !== undefined && own.slice(echoAt + 1).some(({ key }) => key === `${FIX_KEY_PREFIX}${opener.key}`);
   return {
     key: opener.key,
     itemId: identity.id,
     kind: identity.kind,
     thread,
     ...(ruling ? { ruling } : {}),
+    ...(fixClosed ? { fixClosed: true as const } : {}),
     replies: thread.comments.slice(boundary + 1).filter((comment) => !owned.has(comment)),
   };
 }

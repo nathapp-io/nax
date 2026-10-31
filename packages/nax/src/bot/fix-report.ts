@@ -10,6 +10,7 @@ import {
   listPrComments,
   listReviewThreads,
   ownComments,
+  type PrThread,
   parseNaxBotMarker,
   postPrComment,
   readCurrentUser,
@@ -23,7 +24,7 @@ import type { StepResult } from "@/step-graph";
 // Workflow leaves avoid pulling orchestration dependencies into the bot nodes.
 import { type CiWaitResult, ciAllowsReady, waitForChecks } from "../workflow/ci-wait";
 import { type DecisionEntry, sidecarKindFor } from "../workflow/decisions-sidecar";
-import { isOpenItemKind } from "../workflow/item-threads";
+import { isOpenItemKind, parseItemOpener } from "../workflow/item-threads";
 import { safeCode } from "../workflow/pr-body-safe";
 import { evidenceComment, markReadyArgv } from "../workflow/promote";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
@@ -70,6 +71,26 @@ async function replyAgreedThreads(env: BotFixEnv, state: BotFixState): Promise<n
   return replied;
 }
 
+/** Only an own fix after the latest own ruling echo answers this advisor cycle. */
+function advisorFixAnswered(thread: PrThread, login: string, key: string): boolean {
+  let echo = -1;
+  let fix = -1;
+  thread.comments.forEach((comment, index) => {
+    if (comment.author !== login) return;
+    const marker = parseNaxBotMarker(comment.body)?.key;
+    if (marker?.startsWith("wr-")) echo = index;
+    if (marker === `fix-${key}`) fix = index;
+  });
+  return echo >= 0 && fix > echo;
+}
+
+function skipWorkflowFinding(thread: PrThread, login: string, key: string): boolean {
+  if (!key.startsWith("w-")) return false;
+  const first = thread.comments[0];
+  if (!first || parseItemOpener(first.body)?.kind !== "advisor") return true;
+  return advisorFixAnswered(thread, login, key);
+}
+
 async function resolveOwnFindings(env: BotFixEnv, state: BotFixState): Promise<{ replied: number; resolved: number }> {
   const agreed = new Map(env.review.agreed.filter((item) => item.kind === "finding").map((item) => [item.key, item]));
   let replied = 0;
@@ -79,7 +100,8 @@ async function resolveOwnFindings(env: BotFixEnv, state: BotFixState): Promise<{
     if (!first || first.author !== env.user.login) continue;
     const marker = parseNaxBotMarker(first.body);
     const item = marker && agreed.get(marker.key);
-    if (!item || item.key.startsWith("w-")) continue;
+    if (!item) continue;
+    if (skipWorkflowFinding(thread, env.user.login, item.key)) continue;
     try {
       const summary = safeText(item.issue.split(/\r?\n/, 1)[0] ?? "", MAX_ISSUE_LENGTH);
       const body = withNaxBotMarker(

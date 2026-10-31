@@ -51,6 +51,8 @@ export interface RecordRulingsOutcome {
   readonly unindexed?: readonly string[];
   readonly recorded: readonly PrRuling[];
   readonly settled: SettledItems["settled"];
+  /** Confirmed advisor changes still awaiting a fix reply; absent when empty. */
+  readonly confirmedWork?: readonly (ItemThread & { readonly ruling: PrRuling })[];
   readonly open: SettledItems["open"];
   readonly asked: number;
   readonly failed: number;
@@ -225,16 +227,27 @@ async function refreshIndex(
   }
 }
 
+function isConfirmedWork(item: ItemThread & { readonly ruling: PrRuling }): boolean {
+  return item.kind === "advisor" && item.ruling.disposition === "confirmed" && !item.fixClosed;
+}
+
+function renewedRuling(item: ItemThread, ruling: PrRuling): ItemThread & { readonly ruling: PrRuling } {
+  // A new echo starts a new cycle: an older fix cannot answer this ruling.
+  const { fixClosed: _previousFix, ...current } = item;
+  return { ...current, ruling };
+}
+
 /** Only successful echoes count as newly recorded; resolution failure never undoes an echo. */
 export async function recordPrRulings(input: RecordRulingsInput): Promise<RecordRulingsOutcome> {
   const read = readItemThreads(input.threads, input.comments, input.login);
   const initial = await settleItemThreads(read, permissionReader(input));
-  const settled = [...initial.settled];
+  const settled = initial.settled.filter((item) => !isConfirmedWork(item));
+  const confirmedWork = initial.settled.filter(isConfirmedWork);
   const open: SettledItems["open"][number][] = [];
   const recorded: PrRuling[] = [];
   const model = await readModelCandidates(input, initial.open);
   let failed = model.failed;
-  for (const item of initial.settled) {
+  for (const item of settled) {
     if (!item.thread.resolved) await resolve(input, item);
   }
   for (const item of initial.open) {
@@ -254,8 +267,12 @@ export async function recordPrRulings(input: RecordRulingsInput): Promise<Record
       continue;
     }
     recorded.push(ruling);
-    settled.push({ ...item, ruling });
-    await resolve(input, item);
+    const entry = renewedRuling(item, ruling);
+    if (isConfirmedWork(entry)) confirmedWork.push(entry);
+    else {
+      settled.push(entry);
+      await resolve(input, item);
+    }
   }
   await tickBody(input, settled);
   await refreshIndex(input, read, settled);
@@ -265,6 +282,7 @@ export async function recordPrRulings(input: RecordRulingsInput): Promise<Record
     ...(unindexed.length ? { unindexed } : {}),
     recorded,
     settled,
+    ...(confirmedWork.length ? { confirmedWork } : {}),
     open,
     asked: model.asked,
     failed,

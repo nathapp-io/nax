@@ -1,5 +1,15 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { assertDefined, makeBotReviewDeps, makeNaxConfig, makeScriptedCallOp, makeTestRuntime } from "@test/helpers";
+import { join } from "node:path";
+import {
+  assertDefined,
+  cleanupTempDir,
+  makeBotReviewDeps,
+  makeNaxConfig,
+  makeScriptedCallOp,
+  makeTempDir,
+  makeTestRuntime,
+} from "@test/helpers";
+import { type BotReviewArtifact, postPrReview } from "@/bot/post";
 import { _botReviewDeps, runBotReview } from "@/bot/review-run";
 import { _reviewStepDeps, runPrReview } from "@/bot/review-step";
 import { _rulingsDeps, type RecordRulingsOutcome, recordPrRulings } from "@/bot/rulings";
@@ -153,6 +163,62 @@ function openItems(): void {
 }
 
 describe("runBotReview workflow rulings", () => {
+  test("US-004 AC-17/18 confirmed advisor work reaches actual persistence but not model earlier", async () => {
+    const stateDir = makeTempDir("review-confirmed-");
+    const key = "w-D-1.12345678";
+    const advisor = {
+      ...thread("advisor", key),
+      path: "anchor.ts",
+      line: 42,
+      comments: [comment("91", "bot", withNaxBotMarker("Open item **D-1** (advisor): change required", key))],
+    };
+    threads = [advisor];
+    outcome = {
+      ...outcome,
+      confirmedWork: [
+        {
+          key,
+          itemId: "D-1",
+          kind: "advisor",
+          thread: advisor,
+          replies: [],
+          ruling: { itemKey: key, itemId: "D-1", disposition: "confirmed", reason: "change X", by: "writer" },
+        },
+      ],
+    };
+    _botReviewDeps.postPrReview = (value) =>
+      postPrReview({
+        ...value,
+        stateDir,
+        deps: { run: async () => ({ exitCode: 0, stdout: '{"id":42}', stderr: "" }), readText: async () => null },
+      });
+    try {
+      expect((await runBotReview(input)).outcome).toBe("posted");
+      expect(record).toHaveBeenCalledTimes(1);
+      const modelInput = review.mock.calls[0]?.[1];
+      expect(modelInput?.earlier).toEqual([]);
+      expect(modelInput).not.toHaveProperty("itemConfirmed");
+      expect(modelInput?.settled).toContainEqual({
+        id: "D-1",
+        kind: "advisor",
+        issue: "change required",
+        disposition: "confirmed",
+        reason: "change X",
+      });
+      const artifact: BotReviewArtifact = await Bun.file(join(stateDir, "bot-review.json")).json();
+      expect(artifact.agreed).toEqual([
+        {
+          kind: "finding",
+          key,
+          issue: "Open item **D-1** (advisor): change required",
+          severity: "important",
+          suggestion: "change X",
+        },
+      ]);
+    } finally {
+      cleanupTempDir(stateDir);
+    }
+  });
   test("settled AC-16 writer keyword reaches real review operation through item index", async () => {
     const rulingDeps = { ..._rulingsDeps };
     const item = { id: "_run:cv1", kind: "cannot-verify" as const, issue: "Live job-log availability" };

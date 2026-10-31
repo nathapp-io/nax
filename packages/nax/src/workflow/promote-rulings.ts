@@ -23,7 +23,11 @@ export type PrRulingsReport =
   | { readonly read: true; readonly count: number }
   | { readonly read: false; readonly error: string };
 
-async function canRule(ref: PrRef, comment: PrComment, context: { deps: ForgeDeps; cwd: string }): Promise<boolean> {
+export async function canRule(
+  ref: PrRef,
+  comment: PrComment,
+  context: { deps: ForgeDeps; cwd: string },
+): Promise<boolean> {
   try {
     return await hasWriteAccess(ref, { login: comment.author, id: comment.authorId }, context.deps, context.cwd);
   } catch (error) {
