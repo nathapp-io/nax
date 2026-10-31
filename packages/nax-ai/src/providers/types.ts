@@ -121,6 +121,8 @@ export type ThinkingFormat = "openai" | "qwen" | "qwen-chat-template" | "deepsee
 
 export interface ResolvedModel {
   readonly id: string;
+  /** Accepted input modalities. Absent means unknown; consumers assume text only. */
+  readonly input?: readonly ("text" | "image")[];
   readonly provider: string;
   /** May differ from the provider default: one provider can span several. */
   readonly protocol: string;

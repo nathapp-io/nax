@@ -82,6 +82,7 @@ export type {
   CacheRetention,
   ConstrainedSampling,
   ConversationMessage,
+  ImageAttachment,
   JsonSchema,
   Protocol,
   ProtocolError,

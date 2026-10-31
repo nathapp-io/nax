@@ -119,8 +119,19 @@ export interface ThinkingBlock {
   readonly redacted?: boolean;
 }
 
+export interface ImageAttachment {
+  /** One of IMAGE_MIME_TYPES (nax-agent). */
+  readonly mimeType: string;
+  /** Base64 of the raw image bytes. */
+  readonly data: string;
+  readonly width?: number;
+  readonly height?: number;
+  /** Display-only origin (clipboard or path); never sent to a model. */
+  readonly source?: string;
+}
+
 export type ConversationMessage =
-  | { readonly role: "user"; readonly content: string }
+  | { readonly role: "user"; readonly content: string; readonly images?: readonly ImageAttachment[] }
   | {
       readonly role: "assistant";
       readonly content: string;

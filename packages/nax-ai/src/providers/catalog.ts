@@ -21,6 +21,8 @@ import type { Pricing, ProviderAuth, ProviderOverride, ResolvedModel, ResolvedPr
 
 export interface RawModel {
   readonly id: string;
+  /** Accepted input modalities. Absent means unknown; consumers assume text only. */
+  readonly input?: readonly ("text" | "image")[];
   /** Falls back to the provider's `defaultProtocol` when absent. */
   readonly protocol?: string;
   readonly pricing: Pricing;
@@ -93,6 +95,7 @@ export function normaliseCatalog(raw: readonly RawProvider[], overrides: readonl
     for (const rawModel of rawProvider.models) {
       setModel(rawProvider.id, {
         id: rawModel.id,
+        ...(rawModel.input !== undefined ? { input: rawModel.input } : {}),
         provider: rawProvider.id,
         protocol: rawModel.protocol ?? rawProvider.defaultProtocol,
         pricing: rawModel.pricing,
@@ -113,7 +116,8 @@ export function normaliseCatalog(raw: readonly RawProvider[], overrides: readonl
       assertOverrideModelProvider(override.provider, model);
       assertOverrideModelRouting(model);
       assertOverrideModelThinkingFormat(model);
-      setModel(override.provider, model);
+      const input = model.input ?? models.get(override.provider)?.get(model.id)?.input;
+      setModel(override.provider, input !== undefined ? { ...model, input } : model);
     }
   }
 
