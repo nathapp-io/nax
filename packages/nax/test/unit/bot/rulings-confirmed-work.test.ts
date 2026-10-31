@@ -16,7 +16,8 @@ const comment = (id: string, body: string, author = "bot"): PrComment => ({
   createdAt: "2026-01-01T00:00:00Z",
 });
 const marked = (id: string, body: string, marker: string) => comment(id, withNaxBotMarker(body, marker));
-const opener = (kind = "advisor") => marked("opener", renderItemOpener({ id: "D-1", kind, issue: "x" }), key);
+const opener = (kind: Parameters<typeof renderItemOpener>[0]["kind"] = "advisor") =>
+  marked("opener", renderItemOpener({ id: "D-1", kind, issue: "x" }), key);
 const reply = (body = "confirm: change X") => comment("reply", body, "alice");
 const echo = () => marked("echo", renderRulingEcho(ruling), `wr-confirmed-${key}`);
 const fix = () => marked("fix", "Fixed in abc1234567", `fix-${key}`);
@@ -135,7 +136,7 @@ describe("recordPrRulings confirmed advisor work", () => {
     expect(out).not.toHaveProperty("confirmedWork");
     expect(resolve).toHaveBeenCalledTimes(1);
   });
-  test.each(["cannot-verify", "finding", "ruling", "gate", "story", "ci", "reason"])(
+  test.each(["cannot-verify", "finding", "ruling", "gate", "story", "ci", "reason"] as const)(
     "AC-13/14 preserves confirmed settlement for non-advisor %s",
     async (kind) => {
       const out = await recordPrRulings(input(thread(opener(kind), reply())));
