@@ -13,8 +13,12 @@ import type { ConversationMessage } from "@nathapp/nax-ai";
 import { getLogger, NaxError } from "#src/infra/index";
 import { writeFileAtomic } from "#src/internal/atomic-write";
 import { historyFromTranscript, type TranscriptIdentity, transcriptDocFor } from "./transcript-identity.ts";
-import { rehydrateTranscriptImages, splitTranscriptImages } from "./transcript-images.ts";
+import { rehydrateTranscriptImages, splitTranscriptImages, transcriptImagesPath } from "./transcript-images.ts";
+
 import type { TranscriptDoc, TranscriptStore, TurnMarker } from "./transcript-types.ts";
+
+/** Folder lifecycle seam; the JSON operations retain their existing behavior. */
+export const _transcriptLifecycleDeps = { rename, rm };
 
 export { type TranscriptIdentity, transcriptModelIdentity } from "./transcript-identity.ts";
 
@@ -131,16 +135,29 @@ export async function saveTranscript(
  */
 export async function retainTranscript(dir: string, sessionName: string): Promise<void> {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const live = transcriptPath(dir, sessionName);
+  const retained = join(dir, `${sessionName}.transcript.failed-${stamp}.json`);
   try {
-    await rename(transcriptPath(dir, sessionName), join(dir, `${sessionName}.transcript.failed-${stamp}.json`));
+    await rename(live, retained);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
     throw err;
   }
+  try {
+    await _transcriptLifecycleDeps.rename(transcriptImagesPath(live), transcriptImagesPath(retained));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    // Image-free transcripts have no sidecar to retain.
+  }
+}
+
+async function deleteTranscriptFile(path: string): Promise<void> {
+  await rm(path, { force: true });
+  await _transcriptLifecycleDeps.rm(transcriptImagesPath(path), { recursive: true, force: true });
 }
 
 export async function deleteTranscript(dir: string, sessionName: string): Promise<void> {
-  await rm(transcriptPath(dir, sessionName), { force: true });
+  await deleteTranscriptFile(transcriptPath(dir, sessionName));
 }
 
 /**
@@ -207,7 +224,7 @@ export async function pruneRetainedTranscripts(
   // Oldest first, so the slice below drops exactly the excess over the cap.
   withMtimes.sort((a, b) => a.mtimeMs - b.mtimeMs);
   const toDelete = withMtimes.slice(0, withMtimes.length - maxRetained);
-  await Promise.all(toDelete.map((f) => rm(f.path, { force: true })));
+  await Promise.all(toDelete.map((f) => deleteTranscriptFile(f.path)));
 
   if (!hasWarnedAboutTranscriptTruncation) {
     hasWarnedAboutTranscriptTruncation = true;

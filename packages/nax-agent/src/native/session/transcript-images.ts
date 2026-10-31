@@ -10,7 +10,7 @@ import type { TranscriptDoc } from "./transcript-types.ts";
 export const _transcriptImagesDeps = {
   link,
   mkdir,
-  readFile,
+  readFile: (path: string) => readFile(path),
   rm,
   stat: (path: string) => stat(path),
   writeFileAtomic,
@@ -103,9 +103,29 @@ export async function splitTranscriptImages(path: string, doc: TranscriptDoc): P
   return { ...doc, schemaVersion: 2, messages } satisfies StoredDoc;
 }
 
-/** Successful v2 round-trips only; missing/invalid image recovery belongs to US-008. */
+async function readStoredImage(folder: string, image: StoredImage): Promise<ImageAttachment | null> {
+  const { ref, ...metadata } = image;
+  // Validate both fields before deriving a path or touching the filesystem.
+  if (typeof ref !== "string" || !/^[a-f0-9]{64}$/.test(ref) || !Object.hasOwn(extensions, image.mimeType)) {
+    return null;
+  }
+  try {
+    const bytes = await _transcriptImagesDeps.readFile(join(folder, `${ref}.${extensions[image.mimeType]}`));
+    return { ...metadata, data: bytes.toString("base64") };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+/** Decode the private disk format; callers only ever see inline attachments. */
 export async function rehydrateTranscriptImages(path: string, value: object): Promise<TranscriptDoc> {
   const doc = value as StoredDoc;
+  if (typeof doc.schemaVersion === "number" && doc.schemaVersion > 2) {
+    throw new NaxError(`Unsupported transcript schemaVersion ${doc.schemaVersion}`, "TRANSCRIPT_SCHEMA_UNSUPPORTED", {
+      stage: "native-session",
+    });
+  }
   if (doc.schemaVersion !== 2) return value as TranscriptDoc;
   const { schemaVersion: _version, ...rest } = doc;
   const messages: ConversationMessage[] = [];
@@ -115,17 +135,14 @@ export async function rehydrateTranscriptImages(path: string, value: object): Pr
       continue;
     }
     const images: ImageAttachment[] = [];
+    let content = message.content;
     for (const image of message.images) {
-      const { ref, ...metadata } = image;
-      if (!/^[a-f0-9]{64}$/.test(ref)) {
-        throw new NaxError("Invalid transcript image reference", "TRANSCRIPT_CORRUPT", { stage: "native-session" });
-      }
-      const bytes = await _transcriptImagesDeps.readFile(
-        join(transcriptImagesPath(path), `${ref}.${extension(image.mimeType)}`),
-      );
-      images.push({ ...metadata, data: bytes.toString("base64") });
+      const hydrated = await readStoredImage(transcriptImagesPath(path), image);
+      if (hydrated) images.push(hydrated);
+      else content = content ? `${content}\n[image missing]` : "[image missing]";
     }
-    messages.push({ ...message, images });
+    const { images: _storedImages, ...text } = message;
+    messages.push({ ...text, content, ...(images.length ? { images } : {}) });
   }
   return { ...rest, messages };
 }

@@ -33,6 +33,45 @@ const msgs: ConversationMessage[] = [
   { role: "assistant", content: "hi", thinking: [{ text: "pondering", signature: "sig-1" }] },
 ];
 
+describe("transcript image folder lifecycle", () => {
+  const images: ConversationMessage[] = [
+    { role: "user", content: "x", images: [{ mimeType: "image/png", data: "AAAA" }] },
+  ];
+
+  test("AC-14: delete removes the live image folder", async () => {
+    const store = createFileTranscriptStore(dir);
+    await store.save("s", { savedAt: "t", messages: images });
+    await store.delete("s");
+    expect(await readdir(dir)).toEqual([]);
+  });
+
+  test("AC-15: retainFailed uses the JSON stamp for the folder", async () => {
+    const store = createFileTranscriptStore(dir);
+    await store.save("s", { savedAt: "t", messages: images });
+    await store.retainFailed("s");
+    const names = await readdir(dir);
+    const json = names.find((name) => name.endsWith(".json"));
+    expect(json).toMatch(/^s\.transcript\.failed-.*\.json$/);
+    expect(names).toContain((json ?? "missing").replace(/\.json$/, ".images"));
+    expect(names).not.toContain("s.transcript.images");
+  });
+
+  test("AC-16/17: pruning removes only the deleted JSON's sidecar", async () => {
+    for (const [i, session] of ["old", "new"].entries()) {
+      await saveTranscript(dir, session, images);
+      await retainTranscript(dir, session);
+      const json = (await readdir(dir)).find((name) => name.startsWith(`${session}.`) && name.endsWith(".json"));
+      const time = new Date(2026, 0, i + 1);
+      await utimes(join(dir, json ?? "missing"), time, time);
+    }
+    expect(await pruneRetainedTranscripts(dir, 1)).toBe(1);
+    const names = await readdir(dir);
+    expect(names).toHaveLength(2);
+    expect(names.every((name) => name.startsWith("new.transcript.failed-"))).toBe(true);
+    expect(names.filter((name) => name.endsWith(".images"))).toHaveLength(1);
+  });
+});
+
 describe("transcript store", () => {
   test("a session with no transcript loads as empty", async () => {
     expect(await loadTranscript(dir, "sess-a")).toEqual([]);
