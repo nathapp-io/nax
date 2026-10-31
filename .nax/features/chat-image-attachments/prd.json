@@ -3,7 +3,7 @@
   "feature": "chat-image-attachments",
   "branchName": "feat/chat-image-attachments",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T16:22:05.766Z",
+  "updatedAt": "2026-10-31T16:34:36.750Z",
   "userStories": [
     {
       "id": "US-001",
@@ -678,14 +678,17 @@
       "dependencies": [
         "US-010"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Small discriminated outcome, command registration and screen delegation to an existing hook, with explicit command/menu regression anchors."
+        "reasoning": "Small discriminated outcome, command registration and screen delegation to an existing hook, with explicit command/menu regression anchors.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/slash-commands.ts",
@@ -719,7 +722,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b8cdf8141c27b6eccfe35a5309dffd5a1647d9da"
     },
     {
       "id": "US-012",
