@@ -38,6 +38,8 @@ const JPEG_SOF_MIN = 0xc0;
 const JPEG_SOF_MAX = 0xcf;
 /** C4 (DHT), C8 (JPG) and CC (DAC) sit in the SOF range but carry no frame dimensions. */
 const JPEG_NOT_SOF = [0xc4, 0xc8, 0xcc];
+/** A SOF declares at least its two length bytes, precision, height, width and one component. */
+const JPEG_SOF_MIN_LENGTH = 8;
 /** Offsets of height and width from a SOF marker's own `FF`. */
 const JPEG_HEIGHT_DELTA = 5;
 const JPEG_WIDTH_DELTA = 7;
@@ -126,7 +128,13 @@ function jpegDimensions(bytes: Uint8Array): Dimensions | undefined {
       offset = marker + 1;
       continue;
     }
-    if (isStartOfFrame(code)) return sofDimensions(bytes, marker - 1);
+    if (isStartOfFrame(code)) {
+      // A SOF's declared length must reach the dimension fields and stay inside the bytes;
+      // otherwise the "dimensions" would be read out of whatever follows the segment.
+      const length = readU16BE(bytes, marker + 1);
+      if (!isCompleteSegment(bytes, marker, length, JPEG_SOF_MIN_LENGTH)) return undefined;
+      return sofDimensions(bytes, marker - 1);
+    }
     // The length counts the two length bytes and the payload, but not the marker itself.
     const length = readU16BE(bytes, marker + 1);
     if (length === undefined) return undefined;
@@ -187,6 +195,14 @@ function skipFillBytes(bytes: Uint8Array, offset: number): number | undefined {
   let index = offset;
   while (bytes[index] === JPEG_MARKER_PREFIX) index += 1;
   return index < bytes.length ? index : undefined;
+}
+
+/**
+ * Whether a segment starting at the `FF` before `marker` declares at least `minLength` bytes and
+ * lies wholly inside `bytes`.
+ */
+function isCompleteSegment(bytes: Uint8Array, marker: number, length: number | undefined, minLength: number): boolean {
+  return length !== undefined && length >= minLength && marker - 1 + 2 + length <= bytes.length;
 }
 
 function pair(width: number | undefined, height: number | undefined): Dimensions | undefined {

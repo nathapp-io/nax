@@ -214,6 +214,26 @@ describe("sniffImage", () => {
     expect(sniffImage(bytes)).toEqual({ format: "jpeg", mimeType: "image/jpeg" });
   });
 
+  test("returns a JPEG with no dimensions when the SOF segment is too short for its fields", () => {
+    // SOF0 declares a length of 4 — fewer bytes than precision + height + width need — while the
+    // bytes that follow still look like 300x400 dimensions.
+    const bytes = Uint8Array.from([0xff, 0xd8, 0xff, 0xff, 0xc0, 0x00, 0x04, 0x08, 0x01, 0x2c, 0x01, 0x90, 0xff, 0xd9]);
+    const sniffed = sniffImage(bytes);
+    expect(sniffed).toEqual({ format: "jpeg", mimeType: "image/jpeg" });
+    expect(Object.hasOwn(sniffed ?? {}, "width")).toBe(false);
+    expect(Object.hasOwn(sniffed ?? {}, "height")).toBe(false);
+  });
+
+  test("returns a JPEG with no dimensions when the SOF segment extends past the end of the bytes", () => {
+    // SOF0 declares the length a real 3-component frame would have (17), but only the dimension
+    // fields are present, so the segment overruns the buffer.
+    const bytes = Uint8Array.from([0xff, 0xd8, 0xff, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x01, 0x2c, 0x01, 0x90]);
+    const sniffed = sniffImage(bytes);
+    expect(sniffed).toEqual({ format: "jpeg", mimeType: "image/jpeg" });
+    expect(Object.hasOwn(sniffed ?? {}, "width")).toBe(false);
+    expect(Object.hasOwn(sniffed ?? {}, "height")).toBe(false);
+  });
+
   test("returns a GIF with no dimensions when the header stops before them", () => {
     const bytes = Uint8Array.from(ascii("GIF89a"));
     expect(sniffImage(bytes)).toEqual({ format: "gif", mimeType: "image/gif" });
