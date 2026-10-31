@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { link, mkdir, readFile, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { constants } from "node:fs";
+import { type FileHandle, link, lstat, mkdir, open, readFile, realpath, rm, stat } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import type { ConversationMessage, ImageAttachment } from "@nathapp/nax-ai";
 import { NaxError } from "#src/infra/index";
 import { writeFileAtomic } from "#src/internal/atomic-write";
@@ -10,7 +11,10 @@ import type { TranscriptDoc } from "./transcript-types.ts";
 export const _transcriptImagesDeps = {
   link,
   mkdir,
-  readFile: (path: string) => readFile(path),
+  open,
+  realpath,
+  lstat,
+  readFile: (path: string | FileHandle) => readFile(path),
   rm,
   stat: (path: string) => stat(path),
   writeFileAtomic,
@@ -103,6 +107,35 @@ export async function splitTranscriptImages(path: string, doc: TranscriptDoc): P
   return { ...doc, schemaVersion: 2, messages } satisfies StoredDoc;
 }
 
+/** Reject redirected sidecars as well as symlinked image entries. */
+async function canonicalImageFolder(folder: string): Promise<string | null> {
+  const parent = await _transcriptImagesDeps.realpath(dirname(folder));
+  const expected = join(parent, basename(folder));
+  return (await _transcriptImagesDeps.realpath(folder)) === expected ? expected : null;
+}
+
+async function readImageBytes(folder: string, name: string): Promise<Buffer | null> {
+  const canonical = await canonicalImageFolder(folder);
+  if (canonical === null) return null;
+  const path = join(canonical, name);
+  // O_NOFOLLOW closes the lstat/open race for the final path component.
+  const handle = await _transcriptImagesDeps.open(
+    path,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  );
+  try {
+    // Verify containment and identity AFTER open, before consuming any bytes.
+    const resolved = await _transcriptImagesDeps.realpath(path);
+    if (dirname(resolved) !== canonical || (await canonicalImageFolder(folder)) !== canonical) return null;
+    const opened = await handle.stat();
+    const current = await _transcriptImagesDeps.lstat(path);
+    if (!opened.isFile() || !current.isFile() || opened.dev !== current.dev || opened.ino !== current.ino) return null;
+    return await _transcriptImagesDeps.readFile(handle);
+  } finally {
+    await handle.close();
+  }
+}
+
 async function readStoredImage(folder: string, image: StoredImage): Promise<ImageAttachment | null> {
   const { ref, ...metadata } = image;
   // Validate both fields before deriving a path or touching the filesystem.
@@ -110,10 +143,11 @@ async function readStoredImage(folder: string, image: StoredImage): Promise<Imag
     return null;
   }
   try {
-    const bytes = await _transcriptImagesDeps.readFile(join(folder, `${ref}.${extensions[image.mimeType]}`));
-    return { ...metadata, data: bytes.toString("base64") };
+    const bytes = await readImageBytes(folder, `${ref}.${extensions[image.mimeType]}`);
+    return bytes === null ? null : { ...metadata, data: bytes.toString("base64") };
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ELOOP" || code === "ENOTDIR") return null;
     throw error;
   }
 }

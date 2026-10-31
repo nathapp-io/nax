@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ImageAttachment, TranscriptDoc } from "@nathapp/nax-agent";
 import { NaxError } from "#src/infra/index";
@@ -13,11 +13,13 @@ const image: ImageAttachment = { mimeType: "image/png", data: "AAAA", width: 10,
 const doc: TranscriptDoc = { savedAt: "t", messages: [{ role: "user", content: "x", images: [image] }] };
 let dir: string;
 const realRead = _transcriptImagesDeps.readFile;
+const realOpen = _transcriptImagesDeps.open;
 beforeEach(() => {
   dir = makeTempDir("transcript-read-");
 });
 afterEach(() => {
   _transcriptImagesDeps.readFile = realRead;
+  _transcriptImagesDeps.open = realOpen;
   cleanupTempDir(dir);
 });
 
@@ -80,6 +82,43 @@ describe("file transcript image reads", () => {
     expect((await createFileTranscriptStore(dir).load("s"))?.messages).toEqual([
       { role: "user", content: "x\n[image missing]" },
     ]);
+    expect(reads).toBe(0);
+  });
+  test.each(["file", "folder"] as const)("F1: refuses an outside %s symlink", async (target) => {
+    const folder = transcriptImagesPath(transcriptPath(dir, "s"));
+    const ref = "a".repeat(64);
+    const outside = join(dir, "outside");
+    await mkdir(outside);
+    await writeFile(join(outside, `${ref}.png`), "private bytes");
+    if (target === "file") {
+      await mkdir(folder);
+      await symlink(join(outside, `${ref}.png`), join(folder, `${ref}.png`));
+    } else {
+      await symlink(outside, folder);
+    }
+    await stored([{ ref, mimeType: "image/png" }]);
+    expect((await createFileTranscriptStore(dir).load("s"))?.messages).toEqual([
+      { role: "user", content: "x\n[image missing]" },
+    ]);
+  });
+  test("F1: a folder redirected during open is rejected before bytes are read", async () => {
+    const store = createFileTranscriptStore(dir);
+    await store.save("s", doc);
+    const folder = transcriptImagesPath(transcriptPath(dir, "s"));
+    const outside = join(dir, "outside");
+    await mkdir(outside);
+    for (const name of await readdir(folder)) await writeFile(join(outside, name), "private bytes");
+    _transcriptImagesDeps.open = async (...args) => {
+      await rename(folder, `${folder}.original`);
+      await symlink(outside, folder);
+      return realOpen(...args);
+    };
+    let reads = 0;
+    _transcriptImagesDeps.readFile = async (...args) => {
+      reads++;
+      return realRead(...args);
+    };
+    expect((await store.load("s"))?.messages).toEqual([{ role: "user", content: "x\n[image missing]" }]);
     expect(reads).toBe(0);
   });
   test("missing images on empty content have no leading newline; valid images retain order", async () => {
