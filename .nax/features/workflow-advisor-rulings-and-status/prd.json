@@ -3,7 +3,7 @@
   "feature": "workflow-advisor-rulings-and-status",
   "branchName": "feat/workflow-advisor-rulings-and-status",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-31T03:57:47.698Z",
+  "updatedAt": "2026-10-31T04:07:32.518Z",
   "userStories": [
     {
       "id": "US-001",
@@ -267,14 +267,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Localized post-push mutation changes reuse established seams but depend on bot ownership and trusted marker provenance; strict isolation protects closure authorization and retrigger behavior."
+        "reasoning": "Localized post-push mutation changes reuse established seams but depend on bot ownership and trusted marker provenance; strict isolation protects closure authorization and retrigger behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/fix-report.ts",
@@ -290,7 +293,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a0909eaebbb6323229c44971fd8a7e4e76513703"
     },
     {
       "id": "US-006",
