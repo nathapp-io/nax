@@ -3,7 +3,7 @@
   "feature": "workflow-advisor-rulings-and-status",
   "branchName": "feat/workflow-advisor-rulings-and-status",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-31T03:31:58.841Z",
+  "updatedAt": "2026-10-31T03:40:31.633Z",
   "userStories": [
     {
       "id": "US-001",
@@ -95,14 +95,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Recorder partitioning is localized but controls writer-authorized durable PR mutations and must preserve failure and retrigger semantics, warranting the security override."
+        "reasoning": "Recorder partitioning is localized but controls writer-authorized durable PR mutations and must preserve failure and retrigger semantics, warranting the security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/rulings.ts",
@@ -117,7 +120,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1fea1ecb3a9d69ad99fc21a36d9758aaa548318b"
     },
     {
       "id": "US-003",
