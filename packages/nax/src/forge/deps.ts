@@ -12,10 +12,47 @@
  */
 
 import { gitSpawnEnv, hardenedGitArgv, killProcessGroup } from "@nathapp/nax-agent/internal";
+import { injectedForgeIdentity } from "./identity";
 import type { ForgeDeps } from "./types";
 
 /** Default wall-clock cap for any one subprocess (BUG-8). */
 export const DEFAULT_SUBPROCESS_TIMEOUT_MS = 30_000;
+
+/**
+ * The variables each forge CLI reads a token from. `gh` reads `GH_TOKEN` and,
+ * for a GitHub Enterprise Server host, `GH_ENTERPRISE_TOKEN`; `glab` reads
+ * `GITLAB_TOKEN` for whatever host it resolves.
+ */
+const FORGE_TOKEN_ENV = {
+  gh: ["GH_TOKEN", "GH_ENTERPRISE_TOKEN"],
+  glab: ["GITLAB_TOKEN"],
+} as const satisfies Record<string, readonly string[]>;
+
+/** `gh` or a path ending in `/gh`: the program, as opposed to a wrapper in front of it. */
+function isForgeProgram(token: string | undefined, program: string): boolean {
+  return token === program || (token?.endsWith(`/${program}`) ?? false);
+}
+
+function forgeProgram(cmd: readonly string[]): "gh" | "glab" | undefined {
+  const program = cmd[0];
+  if (isForgeProgram(program, "gh")) return "gh";
+  if (isForgeProgram(program, "glab")) return "glab";
+  return undefined;
+}
+
+/**
+ * The token environment for a `gh` / `glab` spawn — `undefined` for every other
+ * program (including `git`, whose credentials are `botGit`'s business) and when
+ * nothing was injected, so an uninjected run behaves exactly as before. The
+ * token goes in the environment, never in `cmd`, so it cannot reach a log line
+ * or another process's argv.
+ */
+function tokenEnv(cmd: readonly string[]): Record<string, string> | undefined {
+  const identity = injectedForgeIdentity();
+  const program = forgeProgram(cmd);
+  if (identity === undefined || program === undefined) return undefined;
+  return Object.fromEntries(FORGE_TOKEN_ENV[program].map((name) => [name, identity.token]));
+}
 
 /**
  * Injectable seam mirroring the `_autoPrDeps` pattern. Production callers read
@@ -45,7 +82,8 @@ export async function defaultRun(
     cwd: opts.cwd,
     // Hardened for every command, not only argv[0] === "git": gh / glab run
     // git underneath, and the GIT_CONFIG_* entries are inert to anything else.
-    env: gitSpawnEnv(),
+    // tokenEnv adds the injected forge token for gh / glab only.
+    env: gitSpawnEnv(tokenEnv(cmd)),
     stdout: "pipe",
     stderr: "pipe",
     // ORPHAN-1: setsid() makes this pid the process-group leader, so the
@@ -96,4 +134,10 @@ async function defaultReadText(path: string): Promise<string | null> {
   return file.text();
 }
 
-export const defaultForgeDeps: ForgeDeps = { run: defaultRun, readText: defaultReadText };
+export const defaultForgeDeps: ForgeDeps = {
+  run: defaultRun,
+  readText: defaultReadText,
+  // The identity captured at CLI start (US-002), read through the module so a
+  // capture that happens after this object is built is still seen.
+  identity: injectedForgeIdentity,
+};

@@ -80,10 +80,11 @@ export async function gitWithTimeout(
   /** Full argv INCLUDING argv[0]. Callers that must control argv[0] pass this;
    *  everyone else gets ["git", ...args] as before. */
   argvOverride?: readonly string[],
+  envOverlay?: Readonly<Record<string, string>>,
 ): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut?: boolean }> {
   const proc = _gitDeps.spawn(hardenedGitArgv(argvOverride ?? ["git", ...args]), {
     cwd: workdir,
-    env: hardenedGitEnv(process.env),
+    env: hardenedGitEnv(envOverlay === undefined ? process.env : { ...process.env, ...envOverlay }),
     stdout: "pipe",
     stderr: "pipe",
   });

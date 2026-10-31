@@ -55,7 +55,7 @@ export {
   pushStep,
 } from "./fix-steps";
 export { _gateBaselineDeps, failingOnHead, logGateFailure, readHeadCi } from "./gate-baseline";
-export { BOT_GIT_HOOKS_OFF, botGit } from "./git";
+export { BOT_GIT_HOOKS_OFF, botGit, NAX_BOT_CREDENTIAL_HELPER } from "./git";
 export { featureIntentPaths } from "./intent";
 export { _ledgerCarryDeps, ledgerStep } from "./ledger-carry";
 export { _botLogDeps, type BotLog, openBotLog } from "./log";

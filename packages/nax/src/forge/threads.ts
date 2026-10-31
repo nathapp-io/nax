@@ -89,8 +89,22 @@ interface GithubThread {
   originalLine: number | null;
   comments: {
     pageInfo?: { hasNextPage: boolean };
-    nodes: { databaseId: number; author: { login: string } | null; body: string; createdAt: string }[];
+    nodes: GithubThreadComment[];
   };
+}
+interface GithubThreadComment {
+  databaseId: number;
+  author: GithubAuthor | null;
+  body: string;
+  createdAt: string;
+}
+/**
+ * GitHub GraphQL reports a bot's login without the `[bot]` suffix REST appends,
+ * so the type is what tells the two apart. Older replies omit it.
+ */
+interface GithubAuthor {
+  login: string;
+  __typename?: string;
 }
 interface GithubReply {
   data: {
@@ -129,12 +143,22 @@ const REVIEW_THREADS_QUERY = `query($owner: String!, $name: String!, $number: In
       reviewThreads(first: 100, after: $endCursor) {
         pageInfo { hasNextPage endCursor }
         nodes { id isResolved isOutdated path line originalLine
-          comments(first: 100) { pageInfo { hasNextPage } nodes { databaseId author { login } body createdAt } }
+          comments(first: 100) { pageInfo { hasNextPage } nodes { databaseId author { login __typename } body createdAt } }
         }
       }
     }
   }
 }`;
+
+/**
+ * The author login as REST reports it. GraphQL drops the `[bot]` suffix a bot's
+ * login carries everywhere else, so an unmapped `Bot` never matches the bot's own
+ * REST-form login — and a human account named like the bot's slug would.
+ */
+function githubAuthor(author: GithubAuthor | null | undefined): string {
+  if (!author) return "ghost";
+  return author.__typename === "Bot" ? `${author.login}[bot]` : author.login;
+}
 
 function githubThread(node: GithubThread): PrThread {
   // Authoritative ruling consumers must never authorize from an incomplete conversation.
@@ -161,7 +185,7 @@ function githubThread(node: GithubThread): PrThread {
     comments: node.comments.nodes.map((comment) => ({
       id: String(comment.databaseId),
       kind: "thread",
-      author: comment.author?.login ?? "ghost",
+      author: githubAuthor(comment.author),
       body: comment.body,
       createdAt: comment.createdAt,
     })),

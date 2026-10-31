@@ -30,6 +30,14 @@ export {
 } from "./comments";
 export { defaultForgeDeps } from "./deps";
 export { detectForge, forgeFromRemoteUrl, remoteHost } from "./detect";
+export type { InjectedForgeIdentity } from "./identity";
+export {
+  _forgeIdentity,
+  _forgeIdentityDeps,
+  captureForgeIdentity,
+  FORGE_IDENTITY_ENV,
+  injectedForgeIdentity,
+} from "./identity";
 export type { LinkedIssue } from "./issues";
 export { MAX_LINKED_ISSUES, parseClosingRefs, readIssue, readLinkedIssues } from "./issues";
 export type { JobLogRead } from "./job-log";

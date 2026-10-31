@@ -7,8 +7,32 @@ import type { ForgeDeps, ForgeRunResult } from "./types";
 
 const MAX_FAILURE_DETAIL_LENGTH = 200;
 
+/**
+ * A GitHub App installation token cannot call `/user`, so the login has to come
+ * with the token. Fail closed rather than fall back to the ambient CLI login:
+ * a half-switched identity would compare a PR against the wrong account.
+ */
+function missingGithubLogin(): NaxError {
+  return new NaxError(
+    "[forge] NAX_FORGE_LOGIN is required with NAX_FORGE_TOKEN_FILE on GitHub",
+    "FORGE_IDENTITY_LOGIN_REQUIRED",
+    { stage: "forge" },
+  );
+}
+
 /** Read authenticated forge identity without relying on implicit CLI host context. */
 export async function readCurrentUser(ref: PrRef, deps: ForgeDeps, cwd: string): Promise<CurrentUser> {
+  const identity = deps.identity?.();
+  if (identity !== undefined) {
+    // The injected login is the answer: asking the forge would return the token's
+    // own account, which on GitHub is the App bot under a different name.
+    if (identity.login !== undefined) {
+      return { login: identity.login, ...(identity.id === undefined ? {} : { id: identity.id }) };
+    }
+    // GitLab answers `api user` with the token's own account, so only GitHub needs
+    // the login supplied up front.
+    if (ref.forge === "github") throw missingGithubLogin();
+  }
   let result: ForgeRunResult;
   try {
     result = await deps.run(api(ref, "user"), { cwd });
