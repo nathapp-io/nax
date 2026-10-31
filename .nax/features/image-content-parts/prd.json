@@ -3,7 +3,7 @@
   "feature": "image-content-parts",
   "branchName": "feat/image-content-parts",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T11:10:29.268Z",
+  "updatedAt": "2026-10-31T11:20:25.160Z",
   "userStories": [
     {
       "id": "US-001",
@@ -448,14 +448,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Introduces a private disk format, content-addressed binary publication and failure-atomic JSON sequencing; session persistence, hashing and filesystem safety require isolated three-session TDD."
+        "reasoning": "Introduces a private disk format, content-addressed binary publication and failure-atomic JSON sequencing; session persistence, hashing and filesystem safety require isolated three-session TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/native/session/transcript-store.ts",
@@ -476,7 +479,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4f113687a37258b7bf2fc0d6edddcd8f66625698"
     },
     {
       "id": "US-008",
