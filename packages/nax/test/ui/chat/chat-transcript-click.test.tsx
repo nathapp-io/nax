@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { SessionEventBody } from "@nathapp/nax-agent";
 import { cleanup, render } from "ink-testing-library";
-import { act } from "react";
+import { act, useState } from "react";
 import { type ChatHost, createChatAskController } from "@/chat";
 import { buildResourceCatalog, type SkillResource } from "@/resources";
 import { ChatApp } from "@/tui/chat";
+import { type LayoutOptions, layoutTranscript } from "@/tui/chat/layout";
+import { TranscriptViewport } from "@/tui/chat/TranscriptViewport";
+import { resolveChatTheme } from "@/tui/chat/theme";
+import { toggleTranscriptLine } from "@/tui/chat/transcript-click";
+import type { TranscriptEntry } from "@/tui/chat/transcript-model";
 import { fakeMouse } from "./mouse";
 
 afterEach(cleanup);
@@ -232,5 +237,106 @@ describe("ChatApp transcript clicks", () => {
     expect(ui.frame()).toBe(before);
     await ui.click(first);
     expect(ui.frame()).toContain("private tool output");
+  });
+});
+/** Colour off, so every frame is the plain row text and no assertion depends on escapes. */
+const THEME = resolveChatTheme({ env: {}, colorLevel: 0 });
+const TRANSCRIPT_WIDTH = 60;
+const TRANSCRIPT_HEIGHT = 8;
+const ATTACHMENT_LAYOUT: LayoutOptions = { width: TRANSCRIPT_WIDTH, theme: THEME, expanded: false };
+
+type AttachmentEntry = Extract<TranscriptEntry, { kind: "attachment" }>;
+
+/** An attached text file: two body lines travelled with it. */
+function attachedEntry(overrides: Partial<AttachmentEntry> = {}): AttachmentEntry {
+  return { kind: "attachment", path: "a.ts", status: "attached", note: "2 lines", body: "one\ntwo\n", ...overrides };
+}
+
+/**
+ * A rendered transcript of `entries` under ChatApp's own click wiring: the lines are
+ * recomputed from the entries, and a click is handed to `toggleTranscriptLine`. A mention
+ * message reaches the screen through a send (US-005); this harness stands in for that send
+ * so the attachment rows can be clicked here.
+ */
+function mountEntries(entries: readonly TranscriptEntry[]) {
+  const mouse = fakeMouse();
+  function Screen() {
+    const [rows, setRows] = useState(entries);
+    return (
+      <TranscriptViewport
+        mouse={mouse.events}
+        lines={layoutTranscript(rows, ATTACHMENT_LAYOUT)}
+        height={TRANSCRIPT_HEIGHT}
+        theme={THEME}
+        onClick={(line) => setRows((current) => toggleTranscriptLine(current, line, ATTACHMENT_LAYOUT))}
+      />
+    );
+  }
+  const ui = render(<Screen />);
+  Object.defineProperty(ui.stdout, "columns", { value: TRANSCRIPT_WIDTH, configurable: true });
+  const frame = () => ui.lastFrame() ?? "";
+  const rows = () => frame().split("\n");
+  const row = (text: string) => {
+    const index = rows().findIndex((line) => line.includes(text));
+    expect(index).toBeGreaterThanOrEqual(0);
+    return index < 0 ? 0 : index;
+  };
+  const shown = (text: string) => rows().some((line) => line.trim() === text);
+  const click = async (index: number) => {
+    await Promise.resolve(
+      act(async () => {
+        mouse.emit("press", { button: "left", x: 2, y: index + 1 });
+        mouse.emit("release", { button: "left", x: 2, y: index + 1 });
+      }),
+    );
+  };
+  return { frame, rows, row, shown, click };
+}
+
+describe("ChatApp transcript clicks: attachment rows", () => {
+  test("AC-15 clicking a collapsed attachment row shows its body rows", async () => {
+    const ui = mountEntries([attachedEntry()]);
+    expect(ui.shown("one")).toBe(false);
+    await ui.click(ui.row("attached @a.ts"));
+    expect(ui.shown("one")).toBe(true);
+    expect(ui.shown("two")).toBe(true);
+    expect(ui.frame()).toContain("(ctrl+o to hide)");
+  });
+
+  test("AC-16 clicking that row a second time hides the body rows again", async () => {
+    const ui = mountEntries([attachedEntry()]);
+    await ui.click(ui.row("attached @a.ts"));
+    expect(ui.shown("one")).toBe(true);
+    await ui.click(ui.row("attached @a.ts"));
+    expect(ui.shown("one")).toBe(false);
+    expect(ui.frame()).toContain("(ctrl+o to show)");
+  });
+
+  test("AC-17 clicking a refused attachment row leaves the transcript unchanged", async () => {
+    const ui = mountEntries([attachedEntry({ status: "refused", note: "not attached: outside the repo", body: "" })]);
+    const before = ui.frame();
+    await ui.click(ui.row("not attached: outside the repo"));
+    expect(ui.frame()).toBe(before);
+  });
+
+  test.each(["cut", "folder"] as const)("clicking a collapsed %s row shows its body", async (status) => {
+    const ui = mountEntries([attachedEntry({ status, note: "2 entries" })]);
+    await ui.click(ui.row("attached @a.ts"));
+    expect(ui.shown("one")).toBe(true);
+  });
+
+  test("clicking a path-only row leaves the transcript unchanged", async () => {
+    const ui = mountEntries([attachedEntry({ status: "path-only", note: "path only: binary", body: "" })]);
+    const before = ui.frame();
+    await ui.click(ui.row("attached @a.ts"));
+    expect(ui.frame()).toBe(before);
+  });
+
+  test("the body rows of an expanded attachment are inert", async () => {
+    const ui = mountEntries([attachedEntry()]);
+    await ui.click(ui.row("attached @a.ts"));
+    const expanded = ui.frame();
+    await ui.click(ui.row("one"));
+    expect(ui.frame()).toBe(expanded);
   });
 });

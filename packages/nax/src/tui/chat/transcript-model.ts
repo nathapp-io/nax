@@ -8,6 +8,7 @@
  * itself rather than a copy.
  */
 import type { SessionEvent } from "@nathapp/nax-agent";
+import type { MentionStatus } from "@/chat/mentions";
 
 export interface ToolChild {
   readonly callId: string;
@@ -18,7 +19,9 @@ export interface ToolChild {
 
 export type TranscriptEntry =
   | { kind: "welcome"; skills: number; commands: number; agents: number; mcpServers: number; mcpConnected: number }
-  | { kind: "user"; text: string }
+  | { kind: "user"; text: string; mentions?: readonly string[] }
+  /** One mention nax expanded on send: what travelled, and the body ctrl+o reveals. */
+  | { kind: "attachment"; path: string; status: MentionStatus; note: string; body: string; open?: boolean }
   | { kind: "skill"; name: string; args: string; body: string; open?: boolean }
   | { kind: "reply"; turnId: string; text: string }
   | { kind: "thinking"; turnId: string; text: string; startedAt: string; endedAt?: string; open?: boolean }

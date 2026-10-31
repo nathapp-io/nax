@@ -30,16 +30,21 @@
  * observable.
  */
 
+import { attachmentLines } from "./layout-attachment";
 import {
+  cardIndent,
+  cardRows,
   EMPTY_LINE,
   GUTTER,
   GUTTER_WIDTH,
+  HIDE_HINT,
   type LayoutContext,
   line,
   oneLine,
   prefixedLine,
   resolveWidth,
   resultPrefix,
+  SHOW_HINT,
   SOURCE_LINE_BREAK,
   SPACE,
   type SpanStyle,
@@ -49,9 +54,10 @@ import {
   wrapText,
 } from "./layout-lines";
 import { listingLines } from "./layout-listing";
+import { userTextSpans } from "./layout-mentions";
 import { interruptedLines, statusLines, welcomeLines } from "./layout-status";
 import { renderMarkdown } from "./markdown";
-import { displayWidth, MIN_LAYOUT_WIDTH, type StyledLine, sanitizeText } from "./styled-line";
+import { MIN_LAYOUT_WIDTH, type Span, type StyledLine, sanitizeText } from "./styled-line";
 import type { ChatColorToken, ChatTheme } from "./theme";
 import { type CardLine, type DiffLine, secondsBetween, type ToolCardModel, toolCardModel } from "./tool-card";
 import type { TranscriptEntry } from "./transcript-model";
@@ -83,8 +89,6 @@ const MIN_REPLY_WIDTH = MIN_LAYOUT_WIDTH - GUTTER_WIDTH;
 const USER_MARKER = ">";
 const USER_BAND = "userBand";
 const THOUGHT_FOR = "Thought for";
-const SHOW_HINT = "(ctrl+o to show)";
-const HIDE_HINT = "(ctrl+o to hide)";
 const SECONDS_SUFFIX = "s";
 /** The colour a tool card's bullet takes, by the tone its model reported. */
 const BULLET_COLORS = {
@@ -106,22 +110,21 @@ function thoughtLine(text: string): StyledLine {
  * A user message: every source line behind the accent marker (its continuations, and
  * every later source line, behind two spaces), banded `userBand` across the whole width.
  * A blank source line stays a blank indented line, so a two-paragraph message keeps its
- * break.
+ * break. A mention the message listed keeps its own accent span (`layout-mentions.ts`),
+ * inside the same band, so a view can pick the paths out of the text.
  */
 function userLines(entry: UserEntry, context: LayoutContext): readonly StyledLine[] {
   const marker = styled(USER_MARKER, { color: "accent", background: USER_BAND });
   const gutter = styled(GUTTER, { background: USER_BAND });
-  const lines: StyledLine[] = [];
-  for (const source of textLines(entry.text)) {
-    for (const content of wrappedSource(source, context.width - GUTTER_WIDTH)) {
-      // The marker carries its own trailing space; every other line's gutter is the two
-      // spaces themselves, so the content starts at the same column either way. A blank
-      // line is drawn as its gutter alone, never with a trailing space.
-      const [prefix, text] = lines.length === 0 ? [marker, content === "" ? "" : SPACE + content] : [gutter, content];
-      lines.push(line([prefix, styled(text, { background: USER_BAND })]));
-    }
-  }
-  return lines;
+  const band = (span: Span): Span => ({ ...span, background: USER_BAND });
+  return userTextSpans(entry.text, entry.mentions ?? [], context.width - GUTTER_WIDTH).map((spans, index) => {
+    // The marker carries its own trailing space; every other line's gutter is the two
+    // spaces themselves, so the content starts at the same column either way. A blank
+    // line is drawn as its gutter alone, never with a trailing space.
+    const content = spans.map(band);
+    if (index > 0) return line([gutter, ...content]);
+    return line(content.length === 0 ? [marker] : [marker, band(styled(SPACE)), ...content]);
+  });
 }
 
 /**
@@ -167,11 +170,6 @@ function thinkingLines(entry: ThinkingEntry, context: LayoutContext): readonly S
   return [...header, ...thought];
 }
 
-/** Where a card's later summary lines, its diff lines and its expand hint start. */
-function cardIndent(theme: ChatTheme): string {
-  return SPACE.repeat(displayWidth(resultPrefix(theme)));
-}
-
 /** A skill's slash invocation, muted line count, and optional indented body. */
 function skillLines(entry: Extract<TranscriptEntry, { kind: "skill" }>, context: LayoutContext): readonly StyledLine[] {
   const sources = entry.body === "" ? [] : entry.body.replace(/(?:\r\n|[\r\n])$/, "").split(SOURCE_LINE_BREAK);
@@ -187,25 +185,6 @@ function skillLines(entry: Extract<TranscriptEntry, { kind: "skill" }>, context:
     cardRows(source, { head: indent, rest: indent }, { color: "muted" }, context),
   );
   return [...user, ...header, ...body];
-}
-
-/**
- * One card line's rows: its text split at its own line breaks, the first physical line
- * behind `head` and every later one behind `rest`. A summary that interpolates a path
- * carrying a newline would otherwise draw a terminal row with no card indent at all, which
- * the row-based viewport would count as nothing.
- */
-function cardRows(
-  text: string,
-  prefixes: { readonly head: string; readonly rest: string },
-  style: SpanStyle,
-  context: LayoutContext,
-): readonly StyledLine[] {
-  return sanitizeText(text)
-    .split(SOURCE_LINE_BREAK)
-    .flatMap((physical, index) =>
-      prefixedLine([styled(physical, style)], [styled(index === 0 ? prefixes.head : prefixes.rest, style)], context),
-    );
 }
 
 /**
@@ -284,6 +263,8 @@ function layoutEntry(entry: TranscriptEntry, context: LayoutContext): readonly S
   switch (entry.kind) {
     case "user":
       return userLines(entry, context);
+    case "attachment":
+      return attachmentLines(entry, context);
     case "skill":
       return skillLines(entry, context);
     case "reply":
@@ -350,7 +331,7 @@ function variantsFor(entry: TranscriptEntry, theme: ChatTheme): Map<string, read
  */
 function cachedLines(entry: TranscriptEntry, base: LayoutContext): readonly StyledLine[] {
   const context =
-    entry.kind === "thinking" || entry.kind === "tool" || entry.kind === "skill"
+    entry.kind === "thinking" || entry.kind === "tool" || entry.kind === "skill" || entry.kind === "attachment"
       ? { ...base, expanded: entry.open ?? base.expanded }
       : base;
   const variants = variantsFor(entry, context.theme);
