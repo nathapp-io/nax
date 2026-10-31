@@ -68,6 +68,25 @@ export {
 export { type ChatModelChoicesInput, chatEffortLevels, chatModelChoices, tierModels } from "./chat-models";
 export type { ChatJob, ChatJobs } from "./jobs";
 export {
+  type ExpandedMentions,
+  findMentionTokens,
+  formatMentionMessage,
+  formatMentionToken,
+  MENTION_BINARY_PROBE_BYTES,
+  MENTION_FILE_INDEX_MAX_AGE_MS,
+  MENTION_FILE_MAX_CHARS,
+  MENTION_READ_MAX_BYTES,
+  MENTION_TOTAL_MAX_CHARS,
+  type MentionFileIndex,
+  type MentionFileList,
+  type MentionFileRow,
+  type MentionRecord,
+  type MentionStatus,
+  type MentionToken,
+  type ParsedMentionMessage,
+  parseMentionMessage,
+} from "./mentions";
+export {
   _openChatSessionDeps,
   type ChatHistory,
   type ChatSessionHandle,
