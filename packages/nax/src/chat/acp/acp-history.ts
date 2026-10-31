@@ -8,7 +8,7 @@
  * per tool call, stamped with an ACP `origin`. Tool inputs, results and
  * thinking are never recorded.
  */
-import type { SessionEvent, TranscriptDoc } from "@nathapp/nax-agent";
+import type { ImageAttachment, SessionEvent, TranscriptDoc } from "@nathapp/nax-agent";
 import { ACP_CHAT_AGENTS, type AcpChatAgent, type ChatAcpModel } from "./acp-model";
 
 export type ChatMessage = TranscriptDoc["messages"][number];
@@ -113,9 +113,11 @@ export function acpTurnMessages(input: {
   readonly message: string;
   readonly events: readonly SessionEvent[];
   readonly acp: ChatAcpModel;
+  /** The images sent with the message; omitted from the recorded turn when empty or absent. */
+  readonly images?: readonly ImageAttachment[];
 }): readonly [ChatMessage, ChatMessage] {
   return [
-    { role: "user", content: input.message },
+    { role: "user", content: input.message, ...(input.images?.length ? { images: input.images } : {}) },
     { role: "assistant", content: assistantContent(input.events), origin: acpOrigin(input.acp) },
   ];
 }

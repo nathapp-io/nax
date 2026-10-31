@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { ImageAttachment } from "@nathapp/nax-agent";
 import { ACP_HANDOFF_ENTRY_MAX_CHARS, handoffEntries, unseenMessages } from "@/chat/acp/acp-handoff-entries";
 import type { ChatMessage } from "@/chat/acp/acp-history";
 
@@ -149,5 +150,90 @@ describe("handoffEntries", () => {
       { speaker: "User", text: "q" },
       { speaker: "nax", text: "a" },
     ]);
+  });
+});
+
+const png = (overrides: Partial<ImageAttachment> = {}): ImageAttachment => ({
+  mimeType: "image/png",
+  data: "AAAA",
+  ...overrides,
+});
+
+const withImages = (content: string, images: readonly ImageAttachment[]): ChatMessage => ({
+  role: "user",
+  content,
+  images,
+});
+
+describe("handoffEntries image notes", () => {
+  test("AC-8: a user message with one image carries a numbered note describing it", () => {
+    const message = withImages("look", [png({ width: 1280, height: 720, source: "clipboard" })]);
+    expect(handoffEntries([message])).toEqual([
+      { speaker: "User", text: "look\n[image 1: png 1280×720, clipboard; not carried across the switch]" },
+    ]);
+  });
+
+  test("AC-9: numbers the notes in image order", () => {
+    const message = withImages("look", [
+      png({ width: 1280, height: 720, source: "clipboard" }),
+      png({ mimeType: "image/jpeg", source: "shot.jpg" }),
+    ]);
+    const [entry] = handoffEntries([message]);
+    expect(entry?.text).toBe(
+      [
+        "look",
+        "[image 1: png 1280×720, clipboard; not carried across the switch]",
+        "[image 2: jpeg, shot.jpg; not carried across the switch]",
+      ].join("\n"),
+    );
+  });
+
+  test("AC-10: writes a note without the pixel size when the image has no dimensions", () => {
+    const message = withImages("look", [png({ source: "clipboard" })]);
+    expect(handoffEntries([message]).map((entry) => entry.text)).toEqual([
+      "look\n[image 1: png, clipboard; not carried across the switch]",
+    ]);
+  });
+
+  test.each([
+    ["only a width", { width: 1280 }],
+    ["only a height", { height: 720 }],
+  ])("omits the pixel size for an image with %s", (_label, dimensions) => {
+    const message = withImages("look", [png({ ...dimensions, source: "clipboard" })]);
+    expect(handoffEntries([message]).map((entry) => entry.text)).toEqual([
+      "look\n[image 1: png, clipboard; not carried across the switch]",
+    ]);
+  });
+
+  test("AC-10: writes a note without a source when the image carries none", () => {
+    const message = withImages("look", [png({ width: 1280, height: 720 })]);
+    expect(handoffEntries([message]).map((entry) => entry.text)).toEqual([
+      "look\n[image 1: png 1280×720; not carried across the switch]",
+    ]);
+  });
+
+  test("AC-11: writes no leading newline when the content is empty", () => {
+    const message = withImages("", [png({ width: 1280, height: 720, source: "clipboard" })]);
+    const [entry] = handoffEntries([message]);
+    expect(entry?.text.startsWith("[image 1:")).toBe(true);
+    expect(entry?.text).toBe("[image 1: png 1280×720, clipboard; not carried across the switch]");
+  });
+
+  test("AC-12: cuts the joined text to the cap and marks the cut with an ellipsis", () => {
+    const content = "x".repeat(3_990);
+    const message = withImages(content, [png({ width: 1280, height: 720, source: "clipboard" })]);
+    const joined = `${content}\n[image 1: png 1280×720, clipboard; not carried across the switch]`;
+    expect(joined.length).toBeGreaterThan(ACP_HANDOFF_ENTRY_MAX_CHARS);
+    const [entry] = handoffEntries([message]);
+    expect(entry?.text).toBe(`${joined.slice(0, ACP_HANDOFF_ENTRY_MAX_CHARS)}…`);
+    expect(entry?.text.length).toBe(ACP_HANDOFF_ENTRY_MAX_CHARS + 1);
+  });
+
+  test("AC-13: a user message without images is unchanged", () => {
+    expect(handoffEntries([user("plan it")])).toEqual([{ speaker: "User", text: "plan it" }]);
+  });
+
+  test("a user message with an empty images array is unchanged", () => {
+    expect(handoffEntries([withImages("plan it", [])])).toEqual([{ speaker: "User", text: "plan it" }]);
   });
 });
