@@ -22,6 +22,7 @@ import {
   type ChatHostState,
   type ChatSendOptions,
   createChatAskController,
+  MENTION_FILE_INDEX_MAX_AGE_MS,
   type MentionFileIndex,
   type MentionFileList,
   type MentionFileRow,
@@ -479,5 +480,46 @@ describe("rows already loaded", () => {
     ui.pressAll("@sr", TAB, RETURN);
     await ui.settle();
     expect(ui.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("a list that has aged out", () => {
+  /**
+   * The real index behind git's own answer: the first listing resolves, every later one hangs,
+   * and the cache's clock is the case's to advance.
+   */
+  function realIndexBehindAGate() {
+    const clock = { at: 0 };
+    const answer = {
+      call: 0,
+      /** One file, for the listing that answers; a promise that never settles for the rest. */
+      git: () => {
+        answer.call += 1;
+        return answer.call === 1
+          ? Promise.resolve({ stdout: "a.ts\0", exitCode: 0 })
+          : new Promise<{ stdout: string; exitCode: number }>(() => {});
+      },
+    };
+    chat._mentionFilesDeps.git = answer.git;
+    chat._mentionFilesDeps.now = () => clock.at;
+    return { clock, calls: () => answer.call };
+  }
+
+  test("AC-18 an unconfirmed refresh leaves no row to complete and the return to the prompt", async () => {
+    const index = realIndexBehindAGate();
+    const ui = mount();
+    ui.type("@");
+    await ui.settle();
+    expect(ui.rows()).toContain("❯ a.ts");
+    // The list ages out, so the next query re-lists — and that answer is not coming.
+    ui.press(CTRL_U);
+    index.clock.at = MENTION_FILE_INDEX_MAX_AGE_MS;
+    ui.type("@");
+    await ui.settle();
+    expect(index.calls()).toBe(2);
+    // A refresh is not an answer: the row the last listing carried is no longer selectable.
+    expect(ui.rows().some((line) => line.includes("a.ts"))).toBe(false);
+    await ui.returnNow();
+    expect(ui.send).toHaveBeenCalled();
   });
 });

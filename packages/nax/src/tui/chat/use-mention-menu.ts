@@ -12,9 +12,11 @@
  * a folder into the prompt the return that follows must complete that folder's file rather than
  * submit the line. That is also why this hook, and not the view, subscribes to the keys: a
  * picker that only mounts after a render cannot own the batch delivered before it. For the same
- * reason the rows a `get()` last resolved stay claimable while the next listing is in flight —
- * an index that has already answered is asked again, and its previous answer is what the keys
- * of that batch act on.
+ * reason the rows a `get()` last resolved stay claimable for the rest of a batch whose keys the
+ * picker already answered — the index is asked again at most once per query, and the answer it
+ * gave is what those keys act on. A listing that is *in flight*, on the other hand, is not an
+ * answer: until it settles the picker offers no row and claims no key, so a list that has aged
+ * out of the index can never complete a query with rows git has not re-confirmed.
  *
  * Two keys of one batch both run before the re-render that would show the first one's move, so
  * every handler reads the pointer and the prompt from refs rather than from the render. An
@@ -58,6 +60,8 @@ interface LivePicker {
   dismissed: string | undefined;
   /** The list `get()` last resolved, or undefined until it first answers. */
   listed: MentionFileList | undefined;
+  /** True while a `get()` is in flight: a refresh is not an answer, so nothing is offered. */
+  pending: boolean;
   pointer: Pointer;
   /** True once the picker has acted on a key of the batch being delivered. */
   acted: boolean;
@@ -131,6 +135,7 @@ export function useMentionMenu(options: MentionMenuOptions): MentionMenuControll
     editor: options.editor,
     dismissed: undefined,
     listed: undefined,
+    pending: false,
     pointer: { query: "", index: FIRST_ROW },
     acted: false,
   });
@@ -147,12 +152,17 @@ export function useMentionMenu(options: MentionMenuOptions): MentionMenuControll
     if (!open || asked) return;
     // The list belongs to the directory, not to the query, so a late answer is never stale:
     // the index shares one in-flight listing and reuses it while it is young. A rejection is
-    // a list git could not produce, which the picker draws as its own line.
+    // a list git could not produce, which the picker draws as its own line. Until this listing
+    // settles — a first one or a refresh of an aged-out list — there is no answer to offer, so
+    // the rows of the previous one stop being selectable and the picker draws nothing.
+    live.current.pending = true;
     const settle = (list: MentionFileList): void => {
       live.current.listed = list;
+      live.current.pending = false;
       setRevision((seen) => seen + 1);
     };
     void index.get().then(settle, () => settle(NO_LIST));
+    setRevision((seen) => seen + 1);
   }, [index, options.editor]);
 
   /**
@@ -164,7 +174,11 @@ export function useMentionMenu(options: MentionMenuOptions): MentionMenuControll
 
   /** The mention being typed right now, and the rows the loaded list keeps for it. */
   const claim = (): MentionClaim | undefined => {
-    const listed = live.current.listed;
+    const state = live.current;
+    // A listing in flight is not an answer: the rows of the previous one are not selectable
+    // until the refresh that replaced it says what the directory holds now.
+    if (state.pending) return undefined;
+    const listed = state.listed;
     if (listed === undefined || !listed.git) return undefined;
     const at = mentionQueryAt(live.current.editor);
     if (at === null) return undefined;
@@ -248,6 +262,9 @@ export function useMentionMenu(options: MentionMenuOptions): MentionMenuControll
     if (latest.current.blocked || latest.current.suppressed) return NO_VIEW;
     if (state.dismissed === state.editor.text) return NO_VIEW;
     if (mentionQueryAt(state.editor) === null) return NO_VIEW;
+    // Nothing is drawn while the listing that a query asked for is still in flight, whether it
+    // is the first one or a refresh of a list that has aged out of the index.
+    if (state.pending) return NO_VIEW;
     const listed = state.listed;
     if (listed === undefined) return NO_VIEW;
     if (!listed.git) {
