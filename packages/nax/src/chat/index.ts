@@ -68,7 +68,9 @@ export {
 export { type ChatModelChoicesInput, chatEffortLevels, chatModelChoices, tierModels } from "./chat-models";
 export type { ChatJob, ChatJobs } from "./jobs";
 export {
+  _mentionExpandDeps,
   type ExpandedMentions,
+  expandChatMentions,
   findMentionTokens,
   formatMentionMessage,
   formatMentionToken,
@@ -83,6 +85,7 @@ export {
   type MentionRecord,
   type MentionStatus,
   type MentionToken,
+  type MentionWhere,
   type ParsedMentionMessage,
   parseMentionMessage,
 } from "./mentions";

@@ -1,4 +1,5 @@
 export { formatMentionMessage, parseMentionMessage } from "./mention-envelope";
+export { _mentionExpandDeps, expandChatMentions, type MentionWhere } from "./mention-expand";
 export { findMentionTokens, formatMentionToken } from "./mention-tokens";
 export {
   type ExpandedMentions,
