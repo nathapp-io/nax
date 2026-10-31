@@ -37,8 +37,8 @@ workflows live in one chat.
 ## 3. Non-goals
 
 - The koda side (workflow tools on the ACP server koda connects to). It is a
-  SEPARATE feature (user ruling 10-29), outlined in §9, designed and built after
-  this one.
+  SEPARATE feature (user ruling 10-29), outlined in §9. DROPPED 2026-10-31,
+  see §9.
 - Gemini, OpenCode, pi as chat brains. The registry has them; they are not in this
   slice. A builder may leave them listable-but-hidden or simply not list them.
 - Re-implementing the agent's own features on the nax side (its skills, subagents,
@@ -273,16 +273,23 @@ Two gaps to close:
   nax); F2 chat ACP brain (picker, backend switch, modes, own setup, step-aside);
   F3 history carry + resume. The builder may merge or reorder.
 
-## 9. Next feature (separate): workflow tools for koda
+## 9. Workflow tools for koda: DROPPED (2026-10-31)
 
-Outline only, to be brainstormed after this slice. The ACP server koda talks to
-is the `nax-agent` binary (`packages/nax-agent-acp/src/server/`), a plain native
-agent that does not load `@nathapp/nax`; the workflow tools live in the nax chat
-host (job list, ask cards). Open questions: nax serving ACP itself (a `nax acp`
-entry that reuses the chat host) vs moving the workflow tools into a package the
-server can load; how run asks travel to koda (ACP permission / elicitation
-requests); approval rules for koda-launched runs. F1's tool-gap work is reusable
-there.
+Dropped by user ruling 2026-10-31. The original outline assumed koda talks to
+the `nax-agent` ACP server (`packages/nax-agent-acp/src/server/`). It does not:
+
+- koda's runner embeds `@nathapp/nax-agent` as a library
+  (`apps/runner/src/thread/session-factory.ts`) and gives the thread agent its
+  own embedder tools plus server-defined koda tool proxies
+  (`apps/runner/src/thread/tools/koda-proxies.ts`).
+- koda already dispatches plan and run as fleet jobs, under its own approval
+  policy, which records actor, approval mode and approver.
+
+The `nax-jobs` tools spawn `nax plan` / `nax run` as local processes in a
+checkout. Inside koda they would be a second launch path that bypasses the fleet
+approval and audit trail. If a koda thread needs to start a plan or run, that is
+a koda-side feature: a server-defined koda tool that creates a fleet job, with
+no nax change.
 
 ## 10. Glossary
 
