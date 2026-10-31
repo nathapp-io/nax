@@ -10,7 +10,7 @@
  * Same-session model and mode notices share one drawn-state comparison after control refresh.
  */
 
-import type { SessionEvent } from "@nathapp/nax-agent";
+import type { ImageAttachment, SessionEvent } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, useInput, useStdout } from "ink";
 import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -32,10 +32,12 @@ import {
   workingLine,
 } from "./chat-status";
 import { FixedRow } from "./FixedRow";
+import { imagesForSend } from "./image-draft";
+import { prepareImageSend } from "./image-send";
 import { layoutTranscript } from "./layout";
 import { type EditorState, EMPTY_EDITOR } from "./line-editor";
 import { MentionMenu } from "./MentionMenu";
-import { mentionPrepare, sentEntries } from "./mention-send";
+import { needsMentionExpansion, sentEntries } from "./mention-send";
 import type { MouseEvents } from "./mouse-input";
 import { Picker, useChatPicker } from "./Picker";
 import { SlashMenu } from "./SlashMenu";
@@ -99,6 +101,8 @@ const DEFAULT_ROWS = 24;
 const SANDBOX_WARNING = "sandbox unavailable: commands run outside the sandbox";
 const TURN_BUSY_NOTICE = "wait for the turn to finish (Ctrl-C to interrupt)";
 const QUIT = "quit";
+/** What a slash line with a picture attached is told: an image travels with a plain message only. */
+const IMAGES_PLAIN_ONLY = "images can only be sent with a plain message";
 /** What the input offers after a declined ask, until the next submit says what to do instead. */
 const TELL_NAX_HINT = "tell nax what to do instead";
 /** ink reports ctrl+o as the letter `o` with the ctrl modifier, so the key is its `input`. */
@@ -116,6 +120,21 @@ interface QuestionAnswer {
 
 /** No question answered yet — the state a fresh screen opens on. */
 const NO_ANSWER: QuestionAnswer = { requestId: "", draft: EMPTY_DRAFT };
+
+/**
+ * A message composed for `host.send`: the text the brain reads, and the images that travel
+ * with it — absent or empty when the message carries none.
+ */
+interface ComposedSend {
+  readonly message: string;
+  readonly images?: readonly ImageAttachment[];
+}
+
+/**
+ * What a send's prepare step resolves: the composed message to send, or the notice that says
+ * why the line goes nowhere.
+ */
+type PreparedSend = ComposedSend | { readonly notice: string };
 
 interface TerminalSize {
   readonly columns: number;
@@ -384,21 +403,70 @@ export function ChatApp({
     });
   }
 
+  /** Put a refused line back in the prompt, cursor at its end, so return sends it again. */
+  function restorePrompt(text: string): void {
+    inputHandle.current?.edit({ text, cursor: Array.from(text).length });
+  }
+
   /**
-   * A non-slash message's send. A mention-bearing one is prepared — expanded once, against the
-   * cwd the screen was handed and the repo the host reports — while a plain one keeps today's
-   * exact call; either way the typed text stays the title and the draft history.
+   * A slash line with a picture still in the message runs nothing: an image travels with a
+   * plain message only, so the line goes back into the prompt before any command effect —
+   * a model switch included — and the draft keeps the picture.
+   */
+  function refuseSlashLine(message: string): void {
+    append({ kind: "notice", text: IMAGES_PLAIN_ONLY });
+    restorePrompt(message);
+  }
+
+  /**
+   * The prepare step for a message that carries a placeholder image or a mention: the image-send
+   * module decides what travels and asks the brain's capability once. The screen only restores a
+   * refused line — the text and the draft — and hands a composed message on to `host.send`.
+   */
+  function imagePrepare(text: string): () => Promise<PreparedSend> {
+    return async () => {
+      const result = await prepareImageSend({
+        text,
+        draft: imageAttach.current(),
+        where: { cwd, repoRoot: host.repoRoot },
+        expand: _chatAppDeps.expandMentions,
+        // Optional so a hand-built host still typechecks: one without it cannot read images.
+        acceptsImages: () => host.acceptsImages?.() ?? Promise.resolve(false),
+        model: host.current().model,
+      });
+      if (result.kind === "refuse") {
+        restorePrompt(text);
+        return { notice: result.notice };
+      }
+      return { message: result.message, images: result.images };
+    };
+  }
+
+  /**
+   * A non-slash message's send. One that carries a placeholder image or a mention is prepared —
+   * expanded once against the cwd the screen was handed and the repo the host reports, with the
+   * images its placeholders still name — while a plain one keeps today's exact call; either way
+   * the typed text stays the title and the draft history.
    */
   async function submit(message: string): Promise<void> {
     const command = parseSlashCommand(message);
+    const images = imagesForSend(imageAttach.current(), message).images;
     if (!command) {
       noteUserTurn();
-      await sendTurn(message, mentionPrepare(message, { cwd, repoRoot: host.repoRoot }, _chatAppDeps.expandMentions));
+      if (images.length === 0 && !needsMentionExpansion(message)) {
+        await sendTurn(message);
+        return;
+      }
+      await sendTurn(message, imagePrepare(message));
       return;
     }
     if (command.name === QUIT) {
       if (sending.current) host.cancel();
       await keys.close();
+      return;
+    }
+    if (images.length > 0) {
+      refuseSlashLine(message);
       return;
     }
     if (sending.current) {
@@ -408,11 +476,23 @@ export function ChatApp({
     await runCommand(command);
   }
 
-  async function sendTurn(
-    message: string,
-    prepare?: () => Promise<{ message: string } | { notice: string }>,
-    title = message,
-  ): Promise<boolean> {
+  /**
+   * One composed message out. A message carrying images hands them over with its title; a
+   * message that is only the typed text keeps today's two-argument call, and an expanded one
+   * keeps the typed text as its title.
+   */
+  async function sendMessage(
+    prepared: ComposedSend,
+    title: string,
+    onEvent: (event: SessionEvent) => void,
+  ): Promise<void> {
+    const images = prepared.images ?? [];
+    if (images.length > 0) await host.send(prepared.message, onEvent, { title, images });
+    else if (prepared.message === title) await host.send(prepared.message, onEvent);
+    else await host.send(prepared.message, onEvent, { title });
+  }
+
+  async function sendTurn(message: string, prepare?: () => Promise<PreparedSend>, title = message): Promise<boolean> {
     if (sending.current) return false;
     sending.current = true;
     setBusy(true);
@@ -429,8 +509,7 @@ export function ChatApp({
         if (event.type === "turn_start") started = true;
         handleEvent(event);
       };
-      if (prepared.message === title) await host.send(prepared.message, onEvent);
-      else await host.send(prepared.message, onEvent, { title });
+      await sendMessage(prepared, title, onEvent);
       return true;
     } catch (error) {
       append({ kind: "error", text: errorMessage(error) });
