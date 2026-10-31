@@ -357,6 +357,12 @@ export function ChatApp({
       picker.open(outcome.picker);
       return;
     }
+    // `/image` hands over the picture's name, or none for the clipboard: the attach hook reads
+    // it, writes the placeholder and notices any refusal. Nothing is sent.
+    if (outcome.kind === "attach") {
+      await imageAttach.attach(outcome.path);
+      return;
+    }
     if (outcome.kind === "send") {
       noteUserTurn();
       await sendTurn(outcome.message, undefined, `/${command.name}${command.rest}`);
