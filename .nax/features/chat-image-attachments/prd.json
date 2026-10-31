@@ -3,7 +3,7 @@
   "feature": "chat-image-attachments",
   "branchName": "feat/chat-image-attachments",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T14:11:07.604Z",
+  "updatedAt": "2026-10-31T14:20:49.245Z",
   "userStories": [
     {
       "id": "US-001",
@@ -84,14 +84,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Deterministic byte validation, base64 arithmetic, labels and barrel additions over existing image constants."
+        "reasoning": "Deterministic byte validation, base64 arithmetic, labels and barrel additions over existing image constants.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/index.ts",
@@ -113,7 +116,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1befea6a6ed2820d4e4bb2a47f2bef44bfa333d4"
     },
     {
       "id": "US-003",
