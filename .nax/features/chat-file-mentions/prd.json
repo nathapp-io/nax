@@ -3,7 +3,7 @@
   "feature": "chat-file-mentions",
   "branchName": "feat/chat-file-mentions",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T08:10:49.726Z",
+  "updatedAt": "2026-10-31T08:24:23.983Z",
   "userStories": [
     {
       "id": "US-001",
@@ -430,14 +430,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Two new package-local modules implement a single-list TTL/in-flight cache and fully specified pure picker transformations using existing editor/menu conventions; injected clocks, deferred git results and exact editor outputs make medium/tdd-simple realistic."
+        "reasoning": "Two new package-local modules implement a single-list TTL/in-flight cache and fully specified pure picker transformations using existing editor/menu conventions; injected clocks, deferred git results and exact editor outputs make medium/tdd-simple realistic.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/mentions/mention-tokens.ts",
@@ -463,7 +466,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0e1af0e62ea5d9920f7ae464f01c72dda7c41045"
     },
     {
       "id": "US-007",
