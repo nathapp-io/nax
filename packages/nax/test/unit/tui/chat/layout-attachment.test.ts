@@ -47,6 +47,12 @@ describe("attachmentLabel", () => {
     );
   });
 
+  test("US-006 AC-11 names a mentioned image and what it is", () => {
+    expect(attachmentLabel({ path: "shot.png", status: "image", note: "image · png · 2×3 · 1 KB" })).toBe(
+      "attached @shot.png · image · png · 2×3 · 1 KB",
+    );
+  });
+
   test("quotes a path that carries whitespace, the way the token is typed", () => {
     expect(attachmentLabel({ path: "my dir/x.ts", status: "attached", note: "1 lines" })).toBe(
       'attached @"my dir/x.ts" · 1 lines',
@@ -61,6 +67,10 @@ describe("attachmentExpandable", () => {
 
   test.each(["path-only", "refused"] as const)("%s carries nothing to reveal", (status) => {
     expect(attachmentExpandable(status)).toBe(false);
+  });
+
+  test("US-006 AC-12 an image travelled as its bytes, so there is no body to reveal", () => {
+    expect(attachmentExpandable("image")).toBe(false);
   });
 });
 

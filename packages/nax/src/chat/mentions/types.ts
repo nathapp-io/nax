@@ -5,9 +5,10 @@
  * The limits are fixed by design (user-confirmed defaults), not config: they bound content
  * size and cache age, never a timeout.
  */
+import type { ImageAttachment } from "@nathapp/nax-agent";
 
 /** How a resolved mention travelled inside the message envelope. */
-export type MentionStatus = "attached" | "cut" | "folder" | "path-only" | "refused";
+export type MentionStatus = "attached" | "cut" | "folder" | "image" | "path-only" | "refused";
 
 /** One mentioned path and the content nax attached for it. */
 export interface MentionRecord {
@@ -43,6 +44,8 @@ export interface ExpandedMentions {
   /** What `host.send` receives. */
   readonly message: string;
   readonly records: readonly MentionRecord[];
+  /** The mentioned images, in mention order; absent when a mention carried none. */
+  readonly images?: readonly ImageAttachment[];
 }
 
 /** One row of the mention picker's file list; folder paths end with "/". */

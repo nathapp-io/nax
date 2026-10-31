@@ -25,7 +25,7 @@ const ATTRIBUTE_UNESCAPES: readonly (readonly [string, string])[] = [
   ["&amp;", "&"],
 ];
 
-const MENTION_STATUSES: ReadonlySet<string> = new Set(["attached", "cut", "folder", "path-only", "refused"]);
+const MENTION_STATUSES: ReadonlySet<string> = new Set(["attached", "cut", "folder", "image", "path-only", "refused"]);
 
 const TRAILER_LINE = /^<\/nax-mentions length="(\d+)">$/;
 const RECORD_HEADER = /^<mention path="([^"]*)" status="([^"]*)" note="([^"]*)" length="(\d+)">\n/;

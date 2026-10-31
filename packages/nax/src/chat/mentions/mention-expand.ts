@@ -8,7 +8,9 @@
  */
 import { readdir, realpath, stat } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
+import type { ImageAttachment } from "@nathapp/nax-agent";
 import { errorMessage, GIT_TIMEOUT_MS, gitWithTimeout } from "@nathapp/nax-agent/internal";
+import { imageDescription, imageFromBytes, sniffImage } from "../images";
 import { formatMentionMessage } from "./mention-envelope";
 import { findMentionTokens } from "./mention-tokens";
 import {
@@ -21,10 +23,12 @@ import {
   type MentionToken,
 } from "./types";
 
-/** Where a mention is being resolved: the user's cwd and the repo it must stay inside. */
+/** Where a mention is being resolved: the user's cwd, the repo it must stay inside, and whether images travel. */
 export interface MentionWhere {
   readonly cwd: string;
   readonly repoRoot: string;
+  /** Whether the brain reads images; absent means it does not, and a mention keeps its path alone. */
+  readonly images?: boolean;
 }
 
 export const _mentionExpandDeps = {
@@ -60,9 +64,13 @@ interface Located {
 interface ExpandContext {
   readonly cwd: string;
   readonly realRoot: string | undefined;
+  /** Whether the brain reads images: a mentioned image is the path alone when it does not. */
+  readonly readsImages: boolean;
   readonly seen: Set<string>;
   /** Characters of record bodies kept so far; the running total step 9 caps. */
   chars: number;
+  /** The images collected so far, in the order their mentions were typed. */
+  readonly images: ImageAttachment[];
 }
 
 /** One direct entry of a listed folder, before the trailing "/" a subfolder is shown with. */
@@ -103,6 +111,12 @@ const ROOT_PATHSPEC = ".";
 const PATH_ONLY_FILE_TOO_LARGE = "path only: file too large";
 const PATH_ONLY_BINARY = "path only: binary";
 const PATH_ONLY_MESSAGE_TOO_LARGE = "path only: message too large";
+/** A mentioned image on a brain that cannot read one: the path travels, as it did before images. */
+const PATH_ONLY_NO_IMAGES = "path only: model cannot read images";
+/** The prefix of every refusal `imageFromBytes` gives, worded as a path-only record's note. */
+const PATH_ONLY_PREFIX = "path only: ";
+/** What an image record's note opens with, before the description of the image itself. */
+const IMAGE_NOTE_LEAD = "image · ";
 /** A folder listing is one entry per line, and every line of a file body ends with this. */
 const NEWLINE = "\n";
 /** Paths git lists are always "/"-separated, whatever the platform's `sep` is. */
@@ -122,15 +136,18 @@ export async function expandChatMentions(text: string, where: MentionWhere): Pro
   const ctx: ExpandContext = {
     cwd: where.cwd,
     realRoot: await realPathOrUndefined(where.repoRoot),
+    readsImages: where.images === true,
     seen: new Set(),
     chars: 0,
+    images: [],
   };
   const records: MentionRecord[] = [];
   for (const token of findMentionTokens(text)) {
     const record = await expandToken(token, ctx);
     if (record !== undefined) records.push(record);
   }
-  return { message: formatMentionMessage(text, records), records };
+  const message = formatMentionMessage(text, records);
+  return ctx.images.length === 0 ? { message, records } : { message, records, images: ctx.images };
 }
 
 async function expandToken(token: MentionToken, ctx: ExpandContext): Promise<MentionRecord | undefined> {
@@ -177,14 +194,30 @@ async function ignoredRefusal(path: string, cwd: string): Promise<string | undef
   return result.exitCode === 1 ? undefined : `git check-ignore failed (exit ${result.exitCode})`;
 }
 
-/** Steps 5-9: a folder listing, or a file body bounded by size, binary, cut and the total cap. */
+/** Steps 5-9: a folder listing, or a file body bounded by size, image, binary, cut and the total cap. */
 async function contentRecord(located: Located, ctx: ExpandContext): Promise<MentionRecord> {
   const info = await _mentionExpandDeps.stat(located.realPath);
   if (info.isDirectory) return folderRecord(located, ctx);
   if (info.size > MENTION_READ_MAX_BYTES) return pathOnly(located.path, PATH_ONLY_FILE_TOO_LARGE);
   const bytes = await _mentionExpandDeps.readBytes(located.realPath);
+  const image = imageRecord(located, bytes, ctx);
+  if (image !== undefined) return image;
   if (isBinary(bytes)) return pathOnly(located.path, PATH_ONLY_BINARY);
   return applyTotalCap(textRecord(located, new TextDecoder().decode(bytes)), ctx);
+}
+
+/**
+ * The image step, between the read ceiling and the binary probe: bytes that are an image travel
+ * as an attachment when the brain reads images, and as their path alone when it does not. A
+ * header that is not an image is not this step's business, so the file carries on as text.
+ */
+function imageRecord(located: Located, bytes: Uint8Array, ctx: ExpandContext): MentionRecord | undefined {
+  if (sniffImage(bytes) === undefined) return undefined;
+  if (!ctx.readsImages) return pathOnly(located.path, PATH_ONLY_NO_IMAGES);
+  const result = imageFromBytes(bytes, located.path);
+  if ("refusal" in result) return pathOnly(located.path, `${PATH_ONLY_PREFIX}${result.refusal}`);
+  ctx.images.push(result.image);
+  return { path: located.path, status: "image", note: `${IMAGE_NOTE_LEAD}${imageDescription(result.image)}`, body: "" };
 }
 
 /** Step 5: the folder's direct entries, one per line, subfolders suffixed with "/". */

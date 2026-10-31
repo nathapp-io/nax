@@ -49,4 +49,17 @@ describe("mentionTranscriptEntries", () => {
     const entries = mentionTranscriptEntries({ text: "see @a.ts", records: [attachedA] });
     for (const entry of entries.slice(1)) expect(entry).not.toHaveProperty("open");
   });
+
+  test("US-006 AC-13 highlights a mentioned image path on the user entry", () => {
+    const shot: MentionRecord = { path: "shot.png", status: "image", note: "image · png · 2×3 · 1 KB", body: "" };
+    const entries = mentionTranscriptEntries({ text: "see @shot.png", records: [shot] });
+    expect(entries[0]).toEqual({ kind: "user", text: "see @shot.png", mentions: ["shot.png"] });
+    expect(entries[1]).toEqual({
+      kind: "attachment",
+      path: "shot.png",
+      status: "image",
+      note: "image · png · 2×3 · 1 KB",
+      body: "",
+    });
+  });
 });
