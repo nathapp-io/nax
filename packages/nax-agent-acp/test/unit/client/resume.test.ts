@@ -35,6 +35,7 @@ const RECORD: CapabilityRecord = {
   resume: false,
   close: false,
   mcpHttp: false,
+  image: false,
   readOnlyMode: true,
   preApproval: true,
   ownToolCalls: false,

@@ -34,6 +34,14 @@ const FULL_INIT: InitializeResponse = {
 };
 
 describe("buildCapabilityRecord (spec §6.3 step 2)", () => {
+  test.each([true, false, undefined])("image capability %p defaults to false", (image) => {
+    const agentCapabilities = image === undefined ? {} : { promptCapabilities: { image } };
+    expect(buildCapabilityRecord({ protocolVersion: 1, agentCapabilities }, undefined)).toHaveProperty(
+      "image",
+      image === true,
+    );
+  });
+
   test("initialize plus registry data", () => {
     expect(buildCapabilityRecord(FULL_INIT, CLAUDE)).toEqual({
       protocolVersion: 1,
@@ -43,6 +51,7 @@ describe("buildCapabilityRecord (spec §6.3 step 2)", () => {
       resume: true,
       close: true,
       mcpHttp: true,
+      image: false,
       readOnlyMode: true,
       preApproval: true,
       ownToolCalls: false,
@@ -56,6 +65,7 @@ describe("buildCapabilityRecord (spec §6.3 step 2)", () => {
       resume: false,
       close: false,
       mcpHttp: false,
+      image: false,
       readOnlyMode: false,
       preApproval: false,
       ownToolCalls: false,

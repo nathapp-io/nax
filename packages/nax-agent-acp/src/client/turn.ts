@@ -22,7 +22,13 @@
  * provider 402) answers end_turn, and the turn must not read as completed.
  */
 import type { PromptResponse } from "@agentclientprotocol/sdk";
-import { attachTurnSpend, type FailedTurnSpend, NaxError, type TurnResult } from "@nathapp/nax-agent";
+import {
+  attachTurnSpend,
+  type FailedTurnSpend,
+  type ImageAttachment,
+  NaxError,
+  type TurnResult,
+} from "@nathapp/nax-agent";
 import type { AcpLink } from "#src/client/connection";
 import { emptyTurnError, promptRequestError, rpcErrorOf, stopReasonError } from "#src/client/errors";
 import type { TurnCollector } from "#src/client/events";
@@ -42,6 +48,7 @@ export interface TurnState {
 
 export interface TurnInput {
   readonly text: string;
+  readonly images?: readonly ImageAttachment[];
   readonly signal: AbortSignal;
   readonly collector: TurnCollector;
 }
@@ -66,7 +73,7 @@ export async function runPromptTurn(state: TurnState, input: TurnInput): Promise
   let carried: PromptResponse["usage"];
   for (let continuation = 0; ; continuation += 1) {
     const denialsBefore = input.collector.denials();
-    const response = await promptOnce(state, input, text, carried);
+    const response = await promptOnce(state, input, { text, carried, firstPrompt: continuation === 0 });
     const usage = sumUsage(carried, response.usage);
     const continueAfterDenial =
       response.stopReason === "cancelled" &&
@@ -87,12 +94,16 @@ export async function runPromptTurn(state: TurnState, input: TurnInput): Promise
 async function promptOnce(
   state: TurnState,
   input: TurnInput,
-  text: string,
-  carried: PromptResponse["usage"],
+  prompt: { text: string; carried: PromptResponse["usage"]; firstPrompt: boolean },
 ): Promise<PromptResponse> {
+  const { text, carried, firstPrompt } = prompt;
+  const images = firstPrompt ? (input.images ?? []) : [];
   const pending = state.link.prompt({
     sessionId: state.agentSessionId,
-    prompt: [{ type: "text", text }],
+    prompt: [
+      ...images.map((image) => ({ type: "image" as const, mimeType: image.mimeType, data: image.data })),
+      { type: "text", text },
+    ],
   });
   const outcome = await race(pending, { signal: input.signal });
   switch (outcome.kind) {
