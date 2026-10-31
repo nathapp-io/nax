@@ -115,6 +115,7 @@ export {
   resolveChatSessionsDir,
 } from "./open-chat-session";
 export type { ChatResources } from "./resources";
+export { sessionAcceptsImages } from "./session-images";
 export { sessionTitleText } from "./session-title";
 export { parseSkillInvocation } from "./skill-invocation";
 export {
