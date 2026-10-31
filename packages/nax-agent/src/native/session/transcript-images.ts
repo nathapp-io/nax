@@ -66,15 +66,35 @@ async function publishImageOnce(path: string, bytes: Uint8Array): Promise<void> 
   }
 }
 
+async function assertSafeImageFolder(folder: string): Promise<void> {
+  if ((await canonicalImageFolder(folder)) === null) {
+    throw new NaxError("Unsafe transcript image sidecar", "TRANSCRIPT_IMAGE_PATH_UNSAFE", {
+      stage: "native-session",
+    });
+  }
+}
+
 async function publishImage(folder: string, image: ImageAttachment): Promise<StoredImage> {
+  await assertSafeImageFolder(folder);
   const bytes = Buffer.from(image.data, "base64");
   const ref = createHash("sha256").update(bytes).digest("hex");
   const path = join(folder, `${ref}.${extension(image.mimeType)}`);
   try {
     await _transcriptImagesDeps.stat(path);
+    const entry = await _transcriptImagesDeps.lstat(path);
+    if (!entry.isFile()) {
+      throw new NaxError("Unsafe transcript image entry", "TRANSCRIPT_IMAGE_PATH_UNSAFE", {
+        stage: "native-session",
+      });
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     await publishImageOnce(path, bytes);
+  }
+  if ((await readImageBytes(folder, basename(path))) === null) {
+    throw new NaxError("Unsafe transcript image entry", "TRANSCRIPT_IMAGE_PATH_UNSAFE", {
+      stage: "native-session",
+    });
   }
   const { data: _data, ...metadata } = image;
   return { ...metadata, ref };
@@ -93,6 +113,7 @@ export async function splitTranscriptImages(path: string, doc: TranscriptDoc): P
   if (!hasImages) return doc;
   const folder = transcriptImagesPath(path);
   await _transcriptImagesDeps.mkdir(folder, { recursive: true });
+  await assertSafeImageFolder(folder);
   const messages: StoredMessage[] = [];
   // Sequential publication deduplicates repeated images within this save too.
   for (const message of doc.messages) {
@@ -109,6 +130,7 @@ export async function splitTranscriptImages(path: string, doc: TranscriptDoc): P
 
 /** Reject redirected sidecars as well as symlinked image entries. */
 async function canonicalImageFolder(folder: string): Promise<string | null> {
+  if (!(await _transcriptImagesDeps.lstat(folder)).isDirectory()) return null;
   const parent = await _transcriptImagesDeps.realpath(dirname(folder));
   const expected = join(parent, basename(folder));
   return (await _transcriptImagesDeps.realpath(folder)) === expected ? expected : null;

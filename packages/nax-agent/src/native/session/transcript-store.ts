@@ -146,8 +146,21 @@ export async function retainTranscript(dir: string, sessionName: string): Promis
   try {
     await _transcriptLifecycleDeps.rename(transcriptImagesPath(live), transcriptImagesPath(retained));
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-    // Image-free transcripts have no sidecar to retain.
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+    // Restore the live JSON on failure so its still-live sidecar remains loadable
+    // and a later retention attempt can move the pair again.
+    try {
+      await _transcriptLifecycleDeps.rename(retained, live);
+    } catch (rollbackError) {
+      throw new NaxError("Transcript retention rollback failed", "TRANSCRIPT_RETENTION_ROLLBACK_FAILED", {
+        stage: "native-session",
+        cause: err,
+        rollbackError,
+        live,
+        retained,
+      });
+    }
+    throw err;
   }
 }
 

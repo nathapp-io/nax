@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ImageAttachment, TranscriptDoc } from "@nathapp/nax-agent";
 import { NaxError } from "#src/infra/index";
@@ -39,6 +39,24 @@ describe("file transcript image reads", () => {
     const user = loaded?.messages[0];
     expect(user?.role === "user" && user.images?.[0]).not.toHaveProperty("ref");
     expect(loaded).not.toHaveProperty("schemaVersion");
+  });
+  test("B1: a symlinked sidecar rejects save without replacing the previous transcript", async () => {
+    const store = createFileTranscriptStore(dir);
+    const previous: TranscriptDoc = { savedAt: "old", messages: [{ role: "user", content: "keep" }] };
+    await store.save("s", previous);
+    const path = transcriptPath(dir, "s");
+    const before = await readFile(path, "utf8");
+    const outside = join(dir, "outside");
+    await mkdir(outside);
+    await symlink(outside, transcriptImagesPath(path));
+    await expect(store.save("s", doc)).rejects.toMatchObject({ code: "TRANSCRIPT_IMAGE_PATH_UNSAFE" });
+    expect(await readdir(outside)).toEqual([]);
+    expect(await readFile(path, "utf8")).toBe(before);
+    expect(await store.load("s")).toEqual(previous);
+    await rm(transcriptImagesPath(path));
+    await store.save("s", doc);
+    await store.markTurn("s", { turnId: "t1", state: "ended" });
+    expect((await store.load("s"))?.messages).toEqual(doc.messages);
   });
   test.each([1, undefined] as const)("AC-4/11: preserves legacy version %s", async (schemaVersion) => {
     const legacy: TranscriptDoc = {
@@ -155,21 +173,24 @@ describe("file transcript image reads", () => {
     const client = installImageClient(["text", "image"]);
     const store = createFileTranscriptStore(dir);
     const adapter = new NativeSessionAdapter([], { ownClient: true });
-    const handle = await adapter.openSession("images", {
-      agentName: "native",
-      workdir: dir,
-      transcriptStore: store,
-      timeoutSeconds: 60,
-      modelDef: { provider: "ignored", model: "stub/stub-model" },
-      resolvedPermissions: { mode: "default", bashApproval: "raw" },
-    });
     try {
-      await store.save(handle.id, doc);
-      await adapter.sendTurn(handle, "next", { interactionHandler: { onInteraction: async () => null } });
-      expect(client.requests).toHaveLength(1);
-      expect(client.requests[0]?.messages).toContainEqual(doc.messages[0]);
+      const handle = await adapter.openSession("images", {
+        agentName: "native",
+        workdir: dir,
+        transcriptStore: store,
+        timeoutSeconds: 60,
+        modelDef: { provider: "ignored", model: "stub/stub-model" },
+        resolvedPermissions: { mode: "default", bashApproval: "raw" },
+      });
+      try {
+        await store.save(handle.id, doc);
+        await adapter.sendTurn(handle, "next", { interactionHandler: { onInteraction: async () => null } });
+        expect(client.requests).toHaveLength(1);
+        expect(client.requests[0]?.messages).toContainEqual(doc.messages[0]);
+      } finally {
+        await adapter.closeSession(handle);
+      }
     } finally {
-      await adapter.closeSession(handle);
       client.restore();
     }
   });

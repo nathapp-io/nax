@@ -8,6 +8,7 @@ import type { ConversationMessage } from "@nathapp/nax-ai";
 import { _atomicWriteDeps } from "#src/internal/atomic-write";
 import {
   _resetTranscriptTruncationWarningForTests,
+  _transcriptLifecycleDeps,
   createFileTranscriptStore,
   deleteTranscript,
   loadTranscript,
@@ -54,6 +55,31 @@ describe("transcript image folder lifecycle", () => {
     expect(json).toMatch(/^s\.transcript\.failed-.*\.json$/);
     expect(names).toContain((json ?? "missing").replace(/\.json$/, ".images"));
     expect(names).not.toContain("s.transcript.images");
+  });
+
+  test("B2: failed sidecar retention rolls back JSON and can be retried", async () => {
+    const store = createFileTranscriptStore(dir);
+    await store.save("s", { savedAt: "t", messages: images });
+    const realRename = _transcriptLifecycleDeps.rename;
+    _transcriptLifecycleDeps.rename = async (from, to) => {
+      if (String(from).endsWith(".images")) throw Object.assign(new Error("denied"), { code: "EACCES" });
+      return realRename(from, to);
+    };
+    try {
+      await expect(store.retainFailed("s")).rejects.toMatchObject({ code: "EACCES" });
+    } finally {
+      _transcriptLifecycleDeps.rename = realRename;
+    }
+    expect((await store.load("s"))?.messages).toEqual(images);
+    expect((await readdir(dir)).sort()).toEqual(["s.transcript.images", "s.transcript.json"]);
+    await store.retainFailed("s");
+    const json = (await readdir(dir)).find((name) => name.endsWith(".json"));
+    // Retained transcripts use their exact disk path rather than a live session name.
+    const { rehydrateTranscriptImages } = await import("#src/native/session/transcript-images");
+    const path = join(dir, json ?? "missing");
+    expect((await rehydrateTranscriptImages(path, JSON.parse(await readFile(path, "utf8")))).messages).toEqual(images);
+    await store.delete("s");
+    expect((await rehydrateTranscriptImages(path, JSON.parse(await readFile(path, "utf8")))).messages).toEqual(images);
   });
 
   test("AC-16/17: pruning removes only the deleted JSON's sidecar", async () => {
