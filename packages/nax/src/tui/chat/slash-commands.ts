@@ -81,6 +81,20 @@ export const COMMAND_DESCRIPTIONS = {
   quit: "Quit nax chat",
 } satisfies Record<SlashCommandName, string>;
 
+/**
+ * The listing a command's shown text becomes, by command name. A command here shows one
+ * listing entry per run; every other command's text becomes a notice entry instead.
+ */
+export const LISTING_TITLES: ReadonlyMap<string, string> = new Map([
+  ["help", "Commands"],
+  ["skills", "Skills"],
+  ["plugins", "Plugins"],
+  ["mcp", "MCP servers"],
+  ["agents", "Agents"],
+  ["sessions", "Sessions"],
+  ["cost", "Cost"],
+]);
+
 export function parseSlashCommand(text: string): SlashCommand | null {
   if (!text.startsWith("/")) return null;
   const name = text.slice(1).match(/^\S*/)?.[0] ?? "";
