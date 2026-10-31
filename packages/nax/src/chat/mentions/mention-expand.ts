@@ -60,7 +60,13 @@ const INSIDE_GIT_DIR = "inside .git";
 const GIT_TIMED_OUT = "git timed out";
 const IGNORED_BY_GIT = "ignored by git";
 const GIT_DIR_SEGMENT = ".git";
-const CHECK_IGNORE_ARGS: readonly string[] = ["--literal-pathspecs", "check-ignore", "-q", "--"];
+/**
+ * The ignore check. `check-ignore` refuses pathspec magic outright ("pathspec magic not
+ * supported by this command") and `--literal-pathspecs` / `GIT_LITERAL_PATHSPECS` inject
+ * exactly that, so either spelling exits 128 on every path (confirmed on git 2.50.1). Its
+ * pathnames are matched literally as typed, which is the behaviour this step needs.
+ */
+const CHECK_IGNORE_ARGS: readonly string[] = ["check-ignore", "-q", "--"];
 /** Sentence punctuation an unquoted path picks up when it ends a sentence. */
 const TRAILING_PUNCTUATION = /[.,;:!?)]+$/;
 

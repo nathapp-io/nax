@@ -190,12 +190,12 @@ describe("expandChatMentions — git-ignored paths", () => {
     ]);
   });
 
-  test("AC-13 asks git with literal pathspecs, in the cwd, about the path as typed", async () => {
+  test("AC-13 asks git for the ignore verdict, in the cwd, about the path as typed", async () => {
     addFile("/repo/dist/out.js", "/repo/dist/out.js", "x\n");
     gitFake = async () => ({ stdout: "", exitCode: 0, timedOut: false });
     await expand("@dist/out.js");
     expect(gitCalls[0]).toEqual({
-      args: ["--literal-pathspecs", "check-ignore", "-q", "--", "dist/out.js"],
+      args: ["check-ignore", "-q", "--", "dist/out.js"],
       cwd: "/repo",
     });
   });
@@ -262,6 +262,32 @@ describe("_mentionExpandDeps", () => {
       expect(entries).toHaveLength(2);
       expect(entries).toContainEqual({ name: "a.ts", isDirectory: false });
       expect(entries).toContainEqual({ name: "sub", isDirectory: true });
+    });
+  });
+});
+
+/**
+ * F1: the check-ignore invocation must be one real git actually answers. The fake-git tests
+ * above cannot see a pathspec option git rejects outright, so this one runs the shipped
+ * commands against a real checkout.
+ */
+describe("check-ignore against real git", () => {
+  test("answers ignored / not-ignored instead of failing with a fatal pathspec error", async () => {
+    await withTempDir(async (root) => {
+      // An empty template dir: a sandboxed agent cannot read the system template directory,
+      // and the fixture needs none of it.
+      const init = await originalDeps.git(["-c", "init.templateDir=", "init", "-q"], root);
+      expect(init.exitCode).toBe(0);
+      await Bun.write(join(root, ".gitignore"), "dist/\n");
+      await mkdir(join(root, "dist"));
+      await Bun.write(join(root, "dist/out.js"), "x\n");
+      await Bun.write(join(root, "a.ts"), "x\n");
+      Object.assign(chat._mentionExpandDeps, originalDeps);
+      const result = await expandChatMentions("see @dist/out.js and @a.ts", { cwd: root, repoRoot: root });
+      expect(result.records.map((record) => [record.path, record.status, record.note])).toEqual([
+        ["dist/out.js", "refused", "not attached: ignored by git"],
+        ["a.ts", "attached", "1 lines"],
+      ]);
     });
   });
 });
