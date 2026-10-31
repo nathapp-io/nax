@@ -123,6 +123,56 @@ describe("gitSpawnEnv", () => {
   });
 });
 
+describe("gitWithTimeout environment overlay", () => {
+  withDepsRestore(_gitDeps);
+  let priorToken: string | undefined;
+  beforeEach(() => {
+    priorToken = process.env.NAX_FORGE_GIT_TOKEN;
+    delete process.env.NAX_FORGE_GIT_TOKEN;
+  });
+  afterEach(() => {
+    if (priorToken === undefined) delete process.env.NAX_FORGE_GIT_TOKEN;
+    else process.env.NAX_FORGE_GIT_TOKEN = priorToken;
+  });
+
+  test("passes the overlay to git while retaining hardened settings", async () => {
+    const stub = makeSpawn(() => "");
+    _gitDeps.spawn = stub.spawn;
+
+    await gitWithTimeout(["fetch"], "/repo", undefined, undefined, undefined, {
+      NAX_FORGE_GIT_TOKEN: "tok-7f3a9c",
+    });
+    const overlayEnv = stub.lastEnv();
+    expect(overlayEnv.NAX_FORGE_GIT_TOKEN).toBe("tok-7f3a9c");
+
+    await gitWithTimeout(["fetch"], "/repo");
+    const baselineEnv = stub.lastEnv();
+    const configEntries = (env: Record<string, string | undefined>) =>
+      Object.fromEntries(Object.entries(env).filter(([key]) => key.startsWith("GIT_CONFIG_")));
+    expect(configEntries(overlayEnv)).toEqual(configEntries(baselineEnv));
+  });
+
+  test("does not add the token variable when no overlay or ambient value exists", async () => {
+    const stub = makeSpawn(() => "");
+    _gitDeps.spawn = stub.spawn;
+
+    await gitWithTimeout(["status"], "/repo");
+
+    expect(Object.hasOwn(stub.lastEnv(), "NAX_FORGE_GIT_TOKEN")).toBe(false);
+  });
+
+  test("preserves non-timeout failure output with an overlay", async () => {
+    const stub = makeSpawn(() => ({ exitCode: 1, stderr: "authentication failed" }));
+    _gitDeps.spawn = stub.spawn;
+
+    const result = await gitWithTimeout(["fetch"], "/repo", undefined, undefined, undefined, {
+      NAX_FORGE_GIT_TOKEN: "tok-7f3a9c",
+    });
+
+    expect(result).toEqual({ stdout: "", stderr: "authentication failed", exitCode: 1 });
+  });
+});
+
 describe("gitWithTimeout: #2198 fsmonitor hardening", () => {
   let dir: string;
   beforeEach(() => {
