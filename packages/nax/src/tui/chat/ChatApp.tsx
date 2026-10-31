@@ -14,7 +14,7 @@ import type { SessionEvent } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, useInput, useStdout } from "ink";
 import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { type ChatHost, expandChatMentions } from "@/chat";
+import { type ChatHost, createMentionFileIndex, expandChatMentions } from "@/chat";
 import { buildCommandMessage } from "@/prompts";
 import { runCommandShellLines } from "@/resources";
 import { NAX_VERSION } from "@/version";
@@ -33,6 +33,7 @@ import {
 } from "./chat-status";
 import { FixedRow } from "./FixedRow";
 import { layoutTranscript } from "./layout";
+import { MentionMenu } from "./MentionMenu";
 import { mentionPrepare, sentEntries } from "./mention-send";
 import type { MouseEvents } from "./mouse-input";
 import { Picker, useChatPicker } from "./Picker";
@@ -55,6 +56,7 @@ import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
 import { useJobs } from "./use-jobs";
 import { FRAME_SLACK_ROWS, useJobsOpener } from "./use-jobs-opener";
+import { useMentionMenu } from "./use-mention-menu";
 import { useSlashMenuKeys } from "./use-slash-menu-keys";
 import { useSwitchNotices } from "./use-switch-notices";
 import { useChatKeys } from "./useChatKeys";
@@ -77,6 +79,8 @@ export const _chatAppDeps = {
   tmux: (): string | undefined => Bun.env.TMUX,
   /** Attach a typed message's mentions to it once, here in the TUI, before any brain sees it. */
   expandMentions: expandChatMentions,
+  /** The `@` picker's file list; the screen builds exactly one per mount, for its own cwd. */
+  mentionFileIndex: createMentionFileIndex,
 };
 
 const HEADER_ROWS = 3;
@@ -134,9 +138,9 @@ function idleForJobNotice(input: { turnRunning: boolean; bottomBlocked: boolean;
   return !input.turnRunning && !input.bottomBlocked && input.canControl;
 }
 
-/** An ask card, a picker or the slash menu is drawn in the bottom region. */
-function surfaceShown(cardOrPicker: boolean, menu: boolean): boolean {
-  return cardOrPicker || menu;
+/** An ask card, a picker, or any menu drawn under the input, claims the bottom region. */
+function surfaceShown(cardOrPicker: boolean, ...menus: readonly boolean[]): boolean {
+  return cardOrPicker || menus.includes(true);
 }
 
 export function ChatApp({
@@ -225,6 +229,22 @@ export function ChatApp({
   function menuOwnsKeys(): boolean {
     return menuShown() && slashKeys.ownsKeys();
   }
+  // The `@` picker draws under the same input and takes the same keys; it builds one file list
+  // for the cwd the screen was handed, and writes a chosen row through the input's handle.
+  const mention = useMentionMenu({
+    cwd,
+    indexFor: _chatAppDeps.mentionFileIndex,
+    editor: draft.editor,
+    blocked: bottomBlocked(ask, picker.model),
+    suppressed: menuShown(),
+    slashOwns: menuOwnsKeys,
+    budget: bottomBudget,
+    active: !keys.locked,
+    handle: inputHandle,
+  });
+  const mentionView = mention.view;
+  /** True while the picker's rows (or its diagnostic line) are drawn under the input. */
+  const mentionShown = mentionView.rows > 0;
   if (menu.reopen) {
     slashKeys.sawDismissal(undefined);
     setDismissedQuery(undefined);
@@ -236,7 +256,9 @@ export function ChatApp({
       setExpanded((current) => !current);
       return;
     }
+    // The picker's own claim closes it on escape, so that escape must never reach the turn.
     if (!key.escape || ask !== undefined || picker.model !== undefined || menuShown()) return;
+    if (mention.ownsNavigation()) return;
     if (!turnRunning || !keys.canControl()) return;
     host.cancel();
   });
@@ -416,9 +438,10 @@ export function ChatApp({
     inputHandle.current?.submit(`/${name}`);
   }
 
-  /** Publish edits and claim the menu together, before the next batched key or render. */
+  /** Publish edits and claim the menus together, before the next batched key or render. */
   function changeDraft(next: InputDraft): void {
     slashKeys.sawPrompt(next.editor.text);
+    mention.sawEditor(next.editor);
     setDraft(next);
   }
 
@@ -448,16 +471,16 @@ export function ChatApp({
   useJobsOpener({
     host,
     mouse,
-    blocked: surfaceShown(bottomBlocked(ask, picker.model), menuShown()),
+    blocked: surfaceShown(bottomBlocked(ask, picker.model), menuShown(), mentionShown),
     footer,
     size,
     open: picker.open,
     note: (text) => append({ kind: "notice", text }),
   });
 
-  // The bottom budget and the menu's share of it are measured above the key handlers, beside
-  // the claim that reads them; the input is measured against what those two leave.
-  const inputBudget = Math.max(1, bottomBudget - INPUT_RULE_ROWS - menuRows);
+  // The bottom budget and the menus' shares of it are measured above the key handlers, beside
+  // the claims that read them; the input is measured against what those leave.
+  const inputBudget = Math.max(1, bottomBudget - INPUT_RULE_ROWS - menuRows - mentionView.rows);
   // The question card's draft is the screen's state: only then can the card's rows — the
   // answer box included — be measured before the frame is composed. It is the card's own
   // draft, keyed by the request it was typed for, so it never inherits the chat input's.
@@ -483,7 +506,7 @@ export function ChatApp({
   const bottomRows = bottomRowsFor({
     ask: cardRows,
     picker: picker.model,
-    input: inputBottomRows + menuRows,
+    input: inputBottomRows + menuRows + mentionView.rows,
     budget: bottomBudget,
   });
   const viewportHeight = Math.max(
@@ -566,7 +589,7 @@ export function ChatApp({
             busy={busy}
             maxRows={inputBudget}
             hint={hint}
-            yieldNavigation={menuOwnsKeys}
+            yieldNavigation={mention.ownsNavigation}
             handle={inputHandle}
             onClearArmedChange={setClearArmed}
           />
@@ -586,6 +609,7 @@ export function ChatApp({
               }}
             />
           ) : null}
+          <MentionMenu view={mentionView} width={columns} theme={theme} />
         </Box>
       )}
       <Box flexDirection="row" justifyContent="space-between" width={columns} height={1} overflow="hidden">
