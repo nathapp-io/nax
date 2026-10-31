@@ -66,6 +66,18 @@ export {
   nextChatMode,
 } from "./chat-mode";
 export { type ChatModelChoicesInput, chatEffortLevels, chatModelChoices, tierModels } from "./chat-models";
+export {
+  type ImageFormat,
+  imageDescription,
+  imageFormatOf,
+  imageFromBytes,
+  imageNoteLabel,
+  imageRawBytes,
+  imageSizeLabel,
+  MAX_IMAGE_EDGE_PX,
+  type SniffedImage,
+  sniffImage,
+} from "./images";
 export type { ChatJob, ChatJobs } from "./jobs";
 export {
   _mentionExpandDeps,
