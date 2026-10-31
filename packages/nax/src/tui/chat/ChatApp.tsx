@@ -14,7 +14,7 @@ import type { SessionEvent } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, useInput, useStdout } from "ink";
 import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { type ChatHost, parseSkillInvocation } from "@/chat";
+import { type ChatHost, expandChatMentions, parseMentionMessage, parseSkillInvocation } from "@/chat";
 import { buildCommandMessage } from "@/prompts";
 import { runCommandShellLines } from "@/resources";
 import { NAX_VERSION } from "@/version";
@@ -33,6 +33,7 @@ import {
 } from "./chat-status";
 import { FixedRow } from "./FixedRow";
 import { layoutTranscript } from "./layout";
+import { mentionTranscriptEntries } from "./mention-entries";
 import type { MouseEvents } from "./mouse-input";
 import { Picker, useChatPicker } from "./Picker";
 import { SlashMenu } from "./SlashMenu";
@@ -66,7 +67,18 @@ export interface ChatAppProps {
 }
 
 /** Environment seam; sampled once per mounted screen. */
-export const _chatAppDeps = { tmux: (): string | undefined => Bun.env.TMUX };
+export const _chatAppDeps = {
+  tmux: (): string | undefined => Bun.env.TMUX,
+  /** Attach a typed message's mentions to it once, here in the TUI, before any brain sees it. */
+  expandMentions: expandChatMentions,
+};
+
+/**
+ * What a typed message must carry to be worth expanding: a mention token's `@`, or the
+ * trailer of an expanded message pasted back in (which `formatMentionMessage` re-parses). A
+ * message with neither keeps today's exact send, so nothing else pays for the expansion.
+ */
+const MENTION_TRIGGERS: readonly string[] = ["@", "</nax-mentions"];
 
 const HEADER_ROWS = 3;
 /** Rows the footer always claims. */
@@ -142,6 +154,23 @@ function surfaceShown(cardOrPicker: boolean, menu: boolean): boolean {
   return cardOrPicker || menu;
 }
 
+/** Whether a typed message carries anything for the expander to resolve. */
+function needsMentionExpansion(text: string): boolean {
+  return MENTION_TRIGGERS.some((trigger) => text.includes(trigger));
+}
+
+/**
+ * What one sent message becomes in the transcript: a skill's invocation, the mention rows of
+ * the envelope nax expanded it into, or the message as it stands. `replayUser` reads a stored
+ * message the same way, so a live turn and a resumed one draw alike.
+ */
+function sentEntries(message: string): readonly TranscriptEntry[] {
+  const skill = parseSkillInvocation(message);
+  if (skill) return [{ kind: "skill", ...skill }];
+  const parsed = parseMentionMessage(message);
+  return parsed === undefined ? [{ kind: "user", text: message }] : mentionTranscriptEntries(parsed);
+}
+
 export function ChatApp({
   host,
   mouse,
@@ -176,9 +205,10 @@ export function ChatApp({
   const [, refresh] = useState(0);
 
   const update = useCallback(() => refresh((revision) => revision + 1), []);
-  const append = useCallback((entry: TranscriptEntry) => {
-    setEntries((rows) => [...rows, entry]);
+  const appendAll = useCallback((added: readonly TranscriptEntry[]) => {
+    setEntries((rows) => [...rows, ...added]);
   }, []);
+  const append = useCallback((entry: TranscriptEntry) => appendAll([entry]), [appendAll]);
   const showError = useCallback((error: unknown) => append({ kind: "error", text: errorMessage(error) }), [append]);
   const keys = useChatKeys({
     host,
@@ -335,11 +365,21 @@ export function ChatApp({
     });
   }
 
+  /**
+   * The typed message as every brain receives it: the same text with the content of each
+   * mention appended. Resolved against the process cwd the screen was handed and the repo
+   * the host reports, once per send — the title and the draft history keep the typed text.
+   */
+  async function prepareMentions(text: string): Promise<{ message: string }> {
+    const expanded = await _chatAppDeps.expandMentions(text, { cwd, repoRoot: host.repoRoot });
+    return { message: expanded.message };
+  }
+
   async function submit(message: string): Promise<void> {
     const command = parseSlashCommand(message);
     if (!command) {
       noteUserTurn();
-      await sendTurn(message);
+      await sendTurn(message, needsMentionExpansion(message) ? () => prepareMentions(message) : undefined);
       return;
     }
     if (command.name === QUIT) {
@@ -369,8 +409,7 @@ export function ChatApp({
         append({ kind: "notice", text: prepared.notice });
         return false;
       }
-      const skill = parseSkillInvocation(prepared.message);
-      append(skill ? { kind: "skill", ...skill } : { kind: "user", text: prepared.message });
+      appendAll(sentEntries(prepared.message));
       setFollowToken((token) => token + 1);
       const onEvent = (event: SessionEvent): void => {
         if (event.type === "turn_start") started = true;

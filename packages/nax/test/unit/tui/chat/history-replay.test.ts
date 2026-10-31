@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { displayToolInput, toolResultPreview } from "@nathapp/nax-agent";
 import { COMPACTION_SUMMARY_PREFIX } from "@nathapp/nax-agent/internal";
-import type { ChatHistory } from "@/chat";
+import { assertDefined } from "@test/helpers";
+import { type ChatHistory, formatMentionMessage, type MentionRecord, parseMentionMessage } from "@/chat";
 import { buildSkillInvocationMessage } from "@/prompts/builders/skills-builder";
+import { mentionTranscriptEntries } from "@/tui/chat/mention-entries";
 import type { TranscriptEntry } from "@/tui/chat/transcript-model";
 
 let replayHistory: typeof import("@/tui/chat/history-replay").replayHistory;
@@ -14,6 +16,10 @@ const CALL = { id: "c1", name: "Read", input: { path: "a" } };
 const ASSISTANT = { role: "assistant", content: "", toolCalls: [CALL] } as const;
 const RESULT = { role: "tool-result", toolCallId: "c1", content: "17 lines" } as const;
 const SAVED_AT = "2026-10-28T01:00:00.000Z";
+/** A mention of a two-line file, as the expander recorded it on send. */
+const ATTACHED_A: MentionRecord = { path: "a.ts", status: "attached", note: "2 lines", body: "x\ny\n" };
+/** A message with a mention trailer whose declared length does not match its block. */
+const MALFORMED_ENVELOPE = `see @a.ts\n\n<nax-mentions>\n<mention path="a.ts" status="attached" note="2 lines" length="4">\nx\ny\n</mention>\n</nax-mentions length="1">`;
 
 function toolEntries(history: ChatHistory): Extract<TranscriptEntry, { kind: "tool" }>[] {
   return replayHistory(history).filter((entry) => entry.kind === "tool");
@@ -159,6 +165,25 @@ describe("replayHistory", () => {
     expect(expected).toEqual({ truncated: true, preview: "[input not serializable]" });
     expect(toolEntries({ messages: [{ ...ASSISTANT, toolCalls: [{ ...CALL, input }] }] })).toMatchObject([
       { input: expected },
+    ]);
+  });
+  test("US-005 AC-11: an expanded user message replays as its mention entries", () => {
+    const content = formatMentionMessage("see @a.ts", [ATTACHED_A]);
+    const parsed = parseMentionMessage(content);
+    assertDefined(parsed, "the expanded message parses");
+    const entries = replayHistory({ messages: [{ role: "user", content }] });
+    expect(entries.map((entry) => entry.kind)).toEqual(["user", "attachment"]);
+    expect(entries).toEqual(mentionTranscriptEntries(parsed));
+  });
+  test("US-005 AC-12: a user message with no expansion stays the plain message", () => {
+    expect(replayHistory({ messages: [{ role: "user", content: "see @a.ts" }] })).toEqual([
+      { kind: "user", text: "see @a.ts" },
+    ]);
+  });
+  test("US-005 AC-13: a malformed mention envelope falls back to the plain message", () => {
+    expect(parseMentionMessage(MALFORMED_ENVELOPE)).toBeUndefined();
+    expect(replayHistory({ messages: [{ role: "user", content: MALFORMED_ENVELOPE }] })).toEqual([
+      { kind: "user", text: MALFORMED_ENVELOPE },
     ]);
   });
   test("preserves message and call order while indexing results before mapping", () => {
