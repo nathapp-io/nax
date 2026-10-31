@@ -111,6 +111,9 @@ async function runClipboardCommand(argv: readonly string[], timeoutMs: number): 
     // The drain is abandoned, not awaited: a grandchild of the killed child can
     // hold the pipe open, and waiting on it would undo the timeout.
     void stdoutRead;
+    // The `exited` race can be lost by a millisecond: wait for the SIGKILL to be
+    // reaped, so `timed-out` is only reported once the child is really gone.
+    await proc.exited;
     return { kind: "timed-out" };
   }
   return { kind: "exited", exitCode: outcome, stdout: new Uint8Array(await stdoutRead) };

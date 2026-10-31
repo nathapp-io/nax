@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { join } from "node:path";
+import { cleanupTempDir, makeTempDir, waitForFile } from "@test/helpers";
 import {
   _clipboardImageDeps,
   CLIPBOARD_READ_TIMEOUT_MS,
@@ -10,6 +12,16 @@ import {
 const original = { ..._clipboardImageDeps };
 /** The real runner, captured before any test replaces the seam. */
 const defaultRun = _clipboardImageDeps.run;
+
+/** Liveness probe: signal 0 delivers nothing, it only reports whether `pid` exists. */
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const bytesOf = (text: string): Uint8Array => new TextEncoder().encode(text);
 const exited = (stdout: Uint8Array | string, exitCode = 0): ClipboardRun => ({
@@ -35,6 +47,24 @@ beforeEach(() => {
 });
 
 afterEach(() => void Object.assign(_clipboardImageDeps, original));
+
+/** A temp dir for the pid file the AC-13 child writes, plus a cleanup list for strays. */
+let dir = "";
+const strays: number[] = [];
+afterEach(() => {
+  for (const pid of strays.splice(0)) {
+    // A stray of 0 (from an empty pidfile) would be `process.kill(0, ...)`,
+    // which signals the caller's whole process group. Only ever target a real
+    // child pid that is still alive.
+    if (!Number.isInteger(pid) || pid <= 1 || !isAlive(pid)) continue;
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // Already gone: the case this test expects.
+    }
+  }
+  cleanupTempDir(dir);
+});
 
 describe("CLIPBOARD_READ_TIMEOUT_MS", () => {
   test("AC-1 is 2000 ms", () => {
@@ -186,12 +216,26 @@ describe("the default runner", () => {
     });
   });
 
-  test("AC-13 resolves timed-out and kills a child that outlives the timeout", async () => {
+  test("AC-13 resolves timed-out and kills the child it started", async () => {
+    dir = makeTempDir();
     const startedAt = performance.now();
 
+    // The AC's own vector: `sleep 5` bounded at 50 ms must not wait 5 s.
     await expect(defaultRun(["sleep", "5"], 50)).resolves.toEqual({ kind: "timed-out" });
-
     expect(performance.now() - startedAt).toBeLessThan(2_000);
+
+    // ...and the child must be dead, not merely abandoned: a child that reports
+    // its own pid is gone by the time `run` resolves. (`sleep 5` cannot be
+    // observed this way — its pid never leaves the runner.)
+    const pidFile = join(dir, "child.pid");
+    await expect(defaultRun(["sh", "-c", `echo $$ > '${pidFile}'; sleep 5`], 50)).resolves.toEqual({
+      kind: "timed-out",
+    });
+    await waitForFile(pidFile);
+    const pid = Number((await Bun.file(pidFile).text()).trim());
+    strays.push(pid);
+    expect(Number.isInteger(pid) && pid > 1).toBe(true);
+    expect(isAlive(pid)).toBe(false);
   });
 
   test("AC-14 captures the stdout of a command that exits 0", async () => {
