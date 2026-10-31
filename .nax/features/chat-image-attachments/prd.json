@@ -3,7 +3,7 @@
   "feature": "chat-image-attachments",
   "branchName": "feat/chat-image-attachments",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T16:34:36.750Z",
+  "updatedAt": "2026-10-31T16:43:05.192Z",
   "userStories": [
     {
       "id": "US-001",
@@ -747,14 +747,17 @@
         "US-005",
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A bounded orchestration helper with injected expander/capability effects and deterministic result union; no session ownership or auth changes."
+        "reasoning": "A bounded orchestration helper with injected expander/capability effects and deterministic result union; no session ownership or auth changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/mention-send.ts",
@@ -773,7 +776,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f4551af5b5260874f3dc174926f0a4e48a363a1f"
     },
     {
       "id": "US-013",
