@@ -3,7 +3,7 @@
   "feature": "chat-image-attachments",
   "branchName": "feat/chat-image-attachments",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T14:50:16.095Z",
+  "updatedAt": "2026-10-31T15:01:21.289Z",
   "userStories": [
     {
       "id": "US-001",
@@ -200,14 +200,17 @@
         "paths"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure path normalization plus a small optional input callback and mounted component assertions; no file effects or capability decisions."
+        "reasoning": "Pure path normalization plus a small optional input callback and mounted component assertions; no file effects or capability decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatInput.tsx",
@@ -227,7 +230,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "2b0a8dabe06ed0d676d87902239cc4836d74091d"
     },
     {
       "id": "US-005",
