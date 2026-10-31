@@ -3,7 +3,7 @@
   "feature": "chat-file-mentions",
   "branchName": "feat/chat-file-mentions",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T07:47:24.839Z",
+  "updatedAt": "2026-10-31T08:10:49.726Z",
   "userStories": [
     {
       "id": "US-001",
@@ -341,14 +341,17 @@
         "US-002",
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Two existing TUI files already provide async prepare, typed titles and inverse-envelope replay; adding a submit guard and parser branches reuses those seams without changing session lifecycle, so medium/tdd-simple with host spies and one default-expander integration is sufficient."
+        "reasoning": "Two existing TUI files already provide async prepare, typed titles and inverse-envelope replay; adding a submit guard and parser branches reuses those seams without changing session lifecycle, so medium/tdd-simple with host spies and one default-expander integration is sufficient.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -384,7 +387,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4d0eff9132a22020fb98fe6fa5ae378c3647974c"
     },
     {
       "id": "US-006",
