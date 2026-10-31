@@ -138,6 +138,7 @@ export function toProviderOverrides(overrides: readonly ProviderCatalogOverride[
       // Omitted when the override declares none: nax-ai then falls back to the
       // template sibling's ceiling, which is the only honest value available.
       ...(model.maxTokens !== undefined ? { maxTokens: model.maxTokens } : {}),
+      ...(model.input !== undefined ? { input: model.input } : {}),
       ...(model.thinkingFormat !== undefined ? { thinkingFormat: model.thinkingFormat } : {}),
       supportsTools: model.supportsTools,
       thinkingLevels: model.thinkingLevels,
