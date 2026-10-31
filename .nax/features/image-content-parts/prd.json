@@ -3,7 +3,7 @@
   "feature": "image-content-parts",
   "branchName": "feat/image-content-parts",
   "createdAt": "2026-10-31T00:00:00.000Z",
-  "updatedAt": "2026-10-31T10:55:34.579Z",
+  "updatedAt": "2026-10-31T11:02:19.235Z",
   "userStories": [
     {
       "id": "US-001",
@@ -250,14 +250,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Reuses current model resolution and backend callbacks for an additive capability check, seed field and config forwarder; session refusal timing and whole-seed replacement require strict three-session TDD but no new architectural abstraction."
+        "reasoning": "Reuses current model resolution and backend callbacks for an additive capability check, seed field and config forwarder; session refusal timing and whole-seed replacement require strict three-session TDD but no new architectural abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/native/session-adapter.ts",
@@ -279,7 +282,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5446d22306c72b8296e0204a73894278a389bb47"
     },
     {
       "id": "US-005",
