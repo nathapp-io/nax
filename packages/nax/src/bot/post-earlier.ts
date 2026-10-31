@@ -40,7 +40,7 @@ interface EarlierEntry {
 /** Keep absent verdicts and re-raised findings open, including threads beyond the prompt cap. */
 export function effectiveEarlier(input: PostReviewInput): EarlierEntry[] {
   const raised = new Set(input.verdict.findings.map(findingKey));
-  return combinedEarlier(input).flatMap((thread) => {
+  return combinedEarlier(input).flatMap<EarlierEntry>((thread) => {
     const first = thread.comments[0];
     const key = parseNaxBotMarker(first?.body ?? "")?.key;
     // Selection supplies own finding threads; defend against a foreign opener when login is available.
