@@ -106,6 +106,15 @@ export interface GoldenOptions {
 const WORKFLOW_STAGE = "workflow";
 
 /**
+ * Whether `value` is a keyed, non-array object — the shape every copy in this file walks key by
+ * key. Written as a predicate rather than a cast so the narrowing is checked by the compiler
+ * (and by biome's noExplicitAny) instead of asserted.
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
  * A deep copy of a plain data value, taken when the interaction was observed. Both machines keep
  * using the objects they hand a seam — a scripted gate result, a findings list, a record patch — so a
  * trace must record what a seam was handed, not what that object later became: mutating an argument,
@@ -118,10 +127,9 @@ export function snapshot(value: Record<string, unknown>): Record<string, unknown
 export function snapshot(value: unknown): unknown;
 export function snapshot(value: unknown): unknown {
   if (Array.isArray(value)) return value.map((item) => snapshot(item));
-  if (value === null || typeof value !== "object") return value;
-  const source = value as Record<string, unknown>;
+  if (!isPlainObject(value)) return value;
   const copy: Record<string, unknown> = {};
-  for (const key of Object.keys(source)) copy[key] = snapshot(source[key]);
+  for (const key of Object.keys(value)) copy[key] = snapshot(value[key]);
   return copy;
 }
 
@@ -275,11 +283,10 @@ function normalizeValue(value: unknown): unknown;
  */
 function normalizeValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map((item) => normalizeValue(item));
-  if (value === null || typeof value !== "object") return value;
-  const source = value as Record<string, unknown>;
+  if (!isPlainObject(value)) return value;
   const normalized: Record<string, unknown> = {};
-  for (const key of Object.keys(source).sort()) {
-    const item = source[key];
+  for (const key of Object.keys(value).sort()) {
+    const item = value[key];
     if (item === undefined) continue;
     normalized[key] = key === ENDED_AT_KEY && typeof item === "string" ? TS_PLACEHOLDER : normalizeValue(item);
   }
@@ -302,15 +309,14 @@ const GOLDEN_ENV_VAR = "NAX_UPDATE_WORKFLOW_GOLDEN";
 const GOLDEN_ROOT = join(import.meta.dir, "..", "fixtures", "workflow-equivalence");
 
 function isTrace(value: unknown): value is WorkflowTrace {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Record<string, unknown>;
-  const machine = candidate.machine;
+  if (!isPlainObject(value)) return false;
+  const machine = value.machine;
   return (
-    typeof candidate.scenario === "string" &&
+    typeof value.scenario === "string" &&
     (machine === "feature" || machine === "story") &&
-    Array.isArray(candidate.events) &&
-    typeof candidate.end === "object" &&
-    candidate.end !== null
+    Array.isArray(value.events) &&
+    typeof value.end === "object" &&
+    value.end !== null
   );
 }
 

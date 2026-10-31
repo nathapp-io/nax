@@ -10,7 +10,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import type { ResolvedRule } from "@/context/rules/rule-set";
+import type { ResolvedRule, RulesForFileInput } from "@/context/rules/rule-set";
 import {
   _reviewRulesMapDeps,
   type AppendChangedFileRulesInput,
@@ -38,19 +38,11 @@ function resolvedRule(ruleId: string, extra: Partial<ResolvedRule> = {}): Resolv
   };
 }
 
-/** One recorded `rulesForFile` call. */
-interface Call {
-  readonly path: string;
-  readonly repoRoot: string;
-  readonly overrideDir?: string;
-  readonly overrideMode?: string;
-}
-
 /** Stub the resolver: `answer` maps a changed path to the rules governing it. */
-function stubRules(answer: (path: string) => ResolvedRule[]): Call[] {
-  const calls: Call[] = [];
+function stubRules(answer: (path: string) => ResolvedRule[]): RulesForFileInput[] {
+  const calls: RulesForFileInput[] = [];
   _reviewRulesMapDeps.rulesForFile = async (input) => {
-    calls.push(input as Call);
+    calls.push(input);
     return answer(input.path);
   };
   return calls;

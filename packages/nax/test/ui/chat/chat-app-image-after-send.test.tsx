@@ -225,16 +225,15 @@ function mount(options: HostOptions = {}) {
 }
 
 /** The nth `host.send` call, failing the test when the call never happened. */
-function callAt(send: ReturnType<typeof fakeHost>["send"], index: number): unknown[] {
+function callAt(send: ReturnType<typeof fakeHost>["send"], index: number) {
   const call = send.mock.calls[index];
   assertDefined(call, `host.send call ${index}`);
   return call;
 }
 
 /** The images `host.send` was called with, or an empty list when the call carried none. */
-function imagesOf(call: readonly unknown[]): readonly ImageAttachment[] {
-  const options = call[2] as ChatSendOptions | undefined;
-  return options?.images ?? [];
+function sentImages(send: ReturnType<typeof fakeHost>["send"]): readonly ImageAttachment[] {
+  return firstCall(send, "host.send")[2]?.images ?? [];
 }
 
 describe("the rows a sent image leaves in the transcript", () => {
@@ -269,7 +268,7 @@ describe("a send empties the image draft", () => {
     expect(call[0]).toBe("hello");
     // The two-argument call: no images, no options at all.
     expect(call).toHaveLength(2);
-    expect(imagesOf(call)).toEqual([]);
+    expect(call[2]).toBeUndefined();
   });
 
   test("AC-4 the next ctrl+v starts again at [Image #1]", async () => {
@@ -278,7 +277,7 @@ describe("a send empties the image draft", () => {
     ui.type(" look");
     await ui.pressAndSettle(RETURN);
     expect(ui.send).toHaveBeenCalledTimes(1);
-    expect(imagesOf(firstCall(ui.send, "host.send"))).toHaveLength(1);
+    expect(sentImages(ui.send)).toHaveLength(1);
     await ui.pasteImage(png(2, 4));
     expect(ui.promptRow()).toBe("> [Image #1]");
   });
@@ -289,7 +288,7 @@ describe("a send empties the image draft", () => {
     ui.deletePlaceholder();
     await ui.submit("hello");
     expect(ui.send).toHaveBeenCalledTimes(1);
-    expect(imagesOf(firstCall(ui.send, "host.send"))).toEqual([]);
+    expect(sentImages(ui.send)).toEqual([]);
     await ui.pasteImage(png(2, 4));
     expect(ui.promptRow()).toBe("> [Image #1]");
   });
@@ -320,7 +319,7 @@ describe("history keeps text only", () => {
     const recalled = callAt(ui.send, 1);
     expect(recalled[0]).toBe("[Image #1] look");
     expect(recalled).toHaveLength(2);
-    expect(imagesOf(recalled)).toEqual([]);
+    expect(recalled[2]).toBeUndefined();
   });
 });
 
