@@ -84,6 +84,13 @@ function advisorFixAnswered(thread: PrThread, login: string, key: string): boole
   return echo >= 0 && fix > echo;
 }
 
+function skipWorkflowFinding(thread: PrThread, login: string, key: string): boolean {
+  if (!key.startsWith("w-")) return false;
+  const first = thread.comments[0];
+  if (!first || parseItemOpener(first.body)?.kind !== "advisor") return true;
+  return advisorFixAnswered(thread, login, key);
+}
+
 async function resolveOwnFindings(env: BotFixEnv, state: BotFixState): Promise<{ replied: number; resolved: number }> {
   const agreed = new Map(env.review.agreed.filter((item) => item.kind === "finding").map((item) => [item.key, item]));
   let replied = 0;
@@ -94,10 +101,7 @@ async function resolveOwnFindings(env: BotFixEnv, state: BotFixState): Promise<{
     const marker = parseNaxBotMarker(first.body);
     const item = marker && agreed.get(marker.key);
     if (!item) continue;
-    if (item.key.startsWith("w-")) {
-      if (parseItemOpener(first.body)?.kind !== "advisor") continue;
-      if (advisorFixAnswered(thread, env.user.login, item.key)) continue;
-    }
+    if (skipWorkflowFinding(thread, env.user.login, item.key)) continue;
     try {
       const summary = safeText(item.issue.split(/\r?\n/, 1)[0] ?? "", MAX_ISSUE_LENGTH);
       const body = withNaxBotMarker(

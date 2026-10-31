@@ -22,7 +22,7 @@ const echo = () =>
   );
 const fixed = (author = "bot", marker = `fix-${key}`) => comment("Fixed in old", marker, author);
 function envFor(
-  options: { kind?: "advisor" | "finding"; resolved?: boolean; author?: string; tail?: PrComment[] } = {},
+  options: { kind?: "advisor" | "finding"; resolved?: boolean; author?: string; tail?: readonly PrComment[] } = {},
 ) {
   const thread: PrThread = {
     id: "advisor-thread",
@@ -109,10 +109,10 @@ describe("replyStep advisor closure", () => {
     expect(reply).toHaveBeenCalledTimes(1);
   });
   test.each([
-    [echo(), fixed(), comment("Raised again", `wo-${key}`), echo()],
-    [echo(), fixed("alice")],
-    [echo(), fixed("bot", "fix-w-other.12345678")],
-  ])("AC-9 admits a new confirmation or ignores a foreign fix: %j", async (...tail) => {
+    { tail: [echo(), fixed(), comment("Raised again", `wo-${key}`), echo()] },
+    { tail: [echo(), fixed("alice")] },
+    { tail: [echo(), fixed("bot", "fix-w-other.12345678")] },
+  ])("AC-9 admits a new confirmation or ignores a foreign fix: %j", async ({ tail }) => {
     const reply = spyOn(_fixReportDeps, "replyToThread").mockResolvedValue({ id: "new" });
     spyOn(_fixReportDeps, "resolveThread").mockResolvedValue();
     await replyStep(envFor({ tail }), state);
