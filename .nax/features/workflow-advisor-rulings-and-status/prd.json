@@ -3,7 +3,7 @@
   "feature": "workflow-advisor-rulings-and-status",
   "branchName": "feat/workflow-advisor-rulings-and-status",
   "createdAt": "2026-10-23T00:00:00.000Z",
-  "updatedAt": "2026-10-31T03:40:31.633Z",
+  "updatedAt": "2026-10-31T03:47:20.623Z",
   "userStories": [
     {
       "id": "US-001",
@@ -143,14 +143,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "A single pure decision function gains a membership source and an ordered hold branch; no new integration or authorization policy."
+        "reasoning": "A single pure decision function gains a membership source and an ordered hold branch; no new integration or authorization policy.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/bot/workflow-ready.ts",
@@ -161,7 +164,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d1782f8851f494ba9da29776bc377120479a6152"
     },
     {
       "id": "US-004",
