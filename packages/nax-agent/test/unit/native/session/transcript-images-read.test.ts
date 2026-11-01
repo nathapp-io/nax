@@ -68,13 +68,40 @@ describe("file transcript image reads", () => {
     await store.save("s", legacy);
     expect(await store.load("s")).toEqual(legacy);
   });
-  test("AC-5: appends a missing note for each image", async () => {
+  test("AC-1/4: marks the missing second image by its stored position and keeps survivors ordered", async () => {
+    const store = createFileTranscriptStore(dir);
+    await store.save("s", doc);
+    const path = transcriptPath(dir, "s");
+    const saved = JSON.parse(await readFile(path, "utf8")) as {
+      messages: Array<{ images: object[] }>;
+    };
+    const first = saved.messages[0]?.images[0];
+    await stored([first ?? {}, { ref: "b".repeat(64), mimeType: "image/png" }]);
+    expect((await store.load("s"))?.messages).toEqual([
+      { role: "user", content: "x\n[image missing #2]", images: [image] },
+    ]);
+  });
+  test("AC-2: numbers each missing image by its stored position", async () => {
     await stored([
       { ref: "a".repeat(64), mimeType: "image/png" },
       { ref: "b".repeat(64), mimeType: "image/png" },
     ]);
     expect((await createFileTranscriptStore(dir).load("s"))?.messages).toEqual([
-      { role: "user", content: "x\n[image missing]\n[image missing]" },
+      { role: "user", content: "x\n[image missing #1]\n[image missing #2]" },
+    ]);
+  });
+  test("AC-4: keeps images around a missing slot in their original order", async () => {
+    const store = createFileTranscriptStore(dir);
+    const thirdImage: ImageAttachment = { ...image, data: "BBBB", width: 30 };
+    await store.save("s", { savedAt: "t", messages: [{ role: "user", content: "x", images: [image, thirdImage] }] });
+    const path = transcriptPath(dir, "s");
+    const saved = JSON.parse(await readFile(path, "utf8")) as {
+      messages: Array<{ images: object[] }>;
+    };
+    const storedImages = saved.messages[0]?.images ?? [];
+    await stored([storedImages[0] ?? {}, { ref: "b".repeat(64), mimeType: "image/png" }, storedImages[1] ?? {}]);
+    expect((await store.load("s"))?.messages).toEqual([
+      { role: "user", content: "x\n[image missing #2]", images: [image, thirdImage] },
     ]);
   });
   test("AC-6: recovers after an image file is deleted", async () => {
@@ -82,7 +109,7 @@ describe("file transcript image reads", () => {
     await store.save("s", doc);
     const folder = transcriptImagesPath(transcriptPath(dir, "s"));
     for (const name of await readdir(folder)) await rm(join(folder, name));
-    expect((await store.load("s"))?.messages).toEqual([{ role: "user", content: "x\n[image missing]" }]);
+    expect((await store.load("s"))?.messages).toEqual([{ role: "user", content: "x\n[image missing #1]" }]);
   });
   test.each([
     ["AC-7/8", "../escape", "image/png"],
@@ -98,7 +125,7 @@ describe("file transcript image reads", () => {
       return realRead(...args);
     };
     expect((await createFileTranscriptStore(dir).load("s"))?.messages).toEqual([
-      { role: "user", content: "x\n[image missing]" },
+      { role: "user", content: "x\n[image missing #1]" },
     ]);
     expect(reads).toBe(0);
   });
@@ -116,7 +143,7 @@ describe("file transcript image reads", () => {
     }
     await stored([{ ref, mimeType: "image/png" }]);
     expect((await createFileTranscriptStore(dir).load("s"))?.messages).toEqual([
-      { role: "user", content: "x\n[image missing]" },
+      { role: "user", content: "x\n[image missing #1]" },
     ]);
   });
   test("F1: a folder redirected during open is rejected before bytes are read", async () => {
@@ -136,10 +163,10 @@ describe("file transcript image reads", () => {
       reads++;
       return realRead(...args);
     };
-    expect((await store.load("s"))?.messages).toEqual([{ role: "user", content: "x\n[image missing]" }]);
+    expect((await store.load("s"))?.messages).toEqual([{ role: "user", content: "x\n[image missing #1]" }]);
     expect(reads).toBe(0);
   });
-  test("missing images on empty content have no leading newline; valid images retain order", async () => {
+  test("AC-3: missing images on empty content have no leading newline; valid images retain order", async () => {
     const store = createFileTranscriptStore(dir);
     await store.save("s", doc);
     const { createHash } = await import("node:crypto");
@@ -152,7 +179,9 @@ describe("file transcript image reads", () => {
       ],
       "",
     );
-    expect((await store.load("s"))?.messages).toEqual([{ role: "user", content: "[image missing]", images: [image] }]);
+    expect((await store.load("s"))?.messages).toEqual([
+      { role: "user", content: "[image missing #1]", images: [image] },
+    ]);
   });
   test("AC-10: rejects future disk schemas with the native error", async () => {
     await writeFile(transcriptPath(dir, "s"), JSON.stringify({ ...doc, schemaVersion: 3 }));

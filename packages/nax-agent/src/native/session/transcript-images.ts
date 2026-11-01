@@ -192,10 +192,13 @@ export async function rehydrateTranscriptImages(path: string, value: object): Pr
     }
     const images: ImageAttachment[] = [];
     let content = message.content;
-    for (const image of message.images) {
+    for (const [index, image] of message.images.entries()) {
       const hydrated = await readStoredImage(transcriptImagesPath(path), image);
       if (hydrated) images.push(hydrated);
-      else content = content ? `${content}\n[image missing]` : "[image missing]";
+      else {
+        const marker = `[image missing #${index + 1}]`;
+        content = content ? `${content}\n${marker}` : marker;
+      }
     }
     const { images: _storedImages, ...text } = message;
     messages.push({ ...text, content, ...(images.length ? { images } : {}) });
