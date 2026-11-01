@@ -32,7 +32,7 @@ import {
   workingLine,
 } from "./chat-status";
 import { FixedRow } from "./FixedRow";
-import { type ImageDraft, imagesForSend, titleWithoutPlaceholders } from "./image-draft";
+import { type ImageDraft, imagesForSend, splitLeadingPlaceholders, titleWithoutPlaceholders } from "./image-draft";
 import { prepareImageSend } from "./image-send";
 import { layoutTranscript } from "./layout";
 import { type EditorState, EMPTY_EDITOR } from "./line-editor";
@@ -472,6 +472,21 @@ export function ChatApp({
   }
 
   /**
+   * The slash line a submitted message runs, and the placeholders it runs after.
+   *
+   * After `/image red.png` the prompt holds `[Image #1]`, so `/image green.png` typed after it
+   * would otherwise be part of a message and go to the model as text. A message that opens with
+   * the placeholders of the pictures it holds and then a slash line runs that line: `lead` is
+   * what goes back into the prompt — the placeholders, exactly as typed — and `line` is the
+   * slash line, which is parsed as if the user had typed it alone. Any other message is its own
+   * line, and `lead` is absent.
+   */
+  function submittedLine(message: string): { readonly line: string; readonly lead?: string } {
+    const split = splitLeadingPlaceholders(message);
+    return split === undefined ? { line: message } : { line: split.rest, lead: split.lead };
+  }
+
+  /**
    * A non-slash message's send. One that carries a placeholder image or a mention is prepared —
    * expanded once against the cwd the screen was handed and the repo the host reports, with the
    * images its placeholders still name — while a plain one keeps today's exact call; either way
@@ -479,9 +494,12 @@ export function ChatApp({
    * the send consumed is what the reset takes back however long the preparation takes.
    */
   async function submit(message: string): Promise<void> {
-    const command = parseSlashCommand(message);
+    // A slash line after the leading placeholders is the line that runs; the images it is
+    // refused for are the ones *it* names, not the ones it left in the prompt.
+    const { line, lead } = submittedLine(message);
+    const command = parseSlashCommand(line);
     const submitted = imageAttach.current();
-    const images = imagesForSend(submitted, message).images;
+    const images = imagesForSend(submitted, line).images;
     if (!command) {
       noteUserTurn();
       if (images.length === 0 && !needsMentionExpansion(message)) {
@@ -494,11 +512,16 @@ export function ChatApp({
       return;
     }
     // The image refusal comes before every command effect, `quit` included: a slash line never
-    // closes the chat while the draft still holds a picture the send never took.
+    // closes the chat while the draft still holds a picture the send never took. It reads the
+    // placeholders of `line`, so a command that left them in the prompt is not refused for them.
     if (images.length > 0) {
       refuseSlashLine(message);
       return;
     }
+    // The placeholders between the prompt and the command go back into it before the command
+    // runs, picture draft and all — `/image` then attaches beside them, and a plain next message
+    // still carries them.
+    if (lead !== undefined) restorePrompt(lead);
     if (command.name === QUIT) {
       if (sending.current) host.cancel();
       await keys.close();

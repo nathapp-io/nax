@@ -46,6 +46,13 @@ const SIZE_REFUSAL = "images in one message must total at most 20 MB";
 /** Every placeholder in a message. Only the ones a draft image owns are rewritten. */
 const PLACEHOLDER = /\[Image #(\d+)\]/g;
 
+/**
+ * The placeholders a message opens with, up to the whitespace before a slash line, and the
+ * slash line itself. The whitespace is horizontal only: a line break ends the line the
+ * placeholders are on, so a `/` on a later line is text in the message, not a command.
+ */
+const LEADING_PLACEHOLDERS = /^([^\S\n]*(?:\[Image #\d+\][^\S\n]*)+)(\/[\s\S]*)$/;
+
 /** A run of whitespace, so a removed placeholder does not leave its spacing doubled. */
 const WHITESPACE_RUN = /\s+/gu;
 
@@ -55,6 +62,26 @@ const IMAGE_TITLE = "image";
 /** The placeholder an attachment shows as in the prompt. */
 export function imagePlaceholder(number: number): string {
   return `[Image #${number}]`;
+}
+
+/**
+ * A message that opens with the placeholders of the pictures it already holds and then a slash
+ * line — or `undefined` for every other line.
+ *
+ * `lead` is everything up to and including the whitespace before the `/`, returned exactly as
+ * typed so the screen can put the pictures back in the prompt unchanged while the command
+ * runs; `rest` is the slash line, which the screen parses as if the user had typed it alone.
+ * That is what lets `/image b.png` after an attached picture attach a second one: the draft and
+ * its placeholders never leave the prompt, because only the command half of the line is taken.
+ *
+ * The whitespace between the last placeholder and the `/` is optional (`[Image #1]/model x`
+ * splits too), and text before the first placeholder — or text instead of a slash line after
+ * them — means there is nothing to split.
+ */
+export function splitLeadingPlaceholders(text: string): { readonly lead: string; readonly rest: string } | undefined {
+  const match = LEADING_PLACEHOLDERS.exec(text);
+  if (match === null) return undefined;
+  return { lead: match[1] ?? "", rest: match[2] ?? "" };
 }
 
 /**

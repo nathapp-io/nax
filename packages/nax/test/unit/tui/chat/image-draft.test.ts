@@ -13,6 +13,7 @@ import {
   type ImageDraft,
   imagePlaceholder,
   imagesForSend,
+  splitLeadingPlaceholders,
   titleWithoutPlaceholders,
 } from "@/tui/chat/image-draft";
 import type { EditorState } from "@/tui/chat/line-editor";
@@ -227,6 +228,47 @@ describe("imagesForSend", () => {
       text: "no placeholder",
       images: [],
     });
+  });
+});
+
+describe("splitLeadingPlaceholders", () => {
+  test("US-005 AC-1 splits the slash line off a leading placeholder, keeping the space before it", () => {
+    expect(splitLeadingPlaceholders("[Image #1] /image b.png")).toEqual({
+      lead: "[Image #1] ",
+      rest: "/image b.png",
+    });
+  });
+
+  test("US-005 AC-2 splits a slash line typed straight onto the placeholder", () => {
+    expect(splitLeadingPlaceholders("[Image #1]/image b.png")).toEqual({
+      lead: "[Image #1]",
+      rest: "/image b.png",
+    });
+  });
+
+  test("US-005 AC-3 leads with every placeholder and the whitespace around them", () => {
+    expect(splitLeadingPlaceholders(" [Image #1] [Image #2] /model x")).toEqual({
+      lead: " [Image #1] [Image #2] ",
+      rest: "/model x",
+    });
+  });
+
+  test("US-005 AC-4 returns undefined for a plain slash line", () => {
+    expect(splitLeadingPlaceholders("/image b.png")).toBeUndefined();
+  });
+
+  test("US-005 AC-5 returns undefined when other text comes before the placeholder", () => {
+    expect(splitLeadingPlaceholders("look [Image #1] /image b.png")).toBeUndefined();
+  });
+
+  test("US-005 AC-6 returns undefined when the placeholders are followed by ordinary text", () => {
+    expect(splitLeadingPlaceholders("[Image #1] hello")).toBeUndefined();
+  });
+
+  test("D-1 leaves a slash line on a later prompt line to the plain send", () => {
+    // A line break ends the line the placeholders are on, so the `/` after it is text in the
+    // message rather than a command after the pictures.
+    expect(splitLeadingPlaceholders("[Image #1]\n/image b.png")).toBeUndefined();
   });
 });
 
