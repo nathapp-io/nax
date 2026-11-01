@@ -109,6 +109,11 @@ export interface BeforeTurnPatch {
    * transcript or makes a provider request, so a hook can stop a prompt
    * reaching the model without seeing it first. `block` wins over every other
    * field in the same patch.
+   *
+   * `reason` is typed, but a plugin's `loop-handlers` are raw JavaScript: when
+   * `reason` is missing, not a string, or blank, the turn is STILL refused and
+   * the message falls back to a text naming the reason as absent, so the
+   * refusal is never a bare `NATIVE_TURN_BLOCKED:` line.
    */
   readonly block?: { readonly reason: string };
   /**

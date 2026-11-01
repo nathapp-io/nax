@@ -121,6 +121,47 @@ describe("runNativeTurn — a before_turn block refuses the turn (AC-1 to AC-3)"
   });
 });
 
+/**
+ * The patch a raw-JavaScript plugin can actually hand the loop.
+ *
+ * A plugin's `loop-handlers` are untyped at runtime, so TypeScript's
+ * `{ reason: string }` is never enforced on what it returns. Parsed rather than
+ * cast, because the value must genuinely be data: that is the situation under
+ * test.
+ */
+function untypedPatch(json: string): BeforeTurnPatch {
+  return JSON.parse(json);
+}
+
+describe("runNativeTurn — a malformed block reason still refuses diagnosably (M1)", () => {
+  // The turn must fail closed whatever the plugin returned, but the refusal
+  // also has to say something: `NaxError.message` is the whole turn-error line
+  // (`NATIVE_TURN_BLOCKED: <message>`), so an empty reason renders as a bare
+  // code with no explanation of why the prompt vanished.
+  const malformed: ReadonlyArray<readonly [string, BeforeTurnPatch]> = [
+    ["no reason field", untypedPatch('{ "block": {} }')],
+    ["reason null", untypedPatch('{ "block": { "reason": null } }')],
+    ["reason blank", { block: { reason: "   " } }],
+    ["reason not a string", untypedPatch('{ "block": { "reason": 42 } }')],
+    ["block not an object", untypedPatch('{ "block": true }')],
+  ];
+
+  for (const [label, patch] of malformed) {
+    test(`a block with ${label} refuses with a message naming the missing reason`, async () => {
+      const { error, sent } = await runTurnWithPatch({ prompt: BLOCKED_PROMPT, patch });
+
+      assertNaxError(error, label);
+      expect(error.code).toBe("NATIVE_TURN_BLOCKED");
+      expect(error.message.trim()).not.toBe("");
+      expect(error.message).toContain("before_turn");
+      expect(error.message).toContain("without a reason");
+      expect(error.context).toMatchObject({ stage: "native-session", sessionName: SESSION });
+      // Still fails closed: nothing reached the provider.
+      expect(sent).toHaveLength(0);
+    });
+  }
+});
+
 describe("runNativeTurn — a before_turn promptContext is prefixed to the prompt message (AC-4 to AC-8)", () => {
   test("AC-4: the prompt message the provider receives is the context, a blank line, then the prompt", async () => {
     const { error, sent } = await runTurnWithPatch({ prompt: "fix it", patch: { promptContext: "branch: main" } });

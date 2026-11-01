@@ -59,6 +59,34 @@ interface BeforeTurnSeedArgs {
 }
 
 /**
+ * What a refusal says when the patch carries no usable reason.
+ *
+ * A plugin's `loop-handlers` are raw JavaScript: TypeScript's
+ * `{ reason: string }` is not enforced on them, so `{ block: {} }`,
+ * `{ block: { reason: undefined } }`, `{ block: { reason: "   " } }` and a
+ * non-object `block` all reach this point. The turn still fails closed — a
+ * malformed block is a block — but the reason is the whole turn-error line the
+ * user reads (`NATIVE_TURN_BLOCKED: <reason>` in chat, a failed turn in a run),
+ * so an empty message would say nothing about why the prompt vanished.
+ */
+const BLOCK_REASON_FALLBACK = "before_turn handler blocked the turn without a reason";
+
+/** The reason a `block` patch refuses the turn with — never empty (US-001). */
+function blockRefusalReason(block: unknown): string {
+  const reason =
+    typeof block === "object" && block !== null ? (block as { readonly reason?: unknown }).reason : undefined;
+  if (typeof reason === "string" && reason.trim() !== "") return reason;
+  getSafeLogger()?.warn(
+    "native-loop-events",
+    "before_turn block patch carries no reason text; refusing the turn anyway",
+    {
+      blockKind: typeof block,
+    },
+  );
+  return BLOCK_REASON_FALLBACK;
+}
+
+/**
  * A `block` patch refuses the turn (US-001).
  *
  * Thrown BEFORE `messages.push` and before any provider request, so a blocked
@@ -68,7 +96,7 @@ interface BeforeTurnSeedArgs {
  */
 function assertTurnNotBlocked(block: BeforeTurnPatch["block"], sessionName: string): void {
   if (block === undefined) return;
-  throw new NaxError(block.reason, "NATIVE_TURN_BLOCKED", { stage: "native-session", sessionName });
+  throw new NaxError(blockRefusalReason(block), "NATIVE_TURN_BLOCKED", { stage: "native-session", sessionName });
 }
 
 /**
