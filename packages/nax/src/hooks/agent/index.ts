@@ -6,6 +6,13 @@
  */
 
 export { loadAgentHooksConfig } from "./config";
+export {
+  _runAgentHookDeps,
+  AGENT_HOOK_DRAIN_MS,
+  AGENT_HOOK_HANDLER_MARGIN_MS,
+  AGENT_HOOK_KILL_GRACE_MS,
+  runAgentHook,
+} from "./run-hook";
 export type {
   AgentHookEntry,
   AgentHookEvent,
