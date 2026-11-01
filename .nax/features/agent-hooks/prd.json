@@ -3,7 +3,7 @@
   "feature": "agent-hooks",
   "branchName": "feat/agent-hooks",
   "createdAt": "2026-11-01T00:00:00.000Z",
-  "updatedAt": "2026-11-01T12:20:47.929Z",
+  "updatedAt": "2026-11-01T12:41:21.711Z",
   "userStories": [
     {
       "id": "US-001",
@@ -252,14 +252,17 @@
         "US-001",
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Tool access guards must fail closed, compose ordered rewrites and keep session-isolated state across concurrent calls; security and session overrides require strict TDD."
+        "reasoning": "Tool access guards must fail closed, compose ordered rewrites and keep session-isolated state across concurrent calls; security and session overrides require strict TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/hooks/agent/run-hook.ts",
@@ -283,7 +286,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3e92bd45208ea3dc4eae5d3e04e1e61eb1a640b0"
     },
     {
       "id": "US-005",
