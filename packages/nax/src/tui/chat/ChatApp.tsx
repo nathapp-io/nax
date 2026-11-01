@@ -656,6 +656,8 @@ export function ChatApp({
             expanded,
             backgroundable,
             tmux,
+            // The esc layer's hint is wired to the screen in US-009; until then nothing claims it.
+            layer: false,
           })
         : "copied",
     copiedChars,
