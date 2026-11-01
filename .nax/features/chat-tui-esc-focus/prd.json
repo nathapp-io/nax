@@ -3,7 +3,7 @@
   "feature": "chat-tui-esc-focus",
   "branchName": "feat/chat-tui-esc-focus",
   "createdAt": "2026-11-01T00:00:00.000Z",
-  "updatedAt": "2026-11-01T05:56:59.684Z",
+  "updatedAt": "2026-11-01T06:06:01.821Z",
   "userStories": [
     {
       "id": "US-001",
@@ -608,14 +608,17 @@
         "parser"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Small pure parser with three established text protocols and an export; no send-path or permission behavior changes."
+        "reasoning": "Small pure parser with three established text protocols and an export; no send-path or permission behavior changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/background-builder.ts",
@@ -637,7 +640,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "50a7194bb8912908cfb647ccaa491e95786f7aff"
     },
     {
       "id": "US-011",
