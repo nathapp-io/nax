@@ -1,5 +1,6 @@
 import type {
   CommandRunResult,
+  ImageAttachment,
   SandboxState,
   SessionEvent,
   SessionMeta,
@@ -41,6 +42,7 @@ import {
 } from "./open-chat-session";
 import type { ChatResources } from "./resources";
 import { closeChatResources, createSessionHygiene, resumableRows } from "./session-hygiene";
+import { sessionAcceptsImages } from "./session-images";
 import { latestResumableId, listCwdSessions } from "./session-listing";
 import { switchChatSession } from "./session-switch";
 import { createSubagentRuns, type SubagentRuns } from "./subagent-runs";
@@ -76,6 +78,8 @@ export interface ChatSessionRow {
 
 export interface ChatSendOptions {
   readonly title?: string;
+  /** Images to send with this message; an absent or empty list sends the text alone. */
+  readonly images?: readonly ImageAttachment[];
 }
 
 /** Shared-session chat lifecycle, independent of the terminal shell. */
@@ -105,6 +109,8 @@ export interface ChatHost {
   resourceNotice?(): string | undefined;
   switchTo(input: { mode?: ChatMode; model?: string }): Promise<void>;
   send(message: string, onEvent: (event: SessionEvent) => void, options?: ChatSendOptions): Promise<void>;
+  /** Whether the open session reads images; `false` when no session is open or it cannot say. */
+  acceptsImages?(): Promise<boolean>;
   runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>;
   cancel(): void;
   listSessions(): Promise<readonly ChatSessionRow[]>;
@@ -508,6 +514,7 @@ class NativeChatHost implements ChatHost {
         storage: this.deps.storage,
         message,
         title: options?.title,
+        images: options?.images,
         asks: this.asks,
         ledger,
         onEvent,
@@ -527,6 +534,11 @@ class NativeChatHost implements ChatHost {
       }
     }
     if (this.handle === handle) this.handle = { ...handle, meta };
+  }
+
+  /** Delegated so the capability read never throws when no session is open. */
+  acceptsImages(): Promise<boolean> {
+    return sessionAcceptsImages(this.handle?.session);
   }
 
   async runCommand(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult> {

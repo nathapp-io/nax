@@ -66,6 +66,18 @@ export {
   nextChatMode,
 } from "./chat-mode";
 export { type ChatModelChoicesInput, chatEffortLevels, chatModelChoices, tierModels } from "./chat-models";
+export {
+  type ImageFormat,
+  imageDescription,
+  imageFormatOf,
+  imageFromBytes,
+  imageNoteLabel,
+  imageRawBytes,
+  imageSizeLabel,
+  MAX_IMAGE_EDGE_PX,
+  type SniffedImage,
+  sniffImage,
+} from "./images";
 export type { ChatJob, ChatJobs } from "./jobs";
 export {
   _mentionExpandDeps,
@@ -103,6 +115,7 @@ export {
   resolveChatSessionsDir,
 } from "./open-chat-session";
 export type { ChatResources } from "./resources";
+export { sessionAcceptsImages } from "./session-images";
 export { sessionTitleText } from "./session-title";
 export { parseSkillInvocation } from "./skill-invocation";
 export {

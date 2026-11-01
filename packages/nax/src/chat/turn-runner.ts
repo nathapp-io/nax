@@ -1,4 +1,4 @@
-import type { SessionEvent, SessionMeta, SessionStorage } from "@nathapp/nax-agent";
+import type { ImageAttachment, SendInput, SessionEvent, SessionMeta, SessionStorage } from "@nathapp/nax-agent";
 import { NaxError } from "@/errors";
 import type { ChatAskController } from "./ask-controller";
 import type { ChatLedger } from "./chat-ledger";
@@ -10,6 +10,8 @@ export interface RunChatTurnOptions {
   readonly handle: ChatSessionHandle;
   readonly storage: SessionStorage;
   readonly message: string;
+  /** Images to send with this turn; an absent or empty list sends the message alone. */
+  readonly images?: readonly ImageAttachment[];
   readonly title?: string;
   readonly asks: Pick<ChatAskController, "handle">;
   readonly ledger: ChatLedger;
@@ -49,12 +51,20 @@ export function routeAskEvent(event: SessionEvent, asks: Pick<ChatAskController,
   }
 }
 
+/**
+ * The send input for one turn: the images when the caller supplied any, and no second
+ * argument at all otherwise, so a text-only send keeps the session's one-argument call.
+ */
+function turnInput(images: readonly ImageAttachment[] | undefined): readonly [] | readonly [SendInput] {
+  return images === undefined || images.length === 0 ? [] : [{ images }];
+}
+
 /** Consume one native turn; rejected sends must not flush or mutate shared state. */
 export async function runChatTurn(options: RunChatTurnOptions): Promise<SessionMeta> {
-  const { handle, message, asks, ledger, onEvent } = options;
+  const { handle, message, asks, ledger, onEvent, images } = options;
   let previousAt: string | undefined;
   let ended: Extract<SessionEvent, { type: "turn_end" }> | undefined;
-  for await (const event of handle.session.send(message)) {
+  for await (const event of handle.session.send(message, ...turnInput(images))) {
     if (event.type === "turn_start") previousAt = event.at;
     routeAskEvent(event, asks);
     if (event.type === "usage") {

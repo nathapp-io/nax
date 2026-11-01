@@ -10,7 +10,7 @@
  * Same-session model and mode notices share one drawn-state comparison after control refresh.
  */
 
-import type { SessionEvent } from "@nathapp/nax-agent";
+import type { ImageAttachment, SessionEvent } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, useInput, useStdout } from "ink";
 import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -32,9 +32,12 @@ import {
   workingLine,
 } from "./chat-status";
 import { FixedRow } from "./FixedRow";
+import { type ImageDraft, imagesForSend } from "./image-draft";
+import { prepareImageSend } from "./image-send";
 import { layoutTranscript } from "./layout";
+import { type EditorState, EMPTY_EDITOR } from "./line-editor";
 import { MentionMenu } from "./MentionMenu";
-import { mentionPrepare, sentEntries } from "./mention-send";
+import { needsMentionExpansion, sentEntries } from "./mention-send";
 import type { MouseEvents } from "./mouse-input";
 import { Picker, useChatPicker } from "./Picker";
 import { SlashMenu } from "./SlashMenu";
@@ -54,6 +57,7 @@ import { type ChatTheme, resolveChatTheme } from "./theme";
 import { toggleTranscriptLine } from "./transcript-click";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
+import { useImageAttach } from "./use-image-attach";
 import { useJobs } from "./use-jobs";
 import { FRAME_SLACK_ROWS, useJobsOpener } from "./use-jobs-opener";
 import { useMentionMenu } from "./use-mention-menu";
@@ -97,10 +101,20 @@ const DEFAULT_ROWS = 24;
 const SANDBOX_WARNING = "sandbox unavailable: commands run outside the sandbox";
 const TURN_BUSY_NOTICE = "wait for the turn to finish (Ctrl-C to interrupt)";
 const QUIT = "quit";
+/** What a slash line with a picture attached is told: an image travels with a plain message only. */
+const IMAGES_PLAIN_ONLY = "images can only be sent with a plain message";
+/**
+ * What the transcript says about a refused line that could not go back into the prompt: the
+ * user edited it while the send was being prepared, so the newer draft stays and the refused
+ * line is named here rather than silently overwritten (see `imagePrepare`).
+ */
+const LINE_NOT_SENT = "not sent: ";
 /** What the input offers after a declined ask, until the next submit says what to do instead. */
 const TELL_NAX_HINT = "tell nax what to do instead";
 /** ink reports ctrl+o as the letter `o` with the ctrl modifier, so the key is its `input`. */
 const CTRL_O = "o";
+/** And ctrl+v as `v` with the ctrl modifier: the clipboard image's key. */
+const CTRL_V = "v";
 /** The theme a caller that passes none gets; resolved once, since it is a pure constant. */
 const DEFAULT_THEME = resolveChatTheme({ env: {}, colorLevel: 0 });
 
@@ -112,6 +126,25 @@ interface QuestionAnswer {
 
 /** No question answered yet — the state a fresh screen opens on. */
 const NO_ANSWER: QuestionAnswer = { requestId: "", draft: EMPTY_DRAFT };
+
+/**
+ * A message composed for `host.send`: the text the brain reads, the images that travel with it
+ * — absent or empty when the message carries none — and the image draft the message was
+ * submitted with, so the send empties exactly the pictures it took and leaves a draft the user
+ * started while it was preparing (see `sendMessage`).
+ */
+interface ComposedSend {
+  readonly message: string;
+  readonly images?: readonly ImageAttachment[];
+  readonly draft?: ImageDraft;
+}
+
+/**
+ * What a send's prepare step resolves: the composed message to send, or the notice that says
+ * why the line goes nowhere — carrying the line itself when the prompt moved on while the
+ * preparation ran and the line could not go back into it (see `imagePrepare`).
+ */
+type PreparedSend = ComposedSend | { readonly notice: string; readonly dropped?: string };
 
 interface TerminalSize {
   readonly columns: number;
@@ -173,6 +206,17 @@ export function ChatApp({
   const [followToken, setFollowToken] = useState(0);
   /** The input's handle: the draft ref and the clear-arm the menu's two actions share. */
   const inputHandle = useRef<ChatInputHandle | undefined>(undefined);
+  /**
+   * The newest editor state, ahead of React: an image read that lands after an `await` puts
+   * its placeholder at the cursor as it stands then, not the one the keypress saw.
+   */
+  const editorRef = useRef<EditorState>(EMPTY_EDITOR);
+  /**
+   * How many times the prompt has changed. A send that can only be refused after an `await`
+   * — the capability probe — reads it again when the answer lands: the same number means the
+   * prompt is still the line it submitted, and a different one means the user has moved on.
+   */
+  const promptRevision = useRef(0);
   const sending = useRef(false);
   const [, refresh] = useState(0);
 
@@ -249,11 +293,25 @@ export function ChatApp({
     slashKeys.sawDismissal(undefined);
     setDismissedQuery(undefined);
   }
+  // The image draft lives beside the prompt, not inside it: this hook reads the clipboard on
+  // ctrl+v, takes a pasted image path and writes the placeholder back through the handle.
+  const imageAttach = useImageAttach({
+    cwd,
+    input: inputHandle,
+    editor: () => editorRef.current,
+    notice: (text) => append({ kind: "notice", text }),
+    active: () => !bottomBlocked(ask, picker.model),
+  });
 
-  // Ctrl+o toggles detail; escape interrupts only when no bottom surface or control owns it.
+  // Ctrl+o toggles detail; ctrl+v attaches a clipboard image; escape interrupts only when no
+  // bottom surface or control owns it. The hook decides whether the key is theirs to answer.
   useInput((input, key) => {
     if (key.ctrl && input === CTRL_O) {
       setExpanded((current) => !current);
+      return;
+    }
+    if (key.ctrl && input === CTRL_V) {
+      void imageAttach.attach();
       return;
     }
     // The picker's own claim closes it on escape, so that escape must never reach the turn.
@@ -334,13 +392,19 @@ export function ChatApp({
       picker.open(outcome.picker);
       return;
     }
+    // `/image` hands over the picture's name, or none for the clipboard: the attach hook reads
+    // it, writes the placeholder and notices any refusal. Nothing is sent.
+    if (outcome.kind === "attach") {
+      await imageAttach.attach(outcome.path);
+      return;
+    }
     if (outcome.kind === "send") {
       noteUserTurn();
-      await sendTurn(outcome.message, undefined, `/${command.name}${command.rest}`);
+      await sendTurn({ message: outcome.message }, undefined, `/${command.name}${command.rest}`);
       return;
     }
     const { name, template, rest } = outcome;
-    await sendTurn(`/${name}${rest}`, async () => {
+    await sendTurn({ message: `/${name}${rest}` }, async () => {
       const expandedLines = await runCommandShellLines(template, (cmd) =>
         host.runCommand
           ? host.runCommand(cmd, () => update())
@@ -355,16 +419,84 @@ export function ChatApp({
     });
   }
 
+  /** Put a refused line back in the prompt, cursor at its end, so return sends it again. */
+  function restorePrompt(text: string): void {
+    inputHandle.current?.edit({ text, cursor: Array.from(text).length });
+  }
+
   /**
-   * A non-slash message's send. A mention-bearing one is prepared — expanded once, against the
-   * cwd the screen was handed and the repo the host reports — while a plain one keeps today's
-   * exact call; either way the typed text stays the title and the draft history.
+   * A slash line with a picture still in the message runs nothing: an image travels with a
+   * plain message only, so the line goes back into the prompt before any command effect — a
+   * model switch or the quit included — and the draft keeps the picture.
+   */
+  function refuseSlashLine(message: string): void {
+    append({ kind: "notice", text: IMAGES_PLAIN_ONLY });
+    restorePrompt(message);
+  }
+
+  /**
+   * The prepare step for a message that carries a placeholder image or a mention: the image-send
+   * module decides what travels and asks the brain's capability once. The screen only restores a
+   * refused line — the text and the draft — and hands a composed message on to `host.send`.
+   *
+   * `draft` is the draft the message was submitted with, not the draft as it stands when the
+   * preparation settles: the prompt and ctrl+v stay live while the capability is asked, and an
+   * image attached in that window belongs to the *next* message.
+   *
+   * A refusal puts the line back only while the prompt still holds it. `revision` is the prompt's
+   * count when the line was submitted, so the user may have typed, deleted or attached a picture
+   * for the next message by the time the answer lands; overwriting that draft would delete an
+   * edit the refusal never saw. The newer prompt then stays, and the refused line travels with
+   * the notice as `dropped` so it is named in the transcript instead of vanishing.
+   */
+  function imagePrepare(text: string, draft: ImageDraft, revision: number): () => Promise<PreparedSend> {
+    return async () => {
+      const result = await prepareImageSend({
+        text,
+        draft,
+        where: { cwd, repoRoot: host.repoRoot },
+        expand: _chatAppDeps.expandMentions,
+        // Optional so a hand-built host still typechecks: one without it cannot read images.
+        acceptsImages: () => host.acceptsImages?.() ?? Promise.resolve(false),
+        model: host.current().model,
+      });
+      if (result.kind === "refuse") {
+        if (promptRevision.current === revision) {
+          restorePrompt(text);
+          return { notice: result.notice };
+        }
+        return { notice: result.notice, dropped: text };
+      }
+      return { message: result.message, images: result.images, draft };
+    };
+  }
+
+  /**
+   * A non-slash message's send. One that carries a placeholder image or a mention is prepared —
+   * expanded once against the cwd the screen was handed and the repo the host reports, with the
+   * images its placeholders still name — while a plain one keeps today's exact call; either way
+   * the typed text stays the title and the draft history. The draft is read once here, so what
+   * the send consumed is what the reset takes back however long the preparation takes.
    */
   async function submit(message: string): Promise<void> {
     const command = parseSlashCommand(message);
+    const submitted = imageAttach.current();
+    const images = imagesForSend(submitted, message).images;
     if (!command) {
       noteUserTurn();
-      await sendTurn(message, mentionPrepare(message, { cwd, repoRoot: host.repoRoot }, _chatAppDeps.expandMentions));
+      if (images.length === 0 && !needsMentionExpansion(message)) {
+        await sendTurn({ message, draft: submitted });
+        return;
+      }
+      // The prompt's count as the line leaves it, so a refusal that lands later can tell
+      // whether the user has redrawn the prompt since (see `imagePrepare`).
+      await sendTurn({ message, draft: submitted }, imagePrepare(message, submitted, promptRevision.current));
+      return;
+    }
+    // The image refusal comes before every command effect, `quit` included: a slash line never
+    // closes the chat while the draft still holds a picture the send never took.
+    if (images.length > 0) {
+      refuseSlashLine(message);
       return;
     }
     if (command.name === QUIT) {
@@ -379,29 +511,58 @@ export function ChatApp({
     await runCommand(command);
   }
 
+  /**
+   * One composed message out. A message carrying images hands them over with its title; a
+   * message that is only the typed text keeps today's two-argument call, and an expanded one
+   * keeps the typed text as its title.
+   *
+   * The draft that composed the message is spent the moment the message reaches the host, so
+   * it is emptied here — before the call rather than after it. A turn that rejects, or one
+   * still in flight, must not keep the numbers of the pictures it already took: the next
+   * ctrl+v starts again at `[Image #1]`.
+   *
+   * Only a message the screen composed from the prompt owns a draft, and only that draft is
+   * emptied. A picture attached while a send was being prepared is a draft the user started for
+   * the next message, and a background notice — a job's, a task's — was never composed from the
+   * prompt at all: it carries no draft, so the pending pictures stay exactly where they are.
+   */
+  async function sendMessage(
+    prepared: ComposedSend,
+    title: string,
+    onEvent: (event: SessionEvent) => void,
+  ): Promise<void> {
+    const images = prepared.images ?? [];
+    if (prepared.draft !== undefined) imageAttach.reset(prepared.draft);
+    if (images.length > 0) await host.send(prepared.message, onEvent, { title, images });
+    else if (prepared.message === title) await host.send(prepared.message, onEvent);
+    else await host.send(prepared.message, onEvent, { title });
+  }
+
   async function sendTurn(
-    message: string,
-    prepare?: () => Promise<{ message: string } | { notice: string }>,
-    title = message,
+    composed: ComposedSend,
+    prepare?: () => Promise<PreparedSend>,
+    title = composed.message,
   ): Promise<boolean> {
     if (sending.current) return false;
     sending.current = true;
     setBusy(true);
     let started = false;
     try {
-      const prepared = prepare ? await prepare() : { message };
+      const prepared = prepare ? await prepare() : composed;
       if ("notice" in prepared) {
         append({ kind: "notice", text: prepared.notice });
+        if (prepared.dropped !== undefined) {
+          append({ kind: "notice", text: `${LINE_NOT_SENT}${prepared.dropped}` });
+        }
         return false;
       }
-      appendAll(sentEntries(prepared.message));
+      appendAll(sentEntries(prepared.message, prepared.images));
       setFollowToken((token) => token + 1);
       const onEvent = (event: SessionEvent): void => {
         if (event.type === "turn_start") started = true;
         handleEvent(event);
       };
-      if (prepared.message === title) await host.send(prepared.message, onEvent);
-      else await host.send(prepared.message, onEvent, { title });
+      await sendMessage(prepared, title, onEvent);
       return true;
     } catch (error) {
       append({ kind: "error", text: errorMessage(error) });
@@ -425,7 +586,7 @@ export function ChatApp({
       bottomBlocked: bottomBlocked(ask, picker.model),
       canControl: keys.canControl(),
     }),
-    deliver: (text) => sendTurn(text),
+    deliver: (text) => sendTurn({ message: text }),
     note: (text) => append({ kind: "notice", text }),
   });
 
@@ -440,6 +601,13 @@ export function ChatApp({
 
   /** Publish edits and claim the menus together, before the next batched key or render. */
   function changeDraft(next: InputDraft): void {
+    // The image hook reads this instead of a rendered draft: a read that lands after an
+    // `await` inserts into the text as it stands then, not as it stood at the key press.
+    editorRef.current = next.editor;
+    // And a refusal that lands after an `await` reads this count to see whether the prompt the
+    // refused line came from is still the one standing: an attach or a typed key moves it too,
+    // since both write through this handle.
+    promptRevision.current += 1;
     slashKeys.sawPrompt(next.editor.text);
     mention.sawEditor(next.editor);
     setDraft(next);
@@ -579,6 +747,7 @@ export function ChatApp({
           <ChatInput
             draft={draft}
             onDraftChange={changeDraft}
+            onPaste={imageAttach.onPaste}
             onSubmit={(message) => {
               setHint(undefined);
               void submit(message);

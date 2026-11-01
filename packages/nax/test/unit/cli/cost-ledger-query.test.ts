@@ -19,7 +19,7 @@ import { NaxError } from "@/errors";
 /** 2026-10-10T12:00:00Z — inside every window the report tests open. */
 const T0 = Date.UTC(2026, 9, 10, 12);
 
-/** A ledger line: strings are written verbatim (malformed-line cases), objects as JSON. */
+/** A ledger line: strings are written verbatim (malformed-line cases), objects are JSON-encoded. */
 type LedgerLine = Record<string, unknown> | string;
 
 /** A plausible `CostEvent` row; every test overrides only the fields it asserts on. */

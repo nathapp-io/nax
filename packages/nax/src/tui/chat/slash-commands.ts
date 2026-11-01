@@ -23,7 +23,13 @@ export type SlashOutcome =
   | { kind: "send"; message: string }
   | { kind: "command"; name: string; template: string; rest: string }
   /** `/model`, `/resume`, `/mode` and `/effort` without arguments, and `/jobs`, open the named picker. */
-  | { kind: "picker"; picker: PickerKind };
+  | { kind: "picker"; picker: PickerKind }
+  /**
+   * `/image` asks the screen to attach a picture: read from the clipboard, or from the file
+   * `path` names. The command reads nothing itself — the screen's attach hook owns the reads,
+   * the placeholder and the notices.
+   */
+  | { kind: "attach"; path?: string };
 
 export interface SlashCommand {
   name: string;
@@ -54,6 +60,7 @@ export const COMMANDS = [
   "feature",
   "skills",
   "plugins",
+  "image",
   "mcp",
   "agents",
   "jobs",
@@ -75,6 +82,7 @@ export const COMMAND_DESCRIPTIONS = {
   feature: "Load a feature spec into the conversation",
   skills: "List skills",
   plugins: "List plugins and what they provide",
+  image: "Attach an image to the next message",
   mcp: "List MCP servers",
   agents: "List agents",
   jobs: "Show nax jobs and background tasks",
@@ -194,6 +202,16 @@ function jobsCommand({ host, show }: CommandContext): SlashOutcome | undefined {
   show("jobs are not available in this session");
 }
 
+/**
+ * `/image [path]` reads nothing here: it answers with the path the user typed, or with none
+ * at all for the clipboard flow, and the screen's attach hook does the reading. A path is
+ * `command.rest` trimmed, so a quoted or space-bearing name arrives whole.
+ */
+function imageCommand(command: SlashCommand): SlashOutcome {
+  const path = command.rest.trim();
+  return path === "" ? { kind: "attach" } : { kind: "attach", path };
+}
+
 function catalogCommand(command: SlashCommand, { host, show }: CommandContext): SlashOutcome | undefined {
   const resource = host.catalog?.findCommand(command.name);
   if (resource) return { kind: "command", name: command.name, template: resource.template, rest: command.rest };
@@ -268,6 +286,8 @@ export async function runSlashCommand(
     case "plugins":
       show(formatPluginsListing(host.catalog ?? buildResourceCatalog([]), host.naxPlugins ?? []));
       break;
+    case "image":
+      return imageCommand(command);
     case "mcp":
       show(formatMcpListing(host.mcp));
       break;

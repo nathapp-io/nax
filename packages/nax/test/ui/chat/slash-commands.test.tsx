@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { CHAT_MODEL, makeAgentResource, makeSubagentHostHarness } from "@test/helpers";
 import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
@@ -9,12 +9,16 @@ import { buildChatFeatureMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing, type SkillResource } from "@/resources";
 import { ChatApp } from "@/tui/chat";
 import { COMMAND_DESCRIPTIONS, COMMANDS } from "@/tui/chat/slash-commands";
+import { _imageAttachDeps } from "@/tui/chat/use-image-attach";
 
 afterEach(() => {
   cleanup();
   mock.restore();
 });
 function mount() {
+  // A case that submits every `/` built-in submits `/image` too, and that command reads the
+  // clipboard: with an empty one, no case here spawns `osascript`, `wl-paste` or `xclip`.
+  spyOn(_imageAttachDeps, "readClipboard").mockResolvedValue({ kind: "none" });
   const state: ChatHostState = {
     sessionId: "old-session",
     mode: "guarded",
@@ -72,6 +76,16 @@ function mount() {
     act(() => {
       ui.stdin.write(text);
     });
+  /** Give the screen a terminal size: ink's testing stream reports none until one is defined. */
+  const resize = async (columns: number, rows: number) => {
+    await Promise.resolve(
+      act(async () => {
+        Object.defineProperty(ui.stdout, "columns", { value: columns, configurable: true });
+        Object.defineProperty(ui.stdout, "rows", { value: rows, configurable: true });
+        ui.stdout.emit("resize");
+      }),
+    );
+  };
   const line = async (text: string) => {
     type(text);
     await Promise.resolve(
@@ -80,7 +94,7 @@ function mount() {
       }),
     );
   };
-  return { ...ui, host, send, line, type, finish: () => gate.resolve() };
+  return { ...ui, host, send, line, type, resize, finish: () => gate.resolve() };
 }
 describe("parseSlashCommand", () => {
   test("AC-1 returns name, arguments and raw rest", async () => {
@@ -200,10 +214,12 @@ describe("slash command routing", () => {
       "/model  Switch model\n/effort  Switch reasoning effort\n/sessions  List saved sessions",
     );
   });
-  test("US-008 AC-21 US-024 AC-14 help lists /mcp on the line after /plugins", async () => {
+  test("US-008 AC-21 US-024 AC-14 help lists /image and /mcp after /plugins", async () => {
     const ui = mount();
     await ui.line("/help");
-    expect(ui.lastFrame()).toContain("/plugins  List plugins and what they provide\n/mcp  List MCP servers");
+    expect(ui.lastFrame()).toContain(
+      "/plugins  List plugins and what they provide\n/image  Attach an image to the next message\n/mcp  List MCP servers",
+    );
   });
   test("AC-17 closes and exits", async () => {
     const ui = mount();
@@ -219,6 +235,9 @@ describe("slash command routing", () => {
   });
   test("US-002 AC-5 /help renders exactly one listing titled Commands", async () => {
     const ui = mount();
+    // Tall enough for the whole listing: a sixteen-command listing outgrows the default frame,
+    // and the title row scrolls out of a viewport the test is not asking about.
+    await ui.resize(80, 40);
     await ui.line("/help");
     const frame = ui.lastFrame() ?? "";
     expect(frame.split("Commands").length - 1).toBe(1);

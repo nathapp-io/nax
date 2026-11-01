@@ -22,6 +22,11 @@ export type TranscriptEntry =
   | { kind: "user"; text: string; mentions?: readonly string[] }
   /** One mention nax expanded on send: what travelled, and the body ctrl+o reveals. */
   | { kind: "attachment"; path: string; status: MentionStatus; note: string; body: string; open?: boolean }
+  /**
+   * One image that travelled with a message, named by `imageNoteLabel` — or an image a
+   * resumed session no longer has. The row already names its source, so it never expands.
+   */
+  | { kind: "image"; label: string }
   | { kind: "skill"; name: string; args: string; body: string; open?: boolean }
   | { kind: "reply"; turnId: string; text: string }
   | { kind: "thinking"; turnId: string; text: string; startedAt: string; endedAt?: string; open?: boolean }

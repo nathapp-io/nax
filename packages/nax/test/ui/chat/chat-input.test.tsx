@@ -73,11 +73,13 @@ interface MountOptions {
   readonly initialDraft?: InputDraft;
   /** Render with colour forced on, so the inverse cursor cell is visible in the frame. */
   readonly colored?: boolean;
+  /** The owner's claim on a pasted chunk — the seam the chat screen attaches an image through. */
+  readonly onPaste?: (chunk: string) => boolean;
 }
 
 /** Mount the input under an owner that keeps the draft, and expose the test verbs. */
 function mount(options: MountOptions = {}) {
-  const { active, busy, hint, yieldNavigation, initialDraft = EMPTY_DRAFT, colored = false } = options;
+  const { active, busy, hint, yieldNavigation, initialDraft = EMPTY_DRAFT, colored = false, onPaste } = options;
   const drafts: InputDraft[] = [];
   const onSubmit = mock((_text: string) => {});
   const onClearArmedChange = mock((_armed: boolean) => {});
@@ -104,6 +106,7 @@ function mount(options: MountOptions = {}) {
         yieldNavigation={yieldNavigation}
         handle={handle}
         onClearArmedChange={onClearArmedChange}
+        onPaste={onPaste}
       />
     );
   }
@@ -485,6 +488,40 @@ describe("ChatInput handle", () => {
     });
     expect(input.onSubmit).toHaveBeenCalledWith("hello");
     expect(input.textRows()).toEqual([`> ${PLACEHOLDER}`]);
+  });
+});
+
+describe("ChatInput paste", () => {
+  test("AC-11 hands a pasted chunk to onPaste and inserts nothing once it takes it", () => {
+    const onPaste = mock((_chunk: string) => true);
+    const input = mount({ onPaste });
+    input.type("/tmp/a.png");
+    expect(onPaste).toHaveBeenCalledTimes(1);
+    expect(onPaste).toHaveBeenCalledWith("/tmp/a.png");
+    expect(input.drafts).toHaveLength(0);
+    expect(input.textRows()).toEqual([`> ${PLACEHOLDER}`]);
+  });
+
+  test("AC-12 inserts a pasted chunk that onPaste declines", () => {
+    const onPaste = mock((_chunk: string) => false);
+    const input = mount({ onPaste });
+    input.type("hello");
+    expect(onPaste).toHaveBeenCalledWith("hello");
+    expect(input.textRows()).toEqual(["> hello"]);
+  });
+
+  test("AC-13 never hands a single typed character to onPaste", () => {
+    const onPaste = mock((_chunk: string) => true);
+    const input = mount({ onPaste });
+    input.type("a");
+    expect(onPaste).not.toHaveBeenCalled();
+    expect(input.textRows()).toEqual(["> a"]);
+  });
+
+  test("AC-14 inserts a pasted chunk as text when the input has no onPaste", () => {
+    const input = mount();
+    input.type("hello");
+    expect(input.textRows()).toEqual(["> hello"]);
   });
 });
 

@@ -14,13 +14,17 @@
  *
  * Each such turn is also appended to the native chat document (the person's
  * message as typed, never the handoff-prefixed text, and one assistant message),
- * because the ACP backend stores no messages of its own.
+ * because the ACP backend stores no messages of its own. Images the person
+ * attached travel with both: to the wrapped `send` as its `SendInput`, and to
+ * the recorded user message, which the file store then writes to its image folder.
  */
 import type {
   AgentSession,
   AnswerReply,
   AnswerStatus,
   CommandRunResult,
+  ImageAttachment,
+  SendInput,
   SessionConfigureInput,
   SessionEvent,
   TranscriptStore,
@@ -51,6 +55,15 @@ function showsAgentWork(event: SessionEvent): boolean {
     default:
       return false;
   }
+}
+
+/**
+ * The images to hand the wrapped send, or undefined when it must be called without an
+ * input at all: a backend distinguishes "no input" from "an input with no images".
+ */
+function forwardableImages(input: SendInput | undefined): readonly ImageAttachment[] | undefined {
+  const images = input?.images;
+  return images === undefined || images.length === 0 ? undefined : images;
 }
 
 /**
@@ -105,8 +118,8 @@ async function* forwarded(
 /** Test seam. */
 export const _acpRecorderDeps: { appendNativeTurn: typeof appendNativeTurn } = { appendNativeTurn };
 
-export function recordAcpTurns(session: AgentSession, input: RecordAcpTurnsInput): AgentSession {
-  let pendingHandoff = input.handoff === undefined || input.handoff === "" ? undefined : input.handoff;
+export function recordAcpTurns(session: AgentSession, options: RecordAcpTurnsInput): AgentSession {
+  let pendingHandoff = options.handoff === undefined || options.handoff === "" ? undefined : options.handoff;
   // Appends still awaiting the store; close() drains them so the host cannot release the storage lock under one.
   const outstanding = new Set<Promise<void>>();
   const track = (work: Promise<void>): Promise<void> => {
@@ -139,18 +152,24 @@ export function recordAcpTurns(session: AgentSession, input: RecordAcpTurnsInput
       if (set === undefined) return undefined;
       return (change: SessionConfigureInput): Promise<void> => set.call(session, change);
     },
-    send(message: string): AsyncIterable<SessionEvent> {
+    get acceptsImages(): AgentSession["acceptsImages"] {
+      const accepts = session.acceptsImages;
+      if (accepts === undefined) return undefined;
+      return (): Promise<boolean> => accepts.call(session);
+    },
+    send(message: string, input?: SendInput): AsyncIterable<SessionEvent> {
       const payload = pendingHandoff === undefined ? message : `${pendingHandoff}${HANDOFF_SEPARATOR}${message}`;
+      const images = forwardableImages(input);
       // Called here, not inside the generator: the wrapped send claims its turn slot (and throws when busy) synchronously.
-      const events = session.send(payload);
+      const events = images === undefined ? session.send(payload) : session.send(payload, { images });
       return forwarded(
         events,
         async (seen) => {
           pendingHandoff = undefined;
           await _acpRecorderDeps.appendNativeTurn(
-            input.store,
-            input.sessionId,
-            acpTurnMessages({ message, events: seen, acp: input.acp }),
+            options.store,
+            options.sessionId,
+            acpTurnMessages({ message, events: seen, acp: options.acp, ...(images === undefined ? {} : { images }) }),
           );
         },
         track,

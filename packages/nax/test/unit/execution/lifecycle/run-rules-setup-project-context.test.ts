@@ -77,7 +77,8 @@ describe("configureRunRules — the project-context file is validated (AC-5 seam
     const err = await run(configWith({ file: "/abs/gone.md" })).catch((caught: unknown) => caught);
 
     expect(err).toBeInstanceOf(NaxError);
-    expect((err as NaxError).code).toBe("PROJECT_CONTEXT_FILE_NOT_FOUND");
+    if (!(err instanceof NaxError)) throw new Error(`expected a NaxError, got ${String(err)}`);
+    expect(err.code).toBe("PROJECT_CONTEXT_FILE_NOT_FOUND");
   });
 
   test("a file past the cap rejects with PROJECT_CONTEXT_FILE_TOO_LARGE", async () => {
@@ -91,7 +92,8 @@ describe("configureRunRules — the project-context file is validated (AC-5 seam
     const err = await run(configWith({ file: "/abs/big.md" })).catch((caught: unknown) => caught);
 
     expect(err).toBeInstanceOf(NaxError);
-    expect((err as NaxError).code).toBe("PROJECT_CONTEXT_FILE_TOO_LARGE");
+    if (!(err instanceof NaxError)) throw new Error(`expected a NaxError, got ${String(err)}`);
+    expect(err.code).toBe("PROJECT_CONTEXT_FILE_TOO_LARGE");
   });
 
   test("a sparse config (no context block at all) still resolves, with no loader call", async () => {

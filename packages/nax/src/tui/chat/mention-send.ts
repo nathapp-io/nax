@@ -10,9 +10,18 @@
  *
  * The message a brain receives carries the typed text plus a record per mention
  * (`ParsedMentionMessage`); `sentEntries` turns that envelope into the user's own words with
- * the paths that travelled, followed by one attachment row per record.
+ * the paths that travelled, followed by one attachment row per record and one note row per
+ * image the message carried.
  */
-import { type ExpandedMentions, type MentionWhere, parseMentionMessage, parseSkillInvocation } from "@/chat";
+import type { ImageAttachment } from "@nathapp/nax-agent";
+import {
+  type ExpandedMentions,
+  imageNoteLabel,
+  type MentionWhere,
+  type ParsedMentionMessage,
+  parseMentionMessage,
+  parseSkillInvocation,
+} from "@/chat";
 import { mentionTranscriptEntries } from "./mention-entries";
 import type { TranscriptEntry } from "./transcript-model";
 
@@ -50,13 +59,41 @@ export function mentionPrepare(
 }
 
 /**
- * What one sent message becomes in the transcript: a skill's invocation, the mention rows of
- * the envelope nax expanded it into, or the message as it stands. `replayUser` reads a stored
- * message the same way, so a live turn and a resumed one draw alike.
+ * How many of a message's images already have an attachment row: a mentioned image is one
+ * `image` record of the envelope nax expanded the message into. No envelope, or one that
+ * carried no image, means every image was pasted and needs its own note row.
  */
-export function sentEntries(message: string): readonly TranscriptEntry[] {
+function mentionedImageCount(parsed: ParsedMentionMessage | undefined): number {
+  return parsed === undefined ? 0 : parsed.records.filter((record) => record.status === "image").length;
+}
+
+/**
+ * One note row per image that has none of its own: the first `images.length - mentioned` of
+ * them, numbered from one in the order they were sent. Images with a row already are the
+ * mentions, which a send appends last, so the pasted ones are the leading run.
+ */
+function imageRows(images: readonly ImageAttachment[] | undefined, mentioned: number): readonly TranscriptEntry[] {
+  const sent = images ?? [];
+  const pasted = sent.slice(0, Math.max(0, sent.length - mentioned));
+  return pasted.map((image, index) => ({ kind: "image", label: imageNoteLabel(index + 1, image) }));
+}
+
+/**
+ * What one sent message becomes in the transcript: a skill's invocation, the mention rows of
+ * the envelope nax expanded it into, or the message as it stands, followed by one note row
+ * per image that travelled with it. `replayUser` reads a stored message the same way, so a
+ * live turn and a resumed one draw alike.
+ *
+ * Each mentioned image already has its own attachment row (it is one record of the
+ * envelope), and a send appends the mentions' images after the pasted ones, so only the
+ * first `images.length - <image records>` images need a row. On replay the stored images can
+ * be one short of what was sent — one was dropped as missing — and that count simply covers
+ * one fewer row; the `image · missing` row `replayUser` adds says what happened to it.
+ */
+export function sentEntries(message: string, images?: readonly ImageAttachment[]): readonly TranscriptEntry[] {
   const skill = parseSkillInvocation(message);
-  if (skill) return [{ kind: "skill", ...skill }];
+  if (skill) return [{ kind: "skill", ...skill }, ...imageRows(images, 0)];
   const parsed = parseMentionMessage(message);
-  return parsed === undefined ? [{ kind: "user", text: message }] : mentionTranscriptEntries(parsed);
+  const entries = parsed === undefined ? [{ kind: "user" as const, text: message }] : mentionTranscriptEntries(parsed);
+  return [...entries, ...imageRows(images, mentionedImageCount(parsed))];
 }

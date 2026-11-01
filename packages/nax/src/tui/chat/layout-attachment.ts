@@ -4,8 +4,9 @@
  * A mention sends its contents, so the transcript says what travelled: `attachmentLabel`
  * composes the one line and `attachmentLines` draws it behind the result prefix, muted, the
  * way a card's result summary is drawn. The status decides what the label claims — a file,
- * a cut file and a folder were attached, a `path-only` mention travelled as its path alone,
- * and a `refused` one did not travel at all, so its row never uses the word "attached".
+ * a cut file and a folder were attached, an image travelled as an image part and its row
+ * names the image, a `path-only` mention travelled as its path alone, and a `refused` one
+ * did not travel at all, so its row never uses the word "attached".
  *
  * Only `attached`, `cut` and `folder` carry a body: their row ends with the expand hint and,
  * while expanded, the body follows as indented muted rows, exactly as `skillLines` draws a
@@ -51,8 +52,9 @@ export function attachmentExpandable(status: MentionStatus): boolean {
 }
 
 /**
- * The row's own words: `attached @a.ts · 2 lines`, `attached @b.png as path only: binary`,
- * or `@../x not attached: outside the repo` when nothing travelled.
+ * The row's own words: `attached @a.ts · 2 lines`, `attached @shot.png · image · png · 2×3 · 1 KB`,
+ * `attached @b.png as path only: binary`, or `@../x not attached: outside the repo` when nothing
+ * travelled.
  */
 export function attachmentLabel(entry: {
   readonly path: string;
@@ -64,6 +66,7 @@ export function attachmentLabel(entry: {
     case "attached":
     case "cut":
     case "folder":
+    case "image":
       return `${ATTACHED} ${path}${NOTE_SEPARATOR}${entry.note}`;
     case "path-only":
       return `${ATTACHED} ${path}${AS}${entry.note}`;

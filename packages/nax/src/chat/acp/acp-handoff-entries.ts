@@ -10,6 +10,8 @@
  * Pure: no I/O, no config, no clock. The total 40,000-character bound and the
  * prompt itself belong to the caller (US-003).
  */
+import type { ImageAttachment } from "@nathapp/nax-agent";
+import { imageFormatOf } from "../images";
 import { acpAgentOfMessage, type ChatMessage } from "./acp-history";
 import type { AcpChatAgent } from "./acp-model";
 import { acpAgentLabel } from "./acp-model";
@@ -28,6 +30,10 @@ const NATIVE_SPEAKER = "nax";
 const TOOL_LINE_PREFIX = "[tool] ";
 const LINE_SEPARATOR = "\n";
 const ELLIPSIS = "…";
+const IMAGE_NOTE_OPEN = "[image ";
+const IMAGE_NOTE_CLOSE = "; not carried across the switch]";
+/** U+00D7, the multiplication sign the transcript labels use between width and height. */
+const PIXEL_SEPARATOR = "×";
 
 /**
  * The messages an opening agent has not seen: all of them for a fresh agent
@@ -60,13 +66,36 @@ function assistantText(message: Extract<ChatMessage, { readonly role: "assistant
   return [...(message.content === "" ? [] : [message.content]), ...toolLines].join(LINE_SEPARATOR);
 }
 
+/** The pixel size, only when the image carries both dimensions. */
+function pixelsOf(image: ImageAttachment): string {
+  const { width, height } = image;
+  if (width === undefined || height === undefined) return "";
+  return ` ${width}${PIXEL_SEPARATOR}${height}`;
+}
+
+/** `[image <n>: <format> <w>×<h>, <source>; not carried across the switch]`, the optional parts omitted. */
+function imageNote(number: number, image: ImageAttachment): string {
+  const source = image.source === undefined ? "" : `, ${image.source}`;
+  const body = `${imageFormatOf(image.mimeType)}${pixelsOf(image)}${source}`;
+  return `${IMAGE_NOTE_OPEN}${number}: ${body}${IMAGE_NOTE_CLOSE}`;
+}
+
+/**
+ * The content, then one note line per image in order; no leading newline when there is no
+ * content. The note is all the next brain gets: earlier images are not re-sent across a switch.
+ */
+function userText(message: Extract<ChatMessage, { readonly role: "user" }>): string {
+  const notes = (message.images ?? []).map((image, index) => imageNote(index + 1, image));
+  return [...(message.content === "" ? [] : [message.content]), ...notes].join(LINE_SEPARATOR);
+}
+
 /** An entry's text is cut to its first `ACP_HANDOFF_ENTRY_MAX_CHARS` UTF-16 units, then marked. */
 function capped(text: string): string {
   return text.length > ACP_HANDOFF_ENTRY_MAX_CHARS ? `${text.slice(0, ACP_HANDOFF_ENTRY_MAX_CHARS)}${ELLIPSIS}` : text;
 }
 
 function entryOf(message: ChatMessage): HandoffEntry | undefined {
-  if (message.role === "user") return { speaker: USER_SPEAKER, text: capped(message.content) };
+  if (message.role === "user") return { speaker: USER_SPEAKER, text: capped(userText(message)) };
   if (message.role !== "assistant") return undefined;
   const text = assistantText(message);
   if (text === "") return undefined;
