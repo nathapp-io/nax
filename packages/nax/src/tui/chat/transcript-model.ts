@@ -51,7 +51,13 @@ export type TranscriptEntry =
   | { kind: "notice"; text: string }
   | { kind: "warning"; text: string }
   | { kind: "error"; text: string }
-  | { kind: "listing"; title: string; text: string }
+  /**
+   * A titled listing: what a slash command shows where a reply would go. `collapsible`
+   * opts in to the collapsed form — the title, then one row counting the lines ctrl+o
+   * reveals — which only the jobs picker's job output asks for; every other listing stays
+   * visible whole. `open` is that listing's own expansion, over the transcript's.
+   */
+  | { kind: "listing"; title: string; text: string; collapsible?: boolean; open?: boolean }
   | { kind: "interrupted" };
 
 type ToolEntry = Extract<TranscriptEntry, { kind: "tool" }>;

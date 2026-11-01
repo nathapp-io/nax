@@ -15,12 +15,24 @@
  * it is the listing's formatting, not a wrap point. Every string passes through
  * `sanitizeText` (inside `textLines`) before it becomes span text, and the title carries no
  * row of its own beyond the first: a break in it is flattened like a card's title.
+ *
+ * A listing the reader asked to keep small — the jobs picker's job output, whose forty
+ * lines would otherwise bury the conversation — is `collapsible`: its title, then one muted
+ * row behind the result prefix counting the lines it withholds and naming ctrl+o. Opened,
+ * that row names the way back and every text line follows as it always did. Every other
+ * listing leaves `collapsible` absent and is drawn whole: a slash command's output is what
+ * the user asked to see, so the key that expands detail must never hide it.
  */
 import {
+  cardIndent,
+  cardRows,
+  HIDE_HINT,
   type LayoutContext,
   line,
   oneLine,
   prefixedLine,
+  resultPrefix,
+  SHOW_HINT,
   type SpanStyle,
   styled,
   textLines,
@@ -65,11 +77,33 @@ function textRows(source: string, context: LayoutContext): readonly StyledLine[]
 }
 
 /**
+ * The count a collapsed listing promises: how many source lines ctrl+o would reveal, in the
+ * singular for one. It is the whole row's text after the prefix.
+ */
+function countLabel(sources: readonly string[], context: LayoutContext): string {
+  const unit = sources.length === 1 ? "line" : "lines";
+  return `${sources.length} ${unit} ${context.expanded ? HIDE_HINT : SHOW_HINT}`;
+}
+
+/** The count row: muted, behind the result prefix, wrapped like a card's result summary. */
+function countRows(sources: readonly string[], context: LayoutContext): readonly StyledLine[] {
+  const prefixes = { head: resultPrefix(context.theme), rest: cardIndent(context.theme) };
+  return cardRows(countLabel(sources, context), prefixes, { color: "muted" }, context);
+}
+
+/**
  * A listing: the title in bold, then every text line in order, each in the colour its tone
  * asks for. A listing with no text is its title alone, and a line too wide for the layout
  * wraps rather than overflowing it.
+ *
+ * A collapsible listing draws the count row in place of the lines while it is collapsed,
+ * and keeps it as the header the reader clicks to hide them again once it is open.
  */
 export function listingLines(entry: ListingEntry, context: LayoutContext): readonly StyledLine[] {
   const title = prefixedLine([styled(oneLine(sanitizeText(entry.title)), { bold: true })], [], context);
-  return [...title, ...textLines(entry.text).flatMap((source) => textRows(source, context))];
+  const sources = textLines(entry.text);
+  const body = sources.flatMap((source) => textRows(source, context));
+  if (entry.collapsible !== true) return [...title, ...body];
+  const count = countRows(sources, context);
+  return context.expanded ? [...title, ...count, ...body] : [...title, ...count];
 }

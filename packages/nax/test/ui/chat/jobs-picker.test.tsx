@@ -13,6 +13,7 @@ import type { ChatJob } from "@/chat/jobs/job-types";
 
 const RETURN = "\r";
 const ESCAPE = "\x1b";
+const CTRL_O = "\x0f";
 const TITLE = "Jobs and tasks · enter output · ctrl+x stop";
 const TASK_ID = "bash-1a2b3c4d";
 const JOB_ID = "run-0000aaaa";
@@ -186,8 +187,12 @@ describe("Enter on a task row", () => {
     expect(tasks.output).toHaveBeenCalledWith(TASK_ID, OUTPUT_LINES);
   });
   test("AC-8 shows a listing titled label · state with the output lines", async () => {
-    const ui = await openWith({ tasks: fakeTasks([task()], async () => "line1\nline2") });
+    const tasks = fakeTasks([task()], async () => "line1\nline2");
+    const ui = await openWith({ tasks });
     ui.press(RETURN);
+    await ui.settle();
+    // The listing opens collapsed, so ctrl+o is what reveals the lines it counted.
+    ui.press(CTRL_O);
     await ui.settle();
     const rows = ui.rows();
     const title = rows.indexOf("bash bun run test · running");
@@ -197,12 +202,50 @@ describe("Enter on a task row", () => {
       expect.stringContaining("line1"),
       expect.stringContaining("line2"),
     ]);
+    expect(tasks.output).toHaveBeenCalledWith(TASK_ID, OUTPUT_LINES);
   });
   test("AC-11 an empty output reads (no output yet)", async () => {
     const ui = await openWith({ tasks: fakeTasks([task()], async () => "") });
     ui.press(RETURN);
     await ui.settle();
+    ui.press(CTRL_O);
+    await ui.settle();
     expect(text(ui)).toContain("(no output yet)");
+  });
+});
+
+describe("US-012 Enter on a finished task row", () => {
+  /** The screen after choosing a finished task that printed two lines. */
+  async function chosenTask() {
+    const tasks = fakeTasks([task({ state: "succeeded" })], async () => "line1\nline2");
+    const ui = await openWith({ tasks });
+    ui.press(RETURN);
+    await ui.settle();
+    return { ui, tasks };
+  }
+
+  test("AC-7 adds a listing whose title row is followed by the count of the lines it withholds", async () => {
+    const { ui, tasks } = await chosenTask();
+    const rows = ui.rows();
+    const title = rows.indexOf("bash bun run test · succeeded");
+    expect(title).toBeGreaterThan(-1);
+    expect(rows[title + 1]).toContain("2 lines (ctrl+o to show)");
+    expect(tasks.output).toHaveBeenCalledWith(TASK_ID, OUTPUT_LINES);
+  });
+
+  test("AC-7 draws none of the task's output lines", async () => {
+    const { ui } = await chosenTask();
+    expect(text(ui)).not.toContain("line1");
+    expect(text(ui)).not.toContain("line2");
+  });
+
+  test("AC-8 ctrl+o draws the task's output lines", async () => {
+    const { ui } = await chosenTask();
+    expect(text(ui)).not.toContain("line1");
+    ui.press(CTRL_O);
+    await ui.settle();
+    expect(text(ui)).toContain("line1");
+    expect(text(ui)).toContain("line2");
   });
 });
 
@@ -215,11 +258,16 @@ describe("Enter on a job row", () => {
     expect(jobs.logTail).toHaveBeenCalledWith(JOB_ID, OUTPUT_LINES);
   });
   test("AC-10 shows a listing titled label · state with the log text", async () => {
-    const ui = await openWith({ jobs: fakeJobs([job()], async () => "job log") });
+    const jobs = fakeJobs([job()], async () => "job log");
+    const ui = await openWith({ jobs });
     ui.press(RETURN);
     await ui.settle();
     expect(ui.rows()).toContain("run f1 · running");
+    // The listing opens collapsed, so ctrl+o is what reveals the log it counted.
+    ui.press(CTRL_O);
+    await ui.settle();
     expect(text(ui)).toContain("job log");
+    expect(jobs.logTail).toHaveBeenCalledWith(JOB_ID, OUTPUT_LINES);
   });
 });
 

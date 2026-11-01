@@ -167,7 +167,14 @@ export function useChatPicker({ host, runControl, onError, show }: ChatPickerOpt
       }
       try {
         const output = await found.read();
-        show({ kind: "listing", title: `${entry.label} · ${found.state}`, text: output === "" ? NO_OUTPUT : output });
+        // Forty lines of job output would bury the conversation, so this listing opens
+        // collapsed: its title, then the count of lines ctrl+o reveals.
+        show({
+          kind: "listing",
+          title: `${entry.label} · ${found.state}`,
+          text: output === "" ? NO_OUTPUT : output,
+          collapsible: true,
+        });
       } catch (error) {
         onError(error);
       }

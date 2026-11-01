@@ -40,3 +40,41 @@ describe("toggleTranscriptLine: background rows", () => {
     expect(toggled[1]).toEqual(background({ open: true }));
   });
 });
+
+type ListingEntry = Extract<TranscriptEntry, { kind: "listing" }>;
+
+/** The jobs picker's output listing, collapsible unless a case says otherwise. */
+function listing(overrides: Partial<ListingEntry> = {}): ListingEntry {
+  return { kind: "listing", title: "bash-1 · succeeded", text: "a\nb\nc", collapsible: true, ...overrides };
+}
+
+describe("toggleTranscriptLine: collapsible listings", () => {
+  test("AC-5 clicking a collapsed listing's title row opens that entry", () => {
+    const entry = listing();
+    expect(toggleTranscriptLine([entry], 0, OPTIONS)).toEqual([listing({ open: true })]);
+  });
+
+  test("AC-5 clicking the title row of a listing without collapsible changes nothing", () => {
+    const { collapsible: _absent, ...plain } = listing();
+    const entries: readonly TranscriptEntry[] = [plain];
+    expect(toggleTranscriptLine(entries, 0, OPTIONS)).toBe(entries);
+  });
+
+  test("clicking an open listing's title row closes it again", () => {
+    expect(toggleTranscriptLine([listing({ open: true })], 0, OPTIONS)).toEqual([listing({ open: false })]);
+  });
+
+  test("clicking an output line of an open listing changes nothing", () => {
+    const entries: readonly TranscriptEntry[] = [listing({ open: true })];
+    // Row 0 is the title; row 1 the count row; row 2 the listing's own first text line.
+    expect(toggleTranscriptLine(entries, 2, OPTIONS)).toBe(entries);
+  });
+
+  test("shares every other entry with the input array, so only the clicked one is redrawn", () => {
+    const user: TranscriptEntry = { kind: "user", text: "hi" };
+    const entry = listing();
+    const toggled = toggleTranscriptLine([user, entry], 2, OPTIONS);
+    expect(toggled[0]).toBe(user);
+    expect(toggled[1]).toEqual(listing({ open: true }));
+  });
+});

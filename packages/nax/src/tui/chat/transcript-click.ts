@@ -2,8 +2,13 @@ import { type LayoutOptions, layoutTranscript, transcriptLineOwners } from "./la
 import { attachmentExpandable } from "./layout-attachment";
 import type { TranscriptEntry } from "./transcript-model";
 
-/** The entries whose detail a header row can open: everything with an `open` flag. */
-type CollapsibleEntry = Extract<TranscriptEntry, { kind: "thinking" | "tool" | "skill" | "attachment" | "background" }>;
+/**
+ * The entries whose detail a header row can open: everything with an `open` flag. A
+ * collapsible listing carries one too, but only the jobs picker's output sets it.
+ */
+type CollapsibleEntry =
+  | Extract<TranscriptEntry, { kind: "thinking" | "tool" | "skill" | "attachment" | "background" }>
+  | Extract<TranscriptEntry, { kind: "listing" }>;
 
 /** The entry with its expansion flipped, sharing every other entry with the input array. */
 function withToggled(
@@ -20,7 +25,9 @@ function withToggled(
 /**
  * Toggle only structural header rows, never wrapped continuations or body text. An
  * attachment toggles on its label row alone, and only when its status carries a body:
- * `path-only` and `refused` rows have nothing to reveal.
+ * `path-only` and `refused` rows have nothing to reveal. A collapsible listing toggles on
+ * its title row alone — its count row and its output never toggle it back — and a listing
+ * that was not opted in is never toggled at all.
  */
 export function toggleTranscriptLine(
   entries: readonly TranscriptEntry[],
@@ -39,6 +46,11 @@ export function toggleTranscriptLine(
   // A notice's summary is its first row; the notice lines it reveals never toggle it back.
   if (entry.kind === "background") {
     if (line !== first) return entries;
+    return withToggled(entries, index, entry, options);
+  }
+  // A collapsible listing's title is its first row; a slash listing never collapses at all.
+  if (entry.kind === "listing") {
+    if (entry.collapsible !== true || line !== first) return entries;
     return withToggled(entries, index, entry, options);
   }
   if (entry.kind !== "thinking" && entry.kind !== "tool" && entry.kind !== "skill") return entries;
