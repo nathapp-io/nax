@@ -55,6 +55,7 @@ function mount() {
       reset: () => {},
       handle: () => {},
       answerQuestion: () => {},
+      declineQuestion: () => {},
       onChange: () => () => {},
     },
     current: () => state,

@@ -329,6 +329,22 @@ describe("host questions (US-009)", () => {
     expect(answer.mock.calls).toEqual([["session-question", { text: "main" }]]);
     expect(asks.pending()).toEqual([]);
   });
+  test("US-007 AC-1: declining settles the host question null and reuses its cleanup", async () => {
+    const { asks, answer } = hostSetup();
+    const abort = new AbortController();
+    const remove = mock(abort.signal.removeEventListener.bind(abort.signal));
+    abort.signal.removeEventListener = remove;
+    const result = asks.requestHostQuestion({ text: "Use that feature?", signal: abort.signal });
+    const changed = mock(() => {});
+    asks.onChange(changed);
+    asks.declineQuestion(asks.pending()[0]?.requestId ?? "missing");
+    expect(await result).toBeNull();
+    expect(asks.pending()).toEqual([]);
+    expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+    expect(clock.pending()).toBe(0);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(answer).not.toHaveBeenCalled();
+  });
 });
 
 describe("host approvals (US-008)", () => {
@@ -610,5 +626,47 @@ describe("refuse hook (US-010)", () => {
     asks.handle(approval("r1", { answerable: false }));
     expect(refuse).not.toHaveBeenCalled();
     expect(answer).not.toHaveBeenCalled();
+  });
+});
+
+describe("declining questions (US-007)", () => {
+  test("AC-3: the decline reply is exported from the chat barrel", () => {
+    expect(chat.QUESTION_DECLINED_REPLY).toBe("The user closed the question without answering.");
+  });
+  test("AC-2: a declined session question answers once with the reply and leaves pending", () => {
+    const { asks, answer } = setup();
+    asks.handle(question());
+    asks.declineQuestion("q1");
+    expect(answer.mock.calls).toEqual([["q1", { text: chat.QUESTION_DECLINED_REPLY }]]);
+    expect(asks.pending()).toEqual([]);
+  });
+  test("AC-4: declining an approval id leaves it pending and answers nothing", () => {
+    const { asks, answer } = setup();
+    const event = approval();
+    asks.handle(event);
+    asks.declineQuestion("r1");
+    expect(asks.pending()).toEqual([event]);
+    expect(answer).not.toHaveBeenCalled();
+  });
+  test("AC-5: an unknown id answers nothing and changes nothing", () => {
+    const { asks, answer } = setup();
+    const event = question();
+    asks.handle(event);
+    const changed = mock(() => {});
+    asks.onChange(changed);
+    asks.declineQuestion("missing");
+    expect(asks.pending()).toEqual([event]);
+    expect(answer).not.toHaveBeenCalled();
+    expect(changed).not.toHaveBeenCalled();
+  });
+  test("AC-6: declining an open question notifies onChange exactly once", () => {
+    const { asks } = setup();
+    asks.handle(question());
+    const changed = mock(() => {});
+    asks.onChange(changed);
+    asks.declineQuestion("q1");
+    expect(changed).toHaveBeenCalledTimes(1);
+    asks.declineQuestion("q1");
+    expect(changed).toHaveBeenCalledTimes(1);
   });
 });
