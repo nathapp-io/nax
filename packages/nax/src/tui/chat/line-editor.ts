@@ -56,6 +56,10 @@ const IGNORED: EditorResult = { kind: "ignored" };
 
 const NEWLINE = "\n";
 const CONTINUATION = "\\";
+const BACKSPACE = "\b";
+const DELETE = "\u007f";
+const MAX_C0_CONTROL = 0x1f;
+const DELETE_CONTROL = 0x7f;
 
 /** The text as code points, with the cursor clamped into `[0, length]`. */
 function read(state: EditorState): { chars: string[]; cursor: number } {
@@ -87,8 +91,53 @@ function splice(state: EditorState, start: number, end: number, replacement: str
  */
 function insert(state: EditorState, text: string): EditorResult {
   const { chars, cursor } = read(state);
-  const added = Array.from(text.replace(/\r\n/g, NEWLINE).replace(/\r/g, NEWLINE));
+  const normalized = text.replace(/\r\n/g, NEWLINE).replace(/\r/g, NEWLINE);
+  const added = Array.from(normalized).filter((char) => {
+    const codePoint = char.codePointAt(0);
+    return (
+      codePoint !== undefined &&
+      (codePoint > MAX_C0_CONTROL || char === "\t" || char === NEWLINE) &&
+      codePoint !== DELETE_CONTROL
+    );
+  });
   return edited([...chars.slice(0, cursor), ...added, ...chars.slice(cursor)].join(""), cursor + added.length);
+}
+
+/**
+ * The key flags a backspace burst must not carry. The list is enumerated rather than "no
+ * value of the key object is truthy": ink hands the handler its own full `Key`, whose other
+ * fields — `pageUp`, `home`, `end`, `super`, `hyper`, `capsLock`, `numLock`, and the kitty
+ * protocol's `eventType` string — are outside the `Pick` this reducer declares, so a truthy
+ * one would silently stop burst detection with nothing in the type to explain it.
+ */
+const BURST_FLAGS = [
+  "return",
+  "backspace",
+  "delete",
+  "leftArrow",
+  "rightArrow",
+  "ctrl",
+  "meta",
+  "shift",
+  "escape",
+  "tab",
+  "upArrow",
+  "downArrow",
+] as const satisfies readonly (keyof EditorKey["key"])[];
+
+/** Whether the chunk is an unmodified run of terminal backspace bytes. */
+function isBackspaceBurst(input: EditorKey): boolean {
+  return (
+    input.input.length > 0 &&
+    Array.from(input.input).every((char) => char === BACKSPACE || char === DELETE) &&
+    BURST_FLAGS.every((flag) => !input.key[flag])
+  );
+}
+
+/** Applies a terminal backspace burst without moving before the start of the text. */
+function deleteBeforeCount(state: EditorState, count: number): EditorResult {
+  const { cursor } = read(state);
+  return splice(state, Math.max(cursor - count, 0), cursor, []);
 }
 
 /** Deletes the code point before the cursor — what both backspace and forward-delete do. */
@@ -181,6 +230,7 @@ export function editLine(state: EditorState, input: EditorKey): EditorResult {
   if (key.rightArrow) return moveTo(state, key.meta ? nextWord(chars, cursor) : Math.min(cursor + 1, chars.length));
   if (key.ctrl) return ctrlResult(state, input.input);
   if (key.escape || key.tab || key.upArrow || key.downArrow) return IGNORED;
+  if (isBackspaceBurst(input)) return deleteBeforeCount(state, input.input.length);
   if (input.input === "") return IGNORED;
   return insert(state, input.input);
 }

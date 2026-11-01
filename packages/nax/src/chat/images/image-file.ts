@@ -51,10 +51,17 @@ export function imageRawBytes(image: ImageAttachment): number {
   return (image.data.length / 4) * 3 - base64Padding(image.data);
 }
 
-/** A byte count as a transcript label: `"342 KB"` below a mebibyte, else `"1.5 MB"`. */
+/**
+ * A byte count as a transcript label: `"178 B"` below a kibibyte, `"342 KB"` below a
+ * mebibyte, else `"1.5 MB"`.
+ *
+ * The byte arm is what a picture smaller than a kibibyte actually weighs — a clipboard
+ * grab or a tiny icon — so flooring it to whole kilobytes would print a size it never had.
+ */
 export function imageSizeLabel(bytes: number): string {
   if (bytes >= MIB_BYTES) return `${(bytes / MIB_BYTES).toFixed(1)} MB`;
-  return `${Math.max(1, Math.floor(bytes / KIB_BYTES))} KB`;
+  if (bytes >= KIB_BYTES) return `${Math.floor(bytes / KIB_BYTES)} KB`;
+  return `${bytes} B`;
 }
 
 /** The parts that describe an image without numbering it: `"png · 1280×720 · 342 KB"`. */

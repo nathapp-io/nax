@@ -174,6 +174,52 @@ async function readStoredImage(folder: string, image: StoredImage): Promise<Imag
   }
 }
 
+/** A note the loader writes in place of an image it could not read back: numbered, or bare. */
+const MISSING_IMAGE_NOTE = /^\[image missing(?: #(\d+))?\]$/;
+const LINE_BREAK = /\r\n|[\r\n]/;
+
+/** A `schemaVersion` 2 document whose image list is not a list: unreadable, not merely lossy. */
+function corruptImageList(): NaxError {
+  return new NaxError("transcript image list is not an array", "TRANSCRIPT_CORRUPT", {
+    stage: "native-session",
+  });
+}
+
+/**
+ * The 1-based slots a stored message's content already notes as lost.
+ *
+ * A later save keeps the notes an earlier load wrote — they travel with the content — and
+ * stores only the images that were readable. The array the next load enumerates is therefore
+ * the survivors of an earlier one, and a lost image must still be numbered by the slot it
+ * held in the original message rather than by its place among the survivors. Notes are read
+ * from the trailing run only, exactly as replay strips them, so a user's own line in the
+ * middle of a message is never mistaken for one, and a bare note (an older build's, which
+ * recorded no position) claims no slot here.
+ */
+function notedSlots(content: unknown): ReadonlySet<number> {
+  const slots = new Set<number>();
+  if (typeof content !== "string") return slots;
+  const lines = content.split(LINE_BREAK);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const note = MISSING_IMAGE_NOTE.exec(lines[index] ?? "");
+    if (note === null) break;
+    const slot = note[1];
+    if (slot !== undefined) slots.add(Number(slot));
+  }
+  return slots;
+}
+
+/** The slot the `index`-th stored image holds: the next 1-based position no note claims. */
+function slotOf(index: number, noted: ReadonlySet<number>): number {
+  let remaining = index + 1;
+  let slot = 0;
+  while (remaining > 0) {
+    slot += 1;
+    if (!noted.has(slot)) remaining -= 1;
+  }
+  return slot;
+}
+
 /** Decode the private disk format; callers only ever see inline attachments. */
 export async function rehydrateTranscriptImages(path: string, value: object): Promise<TranscriptDoc> {
   const doc = value as StoredDoc;
@@ -190,12 +236,17 @@ export async function rehydrateTranscriptImages(path: string, value: object): Pr
       messages.push(message as ConversationMessage);
       continue;
     }
+    if (!Array.isArray(message.images)) throw corruptImageList();
     const images: ImageAttachment[] = [];
     let content = message.content;
-    for (const image of message.images) {
+    const noted = notedSlots(content);
+    for (const [index, image] of message.images.entries()) {
       const hydrated = await readStoredImage(transcriptImagesPath(path), image);
       if (hydrated) images.push(hydrated);
-      else content = content ? `${content}\n[image missing]` : "[image missing]";
+      else {
+        const marker = `[image missing #${slotOf(index, noted)}]`;
+        content = content ? `${content}\n${marker}` : marker;
+      }
     }
     const { images: _storedImages, ...text } = message;
     messages.push({ ...text, content, ...(images.length ? { images } : {}) });

@@ -87,6 +87,7 @@ function fakeHost(repoRoot = "/repo") {
       reset: () => {},
       handle: () => {},
       answerQuestion: () => {},
+      declineQuestion: () => {},
       onChange: () => () => {},
     },
     current: () => STATE,

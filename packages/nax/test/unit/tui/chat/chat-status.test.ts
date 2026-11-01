@@ -19,6 +19,17 @@ import { plainText } from "@/tui/chat/styled-line";
 import { type ChatColorToken, resolveChatTheme } from "@/tui/chat/theme";
 import { footerHint } from "@/tui/chat/use-clipboard-feedback";
 
+/** The footer's gesture inputs with nothing armed, a turn running and nothing drawn over it. */
+const FOOTER_HINT_INPUT = {
+  quitArmed: false,
+  clearArmed: false,
+  busy: true,
+  expanded: false,
+  backgroundable: true,
+  tmux: false,
+  layer: false,
+};
+
 describe("footerHint", () => {
   test.each([
     ["AC-5", {}, "background"],
@@ -29,17 +40,16 @@ describe("footerHint", () => {
     ["idle foreground", { busy: false }, "idle"],
     ["expanded foreground", { busy: false, expanded: true }, "expanded"],
   ] as const)("%s with %j selects %s", (_ac, overrides, expected) => {
-    expect(
-      footerHint({
-        quitArmed: false,
-        clearArmed: false,
-        busy: true,
-        expanded: false,
-        backgroundable: true,
-        tmux: false,
-        ...overrides,
-      }),
-    ).toBe(expected);
+    expect(footerHint({ ...FOOTER_HINT_INPUT, ...overrides })).toBe(expected);
+  });
+
+  test("US-006 AC-12 offers the esc layer's own hint ahead of the busy hints", () => {
+    expect(footerHint({ ...FOOTER_HINT_INPUT, layer: true })).toBe("layer");
+  });
+
+  test("US-006 AC-13 keeps an armed quit and an armed clear ahead of the esc layer", () => {
+    expect(footerHint({ ...FOOTER_HINT_INPUT, quitArmed: true, layer: true })).toBe("quit");
+    expect(footerHint({ ...FOOTER_HINT_INPUT, clearArmed: true, layer: true })).toBe("clear");
   });
 });
 
@@ -436,6 +446,17 @@ describe("footerModel left", () => {
     expect(left.every((span) => span.color === "warning")).toBe(true);
   });
 
+  test("US-006 AC-14 draws the esc layer's hint after the mode label", () => {
+    const { left } = footerModel({
+      state: chatState(),
+      status: IDLE_STATUS,
+      hint: "layer",
+      layerHint: "esc to close jobs",
+    });
+    expect(plainText(left)).toBe("⏵ guarded · esc to close jobs");
+    expect(left[2]).toEqual({ text: "esc to close jobs", color: "muted" });
+  });
+
   const HINT_CASES: Array<[FooterHint, string]> = [
     ["clear", "esc again to clear"],
     ["busy", "esc to interrupt"],
@@ -575,6 +596,24 @@ describe("workingLine", () => {
     const line = workingLine(AGENT_STATUS, STARTED_AT_MS + TWELVE_SECONDS, GLYPHS) ?? [];
     expect(line.find((span) => span.text.includes("Running Agent"))?.color).toBe("accent");
     expect(line.find((span) => span.text.includes("tokens"))?.color).toBe("muted");
+  });
+
+  test("US-006 AC-15 ends the muted detail with the esc layer's hint", () => {
+    const line = workingLine(AGENT_STATUS, STARTED_AT_MS + TWELVE_SECONDS, GLYPHS, "esc to close and stop") ?? [];
+    const detail = line.find((span) => span.text.includes("esc to close and stop"));
+    expect(detail?.color).toBe("muted");
+    expect(detail?.text.endsWith("esc to close and stop)")).toBe(true);
+    expect(plainText(line)).toBe(
+      `${frameAt(TWELVE_SECONDS)} Running Agent… (12s · ↑ 8.4k ↓ 1.2k tokens · esc to close and stop)`,
+    );
+  });
+
+  test("US-006 AC-16 keeps esc to interrupt in the detail when no hint is passed", () => {
+    const line = workingLine(AGENT_STATUS, STARTED_AT_MS + TWELVE_SECONDS, GLYPHS) ?? [];
+    expect(line.find((span) => span.text.includes("interrupt"))).toEqual({
+      text: " (12s · ↑ 8.4k ↓ 1.2k tokens · esc to interrupt)",
+      color: "muted",
+    });
   });
 
   test("shows the first frame at 0 ms elapsed", () => {

@@ -6,9 +6,10 @@ import type { MouseEvents } from "./mouse-input";
 
 /**
  * The gesture the footer offers, in precedence order: an armed quit, then an armed clear,
- * then a running turn (with a background key when available), then expanded detail, then idle.
- * Only one is ever shown, so
- * the warning-coloured quit hint is never hidden behind something the screen is merely doing.
+ * then the esc layer's own hint (what esc would close, deny or cancel right now), then a
+ * running turn (with a background key when available), then expanded detail, then idle.
+ * Only one is ever shown, so the warning-coloured quit hint is never hidden behind something
+ * the screen is merely doing, and the layer hint is never hidden behind the busy one.
  */
 export function footerHint(input: {
   quitArmed: boolean;
@@ -17,9 +18,12 @@ export function footerHint(input: {
   expanded: boolean;
   backgroundable: boolean;
   tmux: boolean;
+  /** Whether something drawn over the turn owns esc — `escHintText(topEscLayer(...)) !== undefined`. */
+  layer: boolean;
 }): FooterHint {
   if (input.quitArmed) return "quit";
   if (input.clearArmed) return "clear";
+  if (input.layer) return "layer";
   if (input.busy && input.backgroundable) return input.tmux ? "backgroundTmux" : "background";
   if (input.busy) return "busy";
   if (input.expanded) return "expanded";

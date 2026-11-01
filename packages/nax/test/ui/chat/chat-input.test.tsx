@@ -445,6 +445,14 @@ describe("ChatInput cursor position", () => {
   });
 });
 
+describe("ChatInput backspace burst", () => {
+  test("one stdin write of DEL bytes deletes that many characters", () => {
+    const input = mount({ initialDraft: { editor: { text: "abcd", cursor: 4 }, history: [] } });
+    input.type("\u007f\u007f\u007f");
+    expect(input.editor()).toEqual({ text: "a", cursor: 1 });
+  });
+});
+
 describe("ChatInput batching", () => {
   test("keeps every key of one batch, not just the last", () => {
     const input = mount();

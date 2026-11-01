@@ -162,11 +162,13 @@ export function shortModel(model: string): string {
   return `${elideEnd(name, SHORT_MODEL_MAX, ELLIPSIS)}${suffix}`;
 }
 
-/** The gesture the footer offers, in precedence order; only one is ever shown. */
-export type FooterHint = "quit" | "clear" | "busy" | "background" | "backgroundTmux" | "expanded" | "idle" | "copied";
+/** The hints with text of their own; `copied` and `layer` compose theirs from a caller's value. */
+type FixedHint = "quit" | "clear" | "busy" | "background" | "backgroundTmux" | "expanded" | "idle";
 
-const HINT_TEXT: Readonly<Record<FooterHint, string>> = {
-  copied: "copied",
+/** The gesture the footer offers, in precedence order; only one is ever shown. */
+export type FooterHint = FixedHint | "copied" | "layer";
+
+const HINT_TEXT: Readonly<Record<FixedHint, string>> = {
   quit: "press ctrl-c again to quit",
   clear: "esc again to clear",
   busy: "esc to interrupt",
@@ -218,11 +220,10 @@ function modeSpan(state: ChatHostState, glyphs: ChatGlyphs): Span {
   };
 }
 
-function hintSpan(hint: FooterHint, copiedChars = 0): Span {
-  return {
-    text: hint === "copied" ? `copied ${copiedChars} chars` : HINT_TEXT[hint],
-    color: hint === "quit" ? "warning" : "muted",
-  };
+/** The hint's own text: `copied` and `layer` read their value from the caller. */
+function hintSpan(hint: FooterHint, copiedChars = 0, layerHint = ""): Span {
+  const text = hint === "copied" ? `copied ${copiedChars} chars` : hint === "layer" ? layerHint : HINT_TEXT[hint];
+  return { text, color: hint === "quit" ? "warning" : "muted" };
 }
 
 /** A sandbox nobody can rely on is a warning; one that is off is only a muted fact. */
@@ -239,11 +240,13 @@ function leftLine(input: {
   hint: FooterHint;
   glyphs: ChatGlyphs;
   copiedChars?: number;
+  layerHint?: string;
 }): StyledLine {
-  const { state, hint, glyphs, copiedChars } = input;
+  const { state, hint, glyphs, copiedChars, layerHint } = input;
   if (hint === "quit") return [hintSpan(hint)];
   const sandbox = sandboxSpan(state.sandbox);
-  const spans: Span[] = [modeSpan(state, glyphs), { text: SEPARATOR, color: "muted" }, hintSpan(hint, copiedChars)];
+  const gesture = hintSpan(hint, copiedChars, layerHint);
+  const spans: Span[] = [modeSpan(state, glyphs), { text: SEPARATOR, color: "muted" }, gesture];
   return sandbox === undefined ? spans : [...spans, sandbox];
 }
 
@@ -329,6 +332,8 @@ export function footerModel(input: {
   status: TurnStatus;
   hint: FooterHint;
   copiedChars?: number;
+  /** The esc layer's hint text, drawn when `hint` is `"layer"`. */
+  layerHint?: string;
   glyphs?: ChatGlyphs;
   jobs?: readonly FooterJob[];
   tasks?: readonly FooterTask[];
@@ -411,17 +416,26 @@ function workingTokens(status: TurnStatus): string {
   return `${UP_ARROW} ${formatTokens(status.inputTokens)} ${DOWN_ARROW} ${formatTokens(status.outputTokens)}${suffix} tokens`;
 }
 
-function workingDetail(status: TurnStatus, elapsed: number): string {
+function workingDetail(status: TurnStatus, elapsed: number, escHint: string): string {
   const seconds = Math.floor(elapsed / MILLIS_PER_SECOND);
-  return ` (${seconds}s${SEPARATOR}${workingTokens(status)}${SEPARATOR}${HINT_TEXT.busy})`;
+  return ` (${seconds}s${SEPARATOR}${workingTokens(status)}${SEPARATOR}${escHint})`;
 }
+
+/** What esc does on the top layer, when nothing is drawn over the turn. */
+const ESC_INTERRUPT = HINT_TEXT.busy;
 
 /**
  * The line the screen shows while a turn runs: a spinner frame and what the turn is doing,
  * in the accent colour, then a muted measurement of the time and the tokens. Undefined
- * when no turn runs, so the screen reserves no row for it.
+ * when no turn runs, so the screen reserves no row for it. `escHint` is the esc layer's hint
+ * text; it takes the place of `esc to interrupt`, so the line names what esc would do now.
  */
-export function workingLine(status: TurnStatus, nowMs: number, glyphs: ChatGlyphs): StyledLine | undefined {
+export function workingLine(
+  status: TurnStatus,
+  nowMs: number,
+  glyphs: ChatGlyphs,
+  escHint: string = ESC_INTERRUPT,
+): StyledLine | undefined {
   if (!status.running) return undefined;
   const elapsed = elapsedMs(status, nowMs);
   const frame = spinnerFrame(elapsed, glyphs);
@@ -429,7 +443,7 @@ export function workingLine(status: TurnStatus, nowMs: number, glyphs: ChatGlyph
     // A glyph set with no frames says nothing rather than leaving a stray column.
     ...(frame === "" ? [] : [{ text: `${frame} `, color: "accent" as const }]),
     { text: workingVerb(status, glyphs), color: "accent" },
-    { text: workingDetail(status, elapsed), color: "muted" },
+    { text: workingDetail(status, elapsed, escHint), color: "muted" },
   ];
 }
 

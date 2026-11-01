@@ -9,11 +9,14 @@
  *
  * The frame is two full-width rule lines with the editor between them: the first text row
  * behind the accent `> ` marker and every later row behind two spaces, the cell under the
- * cursor drawn in inverse. At most `MAX_TEXT_ROWS` rows are shown (or fewer when the screen
- * has less room) and the window follows the cursor, so a ten-line prompt keeps the line being
- * typed in view. The rows are the input's own: it wraps each source line to the columns it is
- * drawn into and renders the pieces, so the height `inputRows` reports is the height on screen
- * — nothing is left for the terminal to wrap, and no prompt text is ever cut away.
+ * cursor drawn in inverse. An empty prompt has no character under its cursor, so a focused
+ * one inverts the first cell of its placeholder instead — otherwise nothing on screen would
+ * say the input had focus until the user typed. At most `MAX_TEXT_ROWS` rows are shown (or
+ * fewer when the screen has less room) and the window follows the cursor, so a ten-line
+ * prompt keeps the line being typed in view. The rows are the input's own: it wraps each
+ * source line to the columns it is drawn into and renders the pieces, so the height
+ * `inputRows` reports is the height on screen — nothing is left for the terminal to wrap,
+ * and no prompt text is ever cut away.
  *
  * Keys: a printable chunk is inserted at the cursor (via the line editor, which also owns
  * backspace, the arrows, the word moves and the ctrl chords), return submits, up and down
@@ -99,6 +102,16 @@ export interface ChatInputProps {
    */
   readonly handle?: RefObject<ChatInputHandle | undefined>;
   readonly onClearArmedChange?: (armed: boolean) => void;
+  /**
+   * The owner's escape, in place of this input's own. While it is set every escape asks the
+   * owner instead of arming the two-press clear — the question card's esc closes the card
+   * even when the answer is empty, which is the one case the clear-arm skips outright. It is
+   * asked before the empty and busy checks for that reason, and the input's up, down, return,
+   * tab and escape still belong to an open menu first (`yieldNavigation`). `active: false`
+   * disables input handling entirely, this callback included. The owner must not throw; the
+   * input runs it inside the key handler.
+   */
+  readonly onEscape?: () => void;
   /** The most text rows the screen has room for; absent means the input's own cap. */
   readonly maxRows?: number;
   /**
@@ -166,6 +179,18 @@ export interface InputRowsOptions {
 /** Where a content row's text starts: behind the prompt marker, and past its indent after a wrap. */
 const TEXT_INDENT = displayWidth(PROMPT_MARKER);
 
+/**
+ * What the rows themselves need: the frame's shape, and whether the input holds focus. An
+ * empty, focused, idle editor inverts the first cell of its placeholder, so the rows are no
+ * longer a function of the draft's text alone — but the *count* still is, because the
+ * inverse cell lands on a character that is already there and costs no column. `inputRows`
+ * therefore keeps taking `InputRowsOptions` and measures the same height either way.
+ */
+interface RowOptions extends InputRowsOptions {
+  /** True while the input has focus; absent — the measuring callers — draws no cursor. */
+  readonly active?: boolean;
+}
+
 /** The columns a row's text occupies inside the frame, the marker already deducted. */
 function frameColumns(width: number): number {
   return Math.max(1, resolveWidth(width) - TEXT_INDENT);
@@ -219,13 +244,19 @@ function splitRow(text: string, columns: number): readonly string[] {
 }
 
 /** The rows the placeholder or the owner's hint draws when the editor is empty. */
-function emptyRows(options: InputRowsOptions): readonly TextRow[] {
+function emptyRows(options: RowOptions): readonly TextRow[] {
   if (options.busy) return [{ text: "", marker: true }];
   const hint = sanitizeText(options.hint ?? PLACEHOLDER);
+  // The inverse cell sits on the placeholder's first character rather than in a cell of its
+  // own, so focus costs no column: the hint wraps to the same rows and `inputRows` measures
+  // the same height whether or not the input has focus. An inactive or busy input inverts
+  // nothing — there is nowhere to type.
+  const focused = options.active === true;
   return splitRow(hint, layoutColumns(options)).map((text, index) => ({
     text,
     marker: index === 0,
     muted: true,
+    ...(index === 0 && focused ? { cursor: 0 } : {}),
   }));
 }
 
@@ -237,7 +268,7 @@ function emptyRows(options: InputRowsOptions): readonly TextRow[] {
  * The cursor belongs to exactly one piece: the one whose span contains its column, or the last
  * one for the end-of-line cell.
  */
-function pieceRows(draft: InputDraft, options: InputRowsOptions): readonly TextRow[] {
+function pieceRows(draft: InputDraft, options: RowOptions): readonly TextRow[] {
   const { editor } = draft;
   if (editor.text === "") return emptyRows(options);
   const columns = layoutColumns(options);
@@ -278,7 +309,7 @@ function pieceRows(draft: InputDraft, options: InputRowsOptions): readonly TextR
  * under the viewport instead of pushing the footer off it. Each drawn row is already a piece
  * of the wrapped text, so it is narrower than the container and ink never re-wraps one.
  */
-function visibleRows(draft: InputDraft, options: InputRowsOptions): readonly TextRow[] {
+function visibleRows(draft: InputDraft, options: RowOptions): readonly TextRow[] {
   const pieces = pieceRows(draft, options);
   const cap = textRowCap(options);
   if (pieces.length <= cap) return pieces;
@@ -308,7 +339,11 @@ interface TextRow {
   readonly marker: boolean;
   /** Display column of the inverse cursor cell, on the one row that holds the cursor. */
   readonly cursor?: number;
-  /** The placeholder or the owner's hint: drawn muted, and never carrying the cursor. */
+  /**
+   * The placeholder or the owner's hint: drawn muted. A muted row does carry the cursor — the
+   * focused input's first one sets `cursor: 0`, so `mutedRow` draws that cell inverse while
+   * the rest of the hint stays muted.
+   */
   readonly muted?: boolean;
 }
 
@@ -384,10 +419,22 @@ function cursorColumn(row: string, offset: number): number {
 function editorRow(row: TextRow): readonly Cell[] {
   const marker: Cell = row.marker ? { text: PROMPT_MARKER, color: "accent" } : { text: CONTINUATION };
   const displayed = sanitizeText(row.text);
-  if (row.muted) return [marker, { text: displayed, color: "muted" }];
+  if (row.muted) return mutedRow(marker, displayed, row.cursor);
   if (row.cursor === undefined) return [marker, { text: displayed }];
   const { head, cell, tail } = splitAtCursor(displayed, row.cursor);
   return [marker, { text: head }, { text: cell, inverse: true }, { text: tail }];
+}
+
+/**
+ * A placeholder or hint row: muted throughout, and — on the focused input's first row — with
+ * its first cell inverted so the user can see where typing will land. The inverse cell keeps
+ * the editor cursor's plain styling; only the hint's own text is muted.
+ */
+function mutedRow(marker: Cell, displayed: string, cursor: number | undefined): readonly Cell[] {
+  const muted: Cell = { text: "", color: "muted" };
+  if (cursor === undefined) return [marker, { ...muted, text: displayed }];
+  const { head, cell, tail } = splitAtCursor(displayed, cursor);
+  return [marker, { ...muted, text: head }, { text: cell, inverse: true }, { ...muted, text: tail }];
 }
 
 /**
@@ -513,6 +560,7 @@ export function ChatInput({
   yieldNavigation = false,
   handle,
   onClearArmedChange,
+  onEscape,
   maxRows,
   onPaste,
 }: ChatInputProps): ReactElement {
@@ -587,10 +635,17 @@ export function ChatInput({
   };
 
   /**
-   * Escape arms a clear, and a second escape inside `DOUBLE_ESCAPE_MS` empties the input.
-   * Past the window the arm has expired (or is re-stamped), so the text survives.
+   * The owner claims every escape while `onEscape` is set — asked first, before the empty
+   * and busy checks, because the one place that needs it (a question card's escape) is
+   * exactly the empty draft the clear-arm skips. Otherwise escape arms a clear, and a second
+   * escape inside `DOUBLE_ESCAPE_MS` empties the input; past the window the arm has expired
+   * (or is re-stamped), so the text survives.
    */
   const escapeKey = (): void => {
+    if (onEscape !== undefined) {
+      onEscape();
+      return;
+    }
     const current = latest.current;
     if (busy || current.editor.text === "") return;
     const armed = armedAt.current;

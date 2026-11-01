@@ -251,9 +251,13 @@ export function useMentionMenu(options: MentionMenuOptions): MentionMenuControll
 
   // The hold a key's apply or dismissal takes lasts only for the batch being delivered: this
   // runs after the re-render that batch produced, so the next key reads a claim that matches
-  // what is drawn rather than one left over from the row that was just completed.
+  // what is drawn rather than one left over from the row that was just completed. Dropping it
+  // re-draws, because the footer's esc hint reads this same claim: without that pass the hint
+  // kept naming a menu that is already gone — and with no turn running, nothing else re-rendered.
   useEffect(() => {
+    if (!live.current.acted) return;
     live.current.acted = false;
+    redraw();
   });
 
   /** What the picker draws: the rows of the claim, or git's diagnostic line in their place. */

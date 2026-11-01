@@ -1,0 +1,819 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-tui-esc-focus",
+  "branchName": "feat/chat-tui-esc-focus",
+  "createdAt": "2026-11-01T00:00:00.000Z",
+  "updatedAt": "2026-11-01T06:34:28.477Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Missing-image marker carries its position",
+      "description": "**Goal** — Preserve each unreadable transcript image's original position in the schemaVersion 2 load marker.\n\n**Motivation** — The loader writes a bare `[image missing]` per unreadable image (`packages/nax-agent/src/native/session/transcript-images.ts`), so replay cannot tell which image was lost and renumbers the rest.\n\n**Approach** — The loader appends `[image missing #<n>]`, `<n>` the image's 1-based position in the stored message's `images`.\n\nThe schemaVersion 2 read appends `[image missing #<n>]` (1-based position in the stored `images`) instead of `[image missing]`.\n\nThe load assertions that expect a bare `[image missing]` line now expect `[image missing #<n>]` with the lost image's position; the invariant is unchanged otherwise (one line per lost image, no leading newline on empty content, the readable images kept in order). Enumerate the stored array, not the filtered survivors. Retain existing filesystem safety, error behavior and all-readable behavior. Show regression failures against the old implementation before implementing.\n\n**Scope** — In: schemaVersion 2 image rehydration and existing loader assertions. Out: replay stripping and slot reconstruction (US-004), image labels/titles (US-003), changes to image publication, schema versions or access controls.\n\n**Interface** — The transcript loader (`packages/nax-agent/src/native/session/transcript-images.ts`, the schemaVersion 2 read): appends `[image missing #<n>]`. The seam to US-004 is the content returned by `createFileTranscriptStore.load`.",
+      "acceptanceCriteria": [
+        "[unit] Loading a schemaVersion 2 transcript whose user message has content `\"x\"` and two stored images, the second of whose files is missing, returns that message with content `\"x\\n[image missing #2]\"` and `images` holding only the first image.",
+        "[unit] Loading a schemaVersion 2 transcript whose user message has content `\"x\"` and two stored images, both missing, returns content `\"x\\n[image missing #1]\\n[image missing #2]\"` and no `images` key.",
+        "[unit] Loading a schemaVersion 2 transcript whose user message has empty content and two stored images, the first missing, returns content `\"[image missing #1]\"` with no leading newline and `images` holding only the second image.",
+        "[unit] Loading a schemaVersion 2 transcript whose user message has three stored images, the second missing, returns `images` holding the first and the third in that order and content ending `\"\\n[image missing #2]\"`.",
+        "[unit] Loading a schemaVersion 2 transcript whose stored images are all readable returns the content unchanged, with no missing-image line."
+      ],
+      "tags": [
+        "chat",
+        "images",
+        "transcript",
+        "persistence"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Small indexed-marker change with existing fixtures; strict isolation applies to the session persistence path and its filesystem safety regression anchors.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/native/session/transcript-images.ts",
+        "packages/nax-agent/test/unit/native/session/transcript-images-read.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/native/session/transcript-images.ts",
+          "reason": "the schemaVersion 2 read appends `[image missing #<n>]` (1-based position in the stored `images`) instead of `[image missing]`."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/native/session/transcript-images-read.test.ts",
+          "reason": "the load assertions that expect a bare `[image missing]` line now expect `[image missing #<n>]` with the lost image's position; the invariant is unchanged otherwise (one line per lost image, no leading newline on empty content, the readable images kept in order)."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0e05493c58547c967f86fc55489ad59d6dca6b23"
+    },
+    {
+      "id": "US-002",
+      "title": "Control bytes in the line editor",
+      "description": "**Goal** — Apply terminal backspace bursts as deletions and prevent invisible control bytes entering a draft.\n\n**Motivation** — ink delivers several backspaces arriving in one terminal write as one input string (`\"\\u007f\\u007f\\u007f\"`, `key.backspace` false); `editLine` inserts it, so the draft holds invisible DEL bytes that are sent to the model.\n\n**Approach** — `editLine` treats an input made only of DEL (`\\u007f`) and BS (`\\b`) bytes, with no key flag set, as that many backspaces. `insert` first normalises CRLF and a lone CR to a newline (as today), then drops C0 control bytes other than newline and tab, and DEL, from the inserted text.\n\nA DEL/BS run longer than the text before the cursor deletes back to the start of the text; no error. Preserve code-point indexing and existing key/modifier precedence. The mounted ChatInput regression must deliver the burst in one stdin write, not several single-key writes.\n\n**Scope** — In: pure line-editor deletion/insertion behavior and its mounted input seam. Out: focus cursor and owner esc handling (US-008), question dismissal (US-009). DEL or BS bytes mixed with printable text in one input chunk are dropped, not applied as deletions.\n\n**Interface**\n```typescript\neditLine(state: EditorState, input: EditorKey): EditorResult\n```\nTarget: a DEL/BS-only input deletes that many code points; inserted text loses C0 controls other than `\\n` and `\\t`, and DEL.",
+      "acceptanceCriteria": [
+        "[unit] `editLine` on editor `{ text: \"abcd\", cursor: 4 }` with input `\"\\u007f\\u007f\\u007f\"` and no key flag set returns an edit to `{ text: \"a\", cursor: 1 }`.",
+        "[unit] `editLine` on editor `{ text: \"abcd\", cursor: 2 }` with input `\"\\b\\b\\b\"` and no key flag set returns an edit to `{ text: \"cd\", cursor: 0 }`, deleting only back to the start.",
+        "[unit] `editLine` on editor `{ text: \"abcd\", cursor: 4 }` with input `\"\\u007f\\b\"` and no key flag set returns an edit to `{ text: \"ab\", cursor: 2 }`.",
+        "[unit] `editLine` on editor `{ text: \"\", cursor: 0 }` with input `\"\\u007f\\u007f\"` returns an edit whose state is `{ text: \"\", cursor: 0 }`.",
+        "[unit] `editLine` on an empty editor with input `\"a\\u0001b\\u007fc\"` returns an edit to `{ text: \"abc\", cursor: 3 }`.",
+        "[unit] `editLine` on an empty editor with input `\"a\\tb\\nc\"` returns an edit to `{ text: \"a\\tb\\nc\", cursor: 5 }`, keeping the tab and the newline.",
+        "[unit] `editLine` on an empty editor with input `\"a\\u001b[0mb\"` returns an edit whose text is `\"a[0mb\"`, the ESC byte dropped.",
+        "[unit] `editLine` on an empty editor with input `\"\\r\\n\"` still inserts one newline (`{ text: \"\\n\", cursor: 1 }`), as today.",
+        "[unit] `editLine` on an empty editor with input `\"a\\rb\"` returns an edit to `{ text: \"a\\nb\", cursor: 3 }`: a lone CR still becomes a newline before control bytes are dropped.",
+        "[integration] Rendering `ChatInput` with draft text `\"abcd\"` and writing `\"\\u007f\\u007f\\u007f\"` to its stdin in one write publishes a draft whose editor text is `\"a\"`."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "input"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single pure reducer change using existing code-point helpers, with a mounted input regression for Ink chunk delivery.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/line-editor.ts",
+        "packages/nax/test/unit/tui/chat/line-editor.test.ts",
+        "packages/nax/src/tui/chat/ChatInput.tsx",
+        "packages/nax/test/ui/chat/chat-input.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "editLine on `{ text: \"a😀b\", cursor: 2 }` with a two-byte DEL-only chunk and no key flags returns `{ kind: \"edit\", state: { text: \"b\", cursor: 0 } }`, deleting whole code points."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/line-editor.ts",
+          "reason": "`editLine` handles a DEL/BS-only input as repeated backspace, and `insert` strips C0 controls other than newline and tab, and DEL."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7628f6bc1c9167679ddf79a1bda3fb643b76dfcf"
+    },
+    {
+      "id": "US-003",
+      "title": "Byte-sized image labels and image-free session titles",
+      "description": "**Goal** — Display sub-KiB image sizes accurately and remove image placeholders from titles of sends carrying images.\n\n**Motivation** — `imageSizeLabel` floors every size below 1 KiB to `1 KB`. The session title is the typed text, `[Image #1] what colour...`.\n\n**Approach** — `imageSizeLabel(bytes)` below 1,024 returns `<bytes> B`. `titleWithoutPlaceholders(text)` removes every `[Image #<digits>]`, collapses runs of whitespace to one space and trims; an empty result is `image`; text with no placeholder is returned unchanged. ChatApp passes it as the `title` of a send that carries images.\n\nUpdate existing label anchors: the `[100, \"1 KB\"]` image-file case becomes `[100, \"100 B\"]`, and `imageNoteLabel(1, { data: \"AAAA\" })` reads `\"image 1 · png · 3 B\"`. Real PNG/JPEG mention fixtures use their actual byte lengths. The image-entries and chat-app-image-after-send AAAA fixture labels become `image 1 · png · 2×3 · 3 B · clipboard`; remove the comment naming the old 1 KB floor. A hand-written `image · png · 2×3 · 1 KB` mention note may stay as written; row order and kinds are unchanged. Sizes of 1,024 bytes and above retain existing KB/MB labels. Preserve the exact two-argument plain host.send path.\n\n**Scope** — In: image-file labels, pure title helper, ChatApp image-send title wiring and existing label regressions. Out: image slot reconstruction (US-004), leading-placeholder slash parsing (US-005), persistence marker changes (US-001).\n\n**Interface**\n```typescript\nimageSizeLabel(bytes: number): string\ntitleWithoutPlaceholders(text: string): string\n```\n`titleWithoutPlaceholders` is a new export in `image-draft.ts`; a send with images passes `titleWithoutPlaceholders(title)` as its title.",
+      "acceptanceCriteria": [
+        "[unit] `imageSizeLabel(178)` returns `\"178 B\"`, `imageSizeLabel(0)` returns `\"0 B\"` and `imageSizeLabel(1023)` returns `\"1023 B\"`.",
+        "[unit] `imageSizeLabel(1024)` returns `\"1 KB\"`, `imageSizeLabel(1536)` returns `\"1 KB\"` and `imageSizeLabel(350_208)` returns `\"342 KB\"`.",
+        "[unit] `imageSizeLabel(1_572_864)` returns `\"1.5 MB\"`, as today.",
+        "[unit] `imageNoteLabel(1, { mimeType: \"image/png\", data: \"AAAA\" })` returns `\"image 1 · png · 3 B\"`.",
+        "[unit] `titleWithoutPlaceholders(\"[Image #1] what colour is it\")` returns `\"what colour is it\"`.",
+        "[unit] `titleWithoutPlaceholders(\"compare [Image #1]  and   [Image #2] now\")` returns `\"compare and now\"`.",
+        "[unit] `titleWithoutPlaceholders(\"[Image #1][Image #2]\")` returns `\"image\"`.",
+        "[unit] `titleWithoutPlaceholders(\"  two  spaces  \")`, a text with no placeholder, returns `\"  two  spaces  \"` unchanged.",
+        "[integration] In the mounted chat screen with a host whose `acceptsImages()` resolves `true`, attaching a clipboard image through ctrl+v (with `_imageAttachDeps.readClipboard` stubbed to return a PNG) and submitting `\"[Image #1] what colour\"` calls `host.send` with a third argument whose `title` is `\"what colour\"` and whose `images` holds that one image.",
+        "[integration] In the mounted chat screen, submitting the plain message `\"hello\"` with no image still calls `host.send(\"hello\", onEvent)` with two arguments."
+      ],
+      "tags": [
+        "chat",
+        "images",
+        "session-title",
+        "tui"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Straightforward pure formatting plus host.send wiring across three source files; requested sessions override applies to session title behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/images/image-file.ts",
+        "packages/nax/src/tui/chat/image-draft.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/test/ui/chat/chat-app-image-send.test.tsx",
+        "packages/nax/test/unit/chat/images/image-file.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/chat/images/image-file.ts",
+          "reason": "`imageSizeLabel` returns `<bytes> B` below 1,024 bytes."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/image-draft.ts",
+          "reason": "new export `titleWithoutPlaceholders`."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/ChatApp.tsx",
+          "reason": "a send with images passes `titleWithoutPlaceholders(title)` as its title."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/images/image-file.test.ts",
+          "reason": "the `[100, \"1 KB\"]` case becomes `[100, \"100 B\"]` and the `imageNoteLabel(1, { data: \"AAAA\" })` expectation becomes `\"image 1 · png · 3 B\"`; sizes of 1,024 bytes and above keep their KB and MB labels."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/mentions/mention-expand-images.test.ts",
+          "reason": "notes of its real PNG and JPEG fixture files read `<n> B`, `<n>` that fixture file's byte length, instead of `1 KB`; every other part of the note is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/tui/chat/image-entries.test.ts",
+          "reason": "labels of its `data: \"AAAA\"` fixture images read `3 B` instead of `1 KB` (for example `image 1 · png · 2×3 · 3 B · clipboard`), and the hand-written `image · png · 2×3 · 1 KB` mention note may stay as written; the comment naming the `1 KB` floor goes; row order and kinds are unchanged."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/chat-app-image-after-send.test.tsx",
+          "reason": "`LABEL` reads `image 1 · png · 2×3 · 3 B · clipboard` (its `data: \"AAAA\"` fixture) instead of `... 1 KB ...`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8a1c341d1ed072a4a51b91c99e9d887ffd7016de"
+    },
+    {
+      "id": "US-004",
+      "title": "Missing images replay at their numbers",
+      "description": "**Goal** — Reconstruct image slots on resume so missing images retain their numbers without duplicating mention attachment rows.\n\n**Motivation** — The loader writes a bare `[image missing]` per unreadable image (`packages/nax-agent/src/native/session/transcript-images.ts`), so replay cannot tell which image was lost and renumbers the rest.\n\n**Approach** — Replay strips both the numbered form and the old bare `[image missing]` from the trailing run of lines. The message's image slots are its loaded images plus its numbered missing markers, in stored order (the missing positions are re-inserted among the loaded images). The first `slots - mentioned` slots are placeholder images (`mentioned` = the `image`-status records in the message's mention envelope, as `sentEntries` counts today); each gets a row numbered by its slot, `imageNoteLabel(n, image)` for a loaded one and `image <n> · missing` for a missing one. A missing slot inside the mention region gets no row, because the mention's attachment row already names that file. A numbered marker beyond the slot count, and every bare marker, gets today's `image · missing` row after the others. A message whose text is empty once the markers are stripped still gets its slot rows (today's early return for empty text keeps only the bare rows). `sentEntries`' skill branch applies the same rule.\n\nKeep content byte-for-byte when there is no trailing marker run; retain compaction behavior. The loader format is supplied by US-001. The integration test saves genuinely distinct PNGs so deleting the second ref does not also remove a deduplicated first image.\n\n**Scope** — In: history-replay marker parsing, sentEntries optional missing positions, slot rows and backward-compatible bare rows, real file-store-to-replay seam. Out: writing the markers (US-001), size/title labels (US-003), notice classification (US-011). Rewriting transcripts saved by older builds: a bare `[image missing]` keeps its `image · missing` row after the others.\n\n**Interface**\n```typescript\nsentEntries(message: string, images?: readonly ImageAttachment[], missing?: readonly number[]): readonly TranscriptEntry[]\n```\n`missing` holds 1-based positions of images lost on load. `replayUser` reads numbered and bare markers and passes the numbered positions to `sentEntries`.",
+      "acceptanceCriteria": [
+        "[unit] `replayHistory` of a stored user message `{ content: \"[Image #1] then [Image #2]\\n[image missing #1]\", images: [red] }` (red a PNG with source `\"clipboard\"`) returns the user entry with text `\"[Image #1] then [Image #2]\"`, then `{ kind: \"image\", label: \"image 1 · missing\" }`, then the image entry whose label is `imageNoteLabel(2, red)`.",
+        "[unit] `replayHistory` of a stored user message `{ content: \"x\\n[image missing #2]\", images: [a] }` returns the user entry `\"x\"`, the image entry labelled `imageNoteLabel(1, a)`, then `{ kind: \"image\", label: \"image 2 · missing\" }`.",
+        "[unit] `replayHistory` of a stored user message `{ content: \"x\\n[image missing]\", images: [a] }` (the bare marker of an older build) returns the user entry `\"x\"`, the image entry labelled `imageNoteLabel(1, a)`, then `{ kind: \"image\", label: \"image · missing\" }`, as today.",
+        "[unit] `replayHistory` of a stored user message `{ content: \"x\\n[image missing #5]\", images: [a] }` (a position beyond the message's two image slots) returns the user entry `\"x\"`, the image entry labelled `imageNoteLabel(1, a)`, then `{ kind: \"image\", label: \"image · missing\" }`.",
+        "[unit] `replayHistory` of a stored user message whose content is only `\"[image missing #1]\"` and that has no images returns exactly `[{ kind: \"image\", label: \"image 1 · missing\" }]`.",
+        "[unit] `replayHistory` of a stored user message `{ content: \"[image missing #1]\", images: [b] }` returns exactly `{ kind: \"image\", label: \"image 1 · missing\" }` then the image entry labelled `imageNoteLabel(2, b)`.",
+        "[unit] `sentEntries(\"look\", [a, b], [2])` returns the user entry `\"look\"`, the image entry labelled `imageNoteLabel(1, a)`, `{ kind: \"image\", label: \"image 2 · missing\" }`, then the image entry labelled `imageNoteLabel(3, b)`.",
+        "[unit] `sentEntries(\"look\", [a])` with no `missing` argument returns the same entries as today: the user entry, then the image entry labelled `imageNoteLabel(1, a)`.",
+        "[unit] `replayHistory` of a stored user message whose content is a mention envelope with one `image`-status record and whose content ends `\"\\n[image missing #1]\"`, with no stored images, returns exactly the envelope's mention entries: the one slot is in the mention region, so no image row is added.",
+        "[integration] Saving a schemaVersion 2 transcript through `createFileTranscriptStore` (from `@nathapp/nax-agent`) whose user message `\"[Image #1] and [Image #2]\"` carries two different PNG images (a 2×3 and a 4×5, so their content-addressed files differ), deleting the file named by the second stored image's `ref` from the transcript's `.images` folder, loading it again and passing the loaded history to `replayHistory` returns the user entry, the image entry labelled `imageNoteLabel(1, first)`, then `{ kind: \"image\", label: \"image 2 · missing\" }`.",
+        "[unit] `sentEntries` of a skill invocation message with images `[a]` and `missing` `[1]` returns the skill entry, then `{ kind: \"image\", label: \"image 1 · missing\" }`, then the image entry labelled `imageNoteLabel(2, a)`."
+      ],
+      "tags": [
+        "chat",
+        "images",
+        "replay",
+        "persistence"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Two existing pure projection modules gain bounded marker parsing and slot reconstruction; the existing public file-store API supplies integration coverage, while the original sessions override still requires strict TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/history-replay.ts",
+        "packages/nax/src/tui/chat/mention-send.ts",
+        "packages/nax/test/unit/tui/chat/image-entries.test.ts",
+        "packages/nax-agent/src/native/session/transcript-images.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/history-replay.ts",
+          "reason": "strip numbered and bare missing-image markers and pass the numbered positions to `sentEntries`."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/mention-send.ts",
+          "reason": "`sentEntries` gains the optional `missing` positions and draws `image <n> · missing` rows in place."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4c1dbae0d8d1830219de64d7a4410bd0c477a7ab"
+    },
+    {
+      "id": "US-005",
+      "title": "Slash commands after image placeholders",
+      "description": "**Goal** — Execute a slash command following leading image placeholders without spending or losing the pending image draft.\n\n**Motivation** — After `/image a.png` the prompt holds `[Image #1]`, so `/image b.png` typed after it is not a slash line and is sent to the model as text.\n\n**Approach** — `splitLeadingPlaceholders(text)` returns `{ lead, rest }` when `text` is one or more `[Image #<digits>]` placeholders and whitespace followed by a line starting with `/`. ChatApp's `submit` treats `rest` as the slash line: the image refusal checks only images whose placeholder is in `rest`, the prompt is written back to `lead` before the command runs, and the command runs as if `rest` had been typed. The image draft is untouched, so `/image b.png` attaches `[Image #2]` after `[Image #1]`.\n\nWhitespace after a placeholder is optional, as `[Image #1]/image b.png` must split too; preserve the exact lead including whitespace. A leading-placeholder slash line containing a present placeholder in rest runs no command and restores the whole original line via today's `IMAGES_PLAIN_ONLY` refusal. Keep the existing /quit behavior and plain-message send path.\n\n**Scope** — In: pure splitLeadingPlaceholders export and ChatApp.submit/restorePrompt wiring; mounted second-image, model switch, refusal and quit flows. Out: title cleanup (US-003), focus/esc input changes (US-008). Opening the slash menu for a line that starts with image placeholders; the menu opens only for a line that starts with `/`. `/image` with several paths in one command; `/image` keeps taking the rest of the line as one path. A line of image placeholders followed by a slash command, submitted while a turn runs: `ChatInput` keeps today's busy rule (only a line starting with `/` is submitted mid-turn), so it is not run until the turn ends.\n\n**Interface**\n```typescript\nsplitLeadingPlaceholders(text: string): { lead: string; rest: string } | undefined\n```\n`parseSlashCommand(text): SlashCommand | null` remains null unless its input starts with `/`; ChatApp passes `rest` when split succeeds.",
+      "acceptanceCriteria": [
+        "[unit] `splitLeadingPlaceholders(\"[Image #1] /image b.png\")` returns `{ lead: \"[Image #1] \", rest: \"/image b.png\" }`.",
+        "[unit] `splitLeadingPlaceholders(\"[Image #1]/image b.png\")` returns `{ lead: \"[Image #1]\", rest: \"/image b.png\" }`.",
+        "[unit] `splitLeadingPlaceholders(\" [Image #1] [Image #2] /model x\")` returns `{ lead: \" [Image #1] [Image #2] \", rest: \"/model x\" }`.",
+        "[unit] `splitLeadingPlaceholders(\"/image b.png\")` returns `undefined`.",
+        "[unit] `splitLeadingPlaceholders(\"look [Image #1] /image b.png\")` returns `undefined`, because text other than placeholders comes before the slash.",
+        "[unit] `splitLeadingPlaceholders(\"[Image #1] hello\")` returns `undefined`.",
+        "[integration] In the mounted chat screen, after `/image red.png` attaches (the prompt then reads `\"[Image #1]\"`), typing `/image green.png` after the placeholder and pressing return attaches a second image: the prompt reads `\"[Image #1][Image #2]\"` and nothing is sent to `host.send`.",
+        "[integration] In the mounted chat screen with one attached image, submitting `\"[Image #1] /model other-model\"` calls the host's model switch with `\"other-model\"`; typing `describe` and pressing return afterwards calls `host.send` with the message `\"[Image #1] describe\"` and that one image, because the placeholder and the image draft were kept.",
+        "[integration] In the mounted chat screen with one attached image, submitting `\"[Image #1] /model x [Image #1]\"` runs no command, appends the `IMAGES_PLAIN_ONLY` notice and writes the whole line back to the prompt.",
+        "[integration] In the mounted chat screen with one attached image, submitting `\"[Image #1] /quit\"` closes the chat as `/quit` does."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "images",
+        "slash-commands"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure prefix parser and localized command dispatch wiring using existing image draft and imperative prompt handle, with explicit refusal cases.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/image-draft.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/test/ui/chat/chat-app-image-command.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/chat-app-placeholder-commands.test.tsx"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/image-draft.ts",
+          "reason": "new export `splitLeadingPlaceholders`."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/ChatApp.tsx",
+          "reason": "`submit` runs a slash line that follows image placeholders and writes the placeholders back to the prompt first."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "51771d02725d65f0bb6bac53df7e5215176636ae"
+    },
+    {
+      "id": "US-006",
+      "title": "The esc layer and its hints",
+      "description": "**Goal** — Introduce one pure top-layer esc model and allow footer/working-line text to describe that layer.\n\n**Motivation** — The footer and the working line say `esc to interrupt` while a card, picker or menu is up, but `ChatApp.tsx` ignores esc whenever one is shown. Esc does close pickers, but nothing says so.\n\n**Approach** — `topEscLayer` reads what is drawn: an ask card (cards render over pickers and the input), then a picker, then the mention picker, then the slash menu, then a running turn. The footer and the working line draw `escHintText(topEscLayer(...))`, and the esc handlers act on the same layer, so the hint and the action cannot disagree. ChatApp passes `turnRunning: turnRunning && keys.canControl()`, `askFromSession: ask.sessionId !== \"host\"`, `ask` mapped from the pending ask's `type` (`question` → `\"question\"`, `approval_requested` → `\"approval\"`, `host_choice` → `\"choice\"`), `mentionShown: mention.ownsNavigation()` (the mention picker's esc claim, false while only its no-git diagnostic line is drawn) and `menuShown: menuShown()`; a question layer's `stops` is `turnRunning && askFromSession`, which is exactly when the dismiss cancels. The working line's presence is decided as today (from the turn status alone) before the menu rows are measured; only its text takes the esc hint, so the layer can read `menuShown()` without a cycle. The hint texts live in `esc-layer.ts`; `chat-status.ts` (574 lines, under the 600-line gate) only gains the `\"layer\"` member, `layerHint` and `escHint` parameters, written compactly; if it would pass 600 lines, the hint helpers move into `esc-layer.ts` rather than the gate baseline growing.\n\nExact hints: question stops=true `esc to close and stop`, otherwise `esc to close`; approval `esc to deny`; choice `esc to cancel`; picker model `esc to close model picker`, resume `esc to close sessions`, mode `esc to close mode picker`, effort `esc to close effort picker`, jobs `esc to close jobs`; mention or slash menu `esc to close menu`; turn/none returns undefined so existing busy/background hints remain. `footerHint` returns `layer` after quit and clear and before busy hints. Existing calls/tests pass layer:false until US-009 wires real screen state.\n\n**Scope** — In: new pure esc-layer module and unit tests, FooterHint layer, layerHint, optional working-line escHint, footerHint precedence. Out: mounted screen integration and AskCard dismissal (US-009), controller decline (US-007), input onEscape (US-008). Changing picker titles; the footer names what esc closes. A mounted-screen test of esc while the keys cannot control the turn (a mode switch in flight); the case is pinned at `topEscLayer` with `turnRunning: false`.\n\n**Interface** — New `EscLayer`, `topEscLayer`, `escHintText` in `src/tui/chat/esc-layer.ts`. Layer results are `{ kind: \"question\", stops: boolean }`, `{ kind: \"approval\" }`, `{ kind: \"choice\" }`, `{ kind: \"picker\", picker: PickerKind }`, `{ kind: \"menu\" }`, `{ kind: \"turn\" }`, `{ kind: \"none\" }`.\n```typescript\nworkingLine(status, nowMs, glyphs, escHint?: string)\n```\n`FooterHint` gains `\"layer\"`; `footerModel({ state, status, hint, copiedChars?, glyphs?, jobs?, tasks?, layerHint?: string })` draws layerHint when hint is layer; `footerHint` input `{ quitArmed, clearArmed, busy, expanded, backgroundable, tmux }` gains `layer: boolean`.",
+      "acceptanceCriteria": [
+        "[unit] `topEscLayer({ ask: \"question\", askFromSession: true, picker: \"jobs\", mentionShown: true, menuShown: true, turnRunning: true })` returns `{ kind: \"question\", stops: true }`, because a card is drawn over everything else.",
+        "[unit] `topEscLayer({ ask: \"question\", askFromSession: true, mentionShown: false, menuShown: false, turnRunning: false })` returns `{ kind: \"question\", stops: false }`.",
+        "[unit] `topEscLayer({ ask: \"question\", askFromSession: false, mentionShown: false, menuShown: false, turnRunning: true })` (a host question during a turn) returns `{ kind: \"question\", stops: false }`.",
+        "[unit] `topEscLayer` with `ask: \"approval\"` returns `{ kind: \"approval\" }`, and with `ask: \"choice\"` returns `{ kind: \"choice\" }`.",
+        "[unit] `topEscLayer({ picker: \"jobs\", mentionShown: true, menuShown: true, turnRunning: true })` returns `{ kind: \"picker\", picker: \"jobs\" }`.",
+        "[unit] `topEscLayer({ mentionShown: true, menuShown: false, turnRunning: true })` returns `{ kind: \"menu\" }`, and so does `topEscLayer({ mentionShown: false, menuShown: true, turnRunning: false })`.",
+        "[unit] `topEscLayer({ mentionShown: false, menuShown: false, turnRunning: true })` returns `{ kind: \"turn\" }`, and with `turnRunning: false` returns `{ kind: \"none\" }`.",
+        "[unit] `escHintText({ kind: \"question\", stops: true })` returns `\"esc to close and stop\"` and `escHintText({ kind: \"question\", stops: false })` returns `\"esc to close\"`.",
+        "[unit] `escHintText({ kind: \"approval\" })` returns `\"esc to deny\"` and `escHintText({ kind: \"choice\" })` returns `\"esc to cancel\"`.",
+        "[unit] `escHintText` for picker `\"model\"`, `\"resume\"`, `\"mode\"`, `\"effort\"` and `\"jobs\"` returns `\"esc to close model picker\"`, `\"esc to close sessions\"`, `\"esc to close mode picker\"`, `\"esc to close effort picker\"` and `\"esc to close jobs\"`.",
+        "[unit] `escHintText({ kind: \"menu\" })` returns `\"esc to close menu\"`; for `{ kind: \"turn\" }` and `{ kind: \"none\" }` it returns `undefined`.",
+        "[unit] `footerHint({ quitArmed: false, clearArmed: false, busy: true, expanded: false, backgroundable: true, tmux: false, layer: true })` returns `\"layer\"`.",
+        "[unit] `footerHint` with `quitArmed: true` and `layer: true` returns `\"quit\"`, and with `clearArmed: true` and `layer: true` returns `\"clear\"`.",
+        "[unit] Given the existing host state and turn status fixtures, `footerModel` with `hint: \"layer\"` and `layerHint: \"esc to close jobs\"` returns a left line whose hint text is `\"esc to close jobs\"` after the mode label.",
+        "[unit] `workingLine(runningStatus, nowMs, glyphs, \"esc to close and stop\")` returns a line whose muted detail ends `\"esc to close and stop)\"`, the escape hint taking the place of `esc to interrupt`.",
+        "[unit] `workingLine(runningStatus, nowMs, glyphs)` with no `escHint` returns the same detail as today, ending `\"esc to interrupt)\"`."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "esc",
+        "hints"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure layer selection and hint composition across existing UI helpers; no permission decisions or session side effects are introduced here.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/src/tui/chat/use-clipboard-feedback.ts",
+        "packages/nax/src/tui/chat/ask-card.ts",
+        "packages/nax/test/unit/tui/chat/chat-status.test.ts",
+        "packages/nax/src/tui/chat/slash-commands.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/esc-layer.ts",
+        "packages/nax/test/unit/tui/chat/esc-layer.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/chat-status.ts",
+          "reason": "`FooterHint` gains `\"layer\"`, `footerModel` takes `layerHint`, and `workingLine` takes an optional `escHint`."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/use-clipboard-feedback.ts",
+          "reason": "`footerHint` takes `layer` and returns `\"layer\"` after quit and clear and before the busy hints."
+        },
+        {
+          "path": "packages/nax/test/unit/tui/chat/chat-status.test.ts",
+          "reason": "`footerHint` calls that build the input object gain `layer: false`, with the same expected hints; no expected text changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "138247f31c56dfafced79b2a48bd7e4cbea051e1"
+    },
+    {
+      "id": "US-007",
+      "title": "Declining a question",
+      "description": "**Goal** — Add an explicit question decline operation that settles host and session questions without answering an approval.\n\n**Motivation** — A question card shows no choices and its answer box looks exactly like the chat input; esc does nothing on it (`AskCard.tsx` returns early from `useInput` for a question).\n\n**Approach** — `ChatAskController.declineQuestion(requestId)` settles a host question with `null` (what its timeout does today) and answers a session question with the text `QUESTION_DECLINED_REPLY` (`\"The user closed the question without answering.\"`), then removes it from `pending()`.\n\n`declineQuestion` with an id that is not an open question has no effect, no answer sent. Reuse host-question cleanup to clear the timeout and abort listener; remove once so onChange fires once. Add the method to both interface and class, and export the constant through `@/chat`. Update only hand-built controller stubs in test/ui/chat/ask-card.test.tsx, chat-app.test.tsx, chat-app-mentions.test.tsx and slash-commands.test.tsx with `declineQuestion: () => {}`; their existing assertions do not change.\n\n**Scope** — In: controller method, constant/barrel export, settlement and no-op tests, interface-consumer fixture compatibility. Out: ChatInput routing (US-008), card/screen dismissal and host.cancel (US-009), layer hints (US-006). Changing what esc does on approval cards (deny) and choice cards (fallback choice); neither stops the turn.\n\n**Interface**\n```typescript\ndeclineQuestion(requestId: string): void\n```\n`QUESTION_DECLINED_REPLY` exported from `@/chat` equals `\"The user closed the question without answering.\"`.",
+      "acceptanceCriteria": [
+        "[unit] On a controller holding a host question opened with `requestHostQuestion({ text: \"Use that feature?\" })`, `declineQuestion(requestId)` resolves that request's promise with `null` and `pending()` no longer lists it.",
+        "[unit] On a controller that received a session `question` event, `declineQuestion(requestId)` calls the controller's `answer` option once with `(requestId, { text: QUESTION_DECLINED_REPLY })` and `pending()` no longer lists it.",
+        "[unit] When `QUESTION_DECLINED_REPLY` is imported from `@/chat`, its value equals `\"The user closed the question without answering.\"`.",
+        "[unit] `declineQuestion` with the id of an open approval leaves the approval in `pending()` and calls no `answer`.",
+        "[unit] `declineQuestion` with an unknown id calls no `answer` and changes nothing in `pending()`.",
+        "[unit] A listener registered with `onChange` is called once when `declineQuestion` removes an open question."
+      ],
+      "tags": [
+        "chat",
+        "questions",
+        "session",
+        "controller"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Extends shared session/approval controller settlement with timeout cleanup and reply routing; strict isolation follows the session and access-control-adjacent override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/ask-controller.ts",
+        "packages/nax/test/unit/chat/ask-controller.test.ts",
+        "packages/nax/src/chat/index.ts"
+      ],
+      "suggestedCriteria": [
+        "Declining the same session question twice sends only one QUESTION_DECLINED_REPLY and emits only one removal notification.",
+        "When a declined host question's former timeout fires or its signal aborts later, the promise remains settled with null and no additional onChange event is emitted."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/chat/ask-controller.ts",
+          "reason": "`declineQuestion` on the interface and the class, and `QUESTION_DECLINED_REPLY`."
+        },
+        {
+          "path": "packages/nax/src/chat/index.ts",
+          "reason": "export `QUESTION_DECLINED_REPLY`."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/ask-card.test.tsx",
+          "reason": "the hand-built `ChatAskController` literal gains `declineQuestion: () => {}`; no assertion changes."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/chat-app.test.tsx",
+          "reason": "the hand-built host's `asks` literal gains `declineQuestion: () => {}`; no assertion changes."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/chat-app-mentions.test.tsx",
+          "reason": "the hand-built host's `asks` literal gains `declineQuestion: () => {}`; no assertion changes."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/slash-commands.test.tsx",
+          "reason": "the hand-built host's `asks` literal gains `declineQuestion: () => {}`; no assertion changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b6974224da98f05f994d65bfd8ebed48392549ae"
+    },
+    {
+      "id": "US-008",
+      "title": "Input focus cursor and an owner's esc",
+      "description": "**Goal** — Make empty focused inputs visibly editable and let an input owner replace escape's draft-clear action.\n\n**Motivation** — No sign the input has focus: an empty editor draws only the muted placeholder with no cursor cell (`packages/nax/src/tui/chat/ChatInput.tsx`, `emptyRows`).\n\n**Approach** — An empty, active, not-busy input draws the first cell of its placeholder or hint inverse, the rest muted. An inactive or busy input draws no inverse cell.\n\nThe question card's `ChatInput` gets `onEscape`, which replaces the input's own esc (the two-press clear) while set. This story adds the optional generic input hook; US-009 supplies it on the question card. Check the callback before the empty/busy clear early return so it works for an empty answer. Preserve menu navigation ownership, the controlled draft/latest ref and the existing double-press window when no callback is supplied. No inverse cell or placeholder appears on the existing busy-empty form. Measure and draw the same number of placeholder rows; keep nonempty cursor rendering unchanged.\n\n**Scope** — In: ChatInput props, empty-row inverse cell, callback-owned esc, mounted ANSI and stdin regressions. Out: the answer placeholder, AskCard.onDismiss and screen cancellation (US-009), line-editor control-byte behavior (US-002), esc-layer helper (US-006). Reducing `ChatApp.tsx` or `ChatInput.tsx` below the 600-line source limit.\n\n**Interface** — `ChatInputProps` gains optional:\n```typescript\nonEscape?: () => void\n```\nThe optional callback replaces esc clear-arm while set; active=false still disables input handling.",
+      "acceptanceCriteria": [
+        "[integration] Rendering an active, not-busy `ChatInput` with an empty draft draws the placeholder's first character as the inverse cell (inside the SGR 7 / SGR 27 pair) and the rest of the placeholder outside it.",
+        "[integration] Rendering an inactive (`active: false`) `ChatInput` with an empty draft draws no inverse cell.",
+        "[integration] Rendering an active `ChatInput` with an empty draft and `busy: true` draws no inverse cell and no placeholder, as today.",
+        "[integration] Rendering an active `ChatInput` with an empty draft and `hint: \"esc again to clear\"` draws the hint's first character `e` as the inverse cell.",
+        "[integration] Rendering an active `ChatInput` with draft `\"abc\"` and the cursor at 1 still draws `b` as the inverse cell.",
+        "[integration] A `ChatInput` rendered with `onEscape` set and draft `\"abc\"` calls `onEscape` once when esc is written to stdin, and the draft is still `\"abc\"` after a second esc within the double-press window (no clear).",
+        "[integration] A `ChatInput` rendered with `onEscape` set and an empty draft calls `onEscape` once when esc is written to stdin.",
+        "[integration] A `ChatInput` rendered without `onEscape` and draft `\"abc\"` still clears the draft on two esc presses within the double-press window, as today."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "focus",
+        "input",
+        "esc"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Localized existing component rendering and key ownership changes, tested through controlled mounted input and raw ANSI frames.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatInput.tsx",
+        "packages/nax/test/ui/chat/chat-input.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/chat-input-focus.test.tsx"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/ChatInput.tsx",
+          "reason": "the empty-editor rows carry the inverse cursor cell when active and not busy, and the optional `onEscape` replaces the esc clear-arm while set."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "15906f76c1ec41f164131c51265d46a4e1c62186"
+    },
+    {
+      "id": "US-009",
+      "title": "Esc and hints in the chat screen",
+      "description": "**Goal** — Wire the drawn top esc layer into chat hints and key actions, including declining and conditionally stopping a session question.\n\n**Motivation** — The footer and the working line say `esc to interrupt` while a card, picker or menu is up, but `ChatApp.tsx` ignores esc whenever one is shown. Esc does close pickers, but nothing says so.\n\n**Approach** — `topEscLayer` reads what is drawn: an ask card (cards render over pickers and the input), then a picker, then the mention picker, then the slash menu, then a running turn. The footer and the working line draw `escHintText(topEscLayer(...))`, and the esc handlers act on the same layer, so the hint and the action cannot disagree. ChatApp passes `turnRunning: turnRunning && keys.canControl()`, `askFromSession: ask.sessionId !== \"host\"`, `ask` mapped from the pending ask's `type` (`question` → `\"question\"`, `approval_requested` → `\"approval\"`, `host_choice` → `\"choice\"`), `mentionShown: mention.ownsNavigation()` (the mention picker's esc claim, false while only its no-git diagnostic line is drawn) and `menuShown: menuShown()`; a question layer's `stops` is `turnRunning && askFromSession`, which is exactly when the dismiss cancels. The working line's presence is decided as today (from the turn status alone) before the menu rows are measured; only its text takes the esc hint, so the layer can read `menuShown()` without a cycle.\n\nQuestion card: decline the question; then, for a question the chat session asked (not a host question from a run ask or a job, whose `sessionId` is `\"host\"`), `host.cancel()` when a turn runs and `keys.canControl()` (AskCard via `onDismiss`, ChatApp). The question card's `ChatInput` gets `onEscape`, which replaces the input's own esc (the two-press clear) while set.\n\nThe question card's input placeholder is `type your answer · enter to send`. Optional `onDismiss`, passed to the question input as `onEscape`, and the question input's placeholder `type your answer · enter to send`, passed both to that `ChatInput` as `hint` and to `askCardLayout`'s `inputRows` call so the measured rows match the drawn ones. There is no new guidance row. Decline precedes cancellation; no host question cancels a chat turn. A running but uncontrollable turn is passed as turnRunning:false to the helper and only closes the question; its excluded mounted mode-switch test is represented by US-006's false case.\n\nUse the same layer for the screen's turn-escape guard and hints, allowing only the layer's owner to act. Preserve existing picker/menu closes, approval deny, choice fallback, idle double-esc clear, and copied/quit/clear hint precedence. Map host_choice safely because it has no sessionId. Keep ChatApp changes to wiring, and keep chat-status under 600 lines without raising a baseline.\n\n**Scope** — In: AskCard.onDismiss and measured answer hint, mounted question escape, layer-based screen guards and footer/working-line integration. Out: helper implementation (US-006), controller settlement (US-007), generic input callback/cursor (US-008). Changing what esc does on approval cards (deny) and choice cards (fallback choice); neither stops the turn. Changing picker titles; the footer names what esc closes. A mounted-screen test of esc while the keys cannot control the turn (a mode switch in flight); the case is pinned at `topEscLayer` with `turnRunning: false`.\n\n**Interface** — `AskCardProps` gains optional:\n```typescript\nonDismiss?: () => void\n```\nThe question input receives `onEscape={onDismiss}` and `hint=\"type your answer · enter to send\"`. ChatApp feeds `escHintText(topEscLayer(...))` to `footerHint`'s `layer`, `footerModel`'s `layerHint` and `workingLine`'s optional `escHint`; onDismiss calls `host.asks.declineQuestion(requestId)` before any `host.cancel()`.",
+      "acceptanceCriteria": [
+        "[integration] In the mounted chat screen with a running turn and an open session question (a `question` event from the session), writing esc to stdin calls `host.asks.declineQuestion` with the question's request id and then `host.cancel()` once.",
+        "[integration] In the mounted chat screen with no running turn and an open host question, writing esc calls `host.asks.declineQuestion` with its request id and does not call `host.cancel()`.",
+        "[integration] In the mounted chat screen with a running turn and an open host question (`sessionId` `\"host\"`), the footer's hint ends with `esc to close` and is not `esc to close and stop`, and writing esc calls `host.asks.declineQuestion` with its request id and does not call `host.cancel()`.",
+        "[integration] In the mounted chat screen with a running turn and the `@` mention picker showing only its no-git diagnostic line (no file rows), the footer shows `esc to interrupt`, and writing esc calls `host.cancel()` once.",
+        "[integration] In the mounted chat screen with an open choice card, the footer shows `esc to cancel`, and writing esc resolves the card with its fallback choice as today.",
+        "[integration] In the mounted chat screen with a typed answer `\"yes\"` in an open question card, writing esc declines the question (no `answerQuestion` call) instead of arming the clear.",
+        "[integration] In the mounted chat screen with an open question card and no typed answer, the card's input row reads `type your answer · enter to send`.",
+        "[integration] In the mounted chat screen with a running turn and an open question card, the footer's last row shows the hint `esc to close and stop` in the place where `esc to interrupt` is drawn when nothing is open.",
+        "[integration] In the mounted chat screen with a running turn and an open question card, the working line's detail ends with `esc to close and stop)` in place of `esc to interrupt)`.",
+        "[integration] In the mounted chat screen with no running turn and an open question card, the footer's hint ends with `esc to close` and is not `esc to close and stop`.",
+        "[integration] In the mounted chat screen with an open approval card, the footer contains `esc to deny`, and writing esc denies the approval as today.",
+        "[integration] In the mounted chat screen with the jobs picker open (ctrl+g), the footer contains `esc to close jobs`; writing esc closes the picker and the footer no longer contains it.",
+        "[integration] In the mounted chat screen with the model picker open (`/model`), the footer contains `esc to close model picker`.",
+        "[integration] In the mounted chat screen with the slash menu open (prompt `\"/mo\"`), the footer contains `esc to close menu`.",
+        "[integration] In the mounted chat screen with a running turn and nothing open, the footer contains `esc to interrupt`, and writing esc calls `host.cancel()` once, as today.",
+        "[integration] In the mounted chat screen with a running turn and the jobs picker open, writing esc closes the picker and does not call `host.cancel()`."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "esc",
+        "questions",
+        "session"
+      ],
+      "dependencies": [
+        "US-006",
+        "US-007",
+        "US-008"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Integrates multiple concurrent Ink key owners, host/session question settlement and controllable-turn cancellation with measured layout; strict isolation applies to session and approval routing.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/AskCard.tsx",
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/src/tui/chat/use-clipboard-feedback.ts",
+        "packages/nax/src/tui/chat/esc-layer.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/chat-app-esc-layers.test.tsx"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/AskCard.tsx",
+          "reason": "optional `onDismiss`, passed to the question input as `onEscape`, and the question input's placeholder `type your answer · enter to send`, passed both to that `ChatInput` as `hint` and to `askCardLayout`'s `inputRows` call so the measured rows match the drawn ones."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/ChatApp.tsx",
+          "reason": "the question card's `onDismiss` (decline, then cancel when a turn runs and the keys can control it), and `topEscLayer` feeding `footerHint`, `footerModel`'s `layerHint` and `workingLine`'s `escHint`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d1ac9d97dd7b85c1f189fab37a97b79cb3044d3b"
+    },
+    {
+      "id": "US-010",
+      "title": "Background notice summaries",
+      "description": "**Goal** — Parse canonical background notice text into stable one-line presentation summaries.\n\n**Motivation** — Background notices fill the transcript: `useJobs` delivers each notice through `sendTurn({ message })` (`ChatApp.tsx`, the `deliver` option), so `sentEntries` lays it out as a highlighted `user` entry; replay does the same.\n\n**Approach** — A task line is matched from `[nax-tasks] background command <id> (` to the first `) ended: <state>,` after it, and a job line from `[nax-jobs] job <id> (<kind> <target>) ended: <state>`, `<state>` being the single word after `ended: `. `summarizeBackgroundNotice(text)` (`packages/nax/src/prompts/builders/notice-summary.ts`, beside the builders that write the notices) returns a one-line summary for a notice and `undefined` for any other text.\n\nTask summaries count matched commands and states in first-seen state order, using singular `1 background command ended` and plural `3 background commands ended`, then ` · <count> <state>` per state. Job summaries read `nax job <kind> <target> ended · <state>`, ignoring cost, note, log and chain lines. A `buildRunAskNotice` first line `[nax-jobs] run ask <askId>` yields `run ask <askId> sent to the agent`. A notice-looking text that matches no known notice line returns undefined. Test with outputs of the canonical builders rather than changing those builders to suit the parser. Export through `@/prompts`.\n\n**Scope** — In: pure summary parser next to notice builders and its barrel export. Out: transcript kind/projection/layout/click behavior (US-011), output listings (US-012). Changing the text the model receives in a background notice. Task commands containing a newline or the text `) ended:`: such a notice may summarise wrongly or fall back to the user row.\n\n**Interface**\n```typescript\nsummarizeBackgroundNotice(text: string): string | undefined\n```\nNew `src/prompts/builders/notice-summary.ts`, exported from `@/prompts`.",
+      "acceptanceCriteria": [
+        "[unit] `summarizeBackgroundNotice` of `buildBackgroundTaskNotice` for three tasks that all ended `succeeded` returns `\"3 background commands ended · 3 succeeded\"`.",
+        "[unit] `summarizeBackgroundNotice` of `buildBackgroundTaskNotice` for one task that ended `failed` returns `\"1 background command ended · 1 failed\"`.",
+        "[unit] `summarizeBackgroundNotice` of `buildBackgroundTaskNotice` for two tasks, the first `succeeded` and the second `failed`, returns `\"2 background commands ended · 1 succeeded · 1 failed\"`, counts in first-seen order.",
+        "[unit] `summarizeBackgroundNotice` of `buildJobNotice` for job kind `run`, target `chat-x` and state `succeeded` returns `\"nax job run chat-x ended · succeeded\"`.",
+        "[unit] `summarizeBackgroundNotice` of `buildJobNotice` for job kind `plan`, target `chat-y`, state `failed` and a `chainId` (which adds the chain line) returns `\"nax job plan chat-y ended · failed\"`.",
+        "[unit] `summarizeBackgroundNotice` of `buildRunAskNotice(\"ask-7\", request)` returns `\"run ask ask-7 sent to the agent\"`.",
+        "[unit] `summarizeBackgroundNotice(\"hello\")` returns `undefined`.",
+        "[unit] `summarizeBackgroundNotice(\"[nax-tasks] something else\")` returns `undefined`, because no line matches a known notice line.",
+        "[unit] `summarizeBackgroundNotice` is importable from `@/prompts`."
+      ],
+      "tags": [
+        "chat",
+        "prompts",
+        "background",
+        "parser"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Small pure parser with three established text protocols and an export; no send-path or permission behavior changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/background-builder.ts",
+        "packages/nax/src/prompts/builders/workflow-builder.ts",
+        "packages/nax/src/prompts/builders/run-ask-builder.ts",
+        "packages/nax/src/prompts/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/prompts/builders/notice-summary.ts",
+        "packages/nax/test/unit/prompts/builders/notice-summary.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/prompts/index.ts",
+          "reason": "export `summarizeBackgroundNotice`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "50a7194bb8912908cfb647ccaa491e95786f7aff"
+    },
+    {
+      "id": "US-011",
+      "title": "Collapsed background notice rows",
+      "description": "**Goal** — Display delivered and replayed background notices as expandable muted summaries without changing their model payload.\n\n**Motivation** — Background notices fill the transcript: `useJobs` delivers each notice through `sendTurn({ message })` (`ChatApp.tsx`, the `deliver` option), so `sentEntries` lays it out as a highlighted `user` entry; replay does the same.\n\n**Approach** — `sentEntries(message)` returns one `{ kind: \"background\"; summary; text }` entry when the summary is defined, so live sends and replay (`replayUser` calls `sentEntries`) draw the same collapsed row. The model still receives the full notice text: only the transcript entry changes. A `background` entry is collapsible like a skill entry: collapsed it is one muted row `<summary> (ctrl+o to show)`; open it adds every notice line, indented and muted. A click on the summary row toggles it, ctrl+o expands all collapsible entries.\n\nUse `summarizeBackgroundNotice` from US-010 in sentEntries, not a separate delivery or replay parser. New `layout-background.ts` uses shared `cardRows`, `resultPrefix`, `cardIndent`, `SHOW_HINT` and `HIDE_HINT`; expanded summary ends `(ctrl+o to hide)`. `layoutEntry` dispatches background to backgroundLines; `cachedLines` treats it as collapsible (`open ?? expanded`). A click on the summary header toggles it; body rows never toggle. Preserve immutable entry replacement and identity caching. Unknown notice-looking text stays today's user row. Preserve any optional missing positions introduced by US-004 when integrating shared sentEntries edits.\n\n**Scope** — In: background transcript union member, notice projection live/resume, new layout, cache/click expansion and mounted task delivery. Out: summary parser (US-010), collapsible listing/job output (US-012), image-slot implementation (US-004). Changing the text the model receives in a background notice. A typed user message that happens to start with a `[nax-tasks]` or `[nax-jobs]` notice line is drawn as a collapsed notice row; accepted.\n\n**Interface**\n```typescript\n{ kind: \"background\"; summary: string; text: string; open?: boolean }\n```\n`sentEntries(message, images?, missing?: readonly number[])` returns `[{ kind: \"background\", summary, text: message }]` when `summarizeBackgroundNotice(message)` is defined. Add `backgroundLines` in `src/tui/chat/layout-background.ts`; use the existing layout context's effective expansion and existing ctrl+o screen handler.",
+      "acceptanceCriteria": [
+        "[unit] `sentEntries` of a `buildBackgroundTaskNotice` text for three succeeded tasks returns exactly `[{ kind: \"background\", summary: \"3 background commands ended · 3 succeeded\", text }]`, `text` the whole notice.",
+        "[unit] `sentEntries(\"hello\")` still returns `[{ kind: \"user\", text: \"hello\" }]`.",
+        "[unit] `backgroundLines` of a collapsed `background` entry (`open` absent, layout `expanded: false`) returns one muted row behind the result prefix reading `<summary> (ctrl+o to show)`.",
+        "[unit] `backgroundLines` of a `background` entry laid out with `expanded: true` returns the summary row ending `(ctrl+o to hide)` followed by one indented muted row per notice line.",
+        "[unit] `layoutTranscript` of a `background` entry with `open: true` and layout `expanded: false` draws the open form, and with `open: false` and `expanded: true` draws the collapsed form.",
+        "[unit] `toggleTranscriptLine` on the summary row of a collapsed `background` entry returns entries where that entry has `open: true`; on an open entry's notice-line row it returns the entries unchanged.",
+        "[unit] `replayHistory` of a stored user message whose content is the `buildJobNotice` text for kind `run`, target `chat-x` and state `succeeded` returns one `background` entry with summary `\"nax job run chat-x ended · succeeded\"` and no `user` entry.",
+        "[integration] In the mounted chat screen, a background task that ends while the chat is idle delivers its notice: `host.send` receives the full notice text, and the transcript shows the collapsed row `1 background command ended · 1 succeeded (ctrl+o to show)` and none of the notice's `[nax-tasks]` lines.",
+        "[integration] In the mounted chat screen after that delivery, ctrl+o shows the notice's `[nax-tasks] background command ...` line in the transcript.",
+        "[unit] `sentEntries(\"[nax-tasks] something else\")` returns `[{ kind: \"user\", text: \"[nax-tasks] something else\" }]` because no known notice line matches."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "background",
+        "transcript",
+        "collapse"
+      ],
+      "dependencies": [
+        "US-010"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New transcript variant crosses shared live/replay projection, pure layout, expansion caching, click ownership and mounted delivery without altering session control.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/layout.ts",
+        "packages/nax/src/tui/chat/transcript-click.ts",
+        "packages/nax/src/tui/chat/mention-send.ts",
+        "packages/nax/test/ui/chat/task-notices.test.tsx",
+        "packages/nax/src/prompts/builders/notice-summary.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/layout-background.ts",
+        "packages/nax/test/unit/tui/chat/layout-background.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/transcript-model.ts",
+          "reason": "the `background` member of `TranscriptEntry`."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/layout.ts",
+          "reason": "`layoutEntry` dispatches `background` to `backgroundLines`, and `cachedLines` treats it as collapsible (`open ?? expanded`)."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/transcript-click.ts",
+          "reason": "a click on a `background` entry's summary row toggles it."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/mention-send.ts",
+          "reason": "`sentEntries` returns the `background` entry for a notice."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f07749098800b06bc2285f73c8173f0e6a15f1b4"
+    },
+    {
+      "id": "US-012",
+      "title": "Collapsed job output from the jobs picker",
+      "description": "**Goal** — Make task/job output opened from the jobs picker collapsible while keeping ordinary slash listings always visible.\n\n**Motivation** — The jobs picker's enter prints a job's status and last 40 output lines as a permanent `listing` entry (`useChatPicker.ts`, `showOutput`).\n\n**Approach** — A `listing` entry gains `collapsible?: boolean`. The jobs picker's output listing sets it. A collapsible listing draws its bold title row, then one muted row behind the result prefix (`resultPrefix`, as a skill's line-count row) reading `<n> lines (ctrl+o to show)` when collapsed or `<n> lines (ctrl+o to hide)` when open, and, when open, every text line as today. Every other listing keeps `collapsible` absent and is drawn as today.\n\nUse singular `1 line` for one source line. The listing member gains `open?: boolean`; layout.ts cachedLines applies `open ?? expanded` only to collapsible listings, and transcript-click toggles a collapsible listing on its title row only. Preserve existing text line coloring/wrapping and NO_OUTPUT fallback. showOutput sets `collapsible: true` for both task output and job logs, without changing read calls, last-40-lines behavior, title, errors or picker close.\n\nUpdate jobs-opener.test.tsx AC-19 to press ctrl+o after enter before reading line2, retaining title/picker-closed assertions. In jobs-picker.test.tsx, AC-10 (job log), AC-8 (line1/line2) and AC-11 ((no output yet)) likewise press ctrl+o before reading output, retaining title and tasks.output/jobs.logTail call assertions.\n\n**Scope** — In: optional listing fields, opt-in collapsed/open layout, title click and expansion-cache integration, jobs picker output flag and mounted output regressions. Out: background notice parsing/projection/layout (US-010/US-011). Collapsing slash-command listings (`/jobs`, `/agents`, `/mcp` and the rest); only the jobs picker's output listing is collapsible. Changing picker titles; the footer names what esc closes.\n\n**Interface** — TranscriptEntry's listing member becomes:\n```typescript\n{ kind: \"listing\"; title: string; text: string; collapsible?: boolean; open?: boolean }\n```\n`listingLines` uses effective expansion supplied by layout; `showOutput` appends `{ kind: \"listing\", title, text, collapsible: true }`.",
+      "acceptanceCriteria": [
+        "[unit] `listingLines` of `{ kind: \"listing\", title: \"bash-1 · succeeded\", text: \"a\\nb\\nc\", collapsible: true }` laid out with `expanded: false` returns the bold title row and one muted row behind the result prefix reading `3 lines (ctrl+o to show)`.",
+        "[unit] `listingLines` of the same entry laid out with `expanded: true` returns the title row, the muted row `3 lines (ctrl+o to hide)`, and the rows `a`, `b` and `c`.",
+        "[unit] `listingLines` of a listing with one text line and `collapsible: true`, collapsed, returns the title row and `1 line (ctrl+o to show)`.",
+        "[unit] `listingLines` of a listing without `collapsible`, laid out with `expanded: false`, returns the title row and every text line, as today.",
+        "[unit] `toggleTranscriptLine` on the title row of a collapsed collapsible listing returns entries where that listing has `open: true`; on the title row of a listing without `collapsible` it returns the entries unchanged.",
+        "[unit] `layoutTranscript` of a collapsible listing with `open: true` and layout `expanded: false` draws every text line.",
+        "[integration] In the mounted chat screen, choosing a finished task in the jobs picker with enter adds a listing whose title row reads `<label> · <state>` and whose next row reads `<n> lines (ctrl+o to show)`, and none of the task's output lines are drawn.",
+        "[integration] In the mounted chat screen after that, ctrl+o draws the task's output lines."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "jobs",
+        "listing",
+        "collapse"
+      ],
+      "dependencies": [
+        "US-011"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Standard opt-in extension of the expansion pattern established by US-011, with one picker producer and explicit always-open listing regression anchors.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/layout-listing.ts",
+        "packages/nax/src/tui/chat/useChatPicker.ts",
+        "packages/nax/src/tui/chat/transcript-click.ts",
+        "packages/nax/test/ui/chat/jobs-picker.test.tsx",
+        "packages/nax/src/tui/chat/layout.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/transcript-model.ts",
+          "reason": "the listing member gains `collapsible?` and `open?`."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/layout-listing.ts",
+          "reason": "a collapsible listing's collapsed rows."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/layout.ts",
+          "reason": "`cachedLines` treats a collapsible listing as collapsible."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/transcript-click.ts",
+          "reason": "a click on a collapsible listing's title row toggles it."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/useChatPicker.ts",
+          "reason": "`showOutput` sets `collapsible: true` on the output listing."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/jobs-opener.test.tsx",
+          "reason": "the `AC-19` test (enter on a task row, then `line2` in the transcript) presses ctrl+o after enter before reading the output; its title and picker-closed assertions are unchanged."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/jobs-picker.test.tsx",
+          "reason": "the `AC-10` test (`job log` under the job's `label · state` title), the `AC-8` test (output lines `line1` and `line2` under the `label · state` title) and the `AC-11` test (`(no output yet)`) press ctrl+o after enter before reading the output rows, because the output listing now starts collapsed; the title-row and `tasks.output` / `jobs.logTail` call assertions are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3cb48a5908d5ee2f077f9ff7d9b29c554752750f"
+    }
+  ],
+  "analysis": "This is a bounded enhancement of the existing React/Ink chat TUI, not a new screen or transport. Navigation used direct Read/Grep/Glob because no codebase-memory MCP tools are exposed in this host; no shell, test runner, or clock capability is exposed, and no validation commands were run while drafting. The binding input spec is also present at .nax/features/chat-tui-esc-focus/spec.md:1; its acceptance criteria are at :343-495. The older design at docs/superpowers/specs/2026-11-01-nax-chat-tui-esc-focus-design.md:27-120 is historical context, not authority over the supplied refinements: do not copy its menu-first esc order, new picker titles, extra answer-label row, display option on ComposedSend, different job summary, or multi-path /image syntax. Exactly US-001 through US-012, their workdirs and listed dependencies are retained. This is one feature/PR. All code changes belong in packages/nax except the numbered missing marker in packages/nax-agent. No changes to nax-ai, ACP transport, package versions, permission resolution, or disk schema version are required. Read docs/architecture/ARCHITECTURE.md:174-196 and the package rules before implementation; use pure helpers and existing _deps seams rather than global patches. Existing large screen files receive wiring only; chat-status.ts is currently 574 lines and must stay under 600 without baseline growth.\n\nUS-001: packages/nax-agent/src/native/session/transcript-images.ts:174-204 rehydrates only schemaVersion 2, reads stored images in sequence, appends bare missing markers at :198, omits images when none survive, and otherwise preserves metadata and readable image order. Enumerate stored positions before filtering; the index is per message, not per surviving image. Keep empty-content concatenation free of a leading newline. The same module contains security-sensitive path validation, canonicalization, O_NOFOLLOW, identity checks and error handling at :130-172; do not alter those while changing the marker. Its public consumer is the file transcript store. packages/nax-agent/test/unit/native/session/transcript-images-read.test.ts:32-109 already tests round trips, legacy versions, deleted files and unsafe metadata; revise every expected load marker, including security-path fixtures, without weakening those assertions. Use the Node-compatible APIs already present, #src/ imports and explicit .ts relative source imports. A regression must fail against old code. The read-format change is backward-compatible for storage: writers continue using schemaVersion 2, new loads annotate loss with positions, and US-004 continues accepting old bare load notes. Strict three-session TDD is selected because this is a session persistence path adjacent to filesystem access controls.\n\nUS-002: packages/nax/src/tui/chat/line-editor.ts:87-99 normalizes CRLF and CR in insert and deletes one code point in deleteBefore; editLine at :173-188 inserts any nonempty unclaimed string. Add the DEL/BS-only chunk rule without disturbing modifier/key precedence, return behavior or code-point cursor semantics established at :4-16. Sanitization occurs after newline normalization, keeps tab and LF, and removes all other C0 and DEL. Mixed printable/control chunks are insertions with controls stripped, never deletion commands. packages/nax/src/tui/chat/ChatInput.tsx:633-650 routes stdin through editLine after optional paste interception, so a mounted one-write test is necessary in addition to pure reducer tests in test/unit/tui/chat/line-editor.test.ts. Preserve edits at cursor zero and clamp long deletion runs.\n\nUS-003: packages/nax/src/chat/images/image-file.ts:55-75 owns imageSizeLabel, imageDescription and imageNoteLabel. imageRawBytes at :50-51 decodes AAAA to 3 bytes; add only the under-1024 branch and preserve floored KB/one-decimal MB. Mention expansion consumes imageDescription at packages/nax/src/chat/mentions/mention-expand.ts:220, so real PNG/JPEG fixture labels change too. packages/nax/src/tui/chat/image-draft.ts:45-49 already has the placeholder grammar and :105-127 preserves draft numbering while selecting images for send. Add titleWithoutPlaceholders there, returning the original string byte-for-byte when no placeholder occurs. packages/nax/src/tui/chat/ChatApp.tsx:529-539 is the host.send boundary: sanitize the title only in the images-present branch; preserve the exact two-argument plain send and existing mention expansion/draft reset. Update existing assertions in test/unit/chat/images/image-file.test.ts, test/unit/chat/mentions/mention-expand-images.test.ts, test/unit/tui/chat/image-entries.test.ts and test/ui/chat/chat-app-image-after-send.test.tsx; the hand-written mention note in image-entries may remain 1 KB because it is stored input. Mounted tests in test/ui/chat/chat-app-image-send.test.tsx use _imageAttachDeps and a host seam. Although this is display-only, session-title behavior receives strict three-session TDD under the requested sessions override.\n\nUS-004: packages/nax/src/tui/chat/history-replay.ts:25-55 strips only a trailing run of bare notes and currently returns early for empty text, dropping surviving image rows. Change that parser to retain numbered positions separately from legacy bare notes, call the extended sentEntries and preserve compaction handling at :52-54. packages/nax/src/tui/chat/mention-send.ts:66-98 counts mention-image records and currently numbers only survivors; replace imageRows with reconstruction of loaded-plus-missing slots, then emit only the leading slots not represented by mention records. Never renumber survivors past missing slots; invalid high markers become legacy-style rows after all numbered rows; missing mention slots add no duplicate attachment row. The skill fast path at :95 must use the same reconstruction. Preserve sentEntries calls with no third parameter. test/unit/tui/chat/image-entries.test.ts:61-99 already pins row ordering, absent images and mention suppression; extend it and the replay tests. The integration proof uses createFileTranscriptStore from the PUBLIC @nathapp/nax-agent entry, saves two genuinely different PNG payloads (2x3 and 4x5), deletes exactly the second ref sidecar and replays the reloaded messages, thereby testing the US-001 format seam rather than mocking it. No schema upgrade or rewriting old transcripts. Both US-003 and this story touch image-entries and mention-send changes later overlap US-011; dependencies stay exactly binding, so preserve compatible edits when integrating branches. Strict strategy follows the session persistence override.\n\nUS-005: parseSlashCommand in packages/nax/src/tui/chat/slash-commands.ts:109-114 rejects any text not starting with /. ChatApp.submit at packages/nax/src/tui/chat/ChatApp.tsx:481-518 parses before inspecting images and currently refuses every slash line with a present image. Add splitLeadingPlaceholders beside the pure draft helpers; require at least one leading placeholder, allow leading/inter-placeholder/trailing whitespace and no whitespace between final placeholder and slash, and reject arbitrary leading words. Parse rest as the command; only images named inside rest trigger IMAGES_PLAIN_ONLY, with the WHOLE original line restored. On success restore lead before runCommand, not after an asynchronous attach, and do not reset the image draft. restorePrompt uses the imperative editor handle at :423-425 and updates the screen's current editor via changeDraft at :605-614; retain this ownership to avoid stale batched edits. /quit must continue through the existing close path; /image uses the rest as one path, preserving unquoted spaces. The slash menu query rules and busy submit gate in ChatInput.tsx:580-586 do not change. Existing mounted image-command tests at test/ui/chat/chat-app-image-command.test.tsx:14-23 stub _imageAttachDeps and type code points individually so a test command is not intercepted as a pasted path; mirror/reuse that setup in the new placeholder-command test.\n\nUS-006: packages/nax/src/tui/chat/chat-status.ts:166-177 defines static FooterHint text, :221-250 constructs the left hint after the mode, :327-350 builds the footer, and :414-434 hardcodes the working-line busy hint. packages/nax/src/tui/chat/use-clipboard-feedback.ts:13-27 chooses quit, clear, busy/background, expanded, idle. Create a pure discriminated EscLayer model with topEscLayer and escHintText; card > picker > mention/slash menu > controllable turn > none. Its question stops flag is turnRunning && askFromSession. A no-git diagnostic is NOT a menu esc layer. The layer input passed later by US-009 uses turnRunning && keys.canControl, so tests with false pin the mode-switch-in-flight failure path without adding the excluded mounted test. Hint strings must exactly match the spec, especially resume=>sessions and choice=>cancel. Extend FooterHint only with layer; layer follows quit/clear, precedes busy, and leaves copy feedback chosen by the screen as today. workingLine keeps existing three-argument behavior and receives an optional fourth hint. This story changes helpers, not mounted behavior; adapt existing footerHint object callers to layer:false as necessary for an independently compilable change, then US-009 replaces the screen's default with real layer state. Existing test/unit/tui/chat/chat-status.test.ts must retain all old expected text and add layer:false to old inputs. No picker title changes.\n\nUS-007: packages/nax/src/chat/ask-controller.ts:55-68 defines ChatAskController; :172-220 creates and settles host questions with timer/abort cleanup; :275-284 answers session/host questions; :102-107 emits changes only on actual removal. declineQuestion first verifies an open question, uses settleHostQuestion(id,null) for a host question, and otherwise answers once with the exported fixed text then removes it. Unknown, approval and stale ids are no-ops. Reuse cleanup/removal paths to avoid duplicate listener notifications or unresolved timers. Export QUESTION_DECLINED_REPLY through packages/nax/src/chat/index.ts:21-26. Dependencies include ChatHost's shared asks at chat/chat-host.ts:183, jobs/jobs-host.ts:3, jobs/run-asks.ts:18, subagent-runs.ts:12, close-confirm.ts:3, turn-runner.ts:3 and ask-fallback.ts:4; their approval/memory behavior must not change. test/unit/chat/ask-controller.test.ts already covers questions and settlement; hand-built interface literals in test/ui/chat/ask-card.test.tsx:117, chat-app.test.tsx:54, chat-app-mentions.test.tsx:89 and slash-commands.test.tsx:57 require declineQuestion stubs only, with no weakening of assertions. Strict strategy reflects session reply routing and the shared approval controller.\n\nUS-008: packages/nax/src/tui/chat/ChatInput.tsx:77-112 defines props, :222-231 draws muted empty placeholder rows without cursor metadata, :382-389 exits on muted rows before rendering the inverse cell, and :593-604 owns the two-escape clear. Change the row representation/rendering so the first placeholder/hint cell is inverse only when active and not busy, with remaining characters muted and no change in row measurement/wrapping. Nonempty cursor drawing and busy empty marker-only behavior stay intact. The optional onEscape must replace clear-arm handling even with empty text, while preserving menu navigation ownership and the default double-press clear when absent. Its timer and draft ref lifecycle at :523-575 must remain cancellable and batch-safe. test/ui/chat/chat-input.test.tsx:42-65 already inspects raw SGR 7/27 and restores chalk level and _chatInputDeps; use the same techniques in the new focused test file rather than assertions against stripped plain text. Existing mounted owners rerender controlled drafts; don't test only a pure row builder.\n\nUS-009: packages/nax/src/tui/chat/ChatApp.tsx:234-240 reads pending ask and turnRunning, :261-270 measures the working line before menu rows, :308-322 guards escape with several separate visibility checks, :620-637 selects the footer hint, and :713-729 mounts AskCard above picker/input. Wire one layer interpretation into hints and handler guards. Separate working-line PRESENCE (status only) from its final hinted text so menuShown can be read without a circular layout dependency. Map ask types explicitly: question=>question, approval_requested=>approval, host_choice=>choice; host_choice has no sessionId, so discriminate safely when computing origin. The question onDismiss declines first, then cancels only a controllable running session-origin question. Do not let the same stdin escape close a picker/card and cancel the turn. packages/nax/src/tui/chat/use-mention-menu.ts:270-285 draws no-git diagnostics with rows but ownsNavigation false, so use the actual claim, not mentionShown. AskCard.tsx:335 measures the answer input; :339-356 defines props; :448-470 returns early for question keys and handles approval/choice locally; :477-489 mounts ChatInput without guidance. Add optional onDismiss and pass it as onEscape plus the EXACT answer hint to both measured inputRows and rendered ChatInput. Preserve expiry, fallback choice and approval deny; none of the latter stop a turn. Add mounted stdin tests in chat-app-esc-layers.test.tsx, reusing test/helpers/chat-picker.tsx and existing chat-asks-keys fixtures where possible, not calls directly to the helper. Mount timing and simultaneous Ink subscribers are the highest esc risk. Strict three-session TDD follows session/control/approval routing.\n\nUS-010: packages/nax/src/prompts/builders/background-builder.ts:13-21 emits one task line per completed task plus guidance; workflow-builder.ts:40-51 emits the job line, optional cost/note and chain continuation; run-ask-builder.ts:23-40 emits the separate run-ask header and untrusted block. Implement summarizeBackgroundNotice in a small pure module BESIDE these writers, and export it from prompts/index.ts. Task command matching must stop at the first ') ended: <state>,' AFTER the id/open parenthesis, not the first closing parenthesis in the shell command; states are a single word, and counts retain first-seen order. Job summaries retain kind and target and ignore cost/log/chain detail; run asks have their own exact summary. Unknown text, including notice-looking text with no recognized line, returns undefined. Tests should feed actual builder outputs from existing background-builder/workflow-builder/run-ask-builder tests, avoiding duplicate hand-maintained protocol examples alone. This parser is presentation-only: do not alter instructions, chain approvals or untrusted-text treatment.\n\nUS-011: packages/nax/src/tui/chat/transcript-model.ts:20-49 is the discriminated union. Add background with summary,text,open?; do not repurpose notice because other notices remain always visible. mention-send.ts:93 is the single projection seam consumed live by ChatApp.tsx:559 and on resume by history-replay.ts:55, while ChatApp.tsx:589 still sends the original notice through sendTurn. Call summarizeBackgroundNotice there before ordinary message projection; never truncate or replace the model's content. New layout-background uses shared cardRows/resultPrefix/cardIndent/SHOW_HINT/HIDE_HINT; skillLines in layout.ts:186-200 is the existing visual pattern. layout.ts:271-300 dispatches entry kinds and :336-349 caches lines using effective expansion, with identity-based WeakMap invalidation at :321. Add background to both dispatcher and open??expanded calculation. transcript-click.ts:6-50 restricts toggles to structural headers and preserves other entry references; add only the summary header click. Global ctrl+o is already wired in ChatApp.tsx:309-312, so do not add another handler; inherit its existing expansion semantics. test/ui/chat/task-notices.test.tsx:17-94 uses real task registry completion and mountChatPicker with gated host sends; assert unchanged full host.send plus collapsed transcript then ctrl+o. replayHistory should collapse builder-generated job text without a second replay-specific parser. Preserve US-004 image-slot work if concurrently integrated; binding dependencies remain US-010 only.\n\nUS-012: packages/nax/src/tui/chat/layout-listing.ts:71-75 currently always draws a bold sanitized title and all source lines, preserving blank lines, wrapping and listingTone. Add an opt-in collapsible flag plus open override to the listing member; leave absent flags exactly as before. The collapsed listing has TWO logical rows (title then muted result-prefix count), unlike background's single summary row. Open form adds the existing colored source-line rendering. Count logical text lines, with singular '1 line', not wrapped display rows. Add collapsible listings to cachedLines' effective expansion and title-only click handling; noncollapsible listing titles must not toggle. packages/nax/src/tui/chat/useChatPicker.ts:161-175 reads task/job output and adds one listing; set collapsible:true there only, retaining NO_OUTPUT fallback and read error handling. choose at :181-187 closes jobs picker before asynchronous output. test/ui/chat/jobs-picker.test.tsx:16 pins the current title, and its output assertions AC-10/AC-8/AC-11 need ctrl+o after enter; jobs-opener.test.tsx AC-19 likewise expands before inspecting line2. Keep output read calls, 40-line limit, titles and picker-closed assertions unchanged. Use existing unit layout-listing and expansion/click suites plus mounted picker flow. Slash command listing producers in slash-commands.ts:98-107 do not opt in.\n\nRisks and rollout: shared ChatApp/image-draft/mention-send/layout/transcript-click edits are intentionally separate stories with binding dependency edges, so merge without overwriting earlier changes; do not add invented dependency edges. New union members require reviewing dispatchers and type extracts; effective open overrides must participate in cache keys and use immutable entry replacement. Preserve baseline escaping, sanitization, wrapping, source-line counts, draft identity, cancellation ownership, and host-vs-session reply isolation. No operational migration, backfill, schema bump, release or data rewrite is needed; old bare image markers remain supported and listing flags are optional. Approval and choice esc semantics are regression anchors, not new permission decisions. Suggested hardening criteria, if present, are separate from binding acceptance. Unit tests cover pure algorithms; mounted integration tests enter through stdin/delivery and the real persistence seam rather than testing only direct helper calls. Follow per-package bun:test commands with explicit paths and timeouts, never bare bun test or bun run nax; pipeline handles normal lint/typecheck/test gates and no such gates are acceptance criteria. Do not run test:coverage inside NAX_SANDBOXED=1. The declared expectedFiles match the spec's Creates lists; extend existing suites and shared helpers for the other specified criteria.\n\nSecond-pass adversarial audit: re-read the canonical spec's design, interfaces, all nine failure rows, Context Files, Creates, all acceptance criteria and all fourteen feature exclusions, then checked the current source boundaries again. Acceptance-preservation ledger (spec item numbers map to the same story and same ordinal in acceptanceCriteria): US-001 {1,2,3,4,5}; US-002 {1,2,3,4,5,6,7,8,9,10}; US-003 {1,2,3,4,5,6,7,8,9,10}; US-004 {1,2,3,4,5,6,7,8,9,10,11}; US-005 {1,2,3,4,5,6,7,8,9,10}; US-006 {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}; US-007 {1,2,3,4,5,6}; US-008 {1,2,3,4,5,6,7,8}; US-009 {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}; US-010 {1,2,3,4,5,6,7,8,9}; US-011 {1,2,3,4,5,6,7,8,9}; US-012 {1,2,3,4,5,6,7,8}. All 118 spec criteria remain, including every parenthetical, existing/as-today/unchanged qualifier, mention-region explanation and first-seen-order clause. US-011 item 10 additionally implements the failure table's unknown-notice-to-user-row requirement, for 119 acceptance entries total. US-006 item 14 replaces the spec's illustrative ellipsis with the existing state/status fixtures without changing hint placement; US-007 item 3 observes the constant's runtime value through the required barrel import; US-010 item 9 observes the required barrel-exported function's return rather than requiring a file-content grep. No deprecated grep/file/verbatim criteria occur. US-006 item 2 now states only its observable return; the uncontrollable-turn interpretation remains in the design and analysis, not as an untestable claim about a mounted caller.\n\nNegative-path ledger: US-001 items 1-4 cover unreadable image recovery; US-002 items 2,4,5,7 cover overlong deletion, empty input and forbidden controls; US-003 items 8 and 10 cover absent placeholder/image inputs and preserve exact original text/two-argument send; US-004 items 3,4,9 cover legacy markers, out-of-range positions and suppressed duplicate mention rows; US-005 items 4-6 and 9 cover nonsplitting text and command refusal; US-006 items 2,3,7,11 cover nonstopping questions, idle and absent hint; US-007 items 4-5 cover wrong-type and unknown ids; US-008 items 2,3,6 cover inactive/busy input and forbidden clear under owner escape; US-009 items 2,3,6,16 cover no cancellation for host/no-turn questions, no answerQuestion on dismissal and picker-owned escape; US-010 items 7-8 cover ordinary and malformed notice text; US-011 items 6 and 10 cover nonheader clicks and unknown notices; US-012 items 4-5 cover opt-in absence and nontoggling ordinary listings. Every story already has a concrete negative path, so no invented failure criteria were added. Backward-compatibility or disappearance of the old placeholder behavior is asserted in each story, not merely promised by a gate.\n\nFailure-table coverage in row order: (1) US-009 items 2,10 plus US-007 item 1; (2) US-006 items 2,8 represent canControl=false exactly as the spec rules, with US-009's guarded dismissal design and no excluded mounted test; (3) US-009 item 3 plus US-007 item 1; (4) US-007 items 4,5; (5) US-010 item 8 and US-011 item 10; (6) US-004 item 4; (7) US-004 item 9; (8) US-005 item 9; (9) US-002 item 2. All fourteen outOfScope strings remain verbatim in source order, with nearby boundaries echoed in story Scope sections; the canonical spec has no story-local deferral blocks to hoist.\n\nFit and scope audit: all spec-recommended Context Files remain in their designated stories, including the upstream esc-layer and notice-summary outputs; each list has at most five entries, and no story's own new file is listed as context. All expectedFiles match their story's Creates list. Binding dependency arrays and workdirs are unchanged and reference only the twelve extant IDs. No new helper outside the spec is required. US-004 complexity is reduced to medium because only two existing pure projection modules change and the file-store API already exists; mandatory strict sessions routing remains in force, including title metadata in US-003 under the original explicit override. US-009 remains complex because the source genuinely has independent Ink key owners and a working-line/menu measurement dependency; US-011 remains complex because adding a union member crosses live/resume projection, renderer dispatch, effective-expansion caching, click ownership and mounted notice delivery. Other simple/medium classifications remain the lightest supported by the source. This audit made no source edits and did not execute tests or claim a machine JSON/schema validation.",
+  "outOfScope": [
+    "Rendering markdown tables (deferred to the next spec by user ruling).",
+    "Changing what esc does on approval cards (deny) and choice cards (fallback choice); neither stops the turn.",
+    "Changing picker titles; the footer names what esc closes.",
+    "Opening the slash menu for a line that starts with image placeholders; the menu opens only for a line that starts with `/`.",
+    "`/image` with several paths in one command; `/image` keeps taking the rest of the line as one path.",
+    "Collapsing slash-command listings (`/jobs`, `/agents`, `/mcp` and the rest); only the jobs picker's output listing is collapsible.",
+    "Changing the text the model receives in a background notice.",
+    "A typed user message that happens to start with a `[nax-tasks]` or `[nax-jobs]` notice line is drawn as a collapsed notice row; accepted.",
+    "DEL or BS bytes mixed with printable text in one input chunk are dropped, not applied as deletions.",
+    "Rewriting transcripts saved by older builds: a bare `[image missing]` keeps its `image · missing` row after the others.",
+    "Reducing `ChatApp.tsx` or `ChatInput.tsx` below the 600-line source limit.",
+    "A mounted-screen test of esc while the keys cannot control the turn (a mode switch in flight); the case is pinned at `topEscLayer` with `turnRunning: false`.",
+    "Task commands containing a newline or the text `) ended:`: such a notice may summarise wrongly or fall back to the user row.",
+    "A line of image placeholders followed by a slash command, submitted while a turn runs: `ChatInput` keeps today's busy rule (only a line starting with `/` is submitted mid-turn), so it is not run until the turn ends."
+  ],
+  "routingProfile": "native-codex-ds"
+}

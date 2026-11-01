@@ -39,8 +39,8 @@ const REPO_ROOT = "/repo";
 const SCREEN_CWD = "/screen";
 /** The code points one `[Image #1]` placeholder occupies. */
 const PLACEHOLDER_CHARS = "[Image #1]".length;
-/** The label a 2×3 PNG pasted from the clipboard earns, below a kibibyte of payload. */
-const LABEL = "image 1 · png · 2×3 · 1 KB · clipboard";
+/** The label a 2×3 PNG pasted from the clipboard earns: its 29 raw bytes, spelled as such. */
+const LABEL = "image 1 · png · 2×3 · 29 B · clipboard";
 /** What a case's turn rejection says, so the error row can be read off the frame. */
 const TURN_FAILED = "turn failed";
 /** The notice a background job delivers, which consumes no picture from the prompt. */

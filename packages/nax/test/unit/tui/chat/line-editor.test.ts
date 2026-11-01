@@ -85,6 +85,32 @@ describe("editLine — insert", () => {
   });
 });
 
+describe("editLine — control bytes", () => {
+  test.each([
+    ["DEL burst", at("abcd", 4), "\u007f\u007f\u007f", { text: "a", cursor: 1 }],
+    ["BS burst beyond start", at("abcd", 2), "\b\b\b", { text: "cd", cursor: 0 }],
+    ["mixed DEL and BS", at("abcd", 4), "\u007f\b", { text: "ab", cursor: 2 }],
+    ["empty DEL burst", EMPTY_EDITOR, "\u007f\u007f", { text: "", cursor: 0 }],
+    ["other C0 control bytes and DEL", EMPTY_EDITOR, "a\u0001b\u007fc", { text: "abc", cursor: 3 }],
+    ["tab and newline", EMPTY_EDITOR, "a\tb\nc", { text: "a\tb\nc", cursor: 5 }],
+    ["ESC in an inserted chunk", EMPTY_EDITOR, "a\u001b[0mb", { text: "a[0mb", cursor: 5 }],
+    ["CRLF", EMPTY_EDITOR, "\r\n", { text: "\n", cursor: 1 }],
+    ["lone CR", EMPTY_EDITOR, "a\rb", { text: "a\nb", cursor: 3 }],
+  ] as const)("%s", (_name, state, chunk, expected) => {
+    expect(editLine(state, press(chunk))).toEqual({ kind: "edit", state: expected });
+  });
+
+  test("a burst still deletes when ink's key object carries fields outside the declared flags", () => {
+    // ink assigns `eventType` (the kitty protocol's 'press'/'repeat'/'release') alongside the
+    // flags this reducer declares, so a burst must not be decided by "every value is falsy".
+    const inkKey = { ...NO_FLAGS, pageUp: false, eventType: "press" };
+    expect(editLine(at("abcd", 4), { input: "\u007f\u007f", key: inkKey })).toEqual({
+      kind: "edit",
+      state: { text: "ab", cursor: 2 },
+    });
+  });
+});
+
 describe("editLine — delete", () => {
   test("backspace deletes the character before the cursor", () => {
     // AC-3

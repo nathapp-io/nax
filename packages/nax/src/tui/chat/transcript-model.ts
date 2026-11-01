@@ -28,6 +28,11 @@ export type TranscriptEntry =
    */
   | { kind: "image"; label: string }
   | { kind: "skill"; name: string; args: string; body: string; open?: boolean }
+  /**
+   * A background notice — a task's, a job's, a run ask's — as one collapsed row: `summary`
+   * is what the row says, `text` the whole notice the model received.
+   */
+  | { kind: "background"; summary: string; text: string; open?: boolean }
   | { kind: "reply"; turnId: string; text: string }
   | { kind: "thinking"; turnId: string; text: string; startedAt: string; endedAt?: string; open?: boolean }
   | {
@@ -46,7 +51,13 @@ export type TranscriptEntry =
   | { kind: "notice"; text: string }
   | { kind: "warning"; text: string }
   | { kind: "error"; text: string }
-  | { kind: "listing"; title: string; text: string }
+  /**
+   * A titled listing: what a slash command shows where a reply would go. `collapsible`
+   * opts in to the collapsed form — the title, then one row counting the lines ctrl+o
+   * reveals — which only the jobs picker's job output asks for; every other listing stays
+   * visible whole. `open` is that listing's own expansion, over the transcript's.
+   */
+  | { kind: "listing"; title: string; text: string; collapsible?: boolean; open?: boolean }
   | { kind: "interrupted" };
 
 type ToolEntry = Extract<TranscriptEntry, { kind: "tool" }>;

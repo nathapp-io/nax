@@ -3,6 +3,7 @@ import { displayToolInput, toolResultPreview } from "@nathapp/nax-agent";
 import { COMPACTION_SUMMARY_PREFIX } from "@nathapp/nax-agent/internal";
 import { assertDefined } from "@test/helpers";
 import { type ChatHistory, formatMentionMessage, type MentionRecord, parseMentionMessage } from "@/chat";
+import { buildJobNotice } from "@/prompts";
 import { buildSkillInvocationMessage } from "@/prompts/builders/skills-builder";
 import { mentionTranscriptEntries } from "@/tui/chat/mention-entries";
 import type { TranscriptEntry } from "@/tui/chat/transcript-model";
@@ -178,6 +179,18 @@ describe("replayHistory", () => {
   test("US-005 AC-12: a user message with no expansion stays the plain message", () => {
     expect(replayHistory({ messages: [{ role: "user", content: "see @a.ts" }] })).toEqual([
       { kind: "user", text: "see @a.ts" },
+    ]);
+  });
+  test("AC-7: a stored background notice replays as one collapsed background entry", () => {
+    const content = buildJobNotice({
+      id: "job-1",
+      kind: "run",
+      target: "chat-x",
+      state: "succeeded",
+      logPath: "/o/jobs/job-1.log",
+    });
+    expect(replayHistory({ messages: [{ role: "user", content }] })).toEqual([
+      { kind: "background", summary: "nax job run chat-x ended · succeeded", text: content },
     ]);
   });
   test("US-005 AC-13: a malformed mention envelope falls back to the plain message", () => {

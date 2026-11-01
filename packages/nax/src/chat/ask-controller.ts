@@ -30,6 +30,11 @@ export interface HostApprovalCard {
 }
 
 export const DEFAULT_HOST_APPROVAL_TIMEOUT_MS = 600_000;
+/**
+ * The reply a session question is answered with when the user declines it: the question is
+ * settled rather than left waiting, and the turn is told plainly that it went unanswered.
+ */
+export const QUESTION_DECLINED_REPLY = "The user closed the question without answering.";
 export const _askControllerDeps = {
   // Cancellable: the handle is cleared whenever the host ask resolves.
   setTimeout: (callback: () => void, delayMs: number): ReturnType<typeof setTimeout> | number =>
@@ -63,6 +68,8 @@ export interface ChatAskController {
   resolve(requestId: string, choice: AskChoice): void;
   canRemember(event: ChatApproval): boolean;
   answerQuestion(requestId: string, text: string): void;
+  /** Settles an open question without an answer: a host question with null, a session one with the reply. */
+  declineQuestion(requestId: string): void;
   setMode(mode: ChatMode): void;
   reset(): void;
   onChange(listener: () => void): () => void;
@@ -280,6 +287,17 @@ class AskController implements ChatAskController {
       return;
     }
     this.options.answer(requestId, { text });
+    this.remove(requestId);
+  }
+
+  declineQuestion(requestId: string): void {
+    // Only an open question: an approval or a choice is settled by `resolve`, never declined.
+    if (this.open.get(requestId)?.type !== "question") return;
+    if (this.questions.has(requestId)) {
+      this.settleHostQuestion(requestId, null);
+      return;
+    }
+    this.options.answer(requestId, { text: QUESTION_DECLINED_REPLY });
     this.remove(requestId);
   }
 

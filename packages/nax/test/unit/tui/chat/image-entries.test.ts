@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ImageAttachment } from "@nathapp/nax-agent";
 import { assertDefined } from "@test/helpers";
-import { formatMentionMessage, type MentionRecord, parseMentionMessage } from "@/chat";
+import { formatMentionMessage, imageNoteLabel, type MentionRecord, parseMentionMessage } from "@/chat";
 import { replayHistory } from "@/tui/chat/history-replay";
 import { layoutTranscript } from "@/tui/chat/layout";
 import { mentionTranscriptEntries } from "@/tui/chat/mention-entries";
@@ -17,15 +17,19 @@ import type { TranscriptEntry } from "@/tui/chat/transcript-model";
 const theme: ChatTheme = resolveChatTheme({ env: {}, colorLevel: 3 });
 const WIDTH = 60;
 
-/** The label a 2×3 PNG pasted from the clipboard earns, below a kibibyte of payload. */
-const LABEL = "image 1 · png · 2×3 · 1 KB · clipboard";
+/** The label a 2×3 PNG pasted from the clipboard earns: its four-character payload, three bytes. */
+const LABEL = "image 1 · png · 2×3 · 3 B · clipboard";
 /** The `[image missing]` note feature 1's load writes when a stored image cannot be read. */
 const MISSING = "[image missing]";
 
-/** A pasted 2×3 PNG: a few raw bytes, so its size label is the "1 KB" floor. */
+/** A pasted 2×3 PNG: a four-character base64 payload, so three raw bytes. */
 function image(overrides: Partial<ImageAttachment> = {}): ImageAttachment {
   return { mimeType: "image/png", data: "AAAA", width: 2, height: 3, source: "clipboard", ...overrides };
 }
+
+/** Two pasted PNGs whose bytes and pixels differ, so no two of their labels can be confused. */
+const A = image();
+const B = image({ data: "AAAB", width: 4, height: 5 });
 
 /** The plain text of every row the layout draws for `entries`. */
 function rowsOf(entries: readonly TranscriptEntry[], expanded = false): readonly string[] {
@@ -94,7 +98,24 @@ describe("sentEntries: image rows", () => {
     expect(sentEntries("look", [image(), second])).toEqual([
       { kind: "user", text: "look" },
       { kind: "image", label: LABEL },
-      { kind: "image", label: "image 2 · png · 4×5 · 1 KB · clipboard" },
+      { kind: "image", label: "image 2 · png · 4×5 · 3 B · clipboard" },
+    ]);
+  });
+
+  test("US-004 AC-7: puts a lost image's row back between the images around it", () => {
+    expect(sentEntries("look", [A, B], [2])).toEqual([
+      { kind: "user", text: "look" },
+      { kind: "image", label: imageNoteLabel(1, A) },
+      { kind: "image", label: "image 2 · missing" },
+      { kind: "image", label: imageNoteLabel(3, B) },
+    ]);
+  });
+
+  test("US-004 AC-8: numbers the rows the same way when nothing was lost", () => {
+    expect(sentEntries("look", [A])).toEqual(sentEntries("look", [A], []));
+    expect(sentEntries("look", [A])).toEqual([
+      { kind: "user", text: "look" },
+      { kind: "image", label: imageNoteLabel(1, A) },
     ]);
   });
 });
@@ -157,5 +178,58 @@ describe("replayHistory: stored image rows", () => {
 
   test("keeps an empty stored message as no entries at all", () => {
     expect(replayHistory({ messages: [{ role: "user", content: "" }] })).toEqual([]);
+  });
+
+  test("US-004 AC-1: replays the lost first image at its number, ahead of the one that survived", () => {
+    const content = "[Image #1] then [Image #2]\n[image missing #1]";
+    expect(replayHistory({ messages: [{ role: "user", content, images: [A] }] })).toEqual([
+      { kind: "user", text: "[Image #1] then [Image #2]" },
+      { kind: "image", label: "image 1 · missing" },
+      { kind: "image", label: imageNoteLabel(2, A) },
+    ]);
+  });
+
+  test("US-004 AC-2: replays a lost second image after the one that survived", () => {
+    expect(replayHistory({ messages: [{ role: "user", content: "x\n[image missing #2]", images: [A] }] })).toEqual([
+      { kind: "user", text: "x" },
+      { kind: "image", label: imageNoteLabel(1, A) },
+      { kind: "image", label: "image 2 · missing" },
+    ]);
+  });
+
+  test("US-004 AC-3: keeps an older build's bare note as the unnumbered row", () => {
+    expect(replayHistory({ messages: [{ role: "user", content: "x\n[image missing]", images: [A] }] })).toEqual([
+      { kind: "user", text: "x" },
+      { kind: "image", label: imageNoteLabel(1, A) },
+      { kind: "image", label: "image · missing" },
+    ]);
+  });
+
+  test("US-004 AC-4: falls back to the unnumbered row for a position beyond the slot count", () => {
+    expect(replayHistory({ messages: [{ role: "user", content: "x\n[image missing #5]", images: [A] }] })).toEqual([
+      { kind: "user", text: "x" },
+      { kind: "image", label: imageNoteLabel(1, A) },
+      { kind: "image", label: "image · missing" },
+    ]);
+  });
+
+  test("US-004 AC-5: rows a numbered note that is the whole message", () => {
+    expect(replayHistory({ messages: [{ role: "user", content: "[image missing #1]" }] })).toEqual([
+      { kind: "image", label: "image 1 · missing" },
+    ]);
+  });
+
+  test("US-004 AC-6: reads a note-only message's number against the image that survived it", () => {
+    expect(replayHistory({ messages: [{ role: "user", content: "[image missing #1]", images: [B] }] })).toEqual([
+      { kind: "image", label: "image 1 · missing" },
+      { kind: "image", label: imageNoteLabel(2, B) },
+    ]);
+  });
+
+  test("US-004 AC-9: draws no row for a lost image the mention envelope already names", () => {
+    const envelope = formatMentionMessage("see @shot.png", [IMAGE_RECORD]);
+    expect(replayHistory({ messages: [{ role: "user", content: `${envelope}\n[image missing #1]` }] })).toEqual(
+      mentionEntries(envelope),
+    );
   });
 });

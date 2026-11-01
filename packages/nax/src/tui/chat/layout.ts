@@ -31,6 +31,7 @@
  */
 
 import { attachmentLines } from "./layout-attachment";
+import { backgroundLines } from "./layout-background";
 import { imageLines } from "./layout-image";
 import {
   cardIndent,
@@ -284,6 +285,8 @@ function layoutEntry(entry: TranscriptEntry, context: LayoutContext): readonly S
       return statusLines(entry, context);
     case "listing":
       return listingLines(entry, context);
+    case "background":
+      return backgroundLines(entry, context);
     case "interrupted":
       return interruptedLines(context);
   }
@@ -331,10 +334,19 @@ function variantsFor(entry: TranscriptEntry, theme: ChatTheme): Map<string, read
  * Cache by width and effective expansion (`open ?? expanded` for collapsible entries).
  * Entry identity bounds retention; replacing a clicked entry invalidates only its layout.
  * A different theme discards its variants so colours and glyphs never leak across themes.
+ *
+ * Only a `collapsible` listing joins the kinds that own their expansion: every other
+ * listing is drawn whole at any expansion, so ctrl+o can never hide a slash command's
+ * output — the user asked for it.
  */
 function cachedLines(entry: TranscriptEntry, base: LayoutContext): readonly StyledLine[] {
   const context =
-    entry.kind === "thinking" || entry.kind === "tool" || entry.kind === "skill" || entry.kind === "attachment"
+    entry.kind === "thinking" ||
+    entry.kind === "tool" ||
+    entry.kind === "skill" ||
+    entry.kind === "attachment" ||
+    entry.kind === "background" ||
+    (entry.kind === "listing" && entry.collapsible === true)
       ? { ...base, expanded: entry.open ?? base.expanded }
       : base;
   const variants = variantsFor(entry, context.theme);

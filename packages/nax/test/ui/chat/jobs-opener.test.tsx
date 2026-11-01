@@ -6,6 +6,7 @@ import type { ChatJobs } from "@/chat/jobs/job-runner";
 import { fakeMouse } from "./mouse";
 
 const CTRL_G = "\x07";
+const CTRL_O = "\x0f";
 const CTRL_X = "\x18";
 const RETURN = "\r";
 const TITLE = "Jobs and tasks · enter output · ctrl+x stop";
@@ -233,6 +234,9 @@ describe("while a turn is running", () => {
     await flush(ui);
     expect(ui.rows()).not.toContain(TITLE);
     expect(text(ui)).toContain(`bash ${COMMAND} · running`);
+    // The listing opens collapsed, so ctrl+o is what reveals the output it counted.
+    ui.press(CTRL_O);
+    await flush(ui);
     expect(text(ui)).toContain("line2");
     await ui.finish();
   });

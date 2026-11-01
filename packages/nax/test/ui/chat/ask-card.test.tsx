@@ -124,6 +124,7 @@ function fakeController(canRemember: boolean) {
     requestHostQuestion: async () => null,
     resolveChoice: () => {},
     answerQuestion,
+    declineQuestion: () => {},
     setMode: () => {},
     reset: () => {},
     onChange: () => () => {},
