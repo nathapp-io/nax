@@ -132,4 +132,12 @@ describe("sentEntries", () => {
   test("AC-10 notice-looking text with no known notice line stays a user entry", () => {
     expect(sentEntries("[nax-tasks] something else")).toEqual([{ kind: "user", text: "[nax-tasks] something else" }]);
   });
+
+  test("a notice-shaped message that carries a picture keeps the picture's row", () => {
+    const text = buildBackgroundTaskNotice([{ ...TASK, id: "bash-44444444", state: "succeeded", exitCode: 0 }]);
+    expect(sentEntries(text, [IMAGE])).toEqual([
+      { kind: "user", text },
+      { kind: "image", label: imageNoteLabel(1, IMAGE) },
+    ]);
+  });
 });

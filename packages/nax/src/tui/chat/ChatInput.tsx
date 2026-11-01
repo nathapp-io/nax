@@ -339,7 +339,11 @@ interface TextRow {
   readonly marker: boolean;
   /** Display column of the inverse cursor cell, on the one row that holds the cursor. */
   readonly cursor?: number;
-  /** The placeholder or the owner's hint: drawn muted, and never carrying the cursor. */
+  /**
+   * The placeholder or the owner's hint: drawn muted. A muted row does carry the cursor — the
+   * focused input's first one sets `cursor: 0`, so `mutedRow` draws that cell inverse while
+   * the rest of the hint stays muted.
+   */
   readonly muted?: boolean;
 }
 

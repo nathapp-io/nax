@@ -103,12 +103,34 @@ function insert(state: EditorState, text: string): EditorResult {
   return edited([...chars.slice(0, cursor), ...added, ...chars.slice(cursor)].join(""), cursor + added.length);
 }
 
+/**
+ * The key flags a backspace burst must not carry. The list is enumerated rather than "no
+ * value of the key object is truthy": ink hands the handler its own full `Key`, whose other
+ * fields — `pageUp`, `home`, `end`, `super`, `hyper`, `capsLock`, `numLock`, and the kitty
+ * protocol's `eventType` string — are outside the `Pick` this reducer declares, so a truthy
+ * one would silently stop burst detection with nothing in the type to explain it.
+ */
+const BURST_FLAGS = [
+  "return",
+  "backspace",
+  "delete",
+  "leftArrow",
+  "rightArrow",
+  "ctrl",
+  "meta",
+  "shift",
+  "escape",
+  "tab",
+  "upArrow",
+  "downArrow",
+] as const satisfies readonly (keyof EditorKey["key"])[];
+
 /** Whether the chunk is an unmodified run of terminal backspace bytes. */
 function isBackspaceBurst(input: EditorKey): boolean {
   return (
     input.input.length > 0 &&
     Array.from(input.input).every((char) => char === BACKSPACE || char === DELETE) &&
-    Object.values(input.key).every((flag) => !flag)
+    BURST_FLAGS.every((flag) => !input.key[flag])
   );
 }
 

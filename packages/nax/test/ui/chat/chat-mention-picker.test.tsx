@@ -346,6 +346,18 @@ describe("dismissing the picker", () => {
     expect(ui.rows()).toContain("> see @ch");
   });
 
+  test("the footer stops naming the menu the moment escape closes it", async () => {
+    scriptIndex(listed([row("chat-host.ts")]));
+    const ui = mount();
+    ui.type("see @ch");
+    await ui.settle();
+    expect(ui.frame()).toContain("esc to close menu");
+    ui.press(ESCAPE);
+    // No second key: the picker's claim is dropped and re-drawn, so nothing promises a close
+    // that already happened while the input's own escape is what a press would now do.
+    expect(ui.frame()).not.toContain("esc to close menu");
+  });
+
   test("AC-11 typing on after that escape opens the picker again", async () => {
     scriptIndex(listed([row("chat-host.ts")]));
     const ui = mount();

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AnswerReply, SessionEvent } from "@nathapp/nax-agent";
-import { makeFakeClock } from "@test/helpers";
+import { assertDefined, makeFakeClock } from "@test/helpers";
 import * as chat from "@/chat";
 import * as hostAsks from "@/chat/ask-controller";
 
@@ -337,7 +337,9 @@ describe("host questions (US-009)", () => {
     const result = asks.requestHostQuestion({ text: "Use that feature?", signal: abort.signal });
     const changed = mock(() => {});
     asks.onChange(changed);
-    asks.declineQuestion(asks.pending()[0]?.requestId ?? "missing");
+    const id = asks.pending()[0]?.requestId;
+    assertDefined(id, "the host question queued for decline");
+    asks.declineQuestion(id);
     expect(await result).toBeNull();
     expect(asks.pending()).toEqual([]);
     expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));

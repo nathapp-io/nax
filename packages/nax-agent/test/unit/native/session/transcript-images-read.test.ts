@@ -7,7 +7,7 @@ import { createMemoryTranscriptStore } from "#src/native/session/memory-transcri
 import { _transcriptImagesDeps, transcriptImagesPath } from "#src/native/session/transcript-images";
 import { createFileTranscriptStore, transcriptPath } from "#src/native/session/transcript-store";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
-import { cleanupTempDir, installImageClient, makeTempDir } from "#test/helpers/index";
+import { assertDefined, cleanupTempDir, installImageClient, makeTempDir } from "#test/helpers/index";
 
 const image: ImageAttachment = { mimeType: "image/png", data: "AAAA", width: 10, height: 20, source: "clipboard" };
 const doc: TranscriptDoc = { savedAt: "t", messages: [{ role: "user", content: "x", images: [image] }] };
@@ -68,7 +68,7 @@ describe("file transcript image reads", () => {
     await store.save("s", legacy);
     expect(await store.load("s")).toEqual(legacy);
   });
-  test("AC-1/4: marks the missing second image by its stored position and keeps survivors ordered", async () => {
+  test("US-001 AC-1/4: marks the missing second image by its stored position and keeps survivors ordered", async () => {
     const store = createFileTranscriptStore(dir);
     await store.save("s", doc);
     const path = transcriptPath(dir, "s");
@@ -81,7 +81,7 @@ describe("file transcript image reads", () => {
       { role: "user", content: "x\n[image missing #2]", images: [image] },
     ]);
   });
-  test("AC-2: numbers each missing image by its stored position", async () => {
+  test("US-001 AC-2: numbers each missing image by its stored position", async () => {
     await stored([
       { ref: "a".repeat(64), mimeType: "image/png" },
       { ref: "b".repeat(64), mimeType: "image/png" },
@@ -90,7 +90,7 @@ describe("file transcript image reads", () => {
       { role: "user", content: "x\n[image missing #1]\n[image missing #2]" },
     ]);
   });
-  test("AC-4: keeps images around a missing slot in their original order", async () => {
+  test("US-001 AC-4: keeps images around a missing slot in their original order", async () => {
     const store = createFileTranscriptStore(dir);
     const thirdImage: ImageAttachment = { ...image, data: "BBBB", width: 30 };
     await store.save("s", { savedAt: "t", messages: [{ role: "user", content: "x", images: [image, thirdImage] }] });
@@ -103,6 +103,58 @@ describe("file transcript image reads", () => {
     expect((await store.load("s"))?.messages).toEqual([
       { role: "user", content: "x\n[image missing #2]", images: [image, thirdImage] },
     ]);
+  });
+  test("US-001: a lost image keeps its original slot across a later load and save", async () => {
+    const store = createFileTranscriptStore(dir);
+    const second: ImageAttachment = { ...image, data: "BBBB", width: 20 };
+    const third: ImageAttachment = { ...image, data: "CCCC", width: 30 };
+    await store.save("s", { savedAt: "t", messages: [{ role: "user", content: "x", images: [image, second, third] }] });
+    const path = transcriptPath(dir, "s");
+    // Each cycle loses the next survivor's file, so the slot a later loss is numbered against
+    // is never the slot the array it comes from counts.
+    const loseFirstStoredImage = async (): Promise<void> => {
+      const saved = JSON.parse(await readFile(path, "utf8")) as {
+        messages: Array<{ images: Array<{ ref: string }> }>;
+      };
+      await rm(join(transcriptImagesPath(path), `${saved.messages[0]?.images[0]?.ref ?? ""}.png`));
+    };
+    await loseFirstStoredImage();
+    const once = await store.load("s");
+    expect(once?.messages).toEqual([{ role: "user", content: "x\n[image missing #1]", images: [second, third] }]);
+    assertDefined(once, "the first load of the three-image transcript");
+    await store.save("s", once);
+    await loseFirstStoredImage();
+    // The survivor that was original #2 is gone, so original #3 is still image 3 rather than
+    // the next number the two-image array would have given it.
+    expect((await store.load("s"))?.messages).toEqual([
+      { role: "user", content: "x\n[image missing #1]\n[image missing #2]", images: [third] },
+    ]);
+  });
+  test("US-001: a bare note from an older build names no slot", async () => {
+    // A pre-numbering note records no position, so it cannot shift the survivors' slots: the one
+    // stored image, now unreadable too, is numbered from the start.
+    await writeFile(
+      transcriptPath(dir, "s"),
+      JSON.stringify({
+        schemaVersion: 2,
+        savedAt: "t",
+        messages: [
+          { role: "user", content: "x\n[image missing]", images: [{ ref: "a".repeat(64), mimeType: "image/png" }] },
+        ],
+      }),
+    );
+    expect((await createFileTranscriptStore(dir).load("s"))?.messages).toEqual([
+      { role: "user", content: "x\n[image missing]\n[image missing #1]" },
+    ]);
+  });
+  test("US-001: a stored image list that is not an array is a corrupt transcript", async () => {
+    await writeFile(
+      transcriptPath(dir, "s"),
+      JSON.stringify({ schemaVersion: 2, savedAt: "t", messages: [{ role: "user", content: "x", images: "ab" }] }),
+    );
+    const result = createFileTranscriptStore(dir).load("s");
+    await expect(result).rejects.toBeInstanceOf(NaxError);
+    await expect(result).rejects.toMatchObject({ code: "TRANSCRIPT_CORRUPT", context: { stage: "native-session" } });
   });
   test("AC-6: recovers after an image file is deleted", async () => {
     const store = createFileTranscriptStore(dir);
@@ -166,7 +218,7 @@ describe("file transcript image reads", () => {
     expect((await store.load("s"))?.messages).toEqual([{ role: "user", content: "x\n[image missing #1]" }]);
     expect(reads).toBe(0);
   });
-  test("AC-3: missing images on empty content have no leading newline; valid images retain order", async () => {
+  test("US-001 AC-3: missing images on empty content have no leading newline; valid images retain order", async () => {
     const store = createFileTranscriptStore(dir);
     await store.save("s", doc);
     const { createHash } = await import("node:crypto");

@@ -43,13 +43,18 @@ export const EMPTY_IMAGE_DRAFT: ImageDraft = { next: 1, images: [] };
 const COUNT_REFUSAL = `at most ${MAX_IMAGES_PER_MESSAGE} images per message`;
 const SIZE_REFUSAL = "images in one message must total at most 20 MB";
 
-/** Every placeholder in a message. Only the ones a draft image owns are rewritten. */
+/**
+ * Every placeholder in a message. Only the ones a draft image owns are rewritten.
+ * `LEADING_PLACEHOLDERS` below spells the same shape for the split it does — change the two
+ * together, and keep this one's capture group meaning "the number".
+ */
 const PLACEHOLDER = /\[Image #(\d+)\]/g;
 
 /**
  * The placeholders a message opens with, up to the whitespace before a slash line, and the
  * slash line itself. The whitespace is horizontal only: a line break ends the line the
  * placeholders are on, so a `/` on a later line is text in the message, not a command.
+ * `PLACEHOLDER` above spells the same shape — change the two together.
  */
 const LEADING_PLACEHOLDERS = /^([^\S\n]*(?:\[Image #\d+\][^\S\n]*)+)(\/[\s\S]*)$/;
 

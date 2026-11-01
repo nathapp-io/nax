@@ -99,6 +99,16 @@ describe("editLine — control bytes", () => {
   ] as const)("%s", (_name, state, chunk, expected) => {
     expect(editLine(state, press(chunk))).toEqual({ kind: "edit", state: expected });
   });
+
+  test("a burst still deletes when ink's key object carries fields outside the declared flags", () => {
+    // ink assigns `eventType` (the kitty protocol's 'press'/'repeat'/'release') alongside the
+    // flags this reducer declares, so a burst must not be decided by "every value is falsy".
+    const inkKey = { ...NO_FLAGS, pageUp: false, eventType: "press" };
+    expect(editLine(at("abcd", 4), { input: "\u007f\u007f", key: inkKey })).toEqual({
+      kind: "edit",
+      state: { text: "ab", cursor: 2 },
+    });
+  });
 });
 
 describe("editLine — delete", () => {

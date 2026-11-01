@@ -131,7 +131,10 @@ function imageRows(
  *
  * The notice row changes only the transcript: `text` is the whole notice, so the model still
  * receives every line of it. `summarizeBackgroundNotice` decides what is a notice, so text
- * that merely looks like one — `[nax-tasks] something else` — keeps today's user row.
+ * that merely looks like one — `[nax-tasks] something else` — keeps today's user row. A text
+ * that *does* carry pictures is never collapsed: a notice is generated, so a message with an
+ * image the user attached is theirs, and swallowing the rows those images earn would leave
+ * the transcript silent about a picture `host.send` still delivers.
  *
  * Each mentioned image already has its own attachment row (it is one record of the
  * envelope), and a send appends the mentions' images after the pasted ones, so only the
@@ -144,8 +147,10 @@ export function sentEntries(
   images?: readonly ImageAttachment[],
   missing: readonly number[] = [],
 ): readonly TranscriptEntry[] {
-  const summary = summarizeBackgroundNotice(message);
-  if (summary !== undefined) return [{ kind: "background", summary, text: message }];
+  if ((images?.length ?? 0) === 0 && missing.length === 0) {
+    const summary = summarizeBackgroundNotice(message);
+    if (summary !== undefined) return [{ kind: "background", summary, text: message }];
+  }
   const skill = parseSkillInvocation(message);
   if (skill) return [{ kind: "skill", ...skill }, ...imageRows(images, 0, missing)];
   const parsed = parseMentionMessage(message);

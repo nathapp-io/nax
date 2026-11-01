@@ -97,13 +97,16 @@ function countRows(sources: readonly string[], context: LayoutContext): readonly
  * wraps rather than overflowing it.
  *
  * A collapsible listing draws the count row in place of the lines while it is collapsed,
- * and keeps it as the header the reader clicks to hide them again once it is open.
+ * and keeps it as the header the reader clicks to hide them again once it is open. The
+ * lines are wrapped only when they are drawn: a collapsed forty-line job log costs one row,
+ * not forty wraps, on every layout pass that is not cached.
  */
 export function listingLines(entry: ListingEntry, context: LayoutContext): readonly StyledLine[] {
   const title = prefixedLine([styled(oneLine(sanitizeText(entry.title)), { bold: true })], [], context);
   const sources = textLines(entry.text);
-  const body = sources.flatMap((source) => textRows(source, context));
-  if (entry.collapsible !== true) return [...title, ...body];
+  const collapsible = entry.collapsible === true;
+  const body = collapsible && !context.expanded ? [] : sources.flatMap((source) => textRows(source, context));
+  if (!collapsible) return [...title, ...body];
   const count = countRows(sources, context);
-  return context.expanded ? [...title, ...count, ...body] : [...title, ...count];
+  return [...title, ...count, ...body];
 }
