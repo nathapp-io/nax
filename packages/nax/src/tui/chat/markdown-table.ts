@@ -23,6 +23,14 @@
  * muted separator, the body rows, and a muted bottom border. A cell is wrapped to its column
  * width and padded to it on the side its alignment asks for, so every drawn line is exactly
  * `sum(widths) + 3n + 1` columns wide and the caller never has to re-wrap a table line.
+ *
+ * When even the floors do not fit, no grid can honour the width and the table stacks: each
+ * body row becomes a block of `Header: value` lines, one per column, each wrapped to the
+ * whole width with no hanging indent, and a muted rule across the width separates the
+ * blocks. A column with no header draws its value alone, one with no value draws
+ * `Header:` — `wrap` drops the trailing separator — and one with neither draws nothing, so
+ * an empty row leaves no block and two rules are never adjacent. A header-only table stacks
+ * as one bold line per header cell.
  */
 import type { Span, StyledLine } from "./styled-line";
 import type { TableGlyphs } from "./theme";
@@ -57,13 +65,22 @@ const CELL_PADDING = COLUMN_FRAME_WIDTH - 1;
 /** The closing rule after the last column. */
 const CLOSING_RULE_WIDTH = 1;
 
+/**
+ * The separator between a stacked line's label and its value. Unstyled, so a value never
+ * carries the label's style, and `wrap` drops it when there is no value to follow it.
+ */
+const LABEL_SEPARATOR = ": ";
+
 /** The content columns a grid leaves for its cells at `width`. */
 function contentBudget(width: number, columns: number): number {
   return width - (COLUMN_FRAME_WIDTH * columns + CLOSING_RULE_WIDTH);
 }
 
-/** A column never measures zero: an all-empty column still draws one blank column. */
-function atLeastOneColumn(width: number): number {
+/**
+ * A width below one column is drawn as one: an all-empty column still claims a column, and
+ * a degenerate render width never makes the drawing throw.
+ */
+function atLeastOne(width: number): number {
   return Number.isFinite(width) ? Math.max(1, Math.trunc(width)) : 1;
 }
 
@@ -108,7 +125,7 @@ function shrinkToBudget(natural: readonly number[], floors: readonly number[], b
 /** Content width per column for `width`, or undefined when the floors do not fit (stack). */
 export function columnWidths(natural: readonly number[], width: number): readonly number[] | undefined {
   if (natural.length === 0) return [];
-  const naturals = natural.map(atLeastOneColumn);
+  const naturals = natural.map(atLeastOne);
   const budget = contentBudget(width, naturals.length);
   if (sum(naturals) <= budget) return naturals;
   const floors = naturals.map(floorWidth);
@@ -222,15 +239,53 @@ function gridLines(model: TableModel, options: RenderTableOptions, plan: ColumnP
   return [top, ...header, separator, ...body, bottom];
 }
 
+/** The rule between two stacked blocks: one muted run as wide as the render. */
+function stackRule(width: number, rule: string): StyledLine {
+  return [muted(rule.repeat(width))];
+}
+
 /**
- * The grid when the columns fit, otherwise the stacked layout. A table that does not fit
- * even at its floors draws nothing until the stacked layout lands (US-003).
+ * One column of a stacked block: `Header: value` when both halves have text, and the half
+ * that does when the other is empty. Two empty halves draw nothing.
+ */
+function stackedColumn(header: readonly Span[], cell: readonly Span[], width: number): StyledLine[] {
+  const label = spansWidth(header) === 0 ? null : boldSpans(header);
+  const value = spansWidth(cell) === 0 ? null : cell;
+  if (label === null) return value === null ? [] : wrap(value, width);
+  return wrap([...label, { text: LABEL_SEPARATOR }, ...(value ?? [])], width);
+}
+
+/** One body row as a stacked block: its columns' lines in column order, unwrapped by column. */
+function stackedBlock(model: TableModel, row: readonly (readonly Span[])[], width: number): StyledLine[] {
+  const cells = normalized(row, model.header.length);
+  const lines: StyledLine[] = [];
+  for (let index = 0; index < model.header.length; index += 1) {
+    lines.push(...stackedColumn(model.header[index], cells[index], width));
+  }
+  return lines;
+}
+
+/**
+ * The stacked layout: one block per body row, separated by a muted rule so two rules are
+ * never adjacent — a row that draws nothing leaves no block. A header-only table has no
+ * blocks and stacks as one bold line per header cell.
+ */
+function stackedLines(model: TableModel, width: number, rule: string): StyledLine[] {
+  if (model.rows.length === 0) return model.header.flatMap((header) => wrap(boldSpans(header), width));
+  const blocks = model.rows.map((row) => stackedBlock(model, row, width)).filter((block) => block.length > 0);
+  return blocks.flatMap((block, index) => (index === 0 ? block : [stackRule(width, rule), ...block]));
+}
+
+/**
+ * The grid when the columns fit, otherwise the stacked layout. A width below one column is
+ * drawn as one column, so a degenerate width stacks instead of throwing.
  */
 export function renderTable(model: TableModel, options: RenderTableOptions): StyledLine[] {
   const columns = model.header.length;
   if (columns === 0) return [];
-  const widths = columnWidths(naturalWidths(model), options.width);
-  if (widths === undefined) return [];
+  const width = atLeastOne(options.width);
+  const widths = columnWidths(naturalWidths(model), width);
+  if (widths === undefined) return stackedLines(model, width, options.rule);
   const aligns = Array.from({ length: columns }, (_, index) => model.align.at(index) ?? null);
   return gridLines(model, options, { widths, aligns, vertical: options.glyphs.vertical });
 }

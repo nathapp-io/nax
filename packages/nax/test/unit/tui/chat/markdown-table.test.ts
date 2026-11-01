@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { columnWidths, MIN_CELL_WIDTH, renderTable, type TableAlign, type TableModel } from "@/tui/chat/markdown-table";
+import {
+  columnWidths,
+  MIN_CELL_WIDTH,
+  type RenderTableOptions,
+  renderTable,
+  type TableAlign,
+  type TableModel,
+} from "@/tui/chat/markdown-table";
 import { plainText, type Span, type StyledLine } from "@/tui/chat/styled-line";
 import { type ChatTheme, resolveChatTheme, type TableGlyphs } from "@/tui/chat/theme";
 import { spansWidth } from "@/tui/chat/wrap";
@@ -281,5 +288,132 @@ describe("renderTable", () => {
       "| ccc | d  |",
       "+-----+----+",
     ]);
+  });
+});
+
+/**
+ * A four-column table: `a`-`d` across, plus whichever body rows the case needs. At width 16
+ * the content budget is 16 - 13 = 3, below the four floors of 1 each, so no grid can honour
+ * the width and `renderTable` stacks instead.
+ */
+function fourColumn(rows: readonly (readonly (readonly Span[])[])[]): TableModel {
+  return table([cell("a"), cell("b"), cell("c"), cell("d")], rows, [null, null, null, null]);
+}
+
+/** The two-row table the stacked cases draw: `1 2 3 4` over `5 6 7 8`. */
+const STACKED = fourColumn([
+  [cell("1"), cell("2"), cell("3"), cell("4")],
+  [cell("5"), cell("6"), cell("7"), cell("8")],
+]);
+
+/** The line the stacked layout puts between two blocks: the rule glyph at the render width. */
+const STACK_RULE = "─".repeat(16);
+
+/** The stacked `RenderTableOptions` at `width`, drawing `rule` between blocks. */
+function stackOptions(width: number): RenderTableOptions {
+  return { width, glyphs: UNICODE_THEME.glyphs.table, rule: "─" };
+}
+
+function renderStacked(model: TableModel = STACKED, width = 16): readonly StyledLine[] {
+  return renderTable(model, stackOptions(width));
+}
+
+/** A header-only table: four labels whose floors of 3 do not fit the budget 18 - 13 = 5. */
+const HEADER_ONLY = table([cell("alpha"), cell("bravo"), cell("charlie"), cell("delta")], [], [null, null, null, null]);
+
+/** A two-column table that never fits a grid, so every width floors to the stacked layout. */
+const NARROW = table([cell("a"), cell("b")], [[cell("1"), cell("2")]], [null, null]);
+
+describe("renderTable — stacked layout", () => {
+  test("AC-1: a table that cannot fit its columns stacks a label and its value per cell", () => {
+    expect(texts(renderStacked())).toEqual([
+      "a: 1",
+      "b: 2",
+      "c: 3",
+      "d: 4",
+      STACK_RULE,
+      "a: 5",
+      "b: 6",
+      "c: 7",
+      "d: 8",
+    ]);
+  });
+
+  test("AC-2: each stacked line's header label is bold", () => {
+    const spans = renderStacked().flat();
+    for (const label of ["a", "b", "c", "d"]) {
+      const labels = spans.filter((span) => span.text === label);
+      expect(labels).toHaveLength(2);
+      for (const span of labels) expect(span.bold).toBe(true);
+    }
+  });
+
+  test("AC-3: the span beginning ': ' is not bold, so a value never inherits the label's style", () => {
+    const separators = renderStacked()
+      .flat()
+      .filter((span) => span.text.startsWith(": "));
+    expect(separators).toHaveLength(8);
+    for (const span of separators) expect(span.bold ?? false).toBe(false);
+  });
+
+  test("AC-4: the line between two stacked blocks is the rule glyph, muted", () => {
+    const rules = renderStacked().filter((line) => plainText(line) === STACK_RULE);
+    expect(rules).toHaveLength(1);
+    const spans = rules[0] ?? [];
+    expect(spans.length).toBeGreaterThan(0);
+    for (const span of spans) expect(span.color).toBe("muted");
+  });
+
+  test("AC-5: a value wider than the width wraps across lines instead of overflowing", () => {
+    const model = fourColumn([[cell("1"), cell("2 3 4 5 6 7 8 9"), cell("3"), cell("4")]]);
+    expect(texts(renderStacked(model, 10))).toEqual(["a: 1", "b: 2 3 4 5", "6 7 8 9", "c: 3", "d: 4"]);
+  });
+
+  test("AC-6: every stacked line stays inside the width", () => {
+    const model = fourColumn([[cell("1"), cell("2 3 4 5 6 7 8 9"), cell("3"), cell("4")]]);
+    const lines = renderStacked(model, 10);
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) expect(spansWidth(line)).toBeLessThanOrEqual(10);
+  });
+
+  test("AC-7: an empty header draws its value alone", () => {
+    const model = table([cell("a"), cell("")], [[cell("1"), cell("2")]], [null, null]);
+    expect(texts(renderStacked(model, 8))).toEqual(["a: 1", "2"]);
+  });
+
+  test("AC-8: a missing value draws the label and its colon, with no trailing space", () => {
+    const model = table([cell("a"), cell("b"), cell("c")], [[cell("1")]], [null, null, null]);
+    expect(texts(renderStacked(model, 12))).toEqual(["a: 1", "b:", "c:"]);
+  });
+
+  test("AC-9: a column with neither a header nor a value draws no line", () => {
+    const model = table([cell("a"), cell("")], [[cell("1"), []]], [null, null]);
+    expect(texts(renderStacked(model, 8))).toEqual(["a: 1"]);
+  });
+
+  test("AC-10: a header-only table stacks one line per header cell", () => {
+    expect(texts(renderStacked(HEADER_ONLY, 18))).toEqual(["alpha", "bravo", "charlie", "delta"]);
+  });
+
+  test("AC-11: every span of the header-only stack is bold", () => {
+    const spans = renderStacked(HEADER_ONLY, 18).flat();
+    expect(spans.length).toBeGreaterThan(0);
+    for (const span of spans) expect(span.bold).toBe(true);
+  });
+
+  test("AC-12: a width below one column does not throw", () => {
+    expect(() => renderTable(NARROW, stackOptions(0))).not.toThrow();
+  });
+
+  test("AC-13: a width below one column draws as one column", () => {
+    const lines = texts(renderTable(NARROW, stackOptions(0)));
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines).toEqual(texts(renderTable(NARROW, stackOptions(1))));
+  });
+
+  test("AC-14: a table whose columns fit still draws the grid", () => {
+    const lines = texts(renderTable(STACKED, stackOptions(17)));
+    expect(lines[0]).toBe("┌───┬───┬───┬───┐");
+    expect(lines.some((line) => line === "─".repeat(17))).toBe(false);
   });
 });
