@@ -15,8 +15,9 @@
  * Keys have one owner here. An approval card owns escape (No), return (the selection), the
  * bare arrows (move the selection), the option's own number, and the `a` / `s` / `d`
  * shortcuts; a ctrl or meta chord does nothing, which is the rule the input has always had.
- * A question card owns none of them: the `ChatInput` inside it owns the typing keys and the
- * return that submits, exactly as the chat input does.
+ * A question card owns none of them: the `ChatInput` inside it owns the typing keys, the
+ * return that submits and — through the screen's `onDismiss` — escape, which closes the card
+ * and declines the question rather than arming the input's own clear.
  *
  * The countdown is a `setTimeout` chain of `COUNTDOWN_TICK_MS`, cleared with `clearTimeout`
  * on unmount and once nothing is left to count; `setInterval` is not used because the
@@ -56,6 +57,12 @@ const SECONDS_PER_MINUTE = 60;
 const SECONDS_PADDING = 2;
 /** The label's own words; the count is what changes. */
 const ELIDED_ONE = "1 more line";
+/**
+ * What an empty answer box offers. It is the card's only guidance — there is no separate row
+ * for it — so it is passed both to the input that draws it and to the measurement that
+ * reserves its rows, and the two cannot disagree.
+ */
+const ANSWER_HINT = "type your answer · enter to send";
 /**
  * One empty line: what separates the card's title from what it is asking about. It carries a
  * space, because a row of no spans draws nothing at all — the row has to exist to be counted.
@@ -332,7 +339,10 @@ export function askCardLayout(model: AskCardModel, options: AskCardLayoutOptions
   const card = questionBody(model, options, context);
   const room = Math.max(INPUT_RULE_ROWS + 1, budget - card.tail.length - 1);
   const maxRows = Math.max(1, room - INPUT_RULE_ROWS);
-  const box = { rows: inputRows(options.answer, { width: options.width, container: options.width, maxRows }), maxRows };
+  const box = {
+    rows: inputRows(options.answer, { width: options.width, container: options.width, maxRows, hint: ANSWER_HINT }),
+    maxRows,
+  };
   return fitCard(card, box, budget, context);
 }
 
@@ -351,6 +361,13 @@ export interface AskCardProps {
   readonly onAnswerChange: (draft: InputDraft) => void;
   /** Reports a No, so the screen can free the input to say what to do instead. */
   readonly onDeclined?: () => void;
+  /**
+   * The screen's escape on a question card: the question is declined rather than answered,
+   * and the chat turn it was asked during stops when the screen says so. Passing it replaces
+   * the answer box's own two-press clear, which is the one place a question card's escape
+   * could mean anything else.
+   */
+  readonly onDismiss?: () => void;
   readonly active?: boolean;
 }
 
@@ -385,6 +402,7 @@ export function AskCard({
   answer,
   onAnswerChange,
   onDeclined,
+  onDismiss,
   active = true,
 }: AskCardProps): ReactElement {
   const [nowMs, setNowMs] = useState<number>(() => _askCardDeps.now());
@@ -485,6 +503,8 @@ export function AskCard({
           draft={answer}
           onDraftChange={onAnswerChange}
           onSubmit={(text) => controller.answerQuestion(ask.requestId, text)}
+          onEscape={onDismiss}
+          hint={ANSWER_HINT}
           width={width}
           theme={theme}
           active={active}

@@ -14,7 +14,7 @@ import type { ImageAttachment, SessionEvent } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, useInput, useStdout } from "ink";
 import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { type ChatHost, createMentionFileIndex, expandChatMentions } from "@/chat";
+import { type ChatHost, type ChatPendingAsk, createMentionFileIndex, expandChatMentions } from "@/chat";
 import { buildCommandMessage } from "@/prompts";
 import { runCommandShellLines } from "@/resources";
 import { NAX_VERSION } from "@/version";
@@ -31,6 +31,7 @@ import {
   WORKING_TICK_MS,
   workingLine,
 } from "./chat-status";
+import { type EscAsk, type EscLayer, escHintText, topEscLayer } from "./esc-layer";
 import { FixedRow } from "./FixedRow";
 import { type ImageDraft, imagesForSend, splitLeadingPlaceholders, titleWithoutPlaceholders } from "./image-draft";
 import { prepareImageSend } from "./image-send";
@@ -176,6 +177,26 @@ function surfaceShown(cardOrPicker: boolean, ...menus: readonly boolean[]): bool
   return cardOrPicker || menus.includes(true);
 }
 
+/**
+ * The card the screen is drawing, in the terms the esc layer answers in. A host choice is
+ * mapped by its own arm: it carries no `sessionId`, and reading one off every ask would only
+ * be a field the choice arm does not have.
+ */
+function escAsk(ask: ChatPendingAsk | undefined): EscAsk | undefined {
+  if (ask === undefined) return undefined;
+  if (ask.type === "question") return "question";
+  return ask.type === "approval_requested" ? "approval" : "choice";
+}
+
+/**
+ * Whether the chat session itself asked the question. A run ask or a job asks through the
+ * same card with `sessionId` `"host"`, and closing that one must leave the chat turn running:
+ * the question came from elsewhere, so nothing here is waiting for the answer.
+ */
+function askedBySession(ask: ChatPendingAsk | undefined): boolean {
+  return ask !== undefined && ask.type === "question" && ask.sessionId !== "host";
+}
+
 export function ChatApp({
   host,
   mouse,
@@ -257,12 +278,14 @@ export function ChatApp({
     dismissed: dismissedQuery,
     blocked: bottomBlocked(ask, picker.model),
   });
-  // Measure first: an invisible menu must not claim navigation or run unseen commands.
-  const working = workingLine(status, nowMs, theme.glyphs);
+  // Measure first: an invisible menu must not claim navigation or run unseen commands. The
+  // working line's row is decided here, from the turn alone; its text is composed further
+  // down, once the layer that names esc's action can be read without a cycle.
+  const workingShown = status.running;
   const usableRows = size.rows - FRAME_SLACK_ROWS;
   const bottomBudget = Math.max(
     1,
-    usableRows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
+    usableRows - HEADER_ROWS - (workingShown ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
   );
   const menuRows = menuRowsFor({ rows: menu.rows, budget: bottomBudget });
   /** A menu with no row budget cannot own keys. */
@@ -293,6 +316,26 @@ export function ChatApp({
     slashKeys.sawDismissal(undefined);
     setDismissedQuery(undefined);
   }
+  /**
+   * The layer esc acts on, read from what this frame draws — one answer for the footer, the
+   * working line and the screen's own guard, so the hint and the action cannot disagree. A
+   * turn whose keys cannot control it is not esc's to stop, and the mention picker's claim is
+   * its esc ownership rather than its drawn rows: its no-git diagnostic line claims no key.
+   */
+  function escLayerNow(): EscLayer {
+    return topEscLayer({
+      ask: escAsk(ask),
+      askFromSession: askedBySession(ask),
+      picker: picker.model?.kind,
+      mentionShown: mention.ownsNavigation(),
+      menuShown: menuShown(),
+      turnRunning: turnRunning && keys.canControl(),
+    });
+  }
+  const escHint = escHintText(escLayerNow());
+  // The working line is drawn from the turn status alone, so its presence is unchanged; only
+  // its text takes the layer's hint, and `esc to interrupt` stays when the layer has none.
+  const working = workingLine(status, nowMs, theme.glyphs, escHint);
   // The image draft lives beside the prompt, not inside it: this hook reads the clipboard on
   // ctrl+v, takes a pasted image path and writes the placeholder back through the handle.
   const imageAttach = useImageAttach({
@@ -314,10 +357,10 @@ export function ChatApp({
       void imageAttach.attach();
       return;
     }
-    // The picker's own claim closes it on escape, so that escape must never reach the turn.
-    if (!key.escape || ask !== undefined || picker.model !== undefined || menuShown()) return;
-    if (mention.ownsNavigation()) return;
-    if (!turnRunning || !keys.canControl()) return;
+    // Only a bare running turn is the screen's own escape. A card, a picker and a menu each
+    // own escape themselves and answer it in their own handler, so a key they close must
+    // never also reach the turn.
+    if (!key.escape || escLayerNow().kind !== "turn") return;
     host.cancel();
   });
 
@@ -638,6 +681,18 @@ export function ChatApp({
     setDraft(next);
   }
 
+  /**
+   * Esc on the question card: decline the question, then stop the chat turn it interrupted —
+   * but only when the chat session itself asked it, a turn is running, and the keys can still
+   * control it. A run ask's or a job's question asks as `"host"`: nothing here is waiting for
+   * the answer, so the chat turn keeps running. The decline always comes first, so a question
+   * is settled even on the turn it goes on to stop.
+   */
+  function dismissQuestion(pending: ChatPendingAsk): void {
+    host.asks.declineQuestion(pending.requestId);
+    if (askedBySession(pending) && turnRunning && keys.canControl()) host.cancel();
+  }
+
   const columns = size.columns;
   const layoutOptions = { width: columns, theme, expanded };
   const lines = layoutTranscript(entries, layoutOptions);
@@ -656,10 +711,11 @@ export function ChatApp({
             expanded,
             backgroundable,
             tmux,
-            // The esc layer's hint is wired to the screen in US-009; until then nothing claims it.
-            layer: false,
+            // The esc layer's own hint, which names what esc would close, deny or cancel now.
+            layer: escHint !== undefined,
           })
         : "copied",
+    layerHint: escHint,
     copiedChars,
     glyphs: theme.glyphs,
   });
@@ -750,6 +806,7 @@ export function ChatApp({
             answer={answer}
             onAnswerChange={(next) => setAnswerDraft({ requestId: ask.requestId, draft: next })}
             onDeclined={() => setHint(TELL_NAX_HINT)}
+            onDismiss={() => dismissQuestion(ask)}
             active={!keys.locked}
           />
         </Box>
