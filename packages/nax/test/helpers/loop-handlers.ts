@@ -24,6 +24,10 @@ import type {
   BeforeCompactionPayload,
   BeforeToolOutcome,
   BeforeToolPayload,
+  BeforeTurnEndPatch,
+  BeforeTurnEndPayload,
+  BeforeTurnPatch,
+  BeforeTurnPayload,
   LoopEvent,
   LoopHandlerContext,
   LoopHandlerEntry,
@@ -102,6 +106,32 @@ export function beforeCompactionPayload(): BeforeCompactionPayload {
   return { reason: "proactive", toSummarize: [], estimatedTokens: 1_000 };
 }
 
+/** One loaded transcript message, as a `before_turn` payload carries it. */
+export function transcriptMessage(content: string): BeforeTurnPayload["history"][number] {
+  return { role: "user", content };
+}
+
+/**
+ * A `before_turn` payload. `history` defaults to empty — the first turn of a
+ * session, which is the only turn a `SessionStart` hook fires on.
+ */
+export function beforeTurnPayload(input: {
+  prompt: string;
+  history?: BeforeTurnPayload["history"];
+  sessionName?: string;
+}): BeforeTurnPayload {
+  const { prompt, history = [], sessionName = "sess-turn" } = input;
+  return { prompt, history, sessionName, boundary: false };
+}
+
+/** A `before_turn_end` payload, defaulted to a turn that completed on its own. */
+export function beforeTurnEndPayload(
+  input: { ended?: BeforeTurnEndPayload["ended"]; stopped?: boolean; followUpsSoFar?: number } = {},
+): BeforeTurnEndPayload {
+  const { ended = "completed", stopped = false, followUpsSoFar = 0 } = input;
+  return { messages: [], roundTrips: 1, ended, stopped, followUpsSoFar };
+}
+
 /** What a `before_tool` handler's answer holds as model-facing text. */
 export function outcomeText(outcome: BeforeToolOutcome): string {
   if (outcome.kind === "nudge") return outcome.text;
@@ -148,6 +178,41 @@ export async function callAfterTool(
 /** An `after_tool` patch is the only one carrying `content`/`isError`. */
 function isAfterToolPatch(answer: PatchOf<LoopEvent>): answer is AfterToolPatch {
   return "content" in answer || "isError" in answer;
+}
+
+/**
+ * Run the set's `before_turn` handler. `undefined` is a real answer — "no patch,
+ * the prompt and history are unchanged" — so it is returned as-is.
+ */
+export async function callBeforeTurn(
+  set: LoopHandlerSet,
+  payload: BeforeTurnPayload,
+  ctx: LoopHandlerContext,
+): Promise<BeforeTurnPatch | undefined> {
+  const entry = loopHandlerEntry(set, "before_turn");
+  const answer = await entry.handler(payload, ctx);
+  if (answer === undefined) return undefined;
+  return isBeforeTurnPatch(answer) ? answer : undefined;
+}
+
+/** A `before_turn` patch is the only one carrying a `seed`/`history`/`block`/`promptContext`. */
+function isBeforeTurnPatch(answer: PatchOf<LoopEvent>): answer is BeforeTurnPatch {
+  return "seed" in answer || "history" in answer || "block" in answer || "promptContext" in answer;
+}
+
+/**
+ * Run the set's `before_turn_end` handler. `undefined` is a real answer — "end
+ * the turn" — so it is returned as-is.
+ */
+export async function callBeforeTurnEnd(
+  set: LoopHandlerSet,
+  payload: BeforeTurnEndPayload,
+  ctx: LoopHandlerContext,
+): Promise<BeforeTurnEndPatch | undefined> {
+  const entry = loopHandlerEntry(set, "before_turn_end");
+  const answer = await entry.handler(payload, ctx);
+  if (answer === undefined) return undefined;
+  return "followUp" in answer ? answer : undefined;
 }
 
 /** Only a `before_tool` patch carries a `kind`; anything else is no decision. */

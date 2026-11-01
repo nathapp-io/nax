@@ -1,5 +1,6 @@
 /**
- * Agent hook loop handlers (US-004) — the two tool events.
+ * Agent hook loop handlers — the two tool events (US-004) and the factory that
+ * builds the whole set.
  *
  * `createAgentHookHandlers` turns the `agent` section of `hooks.json` into a
  * `LoopHandlerSet` for ONE surface. Two decisions are load-bearing:
@@ -16,6 +17,10 @@
  * `PreToolUse` maps to `before_tool`, `PostToolUse` to `after_tool`. A matcher
  * absent or `"*"` covers every tool; anything else is the anchored expression
  * `^(?:matcher)$`, because `Bash` must not match `BashOutput`.
+ *
+ * The turn events (`SessionStart`/`UserPromptSubmit` on `before_turn`, `Stop` on
+ * `before_turn_end`) are built by `turn-handlers.ts` and registered by the same
+ * factory — one set, one surface, not a second registration mechanism.
  *
  * **The deadline.** Each handler's `timeoutMs` is the margin plus one
  * `timeoutMs + kill grace + drain` budget per entry it may run. With that
@@ -46,17 +51,25 @@ import type {
   PayloadOf,
 } from "@nathapp/nax-agent/internal";
 import { getLogger } from "@/logger";
-import { AGENT_HOOK_DRAIN_MS, AGENT_HOOK_HANDLER_MARGIN_MS, AGENT_HOOK_KILL_GRACE_MS, runAgentHook } from "./run-hook";
+import {
+  _agentHookHandlerDeps,
+  AGENT_HOOKS_PLUGIN,
+  AGENT_HOOKS_STAGE,
+  type AgentHookState,
+  additionalContextOf,
+  blockReason,
+  CONTEXT_SEPARATOR,
+  cwdFor,
+  describeFailure,
+  handlerDeadline,
+  hookPayloadBase,
+  isJsonObject,
+  scopedEntries,
+  surfaceEntries,
+  warnHookProblem,
+} from "./common";
+import { turnHookEntries } from "./turn-handlers";
 import type { AgentHookEntry, AgentHookRun, AgentHookSurface, AgentHooksConfig } from "./types";
-
-/** The plugin name every entry this factory registers carries. */
-export const AGENT_HOOKS_PLUGIN = "agent-hooks";
-
-/** Logger stage, shared with `run-hook.ts`. */
-const AGENT_HOOKS_STAGE = "agent-hooks";
-
-/** The matcher value that covers every tool. */
-const MATCH_ALL_TOOLS = "*";
 
 /** The config events these handlers serve. */
 const PRE_TOOL_EVENT = "PreToolUse";
@@ -65,47 +78,26 @@ const POST_TOOL_EVENT = "PostToolUse";
 /** Prefix on a `PreToolUse` refusal. */
 const AGENT_HOOK_BLOCK_PREFIX = "Blocked by hook: ";
 
-/** Between the context strings several `PreToolUse` entries contribute. */
-const CONTEXT_SEPARATOR = "\n\n";
-
-/** Injectable for tests; read at call time, never captured at import. */
-export const _agentHookHandlerDeps: { runAgentHook: typeof runAgentHook } = { runAgentHook };
-
-/** One entry that survived the surface filter, with its matcher compiled once. */
-interface ScopedHook {
-  readonly entry: AgentHookEntry;
-  /** Whether the entry's matcher covers this tool name. */
-  matches(toolName: string): boolean;
-}
-
-/** Everything the handlers close over for the life of the factory. */
-interface HookState {
-  readonly surface: AgentHookSurface;
-  readonly repoRoot: string;
-  readonly preTool: readonly ScopedHook[];
-  readonly postTool: readonly ScopedHook[];
-  /** Recorded call inputs: session name, then call id (US-004). */
-  readonly records: Map<string, Map<string, unknown>>;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Construction
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Build the surface's handler set: at most one `before_tool` and one
- * `after_tool` entry, each carrying the deadline that covers every entry it may
- * run. An empty config — or a config whose entries are all scoped elsewhere —
- * yields an empty set.
+ * Build the surface's handler set: at most one handler per loop event, each
+ * carrying the deadline that covers every entry it may run. An empty config —
+ * or a config whose entries are all scoped elsewhere — yields an empty set.
  */
 export function createAgentHookHandlers(input: {
   readonly config: AgentHooksConfig;
   readonly surface: AgentHookSurface;
   readonly repoRoot: string;
 }): LoopHandlerSet {
-  const state: HookState = {
+  const state: AgentHookState = {
     surface: input.surface,
     repoRoot: input.repoRoot,
+    sessionStart: surfaceEntries(input.config.SessionStart, input.surface),
+    promptSubmit: surfaceEntries(input.config.UserPromptSubmit, input.surface),
+    stop: surfaceEntries(input.config.Stop, input.surface),
     preTool: scopedEntries(input.config.PreToolUse, input.surface),
     postTool: scopedEntries(input.config.PostToolUse, input.surface),
     records: new Map(),
@@ -118,7 +110,7 @@ export function createAgentHookHandlers(input: {
     entries.push({
       plugin: AGENT_HOOKS_PLUGIN,
       event: "before_tool",
-      timeoutMs: handlerDeadline(state.preTool),
+      timeoutMs: handlerDeadline(state.preTool.map((hook) => hook.entry)),
       handler: beforeToolHandler(state),
     });
   }
@@ -126,64 +118,26 @@ export function createAgentHookHandlers(input: {
     entries.push({
       plugin: AGENT_HOOKS_PLUGIN,
       event: "after_tool",
-      timeoutMs: handlerDeadline(state.postTool),
+      timeoutMs: handlerDeadline(state.postTool.map((hook) => hook.entry)),
       handler: afterToolHandler(state),
     });
   }
+  entries.push(...turnHookEntries(state));
   return Object.freeze(entries);
-}
-
-/** The entries this surface runs, with each matcher compiled once. */
-function scopedEntries(entries: readonly AgentHookEntry[], surface: AgentHookSurface): ScopedHook[] {
-  return entries
-    .filter((entry) => entry.scope.includes(surface))
-    .map((entry) => ({ entry, matches: compileMatcher(entry.matcher) }));
-}
-
-/**
- * A matcher as a whole-name predicate. Absent and `"*"` cover every tool;
- * anything else is anchored, so `Bash` never matches `BashOutput`.
- */
-function compileMatcher(matcher: string | undefined): (toolName: string) => boolean {
-  if (matcher === undefined || matcher === MATCH_ALL_TOOLS) return () => true;
-  let pattern: RegExp;
-  try {
-    pattern = new RegExp(`^(?:${matcher})$`);
-  } catch {
-    // The loader rejects an uncompilable matcher with a warning of its own. A
-    // config assembled by hand can still carry one, and a hook whose matcher
-    // cannot be evaluated must not run for every call.
-    getLogger().warn(AGENT_HOOKS_STAGE, `Ignoring agent hook with an uncompilable matcher "${matcher}"`, { matcher });
-    return () => false;
-  }
-  return (toolName) => pattern.test(toolName);
-}
-
-/**
- * The handler's deadline: its own bookkeeping margin plus, per entry it may
- * run, the entry's timeout and the two bounds `run-hook.ts` adds on top of it
- * (SIGTERM to SIGKILL, then stream drain). The hook therefore times out first
- * and these handlers, not the native wrapper, decide what a failure means.
- */
-function handlerDeadline(hooks: readonly ScopedHook[]): number {
-  return hooks.reduce(
-    (total, hook) => total + hook.entry.timeoutMs + AGENT_HOOK_KILL_GRACE_MS + AGENT_HOOK_DRAIN_MS,
-    AGENT_HOOK_HANDLER_MARGIN_MS,
-  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Handlers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function beforeToolHandler(state: HookState): ExternalHandlerOf<LoopEvent> {
+function beforeToolHandler(state: AgentHookState): ExternalHandlerOf<LoopEvent> {
   return async (payload, ctx) => {
     if (!isBeforeToolPayload(payload)) return { kind: "allow" };
     return runPreToolHooks(state, payload, ctx);
   };
 }
 
-function afterToolHandler(state: HookState): ExternalHandlerOf<LoopEvent> {
+function afterToolHandler(state: AgentHookState): ExternalHandlerOf<LoopEvent> {
   return async (payload, ctx) => {
     if (!isAfterToolPayload(payload)) return undefined;
     return runPostToolHooks(state, payload, ctx);
@@ -223,7 +177,7 @@ type PreToolStep =
  * arrives there belongs to the input that actually ran.
  */
 async function runPreToolHooks(
-  state: HookState,
+  state: AgentHookState,
   payload: BeforeToolPayload,
   ctx: LoopHandlerContext,
 ): Promise<BeforeToolOutcome> {
@@ -299,20 +253,6 @@ function blockedStep(reason: string): PreToolStep {
   return { kind: "blocked", outcome: { kind: "block", content: `${AGENT_HOOK_BLOCK_PREFIX}${reason}` } };
 }
 
-/** Why a hook's own failure refused the call, naming the hook that failed. */
-function describeFailure(entry: AgentHookEntry, reason: string): string {
-  return `agent hook "${entry.command}" failed (${reason})`;
-}
-
-/**
- * The reason a `decision: "block"` answers with. Without one the refusal still
- * has to say which hook answered, so the command stands in for it.
- */
-function blockReason(json: Readonly<Record<string, unknown>>, entry: AgentHookEntry): string {
-  const { reason } = json;
-  return typeof reason === "string" && reason.length > 0 ? reason : `blocked by hook '${entry.command}'`;
-}
-
 /**
  * A `updatedInput` rewrite, when it is one. A JSON object is the contract;
  * anything else (a string, an array, `null`) is ignored with one warning naming
@@ -324,17 +264,6 @@ function updatedInputOf(entry: AgentHookEntry, updated: unknown): Record<string,
   if (isJsonObject(updated)) return updated;
   warnHookProblem(entry, "its updatedInput is not a JSON object, so the input is unchanged");
   return undefined;
-}
-
-/** True for a plain JSON object — an array and `null` are not rewrites. */
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** A non-empty `additionalContext` string, or undefined. */
-function additionalContextOf(json: Readonly<Record<string, unknown>>): string | undefined {
-  const { additionalContext } = json;
-  return typeof additionalContext === "string" && additionalContext.length > 0 ? additionalContext : undefined;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -364,7 +293,7 @@ const CONTEXT_PREFIX = "Hook context: ";
  * not an entry runs and whether or not it answers.
  */
 async function runPostToolHooks(
-  state: HookState,
+  state: AgentHookState,
   payload: AfterToolPayload,
   ctx: LoopHandlerContext,
 ): Promise<AfterToolPatch | undefined> {
@@ -431,7 +360,7 @@ function warnPostToolFailure(entry: AgentHookEntry, reason: string): void {
  * `PreToolUse`-only config keeps no state at all.
  */
 function rememberCallInput(
-  state: HookState,
+  state: AgentHookState,
   ctx: LoopHandlerContext,
   callId: string,
   toolName: string,
@@ -449,7 +378,7 @@ function rememberCallInput(
  * `after_tool` dispatch for the key, whether or not a hook runs, so a result
  * answered more than once cannot replay a stale input.
  */
-function takeCallInput(state: HookState, sessionName: string, callId: string | undefined): unknown {
+function takeCallInput(state: AgentHookState, sessionName: string, callId: string | undefined): unknown {
   if (callId === undefined) return undefined;
   const byCallId = state.records.get(sessionName);
   if (byCallId === undefined) return undefined;
@@ -464,7 +393,7 @@ function takeCallInput(state: HookState, sessionName: string, callId: string | u
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface ToolPayloadInput {
-  readonly state: HookState;
+  readonly state: AgentHookState;
   readonly ctx: LoopHandlerContext;
   readonly cwd: string;
   readonly event: typeof PRE_TOOL_EVENT | typeof POST_TOOL_EVENT;
@@ -481,28 +410,9 @@ interface ToolPayloadInput {
 function toolHookPayload(action: ToolPayloadInput): Readonly<Record<string, unknown>> {
   const { state, ctx, cwd, event, toolName, input, response } = action;
   return {
-    hook_event_name: event,
-    session_id: ctx.sessionName,
-    cwd,
-    surface: state.surface,
-    ...(ctx.role !== undefined ? { role: ctx.role } : {}),
-    ...(ctx.feature !== undefined ? { feature: ctx.feature } : {}),
-    ...(ctx.storyId !== undefined ? { story_id: ctx.storyId } : {}),
-    ...(ctx.model !== undefined ? { model: ctx.model } : {}),
+    ...hookPayloadBase({ state, ctx, cwd, event }),
     tool_name: toolName,
     ...(input !== undefined ? { tool_input: input } : {}),
     ...(response !== undefined ? { tool_response: response } : {}),
   };
-}
-
-/** The hook runs where the session works, else in the repository it belongs to. */
-function cwdFor(state: HookState, ctx: LoopHandlerContext): string {
-  return ctx.workdir ?? state.repoRoot;
-}
-
-function warnHookProblem(entry: AgentHookEntry, reason: string): void {
-  getLogger().warn(AGENT_HOOKS_STAGE, `Agent hook "${entry.command}" was ignored: ${reason}`, {
-    command: entry.command,
-    reason,
-  });
 }

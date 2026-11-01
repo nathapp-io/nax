@@ -116,9 +116,13 @@ export {
   afterToolPayload,
   beforeCompactionPayload,
   beforeToolPayload,
+  beforeTurnEndPayload,
+  beforeTurnPayload,
   callAfterTool,
   callBeforeCompaction,
   callBeforeTool,
+  callBeforeTurn,
+  callBeforeTurnEnd,
   handlerContext,
   loopHandlerEntry,
   outcomeText,
@@ -126,6 +130,7 @@ export {
   seedPackageRule,
   seedRule,
   toolCall,
+  transcriptMessage,
 } from "./loop-handlers";
 export { type MockMergeEngine, makeMergeEngine } from "./merge-engine";
 export { makeAgentAdapter } from "./mock-agent-adapter";
