@@ -268,22 +268,43 @@ async function collectOutput(
   timeoutMs: number,
 ): Promise<HookProcessOutcome> {
   let timedOut = false;
+  let sigkillFired = false;
   let sigkillId: ReturnType<typeof setTimeout> | undefined;
+  let sigkillSent: Promise<void> | undefined;
   // setTimeout, not Bun.sleep: both timers must be cancellable mid-flight
   // (forbidden-patterns-source.md, the clearTimeout exception).
   const killId = setTimeout(() => {
     timedOut = true;
     killProcessGroup(proc.pid, "SIGTERM");
-    // A single SIGTERM is not a deadline: a hook that traps or ignores it leaves
-    // `proc.exited` unresolved forever. Escalate after the grace period.
-    sigkillId = setTimeout(() => killProcessGroup(proc.pid, "SIGKILL"), _runAgentHookDeps.killGraceMs);
+    // A single SIGTERM is not a deadline. A hook that traps or ignores it leaves
+    // `proc.exited` unresolved forever, and a descendant that ignores it outlives
+    // a leader that did exit — so the escalation arms here and is settled once
+    // the group is empty (see below), not when the leader happens to exit.
+    sigkillSent = new Promise<void>((resolve) => {
+      sigkillId = setTimeout(() => {
+        sigkillFired = true;
+        killProcessGroup(proc.pid, "SIGKILL", { singleProcessFallback: false });
+        resolve();
+      }, _runAgentHookDeps.killGraceMs);
+    });
   }, timeoutMs);
 
   const stdoutCapture = captureStream(proc.stdout);
   const stderrCapture = captureStream(proc.stderr);
   const exitCode = await proc.exited;
   clearTimeout(killId);
-  clearTimeout(sigkillId);
+
+  // The leader's exit says nothing about the rest of its group. A pending
+  // SIGKILL is awaited while the group still has a member (signal 0 probes
+  // without delivering anything) and its timer cancelled once it is empty, so no
+  // timer outlives the call and no TERM-resistant descendant is left running.
+  // `singleProcessFallback` stays off: the reap of the leader frees its pid for
+  // reuse, and `detached` guarantees the group kill targets the hook's own group.
+  if (sigkillId !== undefined) {
+    const membersLeft = !sigkillFired && killProcessGroup(proc.pid, 0, { singleProcessFallback: false });
+    if (membersLeft) await sigkillSent;
+    clearTimeout(sigkillId);
+  }
 
   await Promise.all([
     waitForDrain(stdoutCapture, _runAgentHookDeps.drainMs),

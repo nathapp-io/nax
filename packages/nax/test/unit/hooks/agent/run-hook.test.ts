@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir, withDebugSpy, withDepsRestore } from "@test/helpers";
+import { cleanupTempDir, makeTempDir, waitForCondition, withDebugSpy, withDepsRestore } from "@test/helpers";
 import { NaxError } from "@/errors";
 import {
   _runAgentHookDeps,
@@ -257,6 +257,29 @@ describe("runAgentHook — deadline and drain", () => {
     expect(performance.now() - startedAt).toBeLessThan(2000);
     expect(run.kind).toBe("error");
     expect(errorReason(run)).toContain("timed out after 100ms");
+  });
+
+  test("AC-16 continued: a descendant that ignores SIGTERM is escalated after the leader exits", async () => {
+    _runAgentHookDeps.killGraceMs = 200;
+    _runAgentHookDeps.drainMs = 200;
+    const childPidFile = join(dir, "child.pid");
+    // The leader dies on SIGTERM (default disposition); the descendant it
+    // started ignores it. Only the SIGKILL escalation can end the descendant,
+    // and it must still run after `proc.exited` resolves for the leader.
+    const script = scriptFile([`sh -c 'trap "" TERM; echo $$ > "${childPidFile}"; sleep 10' &`, "sleep 10"].join("\n"));
+    const startedAt = performance.now();
+    const run = await runAgentHook({
+      entry: makeEntry({ command: runScript(script), timeoutMs: PID_REPORTING_TIMEOUT_MS }),
+      payload: PAYLOAD,
+      cwd: dir,
+    });
+
+    expect(performance.now() - startedAt).toBeLessThan(4000);
+    expect(run.kind).toBe("error");
+    expect(errorReason(run)).toContain(`timed out after ${PID_REPORTING_TIMEOUT_MS}ms`);
+
+    const childPid = await readPid(childPidFile);
+    await waitForCondition(() => !isAlive(childPid), 1000);
   });
 
   test("AC-17: the SIGTERM-trapping hook's process no longer exists", async () => {
