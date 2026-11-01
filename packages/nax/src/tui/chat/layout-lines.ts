@@ -17,7 +17,7 @@
  */
 import { displayWidth, MIN_LAYOUT_WIDTH, type Span, type StyledLine, sanitizeText } from "./styled-line";
 import type { ChatTheme } from "./theme";
-import { wrapSpans } from "./wrap";
+import { spansWidth, wrapSpans } from "./wrap";
 
 /** One entry's rendering context: the resolved width and how much detail to show. */
 export interface LayoutContext {
@@ -69,11 +69,6 @@ export function styled(text: string, style: SpanStyle = {}): Span {
 /** A line from spans, dropping the empty ones so a line never carries a blank span. */
 export function line(spans: readonly Span[]): StyledLine {
   return spans.filter((span) => span.text !== "");
-}
-
-/** A line's width in terminal columns. */
-export function lineWidth(spans: readonly Span[]): number {
-  return spans.reduce((total, span) => total + displayWidth(span.text), 0);
 }
 
 /**
@@ -201,7 +196,9 @@ export function wrappedSource(text: string, columns: number): readonly string[] 
 /**
  * One line behind its prefix. A line that fits is drawn whole; a wider one is wrapped at
  * word boundaries with blank columns as wide as the prefix on every continuation, so a
- * narrow layout loses neither a card's output nor a reply's words.
+ * narrow layout loses neither a card's output nor a reply's words. The measurement is
+ * `spansWidth`, the same one the wrap uses, so a grapheme a style boundary splits is
+ * counted once here too.
  */
 export function prefixedLine(
   spans: readonly Span[],
@@ -209,7 +206,7 @@ export function prefixedLine(
   context: LayoutContext,
 ): readonly StyledLine[] {
   const prefixed = line([...prefix, ...spans]);
-  if (lineWidth(prefixed) <= context.width) return [prefixed];
+  if (spansWidth(prefixed) <= context.width) return [prefixed];
   return wrapSpans(spans, { width: context.width, prefix });
 }
 

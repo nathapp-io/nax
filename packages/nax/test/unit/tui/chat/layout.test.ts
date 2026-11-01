@@ -34,6 +34,8 @@ const FOUR_COLUMN_TABLE = [FOUR_COLUMN_HEADER, FOUR_COLUMN_DELIMITER, `| ${FOUR_
 );
 /** Every word the four-column table's body holds, one per cell word. */
 const CELL_WORDS = FOUR_COLUMN_CELLS.flatMap((cell) => cell.split(" "));
+/** A one-cell table nested in a list item, its cell splitting an emoji across two styles. */
+const SPLIT_EMOJI_TABLE = "- item\n\n  | h |\n  | - |\n  | **👍**🏽 |";
 
 const THOUGHT = "weighing the ordering options";
 /** One "word" wider than the columns a user line leaves for its content. */
@@ -145,6 +147,14 @@ function bulletOf(line: StyledLine): Span {
 /** Every line's display width, for the "never wider than the layout" assertions. */
 function widths(lines: readonly StyledLine[]): readonly number[] {
   return lines.map((line) => displayWidth(plainText(line)));
+}
+
+/** The drawn width of every line carrying a table frame glyph, in order. */
+function gridLineWidths(lines: readonly StyledLine[]): readonly number[] {
+  const frame = new Set(Object.values(theme.glyphs.table));
+  return lines
+    .filter((line) => [...plainText(line)].some((character) => frame.has(character)))
+    .map((line) => displayWidth(plainText(line)));
 }
 
 /** The reply lines with their two-column gutter taken off, joined: what the reply still says. */
@@ -406,6 +416,20 @@ describe("layoutTranscript: reply entries", () => {
     for (const word of [...FOUR_COLUMN_WORDS, ...CELL_WORDS]) expect(joined).toContain(word);
     // Each header labels its own column's value, which only the stacked renderer draws.
     for (const word of FOUR_COLUMN_WORDS) expect(joined).toContain(`${word}: `);
+  });
+
+  test("keeps a nested table's frame aligned when a cell splits a grapheme across styles", () => {
+    const lines = layout([replyEntry(SPLIT_EMOJI_TABLE)], { width: MINIMUM_WIDTH + 1 });
+    for (const width of widths(lines)) expect(width).toBeLessThanOrEqual(MINIMUM_WIDTH + 1);
+    // `**👍**🏽` arrives as a bold `👍` and a plain modifier: measuring the spans apart
+    // would pad the body two columns short, so its right border would not line up.
+    const grid = gridLineWidths(lines);
+    expect(grid.length).toBe(5);
+    expect(new Set(grid).size).toBe(1);
+    for (const text of texts(lines).filter((candidate) => candidate.includes(theme.glyphs.table.vertical))) {
+      // The reply's own gutter plus the list item's hanging indent: the frame never moves.
+      expect(text.startsWith(" ".repeat(GUTTER * 2))).toBe(true);
+    }
   });
 
   test("wraps quoted fallback content instead of cutting it", () => {

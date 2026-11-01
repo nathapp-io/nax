@@ -7,7 +7,7 @@ import {
   type TableAlign,
   type TableModel,
 } from "@/tui/chat/markdown-table";
-import { plainText, type Span, type StyledLine } from "@/tui/chat/styled-line";
+import { displayWidth, plainText, type Span, type StyledLine } from "@/tui/chat/styled-line";
 import { type ChatTheme, resolveChatTheme, type TableGlyphs } from "@/tui/chat/theme";
 import { spansWidth } from "@/tui/chat/wrap";
 
@@ -288,6 +288,52 @@ describe("renderTable", () => {
       "| ccc | d  |",
       "+-----+----+",
     ]);
+  });
+});
+
+/**
+ * A cell whose emoji the inline renderer split across two styles — `**👍**🏽` arrives as a
+ * bold `👍` and a plain skin-tone modifier, one grapheme in two spans.
+ */
+const SPLIT_EMOJI_CELL: readonly Span[] = [{ text: "👍", bold: true }, { text: "🏽" }];
+
+/** Every line's width as the terminal draws it: the plain text measured as one string. */
+function drawnWidths(lines: readonly StyledLine[]): readonly number[] {
+  return lines.map((line) => displayWidth(plainText(line)));
+}
+
+describe("renderTable — a grapheme a style boundary splits", () => {
+  test("measures the split cluster once, so the column is as wide as the emoji it draws", () => {
+    const model = table([cell("h")], [[SPLIT_EMOJI_CELL]], [null]);
+    expect(texts(renderTable(model, tableOptions(UNICODE_THEME)))).toEqual([
+      "┌────┐",
+      "│ h  │",
+      "├────┤",
+      "│ 👍🏽 │",
+      "└────┘",
+    ]);
+  });
+
+  test("draws every row of the grid to one width on screen, right border included", () => {
+    const model = table([cell("h")], [[SPLIT_EMOJI_CELL]], [null]);
+    const lines = renderTable(model, tableOptions(UNICODE_THEME));
+    const drawn = drawnWidths(lines);
+    expect(new Set(drawn).size).toBe(1);
+    for (const line of lines) expect(spansWidth(line)).toBe(drawn[0]);
+  });
+
+  test("pads a split-cluster cell next to a full cell without stranding a border", () => {
+    const model = table([cell("a"), cell("bb")], [[SPLIT_EMOJI_CELL, cell("ccc")]], [null, null]);
+    const lines = renderTable(model, tableOptions(UNICODE_THEME));
+    expect(texts(lines)).toEqual(["┌────┬─────┐", "│ a  │ bb  │", "├────┼─────┤", "│ 👍🏽 │ ccc │", "└────┴─────┘"]);
+    expect(new Set(drawnWidths(lines)).size).toBe(1);
+  });
+
+  test("aligns a split-cluster cell on the side its column asks for", () => {
+    const model = table([cell("head5")], [[SPLIT_EMOJI_CELL]], ["right"]);
+    const lines = renderTable(model, tableOptions(UNICODE_THEME));
+    expect(texts(lines)[3]).toBe("│    👍🏽 │");
+    expect(spansWidth(lines[3])).toBe(drawnWidths(lines)[0]);
   });
 });
 
