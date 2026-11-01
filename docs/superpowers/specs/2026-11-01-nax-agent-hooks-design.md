@@ -96,6 +96,12 @@ carrying the reason:
 - chat: the prompt is not sent; the reason is shown to the user as a notice.
 - run: the turn fails with the reason, handled like any other failed turn.
 
+Adding context needs a second new `BeforeTurnPatch` field, `promptContext`
+(string): the existing `seed` patch REPLACES the prompt message and would drop
+image attachments (`beforeTurnSeed` in `turn-loop.ts`), so the loop instead
+prefixes `promptContext` plus a blank line to the content of the first seed
+message, keeping its images. (Found during spec grounding.)
+
 `SessionStart` = `before_turn` on a session whose loaded history is empty. In
 chat a resumed session with history does not fire it. (My call.)
 
@@ -142,8 +148,12 @@ Entry fields:
   an edit routinely exceed the 10s loop-handler deadline, so hook handlers get
   their own bound: `LoopHandlerEntry` gains an optional per-entry `timeoutMs`
   that `wrapExternalHandler()` uses instead of `LOOP_HANDLER_TIMEOUT_MS` when
-  set (plugin handlers keep 10s). One handler is registered per (event, entry),
-  so the deadline is per hook, not per event. The hook process is killed at
+  set (plugin handlers keep 10s). One handler is registered per EVENT (it runs
+  that event's matching entries in order), because `dispatchChain` merges
+  patches by overwrite: two `before_turn` handlers that each return `seed`
+  would keep only the last one's. That handler's `timeoutMs` is the sum of its
+  entries' timeouts plus a 1000 ms margin, so each hook still gets its full
+  own bound. The hook process is killed at
   its deadline; the turn's abort also kills it. (My call.)
 - `enabled` — default true.
 
@@ -155,11 +165,14 @@ a warning naming it, never a crash. Config is read ONCE when the surface starts
 (chat start / run setup) for that surface's repo root; editing `hooks.json`
 takes effect on the next chat or run. (My call.)
 
-Trust: project `.nax/hooks.json` agent hooks come from a checked-in file. In
-chat they are installed only once the workspace passes chat's existing trust
-prompt; an untrusted workspace runs global agent hooks only and shows a notice
-that project hooks were skipped. In run they follow the same trust model as
-the lifecycle hooks already in that file. (My call.)
+Trust: project `.nax/hooks.json` agent hooks come from a checked-in file.
+`nax chat` refuses an untrusted project at its entry, but `nax run` gates per
+execution site (`fireHook` asserts `assertTrusted(workdir, "hooks")` before
+each project lifecycle hook). Agent hooks do the same: a project entry asserts
+trust (new surface `"agent-hooks"`) before it spawns, and a refusal is a hook
+error (so `PreToolUse` fails closed). Global entries are exempt. `nax bot`
+never loads agent hooks (PR worktrees may come from forks). (Corrected by
+spec-review pass 2.)
 
 ### 6.3 I/O contract
 
@@ -201,12 +214,15 @@ history, so `SessionStart` fires again on the next turn. (My call.)
 
 ### 6.4 Delivery
 
-A built-in plugin (alongside `plugins/builtin/*`) providing `loop-handlers`.
-It loads the agent hooks config and registers one handler per (event, entry).
-Scope filtering needs the surface: either the plugin is built per surface
-(chat builds the chat-scoped set, run the run-scoped set) or
-`LoopHandlerContext` gains a `surface` field. Builder's choice; the stdin
-`surface` field must be correct either way.
+A handler factory, not a registry plugin, following the rule-delivery
+precedent (`createRuleDeliveryHandlers` is appended to the plugin set at both
+sites): the factory is built per surface (`surface: "chat" | "run"`) from the
+loaded config and returns a `LoopHandlerSet` whose entries carry plugin name
+`agent-hooks`. Chat appends it to `pluginHandlers` in `cli/chat.ts`
+`chatResources`; run appends it in `configureRunRules`
+(`execution/lifecycle/run-rules-setup.ts`). No `LoopHandlerContext` change is
+needed. (Verified during spec grounding; replaces the earlier "built-in
+plugin" wording.)
 
 Subagents spawned from chat use the chat set (they already inherit it).
 
@@ -234,7 +250,7 @@ Subagents spawned from chat use the chat set (they already inherit it).
 ## 7. Constraints
 
 - `packages/nax-agent` must not import the nax plugin system; nax-agent
-  changes are limited to: the `before_turn` block capability, the per-entry
+  changes are limited to: the `before_turn` `block` and `promptContext` fields, the per-entry
   `timeoutMs` on `LoopHandlerEntry`, and `surface` on `LoopHandlerContext` if
   the builder picks that route.
 - Pipeline mode is frozen: no pipeline-only changes. Run delivery uses the
@@ -260,7 +276,7 @@ Subagents spawned from chat use the chat set (they already inherit it).
 5. Default scope is both surfaces; default timeout 30000 ms with a per-entry
    deadline added to `LoopHandlerEntry` (one small nax-agent change beyond the
    `before_turn` block).
-6. Project agent hooks in chat need the workspace trusted.
+6. Project entries assert trust per hook (surface `agent-hooks`); bot never loads agent hooks.
 7. Matcher = the tool name the loop dispatches; PostToolUse sees the rewritten input.
 8. Config read once per chat/run start.
 9. `UserPromptSubmit` hook error: blocks in chat, fails open with a warning in run.
