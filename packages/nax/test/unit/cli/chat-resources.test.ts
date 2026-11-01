@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { join, resolve } from "node:path";
+import type { LoopHandlerEntry, LoopHandlerSet } from "@nathapp/nax-agent/internal";
 import { assertDefined, makeLogger, makeNaxConfig, makePRD, makeStory, withTempDir } from "@test/helpers";
 import { _chatMcpDeps, type ChatMcp, createChatHost, createChatMcp, createChatStorage } from "@/chat";
 import { _chatCommandDeps, chatCommand } from "@/cli/chat";
@@ -69,6 +70,9 @@ function fixture() {
     initInteractionChain: async () => null,
     createChatStorage: () => storage,
     createChatHost: mock((_input: Parameters<typeof createChatHost>[0]) => host),
+    loadAgentHookHandlers: mock(
+      async (_input: Parameters<typeof _chatCommandDeps.loadAgentHookHandlers>[0]): Promise<LoopHandlerSet> => [],
+    ),
     renderChat: () => ({ unmount() {}, waitUntilExit: async () => {} }),
     onSignal: () => () => {},
     writeErr: mock((_message: string) => {}),
@@ -331,5 +335,44 @@ describe("chatCommand MCP composition", () => {
     expect(deps.writeErr).toHaveBeenCalledWith("mcp compose failed");
     expect(deps.setExitCode).toHaveBeenCalledWith(1);
     expect(deps.createChatHost).not.toHaveBeenCalled();
+  });
+});
+
+/** A loop-handler entry the agent-hooks loader would hand back. */
+function agentHookEntry(event: LoopHandlerEntry["event"] = "before_turn_end"): LoopHandlerEntry {
+  return { plugin: "agent-hooks", event, handler: () => undefined };
+}
+
+/** A loop-handler entry a plugin contributed. */
+function pluginLoopEntry(): LoopHandlerEntry {
+  return { plugin: "kit", event: "before_turn", handler: () => undefined };
+}
+
+describe("chatCommand agent hooks (US-006)", () => {
+  test("AC-6: loads the agent hooks once for the chat surface at repoRoot", async () => {
+    const { deps } = fixture();
+    deps.loadAgentHookHandlers.mockResolvedValue([agentHookEntry()]);
+    await chatCommand({ dir: "/r" }, deps);
+    expect(deps.loadAgentHookHandlers).toHaveBeenCalledTimes(1);
+    expect(deps.loadAgentHookHandlers.mock.calls[0]?.[0]).toEqual({ surface: "chat", repoRoot: "/r" });
+  });
+  test("AC-7: appends the agent hooks after the plugin registry's entries", async () => {
+    const { deps } = fixture();
+    const plugins = [pluginLoopEntry()];
+    const hooks = [agentHookEntry()];
+    deps.loadPlugins.mockResolvedValue(Object.assign(new PluginRegistry([]), { getLoopHandlers: () => plugins }));
+    deps.loadAgentHookHandlers.mockResolvedValue(hooks);
+    await chatCommand({ dir: "/r" }, deps);
+    const resources = deps.createChatHost.mock.calls[0]?.[0].resources;
+    expect(resources?.pluginHandlers).toEqual([...plugins, ...hooks]);
+    expect(resources?.pluginHandlers.at(-1)).toBe(hooks[0]);
+  });
+  test("AC-8: an empty agent hook set leaves the plugin registry's entries alone", async () => {
+    const { deps } = fixture();
+    const plugins = [pluginLoopEntry()];
+    deps.loadPlugins.mockResolvedValue(Object.assign(new PluginRegistry([]), { getLoopHandlers: () => plugins }));
+    await chatCommand({ dir: "/r" }, deps);
+    const resources = deps.createChatHost.mock.calls[0]?.[0].resources;
+    expect(resources?.pluginHandlers).toEqual(plugins);
   });
 });
