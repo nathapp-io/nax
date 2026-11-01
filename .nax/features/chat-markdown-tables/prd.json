@@ -3,7 +3,7 @@
   "feature": "chat-markdown-tables",
   "branchName": "feat/chat-markdown-tables",
   "createdAt": "2026-11-01T00:00:00.000Z",
-  "updatedAt": "2026-11-01T08:37:49.785Z",
+  "updatedAt": "2026-11-01T08:48:05.502Z",
   "userStories": [
     {
       "id": "US-001",
@@ -151,14 +151,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Localized completion of a pure renderer and existing tests with explicit wrapping, empty-content and width-boundary rules; no external side effects or security-critical functions."
+        "reasoning": "Localized completion of a pure renderer and existing tests with explicit wrapping, empty-content and width-boundary rules; no external side effects or security-critical functions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/markdown-table.ts",
@@ -176,7 +179,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e59dc819d8c1f7ba203c2a4fb53315562898e806"
     },
     {
       "id": "US-004",
