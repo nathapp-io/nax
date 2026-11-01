@@ -5,7 +5,7 @@ import { NaxError } from "@/errors";
 import { botCostLimit } from "./cost";
 import { _botFixDeps, type BotFixInput, type BotFixResult, runBotFix } from "./fix-run";
 import { _prHeadWaitDeps, PR_HEAD_WAIT_MS, waitForPrHead } from "./pr-head-wait";
-import { type BotReviewResult, runBotReview } from "./review-run";
+import { type BotReviewInput, type BotReviewResult, runBotReview } from "./review-run";
 
 export { PR_HEAD_POLL_MS, PR_HEAD_WAIT_MS, waitForPrHead } from "./pr-head-wait";
 
@@ -20,6 +20,12 @@ export const _fixCycleDeps = {
   waitForPrHead,
 };
 
+/** `decisions` feed only the post-push review; the fix sessions never see them. */
+export type BotFixCycleInput = BotFixInput & {
+  readonly rereview: boolean;
+  readonly decisions?: BotReviewInput["decisions"];
+};
+
 export interface BotFixCycleResult {
   readonly fix: BotFixResult;
   readonly review?: BotReviewResult;
@@ -27,10 +33,8 @@ export interface BotFixCycleResult {
   readonly skipped?: string;
 }
 
-export async function runBotFixCycle(
-  input: BotFixInput & { readonly rereview: boolean },
-  deps = _fixCycleDeps,
-): Promise<BotFixCycleResult> {
+export async function runBotFixCycle(cycleInput: BotFixCycleInput, deps = _fixCycleDeps): Promise<BotFixCycleResult> {
+  const { decisions, ...input } = cycleInput;
   const fix = await deps.runBotFix(input);
   if (fix.outcome !== "pushed" || !input.rereview) return { fix };
   let review: BotReviewResult | undefined;
@@ -47,7 +51,11 @@ export async function runBotFixCycle(
       };
     const remaining = (input.costLimitUsd ?? fix.limitUsd ?? botCostLimit(DEFAULT_CONFIG)) - (fix.spentUsd ?? 0);
     if (remaining <= 0) return { fix, skipped: `cost limit reached; run nax bot review ${ref.number}` };
-    review = await deps.runBotReview({ ...input, costLimitUsd: remaining });
+    review = await deps.runBotReview({
+      ...input,
+      ...(decisions === undefined ? {} : { decisions }),
+      costLimitUsd: remaining,
+    });
     if (review.outcome !== "posted") return { fix, review };
     const readyBudget = remaining - (review.spentUsd ?? 0);
     // Exhaustion is an expected internal boundary, not an invalid external limit.

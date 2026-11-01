@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { join } from "node:path";
+import { withTempDir } from "@test/helpers";
 import { Command } from "commander";
 import type { BotFixCycleResult, BotFixResult, BotReviewResult, runBotFixCycle } from "@/bot";
 import * as bot from "@/bot";
@@ -83,6 +85,41 @@ describe("botFixCommand cycle", () => {
   test("AC-2 --no-rereview opts out", async () => {
     await run("--no-rereview");
     expect(cycle).toHaveBeenCalledWith(expect.objectContaining({ rereview: false, fresh: false }));
+  });
+  test("--decisions loads the file and forwards the decisions to the cycle", async () => {
+    await withTempDir(async (dir) => {
+      const path = join(dir, "decisions.json");
+      const decisions = [{ id: "D-1", statement: "Keep generated files" }];
+      await Bun.write(path, JSON.stringify({ version: 1, decisions }));
+      await run("--decisions", path);
+      expect(cycle).toHaveBeenCalledWith(expect.objectContaining({ decisions, rereview: true }));
+      expect(exits).toEqual([0]);
+    });
+  });
+  test("--decisions with --no-rereview is allowed", async () => {
+    await withTempDir(async (dir) => {
+      const path = join(dir, "decisions.json");
+      await Bun.write(path, JSON.stringify({ version: 1, decisions: [] }));
+      await run("--decisions", path, "--no-rereview");
+      expect(cycle).toHaveBeenCalledWith(expect.objectContaining({ rereview: false }));
+      expect(exits).toEqual([0]);
+    });
+  });
+  test.each(["missing", "invalid"])("%s decisions file fails before any fix work", async (kind) => {
+    await withTempDir(async (dir) => {
+      const path = join(dir, "decisions.json");
+      if (kind === "invalid") await Bun.write(path, '{"version":2,"decisions":[]}');
+      await run("--decisions", path);
+      expect(stderr).toHaveLength(1);
+      if (kind === "missing") expect(stderr[0]).toBe(`[bot] Cannot read decisions file ${path}`);
+      else expect(stderr[0]).toStartWith(`[bot] Invalid decisions file ${path}`);
+      expect(exits).toEqual([1]);
+      expect(cycle).not.toHaveBeenCalled();
+    });
+  });
+  test("without --decisions the cycle input has no decisions key", async () => {
+    await run();
+    expect(cycle.mock.calls[0]?.[0]).not.toHaveProperty("decisions");
   });
   test("AC-3 --fresh discards saved fix", async () => {
     await run("--fresh");

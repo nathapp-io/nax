@@ -54,8 +54,8 @@ export interface BotReviewOptions {
   readonly full?: boolean;
 }
 
-/** `nax bot fix` shares the bot inputs, but never the review-only flags: its re-review is incremental. */
-export interface BotFixOptions extends Omit<BotReviewOptions, "decisions" | "full"> {
+/** `nax bot fix` shares the bot inputs, but never `--full`: its re-review is incremental. Decisions reach only that re-review. */
+export interface BotFixOptions extends Omit<BotReviewOptions, "full"> {
   readonly trust?: boolean;
   readonly rereview?: boolean;
   readonly fresh?: boolean;
@@ -97,10 +97,15 @@ async function withBotInput(
   }
 }
 
+/** Same file format and validation for `bot review` and `bot fix`; absent when the flag is omitted. */
+async function loadDecisionsOption(options: { readonly decisions?: string }, deps: BotCliDeps) {
+  return options.decisions === undefined ? undefined : await deps.loadBotDecisions(options.decisions);
+}
+
 /** Review and fix use identical guarded input/error conventions. */
 export async function botReviewCommand(options: BotReviewOptions, deps: BotCliDeps = _botCliDeps): Promise<number> {
   return withBotInput(options, deps, async (input) => {
-    const decisions = options.decisions === undefined ? undefined : await deps.loadBotDecisions(options.decisions);
+    const decisions = await loadDecisionsOption(options, deps);
     const result = await deps.runBotReview({
       ...input,
       ...(options.full === true && { full: true }),
@@ -124,8 +129,10 @@ export async function botReviewCommand(options: BotReviewOptions, deps: BotCliDe
 
 export async function botFixCommand(options: BotFixOptions, deps: BotCliDeps = _botCliDeps): Promise<number> {
   return withBotInput(options, deps, async (input) => {
+    const decisions = await loadDecisionsOption(options, deps);
     const cycle = await deps.runBotFixCycle({
       ...input,
+      ...(decisions === undefined ? {} : { decisions }),
       ...(options.trust === true && { trust: true }),
       rereview: options.rereview ?? true,
       fresh: options.fresh ?? false,
@@ -205,7 +212,8 @@ export function registerBotCommand(program: Command, deps: BotCliDeps = _botCliD
     });
   withBotOptions(group.command("fix <pr>").description("Fix agreed findings and push changes"))
     .option("--trust", "Run on checks detected from package scripts (no nax config on the base branch)")
-    .option("--no-rereview", "Skip post-push review and ready pass")
+    .option("--decisions <path>", "Caller decisions file, applied to the post-push re-review only")
+    .option("--no-rereview", "Skip post-push review and ready pass (--decisions is then unused)")
     .option("--fresh", "Discard the saved fix", false)
     .action(async (pr: string, options: Omit<BotFixOptions, "pr">) => {
       deps.exit(await botFixCommand({ ...options, pr }, deps));

@@ -66,6 +66,20 @@ describe("runBotFixCycle", () => {
     expect(deps.runBotFix).toHaveBeenLastCalledWith({ ...input, readyOnly: true, costLimitUsd: 3 });
     expect(deps.runBotFix).toHaveBeenCalledTimes(2);
   });
+  test("passes decisions to the post-push review only, never to the fix sessions", async () => {
+    const decisions = [{ id: "D-1", statement: "Keep generated files" }];
+    const { deps } = fixture();
+    await runBotFixCycle({ ...input, decisions }, deps);
+    expect(deps.runBotReview).toHaveBeenCalledWith({ ...input, decisions, costLimitUsd: 5 });
+    for (const call of deps.runBotFix.mock.calls) expect(call[0]).not.toHaveProperty("decisions");
+    expect(deps.runBotFix).toHaveBeenCalledTimes(2);
+  });
+  test("without decisions the re-review input has no decisions key", async () => {
+    const { deps } = fixture();
+    await runBotFixCycle(input, deps);
+    const reviewInput = (deps.runBotReview.mock.calls as unknown[][])[0]?.[0];
+    expect(reviewInput).not.toHaveProperty("decisions");
+  });
   test("AC-8 timeout skips review with actionable message", async () => {
     const { deps } = fixture();
     deps.waitForPrHead.mockResolvedValue(false);
