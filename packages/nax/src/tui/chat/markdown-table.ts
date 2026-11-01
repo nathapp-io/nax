@@ -18,9 +18,15 @@
  *
  * Glyphs are theme-owned (`ChatGlyphs.table`) and passed in, so an ASCII terminal draws a
  * frame of `-`, `|` and `+` without this module knowing which set is active.
+ *
+ * `renderTable` draws the grid the widths allow: a muted top border, the bold header row, a
+ * muted separator, the body rows, and a muted bottom border. A cell is wrapped to its column
+ * width and padded to it on the side its alignment asks for, so every drawn line is exactly
+ * `sum(widths) + 3n + 1` columns wide and the caller never has to re-wrap a table line.
  */
-import type { Span } from "./styled-line";
+import type { Span, StyledLine } from "./styled-line";
 import type { TableGlyphs } from "./theme";
+import { mergeSpans, SPACE, spansWidth, styled, wrap } from "./wrap";
 
 /** A column's alignment, as a markdown table's delimiter row states it. `null` is left. */
 export type TableAlign = "left" | "center" | "right" | null;
@@ -44,6 +50,9 @@ export const MIN_CELL_WIDTH = 3;
 
 /** Every column costs one vertical rule plus the space on either side of its content. */
 const COLUMN_FRAME_WIDTH = 3;
+
+/** The space on either side of a cell's content — the width a border runs along. */
+const CELL_PADDING = COLUMN_FRAME_WIDTH - 1;
 
 /** The closing rule after the last column. */
 const CLOSING_RULE_WIDTH = 1;
@@ -105,4 +114,123 @@ export function columnWidths(natural: readonly number[], width: number): readonl
   const floors = naturals.map(floorWidth);
   if (sum(floors) > budget) return undefined;
   return shrinkToBudget(naturals, floors, budget);
+}
+
+/** The per-column geometry one table is drawn with. */
+interface ColumnPlan {
+  readonly widths: readonly number[];
+  readonly aligns: readonly TableAlign[];
+  /** The glyph closing each side of every content line. */
+  readonly vertical: string;
+}
+
+/** The three joints one horizontal border runs between. */
+interface BorderEdges {
+  readonly left: string;
+  readonly join: string;
+  readonly right: string;
+}
+
+/** A border or vertical glyph run: frame glyphs are muted, whatever the theme's colours. */
+function muted(text: string): Span {
+  return styled(text, { color: "muted" });
+}
+
+/** Header cells are bold on top of whatever the inline renderer styled them with. */
+function boldSpans(cell: readonly Span[]): readonly Span[] {
+  return cell.map((span) => ({ ...span, bold: true }));
+}
+
+/** A table's natural column widths: its widest cell per column, the header included. */
+function naturalWidths(model: TableModel): readonly number[] {
+  const widths: number[] = [];
+  for (let index = 0; index < model.header.length; index += 1) {
+    const cells = [model.header.at(index), ...model.rows.map((row) => row.at(index))];
+    widths.push(Math.max(0, ...cells.map((cell) => (cell === undefined ? 0 : spansWidth(cell)))));
+  }
+  return widths;
+}
+
+/** One column's cells, brought to the header's count: missing cells are empty, extra dropped. */
+function normalized(cells: readonly (readonly Span[])[], columns: number): readonly (readonly Span[])[] {
+  return Array.from({ length: columns }, (_, index) => cells.at(index) ?? []);
+}
+
+/** A cell wrapped to its column width; an empty cell is one blank line. */
+function cellLines(cell: readonly Span[] | undefined, width: number): readonly StyledLine[] {
+  const lines = wrap(cell ?? [], width);
+  return lines.length === 0 ? [[]] : lines;
+}
+
+/** A cell line padded to the column width on the side its alignment asks for. */
+function paddedCell(line: StyledLine, width: number, align: TableAlign): readonly Span[] {
+  const spare = Math.max(0, width - spansWidth(line));
+  const left = align === "right" ? spare : align === "center" ? Math.floor(spare / 2) : 0;
+  return [{ text: SPACE.repeat(left) }, ...line, { text: SPACE.repeat(spare - left) }];
+}
+
+/** One drawn line of a row: every cell padded to its column, framed by vertical rules. */
+function rowLine(cells: readonly (StyledLine | undefined)[], plan: ColumnPlan): StyledLine {
+  const spans: Span[] = [muted(plan.vertical)];
+  for (let index = 0; index < plan.widths.length; index += 1) {
+    const align = plan.aligns.at(index) ?? null;
+    spans.push({ text: SPACE }, ...paddedCell(cells.at(index) ?? [], plan.widths[index], align), { text: SPACE });
+    spans.push(muted(plan.vertical));
+  }
+  return mergeSpans(spans);
+}
+
+/** One row drawn as tall as its tallest cell; shorter cells are blank below it. */
+function rowBlock(cells: readonly (readonly Span[] | undefined)[], plan: ColumnPlan): StyledLine[] {
+  const wrapped = plan.widths.map((width, index) => cellLines(cells.at(index), width));
+  const height = Math.max(1, ...wrapped.map((lines) => lines.length));
+  return Array.from({ length: height }, (_, line) =>
+    rowLine(
+      wrapped.map((lines) => lines.at(line)),
+      plan,
+    ),
+  );
+}
+
+/** A horizontal border: each column's run `CELL_PADDING` wider than its content. */
+function borderLine(widths: readonly number[], edges: BorderEdges, horizontal: string): StyledLine {
+  const segments = widths.map((width) => horizontal.repeat(width + CELL_PADDING));
+  return [muted(`${edges.left}${segments.join(edges.join)}${edges.right}`)];
+}
+
+/** The whole grid: top border, header, a separator when a body follows, body rows, bottom. */
+function gridLines(model: TableModel, options: RenderTableOptions, plan: ColumnPlan): StyledLine[] {
+  const { glyphs } = options;
+  const top = borderLine(
+    plan.widths,
+    { left: glyphs.topLeft, join: glyphs.topJoin, right: glyphs.topRight },
+    glyphs.horizontal,
+  );
+  const bottom = borderLine(
+    plan.widths,
+    { left: glyphs.bottomLeft, join: glyphs.bottomJoin, right: glyphs.bottomRight },
+    glyphs.horizontal,
+  );
+  const header = rowBlock(model.header.map(boldSpans), plan);
+  if (model.rows.length === 0) return [top, ...header, bottom];
+  const separator = borderLine(
+    plan.widths,
+    { left: glyphs.midLeft, join: glyphs.midJoin, right: glyphs.midRight },
+    glyphs.horizontal,
+  );
+  const body = model.rows.flatMap((row) => rowBlock(normalized(row, plan.widths.length), plan));
+  return [top, ...header, separator, ...body, bottom];
+}
+
+/**
+ * The grid when the columns fit, otherwise the stacked layout. A table that does not fit
+ * even at its floors draws nothing until the stacked layout lands (US-003).
+ */
+export function renderTable(model: TableModel, options: RenderTableOptions): StyledLine[] {
+  const columns = model.header.length;
+  if (columns === 0) return [];
+  const widths = columnWidths(naturalWidths(model), options.width);
+  if (widths === undefined) return [];
+  const aligns = Array.from({ length: columns }, (_, index) => model.align.at(index) ?? null);
+  return gridLines(model, options, { widths, aligns, vertical: options.glyphs.vertical });
 }
