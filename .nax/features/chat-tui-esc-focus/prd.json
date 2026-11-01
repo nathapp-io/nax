@@ -3,7 +3,7 @@
   "feature": "chat-tui-esc-focus",
   "branchName": "feat/chat-tui-esc-focus",
   "createdAt": "2026-11-01T00:00:00.000Z",
-  "updatedAt": "2026-11-01T05:40:52.364Z",
+  "updatedAt": "2026-11-01T05:56:59.684Z",
   "userStories": [
     {
       "id": "US-001",
@@ -547,14 +547,17 @@
         "US-007",
         "US-008"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Integrates multiple concurrent Ink key owners, host/session question settlement and controllable-turn cancellation with measured layout; strict isolation applies to session and approval routing."
+        "reasoning": "Integrates multiple concurrent Ink key owners, host/session question settlement and controllable-turn cancellation with measured layout; strict isolation applies to session and approval routing.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -580,7 +583,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d1ac9d97dd7b85c1f189fab37a97b79cb3044d3b"
     },
     {
       "id": "US-010",
