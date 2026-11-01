@@ -9,9 +9,12 @@
  * followed by a muted ` (<href>)`. A fence is framed by a muted `codeTop` line naming
  * its language and a muted `codeBottom` line, with a muted `codeSide` glyph and a space
  * before each code line — highlighted by scope when the language is one `syntax.ts`
- * registered, plain when it is not, and plain again if the highlighter fails. Tables,
- * raw HTML and anything else the lexer produced but this model does not style fall back
- * to their source text.
+ * registered, plain when it is not, and plain again if the highlighter fails. A table is a
+ * grid of muted borders around its bold header and its body rows, or — when its columns
+ * cannot fit the width the block has here — a stacked `Header: value` block per row;
+ * `markdown-table.ts` owns both layouts and draws only, since each cell arrives as the
+ * spans this module's inline renderer produced for it. Raw HTML and anything else the lexer
+ * produced but this model does not style fall back to their source text.
  *
  * Every width is measured in terminal columns and every wrap breaks between grapheme
  * clusters (`wrap.ts` owns that engine: cluster segmentation, word grouping, wrapping,
@@ -24,6 +27,7 @@
  * unlexable document falls back to its own source lines.
  */
 import { marked, type Token, type Tokens } from "marked";
+import { renderTable, type TableModel } from "./markdown-table";
 import { MIN_LAYOUT_WIDTH, type Span, type StyledLine, sanitizeText } from "./styled-line";
 import { codeLines, fenceLanguage, highlightToHtml } from "./syntax";
 import type { ChatTheme } from "./theme";
@@ -62,10 +66,13 @@ export interface RenderMarkdownOptions {
 
 /**
  * Injected seams. The highlighter is one so a test can make it fail and prove a fenced
- * block still renders — a live reply must never be lost to a grammar bug.
+ * block still renders — a live reply must never be lost to a grammar bug. The table
+ * renderer is one so a test can see the model and the options a `table` token is drawn
+ * with without drawing it.
  */
 export const _markdownDeps = {
   highlight: highlightToHtml,
+  renderTable,
 };
 
 /** Every list level indents this many columns. */
@@ -240,6 +247,38 @@ function codeBlockLines(code: Tokens.Code, context: BlockContext): StyledLine[] 
   return context.cutCode === true ? lines.map((line) => cutSpans(line, context.width)) : lines;
 }
 
+/**
+ * A table's cells as the spans their columns draw: each cell's inline tokens go through
+ * the same renderer a paragraph's do, which is what styles — and sanitises — a cell.
+ */
+function tableCells(cells: readonly Tokens.TableCell[], style: SpanStyle): readonly (readonly Span[])[] {
+  return cells.map((cell) => inlineSpans(cell.tokens, style));
+}
+
+/** A `table` token as the model `markdown-table.ts` draws. Cells arrive already styled. */
+function tableModel(table: Tokens.Table, context: BlockContext): TableModel {
+  const style = baseStyle(context);
+  return {
+    header: tableCells(table.header, style),
+    rows: table.rows.map((row) => tableCells(row, style)),
+    align: [...table.align],
+  };
+}
+
+/**
+ * A table, drawn by `markdown-table.ts`: a grid of muted borders around the bold header and
+ * the body rows, or the stacked `Header: value` layout when the columns cannot fit the width
+ * this block has here. The renderer only sizes and draws — the inline styling, the quote's
+ * italics and the sanitisation are all in the spans it is handed.
+ */
+function tableLines(table: Tokens.Table, context: BlockContext): StyledLine[] {
+  return _markdownDeps.renderTable(tableModel(table, context), {
+    width: context.width,
+    glyphs: context.theme.glyphs.table,
+    rule: context.theme.glyphs.rule,
+  });
+}
+
 function blockLines(token: Token, context: BlockContext): StyledLine[] {
   switch (token.type) {
     case "heading":
@@ -260,8 +299,10 @@ function blockLines(token: Token, context: BlockContext): StyledLine[] {
       return [];
     case "code":
       return codeBlockLines(token as Tokens.Code, context);
+    case "table":
+      return tableLines(token as Tokens.Table, context);
     default:
-      // Tables, raw HTML and any token this model does not style keep their source text.
+      // Raw HTML and any token this model does not style keep their source text.
       return sourceLines(token.raw);
   }
 }

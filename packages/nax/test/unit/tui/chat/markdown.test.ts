@@ -1,13 +1,23 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { _markdownDeps, renderMarkdown } from "@/tui/chat/markdown";
+import type { RenderTableOptions, TableModel } from "@/tui/chat/markdown-table";
 import { displayWidth, MIN_LAYOUT_WIDTH, plainText, type Span, type StyledLine } from "@/tui/chat/styled-line";
 import { type ChatTheme, resolveChatTheme } from "@/tui/chat/theme";
 
 const theme: ChatTheme = resolveChatTheme({ env: {}, colorLevel: 3 });
+/** The ASCII theme: the same model drawn with `+`, `-` and `|`. */
+const asciiTheme: ChatTheme = resolveChatTheme({ env: { NAX_ASCII: "1" }, colorLevel: 3 });
 const WIDTH = 40;
 const PARAGRAPH_WIDTH = 20;
 const RULE_WIDTH = 10;
 const NARROW_WIDTH = 10;
+
+/** A two-column table, its delimiter row aligned, and the grid the default theme draws. */
+const TABLE = "| a | b |\n| - | - |\n| 1 | 2 |";
+const ALIGNED_TABLE = "| a | b |\n| :- | -: |\n| 1 | 2 |";
+const GRID = ["┌───┬───┐", "│ a │ b │", "├───┼───┤", "│ 1 │ 2 │", "└───┴───┘"] as const;
+/** What the stubbed table renderer draws: one span on one line. */
+const TABLE_STUB = "T";
 
 const WORDS = [
   "aaaaa",
@@ -55,6 +65,24 @@ function firstSpanStartingWith(line: StyledLine, prefix: string): Span {
     throw new Error(`no span starting ${JSON.stringify(prefix)} in line ${JSON.stringify(plainText(line))}`);
   }
   return span;
+}
+
+/** The one rendered line whose plain text is `text`, failing the test when there is none. */
+function lineWithText(lines: readonly StyledLine[], text: string): StyledLine {
+  const line = lines.find((candidate) => plainText(candidate) === text);
+  if (line === undefined) {
+    throw new Error(`no line ${JSON.stringify(text)} in ${JSON.stringify(texts(lines))}`);
+  }
+  return line;
+}
+
+/** The one rendered line holding the span `text`, failing the test when there is none. */
+function lineHolding(lines: readonly StyledLine[], text: string): StyledLine {
+  const line = lines.find((candidate) => candidate.some((span) => span.text === text));
+  if (line === undefined) {
+    throw new Error(`no line holding ${JSON.stringify(text)} in ${JSON.stringify(texts(lines))}`);
+  }
+  return line;
 }
 
 const FENCE = "```";
@@ -297,11 +325,144 @@ describe("renderMarkdown block elements", () => {
   });
 });
 
-describe("renderMarkdown fallbacks", () => {
-  test("keeps a table as its source text", () => {
-    expect(texts(render("| a | b |\n| - | - |\n| 1 | 2 |"))).toEqual(["| a | b |", "| - | - |", "| 1 | 2 |"]);
+describe("renderMarkdown tables", () => {
+  const renderTable = _markdownDeps.renderTable;
+
+  afterEach(() => {
+    _markdownDeps.renderTable = renderTable;
   });
 
+  /** One recorded call to the table renderer. */
+  interface TableCall {
+    readonly model: TableModel;
+    readonly options: RenderTableOptions;
+  }
+
+  /** Replace the renderer with a spy: it records its arguments and draws `TABLE_STUB`. */
+  function spyRenderTable(): TableCall[] {
+    const calls: TableCall[] = [];
+    _markdownDeps.renderTable = (model, options) => {
+      calls.push({ model, options });
+      return [[{ text: TABLE_STUB }]];
+    };
+    return calls;
+  }
+
+  function cellTexts(cells: readonly (readonly Span[])[]): readonly string[] {
+    return cells.map((cell) => plainText(cell));
+  }
+
+  /** `TABLE` quoted line by line, as a blockquote's source writes it. */
+  function quoted(source: string): string {
+    return source
+      .split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n");
+  }
+
+  /** `TABLE` indented by one list item's content column. */
+  function itemized(source: string): string {
+    return source
+      .split("\n")
+      .map((line) => `  ${line}`)
+      .join("\n");
+  }
+
+  test("AC-1 returns the lines the table renderer drew", () => {
+    spyRenderTable();
+    expect(texts(render(ALIGNED_TABLE))).toEqual([TABLE_STUB]);
+  });
+
+  test("AC-2 calls the table renderer once for one table", () => {
+    const calls = spyRenderTable();
+    render(ALIGNED_TABLE);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("AC-3 passes the header cells, the body rows and the alignments", () => {
+    const calls = spyRenderTable();
+    render(ALIGNED_TABLE);
+    expect(calls).toHaveLength(1);
+    expect(cellTexts(calls[0].model.header)).toEqual(["a", "b"]);
+    expect(calls[0].model.rows.map(cellTexts)).toEqual([["1", "2"]]);
+    expect(calls[0].model.align).toEqual(["left", "right"]);
+  });
+
+  test("AC-4 passes the block's width, the theme's table glyphs and its rule", () => {
+    const calls = spyRenderTable();
+    render(ALIGNED_TABLE);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].options).toEqual({ width: WIDTH, glyphs: theme.glyphs.table, rule: theme.glyphs.rule });
+  });
+
+  test("AC-5 draws a fitted table as a box grid", () => {
+    expect(texts(render(TABLE))).toEqual([...GRID]);
+  });
+
+  test("AC-6 bolds a strong cell", () => {
+    expect(spanWith(lineWithText(render("| h |\n| - |\n| **x** |"), "│ x │"), "x").bold).toBe(true);
+  });
+
+  test("AC-7 colours a code span cell accent", () => {
+    expect(spanWith(lineWithText(render("| h |\n| - |\n| `y` |"), "│ y │"), "y").color).toBe("accent");
+  });
+
+  test("AC-8 draws a cell carrying an ANSI sequence as its bare text", () => {
+    expect(texts(render("| h |\n| - |\n| a\u001b[31mb |"))).toContain("│ ab │");
+  });
+
+  test("AC-9 leaves no ESC byte in a table drawn from such a cell", () => {
+    const spans = render("| h |\n| - |\n| a\u001b[31mb |").flat();
+    expect(spans.length).toBeGreaterThan(0);
+    for (const span of spans) expect(span.text).not.toContain("\u001b");
+  });
+
+  test("AC-10 draws a table after a paragraph behind one empty line", () => {
+    expect(texts(render(`para\n\n${TABLE}`))).toEqual(["para", "", ...GRID]);
+  });
+
+  test("AC-11 draws a table inside a list item behind the item's hanging indent", () => {
+    expect(texts(render(`- item\n\n${itemized(TABLE)}`))).toEqual(["- item", ...GRID.map((line) => `  ${line}`)]);
+  });
+
+  test("AC-12 draws a quoted table behind the muted quote glyph", () => {
+    const lines = render(quoted(TABLE));
+    expect(texts(lines)).toEqual(GRID.map((line) => `${theme.glyphs.codeSide} ${line}`));
+    for (const line of lines) {
+      expect(line[0].color).toBe("muted");
+      expect(line[0].text.startsWith(theme.glyphs.codeSide)).toBe(true);
+    }
+  });
+
+  test("AC-13 italicises the cells of a quoted table", () => {
+    const lines = render(quoted(TABLE));
+    for (const text of ["a", "b", "1", "2"]) {
+      expect(spanWith(lineHolding(lines, text), text).italic).toBe(true);
+    }
+  });
+
+  test("AC-14 draws the grid with the ASCII theme's glyphs", () => {
+    expect(texts(renderMarkdown(TABLE, { width: WIDTH, theme: asciiTheme }))).toEqual([
+      "+---+---+",
+      "| a | b |",
+      "+---+---+",
+      "| 1 | 2 |",
+      "+---+---+",
+    ]);
+  });
+
+  test("AC-15 keeps a header row whose delimiter row has not arrived as a paragraph", () => {
+    expect(texts(render("| a | b |"))).toEqual(["| a | b |"]);
+  });
+
+  test("AC-23 draws a cell carrying an alternate-screen escape as its bare text", () => {
+    const lines = render("| h |\n| - |\n| a\u001b[?1049lb |");
+    expect(texts(lines)).toContain("│ ab │");
+    for (const span of lines.flat()) expect(span.text).not.toContain("\u001b");
+  });
+});
+
+describe("renderMarkdown fallbacks", () => {
   test("keeps raw HTML as its source text", () => {
     expect(texts(render("<div>hi</div>"))).toEqual(["<div>hi</div>"]);
   });

@@ -333,9 +333,8 @@ export function cutSpans(spans: readonly Span[], columns: number): StyledLine {
  * through by cluster, so a bold word, a link's muted suffix or a highlighted code span
  * survives the wrap intact.
  *
- * `layoutTranscript` uses this for a line a model leaves wide on purpose — a table's source
- * text, raw HTML, a quoted block — so that a narrow layout wraps it instead of cutting the
- * text away.
+ * `layoutTranscript` uses this for a line a model leaves wide on purpose — raw HTML, a
+ * quoted block — so that a narrow layout wraps it instead of cutting the text away.
  */
 export function wrapSpans(
   spans: readonly Span[],
