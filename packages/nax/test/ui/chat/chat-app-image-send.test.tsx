@@ -465,3 +465,28 @@ describe("mentions on a brain that reads images", () => {
     expect(Object.keys(where)).toEqual(["cwd", "repoRoot"]);
   });
 });
+
+describe("the title a send carries", () => {
+  test("US-003 AC-9 a send with an image titles the session without the placeholder", async () => {
+    const ui = mount({ accepts: async () => true });
+    await ui.pasteImage(png(2, 3));
+    ui.type(" what colour");
+    expect(ui.promptRow()).toBe("> [Image #1] what colour");
+    await ui.pressAndSettle(RETURN);
+    expect(ui.send).toHaveBeenCalledTimes(1);
+    const [message, onEvent, options] = firstCall(ui.send, "host.send");
+    // The message keeps the placeholder; only the title drops it.
+    expect(message).toBe("[Image #1] what colour");
+    expect(typeof onEvent).toBe("function");
+    expect(options?.title).toBe("what colour");
+    expect(options?.images).toHaveLength(1);
+    expect(options?.images?.[0]).toMatchObject({ mimeType: "image/png", source: "clipboard", width: 2, height: 3 });
+  });
+
+  test("US-003 AC-10 a plain message keeps today's two-argument send", async () => {
+    const ui = mount({ accepts: async () => true });
+    await ui.submit("hello");
+    expect(ui.send).toHaveBeenCalledWith("hello", expect.any(Function));
+    expect(firstCall(ui.send, "host.send")).toHaveLength(2);
+  });
+});

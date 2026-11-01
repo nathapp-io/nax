@@ -17,12 +17,12 @@ import type { TranscriptEntry } from "@/tui/chat/transcript-model";
 const theme: ChatTheme = resolveChatTheme({ env: {}, colorLevel: 3 });
 const WIDTH = 60;
 
-/** The label a 2×3 PNG pasted from the clipboard earns, below a kibibyte of payload. */
-const LABEL = "image 1 · png · 2×3 · 1 KB · clipboard";
+/** The label a 2×3 PNG pasted from the clipboard earns: its four-character payload, three bytes. */
+const LABEL = "image 1 · png · 2×3 · 3 B · clipboard";
 /** The `[image missing]` note feature 1's load writes when a stored image cannot be read. */
 const MISSING = "[image missing]";
 
-/** A pasted 2×3 PNG: a few raw bytes, so its size label is the "1 KB" floor. */
+/** A pasted 2×3 PNG: a four-character base64 payload, so three raw bytes. */
 function image(overrides: Partial<ImageAttachment> = {}): ImageAttachment {
   return { mimeType: "image/png", data: "AAAA", width: 2, height: 3, source: "clipboard", ...overrides };
 }
@@ -94,7 +94,7 @@ describe("sentEntries: image rows", () => {
     expect(sentEntries("look", [image(), second])).toEqual([
       { kind: "user", text: "look" },
       { kind: "image", label: LABEL },
-      { kind: "image", label: "image 2 · png · 4×5 · 1 KB · clipboard" },
+      { kind: "image", label: "image 2 · png · 4×5 · 3 B · clipboard" },
     ]);
   });
 });

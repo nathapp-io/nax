@@ -165,7 +165,7 @@ describe("expandChatMentions — mentioned images", () => {
   test("AC-1 records a mentioned image as an image record describing it", async () => {
     addBytes("/repo/shot.png", png(2, 3));
     const result = await expandImages("see @shot.png");
-    expect(result.records).toEqual([{ path: "shot.png", status: "image", note: "image · png · 2×3 · 1 KB", body: "" }]);
+    expect(result.records).toEqual([{ path: "shot.png", status: "image", note: "image · png · 2×3 · 29 B", body: "" }]);
   });
 
   test("AC-2 collects the file's bytes as a PNG attachment with its pixel size and typed path", async () => {
@@ -215,7 +215,7 @@ describe("expandChatMentions — mentioned images", () => {
     addBytes("/repo/photo.dat", bytes);
     const result = await expandImages("@photo.dat");
     expect(result.records).toEqual([
-      { path: "photo.dat", status: "image", note: "image · jpeg · 2×3 · 1 KB", body: "" },
+      { path: "photo.dat", status: "image", note: "image · jpeg · 2×3 · 15 B", body: "" },
     ]);
     expect(result.images).toEqual([
       { mimeType: "image/jpeg", data: base64(bytes), width: 2, height: 3, source: "photo.dat" },
@@ -245,7 +245,7 @@ describe("expandChatMentions — mentioned images", () => {
     const parsed = parseMentionMessage(expanded.message);
     expect(parsed).toEqual({
       text: "see @shot.png",
-      records: [{ path: "shot.png", status: "image", note: "image · png · 2×3 · 1 KB", body: "" }],
+      records: [{ path: "shot.png", status: "image", note: "image · png · 2×3 · 29 B", body: "" }],
     });
   });
 

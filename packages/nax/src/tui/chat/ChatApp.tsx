@@ -32,7 +32,7 @@ import {
   workingLine,
 } from "./chat-status";
 import { FixedRow } from "./FixedRow";
-import { type ImageDraft, imagesForSend } from "./image-draft";
+import { type ImageDraft, imagesForSend, titleWithoutPlaceholders } from "./image-draft";
 import { prepareImageSend } from "./image-send";
 import { layoutTranscript } from "./layout";
 import { type EditorState, EMPTY_EDITOR } from "./line-editor";
@@ -512,9 +512,10 @@ export function ChatApp({
   }
 
   /**
-   * One composed message out. A message carrying images hands them over with its title; a
-   * message that is only the typed text keeps today's two-argument call, and an expanded one
-   * keeps the typed text as its title.
+   * One composed message out. A message carrying images hands them over with its title — the
+   * typed text without the placeholders, so the session is named by what was asked rather
+   * than by `[Image #1]`; a message that is only the typed text keeps today's two-argument
+   * call, and an expanded one keeps the typed text as its title.
    *
    * The draft that composed the message is spent the moment the message reaches the host, so
    * it is emptied here — before the call rather than after it. A turn that rejects, or one
@@ -533,7 +534,8 @@ export function ChatApp({
   ): Promise<void> {
     const images = prepared.images ?? [];
     if (prepared.draft !== undefined) imageAttach.reset(prepared.draft);
-    if (images.length > 0) await host.send(prepared.message, onEvent, { title, images });
+    if (images.length > 0)
+      await host.send(prepared.message, onEvent, { title: titleWithoutPlaceholders(title), images });
     else if (prepared.message === title) await host.send(prepared.message, onEvent);
     else await host.send(prepared.message, onEvent, { title });
   }

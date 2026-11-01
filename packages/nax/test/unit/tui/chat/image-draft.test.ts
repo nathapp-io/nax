@@ -13,6 +13,7 @@ import {
   type ImageDraft,
   imagePlaceholder,
   imagesForSend,
+  titleWithoutPlaceholders,
 } from "@/tui/chat/image-draft";
 import type { EditorState } from "@/tui/chat/line-editor";
 
@@ -226,5 +227,23 @@ describe("imagesForSend", () => {
       text: "no placeholder",
       images: [],
     });
+  });
+});
+
+describe("titleWithoutPlaceholders", () => {
+  test("US-003 AC-5 drops the leading placeholder and its spacing", () => {
+    expect(titleWithoutPlaceholders("[Image #1] what colour is it")).toBe("what colour is it");
+  });
+
+  test("US-003 AC-6 drops every placeholder and collapses the whitespace runs it leaves", () => {
+    expect(titleWithoutPlaceholders("compare [Image #1]  and   [Image #2] now")).toBe("compare and now");
+  });
+
+  test("US-003 AC-7 names a message that was nothing but pictures", () => {
+    expect(titleWithoutPlaceholders("[Image #1][Image #2]")).toBe("image");
+  });
+
+  test("US-003 AC-8 returns text with no placeholder exactly as typed", () => {
+    expect(titleWithoutPlaceholders("  two  spaces  ")).toBe("  two  spaces  ");
   });
 });

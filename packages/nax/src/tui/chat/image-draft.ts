@@ -46,9 +46,33 @@ const SIZE_REFUSAL = "images in one message must total at most 20 MB";
 /** Every placeholder in a message. Only the ones a draft image owns are rewritten. */
 const PLACEHOLDER = /\[Image #(\d+)\]/g;
 
+/** A run of whitespace, so a removed placeholder does not leave its spacing doubled. */
+const WHITESPACE_RUN = /\s+/gu;
+
+/** What a message that was nothing but pictures is titled. */
+const IMAGE_TITLE = "image";
+
 /** The placeholder an attachment shows as in the prompt. */
 export function imagePlaceholder(number: number): string {
   return `[Image #${number}]`;
+}
+
+/**
+ * The title a send carrying pictures earns: its placeholders removed, the whitespace runs
+ * they leave collapsed to one space and the ends trimmed.
+ *
+ * A title is what the session is called, so `[Image #1] what colour is it` is titled
+ * `what colour is it` rather than by the placeholder the prompt used to point at its own
+ * picture. Text with no placeholder is returned **exactly** as typed: the collapse is part of
+ * dropping placeholders, not a tidy-up the screen applies to every title.
+ *
+ * A message that was nothing but pictures carries no words to be called by, so it falls back
+ * to `image` rather than to an empty title.
+ */
+export function titleWithoutPlaceholders(text: string): string {
+  const stripped = text.replace(PLACEHOLDER, "");
+  if (stripped === text) return text;
+  return stripped.replace(WHITESPACE_RUN, " ").trim() || IMAGE_TITLE;
 }
 
 /** The draft images whose placeholder is still in `text`, in draft order. */

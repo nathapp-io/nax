@@ -110,12 +110,25 @@ describe("imageRawBytes", () => {
 
 describe("imageSizeLabel", () => {
   test.each([
-    [350_208, "342 KB"],
-    [100, "1 KB"],
-    [1_048_575, "1023 KB"],
-    [1_572_864, "1.5 MB"],
-  ])("AC-7 labels %i bytes as %s", (bytes, label) => {
+    [0, "0 B"],
+    [100, "100 B"],
+    [178, "178 B"],
+    [1023, "1023 B"],
+  ])("US-003 AC-1 prints a sub-kibibyte size in bytes: %i -> %s", (bytes, label) => {
     expect(imageSizeLabel(bytes)).toBe(label);
+  });
+
+  test.each([
+    [1024, "1 KB"],
+    [1536, "1 KB"],
+    [350_208, "342 KB"],
+    [1_048_575, "1023 KB"],
+  ])("US-003 AC-2 keeps the KB label from a kibibyte up: %i -> %s", (bytes, label) => {
+    expect(imageSizeLabel(bytes)).toBe(label);
+  });
+
+  test("US-003 AC-3 keeps the MB label as one decimal", () => {
+    expect(imageSizeLabel(1_572_864)).toBe("1.5 MB");
   });
 });
 
@@ -127,6 +140,10 @@ describe("imageDescription", () => {
 });
 
 describe("imageNoteLabel", () => {
+  test("US-003 AC-4 labels a four-character base64 payload as 3 B", () => {
+    expect(imageNoteLabel(1, { mimeType: "image/png", data: "AAAA" })).toBe("image 1 · png · 3 B");
+  });
+
   test("AC-9 prefixes the image number and appends the source when present", () => {
     expect(imageNoteLabel(2, pngImage(350_208, { width: 1280, height: 720, source: "clipboard" }))).toBe(
       "image 2 · png · 1280×720 · 342 KB · clipboard",
@@ -156,6 +173,6 @@ describe("the images barrel", () => {
     expect(Object.hasOwn(image ?? {}, "width")).toBe(false);
     expect(Object.hasOwn(image ?? {}, "height")).toBe(false);
 
-    expect(imageNoteLabel(1, { mimeType: "image/png", data: "AAAA" })).toBe("image 1 · png · 1 KB");
+    expect(imageNoteLabel(1, { mimeType: "image/png", data: "AAAA" })).toBe("image 1 · png · 3 B");
   });
 });
