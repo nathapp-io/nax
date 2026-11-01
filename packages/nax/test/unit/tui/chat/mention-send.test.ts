@@ -3,16 +3,41 @@
  * the prepare step that expands it once, and what a sent message becomes in the transcript.
  */
 import { describe, expect, mock, test } from "bun:test";
+import type { ImageAttachment } from "@nathapp/nax-agent";
 import { assertDefined } from "@test/helpers";
-import { formatMentionMessage, type MentionRecord, type MentionWhere, parseMentionMessage } from "@/chat";
+import {
+  formatMentionMessage,
+  imageNoteLabel,
+  type MentionRecord,
+  type MentionWhere,
+  parseMentionMessage,
+} from "@/chat";
 import { buildSkillInvocationMessage } from "@/prompts/builders/skills-builder";
 import { mentionTranscriptEntries } from "@/tui/chat/mention-entries";
 import { mentionPrepare, needsMentionExpansion, sentEntries } from "@/tui/chat/mention-send";
+import type { TranscriptEntry } from "@/tui/chat/transcript-model";
 
 /** Where a mention is resolved: the process cwd, and the repo it must stay inside. */
 const WHERE: MentionWhere = { cwd: "/repo/pkg", repoRoot: "/repo" };
 /** A mention of a two-line file, as the expander records it. */
 const ATTACHED_A: MentionRecord = { path: "a.ts", status: "attached", note: "2 lines", body: "x\ny\n" };
+/** A skill invocation, as nax's own prompt builder writes one. */
+const SKILL_CONTENT = buildSkillInvocationMessage({
+  skill: {
+    kind: "skill",
+    name: "brainstorming",
+    qualifiedName: "superpowers:brainstorming",
+    description: "test skill",
+    body: "body",
+    baseDir: "/skills/brainstorming",
+    path: "/skills/brainstorming/SKILL.md",
+    modelInvocable: true,
+    origin: { kind: "claude-project" },
+  },
+  args: "",
+});
+/** A pasted 2×3 PNG, as the transcript labels it. */
+const IMAGE: ImageAttachment = { mimeType: "image/png", data: "AAAA", width: 2, height: 3, source: "clipboard" };
 
 describe("needsMentionExpansion", () => {
   test.each([
@@ -51,23 +76,18 @@ describe("mentionPrepare", () => {
 
 describe("sentEntries", () => {
   test("keeps a skill invocation as its skill entry", () => {
-    const content = buildSkillInvocationMessage({
-      skill: {
-        kind: "skill",
-        name: "brainstorming",
-        qualifiedName: "superpowers:brainstorming",
-        description: "test skill",
-        body: "body",
-        baseDir: "/skills/brainstorming",
-        path: "/skills/brainstorming/SKILL.md",
-        modelInvocable: true,
-        origin: { kind: "claude-project" },
-      },
-      args: "",
-    });
-    expect(sentEntries(content)).toEqual([
+    expect(sentEntries(SKILL_CONTENT)).toEqual([
       { kind: "skill", name: "superpowers:brainstorming", args: "", body: "body" },
     ]);
+  });
+
+  test("US-004 AC-11: rows a skill's lost image at its number, ahead of the one that survived", () => {
+    const expected: readonly TranscriptEntry[] = [
+      { kind: "skill", name: "superpowers:brainstorming", args: "", body: "body" },
+      { kind: "image", label: "image 1 · missing" },
+      { kind: "image", label: imageNoteLabel(2, IMAGE) },
+    ];
+    expect(sentEntries(SKILL_CONTENT, [IMAGE], [1])).toEqual(expected);
   });
 
   test("renders an expanded message as its mention entries", () => {

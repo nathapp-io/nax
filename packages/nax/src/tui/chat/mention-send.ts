@@ -67,15 +67,59 @@ function mentionedImageCount(parsed: ParsedMentionMessage | undefined): number {
   return parsed === undefined ? 0 : parsed.records.filter((record) => record.status === "image").length;
 }
 
+/** The row an image the store could not read back leaves behind, named by the slot it held. */
+function missingSlotLabel(number: number): string {
+  return `image ${number} · missing`;
+}
+
 /**
- * One note row per image that has none of its own: the first `images.length - mentioned` of
- * them, numbered from one in the order they were sent. Images with a row already are the
- * mentions, which a send appends last, so the pasted ones are the leading run.
+ * The row of an image nobody can place: an older build's note, which recorded no position,
+ * or a position the message's slots cannot hold.
  */
-function imageRows(images: readonly ImageAttachment[] | undefined, mentioned: number): readonly TranscriptEntry[] {
-  const sent = images ?? [];
-  const pasted = sent.slice(0, Math.max(0, sent.length - mentioned));
-  return pasted.map((image, index) => ({ kind: "image", label: imageNoteLabel(index + 1, image) }));
+const MISSING_IMAGE_LABEL = "image · missing";
+
+/** One unnumbered `image · missing` row per note no slot of the message can stand for. */
+export function missingImageRows(count: number): readonly TranscriptEntry[] {
+  return Array.from({ length: count }, () => ({ kind: "image" as const, label: MISSING_IMAGE_LABEL }));
+}
+
+/** The row one image slot draws: the image's numbered label, or the note of the number it held. */
+function slotRow(position: number, image: ImageAttachment | undefined): TranscriptEntry {
+  return { kind: "image", label: image === undefined ? missingSlotLabel(position) : imageNoteLabel(position, image) };
+}
+
+/**
+ * One note row per image that has none of its own, in slot order. A message's slots are the
+ * images it still carries plus the positions of those lost on load (`missing`), re-inserted
+ * among them: the store dropped a lost image from the list without forgetting where it sat.
+ *
+ * The first `slots - mentioned` slots are the pasted ones; images with a row already are the
+ * mentions, which a send appends last. Each pasted slot is numbered by its own slot, so a
+ * lost image keeps its number instead of letting the survivors close the gap. A position the
+ * slots cannot hold — more markers than slots — becomes today's unnumbered row, after the
+ * numbered ones: it names an image nobody can place.
+ */
+function imageRows(
+  images: readonly ImageAttachment[] | undefined,
+  mentioned: number,
+  missing: readonly number[],
+): readonly TranscriptEntry[] {
+  const loaded = images ?? [];
+  const total = loaded.length + missing.length;
+  // A position beyond the slots is a note about an image the message no longer describes.
+  const lost = new Set(missing.filter((position) => position >= 1 && position <= total));
+  const pasted = Math.max(0, total - mentioned);
+  const rows: TranscriptEntry[] = [];
+  let next = 0;
+  for (let position = 1; position <= total; position += 1) {
+    const here = lost.has(position);
+    // Only a surviving image consumes one of `loaded`; the lost ones were dropped from it.
+    const image = here ? undefined : loaded[next++];
+    // A position nothing fills is a marker's claim about a slot the message lacks: no row.
+    if (!here && image === undefined) continue;
+    if (position <= pasted) rows.push(slotRow(position, image));
+  }
+  return [...rows, ...missingImageRows(missing.length - lost.size)];
 }
 
 /**
@@ -86,14 +130,23 @@ function imageRows(images: readonly ImageAttachment[] | undefined, mentioned: nu
  *
  * Each mentioned image already has its own attachment row (it is one record of the
  * envelope), and a send appends the mentions' images after the pasted ones, so only the
- * first `images.length - <image records>` images need a row. On replay the stored images can
- * be one short of what was sent — one was dropped as missing — and that count simply covers
- * one fewer row; the `image · missing` row `replayUser` adds says what happened to it.
+ * first `images.length - <image records>` images need a row. On replay the stored images are
+ * short by the ones the store could not read back — it names each by the position it held —
+ * so `missing` puts every lost image back at its own number.
  */
-export function sentEntries(message: string, images?: readonly ImageAttachment[]): readonly TranscriptEntry[] {
+export function sentEntries(
+  message: string,
+  images?: readonly ImageAttachment[],
+  missing: readonly number[] = [],
+): readonly TranscriptEntry[] {
   const skill = parseSkillInvocation(message);
-  if (skill) return [{ kind: "skill", ...skill }, ...imageRows(images, 0)];
+  if (skill) return [{ kind: "skill", ...skill }, ...imageRows(images, 0, missing)];
   const parsed = parseMentionMessage(message);
-  const entries = parsed === undefined ? [{ kind: "user" as const, text: message }] : mentionTranscriptEntries(parsed);
-  return [...entries, ...imageRows(images, mentionedImageCount(parsed))];
+  return [...messageEntries(message, parsed), ...imageRows(images, mentionedImageCount(parsed), missing)];
+}
+
+/** The user's own words, or the rows its envelope expanded into: nothing for empty text. */
+function messageEntries(message: string, parsed: ParsedMentionMessage | undefined): readonly TranscriptEntry[] {
+  if (message === "") return [];
+  return parsed === undefined ? [{ kind: "user", text: message }] : mentionTranscriptEntries(parsed);
 }

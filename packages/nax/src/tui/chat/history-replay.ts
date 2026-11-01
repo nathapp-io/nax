@@ -3,15 +3,16 @@
  *
  * A stored user message replays exactly as a live turn drew it — `sentEntries` is that one
  * rule — except for one thing the store did: when an image it saved could not be read back,
- * it appends a `[image missing]` line to the content instead (feature 1's load note). Those
- * lines are stripped from the trailing run and each becomes an `image · missing` row, so a
- * resumed transcript says an image was sent and is gone rather than showing the note as if
- * the user had typed it.
+ * it appends a `[image missing #<n>]` line to the content instead (feature 1's load note,
+ * numbered by the position the image held). Those lines are stripped from the trailing run
+ * and their positions handed to `sentEntries`, so a resumed transcript draws the lost image
+ * at its own number rather than renumbering the survivors. A bare `[image missing]` — a note
+ * from a build that recorded no position — becomes today's unnumbered row instead.
  */
 import { displayToolInput, type ImageAttachment, toolResultPreview } from "@nathapp/nax-agent";
 import { COMPACTION_SUMMARY_PREFIX } from "@nathapp/nax-agent/internal";
 import { acpAgentOfMessage, type ChatHistory } from "@/chat";
-import { sentEntries } from "./mention-send";
+import { missingImageRows, sentEntries } from "./mention-send";
 import type { TranscriptEntry } from "./transcript-model";
 
 type Message = ChatHistory["messages"][number];
@@ -21,38 +22,42 @@ type StoredCall = NonNullable<Extract<Message, { role: "assistant" }>["toolCalls
 const FALLBACK_TIMESTAMP = "1970-01-01T00:00:00.000Z";
 const NO_RESULT_TEXT = "No result was recorded for this call.";
 const SOURCE_LINE_BREAK = /\r\n|[\r\n]/;
-/** The line feature 1's load writes in place of an image it could not read back. */
-const MISSING_IMAGE_NOTE = "[image missing]";
-/** What a stripped note becomes: a row saying the image the message named is gone. */
-const MISSING_IMAGE_LABEL = "image · missing";
+/** The line feature 1's load writes in place of an image it could not read back: bare, or numbered. */
+const MISSING_IMAGE_NOTE = /^\[image missing(?: #(\d+))?\]$/;
 
-/** A stored message without its trailing `[image missing]` lines, and how many were taken. */
+/** A stored message without its trailing note lines, and what those notes said was lost. */
 interface StrippedImageNotes {
   readonly text: string;
-  readonly missing: number;
+  /** The 1-based positions of the images the store could not read back, in stored order. */
+  readonly missing: readonly number[];
+  /** Notes from an older build, which recorded no position for the image it lost. */
+  readonly bare: number;
 }
 
 function stripMissingImageNotes(content: string): StrippedImageNotes {
   const lines = content.split(SOURCE_LINE_BREAK);
+  const missing: number[] = [];
+  let bare = 0;
   let end = lines.length;
-  while (end > 0 && lines[end - 1] === MISSING_IMAGE_NOTE) end -= 1;
+  while (end > 0) {
+    const note = MISSING_IMAGE_NOTE.exec(lines[end - 1]);
+    if (note === null) break;
+    end -= 1;
+    const position = note[1];
+    if (position === undefined) bare += 1;
+    else missing.unshift(Number(position));
+  }
   // Content with no note replays byte for byte; only a stripped one is split and rejoined.
-  if (end === lines.length) return { text: content, missing: 0 };
-  return { text: lines.slice(0, end).join("\n"), missing: lines.length - end };
-}
-
-function missingImageRows(count: number): readonly TranscriptEntry[] {
-  return Array.from({ length: count }, () => ({ kind: "image", label: MISSING_IMAGE_LABEL }));
+  if (end === lines.length) return { text: content, missing: [], bare: 0 };
+  return { text: lines.slice(0, end).join("\n"), missing, bare };
 }
 
 function replayUser(content: string, images: readonly ImageAttachment[] | undefined): readonly TranscriptEntry[] {
-  const { text, missing } = stripMissingImageNotes(content);
-  const stripped = missingImageRows(missing);
-  if (text === "") return stripped;
+  const { text, missing, bare } = stripMissingImageNotes(content);
   if (text.startsWith(COMPACTION_SUMMARY_PREFIX)) {
     return [{ kind: "notice", text: "earlier conversation compacted" }];
   }
-  return [...sentEntries(text, images), ...stripped];
+  return [...sentEntries(text, images, missing), ...missingImageRows(bare)];
 }
 
 function replayCall(
