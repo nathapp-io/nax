@@ -145,6 +145,17 @@ describe("runAgentHook — stdin, cwd and exit 0", () => {
 
     expect(run).toEqual({ kind: "ok", stdout: "[1,2]" });
   });
+
+  test("a stdout that opens a JSON object but does not parse is an error naming the command", async () => {
+    // A guard that meant to block must never read as plain text: on PreToolUse
+    // plain text is an allow, so a truncated or typo'd answer fails closed.
+    const command = runScript(scriptFile(`printf '{"decision":"block","reason":"r"'`));
+    const run = await runAgentHook({ entry: makeEntry({ command }), payload: PAYLOAD, cwd: dir });
+
+    expect(run.kind).toBe("error");
+    expect(run.kind === "error" ? run.reason : "").toContain("not valid JSON");
+    expect(run.kind === "error" ? run.reason : "").toContain("hook.sh");
+  });
 });
 
 describe("runAgentHook — exit codes", () => {

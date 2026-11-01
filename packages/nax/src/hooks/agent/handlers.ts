@@ -203,7 +203,7 @@ async function runPreToolHooks(
     if (step.context !== undefined) notes.push(step.context);
   }
 
-  rememberCallInput(state, ctx, payload.call.id, toolName, input);
+  rememberCallInput(state, ctx, { id: payload.call.id, toolName, input });
   return combinePreToolAnswers(rewritten, notes);
 }
 
@@ -355,6 +355,16 @@ function warnPostToolFailure(entry: AgentHookEntry, reason: string): void {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * The most call inputs one session keeps waiting for their `after_tool`.
+ *
+ * A call blocked by a later plugin, one that throws, or one abandoned by an
+ * aborted turn never reaches `after_tool`, so its record is never taken. The
+ * cap bounds that residue for a long chat; the oldest record goes first, and a
+ * call that old has no result coming.
+ */
+export const AGENT_HOOK_MAX_RECORDED_CALLS = 256;
+
+/**
  * Record the input this call will run with for `after_tool`, which cannot see
  * the call. Written only when a `PostToolUse` entry covers the tool, so a
  * `PreToolUse`-only config keeps no state at all.
@@ -362,15 +372,17 @@ function warnPostToolFailure(entry: AgentHookEntry, reason: string): void {
 function rememberCallInput(
   state: AgentHookState,
   ctx: LoopHandlerContext,
-  callId: string,
-  toolName: string,
-  input: unknown,
+  call: { readonly id: string; readonly toolName: string; readonly input: unknown },
 ): void {
-  if (!state.postTool.some((hook) => hook.matches(toolName))) return;
+  if (!state.postTool.some((hook) => hook.matches(call.toolName))) return;
   const existing = state.records.get(ctx.sessionName);
   const byCallId = existing ?? new Map<string, unknown>();
   if (existing === undefined) state.records.set(ctx.sessionName, byCallId);
-  byCallId.set(callId, input);
+  byCallId.delete(call.id);
+  byCallId.set(call.id, call.input);
+  // Map iteration is insertion order, so the first key is the oldest record.
+  const oldest = byCallId.keys().next();
+  if (byCallId.size > AGENT_HOOK_MAX_RECORDED_CALLS && oldest.done !== true) byCallId.delete(oldest.value);
 }
 
 /**

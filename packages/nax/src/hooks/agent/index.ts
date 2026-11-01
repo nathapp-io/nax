@@ -7,7 +7,7 @@
 
 export { _agentHookHandlerDeps, AGENT_HOOKS_PLUGIN } from "./common";
 export { loadAgentHooksConfig } from "./config";
-export { createAgentHookHandlers } from "./handlers";
+export { AGENT_HOOK_MAX_RECORDED_CALLS, createAgentHookHandlers } from "./handlers";
 export { _loadAgentHookDeps, loadAgentHookHandlers } from "./load";
 export {
   _runAgentHookDeps,

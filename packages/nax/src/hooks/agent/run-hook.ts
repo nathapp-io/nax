@@ -180,7 +180,11 @@ function toRun(entry: AgentHookEntry, outcome: HookProcessOutcome): AgentHookRun
 
   if (outcome.exitCode === 0) {
     const json = parseJsonObject(stdout);
-    return json === undefined ? { kind: "ok", stdout } : { kind: "ok", stdout, json };
+    if (json !== undefined) return { kind: "ok", stdout, json };
+    // An answer that opens an object but does not parse is a broken decision,
+    // not plain text: read as text, a truncated `PreToolUse` block would allow.
+    if (stdout.startsWith("{")) return { kind: "error", reason: `${command} printed stdout that is not valid JSON` };
+    return { kind: "ok", stdout };
   }
   // 2 is the block code; the reason is the hook's own trimmed stderr, and a
   // silent block still has to say which hook answered.
