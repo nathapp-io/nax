@@ -55,6 +55,7 @@ export type TrustSurface =
   | "plugins"
   | "context-plugin-providers"
   | "hooks"
+  | "agent-hooks"
   | "mcp"
   | "quality-command"
   | "test-command"

@@ -66,7 +66,7 @@ const PATCHABLE_FIELDS = {
   // A decision, not a field patch — chained in dispatchBeforeTool below.
   before_tool: [],
   after_tool: ["content", "isError"],
-  before_turn: ["seed", "history"],
+  before_turn: ["seed", "history", "block", "promptContext"],
   transform_context: ["messages"],
   before_request: ["options"],
   after_response: ["text", "toolCalls", "thinking"],

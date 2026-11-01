@@ -20,6 +20,11 @@
  * Later stories extend this module, not that call site: US-005 appends the
  * native rule-delivery handlers to the returned set, and US-007 adds the
  * project-context file checks.
+ *
+ * US-007 (agent hooks) also appends this run's `.nax/hooks.json` handlers
+ * ahead of rule delivery — but only for a caller that opts in with
+ * `agentHooks: "run"`. The bot configures a PR worktree that may come from a
+ * fork, so its call omits the flag and never executes that file's commands.
  */
 
 import { stat } from "node:fs/promises";
@@ -29,6 +34,7 @@ import { isWorkflowMode, NATIVE_AGENT_NAME, type NaxConfig } from "@/config";
 import { loadProjectContextOverride } from "@/context/project-context-override";
 import { createRuleDeliveryHandlers } from "@/context/rules/rule-delivery";
 import { NaxError } from "@/errors";
+import { loadAgentHookHandlers } from "@/hooks";
 import { getLogger } from "@/logger";
 
 /**
@@ -49,6 +55,8 @@ export const _runRulesSetupDeps: {
   loadProjectContextOverride: typeof loadProjectContextOverride;
   /** US-005 — the native rule-delivery handlers the run registers. */
   createRuleDeliveryHandlers: typeof createRuleDeliveryHandlers;
+  /** US-007 — the run surface's agent hooks, loaded only when a caller opts in. */
+  loadAgentHookHandlers: typeof loadAgentHookHandlers;
 } = {
   /**
    * Deliberately not `Bun.file(dir).exists()`: that reports `false` for a
@@ -64,6 +72,7 @@ export const _runRulesSetupDeps: {
   },
   loadProjectContextOverride,
   createRuleDeliveryHandlers,
+  loadAgentHookHandlers,
 };
 
 /**
@@ -91,6 +100,13 @@ export async function configureRunRules(input: {
   config: NaxConfig;
   workdir: string;
   pluginHandlers: LoopHandlerSet;
+  /**
+   * US-007 — the surface whose `.nax/hooks.json` may be executed. The run is
+   * the one caller that opts in; `nax bot` configures a PR worktree that may
+   * come from a fork, so it must never execute that file's commands and passes
+   * nothing here.
+   */
+  agentHooks?: "run";
 }): Promise<LoopHandlerSet> {
   // Defensive reads: a sparse test config, or a config object assembled before
   // this key existed, must not throw here — same shape as the `context?.v2?.`
@@ -103,7 +119,29 @@ export async function configureRunRules(input: {
     });
   }
   await validateProjectContext(input.config);
-  return withRuleDeliveryHandlers(input.config, input.workdir, input.pluginHandlers, overrideDir);
+  const handlers = await withAgentHookHandlers(input);
+  return withRuleDeliveryHandlers(input.config, input.workdir, handlers, overrideDir);
+}
+
+/**
+ * US-007 — merge the run surface's agent hooks into the plugin set.
+ *
+ * After the validation above, so a run that is about to fail for a bad
+ * `overrideDir` never spawns a hook. NOT gated on workflow mode or on
+ * `context.rules.delivery`: those two decide whether rule DELIVERY applies,
+ * and an agent hook is a separate mechanism the operator opted into.
+ *
+ * An empty hook set returns the plugin set by identity — the invariant US-002
+ * and US-005 pinned for a run that has no `hooks.json`.
+ */
+async function withAgentHookHandlers(input: {
+  workdir: string;
+  pluginHandlers: LoopHandlerSet;
+  agentHooks?: "run";
+}): Promise<LoopHandlerSet> {
+  if (input.agentHooks !== "run") return input.pluginHandlers;
+  const hooks = await _runRulesSetupDeps.loadAgentHookHandlers({ surface: "run", repoRoot: input.workdir });
+  return hooks.length > 0 ? [...input.pluginHandlers, ...hooks] : input.pluginHandlers;
 }
 
 /**

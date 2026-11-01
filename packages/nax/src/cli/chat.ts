@@ -22,6 +22,7 @@ import {
 } from "@/chat";
 import { findProjectDir, getProjectKey, globalConfigDir, isWorkflowMode, loadConfig, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
+import { loadAgentHookHandlers } from "@/hooks";
 import { type InteractionChain, initInteractionChain } from "@/interaction";
 import { getSafeLogger } from "@/logger";
 import { loadPlugins, PluginRegistry } from "@/plugins";
@@ -56,6 +57,7 @@ export const _chatCommandDeps = {
   },
   loadPlugins,
   loadResourceCatalog,
+  loadAgentHookHandlers,
   createChatMcp,
   env: process.env,
   loadConfig,
@@ -214,7 +216,13 @@ async function chatResources(repoRoot: string, config: NaxConfig, deps: ChatComm
         }),
         ...mcp.providers,
       ],
-      pluginHandlers: registry.getLoopHandlers(),
+      // Plugin handlers first, then the agent hooks: `ChatHost` appends rule
+      // delivery after both, so the "rules after plugins" order is unchanged.
+      // The hooks are loaded once here, when the surface starts.
+      pluginHandlers: [
+        ...registry.getLoopHandlers(),
+        ...(await deps.loadAgentHookHandlers({ surface: "chat", repoRoot })),
+      ],
       naxPlugins: registry.plugins.map(({ name, provides }) => ({ name, provides })),
       mcp: mcp.state,
       teardown: async () => {

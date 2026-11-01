@@ -181,8 +181,15 @@ export async function initializeAfterLock(options: InitializeAfterLockOptions): 
     // US-002: `configureRunRules` owns the run-start validation of the rules
     // override and returns the set unchanged at this story; every branch stays
     // in that module so this function's complexity baseline does not grow.
+    // US-007: `agentHooks: "run"` is the opt-in that lets this run execute its
+    // own `.nax/hooks.json`; the bot's call passes nothing and loads none.
     runtime.sessionManager.configureLoopHandlers(
-      await configureRunRules({ config, workdir, pluginHandlers: pluginRegistry.getLoopHandlers() }),
+      await configureRunRules({
+        config,
+        workdir,
+        pluginHandlers: pluginRegistry.getLoopHandlers(),
+        agentHooks: "run",
+      }),
     );
 
     // Log plugins loaded

@@ -19,9 +19,15 @@
 
 import { join } from "node:path";
 import type {
+  AfterToolPatch,
+  AfterToolPayload,
   BeforeCompactionPayload,
   BeforeToolOutcome,
   BeforeToolPayload,
+  BeforeTurnEndPatch,
+  BeforeTurnEndPayload,
+  BeforeTurnPatch,
+  BeforeTurnPayload,
   LoopEvent,
   LoopHandlerContext,
   LoopHandlerEntry,
@@ -42,13 +48,32 @@ export function loopHandlerEntry(set: LoopHandlerSet, event: LoopEvent): LoopHan
 }
 
 /** A tool call as a `before_tool` payload carries it (nax-ai's `ToolCall` shape). */
-export function toolCall(name: string, input: Record<string, unknown>): BeforeToolPayload["call"] {
-  return { id: `call-${name}`, name, input };
+export function toolCall(name: string, input: Record<string, unknown>, id = `call-${name}`): BeforeToolPayload["call"] {
+  return { id, name, input };
 }
 
 /** A `before_tool` payload for one call. No handler under test reads `tools`. */
-export function beforeToolPayload(name: string, input: Record<string, unknown>): BeforeToolPayload {
-  return { call: toolCall(name, input), tools: [] };
+export function beforeToolPayload(name: string, input: Record<string, unknown>, id?: string): BeforeToolPayload {
+  return { call: toolCall(name, input, id), tools: [] };
+}
+
+/**
+ * An `after_tool` payload for one finished call. Absent keys stay absent: a
+ * payload with no `callId` is exactly the case a handler must survive.
+ */
+export function afterToolPayload(input: {
+  content: string;
+  isError?: boolean;
+  toolName?: string;
+  callId?: string;
+}): AfterToolPayload {
+  const { content, isError, toolName, callId } = input;
+  return {
+    content,
+    ...(isError !== undefined ? { isError } : {}),
+    ...(toolName !== undefined ? { toolName } : {}),
+    ...(callId !== undefined ? { callId } : {}),
+  };
 }
 
 /**
@@ -56,15 +81,55 @@ export function beforeToolPayload(name: string, input: Record<string, unknown>):
  * is the absence of the key, which is exactly what a role-scoped handler reads.
  */
 export function handlerContext(
-  input: { sessionName?: string; role?: string; storyId?: string } = {},
+  input: {
+    sessionName?: string;
+    role?: string;
+    storyId?: string;
+    feature?: string;
+    model?: string;
+    workdir?: string;
+  } = {},
 ): LoopHandlerContext {
-  const { sessionName = "sess-rule-delivery", role, storyId = "US-005" } = input;
-  return { sessionName, ...(role !== undefined ? { role } : {}), storyId };
+  const { sessionName = "sess-rule-delivery", role, storyId = "US-005", feature, model, workdir } = input;
+  return {
+    sessionName,
+    ...(role !== undefined ? { role } : {}),
+    ...(feature !== undefined ? { feature } : {}),
+    ...(workdir !== undefined ? { workdir } : {}),
+    ...(model !== undefined ? { model } : {}),
+    storyId,
+  };
 }
 
 /** A `before_compaction` payload; the rule-delivery handler reads none of it. */
 export function beforeCompactionPayload(): BeforeCompactionPayload {
   return { reason: "proactive", toSummarize: [], estimatedTokens: 1_000 };
+}
+
+/** One loaded transcript message, as a `before_turn` payload carries it. */
+export function transcriptMessage(content: string): BeforeTurnPayload["history"][number] {
+  return { role: "user", content };
+}
+
+/**
+ * A `before_turn` payload. `history` defaults to empty — the first turn of a
+ * session, which is the only turn a `SessionStart` hook fires on.
+ */
+export function beforeTurnPayload(input: {
+  prompt: string;
+  history?: BeforeTurnPayload["history"];
+  sessionName?: string;
+}): BeforeTurnPayload {
+  const { prompt, history = [], sessionName = "sess-turn" } = input;
+  return { prompt, history, sessionName, boundary: false };
+}
+
+/** A `before_turn_end` payload, defaulted to a turn that completed on its own. */
+export function beforeTurnEndPayload(
+  input: { ended?: BeforeTurnEndPayload["ended"]; stopped?: boolean; followUpsSoFar?: number } = {},
+): BeforeTurnEndPayload {
+  const { ended = "completed", stopped = false, followUpsSoFar = 0 } = input;
+  return { messages: [], roundTrips: 1, ended, stopped, followUpsSoFar };
 }
 
 /** What a `before_tool` handler's answer holds as model-facing text. */
@@ -93,6 +158,61 @@ export async function callBeforeCompaction(
 ): Promise<PatchOf<LoopEvent> | undefined> {
   const entry = loopHandlerEntry(set, "before_compaction");
   return entry.handler(payload, ctx);
+}
+
+/**
+ * Run the set's `after_tool` handler. `undefined` is a real answer — "no patch,
+ * leave the result alone" — so it is returned as-is rather than normalized.
+ */
+export async function callAfterTool(
+  set: LoopHandlerSet,
+  payload: AfterToolPayload,
+  ctx: LoopHandlerContext,
+): Promise<AfterToolPatch | undefined> {
+  const entry = loopHandlerEntry(set, "after_tool");
+  const answer = await entry.handler(payload, ctx);
+  if (answer === undefined) return undefined;
+  return isAfterToolPatch(answer) ? answer : undefined;
+}
+
+/** An `after_tool` patch is the only one carrying `content`/`isError`. */
+function isAfterToolPatch(answer: PatchOf<LoopEvent>): answer is AfterToolPatch {
+  return "content" in answer || "isError" in answer;
+}
+
+/**
+ * Run the set's `before_turn` handler. `undefined` is a real answer — "no patch,
+ * the prompt and history are unchanged" — so it is returned as-is.
+ */
+export async function callBeforeTurn(
+  set: LoopHandlerSet,
+  payload: BeforeTurnPayload,
+  ctx: LoopHandlerContext,
+): Promise<BeforeTurnPatch | undefined> {
+  const entry = loopHandlerEntry(set, "before_turn");
+  const answer = await entry.handler(payload, ctx);
+  if (answer === undefined) return undefined;
+  return isBeforeTurnPatch(answer) ? answer : undefined;
+}
+
+/** A `before_turn` patch is the only one carrying a `seed`/`history`/`block`/`promptContext`. */
+function isBeforeTurnPatch(answer: PatchOf<LoopEvent>): answer is BeforeTurnPatch {
+  return "seed" in answer || "history" in answer || "block" in answer || "promptContext" in answer;
+}
+
+/**
+ * Run the set's `before_turn_end` handler. `undefined` is a real answer — "end
+ * the turn" — so it is returned as-is.
+ */
+export async function callBeforeTurnEnd(
+  set: LoopHandlerSet,
+  payload: BeforeTurnEndPayload,
+  ctx: LoopHandlerContext,
+): Promise<BeforeTurnEndPatch | undefined> {
+  const entry = loopHandlerEntry(set, "before_turn_end");
+  const answer = await entry.handler(payload, ctx);
+  if (answer === undefined) return undefined;
+  return "followUp" in answer ? answer : undefined;
 }
 
 /** Only a `before_tool` patch carries a `kind`; anything else is no decision. */
