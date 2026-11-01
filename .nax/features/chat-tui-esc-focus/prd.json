@@ -3,7 +3,7 @@
   "feature": "chat-tui-esc-focus",
   "branchName": "feat/chat-tui-esc-focus",
   "createdAt": "2026-11-01T00:00:00.000Z",
-  "updatedAt": "2026-11-01T05:29:31.005Z",
+  "updatedAt": "2026-11-01T05:40:52.364Z",
   "userStories": [
     {
       "id": "US-001",
@@ -481,14 +481,17 @@
         "esc"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Localized existing component rendering and key ownership changes, tested through controlled mounted input and raw ANSI frames."
+        "reasoning": "Localized existing component rendering and key ownership changes, tested through controlled mounted input and raw ANSI frames.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatInput.tsx",
@@ -507,7 +510,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "15906f76c1ec41f164131c51265d46a4e1c62186"
     },
     {
       "id": "US-009",
