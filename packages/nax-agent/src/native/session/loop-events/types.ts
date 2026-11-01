@@ -103,6 +103,23 @@ export interface BeforeTurnPatch {
   readonly seed?: readonly NativeTranscriptMessage[];
   /** Honoured ONLY when payload.boundary is true (spec 3.2, 6.1). */
   readonly history?: readonly NativeTranscriptMessage[];
+  /**
+   * Refuse the turn (US-001). `runNativeTurn` throws `NATIVE_TURN_BLOCKED`
+   * carrying `reason` as its message BEFORE it appends anything to the
+   * transcript or makes a provider request, so a hook can stop a prompt
+   * reaching the model without seeing it first. `block` wins over every other
+   * field in the same patch.
+   */
+  readonly block?: { readonly reason: string };
+  /**
+   * Context to PREFIX to the first message the turn seeds (US-001).
+   *
+   * `seed` cannot carry it: that patch REPLACES the prompt message, and the
+   * prompt's images go with it. A prefix leaves the caller's message — text,
+   * images and all — exactly as it was, with the context above it. An empty
+   * string is no context, so the message is untouched.
+   */
+  readonly promptContext?: string;
 }
 
 /** `transform_context` — fires before every provider request attempt. */
@@ -251,6 +268,15 @@ export interface LoopHandlerEntry {
   readonly plugin: string;
   readonly event: LoopEvent;
   readonly handler: ExternalHandlerOf<LoopEvent>;
+  /**
+   * How long THIS handler may run before `wrapExternalHandler` answers for it,
+   * replacing `LOOP_HANDLER_TIMEOUT_MS` (US-001). A formatter or type check
+   * after an edit routinely needs longer than the 10 s default; a handler that
+   * does not set it keeps that default, so widening one hook never widens the
+   * rest. Only a FINITE POSITIVE number is a deadline — `0` and `Infinity` are
+   * not, and fall back to the default rather than disabling the bound.
+   */
+  readonly timeoutMs?: number;
 }
 
 /**

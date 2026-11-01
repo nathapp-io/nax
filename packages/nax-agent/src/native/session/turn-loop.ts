@@ -26,6 +26,7 @@ import type { TranscriptMessage as NativeTranscriptMessage } from "./compaction.
 import { createInvalidCallBudget } from "./handle-invalid-tool-call.ts";
 import { applyHistoryPatch } from "./loop-events/cache-boundary.ts";
 import { createLoopEventRegistry } from "./loop-events/index.ts";
+import type { BeforeTurnPatch } from "./loop-events/types.ts";
 import { registerBuiltinLoopHandlers } from "./loop-handlers.ts";
 import { sessionAnchorFor, sessionTranscriptFor } from "./session.ts";
 import { codingToolsToDefinitions, toToolDefinitions } from "./tool-mapping.ts";
@@ -44,6 +45,33 @@ import { buildTurnResult, logTurnTailWarnings } from "./turn-result.ts";
 import { recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types.ts";
 
 /**
+ * The `before_turn` patch a turn applies, plus the facts the application needs.
+ *
+ * An options object rather than a fourth positional: the seed rule, the context
+ * prefix and the block all read the SAME patch, and the turn's own name is only
+ * there to attribute a refusal.
+ */
+interface BeforeTurnSeedArgs {
+  readonly patch: BeforeTurnPatch | undefined;
+  readonly prompt: string;
+  readonly images: SendTurnOpts["images"];
+  readonly sessionName: string;
+}
+
+/**
+ * A `block` patch refuses the turn (US-001).
+ *
+ * Thrown BEFORE `messages.push` and before any provider request, so a blocked
+ * prompt is neither sent nor persisted. `reason` is the message, which is what
+ * makes the chat's turn-error line read `NATIVE_TURN_BLOCKED: <reason>`
+ * (`applyTurnEnd` in nax's transcript-model renders `CODE: message`).
+ */
+function assertTurnNotBlocked(block: BeforeTurnPatch["block"], sessionName: string): void {
+  if (block === undefined) return;
+  throw new NaxError(block.reason, "NATIVE_TURN_BLOCKED", { stage: "native-session", sessionName });
+}
+
+/**
  * The messages `before_turn` appends as the turn's seed: the handler's patch
  * when it is a non-empty user-role array (spec 6.1's stop rule), otherwise the
  * prompt the caller handed the turn. A bad patch is rejected the way a bad
@@ -51,7 +79,7 @@ import { recordNativeTurnFailureUsage, type TurnDeps } from "./turn-types.ts";
  * empty or speaks with another role hands the model a conversation it cannot
  * answer as itself.
  */
-function beforeTurnSeed(
+function seededMessages(
   patch: readonly NativeTranscriptMessage[] | undefined,
   prompt: string,
   images: SendTurnOpts["images"],
@@ -69,6 +97,33 @@ function beforeTurnSeed(
     { seedLength: patch.length },
   );
   return [seed];
+}
+
+/**
+ * `promptContext` is PREFIXED to the seed's first message (US-001).
+ *
+ * Not a `seed` patch: that one replaces the prompt message, and the caller's
+ * images go with it. Only `content` changes here, so a message's images,
+ * toolCallId and role survive untouched. An empty context is no context.
+ */
+function withPromptContext(
+  seed: readonly NativeTranscriptMessage[],
+  promptContext: string | undefined,
+): NativeTranscriptMessage[] {
+  if (promptContext === undefined || promptContext === "") return [...seed];
+  const [first, ...rest] = seed;
+  if (first === undefined) return [];
+  return [{ ...first, content: `${promptContext}\n\n${first.content}` }, ...rest];
+}
+
+/**
+ * What the turn actually appends. `block` is checked FIRST — a patch carrying
+ * both a block and a context refuses the turn, because the reason is the whole
+ * answer and there is no turn left for the context to sit in front of.
+ */
+function beforeTurnSeed({ patch, prompt, images, sessionName }: BeforeTurnSeedArgs): NativeTranscriptMessage[] {
+  assertTurnNotBlocked(patch?.block, sessionName);
+  return withPromptContext(seededMessages(patch?.seed, prompt, images), patch?.promptContext);
 }
 
 /** Keep billed spend on the original error for both loop and persistence failures. */
@@ -158,7 +213,14 @@ export async function runNativeTurn(
       event: "before_turn",
     }).messages,
   ];
-  messages.push(...beforeTurnSeed(turnStart.seed, prompt, opts.images));
+  messages.push(
+    ...beforeTurnSeed({
+      patch: turnStart,
+      prompt,
+      images: opts.images,
+      sessionName: handle.id,
+    }),
+  );
 
   const codingTools = opts.codingTools ?? [];
   const codingToolNames = new Set(codingTools.map((t) => t.name));

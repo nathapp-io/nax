@@ -24,18 +24,61 @@ import type { HandlerOf, LoopEvent, LoopHandlerContext, LoopHandlerEntry, PatchO
 /**
  * How long a plugin handler may run before the wrapper answers for it. A
  * constant by ruling, not a `NaxConfig` key: it bounds the turn's liveness, it
- * is not a policy a project tunes per package.
+ * is not a policy a project tunes per package. An entry with its own
+ * `timeoutMs` replaces it for that handler alone (US-001 — see `deadlineFor`).
  */
 export const LOOP_HANDLER_TIMEOUT_MS = 10_000;
 
 /**
- * Test seam for the deadline only. Read at DISPATCH time, never captured when
- * the handler is wrapped — a wrapped handler is installed once and dispatched
- * many times.
+ * The handle the deadline timer is armed with. Bun's `Timer` and a virtual
+ * clock's numeric id are the same thing at runtime, and the test seam below
+ * carries either.
  */
-export const _externalHandlerDeps = {
+type TimerHandle = number | ReturnType<typeof setTimeout>;
+
+interface ExternalHandlerDeps {
+  /**
+   * Test seam for the deadline only. Read at DISPATCH time, never captured
+   * when the handler is wrapped — a wrapped handler is installed once and
+   * dispatched many times.
+   */
+  timeoutMs: number;
+  /**
+   * The timer pair the deadline is armed on. Injected rather than called on the
+   * globals so a test can drive the deadline on `makeFakeClock()` instead of
+   * sleeping for it (`docs/guides/testing-rules.md` §3 forbids a fixed sleep,
+   * and "wait a real 100 ms and hope the 10 ms default lost the race" is the
+   * flake it forbids).
+   *
+   * The defaults READ the globals at call time instead of capturing them, so a
+   * `withTimerSpy` substitution still observes the timer the wrapper arms.
+   */
+  setTimeout(handler: () => void, delayMs: number): TimerHandle;
+  clearTimeout(handle: TimerHandle | undefined): void;
+}
+
+export const _externalHandlerDeps: ExternalHandlerDeps = {
   timeoutMs: LOOP_HANDLER_TIMEOUT_MS,
+  setTimeout: (handler, delayMs) => globalThis.setTimeout(handler, delayMs),
+  clearTimeout: (handle) => {
+    if (handle !== undefined) globalThis.clearTimeout(handle);
+  },
 };
+
+/**
+ * The deadline THIS dispatch is bounded by (US-001): the entry's own when it is
+ * a finite positive number, the module default otherwise.
+ *
+ * `0` and `Infinity` are not deadlines — one would answer before the handler
+ * was ever called, the other would disable the bound — so they fall back to the
+ * default rather than being trusted as an override. `NaN` is not finite and
+ * falls back the same way.
+ */
+function deadlineFor(entry: LoopHandlerEntry): number {
+  const override = entry.timeoutMs;
+  if (override === undefined || !Number.isFinite(override) || override <= 0) return _externalHandlerDeps.timeoutMs;
+  return override;
+}
 
 /**
  * The patch fields whose presence is worth tracing: the ones a later
@@ -66,26 +109,33 @@ type Settlement =
  *
  * `setTimeout` and not `Bun.sleep()`: the handle has to be cancelled mid-flight
  * (`clearTimeout`), which is the sanctioned exception to the Bun-native delay
- * rule.
+ * rule. Both go through `_externalHandlerDeps`, whose defaults forward to the
+ * globals at call time (see its doc).
+ *
+ * `timeoutMs` is the entry's own deadline when it has one — `deadlineFor` — so
+ * a long-running hook widens only its own bound.
  */
 function raceSettlement(
   entry: LoopHandlerEntry,
   payload: unknown,
   deps: { readonly getCtx: () => LoopHandlerContext; readonly signal: AbortSignal },
 ): Promise<Settlement> {
-  const timeoutMs = _externalHandlerDeps.timeoutMs;
+  const timeoutMs = deadlineFor(entry);
   return new Promise<Settlement>((resolve) => {
     let settled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: TimerHandle | undefined;
     const finish = (result: Settlement): void => {
       if (settled) return;
       settled = true;
-      if (timer !== undefined) clearTimeout(timer);
+      if (timer !== undefined) _externalHandlerDeps.clearTimeout(timer);
       deps.signal.removeEventListener("abort", onAbort);
       resolve(result);
     };
     const onAbort = (): void => finish({ ok: false, reason: "aborted before it settled" });
-    timer = setTimeout(() => finish({ ok: false, reason: `did not settle within ${timeoutMs}ms` }), timeoutMs);
+    timer = _externalHandlerDeps.setTimeout(
+      () => finish({ ok: false, reason: `did not settle within ${timeoutMs}ms` }),
+      timeoutMs,
+    );
     deps.signal.addEventListener("abort", onAbort, { once: true });
     // The context is read here, at dispatch, so a handler always sees the facts
     // of the turn it is running in. Read in its OWN try: a `getCtx` throw is
