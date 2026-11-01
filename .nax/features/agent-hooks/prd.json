@@ -3,7 +3,7 @@
   "feature": "agent-hooks",
   "branchName": "feat/agent-hooks",
   "createdAt": "2026-11-01T00:00:00.000Z",
-  "updatedAt": "2026-11-01T12:57:23.315Z",
+  "updatedAt": "2026-11-01T13:20:45.402Z",
   "userStories": [
     {
       "id": "US-001",
@@ -383,14 +383,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Loader/barrel and chat dependency wiring are standard, but activate repository-controlled hooks in interactive sessions; strict security/session isolation is retained."
+        "reasoning": "Loader/barrel and chat dependency wiring are standard, but activate repository-controlled hooks in interactive sessions; strict security/session isolation is retained.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/chat.ts",
@@ -412,7 +415,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b9adbce79981f39ad247fd521e2f933810d32971"
     },
     {
       "id": "US-007",
