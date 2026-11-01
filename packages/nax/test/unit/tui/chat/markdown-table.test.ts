@@ -167,12 +167,15 @@ describe("renderTable", () => {
 
   test("AC-3: the header cells are bold", () => {
     const lines = renderBasic();
-    for (const span of spansHolding(lines, "a")) expect(span.bold).toBe(true);
-    for (const span of spansHolding(lines, "bb")) expect(span.bold).toBe(true);
+    const headers = [...spansHolding(lines, "a"), ...spansHolding(lines, "bb")];
+    expect(headers.length).toBeGreaterThan(0);
+    for (const span of headers) expect(span.bold).toBe(true);
   });
 
   test("AC-4: the body cell is not bold", () => {
-    for (const span of spansHolding(renderBasic(), "ccc")) expect(span.bold ?? false).toBe(false);
+    const body = spansHolding(renderBasic(), "ccc");
+    expect(body.length).toBeGreaterThan(0);
+    for (const span of body) expect(span.bold ?? false).toBe(false);
   });
 
   test("AC-5: a header cell keeps its own style and gains bold", () => {
