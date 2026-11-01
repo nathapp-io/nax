@@ -3,7 +3,7 @@
   "feature": "agent-hooks",
   "branchName": "feat/agent-hooks",
   "createdAt": "2026-11-01T00:00:00.000Z",
-  "updatedAt": "2026-11-01T12:41:21.711Z",
+  "updatedAt": "2026-11-01T12:57:23.315Z",
   "userStories": [
     {
       "id": "US-001",
@@ -324,14 +324,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Extends the upstream factory in one source module with two handlers reusing its runner, filtering and deadline conventions; prompt blocking and session-first-turn decisions require strict security/session TDD."
+        "reasoning": "Extends the upstream factory in one source module with two handlers reusing its runner, filtering and deadline conventions; prompt blocking and session-first-turn decisions require strict security/session TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/hooks/agent/handlers.ts",
@@ -353,7 +356,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a13e0a1b2cbbb3adb83e2198cd00bad6d48681e6"
     },
     {
       "id": "US-006",
