@@ -20,7 +20,8 @@ noisy, and `fix` refused any repo without a base-branch `.nax` config. This spec
    them once, installs dependencies, allows loopback listeners, and saves the resolved checks in its artifact;
    `fix` runs those same checks. Both commands say up front when no checks exist.
 4. **An open integration seam for third parties** (koda is the first consumer, never named in code): a
-   caller-supplied decisions file goes into the review (`--decisions <path>`), and `bot-review.json` becomes a
+   caller-supplied decisions file goes into the review (`--decisions <path>`; `nax bot fix` accepts the same flag
+   and applies it to its post-push re-review only, never to the fix session), and `bot-review.json` becomes a
    documented version-2 contract carrying the resolved checks and decision events, starting with
    `finding-withdrawn` (a finding the bot withdrew after a human disagreed in its thread).
 5. **A run log.** `nax bot review` and `nax bot fix` never initialise the logger today, so every warning in the
