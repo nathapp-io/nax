@@ -223,6 +223,13 @@ describe("runAgentHook — deadline and drain", () => {
   test(
     "AC-9 continued: the timed-out call resolves in under 2s",
     async () => {
+      // Both bounds are injected so the assertion means exactly one thing: the
+      // hook was KILLED rather than allowed to finish. With the module's default
+      // 5 s grace the call may legitimately need it (a hook that ignores
+      // SIGTERM), and `sleep 5` would then be indistinguishable from a kill at
+      // the boundary — one such run took 5111 ms and failed the suite.
+      _runAgentHookDeps.killGraceMs = 200;
+      _runAgentHookDeps.drainMs = 200;
       const startedAt = performance.now();
       await runAgentHook({
         entry: makeEntry({ command: runScript(scriptFile("sleep 5")), timeoutMs: 100 }),
@@ -231,6 +238,35 @@ describe("runAgentHook — deadline and drain", () => {
       });
 
       expect(performance.now() - startedAt).toBeLessThan(2000);
+    },
+    SPAWN_TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "AC-9 continued: a descendant that already took the SIGTERM does not cost the full kill grace",
+    async () => {
+      // The stall the test above intermittently measured, pinned deterministically.
+      // The leader dies on SIGTERM at the deadline. The descendant it started
+      // IGNORES SIGTERM (an ignored disposition survives `exec`) but ends by
+      // itself at 1 s, so the group is non-empty when the leader's exit is
+      // observed and empty long before the grace expires. Awaiting the
+      // ESCALATION instead of the group therefore costs the whole grace — 10 s
+      // here, deliberately far above the bound, so a regression cannot pass by
+      // being merely slow. Polling the group ends the wait at ~1 s.
+      _runAgentHookDeps.killGraceMs = 10_000;
+      const startedAt = performance.now();
+      const run = await runAgentHook({
+        entry: makeEntry({
+          command: runScript(scriptFile(["sh -c 'trap \"\" TERM; exec sleep 1' &", "sleep 5"].join("\n"))),
+          timeoutMs: 100,
+        }),
+        payload: PAYLOAD,
+        cwd: dir,
+      });
+
+      expect(performance.now() - startedAt).toBeLessThan(2000);
+      expect(run.kind).toBe("error");
+      expect(errorReason(run)).toContain("timed out after 100ms");
     },
     SPAWN_TEST_TIMEOUT_MS,
   );

@@ -37,6 +37,14 @@ export const AGENT_HOOK_DRAIN_MS = 2000;
 /** Deadline budget a handler keeps back for its own bookkeeping, inside the hook's timeout. */
 export const AGENT_HOOK_HANDLER_MARGIN_MS = 1000;
 
+/**
+ * How often a killed hook's process group is probed while waiting for it to
+ * empty. Small enough that the wait ends as soon as the last descendant is
+ * gone, large enough that a TERM-resistant descendant costs a handful of
+ * `kill(-pgid, 0)` calls per second rather than a busy loop.
+ */
+const AGENT_HOOK_GROUP_POLL_MS = 25;
+
 /** The reason a command with no argv answers with. */
 const EMPTY_COMMAND_REASON = "empty command";
 
@@ -113,6 +121,41 @@ async function waitForDrain(capture: StreamCapture, deadlineMs: number): Promise
 /** How a command is named in a reason, so a multi-hook config says which one failed. */
 function describeCommand(command: string): string {
   return `Agent hook command "${command}"`;
+}
+
+/**
+ * Wait for a killed hook's process group to empty, or for the SIGKILL
+ * escalation to fire — whichever comes first.
+ *
+ * Awaiting the escalation ALONE sits out the whole kill grace even when the
+ * group empties milliseconds after the leader exits: a descendant that already
+ * took the SIGTERM is still a member at the instant `proc.exited` resolves (it
+ * is dying, or a zombie until it is reaped), so the probe in `collectOutput`
+ * legitimately sees it. That made a hook with a 100 ms deadline take 5.1 s
+ * instead of ~0.1 s, intermittently — 5105-5107 ms measured on this host when
+ * the descendant was observed. Polling keeps the escalation for a descendant
+ * that IGNORES SIGTERM and ends the wait as soon as nothing is left to kill.
+ *
+ * setTimeout, not Bun.sleep, for the reason `collectOutput` gives: the polling
+ * handle is cancelled mid-flight, here in the `finally`.
+ */
+async function waitForGroupExit(pid: number, escalation: Promise<void>): Promise<void> {
+  let pollId: ReturnType<typeof setTimeout> | undefined;
+  const drained = new Promise<void>((resolve) => {
+    const poll = (): void => {
+      if (!killProcessGroup(pid, 0, { singleProcessFallback: false })) {
+        resolve();
+        return;
+      }
+      pollId = setTimeout(poll, AGENT_HOOK_GROUP_POLL_MS);
+    };
+    poll();
+  });
+  try {
+    await Promise.race([escalation, drained]);
+  } finally {
+    clearTimeout(pollId);
+  }
 }
 
 /** The object in a hook's stdout, or undefined when it is not a non-null non-array object. */
@@ -296,13 +339,14 @@ async function collectOutput(
 
   // The leader's exit says nothing about the rest of its group. A pending
   // SIGKILL is awaited while the group still has a member (signal 0 probes
-  // without delivering anything) and its timer cancelled once it is empty, so no
-  // timer outlives the call and no TERM-resistant descendant is left running.
+  // WITHOUT delivering anything, and polling ends the wait as soon as it is
+  // empty) and its timer cancelled once it is, so no timer outlives the call
+  // and no TERM-resistant descendant is left running.
   // `singleProcessFallback` stays off: the reap of the leader frees its pid for
   // reuse, and `detached` guarantees the group kill targets the hook's own group.
-  if (sigkillId !== undefined) {
+  if (sigkillId !== undefined && sigkillSent !== undefined) {
     const membersLeft = !sigkillFired && killProcessGroup(proc.pid, 0, { singleProcessFallback: false });
-    if (membersLeft) await sigkillSent;
+    if (membersLeft) await waitForGroupExit(proc.pid, sigkillSent);
     clearTimeout(sigkillId);
   }
 
