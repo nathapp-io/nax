@@ -130,6 +130,7 @@ function fakeHost(options: HostOptions = {}) {
     await gate.promise;
   });
   const switches = { count: 0 };
+  const closes = { count: 0 };
   const host: ChatHost = {
     repoRoot: REPO_ROOT,
     models: [MODEL],
@@ -145,17 +146,19 @@ function fakeHost(options: HostOptions = {}) {
     },
     cancel: () => {},
     listSessions: async () => [],
-    close: async () => {},
+    close: async () => {
+      closes.count += 1;
+    },
     ...(options.accepts === undefined ? {} : { acceptsImages: options.accepts }),
   };
-  return { host, send, switches };
+  return { host, send, switches, closes };
 }
 
 /** The mounted screen, with its frame rows and the verbs a case drives it with. */
 function mount(options: HostOptions = {}) {
   const readClipboard = spyOn(_imageAttachDeps, "readClipboard").mockResolvedValue({ kind: "none" });
   const readFile = spyOn(_imageAttachDeps, "readFile").mockResolvedValue(undefined);
-  const { host, send, switches } = fakeHost(options);
+  const { host, send, switches, closes } = fakeHost(options);
   const ui = render(<ChatApp host={host} cwd={SCREEN_CWD} />);
   /** The frame's rows as the terminal shows them: no escape codes, no trailing blanks. */
   const rows = (): string[] =>
@@ -218,6 +221,7 @@ function mount(options: HostOptions = {}) {
     ...ui,
     send,
     switches,
+    closes,
     rows,
     frame,
     promptRow,
@@ -358,6 +362,19 @@ describe("a refused send puts the line back", () => {
     expect(ui.switches.count).toBe(0);
     expect(ui.send).not.toHaveBeenCalled();
     expect(ui.promptRow()).toBe("> /model [Image #1]");
+  });
+
+  test("D-1 a destructive command runs nothing: /quit with a present image is refused like the rest", async () => {
+    const ui = mount({ accepts: async () => true });
+    ui.type("/quit ");
+    await ui.pasteImage(png(2, 3));
+    expect(ui.promptRow()).toBe("> /quit [Image #1]");
+    await ui.pressAndSettle(RETURN);
+    expect(ui.frame()).toContain(SLASH_REFUSAL);
+    // The chat stays open: the quit never ran, so nothing closed.
+    expect(ui.closes.count).toBe(0);
+    expect(ui.send).not.toHaveBeenCalled();
+    expect(ui.promptRow()).toBe("> /quit [Image #1]");
   });
 
   test("B2 a refusal that lands after an edit keeps the newer prompt and names the line it dropped", async () => {

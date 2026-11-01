@@ -426,8 +426,8 @@ export function ChatApp({
 
   /**
    * A slash line with a picture still in the message runs nothing: an image travels with a
-   * plain message only, so the line goes back into the prompt before any command effect —
-   * a model switch included — and the draft keeps the picture.
+   * plain message only, so the line goes back into the prompt before any command effect — a
+   * model switch or the quit included — and the draft keeps the picture.
    */
   function refuseSlashLine(message: string): void {
     append({ kind: "notice", text: IMAGES_PLAIN_ONLY });
@@ -493,13 +493,15 @@ export function ChatApp({
       await sendTurn({ message, draft: submitted }, imagePrepare(message, submitted, promptRevision.current));
       return;
     }
+    // The image refusal comes before every command effect, `quit` included: a slash line never
+    // closes the chat while the draft still holds a picture the send never took.
+    if (images.length > 0) {
+      refuseSlashLine(message);
+      return;
+    }
     if (command.name === QUIT) {
       if (sending.current) host.cancel();
       await keys.close();
-      return;
-    }
-    if (images.length > 0) {
-      refuseSlashLine(message);
       return;
     }
     if (sending.current) {
