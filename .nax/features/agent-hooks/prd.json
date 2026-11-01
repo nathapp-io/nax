@@ -1,0 +1,450 @@
+{
+  "project": "nax-monorepo",
+  "feature": "agent-hooks",
+  "branchName": "feat/agent-hooks",
+  "createdAt": "2026-11-01T00:00:00.000Z",
+  "updatedAt": "2026-11-01T11:00:30.082Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Native turn blocking, prompt context and handler deadlines",
+      "description": "**Goal** — Add turn blocking, attachment-preserving prompt context and per-entry deadlines to the native loop.\n\n**Motivation** — The only way to influence a native-agent tool call today is an in-process JavaScript plugin providing `loop-handlers`.\n\n**Approach** — Two small `packages/nax-agent` additions make this possible:\n\n1. `BeforeTurnPatch` gains `block` and `promptContext`. A `block` patch makes `runNativeTurn` throw before it appends anything to the transcript or makes a provider request; chat already renders a turn that throws as an error line `CODE: message` (`applyTurnEnd` in `packages/nax/src/tui/chat/transcript-model.ts`), and a run treats it as a failed turn. `promptContext` is prefixed to the prompt message: the existing `seed` patch cannot be used for context because it REPLACES the prompt message and drops its images (`beforeTurnSeed` in `turn-loop.ts`).\n2. `LoopHandlerEntry` gains an optional `timeoutMs` that `wrapExternalHandler` uses instead of `LOOP_HANDLER_TIMEOUT_MS` (10 s). A formatter or type check after an edit routinely needs longer; plugin handlers that do not set it keep 10 s.\n\n`runNativeTurn` (`native/session/turn-loop.ts`) — after the `before_turn` dispatch: a patch with `block` throws `NaxError` code `NATIVE_TURN_BLOCKED` (message = the reason, context `{ stage: \"native-session\", sessionName }`) before `messages.push(...)`; a patch with a non-empty `promptContext` prefixes `promptContext + \"\\n\\n\"` to the content of the first message `beforeTurnSeed` returns.\n\n`raceSettlement` in `wrapExternalHandler` (`loop-events/external-handler.ts`) — deadline = `entry.timeoutMs` when it is a finite positive number, else `_externalHandlerDeps.timeoutMs`.\n\n**Complexity.** `runNativeTurn` is not in the nax-agent complexity baseline, so the `block` check and the `promptContext` prefix live in helpers (for example by extending `beforeTurnSeed`), not as new branches in `runNativeTurn`.\n\nThe factory handler itself does not settle within its `timeoutMs` (unreachable while every hook honours its own deadline): existing wrapper behaviour: `before_tool` fails closed to block, other events change nothing. Preserve abort/timer cleanup and all existing handler defaults.\n\n**Scope** — In: the four existing loop files, their behavioral tests and any required existing API declaration snapshot update. Out: hook config and execution (US-002/003), factory producers (US-004/005), chat/run wiring (US-006/007); \n- Concatenating `before_turn` `seed` or `promptContext` patches across several handlers; `dispatchChain` keeps overwrite semantics, so a later plugin handler returning `promptContext` replaces the agent hooks' value.\n\n**Interface** — Target additions to the existing types, retaining all existing members:\n```typescript\nexport interface BeforeTurnPatch {\n  readonly seed?: readonly NativeTranscriptMessage[];\n  readonly history?: readonly NativeTranscriptMessage[];\n  readonly block?: { readonly reason: string };\n  readonly promptContext?: string;\n}\nexport interface LoopHandlerEntry {\n  readonly plugin: string;\n  readonly event: LoopEvent;\n  readonly handler: ExternalHandlerOf<LoopEvent>;\n  readonly timeoutMs?: number;\n}\n```\n`PATCHABLE_FIELDS.before_turn` target: `[\"seed\", \"history\", \"block\", \"promptContext\"]`.",
+      "acceptanceCriteria": [
+        "[unit] runNativeTurn with a registered before_turn handler returning { block: { reason: \"no secrets in prompts\" } } rejects with a NaxError whose code is NATIVE_TURN_BLOCKED and whose message is no secrets in prompts.",
+        "[unit] In that blocked runNativeTurn, the fake provider complete dependency is never called.",
+        "[unit] After that blocked runNativeTurn on a session seeded with one prior exchange, the session's transcript holds exactly the prior exchange's messages: the blocked prompt is not persisted.",
+        "[unit] runNativeTurn with prompt fix it and a before_turn handler returning { promptContext: \"branch: main\" } sends the provider a final user message whose content is branch: main\n\nfix it.",
+        "[unit] runNativeTurn with prompt look, one image attachment in opts.images and a before_turn handler returning { promptContext: \"ctx\" } sends a final user message with content ctx\n\nlook that still carries that image.",
+        "[unit] runNativeTurn with a before_turn handler returning { promptContext: \"\" } sends the prompt message content unchanged.",
+        "[unit] runNativeTurn with a before_turn handler returning both { seed: [{ role: \"user\", content: \"seeded\" }], promptContext: \"ctx\" } sends a user message whose content is ctx\n\nseeded.",
+        "[unit] runNativeTurn with a before_turn handler returning both block and promptContext rejects with NATIVE_TURN_BLOCKED: block wins.",
+        "[unit] createLoopEventRegistry().dispatch(\"before_turn\", payload) returns all four fields unchanged when its registered handler returns { seed: [{ role: \"user\", content: \"seeded\" }], history: [{ role: \"user\", content: \"prior\" }], block: { reason: \"deny\" }, promptContext: \"x\" }.",
+        "[unit] wrapExternalHandler for an entry with timeoutMs: 50 whose handler never settles answers a before_tool dispatch with a block outcome after the 50 ms deadline, while _externalHandlerDeps.timeoutMs is set to 10000.",
+        "[unit] wrapExternalHandler for an entry with timeoutMs: 5000 whose before_tool handler settles { kind: \"allow\" } after 100 ms answers allow, while _externalHandlerDeps.timeoutMs is set to 20: the entry's deadline replaces the default.",
+        "[unit] wrapExternalHandler for an entry with no timeoutMs whose handler never settles answers block once _externalHandlerDeps.timeoutMs (set to 30) elapses.",
+        "[unit] wrapExternalHandler for an entry with timeoutMs: 0, and for one with timeoutMs: Infinity, whose handler never settles answers block once _externalHandlerDeps.timeoutMs (set to 30) elapses: only a finite positive timeoutMs replaces the default.",
+        "[unit] When an external before_turn handler fails to settle within its timeoutMs, wrapExternalHandler returns an empty patch, leaving the event unchanged as required by the existing wrapper failure rule."
+      ],
+      "tags": [
+        "feature",
+        "native-agent",
+        "sessions",
+        "security",
+        "loop-events"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Four existing modules receive additive type fields, a helper-level turn check/prefix and a deadline fallback using established patterns; session and prompt-blocking boundaries still require the strict security/session strategy."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/native/session/loop-events/types.ts",
+        "packages/nax-agent/src/native/session/loop-events/registry.ts",
+        "packages/nax-agent/src/native/session/turn-loop.ts",
+        "packages/nax-agent/src/native/session/loop-events/external-handler.ts",
+        "packages/nax-agent/test/unit/native/session/turn-loop-transcript-identity.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/native/session/loop-events/before-turn-block.test.ts",
+        "packages/nax-agent/test/unit/native/session/loop-events/external-handler-timeout.test.ts"
+      ],
+      "suggestedCriteria": [
+        "runNativeTurn rejection for a block patch carries error context { stage: \"native-session\", sessionName: handle.id }.",
+        "wrapExternalHandler falls back to _externalHandlerDeps.timeoutMs for negative or NaN entry.timeoutMs values.",
+        "When a promptContext patch prefixes a multi-message seed, only the first message's content changes and all remaining message fields are preserved."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Load and validate global and project agent hooks",
+      "description": "**Goal** — Introduce the agent hook contracts and a tolerant zod-backed loader for the new hooks.json section.\n\n**Motivation** — Claude Code users expect a shell command in config.\n\n**Approach** — `hooks.json` (global `~/.nax/hooks.json` via `globalConfigDir()`, project `<repoRoot>/.nax/hooks.json`). The lifecycle `hooks` map is unchanged; the new `agent` key holds arrays of entries per event.\n\nEntry fields:\n\n| Field | Type | Default | Meaning |\n|---|---|---|---|\n| `command` | non-empty string | required | command line, argv-spawned |\n| `matcher` | string | absent = every tool | `\"*\"` means every tool (checked before any compile); any other value is a regular expression that must match the WHOLE tool name: at load both the raw value and its wrapped form `^(?:matcher)$` must compile, else the entry is skipped. Read for `PreToolUse` and `PostToolUse` only |\n| `scope` | non-empty array of `\"chat\"` / `\"run\"` | `[\"chat\", \"run\"]` | surfaces the entry runs on |\n| `timeout` | integer ms, 1..600000 | 30000 | per-hook deadline |\n| `enabled` | boolean | true | `false` drops the entry at load |\n\n`skipGlobal: true` in the project file skips the global file's `agent` section exactly as it already skips its lifecycle `hooks`. Global entries run before project entries.\n\n`loadAgentHooksConfig` reads each file with `Bun.file(...).text()` and `JSON.parse` inside its own try/catch, not `loadJsonFile` (which would log a second warning under the `hooks` stage).\n\nMissing hooks.json or no agent key contributes no hooks and no warning. Invalid JSON, non-object top-level values, or non-object agent sections each contribute no hooks from that file and one agent-hooks warning naming its path. Unknown event keys are ignored with one warning naming the key and path. An entry fails validation (missing command, bad scope, timeout out of range, matcher not a valid regular expression): entry skipped; one warning naming the event, index and origin; other entries still load. Treat arrays and null as non-objects for config/object contracts. Return an empty array for every event even when neither file contributes hooks.\n\n**Constants by ruling.** The entry default `30000` ms and the three `AGENT_HOOK_*` constants are constants by ruling, not `NaxConfig` keys, for the same reason `LOOP_HANDLER_TIMEOUT_MS` is: they bound liveness rather than being per-project policy; a user tunes a hook through its own `timeout`.\n\nBarrel: each story adds its new module's exports to `packages/nax/src/hooks/agent/index.ts` (created by US-002), and `packages/nax/src/hooks/index.ts` re-exports them; `cli/chat.ts` and `run-rules-setup.ts` import from `@/hooks`, never from an internal file.\n\n**Scope** — In: types.ts, config.ts, the new agent barrel, re-export from the existing hooks barrel and config behavior tests. Out: process execution/trust (US-003), handlers (US-004/005), loader facade/chat wiring (US-006), run wiring (US-007); no changes to lifecycle hook schemas.\n- Any change to the run lifecycle hooks (`on-*` events), `loadHooksConfig`, `executeHook` or `fireHook`.\n\n**Interface** —\n```typescript\n// types.ts\nexport const AGENT_HOOK_EVENTS = [\"PreToolUse\", \"PostToolUse\", \"UserPromptSubmit\", \"SessionStart\", \"Stop\"] as const;\nexport type AgentHookEvent = (typeof AGENT_HOOK_EVENTS)[number];\nexport type AgentHookSurface = \"chat\" | \"run\";\nexport interface AgentHookEntry {\n  readonly command: string;\n  readonly matcher?: string;\n  readonly scope: readonly AgentHookSurface[];\n  readonly timeoutMs: number;\n  readonly origin: \"global\" | \"project\";\n}\nexport type AgentHooksConfig = { readonly [E in AgentHookEvent]: readonly AgentHookEntry[] };\nexport type AgentHookRun =\n  | { readonly kind: \"ok\"; readonly stdout: string; readonly json?: Readonly<Record<string, unknown>> }\n  | { readonly kind: \"block\"; readonly reason: string }\n  | { readonly kind: \"error\"; readonly reason: string };\n\n// config.ts\nexport function loadAgentHooksConfig(projectNaxDir: string, globalDir?: string): Promise<AgentHooksConfig>;\n```",
+      "acceptanceCriteria": [
+        "[unit] AGENT_HOOK_EVENTS imported from @/hooks equals [\"PreToolUse\", \"PostToolUse\", \"UserPromptSubmit\", \"SessionStart\", \"Stop\"].",
+        "[unit] loadAgentHooksConfig(projectDir, globalDir) with no hooks.json in either directory resolves to an object holding an empty array for each of the five events, and logs no warning.",
+        "[unit] A project hooks.json of { \"hooks\": {} } (no agent key) yields empty arrays for all five events.",
+        "[unit] A project hooks.json with agent.PreToolUse = [{ \"command\": \"guard.sh\" }] yields one PreToolUse entry { command: \"guard.sh\", scope: [\"chat\", \"run\"], timeoutMs: 30000, origin: \"project\" } with matcher absent.",
+        "[unit] An entry { \"command\": \"a.sh\", \"matcher\": \"Bash\", \"scope\": [\"run\"], \"timeout\": 1500 } loads as matcher: \"Bash\", scope: [\"run\"], timeoutMs: 1500.",
+        "[unit] An entry with \"matcher\": \"*\" loads with matcher: \"*\".",
+        "[unit] An entry with \"enabled\": false is not in the result.",
+        "[unit] With global agent.Stop = [{ \"command\": \"g.sh\" }] and project agent.Stop = [{ \"command\": \"p.sh\" }], the Stop array is g.sh (origin global) then p.sh (origin project).",
+        "[unit] With a project file holding \"skipGlobal\": true, the global file's agent entries are absent from the result.",
+        "[unit] A hooks.json with only an agent key and no hooks key loads its agent entries.",
+        "[unit] An entry missing command is skipped, the other entries of that event still load, and one warning on the agent-hooks logger stage names the event, the entry's index and its origin.",
+        "[unit] An entry with \"timeout\": 600001 is skipped with one warning; an entry with \"timeout\": 600000 loads.",
+        "[unit] An entry with \"scope\": [] is skipped with one warning; an entry with \"scope\": [\"chat\", \"bogus\"] is skipped with one warning.",
+        "[unit] An entry with \"matcher\": \"(\" (not a valid regular expression in its wrapped form ^(?:()$) is skipped with one warning.",
+        "[unit] An entry with \"matcher\": \"a)|(b\" (whose raw form does not compile) is skipped with one warning.",
+        "[unit] An agent key named PreTool (unknown event) is ignored with one warning naming PreTool, and the known events still load.",
+        "[unit] A project hooks.json whose content is not valid JSON contributes no agent hooks and logs exactly one warning in total, on the agent-hooks stage, naming its path, while the global file's agent entries still load.",
+        "[unit] A project hooks.json whose top-level value is [] contributes no agent hooks and logs one warning naming its path.",
+        "[unit] A project hooks.json whose agent value is an array contributes no agent hooks and logs one warning naming its path."
+      ],
+      "tags": [
+        "feature",
+        "hooks",
+        "config",
+        "validation"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded additive loader using existing zod, Bun file reads and barrel conventions; it validates configuration without executing code or making access-control decisions."
+      },
+      "contextFiles": [
+        "packages/nax/src/hooks/runner.ts",
+        "packages/nax/src/hooks/types.ts",
+        "packages/nax/src/hooks/index.ts",
+        "packages/nax/src/config/schemas-infra.ts",
+        "packages/nax/test/unit/hooks/runner-validation.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/hooks/agent/types.ts",
+        "packages/nax/src/hooks/agent/config.ts",
+        "packages/nax/src/hooks/agent/index.ts",
+        "packages/nax/test/unit/hooks/agent/config.test.ts"
+      ],
+      "suggestedCriteria": [
+        "loadAgentHooksConfig skips timeout values 0, negative numbers, fractions and non-numbers with one entry warning each.",
+        "loadAgentHooksConfig skips empty command strings and non-boolean enabled values without discarding valid sibling entries.",
+        "When only the global hooks.json is malformed, loadAgentHooksConfig still loads valid project agent entries and emits exactly one warning naming the global path."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Execute one trusted argv hook with bounded process lifetime",
+      "description": "**Goal** — Execute one configured hook and return a normalized result with trust enforcement, bounded process cleanup and attributed logging.\n\n**Motivation** — A user who wants \"run prettier after every edit\", \"never let the agent `git push`\" or \"keep going until the tests pass\" has to write a plugin.\n\n**Approach** — Hook commands run as child processes exactly like the lifecycle hooks: argv spawn through `parseCommandToArgv` (no shell; a leading `~` is already expanded from HOME), the same `validateHookCommand` lint, process cwd = the session's `LoopHandlerContext.workdir`, else the repo root the config was loaded for. The hook receives one JSON object on stdin and answers by exit code plus optional JSON on stdout.\n\n**Trust.** A project `.nax/hooks.json` is repository-controlled code. `nax chat` refuses an untrusted project at its entry (`ensureProjectTrusted` in `packages/nax/src/cli/chat.ts`), but `nax run` has no entry gate: each repository-controlled execution site asserts trust itself, e.g. `fireHook` calls `assertTrusted(workdir, \"hooks\")` before every project lifecycle hook (`packages/nax/src/hooks/runner.ts`). Agent hooks follow the same per-site rule: before spawning an entry with `origin: \"project\"`, `runAgentHook` calls `assertTrusted(cwd, \"agent-hooks\")` (new `TrustSurface` member `\"agent-hooks\"` in `packages/nax/src/trust/types.ts`); a refusal becomes a hook error and nothing is spawned, so a project `PreToolUse` hook in an untrusted project fails closed. Global entries are exempt, as in `fireHook`.\n\n**Environment and output.** The hook process gets the same allowed environment the lifecycle hooks get (`buildAllowedEnv`, as `executeHook` does). Hook output is not size-capped (see Out of Scope).\n\nExit codes: `0` = success; `2` = block, reason = trimmed stderr; any other code, a timeout, a spawn failure or a lint rejection = hook error. Optional stdout JSON on exit 0 (a stdout that is not a JSON object is plain text). Empty block stderr falls back to a reason naming the command. Trim stdout and return the original parsed object only for non-null non-array objects. A whitespace-only command answers error reason `empty command`.\n\n`validateHookCommand(command: string): void` (throws `NaxError` code `HOOK_DANGEROUS_PATTERN`, exported) and the spawn/kill pattern of `executeHook` (`Bun.spawn` with `detached: true`, SIGTERM then SIGKILL after a grace period, stream capture with a drain bound) — `packages/nax/src/hooks/runner.ts`. `killProcessGroup` is imported there from `@nathapp/nax-agent/internal`, and `run-hook.ts` imports it the same way; `captureStream`, `waitForDrain` and `HOOK_KILL_GRACE_MS` are module-private and `runner.ts` is out of scope, so `run-hook.ts` MIRRORS those with its own private helpers.\n\nEvery hook execution logs one `agent-hooks` debug line with the event, command, outcome kind and duration in ms. Read killGraceMs/drainMs at call time. A timeout reason contains `timed out after <timeoutMs>ms`; escalation must terminate TERM-resistant process groups. Drain stdout and stderr concurrently with a bound and retain partial output even when a descendant holds a pipe open. Catch trust/lint/spawn failures into AgentHookRun.error, never reject; cancel timers/readers on completion. Export the new runner symbols from the agent barrel.\n\n**Scope** — In: run-hook.ts, TrustSurface addition and execution tests. Out: config parsing (US-002), event-specific interpretation (US-004/005), surface loading/wiring (US-006/007). No changes to runner.ts.\n- Any change to the run lifecycle hooks (`on-*` events), `loadHooksConfig`, `executeHook` or `fireHook`.\n- A size cap on hook stdout, stderr or context injected into the prompt or a tool result.\n- Killing a running hook when the turn is aborted: `LoopHandlerContext` carries no abort signal by design, so a hook runs until it exits or reaches its own `timeout`.\n\n**Interface** —\n```typescript\n// run-hook.ts\nexport const AGENT_HOOK_KILL_GRACE_MS = 5000;\nexport const AGENT_HOOK_DRAIN_MS = 2000;\nexport const AGENT_HOOK_HANDLER_MARGIN_MS = 1000;\nexport const _runAgentHookDeps: {\n  killGraceMs: number; // default AGENT_HOOK_KILL_GRACE_MS, read at call time\n  drainMs: number; // default AGENT_HOOK_DRAIN_MS, read at call time\n  assertTrusted: typeof assertTrusted;\n};\nexport function runAgentHook(input: {\n  readonly entry: AgentHookEntry;\n  readonly payload: Readonly<Record<string, unknown>>;\n  readonly cwd: string;\n}): Promise<AgentHookRun>;\n```",
+      "acceptanceCriteria": [
+        "[integration] runAgentHook with an entry whose command is a script that copies stdin to a file passes JSON.stringify(payload) on stdin: the file content parses to the given payload.",
+        "[integration] runAgentHook with a script that prints its working directory runs it in the given cwd: the result is { kind: \"ok\" } with stdout whose real path equals the real path of that directory.",
+        "[integration] A script that exits 0 printing '  hello  ' returns { kind: \"ok\", stdout: \"hello\" } with no json.",
+        "[integration] A script that exits 0 printing {\"decision\":\"block\",\"reason\":\"r\"} returns kind: \"ok\" with json equal to { decision: \"block\", reason: \"r\" }.",
+        "[integration] A script that exits 0 printing [1,2] returns kind: \"ok\" with no json: only a JSON object is parsed.",
+        "[integration] A script that exits 2 writing not allowed to stderr returns { kind: \"block\", reason: \"not allowed\" }.",
+        "[integration] A script that exits 2 with empty stderr returns kind: \"block\" with a reason that names the entry's command.",
+        "[integration] A script that exits 1 writing boom to stderr returns kind: \"error\" with a reason naming the command, the exit code 1 and boom.",
+        "[integration] A script that sleeps 5 s, run with timeoutMs: 100, resolves in under 2 s to kind: \"error\" with a reason holding timed out after 100ms.",
+        "[integration] After runAgentHook times out a script sleeping 5 s with timeoutMs: 100, its process no longer exists.",
+        "[unit] AGENT_HOOK_KILL_GRACE_MS, AGENT_HOOK_DRAIN_MS and AGENT_HOOK_HANDLER_MARGIN_MS imported from @/hooks equal 5000, 2000 and 1000.",
+        "[unit] An entry whose command is eval rm returns kind: \"error\" naming the rejected pattern without spawning a process.",
+        "[integration] An entry whose command names an executable that does not exist returns kind: \"error\" and does not reject.",
+        "[unit] An entry whose command is only whitespace returns kind: \"error\" with reason empty command.",
+        "[integration] An entry whose command is <script> 'a b' c runs the script with exactly two arguments, a b and c: the command is split into argv without a shell.",
+        "[integration] A script that traps SIGTERM and keeps sleeping, run with timeoutMs: 100 and _runAgentHookDeps.killGraceMs set to 200, resolves in under 2 s to kind: \"error\" holding timed out after 100ms.",
+        "[integration] After runAgentHook times out a SIGTERM-trapping script with timeoutMs: 100 and _runAgentHookDeps.killGraceMs set to 200, its process no longer exists.",
+        "[integration] A script that prints partial, starts a background child that keeps stdout open for 10 s and exits 0, run with _runAgentHookDeps.drainMs set to 200, resolves in under 2 s to { kind: \"ok\", stdout: \"partial\" }.",
+        "[unit] A project entry (origin: \"project\") with _runAgentHookDeps.assertTrusted stubbed to reject with a NaxError of code PROJECT_UNTRUSTED returns kind: \"error\" whose reason mentions trust.",
+        "[unit] When _runAgentHookDeps.assertTrusted refuses a project entry with PROJECT_UNTRUSTED, runAgentHook spawns no process.",
+        "[unit] For a project entry, runAgentHook calls _runAgentHookDeps.assertTrusted with the cwd and \"agent-hooks\".",
+        "[unit] A global entry (origin: \"global\") never calls _runAgentHookDeps.assertTrusted.",
+        "[integration] Each runAgentHook call logs one debug line on the agent-hooks logger stage whose data holds the payload's hook_event_name, the command, the result kind and a numeric durationMs."
+      ],
+      "tags": [
+        "feature",
+        "hooks",
+        "security",
+        "trust",
+        "process-lifecycle"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Repository-controlled host execution crosses an access-control boundary and requires race-safe process-group kill, stream drain and failure attribution; security override applies."
+      },
+      "contextFiles": [
+        "packages/nax/src/hooks/runner.ts",
+        "packages/nax/src/utils/command-argv.ts",
+        "packages/nax/src/hooks/agent/types.ts",
+        "packages/nax/src/hooks/agent/index.ts",
+        "packages/nax/src/trust/types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/hooks/agent/run-hook.ts",
+        "packages/nax/test/unit/hooks/agent/run-hook.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a hook prints JSON null or a JSON string on exit 0, runAgentHook returns trimmed stdout with no json field.",
+        "When a hook prints to stdout and stderr concurrently before exiting, runAgentHook captures both without waiting indefinitely.",
+        "When a timed-out hook has a child in its process group, neither process survives SIGKILL escalation."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Deliver ordered pre-tool guards and post-tool feedback",
+      "description": "**Goal** — Build the surface-scoped factory's tool handlers with sequential decisions, input rewrite chaining and session-isolated post-tool input records.\n\n**Motivation** — A user who wants \"run prettier after every edit\", \"never let the agent `git push`\" or \"keep going until the tests pass\" has to write a plugin.\n\n**Approach** — One factory per surface turns the `agent` section of `hooks.json` into a `LoopHandlerSet`. It registers at most one handler per loop event; that handler runs every applicable hook entry for the event in order. One handler per event (not per entry) is required: `dispatchChain` in `packages/nax-agent/src/native/session/loop-events/registry.ts` merges handler patches by overwrite, so two handlers that each return a `before_turn` patch would keep only the last one's.\n\n`PreToolUse` maps to `before_tool`, before each tool call whose name the entry's `matcher` matches. `PostToolUse` maps to `after_tool`, after each tool call whose name the entry's `matcher` matches. Scope-filter once at factory construction; matcher absent or `*` matches all tools; otherwise use the anchored full-name expression `^(?:matcher)$`.\n\n**Deadline.** Each factory handler's `timeoutMs` is `AGENT_HOOK_HANDLER_MARGIN_MS + Σ (entry.timeoutMs + AGENT_HOOK_KILL_GRACE_MS + AGENT_HOOK_DRAIN_MS)` over the entries that handler may run on its surface (for `before_turn`: every `SessionStart` and `UserPromptSubmit` entry, whether or not `SessionStart` runs on a given turn). The constants live in `run-hook.ts`: `AGENT_HOOK_KILL_GRACE_MS = 5000` (SIGTERM to SIGKILL), `AGENT_HOOK_DRAIN_MS = 2000` (stream drain bound), `AGENT_HOOK_HANDLER_MARGIN_MS = 1000`. With this bound a hook always reports its own timeout or error before the wrapper's deadline fires, so the per-event failure rules below, not the wrapper's generic ones, decide the outcome.\n\n**Combining several entries of one event** (one handler runs them all, in config order):\n- Context strings (`additionalContext`, and plain-text stdout where it counts as context) are joined with `\"\\n\\n\"` in entry order; empty strings are dropped.\n- `PreToolUse`: an entry's `updatedInput` becomes the `tool_input` every later entry sees and the outcome's `input`; context strings become one `nudge` text; the first block stops the chain. An outcome with both an input and a nudge text is `{ kind: \"nudge\", text, input }`.\n- `PostToolUse`: each entry's feedback (`\"Hook feedback: \" + reason` on a block) and context (`\"Hook context: \" + text`) is appended to the result content in entry order, each preceded by `\"\\n\\n\"`.\n- A JSON-object stdout is never treated as plain text: a `SessionStart` entry answering `{}` adds no context.\n- A JSON `decision: \"block\"` without a string `reason` uses the reason `blocked by hook '<command>'`.\n- A `PreToolUse` `updatedInput` that is not a JSON object is ignored with one warning naming the command.\n\nstdin JSON (every event): `hook_event_name`, `session_id` (the context's `sessionName`), `cwd`, `surface` (`\"chat\"` | `\"run\"`), and, when the context has them, `role`, `feature`, `story_id`, `model`. Per event:\n- `PreToolUse`: `tool_name`, `tool_input` (the input as rewritten by earlier hooks in the same chain).\n- `PostToolUse`: `tool_name`, `tool_input`, `tool_response` = `{ \"content\": string, \"is_error\": boolean }` (`is_error` is `false` when the payload's `isError` is absent). `tool_input` is the input the agent-hooks `before_tool` handler recorded for that call: the call's input after this handler's own `updatedInput` rewrites (a later plugin's rewrite is not seen). The record is keyed by the context's `sessionName` plus the call id, is written only when at least one `PostToolUse` entry matches the tool name, and is deleted on every `after_tool` dispatch for that key, whether or not a hook runs. `tool_input` is omitted when the payload has no `callId` or nothing was recorded. (A blocked call never reaches `after_tool`; its record stays until the factory is dropped at the end of the chat or run.)\n\nUse ctx.workdir as cwd, falling back to repoRoot. Post-only config needs a recording before_tool entry with timeoutMs 1000. PreToolUse block returns `{ kind: \"block\", content: \"Blocked by hook: \" + reason }`; an error fails closed with isError true and content naming command/error. PostToolUse errors warn and contribute no patch, while block adds feedback rather than blocking the already-finished call. Read decision/reason/updatedInput/additionalContext only for PreToolUse and decision/reason/additionalContext for PostToolUse. Plain stdout is ignored for tool events. Call the runner through _agentHookHandlerDeps for every entry and add factory exports to the agent barrel.\n\n**Scope** — In: factory, tool events, surface filters, timeout accounting, shared record and tool-handler tests. Out: turn-event handlers (US-005), loader/chat (US-006) and run setup (US-007). \n- Merging a hook's `PreToolUse` nudge with rule delivery's nudge for the same call; the later handler's nudge wins (rule delivery, on both surfaces).\n- Removing the `tool_input` record of a call that a later handler blocked; it lives until the chat or run ends.\n\n**Interface** —\n```typescript\n// handlers.ts\nexport const AGENT_HOOKS_PLUGIN = \"agent-hooks\";\nexport const _agentHookHandlerDeps: { runAgentHook: typeof runAgentHook };\nexport function createAgentHookHandlers(input: {\n  readonly config: AgentHooksConfig;\n  readonly surface: AgentHookSurface;\n  readonly repoRoot: string;\n}): LoopHandlerSet;\n```",
+      "acceptanceCriteria": [
+        "[unit] createAgentHookHandlers with every event empty returns an empty set.",
+        "[unit] With one PreToolUse entry scoped [\"run\"] and surface chat, createAgentHookHandlers returns no before_tool entry.",
+        "[unit] With two PreToolUse entries scoped to both surfaces with timeoutMs 2000 and 3000 and surface run, createAgentHookHandlers returns exactly one before_tool entry whose plugin is agent-hooks and whose timeoutMs is 20000 (1000 + (2000 + 5000 + 2000) + (3000 + 5000 + 2000)).",
+        "[unit] With only one PostToolUse entry of timeoutMs 4000, the set holds one after_tool entry with timeoutMs 12000 and one before_tool entry (it records call inputs for tool_input) with timeoutMs 1000.",
+        "[unit] The before_tool handler, for an entry with matcher: \"Bash\", calls the stubbed _agentHookHandlerDeps.runAgentHook for a call named Bash and not for a call named BashOutput: the match is anchored to the whole name.",
+        "[unit] An entry with matcher: \"Write|Edit\" runs for calls named Write and Edit; entries with matcher absent or \"*\" run for every call.",
+        "[unit] The before_tool handler calls runAgentHook with a payload holding hook_event_name: \"PreToolUse\", session_id = the context's sessionName, surface, cwd, tool_name and tool_input = the call's input, plus role, feature, story_id and model from the context when present.",
+        "[unit] The cwd passed to runAgentHook is the context's workdir when present, else the factory's repoRoot.",
+        "[unit] A PreToolUse run of { kind: \"block\", reason: \"no push\" } makes the handler return { kind: \"block\", content: \"Blocked by hook: no push\" }, and a later PreToolUse entry is not run.",
+        "[unit] A PreToolUse run of kind: \"ok\" with json { decision: \"block\", reason: \"r\" } returns { kind: \"block\", content: \"Blocked by hook: r\" }.",
+        "[unit] A PreToolUse run of { kind: \"error\", reason: \"exited 1\" } returns a block outcome with isError: true whose content names the entry's command and exited 1.",
+        "[unit] With two PreToolUse entries where the first answers json { updatedInput: { command: \"ls -la\" } }, the second is called with tool_input { command: \"ls -la\" } and the handler returns { kind: \"allow\", input: { command: \"ls -la\" } }.",
+        "[unit] Two PreToolUse entries answering json { additionalContext: \"careful\" } and { additionalContext: \"really\" } make the handler return { kind: \"nudge\", text: \"careful\\n\\nreally\" }.",
+        "[unit] One PreToolUse entry answering json { updatedInput: { a: 1 }, additionalContext: \"note\" } makes the handler return { kind: \"nudge\", text: \"note\", input: { a: 1 } }.",
+        "[unit] A call that no PreToolUse entry matches returns { kind: \"allow\" } without calling runAgentHook.",
+        "[unit] With a PreToolUse entry rewriting the input of call c1 (named Write) to { path: \"b.ts\" } and a PostToolUse entry, the after_tool handler for callId: \"c1\" calls runAgentHook with hook_event_name: \"PostToolUse\", tool_name: \"Write\", tool_input: { path: \"b.ts\" } and tool_response: { content, is_error: false } when the payload's isError is absent.",
+        "[unit] A second after_tool dispatch for the same session and callId: \"c1\" calls runAgentHook with no tool_input: the record is deleted once read; an after_tool payload without callId also gets no tool_input.",
+        "[unit] Calls with the same callId: \"c1\" in two sessions (sessionName s1 and s2) with inputs { path: \"a.ts\" } and { path: \"b.ts\" } each reach their own session's PostToolUse hook with their own tool_input.",
+        "[unit] With a PostToolUse entry matcher: \"Write\" only, a before_tool call named Read with id c2 writes no record, and an after_tool dispatch for toolName: \"Read\", callId: \"c2\" returns undefined without calling runAgentHook.",
+        "[unit] A PostToolUse run of kind: \"ok\" with json { decision: \"block\" } (no reason) appends \"\\n\\nHook feedback: blocked by hook '<command>'\" to the content.",
+        "[unit] A PreToolUse run answering json { updatedInput: \"rm -rf\" } (not an object) leaves the input unchanged, returns { kind: \"allow\" } and logs one warning naming the command.",
+        "[unit] Two PostToolUse entries answering { kind: \"block\", reason: \"lint failed\" } and json { additionalContext: \"formatted\" } make the after_tool handler return { content: <original content> + \"\\n\\nHook feedback: lint failed\" + \"\\n\\nHook context: formatted\" }.",
+        "[unit] A PostToolUse run of kind: \"error\" returns no patch (undefined) and logs one warning naming the command.",
+        "[unit] An after_tool payload whose toolName no PostToolUse entry matches returns undefined without calling runAgentHook."
+      ],
+      "tags": [
+        "feature",
+        "hooks",
+        "security",
+        "tool-guards",
+        "loop-events"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Tool access guards must fail closed, compose ordered rewrites and keep session-isolated state across concurrent calls; security and session overrides require strict TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/hooks/agent/run-hook.ts",
+        "packages/nax/src/hooks/agent/index.ts",
+        "packages/nax-agent/src/native/session/loop-events/types.ts",
+        "packages/nax-agent/src/native/session/loop-events/registry.ts",
+        "packages/nax/src/context/rules/rule-delivery/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/hooks/agent/handlers.ts",
+        "packages/nax/test/unit/hooks/agent/handlers.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When after_tool dispatches a recorded key with an unmatched toolName, a later dispatch of that key with a matched toolName omits tool_input.",
+        "When before_tool records a call and a later handler rewrites its input, PostToolUse still receives the agent-hooks handler's recorded input rather than the later rewrite.",
+        "When PreToolUse answers a JSON block without a string reason, its block content uses blocked by hook '<command>'.",
+        "When updatedInput is an array or null, the before_tool handler keeps its previous input and emits one command-naming warning.",
+        "When PostToolUse observes isError: true, its stdin tool_response carries is_error: true."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Deliver session, prompt and stop hooks",
+      "description": "**Goal** — Extend createAgentHookHandlers with first-turn context, prompt guard/context and bounded stop continuations.\n\n**Motivation** — A user who wants \"run prettier after every edit\", \"never let the agent `git push`\" or \"keep going until the tests pass\" has to write a plugin.\n\n**Approach** — Extend the existing factory, not a separate registration mechanism. `SessionStart` maps to `before_turn` when the turn's loaded `history` is empty. `UserPromptSubmit` maps to `before_turn` every turn, after `SessionStart` hooks. `Stop` maps to `before_turn_end` when the turn ended `\"completed\"` and not by a stop.\n\n**Deadline.** Each factory handler's `timeoutMs` is `AGENT_HOOK_HANDLER_MARGIN_MS + Σ (entry.timeoutMs + AGENT_HOOK_KILL_GRACE_MS + AGENT_HOOK_DRAIN_MS)` over the entries that handler may run on its surface (for `before_turn`: every `SessionStart` and `UserPromptSubmit` entry, whether or not `SessionStart` runs on a given turn). The constants live in `run-hook.ts`: `AGENT_HOOK_KILL_GRACE_MS = 5000` (SIGTERM to SIGKILL), `AGENT_HOOK_DRAIN_MS = 2000` (stream drain bound), `AGENT_HOOK_HANDLER_MARGIN_MS = 1000`. With this bound a hook always reports its own timeout or error before the wrapper's deadline fires, so the per-event failure rules below, not the wrapper's generic ones, decide the outcome.\n\n**Combining several entries of one event** (one handler runs them all, in config order):\n- Context strings (`additionalContext`, and plain-text stdout where it counts as context) are joined with `\"\\n\\n\"` in entry order; empty strings are dropped.\n- `UserPromptSubmit`: the first block stops the remaining `UserPromptSubmit` entries and the handler returns only `block`.\n- `Stop`: the first block stops the remaining `Stop` entries.\n- A JSON-object stdout is never treated as plain text: a `SessionStart` entry answering `{}` adds no context.\n- A JSON `decision: \"block\"` without a string `reason` uses the reason `blocked by hook '<command>'`.\n\nstdin JSON (every event): `hook_event_name`, `session_id` (the context's `sessionName`), `cwd`, `surface` (`\"chat\"` | `\"run\"`), and, when the context has them, `role`, `feature`, `story_id`, `model`. Per event:\n- `UserPromptSubmit`: `prompt`.\n- `SessionStart`: no extra field.\n- `Stop`: `stop_hook_active` (true when `followUpsSoFar > 0`, i.e. from the second `Stop` run of a turn on). The loop's existing cap (`MAX_FOLLOW_UPS_PER_TURN = 3`) still applies: a hook that always blocks makes the agent continue at most 3 times per turn.\n\nFor `UserPromptSubmit` and `SessionStart` a plain-text stdout on exit 0 is context. Read `decision` (`\"block\"`), `reason`, `additionalContext` for UserPromptSubmit; `additionalContext` for SessionStart; `decision` (`\"block\"`) and `reason` for Stop. SessionStart exit-2 block is ignored with a warning. Hook errors: `UserPromptSubmit` blocks the prompt on `chat` and is let through with a warning on `run`; `SessionStart`, `Stop` log a warning and change nothing. Explicit UserPromptSubmit blocks apply on both surfaces and discard accumulated context. An empty result returns undefined, not a fabricated context patch. Reuse factory scope filtering, cwd/common payload and runner seam from US-004; run all applicable SessionStart entries before UserPromptSubmit.\n\nThe producer seam is `BeforeTurnPatch.block` and `promptContext` from US-001. The handler returns those patches and does not replace prompt messages with seed. The stop producer returns `{ followUp: reason }` and relies on the existing loop cap, never bypasses it.\n\n**Scope** — In: extending handlers.ts and adding turn-handlers.test.ts. Out: native loop consumers/deadline wrapper (US-001), tool-handler semantics (US-004), surface loader/chat (US-006), run setup (US-007). \n- Shell hooks on the other loop events (`transform_context`, `before_request`, `after_response`, `before_compaction`).\n- Concatenating `before_turn` `seed` or `promptContext` patches across several handlers; `dispatchChain` keeps overwrite semantics, so a later plugin handler returning `promptContext` replaces the agent hooks' value.\n\n**Interface** — Extend this same factory without changing its signature:\n```typescript\nexport function createAgentHookHandlers(input: {\n  readonly config: AgentHooksConfig;\n  readonly surface: AgentHookSurface;\n  readonly repoRoot: string;\n}): LoopHandlerSet;\n```\nReturn `BeforeTurnPatch` with `readonly block?: { readonly reason: string }` / `readonly promptContext?: string`, or `BeforeTurnEndPatch` with `readonly followUp?: string`, through the existing ExternalHandlerOf loop contract.",
+      "acceptanceCriteria": [
+        "[unit] With one SessionStart entry of timeoutMs 1000 and one UserPromptSubmit entry of timeoutMs 2000 on surface chat, createAgentHookHandlers returns exactly one before_turn entry with timeoutMs 18000 (1000 + (1000 + 7000) + (2000 + 7000)).",
+        "[unit] With one Stop entry of timeoutMs 3000, createAgentHookHandlers returns one before_turn_end entry with timeoutMs 11000.",
+        "[unit] The before_turn handler for a payload with empty history runs the SessionStart entry with hook_event_name: \"SessionStart\", then the UserPromptSubmit entry with hook_event_name: \"UserPromptSubmit\" and prompt = the payload's prompt, in that order.",
+        "[unit] The before_turn handler for a payload with non-empty history does not run the SessionStart entry.",
+        "[unit] A SessionStart run of { kind: \"ok\", stdout: \"repo: nax\" } and a UserPromptSubmit run answering json { additionalContext: \"be brief\" } make the handler return { promptContext: \"repo: nax\\n\\nbe brief\" }.",
+        "[unit] A UserPromptSubmit run of { kind: \"ok\", stdout: \"today is monday\" } (plain text) makes the handler return { promptContext: \"today is monday\" }.",
+        "[unit] A SessionStart run of kind: \"ok\" with json {} and a UserPromptSubmit run of { kind: \"ok\", stdout: \"\" } make the handler return undefined.",
+        "[unit] A UserPromptSubmit run of { kind: \"block\", reason: \"contains a key\" } returns { block: { reason: \"contains a key\" } } with no promptContext, and a later UserPromptSubmit entry is not run.",
+        "[unit] A UserPromptSubmit run of kind: \"ok\" with json { decision: \"block\", reason: \"r\" } returns { block: { reason: \"r\" } }.",
+        "[unit] On surface chat, a UserPromptSubmit run of { kind: \"error\", reason: \"exited 3\" } returns a block whose reason names the entry's command and exited 3.",
+        "[unit] On surface run, a UserPromptSubmit run of { kind: \"error\", reason: \"exited 3\" } returns no block, the next UserPromptSubmit entry still runs, and one warning names the command.",
+        "[unit] A SessionStart run of kind: \"block\" or kind: \"error\" adds no context and no block, and logs one warning.",
+        "[unit] The before_turn_end handler for { ended: \"completed\", stopped: false, followUpsSoFar: 0 } runs the Stop entry with hook_event_name: \"Stop\" and stop_hook_active: false.",
+        "[unit] For followUpsSoFar: 1 the Stop payload carries stop_hook_active: true.",
+        "[unit] A Stop run of { kind: \"block\", reason: \"tests still fail\" } makes the handler return { followUp: \"tests still fail\" }, and a later Stop entry is not run.",
+        "[unit] A Stop run of kind: \"ok\" with json { decision: \"block\", reason: \"go on\" } returns { followUp: \"go on\" }.",
+        "[unit] A Stop run of { kind: \"ok\", stdout: \"\" } returns undefined.",
+        "[unit] A Stop run of kind: \"error\" returns undefined and logs one warning naming the command.",
+        "[unit] The before_turn_end handler runs no Stop entry for ended: \"aborted\", for ended: \"errored\", or for ended: \"completed\" with stopped: true."
+      ],
+      "tags": [
+        "feature",
+        "hooks",
+        "security",
+        "prompt-guards",
+        "sessions"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Extends the upstream factory in one source module with two handlers reusing its runner, filtering and deadline conventions; prompt blocking and session-first-turn decisions require strict security/session TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/hooks/agent/handlers.ts",
+        "packages/nax/src/hooks/agent/run-hook.ts",
+        "packages/nax/test/unit/hooks/agent/handlers.test.ts",
+        "packages/nax-agent/src/native/session/loop-events/types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/hooks/agent/turn-handlers.test.ts"
+      ],
+      "suggestedCriteria": [
+        "On either surface, a JSON UserPromptSubmit block without a string reason returns a block reason of blocked by hook '<command>'.",
+        "When a Stop JSON block has no string reason, before_turn_end returns followUp equal to blocked by hook '<command>'.",
+        "When a first-turn prompt is blocked and loaded history remains empty on the next turn, the next before_turn dispatch runs SessionStart again.",
+        "When a Stop hook always blocks, a native turn honors no more than three followUp continuations.",
+        "When one context-producing entry answers an empty string between two non-empty contexts, the final promptContext contains only the two non-empty texts separated by one blank line."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Load hook handlers once and append them to chat resources",
+      "description": "**Goal** — Add the non-throwing handler loader and connect chat resources to the factory through an injectable dependency.\n\n**Motivation** — The run lifecycle hooks in `hooks.json` (`on-start`, `on-story-complete`, ...) are shell commands, but they fire only in `nax run`, only on run lifecycle events, and cannot block or change anything.\n\n**Approach** — `loadAgentHookHandlers` reads `<repoRoot>/.nax` and `globalConfigDir()` through `_loadAgentHookDeps` and returns `createAgentHookHandlers(...)`. It never rejects: an unexpected throw from loading yields an empty set and one `agent-hooks` warning, so a broken `hooks.json` never stops chat or a run.\n\n`chatResources` (`packages/nax/src/cli/chat.ts`)\n- Baseline: `pluginHandlers: registry.getLoopHandlers()`\n- Target: `pluginHandlers: [...registry.getLoopHandlers(), ...(await deps.loadAgentHookHandlers({ surface: \"chat\", repoRoot }))]`, with `loadAgentHookHandlers` added to `_chatCommandDeps`.\n\n**Ordering at the wiring sites.** On both surfaces the order is plugin handlers, then agent hooks, then rule delivery: chat appends the agent-hook handlers to `pluginHandlers` and `ChatHost` appends rule delivery after them; run passes `[...pluginHandlers, ...agentHooks]` into `withRuleDeliveryHandlers`, which appends rule delivery last (the existing \"rules after plugins\" rule). Rule delivery answers `before_tool` with a nudge (read) or a block (write) and `dispatchBeforeTool` keeps only the last nudge, so for a call where both answer a nudge, the rule text wins (see Out of Scope).\n\n**Subagents.** Chat subagents inherit `ChatHost.loopHandlers`, so chat-scoped agent hooks also run inside chat subagent turns.\n\nBarrel: each story adds its new module's exports to `packages/nax/src/hooks/agent/index.ts` (created by US-002), and `packages/nax/src/hooks/index.ts` re-exports them; `cli/chat.ts` and `run-rules-setup.ts` import from `@/hooks`, never from an internal file.\n\nRead the config once during chat startup, not on each turn. Use the existing chat entry trust gate; runner trust rechecks remain in US-003. Do not change ChatHost's later existing host-job guards, resource teardown, ACP behavior or the package-declared-hooks notice. The native-only loop forwarding and subagent inheritance already exist and need no alternate path.\n\n**Scope** — In: load.ts and its barrel exports, _chatCommandDeps and chatResources integration, unit loader tests and chatCommand seam integration assertions. Out: handler behavior (US-004/005), run/bot opt-in wiring (US-007).\n- Reloading `hooks.json` during a chat or run; the config is read once when the surface starts.\n- Agent hooks for ACP brains (Claude Code, Codex, Cursor as the chat agent); they run their own hooks and loop handlers reach only the native agent.\n- Executing Claude Code's own hooks (`~/.claude/settings.json`, plugin `hooks.json`) or package-declared hooks listed by `packages/nax/src/resources/parse-hooks.ts`; the chat notice that they are not executed stays.\n- Merging a hook's `PreToolUse` nudge with rule delivery's nudge for the same call; the later handler's nudge wins (rule delivery, on both surfaces).\n\n**Interface** —\n```typescript\n// load.ts\nexport const _loadAgentHookDeps: { loadAgentHooksConfig: typeof loadAgentHooksConfig; globalDir: () => string };\nexport function loadAgentHookHandlers(input: {\n  readonly surface: AgentHookSurface;\n  readonly repoRoot: string;\n}): Promise<LoopHandlerSet>;\n```",
+      "acceptanceCriteria": [
+        "[unit] loadAgentHookHandlers({ surface: \"run\", repoRoot }) calls the stubbed _loadAgentHookDeps.loadAgentHooksConfig with join(repoRoot, \".nax\") and the stubbed _loadAgentHookDeps.globalDir() value.",
+        "[unit] loadAgentHookHandlers given a stubbed config with one PreToolUse entry scoped [\"run\"] returns one before_tool entry for surface run and an empty set for surface chat.",
+        "[unit] loadAgentHookHandlers whose stubbed loadAgentHooksConfig rejects resolves to an empty set.",
+        "[unit] loadAgentHookHandlers whose stubbed loadAgentHooksConfig rejects logs one agent-hooks warning.",
+        "[integration] loadAgentHookHandlers imported from @/hooks, called with surface: \"run\" and a temp repo whose .nax/hooks.json holds one Stop entry and an empty global directory, returns one before_turn_end entry with plugin agent-hooks.",
+        "[integration] chatCommand with _chatCommandDeps.loadAgentHookHandlers stubbed to return one sentinel entry calls the stub once with { surface: \"chat\", repoRoot }.",
+        "[integration] chatCommand with _chatCommandDeps.loadAgentHookHandlers stubbed to return one sentinel entry passes resources to the stubbed createChatHost whose pluginHandlers end with that sentinel entry after the plugin registry's entries.",
+        "[integration] chatCommand with loadAgentHookHandlers stubbed to return an empty set creates the host with pluginHandlers equal to the plugin registry's entries."
+      ],
+      "tags": [
+        "feature",
+        "hooks",
+        "chat",
+        "security",
+        "integration"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Loader/barrel and chat dependency wiring are standard, but activate repository-controlled hooks in interactive sessions; strict security/session isolation is retained."
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/chat.ts",
+        "packages/nax/test/unit/cli/chat-resources.test.ts",
+        "packages/nax/src/hooks/agent/index.ts",
+        "packages/nax/src/hooks/agent/handlers.ts",
+        "packages/nax/src/hooks/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/hooks/agent/load.ts",
+        "packages/nax/test/unit/hooks/agent/load.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When _loadAgentHookDeps.globalDir throws, loadAgentHookHandlers resolves to an empty set with one agent-hooks warning.",
+        "When chatCommand's trust gate refuses the project, loadAgentHookHandlers is never called.",
+        "When chat launches native subagents, their loop-handler set includes the same chat-scoped agent-hook entry objects received by the parent ChatHost."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "Opt run into agent hooks without enabling bot worktrees",
+      "description": "**Goal** — Load run-scoped agent hooks only through an explicit shared-setup opt-in while preserving rules ordering, validation and empty-set identity.\n\n**Motivation** — The only way to influence a native-agent tool call today is an in-process JavaScript plugin providing `loop-handlers`.\n\n**Approach** — `configureRunRules` (`packages/nax/src/execution/lifecycle/run-rules-setup.ts`)\n- Baseline: `configureRunRules(input: { config; workdir; pluginHandlers }): Promise<LoopHandlerSet>` returning `withRuleDeliveryHandlers(...)`\n- Target: input gains optional `agentHooks?: \"run\"`. When it is `\"run\"`, `hooks = await _runRulesSetupDeps.loadAgentHookHandlers({ surface: \"run\", repoRoot: input.workdir })` and `withRuleDeliveryHandlers` receives `hooks.length > 0 ? [...input.pluginHandlers, ...hooks] : input.pluginHandlers`, so rule delivery stays last. When `agentHooks` is absent the loader is not called. With no hooks the result is exactly today's (identity tests in `run-rules-setup.test.ts` and `run-rules-setup-delivery.test.ts` stay green). `loadAgentHookHandlers` is added to `_runRulesSetupDeps`.\n\n`initializeAfterLock` (`packages/nax/src/execution/lifecycle/run-setup-init.ts`)\n- Baseline: `configureRunRules({ config, workdir, pluginHandlers: pluginRegistry.getLoopHandlers() })`\n- Target: the same call plus `agentHooks: \"run\"`.\n\n**Bot is excluded.** `packages/nax/src/bot/run-setup.ts` also calls `configureRunRules`, on a PR worktree that may come from a fork. Agent hooks are therefore opt-in on `configureRunRules` (`agentHooks: \"run\"`), passed only by `initializeAfterLock` (`packages/nax/src/execution/lifecycle/run-setup-init.ts`); the bot call stays as it is and loads no agent hooks.\n\n**Ordering at the wiring sites.** On both surfaces the order is plugin handlers, then agent hooks, then rule delivery: chat appends the agent-hook handlers to `pluginHandlers` and `ChatHost` appends rule delivery after them; run passes `[...pluginHandlers, ...agentHooks]` into `withRuleDeliveryHandlers`, which appends rule delivery last (the existing \"rules after plugins\" rule). Rule delivery answers `before_tool` with a nudge (read) or a block (write) and `dispatchBeforeTool` keeps only the last nudge, so for a call where both answer a nudge, the rule text wins (see Out of Scope).\n\nRetain all current overrideDir/project-context validation before invoking the hook loader: a missing overrideDir still throws RULES_OVERRIDE_DIR_NOT_FOUND without loading hooks. Invoke the loader when opted in even when rule delivery is skipped; workflow mode and rule-delivery settings gate rule delivery, not agent hooks. When hooks are empty or opt-in absent, preserve the exact plugin set by identity wherever existing withRuleDeliveryHandlers does. Import the loader from @/hooks.\n\n**Scope** — In: run-rules-setup.ts, the initializeAfterLock call and seam tests through both configureRunRules and initializeAfterLock. Out: loader implementation/chat wiring (US-006), handler semantics (US-004/005). Leave packages/nax/src/bot/run-setup.ts unchanged.\n- Agent hooks in `nax bot review` / `nax bot fix`: the bot's `configureRunRules` call does not pass `agentHooks`, so a PR worktree's `.nax/hooks.json` is never executed.\n- Pipeline-mode-specific wiring; `initializeAfterLock` is the shared run setup.\n- Merging a hook's `PreToolUse` nudge with rule delivery's nudge for the same call; the later handler's nudge wins (rule delivery, on both surfaces).\n\n**Interface** — Extend the existing configureRunRules input while retaining its existing config/workdir/pluginHandlers types:\n```typescript\nexport async function configureRunRules(input: {\n  config: NaxConfig;\n  workdir: string;\n  pluginHandlers: LoopHandlerSet;\n  agentHooks?: \"run\";\n}): Promise<LoopHandlerSet>;\n```\nAdd `loadAgentHookHandlers: typeof loadAgentHookHandlers` to the existing `_runRulesSetupDeps`; retain all existing dependency members.",
+      "acceptanceCriteria": [
+        "[unit] configureRunRules with workflow mode on, context.rules.delivery \"index\", agentHooks: \"run\" and _runRulesSetupDeps.loadAgentHookHandlers stubbed to return one sentinel entry calls the stub once with { surface: \"run\", repoRoot: workdir }.",
+        "[unit] configureRunRules with workflow mode on, context.rules.delivery \"index\", agentHooks: \"run\" and _runRulesSetupDeps.loadAgentHookHandlers stubbed to return one sentinel entry returns plugin handlers, then the sentinel entry, then the rule-delivery entries.",
+        "[unit] configureRunRules with agentHooks: \"run\", workflow mode off (rule delivery skipped) and the stub returning one sentinel entry returns the plugin handlers followed by the sentinel entry.",
+        "[unit] configureRunRules with agentHooks: \"run\", rule delivery skipped and the stub returning an empty set returns the plugin handler set itself (the same array by identity).",
+        "[unit] configureRunRules without agentHooks never calls loadAgentHookHandlers.",
+        "[unit] configureRunRules without agentHooks returns the plugin handler set by identity when rule delivery is skipped.",
+        "[unit] configureRunRules with agentHooks: \"run\" and context.rules.overrideDir naming a missing directory rejects with RULES_OVERRIDE_DIR_NOT_FOUND without calling loadAgentHookHandlers.",
+        "[integration] initializeAfterLock with _runRulesSetupDeps.loadAgentHookHandlers stubbed to return one sentinel entry hands runtime.sessionManager.configureLoopHandlers a set holding that sentinel right after the plugin registry's entries and before the rule-delivery entries.",
+        "[integration] initializeAfterLock with _runRulesSetupDeps.loadAgentHookHandlers stubbed to return one sentinel entry calls that stub with { surface: \"run\", repoRoot: workdir }."
+      ],
+      "tags": [
+        "feature",
+        "hooks",
+        "run-setup",
+        "security",
+        "bot-isolation"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Small shared-setup integration with identity-sensitive regressions; explicit opt-in protects possibly fork-controlled bot worktrees from host execution, invoking the access-control override."
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/lifecycle/run-rules-setup.ts",
+        "packages/nax/src/execution/lifecycle/run-setup-init.ts",
+        "packages/nax/test/unit/execution/lifecycle/run-rules-setup.test.ts",
+        "packages/nax/test/unit/execution/lifecycle/run-setup-init.test.ts",
+        "packages/nax/src/hooks/agent/load.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/execution/lifecycle/run-rules-setup-agent-hooks.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When bot run setup invokes configureRunRules on a PR worktree containing agent hook entries, loadAgentHookHandlers is never called.",
+        "When configureRunRules receives agentHooks: \"run\" with workflow delivery \"push\", the opted-in hook entries still follow plugins without adding rule-delivery entries.",
+        "When existing project-context validation rejects, configureRunRules does not call loadAgentHookHandlers."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Discovery: codebase-memory MCP is unavailable in this tool session; direct repository reads and text searches were used instead. This is an additive enhancement to an established Bun/TypeScript orchestrator and a Node-compatible native-agent library, not a greenfield feature. The binding implementation contract is .nax/features/agent-hooks/spec.md; retain exactly US-001 through US-007 and their specified package workdirs/dependencies. The referenced docs/superpowers/specs/2026-11-01-nax-agent-hooks-design.md is older in several material details: its timeout accounting omits kill/drain allowances, it suggests killing on abort, and its blocked-turn UI/input-record descriptions are less precise. The supplied spec and its ACs take precedence: use the complete timeout formula, do not add an abort signal, throw NATIVE_TURN_BLOCKED without transcript mutation, and record only the input observed/rewritten by the agent-hooks handler.\n\nNative loop foundations (US-001): packages/nax-agent/src/native/session/loop-events/types.ts:98-114 defines BeforeTurnPayload and the currently seed/history-only BeforeTurnPatch; types.ts:225-260 defines the context, external-handler signature, entry and readonly handler set. LoopHandlerEntry currently has no per-entry deadline. These types are already publicly exported at packages/nax-agent/src/index.ts:160-168; extend the existing types, not a parallel interception API. packages/nax-agent/src/native/session/loop-events/registry.ts:66-76 allowlists patch fields and its type-level exhaustiveness check requires adding block/promptContext with the type change. registry.ts:265-311 merges field patches by overwrite, not concatenation; registry.ts:198-251 chains tool input rewrites, short-circuits blocks and keeps the last nudge. Do not change these merge semantics. packages/nax-agent/src/native/session/loop-events/external-handler.ts:35-43 owns the 10000 ms default/seam; :77-119 reads the deadline at dispatch and cleans timer/listener state; :131-157 fails before_tool closed but other events to an empty patch. Entry timeoutMs must be finite and positive to replace, not augment, the existing seam. Preserve wrapper abort semantics and legacy plugins without timeoutMs. packages/nax-agent/src/native/session/turn-loop.ts:53-74 builds a seed that can retain opts.images or replace the prompt with explicit seed messages. The before_turn dispatch is at :150-155; history application and messages.push are at :160-170, before the provider-loop try/catch at :233. Check block before appending or provider work and put both new concerns in helpers, avoiding complexity growth in runNativeTurn. Prefix the content of only the first selected seed message, preserving all other fields/images. Existing transcript identity regression patterns are in packages/nax-agent/test/unit/native/session/turn-loop-transcript-identity.test.ts:44-60 and :62-105. Existing registry/external-handler/before-turn-end tests under test/unit/native/session/loop-events cover backwards compatibility. packages/nax-agent/src/native/session/turn-loop-round-trip.ts:62 and :391-417 already enforce the three-follow-up cap and stop rejection; reuse them. Chat already renders thrown turn errors as CODE: message at packages/nax/src/tui/chat/transcript-model.ts:202-205, so no new UI behavior is needed. Any intended declaration-surface change must follow the package's existing API snapshot process (api/nax-agent.api.txt); do not expose test seams from its public entry.\n\nConfiguration (US-002): packages/nax/src/hooks/types.ts:9-52 defines lifecycle events/entries and :55-57 defines the lifecycle hooks map. packages/nax/src/hooks/index.ts:1-3 currently exports lifecycle functions/types only; add the agent barrel without altering lifecycle contracts. packages/nax/src/hooks/runner.ts:95-129 reads the project first for skipGlobal, preserves separate global/project hooks, and uses loadJsonFile. The new agent loader must independently read Bun.file(...).text()/JSON.parse to avoid duplicate hooks-stage warnings and validate individual entries with zod, not modify this loader. Project skipGlobal suppresses the global agent section; otherwise global entries precede project entries. Return all five event arrays even when files are absent. Missing files/no agent are silent; malformed file/top-level/agent values each produce one agent-hooks warning naming the path. Invalid entries warn individually with event/index/origin and do not discard siblings. A matcher other than absent/* must compile both raw and wrapped as ^(?:matcher)$; an alternation must match the whole tool name. Keep matcher validation restricted to tool events. Defaults: enabled true, both scopes, timeoutMs 30000; timeout input is an integer 1..600000. Unknown event keys warn and are ignored. Existing validation patterns/tests are packages/nax/test/unit/hooks/runner-validation.test.ts. No migration is required for existing hooks.json: agent is optional and lifecycle hooks remain unchanged.\n\nExecution/trust (US-003): packages/nax/src/hooks/runner.ts:179-204 exports validateHookCommand, :268-279 uses parseCommandToArgv, :287-305 demonstrates Bun.spawn argv/no shell, detached group, allowed environment and timeout escalation, and :307-320 demonstrates concurrent bounded incremental stream drain. Its stream helpers and constants at :17-77 are private; mirror privately in the new module, importing killProcessGroup from @nathapp/nax-agent/internal, and never edit runner.ts. packages/nax/src/utils/command-argv.ts:3-66 already preserves quoted arguments and expands ~/ via allowed HOME. packages/nax/src/agents/shared/env.ts:52-91 is the environment allowlist SSOT (including existing allowed key variables); do not replace it with process.env or log payloads/credentials. Project execution has to reassert trust at the spawn site: packages/nax/src/trust/registry.ts:43-44 normalizes and asserts trust; :65-71 throws PROJECT_UNTRUSTED with surface context. Extend TrustSurface at packages/nax/src/trust/types.ts:53-64 with agent-hooks. Lifecycle precedent at packages/nax/src/hooks/runner.ts:355-360 exempts global hooks and checks project hooks; the new runner differs deliberately by converting refusal into AgentHookRun.error rather than rejecting. Catch validation/spawn/trust failures, serialize JSON stdin, trim stdout/stderr, recognize only non-null non-array JSON objects, map 0/2/other exits, always log one debug outcome with duration. Liveness risks are TERM-resistant children, descendants holding pipes, stream error races and timer leaks: preserve incremental output, cancel readers after a bounded drain, clean timers, use SIGTERM then SIGKILL. Constants are liveness rulings, not NaxConfig keys. Integration tests must use real argv scripts/process behavior; restore mutable deps after each test.\n\nHandler factory (US-004/005): packages/nax/src/context/rules/rule-delivery/index.ts:108-135 is the factory precedent for an attributed LoopHandlerSet and :150-176 shows per-factory/per-session state. Return at most one entry per loop event, with plugin agent-hooks. Scope-filter entries first, then sum all entries that handler may run (regardless of matcher or first-turn status): 1000 + sum(timeoutMs + 5000 + 2000). Register a recording-only before_tool entry when PostToolUse exists even without PreToolUse; that entry has timeoutMs 1000. Store tool input only when a PostToolUse matcher applies, keyed without collisions by sessionName and call id; capture the input after this factory's own rewrites. Always delete a matching record on after_tool dispatch, even if the reported tool does not match; absent callId/record means omit tool_input. Do not infer downstream rewrites. Blocked-call records may live until the factory is dropped by design. Aggregate contexts in config order with blank lines, ignore empty strings and never reinterpret a JSON object as plain text. PreToolUse blocks/errors short-circuit (errors set isError); rewrites feed the next entry; combine nudge plus rewrite. PostToolUse preserves original content and appends feedback/context sequentially, while errors warn without adding text. SessionStart uses loaded history emptiness, runs before UserPromptSubmit, and may rerun after a blocked initial turn. UserPromptSubmit explicit blocks win over all context and short-circuit; errors block chat but warn-and-continue run. SessionStart block/error only warns. Stop only runs on completed/not-stopped, sends followUpsSoFar > 0, returns the first block as followUp, and leaves the loop cap untouched. JSON blocks without a string reason use blocked by hook '<command>'; invalid updatedInput is ignored with one command-naming warning. Use _agentHookHandlerDeps.runAgentHook for every execution.\n\nChat/loading (US-006): packages/nax/src/config/paths/index.ts:63-67 resolves globalConfigDir with NAX_GLOBAL_CONFIG_DIR override, so use that rather than homedir literals. packages/nax/test/preload.ts:37-43 isolates this global directory. New loadAgentHookHandlers reads repoRoot/.nax and the global dir through its deps, never rejects, and gives one agent-hooks warning plus an empty set on unexpected failure. packages/nax/src/cli/chat.ts:46-83 owns _chatCommandDeps; :181-240 chatResources owns plugin/resource lifetimes; :217 currently forwards registry.getLoopHandlers(); :263-295 resolves repoRoot, composes resources and creates the host. Add the loader seam and append to resource pluginHandlers after plugin registry entries, importing from @/hooks. Existing packages/nax/test/unit/cli/chat-resources.test.ts:21-78 offers isolated dependency fixtures and :95-149 exercises trust-before-composition/host forwarding. packages/nax/src/chat/chat-host.ts:216-224 appends rule delivery after resource handlers and then existing host-job guards; preserve those guards and all unrelated ordering. :226-234 already passes the same loopHandlers to subagents, so no separate subagent wiring or second load is needed. The supplied spec's 'rule delivery last' refers to the relative plugin/agent-hooks/rules ordering; do not reorder later existing host-job guards.\n\nRun/bot (US-007): packages/nax/src/execution/lifecycle/run-rules-setup.ts:90-108 validates overrideDir and project context before assembling handlers; :124-137 skips rule delivery in pipeline/push cases by returning its input set by identity and appends rule handlers in workflow/index. Add optional agentHooks: run; validate existing overrides first, then load only when opted in, preserve identity when loader is absent/empty, then pass the combined set to existing rule delivery. This means agent hooks still attach when rule delivery itself is skipped; no pipeline-specific code is needed. packages/nax/src/execution/lifecycle/run-setup-init.ts:181-186 is the shared initializeAfterLock configuration site; add only agentHooks: run to its call. packages/nax/src/bot/run-setup.ts:12-13 is a second caller operating on possibly fork-controlled PR worktrees; leave it unchanged so it never loads these hooks. packages/nax/src/session/manager.ts:151 configures the retained handler set; packages/nax/src/session/loop-handler-forwarding.ts:39-49 returns no handler options for non-native sessions, preserving ACP exclusion without new adapter changes. Existing identity regression anchors are packages/nax/test/unit/execution/lifecycle/run-rules-setup.test.ts:49-74 and run-rules-setup-delivery.test.ts:159-174. Also preserve run-setup-init and project-context validation tests.\n\nDelivery, migration and verification: implement US-001 and US-002 independently, then runner, tool factory, turn factory, chat loader/wiring and opt-in run wiring in the binding order. No package version changes or dependency additions are needed; releases are maintainer-only and lockstep. New module exports must be added incrementally to hooks/agent/index.ts and re-exported by hooks/index.ts; chat/run use @/hooks. The feature changes native sessions only and adds no new loop event names, permission profile, context abort signal or config policy knobs. nax-agent remains Node-compatible with #src imports and .ts relative source imports; nax owns Bun APIs. Follow docs/architecture/ARCHITECTURE.md:15-48 for DI, error handling, constants, async and test conventions; preserve strict typing, existing errors and stage conventions, file/complexity limits and shared helper reuse. Each story includes behavioral failing tests and existing regression anchors, not a separate testing story. Strict three-session TDD is selected for session boundaries, prompt/tool guards, repository execution trust and wiring of repository-controlled execution; configuration-only/loading work without a new access-control decision uses the complexity default. Never run bare bun test or bun run nax, never run coverage in NAX_SANDBOXED=1. No commands were executed in this drafting session; analysis is based on source inspection. Failure-table coverage is distributed to configuration validation, runner process failures, per-event factory policies, loader fallback, and wrapper fallback ACs. Out-of-scope items are preserved verbatim below.\n\nRefine self-audit: re-read all 106 numbered spec ACs and the ten failure-handling rows against the draft, plus the spec context/creates lists and the existing wrapper, chat handler order and run validation code. The following exhaustive mapping uses spec AC number -> this story's acceptanceCriteria ordinal (comma-separated ordinals are a split assertion, not dropped requirements). US-001: 1->1; 2->2; 3->3; 4->4; 5->5; 6->6; 7->7; 8->8; 9->9; 10->10; 11->11; 12->12; 13->13. US-002: 1->1; 2->2,3; 3->4; 4->5; 5->6; 6->7; 7->8; 8->9; 9->10; 10->11; 11->12,13; 12->14,15; 13->16,17; 14->18; 15->19; 16->20,21; 17->22,23; 18->24; 19->25. US-003: 1->1; 2->2; 3->3; 4->4; 5->5; 6->6; 7->7; 8->8; 9->9,10; 10->11; 11->12; 12->13; 13->14; 14->15; 15->16,17; 16->18; 17->19,20,21; 18->22; 19->23. US-004: 1->1; 2->2; 3->3; 4->4,5; 5->6; 6->7,8; 7->9; 8->10; 9->11,12; 10->13; 11->14; 12->15,16; 13->17; 14->18; 15->19; 16->20; 17->21,22; 18->23; 19->24,25; 20->26; 21->27,28; 22->29; 23->30,31; 24->32. US-005: 1->1; 2->2; 3->3; 4->4; 5->5; 6->6; 7->7; 8->8,9; 9->10; 10->11; 11->12,13,14; 12->15,16; 13->17; 14->18; 15->19,20; 16->21; 17->22; 18->23,24; 19->25. US-006: 1->1; 2->2; 3->3,4; 4->5; 5->6,7; 6->8. US-007: 1->1,2; 2->3; 3->4; 4->5,6; 5->7; 6->8,9. All spec assertions remain in their original stories, including attachment retention, unchanged empty prompt context, default deadline fallback, missing-error defaults, record deletion/session isolation, rule-delivery-skipped qualifiers and array identity anchors. Additional mandatory failure-table coverage remains US-001 AC14 and US-002 AC26/27. The previously private-state-only no-record assertion (US-004 AC24) now has an observable runner-payload probe; its synthetic after_tool toolName is a direct-handler test probe, not a claim that the native loop changes a tool's name. US-001 AC9 now supplies concrete seed/history/block values instead of ellipses.\n\nNegative paths are present in every story: blocked turn/timeouts (US-001), invalid config entries/files (US-002), trust/lint/spawn/timeout failures (US-003), fail-closed pre-tool and warning-only post-tool errors (US-004), chat/run prompt-error policies and ignored session/stop errors (US-005), failed config loading (US-006), and missing override directory before loading (US-007). Regression anchors include the no-timeoutMs wrapper default, no-agent config/no warnings, command parser's existing quoted argv semantics, no-match allow/no patch, no-context turn patches and existing Stop gates, empty chat hook equivalence, and run identity preservation. ContextFiles exactly match each spec-recommended list, remain within five, and refer only to existing or upstream-created files; expectedFiles match the spec's Creates lists. Binding workdirs/dependencies and all seven ids remain unchanged. All fourteen feature exclusions remain verbatim at top level; nearby story Scope-Out bullets now repeat the relevant full exclusion text. No story-local exclusion was lifted to feature scope. Complexity is reduced to medium for US-001's additive changes in four existing modules and US-005's reuse of the completed factory; strict three-session TDD remains for their session/guard boundaries under the explicit security override. Only the process runner and stateful tool factory retain complex classification. No implementation, tests or shell validation commands were run as part of this PRD audit.",
+  "outOfScope": [
+    "Executing Claude Code's own hooks (`~/.claude/settings.json`, plugin `hooks.json`) or package-declared hooks listed by `packages/nax/src/resources/parse-hooks.ts`; the chat notice that they are not executed stays.",
+    "Agent hooks for ACP brains (Claude Code, Codex, Cursor as the chat agent); they run their own hooks and loop handlers reach only the native agent.",
+    "An `ask` decision that pauses and asks the human from a hook.",
+    "Shell hooks on the other loop events (`transform_context`, `before_request`, `after_response`, `before_compaction`).",
+    "Any change to the run lifecycle hooks (`on-*` events), `loadHooksConfig`, `executeHook` or `fireHook`.",
+    "Concatenating `before_turn` `seed` or `promptContext` patches across several handlers; `dispatchChain` keeps overwrite semantics, so a later plugin handler returning `promptContext` replaces the agent hooks' value.",
+    "Killing a running hook when the turn is aborted: `LoopHandlerContext` carries no abort signal by design, so a hook runs until it exits or reaches its own `timeout`.",
+    "Agent hooks in `nax bot review` / `nax bot fix`: the bot's `configureRunRules` call does not pass `agentHooks`, so a PR worktree's `.nax/hooks.json` is never executed.",
+    "Merging a hook's `PreToolUse` nudge with rule delivery's nudge for the same call; the later handler's nudge wins (rule delivery, on both surfaces).",
+    "A size cap on hook stdout, stderr or context injected into the prompt or a tool result.",
+    "Removing the `tool_input` record of a call that a later handler blocked; it lives until the chat or run ends.",
+    "Reloading `hooks.json` during a chat or run; the config is read once when the surface starts.",
+    "Pipeline-mode-specific wiring; `initializeAfterLock` is the shared run setup.",
+    "A user guide page; documentation follows separately."
+  ],
+  "routingProfile": "native-codex-ds"
+}
