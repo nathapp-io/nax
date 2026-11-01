@@ -3,7 +3,7 @@
   "feature": "chat-tui-esc-focus",
   "branchName": "feat/chat-tui-esc-focus",
   "createdAt": "2026-11-01T00:00:00.000Z",
-  "updatedAt": "2026-11-01T05:21:34.832Z",
+  "updatedAt": "2026-11-01T05:29:31.005Z",
   "userStories": [
     {
       "id": "US-001",
@@ -405,14 +405,17 @@
         "controller"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Extends shared session/approval controller settlement with timeout cleanup and reply routing; strict isolation follows the session and access-control-adjacent override."
+        "reasoning": "Extends shared session/approval controller settlement with timeout cleanup and reply routing; strict isolation follows the session and access-control-adjacent override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/ask-controller.ts",
@@ -453,7 +456,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b6974224da98f05f994d65bfd8ebed48392549ae"
     },
     {
       "id": "US-008",
