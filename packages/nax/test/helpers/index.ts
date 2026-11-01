@@ -113,8 +113,10 @@ export {
 } from "./interaction-internals";
 export { makeLinkWithCosts } from "./link-with-costs";
 export {
+  afterToolPayload,
   beforeCompactionPayload,
   beforeToolPayload,
+  callAfterTool,
   callBeforeCompaction,
   callBeforeTool,
   handlerContext,

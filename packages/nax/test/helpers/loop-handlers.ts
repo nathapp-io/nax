@@ -19,6 +19,8 @@
 
 import { join } from "node:path";
 import type {
+  AfterToolPatch,
+  AfterToolPayload,
   BeforeCompactionPayload,
   BeforeToolOutcome,
   BeforeToolPayload,
@@ -42,13 +44,32 @@ export function loopHandlerEntry(set: LoopHandlerSet, event: LoopEvent): LoopHan
 }
 
 /** A tool call as a `before_tool` payload carries it (nax-ai's `ToolCall` shape). */
-export function toolCall(name: string, input: Record<string, unknown>): BeforeToolPayload["call"] {
-  return { id: `call-${name}`, name, input };
+export function toolCall(name: string, input: Record<string, unknown>, id = `call-${name}`): BeforeToolPayload["call"] {
+  return { id, name, input };
 }
 
 /** A `before_tool` payload for one call. No handler under test reads `tools`. */
-export function beforeToolPayload(name: string, input: Record<string, unknown>): BeforeToolPayload {
-  return { call: toolCall(name, input), tools: [] };
+export function beforeToolPayload(name: string, input: Record<string, unknown>, id?: string): BeforeToolPayload {
+  return { call: toolCall(name, input, id), tools: [] };
+}
+
+/**
+ * An `after_tool` payload for one finished call. Absent keys stay absent: a
+ * payload with no `callId` is exactly the case a handler must survive.
+ */
+export function afterToolPayload(input: {
+  content: string;
+  isError?: boolean;
+  toolName?: string;
+  callId?: string;
+}): AfterToolPayload {
+  const { content, isError, toolName, callId } = input;
+  return {
+    content,
+    ...(isError !== undefined ? { isError } : {}),
+    ...(toolName !== undefined ? { toolName } : {}),
+    ...(callId !== undefined ? { callId } : {}),
+  };
 }
 
 /**
@@ -56,10 +77,24 @@ export function beforeToolPayload(name: string, input: Record<string, unknown>):
  * is the absence of the key, which is exactly what a role-scoped handler reads.
  */
 export function handlerContext(
-  input: { sessionName?: string; role?: string; storyId?: string } = {},
+  input: {
+    sessionName?: string;
+    role?: string;
+    storyId?: string;
+    feature?: string;
+    model?: string;
+    workdir?: string;
+  } = {},
 ): LoopHandlerContext {
-  const { sessionName = "sess-rule-delivery", role, storyId = "US-005" } = input;
-  return { sessionName, ...(role !== undefined ? { role } : {}), storyId };
+  const { sessionName = "sess-rule-delivery", role, storyId = "US-005", feature, model, workdir } = input;
+  return {
+    sessionName,
+    ...(role !== undefined ? { role } : {}),
+    ...(feature !== undefined ? { feature } : {}),
+    ...(workdir !== undefined ? { workdir } : {}),
+    ...(model !== undefined ? { model } : {}),
+    storyId,
+  };
 }
 
 /** A `before_compaction` payload; the rule-delivery handler reads none of it. */
@@ -93,6 +128,26 @@ export async function callBeforeCompaction(
 ): Promise<PatchOf<LoopEvent> | undefined> {
   const entry = loopHandlerEntry(set, "before_compaction");
   return entry.handler(payload, ctx);
+}
+
+/**
+ * Run the set's `after_tool` handler. `undefined` is a real answer — "no patch,
+ * leave the result alone" — so it is returned as-is rather than normalized.
+ */
+export async function callAfterTool(
+  set: LoopHandlerSet,
+  payload: AfterToolPayload,
+  ctx: LoopHandlerContext,
+): Promise<AfterToolPatch | undefined> {
+  const entry = loopHandlerEntry(set, "after_tool");
+  const answer = await entry.handler(payload, ctx);
+  if (answer === undefined) return undefined;
+  return isAfterToolPatch(answer) ? answer : undefined;
+}
+
+/** An `after_tool` patch is the only one carrying `content`/`isError`. */
+function isAfterToolPatch(answer: PatchOf<LoopEvent>): answer is AfterToolPatch {
+  return "content" in answer || "isError" in answer;
 }
 
 /** Only a `before_tool` patch carries a `kind`; anything else is no decision. */

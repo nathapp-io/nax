@@ -6,6 +6,7 @@
  */
 
 export { loadAgentHooksConfig } from "./config";
+export { _agentHookHandlerDeps, AGENT_HOOKS_PLUGIN, createAgentHookHandlers } from "./handlers";
 export {
   _runAgentHookDeps,
   AGENT_HOOK_DRAIN_MS,
