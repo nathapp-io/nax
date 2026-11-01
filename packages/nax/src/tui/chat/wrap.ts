@@ -4,7 +4,10 @@
  * by wrapping, cutting or bounding a prefix.
  *
  * Everything here is measured in terminal columns with `displayWidth`, never in code units,
- * and a wrap never splits a cluster that fits on a line. A cluster wider than the whole line
+ * and a wrap never splits a cluster that fits on a line. `spansWidth` measures a line's
+ * spans as one string — the same text a terminal draws — so a cluster a style boundary
+ * splits (`**👍**🏽` is a bold `👍` and a plain modifier) counts once, and the width a line
+ * reports always agrees with the wrap that produced it. A cluster wider than the whole line
  * — a long Indic conjunct is one grapheme many columns wide — is the one case where keeping
  * the line inside the width wins over keeping the cluster whole, and it is cut between code
  * points.
@@ -85,8 +88,15 @@ export function mergeSpans(spans: readonly Span[]): StyledLine {
   return merged;
 }
 
+/**
+ * A line's width in terminal columns: the spans' text measured **as one string**, which is
+ * what the terminal draws. Measuring each span on its own would count a grapheme a style
+ * boundary splits — `**👍**🏽` arrives as a bold `👍` and a plain skin-tone modifier, one
+ * cluster — twice, and a padded line would then disagree with the wrap that produced it.
+ * This is the one measurement every caller (`wrap`, the table drawing, the layout) shares.
+ */
 export function spansWidth(spans: readonly Span[]): number {
-  return spans.reduce((total, span) => total + displayWidth(span.text), 0);
+  return displayWidth(spans.map((span) => span.text).join(""));
 }
 
 function styleOf(span: Span): SpanStyle {
@@ -333,9 +343,8 @@ export function cutSpans(spans: readonly Span[], columns: number): StyledLine {
  * through by cluster, so a bold word, a link's muted suffix or a highlighted code span
  * survives the wrap intact.
  *
- * `layoutTranscript` uses this for a line a model leaves wide on purpose — a table's source
- * text, raw HTML, a quoted block — so that a narrow layout wraps it instead of cutting the
- * text away.
+ * `layoutTranscript` uses this for a line a model leaves wide on purpose — raw HTML, a
+ * quoted block — so that a narrow layout wraps it instead of cutting the text away.
  */
 export function wrapSpans(
   spans: readonly Span[],

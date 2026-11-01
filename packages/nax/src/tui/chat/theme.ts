@@ -29,6 +29,21 @@ export type ChatColorToken =
   | "syntaxNumber"
   | "syntaxTitle";
 
+/** The table frame's glyph set: two rules and the nine joints that meet them. */
+export interface TableGlyphs {
+  readonly horizontal: string;
+  readonly vertical: string;
+  readonly topLeft: string;
+  readonly topJoin: string;
+  readonly topRight: string;
+  readonly midLeft: string;
+  readonly midJoin: string;
+  readonly midRight: string;
+  readonly bottomLeft: string;
+  readonly bottomJoin: string;
+  readonly bottomRight: string;
+}
+
 /** The character set all chat models draw with. */
 export interface ChatGlyphs {
   readonly bullet: string;
@@ -45,6 +60,7 @@ export interface ChatGlyphs {
   readonly codeTop: string;
   readonly codeSide: string;
   readonly codeBottom: string;
+  readonly table: TableGlyphs;
   readonly spinner: readonly string[];
 }
 
@@ -155,6 +171,19 @@ const UNICODE_GLYPHS: ChatGlyphs = {
   codeTop: "┌",
   codeSide: "│",
   codeBottom: "└",
+  table: {
+    horizontal: "─",
+    vertical: "│",
+    topLeft: "┌",
+    topJoin: "┬",
+    topRight: "┐",
+    midLeft: "├",
+    midJoin: "┼",
+    midRight: "┤",
+    bottomLeft: "└",
+    bottomJoin: "┴",
+    bottomRight: "┘",
+  },
   spinner: ["·", "✢", "✳", "✶", "✻", "✽"],
 };
 
@@ -173,6 +202,19 @@ const ASCII_GLYPHS: ChatGlyphs = {
   codeTop: "+",
   codeSide: "|",
   codeBottom: "+",
+  table: {
+    horizontal: "-",
+    vertical: "|",
+    topLeft: "+",
+    topJoin: "+",
+    topRight: "+",
+    midLeft: "+",
+    midJoin: "+",
+    midRight: "+",
+    bottomLeft: "+",
+    bottomJoin: "+",
+    bottomRight: "+",
+  },
   spinner: ["-", "\\", "|", "/"],
 };
 

@@ -21,6 +21,22 @@ const MINIMUM_WIDTH = 10;
 const AT = "2026-10-01T00:00:00.000Z";
 const AT_PLUS_6S = "2026-10-01T00:00:06.000Z";
 
+/** A two-column table and the grid the renderer draws for it at any width that fits it. */
+const TABLE = "| a | b |\n| - | - |\n| 1 | 2 |";
+const GRID = ["┌───┬───┐", "│ a │ b │", "├───┼───┤", "│ 1 │ 2 │", "└───┴───┘"] as const;
+/** A four-column table: its grid would not fit the 18 columns a reply has at width 20. */
+const FOUR_COLUMN_WORDS = ["alpha", "bravo", "charlie", "delta"] as const;
+const FOUR_COLUMN_CELLS = ["one two", "three four", "five six", "seven eight"] as const;
+const FOUR_COLUMN_HEADER = `| ${FOUR_COLUMN_WORDS.join(" | ")} |`;
+const FOUR_COLUMN_DELIMITER = `| ${FOUR_COLUMN_WORDS.map(() => "---").join(" | ")} |`;
+const FOUR_COLUMN_TABLE = [FOUR_COLUMN_HEADER, FOUR_COLUMN_DELIMITER, `| ${FOUR_COLUMN_CELLS.join(" | ")} |`].join(
+  "\n",
+);
+/** Every word the four-column table's body holds, one per cell word. */
+const CELL_WORDS = FOUR_COLUMN_CELLS.flatMap((cell) => cell.split(" "));
+/** A one-cell table nested in a list item, its cell splitting an emoji across two styles. */
+const SPLIT_EMOJI_TABLE = "- item\n\n  | h |\n  | - |\n  | **👍**🏽 |";
+
 const THOUGHT = "weighing the ordering options";
 /** One "word" wider than the columns a user line leaves for its content. */
 const WIDE_TEXT = "日".repeat(30);
@@ -131,6 +147,14 @@ function bulletOf(line: StyledLine): Span {
 /** Every line's display width, for the "never wider than the layout" assertions. */
 function widths(lines: readonly StyledLine[]): readonly number[] {
   return lines.map((line) => displayWidth(plainText(line)));
+}
+
+/** The drawn width of every line carrying a table frame glyph, in order. */
+function gridLineWidths(lines: readonly StyledLine[]): readonly number[] {
+  const frame = new Set(Object.values(theme.glyphs.table));
+  return lines
+    .filter((line) => [...plainText(line)].some((character) => frame.has(character)))
+    .map((line) => displayWidth(plainText(line)));
 }
 
 /** The reply lines with their two-column gutter taken off, joined: what the reply still says. */
@@ -351,12 +375,61 @@ describe("layoutTranscript: reply entries", () => {
     expect(squashed(lines)).toBe(source.replace(/\s+/g, ""));
   });
 
-  test("wraps a table's source line instead of clipping it", () => {
-    const header = "| alpha | bravo | charlie | delta |";
-    const source = `${header}\n| --- | --- | --- | --- |`;
+  test("draws a reply's table as a grid behind the bullet and the gutter", () => {
+    const lines = texts(layout([replyEntry(TABLE)]));
+    expect(lines[0]).toBe(`${theme.glyphs.bullet} ┌───┬───┐`);
+    expect(lines.slice(1)).toEqual(GRID.slice(1).map((line) => `  ${line}`));
+  });
+
+  test("draws a table of headers within the layout's columns instead of its source text", () => {
+    const source = [FOUR_COLUMN_HEADER, FOUR_COLUMN_DELIMITER].join("\n");
     const lines = layout([replyEntry(source)], { width: NARROW_WIDTH });
     for (const width of widths(lines)) expect(width).toBeLessThanOrEqual(NARROW_WIDTH);
-    expect(squashed(lines)).toBe(source.replace(/\s+/g, ""));
+    const joined = texts(lines).join("\n");
+    expect(joined).not.toContain("|");
+    const positions = FOUR_COLUMN_WORDS.map((word) => joined.indexOf(word));
+    for (const position of positions) expect(position).toBeGreaterThanOrEqual(0);
+    expect([...positions].sort((left, right) => left - right)).toEqual(positions);
+  });
+
+  /** The reply lines of the four-column table at the narrow width, as one block of text. */
+  function narrowFourColumn(): string {
+    return texts(layout([replyEntry(FOUR_COLUMN_TABLE)], { width: NARROW_WIDTH })).join("\n");
+  }
+
+  test("draws a four-column table with a body row at width 20 without overflowing it", () => {
+    const lines = layout([replyEntry(FOUR_COLUMN_TABLE)], { width: NARROW_WIDTH });
+    expect(lines.length).toBeGreaterThan(1);
+    for (const width of widths(lines)) expect(width).toBeLessThanOrEqual(NARROW_WIDTH);
+    // Stacked, not drawn from source: the first header labels its column's value.
+    expect(narrowFourColumn()).toContain(`${FOUR_COLUMN_WORDS[0]}: `);
+  });
+
+  test("stacks a four-column table that cannot fit the reply's columns", () => {
+    const joined = narrowFourColumn();
+    expect(joined).not.toContain("│");
+    expect(joined).not.toContain("|");
+  });
+
+  test("keeps every header and cell word of a stacked table", () => {
+    const joined = narrowFourColumn();
+    for (const word of [...FOUR_COLUMN_WORDS, ...CELL_WORDS]) expect(joined).toContain(word);
+    // Each header labels its own column's value, which only the stacked renderer draws.
+    for (const word of FOUR_COLUMN_WORDS) expect(joined).toContain(`${word}: `);
+  });
+
+  test("keeps a nested table's frame aligned when a cell splits a grapheme across styles", () => {
+    const lines = layout([replyEntry(SPLIT_EMOJI_TABLE)], { width: MINIMUM_WIDTH + 1 });
+    for (const width of widths(lines)) expect(width).toBeLessThanOrEqual(MINIMUM_WIDTH + 1);
+    // `**👍**🏽` arrives as a bold `👍` and a plain modifier: measuring the spans apart
+    // would pad the body two columns short, so its right border would not line up.
+    const grid = gridLineWidths(lines);
+    expect(grid.length).toBe(5);
+    expect(new Set(grid).size).toBe(1);
+    for (const text of texts(lines).filter((candidate) => candidate.includes(theme.glyphs.table.vertical))) {
+      // The reply's own gutter plus the list item's hanging indent: the frame never moves.
+      expect(text.startsWith(" ".repeat(GUTTER * 2))).toBe(true);
+    }
   });
 
   test("wraps quoted fallback content instead of cutting it", () => {

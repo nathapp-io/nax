@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type ChatColorToken, type ChatTheme, resolveChatTheme } from "@/tui/chat/theme";
+import { type ChatColorToken, type ChatTheme, resolveChatTheme, type TableGlyphs } from "@/tui/chat/theme";
 
 type ColorLevel = 0 | 1 | 2 | 3;
 type Env = Readonly<Record<string, string | undefined>>;
@@ -78,6 +78,34 @@ const ANSI_16 = {
 
 const UNICODE_SPINNER = ["·", "✢", "✳", "✶", "✻", "✽"];
 const ASCII_SPINNER = ["-", "\\", "|", "/"];
+
+const UNICODE_TABLE = {
+  horizontal: "─",
+  vertical: "│",
+  topLeft: "┌",
+  topJoin: "┬",
+  topRight: "┐",
+  midLeft: "├",
+  midJoin: "┼",
+  midRight: "┤",
+  bottomLeft: "└",
+  bottomJoin: "┴",
+  bottomRight: "┘",
+} satisfies TableGlyphs;
+
+const ASCII_TABLE = {
+  horizontal: "-",
+  vertical: "|",
+  topLeft: "+",
+  topJoin: "+",
+  topRight: "+",
+  midLeft: "+",
+  midJoin: "+",
+  midRight: "+",
+  bottomLeft: "+",
+  bottomJoin: "+",
+  bottomRight: "+",
+} satisfies TableGlyphs;
 
 function theme(env: Env = {}, colorLevel: ColorLevel = 3): ChatTheme {
   return resolveChatTheme({ env, colorLevel });
@@ -247,5 +275,40 @@ describe("resolveChatTheme — glyphs", () => {
     const resolved = theme({ NO_COLOR: "1" }, 0);
     expect(resolved.color).toBe(false);
     expect(resolved.glyphs.bullet).toBe("⏺");
+  });
+});
+
+describe("resolveChatTheme — table glyphs", () => {
+  test("AC-1: an empty environment resolves the Unicode table set", () => {
+    expect(theme({}, 3).glyphs.table).toEqual(UNICODE_TABLE);
+  });
+
+  test("AC-2: NAX_ASCII=1 resolves the ASCII table set — bars and '+' joins", () => {
+    const table = theme({ NAX_ASCII: "1" }, 3).glyphs.table;
+    expect(table.horizontal).toBe("-");
+    expect(table.vertical).toBe("|");
+    expect(table.topLeft).toBe("+");
+    expect(table.topJoin).toBe("+");
+    expect(table.topRight).toBe("+");
+    expect(table.midLeft).toBe("+");
+    expect(table.midJoin).toBe("+");
+    expect(table.midRight).toBe("+");
+    expect(table.bottomLeft).toBe("+");
+    expect(table.bottomJoin).toBe("+");
+    expect(table.bottomRight).toBe("+");
+    expect(table).toEqual(ASCII_TABLE);
+  });
+
+  test("AC-12: adding the table glyphs keeps the Unicode bullet", () => {
+    expect(theme({}, 3).glyphs.bullet).toBe("⏺");
+  });
+
+  test("AC-13: adding the table glyphs keeps the ASCII bullet", () => {
+    expect(theme({ NAX_ASCII: "1" }, 3).glyphs.bullet).toBe("*");
+  });
+
+  test("the ASCII table set follows the ASCII selection, not the locale", () => {
+    expect(theme({ LANG: "C" }, 3).glyphs.table).toEqual(ASCII_TABLE);
+    expect(theme({ LANG: "en_US.UTF-8" }, 3).glyphs.table).toEqual(UNICODE_TABLE);
   });
 });

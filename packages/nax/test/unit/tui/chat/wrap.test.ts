@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { displayWidth, plainText, type Span, type StyledLine } from "@/tui/chat/styled-line";
-import { cutSpans, mergeSpans, wrap, wrapSpans } from "@/tui/chat/wrap";
+import { cutSpans, mergeSpans, spansWidth, wrap, wrapSpans } from "@/tui/chat/wrap";
 
 const STAR = "* ";
 const WIDTH = 12;
@@ -79,5 +79,41 @@ describe("wrap", () => {
     const lines = wrap(mixedSpans(), WIDTH, [{ text: "  " }]);
     expect(textOf(lines[0]).startsWith("  alpha")).toBe(true);
     expect(textOf(lines[1]).startsWith("  ")).toBe(true);
+  });
+});
+
+/**
+ * A bold `👍` whose skin-tone modifier the inline renderer put in a plain span — the shape
+ * `**👍**🏽` produces, and the one a per-span width sum counts twice.
+ */
+const SPLIT_EMOJI: readonly Span[] = [{ text: "👍", bold: true }, { text: "🏽" }];
+
+describe("spansWidth", () => {
+  test("counts a grapheme a style boundary splits once, as the terminal draws it", () => {
+    expect(spansWidth(SPLIT_EMOJI)).toBe(displayWidth("👍🏽"));
+  });
+
+  test("measures split spans exactly as the same text in one span", () => {
+    expect(spansWidth(SPLIT_EMOJI)).toBe(spansWidth([{ text: "👍🏽" }]));
+  });
+
+  test("measures a split cluster once wherever it sits in the line", () => {
+    const line: readonly Span[] = [{ text: "a " }, ...SPLIT_EMOJI, { text: " b" }];
+    expect(spansWidth(line)).toBe(displayWidth("a 👍🏽 b"));
+  });
+
+  test("adds up the spans of a line with no split cluster", () => {
+    expect(spansWidth(mixedSpans())).toBe(displayWidth(textOf(mixedSpans())));
+  });
+
+  test("agrees with wrap on every line wrap drew, so a padded line keeps its frame", () => {
+    const line: readonly Span[] = [{ text: "a " }, ...SPLIT_EMOJI, { text: " b" }];
+    const lines = wrap(line, 4);
+    expect(lines.length).toBeGreaterThan(1);
+    for (const wrapped of lines) expect(spansWidth(wrapped)).toBeLessThanOrEqual(4);
+  });
+
+  test("keeps a split cluster whole when cutSpans is asked for the room it already takes", () => {
+    expect(textOf(cutSpans(SPLIT_EMOJI, 2))).toBe("👍🏽");
   });
 });

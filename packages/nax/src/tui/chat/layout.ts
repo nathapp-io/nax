@@ -14,8 +14,9 @@
  * A reply is rendered into the columns left behind its gutter, and the one line
  * `renderMarkdown` leaves wide on purpose — a fenced block's code line — is cut at the
  * layout's width (wrapping would invent line numbers the code's own indentation
- * contradicts). Every other line it leaves wide, a table's source text or raw HTML, is
- * wrapped instead, so a narrow layout never loses a reply's words.
+ * contradicts). Every other line it leaves wide, raw HTML, is wrapped instead, so a narrow
+ * layout never loses a reply's words. A table is not one of them: the renderer draws it to
+ * the columns its block has here, as a grid or — when the columns cannot fit — stacked.
  *
  * A tool card is drawn from `toolCardModel`: header, result summary, an Edit's diff and,
  * while collapsed, the count of the lines ctrl+o would reveal. The model reports tones, not
@@ -133,8 +134,9 @@ function userLines(entry: UserEntry, context: LayoutContext): readonly StyledLin
  * A reply: its markdown rendered into the columns left behind the gutter, the first line
  * behind the bullet glyph and the rest behind two spaces, with code lines cut — never
  * wrapped — by the renderer at the width the block actually has. A line `renderMarkdown`
- * leaves wide on purpose — a table's source text, raw HTML, a quote — reaches
- * `prefixedLine` still wide and is wrapped there rather than lost.
+ * leaves wide on purpose — raw HTML, a quote — reaches `prefixedLine` still wide and is
+ * wrapped there rather than lost; a table reaches it already drawn to these columns, so it
+ * is never wrapped again.
  */
 function replyLines(entry: ReplyEntry, context: LayoutContext): readonly StyledLine[] {
   const rendered = renderMarkdown(entry.text, {

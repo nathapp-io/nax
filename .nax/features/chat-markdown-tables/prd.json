@@ -1,0 +1,279 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-markdown-tables",
+  "branchName": "feat/chat-markdown-tables",
+  "createdAt": "2026-11-01T00:00:00.000Z",
+  "updatedAt": "2026-11-01T09:03:19.798Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Table glyphs and column sizing",
+      "description": "**Goal** — Add theme-owned table glyphs and the pure table model and deterministic column-sizing contract.\n\n**Motivation** — Models answer with tables often (status summaries, option comparisons), so this is the most visible remaining markdown gap.\n\n**Approach** — One deterministic renderer, no new dependency. A new pure module `packages/nax/src/tui/chat/markdown-table.ts` owns column sizing and drawing over already-styled cell spans, so it does not import `markdown.ts` (no import cycle): `markdown.ts` turns each cell's inline tokens into spans with its existing `inlineSpans`, builds a `TableModel`, and calls `renderTable` through its `_markdownDeps` seam.\n\n**Column sizing (`columnWidths`).** The natural width of a column is the widest cell in it (header included), measured in terminal columns with `spansWidth`, and at least 1. The budget is `width - (3n + 1)`. If the natural widths fit the budget they are used. Otherwise each column's floor is `min(natural, MIN_CELL_WIDTH)` with `MIN_CELL_WIDTH = 3`; if the floors do not fit the budget, `columnWidths` returns `undefined` (stack). Otherwise it shrinks one column by one column-width at a time, always the currently widest column above its floor (on a tie, the leftmost), until the widths sum to the budget. Example: natural `[10, 4, 20]` with budget 20 gives `[8, 4, 8]`.\n\nTarget: the same fields plus `readonly table: TableGlyphs`, with a new exported interface below. Unicode set: `─ │ ┌ ┬ ┐ ├ ┼ ┤ └ ┴ ┘` (in field order). ASCII set: `horizontal` `-`, `vertical` `|`, every corner and join `+`.\n\nModule rules: `src/tui/chat/` sibling imports are relative (`./wrap`), `markdown-table.ts` is not added to the `src/tui/chat/index.ts` barrel (it has no consumer outside the directory), new source stays under the 600-line gate.\n\n**Scope** — In: extend `theme.ts` and its glyph tests; create `markdown-table.ts` and `markdown-table.test.ts` with model types, options, constant and sizing tests. `columnWidths` consumes supplied natural widths; measuring model cells belongs to US-002. Out: grid drawing and `renderTable` implementation (US-002), stacked drawing/degenerate render width (US-003), markdown token dispatch and layout regression updates (US-004). Changing the fence glyphs (`codeTop`, `codeSide`, `codeBottom`) or sharing them with the table glyph set. A configurable `MIN_CELL_WIDTH`, column-width hints, or a per-table style choice. Adding any package dependency for table rendering; the renderer is built on `marked`'s existing table token and `wrap.ts`. Exporting `markdown-table.ts` from the `src/tui/chat/index.ts` barrel; it has no consumer outside `src/tui/chat/`. `markdown-table.ts` importing `markdown.ts`; cells arrive as styled spans so the dependency runs one way only.\n\n**Interface** — In `theme.ts`:\n```ts\nexport interface TableGlyphs {\n  readonly horizontal: string;\n  readonly vertical: string;\n  readonly topLeft: string;\n  readonly topJoin: string;\n  readonly topRight: string;\n  readonly midLeft: string;\n  readonly midJoin: string;\n  readonly midRight: string;\n  readonly bottomLeft: string;\n  readonly bottomJoin: string;\n  readonly bottomRight: string;\n}\n```\nAdd `readonly table: TableGlyphs` to `ChatGlyphs`, retaining all existing fields. In the new `markdown-table.ts`:\n```ts\nimport type { Span, StyledLine } from \"./styled-line\";\nimport type { TableGlyphs } from \"./theme\";\n\nexport type TableAlign = \"left\" | \"center\" | \"right\" | null;\n\nexport interface TableModel {\n  readonly header: readonly (readonly Span[])[];\n  readonly rows: readonly (readonly (readonly Span[])[])[];\n  readonly align: readonly TableAlign[];\n}\n\nexport interface RenderTableOptions {\n  readonly width: number;\n  readonly glyphs: TableGlyphs;\n  /** The rule glyph the stacked layout separates rows with. */\n  readonly rule: string;\n}\n\n/** The narrowest a column shrinks to before the table stacks. */\nexport const MIN_CELL_WIDTH = 3;\n\n/** Content width per column for `width`, or undefined when the floors do not fit (stack). */\nexport function columnWidths(natural: readonly number[], width: number): readonly number[] | undefined;\n```\nThe function declaration is the required exported signature; supply its implementation in this story. The `StyledLine` type is used by the renderer added in US-002.",
+      "acceptanceCriteria": [
+        "[unit] resolveChatTheme({ env: {}, colorLevel: 3 }) returns glyphs.table equal to { horizontal: '─', vertical: '│', topLeft: '┌', topJoin: '┬', topRight: '┐', midLeft: '├', midJoin: '┼', midRight: '┤', bottomLeft: '└', bottomJoin: '┴', bottomRight: '┘' }.",
+        "[unit] resolveChatTheme({ env: { NAX_ASCII: '1' }, colorLevel: 3 }) returns glyphs.table with horizontal '-', vertical '|', and '+' for each of topLeft, topJoin, topRight, midLeft, midJoin, midRight, bottomLeft, bottomJoin, bottomRight.",
+        "[unit] MIN_CELL_WIDTH imported from markdown-table.ts equals 3.",
+        "[unit] columnWidths([3, 2], 40) returns [3, 2]: natural widths that fit the budget 40 - 7 are kept.",
+        "[unit] columnWidths([10, 4, 20], 30) returns [8, 4, 8]: the budget 30 - 10 = 20 is reached by shrinking the widest column one step at a time, the leftmost on a tie.",
+        "[unit] columnWidths([6, 23], 25) returns [6, 12].",
+        "[unit] columnWidths([2, 9], 10) returns undefined, because the floors min(2, 3) + min(9, 3) = 5 exceed the budget 10 - 7 = 3.",
+        "[unit] columnWidths([1, 1, 1, 1], 17) returns [1, 1, 1, 1]: a column narrower than MIN_CELL_WIDTH keeps its natural width as its floor.",
+        "[unit] columnWidths([1, 1, 1, 1], 16) returns undefined: a column narrower than MIN_CELL_WIDTH keeps its natural width as its floor.",
+        "[unit] columnWidths([5, 5], 13) returns [3, 3], every column at its floor exactly filling the budget 13 - 7 = 6.",
+        "[unit] columnWidths([], 40) returns [].",
+        "[unit] resolveChatTheme({ env: {}, colorLevel: 3 }).glyphs.bullet remains '⏺' after adding glyphs.table, preserving the existing Unicode theme selection.",
+        "[unit] resolveChatTheme({ env: { NAX_ASCII: '1' }, colorLevel: 3 }).glyphs.bullet remains '*', preserving the existing ASCII theme selection."
+      ],
+      "tags": [
+        "feature",
+        "tui",
+        "markdown",
+        "theme"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive theme/type changes and a small deterministic sizing algorithm across two source modules and their tests; no external integration or security-critical behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/theme.ts",
+        "packages/nax/test/unit/tui/chat/theme.test.ts",
+        "packages/nax/src/tui/chat/styled-line.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/markdown-table.ts",
+        "packages/nax/test/unit/tui/chat/markdown-table.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "74b596e175cdc367aedc6153df4db03f31b35086"
+    },
+    {
+      "id": "US-002",
+      "title": "Drawing a table grid",
+      "description": "**Goal** — Implement `renderTable`'s fitting-grid branch with terminal-column sizing, muted borders, bold headers, markdown alignment and wrapped styled cells.\n\n**Motivation** — `layout.ts` then wraps those source lines when they are wider than the column, which breaks the pipes across lines.\n\n**Approach** — **Grid geometry.** For `n` columns with content widths `w1..wn`, every grid line is `sum(w) + 3n + 1` columns wide: a vertical glyph, then per column a space, the cell content padded to `wi`, a space and a vertical glyph. Lines, top to bottom: a top border (`topLeft`, `horizontal` repeated `wi + 2` per column joined by `topJoin`, `topRight`), the header row(s), a separator (`midLeft`, `midJoin`, `midRight`) when there is at least one body row, the body rows with no separator between them, and a bottom border (`bottomLeft`, `bottomJoin`, `bottomRight`). Border and vertical glyphs are `muted`; header cell spans are bold on top of their own styles; padding spaces are unstyled.\n\n**Column sizing (`columnWidths`).** The natural width of a column is the widest cell in it (header included), measured in terminal columns with `spansWidth`, and at least 1. The budget is `width - (3n + 1)`. If the natural widths fit the budget they are used. Otherwise each column's floor is `min(natural, MIN_CELL_WIDTH)` with `MIN_CELL_WIDTH = 3`; if the floors do not fit the budget, `columnWidths` returns `undefined` (stack). Otherwise it shrinks one column by one column-width at a time, always the currently widest column above its floor (on a tie, the leftmost), until the widths sum to the budget. Example: natural `[10, 4, 20]` with budget 20 gives `[8, 4, 8]`.\n\n**Cells.** Each cell is wrapped to its column width with `wrap` from `wrap.ts` (word wrap, a word longer than the column breaks between grapheme clusters), an empty cell is one blank line, and a row is as tall as its tallest cell; shorter cells are padded with blank lines below. Each cell line, header cells included, is padded to the column width by its column's alignment: `left` and `null` pad on the right, `right` pads on the left, `center` puts `floor(extra / 2)` spaces on the left and the rest on the right. A row with fewer cells than the header draws the missing cells empty; cells beyond the header count are not drawn.\n\nPatterns to mirror: `codeBlockLines` and `ruleLine` in `markdown.ts` (muted frame glyphs from `context.theme.glyphs`, `mergeSpans`/`styled` construction), `_markdownDeps` as the injected seam (`markdown.test.ts` already swaps `highlight`). Module rules: `src/tui/chat/` sibling imports are relative (`./wrap`), `markdown-table.ts` is not added to the `src/tui/chat/index.ts` barrel (it has no consumer outside the directory), new source stays under the 600-line gate.\n\n**Scope** — In: extend the upstream-created `markdown-table.ts` and its tests; derive natural widths from model cells, use `columnWidths` to choose the branch, draw Unicode/ASCII grids, handle empty headers, header-only tables, wrapped/ragged rows and existing inline styles. Out: when `columnWidths` returns `undefined`, this story's `renderTable` may return any lines; US-003 defines them. Theme and sizing API changes belong to US-001; actual markdown dispatch and layout test replacement belong to US-004. Separator lines between body rows of the grid. Adding any package dependency for table rendering; the renderer is built on `marked`'s existing table token and `wrap.ts`. Changing the fence glyphs (`codeTop`, `codeSide`, `codeBottom`) or sharing them with the table glyph set. Exporting `markdown-table.ts` from the `src/tui/chat/index.ts` barrel; it has no consumer outside `src/tui/chat/`. `markdown-table.ts` importing `markdown.ts`; cells arrive as styled spans so the dependency runs one way only.\n\n**Interface** — Use the upstream `TableModel`, `RenderTableOptions`, `TableAlign` and `MIN_CELL_WIDTH` unchanged.\n```ts\n/** Content width per column for `width`, or undefined when the floors do not fit (stack). */\nexport function columnWidths(natural: readonly number[], width: number): readonly number[] | undefined;\n\n/** The grid when the columns fit, otherwise the stacked layout. */\nexport function renderTable(model: TableModel, options: RenderTableOptions): StyledLine[];\n```\nThe stacked branch of the final renderer contract is completed by US-003. Existing helpers, read only:\n```ts\nwrap(spans: readonly Span[], width: number, prefix?: readonly Span[]): StyledLine[]\nspansWidth(spans: readonly Span[]): number\nmergeSpans(spans: readonly Span[]): StyledLine\nstyled(text: string, style: SpanStyle): Span\ntype SpanStyle = Omit<Span, \"text\">\n```",
+      "acceptanceCriteria": [
+        "[unit] renderTable with header [[{ text: 'a' }], [{ text: 'bb' }]], one row [[{ text: 'ccc' }], [{ text: 'd' }]], align [null, null], width 40, Unicode table glyphs and rule '─' returns plain texts ['┌─────┬────┐', '│ a   │ bb │', '├─────┼────┤', '│ ccc │ d  │', '└─────┴────┘'].",
+        "[unit] In that renderTable output every span holding a border or vertical glyph has color 'muted'.",
+        "[unit] In that renderTable output the spans holding 'a' and 'bb' are bold.",
+        "[unit] In that renderTable output the span holding 'ccc' is not bold.",
+        "[unit] renderTable given a header cell span styled { color: 'accent' } draws it with color 'accent' and bold: true in the header row.",
+        "[unit] renderTable with header 'a', 'bb', one row 'ccc', 'd', align [null, 'right'] and width 40 draws the body row '│ ccc │  d │'.",
+        "[unit] renderTable with one column, header 'head5', one row 'ab', align ['center'] and width 40 draws the body row '│  ab   │': 3 spare columns put 1 space left and 2 right of the text, inside the 1-space cell padding.",
+        "[unit] renderTable with one column, header 'head5', one row 'ab', align ['left'] and width 40 draws the body row '│ ab    │'.",
+        "[unit] renderTable with one column, header 'ab', one row 'head5', align ['right'] and width 40 draws the header row '│    ab │': a header cell takes its column's alignment.",
+        "[unit] renderTable with header 'Story', 'Description', one row 'US-001', 'add the esc layer model', align [null, null] and width 25 returns plain texts ['┌────────┬──────────────┐', '│ Story  │ Description  │', '├────────┼──────────────┤', '│ US-001 │ add the esc  │', '│        │ layer model  │', '└────────┴──────────────┘'].",
+        "[unit] Every line renderTable returns for a grid is exactly sum(column widths) + 3 × columns + 1 columns wide measured with spansWidth, including when a cell holds the double-width text '日本' (a column of natural width 4).",
+        "[unit] renderTable given a row with fewer cells than the header draws the missing cells as blank padding.",
+        "[unit] renderTable given a row with more cells than the header draws only the first header-count cells.",
+        "[unit] renderTable given a header and no rows returns three lines: the top border, the header row and the bottom border, with no '├' separator line.",
+        "[unit] renderTable given an empty header returns an empty array.",
+        "[unit] renderTable with header 'a', 'b', 'c', 'd', rows ['1', '2', '3', '4'] and ['5', '6', '7', '8'], align all null and width 17 returns a grid whose first line is '┌───┬───┬───┬───┐'.",
+        "[unit] renderTable with ASCII table glyphs, header 'a', 'bb', one row 'ccc', 'd', align [null, null] and width 40 returns plain texts ['+-----+----+', '| a   | bb |', '+-----+----+', '| ccc | d  |', '+-----+----+']."
+      ],
+      "tags": [
+        "feature",
+        "tui",
+        "markdown",
+        "rendering"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A pure renderer and its tests using existing wrapping and span primitives; geometry and style edge cases are substantial but deterministic and locally scoped.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/markdown-table.ts",
+        "packages/nax/src/tui/chat/wrap.ts",
+        "packages/nax/src/tui/chat/theme.ts",
+        "packages/nax/src/tui/chat/markdown.ts",
+        "packages/nax/test/unit/tui/chat/markdown-table.test.ts"
+      ],
+      "suggestedCriteria": [
+        "renderTable with header ['a', 'b'], row ['1', '2', a 100-column extra cell] and width 40 returns the same grid as the row ['1', '2'], so a discarded extra cell does not affect visible sizing.",
+        "renderTable preserves the original input model's span styles after rendering a bold header.",
+        "renderTable with an overlong unbroken ASCII word in a shrunken column preserves all word characters across wrapped cell lines without exceeding the grid width."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "68ac15d7fd68a90a10b75eb59ec22975e54c3f43"
+    },
+    {
+      "id": "US-003",
+      "title": "The stacked table layout",
+      "description": "**Goal** — Complete `renderTable` with stacked output when column floors cannot fit and make degenerate widths behave like width 1.\n\n**Motivation** — Models answer with tables often (status summaries, option comparisons), so this is the most visible remaining markdown gap.\n\n**Approach** — **Stacked layout.** When `columnWidths` returns `undefined`, each body row becomes one block: per column, the bold header spans, an unstyled `\": \"`, then the cell spans, wrapped together to the width with `wrap` (no hanging indent). A column whose header text is empty draws the cell spans alone. A column whose cell is empty or missing draws the bold header and `:` with no trailing space (`wrap` drops a trailing separator); a column whose header and cell are both empty draws no line. A body row whose every column draws no line produces no block and no rule, so two rules are never adjacent. Blocks are separated by one muted line of the rule glyph repeated to the width. A header-only table (no body rows) stacks as one bold line per header cell, wrapped to the width.\n\n**Width floor.** `renderTable` treats a `width` below 1 as 1, so it never throws on a degenerate width; through `renderMarkdown` the width is already floored by `resolveWidth`.\n\nUse the already implemented `columnWidths` result to choose grid versus stacked, not a separate column-count heuristic. The grid remains the US-002 behavior when widths fit. Cells remain already-styled spans and header bold is added on top of their existing styles. A row with fewer cells than the header draws the missing cells empty; cells beyond the header count are not drawn. Keep `wrap.ts` read-only and call `wrap`, not the layout-floored `wrapSpans`.\n\n**Scope** — In: extend `markdown-table.ts` and its existing tests with stacked body blocks, empty labels/values/rows, header-only output and the render width floor. Out: changing grid geometry or column shrinking (US-001/US-002), integrating markdown/table spies or changing reply-layout tests (US-004). Horizontal scrolling or a \"show source\" toggle for wide tables; the wrap-then-stack rule is the only answer to width. A configurable `MIN_CELL_WIDTH`, column-width hints, or a per-table style choice. Adding any package dependency for table rendering; the renderer is built on `marked`'s existing table token and `wrap.ts`. Exporting `markdown-table.ts` from the `src/tui/chat/index.ts` barrel; it has no consumer outside `src/tui/chat/`. `markdown-table.ts` importing `markdown.ts`; cells arrive as styled spans so the dependency runs one way only.\n\n**Interface** — Preserve the upstream model/options definitions and this exported signature:\n```ts\n/** The grid when the columns fit, otherwise the stacked layout. */\nexport function renderTable(model: TableModel, options: RenderTableOptions): StyledLine[];\n```\n`RenderTableOptions` remains:\n```ts\nexport interface RenderTableOptions {\n  readonly width: number;\n  readonly glyphs: TableGlyphs;\n  /** The rule glyph the stacked layout separates rows with. */\n  readonly rule: string;\n}\n```\nUse `wrap(spans: readonly Span[], width: number, prefix?: readonly Span[]): StyledLine[]` for the combined label/value spans.",
+      "acceptanceCriteria": [
+        "[unit] renderTable with header 'a', 'b', 'c', 'd', rows ['1', '2', '3', '4'] and ['5', '6', '7', '8'], width 16 and rule '─' returns stacked plain texts ['a: 1', 'b: 2', 'c: 3', 'd: 4', '────────────────', 'a: 5', 'b: 6', 'c: 7', 'd: 8'].",
+        "[unit] In that stacked renderTable output the span holding each header label is bold.",
+        "[unit] In that stacked renderTable output the span text beginning ': ' is not bold.",
+        "[unit] In that stacked renderTable output every span of the rule line has color 'muted'.",
+        "[unit] renderTable with header 'a', 'b', 'c', 'd', one row ['1', '2 3 4 5 6 7 8 9', '3', '4'] and width 10 draws the 'b' value across more than one line.",
+        "[unit] Every line renderTable returns with header 'a', 'b', 'c', 'd', one row ['1', '2 3 4 5 6 7 8 9', '3', '4'] and width 10 is at most 10 columns wide.",
+        "[unit] renderTable with header 'a' and an empty second header cell, one row ['1', '2'], and width 8 returns plain texts ['a: 1', '2']: an empty header draws the value alone.",
+        "[unit] renderTable with header 'a', 'b', 'c', one row with only the cell '1', and width 12 returns plain texts ['a: 1', 'b:', 'c:'].",
+        "[unit] renderTable with header 'a' and an empty second header cell, one row with '1' and an empty second cell, and width 8 returns only 'a: 1'.",
+        "[unit] renderTable given header 'alpha', 'bravo', 'charlie', 'delta', no rows, and width 18 returns the four plain texts ['alpha', 'bravo', 'charlie', 'delta'].",
+        "[unit] Every span returned by renderTable given header 'alpha', 'bravo', 'charlie', 'delta', no rows, and width 18 is bold.",
+        "[unit] renderTable with header 'a', 'b', one row ['1', '2'] and width 0 does not throw.",
+        "[unit] renderTable with header 'a', 'b', one row ['1', '2'] and width 0 returns the same lines as at width 1.",
+        "[unit] renderTable with header 'a', 'b', 'c', 'd', rows ['1', '2', '3', '4'] and ['5', '6', '7', '8'], align all null and width 17 still returns a grid whose first line is '┌───┬───┬───┬───┐', preserving US-002's fitting-grid behavior after adding stacked output."
+      ],
+      "tags": [
+        "feature",
+        "tui",
+        "markdown",
+        "responsive-layout"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Localized completion of a pure renderer and existing tests with explicit wrapping, empty-content and width-boundary rules; no external side effects or security-critical functions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/markdown-table.ts",
+        "packages/nax/src/tui/chat/wrap.ts",
+        "packages/nax/test/unit/tui/chat/markdown-table.test.ts"
+      ],
+      "suggestedCriteria": [
+        "renderTable in stacked mode with two empty header cells and body rows ['1', '2'], ['', ''], ['3', '4'] returns the same output as those rows without the all-empty middle row, with exactly one rule between the nonempty blocks.",
+        "renderTable in stacked mode with two empty header cells and only all-empty body rows returns no lines.",
+        "renderTable in stacked mode preserves italic and accent styling on wrapped value spans while leaving the label/value separator unstyled.",
+        "renderTable in stacked mode wraps an over-wide header-only cell into bold lines no wider than the requested width.",
+        "renderTable with header ['a', 'b'], row ['1', '2'] and width -5 returns the same lines as at width 1."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e59dc819d8c1f7ba203c2a4fb53315562898e806"
+    },
+    {
+      "id": "US-004",
+      "title": "Tables in chat replies",
+      "description": "**Goal** — Route marked table tokens through the completed renderer and injected seam, preserving reply context, inline styles, sanitization and transcript gutters.\n\n**Motivation** — `renderMarkdown` (`packages/nax/src/tui/chat/markdown.ts`) styles headings, lists, quotes, rules and fences, but its `blockLines` default branch returns `sourceLines(token.raw)` for a table, so a reply listing stories or a comparison shows raw `| a | b |` / `| - | - |` text.\n\n**Approach** — One deterministic renderer, no new dependency. A new pure module `packages/nax/src/tui/chat/markdown-table.ts` owns column sizing and drawing over already-styled cell spans, so it does not import `markdown.ts` (no import cycle): `markdown.ts` turns each cell's inline tokens into spans with its existing `inlineSpans`, builds a `TableModel`, and calls `renderTable` through its `_markdownDeps` seam.\n\n**Context.** The table renders at the width its block has, so inside a list item it renders behind the marker's indent and inside a blockquote behind the quote glyph, with the quote's italic carried into every cell through `baseStyle`. Cell text goes through `inlineSpans`, which sanitises it (`sanitizeText`), so a cell carrying `\\u001b[?1049l` cannot leave the alternate screen. A half-streamed table whose delimiter row has not arrived yet is lexed by marked as a paragraph and keeps rendering as today; it becomes a grid on the delta that completes the delimiter row.\n\n`packages/nax/src/tui/chat/markdown.ts` `_markdownDeps`. Target: `{ highlight: highlightToHtml, renderTable }`, with `renderTable` imported from `./markdown-table`.\n\n`packages/nax/src/tui/chat/markdown.ts` `blockLines`. Target: `case \"table\"` builds a `TableModel` from the `Tokens.Table` (each header and row cell as `inlineSpans(cell.tokens, baseStyle(context))`, `align` copied) and returns `_markdownDeps.renderTable(model, { width: context.width, glyphs: context.theme.glyphs.table, rule: context.theme.glyphs.rule })`. The module header comment and the `default` branch comment stop listing tables among the source-text fallbacks.\n\n`packages/nax/src/tui/chat/layout.ts` `replyLines`: calls `renderMarkdown(entry.text, { width: context.width - GUTTER_WIDTH, theme, minWidth: MIN_REPLY_WIDTH, cutCode: true })` and wraps any returned line still wider than the column in `prefixedLine`. Its behaviour is unchanged; a table line now never exceeds the width, so nothing reaches that wrap. Its doc comments (the module header and `replyLines`) and the `wrapSpans` doc comment in `wrap.ts` stop naming \"a table's source text\" as a wide line (US-004).\n\nTest modifications: `packages/nax/test/unit/tui/chat/markdown.test.ts` — the test \"keeps a table as its source text\" asserts that `| a | b |\\n| - | - |\\n| 1 | 2 |` renders as its three source lines; a table now renders as a box grid, so that test is replaced by one asserting the grid lines `┌───┬───┐`, `│ a │ b │`, `├───┼───┤`, `│ 1 │ 2 │`, `└───┴───┘`. The raw HTML fallback test beside it stays unchanged. The spy test restores `_markdownDeps.renderTable` in an `afterEach` covering it (extend the existing hook that restores `_markdownDeps.highlight` in the fenced-code describe, or give the new describe its own), so the spy cannot leak into later tests.\n\n`packages/nax/test/unit/tui/chat/layout.test.ts` — the test \"wraps a table's source line instead of clipping it\" asserts that the squashed layout of a 4-column header-only table equals its source text with whitespace removed; the table is now drawn by the renderer (stacked at this width), so the test instead asserts every line is at most `NARROW_WIDTH` columns and that the lines in order hold the header words `alpha`, `bravo`, `charlie`, `delta` and no `|` character.\n\n**Scope** — In: `markdown.ts` dispatch/seam and comments; comment-only changes in `layout.ts` and `wrap.ts`; replace the obsolete table expectations and add styled-cell, sanitization, nested-block, streaming, ASCII and real `layoutTranscript` assertions in the existing markdown/layout tests. The renderer completed by US-003 is an input to this story. Out: renderer sizing/drawing changes (US-001–US-003), theme changes (US-001), layout runtime changes, nonreply markdown expansion, new dependencies and chat-barrel exports. Multi-line cell content from an inline `<br>` tag; it keeps rendering as the tag's text, as other raw HTML does. Tables in thinking blocks, user messages, tool results or listings; only replies go through `renderMarkdown`. Changing the fence glyphs (`codeTop`, `codeSide`, `codeBottom`) or sharing them with the table glyph set. Exporting `markdown-table.ts` from the `src/tui/chat/index.ts` barrel; it has no consumer outside `src/tui/chat/`. `markdown-table.ts` importing `markdown.ts`; cells arrive as styled spans so the dependency runs one way only. Raw HTML fallback behavior stays unchanged.\n\n**Interface** — Preserve the completed renderer signature and model:\n```ts\nexport type TableAlign = \"left\" | \"center\" | \"right\" | null;\n\nexport interface TableModel {\n  readonly header: readonly (readonly Span[])[];\n  readonly rows: readonly (readonly (readonly Span[])[])[];\n  readonly align: readonly TableAlign[];\n}\n\n/** The grid when the columns fit, otherwise the stacked layout. */\nexport function renderTable(model: TableModel, options: RenderTableOptions): StyledLine[];\n```\nThe seam target is:\n```ts\nexport const _markdownDeps = {\n  highlight: highlightToHtml,\n  renderTable,\n};\n```\nUse marked 18.1.0 `Tokens.Table`: `{ type: \"table\"; raw: string; align: Array<\"center\" | \"left\" | \"right\" | null>; header: TableCell[]; rows: TableCell[][] }`, `Tokens.TableCell`: `{ text: string; tokens: Token[]; header: boolean; align: ... }`. `renderMarkdown`'s existing public options and signature remain unchanged.",
+      "acceptanceCriteria": [
+        "[unit] With _markdownDeps.renderTable replaced by a spy returning [[{ text: 'T' }]], renderMarkdown('| a | b |\\n| :- | -: |\\n| 1 | 2 |', { width: 40, theme }) returns the single line 'T'.",
+        "[unit] When renderMarkdown('| a | b |\\n| :- | -: |\\n| 1 | 2 |', { width: 40, theme }) runs with _markdownDeps.renderTable stubbed to return [[{ text: 'T' }]], the spy is called exactly once.",
+        "[unit] When renderMarkdown('| a | b |\\n| :- | -: |\\n| 1 | 2 |', { width: 40, theme }) runs with _markdownDeps.renderTable stubbed, the spy receives a model whose header plain texts are ['a', 'b'], row plain texts [['1', '2']], and align ['left', 'right'].",
+        "[unit] When renderMarkdown('| a | b |\\n| :- | -: |\\n| 1 | 2 |', { width: 40, theme }) runs with _markdownDeps.renderTable stubbed, the spy receives options { width: 40, glyphs: theme.glyphs.table, rule: theme.glyphs.rule }.",
+        "[unit] renderMarkdown('| a | b |\\n| - | - |\\n| 1 | 2 |', { width: 40, theme }) with the real renderer returns plain texts ['┌───┬───┐', '│ a │ b │', '├───┼───┤', '│ 1 │ 2 │', '└───┴───┘'].",
+        "[unit] renderMarkdown of a table whose body cell is '**x**' returns a bold span 'x'.",
+        "[unit] renderMarkdown of a table whose body cell is '`y`' returns a span 'y' with color 'accent'.",
+        "[unit] renderMarkdown of a table whose body cell is 'a\\u001b[31mb' returns the cell text 'ab'.",
+        "[unit] renderMarkdown of a table whose body cell is 'a\\u001b[31mb' returns no ESC byte in any span.",
+        "[unit] renderMarkdown('para\\n\\n| a | b |\\n| - | - |\\n| 1 | 2 |', { width: 40, theme }) returns 'para', one empty line, then the five grid lines.",
+        "[unit] renderMarkdown('- item\\n\\n  | a | b |\\n  | - | - |\\n  | 1 | 2 |', { width: 40, theme }) returns '- item' followed directly by the five grid lines, each behind two spaces of hanging indent ('  ┌───┬───┐' first).",
+        "[unit] renderMarkdown('> | a | b |\\n> | - | - |\\n> | 1 | 2 |', { width: 40, theme }) returns five lines each starting with the muted quote glyph and a space.",
+        "[unit] In renderMarkdown('> | a | b |\\n> | - | - |\\n> | 1 | 2 |', { width: 40, theme }) output, the spans holding 'a', 'b', '1' and '2' are italic.",
+        "[unit] renderMarkdown with the ASCII theme (NAX_ASCII: '1') draws '| a | b |\\n| - | - |\\n| 1 | 2 |' as plain texts ['+---+---+', '| a | b |', '+---+---+', '| 1 | 2 |', '+---+---+'].",
+        "[unit] renderMarkdown('| a | b |', { width: 40, theme }), a header row whose delimiter row has not arrived, returns the paragraph text '| a | b |' (a regression pin: it holds today and must keep holding).",
+        "[integration] layoutTranscript of a reply whose text is '| a | b |\\n| - | - |\\n| 1 | 2 |' at width 40 draws the bullet glyph and a space before '┌───┬───┐' on the first line and two spaces before each following grid line.",
+        "[integration] layoutTranscript of a reply holding the table with header 'alpha', 'bravo', 'charlie', 'delta' and one row ['one two', 'three four', 'five six', 'seven eight'] at width 20 draws no line wider than 20 columns.",
+        "[integration] layoutTranscript of a reply holding the table with header 'alpha', 'bravo', 'charlie', 'delta' and one row ['one two', 'three four', 'five six', 'seven eight'] at width 20 draws no '│' glyph (the table stacks at the 18-column reply width).",
+        "[integration] layoutTranscript of a reply holding the table with header 'alpha', 'bravo', 'charlie', 'delta' and one row ['one two', 'three four', 'five six', 'seven eight'] at width 20 keeps every header and cell word in the output.",
+        "[integration] layoutTranscript of a reply containing '| alpha | bravo | charlie | delta |\\n| --- | --- | --- | --- |' at NARROW_WIDTH=20 returns only lines at most NARROW_WIDTH terminal columns wide.",
+        "[integration] layoutTranscript of a reply containing '| alpha | bravo | charlie | delta |\\n| --- | --- | --- | --- |' at NARROW_WIDTH=20 returns header words 'alpha', 'bravo', 'charlie', 'delta' in that order.",
+        "[integration] layoutTranscript of a reply containing '| alpha | bravo | charlie | delta |\\n| --- | --- | --- | --- |' at NARROW_WIDTH=20 returns no '|' character.",
+        "[unit] renderMarkdown of a table cell carrying 'a\\u001b[?1049lb' renders the cell text 'ab' with no terminal escape sequence, preserving sanitization before the cell becomes span text."
+      ],
+      "tags": [
+        "feature",
+        "tui",
+        "markdown",
+        "integration"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Uses an existing token dispatcher and injected seam with a completed pure renderer, plus comment-only layout/wrap edits and focused regressions; no new cross-package abstraction or authentication, access-control, credential, or session logic.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/markdown.ts",
+        "packages/nax/src/tui/chat/markdown-table.ts",
+        "packages/nax/test/unit/tui/chat/markdown.test.ts",
+        "packages/nax/src/tui/chat/layout.ts",
+        "packages/nax/test/unit/tui/chat/layout.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When renderMarkdown receives a table nested in a narrow list item, every returned line including its hanging indent fits the requested width.",
+        "When renderMarkdown receives a table nested in a narrow blockquote, every returned line including its quote prefix fits the requested width.",
+        "When a reply initially containing '| a | b |' receives the delta '\n| - | - |', layoutTranscript replaces the paragraph presentation with a header-only grid."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/tui/chat/markdown.test.ts",
+          "reason": "the test \"keeps a table as its source text\" asserts that `| a | b |\\n| - | - |\\n| 1 | 2 |` renders as its three source lines; a table now renders as a box grid, so that test is replaced by one asserting the grid lines `┌───┬───┐`, `│ a │ b │`, `├───┼───┤`, `│ 1 │ 2 │`, `└───┴───┘`. The raw HTML fallback test beside it stays unchanged. The spy test restores `_markdownDeps.renderTable` in an `afterEach` covering it (extend the existing hook that restores `_markdownDeps.highlight` in the fenced-code describe, or give the new describe its own), so the spy cannot leak into later tests."
+        },
+        {
+          "path": "packages/nax/test/unit/tui/chat/layout.test.ts",
+          "reason": "the test \"wraps a table's source line instead of clipping it\" asserts that the squashed layout of a 4-column header-only table equals its source text with whitespace removed; the table is now drawn by the renderer (stacked at this width), so the test instead asserts every line is at most `NARROW_WIDTH` columns and that the lines in order hold the header words `alpha`, `bravo`, `charlie`, `delta` and no `|` character."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3a75d56efc64774cabe66b16bb2cc67eaf39cb35"
+    }
+  ],
+  "analysis": "This is an enhancement to the existing @nathapp/nax Bun/TypeScript React/Ink chat renderer, not a greenfield project. Codebase-memory MCP tools are not exposed in this session, so structural discovery used the available direct file reads and text searches instead. No code or tests were executed while drafting this PRD. The supplied baseline commit is a locator only; implementation must read the current files before editing.\n\nGoal and completion: render marked table tokens in assistant replies as a full muted box grid with bold headers, preserved inline styles, markdown alignment, deterministic widest-first shrinking and wrapped cells; switch to stacked Header: value blocks only when column floors cannot fit. Every table line must fit its own block's content budget, not the outer terminal width. Binding implementation sequence is exactly US-001 -> US-002 -> US-003 -> US-004, all scoped to packages/nax. No dependency, release, configuration, persisted transcript, or public barrel migration is required.\n\nExisting architecture and data flow: packages/nax/src/tui/chat/markdown.ts:26 imports marked; packages/nax/package.json:95 pins marked 18.1.0. renderMarkdown at markdown.ts:273 resolves the caller's width, lexes the document, catches lexer failures into sanitized source lines, and inserts one blank line between nonempty top-level blocks. blockLines at markdown.ts:243 dispatches supported block tokens; tables currently reach the sourceLines fallback at markdown.ts:263. _markdownDeps at markdown.ts:67 currently contains only highlight. inlineSpans at markdown.ts:154 recursively styles cell-compatible inline tokens; inlineToken at markdown.ts:124 applies bold/emphasis/accent and sanitized text via singleLine at markdown.ts:92. baseStyle at markdown.ts:114 carries italic from quotes. The new table dispatch must use inlineSpans(cell.tokens, baseStyle(context)) for both header and body cells, copy align, and call the actual injected _markdownDeps.renderTable seam, not a direct renderer call that bypasses the spy. The marked Table token normalization (short rows padded, extra cells discarded) is supplied by the spec; the pure renderer must still normalize directly supplied ragged TableModel rows by header count.\n\nWidth ownership: itemBlockLines at markdown.ts:171 subtracts the bounded list prefix from the context width before rendering a child, and blockquoteLines at markdown.ts:206 subtracts the quote prefix and sets italic:true. Neither mechanism should change. ruleLine at markdown.ts:217 and codeBlockLines at markdown.ts:230 show the existing muted frame and mergeSpans/styled patterns to mirror. layout.ts:138 replyLines calls renderMarkdown with width=context.width-GUTTER_WIDTH, minWidth=MIN_REPLY_WIDTH and cutCode:true, then prefixes the bullet on the first line and the blank gutter thereafter. The fallback prefixedLine at packages/nax/src/tui/chat/layout-lines.ts:206 wraps an over-wide result. Tables must fit before that fallback is reached; do not modify layout runtime behavior or remove wrapping for raw HTML/other fallbacks. At terminal width 20 the reply budget is 18, and a four-column table with the specified long headers must stack. At width 17 four natural one-column cells fit a grid; at width 16 they must stack. These boundary cases establish that renderTable really uses columnWidths. Update only stale table-source references in the markdown.ts header/default comments, layout.ts header/replyLines comments, and wrap.ts wrapSpans comment.\n\nTheme impact: packages/nax/src/tui/chat/theme.ts:33 defines ChatGlyphs, theme.ts:143 and theme.ts:161 define its Unicode and ASCII objects, theme.ts:236 chooses by NAX_ASCII/locale, and theme.ts:247 resolves the full theme. Add an exported TableGlyphs interface and a readonly table member to both complete glyph objects without changing existing fence glyphs or color/locale resolution. Theme consumers include ChatApp.tsx:57, styled-line.tsx:14, layout.ts:63, layout-status.ts:18, chat-status.ts:17, and the public index.ts:10. layout-status.ts:32 uses a literal status map constrained with keyof ChatGlyphs; its actual keys remain notice/warning/error and require no behavioral change. Text search found no handwritten ChatGlyphs or glyphs-object literals in packages/nax/test; existing tests obtain themes through resolveChatTheme. The new nested glyph object is additive, but watch any exact whole-theme snapshots or custom structural fixtures encountered during implementation. Do not export markdown-table.ts from index.ts.\n\nNew pure leaf module: create only packages/nax/src/tui/chat/markdown-table.ts and packages/nax/test/unit/tui/chat/markdown-table.test.ts in US-001. The renderer takes immutable, already-styled spans and TableGlyphs, never imports markdown.ts, and has no I/O or new dependency. Use relative sibling imports and keep the supplied names and signatures unchanged. US-001 establishes theme, types, MIN_CELL_WIDTH=3 and columnWidths; US-002 adds grid renderTable and computes natural widths from the header and header-count body cells; US-003 completes its stacked fallback and width floor; US-004 wires it into markdown replies. Types created by US-001 can be context for all later stories, but only US-001 lists those files as expectedFiles.\n\nSpan/width primitives: packages/nax/src/tui/chat/styled-line.tsx:17 defines Span, :26 defines readonly StyledLine, :29 fixes MIN_LAYOUT_WIDTH=10, :41 exposes plainText, :46 measures with Bun.stringWidth, and :71 sanitizes with Bun.stripANSI plus control stripping. packages/nax/src/tui/chat/wrap.ts:53 provides resolveWidth; :59 styled; :74 mergeSpans; :88 spansWidth; :126 segments combined text across style boundaries; :160 groups words and drops trailing separators; :196 implements oversized-cluster fallback; :307 wraps directly to the requested content width; :340 wrapSpans applies the outer layout floor. Use wrap, not wrapSpans, for narrow cells and stacked content. wrap([]) returns no lines, so grid empty cells need an explicit blank line and shorter cells need bottom fill. Preserve all input styles when adding header bold; leave synthetic padding and colon/separator text unstyled. mergeSpans can merge adjacent plain runs, so assertions should inspect styled text runs without depending on every unstyled padding fragment retaining its own span identity. Natural widths are terminal columns with minimum 1, not JavaScript string length.\n\nRisks and edge cases: shrinking must select the currently widest column above its individual min(natural,3) floor and prefer the leftmost tie, with frame overhead 3n+1. Ignore extra row cells even when measuring natural widths; otherwise hidden data could shrink or stack a visible table. Header-only grids omit the middle rule, empty headers return [], centered odd padding places the extra space on the right, and wrapped header lines remain aligned and bold. Stacked empty labels omit the colon, empty values retain a bare colon after a nonempty label, and entirely empty rows must not introduce empty blocks or adjacent rules. Header-only stacked tables render bold headers without labels/colons. Width below 1 must behave like 1, not the general layout minimum of 10. Existing wrap's splitGlyph fallback cannot make a single double-column code point fit a one-column budget; normal reply content budgets and grid floors avoid that case, but direct renderTable widths near 1 merit careful review rather than assuming the helper proves every possible width invariant. This PRD does not authorize a broad rewrite of shared wrapping. One-step widest-first shrinking is deterministic but can do many iterations for extremely long cells; preserve the specified algorithm/leftmost tie semantics. Streaming input must remain a paragraph until marked emits a table token. Cell sanitization must remain upstream through inlineSpans, including screen-control escapes; this is preservation of an existing text-rendering boundary, not an authentication/session/permission change.\n\nTests and migration: packages/nax/test/unit/tui/chat/theme.test.ts:175 exercises glyph resolution and :246 pins glyph/color independence; extend it with the exact nested table sets. markdown.test.ts:301 currently expects source-table lines and must be replaced with the exact five-line grid expectation; the neighboring raw HTML fallback at :305 stays unchanged. Its highlighter seam cleanup at :464 is scoped to the highlighting fallback describe; table spies need their own covering afterEach or an appropriately broadened cleanup, always restoring the original function even after a failing test. layout.test.ts:298 covers replies and :354 currently checks squashed table source; replace that assertion with bounded stacked header output, keeping the unrelated HTML and fence behavior unchanged. Add the two layoutTranscript integration assertions there; they exercise the real markdown renderer rather than a layout stub. Existing wrap.test.ts:28 and :40 pin style-preserving wrapping, and markdown.test.ts:237 onward covers graphemes/prefix budgets. Table-specific unit tests should assert exact plain texts, span styles, and spansWidth for double-width text and wrapping, using the real theme and shared primitives. Use bun:test and the _deps seam instead of global module mocking. Targeted commands, if needed outside automatic execution, are run from packages/nax, e.g. bun test test/unit/tui/chat/markdown-table.test.ts --timeout=30000 and the affected theme/markdown/layout test paths. Never run bare bun test or bun run nax; the pipeline supplies lint/typecheck/tests, and coverage must not be run inside NAX_SANDBOXED=1.\n\nConventions: docs/architecture/ARCHITECTURE.md:13 links conventions and :24 links function/testing standards; its quick reference sets a 600-line source hard limit and 800-line test hard limit. Existing markdown.test.ts has 521 lines and layout.test.ts 686, so keep new cases concise and within the test file limit. No generated AGENTS.md/CLAUDE rules should be edited. Final migration is solely the intentional reply presentation change: copied terminal text becomes box glyphs rather than markdown source; nonreply entries, raw HTML fallbacks, fences, theme colors, layout cache behavior, and package dependencies remain unchanged.\n\nRefine-pass self-audit: re-read the spec, current theme/markdown dispatch, wrap API and reply gutter call site. All 47 numbered spec ACs are retained in their binding stories. Exhaustive spec-ordinal -> PRD acceptanceCriteria-ordinal mapping (1-based): US-001 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8-9, 9->10, 10->11; US-002 1->1, 2->2, 3->3-4, 4->5, 5->6, 6->7, 7->8, 8->9, 9->10, 10->11, 11->12, 12->13, 13->14, 14->15, 15->16, 16->17; US-003 1->1, 2->2-3, 3->4, 4->5-6, 5->7, 6->8, 7->9, 8->10-11, 9->12-13; US-004 1->1-4, 2->5, 3->6, 4->7, 5->8-9, 6->10, 7->11, 8->12-13, 9->14, 10->15, 11->16, 12->17-19. Splits only separate assertions; qualifying clauses remain attached, including leftmost tie-breaking, individual natural-width floors, asymmetric center padding, header alignment, the double-width natural-width example, omitted header-only separator, the paragraph streaming regression pin and the 18-column reply budget. No deprecated file-check tags were present.\n\nEach story already has a directly observable negative path: US-001 insufficient budget returns undefined (AC7/9); US-002 missing/extra cells and empty header (AC12/13/15); US-003 empty/missing values and width zero (AC7-9/12-13); US-004 terminal escape stripping and delimiter-not-yet-arrived paragraph fallback (AC8-9/15/23). The seven Failure Handling rows map respectively to US-002 AC10, US-003 AC1/6, US-002 AC14 plus US-003 AC10-11, US-002 AC12-13, US-002 AC15, US-004 AC8-9/23, and US-004 AC15. The header-only layout replacement requirements are US-004 AC20-22.\n\nAudit corrections: added explicit existing Unicode/ASCII bullet-selection regression pins to US-001 (AC12-13) and repeated the US-002 width-17 fitting-grid assertion in US-003 (AC14) to protect the branch while completing its former placeholder fallback. These are regression guards requested by the refine pass, not new product behavior. US-002 already protects inherited header color in AC5; US-004 pins replacement of source-table output and preserves the existing incomplete-table behavior. All assertions observe returned lines, span properties, exported values, exceptions or spy call state; no quality-gate ACs were introduced. String-valued header/row examples are fixture shorthand: the real TableModel always carries readonly Span[] per cell, header is an array of cells and rows is an array of rows. No alternate string-input overload is proposed.\n\nContext audit: US-001/002/003 include all their spec-recommended context files, and only US-001 creates the two expectedFiles. US-004 has six spec-recommended files but a five-file cap: prioritize markdown.ts, markdown.test.ts, layout.ts, wrap.ts and layout.test.ts because these are the actual edit sites and regression replacements; the completed upstream markdown-table.ts remains available for reference and its contract is embedded in the description. No same-story output appears as context. The binding story IDs, workdirs and dependency arrays remain unchanged and all referenced IDs exist. Medium/tdd-simple remains the lightest realistic choice for each localized, deterministic change; preserving terminal text sanitization does not introduce security-critical authentication, permission or session logic.\n\nOut-of-scope audit: all ten feature exclusions remain verbatim in the top-level array: terminal copying as glyphs, no scroll/source toggle, no inter-body-row grid rules, no HTML br multiline support, no nonreply tables, no fence-glyph changes/sharing, no configurable widths/styles, no new dependency, no chat-barrel export, and no reverse markdown.ts import. Relevant exclusions are echoed verbatim into the corresponding Scope Out clauses. There are no story-local Out of Scope blocks to hoist. Descriptions retain the spec algorithms and signatures, and no description/AC contradiction, invented dependency or layout-runtime change was found.",
+  "outOfScope": [
+    "Copying a rendered table back out as markdown source: the transcript holds the drawn grid, and a terminal selection copies the box glyphs.",
+    "Horizontal scrolling or a \"show source\" toggle for wide tables; the wrap-then-stack rule is the only answer to width.",
+    "Separator lines between body rows of the grid.",
+    "Multi-line cell content from an inline `<br>` tag; it keeps rendering as the tag's text, as other raw HTML does.",
+    "Tables in thinking blocks, user messages, tool results or listings; only replies go through `renderMarkdown`.",
+    "Changing the fence glyphs (`codeTop`, `codeSide`, `codeBottom`) or sharing them with the table glyph set.",
+    "A configurable `MIN_CELL_WIDTH`, column-width hints, or a per-table style choice.",
+    "Adding any package dependency for table rendering; the renderer is built on `marked`'s existing table token and `wrap.ts`.",
+    "Exporting `markdown-table.ts` from the `src/tui/chat/index.ts` barrel; it has no consumer outside `src/tui/chat/`.",
+    "`markdown-table.ts` importing `markdown.ts`; cells arrive as styled spans so the dependency runs one way only."
+  ],
+  "routingProfile": "native-codex-ds"
+}
