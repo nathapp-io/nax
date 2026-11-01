@@ -3,7 +3,7 @@ import { attachmentExpandable } from "./layout-attachment";
 import type { TranscriptEntry } from "./transcript-model";
 
 /** The entries whose detail a header row can open: everything with an `open` flag. */
-type CollapsibleEntry = Extract<TranscriptEntry, { kind: "thinking" | "tool" | "skill" | "attachment" }>;
+type CollapsibleEntry = Extract<TranscriptEntry, { kind: "thinking" | "tool" | "skill" | "attachment" | "background" }>;
 
 /** The entry with its expansion flipped, sharing every other entry with the input array. */
 function withToggled(
@@ -34,6 +34,11 @@ export function toggleTranscriptLine(
   const first = owners.indexOf(index);
   if (entry.kind === "attachment") {
     if (!attachmentExpandable(entry.status) || line !== first) return entries;
+    return withToggled(entries, index, entry, options);
+  }
+  // A notice's summary is its first row; the notice lines it reveals never toggle it back.
+  if (entry.kind === "background") {
+    if (line !== first) return entries;
     return withToggled(entries, index, entry, options);
   }
   if (entry.kind !== "thinking" && entry.kind !== "tool" && entry.kind !== "skill") return entries;

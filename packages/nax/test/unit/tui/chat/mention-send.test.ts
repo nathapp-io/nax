@@ -12,6 +12,8 @@ import {
   type MentionWhere,
   parseMentionMessage,
 } from "@/chat";
+import type { BackgroundTask } from "@/chat/background";
+import { buildBackgroundTaskNotice } from "@/prompts";
 import { buildSkillInvocationMessage } from "@/prompts/builders/skills-builder";
 import { mentionTranscriptEntries } from "@/tui/chat/mention-entries";
 import { mentionPrepare, needsMentionExpansion, sentEntries } from "@/tui/chat/mention-send";
@@ -38,6 +40,15 @@ const SKILL_CONTENT = buildSkillInvocationMessage({
 });
 /** A pasted 2×3 PNG, as the transcript labels it. */
 const IMAGE: ImageAttachment = { mimeType: "image/png", data: "AAAA", width: 2, height: 3, source: "clipboard" };
+/** A background command as the registry records it; a case overrides the id and the state. */
+const TASK: BackgroundTask = {
+  id: "bash-00000000",
+  command: "bun test",
+  origin: "agent",
+  startedAt: "2026-01-01T00:00:00.000Z",
+  state: "running",
+  logPath: "/o/chat-tasks/bash-00000000.log",
+};
 
 describe("needsMentionExpansion", () => {
   test.each([
@@ -101,5 +112,24 @@ describe("sentEntries", () => {
 
   test("keeps a message nax did not expand as one user entry", () => {
     expect(sentEntries("see @a.ts")).toEqual([{ kind: "user", text: "see @a.ts" }]);
+  });
+
+  test("AC-1 a background task notice becomes one collapsed background entry", () => {
+    const text = buildBackgroundTaskNotice([
+      { ...TASK, id: "bash-11111111", state: "succeeded", exitCode: 0 },
+      { ...TASK, id: "bash-22222222", state: "succeeded", exitCode: 0 },
+      { ...TASK, id: "bash-33333333", state: "succeeded", exitCode: 0 },
+    ]);
+    expect(sentEntries(text)).toEqual([
+      { kind: "background", summary: "3 background commands ended · 3 succeeded", text },
+    ]);
+  });
+
+  test("AC-2 ordinary text is still one user entry", () => {
+    expect(sentEntries("hello")).toEqual([{ kind: "user", text: "hello" }]);
+  });
+
+  test("AC-10 notice-looking text with no known notice line stays a user entry", () => {
+    expect(sentEntries("[nax-tasks] something else")).toEqual([{ kind: "user", text: "[nax-tasks] something else" }]);
   });
 });

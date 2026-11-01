@@ -28,6 +28,11 @@ export type TranscriptEntry =
    */
   | { kind: "image"; label: string }
   | { kind: "skill"; name: string; args: string; body: string; open?: boolean }
+  /**
+   * A background notice — a task's, a job's, a run ask's — as one collapsed row: `summary`
+   * is what the row says, `text` the whole notice the model received.
+   */
+  | { kind: "background"; summary: string; text: string; open?: boolean }
   | { kind: "reply"; turnId: string; text: string }
   | { kind: "thinking"; turnId: string; text: string; startedAt: string; endedAt?: string; open?: boolean }
   | {

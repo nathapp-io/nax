@@ -199,3 +199,31 @@ describe("background task notices", () => {
     expect(ui.ui.lastFrame()).toContain("jobs are not available in this session");
   });
 });
+
+describe("background notices in the transcript", () => {
+  const COLLAPSED_ROW = "1 background command ended · 1 succeeded (ctrl+o to show)";
+
+  test("AC-8 an idle task's notice is delivered whole and drawn as one collapsed row", async () => {
+    const ui = mount();
+    await ui.endTask();
+    const sent = ui.send.mock.calls[0]?.[0];
+    assertDefined(sent, "delivered notice");
+    // The model still receives every line of the notice; only the transcript row differs.
+    expect(ui.tasks.peekNotice() ?? "").toBe(sent);
+    expect(sent).toContain("[nax-tasks] background command");
+    const frame = ui.ui.lastFrame() ?? "";
+    expect(frame).toContain(COLLAPSED_ROW);
+    expect(frame).not.toContain("[nax-tasks]");
+    await ui.finishTurn(0);
+  });
+
+  test("AC-9 ctrl+o reveals the notice's own line", async () => {
+    const ui = mount();
+    await ui.endTask();
+    await ui.finishTurn(0);
+    expect(ui.ui.lastFrame()).not.toContain("[nax-tasks] background command");
+    ui.press("\x0f");
+    await ui.settle();
+    expect(ui.ui.lastFrame()).toContain("[nax-tasks] background command");
+  });
+});

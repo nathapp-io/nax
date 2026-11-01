@@ -22,6 +22,7 @@ import {
   parseMentionMessage,
   parseSkillInvocation,
 } from "@/chat";
+import { summarizeBackgroundNotice } from "@/prompts";
 import { mentionTranscriptEntries } from "./mention-entries";
 import type { TranscriptEntry } from "./transcript-model";
 
@@ -123,10 +124,14 @@ function imageRows(
 }
 
 /**
- * What one sent message becomes in the transcript: a skill's invocation, the mention rows of
- * the envelope nax expanded it into, or the message as it stands, followed by one note row
- * per image that travelled with it. `replayUser` reads a stored message the same way, so a
- * live turn and a resumed one draw alike.
+ * What one sent message becomes in the transcript: a background notice as one collapsed row,
+ * a skill's invocation, the mention rows of the envelope nax expanded it into, or the message
+ * as it stands, followed by one note row per image that travelled with it. `replayUser` reads
+ * a stored message the same way, so a live turn and a resumed one draw alike.
+ *
+ * The notice row changes only the transcript: `text` is the whole notice, so the model still
+ * receives every line of it. `summarizeBackgroundNotice` decides what is a notice, so text
+ * that merely looks like one — `[nax-tasks] something else` — keeps today's user row.
  *
  * Each mentioned image already has its own attachment row (it is one record of the
  * envelope), and a send appends the mentions' images after the pasted ones, so only the
@@ -139,6 +144,8 @@ export function sentEntries(
   images?: readonly ImageAttachment[],
   missing: readonly number[] = [],
 ): readonly TranscriptEntry[] {
+  const summary = summarizeBackgroundNotice(message);
+  if (summary !== undefined) return [{ kind: "background", summary, text: message }];
   const skill = parseSkillInvocation(message);
   if (skill) return [{ kind: "skill", ...skill }, ...imageRows(images, 0, missing)];
   const parsed = parseMentionMessage(message);
