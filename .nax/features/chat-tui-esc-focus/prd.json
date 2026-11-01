@@ -3,7 +3,7 @@
   "feature": "chat-tui-esc-focus",
   "branchName": "feat/chat-tui-esc-focus",
   "createdAt": "2026-11-01T00:00:00.000Z",
-  "updatedAt": "2026-11-01T03:40:34.157Z",
+  "updatedAt": "2026-11-01T04:18:44.654Z",
   "userStories": [
     {
       "id": "US-001",
@@ -23,14 +23,17 @@
         "persistence"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Small indexed-marker change with existing fixtures; strict isolation applies to the session persistence path and its filesystem safety regression anchors."
+        "reasoning": "Small indexed-marker change with existing fixtures; strict isolation applies to the session persistence path and its filesystem safety regression anchors.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax-agent/src/native/session/transcript-images.ts",
@@ -47,7 +50,11 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0e05493c58547c967f86fc55489ad59d6dca6b23"
     },
     {
       "id": "US-002",
@@ -96,7 +103,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -168,7 +178,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -222,7 +235,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -276,7 +292,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -342,7 +361,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -408,7 +430,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -455,7 +480,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-009",
@@ -521,7 +549,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-010",
@@ -571,7 +602,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-011",
@@ -638,7 +672,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-012",
@@ -711,7 +748,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "This is a bounded enhancement of the existing React/Ink chat TUI, not a new screen or transport. Navigation used direct Read/Grep/Glob because no codebase-memory MCP tools are exposed in this host; no shell, test runner, or clock capability is exposed, and no validation commands were run while drafting. The binding input spec is also present at .nax/features/chat-tui-esc-focus/spec.md:1; its acceptance criteria are at :343-495. The older design at docs/superpowers/specs/2026-11-01-nax-chat-tui-esc-focus-design.md:27-120 is historical context, not authority over the supplied refinements: do not copy its menu-first esc order, new picker titles, extra answer-label row, display option on ComposedSend, different job summary, or multi-path /image syntax. Exactly US-001 through US-012, their workdirs and listed dependencies are retained. This is one feature/PR. All code changes belong in packages/nax except the numbered missing marker in packages/nax-agent. No changes to nax-ai, ACP transport, package versions, permission resolution, or disk schema version are required. Read docs/architecture/ARCHITECTURE.md:174-196 and the package rules before implementation; use pure helpers and existing _deps seams rather than global patches. Existing large screen files receive wiring only; chat-status.ts is currently 574 lines and must stay under 600 without baseline growth.\n\nUS-001: packages/nax-agent/src/native/session/transcript-images.ts:174-204 rehydrates only schemaVersion 2, reads stored images in sequence, appends bare missing markers at :198, omits images when none survive, and otherwise preserves metadata and readable image order. Enumerate stored positions before filtering; the index is per message, not per surviving image. Keep empty-content concatenation free of a leading newline. The same module contains security-sensitive path validation, canonicalization, O_NOFOLLOW, identity checks and error handling at :130-172; do not alter those while changing the marker. Its public consumer is the file transcript store. packages/nax-agent/test/unit/native/session/transcript-images-read.test.ts:32-109 already tests round trips, legacy versions, deleted files and unsafe metadata; revise every expected load marker, including security-path fixtures, without weakening those assertions. Use the Node-compatible APIs already present, #src/ imports and explicit .ts relative source imports. A regression must fail against old code. The read-format change is backward-compatible for storage: writers continue using schemaVersion 2, new loads annotate loss with positions, and US-004 continues accepting old bare load notes. Strict three-session TDD is selected because this is a session persistence path adjacent to filesystem access controls.\n\nUS-002: packages/nax/src/tui/chat/line-editor.ts:87-99 normalizes CRLF and CR in insert and deletes one code point in deleteBefore; editLine at :173-188 inserts any nonempty unclaimed string. Add the DEL/BS-only chunk rule without disturbing modifier/key precedence, return behavior or code-point cursor semantics established at :4-16. Sanitization occurs after newline normalization, keeps tab and LF, and removes all other C0 and DEL. Mixed printable/control chunks are insertions with controls stripped, never deletion commands. packages/nax/src/tui/chat/ChatInput.tsx:633-650 routes stdin through editLine after optional paste interception, so a mounted one-write test is necessary in addition to pure reducer tests in test/unit/tui/chat/line-editor.test.ts. Preserve edits at cursor zero and clamp long deletion runs.\n\nUS-003: packages/nax/src/chat/images/image-file.ts:55-75 owns imageSizeLabel, imageDescription and imageNoteLabel. imageRawBytes at :50-51 decodes AAAA to 3 bytes; add only the under-1024 branch and preserve floored KB/one-decimal MB. Mention expansion consumes imageDescription at packages/nax/src/chat/mentions/mention-expand.ts:220, so real PNG/JPEG fixture labels change too. packages/nax/src/tui/chat/image-draft.ts:45-49 already has the placeholder grammar and :105-127 preserves draft numbering while selecting images for send. Add titleWithoutPlaceholders there, returning the original string byte-for-byte when no placeholder occurs. packages/nax/src/tui/chat/ChatApp.tsx:529-539 is the host.send boundary: sanitize the title only in the images-present branch; preserve the exact two-argument plain send and existing mention expansion/draft reset. Update existing assertions in test/unit/chat/images/image-file.test.ts, test/unit/chat/mentions/mention-expand-images.test.ts, test/unit/tui/chat/image-entries.test.ts and test/ui/chat/chat-app-image-after-send.test.tsx; the hand-written mention note in image-entries may remain 1 KB because it is stored input. Mounted tests in test/ui/chat/chat-app-image-send.test.tsx use _imageAttachDeps and a host seam. Although this is display-only, session-title behavior receives strict three-session TDD under the requested sessions override.\n\nUS-004: packages/nax/src/tui/chat/history-replay.ts:25-55 strips only a trailing run of bare notes and currently returns early for empty text, dropping surviving image rows. Change that parser to retain numbered positions separately from legacy bare notes, call the extended sentEntries and preserve compaction handling at :52-54. packages/nax/src/tui/chat/mention-send.ts:66-98 counts mention-image records and currently numbers only survivors; replace imageRows with reconstruction of loaded-plus-missing slots, then emit only the leading slots not represented by mention records. Never renumber survivors past missing slots; invalid high markers become legacy-style rows after all numbered rows; missing mention slots add no duplicate attachment row. The skill fast path at :95 must use the same reconstruction. Preserve sentEntries calls with no third parameter. test/unit/tui/chat/image-entries.test.ts:61-99 already pins row ordering, absent images and mention suppression; extend it and the replay tests. The integration proof uses createFileTranscriptStore from the PUBLIC @nathapp/nax-agent entry, saves two genuinely different PNG payloads (2x3 and 4x5), deletes exactly the second ref sidecar and replays the reloaded messages, thereby testing the US-001 format seam rather than mocking it. No schema upgrade or rewriting old transcripts. Both US-003 and this story touch image-entries and mention-send changes later overlap US-011; dependencies stay exactly binding, so preserve compatible edits when integrating branches. Strict strategy follows the session persistence override.\n\nUS-005: parseSlashCommand in packages/nax/src/tui/chat/slash-commands.ts:109-114 rejects any text not starting with /. ChatApp.submit at packages/nax/src/tui/chat/ChatApp.tsx:481-518 parses before inspecting images and currently refuses every slash line with a present image. Add splitLeadingPlaceholders beside the pure draft helpers; require at least one leading placeholder, allow leading/inter-placeholder/trailing whitespace and no whitespace between final placeholder and slash, and reject arbitrary leading words. Parse rest as the command; only images named inside rest trigger IMAGES_PLAIN_ONLY, with the WHOLE original line restored. On success restore lead before runCommand, not after an asynchronous attach, and do not reset the image draft. restorePrompt uses the imperative editor handle at :423-425 and updates the screen's current editor via changeDraft at :605-614; retain this ownership to avoid stale batched edits. /quit must continue through the existing close path; /image uses the rest as one path, preserving unquoted spaces. The slash menu query rules and busy submit gate in ChatInput.tsx:580-586 do not change. Existing mounted image-command tests at test/ui/chat/chat-app-image-command.test.tsx:14-23 stub _imageAttachDeps and type code points individually so a test command is not intercepted as a pasted path; mirror/reuse that setup in the new placeholder-command test.\n\nUS-006: packages/nax/src/tui/chat/chat-status.ts:166-177 defines static FooterHint text, :221-250 constructs the left hint after the mode, :327-350 builds the footer, and :414-434 hardcodes the working-line busy hint. packages/nax/src/tui/chat/use-clipboard-feedback.ts:13-27 chooses quit, clear, busy/background, expanded, idle. Create a pure discriminated EscLayer model with topEscLayer and escHintText; card > picker > mention/slash menu > controllable turn > none. Its question stops flag is turnRunning && askFromSession. A no-git diagnostic is NOT a menu esc layer. The layer input passed later by US-009 uses turnRunning && keys.canControl, so tests with false pin the mode-switch-in-flight failure path without adding the excluded mounted test. Hint strings must exactly match the spec, especially resume=>sessions and choice=>cancel. Extend FooterHint only with layer; layer follows quit/clear, precedes busy, and leaves copy feedback chosen by the screen as today. workingLine keeps existing three-argument behavior and receives an optional fourth hint. This story changes helpers, not mounted behavior; adapt existing footerHint object callers to layer:false as necessary for an independently compilable change, then US-009 replaces the screen's default with real layer state. Existing test/unit/tui/chat/chat-status.test.ts must retain all old expected text and add layer:false to old inputs. No picker title changes.\n\nUS-007: packages/nax/src/chat/ask-controller.ts:55-68 defines ChatAskController; :172-220 creates and settles host questions with timer/abort cleanup; :275-284 answers session/host questions; :102-107 emits changes only on actual removal. declineQuestion first verifies an open question, uses settleHostQuestion(id,null) for a host question, and otherwise answers once with the exported fixed text then removes it. Unknown, approval and stale ids are no-ops. Reuse cleanup/removal paths to avoid duplicate listener notifications or unresolved timers. Export QUESTION_DECLINED_REPLY through packages/nax/src/chat/index.ts:21-26. Dependencies include ChatHost's shared asks at chat/chat-host.ts:183, jobs/jobs-host.ts:3, jobs/run-asks.ts:18, subagent-runs.ts:12, close-confirm.ts:3, turn-runner.ts:3 and ask-fallback.ts:4; their approval/memory behavior must not change. test/unit/chat/ask-controller.test.ts already covers questions and settlement; hand-built interface literals in test/ui/chat/ask-card.test.tsx:117, chat-app.test.tsx:54, chat-app-mentions.test.tsx:89 and slash-commands.test.tsx:57 require declineQuestion stubs only, with no weakening of assertions. Strict strategy reflects session reply routing and the shared approval controller.\n\nUS-008: packages/nax/src/tui/chat/ChatInput.tsx:77-112 defines props, :222-231 draws muted empty placeholder rows without cursor metadata, :382-389 exits on muted rows before rendering the inverse cell, and :593-604 owns the two-escape clear. Change the row representation/rendering so the first placeholder/hint cell is inverse only when active and not busy, with remaining characters muted and no change in row measurement/wrapping. Nonempty cursor drawing and busy empty marker-only behavior stay intact. The optional onEscape must replace clear-arm handling even with empty text, while preserving menu navigation ownership and the default double-press clear when absent. Its timer and draft ref lifecycle at :523-575 must remain cancellable and batch-safe. test/ui/chat/chat-input.test.tsx:42-65 already inspects raw SGR 7/27 and restores chalk level and _chatInputDeps; use the same techniques in the new focused test file rather than assertions against stripped plain text. Existing mounted owners rerender controlled drafts; don't test only a pure row builder.\n\nUS-009: packages/nax/src/tui/chat/ChatApp.tsx:234-240 reads pending ask and turnRunning, :261-270 measures the working line before menu rows, :308-322 guards escape with several separate visibility checks, :620-637 selects the footer hint, and :713-729 mounts AskCard above picker/input. Wire one layer interpretation into hints and handler guards. Separate working-line PRESENCE (status only) from its final hinted text so menuShown can be read without a circular layout dependency. Map ask types explicitly: question=>question, approval_requested=>approval, host_choice=>choice; host_choice has no sessionId, so discriminate safely when computing origin. The question onDismiss declines first, then cancels only a controllable running session-origin question. Do not let the same stdin escape close a picker/card and cancel the turn. packages/nax/src/tui/chat/use-mention-menu.ts:270-285 draws no-git diagnostics with rows but ownsNavigation false, so use the actual claim, not mentionShown. AskCard.tsx:335 measures the answer input; :339-356 defines props; :448-470 returns early for question keys and handles approval/choice locally; :477-489 mounts ChatInput without guidance. Add optional onDismiss and pass it as onEscape plus the EXACT answer hint to both measured inputRows and rendered ChatInput. Preserve expiry, fallback choice and approval deny; none of the latter stop a turn. Add mounted stdin tests in chat-app-esc-layers.test.tsx, reusing test/helpers/chat-picker.tsx and existing chat-asks-keys fixtures where possible, not calls directly to the helper. Mount timing and simultaneous Ink subscribers are the highest esc risk. Strict three-session TDD follows session/control/approval routing.\n\nUS-010: packages/nax/src/prompts/builders/background-builder.ts:13-21 emits one task line per completed task plus guidance; workflow-builder.ts:40-51 emits the job line, optional cost/note and chain continuation; run-ask-builder.ts:23-40 emits the separate run-ask header and untrusted block. Implement summarizeBackgroundNotice in a small pure module BESIDE these writers, and export it from prompts/index.ts. Task command matching must stop at the first ') ended: <state>,' AFTER the id/open parenthesis, not the first closing parenthesis in the shell command; states are a single word, and counts retain first-seen order. Job summaries retain kind and target and ignore cost/log/chain detail; run asks have their own exact summary. Unknown text, including notice-looking text with no recognized line, returns undefined. Tests should feed actual builder outputs from existing background-builder/workflow-builder/run-ask-builder tests, avoiding duplicate hand-maintained protocol examples alone. This parser is presentation-only: do not alter instructions, chain approvals or untrusted-text treatment.\n\nUS-011: packages/nax/src/tui/chat/transcript-model.ts:20-49 is the discriminated union. Add background with summary,text,open?; do not repurpose notice because other notices remain always visible. mention-send.ts:93 is the single projection seam consumed live by ChatApp.tsx:559 and on resume by history-replay.ts:55, while ChatApp.tsx:589 still sends the original notice through sendTurn. Call summarizeBackgroundNotice there before ordinary message projection; never truncate or replace the model's content. New layout-background uses shared cardRows/resultPrefix/cardIndent/SHOW_HINT/HIDE_HINT; skillLines in layout.ts:186-200 is the existing visual pattern. layout.ts:271-300 dispatches entry kinds and :336-349 caches lines using effective expansion, with identity-based WeakMap invalidation at :321. Add background to both dispatcher and open??expanded calculation. transcript-click.ts:6-50 restricts toggles to structural headers and preserves other entry references; add only the summary header click. Global ctrl+o is already wired in ChatApp.tsx:309-312, so do not add another handler; inherit its existing expansion semantics. test/ui/chat/task-notices.test.tsx:17-94 uses real task registry completion and mountChatPicker with gated host sends; assert unchanged full host.send plus collapsed transcript then ctrl+o. replayHistory should collapse builder-generated job text without a second replay-specific parser. Preserve US-004 image-slot work if concurrently integrated; binding dependencies remain US-010 only.\n\nUS-012: packages/nax/src/tui/chat/layout-listing.ts:71-75 currently always draws a bold sanitized title and all source lines, preserving blank lines, wrapping and listingTone. Add an opt-in collapsible flag plus open override to the listing member; leave absent flags exactly as before. The collapsed listing has TWO logical rows (title then muted result-prefix count), unlike background's single summary row. Open form adds the existing colored source-line rendering. Count logical text lines, with singular '1 line', not wrapped display rows. Add collapsible listings to cachedLines' effective expansion and title-only click handling; noncollapsible listing titles must not toggle. packages/nax/src/tui/chat/useChatPicker.ts:161-175 reads task/job output and adds one listing; set collapsible:true there only, retaining NO_OUTPUT fallback and read error handling. choose at :181-187 closes jobs picker before asynchronous output. test/ui/chat/jobs-picker.test.tsx:16 pins the current title, and its output assertions AC-10/AC-8/AC-11 need ctrl+o after enter; jobs-opener.test.tsx AC-19 likewise expands before inspecting line2. Keep output read calls, 40-line limit, titles and picker-closed assertions unchanged. Use existing unit layout-listing and expansion/click suites plus mounted picker flow. Slash command listing producers in slash-commands.ts:98-107 do not opt in.\n\nRisks and rollout: shared ChatApp/image-draft/mention-send/layout/transcript-click edits are intentionally separate stories with binding dependency edges, so merge without overwriting earlier changes; do not add invented dependency edges. New union members require reviewing dispatchers and type extracts; effective open overrides must participate in cache keys and use immutable entry replacement. Preserve baseline escaping, sanitization, wrapping, source-line counts, draft identity, cancellation ownership, and host-vs-session reply isolation. No operational migration, backfill, schema bump, release or data rewrite is needed; old bare image markers remain supported and listing flags are optional. Approval and choice esc semantics are regression anchors, not new permission decisions. Suggested hardening criteria, if present, are separate from binding acceptance. Unit tests cover pure algorithms; mounted integration tests enter through stdin/delivery and the real persistence seam rather than testing only direct helper calls. Follow per-package bun:test commands with explicit paths and timeouts, never bare bun test or bun run nax; pipeline handles normal lint/typecheck/test gates and no such gates are acceptance criteria. Do not run test:coverage inside NAX_SANDBOXED=1. The declared expectedFiles match the spec's Creates lists; extend existing suites and shared helpers for the other specified criteria.\n\nSecond-pass adversarial audit: re-read the canonical spec's design, interfaces, all nine failure rows, Context Files, Creates, all acceptance criteria and all fourteen feature exclusions, then checked the current source boundaries again. Acceptance-preservation ledger (spec item numbers map to the same story and same ordinal in acceptanceCriteria): US-001 {1,2,3,4,5}; US-002 {1,2,3,4,5,6,7,8,9,10}; US-003 {1,2,3,4,5,6,7,8,9,10}; US-004 {1,2,3,4,5,6,7,8,9,10,11}; US-005 {1,2,3,4,5,6,7,8,9,10}; US-006 {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}; US-007 {1,2,3,4,5,6}; US-008 {1,2,3,4,5,6,7,8}; US-009 {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}; US-010 {1,2,3,4,5,6,7,8,9}; US-011 {1,2,3,4,5,6,7,8,9}; US-012 {1,2,3,4,5,6,7,8}. All 118 spec criteria remain, including every parenthetical, existing/as-today/unchanged qualifier, mention-region explanation and first-seen-order clause. US-011 item 10 additionally implements the failure table's unknown-notice-to-user-row requirement, for 119 acceptance entries total. US-006 item 14 replaces the spec's illustrative ellipsis with the existing state/status fixtures without changing hint placement; US-007 item 3 observes the constant's runtime value through the required barrel import; US-010 item 9 observes the required barrel-exported function's return rather than requiring a file-content grep. No deprecated grep/file/verbatim criteria occur. US-006 item 2 now states only its observable return; the uncontrollable-turn interpretation remains in the design and analysis, not as an untestable claim about a mounted caller.\n\nNegative-path ledger: US-001 items 1-4 cover unreadable image recovery; US-002 items 2,4,5,7 cover overlong deletion, empty input and forbidden controls; US-003 items 8 and 10 cover absent placeholder/image inputs and preserve exact original text/two-argument send; US-004 items 3,4,9 cover legacy markers, out-of-range positions and suppressed duplicate mention rows; US-005 items 4-6 and 9 cover nonsplitting text and command refusal; US-006 items 2,3,7,11 cover nonstopping questions, idle and absent hint; US-007 items 4-5 cover wrong-type and unknown ids; US-008 items 2,3,6 cover inactive/busy input and forbidden clear under owner escape; US-009 items 2,3,6,16 cover no cancellation for host/no-turn questions, no answerQuestion on dismissal and picker-owned escape; US-010 items 7-8 cover ordinary and malformed notice text; US-011 items 6 and 10 cover nonheader clicks and unknown notices; US-012 items 4-5 cover opt-in absence and nontoggling ordinary listings. Every story already has a concrete negative path, so no invented failure criteria were added. Backward-compatibility or disappearance of the old placeholder behavior is asserted in each story, not merely promised by a gate.\n\nFailure-table coverage in row order: (1) US-009 items 2,10 plus US-007 item 1; (2) US-006 items 2,8 represent canControl=false exactly as the spec rules, with US-009's guarded dismissal design and no excluded mounted test; (3) US-009 item 3 plus US-007 item 1; (4) US-007 items 4,5; (5) US-010 item 8 and US-011 item 10; (6) US-004 item 4; (7) US-004 item 9; (8) US-005 item 9; (9) US-002 item 2. All fourteen outOfScope strings remain verbatim in source order, with nearby boundaries echoed in story Scope sections; the canonical spec has no story-local deferral blocks to hoist.\n\nFit and scope audit: all spec-recommended Context Files remain in their designated stories, including the upstream esc-layer and notice-summary outputs; each list has at most five entries, and no story's own new file is listed as context. All expectedFiles match their story's Creates list. Binding dependency arrays and workdirs are unchanged and reference only the twelve extant IDs. No new helper outside the spec is required. US-004 complexity is reduced to medium because only two existing pure projection modules change and the file-store API already exists; mandatory strict sessions routing remains in force, including title metadata in US-003 under the original explicit override. US-009 remains complex because the source genuinely has independent Ink key owners and a working-line/menu measurement dependency; US-011 remains complex because adding a union member crosses live/resume projection, renderer dispatch, effective-expansion caching, click ownership and mounted notice delivery. Other simple/medium classifications remain the lightest supported by the source. This audit made no source edits and did not execute tests or claim a machine JSON/schema validation.",
