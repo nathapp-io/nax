@@ -189,6 +189,15 @@ describe("runNativeTurn — a before_turn promptContext is prefixed to the promp
     expect(lastSentMessage(sent)).toEqual({ role: "user", content: "keep me" });
   });
 
+  test("a non-string promptContext from a raw-JS handler leaves the prompt message unchanged", async () => {
+    for (const raw of ['{ "promptContext": { "a": 1 } }', '{ "promptContext": 0 }', '{ "promptContext": null }']) {
+      const { error, sent } = await runTurnWithPatch({ prompt: "keep me", patch: untypedPatch(raw) });
+
+      expect(error).toBeUndefined();
+      expect(lastSentMessage(sent)).toEqual({ role: "user", content: "keep me" });
+    }
+  });
+
   test("AC-7: promptContext prefixes the first message of the seed patch, not the discarded prompt", async () => {
     const { sent } = await runTurnWithPatch({
       prompt: "the caller's prompt",

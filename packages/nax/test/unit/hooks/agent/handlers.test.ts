@@ -31,6 +31,7 @@ import {
 import {
   _agentHookHandlerDeps,
   AGENT_HOOK_EVENTS,
+  AGENT_HOOK_MAX_RECORDED_CALLS,
   AGENT_HOOKS_PLUGIN,
   type AgentHookEntry,
   type AgentHookRun,
@@ -386,6 +387,27 @@ describe("after_tool — the recorded call input", () => {
     await callAfterTool(set, afterToolPayload({ content: "anonymous", toolName: "Write" }), ctx);
     expect(runs).toHaveLength(1);
     expect("tool_input" in runs[0].payload).toBe(false);
+  });
+
+  test("records whose after_tool never arrives are capped per session, oldest evicted first", async () => {
+    const set = rewritingSet();
+    const ctx = handlerContext();
+
+    // Calls blocked by a later plugin, or abandoned mid-turn, never reach
+    // after_tool; without a cap each leaves its input behind for the process.
+    for (let index = 0; index <= AGENT_HOOK_MAX_RECORDED_CALLS; index++) {
+      answerNext();
+      await callBeforeTool(set, beforeToolPayload("Write", { path: `f${index}.ts` }, `c${index}`), ctx);
+    }
+
+    answerNext();
+    await callAfterTool(set, afterToolPayload({ content: "late", toolName: "Write", callId: "c0" }), ctx);
+    expect("tool_input" in runs[0].payload).toBe(false);
+
+    answerNext();
+    const newest = `c${AGENT_HOOK_MAX_RECORDED_CALLS}`;
+    await callAfterTool(set, afterToolPayload({ content: "ok", toolName: "Write", callId: newest }), ctx);
+    expect(runs[0].payload).toMatchObject({ tool_input: { path: `f${AGENT_HOOK_MAX_RECORDED_CALLS}.ts` } });
   });
 
   test("AC-18: the same call id in two sessions keeps each session's own input", async () => {

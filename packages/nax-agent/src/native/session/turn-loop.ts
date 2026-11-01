@@ -133,12 +133,22 @@ function seededMessages(
  * Not a `seed` patch: that one replaces the prompt message, and the caller's
  * images go with it. Only `content` changes here, so a message's images,
  * toolCallId and role survive untouched. An empty context is no context.
+ *
+ * A plugin's `loop-handlers` are raw JavaScript (see `blockRefusalReason`), so a
+ * non-string context reaches here too; it is dropped with a warning rather than
+ * stringified into the prompt as `[object Object]`.
  */
 function withPromptContext(
   seed: readonly NativeTranscriptMessage[],
-  promptContext: string | undefined,
+  promptContext: unknown,
 ): NativeTranscriptMessage[] {
   if (promptContext === undefined || promptContext === "") return [...seed];
+  if (typeof promptContext !== "string") {
+    getSafeLogger()?.warn("native-loop-events", "before_turn promptContext is not a string; prompt unchanged", {
+      promptContextKind: promptContext === null ? "null" : typeof promptContext,
+    });
+    return [...seed];
+  }
   const [first, ...rest] = seed;
   if (first === undefined) return [];
   return [{ ...first, content: `${promptContext}\n\n${first.content}` }, ...rest];
