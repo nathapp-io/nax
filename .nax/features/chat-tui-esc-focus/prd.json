@@ -3,7 +3,7 @@
   "feature": "chat-tui-esc-focus",
   "branchName": "feat/chat-tui-esc-focus",
   "createdAt": "2026-11-01T00:00:00.000Z",
-  "updatedAt": "2026-11-01T06:06:01.821Z",
+  "updatedAt": "2026-11-01T06:20:26.872Z",
   "userStories": [
     {
       "id": "US-001",
@@ -669,14 +669,17 @@
       "dependencies": [
         "US-010"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "New transcript variant crosses shared live/replay projection, pure layout, expansion caching, click ownership and mounted delivery without altering session control."
+        "reasoning": "New transcript variant crosses shared live/replay projection, pure layout, expansion caching, click ownership and mounted delivery without altering session control.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/layout.ts",
@@ -711,7 +714,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f07749098800b06bc2285f73c8173f0e6a15f1b4"
     },
     {
       "id": "US-012",
