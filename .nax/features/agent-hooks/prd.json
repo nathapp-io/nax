@@ -3,7 +3,7 @@
   "feature": "agent-hooks",
   "branchName": "feat/agent-hooks",
   "createdAt": "2026-11-01T00:00:00.000Z",
-  "updatedAt": "2026-11-01T11:39:10.546Z",
+  "updatedAt": "2026-11-01T11:51:05.894Z",
   "userStories": [
     {
       "id": "US-001",
@@ -100,14 +100,17 @@
         "validation"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A bounded additive loader using existing zod, Bun file reads and barrel conventions; it validates configuration without executing code or making access-control decisions."
+        "reasoning": "A bounded additive loader using existing zod, Bun file reads and barrel conventions; it validates configuration without executing code or making access-control decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/hooks/runner.ts",
@@ -131,7 +134,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6542ed9c58b89e591cd4f66157e895f388cbdf57"
     },
     {
       "id": "US-003",
