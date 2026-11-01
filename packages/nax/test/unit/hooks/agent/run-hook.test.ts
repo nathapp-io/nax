@@ -191,27 +191,49 @@ describe("runAgentHook — exit codes", () => {
 describe("runAgentHook — deadline and drain", () => {
   withDepsRestore(_runAgentHookDeps, ["killGraceMs", "drainMs"]);
 
-  test("AC-9: a hook over its timeout resolves fast with a timed-out reason", async () => {
-    const run = await runAgentHook({
-      entry: makeEntry({ command: runScript(scriptFile("sleep 5")), timeoutMs: 100 }),
-      payload: PAYLOAD,
-      cwd: dir,
-    });
+  /**
+   * Every case here inherits `--timeout` from the suite (5 s in
+   * `scripts/run-tests-phases.ts`) unless it says otherwise, and 5 s is not a
+   * behavioural bound for a test that spawns `/bin/sh`, waits out a deadline,
+   * a kill grace AND a drain (2 s by default) before it asserts anything. When
+   * the blanket budget did cut one off, bun printed `(fail) <name>` BEFORE the
+   * detail line — the reverse of an assertion failure — so the suite read the
+   * record as "no assertion message captured" and attributed a bare timeout to
+   * this file. Each test below already bounds its own wall clock (the
+   * `toBeLessThan` assertions); this budget only stops the runner from killing
+   * the spawn before those assertions can be reached.
+   */
+  const SPAWN_TEST_TIMEOUT_MS = 20_000;
 
-    expect(run.kind).toBe("error");
-    expect(errorReason(run)).toContain("timed out after 100ms");
-  });
+  test(
+    "AC-9: a hook over its timeout resolves fast with a timed-out reason",
+    async () => {
+      const run = await runAgentHook({
+        entry: makeEntry({ command: runScript(scriptFile("sleep 5")), timeoutMs: 100 }),
+        payload: PAYLOAD,
+        cwd: dir,
+      });
 
-  test("AC-9 continued: the timed-out call resolves in under 2s", async () => {
-    const startedAt = performance.now();
-    await runAgentHook({
-      entry: makeEntry({ command: runScript(scriptFile("sleep 5")), timeoutMs: 100 }),
-      payload: PAYLOAD,
-      cwd: dir,
-    });
+      expect(run.kind).toBe("error");
+      expect(errorReason(run)).toContain("timed out after 100ms");
+    },
+    SPAWN_TEST_TIMEOUT_MS,
+  );
 
-    expect(performance.now() - startedAt).toBeLessThan(2000);
-  });
+  test(
+    "AC-9 continued: the timed-out call resolves in under 2s",
+    async () => {
+      const startedAt = performance.now();
+      await runAgentHook({
+        entry: makeEntry({ command: runScript(scriptFile("sleep 5")), timeoutMs: 100 }),
+        payload: PAYLOAD,
+        cwd: dir,
+      });
+
+      expect(performance.now() - startedAt).toBeLessThan(2000);
+    },
+    SPAWN_TEST_TIMEOUT_MS,
+  );
 
   /**
    * The two cases that read the child's own pid need a deadline the child can
@@ -225,96 +247,118 @@ describe("runAgentHook — deadline and drain", () => {
   const PID_REPORTING_TIMEOUT_MS = 1500;
   const PID_REPORTING_ELAPSED_MAX_MS = 4000;
 
-  test("AC-10: the timed-out hook's process no longer exists", async () => {
-    const pidFile = join(dir, "hook.pid");
-    const startedAt = performance.now();
-    const run = await runAgentHook({
-      entry: makeEntry({
-        command: runScript(scriptFile(`echo $$ > '${pidFile}'\nsleep 5`)),
-        timeoutMs: PID_REPORTING_TIMEOUT_MS,
-      }),
-      payload: PAYLOAD,
-      cwd: dir,
-    });
+  test(
+    "AC-10: the timed-out hook's process no longer exists",
+    async () => {
+      const pidFile = join(dir, "hook.pid");
+      const startedAt = performance.now();
+      const run = await runAgentHook({
+        entry: makeEntry({
+          command: runScript(scriptFile(`echo $$ > '${pidFile}'\nsleep 5`)),
+          timeoutMs: PID_REPORTING_TIMEOUT_MS,
+        }),
+        payload: PAYLOAD,
+        cwd: dir,
+      });
 
-    // The elapsed bound is what makes this fail if the deadline does not kill:
-    // an unkilled `sleep 5` still ends, so only its duration distinguishes it.
-    expect(performance.now() - startedAt).toBeLessThan(PID_REPORTING_ELAPSED_MAX_MS);
-    expect(run.kind).toBe("error");
-    expect(errorReason(run)).toContain(`timed out after ${PID_REPORTING_TIMEOUT_MS}ms`);
-    expect(isAlive(await readPid(pidFile))).toBe(false);
-  });
+      // The elapsed bound is what makes this fail if the deadline does not kill:
+      // an unkilled `sleep 5` still ends, so only its duration distinguishes it.
+      expect(performance.now() - startedAt).toBeLessThan(PID_REPORTING_ELAPSED_MAX_MS);
+      expect(run.kind).toBe("error");
+      expect(errorReason(run)).toContain(`timed out after ${PID_REPORTING_TIMEOUT_MS}ms`);
+      expect(isAlive(await readPid(pidFile))).toBe(false);
+    },
+    SPAWN_TEST_TIMEOUT_MS,
+  );
 
-  test("AC-16: a SIGTERM-trapping hook is terminated by the SIGKILL escalation", async () => {
-    _runAgentHookDeps.killGraceMs = 200;
-    const startedAt = performance.now();
-    const run = await runAgentHook({
-      entry: makeEntry({ command: runScript(scriptFile("trap '' TERM\nsleep 5")), timeoutMs: 100 }),
-      payload: PAYLOAD,
-      cwd: dir,
-    });
+  test(
+    "AC-16: a SIGTERM-trapping hook is terminated by the SIGKILL escalation",
+    async () => {
+      _runAgentHookDeps.killGraceMs = 200;
+      const startedAt = performance.now();
+      const run = await runAgentHook({
+        entry: makeEntry({ command: runScript(scriptFile("trap '' TERM\nsleep 5")), timeoutMs: 100 }),
+        payload: PAYLOAD,
+        cwd: dir,
+      });
 
-    expect(performance.now() - startedAt).toBeLessThan(2000);
-    expect(run.kind).toBe("error");
-    expect(errorReason(run)).toContain("timed out after 100ms");
-  });
+      expect(performance.now() - startedAt).toBeLessThan(2000);
+      expect(run.kind).toBe("error");
+      expect(errorReason(run)).toContain("timed out after 100ms");
+    },
+    SPAWN_TEST_TIMEOUT_MS,
+  );
 
-  test("AC-16 continued: a descendant that ignores SIGTERM is escalated after the leader exits", async () => {
-    _runAgentHookDeps.killGraceMs = 200;
-    _runAgentHookDeps.drainMs = 200;
-    const childPidFile = join(dir, "child.pid");
-    // The leader dies on SIGTERM (default disposition); the descendant it
-    // started ignores it. Only the SIGKILL escalation can end the descendant,
-    // and it must still run after `proc.exited` resolves for the leader.
-    const script = scriptFile([`sh -c 'trap "" TERM; echo $$ > "${childPidFile}"; sleep 10' &`, "sleep 10"].join("\n"));
-    const startedAt = performance.now();
-    const run = await runAgentHook({
-      entry: makeEntry({ command: runScript(script), timeoutMs: PID_REPORTING_TIMEOUT_MS }),
-      payload: PAYLOAD,
-      cwd: dir,
-    });
+  test(
+    "AC-16 continued: a descendant that ignores SIGTERM is escalated after the leader exits",
+    async () => {
+      _runAgentHookDeps.killGraceMs = 200;
+      _runAgentHookDeps.drainMs = 200;
+      const childPidFile = join(dir, "child.pid");
+      // The leader dies on SIGTERM (default disposition); the descendant it
+      // started ignores it. Only the SIGKILL escalation can end the descendant,
+      // and it must still run after `proc.exited` resolves for the leader.
+      const script = scriptFile(
+        [`sh -c 'trap "" TERM; echo $$ > "${childPidFile}"; sleep 10' &`, "sleep 10"].join("\n"),
+      );
+      const startedAt = performance.now();
+      const run = await runAgentHook({
+        entry: makeEntry({ command: runScript(script), timeoutMs: PID_REPORTING_TIMEOUT_MS }),
+        payload: PAYLOAD,
+        cwd: dir,
+      });
 
-    expect(performance.now() - startedAt).toBeLessThan(4000);
-    expect(run.kind).toBe("error");
-    expect(errorReason(run)).toContain(`timed out after ${PID_REPORTING_TIMEOUT_MS}ms`);
+      expect(performance.now() - startedAt).toBeLessThan(4000);
+      expect(run.kind).toBe("error");
+      expect(errorReason(run)).toContain(`timed out after ${PID_REPORTING_TIMEOUT_MS}ms`);
 
-    const childPid = await readPid(childPidFile);
-    await waitForCondition(() => !isAlive(childPid), 1000);
-  });
+      const childPid = await readPid(childPidFile);
+      await waitForCondition(() => !isAlive(childPid), 1000);
+    },
+    SPAWN_TEST_TIMEOUT_MS,
+  );
 
-  test("AC-17: the SIGTERM-trapping hook's process no longer exists", async () => {
-    _runAgentHookDeps.killGraceMs = 200;
-    const pidFile = join(dir, "hook.pid");
-    const startedAt = performance.now();
-    const run = await runAgentHook({
-      entry: makeEntry({
-        command: runScript(scriptFile(`trap '' TERM\necho $$ > '${pidFile}'\nsleep 5`)),
-        timeoutMs: PID_REPORTING_TIMEOUT_MS,
-      }),
-      payload: PAYLOAD,
-      cwd: dir,
-    });
+  test(
+    "AC-17: the SIGTERM-trapping hook's process no longer exists",
+    async () => {
+      _runAgentHookDeps.killGraceMs = 200;
+      const pidFile = join(dir, "hook.pid");
+      const startedAt = performance.now();
+      const run = await runAgentHook({
+        entry: makeEntry({
+          command: runScript(scriptFile(`trap '' TERM\necho $$ > '${pidFile}'\nsleep 5`)),
+          timeoutMs: PID_REPORTING_TIMEOUT_MS,
+        }),
+        payload: PAYLOAD,
+        cwd: dir,
+      });
 
-    // Same reasoning as AC-10: only the elapsed bound distinguishes a killed
-    // process from one that would have ended by itself.
-    expect(performance.now() - startedAt).toBeLessThan(PID_REPORTING_ELAPSED_MAX_MS);
-    expect(run.kind).toBe("error");
-    expect(errorReason(run)).toContain(`timed out after ${PID_REPORTING_TIMEOUT_MS}ms`);
-    expect(isAlive(await readPid(pidFile))).toBe(false);
-  });
+      // Same reasoning as AC-10: only the elapsed bound distinguishes a killed
+      // process from one that would have ended by itself.
+      expect(performance.now() - startedAt).toBeLessThan(PID_REPORTING_ELAPSED_MAX_MS);
+      expect(run.kind).toBe("error");
+      expect(errorReason(run)).toContain(`timed out after ${PID_REPORTING_TIMEOUT_MS}ms`);
+      expect(isAlive(await readPid(pidFile))).toBe(false);
+    },
+    SPAWN_TEST_TIMEOUT_MS,
+  );
 
-  test("AC-18: a background child holding stdout does not extend the drain", async () => {
-    _runAgentHookDeps.drainMs = 200;
-    const startedAt = performance.now();
-    const run = await runAgentHook({
-      entry: makeEntry({ command: runScript(scriptFile("printf 'partial'\nsleep 10 &\nexit 0")) }),
-      payload: PAYLOAD,
-      cwd: dir,
-    });
+  test(
+    "AC-18: a background child holding stdout does not extend the drain",
+    async () => {
+      _runAgentHookDeps.drainMs = 200;
+      const startedAt = performance.now();
+      const run = await runAgentHook({
+        entry: makeEntry({ command: runScript(scriptFile("printf 'partial'\nsleep 10 &\nexit 0")) }),
+        payload: PAYLOAD,
+        cwd: dir,
+      });
 
-    expect(performance.now() - startedAt).toBeLessThan(2000);
-    expect(run).toEqual({ kind: "ok", stdout: "partial" });
-  });
+      expect(performance.now() - startedAt).toBeLessThan(2000);
+      expect(run).toEqual({ kind: "ok", stdout: "partial" });
+    },
+    SPAWN_TEST_TIMEOUT_MS,
+  );
 });
 
 describe("runAgentHook — command validation", () => {
