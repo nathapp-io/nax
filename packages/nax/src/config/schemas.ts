@@ -55,6 +55,7 @@ import {
   RoutingConfigSchema,
 } from "./schemas-infra";
 import { McpConfigSchema } from "./schemas-mcp";
+import { MemoryConfigSchema } from "./schemas-memory";
 import { ConfiguredModelSchema, ModelMapSchema } from "./schemas-model";
 import { validateProtocolGate } from "./schemas-protocol-gate";
 import { ReportersConfigSchema } from "./schemas-reporters";
@@ -523,6 +524,8 @@ export const NaxConfigSchema = z
     // Derived, not hand-written — same reason as `context:` above: a literal
     // default here would shadow every inner `.default()` in McpConfigSchema.
     mcp: McpConfigSchema.default(() => McpConfigSchema.parse({})),
+    // Same derivation as `mcp:` — a literal default would shadow every inner `.default()`.
+    memory: MemoryConfigSchema.default(() => MemoryConfigSchema.parse({})),
     resources: ResourcesConfigSchema.default(() => ResourcesConfigSchema.parse({})),
     reporters: ReportersConfigSchema,
     profile: z.string().default("default"),
