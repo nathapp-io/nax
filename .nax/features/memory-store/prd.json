@@ -3,7 +3,7 @@
   "feature": "memory-store",
   "branchName": "feat/memory-store",
   "createdAt": "2026-11-02T00:00:00.000Z",
-  "updatedAt": "2026-11-02T03:45:48.943Z",
+  "updatedAt": "2026-11-02T04:04:50.271Z",
   "userStories": [
     {
       "id": "US-001",
@@ -352,14 +352,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure deterministic formatting and sanitization with an explicit ordering and no new persistence integration."
+        "reasoning": "Pure deterministic formatting and sanitization with an explicit ordering and no new persistence integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/types.ts",
@@ -383,7 +386,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8436ddcc821d3c4e3e58775947543da01434ebf4"
     },
     {
       "id": "US-007",
