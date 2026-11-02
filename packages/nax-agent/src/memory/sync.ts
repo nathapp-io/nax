@@ -21,10 +21,20 @@
  * a throw and a timeout are one outcome — `unreachable` — and it is recorded in
  * `sync.json` over the cursors a failed probe learned nothing about.
  *
- * Steps 3 (drain the outbox) and 4 (pull the provider's pages) are not here yet:
- * US-013 and US-014 add them between the probe and the finish. This shell hands
- * the provider nothing and pulls nothing, so a run that reaches the finish is
- * `synced` with all four counters at zero.
+ * Step 3 delivers what the agent already wrote. Each `queued` entry is pushed in
+ * `seq` order through the same kind of race, and the provider's answer is applied
+ * to the mirror before the entry is removed: a `save` carries the returned id and
+ * status into its note, a `forget` removes the note only when the provider says it
+ * is `deleted`. The two failures are not the same fact. `MEMORY_PUSH_REJECTED` is
+ * permanent — retrying would repeat it — so the entry is marked with the reason and
+ * the drain continues. Anything else, a timeout included, is transient: the drain
+ * stops, the entry stays `queued` for the next run, `sync.json` records why, and
+ * the run ends `failed` — after the index is refreshed, so a forget still waiting
+ * is visible as `(forget pending)`.
+ *
+ * Step 4 (pull the provider's pages) is not here yet: US-014 adds it between the
+ * drain and the finish. Until then a run whose drain completed pulls nothing, so
+ * it is `synced` with both pull counters at zero.
  */
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
@@ -32,10 +42,11 @@ import { NaxError } from "#src/infra/nax-error";
 import { isProcessAlive } from "#src/internal/process-alive";
 import { acquireSessionLock } from "#src/session-store/index";
 import { refreshMemoryIndex } from "./index-render.ts";
-import type { MemoryOutbox } from "./outbox.ts";
-import type { MemoryProvider } from "./provider-types.ts";
+import { isMemoryPushRejected } from "./note.ts";
+import type { MemoryOutbox, MemoryOutboxEntry } from "./outbox.ts";
+import type { MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
 import { _memoryStoreDeps, type MemoryStore } from "./store.ts";
-import { MEMORY_PROBE_TIMEOUT_MS, type MemoryTimers } from "./types.ts";
+import { MEMORY_OP_TIMEOUT_MS, MEMORY_PROBE_TIMEOUT_MS, type MemoryTimers } from "./types.ts";
 
 /** The stage every memory-origin log line carries. */
 const ERROR_STAGE = "memory";
@@ -214,16 +225,126 @@ async function providerAnswers(input: MemorySyncInput): Promise<boolean> {
  * the outbox is not read, so the queued writes stay exactly as they were.
  */
 async function recordUnreachable(input: MemorySyncInput): Promise<MemorySyncResult> {
-  const state = await input.store.readSyncState();
-  await input.store.writeSyncState({ ...state, lastError: UNREACHABLE });
+  await recordLastError(input, UNREACHABLE);
   return stopped("unreachable");
 }
 
-/** Step 5: regenerate the index the next session reads, and report what the run did. */
-async function finish(input: MemorySyncInput, counts: MemorySyncCounts): Promise<MemorySyncResult> {
+/** Note why a run could not finish, leaving every other field of the state as it was. */
+async function recordLastError(input: MemorySyncInput, message: string): Promise<void> {
+  const state = await input.store.readSyncState();
+  await input.store.writeSyncState({ ...state, lastError: message });
+}
+
+/**
+ * The write an entry stands for, as the provider takes it.
+ *
+ * The entry carries the queue's own bookkeeping — its sequence, when it was taken,
+ * whether it is still queued — and none of that is the provider's to read, so the
+ * request is projected from the fields the two shapes share rather than forwarded.
+ */
+function requestOf(entry: MemoryOutboxEntry): MemoryWriteRequest {
+  return {
+    kind: entry.kind,
+    clientId: entry.clientId,
+    scope: entry.scope,
+    slug: entry.slug,
+    writeMode: entry.writeMode,
+    ...(entry.note === undefined ? {} : { note: entry.note }),
+    ...(entry.reason === undefined ? {} : { reason: entry.reason }),
+  };
+}
+
+/** What one push came to: the provider's answer, a permanent refusal, or a transient failure. */
+type PushOutcome =
+  | { readonly kind: "pushed"; readonly result: MemoryPushResult }
+  | { readonly kind: "rejected"; readonly reason: string }
+  | { readonly kind: "failed"; readonly reason: string };
+
+/**
+ * One entry, pushed through the operation race.
+ *
+ * `MEMORY_PUSH_REJECTED` is the provider saying it will never accept this write, so
+ * it is separated here from every other throw and from the `MEMORY_TIMEOUT` the race
+ * raises: only the first is worth keeping on the entry, and only the others are worth
+ * another attempt.
+ */
+async function pushEntry(input: MemorySyncInput, entry: MemoryOutboxEntry, timers: MemoryTimers): Promise<PushOutcome> {
+  try {
+    const pushed = input.provider.push(requestOf(entry));
+    return { kind: "pushed", result: await raceTimeout(pushed, MEMORY_OP_TIMEOUT_MS, timers) };
+  } catch (error) {
+    const reason = errorMessage(error);
+    return isMemoryPushRejected(error) ? { kind: "rejected", reason } : { kind: "failed", reason };
+  }
+}
+
+/**
+ * Step 3's mirror half: write the provider's answer into the mirror before the entry goes.
+ *
+ * A `save` carries the returned id and status into its note, and only those two: the
+ * delivery says what the provider made of the write, not what the note now reads. The
+ * mirror is preferred over the entry's own copy so a note edited in the mirror is not
+ * rolled back; an entry with no mirrored note yields to its copy, so a delivery whose
+ * note the mirror never held is not reported as one that vanished.
+ *
+ * A `forget` removes the note only on `deleted`. A `proposal`-mode forget the provider
+ * has merely recorded is still pending, and the note it names stays until it is not.
+ */
+async function applyPushed(input: MemorySyncInput, entry: MemoryOutboxEntry, answer: MemoryPushResult): Promise<void> {
+  if (entry.kind === "forget") {
+    if (answer.status === "deleted") await input.store.deleteNote(entry.scope, entry.slug);
+    return;
+  }
+  const base = (await input.store.readNote(entry.scope, entry.slug)) ?? entry.note;
+  if (base === undefined) return;
+  await input.store.writeNote({ ...base, id: answer.id, status: answer.status });
+}
+
+/** What a drain delivered, and the transient failure that stopped it early. */
+interface DrainResult {
+  readonly pushed: number;
+  readonly rejected: number;
+  /** The message of the failure that ended the drain; absent when every entry was delivered. */
+  readonly failure?: string;
+}
+
+/**
+ * Step 3: deliver every queued write, oldest first.
+ *
+ * `list()` answers with the rejected entries too — they are the record of a refusal —
+ * so only `queued` entries are pushed: nothing here retries a permanent one.
+ */
+async function drainOutbox(input: MemorySyncInput): Promise<DrainResult> {
+  const timers = input.timers ?? GLOBAL_TIMERS;
+  let pushed = 0;
+  let rejected = 0;
+  for (const entry of await input.outbox.list()) {
+    if (entry.state !== "queued") continue;
+    const outcome = await pushEntry(input, entry, timers);
+    if (outcome.kind === "failed") return { pushed, rejected, failure: outcome.reason };
+    if (outcome.kind === "rejected") {
+      await input.outbox.markRejected(entry.clientId, outcome.reason);
+      rejected += 1;
+      continue;
+    }
+    await applyPushed(input, entry, outcome.result);
+    await input.outbox.remove(entry.clientId);
+    pushed += 1;
+  }
+  return { pushed, rejected };
+}
+
+/**
+ * Step 5: regenerate the index the next session reads, and report what the run did.
+ *
+ * `failure` is a drain that stopped early: the index is still refreshed, because the
+ * entries left queued are what the next session has to see — a forget still waiting
+ * renders as `(forget pending)` — and the counters are what did move before it stopped.
+ */
+async function finish(input: MemorySyncInput, counts: MemorySyncCounts, failure?: string): Promise<MemorySyncResult> {
   const heldForgets = await input.outbox.heldKeys("forget");
   await refreshMemoryIndex(input.store, { heldForgets });
-  return { outcome: "synced", ...counts };
+  return failure === undefined ? { outcome: "synced", ...counts } : { outcome: "failed", ...counts, error: failure };
 }
 
 /** Hand the lock back if this run took it; a failed release is logged, never thrown. */
@@ -250,8 +371,14 @@ export async function syncMemory(input: MemorySyncInput): Promise<MemorySyncResu
     if (acquired === null) return stopped("locked");
     release = acquired;
     if (!(await providerAnswers(input))) return await recordUnreachable(input);
-    // Steps 3 (outbox drain, US-013) and 4 (pull, US-014) belong here.
-    return await finish(input, noCounts());
+    const drain = await drainOutbox(input);
+    const counts: MemorySyncCounts = { ...noCounts(), pushed: drain.pushed, rejected: drain.rejected };
+    if (drain.failure !== undefined) {
+      await recordLastError(input, drain.failure);
+      return await finish(input, counts, drain.failure);
+    }
+    // Step 4 (pull, US-014) belongs here, once the drain has delivered what it could.
+    return await finish(input, counts);
   } catch (error) {
     const message = errorMessage(error);
     warnQuietly(input.logger, "memory sync failed", { path: lock, error: message });
