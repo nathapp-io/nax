@@ -6,11 +6,20 @@
  * machine-local mirror. Reading is the only operation: no tool or command ever
  * writes or deletes one.
  *
- * This module owns the per-file rules — which names are candidates (rule 2) and
- * what makes a candidate acceptable (rule 3). Everything here is repo-scoped:
+ * This module owns all four repo-note rules: the directories themselves are
+ * never entered through a symlink, an absent one reads as "no notes" and an
+ * unreadable one reads as "no notes" behind one warn (rule 1); which names are
+ * candidates (rule 2); what makes a candidate acceptable (rule 3); and the cap
+ * on how many notes one read returns (rule 4). Everything here is repo-scoped:
  * the only anchor is the repository root, and nothing reaches outside the
- * mirror directories resolved by `paths.ts`. Safety about the directory itself
- * (absent, symlinked, unreadable) and the accepted-note cap are separate rules.
+ * directories under `<repoRoot>/.nax`.
+ *
+ * The directory checks run first because they are the cheap answer: a symlinked
+ * `.nax` or `.nax/memory` is refused before a single entry is listed, so a
+ * committed link cannot turn this read into a walk of somewhere else on disk.
+ * The cap then bounds the work a repository can make a read do — a repository
+ * with a thousand committed notes still costs one listing and
+ * `REPO_NOTES_MAX` reads.
  *
  * A candidate is measured with `lstat` and rejected on size *before* it is read,
  * because a repo note is untrusted repository content: the file can be a
@@ -46,9 +55,9 @@ export const REPO_NOTE_MAX_FILE_BYTES = 16_384;
 /**
  * The most accepted repo notes one read returns.
  *
- * Declared here because it bounds what this read can return; the cap itself is
- * enforced by the accepted-note limit rule, which sits alongside these per-file
- * checks rather than inside them.
+ * The remaining candidates are neither measured nor read once the cap is
+ * reached; they are counted in `skipped` and announced by one warn, so a
+ * repository cannot make a read unbounded merely by committing more notes.
  */
 export const REPO_NOTES_MAX = 200;
 
@@ -207,32 +216,134 @@ async function readCandidate(path: string, name: string, logger: MemoryLogger): 
   return acceptedNote(text, name, path, logger);
 }
 
+/**
+ * The repository's `.nax` directory — the first of the two directories a repo
+ * note read passes through.
+ */
+function repoNaxDir(repoRoot: string): string {
+  return join(repoRoot, PROJECT_NAX_DIR);
+}
+
 /** The directory whose top level holds the repository's notes. */
 function repoNotesDir(repoRoot: string): string {
-  return join(repoRoot, PROJECT_NAX_DIR, REPO_MEMORY_DIR_NAME);
+  return join(repoNaxDir(repoRoot), REPO_MEMORY_DIR_NAME);
+}
+
+/**
+ * Whether an error is the filesystem saying "no such entry".
+ *
+ * That is the one directory failure a repo-note read treats as silence: a
+ * repository that has never used memory is the normal case, not a problem.
+ */
+function isMissingError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+/** What `lstat` said about one of the two directories the read passes through. */
+type DirCheck =
+  | { readonly state: "usable" }
+  | { readonly state: "missing" }
+  | { readonly state: "symlink" }
+  | { readonly state: "unreadable"; readonly error: string };
+
+/**
+ * Inspect one directory on the way to the notes.
+ *
+ * `lstat`, not `stat`: a symlink has to be seen *as* a symlink. A committed
+ * `.nax/memory` pointing at `$HOME` would otherwise turn this read into a walk
+ * of somewhere else entirely, which no per-file rule could catch, because every
+ * entry it listed would look like an ordinary note candidate.
+ */
+async function checkDir(path: string): Promise<DirCheck> {
+  try {
+    const info = await _repoNotesDeps.lstat(path);
+    return info.isSymbolicLink() ? { state: "symlink" } : { state: "usable" };
+  } catch (error) {
+    return isMissingError(error) ? { state: "missing" } : { state: "unreadable", error: errorMessage(error) };
+  }
+}
+
+/**
+ * Whether both directories are usable, after logging the one warn a refusal
+ * owes — a symlink names the directory that is the link, and an unreadable one
+ * names the directory plus the error behind it.
+ *
+ * The first unusable directory ends the walk: `dirs` is ordered outermost first,
+ * so a symlinked `.nax` never causes a second `lstat` inside the tree it links to.
+ */
+async function dirsUsable(dirs: readonly string[], logger: MemoryLogger): Promise<boolean> {
+  for (const path of dirs) {
+    const check = await checkDir(path);
+    if (check.state === "usable") continue;
+    if (check.state === "symlink") {
+      logger.warn(LOG_STAGE, "repo notes directory is a symlink", { path });
+    } else if (check.state === "unreadable") {
+      logger.warn(LOG_STAGE, "repo notes unreadable", { path, error: check.error });
+    }
+    return false;
+  }
+  return true;
 }
 
 /**
  * The candidate names — the directory's top-level `.md` entries, in file-name
- * order. A directory that cannot be listed contributes none: whether that is
- * an absent directory, a symlink or a permissions failure is the directory
- * rule's question, not a per-file one.
+ * order — or `null` once the directory itself could not be listed, which reads
+ * as "no repo notes" after the one warn this logs.
+ *
+ * A directory that vanished between `dirsUsable` and here contributes no names
+ * and no warn: nothing is wrong, there is simply nothing left to read.
  */
-async function candidateNames(dir: string): Promise<readonly string[]> {
+async function candidateNames(dir: string, logger: MemoryLogger): Promise<readonly string[] | null> {
   let entries: readonly string[];
   try {
     entries = await _repoNotesDeps.readdir(dir);
-  } catch {
-    return [];
+  } catch (error) {
+    if (isMissingError(error)) return [];
+    logger.warn(LOG_STAGE, "repo notes unreadable", { path: dir, error: errorMessage(error) });
+    return null;
   }
   return entries.filter((name) => name.endsWith(NOTE_EXTENSION)).sort(codeUnitOrder);
 }
 
 /**
+ * Read candidates in file-name order until `REPO_NOTES_MAX` notes are accepted.
+ *
+ * The candidates left over when the cap is reached are charged to `skipped`
+ * behind one warn and never measured or read: a large set of committed notes
+ * costs the repository one listing, not one read per file. Stopping in file-name
+ * order (rather than after sorting by slug) keeps which notes a capped read
+ * returns stable across machines, and the accepted notes are sorted by slug
+ * afterwards so the caller never sees the file-name order.
+ */
+async function collectNotes(names: readonly string[], dir: string, logger: MemoryLogger): Promise<RepoNotes> {
+  const accepted: MemoryNote[] = [];
+  let skipped = 0;
+  let index = 0;
+  for (; index < names.length; index += 1) {
+    if (accepted.length === REPO_NOTES_MAX) break;
+    const name = names[index];
+    const note = await readCandidate(join(dir, name), name, logger);
+    if (note === null) {
+      skipped += 1;
+    } else {
+      accepted.push(note);
+    }
+  }
+  const leftOver = names.length - index;
+  if (leftOver > 0) {
+    logger.warn(LOG_STAGE, "repo notes over limit", { skipped: leftOver });
+    skipped += leftOver;
+  }
+  return { notes: accepted.sort(bySlug), skipped };
+}
+
+/**
  * Read the repository's committed team notes.
  *
- * Never throws for repository content: a candidate that breaks a rule is
- * logged and counted, and `notes` holds only the notes that passed every rule.
+ * Never throws for repository content: a directory that is a symlink, missing
+ * or unreadable reads as no notes (with the one warn rule 1 owes), a candidate
+ * that breaks a per-file rule is logged and counted, and `notes` holds only the
+ * notes that passed every rule.
  *
  * @param input.repoRoot - Absolute path to the repository root (the `.nax` anchor)
  * @param input.logger - Logger the one-warn-per-skip lines go through
@@ -242,15 +353,8 @@ export async function readRepoNotes(input: {
   readonly logger: MemoryLogger;
 }): Promise<RepoNotes> {
   const dir = repoNotesDir(input.repoRoot);
-  const accepted: MemoryNote[] = [];
-  let skipped = 0;
-  for (const name of await candidateNames(dir)) {
-    const note = await readCandidate(join(dir, name), name, input.logger);
-    if (note === null) {
-      skipped += 1;
-    } else {
-      accepted.push(note);
-    }
-  }
-  return { notes: accepted.sort(bySlug), skipped };
+  if (!(await dirsUsable([repoNaxDir(input.repoRoot), dir], input.logger))) return { notes: [], skipped: 0 };
+  const names = await candidateNames(dir, input.logger);
+  if (names === null) return { notes: [], skipped: 0 };
+  return collectNotes(names, dir, input.logger);
 }

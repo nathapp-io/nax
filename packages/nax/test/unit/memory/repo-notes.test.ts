@@ -172,11 +172,13 @@ describe("readRepoNotes", () => {
   test("does not follow a candidate swapped for a symlink after it was measured", async () => {
     const target = join(repoRoot, "target.md");
     writeFileSync(target, noteFile({ slug: "swapped" }));
-    writeNote("swapped.md", noteFile({ slug: "swapped" }));
+    const candidatePath = writeNote("swapped.md", noteFile({ slug: "swapped" }));
     // The race the rule has to survive: `lstat` sees a regular file, and the
-    // path becomes a symlink before the read starts.
+    // path becomes a symlink before the read starts. Only the candidate is
+    // swapped — the directory checks stat `.nax` and `.nax/memory` too.
     _repoNotesDeps.lstat = async (candidate: string) => {
       const info = lstatSync(candidate);
+      if (candidate !== candidatePath) return info;
       rmSync(candidate);
       symlinkSync(target, candidate, "file");
       return info;
