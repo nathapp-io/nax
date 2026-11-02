@@ -83,24 +83,33 @@ export function clockOf(input: { readonly now?: () => Date }): () => Date {
   return input.now ?? (() => new Date());
 }
 
-/** The lock guarding one scope's mirror, or `null` when this store has no such scope. */
+/**
+ * The lock guarding one scope's mirror, or `null` when this store has no such scope.
+ *
+ * The target is spelled in its *resolved* form, and that is the identity every part of the
+ * protocol works with: the map key that deduplicates the set, the path a claim or a writer
+ * chain is registered under, and the file whose holder is read. Two stores can name one
+ * directory through different spellings — nax hands each store its own `userDir`, and a
+ * symlinked alias of the same directory is a different string — so a raw path would let two
+ * writers of one mirror believe they hold two different locks, which is exactly the pair the
+ * chain exists to order.
+ */
 function targetOf(store: MemoryStore, scope: MemoryScope): MirrorLockTarget | null {
-  if (scope === "user") {
-    const dir = store.paths.userDir;
-    return dir === null ? null : { path: join(dir, LOCK_FILE), dir };
-  }
-  return { path: store.paths.lock, dir: store.paths.projectDir };
+  const spelling = scope === "user" ? store.paths.userDir : store.paths.projectDir;
+  if (spelling === null) return null;
+  const dir = realOrRaw(spelling);
+  return { path: join(dir, LOCK_FILE), dir };
 }
 
 /**
  * The locks that guard the given scopes, deduplicated and in the one order every caller
  * takes them.
  *
- * The order is by resolved path because two processes must agree on it without sharing
- * any state: a writer holding one lock and waiting for the other while its counterpart
- * holds that one and waits for this one is a deadlock, and it only stays impossible while
- * both sides sort the same way. Sorting the spellings instead would break as soon as one
- * caller reached the same directory through a link.
+ * The set is keyed and sorted by resolved path because two processes must agree on it
+ * without sharing any state: a writer holding one lock and waiting for the other while its
+ * counterpart holds that one and waits for this one is a deadlock, and it only stays
+ * impossible while both sides sort the same way. Sorting the spellings instead would break
+ * as soon as one caller reached the same directory through a link.
  */
 export function lockTargetsFor(store: MemoryStore, scopes: readonly MemoryScope[]): readonly MirrorLockTarget[] {
   const byPath = new Map<string, MirrorLockTarget>();
@@ -108,7 +117,7 @@ export function lockTargetsFor(store: MemoryStore, scopes: readonly MemoryScope[
     const target = targetOf(store, scope);
     if (target !== null) byPath.set(target.path, target);
   }
-  return [...byPath.values()].sort((left, right) => byCodePoint(realOrRaw(left.path), realOrRaw(right.path)));
+  return [...byPath.values()].sort((left, right) => byCodePoint(left.path, right.path));
 }
 
 /** Every lock this store's writers share: the project's mirror and, when it has one, the user's. */
@@ -293,19 +302,29 @@ function combinedRelease(releases: readonly ReleaseLock[]): ReleaseLock {
  * write to. The operation claim is read first: a write operation of this process is midway
  * through the mirror, and the protocol would call our own pid `own` and hand this run the
  * file that operation believes it holds.
+ *
+ * A failure that is not contention — a directory that cannot be created, a lock file that
+ * cannot be read — unwinds exactly the same way: what this run took is handed back before the
+ * error leaves. A lock abandoned here holds its heartbeat too, so the mirror it guards would
+ * stay locked to every other writer until the heartbeat aged out.
  */
 export async function acquireMirrorLocks(
   input: MirrorLockInput,
   targets: readonly MirrorLockTarget[],
 ): Promise<ReleaseLock | null> {
   const held: ReleaseLock[] = [];
-  for (const target of targets) {
-    const lock = operationInFlight(target.path) ? null : await takeMirrorLock(input, target, true);
-    if (lock === null) {
-      await releaseMirrorLocks(input, held);
-      return null;
+  try {
+    for (const target of targets) {
+      const lock = operationInFlight(target.path) ? null : await takeMirrorLock(input, target, true);
+      if (lock === null) {
+        await releaseMirrorLocks(input, held);
+        return null;
+      }
+      held.push(lock);
     }
-    held.push(lock);
+  } catch (error) {
+    await releaseMirrorLocks(input, held);
+    throw error;
   }
   return combinedRelease([...held].reverse());
 }

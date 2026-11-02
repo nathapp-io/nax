@@ -7,6 +7,9 @@ import { PassThrough } from "node:stream";
 import { pinnedDirectoryWorker } from "#src/internal/pinned-directory-worker";
 import { withTempDir } from "#test/helpers/index";
 
+/** The flags every stage payload is created with: exclusive, and never through a link at it. */
+const STAGE_FLAGS = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
+
 async function run(
   commands: { op: string; args: unknown[] }[],
 ): Promise<{ value?: unknown; code?: string; error?: string }[]> {
@@ -56,6 +59,62 @@ describe("pinnedDirectoryWorker", () => {
         { op: "open", args: [join(dir, "stage"), constants.O_CREAT | constants.O_WRONLY, 0o600] },
       ]);
       expect(replies).toEqual([{ value: 1 }]);
+    });
+  });
+
+  test("resolves an entry against the pinned cwd and reads it through its descriptor", async () => {
+    await withTempDir(async (dir) => {
+      const note = join(dir, "note");
+      await fs.writeFile(note, "payload");
+
+      const replies = await run([
+        { op: "resolve", args: [note] },
+        { op: "open", args: [note, constants.O_RDONLY | constants.O_NOFOLLOW, 0o666] },
+        { op: "read", args: [1] },
+        { op: "close", args: [1] },
+        { op: "resolve", args: [join(dir, "missing")] },
+      ]);
+
+      expect(replies[0]?.value).toBe(await fs.realpath(note));
+      expect(replies[1]?.value).toBe(1);
+      expect(replies[2]?.value).toBe("payload");
+      expect(replies[4]?.code).toBe("ENOENT");
+    });
+  });
+
+  test("[B5] stage creates the namespace exclusively and discard empties it, with no stat in between", async () => {
+    await withTempDir(async (dir) => {
+      const stage = join(dir, "note.tmp");
+      const replies = await run([
+        { op: "stage", args: [stage, 0o700] },
+        { op: "open", args: [join(stage, "stage"), STAGE_FLAGS, 0o600] },
+        { op: "write", args: [1, Buffer.from("payload").toString("base64")] },
+        { op: "close", args: [1] },
+        { op: "discard", args: [stage, "stage"] },
+      ]);
+
+      expect(replies[1]?.value).toBe(1);
+      // The stage and everything in it is gone: the payload and then the directory itself.
+      expect(await fs.readdir(dir)).toEqual([]);
+      // Creating the same namespace twice is refused: exclusive creation is what makes it ours.
+      await fs.mkdir(stage);
+      const again = await run([{ op: "stage", args: [stage, 0o700] }]);
+      expect(again[0]?.code).toBe("EEXIST");
+    });
+  });
+
+  test("[B5] discard retains a namespace that still holds something", async () => {
+    await withTempDir(async (dir) => {
+      const stage = join(dir, "note.tmp");
+      await fs.mkdir(stage);
+      await fs.writeFile(join(stage, "foreign"), "not ours");
+
+      const replies = await run([{ op: "discard", args: [stage, "stage"] }]);
+
+      // `rmdir` clears a directory only when it is empty, so what is left is retained — and the
+      // failure is reported rather than swallowed, which is what the caller's cleanup reads.
+      expect(replies[0]?.code).toBe("ENOTEMPTY");
+      expect(await fs.readFile(join(stage, "foreign"), "utf8")).toBe("not ours");
     });
   });
 });

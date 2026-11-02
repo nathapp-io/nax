@@ -13,7 +13,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, symlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   createMemoryOutbox,
@@ -150,6 +150,43 @@ describe("a user directory two projects share", () => {
       });
       // Both locks are handed back, the shared one included.
       expect(existsSync(first.store.paths.lock)).toBe(false);
+      expect(existsSync(join(userDir, "sync.lock"))).toBe(false);
+    });
+  });
+
+  test("[B3] a store that names the shared user directory through a link shares its lock", async () => {
+    await withTempDir(async (dir) => {
+      const userDir = join(dir, "user");
+      const alias = join(dir, "user-alias");
+      await mkdir(userDir, { recursive: true });
+      await symlink(userDir, alias);
+      const first = project(dir, "project-a", userDir);
+      // Two spellings of one directory: the lock, the deduplicated set and the in-process
+      // chain all have to name the same thing, or both projects write it at once.
+      const second = project(dir, "project-b", alias);
+      expect(second.store.paths.userDir).not.toBe(first.store.paths.userDir);
+
+      const gate = Promise.withResolvers<void>();
+      const rejecting = makeMemoryProvider({
+        push: async () => {
+          await gate.promise;
+          throw refusal("note is pinned");
+        },
+      });
+      const delivering = makeMemoryProvider({ push: () => ({ id: "mem_b", status: "active" }) });
+
+      const savingFirst = save({ project: first, provider: rejecting, body: "first body" });
+      await waitForCondition(() => rejecting.push.mock.calls.length === 1, 5_000);
+      const savingSecond = save({ project: second, provider: delivering, body: "second body" });
+
+      // The alias is not a second mirror: the second save waits for the first to release it.
+      expect(await reachesWithin(() => delivering.push.mock.calls.length === 1, NOT_YET_MS)).toBe(false);
+
+      gate.reject(refusal("note is pinned"));
+      await expect(savingFirst).rejects.toMatchObject({ code: "MEMORY_PUSH_REJECTED" });
+      expect((await savingSecond).delivered).toBe(true);
+      // The refusal undid the first save, and the second save's own note survived it.
+      expect(await second.store.readNote("user", SLUG)).toMatchObject({ id: "mem_b", body: "second body" });
       expect(existsSync(join(userDir, "sync.lock"))).toBe(false);
     });
   });

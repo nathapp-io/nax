@@ -24,6 +24,7 @@ import {
   type MockLogger,
   makeLogger,
   makeMemoryProvider,
+  waitForCondition,
   withDepsRestore,
   withTempDir,
 } from "#test/helpers/index";
@@ -310,6 +311,59 @@ describe("syncMemory", () => {
     expect(typeof pub.syncMemory).toBe("function");
     expect(typeof syncMemory).toBe("function");
     expect(typeof acquireSessionLock).toBe("function");
+  });
+
+  test("[B7] a third sync does not take the claims a lost contention already released", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      const gate = Promise.withResolvers<void>();
+      h.provider.reachable.mockImplementation(async () => {
+        await gate.promise;
+        return true;
+      });
+
+      const running = syncMemory(h.input());
+      await waitForCondition(() => h.provider.reachable.mock.calls.length === 1, 5_000);
+      // The loser of a contention hands back only what it took; the running sync's claim is
+      // not its to give away, so a later caller still sees the mirror as busy.
+      expect((await syncMemory(h.input())).outcome).toBe("locked");
+      expect((await syncMemory(h.input())).outcome).toBe("locked");
+      expect(h.provider.reachable).toHaveBeenCalledTimes(1);
+
+      gate.resolve();
+      await expect(running).resolves.toMatchObject({ outcome: "synced" });
+      expect((await syncMemory(h.input())).outcome).toBe("synced");
+    });
+  });
+
+  test("[B8] a lock that cannot be taken hands back the locks already taken", async () => {
+    await withTempDir(async (dir) => {
+      const logger = makeLogger();
+      const userDir = join(dir, "user");
+      const store = createMemoryStore({ projectDir: join(dir, "project"), userDir, logger });
+      const outbox = createMemoryOutbox({ dir: store.paths.outboxDir, now: () => new Date(STAMP) });
+      const provider = makeMemoryProvider();
+      const realMkdir = _memoryStoreDeps.mkdir;
+      // The shared mirror's directory cannot be created: the project's lock has been taken by
+      // then, and a lock left behind keeps its heartbeat for as long as this process lives.
+      _memoryStoreDeps.mkdir = async (path, options) => {
+        if (String(path).endsWith("/user")) throw new Error("permission denied");
+        return realMkdir(path, options);
+      };
+
+      const result = await syncMemory({
+        store,
+        outbox,
+        provider,
+        logger,
+        now: () => new Date(STAMP),
+        isAlive: () => false,
+      });
+
+      expect(result).toMatchObject({ outcome: "failed", error: "permission denied" });
+      expect(existsSync(store.paths.lock)).toBe(false);
+      expect(provider.reachable).not.toHaveBeenCalled();
+    });
   });
 
   test("an initialisation failure is a failed run, and the in-flight guard is released", async () => {

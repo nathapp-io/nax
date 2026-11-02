@@ -1,9 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, renameSync } from "node:fs";
-import { mkdir, readFile, rename, stat } from "node:fs/promises";
+import { mkdirSync, realpathSync, renameSync } from "node:fs";
+import { mkdir, readFile, rename, stat, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { writeFileAtomic } from "#src/internal/atomic-write";
-import { openPinnedStage, pinnedOperation, withPinnedDirectory } from "#src/internal/pinned-directory";
+import {
+  openPinnedRead,
+  openPinnedStage,
+  pinnedOperation,
+  resolvePinned,
+  withPinnedDirectory,
+} from "#src/internal/pinned-directory";
 import { getAgentRuntime, nodeRuntime, setAgentRuntime } from "#src/runtime/index";
 import { withTempDir } from "#test/helpers/index";
 
@@ -66,7 +72,44 @@ describe("withPinnedDirectory", () => {
       await mkdir(path);
       await pin(path, async () => {
         expect(() => pinnedOperation(join(dir, "foreign"), "rm")).toThrow("not in the pinned directory");
-        expect(() => pinnedOperation(join(path, "note"), "rename", [join(dir, "foreign")])).toThrow("leaves");
+        expect(() => pinnedOperation(join(path, "note"), "rename", [join(dir, "foreign")])).toThrow(
+          "not in the pinned directory",
+        );
+      });
+    });
+  });
+
+  test("[B5] the one deeper operand it accepts is a name inside a staging directory", async () => {
+    await withTempDir(async (dir) => {
+      const path = join(dir, "notes");
+      await mkdir(path);
+      await pin(path, async () => {
+        const stage = join(path, "note.tmp");
+        // A staging directory this write creates is reachable; anything else that climbs is not.
+        await pinnedOperation(stage, "stage", [0o700]);
+        expect(() => pinnedOperation(join(path, "other", "note"), "stat")).toThrow("not in the pinned directory");
+        expect(() => pinnedOperation(join(path, "..", "note"), "stat")).toThrow("not in the pinned directory");
+      });
+    });
+  });
+
+  test("reads an entry from the pinned directory, not from the path that names it", async () => {
+    await withTempDir(async (dir) => {
+      const path = join(dir, "notes");
+      const aside = join(dir, "notes-aside");
+      await mkdir(path);
+      await mkdir(join(dir, "outside"));
+      await Bun.write(join(path, "note"), "real");
+      await Bun.write(join(dir, "outside", "note"), "outside");
+      await pin(path, async () => {
+        // The name now resolves to another directory; the pinned parent still holds the real
+        // file, and the resolution the worker answers with says so.
+        await rename(path, aside);
+        await symlink(join(dir, "outside"), path);
+        expect(await resolvePinned(join(path, "note"))).toBe(realpathSync(join(aside, "note")));
+        const opened = await openPinnedRead(join(path, "note"), 0);
+        expect(await opened?.readText()).toBe("real");
+        await opened?.close();
       });
     });
   });

@@ -440,9 +440,16 @@ export async function syncMemory(input: MemorySyncInput): Promise<MemorySyncResu
   const lock = input.store.paths.lock;
   // Every lock this run takes is claimed here, synchronously and before the first await: a
   // guard taken after a yield is one two callers both pass. Nothing has touched the
-  // filesystem on this path.
-  const claimed = storeLockTargets(input.store).map((target) => target.path);
-  if (!claimed.every((path) => claimSync(path))) {
+  // filesystem on this path. Only the claims *this* run won are recorded, so a run that loses
+  // contention on the second mirror gives back the first — and never the claim of the sync
+  // that is already running, which would let a third caller in behind it.
+  const claimed: string[] = [];
+  const won = storeLockTargets(input.store).every((target) => {
+    if (!claimSync(target.path)) return false;
+    claimed.push(target.path);
+    return true;
+  });
+  if (!won) {
     for (const path of claimed) releaseSync(path);
     return stopped("locked");
   }

@@ -98,15 +98,18 @@ describe("writeFileAtomic", () => {
   test("a failure never removes a file this write did not stage", async () => {
     const path = join(dir, "doc.json");
     const realOpen = _atomicWriteDeps.open;
+    let takenOver = "";
     _atomicWriteDeps.open = async (staged, flags, mode) => {
       const stage = await realOpen(staged, flags, mode);
       return {
         ...stage,
         write: async (content) => {
           await stage.write(content);
-          // The staged file is taken away and someone else's file appears under its name.
-          await rm(staged);
-          await writeFile(staged, "someone else's file\n");
+          // The stage directory this call created is taken away and someone else's file
+          // appears under its name in the shared directory.
+          takenOver = staged.replace(/\/[^/]+$/, "");
+          await rm(takenOver, { recursive: true, force: true });
+          await writeFile(takenOver, "someone else's file\n");
         },
       };
     };
@@ -119,22 +122,22 @@ describe("writeFileAtomic", () => {
       }),
     ).rejects.toThrow("destination moved");
 
-    const staged = (await readdir(dir)).filter((name) => name.endsWith(".tmp"));
-    expect(staged).toHaveLength(1);
-    expect(await readFile(join(dir, staged[0] ?? ""), "utf8")).toBe("someone else's file\n");
+    // `rmdir` clears a directory only when it is empty, and this name is not one any more.
+    expect(await readFile(takenOver, "utf8")).toBe("someone else's file\n");
     expect(existsSync(path)).toBe(false);
   });
 
   test("a failed write preserves a replacement at the staging name", async () => {
     const realOpen = _atomicWriteDeps.open;
     const failure = new Error("write failed after replacement");
-    let replacement = "";
+    let stageDir = "";
     _atomicWriteDeps.open = async (path, flags, mode) => {
       const stage = await realOpen(path, flags, mode);
-      replacement = path;
+      stageDir = path.replace(/\/[^/]+$/, "");
       return {
         ...stage,
         write: async () => {
+          // The payload's name is taken over inside the namespace this call created.
           await rm(path);
           await writeFile(path, "not our stage");
           throw failure;
@@ -143,32 +146,36 @@ describe("writeFileAtomic", () => {
     };
 
     await expect(writeFileAtomic(join(dir, "doc.json"), "ours")).rejects.toBe(failure);
-    expect(await readFile(replacement, "utf8")).toBe("not our stage");
+    // The stage went, and the entry that took its place went with it: nothing this call did
+    // not create is left to identify, and the removal is scoped to its own namespace.
+    expect(existsSync(stageDir)).toBe(false);
+    expect(await readdir(dir)).toEqual([]);
   });
 
-  test("an open failure never removes an unowned staging entry", async () => {
-    let replacement = "";
-    _atomicWriteDeps.open = async (path) => {
-      replacement = path;
+  test("a stage this call could not create is never removed", async () => {
+    let taken = "";
+    _atomicWriteDeps.stage = async (path) => {
+      taken = path;
+      // The name is already someone else's file: the exclusive creation refuses, and nothing
+      // this call does may reach what is already there.
       await writeFile(path, "not our stage");
-      throw new Error("exclusive open refused");
+      throw Object.assign(new Error("EEXIST: file already exists"), { code: "EEXIST" });
     };
-    await expect(writeFileAtomic(join(dir, "doc.json"), "ours")).rejects.toThrow("exclusive open refused");
-    expect(await readFile(replacement, "utf8")).toBe("not our stage");
+    await expect(writeFileAtomic(join(dir, "doc.json"), "ours")).rejects.toThrow("EEXIST");
+    expect(await readFile(taken, "utf8")).toBe("not our stage");
   });
 
-  test("[B5] a replacement made between the ownership check and the removal survives", async () => {
+  test("[B5] the stage is an exclusively created namespace, and the cleanup is scoped to it", async () => {
     const path = join(dir, "doc.json");
     const realDiscard = _atomicWriteDeps.discard;
-    let staged = "";
-    // The entry the cleanup will try to remove is replaced, under the name the call staged
-    // at, after that name was created. Removing on the strength of an earlier stat deletes
-    // it; the removal re-reads the entry and retains what is no longer this call's.
-    _atomicWriteDeps.discard = async (entry, created) => {
-      staged = String(entry);
-      await rm(entry, { force: true });
-      await writeFile(entry, "not our stage");
-      await realDiscard(entry, created);
+    let stageDir = "";
+    // An entry that is not this call's appears inside the namespace while the write is
+    // failing. The removal is one `rmdir` of a directory the call created exclusively, which
+    // clears it only while it is empty — so what is left is retained, never swept by a stat.
+    _atomicWriteDeps.discard = async (entry) => {
+      stageDir = entry;
+      await writeFile(join(entry, "foreign"), "not ours\n");
+      await realDiscard(entry);
     };
 
     await expect(
@@ -179,11 +186,15 @@ describe("writeFileAtomic", () => {
       }),
     ).rejects.toThrow("destination moved");
 
-    expect(await readFile(staged, "utf8")).toBe("not our stage");
+    expect(stageDir.endsWith(".tmp")).toBe(true);
+    expect((await stat(stageDir)).isDirectory()).toBe(true);
+    expect((await stat(stageDir)).mode & 0o777).toBe(0o700);
+    // The foreign entry survived, and so did the namespace holding it.
+    expect(await readFile(join(stageDir, "foreign"), "utf8")).toBe("not ours\n");
     expect(existsSync(path)).toBe(false);
   });
 
-  test("an identity failure neither writes nor removes an unidentified stage", async () => {
+  test("an identity failure neither writes nor leaves its stage behind", async () => {
     const realOpen = _atomicWriteDeps.open;
     const failure = new Error("fstat failed");
     let writes = 0;
@@ -203,10 +214,8 @@ describe("writeFileAtomic", () => {
 
     await expect(writeFileAtomic(join(dir, "doc.json"), "ours")).rejects.toBe(failure);
     expect(writes).toBe(0);
-    const entries = await readdir(dir);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.endsWith(".tmp")).toBe(true);
-    expect(await readFile(join(dir, entries[0] ?? ""), "utf8")).toBe("");
+    // The namespace is this call's whether or not a descriptor could be identified, so it goes.
+    expect(await readdir(dir)).toEqual([]);
   });
 
   test("hands the published file's identity to the caller after the rename", async () => {

@@ -1,13 +1,17 @@
 /**
  * File-backed note mirror. Slugs are validated before I/O; directory and existing
- * note targets must resolve inside their scope root. Reads open a descriptor first and
- * prove, against the namespace as it resolves *afterwards*, that it holds the confined
- * entry — a check taken before the open can be fooled by a parent swapped in between.
- * Listings reject directory replacement and skip escaping files.
+ * note targets must resolve inside their scope root.
  *
- * Mutations run in a dedicated helper whose verified cwd pins the parent inode.
- * Stage creation, publication, deletion and cleanup are cwd-relative there: a
- * replacement at the original path cannot receive any of these operations.
+ * Reads and mutations are both run relative to a *pinned* parent. The parent's
+ * identity is verified against the directory the store resolved, the helper process
+ * then chdirs into it, and every later operation is resolved by that process against
+ * its own cwd. A name on disk can be renamed or replaced afterwards without moving
+ * the pinned directory, so nothing the store verified can be redirected underneath it:
+ * a read takes the entry's bytes from the pinned parent, and a write stages, publishes
+ * and cleans up there. Revalidating a pathname instead would leave the window this
+ * closes — a parent swapped out of the root, restored for the check, and swapped out
+ * again for the syscall names an outside file on both sides of the comparison.
+ *
  * The caller's global cwd is never changed. Post-checks report moved directories;
  * they are not the mechanism that prevents access to replacements.
  *
@@ -16,30 +20,23 @@
  * state) and each scope's generated `MEMORY.md`. They hold no user-authored
  * paths, so they are read and written without a slug to validate; the only
  * scope rule is that the user files need a user directory. A record read is
- * still confined: it resolves inside the store directory and opens with no
- * follow, so a link at `decisions.jsonl` or `sync.json` cannot make the store
- * read bytes from outside it.
+ * still confined: it is read under the project directory's pin and never
+ * follows a link out of the store.
  */
 import type { Dirent } from "node:fs";
 import { constants } from "node:fs";
 import { mkdir, open, readdir, rm, stat } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { z } from "zod";
+import { basename, dirname, join } from "node:path";
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
 import { writeFileAtomic } from "#src/internal/atomic-write";
-import { pinnedOperation, withPinnedDirectory } from "#src/internal/pinned-directory";
+import { openPinnedRead, pinnedOperation, resolvePinned, withPinnedDirectory } from "#src/internal/pinned-directory";
 import { isInside, realOrRaw } from "#src/internal/realpath";
 import { byCodePoint } from "#src/internal/sort";
 import { parseMemoryNote, serializeMemoryNote } from "./note.ts";
-import {
-  MEMORY_DECISION_STATUSES,
-  MEMORY_SLUG_RE,
-  type MemoryDecision,
-  type MemoryNote,
-  type MemoryScope,
-} from "./types.ts";
+import { defaultSyncState, parseDecisionLine, parseSyncStateText } from "./records.ts";
+import { MEMORY_SLUG_RE, type MemoryDecision, type MemoryNote, type MemoryScope } from "./types.ts";
 
 const ERROR_STAGE = "memory";
 const INDEX_FILE = "MEMORY.md";
@@ -75,13 +72,14 @@ function identityOf(info: { dev: number; ino: number }): Identity {
   return { dev: info.dev, ino: info.ino };
 }
 
-/** I/O seam: reads prove descriptor identity; deletes use the active pinned parent. */
+/** I/O seam: reads run under the pinned parent; deletes use the active one; `pin` takes it. */
 export const _memoryStoreDeps: {
   open: OpenFile;
   stat: StatPath;
   mkdir: MakeDir;
   readdir: ReadDirEntries;
   rm: RemoveFile;
+  pin: typeof withPinnedDirectory;
 } = {
   open: async (path, flags) => {
     const handle = await open(path, flags);
@@ -95,6 +93,7 @@ export const _memoryStoreDeps: {
   mkdir: (path, options) => mkdir(path, options),
   readdir: (path, options) => readdir(path, options),
   rm: (path, options) => pinnedOperation<void>(path, "rm") ?? rm(path, options),
+  pin: withPinnedDirectory,
 };
 
 /** The files this store owns, spelled out once so every caller agrees on them. */
@@ -131,50 +130,6 @@ export interface MemoryStore {
   readSyncState(): Promise<MemorySyncState>;
   writeSyncState(state: MemorySyncState): Promise<void>;
   writeIndex(scope: MemoryScope, text: string): Promise<void>;
-}
-
-/** A decision as one mirror line; the shape is what makes a line a decision. */
-const DecisionSchema = z.object({
-  id: z.string().min(1),
-  subject: z.string().min(1),
-  predicate: z.string().min(1),
-  object: z.string().min(1),
-  updatedAt: z.string().min(1),
-  status: z.enum(MEMORY_DECISION_STATUSES),
-});
-
-const SyncStateSchema = z.object({
-  provider: z.string().nullable(),
-  cursor: z.object({ project: z.string().nullable(), user: z.string().nullable() }),
-  lastPullAt: z.string().nullable(),
-  lastError: z.string().nullable(),
-});
-
-/** The state of a store that has never synced. */
-function defaultSyncState(): MemorySyncState {
-  return { provider: null, cursor: { project: null, user: null }, lastPullAt: null, lastError: null };
-}
-
-/** One decoded JSON value, or `null` when the text is not JSON. */
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    // Not JSON: the caller decides whether that is a skipped line or a defaulted state.
-    return null;
-  }
-}
-
-/** One mirror line as a decision, or `null` when the line is not one. */
-function parseDecisionLine(line: string): MemoryDecision | null {
-  const parsed = DecisionSchema.safeParse(parseJson(line));
-  return parsed.success ? parsed.data : null;
-}
-
-/** The whole `sync.json` text as a state, or `null` when it does not hold one. */
-function parseSyncStateText(text: string): MemorySyncState | null {
-  const parsed = SyncStateSchema.safeParse(parseJson(text));
-  return parsed.success ? parsed.data : null;
 }
 
 /** `undefined`, `null` and `""` all mean "this store has no user directory". */
@@ -328,7 +283,7 @@ export function createMemoryStore(input: {
     const identity = await _memoryStoreDeps.stat(dir);
     return { scope, root, spelling: notesDir, dir, identity };
   }
-  /** Detect movement of the original path; mutation safety comes from the pinned cwd. */
+  /** Detect movement of the original path; the pin is what keeps operations off a replacement. */
   async function assertSameDirectory(handle: VerifiedDir): Promise<void> {
     const dir = confinedRealPath(handle.scope, handle.root, handle.dir);
     const identity = await identityAt(dir);
@@ -337,43 +292,52 @@ export function createMemoryStore(input: {
     }
   }
   /**
-   * Any confined file's text, read from a descriptor whose ownership is proved after it is
-   * opened.
+   * One entry's text, read relative to the verified, pinned parent — never to a pathname.
    *
-   * Proof cannot be taken from the namespace as it stood *before* the open: between that
-   * check and the open, `notes/` can become a link to a directory outside the root, so both
-   * the expected identity and the opened descriptor name the same outside file and agree
-   * with each other. So the descriptor is opened first — no follow at the last component —
-   * and what it holds is compared with the entry as the namespace resolves it *now*: still
-   * inside the root, and the very file the descriptor was opened on. A swap either leaves
-   * the root (refused) or names a different inode (refused), and the bytes read afterwards
-   * come from the descriptor, which no later link can redirect.
+   * The worker resolves the entry against the cwd it pinned and verified, so a directory
+   * renamed or replaced afterwards cannot redirect the answer. A plain file is then opened by
+   * name inside that same session: no path in this process is revalidated, so the window a
+   * check leaves — a parent swapped out of the root, restored for the check and swapped out
+   * again for the syscall — does not exist here. A link is a name whose bytes live elsewhere,
+   * so its target is confined against the scope root and read where it resolves.
    */
-  async function readConfinedText(scope: MemoryScope, root: string, path: string): Promise<string | null> {
-    const target = confinedRealPath(scope, root, path);
-    const file = await openConfined(scope, root, path, target);
+  async function readEntryText(handle: VerifiedDir, entry: string): Promise<string | null> {
+    try {
+      const resolved = await resolvePinned(entry);
+      // Only reachable inside the pinned session; a vanished entry reads as missing.
+      if (resolved === null) return null;
+      if (resolved !== entry) return await readConfinedTarget(handle, resolved);
+      const file = await openPinnedRead(entry, READ_FLAGS);
+      if (file === null) return null;
+      try {
+        return await file.readText();
+      } finally {
+        await file.close();
+      }
+    } catch (error) {
+      if (isMissing(error)) return null;
+      if (isSymlinkLoop(error)) throw outsideRoot(handle.scope, entry, handle.root, error);
+      throw error;
+    }
+  }
+  /** A link's destination, confined to the root and read where it resolves. */
+  async function readConfinedTarget(handle: VerifiedDir, target: string): Promise<string | null> {
+    const file = await openConfined(
+      handle.scope,
+      handle.root,
+      target,
+      confinedRealPath(handle.scope, handle.root, target),
+    );
     if (file === null) return null;
     try {
-      const opened = await file.stat();
-      if (!sameIdentity(opened, await entryIdentity(scope, root, path))) throw outsideRoot(scope, path, root);
       return await file.readText();
     } finally {
       await file.close();
     }
   }
-  /**
-   * The identity the entry resolves to inside the root right now; a vanished entry is
-   * refused rather than reported as readable, because nothing is left to prove ownership
-   * against and the descriptor's contents are then unaccounted for.
-   */
-  async function entryIdentity(scope: MemoryScope, root: string, path: string): Promise<Identity> {
-    const identity = await identityAt(confinedRealPath(scope, root, path));
-    if (identity === null) throw outsideRoot(scope, path, root);
-    return identity;
-  }
-  /** One note's text, read from a handle whose identity is proved first. */
+  /** One note's text, in a pinned session of its own. */
   function readNoteText(handle: VerifiedDir, slug: string): Promise<string | null> {
-    return readConfinedText(handle.scope, handle.root, entryPathIn(handle, slug));
+    return inPinnedDirectory(handle, () => readEntryText(handle, entryPathIn(handle, slug)));
   }
   /** The confined handle for a file, or `null` when it vanished; a link at it is refused. */
   async function openConfined(
@@ -427,7 +391,7 @@ export function createMemoryStore(input: {
   }
 
   function inPinnedDirectory<T>(handle: VerifiedDir, action: () => Promise<T>): Promise<T> {
-    return withPinnedDirectory(
+    return _memoryStoreDeps.pin(
       {
         path: handle.dir,
         identity: handle.identity,
@@ -461,13 +425,23 @@ export function createMemoryStore(input: {
   /** The note one listed file holds, or `null` when the file is skipped (never throws). */
   async function listedNote(handle: VerifiedDir, slug: string): Promise<MemoryNote | null> {
     try {
-      const text = await readNoteText(handle, slug);
+      const text = await readEntryText(handle, entryPathIn(handle, slug));
       // A file that vanished between the listing and the read is skipped without a warning.
       return text === null ? null : parseMemoryNote(text);
     } catch (error) {
       warnSkipped(entryName(handle, slug), error);
       return null;
     }
+  }
+
+  /** The notes of one listing, read inside the one pinned session that session opened. */
+  async function listedNotes(handle: VerifiedDir, slugs: readonly string[]): Promise<MemoryNote[]> {
+    const notes: MemoryNote[] = [];
+    for (const slug of slugs) {
+      const note = await listedNote(handle, slug);
+      if (note !== null) notes.push(note);
+    }
+    return notes;
   }
 
   async function listNotes(scope: MemoryScope): Promise<MemoryNote[]> {
@@ -488,17 +462,25 @@ export function createMemoryStore(input: {
       .map((entry) => noteSlugIn(entry))
       .filter((slug): slug is string => slug !== null)
       .sort(byCodePoint);
-    const notes: MemoryNote[] = [];
-    for (const slug of slugs) {
-      const note = await listedNote(handle, slug);
-      if (note !== null) notes.push(note);
-    }
-    return notes;
+    if (slugs.length === 0) return [];
+    return await inPinnedDirectory(handle, () => listedNotes(handle, slugs));
   }
 
-  /** One record file's text, read only from inside the project directory. */
+  /** A scope's root directory itself, verified and identified: records sit directly inside it. */
+  async function openScopeDir(scope: MemoryScope): Promise<VerifiedDir | null> {
+    const root = scope === "user" ? paths.userDir : paths.projectDir;
+    if (root === null) throw scopeUnavailable(scope);
+    const dir = confinedRealPath(scope, root, root);
+    const identity = await identityAt(dir);
+    return identity === null ? null : { scope, root, spelling: root, dir, identity };
+  }
+
+  /** One record file's text, read under the project directory's pin, never outside it. */
   async function readRecordText(path: string): Promise<string | null> {
-    return readConfinedText("project", paths.projectDir, path);
+    const handle = await openScopeDir("project");
+    if (handle === null) return null;
+    const entry = join(handle.dir, basename(path));
+    return await inPinnedDirectory(handle, () => readEntryText(handle, entry));
   }
   /** Publish one record file, creating its directory on demand: staging needs one. */
   async function writeRecordFile(path: string, text: string): Promise<void> {

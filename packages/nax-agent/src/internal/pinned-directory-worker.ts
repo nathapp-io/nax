@@ -34,11 +34,20 @@ export async function pinnedDirectoryWorker(
           value = next;
           break;
         }
+        case "read":
+          value = await fileAt(args[0]).readFile({ encoding: "utf8" });
+          break;
         case "write":
           await fileAt(args[0]).writeFile(Buffer.from(args[1], "base64"));
           break;
         case "identity":
           value = identity(await fileAt(args[0]).stat());
+          break;
+        case "resolve":
+          value = await fs.realpath(args[0]);
+          break;
+        case "stage":
+          await fs.mkdir(args[0], { mode: Number(args[1]) });
           break;
         case "close": {
           await fileAt(args[0]).close();
@@ -55,16 +64,17 @@ export async function pinnedDirectoryWorker(
           await fs.rm(args[0], { force: true });
           break;
         case "discard": {
-          // One request removes the stage only while it is still the file the caller created:
-          // nothing in the caller's process can run between reading the entry and unlinking it.
-          const expected = JSON.parse(args[1]) as { dev: number; ino: number };
+          // Remove this call's stage from the namespace this call created: the payload it
+          // wrote, then the directory itself. Nothing is checked before the removal — a stat
+          // that is then acted on deletes whatever took the name in between — and `rmdir`
+          // clears the directory only when nothing else is in it, so anything that appeared
+          // there is retained rather than swept.
           try {
-            const current = identity(await fs.lstat(args[0]));
-            if (current.dev === expected.dev && current.ino === expected.ino) await fs.unlink(args[0]);
+            await fs.unlink(`${args[0]}/${args[1]}`);
           } catch {
-            // A stage that is already gone needs no removal, and one that cannot be read is
-            // retained: an unreadable entry is not proven to be this call's to delete.
+            // The payload was published (renamed onto the target) or never created.
           }
+          await fs.rmdir(args[0]);
           break;
         }
         default:

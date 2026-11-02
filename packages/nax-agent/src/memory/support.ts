@@ -14,6 +14,7 @@
  * - `warnQuietly` reports a failure without letting the reporting fail its caller.
  */
 import type { AgentLogger } from "#src/infra/agent-logger";
+import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
 import type { MemoryProvider } from "./provider-types.ts";
 import { MEMORY_PROBE_TIMEOUT_MS, type MemoryTimers } from "./types.ts";
@@ -101,5 +102,27 @@ export function warnQuietly(logger: AgentLogger, message: string, data: Record<s
     logger.warn(ERROR_STAGE, message, data);
   } catch {
     // Nothing left to report it to: the outcome the caller is owed still returns.
+  }
+}
+
+/**
+ * Run one bookkeeping step whose failure must not become the caller's answer.
+ *
+ * A provider's refusal is the error the caller is owed, and what follows it — taking the
+ * refused write back off the queue, putting back the note the mirror held — is a consequence
+ * of that error, not an alternative to it. A step that throws is reported and the rest still
+ * runs: a mirror left missing a note it holds, because a queue file could not be removed, is
+ * worse than an entry surviving to be refused again.
+ */
+export async function bookkeeping(
+  logger: AgentLogger,
+  message: string,
+  data: Record<string, unknown>,
+  step: () => Promise<void>,
+): Promise<void> {
+  try {
+    await step();
+  } catch (error) {
+    warnQuietly(logger, message, { ...data, error: errorMessage(error) });
   }
 }

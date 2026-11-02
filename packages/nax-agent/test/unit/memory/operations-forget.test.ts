@@ -40,6 +40,7 @@ import {
   syncMemory,
 } from "@nathapp/nax-agent";
 import { _atomicWriteDeps } from "#src/internal/atomic-write";
+import { _memoryStoreDeps } from "#src/memory/store";
 import { acquireSessionLock } from "#src/session-store/index";
 import {
   assertDefined,
@@ -52,6 +53,7 @@ import {
   makeLogger,
   makeMemoryProvider,
   waitForCondition,
+  withDepsRestore,
   withTempDir,
 } from "#test/helpers/index";
 
@@ -67,6 +69,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const MIRROR_READ_ONLY = "mirror is read-only";
 /** What a full disk reports: a write-ahead entry that cannot be stored. */
 const ENOSPC = "ENOSPC: no space left on device";
+/** What a queue directory the process may not write reports: a refused entry that stays. */
+const OUTBOX_READ_ONLY = "EACCES: the outbox is read-only";
 
 /** The note already in the mirror: what a forget acts on, and what a refusal must put back. */
 function note(overrides: Partial<MemoryNote> = {}): MemoryNote {
@@ -192,6 +196,8 @@ async function lockNonce(h: Harness): Promise<string> {
 }
 
 describe("forgetMemoryNote", () => {
+  withDepsRestore(_memoryStoreDeps);
+
   test("AC-1: a direct forget the provider answers deletes the note and resolves deleted", async () => {
     await withTempDir(async (dir) => {
       const h = harness(dir, { push: { id: "mem_1", status: "deleted" } });
@@ -492,6 +498,33 @@ describe("forgetMemoryNote", () => {
       // Only a permanent refusal is undone; a transient failure leaves the decision standing.
       expect(await h.store.readNote("project", SLUG)).toBeNull();
       expect(await soleEntry(h)).toMatchObject({ kind: "forget", slug: SLUG, state: "queued", reason: REASON });
+    });
+  });
+
+  test("[B9] a refusal whose entry cannot be removed still restores the note and keeps the refusal", async () => {
+    await withTempDir(async (dir) => {
+      const rejected = refusal();
+      const h = harness(dir, { push: rejected });
+      await h.store.writeNote(note());
+      const realRm = _memoryStoreDeps.rm;
+      // The queue cannot take the refused entry back off: that is bookkeeping, and it must not
+      // decide whether the note the forget deleted is put back, nor what error the caller sees.
+      _memoryStoreDeps.rm = async (path, options) => {
+        if (String(path).startsWith(h.store.paths.outboxDir)) throw new Error(OUTBOX_READ_ONLY);
+        return realRm(path, options);
+      };
+
+      const caught = await h.forget().catch((error: unknown) => error);
+
+      assertNaxError(caught, "rejected forget");
+      expect(caught).toBe(rejected);
+      expect(await h.store.readNote("project", SLUG)).toEqual(note());
+      const warns = h.logger.calls.filter((call) => call.level === "warn");
+      expect(warns.map((call) => call.message)).toContain(
+        "memory operation could not take a refused write off the queue",
+      );
+      // The entry the queue could not give up is what the next sync marks rejected.
+      expect(await soleEntry(h)).toMatchObject({ kind: "forget", slug: SLUG, state: "queued" });
     });
   });
 

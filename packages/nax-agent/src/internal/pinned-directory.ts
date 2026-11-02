@@ -19,17 +19,34 @@ function protocolError(message: string): NaxError {
   return new NaxError(message, "MEMORY_IO_FAILED", { stage: "memory" });
 }
 
-/** Only immediate children are accepted; no `..`, absolute or multi-component operands reach the worker. */
+/** The suffix of a staging directory: the one two-level operand a request may name. */
+const STAGE_SUFFIX = ".tmp";
+
+/**
+ * The operand a request carries, relative to the pinned directory.
+ *
+ * A name in the pinned directory is one component; the only deeper operand is a name inside
+ * one of its staging directories (`<name>.tmp/<name>`), which is how a write reaches the
+ * namespace it created for itself. Nothing else is accepted: no `..`, no absolute path and
+ * no further nesting.
+ */
+function operandIn(pinnedPath: string, path: string): string {
+  if (dirname(path) === pinnedPath) return basename(path);
+  const stage = dirname(path);
+  if (dirname(stage) === pinnedPath && basename(stage).endsWith(STAGE_SUFFIX)) {
+    return `${basename(stage)}/${basename(path)}`;
+  }
+  throw protocolError(`Path is not in the pinned directory: ${path}`);
+}
+
+/** Resolve one operand to a request: the same check for a single path and for a rename pair. */
 export function pinnedOperation<T>(path: string, op: string, args: unknown[] = []): Promise<T> | null {
   const directory = activeDirectory.getStore();
   if (!directory) return null;
-  if (dirname(path) !== directory.path) throw protocolError(`Path is not in the pinned directory: ${path}`);
   if (op === "rename") {
-    const target = String(args[0]);
-    if (dirname(target) !== directory.path) throw protocolError(`Rename leaves the pinned directory: ${target}`);
-    return directory.request<T>(op, [basename(path), basename(target)]);
+    return directory.request<T>(op, [operandIn(directory.path, path), operandIn(directory.path, String(args[0]))]);
   }
-  return directory.request<T>(op, [basename(path), ...args]);
+  return directory.request<T>(op, [operandIn(directory.path, path), ...args]);
 }
 
 async function* responses(stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
@@ -127,4 +144,40 @@ export async function openPinnedStage(
     identity: () => directory.request("identity", [descriptor]),
     close: () => directory.request("close", [descriptor]),
   };
+}
+
+/** One entry of the pinned directory, open for reading; `null` outside a pinned session. */
+export interface PinnedRead {
+  readText(): Promise<string>;
+  close(): Promise<void>;
+}
+
+/**
+ * Open one entry of the pinned directory and read it through the descriptor.
+ *
+ * `path` names an entry *of the pinned directory itself*: the worker resolves it against the
+ * cwd it pinned, so no later rename of the directory on disk can redirect the read. The flags
+ * the caller passes are the ones the worker opens with — `O_NOFOLLOW` included, so a link at
+ * the name is refused rather than followed.
+ */
+export async function openPinnedRead(path: string, flags: number): Promise<PinnedRead | null> {
+  const directory = activeDirectory.getStore();
+  if (!directory) return null;
+  const descriptor = await pinnedOperation<number>(path, "open", [flags, 0o666]);
+  return {
+    readText: () => directory.request<string>("read", [descriptor]),
+    close: () => directory.request("close", [descriptor]),
+  };
+}
+
+/**
+ * The real path of one entry of the pinned directory, resolved by the worker against its cwd.
+ *
+ * The answer is what the entry is *inside the pinned directory*: the caller learns whether the
+ * name is a plain file (the answer names the pinned path itself) or a link, and where that link
+ * goes, without resolving the mutable parent a second time in this process.
+ */
+export async function resolvePinned(path: string): Promise<string | null> {
+  const resolved = await pinnedOperation<string>(path, "resolve");
+  return resolved === null ? null : await resolved;
 }

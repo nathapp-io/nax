@@ -9,26 +9,38 @@
  * one filesystem, where POSIX makes it atomic. Not fsync'd: this guards against
  * a killed PROCESS, not a power loss.
  *
- * The stage is created exclusively (`O_CREAT | O_EXCL`) and its identity —
- * `dev`/`ino` — is read from that descriptor, never from its path: the file this
- * call created is then known no matter what later takes the name. In a pinned-directory
- * context all stage, publication and cleanup operations are relative to its verified cwd.
- * Ordinary callers retain path-based I/O. The hooks additionally verify the destination:
+ * The stage is a *directory* (`<path>.<uuid>.tmp`) created exclusively by this
+ * call: `mkdir` refuses a name that is already taken, so the namespace the
+ * payload is written into is this call's alone, and everything the cleanup
+ * removes is an entry this call created there. The shared directory is never
+ * the target of a removal. On failure the payload goes and then the directory,
+ * and `rmdir` clears a directory only when it is empty, so anything that
+ * appeared inside this call's namespace is retained rather than swept. Neither
+ * removal reads an identity first: a stat that is then acted on deletes
+ * whatever took the name in between, and another stat does not make an unlink
+ * ownership-atomic. What remains is the caller's contract — whoever can write
+ * *inside* the stage directory can replace the payload, which is the same
+ * permission that could replace the target itself — and a retained `.tmp`
+ * entry costs nothing, because every listing in this package ignores those
+ * names.
+ *
+ * In a pinned-directory context all stage, publication and cleanup operations
+ * are relative to the verified cwd, and the stage directory is reached as one
+ * deeper operand of it. Ordinary callers retain path-based I/O. The hooks
+ * additionally verify the destination:
  *
  * - `beforePublish` runs once the bytes are staged and before the rename, so a
  *   destination that moved during the write is refused before it receives them;
  * - `afterPublish` receives the staged file's identity once the rename is done, so a
  *   caller can check — and take back by identity — a note that landed somewhere the
- *   rename could not be told apart from;
- * - the cleanup removes the stage only while it is still the file this call created, and
- *   does the ownership check and the removal as one operation (see `removeOwnedEntry`): a
- *   stat that is then acted on would delete whatever took the name between the two.
+ *   rename could not be told apart from.
  *
  * A throw from either hook fails the write and removes the stage.
  */
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, open, rename, rm, unlink } from "node:fs/promises";
+import { mkdir, open, rename, rm, rmdir, unlink } from "node:fs/promises";
+import { join } from "node:path";
 import { openPinnedStage, pinnedOperation } from "./pinned-directory.ts";
 
 /** What a file is, independent of the path that names it. */
@@ -40,8 +52,17 @@ interface Identity {
 /** Exclusive creation, and never through a link at the stage's name. */
 const STAGE_FLAGS: number = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
 
+/** The stage's own directory: this write's private namespace, unpublished by anyone else. */
+const STAGE_DIR_MODE = 0o700;
+
 /** The default a plain `writeFile` would apply, so a published note keeps ordinary permissions. */
 const STAGE_MODE = 0o666;
+
+/** The suffix every stage directory carries; the package's listings ignore those names. */
+const STAGE_SUFFIX = ".tmp";
+
+/** The payload's name inside the stage directory: the only entry this call ever puts there. */
+const STAGE_NAME = "stage";
 
 /** One created stage: written through its descriptor, identified by it, then closed. */
 interface StagedFile {
@@ -50,20 +71,22 @@ interface StagedFile {
   close(): Promise<void>;
 }
 
-/**
- * Remove the entry at `path` only while it still holds the file `created` names.
- *
- * Injectable for tests that simulate a stage name being taken over before the removal.
- */
-type DiscardStage = (path: string, created: Identity) => Promise<void>;
+/** Remove one stage directory and whatever this call left in it. Injectable for tests. */
+type DiscardStage = (stageDir: string) => Promise<void>;
 
-/** Injectable for tests that simulate a write dying part-way, or a stage name being taken over. */
+/** Injectable for tests that simulate a write dying part-way, or a stage namespace being taken. */
 export const _atomicWriteDeps: {
+  stage: (dir: string, mode: number) => Promise<void>;
   open: (path: string, flags: number, mode: number) => Promise<StagedFile>;
   rename: typeof rename;
   rm: typeof rm;
   discard: DiscardStage;
 } = {
+  stage: async (dir, mode) => {
+    const pinned = await pinnedOperation<void>(dir, "stage", [mode]);
+    if (pinned !== null) return await pinned;
+    await mkdir(dir, { mode });
+  },
   open: async (path, flags, mode) => {
     const pinned = await openPinnedStage(path, flags, mode);
     if (pinned) return pinned;
@@ -79,69 +102,39 @@ export const _atomicWriteDeps: {
   },
   rename: (from, to) => pinnedOperation<void>(String(from), "rename", [String(to)]) ?? rename(from, to),
   rm: (path, options) => pinnedOperation<void>(String(path), "rm") ?? rm(path, options),
-  discard: (path, created) => removeOwnedEntry(path, created),
+  discard: (dir) => removeStage(dir),
 };
 
 /**
- * The identity of whatever entry is at `path`, never following a link there.
+ * Remove this call's stage directory, or leave it in place when it cannot be emptied.
  *
- * Deliberately not a seam: the ownership check below is only worth anything if nothing can
- * interpose between it and the removal it licenses.
+ * There is no ownership check before the removal, because there is nothing to check: the
+ * directory was created exclusively by this call, so the payload inside it is this call's
+ * entry. `rmdir` is the removal that stays safe even so — it clears a directory only when
+ * nothing else is inside it, so an entry that appeared in the namespace is retained and a
+ * failed removal only leaves a `.tmp` name behind, which no listing reads.
  */
-async function entryIdentity(path: string): Promise<Identity | null> {
+async function removeStage(stageDir: string): Promise<void> {
+  const pinned = pinnedOperation<void>(stageDir, "discard", [STAGE_NAME]);
+  if (pinned !== null) return await pinned;
   try {
-    const info = await lstat(path);
-    return { dev: info.dev, ino: info.ino };
+    await unlink(join(stageDir, STAGE_NAME));
   } catch {
-    // Nothing there to identify — and nothing left to remove.
-    return null;
+    // The payload was published (renamed onto the target) or was never created.
   }
+  await rmdir(stageDir);
 }
 
 /**
- * Remove a stage's entry, but only while that entry is still the file this call created.
+ * Remove the stage this call created, or leave it in place when it cannot be emptied.
  *
- * Ownership of a name cannot be proven by a stat and then acted on: `lstat` and `unlink` are
- * two operations, and anything able to write in the directory can put a different file at the
- * name between them — which that sequence then deletes even though this module never wrote it.
- * So the check and the removal are one operation, and there is deliberately nothing injectable
- * inside it:
- *
- * - in a pinned directory the worker does both in a single request, so no code in this
- *   process can interpose;
- * - elsewhere they are the two statements below, with no seam between them.
- *
- * What remains is the caller's contract: whoever can write in the target's directory is the
- * trust boundary — they could replace the target itself. A replacement that lands *before* the
- * operation is caught by the check and retained, and a stray `.tmp` beside the target costs
- * nothing because every listing in this package ignores those names. A replacement that lands
- * after it is a file this call has already decided not to touch.
+ * A removal that fails is not reported: the failure the caller is owed is the one that
+ * brought us here, and a stage left behind is a name every listing in the package ignores.
  */
-async function removeOwnedEntry(path: string, created: Identity): Promise<void> {
-  const pinned = pinnedOperation<boolean>(path, "discard", [JSON.stringify(created)]);
-  if (pinned !== null) {
-    await pinned;
-    return;
-  }
-  const current = await entryIdentity(path);
-  if (current === null) return;
-  if (current.dev !== created.dev || current.ino !== created.ino) return;
-  await unlink(path);
-}
-
-/**
- * Remove the stage this call created, or leave it in place when its ownership cannot be proven.
- *
- * `created` is the identity taken from the descriptor at creation, so it stays true even if
- * the name was taken over afterwards. A mismatch means the path now holds something else, and
- * removing it would delete data this module never wrote. Without an identity (open or fstat
- * failed), ownership is unknown: never remove an entry on that basis. A removal that fails is
- * not reported: the failure the caller is owed is the one that brought us here.
- */
-async function discardStage(staged: string, created: Identity | null): Promise<void> {
-  if (created === null) return;
-  await _atomicWriteDeps.discard(staged, created).catch(() => {
-    // A stage that could not be removed is retained; the pinned worker reports its own errors.
+async function discardStage(stageDir: string, owned: boolean): Promise<void> {
+  if (!owned) return;
+  await _atomicWriteDeps.discard(stageDir).catch(() => {
+    // A stage that could not be emptied is retained; the pinned worker reports its own errors.
   });
 }
 
@@ -155,23 +148,30 @@ export async function writeFileAtomic(
   } = {},
 ): Promise<void> {
   // Ends in `.tmp`, not `.json`, so directory sweeps that match `*.json` never see it.
-  const staged = `${path}.${randomUUID()}.tmp`;
+  const staged = `${path}.${randomUUID()}${STAGE_SUFFIX}`;
+  const payload = join(staged, STAGE_NAME);
   let stage: StagedFile | null = null;
+  let owned = false;
   let identity: Identity | null = null;
   try {
-    stage = await _atomicWriteDeps.open(staged, STAGE_FLAGS, options.mode ?? STAGE_MODE);
+    await _atomicWriteDeps.stage(staged, STAGE_DIR_MODE);
+    // Only a namespace this call created is this call's to remove.
+    owned = true;
+    stage = await _atomicWriteDeps.open(payload, STAGE_FLAGS, options.mode ?? STAGE_MODE);
     // Capture ownership before writing: a failed write may already have lost its pathname.
     identity = await stage.identity();
     await stage.write(content);
     if (options.beforePublish) await options.beforePublish();
-    await _atomicWriteDeps.rename(staged, path);
+    await _atomicWriteDeps.rename(payload, path);
     if (options.afterPublish && identity !== null) await options.afterPublish(identity);
   } catch (error) {
-    await discardStage(staged, identity);
+    await discardStage(staged, owned);
     throw error;
   } finally {
     await stage?.close().catch(() => {
       // A stage whose write already failed cannot be rescued by reporting the close either.
     });
   }
+  // The published payload left the namespace empty: the directory is all that remains.
+  await discardStage(staged, owned);
 }

@@ -18,7 +18,8 @@
  * — or removed, when there was none — because a refusal is the one answer that will
  * never change. After acceptance there is no rollback either: the provider holds the
  * note, so a mirror write that then fails leaves the staged note in place and reports
- * the bookkeeping failure.
+ * the bookkeeping failure. See `refusal.ts` for what a refusal does to the queue and
+ * the mirror, and why each step stands on its own.
  *
  * The note is minted with its own UUID — which is also the request's client id, so the save
  * and the write that delivers it are named by one id — starts `active` under `direct` and
@@ -53,7 +54,6 @@
  */
 import { randomUUID } from "node:crypto";
 import { type AgentLogger, getLogger } from "#src/infra/agent-logger";
-import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
 import { refreshMemoryIndex } from "./index-render.ts";
 import {
@@ -66,8 +66,9 @@ import {
 import { isMemoryPushRejected } from "./note.ts";
 import { createMemoryOutbox, type MemoryOutbox } from "./outbox.ts";
 import type { MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
+import { discardRefused, restoreForgotten, restoreNote } from "./refusal.ts";
 import type { MemoryStore } from "./store.ts";
-import { GLOBAL_MEMORY_TIMERS, providerAnswers, raceTimeout, warnQuietly } from "./support.ts";
+import { GLOBAL_MEMORY_TIMERS, providerAnswers, raceTimeout } from "./support.ts";
 import {
   MEMORY_OP_TIMEOUT_MS,
   type MemoryNote,
@@ -266,26 +267,6 @@ async function queueFenced(
 }
 
 /**
- * Undo the staged write: the note that was under the key before, or no note at all.
- *
- * A rollback that fails is reported, never thrown: the caller is owed the provider's
- * refusal, and a second error raised here would replace it. The mirror is then left
- * holding the refused note, which is the one case worth a warning of its own.
- */
-async function restoreNote(input: MemorySaveInput, note: MemoryNote, previous: MemoryNote | null): Promise<void> {
-  try {
-    if (previous === null) await input.store.deleteNote(note.scope, note.slug);
-    else await input.store.writeNote(previous);
-  } catch (error) {
-    warnQuietly(input.logger, "memory save could not restore the previous note", {
-      path: input.store.paths.notesDir,
-      slug: note.slug,
-      error: errorMessage(error),
-    });
-  }
-}
-
-/**
  * Stage the note in the mirror and declare the write on the queue, while holding the lock.
  *
  * The note under the key is read first, because a permanent refusal has to be able to put it
@@ -333,8 +314,8 @@ async function handOver(
     answer = await raceTimeout(input.provider.push(saveRequest(note, input.writeMode)), MEMORY_OP_TIMEOUT_MS, timers);
   } catch (error) {
     if (!isMemoryPushRejected(error)) return await queuedEntryResult(input, note);
-    await input.outbox.remove(note.id);
-    await restoreNote(input, note, previous);
+    await discardRefused(input, note.id);
+    await restoreNote(input, note.scope, note.slug, previous);
     throw error;
   }
   await input.outbox.remove(note.id);
@@ -418,19 +399,6 @@ async function queuedForget(input: MemoryForgetInput): Promise<MemoryForgetResul
   return { slug: input.slug, status: FORGET_STATUS_BY_MODE[input.writeMode], delivered: false };
 }
 
-/** Put a retired note back; a failure is reported, never thrown, so the refusal still reaches the caller. */
-async function restoreForgotten(input: MemoryForgetInput, previous: MemoryNote): Promise<void> {
-  try {
-    await input.store.writeNote(previous);
-  } catch (error) {
-    warnQuietly(input.logger, "memory forget could not restore the note", {
-      path: input.store.paths.notesDir,
-      slug: previous.slug,
-      error: errorMessage(error),
-    });
-  }
-}
-
 /**
  * The ordered half of a forget: join a sync that owns the mirror, or take the lock and decide
  * under it. Nothing is read from the mirror before the lock is held, so what a forget retires
@@ -498,7 +466,9 @@ async function handOverForget(
     answer = await raceTimeout(input.provider.push(request), MEMORY_OP_TIMEOUT_MS, timers);
   } catch (error) {
     if (!isMemoryPushRejected(error)) return await queuedForget(input);
-    await input.outbox.remove(request.clientId);
+    // The refusal is the caller's answer; the entry and the note are put back regardless of
+    // whether removing it works, so a refused forget never leaves the note deleted.
+    await discardRefused(input, request.clientId);
     if (input.writeMode === "direct") await restoreForgotten(input, previous);
     throw error;
   }

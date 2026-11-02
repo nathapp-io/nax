@@ -376,12 +376,15 @@ describe("memory store records", () => {
         const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
         await store.writeDecisions([kept]);
         await writeFixture(outside, `${JSON.stringify(decision({ id: "leaked" }))}\n`);
-        const realOpen = _memoryStoreDeps.open;
-        // The swap happens *inside* the read: the path the store checked now names a link.
-        _memoryStoreDeps.open = async (target, flags) => {
+        const realPin = _memoryStoreDeps.pin;
+        // The swap lands after every check the store makes and before it reads under the pin:
+        // the path it verified now names a link, and only the entry inside the pinned
+        // directory is left to decide where the bytes come from.
+        _memoryStoreDeps.pin = async (input, action) => {
+          const target = join(project, "decisions.jsonl");
           await unlink(target);
           await symlink(outside, target);
-          return realOpen(target, flags);
+          return realPin(input, action);
         };
 
         const error = await caught(store.readDecisions());

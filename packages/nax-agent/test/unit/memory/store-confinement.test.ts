@@ -166,14 +166,19 @@ describe("memory store confinement", () => {
     });
   });
 
-  test("AC-5: writeNote stages a .tmp file in the notes directory and renames it onto the note", async () => {
+  test("AC-5: writeNote stages a .tmp namespace in the notes directory and renames the note out of it", async () => {
     await withTempDir(async (dir) => {
       const project = projectPath(dir);
       const notesDir = join(project, "notes");
       const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
       const calls: string[] = [];
+      const realStage = _atomicWriteDeps.stage;
       const realOpen = _atomicWriteDeps.open;
       const realRename = _atomicWriteDeps.rename;
+      _atomicWriteDeps.stage = async (staged, mode) => {
+        calls.push(`stage ${staged}`);
+        await realStage(staged, mode);
+      };
       _atomicWriteDeps.open = async (staged, flags, mode) => {
         calls.push(`open ${staged}`);
         const stage = await realOpen(staged, flags, mode);
@@ -194,11 +199,17 @@ describe("memory store confinement", () => {
 
       // The store writes to the resolved directory (a temp dir may be reached through a link).
       const final = join(realpathSync(notesDir), "replay-budget.md");
-      const staged = (calls[0] ?? "").replace("open ", "");
-      expect(dirname(staged)).toBe(dirname(final));
-      expect(staged.endsWith(".tmp")).toBe(true);
-      expect(calls).toEqual([`open ${staged}`, `write ${staged}`, `rename ${staged} ${final}`]);
+      const stageDir = (calls[0] ?? "").replace("stage ", "");
+      const staged = (calls[1] ?? "").replace("open ", "");
+      // The stage is a namespace of its own — a `.tmp` directory beside the note — and the
+      // payload inside it is what the rename publishes.
+      expect(dirname(stageDir)).toBe(dirname(final));
+      expect(stageDir.endsWith(".tmp")).toBe(true);
+      expect(dirname(staged)).toBe(stageDir);
+      expect(calls).toEqual([`stage ${stageDir}`, `open ${staged}`, `write ${staged}`, `rename ${staged} ${final}`]);
       expect(existsSync(join(notesDir, "replay-budget.md"))).toBe(true);
+      // The published note leaves nothing of the namespace behind.
+      expect((await readdir(notesDir)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
     });
   });
 
@@ -228,12 +239,14 @@ describe("memory store confinement", () => {
         await store.writeNote(note({ slug: "kept-budget" }));
         const outsideFile = join(dir, "outside-note.md");
         await writeFixture(outsideFile, serializeMemoryNote(note({ slug: "kept-budget", body: "leaked body" })));
-        const realOpen = _memoryStoreDeps.open;
-        // The swap happens *inside* the read: everything the store checked is now a lie.
-        _memoryStoreDeps.open = async (path, flags) => {
-          await unlink(path);
-          await symlink(outsideFile, path);
-          return realOpen(path, flags);
+        const realPin = _memoryStoreDeps.pin;
+        // The swap lands after the store's checks and before it reads under the pin: the note
+        // is a link now, and the link's target is what decides.
+        _memoryStoreDeps.pin = async (input, action) => {
+          const entry = join(project, "notes", "kept-budget.md");
+          await unlink(entry);
+          await symlink(outsideFile, entry);
+          return realPin(input, action);
         };
 
         const error = await caught(store.readNote("project", "kept-budget"));
@@ -243,7 +256,7 @@ describe("memory store confinement", () => {
       });
     });
 
-    test("readNote refuses a notes directory swapped for an outside link inside the read", async () => {
+    test("readNote refuses a notes directory swapped for an outside link before the read", async () => {
       await withTempDir(async (dir) => {
         const project = projectPath(dir);
         const notesDir = join(project, "notes");
@@ -256,13 +269,13 @@ describe("memory store confinement", () => {
           join(outside, "kept-budget.md"),
           serializeMemoryNote(note({ slug: "kept-budget", body: "leaked body" })),
         );
-        const realOpen = _memoryStoreDeps.open;
-        // A different directory now answers for the checked path, holding a note of the same
-        // name: the path still resolves "inside" nothing the store verified.
-        _memoryStoreDeps.open = async (path, flags) => {
+        const realPin = _memoryStoreDeps.pin;
+        // A different directory answers for the checked path by the time the pin is taken,
+        // holding a note of the same name: the pin refuses the directory it did not verify.
+        _memoryStoreDeps.pin = async (input, action) => {
           await rename(notesDir, aside);
           await symlink(outside, notesDir);
-          return realOpen(path, flags);
+          return realPin(input, action);
         };
 
         const error = await caught(store.readNote("project", "kept-budget"));
@@ -272,38 +285,84 @@ describe("memory store confinement", () => {
       });
     });
 
-    test("[B2] readNote returns no outside bytes when the parent is swapped before the stat", async () => {
+    test("[B2] readNote returns no outside bytes when the parent is swapped around the stat", async () => {
       await withTempDir(async (dir) => {
         const project = projectPath(dir);
         const notesDir = join(project, "notes");
         const aside = join(project, "notes-aside");
         const outside = join(dir, "outside");
         const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
-        await store.writeNote(note({ slug: "kept-budget" }));
+        await store.writeNote(note({ slug: "kept-budget", body: "real body" }));
         await mkdir(outside, { recursive: true });
         await writeFixture(
           join(outside, "kept-budget.md"),
           serializeMemoryNote(note({ slug: "kept-budget", body: "leaked body" })),
         );
+        const swapOut = async () => {
+          await rename(notesDir, aside);
+          await symlink(outside, notesDir);
+        };
+        const restore = async () => {
+          await unlink(notesDir);
+          await rename(aside, notesDir);
+        };
+        const realOpen = _memoryStoreDeps.open;
         const realStat = _memoryStoreDeps.stat;
-        let swapped = false;
-        // The one window a pre-open check cannot close: the parent becomes an outside link
-        // before the identity the read will be held to is taken, so a store that trusts that
-        // identity reads the outside file and both sides agree with each other.
+        // The reviewer's sequence: the entry is opened while the parent is an outside link,
+        // the parent is restored for the confinement check, and swapped out again before the
+        // identity that check is held to is read. A read that compares two resolutions of the
+        // same movable pathname finds them agreeing on the outside file and returns its bytes.
+        _memoryStoreDeps.open = async (path, flags) => {
+          await swapOut();
+          const file = await realOpen(path, flags);
+          await restore();
+          return file;
+        };
         _memoryStoreDeps.stat = async (path) => {
-          if (!swapped && path.endsWith("kept-budget.md")) {
-            swapped = true;
-            await rename(notesDir, aside);
-            await symlink(outside, notesDir);
-          }
+          if (path.endsWith("kept-budget.md")) await swapOut();
           return realStat(path);
         };
 
-        const error = await caught(store.readNote("project", "kept-budget"));
+        const result = await store.readNote("project", "kept-budget").then(
+          (read) => read,
+          (error: unknown) => error,
+        );
 
-        expect(swapped).toBe(true);
-        assertNaxError(error, "readNote after the parent was swapped before the stat");
-        expect(error).toMatchObject({ code: "MEMORY_PATH_OUTSIDE", context: { stage: "memory" } });
+        expect(JSON.stringify(result)).not.toContain("leaked body");
+        expect(result).toMatchObject({ body: "real body" });
+      });
+    });
+
+    test("readNote takes its bytes from the pinned parent, not from the path it checked", async () => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const notesDir = join(project, "notes");
+        const aside = join(project, "notes-aside");
+        const outside = join(dir, "outside");
+        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+        await store.writeNote(note({ slug: "kept-budget", body: "real body" }));
+        await mkdir(outside, { recursive: true });
+        await writeFixture(
+          join(outside, "kept-budget.md"),
+          serializeMemoryNote(note({ slug: "kept-budget", body: "leaked body" })),
+        );
+        const realPin = _memoryStoreDeps.pin;
+        // The path names an outside directory for the whole read. The directory the store
+        // verified was pinned first, so the bytes are still the ones it holds.
+        _memoryStoreDeps.pin = async (input, action) =>
+          realPin(input, async () => {
+            await rename(notesDir, aside);
+            await symlink(outside, notesDir);
+            return action();
+          });
+
+        const result = await store.readNote("project", "kept-budget").then(
+          (read) => read,
+          (error: unknown) => error,
+        );
+
+        expect(result).toMatchObject({ body: "real body" });
+        expect(JSON.stringify(result)).not.toContain("leaked body");
       });
     });
 
@@ -407,11 +466,19 @@ describe("memory store confinement", () => {
           await rename(notesDir, aside);
           await symlink(outside, notesDir);
         };
+        /** Write a foreign stage directory at `entry`'s place, in whatever directory it names. */
+        const foreignStage = async (entry: string) => {
+          const stage = dirname(entry);
+          await mkdir(stage, { recursive: true });
+          await writeFixture(join(stage, "stage"), "foreign stage");
+          return stage;
+        };
+        let replaced = "";
         if (operation === "open") {
           const realOpen = _atomicWriteDeps.open;
           _atomicWriteDeps.open = async (path, flags, mode) => {
             await swap();
-            await writeFixture(path, "foreign stage");
+            replaced = await foreignStage(String(path));
             return realOpen(path, flags, mode);
           };
         } else if (operation === "publish") {
@@ -419,7 +486,7 @@ describe("memory store confinement", () => {
           _atomicWriteDeps.rename = async (from, to) => {
             // Make the source exist in the replacement too, so a path rename can succeed.
             await swap();
-            await writeFixture(String(from), "foreign stage");
+            replaced = await foreignStage(String(from));
             await realRename(from, to);
           };
         } else {
@@ -427,12 +494,12 @@ describe("memory store confinement", () => {
           _atomicWriteDeps.rename = async () => {
             throw new Error("publish refused");
           };
-          // The replacement lands before the cleanup runs: the entry the caller will try to
-          // remove is no longer the file it staged.
-          _atomicWriteDeps.discard = async (path, created) => {
+          // The replacement lands before the cleanup runs: the namespace the caller will try
+          // to remove is no longer the one it created.
+          _atomicWriteDeps.discard = async (stage) => {
             await swap();
-            await writeFixture(String(path), "foreign stage");
-            await realDiscard(path, created);
+            replaced = await foreignStage(join(String(stage), "stage"));
+            await realDiscard(stage);
           };
         }
         const error = await caught(store.writeNote(note()));
@@ -440,10 +507,9 @@ describe("memory store confinement", () => {
           assertNaxError(error, `writeNote with a parent swapped during ${operation}`);
           expect(error.code).toBe("MEMORY_PATH_OUTSIDE");
         }
-        const names = await readdir(outside);
-        expect(names).toHaveLength(1);
-        expect(names[0]?.endsWith(".tmp")).toBe(true);
-        expect(await Bun.file(join(outside, names[0] ?? "")).text()).toBe("foreign stage");
+        // The foreign stage is still where it was written, and nothing of ours is left beside it.
+        expect(await Bun.file(join(replaced, "stage")).text()).toBe("foreign stage");
+        expect(await readdir(replaced)).toEqual(["stage"]);
         expect((await readdir(aside)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
       });
     });

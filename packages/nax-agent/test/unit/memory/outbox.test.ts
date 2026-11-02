@@ -356,8 +356,10 @@ describe("memory outbox", () => {
       const [stagePath = ""] = staged;
       const [stagedText = ""] = written;
       expect(staged).toHaveLength(1);
-      expect(stagePath.endsWith(".tmp")).toBe(true);
-      expect(dirname(stagePath)).toBe(outDir);
+      // The stage is a `.tmp` directory beside the entry, and the payload inside it is what
+      // the rename publishes.
+      expect(dirname(stagePath).endsWith(".tmp")).toBe(true);
+      expect(dirname(dirname(stagePath))).toBe(outDir);
       expect(JSON.parse(stagedText.slice(stagePath.length + 1))).toMatchObject({ slug: "in-flight", seq: 2 });
       expect(duringEnqueue.map((entry) => entry.clientId)).toEqual([queued.clientId]);
       expect(published).toEqual([join(outDir, `00000002-${arrived.clientId}.json`)]);
