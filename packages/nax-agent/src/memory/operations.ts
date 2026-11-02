@@ -32,10 +32,14 @@
  * order the agent made them. That order is only meaningful if two saves of the key
  * cannot both decide it, so a mirror's saves run one after another: in this process
  * through `orderedByStore`, and across processes through the store's own lock file —
- * the artifact that already means "this mirror has one writer". A save that cannot take
- * the lock stages nothing and queues its write instead, because the mirror is the
- * other owner's to change. Every path that returns refreshes the index, so the next
- * session reads the note whether or not this session could deliver it.
+ * the artifact that already means "this mirror has one writer". A save that ends up
+ * undelivered declares its queue entry before it asks the provider, and a save fenced
+ * by the lock waits, briefly, for the holder to hand the lock back or declare that
+ * entry (`waitForTurn`), so the sequence a write takes still follows the order the
+ * writes were made in. A save that never gets its turn stages nothing and only queues
+ * its write, because the mirror is its owner's to change. Every path that returns
+ * refreshes the index, so the next session reads the note whether or not this session
+ * could deliver it.
  */
 import { randomUUID } from "node:crypto";
 import type { AgentLogger } from "#src/infra/agent-logger";
@@ -205,20 +209,58 @@ async function orderedByStore<T>(lockPath: string, work: () => Promise<T>): Prom
   }
 }
 
+/** The undelivered answer: the write is on the queue, not delivered. */
+function queued(note: MemoryNote): MemorySaveResult {
+  return { slug: note.slug, status: note.status, delivered: false };
+}
+
 /**
- * The undelivered answer: the mirror already holds the note, and the queue now holds the write.
+ * Queue a write this save could not deliver, and rebuild the index from what the mirror
+ * holds.
  *
- * The request keeps the id the note was staged with, so the note, the entry and the
- * write a later sync sends are named by one client id — the provider can recognise a
- * replay of something it already took.
+ * The staged note is what the mirror keeps, so the session that reads the index next has to
+ * see it — whether it was staged by this save or was already there when this one joined the
+ * queue behind it.
  */
-async function queueUndelivered(
+async function queueUnderLock(
   input: MemoryOperationInput,
   note: MemoryNote,
   request: MemoryWriteRequest,
 ): Promise<MemorySaveResult> {
   await input.outbox.enqueue(request);
-  return { slug: note.slug, status: note.status, delivered: false };
+  await refreshIndex(input);
+  return queued(note);
+}
+
+/**
+ * The answer for a write that is already on the queue and whose staged note the mirror
+ * keeps: the entry is what makes it durable, so the index is the only thing left to rebuild.
+ */
+async function queuedEntryResult(input: MemoryOperationInput, note: MemoryNote): Promise<MemorySaveResult> {
+  await refreshIndex(input);
+  return queued(note);
+}
+
+/**
+ * Queue a write another writer's mirror could not take: the entry is the only thing this
+ * save writes.
+ *
+ * The index is not rebuilt here on purpose. It would be rendered from a mirror that its
+ * owner is still changing, so rebuilding it could publish their half-written state over the
+ * view this save just refused to touch. The owner's own refresh is the one that counts, and
+ * the sync that delivers this entry refreshes it either way.
+ *
+ * The request keeps the id the note was minted with, so the note, the entry and the write a
+ * later sync sends are named by one client id — the provider can recognise a replay of
+ * something it already took.
+ */
+async function queueFenced(
+  input: MemoryOperationInput,
+  note: MemoryNote,
+  request: MemoryWriteRequest,
+): Promise<MemorySaveResult> {
+  await input.outbox.enqueue(request);
+  return queued(note);
 }
 
 /**
@@ -242,44 +284,62 @@ async function restoreNote(input: MemorySaveInput, note: MemoryNote, previous: M
 }
 
 /**
- * Hand the staged note to the provider, or leave it on the queue.
+ * Stage the note in the mirror and declare the write on the queue, while holding the lock.
  *
- * A key the outbox already holds a queued write for is not pushed at all: the provider
- * would receive this write ahead of the one already waiting, so the new write joins the
- * queue behind it and the order the agent wrote them in survives. Otherwise the provider
- * is probed and then pushed, each through its own deadline, and anything short of an
- * acceptance — a probe that answered `false`, threw or timed out; a push that did the
- * same — queues the same request under the same client id and reports the save as
- * undelivered.
- *
- * The two failures are not the same fact. A transient one leaves the staged note in the
- * mirror, because the local write is the newer fact and it is exactly what the queue will
- * deliver. `MEMORY_PUSH_REJECTED` is the provider saying it will never take this write,
- * so queueing it would only repeat the refusal: the mirror is put back the way it was and
- * the provider's error reaches the caller. Only the provider's answer changes the note's
- * id and status, and only after the provider has taken it — the delivered arm is the one
- * arm that cannot be undone.
+ * The note under the key is read first, because a permanent refusal has to be able to put it
+ * back. A key the outbox already holds a queued write for is not taken any further: this
+ * write joins the queue behind the one already waiting, and the order the agent wrote them
+ * in survives. Otherwise the note is staged and its request goes on the queue *before* the
+ * provider is asked — the early entry is this save's declaration that it may end up
+ * undelivered, which is what a save fenced by this lock reads to take its own sequence
+ * behind (`waitForTurn`). A delivery that succeeds takes the entry back off again.
  */
-async function deliverOrQueue(
+async function deliverLocked(input: MemorySaveInput): Promise<MemorySaveResult> {
+  const note = stagedNote(input);
+  const request = saveRequest(note, input.writeMode);
+  const previous = await input.store.readNote(input.write.scope, input.write.slug);
+  await input.store.writeNote(note);
+  if ((await input.outbox.heldKeys()).has(memoryNoteKey(note.scope, note.slug))) {
+    return await queueUnderLock(input, note, request);
+  }
+  await input.outbox.enqueue(request);
+  return await handOver(input, note, previous);
+}
+
+/**
+ * Ask the provider for the note the queue already carries, and take the entry back on success.
+ *
+ * The provider is probed and then pushed, each through its own deadline, and anything short
+ * of an acceptance — a probe that answered `false`, threw or timed out; a push that did the
+ * same — leaves the entry where it is and reports the save as undelivered. The staged note
+ * stays too: the local write is the newer fact, and it is exactly what the queue will
+ * deliver.
+ *
+ * `MEMORY_PUSH_REJECTED` is the provider saying it will never take this write, so queueing
+ * it would only repeat the refusal: the entry comes back off, the mirror is put back the way
+ * it was, and the provider's error reaches the caller. Only the provider's answer changes
+ * the note's id and status, and only after the provider has taken it — the delivered arm is
+ * the one arm that cannot be undone.
+ */
+async function handOver(
   input: MemorySaveInput,
   note: MemoryNote,
   previous: MemoryNote | null,
 ): Promise<MemorySaveResult> {
   const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
-  const request = saveRequest(note, input.writeMode);
-  if ((await input.outbox.heldKeys()).has(memoryNoteKey(note.scope, note.slug))) {
-    return await queueUndelivered(input, note, request);
-  }
-  if (!(await providerAnswers(input.provider, timers))) return await queueUndelivered(input, note, request);
+  if (!(await providerAnswers(input.provider, timers))) return await queuedEntryResult(input, note);
   let answer: MemoryPushResult;
   try {
-    answer = await raceTimeout(input.provider.push(request), MEMORY_OP_TIMEOUT_MS, timers);
+    answer = await raceTimeout(input.provider.push(saveRequest(note, input.writeMode)), MEMORY_OP_TIMEOUT_MS, timers);
   } catch (error) {
-    if (!isMemoryPushRejected(error)) return await queueUndelivered(input, note, request);
+    if (!isMemoryPushRejected(error)) return await queuedEntryResult(input, note);
+    await input.outbox.remove(note.id);
     await restoreNote(input, note, previous);
     throw error;
   }
+  await input.outbox.remove(note.id);
   await recordDelivered(input, note, answer);
+  await refreshIndex(input);
   return { slug: note.slug, status: answer.status, delivered: true };
 }
 
@@ -354,6 +414,50 @@ async function releaseSaveLock(input: MemorySaveInput, release: ReleaseLock): Pr
 }
 
 /**
+ * How long a fenced save waits for the mirror's writer to show its hand, and how often it
+ * looks. A save that is delivering declares its queue entry within microseconds of taking
+ * the lock, so the wait only has to outlast that; one held by a sync shows neither an entry
+ * nor a release, and the wait expires so the write still lands on the queue.
+ */
+const FENCED_WAIT_MS = 250;
+const FENCED_POLL_MS = 10;
+
+/** Wait one interval on the operation's own timer seam. */
+async function pause(timers: MemoryTimers, ms: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    timers.setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * Wait, bounded, for the mirror's writer to finish or to declare its queue entry, and take
+ * the lock when it hands it back.
+ *
+ * Nothing may take a sequence while an older save is undecided. A save that ends up
+ * undelivered writes its entry before it asks the provider, so "this key is already queued"
+ * arrives within microseconds of the older save holding the lock — and a save that joins the
+ * queue behind that entry keeps the order the writes were made in, instead of a sync
+ * delivering the newer write first and leaving the provider on the older content. A lock
+ * handed back means the older save decided the other way (it delivered), so this save gets
+ * its own turn under the lock rather than queueing.
+ *
+ * `null` means neither happened in time. The mirror is then most likely held by a sync,
+ * which queues no save of its own, so queueing at once cannot put this write ahead of an
+ * older one.
+ */
+async function waitForTurn(input: MemorySaveInput): Promise<ReleaseLock | null> {
+  const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
+  const key = memoryNoteKey(input.write.scope, input.write.slug);
+  for (let waited = 0; waited < FENCED_WAIT_MS; waited += FENCED_POLL_MS) {
+    if ((await input.outbox.heldKeys()).has(key)) return null;
+    const lock = await takeSaveLock(input);
+    if (lock !== null) return lock;
+    await pause(timers, FENCED_POLL_MS);
+  }
+  return null;
+}
+
+/**
  * Store one note and deliver it to the provider, or queue it for the next sync.
  *
  * The validator decides first, so a refusal leaves the store exactly as it found it.
@@ -371,37 +475,28 @@ export async function saveMemoryNote(input: MemorySaveInput): Promise<MemorySave
 }
 
 /**
- * The ordered half of a save: take the mirror's lock, and stage and deliver under it.
+ * The ordered half of a save: take the mirror's lock, and stage and declare under it.
  *
  * A mirror another writer owns is not this save's to change, and nothing is lost by
  * leaving it alone: the note goes on the outbox under its own client id, and the sync that
  * does own the mirror delivers it in sequence. Staging into a mirror someone else is
  * draining or pulling would be the very interleaving the lock is there to prevent.
+ *
+ * A sync in this process is the one owner that needs no wait: it queues no save of its own,
+ * so this write can join the queue immediately. Any other owner has to be waited for
+ * (`waitForTurn`), because the sequence this save takes must come after the one that write
+ * will take.
  */
 async function commitSave(input: MemorySaveInput): Promise<MemorySaveResult> {
-  const lock = await takeSaveLock(input);
+  const lockPath = input.store.paths.lock;
+  if (syncInFlight(lockPath)) return await queueWithoutMirror(input);
+  const lock = (await takeSaveLock(input)) ?? (await waitForTurn(input));
   if (lock === null) return await queueWithoutMirror(input);
   try {
-    return await stageAndDeliver(input);
+    return await deliverLocked(input);
   } finally {
     await releaseSaveLock(input, lock);
   }
-}
-
-/**
- * The mirror's half of a save, run while this process holds the lock.
- *
- * The note under the key is read first, because a permanent refusal has to be able to
- * put it back; the note is then mirrored and handed over, and however that ends the
- * indexes are rebuilt, so the session that reads them next sees this save.
- */
-async function stageAndDeliver(input: MemorySaveInput): Promise<MemorySaveResult> {
-  const previous = await input.store.readNote(input.write.scope, input.write.slug);
-  const note = stagedNote(input);
-  await input.store.writeNote(note);
-  const result = await deliverOrQueue(input, note, previous);
-  await refreshIndex(input);
-  return result;
 }
 
 /**
@@ -415,5 +510,5 @@ async function stageAndDeliver(input: MemorySaveInput): Promise<MemorySaveResult
  */
 async function queueWithoutMirror(input: MemorySaveInput): Promise<MemorySaveResult> {
   const note = stagedNote(input);
-  return await queueUndelivered(input, note, saveRequest(note, input.writeMode));
+  return await queueFenced(input, note, saveRequest(note, input.writeMode));
 }
