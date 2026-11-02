@@ -72,15 +72,24 @@ function instantOf(updatedAt: string): number | null {
  * Newest first by the instant `updatedAt` names, not by its literal text: the
  * note codec accepts any non-empty single line, so two notes may carry the same
  * moment in different UTC offsets (`…T12:00:00+09:00` is `…T03:00:00Z`), and a
- * string compare would rank them wrongly. A value that names no instant falls
- * back to the literal compare, which keeps the order deterministic.
+ * string compare would rank them wrongly.
+ *
+ * One total order covers every pair, so the comparator is transitive whatever the
+ * input order: values that name an instant come first, newest to oldest, and the
+ * values that name none follow, compared as text. Mixing the two comparisons
+ * instead would let an unparseable value sort lexically between two instants
+ * whose chronological order is the reverse, and the ranking would then depend on
+ * the order the notes arrived in.
  */
 function compareUpdatedDesc(a: string, b: string): number {
-  if (a === b) return 0;
   const aMs = instantOf(a);
   const bMs = instantOf(b);
-  if (aMs !== null && bMs !== null) return aMs === bMs ? 0 : aMs < bMs ? 1 : -1;
-  return a < b ? 1 : a > b ? -1 : 0;
+  if (aMs === null || bMs === null) {
+    if (aMs !== null) return -1;
+    if (bMs !== null) return 1;
+    return a === b ? 0 : a < b ? 1 : -1;
+  }
+  return aMs === bMs ? 0 : aMs < bMs ? 1 : -1;
 }
 
 /** Rank: score descending, then newest first, then slug ascending. */

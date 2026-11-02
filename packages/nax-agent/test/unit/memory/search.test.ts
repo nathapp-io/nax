@@ -174,6 +174,30 @@ describe("searchMemoryNotes: ordering and limit", () => {
     expect(slugs(search([unparsedEarlier, unparsedLater], "replay"))).toEqual(["zeta-window", "alpha-window"]);
   });
 
+  test("puts a note with an unparseable timestamp last, whatever the input order (AC-9)", () => {
+    // One total order, so the comparator is transitive: instants first (newest
+    // first), then the values that name none. A mixed literal/parsed compare
+    // would be non-transitive here — the unparseable value sorts lexically
+    // between the two instants, opposite to their chronological order — and the
+    // ranking would come out differently for each permutation of the input.
+    const olderWithOffset = note({ slug: "alpha-window", updatedAt: "2026-11-01T12:00:00.000+09:00" }); // 03:00Z
+    const newestInUtc = note({ slug: "beta-window", updatedAt: "2026-11-01T06:00:00.000Z" }); // 06:00Z
+    const notAnInstant = note({ slug: "gamma-window", updatedAt: "2026-11-01T09:00:00.000+99:00" });
+
+    const inputs = [
+      [olderWithOffset, newestInUtc, notAnInstant],
+      [olderWithOffset, notAnInstant, newestInUtc],
+      [newestInUtc, olderWithOffset, notAnInstant],
+      [newestInUtc, notAnInstant, olderWithOffset],
+      [notAnInstant, olderWithOffset, newestInUtc],
+      [notAnInstant, newestInUtc, olderWithOffset],
+    ];
+
+    for (const notes of inputs) {
+      expect(slugs(search(notes, "replay"))).toEqual(["beta-window", "alpha-window", "gamma-window"]);
+    }
+  });
+
   test("returns exactly `limit` hits (AC-10)", () => {
     const notes = [note({ slug: "alpha-window" }), note({ slug: "beta-window" })];
     const hits = searchMemoryNotes(notes, "replay", 1);
