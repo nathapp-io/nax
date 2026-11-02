@@ -400,6 +400,7 @@ estimateCostUsd
 expandMcpRuleGrants
 expandProviderGrants
 findApproval
+findSecret
 findSecretSpans
 flushOpenToolAuditSinks
 getAgentRuntime
@@ -513,6 +514,7 @@ truncationDirectionFor
 unregisterToolAuditSink
 unsandboxedSentence
 validateImageAttachments
+validateMemoryNoteWrite
 validateProviderId
 warnSandboxUnavailableOnce
 writeApprovalsFile

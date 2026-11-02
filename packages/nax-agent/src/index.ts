@@ -108,9 +108,11 @@ export {
   type MemoryScope,
   type MemoryTimers,
   type MemoryWriteRefusal,
+  findSecret,
   isMemoryPushRejected,
   parseMemoryNote,
   serializeMemoryNote,
+  validateMemoryNoteWrite,
 } from "#src/memory/index";
 export {
   createTerminalAuthInteraction,
