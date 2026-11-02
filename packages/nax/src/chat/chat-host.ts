@@ -165,6 +165,8 @@ class NativeChatHost implements ChatHost {
   private turnListener?: (event: SessionEvent) => void;
   private sending = false;
   private handle?: ChatSessionHandle;
+  /** The index the active session was opened with: what a subagent session inherits. */
+  private activeMemoryIndex?: string;
   private ledger?: ChatLedger;
   private resumeNotice?: string;
   private resourceNoticeRead = false;
@@ -244,7 +246,7 @@ class NativeChatHost implements ChatHost {
         asks: this.asks,
         ledger: () => this.ledger,
         turnListener: () => this.turnListener,
-        memoryIndex: this.hostMemory.current,
+        memoryIndex: () => this.activeMemoryIndex,
       });
       const hostTasks = createHostTasks({ outputDir: this.outputDir, now: deps.now, logger: deps.logger });
       this.tasks = hostTasks.tasks;
@@ -338,18 +340,17 @@ class NativeChatHost implements ChatHost {
   private async startSession(input: { mode: ChatMode; model: string }): Promise<void> {
     this.assertOpen();
     assertAcpInstalled(this.deps.acp, input.model);
-    // The index this open carries: synced and rendered once, before the session is built.
-    await this.hostMemory.prepare();
-    const next = await this.open({ ...input, storage: this.deps.storage, ...this.openArgs() });
-    await this.replace(next);
+    const memoryIndex = await this.hostMemory.prepare();
+    const next = await this.open({ ...input, storage: this.deps.storage, ...this.openArgs(memoryIndex) });
+    await this.replace(next, memoryIndex);
     await this.jobs?.attach();
     this.resumeNotice = undefined;
     await this.contextWindows.prime(next.meta.model);
   }
 
-  /** The open arguments every session open shares; the storage and the resume id vary per site. */
-  private openArgs(): Omit<OpenChatSessionRequest, "storage"> {
-    const memoryIndex = this.hostMemory.current();
+  /** The arguments every open shares; the memory index is passed in, never re-read, so
+   * overlapping session operations cannot swap snapshots. */
+  private openArgs(memoryIndex: string | undefined): Omit<OpenChatSessionRequest, "storage"> {
     return {
       cwd: this.deps.cwd,
       repoRoot: this.repoRoot,
@@ -361,7 +362,7 @@ class NativeChatHost implements ChatHost {
     };
   }
 
-  private async replace(next: ChatSessionHandle): Promise<void> {
+  private async replace(next: ChatSessionHandle, memoryIndex: string | undefined): Promise<void> {
     // A late open must release its handle before the operation drain can finish.
     if (this.closed) {
       await this.hygiene.close(next);
@@ -370,6 +371,7 @@ class NativeChatHost implements ChatHost {
     const previous = this.handle;
     if (previous) this.hostJobs?.sessionChanged();
     this.handle = next;
+    this.activeMemoryIndex = memoryIndex;
     this.ledger ??= createChatLedger({
       sessionId: next.meta.sessionId,
       model: next.meta.model,
@@ -399,15 +401,15 @@ class NativeChatHost implements ChatHost {
 
   private async resumeSession(input: { id?: string }): Promise<void> {
     this.assertOpen();
-    // Prepared for every resume, before the resumed session is opened.
-    await this.hostMemory.prepare();
+    // Prepared for every resume; this resume's own snapshot is the one its open carries.
+    const memoryIndex = await this.hostMemory.prepare();
     const id =
       input.id ??
       (await latestResumableId({ storage: this.deps.storage, cwd: this.deps.cwd, logger: this.deps.logger }));
     if (this.handle?.meta.sessionId !== id) {
       let next: ChatSessionHandle;
       try {
-        next = await this.open({ storage: this.deps.storage, ...this.openArgs(), resumeId: id });
+        next = await this.open({ storage: this.deps.storage, ...this.openArgs(memoryIndex), resumeId: id });
       } catch (error) {
         if (error instanceof Error && "code" in error && error.code === "SESSION_LOCKED") {
           const holder = await this.deps.storage.readLockHolder(id);
@@ -419,7 +421,7 @@ class NativeChatHost implements ChatHost {
         }
         throw error;
       }
-      await this.replace(next);
+      await this.replace(next, memoryIndex);
     }
     await this.jobs?.attach();
     const resumed = this.requireHandle();
@@ -433,11 +435,17 @@ class NativeChatHost implements ChatHost {
   private async reopen(
     input: { mode: ChatMode; model: string },
     previous: ChatSessionHandle,
+    memoryIndex: string | undefined,
   ): Promise<ChatSessionHandle> {
     // Reopens own per-open cleanup, but share the original storage lock. Even a
     // failed open must drain its shadow without releasing the active host's lock.
     const storage: SessionStorage = { ...this.deps.storage, acquireLock: async () => async () => {} };
-    const next = await this.open({ ...input, storage, resumeId: previous.meta.sessionId, ...this.openArgs() });
+    const next = await this.open({
+      ...input,
+      storage,
+      resumeId: previous.meta.sessionId,
+      ...this.openArgs(memoryIndex),
+    });
     return {
       ...next,
       release: async (options) => {
@@ -462,18 +470,18 @@ class NativeChatHost implements ChatHost {
     const target = { mode: input.mode ?? from.mode, model };
     if (target.mode === from.mode && target.model === from.model) return;
     assertAcpInstalled(this.deps.acp, target.model);
-    // One prepare per requested switch: the reopen, the rollback reopen and openFresh all
-    // read it through current(), so a mode switch syncs once rather than once per open.
-    await this.hostMemory.prepare();
+    // One prepare per switch: its reopen, rollback reopen and openFresh share this snapshot.
+    const memoryIndex = await this.hostMemory.prepare();
     const outcome = await switchChatSession({
       previous,
       from: { mode: from.mode, model: from.model },
       target,
-      reopen: (to) => this.reopen(to, previous),
-      openFresh: (to) => this.open({ ...to, storage: this.deps.storage, ...this.openArgs() }),
+      reopen: (to) => this.reopen(to, previous, memoryIndex),
+      openFresh: (to) => this.open({ ...to, storage: this.deps.storage, ...this.openArgs(memoryIndex) }),
       writeMeta: (meta) => this.deps.storage.writeMeta(meta),
     });
     this.handle = outcome.handle;
+    this.activeMemoryIndex = memoryIndex;
     if (outcome.handle.meta.sessionId !== previous.meta.sessionId) {
       this.hostJobs?.sessionChanged();
       this.resumeNotice = outcome.notice;

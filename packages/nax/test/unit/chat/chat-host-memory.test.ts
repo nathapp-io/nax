@@ -22,6 +22,7 @@ import {
   makeNaxConfig,
   makeSubagentHostHarness,
   type SubagentHostHarness,
+  waitForCondition,
 } from "@test/helpers";
 import {
   type ChatHost,
@@ -57,6 +58,8 @@ type RenderFn = () => Promise<RenderedMemoryIndex>;
 interface FakeMemoryOptions {
   /** The rendered text; defaults to `INDEX_TEXT`. */
   readonly text?: string;
+  /** One text per `renderIndex` call, the last one repeating; overrides `text` when given. */
+  readonly texts?: readonly string[];
   /** The outcome the synced run reports; defaults to `synced`. */
   readonly outcome?: MemorySyncResult["outcome"];
   readonly syncRejects?: boolean;
@@ -69,6 +72,13 @@ interface FakeMemory {
   readonly renderIndex: ReturnType<typeof mock<RenderFn>>;
 }
 
+/** The text one render returns: the next of `texts`, else `text`, else the default. */
+function renderedText(options: FakeMemoryOptions, call: number): string {
+  const texts = options.texts;
+  if (texts === undefined) return options.text ?? INDEX_TEXT;
+  return texts[Math.min(call, texts.length - 1)] ?? INDEX_TEXT;
+}
+
 /** A `MemoryHost` whose two session-open reads are mocks; nothing else is read by the host. */
 function fakeMemory(events: string[], options: FakeMemoryOptions = {}): FakeMemory {
   const sync = mock<SyncFn>(async (): Promise<MemorySyncResult> => {
@@ -77,9 +87,10 @@ function fakeMemory(events: string[], options: FakeMemoryOptions = {}): FakeMemo
     return { outcome: options.outcome ?? "synced", pushed: 0, rejected: 0, pulled: 0, skipped: 0 };
   });
   const renderIndex = mock<RenderFn>(async (): Promise<RenderedMemoryIndex> => {
+    const call = events.filter((event) => event === "render").length;
     events.push("render");
     if (options.renderRejects === true) throw new Error("the mirror cannot be read");
-    return { text: options.text ?? INDEX_TEXT, omitted: 0 };
+    return { text: renderedText(options, call), omitted: 0 };
   });
   const unused = async (): Promise<never> => {
     throw new Error("the host does not read this in these tests");
@@ -110,6 +121,11 @@ interface Fixture {
   readonly memory?: FakeMemory;
   /** How many of the next opens reject, to drive the switch's rollback and openFresh paths. */
   failOpens(count: number): void;
+  /**
+   * Hold every session close on a gate, so a test can interleave another session
+   * operation between an operation's prepare and the open that follows it.
+   */
+  blockClose(): { readonly entered: Promise<void>; readonly release: () => void };
 }
 
 const hosts: ChatHost[] = [];
@@ -127,6 +143,8 @@ function fixture(options: FixtureOptions = {}): Fixture {
   const events: string[] = [];
   const logger = makeLogger();
   const opens: OpenChatSessionRequest[] = [];
+  let closeGate: Promise<void> = Promise.resolve();
+  const enteredClose = Promise.withResolvers<void>();
   const memory = options.memory === undefined ? undefined : fakeMemory(events, options.memory);
   const catalog = buildResourceCatalog([]);
   const resources: ChatResources | undefined =
@@ -147,7 +165,10 @@ function fixture(options: FixtureOptions = {}): Fixture {
     async *send() {},
     answer: () => "unknown",
     cancel() {},
-    close: async () => {},
+    close: async () => {
+      enteredClose.resolve();
+      await closeGate;
+    },
   };
   const release = async (): Promise<void> => {};
   const storage = Object.assign(createChatStorage({ pid: process.pid, now: () => NOW, logger }), {
@@ -194,6 +215,11 @@ function fixture(options: FixtureOptions = {}): Fixture {
     ...(memory !== undefined ? { memory } : {}),
     failOpens(count) {
       failures = count;
+    },
+    blockClose() {
+      const gate = Promise.withResolvers<void>();
+      closeGate = gate.promise;
+      return { entered: enteredClose.promise, release: gate.resolve };
     },
   };
 }
@@ -317,6 +343,25 @@ describe("chat host memory on open", () => {
     expect(fixture().host.memory).toBeUndefined();
     expect(fixture({ resources: false }).host.memory).toBeUndefined();
   });
+
+  test("F1 an open carries its own operation's snapshot, not one a concurrent operation prepared", async () => {
+    const f = fixture({ memory: { texts: ["index-one", "index-two", "index-three"] } });
+    await f.host.start({ mode: "guarded", model: CHAT_MODEL });
+    // A switch prepares its own index, then spends its time retiring the previous session.
+    const block = f.blockClose();
+    const switching = f.host.switchTo({ mode: "full" });
+    await block.entered;
+    // A second start prepares index-three and opens while the switch is parked.
+    const starting = f.host.start({ mode: "guarded", model: CHAT_MODEL });
+    await waitForCondition(() => f.opens.length === 2);
+    block.release();
+    await Promise.all([switching, starting]);
+
+    const reopened = f.opens.find((request) => request.resumeId !== undefined);
+    expect(f.opens[0]?.memoryIndex).toBe("index-one");
+    expect(f.opens[1]?.memoryIndex).toBe("index-three");
+    expect(reopened?.memoryIndex).toBe("index-two");
+  });
 });
 
 describe("createHostMemory", () => {
@@ -367,5 +412,18 @@ describe("chat host memory for subagents", () => {
 
     expect(harness.nestedSessionOptions).toHaveLength(1);
     expect(harness.nestedSessionOptions[0]?.instructions).toContain(INDEX_TEXT);
+  });
+
+  test("F1 a resume of the open session prepares, but a subagent inherits the open's own snapshot", async () => {
+    const memory = fakeMemory([], { texts: ["index-one", "index-two"] });
+    harness = makeSubagentHostHarness({ agents: [makeAgentResource()], memory: memory.host });
+    await harness.host.start({ mode: "guarded", model: CHAT_MODEL });
+    // A resume of the session that is already open: it prepares, but reopens nothing.
+    await harness.host.resume({ id: harness.host.current().sessionId });
+    expect(memory.sync).toHaveBeenCalledTimes(2);
+
+    await harness.host.send("go", () => {});
+
+    expect(harness.nestedSessionOptions[0]?.instructions).toContain("index-one");
   });
 });

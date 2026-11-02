@@ -35,11 +35,14 @@ export interface CreateHostMemoryInput {
 /** One chat host's memory side. */
 export interface HostMemory {
   /**
-   * Sync the mirror and render the index the next open carries. Absent when this
-   * chat has no memory host or the render failed; never throws on either failure.
+   * Sync the mirror and render the index for one open. Absent when this chat has no
+   * memory host or the render failed; never throws on either failure.
    */
   prepare(): Promise<string | undefined>;
-  /** The index the last `prepare` stored — what a session opened right now carries. */
+  /**
+   * The index the last `prepare` stored. Each open carries the value its own `prepare`
+   * returned instead, so two operations that overlap cannot swap snapshots.
+   */
   current(): string | undefined;
   /** The loop handlers memory registers on a session; empty until US-014 adds compaction. */
   readonly handlers: LoopHandlerSet;
