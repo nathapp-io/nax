@@ -3,7 +3,7 @@
   "feature": "memory-store",
   "branchName": "feat/memory-store",
   "createdAt": "2026-11-02T00:00:00.000Z",
-  "updatedAt": "2026-11-02T05:58:59.661Z",
+  "updatedAt": "2026-11-02T06:51:52.683Z",
   "userStories": [
     {
       "id": "US-001",
@@ -902,14 +902,17 @@
       "dependencies": [
         "US-014"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Completes existing per-page application with schema checks, held-key filtering and scope branches; all store, outbox and paging contracts already exist upstream."
+        "reasoning": "Completes existing per-page application with schema checks, held-key filtering and scope branches; all store, outbox and paging contracts already exist upstream.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/sync.ts",
@@ -927,7 +930,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a70327ac348305917c57440d43e59708c7ee3e6e"
     },
     {
       "id": "US-016",
