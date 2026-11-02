@@ -157,6 +157,32 @@ describe("writeFileAtomic", () => {
     expect(await readFile(replacement, "utf8")).toBe("not our stage");
   });
 
+  test("an identity failure neither writes nor removes an unidentified stage", async () => {
+    const realOpen = _atomicWriteDeps.open;
+    const failure = new Error("fstat failed");
+    let writes = 0;
+    _atomicWriteDeps.open = async (path, flags, mode) => {
+      const stage = await realOpen(path, flags, mode);
+      return {
+        ...stage,
+        identity: async () => {
+          throw failure;
+        },
+        write: async (content) => {
+          writes++;
+          await stage.write(content);
+        },
+      };
+    };
+
+    await expect(writeFileAtomic(join(dir, "doc.json"), "ours")).rejects.toBe(failure);
+    expect(writes).toBe(0);
+    const entries = await readdir(dir);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.endsWith(".tmp")).toBe(true);
+    expect(await readFile(join(dir, entries[0] ?? ""), "utf8")).toBe("");
+  });
+
   test("hands the published file's identity to the caller after the rename", async () => {
     const path = join(dir, "doc.json");
     const published: { dev: number; ino: number }[] = [];

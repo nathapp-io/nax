@@ -5,8 +5,9 @@ import { expect, test } from "vitest";
 import { _atomicWriteDeps, writeFileAtomic } from "#src/internal/atomic-write";
 import { withPinnedDirectory } from "#src/internal/pinned-directory";
 
-test("real Node stages, publishes and removes relative to the pinned parent after replacement", async () => {
-  expect(process.versions.bun).toBeUndefined();
+// Keep this filesystem contract runnable under both Bun and native-Node Vitest.
+// contract-spawn.test.ts separately guards the native-Node suite's runtime identity.
+test("stages, publishes and removes relative to the pinned parent after replacement", async () => {
   const dir = await mkdtemp(join(tmpdir(), "nax-node-pinned-"));
   const path = join(dir, "notes");
   const aside = join(dir, "aside");

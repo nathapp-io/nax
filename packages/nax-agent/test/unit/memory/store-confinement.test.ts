@@ -360,7 +360,7 @@ describe("memory store confinement", () => {
       });
     });
 
-    test.each(["publish", "cleanup"])("writeNote never reaches a replacement during %s", async (operation) => {
+    test.each(["open", "publish", "cleanup"])("writeNote never reaches a replacement during %s", async (operation) => {
       await withTempDir(async (dir) => {
         const project = projectPath(dir);
         const notesDir = join(project, "notes");
@@ -372,7 +372,14 @@ describe("memory store confinement", () => {
           await rename(notesDir, aside);
           await symlink(outside, notesDir);
         };
-        if (operation === "publish") {
+        if (operation === "open") {
+          const realOpen = _atomicWriteDeps.open;
+          _atomicWriteDeps.open = async (path, flags, mode) => {
+            await swap();
+            await writeFixture(path, "foreign stage");
+            return realOpen(path, flags, mode);
+          };
+        } else if (operation === "publish") {
           const realRename = _atomicWriteDeps.rename;
           _atomicWriteDeps.rename = async (from, to) => {
             // Make the source exist in the replacement too, so a path rename can succeed.
@@ -391,7 +398,11 @@ describe("memory store confinement", () => {
             await realRm(path, options);
           };
         }
-        await caught(store.writeNote(note()));
+        const error = await caught(store.writeNote(note()));
+        if (operation !== "cleanup") {
+          assertNaxError(error, `writeNote with a parent swapped during ${operation}`);
+          expect(error.code).toBe("MEMORY_PATH_OUTSIDE");
+        }
         const names = await readdir(outside);
         expect(names).toHaveLength(1);
         expect(names[0]?.endsWith(".tmp")).toBe(true);
