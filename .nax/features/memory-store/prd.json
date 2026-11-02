@@ -3,7 +3,7 @@
   "feature": "memory-store",
   "branchName": "feat/memory-store",
   "createdAt": "2026-11-02T00:00:00.000Z",
-  "updatedAt": "2026-11-02T02:17:23.413Z",
+  "updatedAt": "2026-11-02T02:31:26.227Z",
   "userStories": [
     {
       "id": "US-001",
@@ -166,14 +166,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "One standard filesystem-backed module composes the existing note codec and atomic writer; confinement is deliberately deferred to US-004."
+        "reasoning": "One standard filesystem-backed module composes the existing note codec and atomic writer; confinement is deliberately deferred to US-004.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/note.ts",
@@ -208,7 +211,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "86e3955bbaf0f1d51332d7a10cab60eaa12c1e81"
     },
     {
       "id": "US-004",
