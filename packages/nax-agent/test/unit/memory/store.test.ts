@@ -292,9 +292,13 @@ describe("memory store", () => {
       await withTempDir(async (dir) => {
         const store = createMemoryStore({ projectDir: projectPath(dir), logger: makeLogger() });
         let touched = 0;
-        _memoryStoreDeps.readFile = async () => {
+        _memoryStoreDeps.open = async () => {
           touched += 1;
-          throw new Error("readFile must not be reached");
+          throw new Error("open must not be reached");
+        };
+        _memoryStoreDeps.stat = async () => {
+          touched += 1;
+          throw new Error("stat must not be reached");
         };
         _memoryStoreDeps.readdir = async () => {
           touched += 1;

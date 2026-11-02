@@ -8,9 +8,10 @@
  * not an error — a read resolves `null` — while a note file whose frontmatter
  * does not parse is an error for `readNote`.
  *
- * Every read and directory operation goes through `_memoryStoreDeps`, so a test
- * injects a failing `readFile` / `readdir` there; the write path's seam is
- * `_atomicWriteDeps` inside `#src/internal/atomic-write`.
+ * Every read and directory operation goes through `_memoryStoreDeps` (`open`, `stat`,
+ * `mkdir`, `readdir`, `rm`), so a test injects a failure — or a path swapped between the
+ * store's check and its syscall — there; the write path's seam is `_atomicWriteDeps`
+ * inside `#src/internal/atomic-write`.
  *
  * Every note path is confined twice over: the slug is validated (pure, before any
  * filesystem call), then both the scope's notes directory and the note's own path
@@ -19,18 +20,28 @@
  * of the root is `MEMORY_PATH_OUTSIDE`: a read, a write and a delete refuse, and
  * `listNotes` skips that one file with a `warn` so the rest of the listing survives.
  *
- * A check that is not repeated at the point of use leaves a window: whatever is
- * swapped in between is followed. So each operation verifies again immediately
- * before its syscall (`confinedRealPath`, the last look) and a read copies no bytes
- * from a link (`O_NOFOLLOW`), which turns a link that appears mid-operation into
- * `MEMORY_PATH_OUTSIDE` instead of a file from outside the root. What remains is the
- * gap between that last look and the syscall itself; closing it needs a directory
- * handle and `openat`, which Node does not expose, so it is not claimed here.
+ * A check that is not repeated at the point of use leaves a window: whatever is swapped
+ * in between is followed. So an operation works from a *verified directory* — the
+ * directory's resolved path plus its `dev`/`ino` — rather than from a path string:
+ *
+ *   - a read copies bytes only from a descriptor whose identity matches the file the
+ *     check resolved (`O_NOFOLLOW` covers the last component, the identity comparison
+ *     covers every component above it), so a swap yields no content;
+ *   - a write stages into the resolved directory and re-checks the directory's identity
+ *     between staging and the rename (`writeFileAtomic`'s `beforePublish`), so a
+ *     directory swapped during the write never receives the published note;
+ *   - a delete and a listing use the verified directory's path and re-check its identity
+ *     immediately before the syscall.
+ *
+ * What is left is the instant between an operation's last check and its own syscall for
+ * the two operations that have no identity proof of their own (`readdir`, `unlink`).
+ * Closing that needs a descriptor-relative syscall (`openat`/`unlinkat`); Node exposes
+ * none, and `/dev/fd/<dirfd>/name` is not traversable on macOS, so it is not claimed.
  */
 import type { Dirent } from "node:fs";
 import { constants } from "node:fs";
-import { mkdir, readdir, readFile, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, open, readdir, rm, stat } from "node:fs/promises";
+import { join } from "node:path";
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
@@ -46,25 +57,64 @@ const NOTES_DIR = "notes";
 const NOTE_SUFFIX = ".md";
 
 /**
- * The read flag that makes a read refuse a symlink instead of following it.
+ * How a note is opened for reading: `O_NOFOLLOW` refuses a link at the final component.
  *
- * A note read is a check-then-use sequence: the path is resolved and confined, and only
- * then opened. `O_NOFOLLOW` closes that gap for the last component — a link swapped in
- * after the check fails with `ELOOP` rather than delivering a file from outside the root.
- * Every path reaching the read is already symlink-free (it is the resolved form), so the
- * flag never refuses a legitimate note, including one reached through an in-root link.
+ * Every path reaching the open is already the resolved form, so the flag never refuses a
+ * legitimate note (including one reached through an in-root link). It is one of two
+ * guards: the other is the identity check on the opened handle, which catches a link — or
+ * a whole directory — swapped in above the final component.
  */
-const NO_FOLLOW: number = constants.O_NOFOLLOW;
+const READ_FLAGS: number = constants.O_RDONLY | constants.O_NOFOLLOW;
 
-type ReadText = (path: string, options: { encoding: "utf8"; flag: number }) => Promise<string>;
+/** The identity of a file or directory: what it is, independent of the path that names it. */
+interface Identity {
+  readonly dev: number;
+  readonly ino: number;
+}
+
+/** An opened note: its identity, its text, and the close that must follow. */
+interface OpenedNote {
+  stat(): Promise<Identity>;
+  readText(): Promise<string>;
+  close(): Promise<void>;
+}
+
+type OpenNote = (path: string, flags: number) => Promise<OpenedNote>;
+type StatPath = (path: string) => Promise<Identity>;
 type MakeDir = (path: string, options: { recursive: true }) => Promise<string | undefined>;
 /** Directory entries carry their type, so a listing never has to open a path to learn what it is. */
 type ReadDirEntries = (path: string, options: { withFileTypes: true }) => Promise<Dirent[]>;
 type RemoveFile = (path: string, options: { force: true }) => Promise<void>;
 
-/** Injectable for tests that simulate an unreadable note or an unlistable directory. */
-export const _memoryStoreDeps: { readFile: ReadText; mkdir: MakeDir; readdir: ReadDirEntries; rm: RemoveFile } = {
-  readFile: (path, options) => readFile(path, options),
+/** The part of `Stats` this module reads; narrowed so a stubbed identity type-checks. */
+function identityOf(info: { dev: number; ino: number }): Identity {
+  return { dev: info.dev, ino: info.ino };
+}
+
+/**
+ * Injectable for tests that simulate an unreadable note, an unlistable directory or a
+ * path swapped between the store's check and its syscall.
+ *
+ * Reads go through `open` rather than a path-based `readFile` on purpose: the bytes are
+ * only read from a handle whose identity has been compared with the file the confinement
+ * check resolved, which a `readFile(path)` cannot express.
+ */
+export const _memoryStoreDeps: {
+  open: OpenNote;
+  stat: StatPath;
+  mkdir: MakeDir;
+  readdir: ReadDirEntries;
+  rm: RemoveFile;
+} = {
+  open: async (path, flags) => {
+    const handle = await open(path, flags);
+    return {
+      stat: async () => identityOf(await handle.stat()),
+      readText: () => handle.readFile({ encoding: "utf8" }),
+      close: () => handle.close(),
+    };
+  },
+  stat: async (path) => identityOf(await stat(path)),
   mkdir: (path, options) => mkdir(path, options),
   readdir: (path, options) => readdir(path, options),
   rm: (path, options) => rm(path, options),
@@ -119,25 +169,18 @@ function isMissing(error: unknown): boolean {
   return error.code === "ENOENT" || error.code === "ENOTDIR";
 }
 
-/** One note file a directory listing turned up. */
-interface NoteCandidate {
-  readonly slug: string;
-  readonly path: string;
-}
-
 /**
- * The note a directory entry can hold, or `null` when it is not a `<slug>.md` file.
+ * The slug a directory entry names, or `null` when it is not a `<slug>.md` note.
  *
  * A note is a regular file or a link to one: a directory named `x.md`, a FIFO or a socket is
- * not a note, and is never opened. (US-004's confinement decides what a link may point at.)
+ * not a note, and is never opened. (The confinement decides what a link may point at.)
  */
-function noteCandidateIn(notesDir: string, entry: Dirent): NoteCandidate | null {
+function noteSlugIn(entry: Dirent): string | null {
   if (!entry.isFile() && !entry.isSymbolicLink()) return null;
   const name = entry.name;
   if (!name.endsWith(NOTE_SUFFIX)) return null;
   const slug = name.slice(0, -NOTE_SUFFIX.length);
-  if (!MEMORY_SLUG_RE.test(slug)) return null;
-  return { slug, path: join(notesDir, name) };
+  return MEMORY_SLUG_RE.test(slug) ? slug : null;
 }
 
 function invalidSlug(slug: string): NaxError {
@@ -185,10 +228,25 @@ interface ScopedNotesDir {
   readonly notesDir: string;
 }
 
-/** The scope root a note must stay inside, and the note's path as the caller's spelling of it. */
-interface NoteTarget {
+/** A notes directory the store has resolved, confined and identified. */
+interface VerifiedDir {
+  readonly scope: MemoryScope;
   readonly root: string;
-  readonly path: string;
+  /** The directory as the caller spelled it: what a diagnostic names. */
+  readonly spelling: string;
+  /** The resolved directory: what a syscall uses, with no symlink left in it. */
+  readonly dir: string;
+  readonly identity: Identity;
+}
+
+/** Whether two identities name the same file or directory. */
+function sameIdentity(a: Identity, b: Identity): boolean {
+  return a.dev === b.dev && a.ino === b.ino;
+}
+
+/** The slug, validated: the one check that must happen before anything touches the filesystem. */
+function validSlug(slug: string): void {
+  if (!MEMORY_SLUG_RE.test(slug)) throw invalidSlug(slug);
 }
 
 export function createMemoryStore(input: {
@@ -215,22 +273,6 @@ export function createMemoryStore(input: {
   }
 
   /**
-   * The note's path, validated before anything touches the filesystem, and confined.
-   *
-   * `isInside` resolves a path that does not exist through its nearest existing
-   * ancestor, so checking the file covers the existing-target case (`<slug>.md` is a
-   * link to elsewhere) as well as the ordinary one: a write stages its bytes under
-   * this same directory, so a confined notes directory confines the note.
-   */
-  function noteTarget(scope: MemoryScope, slug: string): NoteTarget {
-    if (!MEMORY_SLUG_RE.test(slug)) throw invalidSlug(slug);
-    const { root, notesDir } = confinedNotesDir(scope);
-    const path = join(notesDir, `${slug}${NOTE_SUFFIX}`);
-    if (!isInside(root, path)) throw outsideRoot(scope, path, root);
-    return { root, path };
-  }
-
-  /**
    * The resolved form of `path`, refused unless it is still inside the root.
    *
    * This is the *last look* before a syscall, and the path the syscall then uses: a
@@ -243,43 +285,132 @@ export function createMemoryStore(input: {
     return resolved;
   }
 
-  /**
-   * One note file's text, or `null` when it (or its directory) is not there.
-   *
-   * Check and use are the same resolved path, and the read will not follow a link: a
-   * symlink swapped in after the check fails with `ELOOP`, which is reported as the
-   * out-of-root path it is. A caller's own spelling of `path` is what the error names.
-   */
-  async function readNoteText(scope: MemoryScope, root: string, path: string): Promise<string | null> {
-    const target = confinedRealPath(scope, root, path);
+  /** The identity of whatever is at `path`, or `null` when nothing is. */
+  async function identityAt(path: string): Promise<Identity | null> {
     try {
-      return await _memoryStoreDeps.readFile(target, { encoding: "utf8", flag: NO_FOLLOW });
+      return await _memoryStoreDeps.stat(path);
     } catch (error) {
       if (isMissing(error)) return null;
-      if (isSymlinkLoop(error)) throw outsideRoot(scope, path, root, error);
+      throw error;
+    }
+  }
+
+  /** The note's entry in a verified directory — the one place a note path is spelled. */
+  function entryPathIn(handle: VerifiedDir, slug: string): string {
+    return join(handle.dir, `${slug}${NOTE_SUFFIX}`);
+  }
+
+  /** The same entry as the caller spelled the directory: what a warning names. */
+  function entryName(handle: VerifiedDir, slug: string): string {
+    return join(handle.spelling, `${slug}${NOTE_SUFFIX}`);
+  }
+
+  /**
+   * The scope's notes directory, resolved, confined and identified.
+   *
+   * This is the handle the rest of an operation is carried out against: its resolved path
+   * (so no symlink is left in it) and its `dev`/`ino` (so a replacement is detectable even
+   * when the path still resolves inside the root). `null` when the directory is not there —
+   * for a read, a listing or a delete that is simply nothing to do.
+   */
+  async function openNotesDir(scope: MemoryScope): Promise<VerifiedDir | null> {
+    const { root, notesDir } = confinedNotesDir(scope);
+    const dir = confinedRealPath(scope, root, notesDir);
+    const identity = await identityAt(dir);
+    return identity === null ? null : { scope, root, spelling: notesDir, dir, identity };
+  }
+
+  /** The same, creating the directory (and its parents) first: the write path's entry point. */
+  async function ensureNotesDir(scope: MemoryScope): Promise<VerifiedDir> {
+    const { root, notesDir } = confinedNotesDir(scope);
+    await _memoryStoreDeps.mkdir(notesDir, { recursive: true });
+    const dir = confinedRealPath(scope, root, notesDir);
+    // A directory that vanishes between the `mkdir` and this `stat` is a genuine failure,
+    // not a missing mirror: the error propagates rather than being reported as "empty".
+    const identity = await _memoryStoreDeps.stat(dir);
+    return { scope, root, spelling: notesDir, dir, identity };
+  }
+
+  /**
+   * The last look at a directory before an operation that cannot prove it by handle.
+   *
+   * A directory moved aside and replaced — by a link, or by another real directory that
+   * still resolves inside the root — keeps the path valid but changes what it is, so the
+   * pinned identity is what refuses it.
+   */
+  async function assertSameDirectory(handle: VerifiedDir): Promise<void> {
+    const dir = confinedRealPath(handle.scope, handle.root, handle.dir);
+    const identity = await identityAt(dir);
+    if (dir !== handle.dir || identity === null || !sameIdentity(identity, handle.identity)) {
+      throw outsideRoot(handle.scope, handle.dir, handle.root);
+    }
+  }
+
+  /**
+   * One note's text, read from a handle whose identity is proved first.
+   *
+   * The bytes only come from a descriptor whose `dev`/`ino` equal those of the file the
+   * confinement check resolved, so a directory or file swapped in between yields a
+   * different identity and no content. `O_NOFOLLOW` covers the last component; the
+   * identity check covers everything above it. `null` means the note is not there.
+   */
+  async function readNoteText(handle: VerifiedDir, slug: string): Promise<string | null> {
+    const entry = entryPathIn(handle, slug);
+    const target = confinedRealPath(handle.scope, handle.root, entry);
+    const expected = await identityAt(target);
+    if (expected === null) return null;
+    const file = await openNote(handle, entry, target);
+    if (file === null) return null;
+    try {
+      if (!sameIdentity(await file.stat(), expected)) throw outsideRoot(handle.scope, entry, handle.root);
+      return await file.readText();
+    } finally {
+      await file.close();
+    }
+  }
+
+  /** The confined handle for a note, or `null` when it vanished; a link at it is refused. */
+  async function openNote(handle: VerifiedDir, entry: string, target: string): Promise<OpenedNote | null> {
+    try {
+      return await _memoryStoreDeps.open(target, READ_FLAGS);
+    } catch (error) {
+      if (isMissing(error)) return null;
+      if (isSymlinkLoop(error)) throw outsideRoot(handle.scope, entry, handle.root, error);
       throw error;
     }
   }
 
   async function readNote(scope: MemoryScope, slug: string): Promise<MemoryNote | null> {
-    const { root, path } = noteTarget(scope, slug);
-    const text = await readNoteText(scope, root, path);
+    validSlug(slug);
+    const handle = await openNotesDir(scope);
+    if (handle === null) return null;
+    const text = await readNoteText(handle, slug);
     return text === null ? null : parseMemoryNote(text);
   }
 
   async function writeNote(note: MemoryNote): Promise<void> {
-    const { root, path } = noteTarget(note.scope, note.slug);
-    await _memoryStoreDeps.mkdir(dirname(path), { recursive: true });
-    // Last look: the directory just ensured — or anything above it — may have been swapped.
-    // `rename` at the end replaces a link at the target instead of writing through it.
-    confinedRealPath(note.scope, root, path);
-    await writeFileAtomic(path, serializeMemoryNote(note));
+    validSlug(note.slug);
+    const handle = await ensureNotesDir(note.scope);
+    const target = confinedRealPath(handle.scope, handle.root, entryPathIn(handle, note.slug));
+    // The stage is written into the verified directory, and the identity is checked again
+    // between staging and the rename: a directory swapped during the write is refused
+    // before the note is published into it. `rename` replaces a link at the target rather
+    // than writing through it.
+    await writeFileAtomic(target, serializeMemoryNote(note), {
+      beforePublish: () => assertSameDirectory(handle),
+    });
   }
 
   async function deleteNote(scope: MemoryScope, slug: string): Promise<void> {
-    // `force` makes an absent note — and an absent notes directory — a no-op. Removing a
-    // directory entry cannot follow a link out of the root: the entry, not its target, goes.
-    await _memoryStoreDeps.rm(noteTarget(scope, slug).path, { force: true });
+    validSlug(slug);
+    const handle = await openNotesDir(scope);
+    if (handle === null) return;
+    const entry = entryPathIn(handle, slug);
+    // A note that resolves out of the root is refused, then the directory is proved to be
+    // the one verified: what goes is that entry, in that directory, never a link's target.
+    confinedRealPath(handle.scope, handle.root, entry);
+    await assertSameDirectory(handle);
+    await _memoryStoreDeps.rm(entry, { force: true });
   }
 
   /** The listing reports a skipped file once, whatever the reason, and carries on. */
@@ -291,33 +422,35 @@ export function createMemoryStore(input: {
   }
 
   /** The note one listed file holds, or `null` when the file is skipped (never throws). */
-  async function listedNote(scope: MemoryScope, root: string, path: string): Promise<MemoryNote | null> {
+  async function listedNote(handle: VerifiedDir, slug: string): Promise<MemoryNote | null> {
     try {
-      const text = await readNoteText(scope, root, path);
+      const text = await readNoteText(handle, slug);
       // A file that vanished between the listing and the read is skipped without a warning.
       return text === null ? null : parseMemoryNote(text);
     } catch (error) {
-      warnSkipped(path, error);
+      warnSkipped(entryName(handle, slug), error);
       return null;
     }
   }
 
   async function listNotes(scope: MemoryScope): Promise<MemoryNote[]> {
-    const { root, notesDir } = confinedNotesDir(scope);
+    const handle = await openNotesDir(scope);
+    if (handle === null) return [];
+    await assertSameDirectory(handle);
     let entries: Dirent[];
     try {
-      entries = await _memoryStoreDeps.readdir(notesDir, { withFileTypes: true });
+      entries = await _memoryStoreDeps.readdir(handle.dir, { withFileTypes: true });
     } catch (error) {
       if (isMissing(error)) return [];
       throw error;
     }
-    const candidates = entries
-      .map((entry) => noteCandidateIn(notesDir, entry))
-      .filter((candidate): candidate is NoteCandidate => candidate !== null)
-      .sort((a, b) => byCodePoint(a.slug, b.slug));
+    const slugs = entries
+      .map((entry) => noteSlugIn(entry))
+      .filter((slug): slug is string => slug !== null)
+      .sort(byCodePoint);
     const notes: MemoryNote[] = [];
-    for (const { path } of candidates) {
-      const note = await listedNote(scope, root, path);
+    for (const slug of slugs) {
+      const note = await listedNote(handle, slug);
       if (note !== null) notes.push(note);
     }
     return notes;

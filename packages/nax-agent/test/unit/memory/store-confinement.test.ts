@@ -10,8 +10,8 @@
  * (no sleeping, no thread) and is exactly the window a plain check leaves open.
  */
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { mkdir, readdir, rmdir, symlink, unlink } from "node:fs/promises";
+import { existsSync, realpathSync } from "node:fs";
+import { mkdir, readdir, rename, rmdir, symlink, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createMemoryStore, type MemoryNote, serializeMemoryNote } from "@nathapp/nax-agent";
 import { _atomicWriteDeps } from "#src/internal/atomic-write";
@@ -184,15 +184,16 @@ describe("memory store confinement", () => {
 
       await store.writeNote(note());
 
-      const final = join(notesDir, "replay-budget.md");
+      // The store writes to the resolved directory (a temp dir may be reached through a link).
+      const final = join(realpathSync(notesDir), "replay-budget.md");
       expect(calls).toHaveLength(2);
       const [stageCall, publishCall] = calls;
       const staged = (stageCall ?? "").replace("writeFile ", "");
       expect(stageCall).toBe(`writeFile ${staged}`);
-      expect(dirname(staged)).toBe(notesDir);
+      expect(dirname(staged)).toBe(dirname(final));
       expect(staged.endsWith(".tmp")).toBe(true);
       expect(publishCall).toBe(`rename ${staged} ${final}`);
-      expect(existsSync(final)).toBe(true);
+      expect(existsSync(join(notesDir, "replay-budget.md"))).toBe(true);
     });
   });
 
@@ -214,20 +215,20 @@ describe("memory store confinement", () => {
     });
   });
 
-  describe("a symlink swapped in after the check", () => {
-    test("readNote refuses a note replaced by an outside link between the check and the read", async () => {
+  describe("a path swapped after the check", () => {
+    test("readNote refuses a note replaced by an outside link inside the read", async () => {
       await withTempDir(async (dir) => {
         const project = projectPath(dir);
         const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
         await store.writeNote(note({ slug: "kept-budget" }));
         const outsideFile = join(dir, "outside-note.md");
         await writeFixture(outsideFile, serializeMemoryNote(note({ slug: "kept-budget", body: "leaked body" })));
-        const realReadFile = _memoryStoreDeps.readFile;
+        const realOpen = _memoryStoreDeps.open;
         // The swap happens *inside* the read: everything the store checked is now a lie.
-        _memoryStoreDeps.readFile = async (path, options) => {
+        _memoryStoreDeps.open = async (path, flags) => {
           await unlink(path);
           await symlink(outsideFile, path);
-          return realReadFile(path, options);
+          return realOpen(path, flags);
         };
 
         const error = await caught(store.readNote("project", "kept-budget"));
@@ -237,29 +238,64 @@ describe("memory store confinement", () => {
       });
     });
 
-    test("listNotes skips a note swapped for an outside link mid-listing, with one warn", async () => {
+    test("readNote refuses a notes directory swapped for an outside link inside the read", async () => {
       await withTempDir(async (dir) => {
         const project = projectPath(dir);
+        const notesDir = join(project, "notes");
+        const aside = join(project, "notes-aside");
+        const outside = join(dir, "outside");
+        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+        await store.writeNote(note({ slug: "kept-budget" }));
+        await mkdir(outside, { recursive: true });
+        await writeFixture(
+          join(outside, "kept-budget.md"),
+          serializeMemoryNote(note({ slug: "kept-budget", body: "leaked body" })),
+        );
+        const realOpen = _memoryStoreDeps.open;
+        // A different directory now answers for the checked path, holding a note of the same
+        // name: the path still resolves "inside" nothing the store verified.
+        _memoryStoreDeps.open = async (path, flags) => {
+          await rename(notesDir, aside);
+          await symlink(outside, notesDir);
+          return realOpen(path, flags);
+        };
+
+        const error = await caught(store.readNote("project", "kept-budget"));
+
+        assertNaxError(error, "readNote after the notes directory was swapped mid-read");
+        expect(error).toMatchObject({ code: "MEMORY_PATH_OUTSIDE", context: { stage: "memory" } });
+      });
+    });
+
+    test("listNotes never reads a note from a directory swapped after the listing", async () => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const notesDir = join(project, "notes");
+        const aside = join(project, "notes-aside");
+        const outside = join(dir, "outside");
         const logger = makeLogger();
         const store = createMemoryStore({ projectDir: project, logger });
         await store.writeNote(note({ slug: "kept-budget" }));
-        await store.writeNote(note({ slug: "swapped-budget" }));
-        const outsideFile = join(dir, "outside-note.md");
-        await writeFixture(outsideFile, serializeMemoryNote(note({ slug: "swapped-budget", body: "leaked body" })));
-        const realReadFile = _memoryStoreDeps.readFile;
-        _memoryStoreDeps.readFile = async (path, options) => {
-          if (path.endsWith("swapped-budget.md")) {
-            await unlink(path);
-            await symlink(outsideFile, path);
-          }
-          return realReadFile(path, options);
+        await mkdir(outside, { recursive: true });
+        await writeFixture(
+          join(outside, "kept-budget.md"),
+          serializeMemoryNote(note({ slug: "kept-budget", body: "leaked body" })),
+        );
+        const realReaddir = _memoryStoreDeps.readdir;
+        // The listing is honest; the directory it named is gone by the time each note is read.
+        _memoryStoreDeps.readdir = async (path, options) => {
+          const entries = await realReaddir(path, options);
+          await rename(notesDir, aside);
+          await symlink(outside, notesDir);
+          return entries;
         };
 
         const notes = await store.listNotes("project");
 
-        expect(notes.map((entry) => entry.slug)).toEqual(["kept-budget"]);
+        expect(notes).toEqual([]);
         const warns = logger.calls.filter((call) => call.level === "warn");
         expect(warns).toHaveLength(1);
+        expect(warns[0]?.stage).toBe("memory");
         expect(String(warns[0]?.data?.error)).toContain("outside the memory scope root");
       });
     });
@@ -286,6 +322,32 @@ describe("memory store confinement", () => {
         assertNaxError(error, "writeNote after the notes directory was swapped for a link");
         expect(error).toMatchObject({ code: "MEMORY_PATH_OUTSIDE", context: { stage: "memory" } });
         expect(await readdir(outside)).toEqual([]);
+      });
+    });
+
+    test("writeNote refuses a notes directory replaced while the note is staged", async () => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const notesDir = join(project, "notes");
+        const aside = join(project, "notes-aside");
+        await mkdir(project, { recursive: true });
+        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+        const realWriteFile = _atomicWriteDeps.writeFile;
+        _atomicWriteDeps.writeFile = async (path, content, options) => {
+          await realWriteFile(path, content, options);
+          // The directory the note was staged in is moved aside and another takes its place:
+          // no symlink is involved, so only the directory's identity gives it away.
+          await rename(notesDir, aside);
+          await mkdir(notesDir);
+        };
+
+        const error = await caught(store.writeNote(note()));
+
+        assertNaxError(error, "writeNote after the notes directory was replaced while staging");
+        expect(error).toMatchObject({ code: "MEMORY_PATH_OUTSIDE", context: { stage: "memory" } });
+        // The note is published nowhere: not in the replacement, not in the directory it was staged in.
+        expect(await readdir(notesDir)).toEqual([]);
+        expect(existsSync(join(aside, "replay-budget.md"))).toBe(false);
       });
     });
   });
