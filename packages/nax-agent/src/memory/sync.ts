@@ -91,13 +91,13 @@ function isArmedTimer(id: unknown): id is ArmedTimer {
 }
 
 /**
- * The timers a run races against when the caller injects none: the process
- * globals, read at call time so a substituted global is still observed. The
- * handle is handed back boxed — `MemoryTimers` keeps the timer id opaque
- * precisely so a fake clock can stand in for the real one, and a box clears the
- * handle this race armed without ever casting one.
+ * The timers an operation races against when the caller injects none: the process
+ * globals, read at call time so a substituted global is still observed. The handle
+ * is handed back boxed — `MemoryTimers` keeps the timer id opaque precisely so a
+ * fake clock can stand in for the real one, and a box clears the handle this race
+ * armed without ever casting one.
  */
-const GLOBAL_TIMERS: MemoryTimers = {
+export const GLOBAL_MEMORY_TIMERS: MemoryTimers = {
   setTimeout: (callback, ms) => ({ handle: globalThis.setTimeout(callback, ms) }),
   clearTimeout: (id) => {
     if (isArmedTimer(id)) globalThis.clearTimeout(id.handle);
@@ -233,15 +233,13 @@ async function takeLock(input: MemorySyncInput): Promise<ReleaseLock | null> {
   }
 }
 
-/** Step 2: ask the provider whether it answers, within the probe deadline. */
-async function providerAnswers(input: MemorySyncInput): Promise<boolean> {
-  const timers = input.timers ?? GLOBAL_TIMERS;
+/** Ask the provider whether it answers within the probe deadline: a throw and a timeout are `false`. */
+export async function providerAnswers(provider: MemoryProvider, timers: MemoryTimers): Promise<boolean> {
   try {
-    return await raceTimeout(input.provider.reachable(), MEMORY_PROBE_TIMEOUT_MS, timers);
+    return await raceTimeout(provider.reachable(), MEMORY_PROBE_TIMEOUT_MS, timers);
   } catch {
-    // A provider that threw and one that never answered are the same fact to this
-    // run: neither can be delivered to, so step 2 reports both as `unreachable`
-    // and `sync.json` carries the reason.
+    // A provider that threw and one that never answered are the same fact here:
+    // neither can be delivered to.
     return false;
   }
 }
@@ -344,7 +342,7 @@ interface DrainResult {
  * so only `queued` entries are pushed: nothing here retries a permanent one.
  */
 async function drainOutbox(input: MemorySyncInput): Promise<DrainResult> {
-  const timers = input.timers ?? GLOBAL_TIMERS;
+  const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
   let pushed = 0;
   let rejected = 0;
   for (const entry of await input.outbox.list()) {
@@ -516,7 +514,7 @@ function pullScopes(store: MemoryStore): readonly MemoryScope[] {
  * this run never made.
  */
 async function pullAll(input: MemorySyncInput): Promise<PullResult> {
-  const timers = input.timers ?? GLOBAL_TIMERS;
+  const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
   let pulled = 0;
   let skipped = 0;
   for (const scope of pullScopes(input.store)) {
@@ -575,7 +573,8 @@ export async function syncMemory(input: MemorySyncInput): Promise<MemorySyncResu
     const acquired = await takeLock(input);
     if (acquired === null) return stopped("locked");
     release = acquired;
-    if (!(await providerAnswers(input))) return await recordUnreachable(input);
+    const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
+    if (!(await providerAnswers(input.provider, timers))) return await recordUnreachable(input);
     const drain = await drainOutbox(input);
     const counts: MemorySyncCounts = { ...noCounts(), pushed: drain.pushed, rejected: drain.rejected };
     // A drain that stopped early says nothing about the provider's own changes: no pull.

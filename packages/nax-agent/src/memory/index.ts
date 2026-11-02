@@ -12,6 +12,12 @@ export {
   parseMemoryNoteRecord,
   serializeMemoryNote,
 } from "./note.ts";
+export {
+  type MemoryOperationInput,
+  type MemorySaveInput,
+  type MemorySaveResult,
+  saveMemoryNote,
+} from "./operations.ts";
 export { createMemoryOutbox, type MemoryOutbox, type MemoryOutboxEntry } from "./outbox.ts";
 export type {
   MemoryPage,

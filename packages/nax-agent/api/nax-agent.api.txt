@@ -204,6 +204,8 @@ type MemoryOutboxEntry
 type MemoryPage
 type MemoryProvider
 type MemoryPushResult
+type MemorySaveInput
+type MemorySaveResult
 type MemoryScope
 type MemoryStore
 type MemoryStorePaths
@@ -508,6 +510,7 @@ runTmpRoot
 sandboxBackendFor
 sandboxSentence
 sanitizeProviderTools
+saveMemoryNote
 scoreGuard
 scoreRules
 scratchpadListTool
