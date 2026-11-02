@@ -475,6 +475,7 @@ providerAttachesTo
 providersWithoutCredentials
 pruneRetainedTranscripts
 quoteArgvForShell
+raceTimeout
 rawBashRefusalReason
 readApprovals
 readApprovalsFile

@@ -127,6 +127,7 @@ export {
   findSecret,
   isMemoryPushRejected,
   parseMemoryNote,
+  raceTimeout,
   refreshMemoryIndex,
   renderMemoryIndex,
   searchMemoryNotes,

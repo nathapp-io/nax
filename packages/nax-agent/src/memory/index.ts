@@ -26,7 +26,7 @@ export {
   type MemoryStorePaths,
   type MemorySyncState,
 } from "./store.ts";
-export { type MemorySyncInput, type MemorySyncResult, syncMemory } from "./sync.ts";
+export { type MemorySyncInput, type MemorySyncResult, raceTimeout, syncMemory } from "./sync.ts";
 export {
   MEMORY_CLIENT_ID_RE,
   MEMORY_DECISION_STATUSES,

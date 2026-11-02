@@ -15,13 +15,16 @@
  * never sync again. A cleanup that fails is logged, never thrown: it must not
  * turn a reportable outcome into a rejection.
  *
+ * Step 2 asks the provider whether it answers, and asks it through
+ * `raceTimeout`: an answer that never arrives must not hold the run open, so the
+ * probe is bounded by `MEMORY_PROBE_TIMEOUT_MS` on the injected timers. `false`,
+ * a throw and a timeout are one outcome — `unreachable` — and it is recorded in
+ * `sync.json` over the cursors a failed probe learned nothing about.
+ *
  * Steps 3 (drain the outbox) and 4 (pull the provider's pages) are not here yet:
  * US-013 and US-014 add them between the probe and the finish. This shell hands
  * the provider nothing and pulls nothing, so a run that reaches the finish is
- * `synced` with all four counters at zero. US-012 owns the probe's timeout
- * policy and the `sync.json` `lastError` an unreachable provider records; until
- * then an answer of `false` is `unreachable` and a provider that throws is a
- * failure of the run.
+ * `synced` with all four counters at zero.
  */
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
@@ -32,13 +35,72 @@ import { refreshMemoryIndex } from "./index-render.ts";
 import type { MemoryOutbox } from "./outbox.ts";
 import type { MemoryProvider } from "./provider-types.ts";
 import { _memoryStoreDeps, type MemoryStore } from "./store.ts";
-import type { MemoryTimers } from "./types.ts";
+import { MEMORY_PROBE_TIMEOUT_MS, type MemoryTimers } from "./types.ts";
 
 /** The stage every memory-origin log line carries. */
 const ERROR_STAGE = "memory";
 
 /** The code `acquireSessionLock` throws for a holder another live process owns. */
 const SESSION_LOCKED = "SESSION_LOCKED";
+
+/** What `sync.json` records when the provider did not answer this run. */
+const UNREACHABLE = "unreachable";
+
+/** A timer armed on the process clock, boxed so the contract's opaque id stays opaque. */
+interface ArmedTimer {
+  readonly handle: ReturnType<typeof setTimeout>;
+}
+
+function isArmedTimer(id: unknown): id is ArmedTimer {
+  return typeof id === "object" && id !== null && "handle" in id;
+}
+
+/**
+ * The timers a run races against when the caller injects none: the process
+ * globals, read at call time so a substituted global is still observed. The
+ * handle is handed back boxed — `MemoryTimers` keeps the timer id opaque
+ * precisely so a fake clock can stand in for the real one, and a box clears the
+ * handle this race armed without ever casting one.
+ */
+const GLOBAL_TIMERS: MemoryTimers = {
+  setTimeout: (callback, ms) => ({ handle: globalThis.setTimeout(callback, ms) }),
+  clearTimeout: (id) => {
+    if (isArmedTimer(id)) globalThis.clearTimeout(id.handle);
+  },
+};
+
+function timedOut(ms: number): NaxError {
+  return new NaxError(`memory operation did not settle within ${ms}ms`, "MEMORY_TIMEOUT", {
+    stage: ERROR_STAGE,
+    timeoutMs: ms,
+  });
+}
+
+/**
+ * `promise`'s value if it settles within `ms`, and a `MEMORY_TIMEOUT` rejection if it does not.
+ *
+ * The timer is armed when the race starts and cleared the moment either side
+ * settles, so a race that finished leaves nothing armed behind it — the property
+ * a fake clock reads as `pending() === 0`. `setTimeout` is the cancellable kind
+ * here on purpose (the `forbidden-patterns-source` exception): `Bun.sleep` cannot
+ * be cancelled, and a sleep that outlives the answer is exactly the leak this
+ * clears.
+ *
+ * A timer race does not cancel the work it raced: the provider call keeps running
+ * after a timeout, because nothing on that side of the seam accepts a signal. Its
+ * late rejection is therefore claimed here rather than left to surface as an
+ * unhandled rejection in whatever process this library runs in.
+ */
+export async function raceTimeout<T>(promise: Promise<T>, ms: number, timers: MemoryTimers): Promise<T> {
+  promise.catch(() => undefined);
+  const deadline = Promise.withResolvers<never>();
+  const armed = timers.setTimeout(() => deadline.reject(timedOut(ms)), ms);
+  try {
+    return await Promise.race([promise, deadline.promise]);
+  } finally {
+    timers.clearTimeout(armed);
+  }
+}
 
 /** Everything one sync needs: the mirror, the queue and the provider it talks to. */
 export interface MemorySyncInput {
@@ -131,9 +193,30 @@ async function takeLock(input: MemorySyncInput): Promise<ReleaseLock | null> {
   }
 }
 
-/** Step 2, as far as this story takes it: ask the provider whether it answers. */
+/** Step 2: ask the provider whether it answers, within the probe deadline. */
 async function providerAnswers(input: MemorySyncInput): Promise<boolean> {
-  return await input.provider.reachable();
+  const timers = input.timers ?? GLOBAL_TIMERS;
+  try {
+    return await raceTimeout(input.provider.reachable(), MEMORY_PROBE_TIMEOUT_MS, timers);
+  } catch {
+    // A provider that threw and one that never answered are the same fact to this
+    // run: neither can be delivered to, so step 2 reports both as `unreachable`
+    // and `sync.json` carries the reason.
+    return false;
+  }
+}
+
+/**
+ * Step 2's failing arm: record why this run could not reach the provider, and stop.
+ *
+ * Only `lastError` changes — a probe that failed learned nothing about the cursors
+ * or the last pull, so whatever the previous sync left carries over untouched — and
+ * the outbox is not read, so the queued writes stay exactly as they were.
+ */
+async function recordUnreachable(input: MemorySyncInput): Promise<MemorySyncResult> {
+  const state = await input.store.readSyncState();
+  await input.store.writeSyncState({ ...state, lastError: UNREACHABLE });
+  return stopped("unreachable");
 }
 
 /** Step 5: regenerate the index the next session reads, and report what the run did. */
@@ -166,7 +249,7 @@ export async function syncMemory(input: MemorySyncInput): Promise<MemorySyncResu
     const acquired = await takeLock(input);
     if (acquired === null) return stopped("locked");
     release = acquired;
-    if (!(await providerAnswers(input))) return stopped("unreachable");
+    if (!(await providerAnswers(input))) return await recordUnreachable(input);
     // Steps 3 (outbox drain, US-013) and 4 (pull, US-014) belong here.
     return await finish(input, noCounts());
   } catch (error) {
