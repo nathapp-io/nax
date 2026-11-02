@@ -3,7 +3,7 @@
   "feature": "memory-store",
   "branchName": "feat/memory-store",
   "createdAt": "2026-11-02T00:00:00.000Z",
-  "updatedAt": "2026-11-02T04:50:35.374Z",
+  "updatedAt": "2026-11-02T05:03:56.389Z",
   "userStories": [
     {
       "id": "US-001",
@@ -605,14 +605,17 @@
       "dependencies": [
         "US-009"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Durable request schemas, promise-chain enqueue serialization, atomic publication and rejected/held state interact across I/O seams."
+        "reasoning": "Durable request schemas, promise-chain enqueue serialization, atomic publication and rejected/held state interact across I/O seams.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/provider-types.ts",
@@ -638,7 +641,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "05b9bf41849ef19c6f3ac21cddc55eb2790d5d7f"
     },
     {
       "id": "US-011",
