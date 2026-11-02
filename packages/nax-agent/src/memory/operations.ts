@@ -40,6 +40,10 @@
  * Only a save fenced by a sync known to this process queues without staging; it leaves
  * the mirror and index to that sync. Every save that stages refreshes the index, so the
  * next session reads the note whether or not this session could deliver it.
+ *
+ * `forgetMemoryNote` is the other half, and it only retires a note the mirror holds: an absent
+ * slug is a refusal. Under `direct` the note goes first, kept aside for a refusal to put back;
+ * under `proposal` it stays, and the marker comes from the outbox alone.
  */
 import { randomUUID } from "node:crypto";
 import type { AgentLogger } from "#src/infra/agent-logger";
@@ -60,6 +64,7 @@ import {
   type MemoryNote,
   type MemoryNoteStatus,
   type MemoryNoteWrite,
+  type MemoryScope,
   type MemoryTimers,
   type MemoryWriteRefusal,
   memoryNoteKey,
@@ -79,6 +84,12 @@ const STATUS_BY_MODE = {
   direct: "active",
   proposal: "pending",
 } as const satisfies Record<MemorySaveInput["writeMode"], MemoryNoteStatus>;
+
+/** The status a forget rests in with no provider answer: retired, or still awaiting approval. */
+const FORGET_STATUS_BY_MODE = {
+  direct: "deleted",
+  proposal: "pending",
+} as const satisfies Record<MemoryForgetInput["writeMode"], MemoryNoteStatus>;
 
 /** What every operation is given: the mirror it writes, the queue and the provider it talks to. */
 export interface MemoryOperationInput {
@@ -109,6 +120,22 @@ export interface MemorySaveInput extends MemoryOperationInput {
 
 /** What a save came to: the note's slug, the status it ended in, and whether a provider took it. */
 export interface MemorySaveResult {
+  readonly slug: string;
+  readonly status: MemoryNoteStatus;
+  readonly delivered: boolean;
+}
+
+/** One forget: the note to retire, why, and the mode it is retired in. */
+export interface MemoryForgetInput extends MemoryOperationInput {
+  readonly scope: MemoryScope;
+  readonly slug: string;
+  readonly reason: string;
+  /** `direct` retires the note at once; `proposal` asks for approval and leaves it in place. */
+  readonly writeMode: "direct" | "proposal";
+}
+
+/** What a forget came to: the slug it names, the status it ended in, and whether it was delivered. */
+export interface MemoryForgetResult {
   readonly slug: string;
   readonly status: MemoryNoteStatus;
   readonly delivered: boolean;
@@ -493,4 +520,78 @@ async function commitSave(input: MemorySaveInput): Promise<MemorySaveResult> {
 async function queueWithoutMirror(input: MemorySaveInput): Promise<MemorySaveResult> {
   const note = stagedNote(input);
   return await queueFenced(input, note, saveRequest(note, input.writeMode));
+}
+
+/** The refusal a forget of a slug this mirror does not hold is thrown as. */
+function noteNotFound(input: MemoryForgetInput): NaxError {
+  return new NaxError(
+    `memory note "${memoryNoteKey(input.scope, input.slug)}" is not in this mirror`,
+    "MEMORY_NOTE_NOT_FOUND",
+    { stage: ERROR_STAGE, scope: input.scope, slug: input.slug },
+  );
+}
+
+/** The request one forget is pushed as: its own UUID keys the write, and the reason rides along. */
+function forgetRequest(input: MemoryForgetInput): MemoryWriteRequest {
+  const { scope, slug, writeMode, reason } = input;
+  return { kind: "forget", clientId: randomUUID(), scope, slug, writeMode, reason };
+}
+
+/** Queue a forget this operation could not deliver, and rebuild the index so its marker shows. */
+async function queueForget(input: MemoryForgetInput, request: MemoryWriteRequest): Promise<MemoryForgetResult> {
+  await input.outbox.enqueue(request);
+  await refreshIndex(input);
+  return { slug: input.slug, status: FORGET_STATUS_BY_MODE[input.writeMode], delivered: false };
+}
+
+/** Put a retired note back; a failure is reported, never thrown, so the refusal still reaches the caller. */
+async function restoreForgotten(input: MemoryForgetInput, previous: MemoryNote): Promise<void> {
+  try {
+    await input.store.writeNote(previous);
+  } catch (error) {
+    warnQuietly(input.logger, "memory forget could not restore the note", {
+      path: input.store.paths.notesDir,
+      slug: previous.slug,
+      error: errorMessage(error),
+    });
+  }
+}
+
+/** The ordered half of a forget: refuse an absent note, retire it, join a queued key, then deliver. */
+async function commitForget(input: MemoryForgetInput): Promise<MemoryForgetResult> {
+  const previous = await input.store.readNote(input.scope, input.slug);
+  if (previous === null) throw noteNotFound(input);
+  const request = forgetRequest(input);
+  if (input.writeMode === "direct") await input.store.deleteNote(input.scope, input.slug);
+  if ((await input.outbox.heldKeys()).has(memoryNoteKey(input.scope, input.slug))) return queueForget(input, request);
+  return await handOverForget(input, previous, request);
+}
+
+/** Ask the provider to forget the note; anything short of an acceptance queues the request. */
+async function handOverForget(
+  input: MemoryForgetInput,
+  previous: MemoryNote,
+  request: MemoryWriteRequest,
+): Promise<MemoryForgetResult> {
+  const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
+  if (!(await providerAnswers(input.provider, timers))) return await queueForget(input, request);
+  let answer: MemoryPushResult;
+  try {
+    answer = await raceTimeout(input.provider.push(request), MEMORY_OP_TIMEOUT_MS, timers);
+  } catch (error) {
+    if (!isMemoryPushRejected(error)) return await queueForget(input, request);
+    if (input.writeMode === "direct") await restoreForgotten(input, previous);
+    throw error;
+  }
+  await refreshIndex(input);
+  return { slug: input.slug, status: answer.status, delivered: true };
+}
+
+/**
+ * Forget one note: retire it and tell the provider, or queue the request for the next sync.
+ * A permanent refusal is the one answer undone, under `direct`, and it is rethrown; the mirror
+ * is asked first, so an absent slug is never queued.
+ */
+export async function forgetMemoryNote(input: MemoryForgetInput): Promise<MemoryForgetResult> {
+  return await orderedByStore(input.store.paths.lock, () => commitForget(input));
 }

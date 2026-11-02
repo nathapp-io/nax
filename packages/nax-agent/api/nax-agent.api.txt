@@ -194,6 +194,8 @@ MODEL_MAX_LINE_CHARS
 type MaskResult
 type MechanicalVerdict
 type MemoryDecision
+type MemoryForgetInput
+type MemoryForgetResult
 type MemoryHit
 type MemoryNote
 type MemoryNoteStatus
@@ -421,6 +423,7 @@ findApproval
 findSecret
 findSecretSpans
 flushOpenToolAuditSinks
+forgetMemoryNote
 getAgentRuntime
 getCodingTool
 getLogger
