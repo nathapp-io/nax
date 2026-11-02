@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { existsSync, realpathSync } from "node:fs";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _atomicWriteDeps, writeFileAtomic } from "#src/internal/atomic-write";
+import { withPinnedDirectory } from "#src/internal/pinned-directory";
 import { withDepsRestore } from "#test/helpers/index";
 
 let dir: string;
@@ -24,7 +25,7 @@ describe("writeFileAtomic", () => {
     expect(await readdir(dir)).toEqual(["doc.json"]);
   });
 
-  test("a write that dies part-way leaves the previous content intact and cleans up", async () => {
+  test("a write that dies part-way leaves previous content intact and retains the stage", async () => {
     const path = join(dir, "doc.json");
     await writeFile(path, '{"v":1}');
     const realOpen = _atomicWriteDeps.open;
@@ -41,7 +42,9 @@ describe("writeFileAtomic", () => {
 
     await expect(writeFileAtomic(path, '{"v":2,"long":"payload"}')).rejects.toThrow("ENOSPC");
     expect(await readFile(path, "utf8")).toBe('{"v":1}');
-    expect(await readdir(dir)).toEqual(["doc.json"]);
+    const stages = (await readdir(dir)).filter((name) => name.endsWith(".tmp"));
+    expect(stages).toHaveLength(1);
+    expect(await readFile(join(dir, stages[0] ?? "", "stage"), "utf8")).toBe('{"v');
   });
 
   test("applies the requested file mode", async () => {
@@ -79,7 +82,7 @@ describe("writeFileAtomic", () => {
     expect(order).toEqual(["stage", "check", "rename"]);
   });
 
-  test("a refused publish leaves the previous content intact and no staging file behind", async () => {
+  test("a refused publish leaves previous content intact and retains its staged payload", async () => {
     const path = join(dir, "doc.json");
     await writeFile(path, '{"v":1}');
     const refusal = new Error("destination moved");
@@ -92,7 +95,9 @@ describe("writeFileAtomic", () => {
       }),
     ).rejects.toBe(refusal);
     expect(await readFile(path, "utf8")).toBe('{"v":1}');
-    expect(await readdir(dir)).toEqual(["doc.json"]);
+    const stages = (await readdir(dir)).filter((name) => name.endsWith(".tmp"));
+    expect(stages).toHaveLength(1);
+    expect(await readFile(join(dir, stages[0] ?? "", "stage"), "utf8")).toBe('{"v":2}');
   });
 
   test("a failure never removes a file this write did not stage", async () => {
@@ -146,10 +151,9 @@ describe("writeFileAtomic", () => {
     };
 
     await expect(writeFileAtomic(join(dir, "doc.json"), "ours")).rejects.toBe(failure);
-    // The stage went, and the entry that took its place went with it: nothing this call did
-    // not create is left to identify, and the removal is scoped to its own namespace.
-    expect(existsSync(stageDir)).toBe(false);
-    expect(await readdir(dir)).toEqual([]);
+    // No pathname unlink can prove ownership of the replacement: retain it.
+    expect(await readFile(join(stageDir, "stage"), "utf8")).toBe("not our stage");
+    expect(await readdir(dir)).toEqual([stageDir.slice(dir.length + 1)]);
   });
 
   test("a stage this call could not create is never removed", async () => {
@@ -165,13 +169,12 @@ describe("writeFileAtomic", () => {
     expect(await readFile(taken, "utf8")).toBe("not our stage");
   });
 
-  test("[B5] the stage is an exclusively created namespace, and the cleanup is scoped to it", async () => {
+  test("[B5] cleanup retains a stage containing foreign entries", async () => {
     const path = join(dir, "doc.json");
     const realDiscard = _atomicWriteDeps.discard;
     let stageDir = "";
-    // An entry that is not this call's appears inside the namespace while the write is
-    // failing. The removal is one `rmdir` of a directory the call created exclusively, which
-    // clears it only while it is empty — so what is left is retained, never swept by a stat.
+    // A foreign entry appears while the write is failing. Cleanup only attempts rmdir:
+    // neither our remaining payload nor the foreign entry may be unlinked by pathname.
     _atomicWriteDeps.discard = async (entry) => {
       stageDir = entry;
       await writeFile(join(entry, "foreign"), "not ours\n");
@@ -194,7 +197,7 @@ describe("writeFileAtomic", () => {
     expect(existsSync(path)).toBe(false);
   });
 
-  test("an identity failure neither writes nor leaves its stage behind", async () => {
+  test("an identity failure never writes and retains the unverified payload", async () => {
     const realOpen = _atomicWriteDeps.open;
     const failure = new Error("fstat failed");
     let writes = 0;
@@ -214,9 +217,51 @@ describe("writeFileAtomic", () => {
 
     await expect(writeFileAtomic(join(dir, "doc.json"), "ours")).rejects.toBe(failure);
     expect(writes).toBe(0);
-    // The namespace is this call's whether or not a descriptor could be identified, so it goes.
-    expect(await readdir(dir)).toEqual([]);
+    const stages = await readdir(dir);
+    expect(stages).toHaveLength(1);
+    expect(await readFile(join(dir, stages[0] ?? "", "stage"), "utf8")).toBe("");
   });
+
+  test.each([false, true])(
+    "[B5] cleanup preserves a foreign payload after stage replacement (pinned=%s)",
+    async (pinned) => {
+      const parent = realpathSync(dir);
+      const foreign = join(parent, "foreign");
+      await mkdir(foreign);
+      await writeFile(join(foreign, "stage"), "foreign payload");
+      const realDiscard = _atomicWriteDeps.discard;
+      let swapped = false;
+      _atomicWriteDeps.discard = async (stageDir) => {
+        await rename(stageDir, `${stageDir}.aside`);
+        await symlink(foreign, stageDir);
+        swapped = true;
+        await realDiscard(stageDir);
+      };
+      const failure = new Error("publish refused");
+      const action = () =>
+        writeFileAtomic(join(parent, "doc.json"), "ours", {
+          beforePublish: async () => {
+            throw failure;
+          },
+        });
+
+      await expect(
+        pinned
+          ? withPinnedDirectory(
+              {
+                path: parent,
+                identity: await stat(parent),
+                changed: () => new Error("parent moved"),
+              },
+              action,
+            )
+          : action(),
+      ).rejects.toBe(failure);
+
+      expect(swapped).toBe(true);
+      expect(await readFile(join(foreign, "stage"), "utf8")).toBe("foreign payload");
+    },
+  );
 
   test("hands the published file's identity to the caller after the rename", async () => {
     const path = join(dir, "doc.json");

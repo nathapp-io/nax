@@ -84,7 +84,7 @@ describe("pinnedDirectoryWorker", () => {
     });
   });
 
-  test("[B5] stage creates the namespace exclusively and discard empties it, with no stat in between", async () => {
+  test("[B5] stage is exclusive and discard only removes an empty namespace", async () => {
     await withTempDir(async (dir) => {
       const stage = join(dir, "note.tmp");
       const replies = await run([
@@ -96,12 +96,15 @@ describe("pinnedDirectoryWorker", () => {
       ]);
 
       expect(replies[1]?.value).toBe(1);
-      // The stage and everything in it is gone: the payload and then the directory itself.
-      expect(await fs.readdir(dir)).toEqual([]);
-      // Creating the same namespace twice is refused: exclusive creation is what makes it ours.
-      await fs.mkdir(stage);
+      // Nonempty stages are retained; exclusive creation does not establish ongoing ownership.
+      expect(replies[4]?.code).toBe("ENOTEMPTY");
+      expect(await fs.readFile(join(stage, "stage"), "utf8")).toBe("payload");
       const again = await run([{ op: "stage", args: [stage, 0o700] }]);
       expect(again[0]?.code).toBe("EEXIST");
+      await fs.unlink(join(stage, "stage"));
+      const emptied = await run([{ op: "discard", args: [stage] }]);
+      expect(emptied[0]?.error).toBeUndefined();
+      expect(await fs.readdir(dir)).toEqual([]);
     });
   });
 

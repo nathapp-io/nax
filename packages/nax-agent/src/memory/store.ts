@@ -45,7 +45,7 @@ const NOTE_SUFFIX = ".md";
 const DECISIONS_FILE = "decisions.jsonl";
 const SYNC_STATE_FILE = "sync.json";
 
-/** Resolved reads refuse final-component links and prove the opened file's identity. */
+/** Reads refuse final-component links; the verified parent pin protects their ancestors. */
 const READ_FLAGS: number = constants.O_RDONLY | constants.O_NOFOLLOW;
 
 interface Identity {
@@ -55,7 +55,6 @@ interface Identity {
 
 /** One open file: read through its descriptor, never through its path. */
 interface OpenedFile {
-  stat(): Promise<Identity>;
   readText(): Promise<string>;
   close(): Promise<void>;
 }
@@ -82,6 +81,8 @@ export const _memoryStoreDeps: {
   pin: typeof withPinnedDirectory;
 } = {
   open: async (path, flags) => {
+    const pinned = await openPinnedRead(path, flags);
+    if (pinned !== null) return pinned;
     const handle = await open(path, flags);
     return {
       stat: async () => identityOf(await handle.stat()),
@@ -320,20 +321,28 @@ export function createMemoryStore(input: {
       throw error;
     }
   }
-  /** A link's destination, confined to the root and read where it resolves. */
+  /** A link's destination has its own ancestors: the notes-directory pin cannot protect them. */
   async function readConfinedTarget(handle: VerifiedDir, target: string): Promise<string | null> {
-    const file = await openConfined(
-      handle.scope,
-      handle.root,
-      target,
-      confinedRealPath(handle.scope, handle.root, target),
-    );
-    if (file === null) return null;
-    try {
-      return await file.readText();
-    } finally {
-      await file.close();
-    }
+    const resolved = confinedRealPath(handle.scope, handle.root, target);
+    const dir = dirname(resolved);
+    const identity = await identityAt(dir);
+    if (identity === null) return null;
+    return inPinnedDirectory({ ...handle, dir, spelling: dir, identity }, async () => {
+      // Stat and spawn may have encountered a replaced ancestor. Prove confinement from
+      // the destination pin itself, not by reopening its absolute spelling. Once proved,
+      // the final NOFOLLOW open stays relative to this same inode even if its name moves.
+      const pinnedTarget = await resolvePinned(resolved);
+      if (pinnedTarget === null) return null;
+      confinedRealPath(handle.scope, handle.root, pinnedTarget);
+      if (pinnedTarget !== resolved) throw outsideRoot(handle.scope, target, handle.root);
+      const file = await openConfined(handle.scope, handle.root, resolved, resolved);
+      if (file === null) return null;
+      try {
+        return await file.readText();
+      } finally {
+        await file.close();
+      }
+    });
   }
   /** One note's text, in a pinned session of its own. */
   function readNoteText(handle: VerifiedDir, slug: string): Promise<string | null> {

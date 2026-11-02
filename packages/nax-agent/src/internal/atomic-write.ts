@@ -10,19 +10,15 @@
  * a killed PROCESS, not a power loss.
  *
  * The stage is a *directory* (`<path>.<uuid>.tmp`) created exclusively by this
- * call: `mkdir` refuses a name that is already taken, so the namespace the
- * payload is written into is this call's alone, and everything the cleanup
- * removes is an entry this call created there. The shared directory is never
- * the target of a removal. On failure the payload goes and then the directory,
- * and `rmdir` clears a directory only when it is empty, so anything that
- * appeared inside this call's namespace is retained rather than swept. Neither
- * removal reads an identity first: a stat that is then acted on deletes
- * whatever took the name in between, and another stat does not make an unlink
- * ownership-atomic. What remains is the caller's contract — whoever can write
- * *inside* the stage directory can replace the payload, which is the same
- * permission that could replace the target itself — and a retained `.tmp`
- * entry costs nothing, because every listing in this package ignores those
- * names.
+ * call. Exclusive creation and mode 0700 do not establish continuing ownership:
+ * a writer of its parent can rename it and put a foreign directory or link at
+ * its name. Cleanup therefore NEVER unlinks a payload through that pathname.
+ * It only attempts `rmdir`, which neither follows a final symlink nor removes a
+ * nonempty directory. Failed writes conservatively retain their payloads; even
+ * a replacement between the last check and cleanup cannot lose foreign bytes.
+ * Successful publication normally leaves an empty stage directory to remove.
+ * A retained `.tmp` namespace is ignored by the package's listings. No pathname
+ * identity check is claimed to make cleanup ownership-atomic.
  *
  * In a pinned-directory context all stage, publication and cleanup operations
  * are relative to the verified cwd, and the stage directory is reached as one
@@ -35,11 +31,11 @@
  *   caller can check — and take back by identity — a note that landed somewhere the
  *   rename could not be told apart from.
  *
- * A throw from either hook fails the write and removes the stage.
+ * A throw from either hook fails the write; cleanup retains any remaining payload.
  */
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { mkdir, open, rename, rm, rmdir, unlink } from "node:fs/promises";
+import { mkdir, open, rename, rm, rmdir } from "node:fs/promises";
 import { join } from "node:path";
 import { openPinnedStage, pinnedOperation } from "./pinned-directory.ts";
 
@@ -52,7 +48,7 @@ interface Identity {
 /** Exclusive creation, and never through a link at the stage's name. */
 const STAGE_FLAGS: number = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
 
-/** The stage's own directory: this write's private namespace, unpublished by anyone else. */
+/** Restrict access inside the stage, without claiming that its parent cannot replace it. */
 const STAGE_DIR_MODE = 0o700;
 
 /** The default a plain `writeFile` would apply, so a published note keeps ordinary permissions. */
@@ -71,7 +67,7 @@ interface StagedFile {
   close(): Promise<void>;
 }
 
-/** Remove one stage directory and whatever this call left in it. Injectable for tests. */
+/** Try removing an empty stage directory, never its contents. Injectable for tests. */
 type DiscardStage = (stageDir: string) => Promise<void>;
 
 /** Injectable for tests that simulate a write dying part-way, or a stage namespace being taken. */
@@ -105,23 +101,10 @@ export const _atomicWriteDeps: {
   discard: (dir) => removeStage(dir),
 };
 
-/**
- * Remove this call's stage directory, or leave it in place when it cannot be emptied.
- *
- * There is no ownership check before the removal, because there is nothing to check: the
- * directory was created exclusively by this call, so the payload inside it is this call's
- * entry. `rmdir` is the removal that stays safe even so — it clears a directory only when
- * nothing else is inside it, so an entry that appeared in the namespace is retained and a
- * failed removal only leaves a `.tmp` name behind, which no listing reads.
- */
+/** Remove only an empty namespace; a payload's ownership cannot be proved by its pathname. */
 async function removeStage(stageDir: string): Promise<void> {
-  const pinned = pinnedOperation<void>(stageDir, "discard", [STAGE_NAME]);
+  const pinned = pinnedOperation<void>(stageDir, "discard");
   if (pinned !== null) return await pinned;
-  try {
-    await unlink(join(stageDir, STAGE_NAME));
-  } catch {
-    // The payload was published (renamed onto the target) or was never created.
-  }
   await rmdir(stageDir);
 }
 

@@ -121,16 +121,9 @@ export async function pinnedDirectoryWorker(
           await fs.rm(args[0], { force: true });
           break;
         case "discard": {
-          // Remove this call's stage from the namespace this call created: the payload it
-          // wrote, then the directory itself. Nothing is checked before the removal — a stat
-          // that is then acted on deletes whatever took the name in between — and `rmdir`
-          // clears the directory only when nothing else is in it, so anything that appeared
-          // there is retained rather than swept.
-          try {
-            await fs.unlink(`${args[0]}/${args[1]}`);
-          } catch {
-            // The payload was published (renamed onto the target) or never created.
-          }
+          // The pinned parent does not pin a stage's own namespace: a writer of that
+          // parent can replace it. Never unlink through it. rmdir removes only empty
+          // directories and refuses final symlinks; nonempty stages are retained.
           await fs.rmdir(args[0]);
           break;
         }

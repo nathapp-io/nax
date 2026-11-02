@@ -55,6 +55,19 @@ async function caught(promise: Promise<unknown>): Promise<unknown> {
   }
 }
 
+/** A destination swap either preserves the pinned bytes or refuses the untrusted parent. */
+function expectConfinedRead(result: unknown, operation: string, phase: string): void {
+  expect(JSON.stringify(result)).not.toContain("leaked body");
+  if (phase === "open") {
+    const read = Array.isArray(result) ? result[0] : result;
+    expect(read).toMatchObject({ body: "real body" });
+  } else if (operation === "read") {
+    expect(result).toMatchObject({ code: "MEMORY_PATH_OUTSIDE" });
+  } else {
+    expect(result).toEqual([]);
+  }
+}
+
 /** Both seams the store and the atomic write read: restored after every test. */
 function withStoreSeams(): void {
   withDepsRestore(_memoryStoreDeps);
@@ -213,7 +226,7 @@ describe("memory store confinement", () => {
     });
   });
 
-  test("AC-6: a failed rename rejects writeNote and leaves no note and no .tmp file", async () => {
+  test("AC-6: a failed rename rejects writeNote, leaves no note and conservatively retains its stage", async () => {
     await withTempDir(async (dir) => {
       const notesDir = join(projectPath(dir), "notes");
       const store = createMemoryStore({ projectDir: projectPath(dir), logger: makeLogger() });
@@ -227,7 +240,10 @@ describe("memory store confinement", () => {
       expect(error).toBe(failure);
       expect(existsSync(notesDir)).toBe(true);
       expect(existsSync(join(notesDir, "replay-budget.md"))).toBe(false);
-      expect((await readdir(notesDir)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+      const stages = (await readdir(notesDir)).filter((name) => name.endsWith(".tmp"));
+      expect(stages).toHaveLength(1);
+      expect(await Bun.file(join(notesDir, stages[0] ?? "", "stage")).text()).toBe(serializeMemoryNote(note()));
+      expect(await store.listNotes("project")).toEqual([]);
     });
   });
 
@@ -333,6 +349,56 @@ describe("memory store confinement", () => {
       });
     });
 
+    test.each([
+      ["read", "open"],
+      ["list", "open"],
+      ["read", "stat"],
+      ["list", "stat"],
+      ["read", "pin"],
+      ["list", "pin"],
+    ])("[B2] %s never follows a symlink destination parent replaced before %s", async (operation, phase) => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const targetDir = join(project, "targets");
+        const outside = join(dir, "outside");
+        const target = join(targetDir, "target.md");
+        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+        await writeFixture(target, serializeMemoryNote(note({ body: "real body" })));
+        await writeFixture(join(outside, "target.md"), serializeMemoryNote(note({ body: "leaked body" })));
+        await mkdir(store.paths.notesDir);
+        await symlink(target, join(store.paths.notesDir, "replay-budget.md"));
+        const realOpen = _memoryStoreDeps.open;
+        const realStat = _memoryStoreDeps.stat;
+        const realPin = _memoryStoreDeps.pin;
+        let swapped = false;
+        const swap = async () => {
+          await rename(targetDir, join(project, "targets-aside"));
+          await symlink(outside, targetDir);
+          swapped = true;
+        };
+        _memoryStoreDeps.open = async (path, flags) => {
+          if (phase === "open" && path.endsWith("/targets/target.md")) await swap();
+          return realOpen(path, flags);
+        };
+        _memoryStoreDeps.stat = async (path) => {
+          if (phase === "stat" && path.endsWith("/targets")) await swap();
+          return realStat(path);
+        };
+        _memoryStoreDeps.pin = async (input, action) => {
+          if (phase === "pin" && input.path.endsWith("/targets")) await swap();
+          return realPin(input, action);
+        };
+
+        const result = await (operation === "read"
+          ? store.readNote("project", "replay-budget")
+          : store.listNotes("project")
+        ).catch((error: unknown) => error);
+
+        expect(swapped).toBe(true);
+        expectConfinedRead(result, operation, phase);
+      });
+    });
+
     test("readNote takes its bytes from the pinned parent, not from the path it checked", async () => {
       await withTempDir(async (dir) => {
         const project = projectPath(dir);
@@ -349,10 +415,14 @@ describe("memory store confinement", () => {
         const realPin = _memoryStoreDeps.pin;
         // The path names an outside directory for the whole read. The directory the store
         // verified was pinned first, so the bytes are still the ones it holds.
+        let swapped = false;
         _memoryStoreDeps.pin = async (input, action) =>
           realPin(input, async () => {
-            await rename(notesDir, aside);
-            await symlink(outside, notesDir);
+            if (!swapped) {
+              await rename(notesDir, aside);
+              await symlink(outside, notesDir);
+              swapped = true;
+            }
             return action();
           });
 
@@ -507,10 +577,13 @@ describe("memory store confinement", () => {
           assertNaxError(error, `writeNote with a parent swapped during ${operation}`);
           expect(error.code).toBe("MEMORY_PATH_OUTSIDE");
         }
-        // The foreign stage is still where it was written, and nothing of ours is left beside it.
+        // The foreign stage survives. An unpublished payload is conservatively retained
+        // under the original parent; successful publication leaves an empty removable stage.
         expect(await Bun.file(join(replaced, "stage")).text()).toBe("foreign stage");
         expect(await readdir(replaced)).toEqual(["stage"]);
-        expect((await readdir(aside)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+        expect((await readdir(aside)).filter((name) => name.endsWith(".tmp"))).toHaveLength(
+          operation === "publish" ? 0 : 1,
+        );
       });
     });
 
