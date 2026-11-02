@@ -3,7 +3,7 @@
   "feature": "memory-store",
   "branchName": "feat/memory-store",
   "createdAt": "2026-11-02T00:00:00.000Z",
-  "updatedAt": "2026-11-02T02:31:26.227Z",
+  "updatedAt": "2026-11-02T03:33:05.638Z",
   "userStories": [
     {
       "id": "US-001",
@@ -235,14 +235,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Adds checks in one store using existing isInside and atomic-write helpers; path confinement remains a security boundary requiring strict isolated TDD."
+        "reasoning": "Adds checks in one store using existing isInside and atomic-write helpers; path confinement remains a security boundary requiring strict isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/store.ts",
@@ -260,7 +263,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "2fa6bfefddbbea5494313ad0abffe627578b875c"
     },
     {
       "id": "US-005",
