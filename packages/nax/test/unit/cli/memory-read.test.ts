@@ -296,6 +296,6 @@ describe("registerMemoryCommand", () => {
     registerMemoryCommand(program, harness().deps);
     const memory = program.commands.find((command) => command.name() === "memory");
     assertDefined(memory, "the memory command");
-    expect(memory.commands.map((command) => command.name())).toEqual(["status", "list", "show", "sync"]);
+    expect(memory.commands.map((command) => command.name())).toEqual(["status", "list", "show", "sync", "save"]);
   });
 });

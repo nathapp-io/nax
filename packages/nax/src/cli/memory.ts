@@ -5,7 +5,7 @@
  * chat session has neither, so this group is the other surface. This file registers the group
  * and holds the two listing subcommands — `status` reports what the mirror holds, `list`
  * prints what it holds — while the other files beside it add their own: `memory-read.ts`
- * (`show`, `sync`), later the write commands.
+ * (`show`, `sync`) and `memory-write.ts` (`save`).
  *
  * The command is a thin shell, as `nax cost` is: the plumbing every subcommand shares — the
  * `--dir` / `--json` flags, the repository-root resolution, the host and the error contract —
@@ -36,6 +36,7 @@ import {
   withMemoryErrors,
 } from "./memory-cli-deps";
 import { registerMemoryReadCommands } from "./memory-read";
+import { registerMemoryWriteCommands } from "./memory-write";
 
 /** What `list` takes on top of the group's flags: one note type and one scope, both optional. */
 export interface MemoryListOptions extends MemoryCliOptions {
@@ -151,5 +152,6 @@ export function registerMemoryCommand(program: Command, deps: MemoryCliDeps = _m
       deps.exit(await memoryListCommand(opts, deps));
     });
   registerMemoryReadCommands(memory, deps);
+  registerMemoryWriteCommands(memory, deps);
   return memory;
 }

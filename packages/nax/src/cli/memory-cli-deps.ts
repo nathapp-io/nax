@@ -5,9 +5,9 @@
  *
  * It lives here rather than in `memory.ts` for the reason `rules-cli-deps.ts` exists:
  * `memory.ts` registers the group, so it imports the files that register their own
- * subcommands (`memory-read.ts` today, the write commands later). A sibling that imported
- * this plumbing back from the registrar would close a runtime import cycle, which
- * `check:import-cycles` rejects. `memory.ts` keeps what only `status` and `list` need.
+ * subcommands (`memory-read.ts` and `memory-write.ts`). A sibling that imported this plumbing
+ * back from the registrar would close a runtime import cycle, which `check:import-cycles`
+ * rejects. `memory.ts` keeps what only `status` and `list` need.
  *
  * The command is a thin shell, as `nax cost` is: it resolves the repository root the way
  * `nax chat` resolves it (the nearest `.nax` above `--dir`, else `--dir`), hands the host
@@ -53,9 +53,7 @@ export interface MemoryCliContext {
 
 /**
  * The seam this group's every external call goes through: the repository walk, the config
- * load, the host and the file read `save --body-file` will take, plus the two output
- * channels. `readFile` has no caller yet — it is declared here so the group has one seam
- * rather than two.
+ * load, the host, the file read `save --body-file` takes, plus the two output channels.
  */
 export interface MemoryCliDeps {
   log: (msg: string) => void;

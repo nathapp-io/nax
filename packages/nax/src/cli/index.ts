@@ -152,6 +152,11 @@ export {
   memorySyncCommand,
   registerMemoryReadCommands,
 } from "./memory-read";
+export {
+  type MemorySaveOptions,
+  memorySaveCommand,
+  registerMemoryWriteCommands,
+} from "./memory-write";
 export type { PlanCommandOptions } from "./plan";
 export { _planDeps, planCommand, resolvePlanMode } from "./plan";
 export { planDecomposeCommand, runReplanLoop } from "./plan-decompose";
