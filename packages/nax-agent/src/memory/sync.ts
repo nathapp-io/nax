@@ -96,6 +96,21 @@ function stopped(outcome: MemorySyncResult["outcome"], error?: string): MemorySy
 }
 
 /**
+ * Report a failure without letting the reporting fail the run.
+ *
+ * The logger is an input, not a guarantee: a host logger that throws would
+ * otherwise turn the never-throws contract into a rejection at exactly the
+ * moment a result is owed, so a logger failure is discarded on purpose.
+ */
+function warnQuietly(logger: AgentLogger, message: string, data: Record<string, unknown>): void {
+  try {
+    logger.warn(ERROR_STAGE, message, data);
+  } catch {
+    // Nothing left to report it to: the outcome the caller is owed still returns.
+  }
+}
+
+/**
  * Take the store's lock, or `null` when another process holds it live.
  *
  * The directory is created first — the lock protocol's guard directory lives
@@ -133,7 +148,7 @@ async function releaseQuietly(input: MemorySyncInput, release: ReleaseLock): Pro
   try {
     await release();
   } catch (error) {
-    input.logger.warn(ERROR_STAGE, "memory sync could not release the lock", {
+    warnQuietly(input.logger, "memory sync could not release the lock", {
       path: input.store.paths.lock,
       error: errorMessage(error),
     });
@@ -155,8 +170,9 @@ export async function syncMemory(input: MemorySyncInput): Promise<MemorySyncResu
     // Steps 3 (outbox drain, US-013) and 4 (pull, US-014) belong here.
     return await finish(input, noCounts());
   } catch (error) {
-    input.logger.warn(ERROR_STAGE, "memory sync failed", { path: lock, error: errorMessage(error) });
-    return stopped("failed", errorMessage(error));
+    const message = errorMessage(error);
+    warnQuietly(input.logger, "memory sync failed", { path: lock, error: message });
+    return stopped("failed", message);
   } finally {
     await releaseQuietly(input, release);
     // Cleared whatever the cleanup did: a lock we could not release ages into

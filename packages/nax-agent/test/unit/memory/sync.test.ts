@@ -97,6 +97,18 @@ function harness(dir: string, script: MemoryProviderScript = {}): Harness {
   };
 }
 
+/**
+ * A logger whose `warn` throws: reporting a failure is best-effort, so a logger
+ * that fails must not be able to turn a reportable outcome into a rejection.
+ */
+function throwingLogger(): MockLogger {
+  const logger = makeLogger();
+  logger.warn.mockImplementation(() => {
+    throw new Error("logger exploded");
+  });
+  return logger;
+}
+
 /** A lock file held by another process, with a heartbeat as fresh as `STAMP`. */
 async function writeLock(path: string, pid: number): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
@@ -337,6 +349,53 @@ describe("syncMemory", () => {
       });
       // The unreleased lock outlives the run — a stale one the next call takes over.
       expect(existsSync(h.store.paths.lock)).toBe(true);
+      await expect(syncMemory(h.input())).resolves.toMatchObject({ outcome: "synced" });
+    });
+  });
+
+  test("F1: a logger that throws cannot turn a failed run into a rejection", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      const logger = throwingLogger();
+      const unavailable = new Error("outbox unavailable");
+      const broken: MemoryOutbox = {
+        ...h.outbox,
+        heldKeys: async () => {
+          throw unavailable;
+        },
+      };
+
+      const result = await syncMemory(h.input({ outbox: broken, logger }));
+
+      expect(result).toEqual({
+        outcome: "failed",
+        pushed: 0,
+        rejected: 0,
+        pulled: 0,
+        skipped: 0,
+        error: "outbox unavailable",
+      });
+      // The warning was attempted, and its failure was swallowed rather than raised.
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(existsSync(h.store.paths.lock)).toBe(false);
+      await expect(syncMemory(h.input())).resolves.toMatchObject({ outcome: "synced" });
+    });
+  });
+
+  test("F1: a logger that throws cannot turn an unclean release into a rejection", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      const logger = throwingLogger();
+      const failure = Object.assign(new Error("EBUSY: resource busy"), { code: "EBUSY" });
+      _lockDeps.remove = () => {
+        throw failure;
+      };
+
+      const result = await syncMemory(h.input({ logger }));
+
+      expect(result).toEqual({ outcome: "synced", pushed: 0, rejected: 0, pulled: 0, skipped: 0 });
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      // The in-flight key is gone even though the reporting path threw.
       await expect(syncMemory(h.input())).resolves.toMatchObject({ outcome: "synced" });
     });
   });
