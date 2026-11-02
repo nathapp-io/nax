@@ -19,9 +19,19 @@
  * host instead of once per read, without the host having to remember which files
  * it rejected.
  *
- * The index, sync and the write paths arrive in US-006 and US-007; until then
- * each answers with a `MEMORY_NOT_IMPLEMENTED` `NaxError` rather than a silent
- * empty result, so a caller wired too early fails loudly.
+ * The index and the status are compositions too, over that same set: the index is
+ * feature 1's renderer given both scopes, the project's decisions, the notes with
+ * a forget still queued and this project's byte cap, and the status is the counts
+ * of what the mirror, the repository and the outbox hold. Neither caches, so a
+ * read of either costs one re-read of the repository.
+ *
+ * Sync is the one operation that is not a read: it hands the same composition to
+ * feature 1's `syncMemory`, which owns the lock, the drain and the pull, and never
+ * throws — so this host reports what it returns rather than guarding it.
+ *
+ * The write paths arrive in US-007; until then each answers with a
+ * `MEMORY_NOT_IMPLEMENTED` `NaxError` rather than a silent empty result, so a
+ * caller wired too early fails loudly.
  */
 import {
   approveMemoryNote,
@@ -34,18 +44,20 @@ import {
   type MemoryNote,
   type MemoryNoteWrite,
   type MemoryOutbox,
+  type MemoryOutboxEntry,
   type MemoryProvider,
   type MemorySaveResult,
   type MemoryScope,
   type MemoryStore,
   type MemorySyncResult,
   type RenderedMemoryIndex,
+  renderMemoryIndex,
   saveMemoryNote,
   searchMemoryNotes,
   syncMemory,
 } from "@nathapp/nax-agent";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
-import { memoryConfigOf, type NaxConfig } from "@/config";
+import { type MemoryConfig, memoryConfigOf, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { type MemoryDirs, type MemoryLogger, memoryDirs } from "./paths";
 import { readRepoNotes } from "./repo-notes";
@@ -192,11 +204,149 @@ async function composeMemory(input: CreateMemoryHostInput): Promise<MemoryParts>
   return { dirs, store, outbox, provider: _memoryHostDeps.createLocalMemoryProvider(store) };
 }
 
+/** Everything one host's reads are built from: where the mirror is, and the config that caps it. */
+interface HostInput {
+  readonly parts: MemoryParts;
+  readonly config: MemoryConfig;
+  readonly repoRoot: string;
+  readonly logger: MemoryLogger;
+}
+
+/**
+ * The project scope as it is measured, rather than as it is merged.
+ *
+ * The status reports the two counts separately — how much of its own the mirror
+ * holds, and how much of the team's it does not shadow — and the index wants the
+ * merge of them, so one read answers both.
+ */
+interface ProjectScope {
+  /** The mirror's own project notes, in slug order. */
+  readonly mirror: readonly MemoryNote[];
+  /** The repository's notes whose slug the mirror does not hold, in slug order. */
+  readonly unshadowed: readonly MemoryNote[];
+  /** How many repository candidates a repo-note rule rejected. */
+  readonly skipped: number;
+}
+
+/** One host's reads, closed over the composition and the repository they read from. */
+interface HostReads {
+  /** The mirror's own notes of one scope, in slug order. */
+  mirrorNotes(scope: MemoryScope): Promise<readonly MemoryNote[]>;
+  /** The project scope as two sets, with how many repo notes were skipped. */
+  projectScope(): Promise<ProjectScope>;
+  /** Every note the surface of one scope sees; only the project scope has repo notes. */
+  notesOf(scope: MemoryScope): Promise<readonly MemoryNote[]>;
+}
+
+/**
+ * Build the reads over one composition.
+ *
+ * The repository is read through the once-per-host wrapper: every one of these
+ * reads re-reads the repository, so a committed file that breaks a rule is met
+ * again and again, and the wrapper is what keeps that to one warn per host.
+ */
+function createReads(input: HostInput): HostReads {
+  const repoLogger = oncePerHost(input.logger);
+  const repoNotes = () => _memoryHostDeps.readRepoNotes({ repoRoot: input.repoRoot, logger: repoLogger });
+  const mirrorNotes = async (scope: MemoryScope) => (await input.parts.store.listNotes(scope)).sort(bySlug);
+  /** The mirror's project notes, and the repository's that its slugs do not shadow. */
+  async function projectScope(): Promise<ProjectScope> {
+    const mirror = await mirrorNotes("project");
+    const held = new Set(mirror.map((note) => note.slug));
+    const repo = await repoNotes();
+    return { mirror, unshadowed: repo.notes.filter((note) => !held.has(note.slug)), skipped: repo.skipped };
+  }
+  /** The mirror's project notes, then the repo notes whose slug none of them holds. */
+  async function projectNotes(): Promise<readonly MemoryNote[]> {
+    const scope = await projectScope();
+    return [...scope.mirror, ...scope.unshadowed].sort(bySlug);
+  }
+  return {
+    mirrorNotes,
+    projectScope,
+    notesOf: (scope) => (scope === "user" ? mirrorNotes("user") : projectNotes()),
+  };
+}
+
+/** One keyword search over the scopes asked for; the project scope carries the repo notes. */
+async function searchNotes(reads: HostReads, query: MemorySearchInput): Promise<readonly MemoryHit[]> {
+  const searched =
+    query.scope === undefined
+      ? [...(await reads.notesOf("project")), ...(await reads.notesOf("user"))]
+      : await reads.notesOf(query.scope);
+  return searchMemoryNotes(searched, query.text, query.limit);
+}
+
+/**
+ * The index a session starts with: feature 1's renderer over both scopes, the
+ * project's decisions, the keys a queued forget still holds and the byte cap the
+ * config sets. Every part is read now — the index is a snapshot, not a view.
+ */
+async function readIndex(reads: HostReads, input: HostInput): Promise<RenderedMemoryIndex> {
+  const [projectNotes, userNotes, decisions, heldForgets] = await Promise.all([
+    reads.notesOf("project"),
+    reads.notesOf("user"),
+    input.parts.store.readDecisions(),
+    input.parts.outbox.heldKeys("forget"),
+  ]);
+  return renderMemoryIndex({ projectNotes, userNotes, decisions, heldForgets, maxBytes: input.config.indexBytes });
+}
+
+/** How many outbox entries are in one state: still to deliver, or refused by the provider. */
+function countState(entries: readonly MemoryOutboxEntry[], state: "queued" | "rejected"): number {
+  return entries.filter((entry) => entry.state === state).length;
+}
+
+/**
+ * One sync: the composition handed to feature 1's scheduler.
+ *
+ * The scheduler owns the lock, the drain and the pull, and by its own contract
+ * never throws — so a `locked`, `unreachable` or `failed` run is a result this host
+ * passes on rather than an error it translates.
+ */
+function syncParts(input: HostInput): Promise<MemorySyncResult> {
+  const { store, outbox, provider } = input.parts;
+  return _memoryHostDeps.syncMemory({ store, outbox, provider, logger: input.logger });
+}
+
+/**
+ * What the surfaces report about a host without calling one of its reads.
+ *
+ * The note counts are the mirror's own — a repo note is the repository's, and is
+ * counted once by `repo` if the mirror's notes do not shadow it. `lastPullAt` and
+ * `lastError` are whatever the last sync left in `sync.json`.
+ */
+async function readStatus(reads: HostReads, input: HostInput): Promise<MemoryStatus> {
+  const [project, user, entries, sync] = await Promise.all([
+    reads.projectScope(),
+    reads.mirrorNotes("user"),
+    input.parts.outbox.list(),
+    input.parts.store.readSyncState(),
+  ]);
+  return {
+    enabled: true,
+    provider: input.parts.provider.id,
+    writeMode: input.config.writeMode,
+    projectDir: input.parts.dirs.projectDir,
+    userDir: input.parts.dirs.userDir,
+    lastPullAt: sync.lastPullAt,
+    lastError: sync.lastError,
+    queued: countState(entries, "queued"),
+    rejected: countState(entries, "rejected"),
+    notes: { project: project.mirror.length, user: user.length, repo: project.unshadowed.length },
+    repoSkipped: project.skipped,
+  };
+}
+
 /**
  * Create the memory host for a session, or `null` when memory is disabled.
  *
  * The disabled check comes before the first dependency call: a project with
  * memory off must not have its repository resolved, hashed or read at all.
+ *
+ * Sync is delegated whole: `syncMemory` owns the lock, the drain and the pull, and
+ * by its own contract never throws, so a `locked` or `failed` run is a result this
+ * host reports rather than an error it translates.
  *
  * @param input.config - The loaded nax config (`memory` is read through `memoryConfigOf`)
  * @param input.repoRoot - Absolute repository root; the `.nax` anchor and the mirror identity
@@ -208,39 +358,20 @@ export async function createMemoryHost(input: CreateMemoryHostInput): Promise<Me
   const config = memoryConfigOf(input.config);
   if (!config.enabled) return null;
   const parts = await composeMemory(input);
-  const repoLogger = oncePerHost(input.logger);
-  /** The repository's committed notes, read afresh and warned about once per host. */
-  const repoNotes = () => _memoryHostDeps.readRepoNotes({ repoRoot: input.repoRoot, logger: repoLogger });
-  /** One scope's own notes, in slug order. */
-  const mirrorNotes = async (scope: MemoryScope) => (await parts.store.listNotes(scope)).sort(bySlug);
-  /** The mirror's project notes, then the repo notes whose slug none of them holds. */
-  async function projectNotes(): Promise<readonly MemoryNote[]> {
-    const mirror = await mirrorNotes("project");
-    const held = new Set(mirror.map((note) => note.slug));
-    const additions = (await repoNotes()).notes.filter((note) => !held.has(note.slug));
-    return [...mirror, ...additions].sort(bySlug);
-  }
-  /** Every note the surface of one scope sees; only the project scope has repo notes. */
-  const notesOf = (scope: MemoryScope) => (scope === "user" ? mirrorNotes("user") : projectNotes());
-  const host: MemoryHost = {
+  const hostInput: HostInput = { parts, config, repoRoot: input.repoRoot, logger: input.logger };
+  const reads = createReads(hostInput);
+  return {
     dirs: parts.dirs,
     providerId: parts.provider.id,
     writeMode: config.writeMode,
-    notes: notesOf,
-    getNote: async (scope, slug) => (await notesOf(scope)).find((note) => note.slug === slug) ?? null,
-    search: async (query) => {
-      const searched =
-        query.scope === undefined
-          ? [...(await notesOf("project")), ...(await notesOf("user"))]
-          : await notesOf(query.scope);
-      return searchMemoryNotes(searched, query.text, query.limit);
-    },
-    renderIndex: () => Promise.reject(notImplemented("renderIndex")),
-    sync: () => Promise.reject(notImplemented("sync")),
-    status: () => Promise.reject(notImplemented("status")),
+    notes: reads.notesOf,
+    getNote: async (scope, slug) => (await reads.notesOf(scope)).find((note) => note.slug === slug) ?? null,
+    search: (query) => searchNotes(reads, query),
+    renderIndex: () => readIndex(reads, hostInput),
+    sync: () => syncParts(hostInput),
+    status: () => readStatus(reads, hostInput),
     save: () => Promise.reject(notImplemented("save")),
     forget: () => Promise.reject(notImplemented("forget")),
     approve: () => Promise.reject(notImplemented("approve")),
   };
-  return host;
 }
