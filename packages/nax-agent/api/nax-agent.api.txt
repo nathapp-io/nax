@@ -503,6 +503,7 @@ scoreRules
 scratchpadListTool
 scratchpadReadTool
 scratchpadWriteTool
+searchMemoryNotes
 serializeMemoryNote
 servedAuth
 sessionSandboxFrom
@@ -517,6 +518,7 @@ substituteCommand
 substituteCommandSpec
 taintApprovals
 toMechanical
+tokenizeMemoryQuery
 toolResultPreview
 truncateForModel
 truncationDirectionFor

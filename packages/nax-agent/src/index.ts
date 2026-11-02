@@ -120,7 +120,9 @@ export {
   parseMemoryNote,
   refreshMemoryIndex,
   renderMemoryIndex,
+  searchMemoryNotes,
   serializeMemoryNote,
+  tokenizeMemoryQuery,
   validateMemoryNoteWrite,
 } from "#src/memory/index";
 export {

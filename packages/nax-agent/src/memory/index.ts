@@ -11,6 +11,7 @@ export {
   parseMemoryNoteRecord,
   serializeMemoryNote,
 } from "./note.ts";
+export { searchMemoryNotes, tokenizeMemoryQuery } from "./search.ts";
 export {
   createMemoryStore,
   type MemoryStore,
