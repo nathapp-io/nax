@@ -25,12 +25,13 @@
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   createMemoryOutbox,
   createMemoryStore,
   MEMORY_OP_TIMEOUT_MS,
+  MEMORY_PROBE_TIMEOUT_MS,
   type MemoryNote,
   type MemoryNoteWrite,
   type MemoryOutbox,
@@ -40,7 +41,9 @@ import {
   type MemoryStore,
   NaxError,
   saveMemoryNote,
+  syncMemory,
 } from "@nathapp/nax-agent";
+import { acquireSessionLock } from "#src/session-store/index";
 import {
   assertDefined,
   assertNaxError,
@@ -169,6 +172,19 @@ function deferred(): { readonly promise: Promise<void>; readonly release: () => 
   });
   return { promise, release: () => release() };
 }
+
+/**
+ * The store's lock, held the way an owner holds it: `pid` and the liveness probe that
+ * decides whether that owner is still there. The release it returns must be called.
+ */
+async function heldLock(h: Harness, pid: number, isAlive: (pid: number) => boolean): Promise<() => Promise<void>> {
+  await mkdir(h.store.paths.projectDir, { recursive: true });
+  const deps = { dir: h.store.paths.projectDir, pid, now: () => new Date(STAMP), logger: h.logger, isAlive };
+  return acquireSessionLock(h.store.paths.lock, deps, isAlive);
+}
+
+/** A pid no test process has: the file a second process's owner would leave behind. */
+const FOREIGN_PID = 8412;
 
 /** The description of the write staged first in the two-saves-in-flight tests. */
 const FIRST_WRITE = "replay budget stays 2,048 MiB";
@@ -422,6 +438,98 @@ describe("saveMemoryNote when the provider does not take the write", () => {
         message: "memory save could not restore the previous note",
         data: { slug: "replay-budget", error: MIRROR_READ_ONLY },
       });
+    });
+  });
+});
+
+describe("saveMemoryNote and the mirror's lock", () => {
+  test("AC-5: a save whose mirror a live process owns queues the note and leaves the mirror alone", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      const owner = await heldLock(h, FOREIGN_PID, () => true);
+      try {
+        // The owner is another process: alive, so its lock is not stale and not this save's.
+        const result = await h.save({ isAlive: () => true });
+
+        expect(result).toEqual({ slug: "replay-budget", status: "active", delivered: false });
+        // The mirror is the owner's: nothing was staged, probed or pushed into it.
+        expect(await h.store.readNote("project", "replay-budget")).toBeNull();
+        expect(h.provider.reachable).not.toHaveBeenCalled();
+        expect(h.provider.push).not.toHaveBeenCalled();
+        // The write itself is not lost: it is queued, carrying the note, for the next sync.
+        const entry = await soleEntry(h);
+        expect(entry).toMatchObject({ kind: "save", slug: "replay-budget", state: "queued" });
+        expect(entry.note?.description).toBe(FIRST_WRITE);
+        // Nothing of the mirror was rebuilt either, and the lock is still the owner's.
+        expect(existsSync(h.store.paths.index)).toBe(false);
+        expect(JSON.parse(await readFile(h.store.paths.lock, "utf8")).pid).toBe(FOREIGN_PID);
+      } finally {
+        await owner();
+      }
+    });
+  });
+
+  test("AC-5: a save whose own process is syncing the mirror queues instead of taking the lock over", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      const clock = makeFakeClock();
+      // A sync that parks on its probe: it holds the mirror's lock, and this process's pid.
+      const running = syncMemory({
+        store: h.store,
+        outbox: h.outbox,
+        provider: makeMemoryProvider({ reachable: "hang" }),
+        logger: h.logger,
+        now: () => new Date(STAMP),
+        pid: process.pid,
+        isAlive: () => true,
+        timers: clock,
+      });
+      await waitForCondition(() => clock.pending() > 0, 5_000);
+      const nonce = JSON.parse(await readFile(h.store.paths.lock, "utf8")).nonce;
+
+      const result = await h.save();
+
+      expect(result.delivered).toBe(false);
+      expect(await h.store.readNote("project", "replay-budget")).toBeNull();
+      // The same nonce is a lock that was never taken over: our own pid is not permission
+      // to steal it from the sync that is still writing the mirror.
+      expect(JSON.parse(await readFile(h.store.paths.lock, "utf8")).nonce).toBe(nonce);
+      expect(await soleEntry(h)).toMatchObject({ slug: "replay-budget", state: "queued" });
+      // The sync ends unreachable and hands the lock back, so the mirror is free again.
+      await clock.advance(MEMORY_PROBE_TIMEOUT_MS);
+      expect((await running).outcome).toBe("unreachable");
+      expect(existsSync(h.store.paths.lock)).toBe(false);
+    });
+  });
+
+  test("a lock this process leaked, with no sync running, is reclaimed by the next save", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      // A lock of ours that was never released: nothing of this process is syncing, so the
+      // file can only be a release that failed — the next save must not be wedged by it.
+      const leaked = await heldLock(h, process.pid, () => true);
+      try {
+        const result = await h.save();
+
+        expect(result.delivered).toBe(true);
+        // Taken over and released: the mirror is free again.
+        expect(existsSync(h.store.paths.lock)).toBe(false);
+      } finally {
+        await leaked();
+      }
+    });
+  });
+
+  test("a delivered save releases the mirror's lock, so the next save takes it", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+
+      const first = await h.save();
+      const second = await h.save({ write: write({ slug: "export-window", description: "exports land by 09:00" }) });
+
+      expect([first.delivered, second.delivered]).toEqual([true, true]);
+      // Released, not just created: the mirror is free for the next save or sync.
+      expect(existsSync(h.store.paths.lock)).toBe(false);
     });
   });
 });

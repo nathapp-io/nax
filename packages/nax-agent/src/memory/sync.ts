@@ -57,6 +57,7 @@ import { isMemoryPushRejected, parseMemoryNoteRecord } from "./note.ts";
 import type { MemoryOutbox, MemoryOutboxEntry } from "./outbox.ts";
 import type { MemoryPage, MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
 import { _memoryStoreDeps, type MemoryStore, type MemorySyncState } from "./store.ts";
+import { claimSync, releaseSync } from "./sync-flight.ts";
 import {
   MEMORY_OP_TIMEOUT_MS,
   MEMORY_PROBE_TIMEOUT_MS,
@@ -179,9 +180,6 @@ interface MemorySyncCounts {
   pulled: number;
   skipped: number;
 }
-
-/** The store locks this process is syncing right now, by lock path. */
-const inFlight = new Set<string>();
 
 function noCounts(): MemorySyncCounts {
   return { pushed: 0, rejected: 0, pulled: 0, skipped: 0 };
@@ -567,8 +565,7 @@ export async function syncMemory(input: MemorySyncInput): Promise<MemorySyncResu
   const lock = input.store.paths.lock;
   // Synchronously, before the first await: a guard taken after a yield is one two
   // callers both pass. Nothing has touched the filesystem on this path.
-  if (inFlight.has(lock)) return stopped("locked");
-  inFlight.add(lock);
+  if (!claimSync(lock)) return stopped("locked");
   let release: ReleaseLock = NO_RELEASE;
   try {
     const acquired = await takeLock(input);
@@ -593,6 +590,6 @@ export async function syncMemory(input: MemorySyncInput): Promise<MemorySyncResu
     await releaseQuietly(input, release);
     // Cleared whatever the cleanup did: a lock we could not release ages into
     // stale recovery, but this process must not be wedged until then.
-    inFlight.delete(lock);
+    releaseSync(lock);
   }
 }

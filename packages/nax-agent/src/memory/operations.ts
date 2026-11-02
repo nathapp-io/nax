@@ -30,21 +30,27 @@
  * A key the outbox already holds a queued write for is not pushed at all: the new
  * write joins the queue behind the waiting one, so the provider receives them in the
  * order the agent made them. That order is only meaningful if two saves of the key
- * cannot both decide it, so each key's saves run one after another (`orderedByKey`):
- * the second waits for the first to have delivered or queued before it stages,
- * queues or pushes anything. Every path that returns refreshes the index, so the next
+ * cannot both decide it, so a mirror's saves run one after another: in this process
+ * through `orderedByStore`, and across processes through the store's own lock file —
+ * the artifact that already means "this mirror has one writer". A save that cannot take
+ * the lock stages nothing and queues its write instead, because the mirror is the
+ * other owner's to change. Every path that returns refreshes the index, so the next
  * session reads the note whether or not this session could deliver it.
  */
 import { randomUUID } from "node:crypto";
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
+import { isProcessAlive } from "#src/internal/process-alive";
+import { acquireSessionLock } from "#src/session-store/index";
+import { holderState, readSessionLock, type SessionStorageDeps } from "#src/session-store/session-lock";
 import { refreshMemoryIndex } from "./index-render.ts";
 import { isMemoryPushRejected } from "./note.ts";
 import type { MemoryOutbox } from "./outbox.ts";
 import type { MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
-import type { MemoryStore } from "./store.ts";
+import { _memoryStoreDeps, type MemoryStore } from "./store.ts";
 import { GLOBAL_MEMORY_TIMERS, providerAnswers, raceTimeout, warnQuietly } from "./sync.ts";
+import { syncInFlight } from "./sync-flight.ts";
 import {
   MEMORY_OP_TIMEOUT_MS,
   type MemoryNote,
@@ -57,6 +63,12 @@ import {
 import { validateMemoryNoteWrite } from "./validate.ts";
 
 const ERROR_STAGE = "memory";
+
+/** The code the lock protocol throws for a live holder another process owns. */
+const SESSION_LOCKED = "SESSION_LOCKED";
+
+/** The lock's release: the protocol hands one back per acquisition, and it must be called. */
+type ReleaseLock = () => Promise<void>;
 
 /** The status a write starts in: a proposal is not in force until it is approved. */
 const STATUS_BY_MODE = {
@@ -78,6 +90,8 @@ export interface MemoryOperationInput {
   readonly now?: () => Date;
   /** The timer seam the probe and the push race against; default the process globals. */
   readonly timers?: MemoryTimers;
+  /** The liveness probe a lock holder is judged by; default `isProcessAlive`. */
+  readonly isAlive?: (pid: number) => boolean;
 }
 
 /** One save: the write to store, the mode it is stored in, and the label it is stored under. */
@@ -101,9 +115,18 @@ function writeRefused(refusal: MemoryWriteRefusal): NaxError {
   return new NaxError(refusal.reason, "MEMORY_WRITE_REFUSED", { stage: ERROR_STAGE, field: refusal.field });
 }
 
+/** The clock a save stamps with: the caller's, or the process clock. */
+function clockOf(input: MemoryOperationInput): () => Date {
+  return input.now ?? (() => new Date());
+}
+
+/** The liveness probe a lock holder is judged by: the caller's, or the real one. */
+function livenessOf(input: MemoryOperationInput): (pid: number) => boolean {
+  return input.isAlive ?? isProcessAlive;
+}
+
 /** The note a write becomes: a fresh id, the mode's starting status and the caller's clock. */
 function stagedNote(input: MemorySaveInput): MemoryNote {
-  const now = input.now ?? (() => new Date());
   const { write } = input;
   return {
     id: randomUUID(),
@@ -112,7 +135,7 @@ function stagedNote(input: MemorySaveInput): MemoryNote {
     scope: write.scope,
     description: write.description,
     source: input.source,
-    updatedAt: now().toISOString(),
+    updatedAt: clockOf(input)().toISOString(),
     status: STATUS_BY_MODE[input.writeMode],
     body: write.body,
   };
@@ -142,39 +165,43 @@ async function refreshIndex(input: MemoryOperationInput): Promise<void> {
   await refreshMemoryIndex(input.store, { heldForgets: await input.outbox.heldKeys("forget") });
 }
 
-/** The tail a key with no save in flight waits behind: nothing. */
+/** The tail a store with no save in flight waits behind: nothing. */
 const NO_SAVE: Promise<void> = Promise.resolve();
 
 /**
- * The saves this process is running, by note key: the tail a same-key save waits behind.
+ * The saves this process is running, by the mirror they write: the tail a save waits behind.
  *
- * Only this process's saves are ordered here. Across processes the outbox's own sequence
- * is the record of the order writes were taken in, and two processes are serialised by the
- * session lock rather than by this map. The stored tail is the one that cannot reject, so
- * one failed save never poisons the next, and the last save of a key drops its entry — a
- * chain left behind is a leak, not a guard.
+ * The lock file is what makes the mirror's writers exclusive across processes, and a
+ * same-process save cannot rely on it — the protocol classifies our own pid as ours and
+ * would let the second save take the lock over from the first — so this chain is what
+ * orders them here. It is keyed by the mirror rather than by the note key because one
+ * store's saves are already one writer: ordering them wholesale is what the lock says
+ * about other processes, and it costs a save of a second key only the wait for the first
+ * to finish. The stored tail is the one that cannot reject, so one failed save never
+ * poisons the next, and the last save of a store drops its entry — a chain left behind is
+ * a leak, not a guard.
  */
-const saveChains = new Map<string, Promise<void>>();
+const storeChains = new Map<string, Promise<void>>();
 
 /**
- * Run `work` once every earlier save of the same key has settled.
+ * Run `work` once every earlier save of the same mirror has settled.
  *
  * Taking the tail happens before the first `await`: a queue read after a yield is one two
  * saves both pass, which is exactly the interleaving this orders away. The caller's own
  * rejection is re-thrown unchanged — a refusal must reach its caller, not the next save —
  * and the chain continues from a tail that swallows it.
  */
-async function orderedByKey<T>(key: string, work: () => Promise<T>): Promise<T> {
-  const run = (saveChains.get(key) ?? NO_SAVE).then(work);
+async function orderedByStore<T>(lockPath: string, work: () => Promise<T>): Promise<T> {
+  const run = (storeChains.get(lockPath) ?? NO_SAVE).then(work);
   const tail = run.then(
     () => undefined,
     () => undefined,
   );
-  saveChains.set(key, tail);
+  storeChains.set(lockPath, tail);
   try {
     return await run;
   } finally {
-    if (saveChains.get(key) === tail) saveChains.delete(key);
+    if (storeChains.get(lockPath) === tail) storeChains.delete(lockPath);
   }
 }
 
@@ -257,35 +284,136 @@ async function deliverOrQueue(
 }
 
 /**
+ * Everything the lock protocol needs, drawn from the save's own inputs: the mirror's
+ * directory for its short-lived guard, this pid as the holder, and the caller's clock,
+ * logger and liveness probe.
+ */
+function lockDeps(input: MemorySaveInput): SessionStorageDeps {
+  return {
+    dir: input.store.paths.projectDir,
+    pid: process.pid,
+    now: clockOf(input),
+    logger: input.logger,
+    isAlive: livenessOf(input),
+  };
+}
+
+/**
+ * Take the mirror's lock for this save, or `null` when it already has a writer.
+ *
+ * A lock file another live process owns is that process's mirror, and this save leaves it
+ * alone. So is one this very process owns while it is syncing: the protocol classifies our
+ * own pid as ours and would let this save take the file over, which would put both writers
+ * back on the mirror and remove the lock the sync still believes it holds. A file naming
+ * this pid with no sync running is a lock this process leaked (a release that failed), and
+ * reclaiming it is the only way the next save can deliver again.
+ */
+async function takeSaveLock(input: MemorySaveInput): Promise<ReleaseLock | null> {
+  const { paths } = input.store;
+  const deps = lockDeps(input);
+  const isAlive = livenessOf(input);
+  await _memoryStoreDeps.mkdir(paths.projectDir, { recursive: true });
+  const holder = readSessionLock(paths.lock).body;
+  if (holder !== undefined && !reclaimable(holder, deps, isAlive, paths.lock)) return null;
+  try {
+    return acquireSessionLock(paths.lock, deps, isAlive);
+  } catch (error) {
+    if (error instanceof NaxError && error.code === SESSION_LOCKED) return null;
+    throw error;
+  }
+}
+
+/** One lock file's holder, as the protocol decodes it. */
+type LockHolder = Parameters<typeof holderState>[0];
+
+/**
+ * Whether a lock file that is already there is still this save's to take over: a stale
+ * holder is a process that is gone, and a pid of our own with no sync running is a leak.
+ */
+function reclaimable(
+  holder: LockHolder,
+  deps: SessionStorageDeps,
+  isAlive: (pid: number) => boolean,
+  path: string,
+): boolean {
+  const state = holderState(holder, deps, isAlive);
+  if (state === "stale") return true;
+  return state === "own" && !syncInFlight(path);
+}
+
+/** Hand the lock back; a failed release is reported, never thrown, so the result still returns. */
+async function releaseSaveLock(input: MemorySaveInput, release: ReleaseLock): Promise<void> {
+  try {
+    await release();
+  } catch (error) {
+    warnQuietly(input.logger, "memory save could not release the mirror lock", {
+      path: input.store.paths.lock,
+      error: errorMessage(error),
+    });
+  }
+}
+
+/**
  * Store one note and deliver it to the provider, or queue it for the next sync.
  *
  * The validator decides first, so a refusal leaves the store exactly as it found it.
- * Everything after it runs in the note key's own order (`orderedByKey`), because none
- * of it means anything if two saves of one key compute it at the same time: the "is
- * this key already queued?" answer, the note staged in the mirror and the entry the
- * queue takes are one decision, and two of them interleaved can be delivered in the
- * wrong order or leave the mirror on the older note.
+ * Everything after it runs in the mirror's own order — one save at a time in this process
+ * (`orderedByStore`) and one writer at a time across processes (the store's lock) —
+ * because none of it means anything if two saves compute it at the same time: the "is
+ * this key already queued?" answer, the note staged in the mirror and the entry the queue
+ * takes are one decision, and two of them interleaved can be delivered in the wrong order
+ * or leave the mirror on the older note.
  */
 export async function saveMemoryNote(input: MemorySaveInput): Promise<MemorySaveResult> {
   const refusal = validateMemoryNoteWrite(input.write, input.source);
   if (refusal !== null) throw writeRefused(refusal);
-  const key = memoryNoteKey(input.write.scope, input.write.slug);
-  return await orderedByKey(key, () => commitSave(input));
+  return await orderedByStore(input.store.paths.lock, () => commitSave(input));
 }
 
 /**
- * The ordered half of a save: read the note it replaces, stage it, deliver it or queue
- * it, and rebuild the indexes.
+ * The ordered half of a save: take the mirror's lock, and stage and deliver under it.
+ *
+ * A mirror another writer owns is not this save's to change, and nothing is lost by
+ * leaving it alone: the note goes on the outbox under its own client id, and the sync that
+ * does own the mirror delivers it in sequence. Staging into a mirror someone else is
+ * draining or pulling would be the very interleaving the lock is there to prevent.
+ */
+async function commitSave(input: MemorySaveInput): Promise<MemorySaveResult> {
+  const lock = await takeSaveLock(input);
+  if (lock === null) return await queueWithoutMirror(input);
+  try {
+    return await stageAndDeliver(input);
+  } finally {
+    await releaseSaveLock(input, lock);
+  }
+}
+
+/**
+ * The mirror's half of a save, run while this process holds the lock.
  *
  * The note under the key is read first, because a permanent refusal has to be able to
  * put it back; the note is then mirrored and handed over, and however that ends the
  * indexes are rebuilt, so the session that reads them next sees this save.
  */
-async function commitSave(input: MemorySaveInput): Promise<MemorySaveResult> {
+async function stageAndDeliver(input: MemorySaveInput): Promise<MemorySaveResult> {
   const previous = await input.store.readNote(input.write.scope, input.write.slug);
   const note = stagedNote(input);
   await input.store.writeNote(note);
   const result = await deliverOrQueue(input, note, previous);
   await refreshIndex(input);
   return result;
+}
+
+/**
+ * The answer when another writer owns the mirror: the write is queued and the mirror is
+ * left alone.
+ *
+ * Nothing is staged, so no index is rebuilt either — the mirror still holds what its owner
+ * put there, and this note reaches it when a sync delivers the entry. The queue is the one
+ * part of the mirror any writer may add to: an entry is a whole file written atomically,
+ * named by its sequence and client id.
+ */
+async function queueWithoutMirror(input: MemorySaveInput): Promise<MemorySaveResult> {
+  const note = stagedNote(input);
+  return await queueUndelivered(input, note, saveRequest(note, input.writeMode));
 }
