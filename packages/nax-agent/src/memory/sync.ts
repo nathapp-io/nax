@@ -39,9 +39,13 @@
  * answer about the sequence, not a budget, so a sequence that ends on the last page one
  * run may drain has finished; only one with more behind it is a page-limit failure.
  *
- * The pull applies the pages it is given; what a page may *mean* — a tombstone, a held
- * key, an unreadable note, a decision — is US-015's, so every note here is written as
- * it arrives and the skip counter stays at zero.
+ * What a page *means* is decided one entry at a time. A note the schema refuses — a slug
+ * outside `MEMORY_SLUG_RE`, a field missing — is skipped and reported once, never thrown:
+ * one unreadable entry must not cost the page its cursor. A key the outbox still holds is
+ * left exactly as the local mirror has it and is not counted, because the local write is
+ * the newer fact. A tombstone deletes. `decisions` replace `decisions.jsonl` on a project
+ * page only. The held set is read after each page, and the page's scope — not the payload's
+ * own `scope` field — decides where a note lands.
  */
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
@@ -49,7 +53,7 @@ import { NaxError } from "#src/infra/nax-error";
 import { isProcessAlive } from "#src/internal/process-alive";
 import { acquireSessionLock } from "#src/session-store/index";
 import { refreshMemoryIndex } from "./index-render.ts";
-import { isMemoryPushRejected } from "./note.ts";
+import { isMemoryPushRejected, parseMemoryNoteRecord } from "./note.ts";
 import type { MemoryOutbox, MemoryOutboxEntry } from "./outbox.ts";
 import type { MemoryPage, MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
 import { _memoryStoreDeps, type MemoryStore, type MemorySyncState } from "./store.ts";
@@ -58,7 +62,9 @@ import {
   MEMORY_PROBE_TIMEOUT_MS,
   MEMORY_PULL_MAX_PAGES,
   MEMORY_PULL_PAGE_SIZE,
+  MEMORY_SLUG_RE,
   type MemoryNote,
+  type MemoryNoteStatus,
   type MemoryScope,
   type MemoryTimers,
 } from "./types.ts";
@@ -384,15 +390,87 @@ async function checkpointPull(input: MemorySyncInput, scope: MemoryScope, cursor
   });
 }
 
-/** Step 4's mirror half: the notes a page carried are written into their own scope's mirror. */
-async function applyPulledNotes(store: MemoryStore, notes: readonly MemoryNote[]): Promise<number> {
-  for (const note of notes) await store.writeNote(note);
-  return notes.length;
+/** The statuses a pull applies as a deletion: the note is retired wherever it came from. */
+const TOMBSTONES: ReadonlySet<MemoryNoteStatus> = new Set(["superseded", "rejected", "deleted"]);
+
+/** A pulled entry the mirror may not hold, with the reason it is not one. */
+type InvalidEntry = { readonly kind: "invalid"; readonly slug?: string; readonly reason: string };
+
+/** One entry of a page: the note it describes, or why it is not a note a mirror may hold. */
+type PulledEntry = { readonly kind: "note"; readonly note: MemoryNote } | InvalidEntry;
+
+/**
+ * One entry of a page read as a note the mirror may hold.
+ *
+ * The slug is checked first, so `Bad Slug` is refused as a slug and not as an opaque shape
+ * error; `parseMemoryNoteRecord` is then the schema a mirror read applies, so a pulled note
+ * and a stored one are held to one contract. Both refusals are a skip, never a throw.
+ */
+function readPulledEntry(entry: unknown): PulledEntry {
+  const slug = typeof entry === "object" && entry !== null && "slug" in entry ? entry.slug : undefined;
+  if (typeof slug !== "string" || !MEMORY_SLUG_RE.test(slug)) {
+    const reason = typeof slug === "string" ? `slug "${slug}" is not a valid note slug` : "slug is missing";
+    return { kind: "invalid", ...(typeof slug === "string" ? { slug } : {}), reason };
+  }
+  try {
+    return { kind: "note", note: parseMemoryNoteRecord(entry) };
+  } catch (error) {
+    return { kind: "invalid", slug, reason: errorMessage(error) };
+  }
 }
 
-/** What a scope's pages came to: the notes applied, and the failure that stopped the sequence. */
-interface PullResult {
+/** One entry the mirror could not take: reported once, at warn, naming the scope and the entry. */
+function warnInvalidEntry(logger: AgentLogger, scope: MemoryScope, entry: InvalidEntry): void {
+  warnQuietly(logger, "skipping a pulled note that is not a valid memory note", {
+    scope,
+    ...(entry.slug === undefined ? {} : { slug: entry.slug }),
+    error: entry.reason,
+  });
+}
+
+/** What one page moved: the notes stored, and the entries that were not. */
+interface PageResult {
   readonly pulled: number;
+  readonly skipped: number;
+}
+
+/**
+ * Step 4's mirror half: one page applied to its scope's mirror.
+ *
+ * The held set is read here, after the page arrived, not once per run: a write enqueued
+ * while the page was in flight is one this page must not overwrite, and the local copy is
+ * the newer fact — so a held key is left exactly as the mirror has it, and is not counted,
+ * because nothing was skipped: the write is still on its way. The page's scope, not the
+ * payload's own `scope` field, says where a note lands. A tombstone deletes rather than
+ * counts: a retired note is not a pull. Decisions and the cursor checkpoint follow both.
+ */
+async function applyPulledPage(input: MemorySyncInput, scope: MemoryScope, answer: MemoryPage): Promise<PageResult> {
+  const held = await input.outbox.heldKeys();
+  let pulled = 0;
+  let skipped = 0;
+  for (const entry of answer.notes) {
+    const parsed = readPulledEntry(entry);
+    if (parsed.kind === "invalid") {
+      skipped += 1;
+      warnInvalidEntry(input.logger, scope, parsed);
+      continue;
+    }
+    const { note } = parsed;
+    if (held.has(`${scope}/${note.slug}`)) continue;
+    if (TOMBSTONES.has(note.status)) {
+      await input.store.deleteNote(scope, note.slug);
+      continue;
+    }
+    await input.store.writeNote({ ...note, scope });
+    pulled += 1;
+  }
+  // The project mirror owns `decisions.jsonl`: a user page's decisions are not the mirror's to write.
+  if (scope === "project" && answer.decisions !== undefined) await input.store.writeDecisions(answer.decisions);
+  return { pulled, skipped };
+}
+
+/** What a scope's pages came to: what they moved, and the failure that stopped the sequence. */
+interface PullResult extends PageResult {
   readonly failure?: string;
 }
 
@@ -407,19 +485,22 @@ async function pullScope(input: MemorySyncInput, scope: MemoryScope, timers: Mem
   const take = input.pageSize ?? MEMORY_PULL_PAGE_SIZE;
   let cursor = (await input.store.readSyncState()).cursor[scope];
   let pulled = 0;
+  let skipped = 0;
   for (let page = 0; page < MEMORY_PULL_MAX_PAGES; page += 1) {
     let answer: MemoryPage;
     try {
       answer = await raceTimeout(input.provider.pull({ scope, cursor, take }), MEMORY_OP_TIMEOUT_MS, timers);
     } catch (error) {
-      return { pulled, failure: errorMessage(error) };
+      return { pulled, skipped, failure: errorMessage(error) };
     }
-    pulled += await applyPulledNotes(input.store, answer.notes);
+    const applied = await applyPulledPage(input, scope, answer);
+    pulled += applied.pulled;
+    skipped += applied.skipped;
     cursor = answer.nextCursor ?? cursor;
     await checkpointPull(input, scope, cursor);
-    if (answer.done) return { pulled };
+    if (answer.done) return { pulled, skipped };
   }
-  return { pulled, failure: PAGE_LIMIT_REACHED };
+  return { pulled, skipped, failure: PAGE_LIMIT_REACHED };
 }
 
 /** The scopes a run pulls, in order: the project mirror, then the user's when the store has one. */
@@ -437,12 +518,14 @@ function pullScopes(store: MemoryStore): readonly MemoryScope[] {
 async function pullAll(input: MemorySyncInput): Promise<PullResult> {
   const timers = input.timers ?? GLOBAL_TIMERS;
   let pulled = 0;
+  let skipped = 0;
   for (const scope of pullScopes(input.store)) {
     const result = await pullScope(input, scope, timers);
     pulled += result.pulled;
-    if (result.failure !== undefined) return { pulled, failure: result.failure };
+    skipped += result.skipped;
+    if (result.failure !== undefined) return { pulled, skipped, failure: result.failure };
   }
-  return { pulled };
+  return { pulled, skipped };
 }
 
 /**
@@ -499,6 +582,7 @@ export async function syncMemory(input: MemorySyncInput): Promise<MemorySyncResu
     if (drain.failure !== undefined) return await failRun(input, counts, drain.failure);
     const pull = await pullAll(input);
     counts.pulled = pull.pulled;
+    counts.skipped = pull.skipped;
     if (pull.failure !== undefined) return await failRun(input, counts, pull.failure);
     return await finish(input, counts);
   } catch (error) {
