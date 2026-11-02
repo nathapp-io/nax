@@ -3,7 +3,7 @@
   "feature": "memory-chat",
   "branchName": "feat/memory-chat",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-02T16:33:23.523Z",
+  "updatedAt": "2026-11-02T16:50:34.993Z",
   "userStories": [
     {
       "id": "US-001",
@@ -610,14 +610,17 @@
       "dependencies": [
         "US-009"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module resource composition and ACP tool exposure affect session capabilities and reserved provider namespaces; apply the session/security override."
+        "reasoning": "Cross-module resource composition and ACP tool exposure affect session capabilities and reserved provider namespaces; apply the session/security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/chat-mcp.ts",
@@ -655,7 +658,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a73f6ec9cc91189b58e8b5612cb3a1e03252c26c"
     },
     {
       "id": "US-011",
