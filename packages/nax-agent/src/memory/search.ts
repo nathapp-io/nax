@@ -62,10 +62,32 @@ interface ScoredNote {
   readonly score: number;
 }
 
+/** The instant a timestamp names in epoch milliseconds, or null when it names none. */
+function instantOf(updatedAt: string): number | null {
+  const ms = Date.parse(updatedAt);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/**
+ * Newest first by the instant `updatedAt` names, not by its literal text: the
+ * note codec accepts any non-empty single line, so two notes may carry the same
+ * moment in different UTC offsets (`…T12:00:00+09:00` is `…T03:00:00Z`), and a
+ * string compare would rank them wrongly. A value that names no instant falls
+ * back to the literal compare, which keeps the order deterministic.
+ */
+function compareUpdatedDesc(a: string, b: string): number {
+  if (a === b) return 0;
+  const aMs = instantOf(a);
+  const bMs = instantOf(b);
+  if (aMs !== null && bMs !== null) return aMs === bMs ? 0 : aMs < bMs ? 1 : -1;
+  return a < b ? 1 : a > b ? -1 : 0;
+}
+
 /** Rank: score descending, then newest first, then slug ascending. */
 function compareScored(a: ScoredNote, b: ScoredNote): number {
   if (a.score !== b.score) return b.score - a.score;
-  if (a.note.updatedAt !== b.note.updatedAt) return a.note.updatedAt < b.note.updatedAt ? 1 : -1;
+  const byUpdatedAt = compareUpdatedDesc(a.note.updatedAt, b.note.updatedAt);
+  if (byUpdatedAt !== 0) return byUpdatedAt;
   return a.note.slug < b.note.slug ? -1 : a.note.slug > b.note.slug ? 1 : 0;
 }
 

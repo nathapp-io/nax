@@ -156,6 +156,24 @@ describe("searchMemoryNotes: ordering and limit", () => {
     ]);
   });
 
+  test("orders by the instant a timestamp names, not by its literal text (AC-9)", () => {
+    // The +09:00 value is 03:00Z, so the Z value six hours later is the newer
+    // note — which is the reverse of both the literal string order and slug order.
+    const earlierWithOffset = note({ slug: "alpha-window", updatedAt: "2026-11-01T12:00:00.000+09:00" });
+    const laterInUtc = note({ slug: "zeta-window", updatedAt: "2026-11-01T06:00:00.000Z" });
+
+    expect(slugs(search([earlierWithOffset, laterInUtc], "replay"))).toEqual(["zeta-window", "alpha-window"]);
+  });
+
+  test("falls back to the literal timestamp when a value names no instant (AC-9)", () => {
+    // The note codec only requires a non-empty single line, so a value may not
+    // parse: the order must stay deterministic instead of throwing or comparing NaN.
+    const unparsedLater = note({ slug: "zeta-window", updatedAt: "zeta-marker" });
+    const unparsedEarlier = note({ slug: "alpha-window", updatedAt: "alpha-marker" });
+
+    expect(slugs(search([unparsedEarlier, unparsedLater], "replay"))).toEqual(["zeta-window", "alpha-window"]);
+  });
+
   test("returns exactly `limit` hits (AC-10)", () => {
     const notes = [note({ slug: "alpha-window" }), note({ slug: "beta-window" })];
     const hits = searchMemoryNotes(notes, "replay", 1);
@@ -212,7 +230,15 @@ describe("searchMemoryNotes: hits", () => {
     expect(longLine.startsWith(snippet)).toBe(true);
   });
 
-  test("leaves the snippet empty for a slug or description match (AC-12)", () => {
+  test("leaves the snippet empty for a slug match (AC-12)", () => {
+    const slugMatch = note({ slug: "replay-window", description: "the log tail", body: "unrelated text\n" });
+    const hit = onlyHit(search([slugMatch], "replay"));
+
+    expect(hit.score).toBe(2);
+    expect(hit.snippet).toBe("");
+  });
+
+  test("leaves the snippet empty for a description match (AC-12)", () => {
     const descriptionMatch = note({ slug: "log-tail", description: "replay window", body: "unrelated text\n" });
 
     expect(onlyHit(search([descriptionMatch], "replay")).snippet).toBe("");
