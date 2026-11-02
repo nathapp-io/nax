@@ -3,7 +3,7 @@
   "feature": "memory-store",
   "branchName": "feat/memory-store",
   "createdAt": "2026-11-02T00:00:00.000Z",
-  "updatedAt": "2026-11-01T19:28:58.781Z",
+  "updatedAt": "2026-11-02T02:10:16.165Z",
   "userStories": [
     {
       "id": "US-001",
@@ -31,14 +31,17 @@
         "serialization"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive schema, codec and export work using existing zod and error conventions; no new dependency or external integration."
+        "reasoning": "Additive schema, codec and export work using existing zod and error conventions; no new dependency or external integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/infra/nax-error.ts",
@@ -63,7 +66,11 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1edc83c4e49e0c09249a09f4717e047c83fa4f31"
     },
     {
       "id": "US-002",
@@ -124,7 +131,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -191,7 +201,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -236,7 +249,10 @@
         "When rename fails while replacing an existing note, the previous final file contents remain unchanged."
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -290,7 +306,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -345,7 +364,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -397,7 +419,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -454,7 +479,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-009",
@@ -510,7 +538,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-010",
@@ -572,7 +603,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-011",
@@ -643,7 +677,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-012",
@@ -694,7 +731,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-013",
@@ -736,7 +776,10 @@
         "packages/nax-agent/test/unit/memory/sync-drain.test.ts"
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-014",
@@ -779,7 +822,10 @@
         "packages/nax-agent/test/unit/memory/sync-pull.test.ts"
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-015",
@@ -826,7 +872,10 @@
         "When a queued forget holds a pulled note's key, the pull leaves that local note untouched without incrementing skipped."
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-016",
@@ -882,7 +931,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-017",
@@ -928,7 +980,10 @@
         "When reachable() never settles, saveMemoryNote resolves delivered false after MEMORY_PROBE_TIMEOUT_MS with its request queued and no pending fake-clock timer."
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-018",
@@ -985,7 +1040,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-019",
@@ -1040,7 +1098,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Repository investigation: codebase-memory MCP is not exposed in this session; structural discovery therefore used direct reads, Glob and Grep scoped to the supplied execution repository. The feature specification is present at .nax/features/memory-store/spec.md:1. There is no packages/nax-agent/src/memory directory today. This is an additive subsystem within an existing package, not a new workspace. The binding decomposition has exactly 19 stories; their workdirs and dependency edges are preserved, including the intentionally incremental implementations of rendering, sync and operations.\n\nArchitecture and ownership: introduce types.ts, note.ts, validate.ts, store.ts, index-render.ts, search.ts, provider-types.ts, local-provider.ts, outbox.ts, sync.ts, operations.ts and a named-export memory/index.ts barrel. Pure parsing, validation, index rendering and keyword search must remain independent of provider/network work. Store and outbox own local persistence; sync orchestrates injected store/outbox/provider under the existing lock; operations implement optimistic local writes and direct/proposal policy. MemoryStore owns caller-supplied projectDir and optional userDir only; no configuration lookup, project-key derivation or home-directory computation. The broader design motivates a shared mirror and nonce/heartbeat locking at docs/superpowers/specs/2026-11-02-nax-memory-design.md:158-224, bounded opportunistic sync at :251-276, and proposal policy at :330-338. The feature spec, especially its ACs, supersedes the older broad design wherever signatures differ: UUID client IDs, per-scope nullable cursors, notes under userDir/notes, strict MEMORY_SLUG_RE, explicit deleted status and MemoryWriteRequest are authoritative. Do not import broader CLI, team-note, network-provider or tool work.\n\nPackage integration and consumers: packages/nax-agent/package.json:6-15 maps '.' and './internal' to TypeScript source, also exposes the existing unrelated './mcp', and provides #src/* and #test/* imports. Do not add a memory subpath or change these maps. packages/nax-agent/src/index.ts:1-8 requires named exports and prohibits underscore-prefixed public names. Existing session storage is exported from this entry at :298-315. packages/nax-agent/src/internal.ts:1-11 establishes below-semver seams and same-module-object identity; :34-45 already exposes atomic-write, process-alive, realpath and redact helpers. Add all specified public memory functions, types and constants through src/memory/index.ts and the root entry, using type exports for types, and expose only the new _memoryStoreDeps seam from ./internal. No _memorySyncDeps. Every story adding public/internal exports regenerates api/nax-agent.api.txt with bun run api:update; do not hand-author generated API declarations. packages/nax-agent/test/unit/packaging/public-surface.test.ts:10-31 pins 20 historical seams, :34-38 asserts their count, :49-56 rejects public underscore names, and :69-89 compares runtime exports to snapshot value names. US-003 adds the new seam and updates the pinned count to 21, preserving identity. Existing downstream packages import the public entry, so additive exports should not require consumer changes. nax-agent-acp must continue to use only that entry; nax may use ./internal. No consumer wiring or release/version changes belong here.\n\nExisting primitives verified: packages/nax-agent/src/infra/nax-error.ts:6-15 accepts any string code and optional context, so no central error-code registry change is needed. Every NaxError constructed by memory code carries { stage: 'memory' }; use errorMessage from packages/nax-agent/src/infra/errors.ts:10-12 rather than duplicating error conversion. AgentLogger methods take stage, message and optional data at packages/nax-agent/src/infra/agent-logger.ts:11-16; every memory-origin logger call uses 'memory', malformed-note diagnostics include { path, error }, and secret refusal messages never include matched text. packages/nax-agent/src/internal/redact.ts:36-43 defines SecretValuePattern, :45-121 supplies SECRET_VALUE_PATTERNS including global regexes and the url-credentials acceptMatch scanner. Reset lastIndex before each pattern use, inspect every candidate until accepted, and scan description before body. Do not change shared redaction behavior. packages/nax-agent/src/internal/atomic-write.ts:23-45 already provides _atomicWriteDeps and writeFileAtomic: UUID sibling stage, rename publication, cleanup on failure. Every whole-file memory write delegates to it; memory modules never construct temp names. This protects against process interruption, not power loss (:1-10). All directory sweeps ignore names ending in .tmp. Reads, mkdir, readdir and rm in memory store/outbox/sync directory creation go through the single _memoryStoreDeps seam.\n\nContainment: packages/nax-agent/src/internal/realpath.ts:31-45 resolves a missing target via its nearest existing ancestor, falling back to lexical absolute spelling; isInside at :49-53 compares resolved subtree boundaries and never throws. This current behavior is stronger than the spec's short 'raw spelling' description; reuse it unchanged. Validate slug before any filesystem work. Check both the notes directory and existing target against the scope root before accessing notes, including deletion; listNotes skips an escaping target with one warn. Existing-directory symlink escapes are rejected, not followed. Missing directories are benign only for specified reads/deletes; unrelated I/O errors should not be silently converted into absence. Atomic rename failure must preserve the old final file where present and clean only its stage. These checks are best-effort confinement with the supplied helpers, not a new race-free filesystem security primitive.\n\nLock integration: packages/nax-agent/src/session-store/index.ts:1 exports constants but not acquireSessionLock; US-011 adds its named barrel re-export. packages/nax-agent/src/session-store/session-lock.ts:10-17 defines SessionStorageDeps, :62-65 emits SESSION_LOCKED, :83-95 treats the same pid as 'own', and :148-188 implements guarded acquisition, heartbeat and nonce-aware asynchronous release. storage.ts:13 and :130 already use this function; test/fixtures/session-store/lock-contender.ts:4 and :12 exercise it too. Do not modify its ownership protocol. The synchronous module-level in-flight guard must be installed before sync's first await, because the lock deliberately treats same-pid callers as owners. Existing lock code constructs session-store errors and logs stage 'session' (:124, :174); catch SESSION_LOCKED internally and adapt the supplied logger at the memory boundary if necessary so memory-facing logs use 'memory', without changing shared session semantics. Acquire/release own their internal low-level lock staging; the memory whole-file atomic-write rule applies to new memory persistence, not a rewrite of the existing locking protocol. Unexpected acquisition, cleanup, refresh and release failures must not escape sync; clear the in-flight key even if release fails. isProcessAlive from packages/nax-agent/src/internal/process-alive.ts:43-56 is the default and only ESRCH proves a process dead.\n\nState-machine risks: outbox enqueue serializes only within one instance; cross-process equal sequence numbers are explicitly allowed and ordered by clientId. Schema-invalid matching entry files remain on disk and are discoverable through listInvalid; rejected entries remain listed but never hold keys or auto-retry. Provider clientId is the idempotency key and must remain unchanged through offline delivery. Direct save/forget restore previous state only on synchronous permanent rejection; sync rejection deliberately leaves the mirror unchanged. Proposal forget never changes note status; its marker is derived solely from queued forget keys. Probe failure leaves outbox/cursors untouched; transient drain failure stops later pushes and suppresses pull; each successful page persists its cursor so mid-pull failure resumes from the last checkpoint. Read heldKeys again after every provider page resolves to protect writes queued during the request. Only project-page decisions replace the read-only decisions mirror. Tombstones delete and do not count as pulled. Page-limit enforcement must permit a final done page at the limit but stop endless providers after 50 calls per scope. An unreachable sync still follows the specified final index refresh and cleanup; locked returns perform no index/provider work. raceTimeout clears the injected timer on either settlement, including rejection and timeout; it bounds waiting, not cancellation of the underlying provider operation.\n\nIndex/search correctness: render index fields as data using the exact fact disclaimer, sanitize control characters/line breaks, retain required type/section order, and count UTF-8 bytes rather than JavaScript character length. Truncation removes entries from the end, prunes newly empty headers and reserves space for the omission line within both clamped caps. User MEMORY.md contains only the two header lines and User section. Keyword search is Unicode whole-token matching with separate weighted slug/description and body groups, distinct query tokens, deterministic score/time/slug ordering and a first-matching-line snippet. No embeddings, extra dependencies or local-provider search property.\n\nTesting and delivery: packages/nax-agent/test/unit/session-store/storage.test.ts:1-25 demonstrates bun:test, real temp directories, #src/index entry imports and injected pid/clock/logger; :85-111 already verifies atomic storage publication and failure cleanup. Related existing suites are test/unit/internal/atomic-write.test.ts, realpath.test.ts, test/unit/logger/redact.test.ts and redact-structured.test.ts, and test/unit/session-store/lock-holder.test.ts and storage-hardening.test.ts. Add the exact story-specific unit suites and final offline-roundtrip integration suite. Generic helpers are already re-exported at packages/nax-agent/test/helpers/index.ts:3-29, notably makeFakeClock (:6-7), temp helpers (:21) and waitForCondition (:22); makeLogger records stage and data at test/helpers/agent-logger.ts:30-46. US-011 adds a scripted mock provider helper and exports it only from the test helper barrel. Timeout tests first await waitForCondition(() => clock.pending() > 0), then advance the relevant constant, then await the operation promise; fake advance drains microtasks, not filesystem I/O. Assert pending() returns to zero. Restore dependency objects after injected faults rather than monkey-patching globals. Show each regression test fails against old code before counting it. Security-sensitive validation/secret refusal, confinement and lock/session work use strict three-session-tdd; complex orchestration uses three-session-tdd-lite unless the security override applies.\n\nToolchain and migration: packages/nax-agent/package.json:17-39 declares build, API update/check, lint/check:all, targeted unit/integration testing and coverage; the actual typecheck script is 'bun check' (:17), despite older generated context describing tsc --noEmit. packages/nax-agent/tsconfig.build.json:4-13 uses NodeNext, rewrites explicit .ts relative extensions and builds src only with Node types. Use #src/ imports or explicit relative .ts paths, no Bun runtime APIs or new runtime dependencies. Run commands from packages/nax-agent: targeted bun test ./test/unit/memory/<suite>.test.ts --timeout=60000 during iteration; bun run api:update and bun run check:api after export changes; build, typecheck, check:all, check:no-bun-apis and bun run test for final verification. Never bare bun test or bun run nax. The spec mentions check:import-cycles, but no standalone package script exists; the shared script is already in lint:checks at package.json:31. API/quality commands are verification instructions, not ACs. Existing coverage gates require 80% lines/functions overall and per source file; do not reduce baselines to accommodate new memory code. No migration of existing data is needed because no memory format exists in this package today; preserve all existing exports and session/atomic/redaction behavior. The feature is done when all 19 specified capabilities and offline flows are implemented, their public/internal surfaces match the generated snapshot, and package checks pass, without adding consumers or releasing packages.\n\nRefine-pass self-audit (manual source/spec comparison, not an executed test run): enumerated all 182 explicitly listed spec ACs and retained each in its original story. Original criterion-to-PRD ledger, using the spec's order within each story: US-001 [1,2,3,4,5,6,7,8,9,10,11,12,13,14]; US-002 [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]; US-003 [1,2,3,4,5,6,7,8,9,10,11,12]; US-004 [1,2,3,4,5,6]; US-005 [1,2,3,4,5,6,7,8,9,10]; US-006 [1,2,3,4,5,6,7,8,9,10,11]; US-007 [1,2,3,4,5,6,7,8]; US-008 [1,2,3,4,5,6,7,8,9,10,11,12,13,14]; US-009 [1,2,3,4,5,6,7,8,9,10]; US-010 [1,2,3,4,5,6,7,8,9,10,11,12,13]; US-011 [1,2,3,4,5,6,7,8,9,10]; US-012 [1,2,3,4,5,6,7]; US-013 [1,2,3,4,5,6,7]; US-014 [1,2,3,4,5,6,7,8]; US-015 [1,2,3,4,5,6,7,8]; US-016 [1,2,3,4,5,6,7]; US-017 [1,2,3,4,5,6,7,8]; US-018 [1,2,3,4,5,6,7,8]; US-019 [1,2,3,4,5,6]. The same numbered criterion in the same PRD story preserves each assertion, including parentheticals about credential-less URLs, stale regex state, multibyte character counts, existing-slug overwrites, queued-behind ordering, same-process calls, unchanged decisions, retained cursors and unchanged active notes. No deprecated grep/file/verbatim AC tags occurred. Clarified timestamp assertions to ISO strings because the spec's now function returns Date while MemoryNote.updatedAt and MemorySyncState.lastPullAt are strings; this preserves the injected-time assertion rather than comparing a Date object with stored text. Made the two type-contract criteria observable through typed consumers invoking the real interface. Preserved exact leading spaces in pending/forget-pending marker assertions and clarified that a save's pushed note is its initial mirrored version, before provider acknowledgment updates its id/status.\n\nNegative-path ledger: US-001 malformed/missing frontmatter; US-002 malformed/secret writes; US-003 unavailable user scope and malformed files; US-004 invalid/escaping paths and failed rename; US-005 malformed JSON and unavailable user index; US-006 filtered statuses and control-character sanitization; US-007 over-cap data and below-minimum cap inputs; US-008 token-less queries and nonmatching whole tokens; US-009 save without note; US-010 invalid clientId/corrupt files; US-011 live lock and thrown heldKeys; US-012 probe errors/timeouts; US-013 rejection/transient push failure; US-014 pull error/timeout/page limit; US-015 invalid notes/project failure; US-016 refused secret/malformed write; US-017 permanent/transient delivery failures; US-018 missing note/rejected forget; US-019 missing/superseded approval. Every story already contains a negative-path AC, so no arbitrary new failure contract was necessary.\n\nFailure-table row mapping, in table order: 1 -> US-003.8/9; 2 -> US-004.1-4; 3 -> US-003.7, US-005.2/4/9, US-010.14; 4 -> US-016.5/8; 5 -> US-012.4-6, US-013.5/6, US-014.5/6, US-017.1-4, US-018.4; 6 -> US-013.4, US-017.6/7, US-018.6; 7 -> US-011.4/6; 8 -> US-015.3/4; 9 -> US-014.7; 10 -> US-007.1-4; 11 -> US-010.8/15 and US-005.5; 12 -> US-011.9. Strengthened the permanent-drain-rejection assertion to retain the untouched mirror and the page-limit assertion to retain its last checkpoint. Added only regression protections needed by existing entrypoint changes and the extension of save: US-003.13/14 retain historical seams and the no-public-underscore invariant; US-011.11 preserves the existing lock function identity through the new re-export; US-017.9 protects delivered-save behavior while new failure branches are added. With three existing failure-table-derived criteria, this produces 189 PRD criteria while preserving all 182 original spec criteria.\n\nAll 14 feature exclusions remain verbatim in top-level outOfScope; nearby store/provider/sync/operation scopes repeat the relevant boundaries. All contextFiles arrays match the spec-recommended lists, respect the five-file limit, and contain only existing or upstream-created files; all expectedFiles match the spec's Creates lists. All 19 binding IDs, workdirs and dependency edges are unchanged. Re-read package.json, the lock implementation, realpath helper and packaging surface tests; no new helper/dependency/call site was presumed beyond the files explicitly created by these stories. Removed an unnecessary inferred status contract for undelivered forget results and clarified US-019's distinction between reimplementing save/forget and testing their integration. Reduced routine store/rendering/loop/operation extensions to medium/tdd-simple where existing seams already carry the hard parts. Strict security isolation remains for US-002, US-004, US-011 and US-016; US-010 remains complex/three-session-tdd-lite for durable concurrent enqueue state. This audit changes only the PRD; it does not assert implementation tests or a JSON parser were executed.",
