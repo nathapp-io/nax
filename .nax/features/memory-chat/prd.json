@@ -3,7 +3,7 @@
   "feature": "memory-chat",
   "branchName": "feat/memory-chat",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-02T14:18:47.873Z",
+  "updatedAt": "2026-11-02T14:42:23.330Z",
   "userStories": [
     {
       "id": "US-001",
@@ -32,14 +32,17 @@
         "memory"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive strict schema and handwritten type wiring follow the existing MCP pattern; several small exports/default invariants need coordinated updates."
+        "reasoning": "Additive strict schema and handwritten type wiring follow the existing MCP pattern; several small exports/default invariants need coordinated updates.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas-mcp.ts",
@@ -84,7 +87,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c043cf07eef82a9fc2ee3ae96a5c812274b65a96"
     },
     {
       "id": "US-002",
@@ -133,7 +140,10 @@
         "packages/nax/test/unit/memory/paths.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -191,7 +201,10 @@
         "A secret skip warning contains no matched secret text."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -238,7 +251,10 @@
         "When .nax itself is a symlink, readRepoNotes logs one repo notes directory is a symlink warning naming that path."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -297,7 +313,10 @@
         "Two separate hosts each emit their own first warning for the same invalid repo note."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -352,7 +371,10 @@
         "host.status() does not count a repo note shadowed by a mirror project note in notes.repo."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -405,7 +427,10 @@
         "packages/nax/test/unit/memory/host-writes.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -471,7 +496,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-009",
@@ -520,7 +548,10 @@
         "When host.getNote throws Error(\"disk full\"), get resolves an isError result with content [memory] get failed: disk full."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-010",
@@ -589,7 +620,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-011",
@@ -640,7 +674,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-012",
@@ -717,7 +754,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-013",
@@ -796,7 +836,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-014",
@@ -880,7 +923,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-015",
@@ -953,7 +999,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-016",
@@ -1023,7 +1072,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-017",
@@ -1075,7 +1127,10 @@
         "nax memory sync --json with outcome failed prints one JSON result document and exits 1."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-018",
@@ -1128,7 +1183,10 @@
         "When save is given an invalid note type, the feature-1 refusal message is written to stderr with Error: and exit 1."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-019",
@@ -1183,7 +1241,10 @@
         "When host.approve throws MEMORY_NOTE_READ_ONLY, the CLI writes Error: followed by that read-only message to stderr."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Navigation: codebase-memory MCP is unavailable in this host, so findings were verified with direct Read/Grep/Glob against the execution repository, not another checkout. This is an enhancement of packages/nax over the already-shipped memory-store library, not a new storage implementation. No src/memory files currently exist in packages/nax. All 19 implementation stories run in packages/nax in the binding serial dependency order; the explicitly declared US-011 remains separate despite its regression/degradation focus.\n\nArchitecture and boundaries: docs/architecture/ARCHITECTURE.md:11-48 establishes barrel exports, external-call _deps seams, NaxError cause/context, prompt builders and permission resolution; :164-184 records the 600-line hard source/type limit, 400-line soft target and test conventions. packages/nax/package.json:9-16 defines Bun build/typecheck/lint and :53-62 defines package-scoped test commands. Use Bun and bun:test in nax, source aliases @/, shared helpers from @test/helpers, and public @nathapp/nax-agent imports (errorMessage from its internal entry); do not change nax-agent or introduce deep cross-package imports. packages/nax-agent/src/index.ts:98-146 already exports the memory contract. packages/nax-agent/src/memory/types.ts:11-66 defines supported types user/feedback/project/reference, scopes project/user, note/hit/write shapes; :74-87 defines slug and size limits. packages/nax-agent/src/memory/note.ts:34-68 requires every frontmatter key and :100-120 requires a blank separator before the body; :131-144 exposes parse/serialize. Repo-note fixtures must use this actual format. packages/nax-agent/src/memory/validate.ts:28-31 deliberately permits a raw string type at validation and :82-117 scans secrets without returning matched text. Do not duplicate validation or accidentally discard the save-refusal behavior by rejecting a raw save type at the CLI parser.\n\nConfig: packages/nax/src/config/schemas.ts:57,75,94,524-525 shows the McpConfigSchema import/export and default factory precedent. MemoryConfigSchema must be strict, local-only and default the complete block, not an empty object shadowing inner defaults. packages/nax/src/config/runtime-types.ts:513,563 has the handwritten NaxConfig and optional inline-import mcp precedent: add only one memory field, with the new type in runtime-types-memory.ts and exports in config/types.ts and config/index.ts. The spec baseline gives schemas.ts 591 lines and runtime-types.ts 599; keep both <=600. Every reader uses memoryConfigOf for old handwritten fixtures lacking memory. Config descriptions and the closed default-key invariant at packages/nax/test/unit/config/defaults.test.ts:292-367 must include memory. Memory is resolved global/project config only, not a per-package override. No migration script or version bump is required: existing configs receive schema defaults and old typed callers use the accessor. Default-on memory is an intentional new behavior; enabled:false is the opt-out.\n\nIdentity and read safety: packages/nax/src/config/project-key.ts:24-25 selects trimmed config.name or repository basename; packages/nax/src/config/paths/index.ts:63 and :167 are the globalConfigDir/findProjectDir entry points. Hash the real repository path for collision separation and symlink identity, sanitize the project segment, and never derive ~/.nax directly. Tests must redirect global configuration to a temp directory. Repo notes add an independent read-only input, not mirror writes: lstat both parent directories before listing, never follow candidate symlinks, enforce 16384-byte pre-read size and 200 accepted-note cap, sort in code-point order, reject malformed/mismatched/nonproject/nonactive/secret notes, and log reasons without secret contents. The host deduplicates only warnings by message/path/reason for its lifetime; it must NOT cache repo-note contents. Mirror project notes shadow matching repo slugs, user notes never merge repo notes, and status counts mirror and unshadowed repo notes separately.\n\nLibrary reuse and concurrency: packages/nax-agent/src/memory/store.ts:105-138 exposes paths/outboxDir, listNotes, decisions and sync state; its :1-24 describes pinned-directory confinement that stays library-owned. packages/nax-agent/src/memory/operations.ts:1-52 owns validation, mirror staging, queue order, cross-process locks, proposal semantics and approval; :111-174 declares operation/result inputs. Forward source nax-chat or human and writeMode unchanged. packages/nax-agent/src/memory/sync.ts:1-46 documents never-reject sync and lock/outbox/page behavior; :84-119 defines inputs and outcome synced/unreachable/locked/failed. packages/nax-agent/src/memory/local-provider.ts:58-85 always answers reachable and pulls no notes; wire lifecycle sync now to drain queued writes without adding any remote behavior. The host's read-only check applies only to project slugs held solely by repo notes; a mirror shadow remains writable and saving over a repo slug creates a shadow. A direct forget of a shadow can reveal the original team note again. Split writes into host-writes.ts and keep host.ts under 400 lines.\n\nTool delivery: packages/nax/src/chat/background/tasks-provider.ts:35-74 is the static provider/JSON-schema/error-result pattern. Create nax-memory with four ordered local names get/search/save/forget, stages [*], additionalProperties:false, default project scope except unscoped search over both scopes, and no throwing tool promises. Validate call shapes at the tool layer and leave note validation to the library. packages/nax/src/chat/chat-mcp.ts:27,102 reserves built-in ids; reserve nax-memory. packages/nax/src/chat/acp/acp-tools.ts:17,31-38 filters delivered provider ids before resolving tools and instructions; extend that invariant to memory rather than bypassing it. packages/nax/src/chat/resources.ts:7-14 is the shared resource contract. packages/nax/src/cli/chat.ts:185-242 privately composes plugins/catalog/workflow/MCP and :259-282 currently builds its fallback logger AFTER resources; move logger construction before resources, inject createMemoryHost through _chatCommandDeps, append memory provider directly after workflow and before MCP, and preserve ownership/teardown. Host rejection is nonfatal and logged. Resources are tested by invoking chatCommand and inspecting stubbed createChatHost arguments, not by exposing chatResources.\n\nPrompt/session flow: packages/nax/src/prompts/builders/chat-builder.ts:3-6,24-33 and :35-53 currently have no memoryIndex and ACP names only workflow/jobs. agents-builder.ts:8-12,29-35 appends the agent prompt after permissions/rules. Introduce pure memory-builder functions and thread optional memoryIndex through native OpenChatSessionRequest (packages/nax/src/chat/open-chat-session.ts:55-67,174-223) and ACP open/options (same file :240-259; packages/nax/src/chat/acp/acp-session-options.ts:44-77), adding the final Memory section for native/ACP and placing it before the subagent prompt. packages/nax/src/chat/subagent-runs.ts:26-41 already receives resource providers; subagent-session.ts:19-40,69-99 creates backend and instructions. Use a current-index getter for subagents; do not make tool filtering suppress the index data. ACP keeps its original instruction snapshot for its own session lifetime and uses its own permissions, not native askRules.\n\nLifecycle risk: packages/nax/src/chat/chat-host.ts is exactly 598 lines. :157 and :304-327 hold its context cache; extract to context-window-cache.ts in US-013 (the binding Stories/Creates assign it to US-013 despite an earlier prose mention of US-014). Pass () => _chatHostDeps.lookupContextWindow to preserve patchable lookup and avoid import cycles. :213-245 builds rule/jobs handlers and subagent runs; :354-377 starts/opens; :418-465 resumes/reopens; :471-500 switches; :503-505 clear currently calls start; :565-591 memoizes close and tears down. Place memory behavior in host-memory.ts; extract the jobs constructor block into sibling host-wiring.ts only if still necessary for the hard limit (optional new output recorded for US-013). Preserve late-open drain, locks, close rejection propagation and shared close-promise identity. packages/nax/src/chat/session-switch.ts:48-122 can change ACP in place, close/reopen, rollback reopen or openFresh; one logical open/switch must sync once, including rollback paths, not once per callback. Prepare before opens and before switchChatSession, reuse current() inside switch callbacks, and avoid double-preparing mode-switch reopen. Existing clear uses startSession, so prepare there once rather than duplicating it. Swallow only memory sync/index errors with prescribed warnings; expected sync outcomes such as unreachable/locked are not exceptions. Before-compaction returns undefined, preserves summaries and goes after rules/before jobs guard. Close sync follows closeChatResources in finally even when resource cleanup throws. packages/nax/src/chat/chat-mode.ts:30-48 consumes resolved posture; guarded mode appends two memory asks only when enabled+askOnSave and otherwise preserves array identity; full mode unchanged. Security-sensitive session/permission stories use three-session-tdd.\n\nSlash/CLI: packages/nax/src/tui/chat/slash-commands.ts:49-109 owns command order/descriptions/listing titles, :173-177 limits ACP-owned features, and :270 onward dispatches built-ins. Memory belongs between jobs and quit and is available to ACP too. Share exact formatters across slash and CLI. packages/nax/src/cli/cost.ts:39-83 is the injected stdout/stderr/exit precedent. packages/nax/bin/nax.ts:61-68 imports registration functions and :1023 registers cost; register memory alongside it and export from cli/index.ts. CLI resolves findProjectDir(dir), dirname(naxDir) or dir, then loadConfig(naxDir ?? undefined), with only one process.cwd() default at command registration. No trust gate/initLogger is needed for this built-in memory group; writes are through the host under global memory directories. All commands accept --dir/--json; failures always use stderr Error: and exit 1, while sync failed also emits its result to stdout and unreachable/locked exit 0. Validate list type/scope, default project scope, enforce exclusive body/body-file and let save type validation be the library's refusal. Split registration/status/list, show/sync and writes into the three prescribed CLI modules.\n\nRegression/test plan and seams: packages/nax/test/unit/cli/chat-resources.test.ts:22-84 spreads real _chatCommandDeps; temp-dir cases begin :149. Stub createMemoryHost:null there and in chat.test.ts to prevent default-on access to the real global store and preserve no-memory provider assertions. packages/nax/test/unit/chat/chat-host-resources.test.ts:16-86 supplies reusable host/open/resources fixtures. Existing unit suites cover chat-mode, open-chat-session, subagent-session, ACP tools/history, chat-host-context-window/session moves, prompts/chat-handoff, and UI slash help; update only exact expected prefix/help/default ask invariants specified by the spec. Add the named per-story test files and verify behavior through real barrel imports, real repo-note/mirror fixtures, stubbed _deps call arguments and command parsing. Maintain the directories->host dirs seam, real repo notes->host merge seam, host/tool provider->chatCommand resources->ACP tools seam, memoryIndex->native/ACP/subagent session options seam, and formatters->slash/CLI outputs seam. The failure table maps to US-002/011/016 path errors; US-003/004/005 note skips and warning dedupe; US-005/011/015/016 disabled behavior; US-013 open sync/render failures; US-014 compaction/close failures; US-015 status/render errors; US-007/009/018 save refusal; US-007/009/019 repo-only refusal; US-008/009/017/019 absent-note errors. All explicit ACs remain in their original stories; failure-table render errors are explicitly represented where missing from the numbered AC list. Run scoped Bun tests during implementation and standard package gates in pipeline; never bare bun test or bun run nax. File-size/import-cycle checks are verification guidance, not ACs. Do not run coverage in a sandboxed nax session. No commands or tests were executed during this PRD-only drafting session.\n\nRefine-pass adversarial audit: re-read .nax/features/memory-chat/spec.md:451-485 (all 11 failure rows and all 16 feature exclusions), :531-633 (all recommended context lists), and :776-1118 (all 279 original ACs). The preservation ledger enumerates each original criterion by its story-local ordinal: US-001 #1-16, US-002 #1-12, US-003 #1-18, US-004 #1-10, US-005 #1-18, US-006 #1-15, US-007 #1-18, US-008 #1-19, US-009 #1-12, US-010 #1-9, US-011 #1-6, US-012 #1-14, US-013 #1-18, US-014 #1-18, US-015 #1-19, US-016 #1-18, US-017 #1-13, US-018 #1-12, US-019 #1-14. Every original ordinal is retained at the same position in its original story. US-011 #6 is expressed through captured outputs, exit codes and collaborator/resource values matching the existing fixture assertions, retaining both named test paths, the null-host setup and the unchanged regression anchor rather than asserting a generic test gate. The qualifiers about existing fixtures, original repo-file contents, same input/as-before subagent instructions, native/ACP model paths, provider ordering and askRules array identity are preserved. No deprecated file/grep/verbatim tags were present.\n\nNegative-path check: US-001 invalid config; US-002 realpath rejection; US-003 invalid/secret/unreadable notes; US-004 missing/symlink/unreadable directories; US-005 disabled/absent note; US-006 now explicitly propagates a locked sync outcome without rejection; US-007 refused writes/read-only/absent notes; US-008 absent/invalid get and limits; US-009 refusal/unexpected errors; US-010 reserved MCP id; US-011 null/reject host; US-012 empty/missing index; US-013 sync/render failures; US-014 compaction/close rejection recovery; US-015 unavailable/disabled/invalid slash argument; US-016 invalid filter/config/host; US-017 absent/disabled/failed sync; US-018 exclusive-body usage/refusal; US-019 absent/read-only/missing reason. New explicit regressions preserve skills/workflow/MCP order (US-010), per-model cache reuse and fail-open lookup (US-013), and old help rows/order (US-015). US-015's index-render failure AC remains, covering the other half of its failure-table row. Revised acceptance totals are 285: 279 preserved originals plus these six explicit failure/regression assertions; suggestedCriteria remain separate.\n\nCodebase cross-checks: packages/nax/src/chat/session-switch.ts:48-122 confirms openFresh is fallback recovery, not the ordinary different-model path; US-013 must exercise that callback without replacing the existing switch state machine. packages/nax/src/chat/chat-host.ts:418-505 confirms clear delegates to start and reopen is also used by switch callbacks, so reuse one prepared snapshot without duplicate sync. :304-327 confirms repeated lookup and rejected lookup semantics now protected by ACs. packages/nax/src/config/project-key.ts:24-25 shows basename is taken from the supplied path, so US-002 explicitly canonicalizes the identity root for the fallback segment as well as the hash; otherwise differently named symlink aliases would violate the unchanged symlink-equality AC. Preserve the caller path in failure context. packages/nax/src/chat/subagent-tools.ts:60-77 already controls allowedTools independently; do not invent a mapper change to deliver instruction data. packages/nax/test/unit/cli/chat-resources.test.ts:256-264 pins the existing skills/workflow/docs order used by the new memory insertion regression. packages/nax/src/cli/cost.ts:257-290 confirms the command/deps/default-cwd pattern: US-016 was reduced to medium/tdd-simple because it consumes the completed host through existing CLI conventions rather than adding a novel abstraction. Security-critical secret/path/write checks and actual session/permission stories retain strict security strategies.\n\nAll 19 contextFiles lists include every file explicitly recommended for that story by the spec (none exceeds five; extra entries are existing files or upstream outputs). Every expectedFiles entry is this story's own new output, not an upstream file. All 19 IDs, workdirs and binding dependencies are unchanged; no nonexistent dependency remains. All 16 outOfScope strings remain verbatim and adjacent story scope boundaries now echo the relevant exclusions. No story-local deferral was hoisted to feature scope. Source API additions, test fixtures, output changes and optional host extraction remain within their stated story scopes. This audit changed only the PRD; no application source or runtime validation was executed.",
