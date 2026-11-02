@@ -3,7 +3,7 @@
   "feature": "memory-chat",
   "branchName": "feat/memory-chat",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-02T16:01:24.873Z",
+  "updatedAt": "2026-11-02T16:17:13.604Z",
   "userStories": [
     {
       "id": "US-001",
@@ -489,14 +489,17 @@
       "dependencies": [
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Static tool adaptation and pure prompt instructions follow the tasks provider pattern without changing the permission model."
+        "reasoning": "Static tool adaptation and pure prompt instructions follow the tasks provider pattern without changing the permission model.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/host.ts",
@@ -523,7 +526,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "04f29c4212caddc886a8fb807a6693da5a70f9ff"
     },
     {
       "id": "US-009",
