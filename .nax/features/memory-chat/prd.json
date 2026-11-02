@@ -3,7 +3,7 @@
   "feature": "memory-chat",
   "branchName": "feat/memory-chat",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-02T18:17:10.386Z",
+  "updatedAt": "2026-11-02T18:30:47.881Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1016,14 +1016,17 @@
       "dependencies": [
         "US-014"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure shared formatters and a standard slash dispatch branch reuse the completed host contract."
+        "reasoning": "Pure shared formatters and a standard slash dispatch branch reuse the completed host contract.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/slash-commands.ts",
@@ -1054,7 +1057,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d969fd8bb9d1cec552f13292fd98aa3d1098ddb6"
     },
     {
       "id": "US-016",
