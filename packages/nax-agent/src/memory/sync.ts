@@ -193,13 +193,14 @@ function stopped(outcome: MemorySyncResult["outcome"], error?: string): MemorySy
 }
 
 /**
- * Report a failure without letting the reporting fail the run.
+ * Report a failure without letting the reporting fail the caller.
  *
  * The logger is an input, not a guarantee: a host logger that throws would
  * otherwise turn the never-throws contract into a rejection at exactly the
- * moment a result is owed, so a logger failure is discarded on purpose.
+ * moment a result is owed, so a logger failure is discarded on purpose. Shared
+ * with the save path, whose rollback is also reported rather than thrown.
  */
-function warnQuietly(logger: AgentLogger, message: string, data: Record<string, unknown>): void {
+export function warnQuietly(logger: AgentLogger, message: string, data: Record<string, unknown>): void {
   try {
     logger.warn(ERROR_STAGE, message, data);
   } catch {

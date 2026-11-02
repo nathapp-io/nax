@@ -35,6 +35,7 @@ import {
   validateMemoryNoteWrite,
 } from "@nathapp/nax-agent";
 import {
+  assertCaughtInstanceOf,
   assertDefined,
   assertNaxError,
   type FakeClock,
@@ -301,6 +302,77 @@ describe("saveMemoryNote", () => {
       expect(await h.store.readNote("project", "replay-budget")).toEqual(existing);
       expect(await h.outbox.list()).toEqual([queued]);
       expect(h.provider.push).not.toHaveBeenCalled();
+    });
+  });
+
+  test("F1: a save the provider never answers restores the note it replaced", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { reachable: false });
+      const previous = note();
+      await h.store.writeNote(previous);
+
+      const caught = await h.save().catch((error: unknown) => error);
+
+      assertNaxError(caught, "undelivered save");
+      expect(caught.code).toBe("MEMORY_UNREACHABLE");
+      expect(h.provider.push).not.toHaveBeenCalled();
+      // A save that was not delivered did not happen: the mirror is as it was.
+      expect(await h.store.readNote("project", "replay-budget")).toEqual(previous);
+    });
+  });
+
+  test("F1: a save of a new slug that is never delivered leaves no note behind", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { reachable: false });
+
+      const caught = await h.save().catch((error: unknown) => error);
+
+      assertNaxError(caught, "undelivered save");
+      expect(await h.store.readNote("project", "replay-budget")).toBeNull();
+      expect(existsSync(join(h.store.paths.notesDir, "replay-budget.md"))).toBe(false);
+    });
+  });
+
+  test("F1: a push that fails after the probe restores the note it replaced", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: new Error("connection reset by peer") });
+      const previous = note();
+      await h.store.writeNote(previous);
+
+      const caught = await h.save().catch((error: unknown) => error);
+
+      // The provider's own failure reaches the caller unchanged, not wrapped.
+      assertCaughtInstanceOf(caught, Error, "push failure");
+      expect(caught.message).toBe("connection reset by peer");
+      expect(await h.store.readNote("project", "replay-budget")).toEqual(previous);
+    });
+  });
+
+  test("F1: a restore that fails is logged, and the delivery failure still reaches the caller", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { reachable: false });
+      await h.store.writeNote(note());
+      let writes = 0;
+      const failingRestore: MemoryStore = {
+        ...h.store,
+        writeNote: async (written) => {
+          writes += 1;
+          if (writes > 1) throw new Error("mirror is read-only");
+          await h.store.writeNote(written);
+        },
+      };
+
+      const caught = await h.save({ store: failingRestore }).catch((error: unknown) => error);
+
+      assertNaxError(caught, "undelivered save");
+      expect(caught.code).toBe("MEMORY_UNREACHABLE");
+      const warns = h.logger.calls.filter((call) => call.level === "warn");
+      expect(warns).toHaveLength(1);
+      expect(warns[0]).toMatchObject({
+        stage: "memory",
+        message: "memory save could not restore the previous note",
+        data: { slug: "replay-budget", error: "mirror is read-only" },
+      });
     });
   });
 });
