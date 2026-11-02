@@ -3,7 +3,7 @@
   "feature": "memory-chat",
   "branchName": "feat/memory-chat",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-02T15:37:07.073Z",
+  "updatedAt": "2026-11-02T15:50:00.152Z",
   "userStories": [
     {
       "id": "US-001",
@@ -364,14 +364,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Replaces host placeholders with standard library delegation and computed counts; storage locking remains library-owned."
+        "reasoning": "Replaces host placeholders with standard library delegation and computed counts; storage locking remains library-owned.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/host.ts",
@@ -390,7 +393,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e8e00d29ea01878917155ef9adb25d931d8292f9"
     },
     {
       "id": "US-007",
