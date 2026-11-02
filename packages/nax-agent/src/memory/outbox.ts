@@ -51,7 +51,10 @@ export type MemoryOutboxEntry = MemoryWriteRequest & {
   readonly seq: number;
   readonly enqueuedAt: string;
   readonly state: "queued" | "rejected";
+  /** The rejection reason once rejected; the request's own reason until then. */
   readonly reason?: string;
+  /** A reason the request itself carried (a forget's justification), kept across a rejection. */
+  readonly requestReason?: string;
 };
 
 /** The durable queue of unacknowledged writes. */
@@ -73,6 +76,7 @@ const EntrySchema = z.object({
   writeMode: z.enum(["direct", "proposal"]),
   note: z.unknown().optional(),
   reason: z.string().optional(),
+  requestReason: z.string().optional(),
   seq: z.number().int().positive(),
   enqueuedAt: z.string().min(1),
   state: z.enum(["queued", "rejected"]),
@@ -143,6 +147,23 @@ function toEntry(text: string): MemoryOutboxEntry | null {
     // A note the note schema refuses could never be replayed: the entry is not readable.
     return null;
   }
+}
+
+/**
+ * One entry as a rejection: `reason` carries the rejection, which is what the caller
+ * reads to decide whether to requeue. The reason the request itself carried — a
+ * forget's justification — is not lost to it; it moves to `requestReason`. Re-marking
+ * an already rejected entry replaces the rejection reason and keeps the original.
+ */
+function toRejected(entry: MemoryOutboxEntry, rejectionReason: string): MemoryOutboxEntry {
+  const { reason: currentReason, requestReason: keptReason, ...rest } = entry;
+  const requestReason = keptReason ?? (entry.state === "queued" ? currentReason : undefined);
+  return {
+    ...rest,
+    ...(requestReason === undefined ? {} : { requestReason }),
+    state: "rejected",
+    reason: rejectionReason,
+  };
 }
 
 export function createMemoryOutbox(input: { readonly dir: string; readonly now?: () => Date }): MemoryOutbox {
@@ -256,7 +277,7 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
       const entry = await readEntry(file);
       // An entry that cannot be read cannot be rewritten either; it stays for listInvalid.
       if (entry === null) continue;
-      const rejected: MemoryOutboxEntry = { ...entry, state: "rejected", reason };
+      const rejected = toRejected(entry, reason);
       await writeFileAtomic(join(dir, file.name), `${JSON.stringify(rejected)}\n`);
     }
   }

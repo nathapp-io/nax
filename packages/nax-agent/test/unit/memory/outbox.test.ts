@@ -276,6 +276,30 @@ describe("memory outbox", () => {
     });
   });
 
+  test("a rejected forget keeps the reason its request carried, beside the rejection reason", async () => {
+    await withTempDir(async (dir) => {
+      const outbox = createMemoryOutbox({ dir: outboxDir(dir), now: fixedNow });
+      const entry = await outbox.enqueue(forgetRequest({ slug: "dropped-budget" }));
+
+      await outbox.markRejected(entry.clientId, "note kind not available");
+
+      const [rejected] = await outbox.list();
+      expect(rejected).toMatchObject({
+        kind: "forget",
+        clientId: entry.clientId,
+        slug: "dropped-budget",
+        state: "rejected",
+        reason: "note kind not available",
+        requestReason: "the budget doubled",
+      });
+      // Re-marking a rejected entry must not move the previous rejection into the request slot.
+      await outbox.markRejected(entry.clientId, "still not available");
+      const [again] = await outbox.list();
+      expect(again).toMatchObject({ reason: "still not available", requestReason: "the budget doubled" });
+      expect(await outbox.listInvalid()).toEqual([]);
+    });
+  });
+
   test("AC-11: heldKeys carries queued keys only, filtered by kind when asked", async () => {
     await withTempDir(async (dir) => {
       const outbox = createMemoryOutbox({ dir: outboxDir(dir), now: fixedNow });
