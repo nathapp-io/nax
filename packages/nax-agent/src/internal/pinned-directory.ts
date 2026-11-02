@@ -23,6 +23,18 @@ function protocolError(message: string): NaxError {
 const STAGE_SUFFIX = ".tmp";
 
 /**
+ * The path a pinned worker resolves entries through, when the platform has one.
+ *
+ * The worker's operations are relative, so the kernel resolves them against the cwd *inode* —
+ * a rename of the directory cannot redirect them. Resolution to a real path needs an absolute
+ * spelling, and a runtime may build one from a cached cwd string (Bun on Linux keeps the
+ * spelling after the directory is renamed), which would resolve the name the directory left
+ * behind. `/proc/self/cwd` is the magic link to the same inode and is Linux-only; macOS has no
+ * traversable equivalent and needs none, because its `realpath` already answers from the inode.
+ */
+const CWD_ANCHOR = process.platform === "linux" ? "/proc/self/cwd" : null;
+
+/**
  * The operand a request carries, relative to the pinned directory.
  *
  * A name in the pinned directory is one component; the only deeper operand is a name inside
@@ -84,7 +96,8 @@ export async function withPinnedDirectory<T>(
   // bundlers/test transforms may otherwise rewrite import() into closure-bound helpers.
   const script = `(${pinnedDirectoryWorker.toString()})(require("node:fs/promises"), {
     createInterface: require("node:readline").createInterface,
-    input: process.stdin, write: (text) => process.stdout.write(text)
+    input: process.stdin, write: (text) => process.stdout.write(text),
+    anchor: ${JSON.stringify(CWD_ANCHOR)}
   })`;
   const child = runtimeSpawn([process.execPath, "-e", script], {
     cwd: input.path,
@@ -171,11 +184,13 @@ export async function openPinnedRead(path: string, flags: number): Promise<Pinne
 }
 
 /**
- * The real path of one entry of the pinned directory, resolved by the worker against its cwd.
+ * The real path of one entry of the pinned directory, resolved from the pinned inode.
  *
  * The answer is what the entry is *inside the pinned directory*: the caller learns whether the
  * name is a plain file (the answer names the pinned path itself) or a link, and where that link
- * goes, without resolving the mutable parent a second time in this process.
+ * goes, without resolving the mutable parent a second time in this process. The worker spells
+ * the resolution through `CWD_ANCHOR`, so the directory being renamed on disk changes the name
+ * in the answer without changing what it describes.
  */
 export async function resolvePinned(path: string): Promise<string | null> {
   const resolved = await pinnedOperation<string>(path, "resolve");

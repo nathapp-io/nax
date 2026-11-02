@@ -4,7 +4,7 @@ import * as fs from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
-import { pinnedDirectoryWorker } from "#src/internal/pinned-directory-worker";
+import { type PinnedWorkerFs, pinnedDirectoryWorker } from "#src/internal/pinned-directory-worker";
 import { withTempDir } from "#test/helpers/index";
 
 /** The flags every stage payload is created with: exclusive, and never through a link at it. */
@@ -12,13 +12,15 @@ const STAGE_FLAGS = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | 
 
 async function run(
   commands: { op: string; args: unknown[] }[],
+  options: { anchor?: string | null; fs?: PinnedWorkerFs } = {},
 ): Promise<{ value?: unknown; code?: string; error?: string }[]> {
   const input = new PassThrough();
   const replies: { value?: unknown; code?: string; error?: string }[] = [];
-  const work = pinnedDirectoryWorker(fs, {
+  const work = pinnedDirectoryWorker(options.fs ?? fs, {
     input,
     createInterface,
     write: (text) => replies.push(JSON.parse(text)),
+    ...(options.anchor === undefined ? {} : { anchor: options.anchor }),
   });
   input.end(commands.map((command) => `${JSON.stringify(command)}\n`).join(""));
   await work;
@@ -115,6 +117,56 @@ describe("pinnedDirectoryWorker", () => {
       // failure is reported rather than swallowed, which is what the caller's cleanup reads.
       expect(replies[0]?.code).toBe("ENOTEMPTY");
       expect(await fs.readFile(join(stage, "foreign"), "utf8")).toBe("not ours");
+    });
+  });
+
+  test("[C1] resolve is spelled through the cwd anchor, not through a cwd the runtime spells", async () => {
+    const pinnedIdentity = { dev: 7, ino: 11 };
+    const asked: string[] = [];
+    const anchoredFs: PinnedWorkerFs = {
+      ...fs,
+      // The anchor names this worker's own directory: the same inode as `.`.
+      stat: async (path: string) => (path === "/pinned-anchor" || path === "." ? pinnedIdentity : fs.stat(path)),
+      realpath: async (path: string) => {
+        asked.push(path);
+        return `/resolved/${path.slice("/pinned-anchor/".length)}`;
+      },
+    };
+
+    const replies = await run([{ op: "resolve", args: ["note"] }], { anchor: "/pinned-anchor", fs: anchoredFs });
+
+    // A relative realpath asks the runtime to spell the name, and a runtime that spells it from
+    // a cached cwd resolves the name the directory left behind. The anchor is answered by the
+    // kernel from the inode, so the entry still describes the directory the worker pinned.
+    expect(asked).toEqual(["/pinned-anchor/note"]);
+    expect(replies[0]?.value).toBe("/resolved/note");
+  });
+
+  test("[C1] an anchor that does not name the pinned directory is ignored", async () => {
+    const asked: string[] = [];
+    const foreignFs: PinnedWorkerFs = {
+      ...fs,
+      stat: async (path: string) => (path === "." ? { dev: 1, ino: 2 } : { dev: 3, ino: 4 }),
+      realpath: async (path: string) => {
+        asked.push(path);
+        return "/resolved/note";
+      },
+    };
+
+    await run([{ op: "resolve", args: ["note"] }], { anchor: "/another-directory", fs: foreignFs });
+
+    // Verifying the anchor is what keeps a stale or wrong anchor from deciding the answer.
+    expect(asked).toEqual(["note"]);
+  });
+
+  test("[C1] an anchor this host does not have falls back to the relative name", async () => {
+    await withTempDir(async (dir) => {
+      const note = join(dir, "note");
+      await fs.writeFile(note, "payload");
+
+      const replies = await run([{ op: "resolve", args: [note] }], { anchor: join(dir, "missing-anchor") });
+
+      expect(replies[0]?.value).toBe(await fs.realpath(note));
     });
   });
 });
