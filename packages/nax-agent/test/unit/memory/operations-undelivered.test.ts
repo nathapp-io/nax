@@ -189,25 +189,16 @@ const FOREIGN_PID = 8412;
 /** A fake-clock step wide enough to fire any poll a fenced save is waiting on. */
 const POLL_STEP_MS = 1_000;
 
-/**
- * Drive a fenced save's wait to its deadline: the fake clock only moves when the test says
- * so, and the save re-arms its poll between each look at the queue.
- */
-async function expireFencedWait(clock: FakeClock, saving: Promise<MemorySaveResult>): Promise<MemorySaveResult> {
+/** Advance thirty polls, exceeding the old 250 ms / 25-poll cutoff without real sleeps. */
+async function delayLockHolder(clock: FakeClock, saving: Promise<MemorySaveResult>): Promise<void> {
   let settled = false;
-  const tracked = saving.finally(() => {
+  void saving.then(() => {
     settled = true;
   });
-  while (!settled) {
-    // The save arms a poll each time it looks; once it stops arming one it is finishing.
-    const armed = await waitForCondition(() => clock.pending() > 0, 50).then(
-      () => true,
-      () => false,
-    );
-    if (!armed) break;
-    await clock.advance(POLL_STEP_MS);
+  for (let poll = 0; poll < 30 && !settled; poll += 1) {
+    await waitForCondition(() => clock.pending() > 0 || settled, 5_000);
+    if (!settled) await clock.advance(POLL_STEP_MS);
   }
-  return await tracked;
 }
 
 /** The description of the write staged first in the two-saves-in-flight tests. */
@@ -485,6 +476,7 @@ describe("saveMemoryNote and the mirror's lock", () => {
           writeMode: "direct",
           note: note({ description: FIRST_WRITE }),
         });
+        await owner();
         await h.clock.advance(POLL_STEP_MS);
         const result = await saving;
 
@@ -519,33 +511,63 @@ describe("saveMemoryNote and the mirror's lock", () => {
     });
   });
 
-  test("AC-5: a save whose mirror a live process owns queues the note and leaves the mirror alone", async () => {
-    await withTempDir(async (dir) => {
-      const h = harness(dir);
-      const owner = await heldLock(h, FOREIGN_PID, () => true);
-      try {
-        // The owner is another process: alive, so its lock is not stale and not this save's,
-        // and it queues nothing this save can see — the wait expires and the write queues.
-        const saving = h.save({ isAlive: () => true });
-        const result = await expireFencedWait(h.clock, saving);
+  test.each([false, true])(
+    "AC-5: a holder paused beyond 250 ms keeps its sequence before a contender (preexisting entry: %s)",
+    async (preexisting) => {
+      await withTempDir(async (dir) => {
+        const h = harness(dir);
+        // Separate instances model the other process's queue, not its in-process chain.
+        const ownerOutbox = createMemoryOutbox({ dir: h.store.paths.outboxDir });
+        if (preexisting) {
+          await ownerOutbox.enqueue({
+            kind: "save",
+            clientId: "earlier-write",
+            scope: "project",
+            slug: "replay-budget",
+            writeMode: "direct",
+            note: note(),
+          });
+        }
+        const owner = await heldLock(h, FOREIGN_PID, () => true);
+        const saving = h.save({ isAlive: () => true, write: write({ description: SECOND_WRITE }) });
+        try {
+          await delayLockHolder(h.clock, saving);
+          const beforeDeclaration = await h.outbox.list();
+          const beforeMirror = await h.store.readNote("project", "replay-budget");
+          const beforeIndex = existsSync(h.store.paths.index);
+          const holderPid = JSON.parse(await readFile(h.store.paths.lock, "utf8")).pid;
+          const declared = await ownerOutbox.enqueue({
+            kind: "save",
+            clientId: "owner-write",
+            scope: "project",
+            slug: "replay-budget",
+            writeMode: "direct",
+            note: note({ description: FIRST_WRITE }),
+          });
+          await owner();
+          await h.clock.advance(POLL_STEP_MS);
+          const result = await saving;
 
-        expect(result).toEqual({ slug: "replay-budget", status: "active", delivered: false });
-        // The mirror is the owner's: nothing was staged, probed or pushed into it.
-        expect(await h.store.readNote("project", "replay-budget")).toBeNull();
-        expect(h.provider.reachable).not.toHaveBeenCalled();
-        expect(h.provider.push).not.toHaveBeenCalled();
-        // The write itself is not lost: it is queued, carrying the note, for the next sync.
-        const entry = await soleEntry(h);
-        expect(entry).toMatchObject({ kind: "save", slug: "replay-budget", state: "queued" });
-        expect(entry.note?.description).toBe(FIRST_WRITE);
-        // Nothing of the mirror was rebuilt either, and the lock is still the owner's.
-        expect(existsSync(h.store.paths.index)).toBe(false);
-        expect(JSON.parse(await readFile(h.store.paths.lock, "utf8")).pid).toBe(FOREIGN_PID);
-      } finally {
-        await owner();
-      }
-    });
-  });
+          // No guessed deadline, or entry from before this owner, permits overtaking it.
+          expect(beforeDeclaration.map((entry) => entry.clientId)).toEqual(preexisting ? ["earlier-write"] : []);
+          expect(beforeMirror).toBeNull();
+          expect(beforeIndex).toBe(false);
+          expect(holderPid).toBe(FOREIGN_PID);
+          expect(result.delivered).toBe(false);
+          const entries = await h.outbox.list();
+          expect(entries.map((entry) => entry.note?.description)).toEqual(
+            preexisting ? [OLD_DESCRIPTION, FIRST_WRITE, SECOND_WRITE] : [FIRST_WRITE, SECOND_WRITE],
+          );
+          expect(entries.at(-1)?.seq).toBeGreaterThan(declared.seq);
+          expect(h.provider.reachable).not.toHaveBeenCalled();
+          expect(h.provider.push).not.toHaveBeenCalled();
+          expect(h.clock.pending()).toBe(0);
+        } finally {
+          await owner();
+        }
+      });
+    },
+  );
 
   test("AC-5: a save whose own process is syncing the mirror queues instead of taking the lock over", async () => {
     await withTempDir(async (dir) => {

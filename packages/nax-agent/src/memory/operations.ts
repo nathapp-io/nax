@@ -33,13 +33,13 @@
  * cannot both decide it, so a mirror's saves run one after another: in this process
  * through `orderedByStore`, and across processes through the store's own lock file —
  * the artifact that already means "this mirror has one writer". A save that ends up
- * undelivered declares its queue entry before it asks the provider, and a save fenced
- * by the lock waits, briefly, for the holder to hand the lock back or declare that
- * entry (`waitForTurn`), so the sequence a write takes still follows the order the
- * writes were made in. A save that never gets its turn stages nothing and only queues
- * its write, because the mirror is its owner's to change. Every path that returns
- * refreshes the index, so the next session reads the note whether or not this session
- * could deliver it.
+ * undelivered declares its queue entry before it asks the provider. A contending save
+ * waits for the holder to release the lock (`waitForTurn`) before it stages or queues,
+ * so even a holder paused before enqueueing keeps the earlier sequence. An entry for
+ * the key alone is not permission to proceed: it might predate the current holder.
+ * Only a save fenced by a sync known to this process queues without staging; it leaves
+ * the mirror and index to that sync. Every save that stages refreshes the index, so the
+ * next session reads the note whether or not this session could deliver it.
  */
 import { randomUUID } from "node:crypto";
 import type { AgentLogger } from "#src/infra/agent-logger";
@@ -290,9 +290,9 @@ async function restoreNote(input: MemorySaveInput, note: MemoryNote, previous: M
  * back. A key the outbox already holds a queued write for is not taken any further: this
  * write joins the queue behind the one already waiting, and the order the agent wrote them
  * in survives. Otherwise the note is staged and its request goes on the queue *before* the
- * provider is asked — the early entry is this save's declaration that it may end up
- * undelivered, which is what a save fenced by this lock reads to take its own sequence
- * behind (`waitForTurn`). A delivery that succeeds takes the entry back off again.
+ * provider is asked. The lock covers both declaration and delivery, so a contending
+ * save cannot take an earlier sequence even if this holder is paused before enqueueing.
+ * A delivery that succeeds takes the entry back off again.
  */
 async function deliverLocked(input: MemorySaveInput): Promise<MemorySaveResult> {
   const note = stagedNote(input);
@@ -413,13 +413,7 @@ async function releaseSaveLock(input: MemorySaveInput, release: ReleaseLock): Pr
   }
 }
 
-/**
- * How long a fenced save waits for the mirror's writer to show its hand, and how often it
- * looks. A save that is delivering declares its queue entry within microseconds of taking
- * the lock, so the wait only has to outlast that; one held by a sync shows neither an entry
- * nor a release, and the wait expires so the write still lands on the queue.
- */
-const FENCED_WAIT_MS = 250;
+/** How often a contending save retries the mirror's existing lock protocol. */
 const FENCED_POLL_MS = 10;
 
 /** Wait one interval on the operation's own timer seam. */
@@ -430,31 +424,20 @@ async function pause(timers: MemoryTimers, ms: number): Promise<void> {
 }
 
 /**
- * Wait, bounded, for the mirror's writer to finish or to declare its queue entry, and take
- * the lock when it hands it back.
+ * Take the lock before declaring any write, regardless of how long its holder pauses.
  *
- * Nothing may take a sequence while an older save is undecided. A save that ends up
- * undelivered writes its entry before it asks the provider, so "this key is already queued"
- * arrives within microseconds of the older save holding the lock — and a save that joins the
- * queue behind that entry keeps the order the writes were made in, instead of a sync
- * delivering the newer write first and leaving the provider on the older content. A lock
- * handed back means the older save decided the other way (it delivered), so this save gets
- * its own turn under the lock rather than queueing.
- *
- * `null` means neither happened in time. The mirror is then most likely held by a sync,
- * which queues no save of its own, so queueing at once cannot put this write ahead of an
- * older one.
+ * Neither elapsed time nor an existing queued key proves the current holder has declared
+ * its write. Waiting for ownership coordinates staging and sequence allocation across
+ * processes without guessing whether the holder is saving or syncing. A dead or stale
+ * holder is reclaimed by the existing lock protocol; a live holder must release it.
  */
-async function waitForTurn(input: MemorySaveInput): Promise<ReleaseLock | null> {
+async function waitForTurn(input: MemorySaveInput): Promise<ReleaseLock> {
   const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
-  const key = memoryNoteKey(input.write.scope, input.write.slug);
-  for (let waited = 0; waited < FENCED_WAIT_MS; waited += FENCED_POLL_MS) {
-    if ((await input.outbox.heldKeys()).has(key)) return null;
+  for (;;) {
     const lock = await takeSaveLock(input);
     if (lock !== null) return lock;
     await pause(timers, FENCED_POLL_MS);
   }
-  return null;
 }
 
 /**
@@ -483,15 +466,14 @@ export async function saveMemoryNote(input: MemorySaveInput): Promise<MemorySave
  * draining or pulling would be the very interleaving the lock is there to prevent.
  *
  * A sync in this process is the one owner that needs no wait: it queues no save of its own,
- * so this write can join the queue immediately. Any other owner has to be waited for
- * (`waitForTurn`), because the sequence this save takes must come after the one that write
- * will take.
+ * so this write can join the queue immediately. Any other owner has to release the lock
+ * before this save stages or declares (`waitForTurn`), preserving sequence allocation even
+ * when the holder is paused before enqueueing.
  */
 async function commitSave(input: MemorySaveInput): Promise<MemorySaveResult> {
   const lockPath = input.store.paths.lock;
   if (syncInFlight(lockPath)) return await queueWithoutMirror(input);
-  const lock = (await takeSaveLock(input)) ?? (await waitForTurn(input));
-  if (lock === null) return await queueWithoutMirror(input);
+  const lock = await waitForTurn(input);
   try {
     return await deliverLocked(input);
   } finally {
