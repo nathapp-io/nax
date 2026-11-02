@@ -7,7 +7,7 @@ import {
   type MemoryNoteWrite,
   validateMemoryNoteWrite,
 } from "@nathapp/nax-agent";
-import { forgetReasonRefusal } from "#src/memory/validate";
+import { forgetReasonRefusal } from "#src/memory/index";
 
 /** A write that every check accepts; each test overrides the field it exercises. */
 const VALID: MemoryNoteWrite = {

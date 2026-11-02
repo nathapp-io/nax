@@ -69,4 +69,4 @@ export {
   type MemoryTimers,
   type MemoryWriteRefusal,
 } from "./types.ts";
-export { findSecret, validateMemoryNoteWrite } from "./validate.ts";
+export { findSecret, forgetReasonRefusal, validateMemoryNoteWrite } from "./validate.ts";
