@@ -113,6 +113,7 @@ export {
   type MemoryScope,
   type MemoryStore,
   type MemoryStorePaths,
+  type MemorySyncResult,
   type MemorySyncState,
   type MemoryTimers,
   type MemoryWriteRefusal,
@@ -130,6 +131,7 @@ export {
   renderMemoryIndex,
   searchMemoryNotes,
   serializeMemoryNote,
+  syncMemory,
   tokenizeMemoryQuery,
   validateMemoryNoteWrite,
 } from "#src/memory/index";

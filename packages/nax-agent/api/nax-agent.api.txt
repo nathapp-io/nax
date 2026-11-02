@@ -207,6 +207,7 @@ type MemoryPushResult
 type MemoryScope
 type MemoryStore
 type MemoryStorePaths
+type MemorySyncResult
 type MemorySyncState
 type MemoryTimers
 type MemoryTranscriptStore
@@ -524,6 +525,7 @@ spillRelativePath
 strayCommonDirTripwire
 substituteCommand
 substituteCommandSpec
+syncMemory
 taintApprovals
 toMechanical
 tokenizeMemoryQuery
