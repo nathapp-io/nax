@@ -1,6 +1,8 @@
 export {
+  type RefreshMemoryIndexOptions,
   type RenderedMemoryIndex,
   type RenderMemoryIndexInput,
+  refreshMemoryIndex,
   renderMemoryIndex,
 } from "./index-render.ts";
 export {

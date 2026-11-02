@@ -254,6 +254,7 @@ RESERVED_TOOL_NAMES
 RULE_SET_VERSION
 type ReadFileSliceOptions
 type ReadFileSliceResult
+type RefreshMemoryIndexOptions
 type RegisteredSink
 type RemovalDecision
 type RemovalResult
@@ -475,6 +476,7 @@ readTurnSpend
 redactForRow
 redactRowStrings
 redactSecrets
+refreshMemoryIndex
 registerBuiltinCodingTools
 registerBuiltinTool
 registerCodingTool
