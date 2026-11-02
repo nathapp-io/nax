@@ -13,11 +13,14 @@
  * `decisions.jsonl` mirror (one JSON object per line), `sync.json` (the sync
  * state) and each scope's generated `MEMORY.md`. They hold no user-authored
  * paths, so they are read and written without a slug to validate; the only
- * scope rule is that the user files need a user directory.
+ * scope rule is that the user files need a user directory. A record read is
+ * still confined: it resolves inside the store directory and opens with no
+ * follow, so a link at `decisions.jsonl` or `sync.json` cannot make the store
+ * read bytes from outside it.
  */
 import type { Dirent } from "node:fs";
 import { constants } from "node:fs";
-import { mkdir, open, readdir, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, open, readdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import type { AgentLogger } from "#src/infra/agent-logger";
@@ -51,20 +54,20 @@ interface Identity {
   readonly ino: number;
 }
 
-interface OpenedNote {
+/** One open file: read through its descriptor, never through its path. */
+interface OpenedFile {
   stat(): Promise<Identity>;
   readText(): Promise<string>;
   close(): Promise<void>;
 }
 
-type OpenNote = (path: string, flags: number) => Promise<OpenedNote>;
+/** Open one file for reading without following a link at it. */
+type OpenFile = (path: string, flags: number) => Promise<OpenedFile>;
 type StatPath = (path: string) => Promise<Identity>;
 type MakeDir = (path: string, options: { recursive: true }) => Promise<string | undefined>;
 /** Directory entries carry their type, so a listing never has to open a path to learn what it is. */
 type ReadDirEntries = (path: string, options: { withFileTypes: true }) => Promise<Dirent[]>;
 type RemoveFile = (path: string, options: { force: true }) => Promise<void>;
-/** The record files have no identity to prove, so they are read whole. */
-type ReadTextFile = (path: string, encoding: "utf8") => Promise<string>;
 
 function identityOf(info: { dev: number; ino: number }): Identity {
   return { dev: info.dev, ino: info.ino };
@@ -72,12 +75,11 @@ function identityOf(info: { dev: number; ino: number }): Identity {
 
 /** I/O seam: reads prove descriptor identity; deletes use the active pinned parent. */
 export const _memoryStoreDeps: {
-  open: OpenNote;
+  open: OpenFile;
   stat: StatPath;
   mkdir: MakeDir;
   readdir: ReadDirEntries;
   rm: RemoveFile;
-  readFile: ReadTextFile;
 } = {
   open: async (path, flags) => {
     const handle = await open(path, flags);
@@ -91,7 +93,6 @@ export const _memoryStoreDeps: {
   mkdir: (path, options) => mkdir(path, options),
   readdir: (path, options) => readdir(path, options),
   rm: (path, options) => pinnedOperation<void>(path, "rm") ?? rm(path, options),
-  readFile: (path, encoding) => readFile(path, encoding),
 };
 
 /** The files this store owns, spelled out once so every caller agrees on them. */
@@ -333,28 +334,42 @@ export function createMemoryStore(input: {
       throw outsideRoot(handle.scope, handle.dir, handle.root);
     }
   }
-  /** One note's text, read from a handle whose identity is proved first. */
-  async function readNoteText(handle: VerifiedDir, slug: string): Promise<string | null> {
-    const entry = entryPathIn(handle, slug);
-    const target = confinedRealPath(handle.scope, handle.root, entry);
+  /**
+   * Any confined file's text, read from a descriptor whose identity is proved first.
+   *
+   * The resolved path must stay inside the scope root and the open refuses a link at
+   * it, so neither a link placed before the read nor one swapped in during it can
+   * make the store read bytes that do not live in its own scope.
+   */
+  async function readConfinedText(scope: MemoryScope, root: string, path: string): Promise<string | null> {
+    const target = confinedRealPath(scope, root, path);
     const expected = await identityAt(target);
     if (expected === null) return null;
-    const file = await openNote(handle, entry, target);
+    const file = await openConfined(scope, root, path, target);
     if (file === null) return null;
     try {
-      if (!sameIdentity(await file.stat(), expected)) throw outsideRoot(handle.scope, entry, handle.root);
+      if (!sameIdentity(await file.stat(), expected)) throw outsideRoot(scope, path, root);
       return await file.readText();
     } finally {
       await file.close();
     }
   }
-  /** The confined handle for a note, or `null` when it vanished; a link at it is refused. */
-  async function openNote(handle: VerifiedDir, entry: string, target: string): Promise<OpenedNote | null> {
+  /** One note's text, read from a handle whose identity is proved first. */
+  function readNoteText(handle: VerifiedDir, slug: string): Promise<string | null> {
+    return readConfinedText(handle.scope, handle.root, entryPathIn(handle, slug));
+  }
+  /** The confined handle for a file, or `null` when it vanished; a link at it is refused. */
+  async function openConfined(
+    scope: MemoryScope,
+    root: string,
+    path: string,
+    target: string,
+  ): Promise<OpenedFile | null> {
     try {
       return await _memoryStoreDeps.open(target, READ_FLAGS);
     } catch (error) {
       if (isMissing(error)) return null;
-      if (isSymlinkLoop(error)) throw outsideRoot(handle.scope, entry, handle.root, error);
+      if (isSymlinkLoop(error)) throw outsideRoot(scope, path, root, error);
       throw error;
     }
   }
@@ -464,14 +479,9 @@ export function createMemoryStore(input: {
     return notes;
   }
 
-  /** One record file's text, or `null` when the file (or its directory) is not there. */
-  async function readTextOrNull(path: string): Promise<string | null> {
-    try {
-      return await _memoryStoreDeps.readFile(path, "utf8");
-    } catch (error) {
-      if (isMissing(error)) return null;
-      throw error;
-    }
+  /** One record file's text, read only from inside the project directory. */
+  async function readRecordText(path: string): Promise<string | null> {
+    return readConfinedText("project", paths.projectDir, path);
   }
   /** Publish one record file, creating its directory on demand: staging needs one. */
   async function writeRecordFile(path: string, text: string): Promise<void> {
@@ -487,7 +497,7 @@ export function createMemoryStore(input: {
   }
 
   async function readDecisions(): Promise<MemoryDecision[]> {
-    const text = await readTextOrNull(paths.decisions);
+    const text = await readRecordText(paths.decisions);
     if (text === null) return [];
     const decisions: MemoryDecision[] = [];
     // One decision per line: a line that is not one is dropped, never fatal.
@@ -509,7 +519,7 @@ export function createMemoryStore(input: {
   }
 
   async function readSyncState(): Promise<MemorySyncState> {
-    const text = await readTextOrNull(paths.syncState);
+    const text = await readRecordText(paths.syncState);
     // A missing file is the state of a store that has never synced; nothing to report.
     if (text === null) return defaultSyncState();
     const state = parseSyncStateText(text);

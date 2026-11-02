@@ -3,13 +3,15 @@
  * decisions mirror (one MemoryDecision per line, read-only here), the sync
  * state and the generated `MEMORY.md` of each scope.
  *
- * Reads go through `_memoryStoreDeps.readFile` and writes through
- * `_atomicWriteDeps`, so a test can watch what the store actually reaches for
- * rather than inferring it from the file that ends up on disk.
+ * Reads go through the store's `open` seam — a no-follow descriptor confined to
+ * the store directory — and writes through `_atomicWriteDeps`, so a test can
+ * watch what the store actually reaches for rather than inferring it from the
+ * file that ends up on disk. The last block covers the confinement itself: a
+ * link at a record file must not make the store read bytes from outside it.
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, symlink, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createMemoryStore, type MemoryDecision, type MemorySyncState } from "@nathapp/nax-agent";
 import { _atomicWriteDeps } from "#src/internal/atomic-write";
@@ -328,6 +330,78 @@ describe("memory store records", () => {
 
         expect(read).toEqual(state);
         expect(read.cursor).toEqual({ project: "page-1", user: null });
+      });
+    });
+  });
+
+  describe("a record file replaced by a link", () => {
+    test("F1: readDecisions of a mirror linked outside the store is MEMORY_PATH_OUTSIDE", async () => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const outside = join(dir, "outside-decisions.jsonl");
+        // A decision the reader would happily decode: only the link's destination decides.
+        await writeFixture(outside, `${JSON.stringify(decision())}\n`);
+        await mkdir(project, { recursive: true });
+        await symlink(outside, join(project, "decisions.jsonl"));
+        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+
+        const error = await caught(store.readDecisions());
+
+        assertNaxError(error, "readDecisions of a mirror linked outside the store");
+        expect(error).toMatchObject({ code: "MEMORY_PATH_OUTSIDE", context: { stage: "memory", scope: "project" } });
+      });
+    });
+
+    test("F1: readSyncState of a sync state linked outside the store is MEMORY_PATH_OUTSIDE", async () => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const outside = join(dir, "outside-sync.json");
+        await writeFixture(outside, `${JSON.stringify(syncState())}\n`);
+        await mkdir(project, { recursive: true });
+        await symlink(outside, join(project, "sync.json"));
+        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+
+        const error = await caught(store.readSyncState());
+
+        assertNaxError(error, "readSyncState of a sync state linked outside the store");
+        expect(error).toMatchObject({ code: "MEMORY_PATH_OUTSIDE", context: { stage: "memory", scope: "project" } });
+      });
+    });
+
+    test("F1: a record file swapped for an outside link inside the read is refused", async () => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const outside = join(dir, "outside-decisions.jsonl");
+        const kept = decision();
+        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+        await store.writeDecisions([kept]);
+        await writeFixture(outside, `${JSON.stringify(decision({ id: "leaked" }))}\n`);
+        const realOpen = _memoryStoreDeps.open;
+        // The swap happens *inside* the read: the path the store checked now names a link.
+        _memoryStoreDeps.open = async (target, flags) => {
+          await unlink(target);
+          await symlink(outside, target);
+          return realOpen(target, flags);
+        };
+
+        const error = await caught(store.readDecisions());
+
+        assertNaxError(error, "readDecisions of a mirror linked outside after the check");
+        expect(error).toMatchObject({ code: "MEMORY_PATH_OUTSIDE", context: { stage: "memory", scope: "project" } });
+      });
+    });
+
+    test("a record file linked to another file inside the store is read", async () => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const kept = decision();
+        const mirror = join(project, "mirror-decisions.jsonl");
+        await writeFixture(mirror, `${JSON.stringify(kept)}\n`);
+        await symlink(mirror, join(project, "decisions.jsonl"));
+        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+
+        // Confinement is about where the bytes live, not about refusing every link.
+        expect(await store.readDecisions()).toEqual([kept]);
       });
     });
   });
