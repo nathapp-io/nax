@@ -203,6 +203,9 @@ describe("slash command routing", () => {
   });
   test("AC-16 US-024 AC-14 help lists every command with its description", async () => {
     const ui = mount();
+    // Tall enough for the whole listing: the seventeen-row listing outgrows the default frame,
+    // and the first row scrolls out of a viewport the test is not asking about.
+    await ui.resize(80, 40);
     await ui.line("/help");
     expect(ui.host.catalog).toBeUndefined();
     expect(ui.host.resourceNotice).toBeUndefined();
@@ -378,7 +381,7 @@ describe("agents command", () => {
     const ui = mount();
     await ui.line("/help");
     expect(ui.lastFrame()).toContain(
-      "/mcp  List MCP servers\n/agents  List agents\n/jobs  Show nax jobs and background tasks\n/quit  Quit nax chat",
+      "/mcp  List MCP servers\n/agents  List agents\n/jobs  Show nax jobs and background tasks\n/memory  Show memory notes and sync status\n/quit  Quit nax chat",
     );
   });
 

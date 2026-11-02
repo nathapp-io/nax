@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import {
   acpAgentLabel,
   type ChatAcpModel,
@@ -13,6 +14,7 @@ import {
 } from "@/chat";
 import { featureDir } from "@/config";
 import { NaxError } from "@/errors";
+import { formatMemoryStatus, formatMemorySyncResult } from "@/memory";
 import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing } from "@/resources";
 
@@ -64,6 +66,7 @@ export const COMMANDS = [
   "mcp",
   "agents",
   "jobs",
+  "memory",
   "quit",
 ] as const;
 
@@ -86,6 +89,7 @@ export const COMMAND_DESCRIPTIONS = {
   mcp: "List MCP servers",
   agents: "List agents",
   jobs: "Show nax jobs and background tasks",
+  memory: "Show memory notes and sync status",
   quit: "Quit nax chat",
 } satisfies Record<SlashCommandName, string>;
 
@@ -99,6 +103,7 @@ export const LISTING_TITLES: ReadonlyMap<string, string> = new Map([
   ["plugins", "Plugins"],
   ["mcp", "MCP servers"],
   ["agents", "Agents"],
+  ["memory", "Memory"],
   ["sessions", "Sessions"],
   ["cost", "Cost"],
 ]);
@@ -203,6 +208,38 @@ function jobsCommand({ host, show }: CommandContext): SlashOutcome | undefined {
 }
 
 /**
+ * `/memory` with no argument shows the status block and the index; `/memory sync` runs one
+ * sync and shows its result. Nothing else is accepted, and a session without a memory host
+ * has nothing to show at all.
+ *
+ * The two reads the listing needs are independent, so they are taken together: one failing
+ * read is the whole listing's failure, and it is reported as a line rather than thrown — a
+ * slash command never ends the session.
+ */
+async function memoryCommand(command: SlashCommand, { host, show }: CommandContext): Promise<void> {
+  const memory = host.memory;
+  if (memory === undefined) {
+    show("memory is disabled in this session");
+    return;
+  }
+  const arg = command.args[0];
+  if (command.args.length > 1 || (arg !== undefined && arg !== "sync")) {
+    show("usage: /memory [sync]");
+    return;
+  }
+  if (arg === "sync") {
+    show(formatMemorySyncResult(await memory.sync()));
+    return;
+  }
+  try {
+    const [status, index] = await Promise.all([memory.status(), memory.renderIndex()]);
+    show(formatMemoryStatus(status, index.text));
+  } catch (error) {
+    show(`memory unavailable: ${errorMessage(error)}`);
+  }
+}
+
+/**
  * `/image [path]` reads nothing here: it answers with the path the user typed, or with none
  * at all for the clipboard flow, and the screen's attach hook does the reading. A path is
  * `command.rest` trimmed, so a quoted or space-bearing name arrives whole.
@@ -296,6 +333,9 @@ export async function runSlashCommand(
       break;
     case "jobs":
       return jobsCommand({ host, show });
+    case "memory":
+      await memoryCommand(command, { host, show });
+      break;
     case "mode":
       if (!arg) return { kind: "picker", picker: "mode" };
       if (arg === "full" || arg === "guarded") await host.switchTo({ mode: arg });

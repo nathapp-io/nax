@@ -391,13 +391,13 @@ describe("SlashMenu completion and dismissal", () => {
 });
 
 describe("SlashMenu window", () => {
-  test("AC-10 sixteen matches draw eight rows", async () => {
+  test("AC-10 seventeen matches draw eight rows", async () => {
     const ui = await screen();
     ui.type("/");
     const rows = ui.rows();
     const menu = rows.slice(rows.indexOf("> /") + 2, -1);
-    // `/image` joins the built-ins after `/plugins`, past this window: the seven rows shown
-    // are unchanged, and only the count the overflow row discloses moved.
+    // `/image` and `/memory` join the built-ins after `/plugins`, past this window: the seven
+    // rows shown are unchanged, and only the count the overflow row discloses moved.
     expect(menu).toEqual([
       `❯ ${HELP_ROW}`,
       "  /mode      Switch permission mode",
@@ -406,7 +406,7 @@ describe("SlashMenu window", () => {
       "  /sessions  List saved sessions",
       "  /resume    Resume a saved session",
       "  /clear     Clear the conversation",
-      "  … 9 more",
+      "  … 10 more",
     ]);
   });
 
