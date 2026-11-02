@@ -200,6 +200,8 @@ type MemoryNoteStatus
 type MemoryNoteType
 type MemoryNoteWrite
 type MemoryScope
+type MemoryStore
+type MemoryStorePaths
 type MemoryTimers
 type MemoryTranscriptStore
 type MemoryWriteRefusal
@@ -377,6 +379,7 @@ createCommandGuard
 createCommandLauncher
 createCommandShadow
 createFileTranscriptStore
+createMemoryStore
 createMemoryTranscriptStore
 createNoOpToolAuditSink
 createRunCommandTool
@@ -811,6 +814,7 @@ _globDeps
 _grepDeps
 _instructionAccessDeps
 _launcherDeps
+_memoryStoreDeps
 _naxStateGuardDeps
 _openUrlDeps
 _policyInputDeps

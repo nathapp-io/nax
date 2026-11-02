@@ -4,6 +4,7 @@ export {
   parseMemoryNoteRecord,
   serializeMemoryNote,
 } from "./note.ts";
+export { createMemoryStore, type MemoryStore, type MemoryStorePaths } from "./store.ts";
 export {
   MEMORY_CLIENT_ID_RE,
   MEMORY_DECISION_STATUSES,
