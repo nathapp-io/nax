@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, symlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import * as pub from "@nathapp/nax-agent";
 import { createMemoryStore, type MemoryNote, type MemoryStore, serializeMemoryNote } from "@nathapp/nax-agent";
@@ -238,6 +238,34 @@ describe("memory store", () => {
         expect((await store.listNotes("project")).map((entry) => entry.slug)).toEqual(["replay-budget"]);
         // Neither file was read, so neither could be reported as unreadable.
         expect(logger.calls).toEqual([]);
+      });
+    });
+
+    test("ignores a directory whose name looks like a note", async () => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const logger = makeLogger();
+        const store = createMemoryStore({ projectDir: project, logger });
+        await store.writeNote(note());
+        // A directory is not a note: it must not be read, listed, or warned about.
+        await mkdir(join(project, "notes", "nested-budget.md"), { recursive: true });
+
+        expect((await store.listNotes("project")).map((entry) => entry.slug)).toEqual(["replay-budget"]);
+        expect(logger.calls).toEqual([]);
+      });
+    });
+
+    test("lists a note reached through a link inside the notes directory", async () => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+        const written = note({ slug: "aliased-budget" });
+        await store.writeNote(written);
+        await symlink(join(project, "notes", "aliased-budget.md"), join(project, "notes", "linked-budget.md"));
+
+        // Both entries are note files, so both are read: a link is not filtered out at the
+        // directory-entry stage (US-004's confinement decides what a link may point at).
+        expect(await store.listNotes("project")).toEqual([written, written]);
       });
     });
   });

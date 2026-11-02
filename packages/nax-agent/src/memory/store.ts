@@ -12,6 +12,7 @@
  * injects a failing `readFile` / `readdir` there; the write path's seam is
  * `_atomicWriteDeps` inside `#src/internal/atomic-write`.
  */
+import type { Dirent } from "node:fs";
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { AgentLogger } from "#src/infra/agent-logger";
@@ -29,14 +30,15 @@ const NOTE_SUFFIX = ".md";
 
 type ReadText = (path: string, encoding: "utf8") => Promise<string>;
 type MakeDir = (path: string, options: { recursive: true }) => Promise<string | undefined>;
-type ReadDir = (path: string) => Promise<string[]>;
+/** Directory entries carry their type, so a listing never has to open a path to learn what it is. */
+type ReadDirEntries = (path: string, options: { withFileTypes: true }) => Promise<Dirent[]>;
 type RemoveFile = (path: string, options: { force: true }) => Promise<void>;
 
 /** Injectable for tests that simulate an unreadable note or an unlistable directory. */
-export const _memoryStoreDeps: { readFile: ReadText; mkdir: MakeDir; readdir: ReadDir; rm: RemoveFile } = {
+export const _memoryStoreDeps: { readFile: ReadText; mkdir: MakeDir; readdir: ReadDirEntries; rm: RemoveFile } = {
   readFile: (path, encoding) => readFile(path, encoding),
   mkdir: (path, options) => mkdir(path, options),
-  readdir: (path) => readdir(path),
+  readdir: (path, options) => readdir(path, options),
   rm: (path, options) => rm(path, options),
 };
 
@@ -89,11 +91,25 @@ function isMissing(error: unknown): boolean {
   return error.code === "ENOENT" || error.code === "ENOTDIR";
 }
 
-/** The slug of a `<slug>.md` entry, or `null` for anything else (temp files, `MEMORY.md`, junk). */
-function slugOfNoteFile(name: string): string | null {
+/** One note file a directory listing turned up. */
+interface NoteCandidate {
+  readonly slug: string;
+  readonly path: string;
+}
+
+/**
+ * The note a directory entry can hold, or `null` when it is not a `<slug>.md` file.
+ *
+ * A note is a regular file or a link to one: a directory named `x.md`, a FIFO or a socket is
+ * not a note, and is never opened. (US-004's confinement decides what a link may point at.)
+ */
+function noteCandidateIn(notesDir: string, entry: Dirent): NoteCandidate | null {
+  if (!entry.isFile() && !entry.isSymbolicLink()) return null;
+  const name = entry.name;
   if (!name.endsWith(NOTE_SUFFIX)) return null;
   const slug = name.slice(0, -NOTE_SUFFIX.length);
-  return MEMORY_SLUG_RE.test(slug) ? slug : null;
+  if (!MEMORY_SLUG_RE.test(slug)) return null;
+  return { slug, path: join(notesDir, name) };
 }
 
 function invalidSlug(slug: string): NaxError {
@@ -164,20 +180,19 @@ export function createMemoryStore(input: {
 
   async function listNotes(scope: MemoryScope): Promise<MemoryNote[]> {
     const notesDir = notesDirFor(scope);
-    let names: string[];
+    let entries: Dirent[];
     try {
-      names = await _memoryStoreDeps.readdir(notesDir);
+      entries = await _memoryStoreDeps.readdir(notesDir, { withFileTypes: true });
     } catch (error) {
       if (isMissing(error)) return [];
       throw error;
     }
-    const slugs = names
-      .map(slugOfNoteFile)
-      .filter((slug): slug is string => slug !== null)
-      .sort(byCodePoint);
+    const candidates = entries
+      .map((entry) => noteCandidateIn(notesDir, entry))
+      .filter((candidate): candidate is NoteCandidate => candidate !== null)
+      .sort((a, b) => byCodePoint(a.slug, b.slug));
     const notes: MemoryNote[] = [];
-    for (const slug of slugs) {
-      const path = join(notesDir, `${slug}${NOTE_SUFFIX}`);
+    for (const { path } of candidates) {
       try {
         notes.push(parseMemoryNote(await _memoryStoreDeps.readFile(path, "utf8")));
       } catch (error) {
