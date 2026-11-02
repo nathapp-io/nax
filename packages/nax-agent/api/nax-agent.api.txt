@@ -199,6 +199,8 @@ type MemoryNote
 type MemoryNoteStatus
 type MemoryNoteType
 type MemoryNoteWrite
+type MemoryOutbox
+type MemoryOutboxEntry
 type MemoryPage
 type MemoryProvider
 type MemoryPushResult
@@ -388,6 +390,7 @@ createCommandLauncher
 createCommandShadow
 createFileTranscriptStore
 createLocalMemoryProvider
+createMemoryOutbox
 createMemoryStore
 createMemoryTranscriptStore
 createNoOpToolAuditSink

@@ -12,6 +12,7 @@ export {
   parseMemoryNoteRecord,
   serializeMemoryNote,
 } from "./note.ts";
+export { createMemoryOutbox, type MemoryOutbox, type MemoryOutboxEntry } from "./outbox.ts";
 export type {
   MemoryPage,
   MemoryProvider,
