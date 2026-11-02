@@ -27,7 +27,7 @@ import { acquireSessionLock } from "#src/session-store/index";
 import { holderState, readSessionLock, type SessionStorageDeps } from "#src/session-store/session-lock";
 import { _memoryStoreDeps, type MemoryStore } from "./store.ts";
 import { GLOBAL_MEMORY_TIMERS, warnQuietly } from "./sync.ts";
-import { syncInFlight } from "./sync-flight.ts";
+import { claimOperation, releaseOperation, syncInFlight } from "./sync-flight.ts";
 import type { MemoryTimers } from "./types.ts";
 
 /** The code the lock protocol throws for a live holder another process owns. */
@@ -90,9 +90,14 @@ function lockDeps(input: MirrorLockInput): SessionStorageDeps {
  * writers back on the mirror and remove the lock the sync still believes it holds. A file
  * naming this pid with no sync running is a lock this process leaked (a release that failed),
  * and reclaiming it is the only way the next operation can deliver again.
+ *
+ * The sync is checked before the file is even read: a sync that has claimed this mirror but
+ * has not written its lock yet is still a sync, and waiting for it is what keeps the two of
+ * them off the mirror at once.
  */
 async function takeMirrorLock(input: MirrorLockInput): Promise<ReleaseLock | null> {
   const { paths } = input.store;
+  if (syncInFlight(paths.lock)) return null;
   const deps = lockDeps(input);
   const isAlive = livenessOf(input);
   await _memoryStoreDeps.mkdir(paths.projectDir, { recursive: true });
@@ -172,13 +177,23 @@ export async function waitForTurn(input: MirrorLockInput): Promise<ReleaseLock> 
  * it. A live holder — another process, or a sync of this process — is waited out on the
  * operation's timers, and a failed release is reported rather than thrown, so `work`'s own
  * answer still reaches the caller.
+ *
+ * The claim is taken before the wait and given back after the release, so the whole of it —
+ * including a wait where this operation holds nothing yet — is visible to a sync that starts
+ * meanwhile (`operationInFlight`): the lock protocol would hand that sync our own pid's lock.
  */
 export async function withMirrorLock<T>(input: MirrorLockInput, work: () => Promise<T>): Promise<T> {
-  const lock = await waitForTurn(input);
+  const lockPath = input.store.paths.lock;
+  claimOperation(lockPath);
   try {
-    return await work();
+    const lock = await waitForTurn(input);
+    try {
+      return await work();
+    } finally {
+      await releaseMirrorLock(input, lock);
+    }
   } finally {
-    await releaseMirrorLock(input, lock);
+    releaseOperation(lockPath);
   }
 }
 

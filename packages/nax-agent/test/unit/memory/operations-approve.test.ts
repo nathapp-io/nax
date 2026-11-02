@@ -30,17 +30,23 @@ import {
   type MemoryApproveInput,
   type MemoryNote,
   type MemoryNoteStatus,
+  type MemoryOutbox,
   type MemoryStore,
+  type MemorySyncResult,
   refreshMemoryIndex,
+  syncMemory,
 } from "@nathapp/nax-agent";
+import type { MemorySyncInput } from "#src/memory/index";
 import { acquireSessionLock } from "#src/session-store/index";
 import {
   assertDefined,
   assertNaxError,
   type FakeClock,
+  type MemoryProviderMock,
   type MockLogger,
   makeFakeClock,
   makeLogger,
+  makeMemoryProvider,
   waitForCondition,
   withTempDir,
 } from "#test/helpers/index";
@@ -79,19 +85,38 @@ function note(overrides: Partial<MemoryNote> = {}): MemoryNote {
 /** The pieces one approval runs against, all pointed at `<dir>/project`. */
 interface Harness {
   readonly store: MemoryStore;
+  readonly outbox: MemoryOutbox;
+  readonly provider: MemoryProviderMock;
   readonly logger: MockLogger;
   /** The approval's input: this harness's store, plus any per-test override. */
   approve(overrides?: Partial<MemoryApproveInput>): Promise<MemoryNote>;
+  /** A sync of the same mirror, claiming this process's pid unless a test says otherwise. */
+  sync(overrides?: Partial<MemorySyncInput>): Promise<MemorySyncResult>;
 }
 
 function harness(dir: string): Harness {
   const logger = makeLogger();
   const store = createMemoryStore({ projectDir: join(dir, "project"), logger });
+  const outbox = createMemoryOutbox({ dir: store.paths.outboxDir, now: () => new Date(STAMP) });
+  const provider = makeMemoryProvider();
   return {
     store,
+    outbox,
+    provider,
     logger,
     approve: (overrides = {}) =>
       approveMemoryNote({ store, now: () => new Date(STAMP), scope: "project", slug: SLUG, ...overrides }),
+    sync: (overrides = {}) =>
+      syncMemory({
+        store,
+        outbox,
+        provider,
+        logger,
+        now: () => new Date(STAMP),
+        pid: process.pid,
+        isAlive: () => true,
+        ...overrides,
+      }),
   };
 }
 
@@ -296,6 +321,43 @@ describe("approveMemoryNote and the mirror's other writers", () => {
       // index regeneration — a refresh with no held keys would silently drop it.
       expect((await indexLineFor(h, DOOMED_SLUG)).endsWith(" (forget pending)")).toBe(true);
       expect((await indexLineFor(h, SLUG)).endsWith(" (pending)")).toBe(false);
+    });
+  });
+
+  test("[F1] a sync started while an approval holds the lock does not run alongside it", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      await h.store.writeNote(note());
+      const parked = Promise.withResolvers<void>();
+      const gate = Promise.withResolvers<void>();
+      // The approval is parked inside its locked section, holding the mirror's lock file.
+      const store: MemoryStore = {
+        ...h.store,
+        writeNote: async (written) => {
+          parked.resolve();
+          await gate.promise;
+          await h.store.writeNote(written);
+        },
+      };
+
+      const approving = h.approve({ store });
+      await parked.promise;
+
+      // The sync claims this process's own pid, which the lock protocol classifies as `own` and
+      // would let it rename the approval's lock aside — taking the mirror mid-transition.
+      const result = await h.sync({ pid: process.pid, isAlive: () => true });
+      gate.resolve();
+      const approved = await approving;
+
+      expect(result).toEqual({ outcome: "locked", pushed: 0, rejected: 0, pulled: 0, skipped: 0 });
+      // Nothing of the sync touched the mirror or the provider while the approval held it.
+      expect(h.provider.reachable).not.toHaveBeenCalled();
+      expect(h.provider.push).not.toHaveBeenCalled();
+      expect(h.provider.pull).not.toHaveBeenCalled();
+      // The approval finished its own transition, and handed the lock back.
+      expect(approved).toEqual({ ...note(), status: "active", updatedAt: STAMP });
+      expect(await h.store.readNote("project", SLUG)).toEqual(approved);
+      expect(existsSync(h.store.paths.lock)).toBe(false);
     });
   });
 });

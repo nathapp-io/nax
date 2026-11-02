@@ -57,7 +57,7 @@ import { isMemoryPushRejected, parseMemoryNoteRecord } from "./note.ts";
 import type { MemoryOutbox, MemoryOutboxEntry } from "./outbox.ts";
 import type { MemoryPage, MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
 import { _memoryStoreDeps, type MemoryStore, type MemorySyncState } from "./store.ts";
-import { claimSync, releaseSync } from "./sync-flight.ts";
+import { claimSync, operationInFlight, releaseSync } from "./sync-flight.ts";
 import {
   MEMORY_OP_TIMEOUT_MS,
   MEMORY_PROBE_TIMEOUT_MS,
@@ -212,17 +212,21 @@ function clockOf(input: MemorySyncInput): () => Date {
 }
 
 /**
- * Take the store's lock, or `null` when another process holds it live.
+ * Take the store's lock, or `null` when another process holds it live — or when a write
+ * operation of this process owns the mirror.
  *
- * The directory is created first — the lock protocol's guard directory lives
- * inside it — and a stale holder is taken over by the acquisition itself, so
- * only a refusal is mapped; every other failure is the caller's to report.
+ * The directory is created first — the lock protocol's guard directory lives inside it — and a
+ * stale holder is taken over by the acquisition itself, so only a refusal is mapped; every other
+ * failure is the caller's to report. The operation claim is read before the file because that
+ * file is ours: the protocol calls our own pid `own` and would rename a running approval's lock
+ * aside, handing this run a mirror another writer is midway through changing.
  */
 async function takeLock(input: MemorySyncInput): Promise<ReleaseLock | null> {
   const { paths } = input.store;
   const pid = input.pid ?? process.pid;
   const now = clockOf(input);
   const isAlive = input.isAlive ?? isProcessAlive;
+  if (operationInFlight(paths.lock)) return null;
   await _memoryStoreDeps.mkdir(paths.projectDir, { recursive: true });
   try {
     return acquireSessionLock(paths.lock, { dir: paths.projectDir, pid, now, logger: input.logger, isAlive }, isAlive);
