@@ -11,6 +11,13 @@
  * Every read and directory operation goes through `_memoryStoreDeps`, so a test
  * injects a failing `readFile` / `readdir` there; the write path's seam is
  * `_atomicWriteDeps` inside `#src/internal/atomic-write`.
+ *
+ * Every note path is confined twice over: the slug is validated (pure, before any
+ * filesystem call), then both the scope's notes directory and the note's own path
+ * must resolve inside the scope root (`isInside`, symlink-tolerant). A store whose
+ * `notes` directory — or one note file — has been replaced by a link pointing out
+ * of the root is `MEMORY_PATH_OUTSIDE`: a read, a write and a delete refuse, and
+ * `listNotes` skips that one file with a `warn` so the rest of the listing survives.
  */
 import type { Dirent } from "node:fs";
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
@@ -19,6 +26,7 @@ import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
 import { writeFileAtomic } from "#src/internal/atomic-write";
+import { isInside } from "#src/internal/realpath";
 import { byCodePoint } from "#src/internal/sort";
 import { parseMemoryNote, serializeMemoryNote } from "./note.ts";
 import { MEMORY_SLUG_RE, type MemoryNote, type MemoryScope } from "./types.ts";
@@ -130,6 +138,21 @@ function scopeUnavailable(scope: MemoryScope): NaxError {
   );
 }
 
+function outsideRoot(scope: MemoryScope, path: string, root: string): NaxError {
+  return new NaxError(`memory path "${path}" is outside the memory scope root "${root}"`, "MEMORY_PATH_OUTSIDE", {
+    stage: ERROR_STAGE,
+    scope,
+    path,
+    root,
+  });
+}
+
+/** A scope's confinement root, and the notes directory that root has to contain. */
+interface ScopedNotesDir {
+  readonly root: string;
+  readonly notesDir: string;
+}
+
 export function createMemoryStore(input: {
   readonly projectDir: string;
   readonly userDir?: string | null;
@@ -138,18 +161,35 @@ export function createMemoryStore(input: {
   const { logger } = input;
   const paths = memoryStorePaths(input.projectDir, dirOrNull(input.userDir));
 
-  /** The notes directory of one scope; the user scope is the one that can be unavailable. */
-  function notesDirFor(scope: MemoryScope): string {
-    if (scope !== "user") return paths.notesDir;
-    if (paths.userNotesDir === null) throw scopeUnavailable(scope);
-    return paths.userNotesDir;
+  /**
+   * The notes directory of one scope, proved to sit inside that scope's root.
+   *
+   * The user scope is the one that can be unavailable (no `userDir`); a project or
+   * user directory that has been replaced by a link pointing elsewhere is refused
+   * here, before anything is read, listed or written through it.
+   */
+  function confinedNotesDir(scope: MemoryScope): ScopedNotesDir {
+    const root = scope === "user" ? paths.userDir : paths.projectDir;
+    const notesDir = scope === "user" ? paths.userNotesDir : paths.notesDir;
+    if (root === null || notesDir === null) throw scopeUnavailable(scope);
+    if (!isInside(root, notesDir)) throw outsideRoot(scope, notesDir, root);
+    return { root, notesDir };
   }
 
-  /** The note's path, validated before anything touches the filesystem. */
+  /**
+   * The note's path, validated before anything touches the filesystem, and confined.
+   *
+   * `isInside` resolves a path that does not exist through its nearest existing
+   * ancestor, so checking the file covers the existing-target case (`<slug>.md` is a
+   * link to elsewhere) as well as the ordinary one: a write stages its bytes under
+   * this same directory, so a confined notes directory confines the note.
+   */
   function notePath(scope: MemoryScope, slug: string): string {
-    const notesDir = notesDirFor(scope);
     if (!MEMORY_SLUG_RE.test(slug)) throw invalidSlug(slug);
-    return join(notesDir, `${slug}${NOTE_SUFFIX}`);
+    const { root, notesDir } = confinedNotesDir(scope);
+    const path = join(notesDir, `${slug}${NOTE_SUFFIX}`);
+    if (!isInside(root, path)) throw outsideRoot(scope, path, root);
+    return path;
   }
 
   /** One note file's text, or `null` when it (or its directory) is not there. */
@@ -178,8 +218,31 @@ export function createMemoryStore(input: {
     await _memoryStoreDeps.rm(notePath(scope, slug), { force: true });
   }
 
+  /** A note the listing refuses to read is reported once, then skipped — the listing carries on. */
+  function warnOutsideRoot(scope: MemoryScope, path: string, root: string): void {
+    logger.warn("memory", "skipping memory note outside the scope root", {
+      path,
+      error: errorMessage(outsideRoot(scope, path, root)),
+    });
+  }
+
+  /** The note one listed file holds, or `null` when the file is skipped (never throws). */
+  async function listedNote(scope: MemoryScope, root: string, path: string): Promise<MemoryNote | null> {
+    if (!isInside(root, path)) {
+      warnOutsideRoot(scope, path, root);
+      return null;
+    }
+    try {
+      return parseMemoryNote(await _memoryStoreDeps.readFile(path, "utf8"));
+    } catch (error) {
+      // One note's problem never fails the listing: report the file and carry on.
+      logger.warn("memory", "skipping unreadable memory note", { path, error: errorMessage(error) });
+      return null;
+    }
+  }
+
   async function listNotes(scope: MemoryScope): Promise<MemoryNote[]> {
-    const notesDir = notesDirFor(scope);
+    const { root, notesDir } = confinedNotesDir(scope);
     let entries: Dirent[];
     try {
       entries = await _memoryStoreDeps.readdir(notesDir, { withFileTypes: true });
@@ -193,12 +256,8 @@ export function createMemoryStore(input: {
       .sort((a, b) => byCodePoint(a.slug, b.slug));
     const notes: MemoryNote[] = [];
     for (const { path } of candidates) {
-      try {
-        notes.push(parseMemoryNote(await _memoryStoreDeps.readFile(path, "utf8")));
-      } catch (error) {
-        // One note's problem never fails the listing: report the file and carry on.
-        logger.warn("memory", "skipping unreadable memory note", { path, error: errorMessage(error) });
-      }
+      const note = await listedNote(scope, root, path);
+      if (note !== null) notes.push(note);
     }
     return notes;
   }
