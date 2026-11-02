@@ -125,6 +125,38 @@ describe("writeFileAtomic", () => {
     expect(existsSync(path)).toBe(false);
   });
 
+  test("a failed write preserves a replacement at the staging name", async () => {
+    const realOpen = _atomicWriteDeps.open;
+    const failure = new Error("write failed after replacement");
+    let replacement = "";
+    _atomicWriteDeps.open = async (path, flags, mode) => {
+      const stage = await realOpen(path, flags, mode);
+      replacement = path;
+      return {
+        ...stage,
+        write: async () => {
+          await rm(path);
+          await writeFile(path, "not our stage");
+          throw failure;
+        },
+      };
+    };
+
+    await expect(writeFileAtomic(join(dir, "doc.json"), "ours")).rejects.toBe(failure);
+    expect(await readFile(replacement, "utf8")).toBe("not our stage");
+  });
+
+  test("an open failure never removes an unowned staging entry", async () => {
+    let replacement = "";
+    _atomicWriteDeps.open = async (path) => {
+      replacement = path;
+      await writeFile(path, "not our stage");
+      throw new Error("exclusive open refused");
+    };
+    await expect(writeFileAtomic(join(dir, "doc.json"), "ours")).rejects.toThrow("exclusive open refused");
+    expect(await readFile(replacement, "utf8")).toBe("not our stage");
+  });
+
   test("hands the published file's identity to the caller after the rename", async () => {
     const path = join(dir, "doc.json");
     const published: { dev: number; ino: number }[] = [];

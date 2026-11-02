@@ -5,7 +5,7 @@
  * vitest with `for (const c of SPAWN_CASES) test(c.name, () => c.run(runtime))`.
  */
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CaseRuntime, CaseSpawnResult } from "./runtime-types";
@@ -56,6 +56,40 @@ function script(path: string, out: string): string {
 }
 
 export const SPAWN_CASES: readonly RuntimeCase[] = [
+  {
+    name: "a live child's cwd pins its directory across rename and replacement",
+    async run(rt) {
+      await withTempDir(async (dir) => {
+        const cwd = join(dir, "parent");
+        const aside = join(dir, "aside");
+        mkdirSync(cwd);
+        const p = rt.spawn(["sh", "-c", "printf ready; read answer; printf original > entry"], {
+          cwd,
+          stdin: "pipe",
+          ...PIPES,
+        });
+        const reader = p.stdout.getReader();
+        const stderr = text(p.stderr);
+        try {
+          assert.equal(new TextDecoder().decode((await reader.read()).value), "ready");
+          renameSync(cwd, aside);
+          mkdirSync(cwd);
+          writeFileSync(join(cwd, "entry"), "replacement");
+          stdinOf(p).write("go\n");
+          stdinOf(p).end();
+          await reader.read();
+          assert.equal(await p.exited, 0);
+          assert.equal(await stderr, "");
+          assert.equal(readFileSync(join(aside, "entry"), "utf8"), "original");
+          assert.equal(readFileSync(join(cwd, "entry"), "utf8"), "replacement");
+        } finally {
+          reader.releaseLock();
+          p.kill();
+          await p.exited;
+        }
+      });
+    },
+  },
   {
     name: "a zero exit: exited 0, exitCode 0, signalCode null",
     async run(rt) {

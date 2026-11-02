@@ -360,6 +360,46 @@ describe("memory store confinement", () => {
       });
     });
 
+    test.each(["publish", "cleanup"])("writeNote never reaches a replacement during %s", async (operation) => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const notesDir = join(project, "notes");
+        const outside = join(dir, "outside");
+        const aside = join(project, "aside");
+        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+        await mkdir(outside);
+        const swap = async () => {
+          await rename(notesDir, aside);
+          await symlink(outside, notesDir);
+        };
+        if (operation === "publish") {
+          const realRename = _atomicWriteDeps.rename;
+          _atomicWriteDeps.rename = async (from, to) => {
+            // Make the source exist in the replacement too, so a path rename can succeed.
+            await swap();
+            await writeFixture(String(from), "foreign stage");
+            await realRename(from, to);
+          };
+        } else {
+          const realRm = _atomicWriteDeps.rm;
+          _atomicWriteDeps.rename = async () => {
+            throw new Error("publish refused");
+          };
+          _atomicWriteDeps.rm = async (path, options) => {
+            await swap();
+            await writeFixture(String(path), "foreign stage");
+            await realRm(path, options);
+          };
+        }
+        await caught(store.writeNote(note()));
+        const names = await readdir(outside);
+        expect(names).toHaveLength(1);
+        expect(names[0]?.endsWith(".tmp")).toBe(true);
+        expect(await Bun.file(join(outside, names[0] ?? "")).text()).toBe("foreign stage");
+        expect((await readdir(aside)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+      });
+    });
+
     test("writeNote takes back a note published into a directory swapped before the rename", async () => {
       await withTempDir(async (dir) => {
         const project = projectPath(dir);
@@ -396,17 +436,19 @@ describe("memory store confinement", () => {
         await store.writeNote(note());
         await mkdir(outside, { recursive: true });
         const realRm = _memoryStoreDeps.rm;
-        // The remove itself cannot be descriptor-relative, so the swap is injected inside it.
+        await writeFixture(join(outside, "replay-budget.md"), "outside sentinel");
+        // Swap BEFORE unlink, not after: detecting damage afterwards is insufficient.
         _memoryStoreDeps.rm = async (path, options) => {
-          await realRm(path, options);
           await rename(notesDir, aside);
           await symlink(outside, notesDir);
+          await realRm(path, options);
         };
 
         const error = await caught(store.deleteNote("project", "replay-budget"));
 
         assertNaxError(error, "deleteNote raced by a directory swap");
         expect(error).toMatchObject({ code: "MEMORY_PATH_OUTSIDE", context: { stage: "memory" } });
+        expect(await Bun.file(join(outside, "replay-budget.md")).text()).toBe("outside sentinel");
       });
     });
   });

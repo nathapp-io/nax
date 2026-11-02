@@ -11,9 +11,9 @@
  *
  * The stage is created exclusively (`O_CREAT | O_EXCL`) and its identity —
  * `dev`/`ino` — is read from that descriptor, never from its path: the file this
- * call created is then known no matter what later takes the name. Node exposes no
- * descriptor-relative `rename`/`unlink`, so the hooks let a caller confine the
- * destination instead of the syscall:
+ * call created is then known no matter what later takes the name. In a pinned-directory
+ * context all stage, publication and cleanup operations are relative to its verified cwd.
+ * Ordinary callers retain path-based I/O. The hooks additionally verify the destination:
  *
  * - `beforePublish` runs once the bytes are staged and before the rename, so a
  *   destination that moved during the write is refused before it receives them;
@@ -28,6 +28,7 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open, rename, rm, stat } from "node:fs/promises";
+import { openPinnedStage, pinnedOperation } from "./pinned-directory.ts";
 
 /** What a file is, independent of the path that names it. */
 interface Identity {
@@ -58,6 +59,8 @@ export const _atomicWriteDeps: {
   stat: StatPath;
 } = {
   open: async (path, flags, mode) => {
+    const pinned = await openPinnedStage(path, flags, mode);
+    if (pinned) return pinned;
     const handle = await open(path, flags, mode);
     return {
       write: (content) => handle.writeFile(content, { encoding: "utf8" }),
@@ -68,10 +71,10 @@ export const _atomicWriteDeps: {
       close: () => handle.close(),
     };
   },
-  rename,
-  rm,
+  rename: (from, to) => pinnedOperation<void>(String(from), "rename", [String(to)]) ?? rename(from, to),
+  rm: (path, options) => pinnedOperation<void>(String(path), "rm") ?? rm(path, options),
   stat: async (path) => {
-    const info = await stat(path);
+    const info = await (pinnedOperation<Identity>(path, "stat") ?? stat(path));
     return { dev: info.dev, ino: info.ino };
   },
 };
@@ -91,13 +94,14 @@ async function identityAt(path: string): Promise<Identity | null> {
  *
  * `created` is the identity taken from the descriptor at creation, so it stays true even if
  * the name was taken over afterwards. A mismatch means the path now holds something else,
- * and removing it would delete data this module never wrote. `null` means creation itself
- * failed: a file under this call's own uuid-named stage can only be its partial output.
+ * and removing it would delete data this module never wrote. Without an identity (open
+ * or fstat failed), ownership is unknown: never remove an entry on that basis.
  */
 async function discardStage(staged: string, created: Identity | null): Promise<void> {
+  if (created === null) return;
   const current = await identityAt(staged);
   if (current === null) return;
-  if (created !== null && (current.dev !== created.dev || current.ino !== created.ino)) return;
+  if (current.dev !== created.dev || current.ino !== created.ino) return;
   await _atomicWriteDeps.rm(staged, { force: true });
 }
 
@@ -116,9 +120,9 @@ export async function writeFileAtomic(
   let identity: Identity | null = null;
   try {
     stage = await _atomicWriteDeps.open(staged, STAGE_FLAGS, options.mode ?? STAGE_MODE);
-    await stage.write(content);
-    // From the descriptor, so a stage name taken over after this point is still recognisable.
+    // Capture ownership before writing: a failed write may already have lost its pathname.
     identity = await stage.identity();
+    await stage.write(content);
     if (options.beforePublish) await options.beforePublish();
     await _atomicWriteDeps.rename(staged, path);
     if (options.afterPublish && identity !== null) await options.afterPublish(identity);
