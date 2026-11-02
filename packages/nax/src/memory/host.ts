@@ -29,9 +29,10 @@
  * feature 1's `syncMemory`, which owns the lock, the drain and the pull, and never
  * throws — so this host reports what it returns rather than guarding it.
  *
- * The write paths arrive in US-007; until then each answers with a
- * `MEMORY_NOT_IMPLEMENTED` `NaxError` rather than a silent empty result, so a
- * caller wired too early fails loudly.
+ * The writes are composed from that same composition plus the one read they need
+ * (`host-writes.ts`): a save is feature 1's operation stamped with this host's
+ * write mode and source, and a forget or an approve is the same operation behind
+ * the refusal that leaves a note only the repository holds untouched.
  */
 import {
   approveMemoryNote,
@@ -58,12 +59,9 @@ import {
 } from "@nathapp/nax-agent";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { type MemoryConfig, memoryConfigOf, type NaxConfig } from "@/config";
-import { NaxError } from "@/errors";
+import { createHostWrites } from "./host-writes";
 import { type MemoryDirs, type MemoryLogger, memoryDirs } from "./paths";
-import { readRepoNotes } from "./repo-notes";
-
-/** Stage every host log line and error carries. */
-const LOG_STAGE = "memory";
+import { type RepoNotes, readRepoNotes } from "./repo-notes";
 
 /** What a caller needs to know about a host without calling one of its reads. */
 export interface MemoryStatus {
@@ -150,14 +148,6 @@ interface MemoryParts {
   readonly provider: MemoryProvider;
 }
 
-/** The refusal a surface wired ahead of its story gets: never a silent empty answer. */
-function notImplemented(operation: string): NaxError {
-  return new NaxError(`[memory] ${operation} is not implemented yet`, "MEMORY_NOT_IMPLEMENTED", {
-    stage: LOG_STAGE,
-    operation,
-  });
-}
-
 /** Slug order, as code points: the one order every note listing is served in. */
 function bySlug(left: MemoryNote, right: MemoryNote): number {
   return byCodePoint(left.slug, right.slug);
@@ -236,6 +226,8 @@ interface HostReads {
   projectScope(): Promise<ProjectScope>;
   /** Every note the surface of one scope sees; only the project scope has repo notes. */
   notesOf(scope: MemoryScope): Promise<readonly MemoryNote[]>;
+  /** The repository's committed project notes, as the last read of them found them. */
+  repoNotes(): Promise<RepoNotes>;
 }
 
 /**
@@ -265,6 +257,7 @@ function createReads(input: HostInput): HostReads {
     mirrorNotes,
     projectScope,
     notesOf: (scope) => (scope === "user" ? mirrorNotes("user") : projectNotes()),
+    repoNotes,
   };
 }
 
@@ -348,6 +341,11 @@ async function readStatus(reads: HostReads, input: HostInput): Promise<MemorySta
  * by its own contract never throws, so a `locked` or `failed` run is a result this
  * host reports rather than an error it translates.
  *
+ * The writes are built from the same composition and the same reads: they take the
+ * repository's notes through the reads' own (warn-deduplicated) view, and feature
+ * 1's operations through `_memoryHostDeps`, so an operation stubbed after the host
+ * was opened is the one the next write calls.
+ *
  * @param input.config - The loaded nax config (`memory` is read through `memoryConfigOf`)
  * @param input.repoRoot - Absolute repository root; the `.nax` anchor and the mirror identity
  * @param input.source - The label a note this host writes records as its origin
@@ -360,6 +358,16 @@ export async function createMemoryHost(input: CreateMemoryHostInput): Promise<Me
   const parts = await composeMemory(input);
   const hostInput: HostInput = { parts, config, repoRoot: input.repoRoot, logger: input.logger };
   const reads = createReads(hostInput);
+  const writes = createHostWrites({
+    store: parts.store,
+    outbox: parts.outbox,
+    provider: parts.provider,
+    logger: input.logger,
+    source: input.source,
+    writeMode: config.writeMode,
+    repoNotes: async () => (await reads.repoNotes()).notes,
+    operations: _memoryHostDeps,
+  });
   return {
     dirs: parts.dirs,
     providerId: parts.provider.id,
@@ -370,8 +378,8 @@ export async function createMemoryHost(input: CreateMemoryHostInput): Promise<Me
     renderIndex: () => readIndex(reads, hostInput),
     sync: () => syncParts(hostInput),
     status: () => readStatus(reads, hostInput),
-    save: () => Promise.reject(notImplemented("save")),
-    forget: () => Promise.reject(notImplemented("forget")),
-    approve: () => Promise.reject(notImplemented("approve")),
+    save: writes.save,
+    forget: writes.forget,
+    approve: writes.approve,
   };
 }
