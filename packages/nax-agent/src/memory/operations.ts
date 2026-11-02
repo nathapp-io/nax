@@ -45,22 +45,23 @@
  * slug is a refusal. Under `direct` the note goes first, kept aside for a refusal to put back;
  * under `proposal` it stays, and the marker comes from the outbox alone.
  *
- * `approveMemoryNote` is the local transition a proposal waits for, and it is deliberately the
- * smallest of the three: it asks no provider, reads no queue and takes no lock, because a note
- * the mirror holds is the whole of what an approval decides. A pending note is rewritten in
- * force under the caller's clock and the index is regenerated from the mirror; a note already
- * in force is returned as it stands; a note that is history — or one this mirror does not hold —
- * is the same `MEMORY_NOTE_NOT_FOUND` refusal a forget of it would be. A queued forget is not
- * approved by this: its `(forget pending)` marker comes from the outbox, which this never sees.
+ * `approveMemoryNote` is the transition a proposal waits for: a pending note is rewritten in force
+ * under the caller's clock and the index is regenerated from the mirror, a note already in force is
+ * returned as it stands, and a note that is history — or one this mirror does not hold — is the
+ * same `MEMORY_NOTE_NOT_FOUND` refusal a forget of it would be. It asks no provider and writes
+ * nothing to the queue, but it is still a writer of the mirror: what it rewrites must be the note
+ * the mirror holds now, so it takes the same ordering and the same lock a save takes. What it reads
+ * from the queue is the held-forget set, because the index it renders carries that marker and this
+ * operation must not drop it. It approves no queued forget: the entry stays the outbox's.
  */
 import { randomUUID } from "node:crypto";
-import type { AgentLogger } from "#src/infra/agent-logger";
+import { type AgentLogger, getLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
 import { refreshMemoryIndex } from "./index-render.ts";
-import { clockOf, releaseMirrorLock, waitForTurn } from "./mirror-lock.ts";
+import { clockOf, type MirrorLockInput, orderedByStore, withMirrorLock } from "./mirror-lock.ts";
 import { isMemoryPushRejected } from "./note.ts";
-import type { MemoryOutbox } from "./outbox.ts";
+import { createMemoryOutbox, type MemoryOutbox } from "./outbox.ts";
 import type { MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
 import type { MemoryStore } from "./store.ts";
 import { GLOBAL_MEMORY_TIMERS, providerAnswers, raceTimeout, warnQuietly } from "./sync.ts";
@@ -144,8 +145,10 @@ export interface MemoryForgetResult {
 /**
  * One approval: the note to put in force, named by its scope and slug.
  *
- * The mirror is the whole of what an approval decides, so this is the whole of what it is
- * given — no queue to consult, no provider to ask, and no lock to wait for.
+ * The mirror is the whole of what an approval decides, so it is given no queue to declare a
+ * write on and no provider to ask. It is given the seams its lock wait runs on, because the
+ * note it rewrites has to be the note the mirror holds at that moment — and every one of them
+ * has a default, so `{ store, scope, slug }` is a complete input.
  */
 export interface MemoryApproveInput {
   readonly store: MemoryStore;
@@ -153,6 +156,12 @@ export interface MemoryApproveInput {
   readonly slug: string;
   /** The clock an approved note is re-stamped from; default `() => new Date()`. */
   readonly now?: () => Date;
+  /** Reported through when the lock cannot be handed back; default the host logger slot. */
+  readonly logger?: AgentLogger;
+  /** The timer seam the lock wait polls on; default the process globals. */
+  readonly timers?: MemoryTimers;
+  /** The liveness probe a lock holder is judged by; default `isProcessAlive`. */
+  readonly isAlive?: (pid: number) => boolean;
 }
 
 /** The refusal a rejected write is thrown as: the validator's reason as the message, its field as context. */
@@ -195,49 +204,15 @@ async function recordDelivered(input: MemorySaveInput, note: MemoryNote, pushed:
   await input.store.writeNote({ ...note, id: pushed.id, status: pushed.status });
 }
 
-/** Regenerate the indexes from what the store now holds, so the next session reads this save. */
-async function refreshIndex(input: MemoryOperationInput): Promise<void> {
+/**
+ * Regenerate the indexes from what the store now holds, so the next session reads this write.
+ *
+ * The queue is read for the notes whose forget is still waiting: that marker is the outbox
+ * speaking, and an index rendered without it would report a retire that is still in flight as
+ * though it had never been asked for.
+ */
+async function refreshIndex(input: { readonly store: MemoryStore; readonly outbox: MemoryOutbox }): Promise<void> {
   await refreshMemoryIndex(input.store, { heldForgets: await input.outbox.heldKeys("forget") });
-}
-
-/** The tail a store with no save in flight waits behind: nothing. */
-const NO_SAVE: Promise<void> = Promise.resolve();
-
-/**
- * The saves this process is running, by the mirror they write: the tail a save waits behind.
- *
- * The lock file is what makes the mirror's writers exclusive across processes, and a
- * same-process save cannot rely on it — the protocol classifies our own pid as ours and
- * would let the second save take the lock over from the first — so this chain is what
- * orders them here. It is keyed by the mirror rather than by the note key because one
- * store's saves are already one writer: ordering them wholesale is what the lock says
- * about other processes, and it costs a save of a second key only the wait for the first
- * to finish. The stored tail is the one that cannot reject, so one failed save never
- * poisons the next, and the last save of a store drops its entry — a chain left behind is
- * a leak, not a guard.
- */
-const storeChains = new Map<string, Promise<void>>();
-
-/**
- * Run `work` once every earlier save of the same mirror has settled.
- *
- * Taking the tail happens before the first `await`: a queue read after a yield is one two
- * saves both pass, which is exactly the interleaving this orders away. The caller's own
- * rejection is re-thrown unchanged — a refusal must reach its caller, not the next save —
- * and the chain continues from a tail that swallows it.
- */
-async function orderedByStore<T>(lockPath: string, work: () => Promise<T>): Promise<T> {
-  const run = (storeChains.get(lockPath) ?? NO_SAVE).then(work);
-  const tail = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  storeChains.set(lockPath, tail);
-  try {
-    return await run;
-  } finally {
-    if (storeChains.get(lockPath) === tail) storeChains.delete(lockPath);
-  }
 }
 
 /** The undelivered answer: the write is on the queue, not delivered. */
@@ -407,12 +382,7 @@ export async function saveMemoryNote(input: MemorySaveInput): Promise<MemorySave
 async function commitSave(input: MemorySaveInput): Promise<MemorySaveResult> {
   const lockPath = input.store.paths.lock;
   if (syncInFlight(lockPath)) return await queueWithoutMirror(input);
-  const lock = await waitForTurn(input);
-  try {
-    return await deliverLocked(input);
-  } finally {
-    await releaseMirrorLock(input, lock);
-  }
+  return await withMirrorLock(input, () => deliverLocked(input));
 }
 
 /**
@@ -478,12 +448,7 @@ async function restoreForgotten(input: MemoryForgetInput, previous: MemoryNote):
 async function commitForget(input: MemoryForgetInput): Promise<MemoryForgetResult> {
   const request = forgetRequest(input);
   if (syncInFlight(input.store.paths.lock)) return await queueFencedForget(input, request);
-  const lock = await waitForTurn(input);
-  try {
-    return await forgetLocked(input, request);
-  } finally {
-    await releaseMirrorLock(input, lock);
-  }
+  return await withMirrorLock(input, () => forgetLocked(input, request));
 }
 
 /**
@@ -554,25 +519,66 @@ function inForce(note: MemoryNote, now: () => Date): MemoryNote {
   return { ...note, status: "active", updatedAt: now().toISOString() };
 }
 
+/** The mirror's own queue, as an approval reads it: where the index's forget markers live. */
+function mirrorOutbox(store: MemoryStore): MemoryOutbox {
+  return createMemoryOutbox({ dir: store.paths.outboxDir });
+}
+
 /**
- * Put one pending note in force in this mirror.
- *
- * Only the note the mirror holds is consulted, so approval is a local transition rather than an
- * authorization step: it asks no provider and changes nothing on the queue, and a forget waiting
- * on that queue is still waiting afterwards. A note already in force is returned exactly as it
- * stands — approving it again is not a rewrite, so its `updatedAt` still says when it was made
- * active. A note that is history is not a note waiting for approval, and neither is one this
- * mirror does not hold: both are `MEMORY_NOTE_NOT_FOUND`, because there is nothing to approve.
- *
- * The index is regenerated from the mirror after the rewrite, so the ` (pending)` marker the
- * renderer draws from the note's own status is gone from the session that reads it next.
+ * The mirror's lock as this approval takes it: the caller's seam where it gave one, and the
+ * process defaults — including the logger slot — where it did not.
  */
-export async function approveMemoryNote(input: MemoryApproveInput): Promise<MemoryNote> {
+function lockInputOf(input: MemoryApproveInput): MirrorLockInput {
+  return {
+    store: input.store,
+    logger: input.logger ?? getLogger(),
+    now: input.now,
+    timers: input.timers,
+    isAlive: input.isAlive,
+  };
+}
+
+/**
+ * The locked half of an approval: read, decide and rewrite while no other writer of this
+ * mirror can change the note in between.
+ *
+ * The read and the write have to be one decision — that is the whole reason this takes the
+ * lock at all — so a note another writer replaced while this waited is the note that gets
+ * approved, never the copy this operation would otherwise have read before the wait.
+ */
+async function approveLocked(input: MemoryApproveInput): Promise<MemoryNote> {
   const note = await input.store.readNote(input.scope, input.slug);
   if (note === null || RETIRED_STATUSES.has(note.status)) throw noteNotFound(input);
   if (note.status === "active") return note;
   const approved = inForce(note, clockOf(input));
   await input.store.writeNote(approved);
-  await refreshMemoryIndex(input.store);
+  await refreshIndex({ store: input.store, outbox: mirrorOutbox(input.store) });
   return approved;
+}
+
+/**
+ * Put one pending note in force in this mirror.
+ *
+ * Only the note the mirror holds is consulted, so approval is a local transition rather than an
+ * authorization step: it asks no provider and writes nothing to the queue, and a forget waiting
+ * on that queue is still waiting afterwards. What it does read from the queue is the set of
+ * notes whose forget is queued, because the index it regenerates carries that marker and an
+ * index rendered without it would report a still-pending retire as though it had never been
+ * asked for.
+ *
+ * The read and the rewrite are one decision, so they run under the same ordering and the same
+ * lock file a save and a forget use: this is a writer of the mirror, and what it approves must
+ * be the note the mirror holds now rather than a copy read before another writer's newer one
+ * landed. Waiting is the right answer here, unlike a save's — an approval has no queue to put
+ * its write on, so it has to be the writer when it reads.
+ *
+ * A note already in force is returned exactly as it stands — approving it again is not a
+ * rewrite, so its `updatedAt` still says when it was made active. A note that is history is not
+ * a note waiting for approval, and neither is one this mirror does not hold: both are
+ * `MEMORY_NOTE_NOT_FOUND`, because there is nothing to approve.
+ */
+export async function approveMemoryNote(input: MemoryApproveInput): Promise<MemoryNote> {
+  return await orderedByStore(input.store.paths.lock, () =>
+    withMirrorLock(lockInputOf(input), () => approveLocked(input)),
+  );
 }
