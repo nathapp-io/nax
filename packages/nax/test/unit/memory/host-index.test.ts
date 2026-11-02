@@ -10,7 +10,10 @@
  * The index and status reads go through the composed store and outbox on disk, so
  * the notes, the queue and `sync.json` are written exactly as the surfaces that
  * own them write them; only `syncMemory` itself is stubbed, because its own
- * behaviour is feature 1's and is tested there.
+ * behaviour is feature 1's and is tested there. The two byte-cap cases are the
+ * exception: they need 60 notes, and 60 store writes are 60 pinned worker
+ * processes, so they seed the note files through the store's own serializer and
+ * read them back through the store (see `seedMirrorNotes`).
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -23,6 +26,7 @@ import {
   type MemoryOutbox,
   type MemoryStore,
   type MemorySyncResult,
+  serializeMemoryNote,
 } from "@nathapp/nax-agent";
 import { assertDefined, cleanupTempDir, type MockLogger, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { _memoryHostDeps, createMemoryHost, type MemoryHost } from "@/memory";
@@ -101,6 +105,26 @@ describe("host index, sync and status", () => {
     await mirror().writeNote(note);
   }
 
+  /**
+   * Put `count` notes in the mirror in one pass, as `<notesDir>/<slug>.md` files.
+   *
+   * A `store.writeNote` pins the notes directory by spawning a worker process
+   * (`src/internal/pinned-directory.ts`) and proving the pinned identity, so the
+   * cost of a bulk fixture is one process per note — 60 of them overran the
+   * confined runner's 5000 ms per-test budget on CI, where a spawn costs ~60 ms
+   * rather than the ~14 ms it costs locally. The caps below are what is asserted,
+   * and the notes are only the input to them, so they are written here through the
+   * store's own serializer and then read back through the store the host composes.
+   */
+  function seedMirrorNotes(count: number): void {
+    const notesDir = mirror().paths.notesDir;
+    mkdirSync(notesDir, { recursive: true });
+    for (let index = 1; index <= count; index += 1) {
+      const note = noteFor(`note-${String(index).padStart(2, "0")}`);
+      writeFileSync(join(notesDir, `${note.slug}.md`), serializeMemoryNote(note));
+    }
+  }
+
   /** Queue one forget, the way a surface that already took the write queues it. */
   async function queueForget(scope: "project" | "user", slug: string): Promise<void> {
     await outbox().enqueue({ kind: "forget", scope, slug, writeMode: "direct", reason: "stale" });
@@ -156,9 +180,7 @@ describe("host index, sync and status", () => {
 
   test("omits notes when the index is over its byte cap", async () => {
     await openHost(makeNaxConfig({ memory: { indexBytes: SMALL_INDEX_BYTES } }));
-    for (let index = 1; index <= MANY_NOTES; index += 1) {
-      await writeMirrorNote(noteFor(`note-${String(index).padStart(2, "0")}`));
-    }
+    seedMirrorNotes(MANY_NOTES);
 
     const index = await host.renderIndex();
 
@@ -167,9 +189,7 @@ describe("host index, sync and status", () => {
 
   test("cuts the rendered text to the byte cap", async () => {
     await openHost(makeNaxConfig({ memory: { indexBytes: SMALL_INDEX_BYTES } }));
-    for (let index = 1; index <= MANY_NOTES; index += 1) {
-      await writeMirrorNote(noteFor(`note-${String(index).padStart(2, "0")}`));
-    }
+    seedMirrorNotes(MANY_NOTES);
 
     const index = await host.renderIndex();
 
