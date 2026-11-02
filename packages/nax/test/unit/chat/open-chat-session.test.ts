@@ -254,13 +254,15 @@ describe("openChatSession resolved posture", () => {
     const posture = { bashApproval: "gated", askRules: ["Write"], denyRules: [] } as const;
     deps.resolveTuiPermissions = mock(() => posture);
     const backendSpy = spyOn(deps, "nativeBackend");
-    const handle = await open({ mode: "guarded" });
+    // Memory asks off, so this case isolates the posture's own rules reaching the backend untouched.
+    const config = makeNaxConfig({ memory: { askOnSave: false } });
+    const handle = await open({ mode: "guarded", config });
     expect(deps.resolveTuiPermissions).toHaveBeenCalledTimes(1);
-    expect(deps.resolveTuiPermissions).toHaveBeenCalledWith(request.config);
+    expect(deps.resolveTuiPermissions).toHaveBeenCalledWith(config);
     expect(deps.nativeBackend).toHaveBeenCalledWith(
       expect.objectContaining({
         bashApproval: "gated",
-        sandbox: request.config.execution.sandbox,
+        sandbox: config.execution.sandbox,
         askRules: posture.askRules,
         denyRules: posture.denyRules,
         askOnUnsandboxed: true,
@@ -273,6 +275,19 @@ describe("openChatSession resolved posture", () => {
     expect(options?.denyRules).toBe(posture.denyRules);
     expect(handle.meta.bashApproval).toBe("gated");
     expect(deps.createAgentSession).toHaveBeenCalledWith(expect.objectContaining({ profile: "full" }));
+  });
+  test("US-014 AC-18 guarded with memory asks passes the memory writes to the native backend", async () => {
+    const posture = { bashApproval: "gated", askRules: ["Write"], denyRules: [] } as const;
+    deps.resolveTuiPermissions = mock(() => posture);
+    const backendSpy = spyOn(deps, "nativeBackend");
+    const config = makeNaxConfig({ memory: { enabled: true, askOnSave: true } });
+
+    await open({ mode: "guarded", config });
+
+    const options = backendSpy.mock.calls[0]?.[0];
+    expect(options?.askRules).toContain("nax-memory__save");
+    expect(options?.askRules).toContain("nax-memory__forget");
+    expect(options?.askRules).toContain("Write");
   });
   test("AC-11/12 full never resolves or forwards guarded-only keys", async () => {
     deps.resolveTuiPermissions = mock(_openChatSessionDeps.resolveTuiPermissions);

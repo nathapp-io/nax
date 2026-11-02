@@ -470,12 +470,14 @@ describe("runSubagent resolved posture", () => {
   test("AC-16/17/18/21 guarded resolves once and forwards posture without host ports", async () => {
     const posture = { bashApproval: "raw", askRules: ["Write"], denyRules: ["Delete(src/**)"] } as const;
     deps.resolveTuiPermissions = mock(() => posture);
-    await run();
+    // Memory asks off: this case pins the posture's own rules reaching the backend by identity.
+    const config = makeNaxConfig({ memory: { askOnSave: false } });
+    await run({ config });
     expect(deps.resolveTuiPermissions).toHaveBeenCalledTimes(1);
-    expect(deps.resolveTuiPermissions).toHaveBeenCalledWith(input.config);
+    expect(deps.resolveTuiPermissions).toHaveBeenCalledWith(config);
     expect(backendOptions()).toMatchObject({
       bashApproval: "raw",
-      sandbox: input.config.execution.sandbox,
+      sandbox: config.execution.sandbox,
       askRules: posture.askRules,
       denyRules: posture.denyRules,
       askOnUnsandboxed: true,

@@ -1,6 +1,7 @@
 import type {
   CommandRunResult,
   ImageAttachment,
+  LoopHandlerSet,
   SandboxState,
   SessionEvent,
   SessionMeta,
@@ -9,7 +10,6 @@ import type {
 } from "@nathapp/nax-agent";
 import { lookupContextWindow } from "@/agents/catalog";
 import { getProjectKey, type NaxConfig } from "@/config";
-import { createRuleDeliveryHandlers } from "@/context/rules/rule-delivery";
 import { NaxError } from "@/errors";
 import type { InteractionChain } from "@/interaction";
 import type { Logger } from "@/logger";
@@ -35,6 +35,7 @@ import { tierModels } from "./chat-models";
 import { createCloseConfirm } from "./close-confirm";
 import { type ContextWindowCache, createContextWindowCache } from "./context-window-cache";
 import { createHostMemory, type HostMemory } from "./host-memory";
+import { closeChatHost, createChatLoopHandlers } from "./host-wiring";
 import { type ChatJobs, type ChatRunAsks, createHostJobs } from "./jobs";
 import {
   type ChatHistory,
@@ -43,7 +44,7 @@ import {
   openChatSession,
 } from "./open-chat-session";
 import type { ChatResources } from "./resources";
-import { closeChatResources, createSessionHygiene, resumableRows } from "./session-hygiene";
+import { createSessionHygiene, resumableRows } from "./session-hygiene";
 import { sessionAcceptsImages } from "./session-images";
 import { latestResumableId, listCwdSessions } from "./session-listing";
 import { switchChatSession } from "./session-switch";
@@ -154,7 +155,7 @@ class NativeChatHost implements ChatHost {
   private readonly fallback: AskFallback;
   private readonly hygiene: ReturnType<typeof createSessionHygiene>;
   private readonly open: typeof openChatSession;
-  private readonly loopHandlers: ReturnType<typeof createRuleDeliveryHandlers>;
+  private readonly loopHandlers: LoopHandlerSet;
   private readonly projectKey: string;
   private readonly outputDir: string;
   private readonly runs?: SubagentRuns;
@@ -223,16 +224,13 @@ class NativeChatHost implements ChatHost {
     this.hostJobs = hostJobs;
     this.jobs = hostJobs?.jobs;
     this.runAsks = hostJobs?.runAsks;
-    const rules = deps.config.context.rules;
-    this.loopHandlers = Object.freeze([
-      ...(deps.resources?.pluginHandlers ?? []),
-      ...createRuleDeliveryHandlers({
-        repoRoot: deps.repoRoot,
-        overrideDir: rules?.overrideDir,
-        overrideMode: rules?.overrideMode,
-      }),
-      ...(hostJobs?.guard ?? []),
-    ]);
+    this.loopHandlers = createChatLoopHandlers({
+      pluginHandlers: deps.resources?.pluginHandlers,
+      rules: deps.config.context.rules,
+      repoRoot: deps.repoRoot,
+      memory: this.hostMemory.handlers,
+      guard: hostJobs?.guard,
+    });
     const resources = deps.resources;
     if (resources) {
       this.runs = createSubagentRuns({
@@ -581,12 +579,13 @@ class NativeChatHost implements ChatHost {
     try {
       await this.runs?.closeAll();
     } finally {
-      await closeChatResources({
+      await closeChatHost({
         hygiene: this.hygiene,
         handle: this.handle,
         tasks: this.tasks,
         resources: this.deps.resources,
         chain: this.deps.chain,
+        memory: this.hostMemory,
       });
     }
   }

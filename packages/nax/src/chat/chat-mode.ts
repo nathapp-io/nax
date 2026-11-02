@@ -1,8 +1,11 @@
 import type { NativeBackendOptions, SessionMeta } from "@nathapp/nax-agent";
-import type { NaxConfig, TuiPermissions } from "@/config";
+import { memoryConfigOf, type NaxConfig, type TuiPermissions } from "@/config";
 import { NaxError } from "@/errors";
 
 export type ChatMode = "full" | "guarded";
+
+/** The two memory writes a guarded native session asks about. `get` and `search` never ask. */
+const MEMORY_WRITE_RULES: readonly string[] = Object.freeze(["nax-memory__save", "nax-memory__forget"]);
 
 export interface ChatSessionSettings {
   readonly profile: "full";
@@ -26,6 +29,20 @@ function requiredPosture(posture: TuiPermissions | undefined): TuiPermissions {
   return posture;
 }
 
+/**
+ * The asks a guarded session resolves to: the posture's own rules, with the two
+ * memory writes appended when the config asks about them.
+ *
+ * With `askOnSave` off — or memory disabled — the posture's array is handed back by
+ * identity, so a session that never touches memory is offered exactly the rules the
+ * resolver produced and nothing has to be re-derived downstream.
+ */
+function guardedAskRules(config: Pick<NaxConfig, "memory">, askRules: readonly string[]): readonly string[] {
+  const memory = memoryConfigOf(config);
+  if (!memory.enabled || !memory.askOnSave) return askRules;
+  return [...askRules, ...MEMORY_WRITE_RULES];
+}
+
 /** Backend overlays consume the opener's resolved posture; full never reads guarded policy. */
 export function chatBackendPosture(
   mode: ChatMode,
@@ -39,7 +56,7 @@ export function chatBackendPosture(
   const resolved = requiredPosture(posture);
   return {
     sandbox: config.execution.sandbox,
-    askRules: resolved.askRules,
+    askRules: guardedAskRules(config, resolved.askRules),
     denyRules: resolved.denyRules,
     askOnUnsandboxed: true,
     askWhenSandboxDown: true,

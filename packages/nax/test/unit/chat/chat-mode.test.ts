@@ -32,7 +32,8 @@ describe("chatBackendPosture", () => {
     expect(chatSessionSettings("full", undefined)).toEqual({ profile: "full", bashApproval: "raw", metaMode: "full" });
   });
   test("AC-6 guarded forwards rules by identity and all ask overlays", () => {
-    const config = makeNaxConfig();
+    // Memory asks off: the fixture pins pass-through, which is the arm that keeps `askRules` identical.
+    const config = makeNaxConfig({ memory: { askOnSave: false } });
     const posture = { bashApproval: "raw", askRules: ["Write"], denyRules: ["Delete(src/**)"] } as const;
     const options = chatBackendPosture("guarded", config, posture);
     expect(options).toEqual({

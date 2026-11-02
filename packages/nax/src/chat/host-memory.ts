@@ -17,10 +17,10 @@
  * a note saved mid-session reaches the next open rather than the current one.
  *
  * Everything the host does with memory goes through this object, so the host itself
- * only holds it and calls it. `handlers` and `closeSync` are the seam US-014 fills:
- * the compaction handler and the close-time sync.
+ * only holds it and calls it. `handlers` and `closeSync` are the compaction flush
+ * and the close-time sync: both are one `sync()` behind the same guard.
  */
-import type { LoopHandlerSet } from "@nathapp/nax-agent";
+import type { ExternalHandlerOf, LoopEvent, LoopHandlerSet } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Logger } from "@/logger";
 import type { MemoryHost } from "@/memory";
@@ -44,32 +44,58 @@ export interface HostMemory {
    * returned instead, so two operations that overlap cannot swap snapshots.
    */
   current(): string | undefined;
-  /** The loop handlers memory registers on a session; empty until US-014 adds compaction. */
+  /** The loop handlers memory registers on a session; empty when this chat has no memory. */
   readonly handlers: LoopHandlerSet;
-  /** Sync once as the host closes; the host wires it into teardown in US-014. */
+  /** Sync once as the host closes, after every resource teardown; never throws. */
   closeSync(): Promise<void>;
 }
 
-/** No handlers yet: compaction registration is US-014's. */
+/**
+ * The plugin name the one entry this module registers carries. It is the memory
+ * tool provider's id (`MEMORY_TOOL_PROVIDER_ID`), spelled here rather than imported
+ * so a chat host does not pull the tool provider's module graph in to name an
+ * entry — the same choice `chat-mcp.ts` makes for its reserved server ids.
+ */
+export const HOST_MEMORY_PLUGIN = "nax-memory";
+
+/** No handlers when there is no memory host: `handlers` is the chat's only entry. */
 const NO_HANDLERS: LoopHandlerSet = Object.freeze([]);
 
-/** Build one host's memory side. Nothing is read from `memory` until `prepare` is called. */
+/** One guarded sync: a throw is a warning, and an expected outcome is not a throw. */
+async function syncOnce(memory: MemoryHost, logger: Pick<Logger, "warn">): Promise<void> {
+  try {
+    await memory.sync();
+  } catch (error) {
+    logger.warn("chat", "memory sync failed", { error: errorMessage(error) });
+  }
+}
+
+/**
+ * The one entry a chat with memory registers: a flush before the transcript is
+ * summarised, so a note saved mid-session reaches the mirror before the turn that
+ * carried it is compacted away. It answers `undefined` — always. The summary is the
+ * summarizer's, and a mirror flush is not a replacement for it.
+ */
+function compactionHandlers(memory: MemoryHost, logger: Pick<Logger, "warn">): LoopHandlerSet {
+  const beforeCompaction: ExternalHandlerOf<LoopEvent> = async () => {
+    await syncOnce(memory, logger);
+    return undefined;
+  };
+  const entries: LoopHandlerSet = [
+    { plugin: HOST_MEMORY_PLUGIN, event: "before_compaction", handler: beforeCompaction },
+  ];
+  return Object.freeze(entries);
+}
+
+/** Build one host's memory side. Nothing is read from `memory` until a flush is due. */
 export function createHostMemory(input: CreateHostMemoryInput): HostMemory {
   let index: string | undefined;
-
-  /** One guarded sync: a throw is a warning, and an expected outcome is not a throw. */
-  async function syncOnce(memory: MemoryHost): Promise<void> {
-    try {
-      await memory.sync();
-    } catch (error) {
-      input.logger.warn("chat", "memory sync failed", { error: errorMessage(error) });
-    }
-  }
+  const memory = input.memory;
 
   /** The index this open should carry, replacing whatever the previous open had. */
-  async function renderIndex(memory: MemoryHost): Promise<string | undefined> {
+  async function renderIndex(host: MemoryHost): Promise<string | undefined> {
     try {
-      return (await memory.renderIndex()).text;
+      return (await host.renderIndex()).text;
     } catch (error) {
       input.logger.warn("chat", "memory index unavailable", { error: errorMessage(error) });
       return undefined;
@@ -78,18 +104,16 @@ export function createHostMemory(input: CreateHostMemoryInput): HostMemory {
 
   return {
     async prepare() {
-      const memory = input.memory;
       if (memory === undefined) return undefined;
-      await syncOnce(memory);
+      await syncOnce(memory, input.logger);
       index = await renderIndex(memory);
       return index;
     },
     current: () => index,
-    handlers: NO_HANDLERS,
+    handlers: memory === undefined ? NO_HANDLERS : compactionHandlers(memory, input.logger),
     async closeSync() {
-      const memory = input.memory;
       if (memory === undefined) return;
-      await syncOnce(memory);
+      await syncOnce(memory, input.logger);
     },
   };
 }
