@@ -222,18 +222,31 @@ describe("writeFileAtomic", () => {
     expect(await readFile(join(dir, stages[0] ?? "", "stage"), "utf8")).toBe("");
   });
 
-  test.each([false, true])(
-    "[B5] cleanup preserves a foreign payload after stage replacement (pinned=%s)",
-    async (pinned) => {
+  test.each([
+    [false, "symlink"],
+    [true, "symlink"],
+    [false, "directory"],
+    [true, "directory"],
+  ] as const)(
+    "[B5] cleanup preserves a foreign payload after stage replacement (pinned=%s, replacement=%s)",
+    async (pinned, replacement) => {
       const parent = realpathSync(dir);
       const foreign = join(parent, "foreign");
       await mkdir(foreign);
       await writeFile(join(foreign, "stage"), "foreign payload");
       const realDiscard = _atomicWriteDeps.discard;
       let swapped = false;
+      let replacementPayload = "";
       _atomicWriteDeps.discard = async (stageDir) => {
+        // Replace the namespace at the cleanup boundary, not before an identity check.
         await rename(stageDir, `${stageDir}.aside`);
-        await symlink(foreign, stageDir);
+        if (replacement === "symlink") {
+          await symlink(foreign, stageDir);
+        } else {
+          await mkdir(stageDir);
+          await writeFile(join(stageDir, "stage"), "foreign payload");
+        }
+        replacementPayload = join(stageDir, "stage");
         swapped = true;
         await realDiscard(stageDir);
       };
@@ -259,6 +272,7 @@ describe("writeFileAtomic", () => {
       ).rejects.toBe(failure);
 
       expect(swapped).toBe(true);
+      expect(await readFile(replacementPayload, "utf8")).toBe("foreign payload");
       expect(await readFile(join(foreign, "stage"), "utf8")).toBe("foreign payload");
     },
   );

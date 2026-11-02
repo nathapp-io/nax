@@ -350,54 +350,68 @@ describe("memory store confinement", () => {
     });
 
     test.each([
-      ["read", "open"],
-      ["list", "open"],
-      ["read", "stat"],
-      ["list", "stat"],
-      ["read", "pin"],
-      ["list", "pin"],
-    ])("[B2] %s never follows a symlink destination parent replaced before %s", async (operation, phase) => {
-      await withTempDir(async (dir) => {
-        const project = projectPath(dir);
-        const targetDir = join(project, "targets");
-        const outside = join(dir, "outside");
-        const target = join(targetDir, "target.md");
-        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
-        await writeFixture(target, serializeMemoryNote(note({ body: "real body" })));
-        await writeFixture(join(outside, "target.md"), serializeMemoryNote(note({ body: "leaked body" })));
-        await mkdir(store.paths.notesDir);
-        await symlink(target, join(store.paths.notesDir, "replay-budget.md"));
-        const realOpen = _memoryStoreDeps.open;
-        const realStat = _memoryStoreDeps.stat;
-        const realPin = _memoryStoreDeps.pin;
-        let swapped = false;
-        const swap = async () => {
-          await rename(targetDir, join(project, "targets-aside"));
-          await symlink(outside, targetDir);
-          swapped = true;
-        };
-        _memoryStoreDeps.open = async (path, flags) => {
-          if (phase === "open" && path.endsWith("/targets/target.md")) await swap();
-          return realOpen(path, flags);
-        };
-        _memoryStoreDeps.stat = async (path) => {
-          if (phase === "stat" && path.endsWith("/targets")) await swap();
-          return realStat(path);
-        };
-        _memoryStoreDeps.pin = async (input, action) => {
-          if (phase === "pin" && input.path.endsWith("/targets")) await swap();
-          return realPin(input, action);
-        };
+      ["project", "read", "open"],
+      ["project", "list", "open"],
+      ["project", "read", "stat"],
+      ["project", "list", "stat"],
+      ["project", "read", "pin"],
+      ["project", "list", "pin"],
+      ["user", "read", "open"],
+      ["user", "list", "open"],
+      ["user", "read", "stat"],
+      ["user", "list", "stat"],
+      ["user", "read", "pin"],
+      ["user", "list", "pin"],
+    ] as const)(
+      "[B2] %s %s never follows a symlink destination parent replaced before %s",
+      async (scope, operation, phase) => {
+        await withTempDir(async (dir) => {
+          const root = join(dir, scope);
+          const targetDir = join(root, "targets");
+          const outside = join(dir, "outside");
+          const target = join(targetDir, "target.md");
+          const store = createMemoryStore({
+            projectDir: projectPath(dir),
+            userDir: join(dir, "user"),
+            logger: makeLogger(),
+          });
+          await writeFixture(target, serializeMemoryNote(note({ scope, body: "real body" })));
+          await writeFixture(join(outside, "target.md"), serializeMemoryNote(note({ scope, body: "leaked body" })));
+          const notesDir = join(root, "notes");
+          await mkdir(notesDir);
+          await symlink(target, join(notesDir, "replay-budget.md"));
+          const realOpen = _memoryStoreDeps.open;
+          const realStat = _memoryStoreDeps.stat;
+          const realPin = _memoryStoreDeps.pin;
+          let swapped = false;
+          const swap = async () => {
+            await rename(targetDir, join(root, "targets-aside"));
+            await symlink(outside, targetDir);
+            swapped = true;
+          };
+          _memoryStoreDeps.open = async (path, flags) => {
+            if (phase === "open" && path.endsWith("/targets/target.md")) await swap();
+            return realOpen(path, flags);
+          };
+          _memoryStoreDeps.stat = async (path) => {
+            if (phase === "stat" && path.endsWith("/targets")) await swap();
+            return realStat(path);
+          };
+          _memoryStoreDeps.pin = async (input, action) => {
+            if (phase === "pin" && input.path.endsWith("/targets")) await swap();
+            return realPin(input, action);
+          };
 
-        const result = await (operation === "read"
-          ? store.readNote("project", "replay-budget")
-          : store.listNotes("project")
-        ).catch((error: unknown) => error);
+          const result = await (operation === "read"
+            ? store.readNote(scope, "replay-budget")
+            : store.listNotes(scope)
+          ).catch((error: unknown) => error);
 
-        expect(swapped).toBe(true);
-        expectConfinedRead(result, operation, phase);
-      });
-    });
+          expect(swapped).toBe(true);
+          expectConfinedRead(result, operation, phase);
+        });
+      },
+    );
 
     test("readNote takes its bytes from the pinned parent, not from the path it checked", async () => {
       await withTempDir(async (dir) => {
