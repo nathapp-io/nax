@@ -14,13 +14,29 @@
  * save is validated once, where the note is written.
  *
  * `get` takes a slug and never an id: ids are the provider's own, and the index a
- * session reads lists slugs. `save` and `forget` are present with their schemas and
- * their input checks, and answer `[memory] not implemented` until the write story
- * lands; nothing here reaches the host's write surface yet.
+ * session reads lists slugs. `save` and `forget` hand the host the note the model
+ * wrote and the reason it gave, and answer with the result the host resolved —
+ * whose validation is the store's, so a refusal arrives here as the reason it was
+ * refused rather than as a second, weaker check kept in this file.
+ *
+ * Every throw becomes a line the model can act on, never a rejected tool: a note
+ * the repository owns is reported with the file to edit, a refused write with the
+ * validator's reason, a missing note as the same `no note` line `get` answers with,
+ * and anything else as `<tool> failed: <message>`.
  */
-import type { MemoryHit, MemoryNote, MemoryScope, ProviderTool, ToolProvider, ToolResult } from "@nathapp/nax-agent";
+import type {
+  MemoryHit,
+  MemoryNote,
+  MemoryNoteType,
+  MemoryNoteWrite,
+  MemoryScope,
+  ProviderTool,
+  ToolProvider,
+  ToolResult,
+} from "@nathapp/nax-agent";
 import { MEMORY_SLUG_RE } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { NaxError } from "@/errors";
 import { buildMemoryToolInstructions } from "@/prompts";
 import type { MemoryHost, MemorySearchInput } from "./host";
 
@@ -38,8 +54,6 @@ const DEFAULT_SCOPE: MemoryScope = "project";
 const SCOPE_VALUES: readonly MemoryScope[] = ["project", "user"];
 /** The fields `save` cannot be called without; its schema requires the same four. */
 const SAVE_REQUIRED_FIELDS = ["slug", "type", "description", "body"] as const;
-/** What a write tool answers until the write story implements it. */
-const NOT_IMPLEMENTED: ToolResult = { isError: true, content: "[memory] not implemented" };
 
 /** A tool's input after its shape checks, or the refusal that stopped it. */
 type Checked<T> = { readonly ok: true; readonly input: T } | { readonly ok: false; readonly result: ToolResult };
@@ -94,6 +108,54 @@ function noteJson(note: MemoryNote): string {
   return JSON.stringify({ id, slug, type, scope, description, source, updatedAt, status, body });
 }
 
+/** The line a tool answers with when the note its request named is not there. */
+function noNote(scope: MemoryScope, slug: string): ToolResult {
+  return { isError: true, content: `[memory] no note ${scope}/${slug}` };
+}
+
+/** The four strings a save cannot be called without, in the order its schema lists them. */
+interface SaveFields {
+  readonly slug: string;
+  readonly type: string;
+  readonly description: string;
+  readonly body: string;
+}
+
+/** The four strings a save was given, or the refusal of the first one the request left out. */
+function saveFieldsOf(input: Record<string, unknown>): Checked<SaveFields> {
+  const slug = stringOf(input, "slug");
+  if (!slug.ok) return slug;
+  const type = stringOf(input, "type");
+  if (!type.ok) return type;
+  const description = stringOf(input, "description");
+  if (!description.ok) return description;
+  const body = stringOf(input, "body");
+  if (!body.ok) return body;
+  return { ok: true, input: { slug: slug.input, type: type.input, description: description.input, body: body.input } };
+}
+
+/**
+ * The note type the model named, as the store's own vocabulary.
+ *
+ * The four types are the store's model and `saveMemoryNote` is what refuses a value
+ * outside it, so the string is handed on rather than a second copy of the list being
+ * kept here: a note is validated once, where it is written.
+ */
+function noteTypeOf(type: string): MemoryNoteType {
+  return type as MemoryNoteType;
+}
+
+/** One save's write: the fields the model gave, stamped with the scope it named. */
+function saveWriteOf(fields: SaveFields, scope: MemoryScope): MemoryNoteWrite {
+  return {
+    slug: fields.slug,
+    type: noteTypeOf(fields.type),
+    scope,
+    description: fields.description,
+    body: fields.body,
+  };
+}
+
 /** One note, read whole. An absent slug is the one answer that is not a note. */
 async function runGet(host: MemoryHost, input: Record<string, unknown>): Promise<ToolResult> {
   const slug = slugOf(input);
@@ -101,7 +163,7 @@ async function runGet(host: MemoryHost, input: Record<string, unknown>): Promise
   const scope = scopeOf(input);
   if (!scope.ok) return scope.result;
   const note = await host.getNote(scope.input, slug.input);
-  if (note === null) return { isError: true, content: `[memory] no note ${scope.input}/${slug.input}` };
+  if (note === null) return noNote(scope.input, slug.input);
   return { content: noteJson(note) };
 }
 
@@ -124,41 +186,63 @@ async function runSearch(host: MemoryHost, input: Record<string, unknown>): Prom
   return { content: JSON.stringify({ hits }) };
 }
 
-/** One save, checked for shape and then held until the write story lands. */
-function runSave(input: Record<string, unknown>): ToolResult {
-  for (const field of SAVE_REQUIRED_FIELDS) {
-    const checked = stringOf(input, field);
-    if (!checked.ok) return checked.result;
-  }
+/** One save: the note the model wrote, written where its content is validated. */
+async function runSave(host: MemoryHost, input: Record<string, unknown>): Promise<ToolResult> {
+  const fields = saveFieldsOf(input);
+  if (!fields.ok) return fields.result;
   const scope = scopeOf(input);
   if (!scope.ok) return scope.result;
-  return NOT_IMPLEMENTED;
+  const result = await host.save(saveWriteOf(fields.input, scope.input));
+  return { content: JSON.stringify(result) };
 }
 
-/** One forget, checked for shape and then held until the write story lands. */
-function runForget(input: Record<string, unknown>): ToolResult {
+/** One forget: the note to retire, why, and the scope it lives in. */
+async function runForget(host: MemoryHost, input: Record<string, unknown>): Promise<ToolResult> {
   const slug = slugOf(input);
   if (!slug.ok) return slug.result;
   const reason = stringOf(input, "reason");
   if (!reason.ok) return reason.result;
   const scope = scopeOf(input);
   if (!scope.ok) return scope.result;
-  return NOT_IMPLEMENTED;
+  const result = await host.forget({ scope: scope.input, slug: slug.input, reason: reason.input });
+  return { content: JSON.stringify(result) };
+}
+
+/**
+ * The result a throw becomes: the refusals the model can act on, then everything else.
+ *
+ * A note the repository owns is reported with the host's own message, which names the
+ * file to edit; a write the store refused is reported as the refusal it is, with the
+ * validator's reason; a note that is not there is the same `no note` line `get` answers
+ * with. Anything else — a full disk, a lock that would not wait — is named by the tool
+ * that failed, so a session knows which call not to repeat.
+ */
+function failure(tool: string, input: Record<string, unknown>, error: unknown): ToolResult {
+  const code = error instanceof NaxError ? error.code : undefined;
+  if (code === "MEMORY_NOTE_READ_ONLY") return { isError: true, content: `[memory] ${errorMessage(error)}` };
+  if (code === "MEMORY_WRITE_REFUSED")
+    return { isError: true, content: `[memory] save refused: ${errorMessage(error)}` };
+  const scope = scopeOf(input);
+  const slug = slugOf(input);
+  if (code === "MEMORY_NOTE_NOT_FOUND" && scope.ok && slug.ok) return noNote(scope.input, slug.input);
+  return { isError: true, content: `[memory] ${tool} failed: ${errorMessage(error)}` };
 }
 
 /**
  * Run one tool action, turning a throw into the result the model sees.
  *
- * A tool's contract is that it answers, never throws: a failing read is the
- * session's problem to work around, not a lost turn. The read tools report only
- * which of them failed and why; a write's own refusals are mapped where the write
- * lives.
+ * A tool's contract is that it answers, never throws: a failing read or a refused
+ * write is the session's problem to work around, not a lost turn.
  */
-async function answer(tool: string, action: () => Promise<ToolResult>): Promise<ToolResult> {
+async function answer(
+  tool: string,
+  input: Record<string, unknown>,
+  action: () => Promise<ToolResult>,
+): Promise<ToolResult> {
   try {
     return await action();
   } catch (error) {
-    return { isError: true, content: `[memory] ${tool} failed: ${errorMessage(error)}` };
+    return failure(tool, input, error);
   }
 }
 
@@ -213,25 +297,25 @@ function memoryTools(host: MemoryHost): readonly ProviderTool[] {
       localName: "get",
       description: "Read one saved memory note in full, by its slug.",
       inputSchema: GET_SCHEMA,
-      run: (input) => answer("get", () => runGet(host, input)),
+      run: (input) => answer("get", input, () => runGet(host, input)),
     },
     {
       localName: "search",
       description: "Find saved memory notes by keyword.",
       inputSchema: SEARCH_SCHEMA,
-      run: (input) => answer("search", () => runSearch(host, input)),
+      run: (input) => answer("search", input, () => runSearch(host, input)),
     },
     {
       localName: "save",
       description: "Save a note a future session would need: one fact, short.",
       inputSchema: SAVE_SCHEMA,
-      run: async (input) => runSave(input),
+      run: (input) => answer("save", input, () => runSave(host, input)),
     },
     {
       localName: "forget",
       description: "Retire a saved memory note that is wrong, with the reason.",
       inputSchema: FORGET_SCHEMA,
-      run: async (input) => runForget(input),
+      run: (input) => answer("forget", input, () => runForget(host, input)),
     },
   ];
 }
@@ -243,7 +327,7 @@ function memoryTools(host: MemoryHost): readonly ProviderTool[] {
  * are as trustworthy as a built-in tool's. Attached to every stage, because a
  * memory note is worth reading wherever an agent runs.
  *
- * @param host - The memory host every tool reads (and, once the writes land, writes) through
+ * @param host - The memory host every tool reads and writes through
  */
 export function createMemoryToolProvider(host: MemoryHost): ToolProvider {
   return {

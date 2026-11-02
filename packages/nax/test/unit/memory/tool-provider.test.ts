@@ -12,6 +12,9 @@
  * repository, so the note `get` reads is the file a teammate committed rather than
  * a mock. The host's two reads are wrapped in `mock()` so a case can assert the
  * call it got — and, for the refused inputs, that the host was never asked at all.
+ *
+ * The write tools and the failure line each of the four tools answers with are
+ * covered in `tool-provider-writes.test.ts`.
  */
 
 import { afterEach, beforeEach, describe, expect, type Mock, mock, test } from "bun:test";
@@ -232,27 +235,6 @@ describe("createMemoryToolProvider", () => {
   describe("instructions", () => {
     test("AC-15 is the memory protocol text", async () => {
       expect(await provider.instructions?.(repoRoot)).toBe(buildMemoryToolInstructions());
-    });
-  });
-
-  describe("writes pending US-009", () => {
-    test("save answers not implemented", async () => {
-      const result = await run("save", { slug: "replay-budget", type: "project", description: "d", body: "b" });
-
-      expect(result).toEqual({ isError: true, content: "[memory] not implemented" });
-    });
-
-    test("forget answers not implemented", async () => {
-      const result = await run("forget", { slug: "replay-budget", reason: "stale" });
-
-      expect(result).toEqual({ isError: true, content: "[memory] not implemented" });
-    });
-
-    test("save refuses a missing required field", async () => {
-      const result = await run("save", { slug: "replay-budget" });
-
-      expect(result.isError).toBe(true);
-      expect(result.content).not.toBe("[memory] not implemented");
     });
   });
 
