@@ -3,7 +3,7 @@
   "feature": "memory-chat",
   "branchName": "feat/memory-chat",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-02T18:00:26.034Z",
+  "updatedAt": "2026-11-02T18:17:10.386Z",
   "userStories": [
     {
       "id": "US-001",
@@ -923,14 +923,17 @@
       "dependencies": [
         "US-013"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Native permission overlays, loop handler ordering and idempotent session teardown are security-critical and require strict isolated TDD."
+        "reasoning": "Native permission overlays, loop handler ordering and idempotent session teardown are security-critical and require strict isolated TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/host-memory.ts",
@@ -974,7 +977,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "85593747a125d4bd5f4675cc9eff91cc9712d7de"
     },
     {
       "id": "US-015",
