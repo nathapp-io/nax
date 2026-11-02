@@ -111,10 +111,13 @@ export {
   type MemorySyncState,
   type MemoryTimers,
   type MemoryWriteRefusal,
+  type RenderedMemoryIndex,
+  type RenderMemoryIndexInput,
   createMemoryStore,
   findSecret,
   isMemoryPushRejected,
   parseMemoryNote,
+  renderMemoryIndex,
   serializeMemoryNote,
   validateMemoryNoteWrite,
 } from "#src/memory/index";

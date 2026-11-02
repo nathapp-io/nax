@@ -1,4 +1,9 @@
 export {
+  type RenderedMemoryIndex,
+  type RenderMemoryIndexInput,
+  renderMemoryIndex,
+} from "./index-render.ts";
+export {
   isMemoryPushRejected,
   parseMemoryNote,
   parseMemoryNoteRecord,

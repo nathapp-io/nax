@@ -257,6 +257,8 @@ type ReadFileSliceResult
 type RegisteredSink
 type RemovalDecision
 type RemovalResult
+type RenderMemoryIndexInput
+type RenderedMemoryIndex
 type ResolveResult
 type ResolveStatus
 type ResolvedPermissions
@@ -479,6 +481,7 @@ registerCodingTool
 registerToolAuditSink
 removeApprovals
 removeStoredProvider
+renderMemoryIndex
 renderProviderInstructions
 requestCapabilityTool
 resetSandboxBackend
