@@ -3,7 +3,7 @@
   "feature": "memory-chat",
   "branchName": "feat/memory-chat",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-02T15:10:39.263Z",
+  "updatedAt": "2026-11-02T15:25:05.244Z",
   "userStories": [
     {
       "id": "US-001",
@@ -238,14 +238,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Parent symlink restrictions are a security boundary; the bounded scanner otherwise extends the existing reader."
+        "reasoning": "Parent symlink restrictions are a security boundary; the bounded scanner otherwise extends the existing reader.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/repo-notes.ts",
@@ -262,7 +265,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "86b507dff759fe276d2b64cf7c299446bf0be5d0"
     },
     {
       "id": "US-005",
