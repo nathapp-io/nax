@@ -1,12 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import {
   createLocalMemoryProvider,
   createMemoryStore,
+  isMemoryPushRejected,
   type MemoryNote,
   type MemoryProvider,
   type MemoryWriteRequest,
+  NaxError,
 } from "@nathapp/nax-agent";
-import { assertNaxError, makeLogger, withTempDir } from "#test/helpers/index";
+import { _memoryStoreDeps } from "#src/memory/store";
+import { assertNaxError, makeLogger, withDepsRestore, withTempDir } from "#test/helpers/index";
 
 /** The example note from the memory-store design, with overrides. */
 function note(overrides: Partial<MemoryNote> = {}): MemoryNote {
@@ -61,6 +66,8 @@ async function caught(promise: Promise<unknown>): Promise<unknown> {
 }
 
 describe("createLocalMemoryProvider", () => {
+  withDepsRestore(_memoryStoreDeps);
+
   test('AC-1: the provider id is "local" and it is always reachable', async () => {
     await withTempDir(async (dir) => {
       const store = createMemoryStore({ projectDir: dir, logger: makeLogger() });
@@ -177,6 +184,76 @@ describe("createLocalMemoryProvider", () => {
       expect(error).toMatchObject({ code: "MEMORY_PUSH_REJECTED", context: { stage: "memory" } });
       expect(error.message).toBe('memory save for "replay-budget" carries no note');
       expect(await store.listNotes("project")).toEqual([]);
+    });
+  });
+
+  test("AC-8: a save for an invalid slug is a push rejection, not a transient failure", async () => {
+    await withTempDir(async (dir) => {
+      const store = createMemoryStore({ projectDir: dir, logger: makeLogger() });
+      const provider = createLocalMemoryProvider(store);
+      const unsluggable = note({ slug: "Bad_Slug" });
+
+      const error = await caught(provider.push(saveRequest(unsluggable)));
+
+      assertNaxError(error, "push of a save with an invalid slug");
+      expect(error).toMatchObject({
+        code: "MEMORY_PUSH_REJECTED",
+        context: { stage: "memory", storeCode: "MEMORY_SLUG_INVALID" },
+      });
+      // The reason is the store's own, and the original error is kept as the cause.
+      expect(error.message).toContain("Bad_Slug");
+      expect(error.context?.cause).toBeInstanceOf(NaxError);
+      expect(await store.listNotes("project")).toEqual([]);
+    });
+  });
+
+  test("AC-8: a save into an unavailable scope is a push rejection", async () => {
+    await withTempDir(async (dir) => {
+      // No userDir: nothing about retrying can make a user-scope write land here.
+      const store = createMemoryStore({ projectDir: dir, logger: makeLogger() });
+      const provider = createLocalMemoryProvider(store);
+      const userNote = note({ scope: "user", slug: "workspace-layout" });
+
+      const error = await caught(provider.push(saveRequest(userNote)));
+
+      assertNaxError(error, "push of a user-scope save without a user directory");
+      expect(error).toMatchObject({
+        code: "MEMORY_PUSH_REJECTED",
+        context: { stage: "memory", storeCode: "MEMORY_SCOPE_UNAVAILABLE" },
+      });
+      expect(existsSync(join(dir, "notes"))).toBe(false);
+    });
+  });
+
+  test("AC-8: a forget for an invalid slug is a push rejection too", async () => {
+    await withTempDir(async (dir) => {
+      const store = createMemoryStore({ projectDir: dir, logger: makeLogger() });
+      const provider = createLocalMemoryProvider(store);
+
+      const error = await caught(provider.push(forgetRequest({ slug: "Bad_Slug" })));
+
+      assertNaxError(error, "push of a forget with an invalid slug");
+      expect(error).toMatchObject({
+        code: "MEMORY_PUSH_REJECTED",
+        context: { stage: "memory", storeCode: "MEMORY_SLUG_INVALID" },
+      });
+    });
+  });
+
+  test("AC-8: a transient store I/O failure propagates unchanged", async () => {
+    await withTempDir(async (dir) => {
+      const store = createMemoryStore({ projectDir: dir, logger: makeLogger() });
+      const provider = createLocalMemoryProvider(store);
+      const failure = Object.assign(new Error("EACCES: permission denied, mkdir"), { code: "EACCES" });
+      _memoryStoreDeps.mkdir = async () => {
+        throw failure;
+      };
+
+      const error = await caught(provider.push(saveRequest(note())));
+
+      // Not a rejection: a retry may well succeed.
+      expect(error).toBe(failure);
+      expect(isMemoryPushRejected(error)).toBe(false);
     });
   });
 
