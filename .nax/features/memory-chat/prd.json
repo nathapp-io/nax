@@ -3,7 +3,7 @@
   "feature": "memory-chat",
   "branchName": "feat/memory-chat",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-02T18:58:07.067Z",
+  "updatedAt": "2026-11-02T19:08:31.444Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1223,14 +1223,17 @@
       "dependencies": [
         "US-017"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "CLI writes combine body input modes with secret/type refusal propagation and must preserve security-critical no-write-on-refusal behavior."
+        "reasoning": "CLI writes combine body input modes with secret/type refusal propagation and must preserve security-critical no-write-on-refusal behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/memory.ts",
@@ -1250,7 +1253,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5f3a3e166f811c582382d2547043acce76e60023"
     },
     {
       "id": "US-019",
