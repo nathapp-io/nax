@@ -3,7 +3,7 @@
   "feature": "memory-store",
   "branchName": "feat/memory-store",
   "createdAt": "2026-11-02T00:00:00.000Z",
-  "updatedAt": "2026-11-02T05:28:22.634Z",
+  "updatedAt": "2026-11-02T05:37:17.588Z",
   "userStories": [
     {
       "id": "US-001",
@@ -802,14 +802,17 @@
       "dependencies": [
         "US-012"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Fills one ordered drain loop using already-tested timeout, provider, outbox and store seams; permanent versus transient handling is explicit and lock ownership is unchanged."
+        "reasoning": "Fills one ordered drain loop using already-tested timeout, provider, outbox and store seams; permanent versus transient handling is explicit and lock ownership is unchanged.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/sync.ts",
@@ -823,7 +826,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c6a3887faf36307b3cea750afe0fcf96bf7bc135"
     },
     {
       "id": "US-014",
