@@ -135,10 +135,16 @@ function harness(dir: string, script: Parameters<typeof makeMemoryProvider>[0] =
   };
 }
 
-/** The mirrored note under the slug every save here writes, asserted to exist and be staged. */
-async function staged(h: Harness): Promise<MemoryNote> {
+/** The mirrored note under the slug every save here writes, whatever became of it. */
+async function mirrored(h: Harness): Promise<MemoryNote> {
   const stored = await h.store.readNote("project", "replay-budget");
   assertDefined(stored, "mirrored note");
+  return stored;
+}
+
+/** The mirrored note, asserted to be staged rather than delivered. */
+async function staged(h: Harness): Promise<MemoryNote> {
+  const stored = await mirrored(h);
   // Staged, not delivered: the note still carries the id and clock it was minted with.
   expect(stored.status).toBe("active");
   expect(stored.source).toBe(SOURCE);
@@ -154,6 +160,20 @@ async function soleEntry(h: Harness): Promise<MemoryOutboxEntry> {
   assertDefined(entry, "queued outbox entry");
   return entry;
 }
+
+/** A promise the test resolves by hand: what keeps one save in flight while a second starts. */
+function deferred(): { readonly promise: Promise<void>; readonly release: () => void } {
+  let release = (): void => undefined;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release: () => release() };
+}
+
+/** The description of the write staged first in the two-saves-in-flight tests. */
+const FIRST_WRITE = "replay budget stays 2,048 MiB";
+/** The description of the write staged second: the one the mirror and the queue must end on. */
+const SECOND_WRITE = "replay budget stays 4,096 MiB";
 
 describe("saveMemoryNote when the provider does not take the write", () => {
   test("AC-1: an unreachable provider mirrors the note and queues it under the same client id", async () => {
@@ -257,6 +277,69 @@ describe("saveMemoryNote when the provider does not take the write", () => {
       expect(queued.seq).toBeGreaterThan(waiting.seq);
       expect(queued).toMatchObject({ kind: "save", slug: "replay-budget", state: "queued" });
       expect(queued.note).toEqual(stored);
+    });
+  });
+
+  test("AC-5: two saves of one key in flight together queue in the order the writes were staged", async () => {
+    await withTempDir(async (dir) => {
+      const gate = deferred();
+      const h = harness(dir, { reachable: false });
+      let staged = 0;
+      // The first write is staged and then held: the second save can only run while it is.
+      const store: MemoryStore = {
+        ...h.store,
+        writeNote: async (written) => {
+          staged += 1;
+          await h.store.writeNote(written);
+          if (written.description === FIRST_WRITE) await gate.promise;
+        },
+      };
+
+      const first = h.save({ store, write: write({ description: FIRST_WRITE }) });
+      const second = h.save({ store, write: write({ description: SECOND_WRITE }) });
+      const overlapped = await waitForCondition(() => staged > 1, 50).then(
+        () => true,
+        () => false,
+      );
+      gate.release();
+      const results = await Promise.all([first, second]);
+
+      // A same-key save must not stage while the first is still being staged and queued.
+      expect(overlapped).toBe(false);
+      expect(results.map((result) => result.delivered)).toEqual([false, false]);
+      const entries = await h.outbox.list();
+      expect(entries.map((entry) => entry.note?.description)).toEqual([FIRST_WRITE, SECOND_WRITE]);
+    });
+  });
+
+  test("AC-5: two saves of one key in flight together deliver in the order the writes were staged", async () => {
+    await withTempDir(async (dir) => {
+      const gate = deferred();
+      let pushes = 0;
+      const h = harness(dir, {
+        push: async () => {
+          pushes += 1;
+          const id = `mem_${pushes}`;
+          // The first delivery is held open; a second one reaching the provider here is the bug.
+          if (pushes === 1) await gate.promise;
+          return { id, status: "active" };
+        },
+      });
+
+      const first = h.save({ write: write({ description: FIRST_WRITE }) });
+      const second = h.save({ write: write({ description: SECOND_WRITE }) });
+      const overlapped = await waitForCondition(() => pushes > 1, 50).then(
+        () => true,
+        () => false,
+      );
+      gate.release();
+      const results = await Promise.all([first, second]);
+
+      // A same-key save must not reach the provider while the first delivery is in flight.
+      expect(overlapped).toBe(false);
+      expect(results.map((result) => result.delivered)).toEqual([true, true]);
+      // The later write is the last one delivered, so the mirror is not left on the older note.
+      expect(await mirrored(h)).toMatchObject({ description: SECOND_WRITE, id: "mem_2" });
     });
   });
 

@@ -33,7 +33,7 @@ import { byCodePoint, byNumber } from "#src/internal/sort";
 import { parseMemoryNoteRecord } from "./note.ts";
 import type { MemoryWriteRequest } from "./provider-types.ts";
 import { _memoryStoreDeps } from "./store.ts";
-import { MEMORY_CLIENT_ID_RE, MEMORY_SCOPES } from "./types.ts";
+import { MEMORY_CLIENT_ID_RE, MEMORY_SCOPES, memoryNoteKey } from "./types.ts";
 
 const ERROR_STAGE = "memory";
 /** An entry file's name: the sequence, the client id that keys it, then the suffix. */
@@ -287,7 +287,7 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     for (const entry of (await scan()).entries) {
       if (entry.state !== "queued") continue;
       if (kind !== undefined && entry.kind !== kind) continue;
-      keys.add(`${entry.scope}/${entry.slug}`);
+      keys.add(memoryNoteKey(entry.scope, entry.slug));
     }
     return keys;
   }

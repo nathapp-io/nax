@@ -86,3 +86,14 @@ export const MEMORY_PROBE_TIMEOUT_MS = 2000;
 export const MEMORY_OP_TIMEOUT_MS = 10_000;
 export const MEMORY_PULL_PAGE_SIZE = 200;
 export const MEMORY_PULL_MAX_PAGES = 50;
+
+/**
+ * The key a note is addressed by wherever the mirror and the queue meet: `<scope>/<slug>`.
+ *
+ * The outbox holds writes by this key and a save asks the outbox whether the key it is
+ * about to write is already held, so the two spellings have to be one: a save that asks
+ * with a different key would never see the entry it must queue behind.
+ */
+export function memoryNoteKey(scope: MemoryScope, slug: string): string {
+  return `${scope}/${slug}`;
+}

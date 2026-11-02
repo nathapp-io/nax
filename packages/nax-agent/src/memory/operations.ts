@@ -29,7 +29,10 @@
  *
  * A key the outbox already holds a queued write for is not pushed at all: the new
  * write joins the queue behind the waiting one, so the provider receives them in the
- * order the agent made them. Every path that returns refreshes the index, so the next
+ * order the agent made them. That order is only meaningful if two saves of the key
+ * cannot both decide it, so each key's saves run one after another (`orderedByKey`):
+ * the second waits for the first to have delivered or queued before it stages,
+ * queues or pushes anything. Every path that returns refreshes the index, so the next
  * session reads the note whether or not this session could deliver it.
  */
 import { randomUUID } from "node:crypto";
@@ -49,6 +52,7 @@ import {
   type MemoryNoteWrite,
   type MemoryTimers,
   type MemoryWriteRefusal,
+  memoryNoteKey,
 } from "./types.ts";
 import { validateMemoryNoteWrite } from "./validate.ts";
 
@@ -138,9 +142,40 @@ async function refreshIndex(input: MemoryOperationInput): Promise<void> {
   await refreshMemoryIndex(input.store, { heldForgets: await input.outbox.heldKeys("forget") });
 }
 
-/** The note's key as the outbox names it: one queued write per key is the one still undelivered. */
-function keyOf(note: MemoryNote): string {
-  return `${note.scope}/${note.slug}`;
+/** The tail a key with no save in flight waits behind: nothing. */
+const NO_SAVE: Promise<void> = Promise.resolve();
+
+/**
+ * The saves this process is running, by note key: the tail a same-key save waits behind.
+ *
+ * Only this process's saves are ordered here. Across processes the outbox's own sequence
+ * is the record of the order writes were taken in, and two processes are serialised by the
+ * session lock rather than by this map. The stored tail is the one that cannot reject, so
+ * one failed save never poisons the next, and the last save of a key drops its entry — a
+ * chain left behind is a leak, not a guard.
+ */
+const saveChains = new Map<string, Promise<void>>();
+
+/**
+ * Run `work` once every earlier save of the same key has settled.
+ *
+ * Taking the tail happens before the first `await`: a queue read after a yield is one two
+ * saves both pass, which is exactly the interleaving this orders away. The caller's own
+ * rejection is re-thrown unchanged — a refusal must reach its caller, not the next save —
+ * and the chain continues from a tail that swallows it.
+ */
+async function orderedByKey<T>(key: string, work: () => Promise<T>): Promise<T> {
+  const run = (saveChains.get(key) ?? NO_SAVE).then(work);
+  const tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  saveChains.set(key, tail);
+  try {
+    return await run;
+  } finally {
+    if (saveChains.get(key) === tail) saveChains.delete(key);
+  }
 }
 
 /**
@@ -205,7 +240,9 @@ async function deliverOrQueue(
 ): Promise<MemorySaveResult> {
   const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
   const request = saveRequest(note, input.writeMode);
-  if ((await input.outbox.heldKeys()).has(keyOf(note))) return await queueUndelivered(input, note, request);
+  if ((await input.outbox.heldKeys()).has(memoryNoteKey(note.scope, note.slug))) {
+    return await queueUndelivered(input, note, request);
+  }
   if (!(await providerAnswers(input.provider, timers))) return await queueUndelivered(input, note, request);
   let answer: MemoryPushResult;
   try {
@@ -222,15 +259,29 @@ async function deliverOrQueue(
 /**
  * Store one note and deliver it to the provider, or queue it for the next sync.
  *
- * The order is the contract: the validator decides first, so a refusal leaves the
- * store exactly as it found it; the note under the key is read next, because a
- * permanent refusal has to be able to put it back; the note is then mirrored and
- * handed over, and however that ends the indexes are rebuilt, so the session that
- * reads them next sees this save.
+ * The validator decides first, so a refusal leaves the store exactly as it found it.
+ * Everything after it runs in the note key's own order (`orderedByKey`), because none
+ * of it means anything if two saves of one key compute it at the same time: the "is
+ * this key already queued?" answer, the note staged in the mirror and the entry the
+ * queue takes are one decision, and two of them interleaved can be delivered in the
+ * wrong order or leave the mirror on the older note.
  */
 export async function saveMemoryNote(input: MemorySaveInput): Promise<MemorySaveResult> {
   const refusal = validateMemoryNoteWrite(input.write, input.source);
   if (refusal !== null) throw writeRefused(refusal);
+  const key = memoryNoteKey(input.write.scope, input.write.slug);
+  return await orderedByKey(key, () => commitSave(input));
+}
+
+/**
+ * The ordered half of a save: read the note it replaces, stage it, deliver it or queue
+ * it, and rebuild the indexes.
+ *
+ * The note under the key is read first, because a permanent refusal has to be able to
+ * put it back; the note is then mirrored and handed over, and however that ends the
+ * indexes are rebuilt, so the session that reads them next sees this save.
+ */
+async function commitSave(input: MemorySaveInput): Promise<MemorySaveResult> {
   const previous = await input.store.readNote(input.write.scope, input.write.slug);
   const note = stagedNote(input);
   await input.store.writeNote(note);
