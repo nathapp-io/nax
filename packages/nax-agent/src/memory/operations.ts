@@ -10,10 +10,13 @@
  * no rule of its own; it only decides what to do with the answer.
  *
  * A write that passes is staged in the mirror before any provider is asked, and
- * that staging is reversible: the note under the key is read first (`previous`)
- * and written back — or removed, when there was none — if the delivery fails. A
- * save that was not delivered therefore did not happen, and the note it would
- * have replaced is not lost to a provider that did not answer.
+ * that staging is reversible up to the moment the provider accepts it: the note
+ * under the key is read first (`previous`) and written back — or removed, when
+ * there was none — if the provider never takes the note. A save that was not
+ * delivered therefore did not happen, and the note it would have replaced is not
+ * lost to a provider that did not answer. After acceptance there is no rollback:
+ * the provider holds the note, so a mirror write that then fails leaves the staged
+ * note in place and reports the bookkeeping failure.
  *
  * The note is minted with its own UUID, starts `active` under `direct` and
  * `pending` under `proposal`, and is stamped with the caller's clock. That UUID
@@ -119,24 +122,31 @@ function saveRequest(note: MemoryNote, writeMode: MemorySaveInput["writeMode"]):
 }
 
 /**
- * Hand one staged note to the provider, then write what it made of the note back.
+ * The pre-acceptance half of a delivery: probe the provider, then push the note.
  *
  * The provider is asked whether it answers before it is asked to store anything,
  * and both calls are bounded by their deadline: a provider that has stopped
- * answering must not hold the caller open. Only the provider's id and status are
- * taken from the answer — the note's own source and timestamp are the caller's,
- * and the delivery says what became of the write, not when it was made.
+ * answering must not hold the caller open. Nothing here changes the mirror, so a
+ * failure in it is a save that did not happen — which is what the rollback undoes.
  */
-async function deliver(input: MemorySaveInput, note: MemoryNote): Promise<MemoryPushResult> {
+async function pushNote(input: MemorySaveInput, note: MemoryNote): Promise<MemoryPushResult> {
   const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
   if (!(await providerAnswers(input.provider, timers))) throw unreachable(note.slug);
-  const pushed = await raceTimeout(
-    input.provider.push(saveRequest(note, input.writeMode)),
-    MEMORY_OP_TIMEOUT_MS,
-    timers,
-  );
+  return await raceTimeout(input.provider.push(saveRequest(note, input.writeMode)), MEMORY_OP_TIMEOUT_MS, timers);
+}
+
+/**
+ * The post-acceptance half: record what the provider made of the note.
+ *
+ * Only the provider's id and status are taken from the answer — the note's own
+ * source and timestamp are the caller's, and the delivery says what became of the
+ * write, not when it was made. This runs after the provider has accepted the
+ * write, so a failure here leaves the staged note in place: the mirror keeps the
+ * note the provider holds, and the bookkeeping failure reaches the caller. Rolling
+ * back instead would hand the mirror a note the provider no longer agrees with.
+ */
+async function recordDelivered(input: MemorySaveInput, note: MemoryNote, pushed: MemoryPushResult): Promise<void> {
   await input.store.writeNote({ ...note, id: pushed.id, status: pushed.status });
-  return pushed;
 }
 
 /** Regenerate the indexes from what the store now holds, so the next session reads this save. */
@@ -165,19 +175,20 @@ async function restoreNote(input: MemorySaveInput, note: MemoryNote, previous: M
 }
 
 /**
- * Deliver the staged note, and put the mirror back the way it was when that fails.
+ * Push the staged note, and put the mirror back the way it was when that fails.
  *
  * The staged write is what makes the note durable, so it is also what has to be
- * undone: a save the provider never took must not leave its note — or its
- * replacement of an older note — behind as if it had.
+ * undone — but only while the provider has not taken it. A save the provider never
+ * accepted must not leave its note, or its replacement of an older note, behind as
+ * if it had.
  */
-async function deliverOrRestore(
+async function pushOrRestore(
   input: MemorySaveInput,
   note: MemoryNote,
   previous: MemoryNote | null,
 ): Promise<MemoryPushResult> {
   try {
-    return await deliver(input, note);
+    return await pushNote(input, note);
   } catch (error) {
     await restoreNote(input, note, previous);
     throw error;
@@ -189,9 +200,10 @@ async function deliverOrRestore(
  *
  * The order is the contract: the validator decides first, so a refusal leaves the
  * store exactly as it found it; the note under the key is read next, because the
- * staged write has to be recoverable; the note is then mirrored and delivered, and
- * the mirror is restored if the delivery fails. The indexes are rebuilt only once
- * the delivery succeeded, so the session that reads them next sees this save.
+ * staged write has to be recoverable; the note is then mirrored and pushed, with
+ * the mirror restored if the provider never took it. Once the provider has taken
+ * it, its answer is recorded and the indexes rebuilt, so the session that reads
+ * them next sees this save.
  */
 export async function saveMemoryNote(input: MemorySaveInput): Promise<MemorySaveResult> {
   const refusal = validateMemoryNoteWrite(input.write, input.source);
@@ -199,7 +211,8 @@ export async function saveMemoryNote(input: MemorySaveInput): Promise<MemorySave
   const previous = await input.store.readNote(input.write.scope, input.write.slug);
   const note = stagedNote(input);
   await input.store.writeNote(note);
-  const answer = await deliverOrRestore(input, note, previous);
+  const answer = await pushOrRestore(input, note, previous);
+  await recordDelivered(input, note, answer);
   await refreshIndex(input);
   return { slug: note.slug, status: answer.status, delivered: true };
 }

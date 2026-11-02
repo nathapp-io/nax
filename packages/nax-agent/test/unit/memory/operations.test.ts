@@ -39,6 +39,7 @@ import {
   assertDefined,
   assertNaxError,
   type FakeClock,
+  firstCall,
   type MemoryProviderMock,
   type MockLogger,
   makeFakeClock,
@@ -55,6 +56,8 @@ const SOURCE = "nax-chat";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** What the provider answers a delivered direct save: the note is live under its own id. */
 const ANSWER_ACTIVE: MemoryPushResult = { id: "mem_1", status: "active" };
+/** What a store whose writes are refused reports: the mirror cannot be written to. */
+const MIRROR_READ_ONLY = "mirror is read-only";
 
 /** The write a save carries: the example note from the memory-store design. */
 function write(overrides: Partial<MemoryNoteWrite> = {}): MemoryNoteWrite {
@@ -143,6 +146,26 @@ function observingProvider(
     },
   });
   return { provider, sighting };
+}
+
+/**
+ * The same store, with `writeNote` failing on exactly its `call`-th call.
+ *
+ * The save writes the mirror more than once — the staged note, then whatever the
+ * provider made of it, and possibly a rollback — so which write fails is what
+ * separates "the provider never took it" from "the provider took it and the
+ * bookkeeping did not".
+ */
+function storeFailingWrite(store: MemoryStore, call: number): MemoryStore {
+  let writes = 0;
+  return {
+    ...store,
+    writeNote: async (written) => {
+      writes += 1;
+      if (writes === call) throw new Error(MIRROR_READ_ONLY);
+      await store.writeNote(written);
+    },
+  };
 }
 
 describe("saveMemoryNote", () => {
@@ -352,17 +375,8 @@ describe("saveMemoryNote", () => {
     await withTempDir(async (dir) => {
       const h = harness(dir, { reachable: false });
       await h.store.writeNote(note());
-      let writes = 0;
-      const failingRestore: MemoryStore = {
-        ...h.store,
-        writeNote: async (written) => {
-          writes += 1;
-          if (writes > 1) throw new Error("mirror is read-only");
-          await h.store.writeNote(written);
-        },
-      };
 
-      const caught = await h.save({ store: failingRestore }).catch((error: unknown) => error);
+      const caught = await h.save({ store: storeFailingWrite(h.store, 2) }).catch((error: unknown) => error);
 
       assertNaxError(caught, "undelivered save");
       expect(caught.code).toBe("MEMORY_UNREACHABLE");
@@ -371,7 +385,50 @@ describe("saveMemoryNote", () => {
       expect(warns[0]).toMatchObject({
         stage: "memory",
         message: "memory save could not restore the previous note",
-        data: { slug: "replay-budget", error: "mirror is read-only" },
+        data: { slug: "replay-budget", error: MIRROR_READ_ONLY },
+      });
+    });
+  });
+
+  test("F2: a mirror write that fails after the provider accepted the save keeps the accepted note", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: ANSWER_ACTIVE });
+      const previous = note();
+      await h.store.writeNote(previous);
+
+      const caught = await h.save({ store: storeFailingWrite(h.store, 2) }).catch((error: unknown) => error);
+
+      // The bookkeeping failed, so the caller is told — but the provider took the note.
+      assertCaughtInstanceOf(caught, Error, "delivered write failure");
+      expect(caught.message).toBe(MIRROR_READ_ONLY);
+      expect(h.provider.push).toHaveBeenCalledTimes(1);
+      const mirrored = await h.store.readNote("project", "replay-budget");
+      assertDefined(mirrored, "mirrored note");
+      // The note the provider accepted is kept, not the one it replaced.
+      expect(mirrored.description).toBe("replay budget stays 2,048 MiB");
+      expect(mirrored.source).toBe(SOURCE);
+      // Its staged id is what keyed the accepted push; the answer was never recorded.
+      const [pushed] = firstCall(h.provider.push, "provider push");
+      expect(mirrored.id).toBe(pushed.clientId);
+      expect(mirrored.id).not.toBe(previous.id);
+      expect(mirrored.id).not.toBe(ANSWER_ACTIVE.id);
+      // A save whose bookkeeping failed never reached the index.
+      expect(existsSync(h.store.paths.index)).toBe(false);
+    });
+  });
+
+  test("F2: a mirror write that fails after acceptance does not delete a new note", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: ANSWER_ACTIVE });
+
+      const caught = await h.save({ store: storeFailingWrite(h.store, 2) }).catch((error: unknown) => error);
+
+      assertCaughtInstanceOf(caught, Error, "delivered write failure");
+      expect(caught.message).toBe(MIRROR_READ_ONLY);
+      expect(await h.store.readNote("project", "replay-budget")).toMatchObject({
+        id: firstCall(h.provider.push, "provider push")[0].clientId,
+        source: SOURCE,
+        status: "active",
       });
     });
   });
