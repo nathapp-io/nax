@@ -3,7 +3,7 @@
   "feature": "memory-chat",
   "branchName": "feat/memory-chat",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-02T16:17:13.604Z",
+  "updatedAt": "2026-11-02T16:33:23.523Z",
   "userStories": [
     {
       "id": "US-001",
@@ -555,14 +555,17 @@
       "dependencies": [
         "US-008"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Existing provider gains writes with secret-refusal and read-only access-error handling; security-sensitive negative paths need strict isolation."
+        "reasoning": "Existing provider gains writes with secret-refusal and read-only access-error handling; security-sensitive negative paths need strict isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/tool-provider.ts",
@@ -579,7 +582,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d13f5c480466c96cfb806ff6d21f571a6e7fc5cc"
     },
     {
       "id": "US-010",
