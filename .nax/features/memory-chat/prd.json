@@ -3,7 +3,7 @@
   "feature": "memory-chat",
   "branchName": "feat/memory-chat",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-02T15:50:00.152Z",
+  "updatedAt": "2026-11-02T16:01:24.873Z",
   "userStories": [
     {
       "id": "US-001",
@@ -428,14 +428,17 @@
       "dependencies": [
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Mutation composition is standard, but repo-only write access restrictions and secret-refusal propagation require strict security TDD."
+        "reasoning": "Mutation composition is standard, but repo-only write access restrictions and secret-refusal propagation require strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/host.ts",
@@ -450,7 +453,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "93e7ab8473f27a7a08127dc5466eb39def3ad987"
     },
     {
       "id": "US-008",
