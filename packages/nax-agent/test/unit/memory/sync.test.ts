@@ -175,7 +175,9 @@ describe("syncMemory", () => {
       expect(result).toEqual({ outcome: "synced", pushed: 0, rejected: 0, pulled: 0, skipped: 0 });
       expect(h.provider.reachable).toHaveBeenCalledTimes(1);
       expect(h.provider.push).not.toHaveBeenCalled();
-      expect(h.provider.pull).not.toHaveBeenCalled();
+      // The pull is part of every reachable run (US-014); a provider with nothing to send
+      // answers one finished page, so it moves nothing either.
+      expect(h.provider.pull).toHaveBeenCalledTimes(1);
     });
   });
 

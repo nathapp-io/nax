@@ -32,9 +32,16 @@
  * the run ends `failed` — after the index is refreshed, so a forget still waiting
  * is visible as `(forget pending)`.
  *
- * Step 4 (pull the provider's pages) is not here yet: US-014 adds it between the
- * drain and the finish. Until then a run whose drain completed pulls nothing, so
- * it is `synced` with both pull counters at zero.
+ * Step 4 asks the provider for what changed elsewhere, one page at a time. The cursor
+ * each page hands back is checkpointed before the next page is asked for, so the disk
+ * always names the last page that arrived: a page that throws, times out or never comes
+ * leaves the run resuming there rather than from the beginning. `done` is the provider's
+ * answer about the sequence, not a budget, so a sequence that ends on the last page one
+ * run may drain has finished; only one with more behind it is a page-limit failure.
+ *
+ * The pull applies the pages it is given; what a page may *mean* — a tombstone, a held
+ * key, an unreadable note, a decision — is US-015's, so every note here is written as
+ * it arrives and the skip counter stays at zero.
  */
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
@@ -44,9 +51,17 @@ import { acquireSessionLock } from "#src/session-store/index";
 import { refreshMemoryIndex } from "./index-render.ts";
 import { isMemoryPushRejected } from "./note.ts";
 import type { MemoryOutbox, MemoryOutboxEntry } from "./outbox.ts";
-import type { MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
-import { _memoryStoreDeps, type MemoryStore } from "./store.ts";
-import { MEMORY_OP_TIMEOUT_MS, MEMORY_PROBE_TIMEOUT_MS, type MemoryTimers } from "./types.ts";
+import type { MemoryPage, MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
+import { _memoryStoreDeps, type MemoryStore, type MemorySyncState } from "./store.ts";
+import {
+  MEMORY_OP_TIMEOUT_MS,
+  MEMORY_PROBE_TIMEOUT_MS,
+  MEMORY_PULL_MAX_PAGES,
+  MEMORY_PULL_PAGE_SIZE,
+  type MemoryNote,
+  type MemoryScope,
+  type MemoryTimers,
+} from "./types.ts";
 
 /** The stage every memory-origin log line carries. */
 const ERROR_STAGE = "memory";
@@ -56,6 +71,9 @@ const SESSION_LOCKED = "SESSION_LOCKED";
 
 /** What `sync.json` records when the provider did not answer this run. */
 const UNREACHABLE = "unreachable";
+
+/** What `sync.json` records when a provider had more pages than one run may drain. */
+const PAGE_LIMIT_REACHED = "pull page limit reached";
 
 /** A timer armed on the process clock, boxed so the contract's opaque id stays opaque. */
 interface ArmedTimer {
@@ -148,7 +166,7 @@ type ReleaseLock = () => Promise<void>;
 /** What a run holds when it took no lock: releasing nothing is releasing successfully. */
 const NO_RELEASE: ReleaseLock = async () => undefined;
 
-/** What the drain and pull steps will add to; nothing here moves a write yet. */
+/** What one run moved: the drain's two counters and the pull's two. */
 interface MemorySyncCounts {
   pushed: number;
   rejected: number;
@@ -183,6 +201,11 @@ function warnQuietly(logger: AgentLogger, message: string, data: Record<string, 
   }
 }
 
+/** The clock a run stamps with: the caller's, or the process clock. */
+function clockOf(input: MemorySyncInput): () => Date {
+  return input.now ?? (() => new Date());
+}
+
 /**
  * Take the store's lock, or `null` when another process holds it live.
  *
@@ -193,7 +216,7 @@ function warnQuietly(logger: AgentLogger, message: string, data: Record<string, 
 async function takeLock(input: MemorySyncInput): Promise<ReleaseLock | null> {
   const { paths } = input.store;
   const pid = input.pid ?? process.pid;
-  const now = input.now ?? (() => new Date());
+  const now = clockOf(input);
   const isAlive = input.isAlive ?? isProcessAlive;
   await _memoryStoreDeps.mkdir(paths.projectDir, { recursive: true });
   try {
@@ -334,12 +357,111 @@ async function drainOutbox(input: MemorySyncInput): Promise<DrainResult> {
   return { pushed, rejected };
 }
 
+/** The cursor pair with one scope moved: the other scope's cursor is carried over untouched. */
+function cursorWith(
+  cursor: MemorySyncState["cursor"],
+  scope: MemoryScope,
+  next: string | null,
+): MemorySyncState["cursor"] {
+  return scope === "user" ? { ...cursor, user: next } : { ...cursor, project: next };
+}
+
+/**
+ * After each page: record where this scope's pull got to.
+ *
+ * The page is the checkpoint, so it is written before the next one is asked for. A page
+ * that throws, times out or never arrives therefore leaves the disk naming the last page
+ * that did arrive, and the next run resumes there instead of from the beginning. The
+ * `lastError` a previous run left is cleared here: this pull reached the provider.
+ */
+async function checkpointPull(input: MemorySyncInput, scope: MemoryScope, cursor: string | null): Promise<void> {
+  const state = await input.store.readSyncState();
+  await input.store.writeSyncState({
+    provider: input.provider.id,
+    cursor: cursorWith(state.cursor, scope, cursor),
+    lastPullAt: clockOf(input)().toISOString(),
+    lastError: null,
+  });
+}
+
+/** Step 4's mirror half: the notes a page carried are written into their own scope's mirror. */
+async function applyPulledNotes(store: MemoryStore, notes: readonly MemoryNote[]): Promise<number> {
+  for (const note of notes) await store.writeNote(note);
+  return notes.length;
+}
+
+/** What a scope's pages came to: the notes applied, and the failure that stopped the sequence. */
+interface PullResult {
+  readonly pulled: number;
+  readonly failure?: string;
+}
+
+/**
+ * One scope's pages, one at a time, each checkpointed before the next is asked for.
+ *
+ * The limit is a budget on this run, not a claim about the sequence: a page that says
+ * `done` finished its sequence whatever page it is, so reaching the limit is a failure
+ * only when the provider still has more to give.
+ */
+async function pullScope(input: MemorySyncInput, scope: MemoryScope, timers: MemoryTimers): Promise<PullResult> {
+  const take = input.pageSize ?? MEMORY_PULL_PAGE_SIZE;
+  let cursor = (await input.store.readSyncState()).cursor[scope];
+  let pulled = 0;
+  for (let page = 0; page < MEMORY_PULL_MAX_PAGES; page += 1) {
+    let answer: MemoryPage;
+    try {
+      answer = await raceTimeout(input.provider.pull({ scope, cursor, take }), MEMORY_OP_TIMEOUT_MS, timers);
+    } catch (error) {
+      return { pulled, failure: errorMessage(error) };
+    }
+    pulled += await applyPulledNotes(input.store, answer.notes);
+    cursor = answer.nextCursor ?? cursor;
+    await checkpointPull(input, scope, cursor);
+    if (answer.done) return { pulled };
+  }
+  return { pulled, failure: PAGE_LIMIT_REACHED };
+}
+
+/** The scopes a run pulls, in order: the project mirror, then the user's when the store has one. */
+function pullScopes(store: MemoryStore): readonly MemoryScope[] {
+  return store.paths.userDir === null ? ["project"] : ["project", "user"];
+}
+
+/**
+ * Step 4: ask the provider for every page of every scope.
+ *
+ * The first failure ends the pull and the other scope is not asked: a cursor that did
+ * not advance is where the next run resumes, and reading past it would record progress
+ * this run never made.
+ */
+async function pullAll(input: MemorySyncInput): Promise<PullResult> {
+  const timers = input.timers ?? GLOBAL_TIMERS;
+  let pulled = 0;
+  for (const scope of pullScopes(input.store)) {
+    const result = await pullScope(input, scope, timers);
+    pulled += result.pulled;
+    if (result.failure !== undefined) return { pulled, failure: result.failure };
+  }
+  return { pulled };
+}
+
+/**
+ * A run that stopped after it moved something: record why, refresh the index, report failed.
+ *
+ * The index is still refreshed, because what the run did move is what the next session
+ * has to see — a forget left queued renders as `(forget pending)` — and the counters are
+ * the work that was done before the step that failed.
+ */
+async function failRun(input: MemorySyncInput, counts: MemorySyncCounts, failure: string): Promise<MemorySyncResult> {
+  await recordLastError(input, failure);
+  return await finish(input, counts, failure);
+}
+
 /**
  * Step 5: regenerate the index the next session reads, and report what the run did.
  *
- * `failure` is a drain that stopped early: the index is still refreshed, because the
- * entries left queued are what the next session has to see — a forget still waiting
- * renders as `(forget pending)` — and the counters are what did move before it stopped.
+ * `failure` is the step that stopped early, if any: the counters are what did move
+ * before it stopped.
  */
 async function finish(input: MemorySyncInput, counts: MemorySyncCounts, failure?: string): Promise<MemorySyncResult> {
   const heldForgets = await input.outbox.heldKeys("forget");
@@ -373,11 +495,11 @@ export async function syncMemory(input: MemorySyncInput): Promise<MemorySyncResu
     if (!(await providerAnswers(input))) return await recordUnreachable(input);
     const drain = await drainOutbox(input);
     const counts: MemorySyncCounts = { ...noCounts(), pushed: drain.pushed, rejected: drain.rejected };
-    if (drain.failure !== undefined) {
-      await recordLastError(input, drain.failure);
-      return await finish(input, counts, drain.failure);
-    }
-    // Step 4 (pull, US-014) belongs here, once the drain has delivered what it could.
+    // A drain that stopped early says nothing about the provider's own changes: no pull.
+    if (drain.failure !== undefined) return await failRun(input, counts, drain.failure);
+    const pull = await pullAll(input);
+    counts.pulled = pull.pulled;
+    if (pull.failure !== undefined) return await failRun(input, counts, pull.failure);
     return await finish(input, counts);
   } catch (error) {
     const message = errorMessage(error);
