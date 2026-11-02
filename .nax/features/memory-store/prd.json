@@ -3,7 +3,7 @@
   "feature": "memory-store",
   "branchName": "feat/memory-store",
   "createdAt": "2026-11-02T00:00:00.000Z",
-  "updatedAt": "2026-11-02T08:37:40.849Z",
+  "updatedAt": "2026-11-02T09:17:07.855Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1072,14 +1072,17 @@
       "dependencies": [
         "US-017"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Adds forget behavior in the operations module by reusing the save path's established provider, timeout and outbox patterns; no new concurrency or authorization mechanism is introduced."
+        "reasoning": "Adds forget behavior in the operations module by reusing the save path's established provider, timeout and outbox patterns; no new concurrency or authorization mechanism is introduced.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/operations.ts",
@@ -1107,7 +1110,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "195a50a43c924704a0ccdb125e54c331deffe076"
     },
     {
       "id": "US-019",
