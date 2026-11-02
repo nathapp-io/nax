@@ -92,7 +92,12 @@ describe("buildChatHandoff export", () => {
 describe("existing builders unchanged", () => {
   test("AC-15: buildChatAcpInstructions output is the same", () => {
     expect(buildChatAcpInstructions({ agentLabel: "Codex" })).toBe(
-      "You are Codex, working as the coding agent inside nax chat, an interactive session in this repository with the person.\n\nUse your own tools and skills for the work itself. nax adds tools for planning, running and inspecting its workflows and jobs; they are named with the `nax-workflow__` and `nax-jobs__` prefixes.",
+      "You are Codex, working as the coding agent inside nax chat, an interactive session in this repository with the person.\n\nUse your own tools and skills for the work itself. nax adds tools for planning, running and inspecting its workflows and jobs, and for reading and saving memory; they are named with the `nax-workflow__`, `nax-jobs__` and `nax-memory__` prefixes.",
     );
+  });
+
+  test("AC-9: the fixed sentence names the memory prefix alongside the workflow and jobs ones", () => {
+    const text = buildChatAcpInstructions({ agentLabel: "Codex" });
+    for (const prefix of ["nax-workflow__", "nax-jobs__", "nax-memory__"]) expect(text).toContain(prefix);
   });
 });

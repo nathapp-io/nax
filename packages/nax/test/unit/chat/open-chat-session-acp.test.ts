@@ -23,6 +23,7 @@ import {
   openChatSession,
 } from "@/chat/open-chat-session";
 import { NaxError } from "@/errors";
+import { buildMemorySection } from "@/prompts";
 
 const ID = "acp-session-id";
 /** A stored agent document only resumes once its agent ran a turn. */
@@ -202,6 +203,12 @@ describe("openChatSession on an ACP model: new session", () => {
     await open({ toolProviders: [workflow] });
     expect(createdOptions().instructions).toContain("Codex");
     expect(createdOptions().instructions).toContain("WORKFLOW-INSTRUCTIONS-TEXT");
+  });
+
+  test("AC-13 a memory index reaches the ACP session instructions", async () => {
+    const memoryIndex = "# Memory\n- [project] a — b";
+    await open({ memoryIndex });
+    expect(createdOptions().instructions).toContain(buildMemorySection(memoryIndex));
   });
 
   test("AC-5 delivers only workflow and jobs tools", async () => {

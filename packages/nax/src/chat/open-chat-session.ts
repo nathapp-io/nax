@@ -64,6 +64,8 @@ export interface OpenChatSessionRequest {
   readonly resumeId?: string;
   readonly loopHandlers: LoopHandlerSet;
   readonly config: NaxConfig;
+  /** The rendered memory index this open carries into the session's instructions; absent when there is none. */
+  readonly memoryIndex?: string;
 }
 
 export interface ChatHistory {
@@ -216,7 +218,11 @@ async function sessionOptions(
     sessionId: meta.sessionId,
     profile: chatSessionSettings(mode, posture).profile,
     workdir: request.cwd,
-    instructions: buildChatInstructions({ mode, rulesIndex: set.rules.map(toRulesIndexEntry) }),
+    instructions: buildChatInstructions({
+      mode,
+      rulesIndex: set.rules.map(toRulesIndexEntry),
+      ...(request.memoryIndex !== undefined ? { memoryIndex: request.memoryIndex } : {}),
+    }),
     approvalTimeoutMs: request.config.execution.approvalTimeout,
   };
 }
@@ -247,6 +253,7 @@ async function openAcpBrain(
       cwd: request.cwd,
       toolProviders: request.toolProviders ?? [],
       approvalTimeoutMs: request.config.execution.approvalTimeout,
+      ...(request.memoryIndex !== undefined ? { memoryIndex: request.memoryIndex } : {}),
     })),
     transcriptStore: store,
   };

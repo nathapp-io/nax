@@ -49,6 +49,8 @@ export interface AcpSessionOptionsInput {
   readonly cwd: string;
   readonly toolProviders: readonly ToolProvider[];
   readonly approvalTimeoutMs?: number;
+  /** The rendered memory index carried into the agent's instructions; absent when there is none. */
+  readonly memoryIndex?: string;
 }
 
 export async function acpSessionOptions(
@@ -71,6 +73,7 @@ export async function acpSessionOptions(
     instructions: buildChatAcpInstructions({
       agentLabel: acpAgentLabel(acp.agent),
       ...(resolved.instructions !== undefined ? { toolInstructions: resolved.instructions } : {}),
+      ...(input.memoryIndex !== undefined ? { memoryIndex: input.memoryIndex } : {}),
     }),
     ...(input.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: input.approvalTimeoutMs } : {}),
   };

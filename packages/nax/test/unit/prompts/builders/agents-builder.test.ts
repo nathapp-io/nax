@@ -117,6 +117,23 @@ describe("buildSubagentInstructions", () => {
   });
 });
 
+describe("buildSubagentInstructions memory section", () => {
+  const memoryIndex = "# Memory\n- [project] a — b";
+
+  test("AC-10: places the memory section before the agent's prompt", () => {
+    const text = prompts.buildSubagentInstructions({ agent, mode: "guarded", rulesIndex: [], memoryIndex });
+    const section = prompts.buildMemorySection(memoryIndex);
+    expect(text).toContain(section);
+    expect(text.indexOf(section)).toBeLessThan(text.indexOf(agent.prompt));
+  });
+
+  test("AC-11: the same input without a memory index matches the pre-feature text", () => {
+    expect(prompts.buildSubagentInstructions({ agent, mode: "guarded", rulesIndex: [] })).toBe(
+      [chatPermissionParagraph("guarded"), agent.prompt].join("\n\n"),
+    );
+  });
+});
+
 describe("prompts barrel", () => {
   test("exposes both builders as functions", () => {
     expect(typeof prompts.buildAgentsInstructions).toBe("function");

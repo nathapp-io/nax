@@ -21,6 +21,7 @@ import {
 } from "@/chat/open-chat-session";
 import { DEFAULT_CONFIG, globalConfigDir, type TuiPermissions } from "@/config";
 import { NaxError } from "@/errors";
+import { buildMemorySection } from "@/prompts";
 
 const ID = "injected-session-id";
 const NOW = new Date("2026-10-01T00:00:00.000Z");
@@ -501,6 +502,24 @@ describe("openChatSession command shadow", () => {
       expect(await storage.readLockHolder(ID)).toBeNull();
     },
   );
+});
+
+describe("openChatSession memory index", () => {
+  const memoryIndex = "# Memory\n- [project] a — b";
+
+  test("AC-12: a native open hands the session the ## Memory section and index", async () => {
+    await open({ memoryIndex });
+    expect(deps.createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({ instructions: expect.stringContaining(buildMemorySection(memoryIndex)) }),
+    );
+  });
+
+  test("no memory index means native instructions carry no ## Memory heading", async () => {
+    await open();
+    expect(deps.createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({ instructions: expect.not.stringContaining("## Memory") }),
+    );
+  });
 });
 
 describe("resolveChatSessionsDir", () => {

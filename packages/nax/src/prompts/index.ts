@@ -72,8 +72,9 @@ export {
 export type { FixReviewPromptInput } from "./builders/fix-review-builder";
 export { buildFixReviewPrompt } from "./builders/fix-review-builder";
 export { buildForgeReadInstructions } from "./builders/forge-read-builder";
-// Memory prompt builder — the protocol a session follows for the nax-memory tools.
-export { buildMemoryToolInstructions } from "./builders/memory-builder";
+// Memory prompt builder — the protocol a session follows for the nax-memory tools,
+// and the ## Memory index section the chat, ACP and subagent builders carry last.
+export { buildMemorySection, buildMemoryToolInstructions } from "./builders/memory-builder";
 export type { NbfWorthCheckPromptInput } from "./builders/nbf-worth-check-builder";
 export { buildNbfWorthCheckPrompt } from "./builders/nbf-worth-check-builder";
 // One-line transcript summaries of the background notices the builders above write.
