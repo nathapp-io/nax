@@ -3,7 +3,7 @@
   "feature": "memory-chat",
   "branchName": "feat/memory-chat",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-02T18:30:47.881Z",
+  "updatedAt": "2026-11-02T18:42:16.953Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1092,14 +1092,17 @@
       "dependencies": [
         "US-015"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Command registration, injected stdout/stderr/exit and root/config resolution mirror cost.ts and composeChat; the new host is already implemented and no novel CLI or access-control abstraction is required."
+        "reasoning": "Command registration, injected stdout/stderr/exit and root/config resolution mirror cost.ts and composeChat; the new host is already implemented and no novel CLI or access-control abstraction is required.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/cost.ts",
@@ -1131,7 +1134,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5eb540122e9059ad6b231637dadf622bc9233203"
     },
     {
       "id": "US-017",
