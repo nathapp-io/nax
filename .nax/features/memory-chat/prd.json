@@ -3,7 +3,7 @@
   "feature": "memory-chat",
   "branchName": "feat/memory-chat",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-02T16:50:34.993Z",
+  "updatedAt": "2026-11-02T17:06:15.165Z",
   "userStories": [
     {
       "id": "US-001",
@@ -681,14 +681,17 @@
       "dependencies": [
         "US-010"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Narrow startup degradation/fixture work, but it changes session resource composition and must isolate the real global filesystem."
+        "reasoning": "Narrow startup degradation/fixture work, but it changes session resource composition and must isolate the real global filesystem.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/chat.ts",
@@ -713,7 +716,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "500412cb314a4ee1be5f00cacb2ebe806dbe39f8"
     },
     {
       "id": "US-012",
