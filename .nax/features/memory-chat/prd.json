@@ -3,7 +3,7 @@
   "feature": "memory-chat",
   "branchName": "feat/memory-chat",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-02T15:25:05.244Z",
+  "updatedAt": "2026-11-02T15:37:07.073Z",
   "userStories": [
     {
       "id": "US-001",
@@ -300,14 +300,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "New host abstraction composes multiple library collaborators, live read-only repo overlays and per-host warning deduplication."
+        "reasoning": "New host abstraction composes multiple library collaborators, live read-only repo overlays and per-host warning deduplication.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/paths.ts",
@@ -328,7 +331,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "be4687f1469c907430bbb88a45ecdbd1f3d85bb2"
     },
     {
       "id": "US-006",
