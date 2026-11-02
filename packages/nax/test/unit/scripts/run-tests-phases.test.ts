@@ -21,10 +21,16 @@ describe("selectPhases", () => {
  * with no failing test of its own — unit 123.7s (nax#2491) and integration 145.8s (US-004 F1),
  * both on a loaded runner whose first, cold run of the suite pays Bun's warm-up. Each was killed
  * by the then-current budget while passing, which is the bug this pins.
+ *
+ * `ui` did not get to finish: a whole-repo run on a loaded runner was killed at 30.11s with
+ * 910 tests passing and nothing failing, so 30.1s is a *lower bound* on what that phase cost
+ * there. It idles at ~10.6s. Recording the bound rather than the idle cost is the point: a
+ * budget derived from the happy path is what made the gate red.
  */
 const OBSERVED_FULL_RUN_MS: Readonly<Record<string, number>> = {
   unit: 123_700,
   integration: 145_800,
+  ui: 30_100,
 };
 
 describe("phase caps", () => {

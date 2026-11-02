@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -11,7 +11,29 @@ import {
   gitCommitTool,
   registerBuiltinCodingTools,
 } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeSpawn, makeSpawnResult, makeTempDir, testProtectedPaths } from "#test/helpers/index";
+import {
+  cleanupTempDir,
+  makeSpawn,
+  makeSpawnResult,
+  makeTempDir,
+  testProtectedPaths,
+  withDepsRestore,
+  withTimeout,
+} from "#test/helpers/index";
+
+/**
+ * The deadline on every await in this file that waits for a subprocess.
+ *
+ * A stalled spawn is the one shape that can hang this file until the runner's own
+ * per-test timeout — and a runner timeout prints no assertion message at all (the
+ * notice lands AFTER the `(fail)` line), so a gate that hits one can only report
+ * "no assertion message captured" with no attribution. Real git in a temp repo
+ * answers in milliseconds, so this bound turns a hang into a named failure.
+ */
+const SUBPROCESS_DEADLINE_MS = 10_000;
+
+/** The bound on the one call under test that is deliberately never answered. */
+const HUNG_CHECK_IGNORE_DEADLINE_MS = 5_000;
 
 const repoRoots: string[] = [];
 
@@ -23,8 +45,12 @@ async function makeRepo(): Promise<string> {
   const repo = makeTempDir("nax-git-commit-");
   repoRoots.push(repo);
   writeFileSync(join(repo, "a.ts"), "export const a = 1;\n");
-  const run = async (args: string[]) =>
-    _gitDeps.spawn(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" }).exited;
+  const run = (args: string[]) =>
+    withTimeout(
+      _gitDeps.spawn(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" }).exited,
+      SUBPROCESS_DEADLINE_MS,
+      `git ${args.join(" ")} while building the commit fixture`,
+    );
   await run(["init", "-q"]);
   await run(["config", "user.email", "test@nax.local"]);
   await run(["config", "user.name", "Nax Test"]);
@@ -242,18 +268,11 @@ describe("gitCommitTool — an absent protected-paths policy fails closed", () =
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("gitCommitTool — unresolved ignore status fails closed (Critical 1)", () => {
-  let origSpawn: typeof _gitDeps.spawn;
-  let origTimeoutMs: number;
-
-  beforeEach(() => {
-    origSpawn = _gitDeps.spawn;
-    origTimeoutMs = _gitDeps.gitTimeoutMs;
-  });
-
-  afterEach(() => {
-    _gitDeps.spawn = origSpawn;
-    _gitDeps.gitTimeoutMs = origTimeoutMs;
-  });
+  // `spawn` AND `gitTimeoutMs` are process-wide seams the tests below mutate. Both are
+  // restored after every test through the shared helper: a hanging stub or a 50 ms
+  // deadline left behind is not a local mistake, it breaks every later test in this
+  // process that spawns git — and it does so as an unattributable runner timeout.
+  withDepsRestore(_gitDeps);
 
   test("a check-ignore timeout is not read as 'not ignored' -- the path is refused, loudly, not staged", async () => {
     const repo = await makeRepo();
@@ -270,9 +289,12 @@ describe("gitCommitTool — unresolved ignore status fails closed (Critical 1)",
       throw new Error(`unexpected spawn during timeout test: ${cmd.join(" ")}`);
     }).spawn;
 
-    const result = await gitCommitTool.run(
-      { message: "feat: timeout case", paths: [".nax/scratchpad/notes.md"] },
-      toolContext(repo),
+    // Bounded: if the SIGKILL path ever stops resolving `exited`, this fails here
+    // with a named message instead of stalling the file for the runner's timeout.
+    const result = await withTimeout(
+      gitCommitTool.run({ message: "feat: timeout case", paths: [".nax/scratchpad/notes.md"] }, toolContext(repo)),
+      HUNG_CHECK_IGNORE_DEADLINE_MS,
+      "gitCommitTool.run with a check-ignore that never answers",
     );
 
     // Fail closed: refused, not silently staged as if "not ignored".
@@ -280,8 +302,7 @@ describe("gitCommitTool — unresolved ignore status fails closed (Critical 1)",
     expect(result.content.toLowerCase()).toContain("timed out");
     expect(result.content).toContain(".nax/scratchpad/notes.md");
 
-    // E2E: restore real git and confirm the file was genuinely never staged.
-    _gitDeps.spawn = origSpawn;
+    // E2E: `isTracked` spawns git itself, so the real check runs whatever the seam holds.
     expect(isTracked(repo, ".nax/scratchpad/notes.md")).toBe(false);
   });
 
@@ -306,8 +327,6 @@ describe("gitCommitTool — unresolved ignore status fails closed (Critical 1)",
     expect(result.isError).toBe(true);
     expect(result.content).toContain("exited 128");
     expect(result.content).toContain(".nax/scratchpad/notes.md");
-
-    _gitDeps.spawn = origSpawn;
     expect(isTracked(repo, ".nax/scratchpad/notes.md")).toBe(false);
   });
 

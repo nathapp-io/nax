@@ -47,6 +47,7 @@ export * from "#src/internal/shell-quote";
 export * from "#src/internal/sort";
 export * from "#src/internal/strip-control-chars";
 export * from "#src/internal/thenable";
+export { _memoryStoreDeps } from "#src/memory/store";
 export * from "#src/native/adapter-deps";
 export * from "#src/native/auth";
 export * from "#src/native/client";

@@ -44,6 +44,12 @@ export {
   requireGuard,
 } from "./command-safety";
 export { CONFINED_TEST_ENV, isConfinedTestRun, SANDBOXED_ENV } from "./confined";
+export {
+  type MemoryProviderMock,
+  type MemoryProviderScript,
+  makeMemoryProvider,
+  type ProviderStep,
+} from "./memory-provider";
 export { installImageClient } from "./native-images";
 export { type NativeSessionSeed, seedNativeSession } from "./native-session-state";
 export { TEST_GIT_EXCLUDE_PATHSPECS, TEST_GITIGNORE_PATTERNS, testProtectedPaths } from "./protected-paths";

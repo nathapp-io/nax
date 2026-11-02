@@ -1,4 +1,4 @@
-export { LOCK_HEARTBEAT_MS, LOCK_STALE_MS } from "./session-lock.ts";
+export { acquireSessionLock, LOCK_HEARTBEAT_MS, LOCK_STALE_MS } from "./session-lock.ts";
 export {
   defaultSessionsDir,
   SESSION_ID_PATTERN,

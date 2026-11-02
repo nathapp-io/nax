@@ -6,7 +6,7 @@ import * as internal from "@nathapp/nax-agent/internal";
 import { _commandShadowDeps, _systemOneClientDeps } from "#src/command-safety/index";
 import { byCodePoint } from "#src/internal/sort";
 
-/** The 20 names S2-7 moves off `.`: 17 `…Deps` seams and 3 reset hooks. */
+/** The 21 names S2-7 moves off `.`: 18 `…Deps` seams and 3 reset hooks. */
 const SEAMS = [
   "_adapterDeps",
   "_approvalsTaintDeps",
@@ -18,6 +18,7 @@ const SEAMS = [
   "_globDeps",
   "_grepDeps",
   "_launcherDeps",
+  "_memoryStoreDeps",
   "_policyInputDeps",
   "_probeDeps",
   "_resetBuiltinsForTest",
@@ -31,10 +32,10 @@ const SEAMS = [
 ] as const;
 
 describe("/internal", () => {
-  test("carries all 20 test seams and reset hooks", () => {
+  test("carries all 21 test seams and reset hooks", () => {
     const missing = SEAMS.filter((name) => !(name in internal));
     expect(missing.sort(byCodePoint)).toEqual([]);
-    expect(SEAMS).toHaveLength(20);
+    expect(SEAMS).toHaveLength(21);
   });
 
   test("the two command-safety seams are the very objects the modules read", () => {

@@ -129,10 +129,10 @@ describe("file transcript image writes", () => {
     const store = createFileTranscriptStore(dir);
     await store.save("s", { ...doc(), messages: [...doc().messages, ...doc().messages] });
     expect(await readdir(folder())).toEqual([`${hash}.png`]);
-    const realWrite = _atomicWriteDeps.writeFile;
-    _atomicWriteDeps.writeFile = async (path, content, options) => {
+    const realOpen = _atomicWriteDeps.open;
+    _atomicWriteDeps.open = async (path, flags, mode) => {
       expect(path.startsWith(folder())).toBe(false);
-      await realWrite(path, content, options);
+      return realOpen(path, flags, mode);
     };
     await store.save("s", doc());
     await store.markTurn("s", { turnId: "t", state: "ended" });
@@ -176,7 +176,7 @@ describe("file transcript image writes", () => {
     expect(await disk()).not.toHaveProperty("schemaVersion");
     expect(await readdir(folder())).toEqual([`${hash}.png`]);
   });
-  test("AC18 failed staged rename cleans up and retry round-trips", async () => {
+  test("AC18 failed staged rename retains an ignored stage and retry round-trips", async () => {
     const store = createFileTranscriptStore(dir);
     const realRename = _atomicWriteDeps.rename;
     let failed = false;
@@ -188,27 +188,38 @@ describe("file transcript image writes", () => {
       await realRename(from, to);
     };
     await expect(store.save("s", doc())).rejects.toThrow("rename failed");
-    expect(await readdir(folder())).toEqual([]);
+    // Atomic cleanup cannot prove pathname ownership, so failed payloads are retained.
+    const stages = await readdir(folder());
+    expect(stages).toHaveLength(1);
+    expect(stages[0]?.endsWith(".tmp")).toBe(true);
+    expect(await readFile(join(folder(), stages[0] ?? "", "stage"))).toEqual(bytes);
     expect(await store.load("s")).toBeNull();
     await store.save("s", doc());
     expect(await store.load("s")).toEqual(doc());
-    expect(await readdir(folder())).toEqual([`${hash}.png`]);
+    expect((await readdir(folder())).sort()).toEqual([...stages, `${hash}.png`].sort());
   });
-  test("AC19 AC20 partial write preserves original error and leaves no final or temp file", async () => {
+  test("AC19 AC20 partial write preserves original error and leaves only a retained stage", async () => {
     const store = createFileTranscriptStore(dir);
     await store.save("s", empty);
     const previous = await readFile(transcriptPath(dir, "s"), "utf8");
-    const realWrite = _atomicWriteDeps.writeFile;
+    const realOpen = _atomicWriteDeps.open;
     const error = new Error("ENOSPC");
-    _atomicWriteDeps.writeFile = async (path, content, options) => {
-      if (path.startsWith(folder())) {
-        await realWrite(path, content.slice(0, 2), options);
-        throw error;
-      }
-      await realWrite(path, content, options);
+    _atomicWriteDeps.open = async (staged, flags, mode) => {
+      const stage = await realOpen(staged, flags, mode);
+      if (!staged.startsWith(folder())) return stage;
+      return {
+        ...stage,
+        write: async (content) => {
+          await stage.write(typeof content === "string" ? content.slice(0, 2) : content);
+          throw error;
+        },
+      };
     };
     await expect(store.save("s", doc())).rejects.toBe(error);
-    expect(await readdir(folder())).toEqual([]);
+    const stages = await readdir(folder());
+    expect(stages).toHaveLength(1);
+    expect(stages[0]?.endsWith(".tmp")).toBe(true);
+    expect(await readdir(join(folder(), stages[0] ?? ""))).toEqual(["stage"]);
     expect(await readFile(transcriptPath(dir, "s"), "utf8")).toBe(previous);
   });
   test("memory store keeps images inline", async () => {

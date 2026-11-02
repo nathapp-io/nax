@@ -24,7 +24,12 @@ export const SUITE_PHASES: readonly Phase[] = [
   // while the same phase warm costs ~60s; the 120s budget killed the cold run
   // with nothing to report, which is not a test result. See the note above.
   { name: "integration", dir: "test/integration/", testTimeoutMs: 5_000, phaseTimeoutMs: 300_000 },
-  { name: "ui", dir: "test/ui/", testTimeoutMs: 5_000, phaseTimeoutMs: 30_000 },
+  // 120s, not 30s: the same overrun again, one phase later. The ui phase costs ~10.6s warm
+  // on an idle machine, but a whole-repo run on a loaded runner was killed at 30.11s with 910
+  // passing tests and no failure of its own — the React reconciliation warning in that log is
+  // not an assertion. A budget that only covers the idle cost turns a loaded runner into a red
+  // gate, so the cap is set from the observation, not from the happy path.
+  { name: "ui", dir: "test/ui/", testTimeoutMs: 5_000, phaseTimeoutMs: 120_000 },
 ];
 
 /**

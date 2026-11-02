@@ -1,0 +1,1197 @@
+{
+  "project": "nax-monorepo",
+  "feature": "memory-store",
+  "branchName": "feat/memory-store",
+  "createdAt": "2026-11-02T00:00:00.000Z",
+  "updatedAt": "2026-11-02T09:50:53.356Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Note format and public memory model",
+      "description": "**Goal** — Introduce the memory note types, constants, frontmatter codec and permanent-push-rejection recognizer.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — A note file is frontmatter between two `---` lines, one `key: value` per line (the `MemoryNote` keys other than `body`, in any order; a value is everything after the first `: `, so a description may itself contain `: `; values are single-line plain scalars, no quoting, no nesting; an unknown key is ignored), then one blank line, then the body. `parseMemoryNote(text)` validates with a zod schema and throws `NaxError` code `MEMORY_NOTE_INVALID` (message names the first bad key) on a missing, unknown-enum or line-break-carrying field; `serializeMemoryNote(note)` writes the keys in the order `id, slug, type, scope, description, source, updatedAt, status`, then `---`, then a blank line, then the body (for an empty body the file ends with `---\\n`). The two round-trip.\n\nExample:\n```markdown\n---\nid: mem_01J9X2\nslug: replay-budget\ntype: project\nscope: project\ndescription: replay budget stays 2,048 MiB\nsource: nax-chat\nupdatedAt: 2026-11-02T08:11:00.000Z\nstatus: active\n---\n\nThe replay budget stays at 2,048 MiB. Next export append is due ~11-23.\n```\n\nA provider that refuses a write for a reason retrying cannot fix throws `NaxError` code `MEMORY_PUSH_REJECTED` (message = the reason); `isMemoryPushRejected(error)` recognises it. Any other throw or a timeout is transient.\n\n**Scope** — In: create types.ts, note.ts and the memory/index.ts barrel; named public exports from src/index.ts, types via export type; regenerate api/nax-agent.api.txt with bun run api:update. All memory-origin NaxErrors have stage memory. Out: write validation/secret refusal (US-002), store persistence (US-003 onward), provider implementations (US-009). Multi-line or quoted frontmatter values and YAML nesting are not supported; values are single-line scalars.\n\n**Interface** —\n```ts\nexport type MemoryNoteType = \"user\" | \"feedback\" | \"project\" | \"reference\";\nexport type MemoryScope = \"project\" | \"user\";\nexport type MemoryNoteStatus = \"active\" | \"pending\" | \"superseded\" | \"rejected\" | \"deleted\";\nexport interface MemoryNote {\n  readonly id: string;           // provider id, or the clientId of the write until synced\n  readonly slug: string;         // MEMORY_SLUG_RE\n  readonly type: MemoryNoteType;\n  readonly scope: MemoryScope;\n  readonly description: string;  // one line, <= MEMORY_DESCRIPTION_MAX_CHARS\n  readonly source: string;       // one line, <= 64 chars: \"nax-chat\" | \"nax-run\" | \"koda-thread\" | \"human\" | \"import\" | any label\n  readonly updatedAt: string;    // ISO 8601\n  readonly status: MemoryNoteStatus;\n  readonly body: string;         // Markdown, <= MEMORY_NOTE_BODY_MAX_BYTES (UTF-8)\n}\nexport interface MemoryDecision {\n  readonly id: string; readonly subject: string; readonly predicate: string;\n  readonly object: string; readonly updatedAt: string; readonly status: \"active\" | \"superseded\" | \"rejected\";\n}\nexport interface MemoryHit {\n  readonly slug: string; readonly scope: MemoryScope; readonly type: MemoryNoteType;\n  readonly description: string; readonly status: MemoryNoteStatus; readonly score: number; readonly snippet: string;\n}\nexport interface MemoryNoteWrite { slug; type; scope; description; body }\nexport interface MemoryWriteRefusal { readonly field: \"slug\" | \"type\" | \"description\" | \"body\" | \"source\"; readonly reason: string }\nexport interface MemoryTimers {\n  setTimeout(callback: () => void, ms: number): unknown;\n  clearTimeout(id: unknown): void;\n}\nexport const MEMORY_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;\nexport const MEMORY_CLIENT_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;\nexport const MEMORY_NOTE_BODY_MAX_BYTES = 8192;\nexport const MEMORY_DESCRIPTION_MAX_CHARS = 200;\nexport const MEMORY_SOURCE_MAX_CHARS = 64;\nexport const MEMORY_INDEX_MAX_BYTES = 24_576;\nexport const MEMORY_INDEX_MAX_LINES = 200;\nexport const MEMORY_INDEX_MIN_LINES = 16;\nexport const MEMORY_INDEX_MIN_BYTES = 512;\nexport const MEMORY_PROBE_TIMEOUT_MS = 2000;\nexport const MEMORY_OP_TIMEOUT_MS = 10_000;\nexport const MEMORY_PULL_PAGE_SIZE = 200;\nexport const MEMORY_PULL_MAX_PAGES = 50;\n```\nThe spec's MemoryNoteWrite declaration uses shorthand fields: supply explicit strict TypeScript types corresponding to MemoryNote (slug/description/body string, type MemoryNoteType, scope MemoryScope), not implicit any. parseMemoryNote(text) returns MemoryNote; serializeMemoryNote(note) returns string; isMemoryPushRejected(error) returns boolean. Share note-shape validation with later pull validation without introducing an unspecified public export. Verify check:api and check:no-bun-apis after implementation.",
+      "acceptanceCriteria": [
+        "[unit] parseMemoryNote applied to the example note text returns a MemoryNote whose slug is replay-budget and whose body equals the single body line of the example.",
+        "[unit] parseMemoryNote on that text returns type project, scope project and status active.",
+        "[unit] serializeMemoryNote applied to that MemoryNote yields text that parseMemoryNote turns back into a structurally equal note.",
+        "[unit] serializeMemoryNote writes the frontmatter keys in the order id, slug, type, scope, description, source, updatedAt, status, then ---, then one blank line, then the body.",
+        "[unit] parseMemoryNote on text with no leading --- line throws NaxError with code MEMORY_NOTE_INVALID.",
+        "[unit] parseMemoryNote on frontmatter missing the slug key throws NaxError with code MEMORY_NOTE_INVALID and a message naming slug.",
+        "[unit] parseMemoryNote on frontmatter whose type is note throws NaxError with code MEMORY_NOTE_INVALID.",
+        "[unit] parseMemoryNote on frontmatter whose status is archived throws NaxError with code MEMORY_NOTE_INVALID.",
+        "[unit] parseMemoryNote on frontmatter whose slug is Bad_Slug throws NaxError with code MEMORY_NOTE_INVALID.",
+        "[unit] parseMemoryNote on a description value ratio: 2:1 returns description ratio: 2:1, and an unknown key extra: x is ignored.",
+        "[unit] parseMemoryNote accepts an empty body (closing --- is the last line) and returns body \"\", and serializeMemoryNote of that note ends with --- followed by a single line break.",
+        "[unit] isMemoryPushRejected returns true for a NaxError with code MEMORY_PUSH_REJECTED.",
+        "[unit] isMemoryPushRejected returns false for a NaxError with code MEMORY_NOTE_INVALID and for a plain Error.",
+        "[unit] Importing parseMemoryNote, serializeMemoryNote, isMemoryPushRejected and every MEMORY_* constant named in the interface from @nathapp/nax-agent succeeds."
+      ],
+      "tags": [
+        "memory",
+        "api",
+        "serialization"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive schema, codec and export work using existing zod and error conventions; no new dependency or external integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/infra/nax-error.ts",
+        "packages/nax-agent/src/session-store/session-meta.ts",
+        "packages/nax-agent/src/index.ts",
+        "packages/nax-agent/test/unit/session-store/storage.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/memory/types.ts",
+        "packages/nax-agent/src/memory/note.ts",
+        "packages/nax-agent/src/memory/index.ts",
+        "packages/nax-agent/test/unit/memory/note.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "add the named exports of the memory barrel created by this story (types via `export type`); no underscore-prefixed name on the public entry."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerate with `bun run api:update` so `check:api` sees the new public names."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1edc83c4e49e0c09249a09f4717e047c83fa4f31"
+    },
+    {
+      "id": "US-002",
+      "title": "Write validation and secret refusal",
+      "description": "**Goal** — Refuse malformed or secret-bearing note writes before persistence.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — `validateMemoryNoteWrite(write, source)` (`validate.ts`) returns `null` or a `MemoryWriteRefusal`, checking in this order and stopping at the first refusal: slug matches `MEMORY_SLUG_RE`; type is one of the four; description non-empty, no line break or control character, within `MEMORY_DESCRIPTION_MAX_CHARS`; source non-empty, no line break or control character, within `MEMORY_SOURCE_MAX_CHARS`; body within `MEMORY_NOTE_BODY_MAX_BYTES`; then secrets: `findSecret(text)` runs every `SECRET_VALUE_PATTERNS` entry (from `#src/internal/redact`) over the description and then the body, resetting `re.lastIndex = 0` before each use of the global regex (so repeated calls never skip a match) and applying `acceptMatch` to every match when present; the first accepted match refuses with `field` naming the text and `reason` `secret (<kind>) must not be stored`, never the matched text.\n\n**Scope** — In: create validate.ts and its tests; export validateMemoryNoteWrite and findSecret through both memory/index.ts and src/index.ts; regenerate API snapshot. Reuse redaction patterns unchanged. Out: parsing (US-001), persistence (US-003), throwing MEMORY_WRITE_REFUSED and save orchestration (US-016).\n\n**Interface** — `validateMemoryNoteWrite(write, source)` returns `null` or a `MemoryWriteRefusal`; `findSecret(text)` returns `{ kind: string }` or `null`.\n```ts\nexport interface MemoryWriteRefusal { readonly field: \"slug\" | \"type\" | \"description\" | \"body\" | \"source\"; readonly reason: string }\n```\nUse UTF-8 byte counting for bodies, not string length. No file or logger operation belongs in these pure functions. Verify check:api after api:update.",
+      "acceptanceCriteria": [
+        "[unit] validateMemoryNoteWrite({ slug: \"replay-budget\", type: \"project\", scope: \"project\", description: \"one line\", body: \"text\" }, \"nax-chat\") returns null.",
+        "[unit] Slug Replay_Budget returns a refusal whose field is slug.",
+        "[unit] A 65-character slug of lower-case letters returns a refusal whose field is slug.",
+        "[unit] Type note returns a refusal whose field is type.",
+        "[unit] A description containing a line break returns a refusal whose field is description.",
+        "[unit] A description of MEMORY_DESCRIPTION_MAX_CHARS + 1 characters returns a refusal whose field is description.",
+        "[unit] A source containing a line break returns a refusal whose field is source.",
+        "[unit] A body of MEMORY_NOTE_BODY_MAX_BYTES + 1 UTF-8 bytes built from multi-byte characters whose character count is below the limit returns a refusal whose field is body.",
+        "[unit] A body containing ghp_ followed by 20 alphanumerics returns a refusal whose field is body, whose reason names github and omits the token text.",
+        "[unit] A description containing API_KEY=abc123 returns a refusal whose field is description and whose reason names assignment.",
+        "[unit] A body containing postgres://alice:s3cret@db.example/app returns a refusal whose reason names url-credentials.",
+        "[unit] A body containing see https://example.com/docs and the word token returns null (the url-credentials pattern's acceptMatch is applied, so a credential-less URL is not a secret).",
+        "[unit] Calling validateMemoryNoteWrite twice in a row with the same GitHub-token body returns a refusal both times (no stale regex state between calls).",
+        "[unit] findSecret(\"x ghp_abcdefghijklmnopqrstu y\") returns { kind: \"github\" } and findSecret(\"plain text\") returns null.",
+        "[unit] validateMemoryNoteWrite and findSecret are exported from @nathapp/nax-agent."
+      ],
+      "tags": [
+        "memory",
+        "security",
+        "validation",
+        "secrets"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Secret and credential detection is security-critical and requires strict isolated TDD despite a small pure-function implementation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/types.ts",
+        "packages/nax-agent/src/internal/redact.ts",
+        "packages/nax-agent/src/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/memory/validate.ts",
+        "packages/nax-agent/test/unit/memory/validate.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "add `validateMemoryNoteWrite` and `findSecret`."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerate with `bun run api:update`."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "efb1b023a91789516fa46fb3ea5edd99e8894358"
+    },
+    {
+      "id": "US-003",
+      "title": "Mirror store paths and note persistence",
+      "description": "**Goal** — Add the file-backed project/user note mirror and its single injectable filesystem seam.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — `createMemoryStore({ projectDir, userDir?, logger })` returns a `MemoryStore`:\n```text\n<projectDir>/MEMORY.md        generated project index\n<projectDir>/notes/<slug>.md  project-scope notes\n<projectDir>/decisions.jsonl  one MemoryDecision JSON per line, read-only mirror\n<projectDir>/sync.json        MemorySyncState\n<projectDir>/sync.lock        sync lock\n<projectDir>/outbox/          outbox entries\n<userDir>/MEMORY.md           generated user index\n<userDir>/notes/<slug>.md     user-scope notes (only when userDir is set)\n```\nRules: a slug failing `MEMORY_SLUG_RE` throws `NaxError` code `MEMORY_SLUG_INVALID` before any filesystem call. A user-scope call on a store without `userDir` throws `NaxError` code `MEMORY_SCOPE_UNAVAILABLE`. Missing directories are not errors: `readNote` resolves `null`, `listNotes` resolves `[]`, `deleteNote` resolves. `listNotes` reads only files named `<slug>.md` whose slug matches `MEMORY_SLUG_RE` (temp files, `MEMORY.md` and anything else are ignored), sorted by slug; a file whose content fails `parseMemoryNote` is skipped with one `warn` per file (`stage: \"memory\"`, data `{ path, error }`). Writes use `writeFileAtomic`; directories are created with `mkdir({ recursive: true })` on demand. Reads and directory operations go through `_memoryStoreDeps` (`readFile`, `mkdir`, `readdir`, `rm`) so tests inject failures; the write path's seam is `_atomicWriteDeps`.\n\n**Scope** — In: paths, readNote, writeNote, deleteNote and listNotes in store.ts; use parseMemoryNote/serializeMemoryNote; export createMemoryStore, MemoryStore, MemoryStorePaths publicly and _memoryStoreDeps from src/internal.ts. Extend packaging/public-surface.test.ts SEAMS with _memoryStoreDeps and change its expected length from 20 to 21; regenerate public/internal API snapshot. Out: symlink confinement and atomic failure hardening (US-004), record/index methods and MemorySyncState export (US-005), provider behavior (US-009). The full target interface below includes US-005 methods; do not claim their implementation is complete in this story. The `nax memory` CLI, `/memory` slash command and the `memory` config schema belong to nax (`memory-chat`); nax-agent takes `projectDir` / `userDir` as plain arguments and computes no `~/.nax` path and no project key. Repo-committed `.nax/memory/*.md` team notes are read by nax (`memory-chat`), not by this store.\n\n**Interface** —\n```ts\nexport interface MemoryStorePaths {\n  readonly projectDir: string; readonly userDir: string | null;\n  readonly index: string; readonly notesDir: string; readonly decisions: string;\n  readonly syncState: string; readonly lock: string; readonly outboxDir: string;\n  readonly userIndex: string | null; readonly userNotesDir: string | null;\n}\nexport interface MemoryStore {\n  readonly paths: MemoryStorePaths;\n  readNote(scope, slug): Promise<MemoryNote | null>;\n  writeNote(note): Promise<void>;\n  deleteNote(scope, slug): Promise<void>;\n  listNotes(scope): Promise<MemoryNote[]>;\n  readDecisions(): Promise<MemoryDecision[]>;\n  writeDecisions(decisions): Promise<void>;\n  readSyncState(): Promise<MemorySyncState>;\n  writeSyncState(state): Promise<void>;\n  writeIndex(scope, text): Promise<void>;   // MEMORY.md of that scope\n}\n```\nAnnotate the spec's shorthand parameters with strict types. Every memory-created NaxError carries stage memory; logger calls use stage memory. Every directory listing ignores .tmp names and every whole-file write uses #src/internal/atomic-write. Verify API and packaging surface after updating exports.",
+      "acceptanceCriteria": [
+        "[unit] createMemoryStore({ projectDir, logger }).paths has index <projectDir>/MEMORY.md, notesDir <projectDir>/notes, lock <projectDir>/sync.lock and outboxDir <projectDir>/outbox.",
+        "[unit] Without userDir, paths.userDir, paths.userIndex and paths.userNotesDir are null; with userDir, paths.userNotesDir is <userDir>/notes and paths.userIndex is <userDir>/MEMORY.md.",
+        "[unit] writeNote of a project-scope note followed by readNote(\"project\", slug) returns a structurally equal note.",
+        "[unit] After writeNote, the file <projectDir>/notes/<slug>.md holds exactly the serializeMemoryNote text, and <projectDir>/notes was created on demand.",
+        "[unit] writeNote of a user-scope note with userDir set stores it at <userDir>/notes/<slug>.md, and readNote(\"user\", slug) returns it.",
+        "[unit] writeNote of a user-scope note on a store created without userDir throws NaxError with code MEMORY_SCOPE_UNAVAILABLE.",
+        "[unit] On a store whose projectDir does not exist, readNote(\"project\", \"x\") resolves null, listNotes(\"project\") resolves [] and deleteNote(\"project\", \"x\") resolves.",
+        "[unit] readNote of a slug whose file holds malformed frontmatter throws NaxError with code MEMORY_NOTE_INVALID.",
+        "[unit] listNotes(\"project\") over three parseable notes and one malformed file returns the three sorted by slug ascending, and the logger received exactly one warn call for the malformed file whose data path names it.",
+        "[unit] listNotes(\"project\") ignores a file named replay-budget.md.abc.tmp and a file named MEMORY.md placed in the notes directory.",
+        "[unit] deleteNote(\"project\", slug) removes the file, and deleteNote of an absent slug resolves without throwing.",
+        "[unit] _memoryStoreDeps is the same object when imported from @nathapp/nax-agent/internal and from #src/memory/store, and createMemoryStore is exported from @nathapp/nax-agent."
+      ],
+      "tags": [
+        "memory",
+        "storage",
+        "api"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One standard filesystem-backed module composes the existing note codec and atomic writer; confinement is deliberately deferred to US-004.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/note.ts",
+        "packages/nax-agent/src/internal/atomic-write.ts",
+        "packages/nax-agent/src/internal.ts",
+        "packages/nax-agent/src/infra/agent-logger.ts",
+        "packages/nax-agent/test/unit/packaging/public-surface.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/memory/store.ts",
+        "packages/nax-agent/test/unit/memory/store.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "add `createMemoryStore` and the `MemoryStore` / `MemoryStorePaths` types."
+        },
+        {
+          "path": "packages/nax-agent/src/internal.ts",
+          "reason": "add `_memoryStoreDeps` to the seam re-exports."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerate with `bun run api:update`; both the public and the internal sections change."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/packaging/public-surface.test.ts",
+          "reason": "the `SEAMS` array and its `toHaveLength(20)` assertion pin the seam count; add `_memoryStoreDeps` and change the expected length to 21 (the invariant is \"every seam in the list is exported from the internal entry\", not the number 20)."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "86e3955bbaf0f1d51332d7a10cab60eaa12c1e81"
+    },
+    {
+      "id": "US-004",
+      "title": "Confine note paths and harden atomic writes",
+      "description": "**Goal** — Prevent note access outside its scope root and verify atomic publication failure behavior.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — Rules: a slug failing `MEMORY_SLUG_RE` throws `NaxError` code `MEMORY_SLUG_INVALID` before any filesystem call. Confinement: before any read or write of a note, `isInside(scopeRoot, notesDir)` must hold and, when the target file exists, `isInside(scopeRoot, file)` must hold too; otherwise `NaxError` code `MEMORY_PATH_OUTSIDE` (for `listNotes`, a file failing the check is skipped with one `warn`, not thrown).\n\nEvery whole-file write in this feature goes through `writeFileAtomic(path, text)` from `#src/internal/atomic-write` (stages `<path>.<uuid>.tmp` beside the target, then `rename`; its `_atomicWriteDeps` seam injects failures), so no module here names a temp file itself; every directory listing ignores names ending in `.tmp`. Containment checks use `isInside(root, path)` from `#src/internal/realpath` (symlink-tolerant, never throws, a missing path compares by its raw spelling).\n\n**Scope** — In: modify store.ts created by US-003 to enforce confinement for note reads/writes/deletes and existing targets; add store-confinement.test.ts with symlink and atomic-failure checks. Reuse the actual existing isInside implementation unchanged, including its nearest-existing-ancestor resolution for missing paths. Out: decisions/sync/index persistence (US-005), outbox sequencing (US-010), synchronization locking (US-011).\n\n**Interface** — `isInside(root, path)` from `#src/internal/realpath`; `writeFileAtomic(path, text)` from `#src/internal/atomic-write`; store `readNote(scope, slug)`, `writeNote(note)`, `deleteNote(scope, slug)`, `listNotes(scope)` keep their US-003 signatures. Every NaxError created here carries `{ stage: \"memory\" }`; skipped-file diagnostics use warn stage memory with `{ path, error }`. Simulate failures through _atomicWriteDeps, not a new write seam. Verify check:all after implementation.",
+      "acceptanceCriteria": [
+        "[unit] writeNote with slug ../escape throws NaxError with code MEMORY_SLUG_INVALID, and neither _memoryStoreDeps.mkdir nor _atomicWriteDeps.writeFile is invoked.",
+        "[unit] With <projectDir>/notes replaced by a symbolic link to a directory outside projectDir, writeNote of a valid slug throws NaxError with code MEMORY_PATH_OUTSIDE and the outside directory stays empty.",
+        "[unit] With <projectDir>/notes/<slug>.md being a symbolic link to a file outside projectDir, readNote throws NaxError with code MEMORY_PATH_OUTSIDE.",
+        "[unit] listNotes(\"project\") skips a symlinked note file that resolves outside projectDir, logs one warn for it, and returns the other notes.",
+        "[unit] writeNote calls _atomicWriteDeps.writeFile with a path ending in .tmp inside the notes directory and then _atomicWriteDeps.rename(temp, final).",
+        "[unit] When _atomicWriteDeps.rename is made to throw, writeNote rejects with that error, the final file does not exist afterwards and no .tmp file remains in the notes directory."
+      ],
+      "tags": [
+        "memory",
+        "security",
+        "confinement",
+        "storage"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Adds checks in one store using existing isInside and atomic-write helpers; path confinement remains a security boundary requiring strict isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/store.ts",
+        "packages/nax-agent/src/internal/realpath.ts",
+        "packages/nax-agent/src/internal/atomic-write.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/memory/store-confinement.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When an existing note file points outside projectDir, deleteNote throws MEMORY_PATH_OUTSIDE and the outside file remains unchanged.",
+        "When rename fails while replacing an existing note, the previous final file contents remain unchanged."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2fa6bfefddbbea5494313ad0abffe627578b875c"
+    },
+    {
+      "id": "US-005",
+      "title": "Persist decisions, sync state and generated indexes",
+      "description": "**Goal** — Complete the store's decisions, checkpoint and scope-index persistence methods.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — `readSyncState` returns the defaults when the file is missing or unparsable (unparsable → one `warn`). Writes use `writeFileAtomic`; directories are created with `mkdir({ recursive: true })` on demand. Reads and directory operations go through `_memoryStoreDeps` (`readFile`, `mkdir`, `readdir`, `rm`) so tests inject failures; the write path's seam is `_atomicWriteDeps`.\n\nThe paths are `<projectDir>/decisions.jsonl` (one MemoryDecision JSON per line, read-only mirror), `<projectDir>/sync.json` (MemorySyncState), `<projectDir>/MEMORY.md` (generated project index) and `<userDir>/MEMORY.md` (generated user index). Missing decisions read as []; malformed JSONL lines are skipped with one warn per line. The default state is `{ provider: null, cursor: { project: null, user: null }, lastPullAt: null, lastError: null }`. A user-scope call on a store without `userDir` throws `NaxError` code `MEMORY_SCOPE_UNAVAILABLE`.\n\n**Scope** — In: add readDecisions, writeDecisions, readSyncState, writeSyncState, writeIndex and MemorySyncState to store.ts; export MemorySyncState through both barrels; regenerate API snapshot. Out: index content rendering (US-006/007), pulling provider decisions/cursors (US-014/015). The decisions mirror is read-only here: only sync writes it, and only from project pages. The store's low-level writeDecisions exists for that synchronization path, not a host editing API.\n\n**Interface** —\n```ts\nexport interface MemorySyncState {\n  readonly provider: string | null;\n  readonly cursor: { readonly project: string | null; readonly user: string | null };\n  readonly lastPullAt: string | null; readonly lastError: string | null;\n}\nreadDecisions(): Promise<MemoryDecision[]>;\nwriteDecisions(decisions): Promise<void>;\nreadSyncState(): Promise<MemorySyncState>;\nwriteSyncState(state): Promise<void>;\nwriteIndex(scope, text): Promise<void>;   // MEMORY.md of that scope\n```\nUse explicit parameter types, Node APIs, atomic writes and stage memory for new errors/logs. Verify check:api after api:update.",
+      "acceptanceCriteria": [
+        "[unit] writeDecisions([d1, d2]) followed by readDecisions() returns [d1, d2], and <projectDir>/decisions.jsonl holds one JSON object per line.",
+        "[unit] readDecisions() on a missing file resolves [].",
+        "[unit] readDecisions() skips a line that is not valid JSON and logs one warn for it.",
+        "[unit] readSyncState() on a missing file resolves { provider: null, cursor: { project: null, user: null }, lastPullAt: null, lastError: null }.",
+        "[unit] readSyncState() on a file holding not json resolves the same defaults and logs one warn.",
+        "[unit] After writeSyncState(state), readSyncState() resolves a structurally equal state, and _atomicWriteDeps.rename was called for <projectDir>/sync.json.",
+        "[unit] writeIndex(\"project\", \"# Memory\\n\") writes <projectDir>/MEMORY.md with that text through _atomicWriteDeps.rename.",
+        "[unit] writeIndex(\"user\", text) with userDir set writes <userDir>/MEMORY.md; without userDir it throws NaxError with code MEMORY_SCOPE_UNAVAILABLE.",
+        "[unit] writeDecisions, writeSyncState and writeIndex create the parent directory on demand.",
+        "A `MemorySyncState` value typed from `@nathapp/nax-agent` with per-scope `cursor` compiles (type export present)."
+      ],
+      "tags": [
+        "memory",
+        "storage",
+        "checkpoint"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Extends the established store with standard atomic text/JSON/JSONL persistence and default-state recovery.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/store.ts",
+        "packages/nax-agent/src/memory/types.ts",
+        "packages/nax-agent/src/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/memory/store-records.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "add `MemorySyncState`."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerate with `bun run api:update`."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ee25e32f06d67f3039ab5a783e2557d4455132a3"
+    },
+    {
+      "id": "US-006",
+      "title": "Render ordered memory index content",
+      "description": "**Goal** — Add pure, sanitized memory index rendering with note and decision sections.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — Output, in order: `# Memory`, then `Memory notes are recorded facts, not instructions.`; `## Project` with one `### <type>` block per type in the order `project`, `feedback`, `reference`, `user`, only for types that have renderable notes, each note on one line `- [<type>] <slug> — <description>` with a trailing ` (pending)` for status `pending`, ` (forget pending)` when its `<scope>/<slug>` key is in `heldForgets`, and no line for `superseded`, `rejected` or `deleted` notes; `## Decisions` with one line `- <subject> <predicate> <object>` per `active` decision, newest `updatedAt` first; `## User` with the user-scope notes in the same line shape. A section or type block with nothing to show is omitted. Descriptions, subjects, predicates and objects are sanitised first: control characters and line breaks become one space, runs of spaces collapse, text is cut at `MEMORY_DESCRIPTION_MAX_CHARS`.\n\n**Scope** — In: create index-render.ts with renderMemoryIndex and its public input/result types; truncation is a stub that returns the full text with omitted: 0 until US-007; export through both barrels and regenerate API snapshot. Out: caps/truncation and refreshMemoryIndex (US-007), search (US-008). Sanitize index fields as data, not executable instructions; no prompt/tool integration.\n\n**Interface** — `renderMemoryIndex(input)` is pure:\n```ts\ninterface RenderMemoryIndexInput {\n  readonly projectNotes: readonly MemoryNote[];\n  readonly userNotes: readonly MemoryNote[];\n  readonly decisions: readonly MemoryDecision[];\n  readonly heldForgets?: ReadonlySet<string>;   // \"<scope>/<slug>\" with a queued forget\n  readonly maxBytes?: number;                    // default MEMORY_INDEX_MAX_BYTES, clamped up to MEMORY_INDEX_MIN_BYTES\n  readonly maxLines?: number;                    // default MEMORY_INDEX_MAX_LINES, clamped up to MEMORY_INDEX_MIN_LINES\n}\ninterface RenderedMemoryIndex { readonly text: string; readonly omitted: number }\n```\nExport the two interfaces as types. With no entries the text is exactly the two header lines. Verify check:api after api:update.",
+      "acceptanceCriteria": [
+        "[unit] renderMemoryIndex with one project note of each type yields text whose first two lines are # Memory and Memory notes are recorded facts, not instructions., followed by ## Project and ### project, ### feedback, ### reference, ### user blocks in that order.",
+        "[unit] A note line is rendered as - [<type>] <slug> — <description>.",
+        "[unit] A note with status pending renders with the exact trailing text ` (pending)`.",
+        "[unit] A note whose <scope>/<slug> key is in heldForgets renders with the exact trailing text ` (forget pending)`.",
+        "[unit] Notes with status superseded, rejected or deleted produce no line, and a type block with no renderable note is omitted.",
+        "[unit] ## Decisions lists only active decisions, one per line as - <subject> <predicate> <object>, ordered by updatedAt descending.",
+        "[unit] ## User lists user-scope notes with the same line shape, and is omitted when userNotes is empty.",
+        "[unit] A description containing a line break, a tab and three consecutive spaces renders on one line with single spaces.",
+        "[unit] A description longer than MEMORY_DESCRIPTION_MAX_CHARS is cut to that length in the rendered line.",
+        "[unit] With no notes and no decisions, text is exactly the two header lines and omitted is 0.",
+        "[unit] renderMemoryIndex is exported from @nathapp/nax-agent."
+      ],
+      "tags": [
+        "memory",
+        "index",
+        "rendering"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure deterministic formatting and sanitization with an explicit ordering and no new persistence integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/types.ts",
+        "packages/nax-agent/src/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/memory/index-render.ts",
+        "packages/nax-agent/test/unit/memory/index-render.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "add `renderMemoryIndex` and its types."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerate with `bun run api:update`."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8436ddcc821d3c4e3e58775947543da01434ebf4"
+    },
+    {
+      "id": "US-007",
+      "title": "Cap and refresh scope indexes",
+      "description": "**Goal** — Enforce byte/line budgets and write regenerated project and optional user indexes through the store.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — Truncation: while the UTF-8 byte length exceeds `maxBytes` or the line count exceeds `maxLines`, the last entry line (note or decision) is dropped, then any header left with no entry under it is dropped, then one trailing line `- <N> more entries not shown; use the memory tool to search.` is appended (counted within the caps) with `omitted` = N dropped entries; `maxLines` below `MEMORY_INDEX_MIN_LINES` and `maxBytes` below `MEMORY_INDEX_MIN_BYTES` are raised to those minimums, which always fit the headers plus the trailing line. `refreshMemoryIndex(store, options?)` with `options = { heldForgets?, maxBytes?, maxLines? }` reads notes and decisions through the store, renders, writes the project text with `store.writeIndex(\"project\", text)` and, when `userDir` is set, writes `store.writeIndex(\"user\", userText)` where `userText` holds the two header lines and the `## User` section only, rendered under the same caps; it resolves the project `RenderedMemoryIndex`.\n\n**Scope** — In: replace US-006's truncation stub in index-render.ts; add refreshMemoryIndex, its public export and API snapshot; verify its store.writeIndex seam using captured arguments. Out: outbox held-key derivation (US-010), sync calls (US-011 onward), rendering new sections or tools. The timeout, page-size, page-limit and index-minimum constants are not configurable in this feature. Rendering still accepts its explicitly specified maxBytes/maxLines options.\n\n**Interface** —\n```ts\ninterface RenderMemoryIndexInput {\n  readonly projectNotes: readonly MemoryNote[];\n  readonly userNotes: readonly MemoryNote[];\n  readonly decisions: readonly MemoryDecision[];\n  readonly heldForgets?: ReadonlySet<string>;   // \"<scope>/<slug>\" with a queued forget\n  readonly maxBytes?: number;                    // default MEMORY_INDEX_MAX_BYTES, clamped up to MEMORY_INDEX_MIN_BYTES\n  readonly maxLines?: number;                    // default MEMORY_INDEX_MAX_LINES, clamped up to MEMORY_INDEX_MIN_LINES\n}\ninterface RenderedMemoryIndex { readonly text: string; readonly omitted: number }\n```\n`renderMemoryIndex(input)` remains pure; `refreshMemoryIndex(store, options?)` returns the project's RenderedMemoryIndex after awaited writes. Defaults are MEMORY_INDEX_MAX_BYTES = 24_576 and MEMORY_INDEX_MAX_LINES = 200; minimums are 512 bytes and 16 lines. Verify check:api after api:update.",
+      "acceptanceCriteria": [
+        "[unit] With maxLines: 20 and thirty project notes of one type, the output has at most 20 lines, its last line has the form - <N> more entries not shown; use the memory tool to search., and omitted equals the number of note lines dropped.",
+        "[unit] With maxLines: 20, four types, and enough notes that a whole type block is dropped, that block's ### <type> header is absent from the output.",
+        "[unit] With maxBytes smaller than the full rendering, the UTF-8 byte length of text is at most maxBytes and omitted is greater than 0.",
+        "[unit] With maxLines: 2 and thirty notes, the output still contains the two header lines and the trailing line (the value is raised to MEMORY_INDEX_MIN_LINES); with maxBytes: 10 the output is at most MEMORY_INDEX_MIN_BYTES bytes and still contains the header lines.",
+        "[unit] refreshMemoryIndex(store) on a store holding two project notes and one decision calls store.writeIndex with `\"project\"` and the rendered text, and resolves the same RenderedMemoryIndex.",
+        "[unit] refreshMemoryIndex on a store with `\"user\"`Dir additionally calls store.writeIndex with user and a text containing the two header lines and the ## User section and no ## Project section.",
+        "[unit] refreshMemoryIndex(store, { heldForgets }) renders the held slug with the exact trailing text ` (forget pending)`.",
+        "[unit] refreshMemoryIndex is exported from @nathapp/nax-agent."
+      ],
+      "tags": [
+        "memory",
+        "index",
+        "limits"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded entry-removal loop and thin refresh function extend one existing renderer using the established store interface; no new abstraction or dependency is needed.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/index-render.ts",
+        "packages/nax-agent/src/memory/store.ts",
+        "packages/nax-agent/src/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/memory/index-render-truncation.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "add `refreshMemoryIndex`."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerate with `bun run api:update`."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3fe8f334998fb01e0a610881891affeaa51b0f61"
+    },
+    {
+      "id": "US-008",
+      "title": "Keyword search over mirrored notes",
+      "description": "**Goal** — Provide deterministic Unicode whole-token search and snippets over note arrays.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — `tokenizeMemoryQuery(text)`: lower-case, split on any run of characters that are not Unicode letters or digits (`\\p{L}` / `\\p{N}`), drop tokens shorter than 2 characters, keep first occurrence order, distinct. `searchMemoryNotes(notes, text, limit)` is pure: the note's `slug` + `description` and its `body` are tokenised the same way; a query token matches a field group only as a whole token (`replay` does not match `replays`). Score = 2 × distinct query tokens present in the slug/description group + 1 × distinct query tokens present in the body group. Notes with score 0 and notes whose status is not `active` or `pending` are excluded. Order: score descending, `updatedAt` descending, slug ascending; at most `limit`. `snippet` = the first body line containing any query token as a whole token, cut at 160 characters, else `\"\"`. An empty or token-less query returns `[]`.\n\n**Scope** — In: create search.ts, export searchMemoryNotes/tokenizeMemoryQuery through both barrels, regenerate API snapshot. Out: provider search integration (future feature), local-provider search (not implemented), index rendering (US-006/007). No background consolidation, no auto-extraction from transcripts, no embeddings or vector search: search is keyword only, whole-token matching.\n\n**Interface** — `tokenizeMemoryQuery(text)` returns distinct string tokens; `searchMemoryNotes(notes, text, limit)` returns MemoryHit[].\n```ts\nexport interface MemoryHit {\n  readonly slug: string; readonly scope: MemoryScope; readonly type: MemoryNoteType;\n  readonly description: string; readonly status: MemoryNoteStatus; readonly score: number; readonly snippet: string;\n}\n```\nDo not introduce a runtime dependency or filesystem access. Verify check:api after api:update.",
+      "acceptanceCriteria": [
+        "[unit] tokenizeMemoryQuery(\"Replay-Budget, 2048 MiB!\") returns [\"replay\", \"budget\", \"2048\", \"mib\"].",
+        "[unit] tokenizeMemoryQuery(\"a b replay replay\") returns [\"replay\"] (short tokens dropped, duplicates removed).",
+        "[unit] tokenizeMemoryQuery(\"Größe über\") returns [\"größe\", \"über\"] (Unicode letters are token characters).",
+        "[unit] searchMemoryNotes(notes, \"replay budget\", 10) ranks a note whose slug contains both tokens above a note whose body alone contains both.",
+        "[unit] A note matching one token only in the body has score 1; a note matching one token only in the description has score 2.",
+        "[unit] A query token repeated in a field counts once for that field.",
+        "[unit] Query replay does not match a note whose only occurrence is the word replays.",
+        "[unit] Notes with status superseded, rejected or deleted are never returned.",
+        "[unit] Two notes with equal score are ordered by updatedAt descending, then slug ascending.",
+        "[unit] limit: 1 returns exactly one hit.",
+        "[unit] searchMemoryNotes(notes, \"\", 10) and searchMemoryNotes(notes, \"a\", 10) return [].",
+        "[unit] A hit's snippet is the first body line containing a query token as a whole token, cut at 160 characters; a note matching only in slug or description has snippet \"\".",
+        "[unit] Matching is case-insensitive: query REPLAY matches a body containing replay.",
+        "[unit] searchMemoryNotes and tokenizeMemoryQuery are exported from @nathapp/nax-agent."
+      ],
+      "tags": [
+        "memory",
+        "search"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure tokenization, weighted ranking and snippets with specified deterministic ordering and no I/O.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/types.ts",
+        "packages/nax-agent/src/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/memory/search.ts",
+        "packages/nax-agent/test/unit/memory/search.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "add `searchMemoryNotes` and `tokenizeMemoryQuery`."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerate with `bun run api:update`."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f975130af01eb3d2b3f4d2399fd1313006e2041b"
+    },
+    {
+      "id": "US-009",
+      "title": "Provider contract and built-in local provider",
+      "description": "**Goal** — Define the injectable provider seam and implement its always-reachable local mirror-backed provider.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — A provider that refuses a write for a reason retrying cannot fix throws `NaxError` code `MEMORY_PUSH_REJECTED` (message = the reason); `isMemoryPushRejected(error)` recognises it. Any other throw or a timeout is transient. `createLocalMemoryProvider(store)` has `id: \"local\"`; `pull` resolves `{ notes: [], done: true }`; `push` of a `save` writes the note with `status: \"active\"` under `direct` and `\"pending\"` under `proposal`, resolving `{ id: request.note.id, status }`; `push` of a `forget` deletes the note under `direct` and leaves it in place under `proposal`, resolving `{ id: request.clientId, status: \"deleted\" | \"pending\" }`; a `save` without a `note` throws `MEMORY_PUSH_REJECTED`; `reachable` resolves `true`; no `search`.\n\n**Scope** — In: create provider-types.ts and local-provider.ts; public exports of createLocalMemoryProvider and the four provider types through both barrels; regenerate API snapshot. Out: outbox (US-010), timeouts and sync (US-011 onward), host operations (US-016 onward). The koda HTTP provider, the generic MCP provider and any network code are the `memory-koda-provider` and `memory-mcp-provider` features; this feature ships only the `local` provider and an injectable `MemoryProvider` interface. `search` on the local provider is not implemented; keyword search runs over the mirror through `searchMemoryNotes`.\n\n**Interface** —\n```ts\nexport interface MemoryWriteRequest {\n  readonly kind: \"save\" | \"forget\";\n  readonly clientId: string;          // MEMORY_CLIENT_ID_RE; idempotency key\n  readonly scope: MemoryScope;\n  readonly slug: string;\n  readonly writeMode: \"direct\" | \"proposal\";\n  readonly note?: MemoryNote;         // present for \"save\"\n  readonly reason?: string;           // present for \"forget\"\n}\nexport interface MemoryPushResult { readonly id: string; readonly status: MemoryNoteStatus }\nexport interface MemoryPage {\n  readonly notes: readonly MemoryNote[];       // tombstones carry status superseded | rejected | deleted\n  readonly decisions?: readonly MemoryDecision[];  // honoured on project pages only\n  readonly nextCursor?: string;\n  readonly done: boolean;\n}\nexport interface MemoryProvider {\n  readonly id: string;\n  pull(input: { scope: MemoryScope; cursor: string | null; take: number }): Promise<MemoryPage>;\n  push(request: MemoryWriteRequest): Promise<MemoryPushResult>;\n  search?(input: { scope: MemoryScope; text: string; limit: number }): Promise<readonly MemoryHit[]>;\n  reachable(): Promise<boolean>;\n}\n```\nUse MemoryStore methods so tests verify local pushes by reading through the store. Every newly constructed NaxError carries stage memory. Verify check:api after api:update.",
+      "acceptanceCriteria": [
+        "[unit] createLocalMemoryProvider(store).id is local and reachable() resolves true.",
+        "[unit] pull({ scope: \"project\", cursor: null, take: 10 }) resolves { notes: [], done: true } with no nextCursor.",
+        "[unit] push of a save request with writeMode: direct resolves { id: note.id, status: \"active\" }, and store.readNote returns the note with status active.",
+        "[unit] push of a save request with writeMode: proposal resolves status pending, and store.readNote returns the note with status pending.",
+        "[unit] push of a save for a slug that already exists overwrites the stored note (readNote returns the new description).",
+        "[unit] push of a forget request with writeMode: direct resolves { id: request.clientId, status: \"deleted\" }, and readNote then resolves null.",
+        "[unit] push of a forget request with writeMode: proposal resolves status pending and readNote still returns the note.",
+        "[unit] push of a save request without a note throws NaxError with code MEMORY_PUSH_REJECTED.",
+        "[unit] The provider object has no search property.",
+        "[unit] createLocalMemoryProvider is callable when imported from @nathapp/nax-agent, and a consumer-defined object literal with id, pull, push and reachable is assignable to the exported MemoryProvider type and returns its scripted responses when invoked through that typed interface."
+      ],
+      "tags": [
+        "memory",
+        "provider",
+        "api"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A declarative seam and small store-backed adapter with explicit direct/proposal transformations; no network or authentication.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/store.ts",
+        "packages/nax-agent/src/memory/note.ts",
+        "packages/nax-agent/src/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/memory/provider-types.ts",
+        "packages/nax-agent/src/memory/local-provider.ts",
+        "packages/nax-agent/test/unit/memory/local-provider.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "add `createLocalMemoryProvider` and the provider types."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerate with `bun run api:update`."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9e55a600bce2b087779f72ac82702f8657d7be23"
+    },
+    {
+      "id": "US-010",
+      "title": "Durable ordered outbox for unacknowledged writes",
+      "description": "**Goal** — Persist queued/rejected provider requests with deterministic sequencing and held-key discovery.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — `createMemoryOutbox({ dir, now? })` (dir = `store.paths.outboxDir`) returns the interface below. `enqueue` assigns `clientId` with `randomUUID()` when absent and otherwise validates it against `MEMORY_CLIENT_ID_RE` (`NaxError` code `MEMORY_CLIENT_ID_INVALID`). Enqueues on one outbox instance are serialised through an internal promise chain, so `seq` = 1 + the highest `seq` among existing entry files (0 when none) is unique even for concurrent callers; the file is `<dir>/<seq padded to 8 digits>-<clientId>.json` written with `writeFileAtomic`. `list` reads only files matching `^\\d{8}-[A-Za-z0-9_-]+\\.json$`, orders by `seq` ascending then `clientId` ascending; a matching file that is not valid JSON or fails the entry schema is excluded from `list` and returned by `listInvalid` (file names). `remove` deletes the entry file (no-op when absent). `markRejected` rewrites the entry with `state: \"rejected\"` and `reason`. `heldKeys(kind)` returns the keys of `queued` entries, filtered by `kind` when given. Directory operations go through `_memoryStoreDeps` (`mkdir`, `readdir`, `readFile`, `rm`).\n\n**Scope** — In: create outbox.ts using atomic whole-file writes and shared filesystem seam; export createMemoryOutbox, MemoryOutbox and MemoryOutboxEntry through both barrels; regenerate API snapshot. Missing outbox directories list as empty and remove as no-op; writes create them on demand. Out: drain/retry orchestration (US-013), save/forget enqueue callers (US-017/018). Automatic retry of a `rejected` outbox entry is out of scope; a later CLI may requeue it. Cross-process serialisation of `enqueue` is not provided: two processes enqueueing at once may produce equal `seq` values, which `list` orders by `clientId`.\n\n**Interface** —\n```ts\ninterface MemoryOutbox {\n  enqueue(request: Omit<MemoryWriteRequest, \"clientId\"> & { clientId?: string }): Promise<MemoryOutboxEntry>;\n  list(): Promise<MemoryOutboxEntry[]>;\n  listInvalid(): Promise<string[]>;\n  remove(clientId: string): Promise<void>;\n  markRejected(clientId: string, reason: string): Promise<void>;\n  heldKeys(kind?: \"save\" | \"forget\"): Promise<ReadonlySet<string>>;   // \"<scope>/<slug>\" of queued entries\n}\ntype MemoryOutboxEntry = MemoryWriteRequest & { seq: number; enqueuedAt: string; state: \"queued\" | \"rejected\"; reason?: string };\n```\nNever construct temp filenames here. All listings ignore .tmp names, all memory-created NaxErrors use stage memory, and schema-invalid JSON is discoverable without entering list(). now defaults to the current Date. Verify check:api after api:update.",
+      "acceptanceCriteria": [
+        "[unit] enqueue(request) with no clientId resolves an entry whose clientId is a UUID (36 characters, 4 hyphens), state queued, seq 1 and enqueuedAt equal to the injected now() ISO string.",
+        "[unit] After that enqueue, the file <dir>/00000001-<clientId>.json exists holding the entry as JSON, and <dir> was created on demand.",
+        "[unit] A second enqueue gets seq 2 even when its enqueuedAt equals the first's.",
+        "[unit] Two enqueue calls started concurrently with Promise.all resolve entries with seq 1 and 2 and produce two files.",
+        "[unit] enqueue(request) with clientId my-client_1 keeps it; with clientId ../x it throws NaxError with code MEMORY_CLIENT_ID_INVALID and writes nothing.",
+        "[unit] list() returns entries ordered by seq ascending, then clientId ascending for equal seq.",
+        "[unit] list() ignores a file named 00000003-x.json.abc.tmp and a file named notes.txt in <dir>.",
+        "[unit] list() excludes a correctly named file whose content is not valid JSON, and listInvalid() returns that file name.",
+        "[unit] remove(clientId) deletes the entry file; remove of an unknown id resolves without throwing.",
+        "[unit] markRejected(clientId, \"note kind not available\") rewrites the entry with state rejected and that reason, and list() still returns it.",
+        "[unit] heldKeys() returns <scope>/<slug> for queued entries only (a rejected entry is excluded); heldKeys(\"forget\") returns only the keys of queued forget entries.",
+        "[unit] enqueue writes through _atomicWriteDeps.writeFile to a .tmp path and then _atomicWriteDeps.rename; while rename is stubbed to delay, a concurrent list() returns only the entries present before the enqueue.",
+        "[unit] createMemoryOutbox is exported from @nathapp/nax-agent.",
+        "[unit] When the outbox directory is missing, list() and listInvalid() return [] and remove(clientId) resolves without throwing.",
+        "[unit] When a correctly named outbox file contains JSON that fails the entry schema, list() excludes it and listInvalid() returns its file name."
+      ],
+      "tags": [
+        "memory",
+        "outbox",
+        "concurrency",
+        "storage"
+      ],
+      "dependencies": [
+        "US-009"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Durable request schemas, promise-chain enqueue serialization, atomic publication and rejected/held state interact across I/O seams.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/provider-types.ts",
+        "packages/nax-agent/src/memory/store.ts",
+        "packages/nax-agent/src/internal/atomic-write.ts",
+        "packages/nax-agent/src/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/memory/outbox.ts",
+        "packages/nax-agent/test/unit/memory/outbox.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "add `createMemoryOutbox` and the outbox types."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerate with `bun run api:update`."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "05b9bf41849ef19c6f3ac21cddc55eb2790d5d7f"
+    },
+    {
+      "id": "US-011",
+      "title": "Sync locking, in-flight guard and never-throws shell",
+      "description": "**Goal** — Introduce syncMemory's guarded lifecycle and reusable scripted provider test helper.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — `syncMemory(input)` with `{ store, outbox, provider, logger, now?, timers?: MemoryTimers, pid?, isAlive?, pageSize? }` (defaults: `now` = `() => new Date()`, `timers` = the globals, `pid` = `process.pid`, `isAlive` = `isProcessAlive` from `#src/internal/process-alive`, `pageSize` = `MEMORY_PULL_PAGE_SIZE`) returns `MemorySyncResult = { outcome: \"synced\" | \"unreachable\" | \"locked\" | \"failed\"; pushed: number; rejected: number; pulled: number; skipped: number; error?: string }` and never throws.\n\n1. **Lock.** Synchronously, before the first `await`, check a module-level in-flight set keyed by `store.paths.lock`: a key already present returns `outcome: \"locked\"` without touching the filesystem; otherwise the key is added. Then `mkdir(projectDir, { recursive: true })`, then `acquireSessionLock(store.paths.lock, { dir: projectDir, pid, now, logger, isAlive }, isAlive)` from `#src/session-store/index` (re-exported from the lock module by US-011). It throws `NaxError` code `SESSION_LOCKED` when another process holds the lock live; that is caught and returned as `outcome: \"locked\"`. A stale holder is taken over by the call itself.\n\n5. **Finish.** `refreshMemoryIndex(store, { heldForgets: await outbox.heldKeys(\"forget\") })`, release the lock and remove the in-flight key (always, in `finally`), return. Any unexpected throw in steps 2–5 is caught, logged at `warn`, and returned as `outcome: \"failed\"` with `error` = the message.\n\nThere is no `_memorySyncDeps` seam: every external dependency is an input.\n\n**Scope** — In: create sync.ts with steps 1/5 and steps 2/3/4 as placeholders; this shell treats the provider as reachable by calling its reachable seam without the timeout policy that US-012 adds. Supply the baseline empty-outbox success result and index refresh. Add named acquireSessionLock re-export from session-store/index.ts, export syncMemory/MemorySyncResult through memory/root barrels and update API snapshot. Create test/helpers/memory-provider.ts with makeMemoryProvider(overrides?) and export only from test/helpers/index.ts. Out: timeout/probe policy (US-012), outbox drain (US-013), paging/application (US-014/015). Run-stage context injection and run-host sync are the `memory-run-stages` feature.\n\n**Interface** — `syncMemory(input)` returns Promise<MemorySyncResult> with the inputs/result above. `makeMemoryProvider(overrides?)` returns a MemoryProvider with recorded mocks for reachable/push/pull and scripted reachability, per-call push results/errors and pull pages. Reuse acquireSessionLock's nonce/heartbeat protocol; do not rewrite it. Route directory creation through _memoryStoreDeps.mkdir. Memory-origin errors and logger calls use stage memory; adapt lock logger calls at this boundary if needed rather than changing existing session lock behavior. Catch initialization/release errors too so never-throws remains true, and clear the in-flight set even when cleanup fails. Verify check:api and the existing import-cycle gate after implementation.",
+      "acceptanceCriteria": [
+        "[unit] makeMemoryProvider() from #test/helpers/index returns a MemoryProvider whose reachable, push and pull are mocks with call records, scripted through overrides (reachable result, push results or throws per call, pull pages).",
+        "[unit] syncMemory on an empty outbox with the scripted provider resolves { outcome: \"synced\", pushed: 0, rejected: 0, pulled: 0, skipped: 0 }.",
+        "[unit] syncMemory creates store.paths.lock while running and the file is absent after it resolves.",
+        "[unit] With a lock file whose holder has a different pid reported alive by the injected isAlive and a fresh heartbeat, syncMemory resolves outcome locked and reachable is not called.",
+        "[unit] With a lock file whose holder pid is reported dead by isAlive, the sync takes the lock over and resolves synced.",
+        "[unit] Two syncMemory calls started synchronously one after the other on the same store in one process (no await between the two calls) resolve one synced and one locked, and reachable is called once.",
+        "[unit] When projectDir does not exist yet, syncMemory creates it and resolves synced.",
+        "[unit] After a successful sync store.paths.index holds the rendered index of the notes in the mirror.",
+        "[unit] syncMemory never rejects: when outbox.heldKeys is made to throw, the result is outcome failed with error set, the lock file is absent, the in-flight key is cleared (a following call resolves synced), and the logger received a warn.",
+        "[unit] syncMemory is exported from @nathapp/nax-agent, and acquireSessionLock is importable from #src/session-store/index."
+      ],
+      "tags": [
+        "memory",
+        "sync",
+        "security",
+        "locking"
+      ],
+      "dependencies": [
+        "US-007",
+        "US-010"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-process session-lock ownership, same-process exclusion and failure-safe cleanup invoke the sessions/security strict-isolation override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/outbox.ts",
+        "packages/nax-agent/src/memory/index-render.ts",
+        "packages/nax-agent/src/memory/local-provider.ts",
+        "packages/nax-agent/src/session-store/session-lock.ts",
+        "packages/nax-agent/src/internal/process-alive.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/memory/sync.ts",
+        "packages/nax-agent/test/helpers/memory-provider.ts",
+        "packages/nax-agent/test/unit/memory/sync.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When lock acquisition fails with an unexpected filesystem error, syncMemory returns outcome failed with its message and a subsequent call is not blocked by an in-flight key."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/session-store/index.ts",
+          "reason": "add `acquireSessionLock` to the names exported from the lock module, so sync imports it through the barrel."
+        },
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "add `syncMemory` and `MemorySyncResult`."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerate with `bun run api:update`."
+        },
+        {
+          "path": "packages/nax-agent/test/helpers/index.ts",
+          "reason": "export `makeMemoryProvider` from the new helper file."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "973ad25a38d0420b046ca84c9edf1b2ef751d0ff"
+    },
+    {
+      "id": "US-012",
+      "title": "Cancellable timeout race and bounded reachability probe",
+      "description": "**Goal** — Bound provider reachability and expose the reusable timer-cleaning timeout race.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — 2. **Probe.** `provider.reachable()` through `raceTimeout(.., MEMORY_PROBE_TIMEOUT_MS, timers)` (the race clears its timer when either side settles, so a fake clock has no pending timer afterwards). `false`, a throw or a timeout → write `sync.json` with only `lastError: \"unreachable\"` changed (cursors kept) → `outcome: \"unreachable\"`, outbox untouched.\n\n`raceTimeout(promise, ms, timers)` lives in `sync.ts`: it resolves with the promise's value when it settles first and clears the timer, and rejects with `NaxError` code `MEMORY_TIMEOUT` when the timer fires first. `setTimeout` here is the cancellable kind (documented at the call site, the forbidden-patterns exception). There is no `_memorySyncDeps` seam: every external dependency is an input.\n\nFake-clock test pattern for the timeout ACs (US-012 and later): the timer is armed only after real awaits (lock, `mkdir`, outbox reads), so a test first `await waitForCondition(() => clock.pending() > 0)`, then `await clock.advance(ms)`, then awaits the sync or operation promise itself (`advance` drains microtasks only; the rest is real filesystem I/O); after the race settles, `clock.pending()` is 0 again. `makeFakeClock()` satisfies `MemoryTimers` directly.\n\n**Scope** — In: fill sync step 2 in sync.ts; export raceTimeout through both barrels; regenerate API snapshot. Preserve US-011 finally/index-refresh behavior for unreachable results. Out: pushes (US-013), pull paging (US-014), operation probe callers (US-016/017/018). Timeout constants are fixed, not new configuration.\n\n**Interface** —\n```ts\nexport interface MemoryTimers {\n  setTimeout(callback: () => void, ms: number): unknown;\n  clearTimeout(id: unknown): void;\n}\n```\n`raceTimeout(promise, ms, timers)` preserves the promise's resolved value type; MEMORY_PROBE_TIMEOUT_MS = 2000, MEMORY_OP_TIMEOUT_MS = 10_000. Construct MEMORY_TIMEOUT with stage memory. A timer race does not cancel the underlying provider promise. Verify check:api after api:update.",
+      "acceptanceCriteria": [
+        "[unit] raceTimeout(promise, ms, timers) resolves with the promise's value when it settles first and calls timers.clearTimeout with the id timers.setTimeout returned.",
+        "[unit] raceTimeout rejects with NaxError code MEMORY_TIMEOUT when the fake clock advances ms before the promise settles.",
+        "[unit] raceTimeout with a fake clock leaves clock.pending() at 0 after either outcome.",
+        "[unit] When reachable() resolves false, syncMemory resolves outcome unreachable, calls neither push nor pull, leaves the outbox unchanged and writes sync.json with lastError unreachable and the previous cursors kept.",
+        "[unit] When reachable() rejects with an Error, syncMemory resolves outcome unreachable and lastError is unreachable.",
+        "[unit] When reachable() never settles, after waitForCondition sees a pending fake-clock timer, clock.advance(MEMORY_PROBE_TIMEOUT_MS) makes syncMemory resolve outcome unreachable and clock.pending() is 0.",
+        "[unit] raceTimeout is exported from @nathapp/nax-agent."
+      ],
+      "tags": [
+        "memory",
+        "sync",
+        "timeouts"
+      ],
+      "dependencies": [
+        "US-011"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Adds an injected cancellable timer race and a bounded probe branch within the existing lock shell, without changing lock ownership.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/sync.ts",
+        "packages/nax-agent/test/helpers/memory-provider.ts",
+        "packages/nax-agent/src/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/memory/sync-probe.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "add `raceTimeout`."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerate with `bun run api:update`."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "78caa6f8b4ef0a20a30c8567aea5d93e30b39a69"
+    },
+    {
+      "id": "US-013",
+      "title": "Drain queued writes with rejection and transient handling",
+      "description": "**Goal** — Deliver outbox writes in order before pulling provider changes.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — 3. **Drain.** For each `queued` entry from `outbox.list()` in order: `push` through `raceTimeout(.., MEMORY_OP_TIMEOUT_MS)`. Success → for a `save`, rewrite the mirrored note with the returned `id` and `status`; for a `forget`, delete the mirrored note only when the returned `status` is `\"deleted\"`; then `remove(clientId)`, `pushed++`. `MEMORY_PUSH_REJECTED` → `markRejected(clientId, message)`, `rejected++`, mirror untouched, continue. Any other error or timeout → stop draining (the entry stays `queued`), write `lastError` = the message, skip step 4, go to step 5 with `outcome: \"failed\"`.\n\n5. **Finish.** `refreshMemoryIndex(store, { heldForgets: await outbox.heldKeys(\"forget\") })`, release the lock and remove the in-flight key (always, in `finally`), return. Any unexpected throw in steps 2–5 is caught, logged at `warn`, and returned as `outcome: \"failed\"` with `error` = the message.\n\n**Scope** — In: fill step 3 in sync.ts, passing each entry's MemoryWriteRequest fields to provider.push through raceTimeout; preserve provider clientId, mirror successful acknowledgments, retain permanent rejections and stop on transient errors. Ensure queued forget keys reach the final index. Out: real cursor/paging implementation (US-014), held-pull validation/tombstones (US-015), immediate operation rollback (US-017/018). Automatic retry of a `rejected` outbox entry is out of scope; a later CLI may requeue it. A rejected `save` found by sync leaves the mirrored note as it is (the next pull brings the provider's view); only the direct save path restores the previous note.\n\n**Interface** —\n```ts\nexport interface MemoryPushResult { readonly id: string; readonly status: MemoryNoteStatus }\n```\nUse the existing syncMemory input/result, MemoryProvider.push, MemoryOutbox.list/remove/markRejected and MemoryStore.writeNote/deleteNote/writeSyncState. Convert errors with #src/infra/errors errorMessage; use stage memory on new logs/errors. Timeout tests await a pending fake timer before advancing MEMORY_OP_TIMEOUT_MS and then await the sync promise. Verify check:all after implementation.",
+      "acceptanceCriteria": [
+        "[unit] With the provider reachable and two queued save entries, syncMemory calls provider.push once per entry in seq order with each entry's MemoryWriteRequest fields, and resolves outcome synced, pushed 2, rejected 0.",
+        "[unit] After that sync both entries are removed from the outbox and each mirrored note carries the id and status the provider returned.",
+        "[unit] A queued forget entry whose push resolves status deleted deletes the mirrored note; one whose push resolves status pending leaves the note in place; both entries are removed.",
+        "[unit] When push throws NaxError code MEMORY_PUSH_REJECTED for the first entry and succeeds for the second, the first entry is rejected with the error message as reason and its mirrored note remains untouched, the second is removed, and the result has rejected: 1, pushed: 1, outcome: synced.",
+        "[unit] When push throws a plain Error for the first of two entries, the second entry is still queued, provider.pull is not called, sync.json.lastError holds the error message, and outcome is failed.",
+        "[unit] When push never settles, after a pending timer appears, clock.advance(MEMORY_OP_TIMEOUT_MS) makes syncMemory resolve outcome failed with the entry still queued.",
+        "[unit] After a transient push failure leaves a forget entry queued, store.paths.index shows that slug with the exact trailing text ` (forget pending)`."
+      ],
+      "tags": [
+        "memory",
+        "sync",
+        "outbox",
+        "delivery"
+      ],
+      "dependencies": [
+        "US-012"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Fills one ordered drain loop using already-tested timeout, provider, outbox and store seams; permanent versus transient handling is explicit and lock ownership is unchanged.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/sync.ts",
+        "packages/nax-agent/src/memory/outbox.ts",
+        "packages/nax-agent/test/helpers/memory-provider.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/memory/sync-drain.test.ts"
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c6a3887faf36307b3cea750afe0fcf96bf7bc135"
+    },
+    {
+      "id": "US-014",
+      "title": "Pull provider pages and checkpoint per-scope cursors",
+      "description": "**Goal** — Add bounded drain-then-pull pagination with durable resume cursors and partial-failure recovery.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — 4. **Pull.** For `scope: \"project\"` then, when `userDir` is set, `\"user\"`: starting from `syncState.cursor[scope]`, call `provider.pull({ scope, cursor, take: pageSize })` until `done`, at most `MEMORY_PULL_MAX_PAGES` pages per scope (the limit reached → `lastError` `\"pull page limit reached\"`, `outcome: \"failed\"`, cursor kept at the last page). Each call goes through `raceTimeout(.., MEMORY_OP_TIMEOUT_MS)`. After each page returns, `outbox.heldKeys()` is read afresh. For each returned note: a slug failing `MEMORY_SLUG_RE` or a note failing the `MemoryNote` schema → `skipped++` with one `warn`; a key in the held set → skipped silently (not counted); a tombstone (`superseded | rejected | deleted`) → `deleteNote`; otherwise `writeNote`, `pulled++`. `decisions` on a project page replace `decisions.jsonl`; `decisions` on a user page are ignored. After each page `sync.json` is written with `cursor[scope] = nextCursor ?? previous`, `lastPullAt = now`, `lastError: null`, `provider = provider.id`. A throw or timeout mid-pull keeps the last written cursor, writes `lastError`, and yields `outcome: \"failed\"` (the other scope is not pulled).\n\n**Scope** — In: fill cursor/paging behavior in step 4 of sync.ts, project pages of valid active notes, checkpointing, page limit, drain-before-pull and bounded failure. The quoted full target pull algorithm also describes US-015's completion work. Out: held-key protection, invalid-note skipping, tombstones, decisions and full user-scope application (US-015). Do not add any external provider implementation.\n\n**Interface** —\n```ts\nexport interface MemoryPage {\n  readonly notes: readonly MemoryNote[];       // tombstones carry status superseded | rejected | deleted\n  readonly decisions?: readonly MemoryDecision[];  // honoured on project pages only\n  readonly nextCursor?: string;\n  readonly done: boolean;\n}\n```\n`provider.pull({ scope, cursor, take: pageSize })` uses pageSize default MEMORY_PULL_PAGE_SIZE = 200 and at most MEMORY_PULL_MAX_PAGES = 50 calls per scope. Use existing MemorySyncState and MemorySyncResult. The design's lastPullAt = now shorthand means now().toISOString(), because now returns Date and the persisted field is string | null. A done:true final page at the limit succeeds; only an undrained sequence fails. Timeout tests first wait for a pending timer, advance MEMORY_OP_TIMEOUT_MS, then await sync. Preserve finally/index refresh and stage memory diagnostics. Verify check:all after implementation.",
+      "acceptanceCriteria": [
+        "[unit] With pages { notes: [n1], nextCursor: \"c1\", done: false } then { notes: [n2], done: true }, syncMemory calls provider.pull first with { scope: \"project\", cursor: null, take: MEMORY_PULL_PAGE_SIZE } and then with cursor c1, and resolves pulled: 2.",
+        "[unit] After that sync both notes are in the mirror and sync.json has cursor.project c1, provider equal to provider.id, lastPullAt equal to now().toISOString() and lastError null.",
+        "[unit] A last page without nextCursor leaves cursor.project at the previous page's cursor.",
+        "[unit] A sync whose state file already holds cursor.project c9 calls pull with cursor c9.",
+        "[unit] When pull throws on the second page, the cursor written after the first page is kept, lastError holds the message and outcome is failed.",
+        "[unit] When pull never settles, after a pending timer appears, clock.advance(MEMORY_OP_TIMEOUT_MS) makes syncMemory resolve outcome failed.",
+        "[unit] A provider whose pages never report done: true is stopped after MEMORY_PULL_MAX_PAGES calls with lastError `\"pull page limit reached\"` and outcome failed, preserving the cursor written for the last completed page.",
+        "[unit] Pull runs after a successful drain in the same call: push is called before pull, and both the pushed note and the pulled notes are in the mirror afterwards."
+      ],
+      "tags": [
+        "memory",
+        "sync",
+        "pagination",
+        "checkpoint"
+      ],
+      "dependencies": [
+        "US-013"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Adds a bounded pagination loop and per-page state writes to the existing sync shell; timeout racing and persistence are upstream implementations with injectable interfaces.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/sync.ts",
+        "packages/nax-agent/src/memory/store.ts",
+        "packages/nax-agent/test/helpers/memory-provider.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/memory/sync-pull.test.ts"
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5cf79cf72bdd5ff4324f115e9a06c63743982425"
+    },
+    {
+      "id": "US-015",
+      "title": "Apply pulled notes safely across scopes",
+      "description": "**Goal** — Complete pull application with validation, tombstones, queued-write protection, project decisions and user notes.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — 4. **Pull.** For `scope: \"project\"` then, when `userDir` is set, `\"user\"`: starting from `syncState.cursor[scope]`, call `provider.pull({ scope, cursor, take: pageSize })` until `done`, at most `MEMORY_PULL_MAX_PAGES` pages per scope (the limit reached → `lastError` `\"pull page limit reached\"`, `outcome: \"failed\"`, cursor kept at the last page). Each call goes through `raceTimeout(.., MEMORY_OP_TIMEOUT_MS)`. After each page returns, `outbox.heldKeys()` is read afresh. For each returned note: a slug failing `MEMORY_SLUG_RE` or a note failing the `MemoryNote` schema → `skipped++` with one `warn`; a key in the held set → skipped silently (not counted); a tombstone (`superseded | rejected | deleted`) → `deleteNote`; otherwise `writeNote`, `pulled++`. `decisions` on a project page replace `decisions.jsonl`; `decisions` on a user page are ignored. After each page `sync.json` is written with `cursor[scope] = nextCursor ?? previous`, `lastPullAt = now`, `lastError: null`, `provider = provider.id`. A throw or timeout mid-pull keeps the last written cursor, writes `lastError`, and yields `outcome: \"failed\"` (the other scope is not pulled).\n\n**Scope** — In: complete step 4 in sync.ts on top of US-014's paging; schema/slug validation, tombstone deletion, fresh held-key checks, project-only decisions and userDir/user cursor support. Out: paging mechanics already implemented by US-014; host save/forget/approve (US-016 through US-019). The decisions mirror is read-only here: only sync writes it, and only from project pages. No cross-scope provider/config routing.\n\n**Interface** —\n```ts\nexport interface MemoryPage {\n  readonly notes: readonly MemoryNote[];       // tombstones carry status superseded | rejected | deleted\n  readonly decisions?: readonly MemoryDecision[];  // honoured on project pages only\n  readonly nextCursor?: string;\n  readonly done: boolean;\n}\n```\nUse the MemoryNote schema from the model layer, store.writeNote/deleteNote/writeDecisions/writeSyncState and outbox.heldKeys(). Held keys are '<scope>/<slug>' and are read after the awaited page, not before it. Invalid notes produce one warn stage memory; held notes do not increment skipped or pulled. Preserve all existing drain/probe/lock/finalization semantics. Verify check:all after implementation.",
+      "acceptanceCriteria": [
+        "[unit] A pulled note with status superseded deletes the mirrored note of that slug and is not counted in pulled.",
+        "[unit] When the scripted pull enqueues a save for slug held on the outbox before resolving a page that contains held, the mirrored held note keeps its local content and is not counted in pulled.",
+        "[unit] A pulled note with slug Bad Slug is skipped, counted in skipped, logged once at warn, and the page's cursor is still written.",
+        "[unit] A pulled object missing description is skipped, counted in skipped and logged once at warn.",
+        "[unit] A project page carrying decisions replaces decisions.jsonl with exactly those decisions.",
+        "[unit] With userDir set, pull is also called with scope user starting from cursor.user, and user-scope notes land under <userDir>/notes.",
+        "[unit] After the user pull, cursor.user is written, and decisions on the user page leave decisions.jsonl unchanged.",
+        "[unit] When the project pull fails mid-way, the user scope is not pulled."
+      ],
+      "tags": [
+        "memory",
+        "sync",
+        "validation",
+        "scopes"
+      ],
+      "dependencies": [
+        "US-014"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Completes existing per-page application with schema checks, held-key filtering and scope branches; all store, outbox and paging contracts already exist upstream.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/sync.ts",
+        "packages/nax-agent/src/memory/outbox.ts",
+        "packages/nax-agent/test/helpers/memory-provider.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/memory/sync-apply.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a pulled note has status rejected or deleted, its existing mirrored note is removed without incrementing pulled.",
+        "When a queued forget holds a pulled note's key, the pull leaves that local note untouched without incrementing skipped."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a70327ac348305917c57440d43e59708c7ee3e6e"
+    },
+    {
+      "id": "US-016",
+      "title": "Save validated notes through the delivered path",
+      "description": "**Goal** — Add the validated direct/proposal save operation and immediate provider delivery.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — Shared inputs: `{ store, outbox, provider, logger, now?, timers? }`. `saveMemoryNote(input & { write: MemoryNoteWrite; writeMode; source })`: `validateMemoryNoteWrite(write, source)` refusal → throw `NaxError` code `MEMORY_WRITE_REFUSED` (message = reason), nothing written. Read the existing note for `(scope, slug)` (`previous`). Build the note: `id` = `randomUUID()`, `status` = `active` under `direct` / `pending` under `proposal`, `updatedAt` = `now()`. Write it to the mirror. Else probe (`reachable` through `raceTimeout(.., MEMORY_PROBE_TIMEOUT_MS)`), then `push` through `raceTimeout(.., MEMORY_OP_TIMEOUT_MS)` with a `save` request whose `clientId` is the note's `id`. Success → rewrite the mirrored note with the returned `id` and `status` → `{ slug, status, delivered: true }`. Always `refreshMemoryIndex(store, { heldForgets: await outbox.heldKeys(\"forget\") })` before returning.\n\nThe quoted delivered-path 'Else probe' follows the queued-key branch introduced in US-017; this story only implements validated, delivered and proposal cases, not that later branch.\n\n**Scope** — In: create operations.ts with saveMemoryNote and MemorySaveResult; export through both barrels and regenerate API snapshot. Validate before reads/writes/provider calls, stage errors as memory, and test the validator/provider/store/index seams rather than duplicating validation logic. Out: queued-behind, unreachable, timeout/transient fallback and permanent rejection rollback (US-017), forget (US-018), approve/offline integration (US-019). The `nax-memory` tool provider, its tools and the chat `## Memory` instructions section are the `memory-chat` feature, not this one.\n\n**Interface** — `saveMemoryNote(input & { write: MemoryNoteWrite; writeMode; source })` returns Promise<MemorySaveResult>; MemorySaveResult exposes `{ slug, status, delivered }` with slug string, status MemoryNoteStatus, delivered boolean. The spec uses shorthand parameters: explicitly type writeMode as 'direct' | 'proposal', source as string, and shared inputs with their existing interfaces; now defaults to () => new Date(), timers to the globals. The design's updatedAt = now() shorthand means now().toISOString(), matching MemoryNote's ISO string field. Provider request is the exported MemoryWriteRequest. New note UUID is both its initial id and request clientId. The provider can replace id/status, not the operation's original source or timestamp.\n\nVerification: check:api after api:update. Use strict secret-refusal regression tests with no persistence on refusal.",
+      "acceptanceCriteria": [
+        "[unit] saveMemoryNote with a valid write, writeMode direct and a reachable provider whose push resolves { id: \"mem_1\", status: \"active\" } resolves { slug, status: \"active\", delivered: true }.",
+        "[unit] After that save store.readNote returns the note with id mem_1, status active, source equal to the input source and updatedAt equal to now().toISOString().",
+        "[unit] saveMemoryNote passes push a save request whose clientId equals the note's initial id (a UUID of 36 characters), whose writeMode is the input mode and whose note equals the mirrored note at the time of push, before the provider's returned id and status are applied.",
+        "[unit] saveMemoryNote with writeMode proposal writes the note with status pending before pushing, and resolves status pending when the provider returns pending.",
+        "[unit] saveMemoryNote with a body containing a GitHub token throws NaxError with code MEMORY_WRITE_REFUSED, no note file exists afterwards and the outbox is empty.",
+        "[unit] After a delivered save, store.paths.index contains the new slug.",
+        "[unit] saveMemoryNote is exported from @nathapp/nax-agent.",
+        "[unit] When a save contains a bad slug, bad description, bad source or oversized body, saveMemoryNote throws MEMORY_WRITE_REFUSED with the first validation refusal reason and leaves the mirror and outbox unchanged."
+      ],
+      "tags": [
+        "memory",
+        "operations",
+        "save",
+        "security"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-015"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The delivered save path composes upstream validation, store and timeout helpers in one module; credential/secret refusal at the write boundary requires strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/sync.ts",
+        "packages/nax-agent/src/memory/validate.ts",
+        "packages/nax-agent/src/memory/index-render.ts",
+        "packages/nax-agent/test/helpers/memory-provider.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/memory/operations.ts",
+        "packages/nax-agent/test/unit/memory/operations.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "add `saveMemoryNote` and `MemorySaveResult`."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerate with `bun run api:update`."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8c0f5e492c4ac24421d3a8caf99d990b76dbebc1"
+    },
+    {
+      "id": "US-017",
+      "title": "Queue undelivered saves and roll back permanent rejections",
+      "description": "**Goal** — Complete saveMemoryNote's offline, ordered-queue and permanent-rejection paths.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — Shared inputs: `{ store, outbox, provider, logger, now?, timers? }`. `saveMemoryNote(input & { write: MemoryNoteWrite; writeMode; source })`: `validateMemoryNoteWrite(write, source)` refusal → throw `NaxError` code `MEMORY_WRITE_REFUSED` (message = reason), nothing written. Read the existing note for `(scope, slug)` (`previous`). Build the note: `id` = `randomUUID()`, `status` = `active` under `direct` / `pending` under `proposal`, `updatedAt` = `now()`. Write it to the mirror. If the outbox already holds a `queued` entry for the same key, enqueue behind it and return `{ slug, status, delivered: false }` (ordering is preserved). Else probe (`reachable` through `raceTimeout(.., MEMORY_PROBE_TIMEOUT_MS)`), then `push` through `raceTimeout(.., MEMORY_OP_TIMEOUT_MS)` with a `save` request whose `clientId` is the note's `id`. Success → rewrite the mirrored note with the returned `id` and `status` → `{ slug, status, delivered: true }`. `MEMORY_PUSH_REJECTED` → restore `previous` (delete the note when there was none) and rethrow. Unreachable (`false`, a throw or a timeout), a push timeout or any other push error → enqueue the request → `{ slug, status, delivered: false }`. Always `refreshMemoryIndex(store, { heldForgets: await outbox.heldKeys(\"forget\") })` before returning.\n\n**Scope** — In: extend operations.ts from US-016 with probe-failure fallback, bounded push failure handling, queued-behind ordering and permanent-rejection rollback; preserve the same UUID clientId in queued requests. Preserve US-016's validated delivered path and its public result shape while adding these branches. Out: redesigning the validation or delivered-path contract from US-016, forget (US-018), approve/offline round trips (US-019). A rejected `save` found by sync leaves the mirrored note as it is (the next pull brings the provider's view); only the direct save path restores the previous note.\n\n**Interface** — Existing `saveMemoryNote(input & { write: MemoryNoteWrite; writeMode; source })` returns Promise<MemorySaveResult>; use outbox.heldKeys()/enqueue and isMemoryPushRejected(error), not a second error classifier. Only provider probe/push failures trigger fallback; do not misclassify local filesystem failures as provider unreachability. Use errorMessage from the shared helper. No new exports or seams are needed. For fake-clock tests wait for pending() > 0, advance the operation/probe timeout, then await the save promise. Verify check:all after implementation.",
+      "acceptanceCriteria": [
+        "[unit] saveMemoryNote when reachable() resolves false writes the note to the mirror, enqueues a save entry with the same clientId, and resolves delivered: false.",
+        "[unit] saveMemoryNote when reachable() rejects with an Error behaves the same as unreachable (delivered: false, request enqueued).",
+        "[unit] saveMemoryNote when push never settles resolves delivered: false after a pending timer appears and the fake clock advances MEMORY_OP_TIMEOUT_MS, with the request enqueued.",
+        "[unit] saveMemoryNote when push rejects with a plain Error resolves delivered: false with the request enqueued and the mirrored note kept.",
+        "[unit] saveMemoryNote for a slug that already has a queued outbox entry does not call push, enqueues behind it (higher seq), and resolves delivered: false.",
+        "[unit] saveMemoryNote when push throws MEMORY_PUSH_REJECTED for a new slug rethrows that error, no note file exists afterwards and nothing is enqueued.",
+        "[unit] saveMemoryNote when push throws MEMORY_PUSH_REJECTED for an existing slug restores the previous note (readNote returns the previous description).",
+        "[unit] After an undelivered save, store.paths.index contains the new slug."
+      ],
+      "tags": [
+        "memory",
+        "operations",
+        "offline",
+        "outbox"
+      ],
+      "dependencies": [
+        "US-016"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Adds queue/fallback/rollback branches to one existing save function using the established outbox and rejection classifier, without changing its security validator.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/operations.ts",
+        "packages/nax-agent/src/memory/outbox.ts",
+        "packages/nax-agent/test/helpers/memory-provider.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/memory/operations-undelivered.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When reachable() never settles, saveMemoryNote resolves delivered false after MEMORY_PROBE_TIMEOUT_MS with its request queued and no pending fake-clock timer."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ed54c107fa499cc9ede8c54167321412f145c0f4"
+    },
+    {
+      "id": "US-018",
+      "title": "Forget notes with direct and proposal policy",
+      "description": "**Goal** — Add bounded delivered/offline forget operations with proposal preservation and rejection rollback.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — Shared inputs: `{ store, outbox, provider, logger, now?, timers? }`. `forgetMemoryNote(input & { scope; slug; reason; writeMode })`: missing note → `NaxError` code `MEMORY_NOTE_NOT_FOUND`. Under `direct` the mirrored note is deleted first (kept as `previous`); under `proposal` it stays. A `queued` entry for the key → enqueue behind it, `delivered: false`. Else probe + `push` of a `forget` request (`clientId` = `randomUUID()`, `reason`). Success → `{ slug, status: result.status, delivered: true }`. `MEMORY_PUSH_REJECTED` → restore `previous` under `direct`, rethrow. Unreachable, timeout or other error → enqueue → `delivered: false`. Always refresh the index with the current forget keys.\n\n**Scope** — In: add forgetMemoryNote and MemoryForgetResult to operations.ts; exports through both barrels and API snapshot; reuse raceTimeout for probe/push, outbox enqueue/heldKeys and refreshMemoryIndex. For undelivered results, report delivered: false without implying provider acknowledgment; retain the direct/proposal mirror behavior specified above. Out: save paths already implemented (US-016/017), approve and offline round-trip integration (US-019). A `forget` under `proposal` mode does not change the note's `status`; it is shown as `(forget pending)` from the outbox only. The result's pending status does not mutate the preserved note. No CLI or automatic approval flow.\n\n**Interface** — `forgetMemoryNote(input & { scope; slug; reason; writeMode })` returns Promise<MemoryForgetResult> exposing `{ slug, status, delivered }`. Explicit types: scope MemoryScope; slug/reason string; writeMode 'direct' | 'proposal'; result status MemoryNoteStatus. Use the shared store/outbox/provider/logger/now/timers contract. Provider request uses kind forget, UUID clientId and the supplied scope/slug/reason/writeMode. Refresh with `refreshMemoryIndex(store, { heldForgets: await outbox.heldKeys(\"forget\") })`. Every NaxError created here carries stage memory. Verify check:api after api:update.",
+      "acceptanceCriteria": [
+        "[unit] forgetMemoryNote under direct with a reachable provider deletes the mirrored note, pushes a forget request carrying reason and a UUID clientId, and resolves status deleted, delivered true.",
+        "[unit] forgetMemoryNote under proposal leaves the note in place, pushes a forget request and resolves status pending.",
+        "[unit] forgetMemoryNote of an absent slug throws NaxError with code MEMORY_NOTE_NOT_FOUND.",
+        "[unit] forgetMemoryNote when the provider is unreachable enqueues the forget request and resolves delivered: false.",
+        "[unit] After an undelivered proposal forget, store.paths.index shows the slug with the exact trailing text ` (forget pending)`.",
+        "[unit] forgetMemoryNote under direct when push throws MEMORY_PUSH_REJECTED restores the note (readNote returns it) and rethrows.",
+        "[unit] forgetMemoryNote for a slug with a queued outbox entry does not call push and enqueues behind it.",
+        "[unit] forgetMemoryNote is exported from @nathapp/nax-agent."
+      ],
+      "tags": [
+        "memory",
+        "operations",
+        "forget",
+        "offline"
+      ],
+      "dependencies": [
+        "US-017"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Adds forget behavior in the operations module by reusing the save path's established provider, timeout and outbox patterns; no new concurrency or authorization mechanism is introduced.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/operations.ts",
+        "packages/nax-agent/src/memory/outbox.ts",
+        "packages/nax-agent/test/helpers/memory-provider.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/memory/operations-forget.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When forgetMemoryNote's push times out, the request remains queued with delivered false and the timer is cleared.",
+        "When a proposal forget receives MEMORY_PUSH_REJECTED, the original note remains unchanged and no request is enqueued."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "add `forgetMemoryNote` and `MemoryForgetResult`."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerate with `bun run api:update`."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "195a50a43c924704a0ccdb125e54c331deffe076"
+    },
+    {
+      "id": "US-019",
+      "title": "Approve pending notes and complete offline round trips",
+      "description": "**Goal** — Add local approval and finish the offline save/forget-to-sync integration flows.\n\n**Motivation** — The native agent starts every session blank.\n\n**Approach** — `approveMemoryNote({ store, scope, slug, now? })`: `pending` → rewritten `active` with `updatedAt` = `now()`, index refreshed, returned; `active` → returned unchanged; missing, or status `superseded | rejected | deleted` → `NaxError` code `MEMORY_NOTE_NOT_FOUND`.\n\n**Scope** — In: add approveMemoryNote to operations.ts, export through both barrels and regenerate API snapshot. Add the specified integration flows: a saved note while unreachable is later drained by sync with the provider's id in the mirror and empty outbox; an offline forget later acknowledged deleted leaves no note and an empty outbox. Out: reimplementing delivered/offline save and forget mechanics from US-016/017/018 (their use and validation in the offline integration flows are in scope), external approval services, CLI, automatic rejected-entry retry. Approval is a local store transition, not an authorization or authentication mechanism. A `forget` under `proposal` mode does not change the note's `status`; it is shown as `(forget pending)` from the outbox only. This approval operation does not approve a queued forget.\n\n**Interface** — `approveMemoryNote({ store, scope, slug, now? })` returns Promise<MemoryNote>; scope is MemoryScope, slug string, now defaults to () => new Date(). The design's updatedAt = now() shorthand means now().toISOString(), matching MemoryNote's ISO string field. Use MemoryStore.readNote/writeNote and refreshMemoryIndex; approveMemoryNote itself must not call provider.push or alter the outbox. The integration flows still exercise provider delivery and outbox removal through syncMemory. New NaxErrors carry stage memory. The integration tests use the shared scripted makeMemoryProvider, real temporary stores and outboxes, and public saveMemoryNote/forgetMemoryNote/syncMemory seams.\n\nVerification: regenerate API with bun run api:update; check:api, check:all and bun run test from packages/nax-agent. Keep package boundaries, no Bun runtime APIs and the generated API surface intact; do not release or bump package versions.",
+      "acceptanceCriteria": [
+        "[unit] approveMemoryNote on a pending note rewrites it with status active and updatedAt equal to now().toISOString(), and the refreshed index no longer shows the exact trailing text ` (pending)` for it.",
+        "[unit] approveMemoryNote on an active note returns it unchanged.",
+        "[unit] approveMemoryNote on an absent slug and on a note with status superseded throws NaxError with code MEMORY_NOTE_NOT_FOUND.",
+        "[integration] A note saved with the provider unreachable (delivered: false) is delivered by a subsequent syncMemory once the scripted provider becomes reachable: push is called with the queued request, the outbox is empty afterwards and the mirrored note carries the provider's id.",
+        "[integration] A forget enqueued while unreachable, followed by a sync where the provider returns status deleted, leaves no mirrored note and an empty outbox.",
+        "[unit] approveMemoryNote is exported from @nathapp/nax-agent."
+      ],
+      "tags": [
+        "memory",
+        "operations",
+        "approval",
+        "integration"
+      ],
+      "dependencies": [
+        "US-018"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A local pending-to-active transition and two integration scenarios compose existing helpers; approval changes stored data, not access rights, and adds no new orchestration mechanism.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/operations.ts",
+        "packages/nax-agent/src/memory/sync.ts",
+        "packages/nax-agent/test/helpers/memory-provider.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/memory/operations-approve.test.ts",
+        "packages/nax-agent/test/integration/memory-offline-roundtrip.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When approveMemoryNote reads a rejected or deleted note, it throws MEMORY_NOTE_NOT_FOUND without rewriting that note."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "add `approveMemoryNote`."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerate with `bun run api:update`."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3eaf7ac816f34ee21db90908aef5a984385c92ce"
+    }
+  ],
+  "analysis": "Repository investigation: codebase-memory MCP is not exposed in this session; structural discovery therefore used direct reads, Glob and Grep scoped to the supplied execution repository. The feature specification is present at .nax/features/memory-store/spec.md:1. There is no packages/nax-agent/src/memory directory today. This is an additive subsystem within an existing package, not a new workspace. The binding decomposition has exactly 19 stories; their workdirs and dependency edges are preserved, including the intentionally incremental implementations of rendering, sync and operations.\n\nArchitecture and ownership: introduce types.ts, note.ts, validate.ts, store.ts, index-render.ts, search.ts, provider-types.ts, local-provider.ts, outbox.ts, sync.ts, operations.ts and a named-export memory/index.ts barrel. Pure parsing, validation, index rendering and keyword search must remain independent of provider/network work. Store and outbox own local persistence; sync orchestrates injected store/outbox/provider under the existing lock; operations implement optimistic local writes and direct/proposal policy. MemoryStore owns caller-supplied projectDir and optional userDir only; no configuration lookup, project-key derivation or home-directory computation. The broader design motivates a shared mirror and nonce/heartbeat locking at docs/superpowers/specs/2026-11-02-nax-memory-design.md:158-224, bounded opportunistic sync at :251-276, and proposal policy at :330-338. The feature spec, especially its ACs, supersedes the older broad design wherever signatures differ: UUID client IDs, per-scope nullable cursors, notes under userDir/notes, strict MEMORY_SLUG_RE, explicit deleted status and MemoryWriteRequest are authoritative. Do not import broader CLI, team-note, network-provider or tool work.\n\nPackage integration and consumers: packages/nax-agent/package.json:6-15 maps '.' and './internal' to TypeScript source, also exposes the existing unrelated './mcp', and provides #src/* and #test/* imports. Do not add a memory subpath or change these maps. packages/nax-agent/src/index.ts:1-8 requires named exports and prohibits underscore-prefixed public names. Existing session storage is exported from this entry at :298-315. packages/nax-agent/src/internal.ts:1-11 establishes below-semver seams and same-module-object identity; :34-45 already exposes atomic-write, process-alive, realpath and redact helpers. Add all specified public memory functions, types and constants through src/memory/index.ts and the root entry, using type exports for types, and expose only the new _memoryStoreDeps seam from ./internal. No _memorySyncDeps. Every story adding public/internal exports regenerates api/nax-agent.api.txt with bun run api:update; do not hand-author generated API declarations. packages/nax-agent/test/unit/packaging/public-surface.test.ts:10-31 pins 20 historical seams, :34-38 asserts their count, :49-56 rejects public underscore names, and :69-89 compares runtime exports to snapshot value names. US-003 adds the new seam and updates the pinned count to 21, preserving identity. Existing downstream packages import the public entry, so additive exports should not require consumer changes. nax-agent-acp must continue to use only that entry; nax may use ./internal. No consumer wiring or release/version changes belong here.\n\nExisting primitives verified: packages/nax-agent/src/infra/nax-error.ts:6-15 accepts any string code and optional context, so no central error-code registry change is needed. Every NaxError constructed by memory code carries { stage: 'memory' }; use errorMessage from packages/nax-agent/src/infra/errors.ts:10-12 rather than duplicating error conversion. AgentLogger methods take stage, message and optional data at packages/nax-agent/src/infra/agent-logger.ts:11-16; every memory-origin logger call uses 'memory', malformed-note diagnostics include { path, error }, and secret refusal messages never include matched text. packages/nax-agent/src/internal/redact.ts:36-43 defines SecretValuePattern, :45-121 supplies SECRET_VALUE_PATTERNS including global regexes and the url-credentials acceptMatch scanner. Reset lastIndex before each pattern use, inspect every candidate until accepted, and scan description before body. Do not change shared redaction behavior. packages/nax-agent/src/internal/atomic-write.ts:23-45 already provides _atomicWriteDeps and writeFileAtomic: UUID sibling stage, rename publication, cleanup on failure. Every whole-file memory write delegates to it; memory modules never construct temp names. This protects against process interruption, not power loss (:1-10). All directory sweeps ignore names ending in .tmp. Reads, mkdir, readdir and rm in memory store/outbox/sync directory creation go through the single _memoryStoreDeps seam.\n\nContainment: packages/nax-agent/src/internal/realpath.ts:31-45 resolves a missing target via its nearest existing ancestor, falling back to lexical absolute spelling; isInside at :49-53 compares resolved subtree boundaries and never throws. This current behavior is stronger than the spec's short 'raw spelling' description; reuse it unchanged. Validate slug before any filesystem work. Check both the notes directory and existing target against the scope root before accessing notes, including deletion; listNotes skips an escaping target with one warn. Existing-directory symlink escapes are rejected, not followed. Missing directories are benign only for specified reads/deletes; unrelated I/O errors should not be silently converted into absence. Atomic rename failure must preserve the old final file where present and clean only its stage. These checks are best-effort confinement with the supplied helpers, not a new race-free filesystem security primitive.\n\nLock integration: packages/nax-agent/src/session-store/index.ts:1 exports constants but not acquireSessionLock; US-011 adds its named barrel re-export. packages/nax-agent/src/session-store/session-lock.ts:10-17 defines SessionStorageDeps, :62-65 emits SESSION_LOCKED, :83-95 treats the same pid as 'own', and :148-188 implements guarded acquisition, heartbeat and nonce-aware asynchronous release. storage.ts:13 and :130 already use this function; test/fixtures/session-store/lock-contender.ts:4 and :12 exercise it too. Do not modify its ownership protocol. The synchronous module-level in-flight guard must be installed before sync's first await, because the lock deliberately treats same-pid callers as owners. Existing lock code constructs session-store errors and logs stage 'session' (:124, :174); catch SESSION_LOCKED internally and adapt the supplied logger at the memory boundary if necessary so memory-facing logs use 'memory', without changing shared session semantics. Acquire/release own their internal low-level lock staging; the memory whole-file atomic-write rule applies to new memory persistence, not a rewrite of the existing locking protocol. Unexpected acquisition, cleanup, refresh and release failures must not escape sync; clear the in-flight key even if release fails. isProcessAlive from packages/nax-agent/src/internal/process-alive.ts:43-56 is the default and only ESRCH proves a process dead.\n\nState-machine risks: outbox enqueue serializes only within one instance; cross-process equal sequence numbers are explicitly allowed and ordered by clientId. Schema-invalid matching entry files remain on disk and are discoverable through listInvalid; rejected entries remain listed but never hold keys or auto-retry. Provider clientId is the idempotency key and must remain unchanged through offline delivery. Direct save/forget restore previous state only on synchronous permanent rejection; sync rejection deliberately leaves the mirror unchanged. Proposal forget never changes note status; its marker is derived solely from queued forget keys. Probe failure leaves outbox/cursors untouched; transient drain failure stops later pushes and suppresses pull; each successful page persists its cursor so mid-pull failure resumes from the last checkpoint. Read heldKeys again after every provider page resolves to protect writes queued during the request. Only project-page decisions replace the read-only decisions mirror. Tombstones delete and do not count as pulled. Page-limit enforcement must permit a final done page at the limit but stop endless providers after 50 calls per scope. An unreachable sync still follows the specified final index refresh and cleanup; locked returns perform no index/provider work. raceTimeout clears the injected timer on either settlement, including rejection and timeout; it bounds waiting, not cancellation of the underlying provider operation.\n\nIndex/search correctness: render index fields as data using the exact fact disclaimer, sanitize control characters/line breaks, retain required type/section order, and count UTF-8 bytes rather than JavaScript character length. Truncation removes entries from the end, prunes newly empty headers and reserves space for the omission line within both clamped caps. User MEMORY.md contains only the two header lines and User section. Keyword search is Unicode whole-token matching with separate weighted slug/description and body groups, distinct query tokens, deterministic score/time/slug ordering and a first-matching-line snippet. No embeddings, extra dependencies or local-provider search property.\n\nTesting and delivery: packages/nax-agent/test/unit/session-store/storage.test.ts:1-25 demonstrates bun:test, real temp directories, #src/index entry imports and injected pid/clock/logger; :85-111 already verifies atomic storage publication and failure cleanup. Related existing suites are test/unit/internal/atomic-write.test.ts, realpath.test.ts, test/unit/logger/redact.test.ts and redact-structured.test.ts, and test/unit/session-store/lock-holder.test.ts and storage-hardening.test.ts. Add the exact story-specific unit suites and final offline-roundtrip integration suite. Generic helpers are already re-exported at packages/nax-agent/test/helpers/index.ts:3-29, notably makeFakeClock (:6-7), temp helpers (:21) and waitForCondition (:22); makeLogger records stage and data at test/helpers/agent-logger.ts:30-46. US-011 adds a scripted mock provider helper and exports it only from the test helper barrel. Timeout tests first await waitForCondition(() => clock.pending() > 0), then advance the relevant constant, then await the operation promise; fake advance drains microtasks, not filesystem I/O. Assert pending() returns to zero. Restore dependency objects after injected faults rather than monkey-patching globals. Show each regression test fails against old code before counting it. Security-sensitive validation/secret refusal, confinement and lock/session work use strict three-session-tdd; complex orchestration uses three-session-tdd-lite unless the security override applies.\n\nToolchain and migration: packages/nax-agent/package.json:17-39 declares build, API update/check, lint/check:all, targeted unit/integration testing and coverage; the actual typecheck script is 'bun check' (:17), despite older generated context describing tsc --noEmit. packages/nax-agent/tsconfig.build.json:4-13 uses NodeNext, rewrites explicit .ts relative extensions and builds src only with Node types. Use #src/ imports or explicit relative .ts paths, no Bun runtime APIs or new runtime dependencies. Run commands from packages/nax-agent: targeted bun test ./test/unit/memory/<suite>.test.ts --timeout=60000 during iteration; bun run api:update and bun run check:api after export changes; build, typecheck, check:all, check:no-bun-apis and bun run test for final verification. Never bare bun test or bun run nax. The spec mentions check:import-cycles, but no standalone package script exists; the shared script is already in lint:checks at package.json:31. API/quality commands are verification instructions, not ACs. Existing coverage gates require 80% lines/functions overall and per source file; do not reduce baselines to accommodate new memory code. No migration of existing data is needed because no memory format exists in this package today; preserve all existing exports and session/atomic/redaction behavior. The feature is done when all 19 specified capabilities and offline flows are implemented, their public/internal surfaces match the generated snapshot, and package checks pass, without adding consumers or releasing packages.\n\nRefine-pass self-audit (manual source/spec comparison, not an executed test run): enumerated all 182 explicitly listed spec ACs and retained each in its original story. Original criterion-to-PRD ledger, using the spec's order within each story: US-001 [1,2,3,4,5,6,7,8,9,10,11,12,13,14]; US-002 [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]; US-003 [1,2,3,4,5,6,7,8,9,10,11,12]; US-004 [1,2,3,4,5,6]; US-005 [1,2,3,4,5,6,7,8,9,10]; US-006 [1,2,3,4,5,6,7,8,9,10,11]; US-007 [1,2,3,4,5,6,7,8]; US-008 [1,2,3,4,5,6,7,8,9,10,11,12,13,14]; US-009 [1,2,3,4,5,6,7,8,9,10]; US-010 [1,2,3,4,5,6,7,8,9,10,11,12,13]; US-011 [1,2,3,4,5,6,7,8,9,10]; US-012 [1,2,3,4,5,6,7]; US-013 [1,2,3,4,5,6,7]; US-014 [1,2,3,4,5,6,7,8]; US-015 [1,2,3,4,5,6,7,8]; US-016 [1,2,3,4,5,6,7]; US-017 [1,2,3,4,5,6,7,8]; US-018 [1,2,3,4,5,6,7,8]; US-019 [1,2,3,4,5,6]. The same numbered criterion in the same PRD story preserves each assertion, including parentheticals about credential-less URLs, stale regex state, multibyte character counts, existing-slug overwrites, queued-behind ordering, same-process calls, unchanged decisions, retained cursors and unchanged active notes. No deprecated grep/file/verbatim AC tags occurred. Clarified timestamp assertions to ISO strings because the spec's now function returns Date while MemoryNote.updatedAt and MemorySyncState.lastPullAt are strings; this preserves the injected-time assertion rather than comparing a Date object with stored text. Made the two type-contract criteria observable through typed consumers invoking the real interface. Preserved exact leading spaces in pending/forget-pending marker assertions and clarified that a save's pushed note is its initial mirrored version, before provider acknowledgment updates its id/status.\n\nNegative-path ledger: US-001 malformed/missing frontmatter; US-002 malformed/secret writes; US-003 unavailable user scope and malformed files; US-004 invalid/escaping paths and failed rename; US-005 malformed JSON and unavailable user index; US-006 filtered statuses and control-character sanitization; US-007 over-cap data and below-minimum cap inputs; US-008 token-less queries and nonmatching whole tokens; US-009 save without note; US-010 invalid clientId/corrupt files; US-011 live lock and thrown heldKeys; US-012 probe errors/timeouts; US-013 rejection/transient push failure; US-014 pull error/timeout/page limit; US-015 invalid notes/project failure; US-016 refused secret/malformed write; US-017 permanent/transient delivery failures; US-018 missing note/rejected forget; US-019 missing/superseded approval. Every story already contains a negative-path AC, so no arbitrary new failure contract was necessary.\n\nFailure-table row mapping, in table order: 1 -> US-003.8/9; 2 -> US-004.1-4; 3 -> US-003.7, US-005.2/4/9, US-010.14; 4 -> US-016.5/8; 5 -> US-012.4-6, US-013.5/6, US-014.5/6, US-017.1-4, US-018.4; 6 -> US-013.4, US-017.6/7, US-018.6; 7 -> US-011.4/6; 8 -> US-015.3/4; 9 -> US-014.7; 10 -> US-007.1-4; 11 -> US-010.8/15 and US-005.5; 12 -> US-011.9. Strengthened the permanent-drain-rejection assertion to retain the untouched mirror and the page-limit assertion to retain its last checkpoint. Added only regression protections needed by existing entrypoint changes and the extension of save: US-003.13/14 retain historical seams and the no-public-underscore invariant; US-011.11 preserves the existing lock function identity through the new re-export; US-017.9 protects delivered-save behavior while new failure branches are added. With three existing failure-table-derived criteria, this produces 189 PRD criteria while preserving all 182 original spec criteria.\n\nAll 14 feature exclusions remain verbatim in top-level outOfScope; nearby store/provider/sync/operation scopes repeat the relevant boundaries. All contextFiles arrays match the spec-recommended lists, respect the five-file limit, and contain only existing or upstream-created files; all expectedFiles match the spec's Creates lists. All 19 binding IDs, workdirs and dependency edges are unchanged. Re-read package.json, the lock implementation, realpath helper and packaging surface tests; no new helper/dependency/call site was presumed beyond the files explicitly created by these stories. Removed an unnecessary inferred status contract for undelivered forget results and clarified US-019's distinction between reimplementing save/forget and testing their integration. Reduced routine store/rendering/loop/operation extensions to medium/tdd-simple where existing seams already carry the hard parts. Strict security isolation remains for US-002, US-004, US-011 and US-016; US-010 remains complex/three-session-tdd-lite for durable concurrent enqueue state. This audit changes only the PRD; it does not assert implementation tests or a JSON parser were executed.",
+  "outOfScope": [
+    "The `nax-memory` tool provider, its tools and the chat `## Memory` instructions section are the `memory-chat` feature, not this one.",
+    "The koda HTTP provider, the generic MCP provider and any network code are the `memory-koda-provider` and `memory-mcp-provider` features; this feature ships only the `local` provider and an injectable `MemoryProvider` interface.",
+    "Run-stage context injection and run-host sync are the `memory-run-stages` feature.",
+    "The `nax memory` CLI, `/memory` slash command and the `memory` config schema belong to nax (`memory-chat`); nax-agent takes `projectDir` / `userDir` as plain arguments and computes no `~/.nax` path and no project key.",
+    "Repo-committed `.nax/memory/*.md` team notes are read by nax (`memory-chat`), not by this store.",
+    "No background consolidation, no auto-extraction from transcripts, no embeddings or vector search: search is keyword only, whole-token matching.",
+    "Automatic retry of a `rejected` outbox entry is out of scope; a later CLI may requeue it.",
+    "A `forget` under `proposal` mode does not change the note's `status`; it is shown as `(forget pending)` from the outbox only.",
+    "Multi-line or quoted frontmatter values and YAML nesting are not supported; values are single-line scalars.",
+    "`search` on the local provider is not implemented; keyword search runs over the mirror through `searchMemoryNotes`.",
+    "The decisions mirror is read-only here: only sync writes it, and only from project pages.",
+    "The timeout, page-size, page-limit and index-minimum constants are not configurable in this feature.",
+    "A rejected `save` found by sync leaves the mirrored note as it is (the next pull brings the provider's view); only the direct save path restores the previous note.",
+    "Cross-process serialisation of `enqueue` is not provided: two processes enqueueing at once may produce equal `seq` values, which `list` orders by `clientId`."
+  ],
+  "routingProfile": "native-codex"
+}
