@@ -5,12 +5,19 @@ export {
   refreshMemoryIndex,
   renderMemoryIndex,
 } from "./index-render.ts";
+export { createLocalMemoryProvider } from "./local-provider.ts";
 export {
   isMemoryPushRejected,
   parseMemoryNote,
   parseMemoryNoteRecord,
   serializeMemoryNote,
 } from "./note.ts";
+export type {
+  MemoryPage,
+  MemoryProvider,
+  MemoryPushResult,
+  MemoryWriteRequest,
+} from "./provider-types.ts";
 export { searchMemoryNotes, tokenizeMemoryQuery } from "./search.ts";
 export {
   createMemoryStore,

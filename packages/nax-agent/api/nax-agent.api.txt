@@ -199,6 +199,9 @@ type MemoryNote
 type MemoryNoteStatus
 type MemoryNoteType
 type MemoryNoteWrite
+type MemoryPage
+type MemoryProvider
+type MemoryPushResult
 type MemoryScope
 type MemoryStore
 type MemoryStorePaths
@@ -206,6 +209,7 @@ type MemorySyncState
 type MemoryTimers
 type MemoryTranscriptStore
 type MemoryWriteRefusal
+type MemoryWriteRequest
 type ModelAnswers
 type ModelResult
 type ModelSpec
@@ -383,6 +387,7 @@ createCommandGuard
 createCommandLauncher
 createCommandShadow
 createFileTranscriptStore
+createLocalMemoryProvider
 createMemoryStore
 createMemoryTranscriptStore
 createNoOpToolAuditSink
