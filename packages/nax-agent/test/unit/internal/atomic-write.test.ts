@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,10 +27,16 @@ describe("writeFileAtomic", () => {
   test("a write that dies part-way leaves the previous content intact and cleans up", async () => {
     const path = join(dir, "doc.json");
     await writeFile(path, '{"v":1}');
-    const realWrite = _atomicWriteDeps.writeFile;
-    _atomicWriteDeps.writeFile = async (target, content, options) => {
-      await realWrite(target, content.slice(0, 3), options);
-      throw new Error("ENOSPC: no space left on device");
+    const realOpen = _atomicWriteDeps.open;
+    _atomicWriteDeps.open = async (staged, flags, mode) => {
+      const stage = await realOpen(staged, flags, mode);
+      return {
+        ...stage,
+        write: async (content) => {
+          await stage.write(typeof content === "string" ? content.slice(0, 3) : content);
+          throw new Error("ENOSPC: no space left on device");
+        },
+      };
     };
 
     await expect(writeFileAtomic(path, '{"v":2,"long":"payload"}')).rejects.toThrow("ENOSPC");
@@ -46,11 +53,17 @@ describe("writeFileAtomic", () => {
   test("runs the caller's check after staging and before the rename", async () => {
     const path = join(dir, "doc.json");
     const order: string[] = [];
-    const realWrite = _atomicWriteDeps.writeFile;
+    const realOpen = _atomicWriteDeps.open;
     const realRename = _atomicWriteDeps.rename;
-    _atomicWriteDeps.writeFile = async (target, content, options) => {
-      order.push("stage");
-      await realWrite(target, content, options);
+    _atomicWriteDeps.open = async (staged, flags, mode) => {
+      const stage = await realOpen(staged, flags, mode);
+      return {
+        ...stage,
+        write: async (content) => {
+          order.push("stage");
+          await stage.write(content);
+        },
+      };
     };
     _atomicWriteDeps.rename = async (from, to) => {
       order.push("rename");
@@ -80,5 +93,50 @@ describe("writeFileAtomic", () => {
     ).rejects.toBe(refusal);
     expect(await readFile(path, "utf8")).toBe('{"v":1}');
     expect(await readdir(dir)).toEqual(["doc.json"]);
+  });
+
+  test("a failure never removes a file this write did not stage", async () => {
+    const path = join(dir, "doc.json");
+    const realOpen = _atomicWriteDeps.open;
+    _atomicWriteDeps.open = async (staged, flags, mode) => {
+      const stage = await realOpen(staged, flags, mode);
+      return {
+        ...stage,
+        write: async (content) => {
+          await stage.write(content);
+          // The staged file is taken away and someone else's file appears under its name.
+          await rm(staged);
+          await writeFile(staged, "someone else's file\n");
+        },
+      };
+    };
+
+    await expect(
+      writeFileAtomic(path, "ours", {
+        beforePublish: async () => {
+          throw new Error("destination moved");
+        },
+      }),
+    ).rejects.toThrow("destination moved");
+
+    const staged = (await readdir(dir)).filter((name) => name.endsWith(".tmp"));
+    expect(staged).toHaveLength(1);
+    expect(await readFile(join(dir, staged[0] ?? ""), "utf8")).toBe("someone else's file\n");
+    expect(existsSync(path)).toBe(false);
+  });
+
+  test("hands the published file's identity to the caller after the rename", async () => {
+    const path = join(dir, "doc.json");
+    const published: { dev: number; ino: number }[] = [];
+
+    await writeFileAtomic(path, "ours", {
+      afterPublish: async (stage) => {
+        published.push(stage);
+      },
+    });
+
+    const written = await stat(path);
+    expect(published).toHaveLength(1);
+    expect(published[0]).toEqual({ dev: written.dev, ino: written.ino });
   });
 });

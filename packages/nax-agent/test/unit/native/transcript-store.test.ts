@@ -177,17 +177,23 @@ describe("transcript store", () => {
 
   test("a save that dies mid-write leaves the previous transcript loadable", async () => {
     await saveTranscript(dir, "sess-a", msgs);
-    const realWrite = _atomicWriteDeps.writeFile;
-    _atomicWriteDeps.writeFile = async (target, content, options) => {
-      await realWrite(target, content.slice(0, 10), options);
-      throw new Error("killed");
+    const realOpen = _atomicWriteDeps.open;
+    _atomicWriteDeps.open = async (staged, flags, mode) => {
+      const stage = await realOpen(staged, flags, mode);
+      return {
+        ...stage,
+        write: async (content) => {
+          await stage.write(typeof content === "string" ? content.slice(0, 10) : content);
+          throw new Error("killed");
+        },
+      };
     };
     try {
       await expect(saveTranscript(dir, "sess-a", [...msgs, { role: "user", content: "more" }])).rejects.toThrow(
         "killed",
       );
     } finally {
-      _atomicWriteDeps.writeFile = realWrite;
+      _atomicWriteDeps.open = realOpen;
     }
     expect(await loadTranscript(dir, "sess-a")).toEqual(msgs);
   });

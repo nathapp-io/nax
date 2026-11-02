@@ -72,8 +72,9 @@ describe("memory store confinement", () => {
         touched.push("mkdir");
         return undefined;
       };
-      _atomicWriteDeps.writeFile = async () => {
-        touched.push("writeFile");
+      _atomicWriteDeps.open = async () => {
+        touched.push("open");
+        throw new Error("the atomic write must not be reached");
       };
 
       const error = await caught(store.writeNote(note({ slug: "../escape" })));
@@ -171,11 +172,18 @@ describe("memory store confinement", () => {
       const notesDir = join(project, "notes");
       const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
       const calls: string[] = [];
-      const realWriteFile = _atomicWriteDeps.writeFile;
+      const realOpen = _atomicWriteDeps.open;
       const realRename = _atomicWriteDeps.rename;
-      _atomicWriteDeps.writeFile = async (path, content, options) => {
-        calls.push(`writeFile ${path}`);
-        await realWriteFile(path, content, options);
+      _atomicWriteDeps.open = async (staged, flags, mode) => {
+        calls.push(`open ${staged}`);
+        const stage = await realOpen(staged, flags, mode);
+        return {
+          ...stage,
+          write: async (content) => {
+            calls.push(`write ${staged}`);
+            await stage.write(content);
+          },
+        };
       };
       _atomicWriteDeps.rename = async (from, to) => {
         calls.push(`rename ${String(from)} ${String(to)}`);
@@ -186,13 +194,10 @@ describe("memory store confinement", () => {
 
       // The store writes to the resolved directory (a temp dir may be reached through a link).
       const final = join(realpathSync(notesDir), "replay-budget.md");
-      expect(calls).toHaveLength(2);
-      const [stageCall, publishCall] = calls;
-      const staged = (stageCall ?? "").replace("writeFile ", "");
-      expect(stageCall).toBe(`writeFile ${staged}`);
+      const staged = (calls[0] ?? "").replace("open ", "");
       expect(dirname(staged)).toBe(dirname(final));
       expect(staged.endsWith(".tmp")).toBe(true);
-      expect(publishCall).toBe(`rename ${staged} ${final}`);
+      expect(calls).toEqual([`open ${staged}`, `write ${staged}`, `rename ${staged} ${final}`]);
       expect(existsSync(join(notesDir, "replay-budget.md"))).toBe(true);
     });
   });
@@ -267,7 +272,7 @@ describe("memory store confinement", () => {
       });
     });
 
-    test("listNotes never reads a note from a directory swapped after the listing", async () => {
+    test("listNotes reports a listing taken from a directory swapped mid-listing", async () => {
       await withTempDir(async (dir) => {
         const project = projectPath(dir);
         const notesDir = join(project, "notes");
@@ -282,7 +287,7 @@ describe("memory store confinement", () => {
           serializeMemoryNote(note({ slug: "kept-budget", body: "leaked body" })),
         );
         const realReaddir = _memoryStoreDeps.readdir;
-        // The listing is honest; the directory it named is gone by the time each note is read.
+        // The listing is honest; the directory it named is gone by the time it returns.
         _memoryStoreDeps.readdir = async (path, options) => {
           const entries = await realReaddir(path, options);
           await rename(notesDir, aside);
@@ -290,13 +295,11 @@ describe("memory store confinement", () => {
           return entries;
         };
 
-        const notes = await store.listNotes("project");
+        const error = await caught(store.listNotes("project"));
 
-        expect(notes).toEqual([]);
-        const warns = logger.calls.filter((call) => call.level === "warn");
-        expect(warns).toHaveLength(1);
-        expect(warns[0]?.stage).toBe("memory");
-        expect(String(warns[0]?.data?.error)).toContain("outside the memory scope root");
+        // Names read from a directory that was replaced cannot be trusted to name its notes.
+        assertNaxError(error, "listNotes after the notes directory was swapped mid-listing");
+        expect(error).toMatchObject({ code: "MEMORY_PATH_OUTSIDE", context: { stage: "memory" } });
       });
     });
 
@@ -332,13 +335,19 @@ describe("memory store confinement", () => {
         const aside = join(project, "notes-aside");
         await mkdir(project, { recursive: true });
         const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
-        const realWriteFile = _atomicWriteDeps.writeFile;
-        _atomicWriteDeps.writeFile = async (path, content, options) => {
-          await realWriteFile(path, content, options);
-          // The directory the note was staged in is moved aside and another takes its place:
-          // no symlink is involved, so only the directory's identity gives it away.
-          await rename(notesDir, aside);
-          await mkdir(notesDir);
+        const realOpen = _atomicWriteDeps.open;
+        _atomicWriteDeps.open = async (staged, flags, mode) => {
+          const stage = await realOpen(staged, flags, mode);
+          return {
+            ...stage,
+            write: async (content) => {
+              await stage.write(content);
+              // The directory the note was staged in is moved aside and another takes its
+              // place: no symlink is involved, so only the directory's identity gives it away.
+              await rename(notesDir, aside);
+              await mkdir(notesDir);
+            },
+          };
         };
 
         const error = await caught(store.writeNote(note()));
@@ -348,6 +357,56 @@ describe("memory store confinement", () => {
         // The note is published nowhere: not in the replacement, not in the directory it was staged in.
         expect(await readdir(notesDir)).toEqual([]);
         expect(existsSync(join(aside, "replay-budget.md"))).toBe(false);
+      });
+    });
+
+    test("writeNote takes back a note published into a directory swapped before the rename", async () => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const notesDir = join(project, "notes");
+        // The directory leaves the root, taking the staged file with it.
+        const aside = join(dir, "notes-aside");
+        await mkdir(project, { recursive: true });
+        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+        const realRename = _atomicWriteDeps.rename;
+        // The swap lands in the one window a path-based rename cannot close: after the last
+        // check, inside the publish itself.
+        _atomicWriteDeps.rename = async (from, to) => {
+          await rename(notesDir, aside);
+          await symlink(aside, notesDir);
+          await realRename(from, to);
+        };
+
+        const error = await caught(store.writeNote(note()));
+
+        assertNaxError(error, "writeNote after the notes directory was swapped before the rename");
+        expect(error).toMatchObject({ code: "MEMORY_PATH_OUTSIDE", context: { stage: "memory" } });
+        // The published note is taken back by identity: it does not survive outside the root.
+        expect(await readdir(aside)).toEqual([]);
+      });
+    });
+
+    test("deleteNote reports a remove raced by a directory swap", async () => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const notesDir = join(project, "notes");
+        const aside = join(project, "notes-aside");
+        const outside = join(dir, "outside");
+        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+        await store.writeNote(note());
+        await mkdir(outside, { recursive: true });
+        const realRm = _memoryStoreDeps.rm;
+        // The remove itself cannot be descriptor-relative, so the swap is injected inside it.
+        _memoryStoreDeps.rm = async (path, options) => {
+          await realRm(path, options);
+          await rename(notesDir, aside);
+          await symlink(outside, notesDir);
+        };
+
+        const error = await caught(store.deleteNote("project", "replay-budget"));
+
+        assertNaxError(error, "deleteNote raced by a directory swap");
+        expect(error).toMatchObject({ code: "MEMORY_PATH_OUTSIDE", context: { stage: "memory" } });
       });
     });
   });

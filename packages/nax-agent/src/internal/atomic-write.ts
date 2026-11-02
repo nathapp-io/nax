@@ -9,48 +9,125 @@
  * one filesystem, where POSIX makes it atomic. Not fsync'd: this guards against
  * a killed PROCESS, not a power loss.
  *
- * `beforePublish` is the caller's hook for a destination it has to re-check: it
- * runs once the bytes are staged and before the rename, so a caller confining its
- * writes can refuse a destination that moved during the write. A throw fails the
- * write and removes the stage.
+ * The stage is created exclusively (`O_CREAT | O_EXCL`) and its identity —
+ * `dev`/`ino` — is read from that descriptor, never from its path: the file this
+ * call created is then known no matter what later takes the name. Node exposes no
+ * descriptor-relative `rename`/`unlink`, so the hooks let a caller confine the
+ * destination instead of the syscall:
+ *
+ * - `beforePublish` runs once the bytes are staged and before the rename, so a
+ *   destination that moved during the write is refused before it receives them;
+ * - `afterPublish` receives the staged file's identity once the rename is done, so a
+ *   caller can check — and take back by identity — a note that landed somewhere the
+ *   rename could not be told apart from;
+ * - the cleanup is identity-checked: the stage is removed only while the path still
+ *   holds the file this call created, never whatever took its name.
+ *
+ * A throw from either hook fails the write and removes the stage.
  */
 import { randomUUID } from "node:crypto";
-import { rename, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open, rename, rm, stat } from "node:fs/promises";
 
-/** The one `writeFile` shape this module uses; narrower than the overloaded node signature so stubs type-check. */
-type WriteText = (
-  path: string,
-  content: string | Uint8Array,
-  options: { encoding: "utf8"; mode?: number },
-) => Promise<void>;
+/** What a file is, independent of the path that names it. */
+interface Identity {
+  readonly dev: number;
+  readonly ino: number;
+}
 
-/** Injectable for tests that simulate a write dying part-way. */
-export const _atomicWriteDeps: { writeFile: WriteText; rename: typeof rename; rm: typeof rm } = {
-  writeFile: (path, content, options) => writeFile(path, content, options),
+/** Exclusive creation, and never through a link at the stage's name. */
+const STAGE_FLAGS: number = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
+
+/** The default a plain `writeFile` would apply, so a published note keeps ordinary permissions. */
+const STAGE_MODE = 0o666;
+
+/** One created stage: written through its descriptor, identified by it, then closed. */
+interface StagedFile {
+  write(content: string | Uint8Array): Promise<void>;
+  identity(): Promise<Identity>;
+  close(): Promise<void>;
+}
+
+type StatPath = (path: string) => Promise<Identity>;
+
+/** Injectable for tests that simulate a write dying part-way, or a stage name being taken over. */
+export const _atomicWriteDeps: {
+  open: (path: string, flags: number, mode: number) => Promise<StagedFile>;
+  rename: typeof rename;
+  rm: typeof rm;
+  stat: StatPath;
+} = {
+  open: async (path, flags, mode) => {
+    const handle = await open(path, flags, mode);
+    return {
+      write: (content) => handle.writeFile(content, { encoding: "utf8" }),
+      identity: async () => {
+        const info = await handle.stat();
+        return { dev: info.dev, ino: info.ino };
+      },
+      close: () => handle.close(),
+    };
+  },
   rename,
   rm,
+  stat: async (path) => {
+    const info = await stat(path);
+    return { dev: info.dev, ino: info.ino };
+  },
 };
+
+/** The identity of whatever is at `path`, or `null` when nothing is. */
+async function identityAt(path: string): Promise<Identity | null> {
+  try {
+    return await _atomicWriteDeps.stat(path);
+  } catch {
+    // Nothing there to identify — and nothing left to remove.
+    return null;
+  }
+}
+
+/**
+ * Remove the stage, but only while the path still holds the file this call created.
+ *
+ * `created` is the identity taken from the descriptor at creation, so it stays true even if
+ * the name was taken over afterwards. A mismatch means the path now holds something else,
+ * and removing it would delete data this module never wrote. `null` means creation itself
+ * failed: a file under this call's own uuid-named stage can only be its partial output.
+ */
+async function discardStage(staged: string, created: Identity | null): Promise<void> {
+  const current = await identityAt(staged);
+  if (current === null) return;
+  if (created !== null && (current.dev !== created.dev || current.ino !== created.ino)) return;
+  await _atomicWriteDeps.rm(staged, { force: true });
+}
 
 export async function writeFileAtomic(
   path: string,
   content: string | Uint8Array,
-  options: { mode?: number; beforePublish?: () => Promise<void> } = {},
+  options: {
+    mode?: number;
+    beforePublish?: () => Promise<void>;
+    afterPublish?: (stage: { dev: number; ino: number }) => Promise<void>;
+  } = {},
 ): Promise<void> {
   // Ends in `.tmp`, not `.json`, so directory sweeps that match `*.json` never see it.
   const staged = `${path}.${randomUUID()}.tmp`;
+  let stage: StagedFile | null = null;
+  let identity: Identity | null = null;
   try {
-    await _atomicWriteDeps.writeFile(staged, content, {
-      encoding: "utf8",
-      ...(options.mode !== undefined ? { mode: options.mode } : {}),
-    });
-    // The caller's last word on the destination, after the bytes are staged and before they
-    // are published: a caller that confines where it writes re-checks here, so a destination
-    // that moved during the write is refused instead of receiving the content. Throwing
-    // fails the write and removes the stage, like any other failure.
+    stage = await _atomicWriteDeps.open(staged, STAGE_FLAGS, options.mode ?? STAGE_MODE);
+    await stage.write(content);
+    // From the descriptor, so a stage name taken over after this point is still recognisable.
+    identity = await stage.identity();
     if (options.beforePublish) await options.beforePublish();
     await _atomicWriteDeps.rename(staged, path);
+    if (options.afterPublish && identity !== null) await options.afterPublish(identity);
   } catch (error) {
-    await _atomicWriteDeps.rm(staged, { force: true });
+    await discardStage(staged, identity);
     throw error;
+  } finally {
+    await stage?.close().catch(() => {
+      // A stage whose write already failed cannot be rescued by reporting the close either.
+    });
   }
 }

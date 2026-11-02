@@ -22,21 +22,25 @@
  *
  * A check that is not repeated at the point of use leaves a window: whatever is swapped
  * in between is followed. So an operation works from a *verified directory* — the
- * directory's resolved path plus its `dev`/`ino` — rather than from a path string:
+ * directory's resolved path plus its `dev`/`ino` — and every step that can prove its own
+ * result does:
  *
  *   - a read copies bytes only from a descriptor whose identity matches the file the
  *     check resolved (`O_NOFOLLOW` covers the last component, the identity comparison
  *     covers every component above it), so a swap yields no content;
- *   - a write stages into the resolved directory and re-checks the directory's identity
- *     between staging and the rename (`writeFileAtomic`'s `beforePublish`), so a
- *     directory swapped during the write never receives the published note;
- *   - a delete and a listing use the verified directory's path and re-check its identity
- *     immediately before the syscall.
+ *   - a write creates its stage exclusively, takes the stage's identity from that
+ *     descriptor, re-checks the directory before the rename and verifies the *result*
+ *     after it — a note that landed outside the root is taken back by identity, so it
+ *     never survives there, and the stage is only ever removed while it is still the file
+ *     the write created;
+ *   - a listing and a delete re-check the directory's identity before *and* after their
+ *     syscall, so one that raced a replacement is reported rather than returned as if it
+ *     had hit the verified directory.
  *
- * What is left is the instant between an operation's last check and its own syscall for
- * the two operations that have no identity proof of their own (`readdir`, `unlink`).
- * Closing that needs a descriptor-relative syscall (`openat`/`unlinkat`); Node exposes
- * none, and `/dev/fd/<dirfd>/name` is not traversable on macOS, so it is not claimed.
+ * Node exposes no descriptor-relative `rename`, `unlink` or `readdir`, so the two calls
+ * that have no identity proof of their own (`unlink`, `readdir`) can still be redirected
+ * inside the instant between their last check and the syscall; that instant is what is
+ * left, and `/dev/fd/<dirfd>/<name>` is not a way around it on macOS.
  */
 import type { Dirent } from "node:fs";
 import { constants } from "node:fs";
@@ -392,13 +396,29 @@ export function createMemoryStore(input: {
     validSlug(note.slug);
     const handle = await ensureNotesDir(note.scope);
     const target = confinedRealPath(handle.scope, handle.root, entryPathIn(handle, note.slug));
-    // The stage is written into the verified directory, and the identity is checked again
-    // between staging and the rename: a directory swapped during the write is refused
-    // before the note is published into it. `rename` replaces a link at the target rather
-    // than writing through it.
+    // The stage is written into the verified directory. The destination is re-checked while
+    // the bytes are staged, and the result is checked again once they are published: a
+    // directory replaced in either gap is refused, and a note that landed outside the root
+    // is taken back before the failure is reported.
     await writeFileAtomic(target, serializeMemoryNote(note), {
       beforePublish: () => assertSameDirectory(handle),
+      afterPublish: (stage) => verifyPublished(handle, target, stage),
     });
+  }
+
+  /**
+   * The note that was just published must be inside the root, and it is taken back if not.
+   *
+   * `rename` cannot be made descriptor-relative, so what is verified is the *result*: the
+   * path the note was published to, resolved again, plus the staged identity the atomic
+   * write reported. A note that landed in a replacement directory is removed only because
+   * that identity proves the file is ours — nothing this call did not create is deleted.
+   */
+  async function verifyPublished(handle: VerifiedDir, target: string, stage: Identity): Promise<void> {
+    if (isInside(handle.root, target)) return;
+    const landed = await identityAt(target);
+    if (landed !== null && sameIdentity(landed, stage)) await _memoryStoreDeps.rm(target, { force: true });
+    throw outsideRoot(handle.scope, target, handle.root);
   }
 
   async function deleteNote(scope: MemoryScope, slug: string): Promise<void> {
@@ -411,6 +431,11 @@ export function createMemoryStore(input: {
     confinedRealPath(handle.scope, handle.root, entry);
     await assertSameDirectory(handle);
     await _memoryStoreDeps.rm(entry, { force: true });
+    // `unlink` is path-based and cannot be undone, so a remove that raced a replacement
+    // cannot be claimed: it is reported rather than returned as if it hit the verified
+    // directory. (Nothing outside the root is ever removed — the entry is unlinked, not a
+    // link's target.)
+    await assertSameDirectory(handle);
   }
 
   /** The listing reports a skipped file once, whatever the reason, and carries on. */
@@ -444,6 +469,9 @@ export function createMemoryStore(input: {
       if (isMissing(error)) return [];
       throw error;
     }
+    // Names read from a directory that was replaced while it was listed cannot be trusted to
+    // name its notes, and a listing cannot tell — so it is refused rather than returned.
+    await assertSameDirectory(handle);
     const slugs = entries
       .map((entry) => noteSlugIn(entry))
       .filter((slug): slug is string => slug !== null)
