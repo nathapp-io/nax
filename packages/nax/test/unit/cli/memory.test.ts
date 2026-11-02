@@ -340,7 +340,9 @@ describe("registerMemoryCommand", () => {
     expect(program.commands.map((command) => command.name())).toContain("memory");
     const memory = program.commands.find((command) => command.name() === "memory");
     assertDefined(memory, "the memory command");
-    expect(memory.commands.map((command) => command.name())).toEqual(["status", "list"]);
+    // This file owns `status` and `list`; the whole group's order is pinned by
+    // test/unit/cli/memory-read.test.ts, which registers the subcommands US-017 adds.
+    expect(memory.commands.map((command) => command.name())).toEqual(expect.arrayContaining(["status", "list"]));
   });
 
   test("AC-18: the registration and its deps seam are importable from @/cli", () => {

@@ -124,21 +124,34 @@ export {
 export { type GenerateCommandOptions, generateCommand } from "./generate";
 export { type InitOptions, initCommand } from "./init";
 export {
+  type MemoryListOptions,
+  type MemoryNoteListing,
+  memoryListCommand,
+  memoryStatusCommand,
+  registerMemoryCommand,
+} from "./memory";
+export {
   _memoryCliDeps,
   cliMemoryLogger,
   type MemoryCliContext,
   type MemoryCliDeps,
   type MemoryCliOptions,
-  type MemoryListOptions,
-  type MemoryNoteListing,
   memoryContext,
+  memoryDefaultDir,
   memoryDisabledError,
-  memoryListCommand,
-  memoryStatusCommand,
+  NOTE_SCOPES,
+  NOTE_TYPES,
   openMemoryHost,
-  registerMemoryCommand,
+  parseNoteScope,
+  parseNoteType,
   withMemoryErrors,
-} from "./memory";
+} from "./memory-cli-deps";
+export {
+  type MemoryShowOptions,
+  memoryShowCommand,
+  memorySyncCommand,
+  registerMemoryReadCommands,
+} from "./memory-read";
 export type { PlanCommandOptions } from "./plan";
 export { _planDeps, planCommand, resolvePlanMode } from "./plan";
 export { planDecomposeCommand, runReplanLoop } from "./plan-decompose";
