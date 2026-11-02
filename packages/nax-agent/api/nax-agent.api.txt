@@ -193,6 +193,7 @@ MODEL_MAX_LINES
 MODEL_MAX_LINE_CHARS
 type MaskResult
 type MechanicalVerdict
+type MemoryApproveInput
 type MemoryDecision
 type MemoryForgetInput
 type MemoryForgetResult
@@ -371,6 +372,7 @@ approvalId
 approvalMemoryApplies
 approvalMemoryKey
 approvalsPath
+approveMemoryNote
 attachTurnSpend
 authImportOutcomeLabel
 buildCommandShadow

@@ -44,6 +44,14 @@
  * `forgetMemoryNote` is the other half, and it only retires a note the mirror holds: an absent
  * slug is a refusal. Under `direct` the note goes first, kept aside for a refusal to put back;
  * under `proposal` it stays, and the marker comes from the outbox alone.
+ *
+ * `approveMemoryNote` is the local transition a proposal waits for, and it is deliberately the
+ * smallest of the three: it asks no provider, reads no queue and takes no lock, because a note
+ * the mirror holds is the whole of what an approval decides. A pending note is rewritten in
+ * force under the caller's clock and the index is regenerated from the mirror; a note already
+ * in force is returned as it stands; a note that is history — or one this mirror does not hold —
+ * is the same `MEMORY_NOTE_NOT_FOUND` refusal a forget of it would be. A queued forget is not
+ * approved by this: its `(forget pending)` marker comes from the outbox, which this never sees.
  */
 import { randomUUID } from "node:crypto";
 import type { AgentLogger } from "#src/infra/agent-logger";
@@ -131,6 +139,20 @@ export interface MemoryForgetResult {
   readonly slug: string;
   readonly status: MemoryNoteStatus;
   readonly delivered: boolean;
+}
+
+/**
+ * One approval: the note to put in force, named by its scope and slug.
+ *
+ * The mirror is the whole of what an approval decides, so this is the whole of what it is
+ * given — no queue to consult, no provider to ask, and no lock to wait for.
+ */
+export interface MemoryApproveInput {
+  readonly store: MemoryStore;
+  readonly scope: MemoryScope;
+  readonly slug: string;
+  /** The clock an approved note is re-stamped from; default `() => new Date()`. */
+  readonly now?: () => Date;
 }
 
 /** The refusal a rejected write is thrown as: the validator's reason as the message, its field as context. */
@@ -407,8 +429,14 @@ async function queueWithoutMirror(input: MemorySaveInput): Promise<MemorySaveRes
   return await queueFenced(input, note, saveRequest(note, input.writeMode));
 }
 
-/** The refusal a forget of a slug this mirror does not hold is thrown as. */
-function noteNotFound(input: MemoryForgetInput): NaxError {
+/** The note an operation names: the two fields the not-found refusal is spelled from. */
+interface MemoryNoteRef {
+  readonly scope: MemoryScope;
+  readonly slug: string;
+}
+
+/** The refusal a note this mirror does not hold — or one that is history — is thrown as. */
+function noteNotFound(input: MemoryNoteRef): NaxError {
   return new NaxError(
     `memory note "${memoryNoteKey(input.scope, input.slug)}" is not in this mirror`,
     "MEMORY_NOTE_NOT_FOUND",
@@ -516,4 +544,35 @@ async function handOverForget(
  */
 export async function forgetMemoryNote(input: MemoryForgetInput): Promise<MemoryForgetResult> {
   return await orderedByStore(input.store.paths.lock, () => commitForget(input));
+}
+
+/** The statuses an approval may not bring into force: a note that is already history. */
+const RETIRED_STATUSES: ReadonlySet<MemoryNoteStatus> = new Set(["superseded", "rejected", "deleted"]);
+
+/** The note one approval rewrites: the same note, in force, stamped with the caller's clock. */
+function inForce(note: MemoryNote, now: () => Date): MemoryNote {
+  return { ...note, status: "active", updatedAt: now().toISOString() };
+}
+
+/**
+ * Put one pending note in force in this mirror.
+ *
+ * Only the note the mirror holds is consulted, so approval is a local transition rather than an
+ * authorization step: it asks no provider and changes nothing on the queue, and a forget waiting
+ * on that queue is still waiting afterwards. A note already in force is returned exactly as it
+ * stands — approving it again is not a rewrite, so its `updatedAt` still says when it was made
+ * active. A note that is history is not a note waiting for approval, and neither is one this
+ * mirror does not hold: both are `MEMORY_NOTE_NOT_FOUND`, because there is nothing to approve.
+ *
+ * The index is regenerated from the mirror after the rewrite, so the ` (pending)` marker the
+ * renderer draws from the note's own status is gone from the session that reads it next.
+ */
+export async function approveMemoryNote(input: MemoryApproveInput): Promise<MemoryNote> {
+  const note = await input.store.readNote(input.scope, input.slug);
+  if (note === null || RETIRED_STATUSES.has(note.status)) throw noteNotFound(input);
+  if (note.status === "active") return note;
+  const approved = inForce(note, clockOf(input));
+  await input.store.writeNote(approved);
+  await refreshMemoryIndex(input.store);
+  return approved;
 }

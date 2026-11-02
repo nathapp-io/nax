@@ -13,7 +13,9 @@ export {
   serializeMemoryNote,
 } from "./note.ts";
 export {
+  approveMemoryNote,
   forgetMemoryNote,
+  type MemoryApproveInput,
   type MemoryForgetInput,
   type MemoryForgetResult,
   type MemoryOperationInput,

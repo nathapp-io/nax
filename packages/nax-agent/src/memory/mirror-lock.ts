@@ -42,8 +42,14 @@ export interface MirrorLockInput {
   readonly isAlive?: (pid: number) => boolean;
 }
 
-/** The clock a lock stamps with: the caller's, or the process clock. */
-export function clockOf(input: MirrorLockInput): () => Date {
+/**
+ * The clock an operation stamps with: the caller's, or the process clock.
+ *
+ * Every operation that stamps a note or a lock file takes the same default, so this is
+ * the one place it is spelled — an approval stamps a note without taking the lock, and
+ * still reads its clock here.
+ */
+export function clockOf(input: { readonly now?: () => Date }): () => Date {
   return input.now ?? (() => new Date());
 }
 
