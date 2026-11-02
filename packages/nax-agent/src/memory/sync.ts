@@ -1,12 +1,12 @@
 /**
  * One sync: the guarded lifecycle around the mirror's exchange with a provider.
  *
- * Two guards, because ownership has two shapes. The lock file is the
- * cross-process one. `acquireSessionLock` classifies the caller's own pid as
- * `own` — it cannot tell a second caller in this process from the first — so a
- * module-level in-flight set keyed by the lock path is what stops the same
- * process syncing twice at once. Both are taken before the first `await`: a
- * check that yields first is a check two callers pass.
+ * Two guards, because ownership has two shapes. The lock files are the cross-process ones —
+ * one for the project mirror and, when the store has a user directory, one for the user mirror
+ * every project shares. `acquireSessionLock` classifies the caller's own pid as `own` — it
+ * cannot tell a second caller in this process from the first — so a module-level in-flight set
+ * keyed by the lock paths is what stops the same process syncing twice at once. Both are taken
+ * before the first `await`: a check that yields first is a check two callers pass.
  *
  * `syncMemory` never throws and never rejects. A live holder is `locked`, an
  * unreachable provider is `unreachable`, anything unexpected is `failed` with
@@ -49,18 +49,17 @@
  */
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
-import { NaxError } from "#src/infra/nax-error";
-import { isProcessAlive } from "#src/internal/process-alive";
-import { acquireSessionLock } from "#src/session-store/index";
+import { applyPushed } from "./delivery.ts";
 import { refreshMemoryIndex } from "./index-render.ts";
+import { acquireMirrorLocks, type ReleaseLock, storeLockTargets } from "./mirror-lock.ts";
 import { isMemoryPushRejected, parseMemoryNoteRecord } from "./note.ts";
 import type { MemoryOutbox, MemoryOutboxEntry } from "./outbox.ts";
 import type { MemoryPage, MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
-import { _memoryStoreDeps, type MemoryStore, type MemorySyncState } from "./store.ts";
-import { claimSync, operationInFlight, releaseSync } from "./sync-flight.ts";
+import type { MemoryStore, MemorySyncState } from "./store.ts";
+import { GLOBAL_MEMORY_TIMERS, providerAnswers, raceTimeout, warnQuietly } from "./support.ts";
+import { claimSync, releaseSync } from "./sync-flight.ts";
 import {
   MEMORY_OP_TIMEOUT_MS,
-  MEMORY_PROBE_TIMEOUT_MS,
   MEMORY_PULL_MAX_PAGES,
   MEMORY_PULL_PAGE_SIZE,
   MEMORY_SLUG_RE,
@@ -70,73 +69,11 @@ import {
   type MemoryTimers,
 } from "./types.ts";
 
-/** The stage every memory-origin log line carries. */
-const ERROR_STAGE = "memory";
-
-/** The code `acquireSessionLock` throws for a holder another live process owns. */
-const SESSION_LOCKED = "SESSION_LOCKED";
-
 /** What `sync.json` records when the provider did not answer this run. */
 const UNREACHABLE = "unreachable";
 
 /** What `sync.json` records when a provider had more pages than one run may drain. */
 const PAGE_LIMIT_REACHED = "pull page limit reached";
-
-/** A timer armed on the process clock, boxed so the contract's opaque id stays opaque. */
-interface ArmedTimer {
-  readonly handle: ReturnType<typeof setTimeout>;
-}
-
-function isArmedTimer(id: unknown): id is ArmedTimer {
-  return typeof id === "object" && id !== null && "handle" in id;
-}
-
-/**
- * The timers an operation races against when the caller injects none: the process
- * globals, read at call time so a substituted global is still observed. The handle
- * is handed back boxed — `MemoryTimers` keeps the timer id opaque precisely so a
- * fake clock can stand in for the real one, and a box clears the handle this race
- * armed without ever casting one.
- */
-export const GLOBAL_MEMORY_TIMERS: MemoryTimers = {
-  setTimeout: (callback, ms) => ({ handle: globalThis.setTimeout(callback, ms) }),
-  clearTimeout: (id) => {
-    if (isArmedTimer(id)) globalThis.clearTimeout(id.handle);
-  },
-};
-
-function timedOut(ms: number): NaxError {
-  return new NaxError(`memory operation did not settle within ${ms}ms`, "MEMORY_TIMEOUT", {
-    stage: ERROR_STAGE,
-    timeoutMs: ms,
-  });
-}
-
-/**
- * `promise`'s value if it settles within `ms`, and a `MEMORY_TIMEOUT` rejection if it does not.
- *
- * The timer is armed when the race starts and cleared the moment either side
- * settles, so a race that finished leaves nothing armed behind it — the property
- * a fake clock reads as `pending() === 0`. `setTimeout` is the cancellable kind
- * here on purpose (the `forbidden-patterns-source` exception): `Bun.sleep` cannot
- * be cancelled, and a sleep that outlives the answer is exactly the leak this
- * clears.
- *
- * A timer race does not cancel the work it raced: the provider call keeps running
- * after a timeout, because nothing on that side of the seam accepts a signal. Its
- * late rejection is therefore claimed here rather than left to surface as an
- * unhandled rejection in whatever process this library runs in.
- */
-export async function raceTimeout<T>(promise: Promise<T>, ms: number, timers: MemoryTimers): Promise<T> {
-  promise.catch(() => undefined);
-  const deadline = Promise.withResolvers<never>();
-  const armed = timers.setTimeout(() => deadline.reject(timedOut(ms)), ms);
-  try {
-    return await Promise.race([promise, deadline.promise]);
-  } finally {
-    timers.clearTimeout(armed);
-  }
-}
 
 /** Everything one sync needs: the mirror, the queue and the provider it talks to. */
 export interface MemorySyncInput {
@@ -167,9 +104,6 @@ export interface MemorySyncResult {
   readonly error?: string;
 }
 
-/** The lock release the session protocol hands back. */
-type ReleaseLock = () => Promise<void>;
-
 /** What a run holds when it took no lock: releasing nothing is releasing successfully. */
 const NO_RELEASE: ReleaseLock = async () => undefined;
 
@@ -190,61 +124,20 @@ function stopped(outcome: MemorySyncResult["outcome"], error?: string): MemorySy
   return { outcome, ...noCounts(), ...(error === undefined ? {} : { error }) };
 }
 
-/**
- * Report a failure without letting the reporting fail the caller.
- *
- * The logger is an input, not a guarantee: a host logger that throws would
- * otherwise turn the never-throws contract into a rejection at exactly the
- * moment a result is owed, so a logger failure is discarded on purpose. Shared
- * with the save path, whose rollback is also reported rather than thrown.
- */
-export function warnQuietly(logger: AgentLogger, message: string, data: Record<string, unknown>): void {
-  try {
-    logger.warn(ERROR_STAGE, message, data);
-  } catch {
-    // Nothing left to report it to: the outcome the caller is owed still returns.
-  }
-}
-
 /** The clock a run stamps with: the caller's, or the process clock. */
 function clockOf(input: MemorySyncInput): () => Date {
   return input.now ?? (() => new Date());
 }
 
 /**
- * Take the store's lock, or `null` when another process holds it live — or when a write
- * operation of this process owns the mirror.
+ * Take every lock this store's mirrors need, or `null` when another writer holds one.
  *
- * The directory is created first — the lock protocol's guard directory lives inside it — and a
- * stale holder is taken over by the acquisition itself, so only a refusal is mapped; every other
- * failure is the caller's to report. The operation claim is read before the file because that
- * file is ours: the protocol calls our own pid `own` and would rename a running approval's lock
- * aside, handing this run a mirror another writer is midway through changing.
+ * The set is what a store with a user directory needs: the project's lock alone leaves two
+ * projects staging the same user note at once. `acquireMirrorLocks` takes them in the one
+ * canonical order, maps a live holder to `null` and hands back what it already took.
  */
 async function takeLock(input: MemorySyncInput): Promise<ReleaseLock | null> {
-  const { paths } = input.store;
-  const pid = input.pid ?? process.pid;
-  const now = clockOf(input);
-  const isAlive = input.isAlive ?? isProcessAlive;
-  if (operationInFlight(paths.lock)) return null;
-  await _memoryStoreDeps.mkdir(paths.projectDir, { recursive: true });
-  try {
-    return acquireSessionLock(paths.lock, { dir: paths.projectDir, pid, now, logger: input.logger, isAlive }, isAlive);
-  } catch (error) {
-    if (error instanceof NaxError && error.code === SESSION_LOCKED) return null;
-    throw error;
-  }
-}
-
-/** Ask the provider whether it answers within the probe deadline: a throw and a timeout are `false`. */
-export async function providerAnswers(provider: MemoryProvider, timers: MemoryTimers): Promise<boolean> {
-  try {
-    return await raceTimeout(provider.reachable(), MEMORY_PROBE_TIMEOUT_MS, timers);
-  } catch {
-    // A provider that threw and one that never answered are the same fact here:
-    // neither can be delivered to.
-    return false;
-  }
+  return await acquireMirrorLocks(input, storeLockTargets(input.store));
 }
 
 /**
@@ -306,28 +199,6 @@ async function pushEntry(input: MemorySyncInput, entry: MemoryOutboxEntry, timer
     const reason = errorMessage(error);
     return isMemoryPushRejected(error) ? { kind: "rejected", reason } : { kind: "failed", reason };
   }
-}
-
-/**
- * Step 3's mirror half: write the provider's answer into the mirror before the entry goes.
- *
- * A `save` carries the returned id and status into its note, and only those two: the
- * delivery says what the provider made of the write, not what the note now reads. The
- * mirror is preferred over the entry's own copy so a note edited in the mirror is not
- * rolled back; an entry with no mirrored note yields to its copy, so a delivery whose
- * note the mirror never held is not reported as one that vanished.
- *
- * A `forget` removes the note only on `deleted`. A `proposal`-mode forget the provider
- * has merely recorded is still pending, and the note it names stays until it is not.
- */
-async function applyPushed(input: MemorySyncInput, entry: MemoryOutboxEntry, answer: MemoryPushResult): Promise<void> {
-  if (entry.kind === "forget") {
-    if (answer.status === "deleted") await input.store.deleteNote(entry.scope, entry.slug);
-    return;
-  }
-  const base = (await input.store.readNote(entry.scope, entry.slug)) ?? entry.note;
-  if (base === undefined) return;
-  await input.store.writeNote({ ...base, id: answer.id, status: answer.status });
 }
 
 /** What a drain delivered, and the transient failure that stopped it early. */
@@ -567,9 +438,14 @@ async function releaseQuietly(input: MemorySyncInput, release: ReleaseLock): Pro
 
 export async function syncMemory(input: MemorySyncInput): Promise<MemorySyncResult> {
   const lock = input.store.paths.lock;
-  // Synchronously, before the first await: a guard taken after a yield is one two
-  // callers both pass. Nothing has touched the filesystem on this path.
-  if (!claimSync(lock)) return stopped("locked");
+  // Every lock this run takes is claimed here, synchronously and before the first await: a
+  // guard taken after a yield is one two callers both pass. Nothing has touched the
+  // filesystem on this path.
+  const claimed = storeLockTargets(input.store).map((target) => target.path);
+  if (!claimed.every((path) => claimSync(path))) {
+    for (const path of claimed) releaseSync(path);
+    return stopped("locked");
+  }
   let release: ReleaseLock = NO_RELEASE;
   try {
     const acquired = await takeLock(input);
@@ -594,6 +470,6 @@ export async function syncMemory(input: MemorySyncInput): Promise<MemorySyncResu
     await releaseQuietly(input, release);
     // Cleared whatever the cleanup did: a lock we could not release ages into
     // stale recovery, but this process must not be wedged until then.
-    releaseSync(lock);
+    for (const path of claimed) releaseSync(path);
   }
 }

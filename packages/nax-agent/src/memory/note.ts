@@ -89,7 +89,15 @@ function splitField(line: string): { key: string; value: string } | null {
   return null;
 }
 
-/** The lines between the fences, plus the body after the blank separator line. */
+/**
+ * The lines between the fences, plus the body after the required blank separator line.
+ *
+ * A note file has exactly one body layout: the closing fence, one blank line, then the
+ * body. Text on the line straight after the fence is not a body — it is a file written by
+ * something that does not follow the format — so it is refused rather than adopted as one:
+ * a body that swallowed the first line of a malformed file would be persisted and served
+ * as if it had been written deliberately.
+ */
 function splitNoteText(text: string): { fields: Record<string, string>; body: string } {
   const lines = text.split("\n").map(stripLineBreak);
   const [first] = lines;
@@ -102,8 +110,11 @@ function splitNoteText(text: string): { fields: Record<string, string>; body: st
     if (field !== null && isNoteKey(field.key)) fields[field.key] = field.value;
   }
   const rest = lines.slice(close + 1);
-  const bodyLines = rest[0] !== undefined && BLANK_LINE.test(rest[0]) ? rest.slice(1) : rest;
-  return { fields, body: bodyLines.join("\n") };
+  const [separator] = rest;
+  if (separator !== undefined && !BLANK_LINE.test(separator)) {
+    throw invalidNote("the body must start on the line after a blank line");
+  }
+  return { fields, body: separator === undefined ? "" : rest.slice(1).join("\n") };
 }
 
 /**

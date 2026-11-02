@@ -47,6 +47,7 @@ import {
   type MockLogger,
   makeLogger,
   makeMemoryProvider,
+  waitForCondition,
   withTempDir,
 } from "#test/helpers/index";
 
@@ -227,6 +228,50 @@ describe("an offline save and the sync that delivers it", () => {
       expect(result).toEqual({ outcome: "unreachable", pushed: 0, rejected: 0, pulled: 0, skipped: 0 });
       // Nothing was pushed, so the entry — and the write it stands for — is still there.
       expect(await h.outbox.list()).toEqual([queued]);
+    });
+  });
+});
+
+describe("a save made while this process is syncing", () => {
+  test("[B4] the delivered save replaces the mirror's older note instead of being lost with its entry", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      const older = note({ id: "mem_old", body: "old body" });
+      await h.store.writeNote(older);
+      // The save is fenced by the sync, so its entry is the only copy of the new content; the
+      // pull that follows brings nothing back for the slug.
+      const gate = Promise.withResolvers<void>();
+      const syncing = makeMemoryProvider({
+        reachable: async () => {
+          await gate.promise;
+          return true;
+        },
+        push: { id: REMOTE_ID, status: "active" },
+        pull: { notes: [], done: true },
+      });
+
+      const running = h.sync({ provider: syncing });
+      await waitForCondition(() => syncing.reachable.mock.calls.length === 1, 5_000);
+
+      const saved = await h.save({ provider: h.provider, write: { ...WRITE, body: "new body" } });
+      expect(saved).toEqual({ slug: SLUG, status: "active", delivered: false });
+      // Nothing was staged: the mirror still holds the older note while the sync owns it.
+      expect(await h.store.readNote("project", SLUG)).toMatchObject({ id: "mem_old", body: "old body" });
+      expect(h.provider.push).not.toHaveBeenCalled();
+
+      gate.resolve();
+      const result = await running;
+
+      expect(result).toEqual({ outcome: "synced", pushed: 1, rejected: 0, pulled: 0, skipped: 0 });
+      // The provider was handed the queued content, so the mirror must end on that content too:
+      // the entry carrying it is gone, and neither the pull nor the drain's own write is a copy.
+      expect(firstCall(syncing.push, "provider push")[0].note).toMatchObject({ body: "new body" });
+      expect(await h.outbox.list()).toEqual([]);
+      expect(await h.store.readNote("project", SLUG)).toMatchObject({
+        id: REMOTE_ID,
+        status: "active",
+        body: "new body",
+      });
     });
   });
 });

@@ -321,4 +321,27 @@ describe("syncMemory step 3 (drain)", () => {
       expect(await h.outbox.list()).toMatchObject([{ clientId: "client-a", state: "rejected" }]);
     });
   });
+
+  test("[B4] delivering an older queued write leaves a newer generation that is still queued alone", async () => {
+    await withTempDir(async (dir) => {
+      // The second push fails, so nothing after the first delivery can repair the mirror: what
+      // the drain does with the older entry's answer is the whole of the outcome.
+      const h = harness(dir, { push: [ANSWER_ACTIVE, new Error("connection reset by peer")] });
+      const older = note({ id: "local-older", body: "older body" });
+      const newer = note({ id: "local-newer", body: "newer body" });
+      // The mirror holds the newer write — staged by a save that has not been delivered — and
+      // the queue holds both it and the older one in front of it.
+      await h.store.writeNote(newer);
+      await h.outbox.enqueue(saveRequest(older, "local-older"));
+      const queued = await h.outbox.enqueue(saveRequest(newer, "local-newer"));
+
+      const result = await syncMemory(h.input());
+
+      expect(result).toMatchObject({ outcome: "failed", pushed: 1, error: "connection reset by peer" });
+      // The older delivery's id and status belong to the older note, not to this one.
+      expect(await h.store.readNote("project", "replay-budget")).toEqual(newer);
+      // The newer write is still waiting, so its copy of the note is the one the next run takes.
+      expect(await h.outbox.list()).toEqual([queued]);
+    });
+  });
 });

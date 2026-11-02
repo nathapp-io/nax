@@ -120,6 +120,14 @@ describe("parseMemoryNote rejections", () => {
     expect(parseMemoryNote(noteText({ slug: "replay-budget" })).slug).toBe("replay-budget");
     expectInvalidNote(noteText({ slug: "Bad_Slug" }));
   });
+
+  test("[M1] a body that starts on the fence's next line, with no blank separator, is refused", () => {
+    // `noteText` puts the blank separator in; this is the malformed spelling that omits it.
+    const head = noteText({}, "");
+    expect(parseMemoryNote(head).body).toBe("");
+    expect(parseMemoryNote(`${head}\n${BODY}`).body).toBe(BODY);
+    expect(expectInvalidNote(`${head}${BODY}`)).toContain("blank line");
+  });
 });
 
 describe("serializeMemoryNote", () => {

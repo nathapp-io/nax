@@ -20,14 +20,15 @@
  * - `afterPublish` receives the staged file's identity once the rename is done, so a
  *   caller can check — and take back by identity — a note that landed somewhere the
  *   rename could not be told apart from;
- * - the cleanup is identity-checked: the stage is removed only while the path still
- *   holds the file this call created, never whatever took its name.
+ * - the cleanup removes the stage only while it is still the file this call created, and
+ *   does the ownership check and the removal as one operation (see `removeOwnedEntry`): a
+ *   stat that is then acted on would delete whatever took the name between the two.
  *
  * A throw from either hook fails the write and removes the stage.
  */
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { open, rename, rm, stat } from "node:fs/promises";
+import { lstat, open, rename, rm, unlink } from "node:fs/promises";
 import { openPinnedStage, pinnedOperation } from "./pinned-directory.ts";
 
 /** What a file is, independent of the path that names it. */
@@ -49,14 +50,19 @@ interface StagedFile {
   close(): Promise<void>;
 }
 
-type StatPath = (path: string) => Promise<Identity>;
+/**
+ * Remove the entry at `path` only while it still holds the file `created` names.
+ *
+ * Injectable for tests that simulate a stage name being taken over before the removal.
+ */
+type DiscardStage = (path: string, created: Identity) => Promise<void>;
 
 /** Injectable for tests that simulate a write dying part-way, or a stage name being taken over. */
 export const _atomicWriteDeps: {
   open: (path: string, flags: number, mode: number) => Promise<StagedFile>;
   rename: typeof rename;
   rm: typeof rm;
-  stat: StatPath;
+  discard: DiscardStage;
 } = {
   open: async (path, flags, mode) => {
     const pinned = await openPinnedStage(path, flags, mode);
@@ -73,16 +79,19 @@ export const _atomicWriteDeps: {
   },
   rename: (from, to) => pinnedOperation<void>(String(from), "rename", [String(to)]) ?? rename(from, to),
   rm: (path, options) => pinnedOperation<void>(String(path), "rm") ?? rm(path, options),
-  stat: async (path) => {
-    const info = await (pinnedOperation<Identity>(path, "stat") ?? stat(path));
-    return { dev: info.dev, ino: info.ino };
-  },
+  discard: (path, created) => removeOwnedEntry(path, created),
 };
 
-/** The identity of whatever is at `path`, or `null` when nothing is. */
-async function identityAt(path: string): Promise<Identity | null> {
+/**
+ * The identity of whatever entry is at `path`, never following a link there.
+ *
+ * Deliberately not a seam: the ownership check below is only worth anything if nothing can
+ * interpose between it and the removal it licenses.
+ */
+async function entryIdentity(path: string): Promise<Identity | null> {
   try {
-    return await _atomicWriteDeps.stat(path);
+    const info = await lstat(path);
+    return { dev: info.dev, ino: info.ino };
   } catch {
     // Nothing there to identify — and nothing left to remove.
     return null;
@@ -90,19 +99,50 @@ async function identityAt(path: string): Promise<Identity | null> {
 }
 
 /**
- * Remove the stage, but only while the path still holds the file this call created.
+ * Remove a stage's entry, but only while that entry is still the file this call created.
+ *
+ * Ownership of a name cannot be proven by a stat and then acted on: `lstat` and `unlink` are
+ * two operations, and anything able to write in the directory can put a different file at the
+ * name between them — which that sequence then deletes even though this module never wrote it.
+ * So the check and the removal are one operation, and there is deliberately nothing injectable
+ * inside it:
+ *
+ * - in a pinned directory the worker does both in a single request, so no code in this
+ *   process can interpose;
+ * - elsewhere they are the two statements below, with no seam between them.
+ *
+ * What remains is the caller's contract: whoever can write in the target's directory is the
+ * trust boundary — they could replace the target itself. A replacement that lands *before* the
+ * operation is caught by the check and retained, and a stray `.tmp` beside the target costs
+ * nothing because every listing in this package ignores those names. A replacement that lands
+ * after it is a file this call has already decided not to touch.
+ */
+async function removeOwnedEntry(path: string, created: Identity): Promise<void> {
+  const pinned = pinnedOperation<boolean>(path, "discard", [JSON.stringify(created)]);
+  if (pinned !== null) {
+    await pinned;
+    return;
+  }
+  const current = await entryIdentity(path);
+  if (current === null) return;
+  if (current.dev !== created.dev || current.ino !== created.ino) return;
+  await unlink(path);
+}
+
+/**
+ * Remove the stage this call created, or leave it in place when its ownership cannot be proven.
  *
  * `created` is the identity taken from the descriptor at creation, so it stays true even if
- * the name was taken over afterwards. A mismatch means the path now holds something else,
- * and removing it would delete data this module never wrote. Without an identity (open
- * or fstat failed), ownership is unknown: never remove an entry on that basis.
+ * the name was taken over afterwards. A mismatch means the path now holds something else, and
+ * removing it would delete data this module never wrote. Without an identity (open or fstat
+ * failed), ownership is unknown: never remove an entry on that basis. A removal that fails is
+ * not reported: the failure the caller is owed is the one that brought us here.
  */
 async function discardStage(staged: string, created: Identity | null): Promise<void> {
   if (created === null) return;
-  const current = await identityAt(staged);
-  if (current === null) return;
-  if (current.dev !== created.dev || current.ino !== created.ino) return;
-  await _atomicWriteDeps.rm(staged, { force: true });
+  await _atomicWriteDeps.discard(staged, created).catch(() => {
+    // A stage that could not be removed is retained; the pinned worker reports its own errors.
+  });
 }
 
 export async function writeFileAtomic(

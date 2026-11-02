@@ -157,6 +157,32 @@ describe("writeFileAtomic", () => {
     expect(await readFile(replacement, "utf8")).toBe("not our stage");
   });
 
+  test("[B5] a replacement made between the ownership check and the removal survives", async () => {
+    const path = join(dir, "doc.json");
+    const realDiscard = _atomicWriteDeps.discard;
+    let staged = "";
+    // The entry the cleanup will try to remove is replaced, under the name the call staged
+    // at, after that name was created. Removing on the strength of an earlier stat deletes
+    // it; the removal re-reads the entry and retains what is no longer this call's.
+    _atomicWriteDeps.discard = async (entry, created) => {
+      staged = String(entry);
+      await rm(entry, { force: true });
+      await writeFile(entry, "not our stage");
+      await realDiscard(entry, created);
+    };
+
+    await expect(
+      writeFileAtomic(path, "ours", {
+        beforePublish: async () => {
+          throw new Error("destination moved");
+        },
+      }),
+    ).rejects.toThrow("destination moved");
+
+    expect(await readFile(staged, "utf8")).toBe("not our stage");
+    expect(existsSync(path)).toBe(false);
+  });
+
   test("an identity failure neither writes nor removes an unidentified stage", async () => {
     const realOpen = _atomicWriteDeps.open;
     const failure = new Error("fstat failed");

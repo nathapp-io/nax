@@ -20,52 +20,54 @@
  * note, so a mirror write that then fails leaves the staged note in place and reports
  * the bookkeeping failure.
  *
- * The note is minted with its own UUID, starts `active` under `direct` and
- * `pending` under `proposal`, and is stamped with the caller's clock. That UUID
- * is the request's client id, so the save and the write that delivers it are
- * named by one id. The provider is then probed through the probe deadline and
- * pushed through the operation deadline, both as `raceTimeout` races, and its
- * answer — never the caller's guess — decides the note's final id and status.
+ * The note is minted with its own UUID — which is also the request's client id, so the save
+ * and the write that delivers it are named by one id — starts `active` under `direct` and
+ * `pending` under `proposal`, and is stamped with the caller's clock. The provider is probed
+ * and pushed through their deadlines as `raceTimeout` races, and its answer, never the
+ * caller's guess, decides the note's final id and status.
  *
- * A key the outbox already holds a queued write for is not pushed at all: the new
- * write joins the queue behind the waiting one, so the provider receives them in the
- * order the agent made them. That order is only meaningful if two saves of the key
- * cannot both decide it, so a mirror's saves run one after another: in this process
- * through `orderedByStore`, and across processes through the store's own lock file —
- * the artifact that already means "this mirror has one writer". A save that ends up
- * undelivered declares its queue entry before it asks the provider. A contending save
- * waits for the holder to release the lock (`waitForTurn`) before it stages or queues,
- * so even a holder paused before enqueueing keeps the earlier sequence. An entry for
- * the key alone is not permission to proceed: it might predate the current holder.
- * Only a save fenced by a sync known to this process queues without staging; it leaves
- * the mirror and index to that sync. Every save that stages refreshes the index, so the
- * next session reads the note whether or not this session could deliver it.
+ * A key the outbox already holds a queued write for is not pushed at all: the new one joins
+ * the queue behind it, so the provider receives them in the order the agent made them. That
+ * order is only meaningful if two saves of the key cannot both decide it, so a mirror's saves
+ * run one after another — in this process (`orderedByMirrorLocks`) and across processes (the
+ * store's lock files, project and user alike). A contending save waits for the holder to
+ * release (`waitForTurn`) before it stages or queues, so a holder paused before enqueueing
+ * still keeps the earlier sequence; an entry for the key alone is not permission to proceed,
+ * because it may predate the current holder. Only a save fenced by a sync known to this
+ * process queues without staging — it leaves the mirror and index to that sync — and every
+ * save that stages refreshes the index, so the next session reads the note whether or not this
+ * session could deliver it.
  *
  * `forgetMemoryNote` is the other half, and it only retires a note the mirror holds: an absent
- * slug is a refusal. Under `direct` the note goes first, kept aside for a refusal to put back;
- * under `proposal` it stays, and the marker comes from the outbox alone.
+ * slug is a refusal. It declares its queue entry *before* touching the note, so the intent is
+ * durable first; under `direct` the note then goes, kept aside for a refusal to put back, and
+ * under `proposal` it stays, with the marker coming from the outbox alone.
  *
  * `approveMemoryNote` is the transition a proposal waits for: a pending note is rewritten in force
  * under the caller's clock and the index is regenerated from the mirror, a note already in force is
  * returned as it stands, and a note that is history — or one this mirror does not hold — is the
  * same `MEMORY_NOTE_NOT_FOUND` refusal a forget of it would be. It asks no provider and writes
- * nothing to the queue, but it is still a writer of the mirror: what it rewrites must be the note
- * the mirror holds now, so it takes the same ordering and the same lock a save takes. What it reads
- * from the queue is the held-forget set, because the index it renders carries that marker and this
- * operation must not drop it. It approves no queued forget: the entry stays the outbox's.
+ * nothing to the queue, but it still writes the mirror, so it takes the same ordering and the same
+ * locks a save takes. It reads the held-forget set only to keep the index's marker, and approves
+ * no queued forget: the entry stays the outbox's.
  */
 import { randomUUID } from "node:crypto";
 import { type AgentLogger, getLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
 import { refreshMemoryIndex } from "./index-render.ts";
-import { clockOf, type MirrorLockInput, orderedByStore, withMirrorLock } from "./mirror-lock.ts";
+import {
+  clockOf,
+  type MirrorLockInput,
+  mirrorSyncInFlight,
+  orderedByMirrorLocks,
+  withMirrorLock,
+} from "./mirror-lock.ts";
 import { isMemoryPushRejected } from "./note.ts";
 import { createMemoryOutbox, type MemoryOutbox } from "./outbox.ts";
 import type { MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
 import type { MemoryStore } from "./store.ts";
-import { GLOBAL_MEMORY_TIMERS, providerAnswers, raceTimeout, warnQuietly } from "./sync.ts";
-import { syncInFlight } from "./sync-flight.ts";
+import { GLOBAL_MEMORY_TIMERS, providerAnswers, raceTimeout, warnQuietly } from "./support.ts";
 import {
   MEMORY_OP_TIMEOUT_MS,
   type MemoryNote,
@@ -221,12 +223,9 @@ function queued(note: MemoryNote): MemorySaveResult {
 }
 
 /**
- * Queue a write this save could not deliver, and rebuild the index from what the mirror
- * holds.
- *
- * The staged note is what the mirror keeps, so the session that reads the index next has to
- * see it — whether it was staged by this save or was already there when this one joined the
- * queue behind it.
+ * Queue a write this save could not deliver and rebuild the index from what the mirror holds:
+ * the staged note is what the mirror keeps, so the next session has to see it — whether this
+ * save staged it or it was already there when this one joined the queue behind another.
  */
 async function queueUnderLock(
   input: MemoryOperationInput,
@@ -251,14 +250,11 @@ async function queuedEntryResult(input: MemoryOperationInput, note: MemoryNote):
  * Queue a write another writer's mirror could not take: the entry is the only thing this
  * save writes.
  *
- * The index is not rebuilt here on purpose. It would be rendered from a mirror that its
- * owner is still changing, so rebuilding it could publish their half-written state over the
- * view this save just refused to touch. The owner's own refresh is the one that counts, and
- * the sync that delivers this entry refreshes it either way.
- *
+ * The index is not rebuilt here on purpose: rendering it from a mirror its owner is still
+ * changing could publish their half-written state over the view this save refused to touch,
+ * and the owner's own refresh (or the sync that delivers this entry) is the one that counts.
  * The request keeps the id the note was minted with, so the note, the entry and the write a
- * later sync sends are named by one client id — the provider can recognise a replay of
- * something it already took.
+ * later sync sends share one client id and a replay is recognisable.
  */
 async function queueFenced(
   input: MemoryOperationInput,
@@ -315,17 +311,15 @@ async function deliverLocked(input: MemorySaveInput): Promise<MemorySaveResult> 
 /**
  * Ask the provider for the note the queue already carries, and take the entry back on success.
  *
- * The provider is probed and then pushed, each through its own deadline, and anything short
- * of an acceptance — a probe that answered `false`, threw or timed out; a push that did the
- * same — leaves the entry where it is and reports the save as undelivered. The staged note
- * stays too: the local write is the newer fact, and it is exactly what the queue will
- * deliver.
+ * Anything short of an acceptance leaves the entry where it is and reports the save as
+ * undelivered; the staged note stays too, because the local write is the newer fact and is
+ * exactly what the queue will deliver.
  *
- * `MEMORY_PUSH_REJECTED` is the provider saying it will never take this write, so queueing
- * it would only repeat the refusal: the entry comes back off, the mirror is put back the way
- * it was, and the provider's error reaches the caller. Only the provider's answer changes
- * the note's id and status, and only after the provider has taken it — the delivered arm is
- * the one arm that cannot be undone.
+ * `MEMORY_PUSH_REJECTED` is the provider saying it will never take this write, so queueing it
+ * would only repeat the refusal: the entry comes back off, the mirror is put back the way it
+ * was, and the provider's error reaches the caller. Only the provider's answer changes the
+ * note's id and status, and only after it has taken the write — the delivered arm is the one
+ * arm that cannot be undone.
  */
 async function handOver(
   input: MemorySaveInput,
@@ -354,16 +348,15 @@ async function handOver(
  *
  * The validator decides first, so a refusal leaves the store exactly as it found it.
  * Everything after it runs in the mirror's own order — one save at a time in this process
- * (`orderedByStore`) and one writer at a time across processes (the store's lock) —
- * because none of it means anything if two saves compute it at the same time: the "is
- * this key already queued?" answer, the note staged in the mirror and the entry the queue
- * takes are one decision, and two of them interleaved can be delivered in the wrong order
- * or leave the mirror on the older note.
+ * (`orderedByMirrorLocks`) and one writer at a time across processes (the store's locks) —
+ * because the "is this key already queued?" answer, the note staged in the mirror and the
+ * entry the queue takes are one decision: interleaved, they deliver in the wrong order or
+ * leave the mirror on the older note.
  */
 export async function saveMemoryNote(input: MemorySaveInput): Promise<MemorySaveResult> {
   const refusal = validateMemoryNoteWrite(input.write, input.source);
   if (refusal !== null) throw writeRefused(refusal);
-  return await orderedByStore(input.store.paths.lock, () => commitSave(input));
+  return await orderedByMirrorLocks(input.store, () => commitSave(input));
 }
 
 /**
@@ -380,8 +373,7 @@ export async function saveMemoryNote(input: MemorySaveInput): Promise<MemorySave
  * when the holder is paused before enqueueing.
  */
 async function commitSave(input: MemorySaveInput): Promise<MemorySaveResult> {
-  const lockPath = input.store.paths.lock;
-  if (syncInFlight(lockPath)) return await queueWithoutMirror(input);
+  if (mirrorSyncInFlight(input.store)) return await queueWithoutMirror(input);
   return await withMirrorLock(input, () => deliverLocked(input));
 }
 
@@ -421,8 +413,7 @@ function forgetRequest(input: MemoryForgetInput): MemoryWriteRequest {
 }
 
 /** Queue a forget this operation could not deliver, and rebuild the index so its marker shows. */
-async function queueForget(input: MemoryForgetInput, request: MemoryWriteRequest): Promise<MemoryForgetResult> {
-  await input.outbox.enqueue(request);
+async function queuedForget(input: MemoryForgetInput): Promise<MemoryForgetResult> {
   await refreshIndex(input);
   return { slug: input.slug, status: FORGET_STATUS_BY_MODE[input.writeMode], delivered: false };
 }
@@ -447,7 +438,7 @@ async function restoreForgotten(input: MemoryForgetInput, previous: MemoryNote):
  */
 async function commitForget(input: MemoryForgetInput): Promise<MemoryForgetResult> {
   const request = forgetRequest(input);
-  if (syncInFlight(input.store.paths.lock)) return await queueFencedForget(input, request);
+  if (mirrorSyncInFlight(input.store)) return await queueFencedForget(input, request);
   return await withMirrorLock(input, () => forgetLocked(input, request));
 }
 
@@ -466,33 +457,52 @@ async function queueFencedForget(input: MemoryForgetInput, request: MemoryWriteR
   return { slug: input.slug, status: FORGET_STATUS_BY_MODE[input.writeMode], delivered: false };
 }
 
-/** Retire the note and declare the request, while the mirror's lock is held. */
+/**
+ * Retire the note and deliver the request, while the mirror's lock is held.
+ *
+ * The intent is declared on the queue *before* the note it names is touched. Under `direct`
+ * this method deletes that note, and a delete no durable request records is a retire the
+ * provider never hears about — the next pull restores the note and the agent's decision is
+ * silently undone. Writing the entry first costs one file write and makes every later failure
+ * recoverable: a failed delete leaves the entry to be replayed, a transient push failure
+ * leaves it queued, and only a permanent refusal takes it back off (with the note put back,
+ * under `direct`, because a refusal will never change).
+ */
 async function forgetLocked(input: MemoryForgetInput, request: MemoryWriteRequest): Promise<MemoryForgetResult> {
   const previous = await input.store.readNote(input.scope, input.slug);
   if (previous === null) throw noteNotFound(input);
+  // Read before the entry goes on: the one this call is about to add cannot be "earlier work".
+  const waiting = (await input.outbox.heldKeys()).has(memoryNoteKey(input.scope, input.slug));
+  await input.outbox.enqueue(request);
   if (input.writeMode === "direct") await input.store.deleteNote(input.scope, input.slug);
-  if ((await input.outbox.heldKeys()).has(memoryNoteKey(input.scope, input.slug))) {
-    return await queueForget(input, request);
-  }
+  if (waiting) return await queuedForget(input);
   return await handOverForget(input, previous, request);
 }
 
-/** Ask the provider to forget the note; anything short of an acceptance queues the request. */
+/**
+ * Ask the provider to forget the note this operation already queued.
+ *
+ * Anything short of an acceptance leaves the entry where it is: the entry is what makes the
+ * retire durable, not this attempt. Acceptance and a permanent refusal both take it back off
+ * — retrying a refusal would repeat it — and the refusal puts the note back under `direct`.
+ */
 async function handOverForget(
   input: MemoryForgetInput,
   previous: MemoryNote,
   request: MemoryWriteRequest,
 ): Promise<MemoryForgetResult> {
   const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
-  if (!(await providerAnswers(input.provider, timers))) return await queueForget(input, request);
+  if (!(await providerAnswers(input.provider, timers))) return await queuedForget(input);
   let answer: MemoryPushResult;
   try {
     answer = await raceTimeout(input.provider.push(request), MEMORY_OP_TIMEOUT_MS, timers);
   } catch (error) {
-    if (!isMemoryPushRejected(error)) return await queueForget(input, request);
+    if (!isMemoryPushRejected(error)) return await queuedForget(input);
+    await input.outbox.remove(request.clientId);
     if (input.writeMode === "direct") await restoreForgotten(input, previous);
     throw error;
   }
+  await input.outbox.remove(request.clientId);
   await refreshIndex(input);
   return { slug: input.slug, status: answer.status, delivered: true };
 }
@@ -508,7 +518,7 @@ async function handOverForget(
  * undone, under `direct`, and it is rethrown; an absent slug is never queued.
  */
 export async function forgetMemoryNote(input: MemoryForgetInput): Promise<MemoryForgetResult> {
-  return await orderedByStore(input.store.paths.lock, () => commitForget(input));
+  return await orderedByMirrorLocks(input.store, () => commitForget(input));
 }
 
 /** The statuses an approval may not bring into force: a note that is already history. */
@@ -578,7 +588,5 @@ async function approveLocked(input: MemoryApproveInput): Promise<MemoryNote> {
  * `MEMORY_NOTE_NOT_FOUND`, because there is nothing to approve.
  */
 export async function approveMemoryNote(input: MemoryApproveInput): Promise<MemoryNote> {
-  return await orderedByStore(input.store.paths.lock, () =>
-    withMirrorLock(lockInputOf(input), () => approveLocked(input)),
-  );
+  return await orderedByMirrorLocks(input.store, () => withMirrorLock(lockInputOf(input), () => approveLocked(input)));
 }

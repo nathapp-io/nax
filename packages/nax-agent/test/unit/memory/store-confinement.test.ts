@@ -272,6 +272,41 @@ describe("memory store confinement", () => {
       });
     });
 
+    test("[B2] readNote returns no outside bytes when the parent is swapped before the stat", async () => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const notesDir = join(project, "notes");
+        const aside = join(project, "notes-aside");
+        const outside = join(dir, "outside");
+        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+        await store.writeNote(note({ slug: "kept-budget" }));
+        await mkdir(outside, { recursive: true });
+        await writeFixture(
+          join(outside, "kept-budget.md"),
+          serializeMemoryNote(note({ slug: "kept-budget", body: "leaked body" })),
+        );
+        const realStat = _memoryStoreDeps.stat;
+        let swapped = false;
+        // The one window a pre-open check cannot close: the parent becomes an outside link
+        // before the identity the read will be held to is taken, so a store that trusts that
+        // identity reads the outside file and both sides agree with each other.
+        _memoryStoreDeps.stat = async (path) => {
+          if (!swapped && path.endsWith("kept-budget.md")) {
+            swapped = true;
+            await rename(notesDir, aside);
+            await symlink(outside, notesDir);
+          }
+          return realStat(path);
+        };
+
+        const error = await caught(store.readNote("project", "kept-budget"));
+
+        expect(swapped).toBe(true);
+        assertNaxError(error, "readNote after the parent was swapped before the stat");
+        expect(error).toMatchObject({ code: "MEMORY_PATH_OUTSIDE", context: { stage: "memory" } });
+      });
+    });
+
     test("listNotes reports a listing taken from a directory swapped mid-listing", async () => {
       await withTempDir(async (dir) => {
         const project = projectPath(dir);
@@ -388,14 +423,16 @@ describe("memory store confinement", () => {
             await realRename(from, to);
           };
         } else {
-          const realRm = _atomicWriteDeps.rm;
+          const realDiscard = _atomicWriteDeps.discard;
           _atomicWriteDeps.rename = async () => {
             throw new Error("publish refused");
           };
-          _atomicWriteDeps.rm = async (path, options) => {
+          // The replacement lands before the cleanup runs: the entry the caller will try to
+          // remove is no longer the file it staged.
+          _atomicWriteDeps.discard = async (path, created) => {
             await swap();
             await writeFixture(String(path), "foreign stage");
-            await realRm(path, options);
+            await realDiscard(path, created);
           };
         }
         const error = await caught(store.writeNote(note()));

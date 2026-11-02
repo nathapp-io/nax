@@ -39,6 +39,7 @@ import {
   NaxError,
   syncMemory,
 } from "@nathapp/nax-agent";
+import { _atomicWriteDeps } from "#src/internal/atomic-write";
 import { acquireSessionLock } from "#src/session-store/index";
 import {
   assertDefined,
@@ -64,6 +65,8 @@ const REASON = "the replay budget was retired in 0.92";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** A store whose writes are refused reports this: the mirror cannot be written to. */
 const MIRROR_READ_ONLY = "mirror is read-only";
+/** What a full disk reports: a write-ahead entry that cannot be stored. */
+const ENOSPC = "ENOSPC: no space left on device";
 
 /** The note already in the mirror: what a forget acts on, and what a refusal must put back. */
 function note(overrides: Partial<MemoryNote> = {}): MemoryNote {
@@ -366,6 +369,38 @@ describe("forgetMemoryNote", () => {
       expect(await h.store.readNote("project", SLUG)).toEqual(existing);
       // Retrying would repeat the refusal, so nothing is queued.
       expect(await h.outbox.list()).toEqual([]);
+    });
+  });
+
+  test("[B6] a forget whose request cannot be queued leaves the note where it was", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { reachable: false });
+      const existing = note();
+      await h.store.writeNote(existing);
+      // The provider is unreachable, so the request has to reach the queue — and the queue is
+      // full. The intent must be durable before the note is touched, so this fails as a whole
+      // rather than leaving a retire nothing records.
+      const realOpen = _atomicWriteDeps.open;
+      _atomicWriteDeps.open = async (path, flags, mode) => {
+        if (String(path).startsWith(h.store.paths.outboxDir)) throw new Error(ENOSPC);
+        return realOpen(path, flags, mode);
+      };
+
+      const caught = await h.forget().catch((error: unknown) => error);
+
+      expect(caught).toBeInstanceOf(Error);
+      expect(String(caught)).toContain(ENOSPC);
+      // The mirror is exactly as it was: no retire, and nothing queued to replay one.
+      expect(await h.store.readNote("project", SLUG)).toEqual(existing);
+      expect(await h.outbox.list()).toEqual([]);
+
+      // And the state is recoverable: the same forget goes through once the queue can take it.
+      _atomicWriteDeps.open = realOpen;
+      const result = await h.forget();
+
+      expect(result).toEqual({ slug: SLUG, status: "deleted", delivered: false });
+      expect(await h.store.readNote("project", SLUG)).toBeNull();
+      expect(await soleEntry(h)).toMatchObject({ kind: "forget", slug: SLUG, state: "queued" });
     });
   });
 

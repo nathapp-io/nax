@@ -54,6 +54,19 @@ export async function pinnedDirectoryWorker(
         case "rm":
           await fs.rm(args[0], { force: true });
           break;
+        case "discard": {
+          // One request removes the stage only while it is still the file the caller created:
+          // nothing in the caller's process can run between reading the entry and unlinking it.
+          const expected = JSON.parse(args[1]) as { dev: number; ino: number };
+          try {
+            const current = identity(await fs.lstat(args[0]));
+            if (current.dev === expected.dev && current.ino === expected.ino) await fs.unlink(args[0]);
+          } catch {
+            // A stage that is already gone needs no removal, and one that cannot be read is
+            // retained: an unreadable entry is not proven to be this call's to delete.
+          }
+          break;
+        }
         default:
           throw new Error(`Unknown pinned operation: ${op}`); // nax-lint-allow: plain-error — isolated wire protocol, reconstructed as NaxError by caller
       }

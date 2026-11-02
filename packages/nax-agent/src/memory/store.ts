@@ -1,7 +1,9 @@
 /**
  * File-backed note mirror. Slugs are validated before I/O; directory and existing
- * note targets must resolve inside their scope root. Reads use identity-verified
- * descriptors; listings reject directory replacement and skip escaping files.
+ * note targets must resolve inside their scope root. Reads open a descriptor first and
+ * prove, against the namespace as it resolves *afterwards*, that it holds the confined
+ * entry — a check taken before the open can be fooled by a parent swapped in between.
+ * Listings reject directory replacement and skip escaping files.
  *
  * Mutations run in a dedicated helper whose verified cwd pins the parent inode.
  * Stage creation, publication, deletion and cleanup are cwd-relative there: a
@@ -335,24 +337,39 @@ export function createMemoryStore(input: {
     }
   }
   /**
-   * Any confined file's text, read from a descriptor whose identity is proved first.
+   * Any confined file's text, read from a descriptor whose ownership is proved after it is
+   * opened.
    *
-   * The resolved path must stay inside the scope root and the open refuses a link at
-   * it, so neither a link placed before the read nor one swapped in during it can
-   * make the store read bytes that do not live in its own scope.
+   * Proof cannot be taken from the namespace as it stood *before* the open: between that
+   * check and the open, `notes/` can become a link to a directory outside the root, so both
+   * the expected identity and the opened descriptor name the same outside file and agree
+   * with each other. So the descriptor is opened first — no follow at the last component —
+   * and what it holds is compared with the entry as the namespace resolves it *now*: still
+   * inside the root, and the very file the descriptor was opened on. A swap either leaves
+   * the root (refused) or names a different inode (refused), and the bytes read afterwards
+   * come from the descriptor, which no later link can redirect.
    */
   async function readConfinedText(scope: MemoryScope, root: string, path: string): Promise<string | null> {
     const target = confinedRealPath(scope, root, path);
-    const expected = await identityAt(target);
-    if (expected === null) return null;
     const file = await openConfined(scope, root, path, target);
     if (file === null) return null;
     try {
-      if (!sameIdentity(await file.stat(), expected)) throw outsideRoot(scope, path, root);
+      const opened = await file.stat();
+      if (!sameIdentity(opened, await entryIdentity(scope, root, path))) throw outsideRoot(scope, path, root);
       return await file.readText();
     } finally {
       await file.close();
     }
+  }
+  /**
+   * The identity the entry resolves to inside the root right now; a vanished entry is
+   * refused rather than reported as readable, because nothing is left to prove ownership
+   * against and the descriptor's contents are then unaccounted for.
+   */
+  async function entryIdentity(scope: MemoryScope, root: string, path: string): Promise<Identity> {
+    const identity = await identityAt(confinedRealPath(scope, root, path));
+    if (identity === null) throw outsideRoot(scope, path, root);
+    return identity;
   }
   /** One note's text, read from a handle whose identity is proved first. */
   function readNoteText(handle: VerifiedDir, slug: string): Promise<string | null> {
