@@ -5,6 +5,8 @@
  * `@/memory` and never from `@/memory/<internal>` (`check:alias-internals`).
  */
 
+export type { CreateMemoryHostInput, MemoryHost, MemorySearchInput, MemoryStatus } from "./host";
+export { _memoryHostDeps, createMemoryHost } from "./host";
 export type { MemoryDirs, MemoryLogger } from "./paths";
 export { _memoryPathsDeps, memoryDirs, memoryProjectSegment } from "./paths";
 export type { RepoNotes } from "./repo-notes";
