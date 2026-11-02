@@ -3,7 +3,7 @@
   "feature": "memory-store",
   "branchName": "feat/memory-store",
   "createdAt": "2026-11-02T00:00:00.000Z",
-  "updatedAt": "2026-11-02T07:34:11.735Z",
+  "updatedAt": "2026-11-02T08:37:40.849Z",
   "userStories": [
     {
       "id": "US-001",
@@ -1019,14 +1019,17 @@
       "dependencies": [
         "US-016"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Adds queue/fallback/rollback branches to one existing save function using the established outbox and rejection classifier, without changing its security validator."
+        "reasoning": "Adds queue/fallback/rollback branches to one existing save function using the established outbox and rejection classifier, without changing its security validator.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/operations.ts",
@@ -1043,7 +1046,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ed54c107fa499cc9ede8c54167321412f145c0f4"
     },
     {
       "id": "US-018",
