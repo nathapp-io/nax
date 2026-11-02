@@ -64,6 +64,7 @@ import {
   registerChatCommand,
   registerCostCommand,
   registerGatesCommand,
+  registerMemoryCommand,
   registerTrustCommand,
   registerWorkflowCommand,
   rulesExportCommand,
@@ -1021,6 +1022,12 @@ registerGatesCommand(program);
 // Pure read of the per-call cost ledger: no agent work, no writes, no config
 // beyond the project name that keys the output dir, so no trust gate.
 registerCostCommand(program);
+
+// ── memory ────────────────────────────────────────────
+// Reads the memory mirror under ~/.nax/memory and writes nothing to the
+// repository, so no trust gate — and no initLogger, because stdout carries the
+// report and the `--json` document.
+registerMemoryCommand(program);
 
 const mcpCmd = program.command("mcp").description("Manage MCP servers the native agent may call tools on");
 

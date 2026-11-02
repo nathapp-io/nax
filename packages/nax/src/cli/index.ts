@@ -123,6 +123,22 @@ export {
 } from "./gates";
 export { type GenerateCommandOptions, generateCommand } from "./generate";
 export { type InitOptions, initCommand } from "./init";
+export {
+  _memoryCliDeps,
+  cliMemoryLogger,
+  type MemoryCliContext,
+  type MemoryCliDeps,
+  type MemoryCliOptions,
+  type MemoryListOptions,
+  type MemoryNoteListing,
+  memoryContext,
+  memoryDisabledError,
+  memoryListCommand,
+  memoryStatusCommand,
+  openMemoryHost,
+  registerMemoryCommand,
+  withMemoryErrors,
+} from "./memory";
 export type { PlanCommandOptions } from "./plan";
 export { _planDeps, planCommand, resolvePlanMode } from "./plan";
 export { planDecomposeCommand, runReplanLoop } from "./plan-decompose";
