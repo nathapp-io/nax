@@ -202,6 +202,7 @@ type MemoryNoteWrite
 type MemoryScope
 type MemoryStore
 type MemoryStorePaths
+type MemorySyncState
 type MemoryTimers
 type MemoryTranscriptStore
 type MemoryWriteRefusal

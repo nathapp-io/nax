@@ -8,11 +8,18 @@
  * replacement at the original path cannot receive any of these operations.
  * The caller's global cwd is never changed. Post-checks report moved directories;
  * they are not the mechanism that prevents access to replacements.
+ *
+ * The store also owns the three record files beside the notes: the read-only
+ * `decisions.jsonl` mirror (one JSON object per line), `sync.json` (the sync
+ * state) and each scope's generated `MEMORY.md`. They hold no user-authored
+ * paths, so they are read and written without a slug to validate; the only
+ * scope rule is that the user files need a user directory.
  */
 import type { Dirent } from "node:fs";
 import { constants } from "node:fs";
-import { mkdir, open, readdir, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, open, readdir, readFile, rm, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { z } from "zod";
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
@@ -21,12 +28,20 @@ import { pinnedOperation, withPinnedDirectory } from "#src/internal/pinned-direc
 import { isInside, realOrRaw } from "#src/internal/realpath";
 import { byCodePoint } from "#src/internal/sort";
 import { parseMemoryNote, serializeMemoryNote } from "./note.ts";
-import { MEMORY_SLUG_RE, type MemoryNote, type MemoryScope } from "./types.ts";
+import {
+  MEMORY_DECISION_STATUSES,
+  MEMORY_SLUG_RE,
+  type MemoryDecision,
+  type MemoryNote,
+  type MemoryScope,
+} from "./types.ts";
 
 const ERROR_STAGE = "memory";
 const INDEX_FILE = "MEMORY.md";
 const NOTES_DIR = "notes";
 const NOTE_SUFFIX = ".md";
+const DECISIONS_FILE = "decisions.jsonl";
+const SYNC_STATE_FILE = "sync.json";
 
 /** Resolved reads refuse final-component links and prove the opened file's identity. */
 const READ_FLAGS: number = constants.O_RDONLY | constants.O_NOFOLLOW;
@@ -48,6 +63,8 @@ type MakeDir = (path: string, options: { recursive: true }) => Promise<string | 
 /** Directory entries carry their type, so a listing never has to open a path to learn what it is. */
 type ReadDirEntries = (path: string, options: { withFileTypes: true }) => Promise<Dirent[]>;
 type RemoveFile = (path: string, options: { force: true }) => Promise<void>;
+/** The record files have no identity to prove, so they are read whole. */
+type ReadTextFile = (path: string, encoding: "utf8") => Promise<string>;
 
 function identityOf(info: { dev: number; ino: number }): Identity {
   return { dev: info.dev, ino: info.ino };
@@ -60,6 +77,7 @@ export const _memoryStoreDeps: {
   mkdir: MakeDir;
   readdir: ReadDirEntries;
   rm: RemoveFile;
+  readFile: ReadTextFile;
 } = {
   open: async (path, flags) => {
     const handle = await open(path, flags);
@@ -73,6 +91,7 @@ export const _memoryStoreDeps: {
   mkdir: (path, options) => mkdir(path, options),
   readdir: (path, options) => readdir(path, options),
   rm: (path, options) => pinnedOperation<void>(path, "rm") ?? rm(path, options),
+  readFile: (path, encoding) => readFile(path, encoding),
 };
 
 /** The files this store owns, spelled out once so every caller agrees on them. */
@@ -89,13 +108,70 @@ export interface MemoryStorePaths {
   readonly userNotesDir: string | null;
 }
 
-/** The note half of the mirror; the decisions, sync state and index files join it in US-005. */
+/** Where the sync loop has got to: the provider it talks to and the two cursors. */
+export interface MemorySyncState {
+  readonly provider: string | null;
+  readonly cursor: { readonly project: string | null; readonly user: string | null };
+  readonly lastPullAt: string | null;
+  readonly lastError: string | null;
+}
+
+/** The mirror: notes, plus the record files sync and the index refresh maintain. */
 export interface MemoryStore {
   readonly paths: MemoryStorePaths;
   readNote(scope: MemoryScope, slug: string): Promise<MemoryNote | null>;
   writeNote(note: MemoryNote): Promise<void>;
   deleteNote(scope: MemoryScope, slug: string): Promise<void>;
   listNotes(scope: MemoryScope): Promise<MemoryNote[]>;
+  readDecisions(): Promise<MemoryDecision[]>;
+  writeDecisions(decisions: readonly MemoryDecision[]): Promise<void>;
+  readSyncState(): Promise<MemorySyncState>;
+  writeSyncState(state: MemorySyncState): Promise<void>;
+  writeIndex(scope: MemoryScope, text: string): Promise<void>;
+}
+
+/** A decision as one mirror line; the shape is what makes a line a decision. */
+const DecisionSchema = z.object({
+  id: z.string().min(1),
+  subject: z.string().min(1),
+  predicate: z.string().min(1),
+  object: z.string().min(1),
+  updatedAt: z.string().min(1),
+  status: z.enum(MEMORY_DECISION_STATUSES),
+});
+
+const SyncStateSchema = z.object({
+  provider: z.string().nullable(),
+  cursor: z.object({ project: z.string().nullable(), user: z.string().nullable() }),
+  lastPullAt: z.string().nullable(),
+  lastError: z.string().nullable(),
+});
+
+/** The state of a store that has never synced. */
+function defaultSyncState(): MemorySyncState {
+  return { provider: null, cursor: { project: null, user: null }, lastPullAt: null, lastError: null };
+}
+
+/** One decoded JSON value, or `null` when the text is not JSON. */
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Not JSON: the caller decides whether that is a skipped line or a defaulted state.
+    return null;
+  }
+}
+
+/** One mirror line as a decision, or `null` when the line is not one. */
+function parseDecisionLine(line: string): MemoryDecision | null {
+  const parsed = DecisionSchema.safeParse(parseJson(line));
+  return parsed.success ? parsed.data : null;
+}
+
+/** The whole `sync.json` text as a state, or `null` when it does not hold one. */
+function parseSyncStateText(text: string): MemorySyncState | null {
+  const parsed = SyncStateSchema.safeParse(parseJson(text));
+  return parsed.success ? parsed.data : null;
 }
 
 /** `undefined`, `null` and `""` all mean "this store has no user directory". */
@@ -109,8 +185,8 @@ function memoryStorePaths(projectDir: string, userDir: string | null): MemorySto
     userDir,
     index: join(projectDir, INDEX_FILE),
     notesDir: join(projectDir, NOTES_DIR),
-    decisions: join(projectDir, "decisions.jsonl"),
-    syncState: join(projectDir, "sync.json"),
+    decisions: join(projectDir, DECISIONS_FILE),
+    syncState: join(projectDir, SYNC_STATE_FILE),
     lock: join(projectDir, "sync.lock"),
     outboxDir: join(projectDir, "outbox"),
     userIndex: userDir === null ? null : join(userDir, INDEX_FILE),
@@ -388,5 +464,85 @@ export function createMemoryStore(input: {
     return notes;
   }
 
-  return { paths, readNote, writeNote, deleteNote, listNotes };
+  /** One record file's text, or `null` when the file (or its directory) is not there. */
+  async function readTextOrNull(path: string): Promise<string | null> {
+    try {
+      return await _memoryStoreDeps.readFile(path, "utf8");
+    } catch (error) {
+      if (isMissing(error)) return null;
+      throw error;
+    }
+  }
+  /** Publish one record file, creating its directory on demand: staging needs one. */
+  async function writeRecordFile(path: string, text: string): Promise<void> {
+    await _memoryStoreDeps.mkdir(dirname(path), { recursive: true });
+    await writeFileAtomic(path, text);
+  }
+  /** One skipped mirror line, reported once, naming the line so it can be found. */
+  function warnSkippedDecision(line: number): void {
+    logger.warn("memory", "skipping a decisions line that is not a memory decision", {
+      path: paths.decisions,
+      line,
+    });
+  }
+
+  async function readDecisions(): Promise<MemoryDecision[]> {
+    const text = await readTextOrNull(paths.decisions);
+    if (text === null) return [];
+    const decisions: MemoryDecision[] = [];
+    // One decision per line: a line that is not one is dropped, never fatal.
+    for (const [index, raw] of text.split("\n").entries()) {
+      if (raw.trim() === "") continue;
+      const decision = parseDecisionLine(raw);
+      if (decision === null) {
+        warnSkippedDecision(index + 1);
+        continue;
+      }
+      decisions.push(decision);
+    }
+    return decisions;
+  }
+
+  async function writeDecisions(decisions: readonly MemoryDecision[]): Promise<void> {
+    const lines = decisions.map((decision) => JSON.stringify(decision));
+    await writeRecordFile(paths.decisions, lines.length === 0 ? "" : `${lines.join("\n")}\n`);
+  }
+
+  async function readSyncState(): Promise<MemorySyncState> {
+    const text = await readTextOrNull(paths.syncState);
+    // A missing file is the state of a store that has never synced; nothing to report.
+    if (text === null) return defaultSyncState();
+    const state = parseSyncStateText(text);
+    if (state !== null) return state;
+    logger.warn("memory", "memory sync state is unreadable; using the default state", { path: paths.syncState });
+    return defaultSyncState();
+  }
+
+  async function writeSyncState(state: MemorySyncState): Promise<void> {
+    await writeRecordFile(paths.syncState, `${JSON.stringify(state)}\n`);
+  }
+
+  /** The generated index of one scope: the user index is the one a store may not have. */
+  function indexPathFor(scope: MemoryScope): string {
+    const path = scope === "user" ? paths.userIndex : paths.index;
+    if (path === null) throw scopeUnavailable(scope);
+    return path;
+  }
+
+  async function writeIndex(scope: MemoryScope, text: string): Promise<void> {
+    await writeRecordFile(indexPathFor(scope), text);
+  }
+
+  return {
+    paths,
+    readNote,
+    writeNote,
+    deleteNote,
+    listNotes,
+    readDecisions,
+    writeDecisions,
+    readSyncState,
+    writeSyncState,
+    writeIndex,
+  };
 }

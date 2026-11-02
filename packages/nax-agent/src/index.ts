@@ -108,6 +108,7 @@ export {
   type MemoryScope,
   type MemoryStore,
   type MemoryStorePaths,
+  type MemorySyncState,
   type MemoryTimers,
   type MemoryWriteRefusal,
   createMemoryStore,
