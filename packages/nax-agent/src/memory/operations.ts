@@ -9,14 +9,16 @@
  * with that reason as its message and nothing on disk is touched. This file adds
  * no rule of its own; it only decides what to do with the answer.
  *
- * A write that passes is staged in the mirror before any provider is asked, and
- * that staging is reversible up to the moment the provider accepts it: the note
- * under the key is read first (`previous`) and written back — or removed, when
- * there was none — if the provider never takes the note. A save that was not
- * delivered therefore did not happen, and the note it would have replaced is not
- * lost to a provider that did not answer. After acceptance there is no rollback:
- * the provider holds the note, so a mirror write that then fails leaves the staged
- * note in place and reports the bookkeeping failure.
+ * A write that passes is staged in the mirror before any provider is asked, and the
+ * staging is what outlives a provider that cannot take it: a provider that does not
+ * answer, and a push that fails or times out, leave the note exactly where it is and
+ * put the request — under the id the note was staged with — on the outbox, so a later
+ * sync delivers what this session already remembers. Only a permanent refusal is
+ * undone: the note under the key is read before staging (`previous`) and written back
+ * — or removed, when there was none — because a refusal is the one answer that will
+ * never change. After acceptance there is no rollback either: the provider holds the
+ * note, so a mirror write that then fails leaves the staged note in place and reports
+ * the bookkeeping failure.
  *
  * The note is minted with its own UUID, starts `active` under `direct` and
  * `pending` under `proposal`, and is stamped with the caller's clock. That UUID
@@ -25,16 +27,17 @@
  * pushed through the operation deadline, both as `raceTimeout` races, and its
  * answer — never the caller's guess — decides the note's final id and status.
  *
- * Only the delivered path is here. A provider that does not answer, and a push
- * that fails or times out, is reported by throwing after the rollback: the mirror
- * is back as it was, and queueing the write behind the outbox belongs to the
- * undelivered path rather than to this one.
+ * A key the outbox already holds a queued write for is not pushed at all: the new
+ * write joins the queue behind the waiting one, so the provider receives them in the
+ * order the agent made them. Every path that returns refreshes the index, so the next
+ * session reads the note whether or not this session could deliver it.
  */
 import { randomUUID } from "node:crypto";
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
 import { refreshMemoryIndex } from "./index-render.ts";
+import { isMemoryPushRejected } from "./note.ts";
 import type { MemoryOutbox } from "./outbox.ts";
 import type { MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
 import type { MemoryStore } from "./store.ts";
@@ -62,7 +65,10 @@ export interface MemoryOperationInput {
   readonly store: MemoryStore;
   readonly outbox: MemoryOutbox;
   readonly provider: MemoryProvider;
-  /** Reported through on the paths that cannot deliver; a delivered save has nothing to say. */
+  /**
+   * Reported through when the save cannot be undone; the other outcomes say what
+   * became of the write in the result, so a delivered save has nothing to say.
+   */
   readonly logger: AgentLogger;
   /** The clock a note is stamped from; default `() => new Date()`. */
   readonly now?: () => Date;
@@ -91,14 +97,6 @@ function writeRefused(refusal: MemoryWriteRefusal): NaxError {
   return new NaxError(refusal.reason, "MEMORY_WRITE_REFUSED", { stage: ERROR_STAGE, field: refusal.field });
 }
 
-function unreachable(slug: string): NaxError {
-  return new NaxError(
-    `memory provider did not answer; "${slug}" is stored locally and was not delivered`,
-    "MEMORY_UNREACHABLE",
-    { stage: ERROR_STAGE, slug },
-  );
-}
-
 /** The note a write becomes: a fresh id, the mode's starting status and the caller's clock. */
 function stagedNote(input: MemorySaveInput): MemoryNote {
   const now = input.now ?? (() => new Date());
@@ -122,20 +120,6 @@ function saveRequest(note: MemoryNote, writeMode: MemorySaveInput["writeMode"]):
 }
 
 /**
- * The pre-acceptance half of a delivery: probe the provider, then push the note.
- *
- * The provider is asked whether it answers before it is asked to store anything,
- * and both calls are bounded by their deadline: a provider that has stopped
- * answering must not hold the caller open. Nothing here changes the mirror, so a
- * failure in it is a save that did not happen — which is what the rollback undoes.
- */
-async function pushNote(input: MemorySaveInput, note: MemoryNote): Promise<MemoryPushResult> {
-  const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
-  if (!(await providerAnswers(input.provider, timers))) throw unreachable(note.slug);
-  return await raceTimeout(input.provider.push(saveRequest(note, input.writeMode)), MEMORY_OP_TIMEOUT_MS, timers);
-}
-
-/**
  * The post-acceptance half: record what the provider made of the note.
  *
  * Only the provider's id and status are taken from the answer — the note's own
@@ -154,12 +138,33 @@ async function refreshIndex(input: MemoryOperationInput): Promise<void> {
   await refreshMemoryIndex(input.store, { heldForgets: await input.outbox.heldKeys("forget") });
 }
 
+/** The note's key as the outbox names it: one queued write per key is the one still undelivered. */
+function keyOf(note: MemoryNote): string {
+  return `${note.scope}/${note.slug}`;
+}
+
+/**
+ * The undelivered answer: the mirror already holds the note, and the queue now holds the write.
+ *
+ * The request keeps the id the note was staged with, so the note, the entry and the
+ * write a later sync sends are named by one client id — the provider can recognise a
+ * replay of something it already took.
+ */
+async function queueUndelivered(
+  input: MemoryOperationInput,
+  note: MemoryNote,
+  request: MemoryWriteRequest,
+): Promise<MemorySaveResult> {
+  await input.outbox.enqueue(request);
+  return { slug: note.slug, status: note.status, delivered: false };
+}
+
 /**
  * Undo the staged write: the note that was under the key before, or no note at all.
  *
- * A rollback that fails is reported, never thrown: the caller is owed the delivery
- * failure, and a second error raised here would replace it. The mirror is then left
- * holding the undelivered note, which is the one case worth a warning of its own.
+ * A rollback that fails is reported, never thrown: the caller is owed the provider's
+ * refusal, and a second error raised here would replace it. The mirror is then left
+ * holding the refused note, which is the one case worth a warning of its own.
  */
 async function restoreNote(input: MemorySaveInput, note: MemoryNote, previous: MemoryNote | null): Promise<void> {
   try {
@@ -175,35 +180,53 @@ async function restoreNote(input: MemorySaveInput, note: MemoryNote, previous: M
 }
 
 /**
- * Push the staged note, and put the mirror back the way it was when that fails.
+ * Hand the staged note to the provider, or leave it on the queue.
  *
- * The staged write is what makes the note durable, so it is also what has to be
- * undone — but only while the provider has not taken it. A save the provider never
- * accepted must not leave its note, or its replacement of an older note, behind as
- * if it had.
+ * A key the outbox already holds a queued write for is not pushed at all: the provider
+ * would receive this write ahead of the one already waiting, so the new write joins the
+ * queue behind it and the order the agent wrote them in survives. Otherwise the provider
+ * is probed and then pushed, each through its own deadline, and anything short of an
+ * acceptance — a probe that answered `false`, threw or timed out; a push that did the
+ * same — queues the same request under the same client id and reports the save as
+ * undelivered.
+ *
+ * The two failures are not the same fact. A transient one leaves the staged note in the
+ * mirror, because the local write is the newer fact and it is exactly what the queue will
+ * deliver. `MEMORY_PUSH_REJECTED` is the provider saying it will never take this write,
+ * so queueing it would only repeat the refusal: the mirror is put back the way it was and
+ * the provider's error reaches the caller. Only the provider's answer changes the note's
+ * id and status, and only after the provider has taken it — the delivered arm is the one
+ * arm that cannot be undone.
  */
-async function pushOrRestore(
+async function deliverOrQueue(
   input: MemorySaveInput,
   note: MemoryNote,
   previous: MemoryNote | null,
-): Promise<MemoryPushResult> {
+): Promise<MemorySaveResult> {
+  const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
+  const request = saveRequest(note, input.writeMode);
+  if ((await input.outbox.heldKeys()).has(keyOf(note))) return await queueUndelivered(input, note, request);
+  if (!(await providerAnswers(input.provider, timers))) return await queueUndelivered(input, note, request);
+  let answer: MemoryPushResult;
   try {
-    return await pushNote(input, note);
+    answer = await raceTimeout(input.provider.push(request), MEMORY_OP_TIMEOUT_MS, timers);
   } catch (error) {
+    if (!isMemoryPushRejected(error)) return await queueUndelivered(input, note, request);
     await restoreNote(input, note, previous);
     throw error;
   }
+  await recordDelivered(input, note, answer);
+  return { slug: note.slug, status: answer.status, delivered: true };
 }
 
 /**
- * Store one note and deliver it to the provider.
+ * Store one note and deliver it to the provider, or queue it for the next sync.
  *
  * The order is the contract: the validator decides first, so a refusal leaves the
- * store exactly as it found it; the note under the key is read next, because the
- * staged write has to be recoverable; the note is then mirrored and pushed, with
- * the mirror restored if the provider never took it. Once the provider has taken
- * it, its answer is recorded and the indexes rebuilt, so the session that reads
- * them next sees this save.
+ * store exactly as it found it; the note under the key is read next, because a
+ * permanent refusal has to be able to put it back; the note is then mirrored and
+ * handed over, and however that ends the indexes are rebuilt, so the session that
+ * reads them next sees this save.
  */
 export async function saveMemoryNote(input: MemorySaveInput): Promise<MemorySaveResult> {
   const refusal = validateMemoryNoteWrite(input.write, input.source);
@@ -211,8 +234,7 @@ export async function saveMemoryNote(input: MemorySaveInput): Promise<MemorySave
   const previous = await input.store.readNote(input.write.scope, input.write.slug);
   const note = stagedNote(input);
   await input.store.writeNote(note);
-  const answer = await pushOrRestore(input, note, previous);
-  await recordDelivered(input, note, answer);
+  const result = await deliverOrQueue(input, note, previous);
   await refreshIndex(input);
-  return { slug: note.slug, status: answer.status, delivered: true };
+  return result;
 }
