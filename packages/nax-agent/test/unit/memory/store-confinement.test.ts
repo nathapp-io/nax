@@ -1,13 +1,17 @@
 /**
  * The mirror store's path confinement, split out of `store.test.ts` by concern
  * (the store file was already at its split target): a note path, and the notes
- * directory itself, may not resolve outside the scope root, and publication
- * through `writeFileAtomic` is checked for its staged-then-renamed shape and
- * for what a failed rename leaves behind.
+ * directory itself, may not resolve outside the scope root; publication through
+ * `writeFileAtomic` is checked for its staged-then-renamed shape and for what a
+ * failed rename leaves behind.
+ *
+ * The last block is the check-to-use gap: each test swaps in an escaping symlink
+ * from *inside* the seam the store calls after its check, which is deterministic
+ * (no sleeping, no thread) and is exactly the window a plain check leaves open.
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, symlink } from "node:fs/promises";
+import { mkdir, readdir, rmdir, symlink, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createMemoryStore, type MemoryNote, serializeMemoryNote } from "@nathapp/nax-agent";
 import { _atomicWriteDeps } from "#src/internal/atomic-write";
@@ -207,6 +211,82 @@ describe("memory store confinement", () => {
       expect(existsSync(notesDir)).toBe(true);
       expect(existsSync(join(notesDir, "replay-budget.md"))).toBe(false);
       expect((await readdir(notesDir)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+    });
+  });
+
+  describe("a symlink swapped in after the check", () => {
+    test("readNote refuses a note replaced by an outside link between the check and the read", async () => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+        await store.writeNote(note({ slug: "kept-budget" }));
+        const outsideFile = join(dir, "outside-note.md");
+        await writeFixture(outsideFile, serializeMemoryNote(note({ slug: "kept-budget", body: "leaked body" })));
+        const realReadFile = _memoryStoreDeps.readFile;
+        // The swap happens *inside* the read: everything the store checked is now a lie.
+        _memoryStoreDeps.readFile = async (path, options) => {
+          await unlink(path);
+          await symlink(outsideFile, path);
+          return realReadFile(path, options);
+        };
+
+        const error = await caught(store.readNote("project", "kept-budget"));
+
+        assertNaxError(error, "readNote of a note linked outside after the check");
+        expect(error).toMatchObject({ code: "MEMORY_PATH_OUTSIDE", context: { stage: "memory" } });
+      });
+    });
+
+    test("listNotes skips a note swapped for an outside link mid-listing, with one warn", async () => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const logger = makeLogger();
+        const store = createMemoryStore({ projectDir: project, logger });
+        await store.writeNote(note({ slug: "kept-budget" }));
+        await store.writeNote(note({ slug: "swapped-budget" }));
+        const outsideFile = join(dir, "outside-note.md");
+        await writeFixture(outsideFile, serializeMemoryNote(note({ slug: "swapped-budget", body: "leaked body" })));
+        const realReadFile = _memoryStoreDeps.readFile;
+        _memoryStoreDeps.readFile = async (path, options) => {
+          if (path.endsWith("swapped-budget.md")) {
+            await unlink(path);
+            await symlink(outsideFile, path);
+          }
+          return realReadFile(path, options);
+        };
+
+        const notes = await store.listNotes("project");
+
+        expect(notes.map((entry) => entry.slug)).toEqual(["kept-budget"]);
+        const warns = logger.calls.filter((call) => call.level === "warn");
+        expect(warns).toHaveLength(1);
+        expect(String(warns[0]?.data?.error)).toContain("outside the memory scope root");
+      });
+    });
+
+    test("writeNote refuses a notes directory swapped for an outside link before the write", async () => {
+      await withTempDir(async (dir) => {
+        const project = projectPath(dir);
+        const notesDir = join(project, "notes");
+        const outside = join(dir, "outside");
+        await mkdir(project, { recursive: true });
+        await mkdir(outside, { recursive: true });
+        const store = createMemoryStore({ projectDir: project, logger: makeLogger() });
+        const realMkdir = _memoryStoreDeps.mkdir;
+        // Between the store's check and its write the directory becomes a link out of the root.
+        _memoryStoreDeps.mkdir = async (path, options) => {
+          const made = await realMkdir(path, options);
+          await rmdir(notesDir);
+          await symlink(outside, notesDir);
+          return made;
+        };
+
+        const error = await caught(store.writeNote(note()));
+
+        assertNaxError(error, "writeNote after the notes directory was swapped for a link");
+        expect(error).toMatchObject({ code: "MEMORY_PATH_OUTSIDE", context: { stage: "memory" } });
+        expect(await readdir(outside)).toEqual([]);
+      });
     });
   });
 });
