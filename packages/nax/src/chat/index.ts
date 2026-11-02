@@ -67,6 +67,8 @@ export {
   nextChatMode,
 } from "./chat-mode";
 export { type ChatModelChoicesInput, chatEffortLevels, chatModelChoices, tierModels } from "./chat-models";
+export { type ContextWindowCache, createContextWindowCache } from "./context-window-cache";
+export { type CreateHostMemoryInput, createHostMemory, type HostMemory } from "./host-memory";
 export {
   type ImageFormat,
   imageDescription,

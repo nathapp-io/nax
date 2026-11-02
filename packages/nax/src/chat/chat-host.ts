@@ -33,6 +33,8 @@ import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import type { ChatMode } from "./chat-mode";
 import { tierModels } from "./chat-models";
 import { createCloseConfirm } from "./close-confirm";
+import { type ContextWindowCache, createContextWindowCache } from "./context-window-cache";
+import { createHostMemory, type HostMemory } from "./host-memory";
 import { type ChatJobs, type ChatRunAsks, createHostJobs } from "./jobs";
 import {
   type ChatHistory,
@@ -88,6 +90,8 @@ export interface ChatHost {
   readonly catalog?: ChatResources["catalog"];
   readonly naxPlugins?: ChatResources["naxPlugins"];
   readonly mcp?: ChatResources["mcp"];
+  /** The memory host this chat writes notes through; absent when memory is off or unavailable. */
+  readonly memory?: ChatResources["memory"];
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   readonly jobs?: ChatJobs;
@@ -139,6 +143,7 @@ class NativeChatHost implements ChatHost {
   readonly catalog?: ChatResources["catalog"];
   readonly naxPlugins?: ChatResources["naxPlugins"];
   readonly mcp?: ChatResources["mcp"];
+  readonly memory?: ChatResources["memory"];
   private readonly nativeModels: readonly string[];
   readonly asks: ChatAskController;
   readonly jobs?: ChatJobs;
@@ -154,8 +159,9 @@ class NativeChatHost implements ChatHost {
   private readonly outputDir: string;
   private readonly runs?: SubagentRuns;
   private readonly toolProviders?: readonly ToolProvider[];
-  /** Catalog context window per model string; `undefined` records a model whose window the catalog cannot state. */
-  private readonly contextWindows = new Map<string, number | undefined>();
+  private readonly contextWindows: ContextWindowCache;
+  /** The index every open carries and every subagent session is told; the host only calls it. */
+  private readonly hostMemory: HostMemory;
   private turnListener?: (event: SessionEvent) => void;
   private sending = false;
   private handle?: ChatSessionHandle;
@@ -177,6 +183,9 @@ class NativeChatHost implements ChatHost {
     this.catalog = deps.resources?.catalog;
     this.naxPlugins = deps.resources?.naxPlugins;
     this.mcp = deps.resources?.mcp;
+    this.memory = deps.resources?.memory;
+    this.contextWindows = createContextWindowCache(() => _chatHostDeps.lookupContextWindow);
+    this.hostMemory = createHostMemory({ memory: deps.resources?.memory, logger: deps.logger });
     this.nativeModels = deps.models ?? tierModels(deps.config);
     this.projectKey = getProjectKey(deps.config, deps.repoRoot);
     this.outputDir = projectOutputDir(this.projectKey, deps.config.outputDir);
@@ -235,6 +244,7 @@ class NativeChatHost implements ChatHost {
         asks: this.asks,
         ledger: () => this.ledger,
         turnListener: () => this.turnListener,
+        memoryIndex: this.hostMemory.current,
       });
       const hostTasks = createHostTasks({ outputDir: this.outputDir, now: deps.now, logger: deps.logger });
       this.tasks = hostTasks.tasks;
@@ -301,31 +311,6 @@ class NativeChatHost implements ChatHost {
     };
   }
 
-  /**
-   * Remember the session model's catalog context window, read once per model
-   * string: a mode switch reopens on the same model, whose window cannot have
-   * changed, and re-reading it per switch would cost a catalog load per toggle.
-   * A model string with no non-empty `<provider>/` prefix names no catalog
-   * entry, so it is not looked up at all (US-003 AC-10).
-   */
-  private async primeContextWindow(model: string): Promise<void> {
-    if (this.contextWindows.has(model)) return;
-    // An ACP model names no nax-ai catalog entry: the agent owns its context window.
-    const split = model.indexOf("/");
-    if (split <= 0 || isChatAcpModel(model)) {
-      this.contextWindows.set(model, undefined);
-      return;
-    }
-    let contextWindow: number | undefined;
-    try {
-      contextWindow = await _chatHostDeps.lookupContextWindow(model.slice(0, split), model.slice(split + 1));
-    } catch {
-      // Fail-open (US-003 AC-8): an unavailable catalog leaves the window
-      // unknown rather than failing the session operation that read it.
-    }
-    this.contextWindows.set(model, contextWindow);
-  }
-
   agents(): readonly ChatAgentRow[] {
     const agents = this.catalog?.agents ?? [];
     if (agents.length === 0) return [];
@@ -353,15 +338,18 @@ class NativeChatHost implements ChatHost {
   private async startSession(input: { mode: ChatMode; model: string }): Promise<void> {
     this.assertOpen();
     assertAcpInstalled(this.deps.acp, input.model);
+    // The index this open carries: synced and rendered once, before the session is built.
+    await this.hostMemory.prepare();
     const next = await this.open({ ...input, storage: this.deps.storage, ...this.openArgs() });
     await this.replace(next);
     await this.jobs?.attach();
     this.resumeNotice = undefined;
-    await this.primeContextWindow(next.meta.model);
+    await this.contextWindows.prime(next.meta.model);
   }
 
   /** The open arguments every session open shares; the storage and the resume id vary per site. */
   private openArgs(): Omit<OpenChatSessionRequest, "storage"> {
+    const memoryIndex = this.hostMemory.current();
     return {
       cwd: this.deps.cwd,
       repoRoot: this.repoRoot,
@@ -369,6 +357,7 @@ class NativeChatHost implements ChatHost {
       loopHandlers: this.loopHandlers,
       ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
       ...(this.tasks ? { backgroundCommands: this.tasks } : {}),
+      ...(memoryIndex !== undefined ? { memoryIndex } : {}),
     };
   }
 
@@ -410,6 +399,8 @@ class NativeChatHost implements ChatHost {
 
   private async resumeSession(input: { id?: string }): Promise<void> {
     this.assertOpen();
+    // Prepared for every resume, before the resumed session is opened.
+    await this.hostMemory.prepare();
     const id =
       input.id ??
       (await latestResumableId({ storage: this.deps.storage, cwd: this.deps.cwd, logger: this.deps.logger }));
@@ -436,7 +427,7 @@ class NativeChatHost implements ChatHost {
       resumed.session.lastTurn?.status === "interrupted"
         ? "The last turn was interrupted. Send a message to continue it."
         : undefined;
-    await this.primeContextWindow(resumed.meta.model);
+    await this.contextWindows.prime(resumed.meta.model);
   }
 
   private async reopen(
@@ -471,6 +462,9 @@ class NativeChatHost implements ChatHost {
     const target = { mode: input.mode ?? from.mode, model };
     if (target.mode === from.mode && target.model === from.model) return;
     assertAcpInstalled(this.deps.acp, target.model);
+    // One prepare per requested switch: the reopen, the rollback reopen and openFresh all
+    // read it through current(), so a mode switch syncs once rather than once per open.
+    await this.hostMemory.prepare();
     const outcome = await switchChatSession({
       previous,
       from: { mode: from.mode, model: from.model },
@@ -485,7 +479,7 @@ class NativeChatHost implements ChatHost {
       this.resumeNotice = outcome.notice;
     }
     this.asks.setMode(outcome.handle.meta.mode === "full" ? "full" : "guarded");
-    await this.primeContextWindow(outcome.handle.meta.model);
+    await this.contextWindows.prime(outcome.handle.meta.model);
     if (outcome.error !== undefined) throw outcome.error;
   }
 
