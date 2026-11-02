@@ -519,6 +519,21 @@ export function getSafeLogger(): Logger | null {
 }
 
 /**
+ * The logger `initLogger` created, or `null` when nothing initialized one.
+ *
+ * `getSafeLogger` substitutes a silent no-op for the uninitialized case, so a
+ * caller writing `getSafeLogger() ?? fallback` never takes its fallback — the
+ * line is written to a logger that emits nothing. A surface that owns an output
+ * channel of its own (the chat writes to stderr) needs the uninitialized case to
+ * be distinguishable so its fallback can actually run.
+ *
+ * @returns The initialized logger, or `null` before `initLogger` has run
+ */
+export function getInitializedLogger(): Logger | null {
+  return instance;
+}
+
+/**
  * Reset logger singleton (for testing only)
  * @internal
  */

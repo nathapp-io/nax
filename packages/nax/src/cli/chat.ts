@@ -24,7 +24,7 @@ import { findProjectDir, getProjectKey, globalConfigDir, isWorkflowMode, loadCon
 import { NaxError } from "@/errors";
 import { loadAgentHookHandlers } from "@/hooks";
 import { type InteractionChain, initInteractionChain } from "@/interaction";
-import { getSafeLogger } from "@/logger";
+import { getInitializedLogger } from "@/logger";
 import { createMemoryHost, createMemoryToolProvider, type MemoryHost, type MemoryLogger } from "@/memory";
 import { loadPlugins, PluginRegistry } from "@/plugins";
 import { createSkillsProvider, loadResourceCatalog, naxPluginPackages } from "@/resources";
@@ -303,6 +303,22 @@ async function discoverModels(config: NaxConfig, deps: ChatCommandDeps): Promise
   return chatModelChoices({ config, availableProviders, listCatalogModels: deps.listCatalogModels });
 }
 
+/**
+ * The logger the whole chat writes through: the run's own when the CLI
+ * initialized one, and otherwise a writer for the screen.
+ *
+ * `getSafeLogger()` answers with a silent no-op instead of `null` when nothing
+ * initialized it, so asking it here would drop every chat warning — the memory
+ * host's "memory unavailable" among them. The chat owns stderr, so it is the
+ * surface that can report those lines rather than lose them with the session.
+ */
+function chatLogger(deps: ChatCommandDeps): MemoryLogger {
+  const initialized = getInitializedLogger();
+  if (initialized !== null) return initialized;
+  const log = (stage: string, message: string): void => deps.writeErr(`[${stage}] ${message}`);
+  return { warn: log, error: log, info: log, debug: log };
+}
+
 async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, cwd: string): Promise<void> {
   const naxDir = deps.findProjectDir(cwd);
   const config = options.profile?.length
@@ -316,8 +332,7 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
     lookupThinkingLevels: deps.lookupThinkingLevels,
   });
   // Built before the resources: the memory host and its repo reads log through it.
-  const log = (stage: string, message: string): void => deps.writeErr(`[${stage}] ${message}`);
-  const logger = getSafeLogger() ?? { warn: log, error: log, info: log, debug: log };
+  const logger = chatLogger(deps);
   const resources = await chatResources(repoRoot, config, deps, logger);
   const storage = deps.createChatStorage({ pid: process.pid, now: () => new Date(), logger });
   const chain = await interactionChain(config, deps);
