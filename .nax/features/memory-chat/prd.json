@@ -3,7 +3,7 @@
   "feature": "memory-chat",
   "branchName": "feat/memory-chat",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-02T17:06:15.165Z",
+  "updatedAt": "2026-11-02T17:16:48.576Z",
   "userStories": [
     {
       "id": "US-001",
@@ -748,14 +748,17 @@
       "dependencies": [
         "US-011"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Optional data traverses several instruction builders and native/ACP session-creation seams; sessions trigger the strict security override."
+        "reasoning": "Optional data traverses several instruction builders and native/ACP session-creation seams; sessions trigger the strict security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/chat-builder.ts",
@@ -797,7 +800,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a3f5ab7a87538b7d539ab8cfb99c9f53c3434dfd"
     },
     {
       "id": "US-013",
