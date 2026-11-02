@@ -60,7 +60,7 @@ export interface MemoryNoteWrite {
 }
 
 export interface MemoryWriteRefusal {
-  readonly field: "slug" | "type" | "description" | "body" | "source";
+  readonly field: "slug" | "type" | "description" | "body" | "source" | "reason";
   readonly reason: string;
 }
 
@@ -78,6 +78,16 @@ export const MEMORY_CLIENT_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 export const MEMORY_NOTE_BODY_MAX_BYTES = 8192;
 export const MEMORY_DESCRIPTION_MAX_CHARS = 200;
 export const MEMORY_SOURCE_MAX_CHARS = 64;
+/**
+ * The longest justification a forget may carry.
+ *
+ * A reason is a one-line answer to "why did this note go", and it is persisted twice over: on
+ * the request the provider is pushed, and inside the outbox entry a forget that cannot be
+ * delivered leaves behind. Bounding it here — the same cap as a note's description, because it
+ * is the same kind of text — keeps a terminal or a step from filling the mirror's queue with a
+ * justification of its own making. `forgetReasonRefusal` is where the rule is applied.
+ */
+export const MEMORY_FORGET_REASON_MAX_CHARS = 200;
 export const MEMORY_INDEX_MAX_BYTES = 24_576;
 export const MEMORY_INDEX_MAX_LINES = 200;
 export const MEMORY_INDEX_MIN_LINES = 16;

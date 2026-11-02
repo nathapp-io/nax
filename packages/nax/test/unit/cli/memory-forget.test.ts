@@ -15,6 +15,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { MemoryForgetResult, MemoryNote, MemoryScope } from "@nathapp/nax-agent";
+import { MEMORY_FORGET_REASON_MAX_CHARS } from "@nathapp/nax-agent";
 import { assertDefined, makeNaxConfig } from "@test/helpers";
 import { Command } from "commander";
 import { type MemoryCliDeps, registerMemoryCommand } from "@/cli";
@@ -238,6 +239,27 @@ describe("nax memory forget", () => {
     expect(h.codes).toEqual([1]);
     expect(h.calls.forget).toEqual([]);
     expect(h.hostCalls).toEqual([]);
+  });
+
+  test("[F1] a reason over the store's cap is a usage error naming the cap, before the host is opened", async () => {
+    const h = harness();
+    await runMemory(h, ["forget", "old", "--reason", "a".repeat(MEMORY_FORGET_REASON_MAX_CHARS + 1)]);
+    const line = h.err[0] ?? "";
+    expect(line.startsWith("Error:")).toBe(true);
+    expect(line).toBe(`Error: forget reason must be at most ${MEMORY_FORGET_REASON_MAX_CHARS} characters`);
+    expect(h.codes).toEqual([1]);
+    expect(h.out).toEqual([]);
+    expect(h.calls.forget).toEqual([]);
+    expect(h.hostCalls).toEqual([]);
+  });
+
+  test("[F1] a reason of exactly the cap is handed to the host unchanged", async () => {
+    const h = harness();
+    const atCap = "a".repeat(MEMORY_FORGET_REASON_MAX_CHARS);
+    await runMemory(h, ["forget", "old", "--reason", atCap]);
+    expect(h.calls.forget).toEqual([{ scope: "project", slug: "old", reason: atCap }]);
+    expect(h.codes).toEqual([0]);
+    expect(h.err).toEqual([]);
   });
 
   test("--dir roots the host at the directory given", async () => {

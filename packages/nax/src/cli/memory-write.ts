@@ -27,12 +27,13 @@
  * forget prints the note it retired and the status it settled on; an approval prints the note that
  * is now in force.
  */
-import type {
-  MemoryForgetResult,
-  MemoryNoteType,
-  MemoryNoteWrite,
-  MemorySaveResult,
-  MemoryScope,
+import {
+  MEMORY_FORGET_REASON_MAX_CHARS,
+  type MemoryForgetResult,
+  type MemoryNoteType,
+  type MemoryNoteWrite,
+  type MemorySaveResult,
+  type MemoryScope,
 } from "@nathapp/nax-agent";
 import type { Command } from "commander";
 import { NaxError } from "@/errors";
@@ -164,17 +165,34 @@ function reasonMissingError(): NaxError {
   return new NaxError("forget requires a reason (--reason <text>)", "MEMORY_CLI_USAGE", { stage: "memory" });
 }
 
+/** The usage error a `forget` whose reason runs past the store's cap answers with. */
+function reasonTooLongError(): NaxError {
+  return new NaxError(
+    `forget reason must be at most ${MEMORY_FORGET_REASON_MAX_CHARS} characters`,
+    "MEMORY_CLI_USAGE",
+    {
+      stage: "memory",
+    },
+  );
+}
+
 /**
- * The reason the operator gave, or the usage error when they gave none.
+ * The reason the operator gave, or the usage error when they gave none or too much.
  *
  * A blank `--reason "  "` counts as none, as the tool's own check does: the reason is what a
  * later session reads to know why a note went, and an empty one records nothing. Unlike
  * `--body ""`, which the store may legitimately keep, there is no such thing as an empty
  * explanation.
+ *
+ * The cap is the store's own (`MEMORY_FORGET_REASON_MAX_CHARS`), so the terminal and the
+ * mirror agree on one number rather than the CLI inventing a second, weaker bound. It is
+ * applied here, before the host is opened, so an over-long justification costs no repository
+ * walk and no write — and `forgetMemoryNote` refuses it too, so neither surface can persist one.
  */
 function reasonOf(opts: MemoryForgetOptions): string {
   const reason = opts.reason;
   if (reason === undefined || reason.trim() === "") throw reasonMissingError();
+  if (reason.length > MEMORY_FORGET_REASON_MAX_CHARS) throw reasonTooLongError();
   return reason;
 }
 

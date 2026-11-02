@@ -15,6 +15,7 @@
 import { SECRET_VALUE_PATTERNS } from "#src/internal/redact";
 import {
   MEMORY_DESCRIPTION_MAX_CHARS,
+  MEMORY_FORGET_REASON_MAX_CHARS,
   MEMORY_NOTE_BODY_MAX_BYTES,
   MEMORY_NOTE_TYPES,
   MEMORY_SLUG_RE,
@@ -36,7 +37,7 @@ export type MemoryNoteWriteInput = Omit<MemoryNoteWrite, "type"> & { readonly ty
 const CONTROL_OR_LINE_BREAK = /[\u0000-\u001f\u007f]/;
 
 /** One field the refusal names, and the longest one-line value it accepts. */
-type LineField = "description" | "source";
+type LineField = "description" | "source" | "reason";
 
 function isMemoryNoteType(value: string): value is MemoryNoteType {
   return MEMORY_NOTE_TYPES.some((type) => type === value);
@@ -99,6 +100,17 @@ export function findSecret(text: string): { readonly kind: string } | null {
     }
   }
   return null;
+}
+
+/**
+ * The refusal for a forget's reason, or `null` when it may be recorded.
+ *
+ * A reason is what a later session reads to know why a note went, so it is held to the same
+ * one-line, non-empty, length-capped rule as a note's description: it is persisted on the
+ * request and inside a queued entry, and neither of those is a place to keep an essay.
+ */
+export function forgetReasonRefusal(reason: string): MemoryWriteRefusal | null {
+  return lineRefusal("reason", reason, MEMORY_FORGET_REASON_MAX_CHARS);
 }
 
 /**

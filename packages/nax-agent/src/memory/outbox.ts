@@ -33,7 +33,7 @@ import { byCodePoint, byNumber } from "#src/internal/sort";
 import { parseMemoryNoteRecord } from "./note.ts";
 import type { MemoryWriteRequest } from "./provider-types.ts";
 import { _memoryStoreDeps } from "./store.ts";
-import { MEMORY_CLIENT_ID_RE, MEMORY_SCOPES, memoryNoteKey } from "./types.ts";
+import { MEMORY_CLIENT_ID_RE, MEMORY_FORGET_REASON_MAX_CHARS, MEMORY_SCOPES, memoryNoteKey } from "./types.ts";
 
 const ERROR_STAGE = "memory";
 /** An entry file's name: the sequence, the client id that keys it, then the suffix. */
@@ -68,19 +68,27 @@ export interface MemoryOutbox {
 }
 
 /** Every field an entry file has to carry to be replayed; the note is checked separately. */
-const EntrySchema = z.object({
-  kind: z.enum(["save", "forget"]),
-  clientId: z.string().regex(MEMORY_CLIENT_ID_RE),
-  scope: z.enum(MEMORY_SCOPES),
-  slug: z.string().min(1),
-  writeMode: z.enum(["direct", "proposal"]),
-  note: z.unknown().optional(),
-  reason: z.string().optional(),
-  requestReason: z.string().optional(),
-  seq: z.number().int().positive(),
-  enqueuedAt: z.string().min(1),
-  state: z.enum(["queued", "rejected"]),
-});
+const EntrySchema = z
+  .object({
+    kind: z.enum(["save", "forget"]),
+    clientId: z.string().regex(MEMORY_CLIENT_ID_RE),
+    scope: z.enum(MEMORY_SCOPES),
+    slug: z.string().min(1),
+    writeMode: z.enum(["direct", "proposal"]),
+    note: z.unknown().optional(),
+    reason: z.string().optional(),
+    requestReason: z.string().optional(),
+    seq: z.number().int().positive(),
+    enqueuedAt: z.string().min(1),
+    state: z.enum(["queued", "rejected"]),
+  })
+  .refine((entry) => entry.state !== "queued" || (entry.reason?.length ?? 0) <= MEMORY_FORGET_REASON_MAX_CHARS, {
+    // A queued entry's `reason` is the forget's own justification, which `forgetMemoryNote`
+    // caps. A rejected entry's is the provider's answer, kept as it arrived: bounding that
+    // would turn a legitimately rejected write into an unreadable entry.
+    message: `a queued reason must be at most ${MEMORY_FORGET_REASON_MAX_CHARS} characters`,
+    path: ["reason"],
+  });
 
 /** One entry file: what its name says about it, before its content is read. */
 interface EntryFile {

@@ -79,7 +79,7 @@ import {
   type MemoryWriteRefusal,
   memoryNoteKey,
 } from "./types.ts";
-import { validateMemoryNoteWrite } from "./validate.ts";
+import { forgetReasonRefusal, validateMemoryNoteWrite } from "./validate.ts";
 
 const ERROR_STAGE = "memory";
 
@@ -480,6 +480,11 @@ async function handOverForget(
 /**
  * Forget one note: retire it in the mirror and tell the provider, or queue the request.
  *
+ * The reason is checked first, before the lock and before anything is written: a justification
+ * that is empty, carries a line break or runs past `MEMORY_FORGET_REASON_MAX_CHARS` is refused
+ * as `MEMORY_WRITE_REFUSED`, so no such text reaches the request the provider is pushed or the
+ * entry a queued forget leaves in the mirror's outbox.
+ *
  * A mirror another writer owns is not this forget's to change, so it is coordinated exactly as
  * a save is: this process's chain (`orderedByStore`) orders the forgets and saves of one mirror,
  * and the store's lock file orders them across processes. Without the lock a forget could delete
@@ -488,6 +493,8 @@ async function handOverForget(
  * undone, under `direct`, and it is rethrown; an absent slug is never queued.
  */
 export async function forgetMemoryNote(input: MemoryForgetInput): Promise<MemoryForgetResult> {
+  const refusal = forgetReasonRefusal(input.reason);
+  if (refusal !== null) throw writeRefused(refusal);
   return await orderedByMirrorLocks(input.store, () => commitForget(input));
 }
 

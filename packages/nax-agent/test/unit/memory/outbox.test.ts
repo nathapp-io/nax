@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import * as pub from "@nathapp/nax-agent";
 import {
   createMemoryOutbox,
+  MEMORY_FORGET_REASON_MAX_CHARS,
   type MemoryNote,
   type MemoryOutboxEntry,
   type MemoryWriteRequest,
@@ -273,6 +274,29 @@ describe("memory outbox", () => {
         slug: entry.slug,
       });
       expect(await outbox.listInvalid()).toEqual([]);
+    });
+  });
+
+  test("[F1] a queued entry whose reason is over the cap is not readable, and a rejected one still is", async () => {
+    await withTempDir(async (dir) => {
+      const outDir = outboxDir(dir);
+      const outbox = createMemoryOutbox({ dir: outDir, now: fixedNow });
+      const overLong = "a".repeat(MEMORY_FORGET_REASON_MAX_CHARS + 1);
+      await writeFixture(
+        join(outDir, "00000001-forged-forget.json"),
+        stored({ clientId: "forged-forget", kind: "forget", reason: overLong }),
+      );
+      await writeFixture(
+        join(outDir, "00000002-long-rejection.json"),
+        stored({ clientId: "long-rejection", seq: 2, state: "rejected", reason: overLong }),
+      );
+
+      const entries = await outbox.list();
+
+      // A queued reason is the forget's own justification, so the cap applies to it. A rejected
+      // entry's reason is the provider's answer, which this outbox does not get to bound.
+      expect(entries.map((entry) => entry.clientId)).toEqual(["long-rejection"]);
+      expect(await outbox.listInvalid()).toEqual(["00000001-forged-forget.json"]);
     });
   });
 
