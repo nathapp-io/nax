@@ -49,14 +49,12 @@ import { randomUUID } from "node:crypto";
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
 import { NaxError } from "#src/infra/nax-error";
-import { isProcessAlive } from "#src/internal/process-alive";
-import { acquireSessionLock } from "#src/session-store/index";
-import { holderState, readSessionLock, type SessionStorageDeps } from "#src/session-store/session-lock";
 import { refreshMemoryIndex } from "./index-render.ts";
+import { clockOf, releaseMirrorLock, waitForTurn } from "./mirror-lock.ts";
 import { isMemoryPushRejected } from "./note.ts";
 import type { MemoryOutbox } from "./outbox.ts";
 import type { MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
-import { _memoryStoreDeps, type MemoryStore } from "./store.ts";
+import type { MemoryStore } from "./store.ts";
 import { GLOBAL_MEMORY_TIMERS, providerAnswers, raceTimeout, warnQuietly } from "./sync.ts";
 import { syncInFlight } from "./sync-flight.ts";
 import {
@@ -72,12 +70,6 @@ import {
 import { validateMemoryNoteWrite } from "./validate.ts";
 
 const ERROR_STAGE = "memory";
-
-/** The code the lock protocol throws for a live holder another process owns. */
-const SESSION_LOCKED = "SESSION_LOCKED";
-
-/** The lock's release: the protocol hands one back per acquisition, and it must be called. */
-type ReleaseLock = () => Promise<void>;
 
 /** The status a write starts in: a proposal is not in force until it is approved. */
 const STATUS_BY_MODE = {
@@ -144,16 +136,6 @@ export interface MemoryForgetResult {
 /** The refusal a rejected write is thrown as: the validator's reason as the message, its field as context. */
 function writeRefused(refusal: MemoryWriteRefusal): NaxError {
   return new NaxError(refusal.reason, "MEMORY_WRITE_REFUSED", { stage: ERROR_STAGE, field: refusal.field });
-}
-
-/** The clock a save stamps with: the caller's, or the process clock. */
-function clockOf(input: MemoryOperationInput): () => Date {
-  return input.now ?? (() => new Date());
-}
-
-/** The liveness probe a lock holder is judged by: the caller's, or the real one. */
-function livenessOf(input: MemoryOperationInput): (pid: number) => boolean {
-  return input.isAlive ?? isProcessAlive;
 }
 
 /** The note a write becomes: a fresh id, the mode's starting status and the caller's clock. */
@@ -371,103 +353,6 @@ async function handOver(
 }
 
 /**
- * Everything the lock protocol needs, drawn from the save's own inputs: the mirror's
- * directory for its short-lived guard, this pid as the holder, and the caller's clock,
- * logger and liveness probe.
- */
-function lockDeps(input: MemorySaveInput): SessionStorageDeps {
-  return {
-    dir: input.store.paths.projectDir,
-    pid: process.pid,
-    now: clockOf(input),
-    logger: input.logger,
-    isAlive: livenessOf(input),
-  };
-}
-
-/**
- * Take the mirror's lock for this save, or `null` when it already has a writer.
- *
- * A lock file another live process owns is that process's mirror, and this save leaves it
- * alone. So is one this very process owns while it is syncing: the protocol classifies our
- * own pid as ours and would let this save take the file over, which would put both writers
- * back on the mirror and remove the lock the sync still believes it holds. A file naming
- * this pid with no sync running is a lock this process leaked (a release that failed), and
- * reclaiming it is the only way the next save can deliver again.
- */
-async function takeSaveLock(input: MemorySaveInput): Promise<ReleaseLock | null> {
-  const { paths } = input.store;
-  const deps = lockDeps(input);
-  const isAlive = livenessOf(input);
-  await _memoryStoreDeps.mkdir(paths.projectDir, { recursive: true });
-  const holder = readSessionLock(paths.lock).body;
-  if (holder !== undefined && !reclaimable(holder, deps, isAlive, paths.lock)) return null;
-  try {
-    return acquireSessionLock(paths.lock, deps, isAlive);
-  } catch (error) {
-    if (error instanceof NaxError && error.code === SESSION_LOCKED) return null;
-    throw error;
-  }
-}
-
-/** One lock file's holder, as the protocol decodes it. */
-type LockHolder = Parameters<typeof holderState>[0];
-
-/**
- * Whether a lock file that is already there is still this save's to take over: a stale
- * holder is a process that is gone, and a pid of our own with no sync running is a leak.
- */
-function reclaimable(
-  holder: LockHolder,
-  deps: SessionStorageDeps,
-  isAlive: (pid: number) => boolean,
-  path: string,
-): boolean {
-  const state = holderState(holder, deps, isAlive);
-  if (state === "stale") return true;
-  return state === "own" && !syncInFlight(path);
-}
-
-/** Hand the lock back; a failed release is reported, never thrown, so the result still returns. */
-async function releaseSaveLock(input: MemorySaveInput, release: ReleaseLock): Promise<void> {
-  try {
-    await release();
-  } catch (error) {
-    warnQuietly(input.logger, "memory save could not release the mirror lock", {
-      path: input.store.paths.lock,
-      error: errorMessage(error),
-    });
-  }
-}
-
-/** How often a contending save retries the mirror's existing lock protocol. */
-const FENCED_POLL_MS = 10;
-
-/** Wait one interval on the operation's own timer seam. */
-async function pause(timers: MemoryTimers, ms: number): Promise<void> {
-  await new Promise<void>((resolve) => {
-    timers.setTimeout(resolve, ms);
-  });
-}
-
-/**
- * Take the lock before declaring any write, regardless of how long its holder pauses.
- *
- * Neither elapsed time nor an existing queued key proves the current holder has declared
- * its write. Waiting for ownership coordinates staging and sequence allocation across
- * processes without guessing whether the holder is saving or syncing. A dead or stale
- * holder is reclaimed by the existing lock protocol; a live holder must release it.
- */
-async function waitForTurn(input: MemorySaveInput): Promise<ReleaseLock> {
-  const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
-  for (;;) {
-    const lock = await takeSaveLock(input);
-    if (lock !== null) return lock;
-    await pause(timers, FENCED_POLL_MS);
-  }
-}
-
-/**
  * Store one note and deliver it to the provider, or queue it for the next sync.
  *
  * The validator decides first, so a refusal leaves the store exactly as it found it.
@@ -504,7 +389,7 @@ async function commitSave(input: MemorySaveInput): Promise<MemorySaveResult> {
   try {
     return await deliverLocked(input);
   } finally {
-    await releaseSaveLock(input, lock);
+    await releaseMirrorLock(input, lock);
   }
 }
 
@@ -557,13 +442,45 @@ async function restoreForgotten(input: MemoryForgetInput, previous: MemoryNote):
   }
 }
 
-/** The ordered half of a forget: refuse an absent note, retire it, join a queued key, then deliver. */
+/**
+ * The ordered half of a forget: join a sync that owns the mirror, or take the lock and decide
+ * under it. Nothing is read from the mirror before the lock is held, so what a forget retires
+ * and what the queue is asked about are both the mirror's current answer rather than a stale one.
+ */
 async function commitForget(input: MemoryForgetInput): Promise<MemoryForgetResult> {
+  const request = forgetRequest(input);
+  if (syncInFlight(input.store.paths.lock)) return await queueFencedForget(input, request);
+  const lock = await waitForTurn(input);
+  try {
+    return await forgetLocked(input, request);
+  } finally {
+    await releaseMirrorLock(input, lock);
+  }
+}
+
+/**
+ * The answer while a sync of this process owns the mirror: the request is queued, and the
+ * mirror is only read.
+ *
+ * The note is still required — a forget of a slug the mirror does not hold is refused rather
+ * than queued — but nothing is deleted and no index is rendered: an index built from a mirror
+ * the sync is halfway through changing would publish its half-written state, and the sync's own
+ * refresh is the one that counts.
+ */
+async function queueFencedForget(input: MemoryForgetInput, request: MemoryWriteRequest): Promise<MemoryForgetResult> {
+  if ((await input.store.readNote(input.scope, input.slug)) === null) throw noteNotFound(input);
+  await input.outbox.enqueue(request);
+  return { slug: input.slug, status: FORGET_STATUS_BY_MODE[input.writeMode], delivered: false };
+}
+
+/** Retire the note and declare the request, while the mirror's lock is held. */
+async function forgetLocked(input: MemoryForgetInput, request: MemoryWriteRequest): Promise<MemoryForgetResult> {
   const previous = await input.store.readNote(input.scope, input.slug);
   if (previous === null) throw noteNotFound(input);
-  const request = forgetRequest(input);
   if (input.writeMode === "direct") await input.store.deleteNote(input.scope, input.slug);
-  if ((await input.outbox.heldKeys()).has(memoryNoteKey(input.scope, input.slug))) return queueForget(input, request);
+  if ((await input.outbox.heldKeys()).has(memoryNoteKey(input.scope, input.slug))) {
+    return await queueForget(input, request);
+  }
   return await handOverForget(input, previous, request);
 }
 
@@ -588,9 +505,14 @@ async function handOverForget(
 }
 
 /**
- * Forget one note: retire it and tell the provider, or queue the request for the next sync.
- * A permanent refusal is the one answer undone, under `direct`, and it is rethrown; the mirror
- * is asked first, so an absent slug is never queued.
+ * Forget one note: retire it in the mirror and tell the provider, or queue the request.
+ *
+ * A mirror another writer owns is not this forget's to change, so it is coordinated exactly as
+ * a save is: this process's chain (`orderedByStore`) orders the forgets and saves of one mirror,
+ * and the store's lock file orders them across processes. Without the lock a forget could delete
+ * a note while another process's save restored or overwrote it, and the queue's order would
+ * describe writes that never happened in that order. A permanent refusal is the one answer
+ * undone, under `direct`, and it is rethrown; an absent slug is never queued.
  */
 export async function forgetMemoryNote(input: MemoryForgetInput): Promise<MemoryForgetResult> {
   return await orderedByStore(input.store.paths.lock, () => commitForget(input));

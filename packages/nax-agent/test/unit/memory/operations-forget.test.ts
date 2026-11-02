@@ -20,7 +20,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as pub from "@nathapp/nax-agent";
 import {
@@ -28,6 +28,7 @@ import {
   createMemoryStore,
   forgetMemoryNote,
   MEMORY_OP_TIMEOUT_MS,
+  MEMORY_PROBE_TIMEOUT_MS,
   type MemoryForgetInput,
   type MemoryForgetResult,
   type MemoryNote,
@@ -36,7 +37,9 @@ import {
   type MemoryStore,
   type MemoryWriteRequest,
   NaxError,
+  syncMemory,
 } from "@nathapp/nax-agent";
+import { acquireSessionLock } from "#src/session-store/index";
 import {
   assertDefined,
   assertNaxError,
@@ -145,6 +148,44 @@ async function indexLineFor(h: Harness, slug: string): Promise<string> {
   const line = index.split("\n").find((text) => text.includes(slug));
   assertDefined(line, `index line for "${slug}"`);
   return line;
+}
+
+/** A pid no test process has: the file a second process's owner would leave behind. */
+const FOREIGN_PID = 8412;
+
+/** A fake-clock step wide enough to fire any poll a fenced forget is waiting on. */
+const POLL_STEP_MS = 1_000;
+
+/**
+ * The store's lock, held the way an owner holds it: `pid` and the liveness probe that decides
+ * whether that owner is still there. Releasing it is the caller's job. (The save suite holds
+ * the same lock the same way; the protocol is real, only its holder is scripted.)
+ */
+async function heldLock(h: Harness, pid: number, isAlive: (pid: number) => boolean): Promise<() => Promise<void>> {
+  await mkdir(h.store.paths.projectDir, { recursive: true });
+  const deps = { dir: h.store.paths.projectDir, pid, now: () => new Date(STAMP), logger: h.logger, isAlive };
+  return acquireSessionLock(h.store.paths.lock, deps, isAlive);
+}
+
+/** A sync of this process parked on its probe: it owns the mirror and this process's pid. */
+function parkedSync(h: Harness, clock: FakeClock): Promise<{ readonly outcome: string }> {
+  return syncMemory({
+    store: h.store,
+    outbox: h.outbox,
+    provider: makeMemoryProvider({ reachable: "hang" }),
+    logger: h.logger,
+    now: () => new Date(STAMP),
+    pid: process.pid,
+    isAlive: () => true,
+    timers: clock,
+  });
+}
+
+/** The nonce of the lock file on disk: the same nonce means the lock was never taken over. */
+async function lockNonce(h: Harness): Promise<string> {
+  const held = JSON.parse(await readFile(h.store.paths.lock, "utf8"));
+  assertDefined(held.nonce, "lock nonce");
+  return held.nonce;
 }
 
 describe("forgetMemoryNote", () => {
@@ -444,6 +485,78 @@ describe("forgetMemoryNote", () => {
         message: "memory forget could not restore the note",
         data: { slug: SLUG, error: MIRROR_READ_ONLY },
       });
+    });
+  });
+});
+
+describe("forgetMemoryNote and the mirror's lock", () => {
+  test("[F1] a forget waits for the mirror's live holder before retiring the note or queueing", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      await h.store.writeNote(note());
+      const owner = await heldLock(h, FOREIGN_PID, () => true);
+
+      const forgetting = h.forget({ isAlive: () => true });
+      // The owner has the mirror: nothing is retired, nothing is queued, and the wait is a poll
+      // on this operation's own timers.
+      await waitForCondition(() => h.clock.pending() > 0, 5_000);
+      expect(await h.store.readNote("project", SLUG)).toEqual(note());
+      expect(await h.outbox.list()).toEqual([]);
+      expect(h.provider.push).not.toHaveBeenCalled();
+
+      await owner();
+      await h.clock.advance(POLL_STEP_MS);
+      const result = await forgetting;
+
+      // Handed over: the forget takes its turn, then releases what it took.
+      expect(result).toEqual({ slug: SLUG, status: "deleted", delivered: true });
+      expect(await h.store.readNote("project", SLUG)).toBeNull();
+      expect(existsSync(h.store.paths.lock)).toBe(false);
+    });
+  });
+
+  test("[F1] a forget whose own process is syncing the mirror queues instead of taking the lock over", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      await h.store.writeNote(note());
+      const clock = makeFakeClock();
+      const running = parkedSync(h, clock);
+      await waitForCondition(() => clock.pending() > 0, 5_000);
+      const nonce = await lockNonce(h);
+
+      const result = await h.forget();
+
+      expect(result).toEqual({ slug: SLUG, status: "deleted", delivered: false });
+      // The sync owns the mirror: this forget neither deletes from it nor renders its index.
+      expect(await h.store.readNote("project", SLUG)).toEqual(note());
+      expect(existsSync(h.store.paths.index)).toBe(false);
+      // Our own pid is not permission to steal the lock the sync still believes it holds.
+      expect(await lockNonce(h)).toBe(nonce);
+      const entries = await h.outbox.list();
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({ kind: "forget", slug: SLUG, reason: REASON, state: "queued" });
+      // The sync ends unreachable and hands the lock back, so the mirror is free again.
+      await clock.advance(MEMORY_PROBE_TIMEOUT_MS);
+      expect((await running).outcome).toBe("unreachable");
+      expect(existsSync(h.store.paths.lock)).toBe(false);
+    });
+  });
+
+  test("[F1] a fenced forget still refuses a slug the mirror does not hold", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir);
+      const clock = makeFakeClock();
+      const running = parkedSync(h, clock);
+      await waitForCondition(() => clock.pending() > 0, 5_000);
+
+      const caught = await h.forget().catch((error: unknown) => error);
+
+      assertNaxError(caught, "fenced forget of an absent slug");
+      expect(caught.code).toBe("MEMORY_NOTE_NOT_FOUND");
+      // Nothing is queued for a note that does not exist, whichever writer owns the mirror.
+      expect(await h.outbox.list()).toEqual([]);
+      await clock.advance(MEMORY_PROBE_TIMEOUT_MS);
+      expect((await running).outcome).toBe("unreachable");
     });
   });
 });
