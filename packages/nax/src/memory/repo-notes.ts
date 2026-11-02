@@ -16,15 +16,19 @@
  * because a repo note is untrusted repository content: the file can be a
  * symlink to somewhere else, or large enough that reading it is itself the
  * problem. Rejections are recoverable by design, so each one is a `warn` naming
- * the path and the reason and is counted in `skipped` — never a throw.
+ * the path and the reason and is counted in `skipped` — nothing escapes this
+ * module as a throw. Because the measurement and the read are two steps, the
+ * read re-checks the file through a handle opened without following a symlink,
+ * so a path swapped for a link in between is refused rather than followed.
  */
 
-import type { Stats } from "node:fs";
-import { lstat, readdir, readFile } from "node:fs/promises";
+import { constants, type Stats } from "node:fs";
+import { lstat, open, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { findSecret, type MemoryNote, parseMemoryNote } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { PROJECT_NAX_DIR } from "@/config";
+import { NaxError } from "@/errors";
 import type { MemoryLogger } from "./paths";
 
 /** Stage every repo-note log line is written under. */
@@ -57,9 +61,59 @@ export interface RepoNotes {
 }
 
 /**
- * Filesystem seam for tests. `lstat` is what makes a symlinked candidate a
- * skip rather than a read, and a test needs to reject `readFile` to exercise a
- * read failure that no permission bit can produce portably.
+ * The flags the read opens with: read-only, and never follow a symlink at the
+ * path (`O_NOFOLLOW`; a swapped-in symlink fails with `ELOOP`). `O_NONBLOCK`
+ * keeps a FIFO substituted for the candidate from blocking the open — the
+ * handle's `stat` then rejects it as not a regular file. `O_NOFOLLOW` is a
+ * POSIX flag; on a platform that does not define it the handle checks below
+ * still reject anything that is not a regular file of an allowed size.
+ */
+const READ_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | constants.O_NONBLOCK;
+
+/**
+ * The refusal for a candidate that stopped being a readable regular note
+ * between the measurement and the open.
+ *
+ * It is thrown only because `readFile` returns a `Promise<string>` and has no
+ * other channel; the caller catches it immediately and turns it into the same
+ * `repo note skipped` warn every other rejection produces.
+ */
+function unsafeCandidate(path: string, problem: string): NaxError {
+  return new NaxError(`[memory] repo note ${problem} at open: ${path}`, "MEMORY_REPO_NOTE_UNSAFE", {
+    stage: LOG_STAGE,
+    path,
+  });
+}
+
+/**
+ * One candidate's text, read through a handle opened without following a
+ * symlink.
+ *
+ * `lstat` measured a *path*; between that measurement and the read the path can
+ * be swapped for a symlink, and a plain `readFile` would then serve a file from
+ * anywhere on disk. Opening with `O_NOFOLLOW` and re-checking type and size on
+ * the handle — then reading from that same handle — makes the file measured the
+ * file consumed.
+ */
+async function readRegularText(path: string): Promise<string> {
+  const handle = await open(path, READ_FLAGS);
+  try {
+    const info = await handle.stat();
+    if (!info.isFile()) throw unsafeCandidate(path, "is not a regular file");
+    if (info.size > REPO_NOTE_MAX_FILE_BYTES) {
+      throw unsafeCandidate(path, `is larger than ${REPO_NOTE_MAX_FILE_BYTES} bytes`);
+    }
+    return await handle.readFile({ encoding: "utf8" });
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Filesystem seam for tests. `lstat` is the cheap pre-measurement that names a
+ * skip reason, and `readFile` is the authoritative no-follow read — a test needs
+ * to replace it to exercise a read failure no permission bit can produce
+ * portably.
  */
 export const _repoNotesDeps: {
   lstat: (path: string) => Promise<Stats>;
@@ -68,7 +122,7 @@ export const _repoNotesDeps: {
 } = {
   lstat: (path: string): Promise<Stats> => lstat(path),
   readdir: (path: string): Promise<string[]> => readdir(path),
-  readFile: (path: string): Promise<string> => readFile(path, "utf8"),
+  readFile: (path: string): Promise<string> => readRegularText(path),
 };
 
 /** File-name order, as code units: a read's candidate order is not the OS's. */

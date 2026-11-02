@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, type MockLogger, makeLogger, makeTempDir } from "@test/helpers";
 import { _repoNotesDeps, REPO_NOTE_MAX_FILE_BYTES, REPO_NOTES_MAX, readRepoNotes } from "@/memory";
@@ -167,6 +167,24 @@ describe("readRepoNotes", () => {
     const { notes } = await readRepoNotes({ repoRoot, logger });
 
     expect(notes).toEqual([]);
+  });
+
+  test("does not follow a candidate swapped for a symlink after it was measured", async () => {
+    const target = join(repoRoot, "target.md");
+    writeFileSync(target, noteFile({ slug: "swapped" }));
+    writeNote("swapped.md", noteFile({ slug: "swapped" }));
+    // The race the rule has to survive: `lstat` sees a regular file, and the
+    // path becomes a symlink before the read starts.
+    _repoNotesDeps.lstat = async (candidate: string) => {
+      const info = lstatSync(candidate);
+      rmSync(candidate);
+      symlinkSync(target, candidate, "file");
+      return info;
+    };
+
+    const { notes, skipped } = await readRepoNotes({ repoRoot, logger });
+
+    expect({ notes, skipped }).toEqual({ notes: [], skipped: 1 });
   });
 
   test("skips a file larger than the per-file cap", async () => {
