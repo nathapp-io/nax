@@ -3,7 +3,7 @@
   "feature": "memory-store",
   "branchName": "feat/memory-store",
   "createdAt": "2026-11-02T00:00:00.000Z",
-  "updatedAt": "2026-11-02T04:04:50.271Z",
+  "updatedAt": "2026-11-02T04:13:52.167Z",
   "userStories": [
     {
       "id": "US-001",
@@ -411,14 +411,17 @@
       "dependencies": [
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A bounded entry-removal loop and thin refresh function extend one existing renderer using the established store interface; no new abstraction or dependency is needed."
+        "reasoning": "A bounded entry-removal loop and thin refresh function extend one existing renderer using the established store interface; no new abstraction or dependency is needed.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/index-render.ts",
@@ -442,7 +445,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3fe8f334998fb01e0a610881891affeaa51b0f61"
     },
     {
       "id": "US-008",
