@@ -153,7 +153,11 @@ export {
   registerMemoryReadCommands,
 } from "./memory-read";
 export {
+  type MemoryApproveOptions,
+  type MemoryForgetOptions,
   type MemorySaveOptions,
+  memoryApproveCommand,
+  memoryForgetCommand,
   memorySaveCommand,
   registerMemoryWriteCommands,
 } from "./memory-write";

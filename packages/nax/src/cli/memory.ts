@@ -5,7 +5,7 @@
  * chat session has neither, so this group is the other surface. This file registers the group
  * and holds the two listing subcommands — `status` reports what the mirror holds, `list`
  * prints what it holds — while the other files beside it add their own: `memory-read.ts`
- * (`show`, `sync`) and `memory-write.ts` (`save`).
+ * (`show`, `sync`) and `memory-write.ts` (`save`, `forget`, `approve`).
  *
  * The command is a thin shell, as `nax cost` is: the plumbing every subcommand shares — the
  * `--dir` / `--json` flags, the repository-root resolution, the host and the error contract —

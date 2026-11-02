@@ -284,6 +284,14 @@ describe("registerMemoryCommand — the write subcommands", () => {
     const program = new Command();
     registerMemoryCommand(program, harness().deps);
     const memory = program.commands.find((command) => command.name() === "memory");
-    expect(memory?.commands.map((command) => command.name())).toEqual(["status", "list", "show", "sync", "save"]);
+    expect(memory?.commands.map((command) => command.name())).toEqual([
+      "status",
+      "list",
+      "show",
+      "sync",
+      "save",
+      "forget",
+      "approve",
+    ]);
   });
 });

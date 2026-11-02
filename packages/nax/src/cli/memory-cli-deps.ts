@@ -133,6 +133,18 @@ export function memoryDisabledError(): NaxError {
   return new NaxError("memory is disabled (memory.enabled is false)", "MEMORY_DISABLED", { stage: "memory" });
 }
 
+/**
+ * The one absence a note-addressed subcommand answers with: the note the operator named is
+ * not there, spelled from the two fields they named it by.
+ *
+ * Feature 1 answers the same fact with its own wording (`… is not in this mirror`); the
+ * terminal's is this one, so the subcommands that hand a slug to a write translate the code
+ * rather than printing a message written for a caller inside a session.
+ */
+export function memoryNoteAbsentError(scope: MemoryScope, slug: string): NaxError {
+  return new NaxError(`no memory note ${scope}/${slug}`, "MEMORY_NOTE_NOT_FOUND", { stage: "memory", scope, slug });
+}
+
 /** A bad flag value: the operator typed something the store's vocabulary does not hold. */
 function memoryUsageError(message: string, data: Record<string, unknown> = {}): NaxError {
   return new NaxError(`[memory] ${message}`, "MEMORY_CLI_USAGE", { stage: "memory", ...data });

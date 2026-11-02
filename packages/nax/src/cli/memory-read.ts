@@ -17,7 +17,6 @@
  */
 import { type MemoryScope, serializeMemoryNote } from "@nathapp/nax-agent";
 import type { Command } from "commander";
-import { NaxError } from "@/errors";
 import { formatMemorySyncResult } from "@/memory";
 import {
   _memoryCliDeps,
@@ -26,6 +25,7 @@ import {
   memoryContext,
   memoryDefaultDir,
   memoryDisabledError,
+  memoryNoteAbsentError,
   NOTE_SCOPES,
   openMemoryHost,
   parseNoteScope,
@@ -38,11 +38,6 @@ const DEFAULT_NOTE_SCOPE: MemoryScope = "project";
 /** What `show` takes on top of the group's flags: the scope to read the slug in. */
 export interface MemoryShowOptions extends MemoryCliOptions {
   readonly scope?: string;
-}
-
-/** The one absence `show` answers with: the note the operator named is not there. */
-function noNoteError(scope: MemoryScope, slug: string): NaxError {
-  return new NaxError(`no memory note ${scope}/${slug}`, "MEMORY_NOTE_NOT_FOUND", { stage: "memory", scope, slug });
 }
 
 /**
@@ -62,7 +57,7 @@ export async function memoryShowCommand(
     const host = await openMemoryHost(await memoryContext(opts.dir, deps), deps);
     if (host === null) throw memoryDisabledError();
     const note = await host.getNote(scope, slug);
-    if (note === null) throw noNoteError(scope, slug);
+    if (note === null) throw memoryNoteAbsentError(scope, slug);
     deps.log(opts.json === true ? JSON.stringify(note) : serializeMemoryNote(note));
     return 0;
   }, deps);
