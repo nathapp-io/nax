@@ -3,7 +3,7 @@
   "feature": "memory-store",
   "branchName": "feat/memory-store",
   "createdAt": "2026-11-02T00:00:00.000Z",
-  "updatedAt": "2026-11-02T04:41:55.992Z",
+  "updatedAt": "2026-11-02T04:50:35.374Z",
   "userStories": [
     {
       "id": "US-001",
@@ -536,14 +536,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A declarative seam and small store-backed adapter with explicit direct/proposal transformations; no network or authentication."
+        "reasoning": "A declarative seam and small store-backed adapter with explicit direct/proposal transformations; no network or authentication.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/store.ts",
@@ -569,7 +572,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9e55a600bce2b087779f72ac82702f8657d7be23"
     },
     {
       "id": "US-010",
