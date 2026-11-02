@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import type { CodingTool, ProviderTool, ToolProvider, ToolRunContext } from "@nathapp/nax-agent";
 import { toEmbedderTools } from "@/agents/acp";
 import { ACP_CHAT_PROVIDER_IDS, chatAcpTools } from "@/chat/acp/acp-tools";
+import { createMemoryToolProvider, type MemoryHost } from "@/memory";
 import { buildChatAcpInstructions } from "@/prompts";
 import { buildChatAcpInstructions as builderExport } from "@/prompts/builders/chat-builder";
 
@@ -28,9 +29,34 @@ function threeProviders(): ToolProvider[] {
   ];
 }
 
+/**
+ * A host no delivered tool is run against: this file asserts the tools' names
+ * and the instructions they arrive with, so every read throws rather than
+ * quietly standing in for a real note.
+ */
+function unreadMemoryHost(): MemoryHost {
+  const unused = async (): Promise<never> => {
+    throw new Error("memory host is not read by this test");
+  };
+  return {
+    dirs: { root: "/m", projectDir: "/m/project", userDir: "/m/user" },
+    providerId: "local",
+    writeMode: "direct",
+    notes: unused,
+    getNote: unused,
+    search: unused,
+    renderIndex: unused,
+    sync: unused,
+    status: unused,
+    save: unused,
+    forget: unused,
+    approve: unused,
+  };
+}
+
 describe("ACP_CHAT_PROVIDER_IDS", () => {
-  test("names the workflow and jobs providers only", () => {
-    expect([...ACP_CHAT_PROVIDER_IDS]).toEqual(["nax-workflow", "nax-jobs"]);
+  test("names the workflow, jobs and memory providers", () => {
+    expect([...ACP_CHAT_PROVIDER_IDS]).toEqual(["nax-workflow", "nax-jobs", "nax-memory"]);
   });
 });
 
@@ -119,6 +145,17 @@ describe("chatAcpTools", () => {
 
   test("AC-10: no providers returns { tools: [] }", async () => {
     expect(await chatAcpTools([], "/repo")).toEqual({ tools: [] });
+  });
+
+  test("memory-chat US-010 AC-3: delivers the four nax-memory tools", async () => {
+    const { tools } = await chatAcpTools([createMemoryToolProvider(unreadMemoryHost())], "/repo");
+    const names = tools.map((t) => t.name);
+    for (const localName of ["get", "search", "save", "forget"]) expect(names).toContain(`nax-memory__${localName}`);
+  });
+
+  test("memory-chat US-010 AC-4: delivers the memory instructions naming nax-memory__search", async () => {
+    const { instructions } = await chatAcpTools([createMemoryToolProvider(unreadMemoryHost())], "/repo");
+    expect(instructions).toContain("nax-memory__search");
   });
 });
 

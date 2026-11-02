@@ -30,6 +30,7 @@ const RESERVED_SERVER_IDS: ReadonlySet<string> = new Set([
   "nax-workflow",
   "nax-jobs",
   "nax-tasks",
+  "nax-memory",
 ]);
 
 export interface ChatMcpServerRow {
