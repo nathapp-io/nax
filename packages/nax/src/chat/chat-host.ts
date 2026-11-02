@@ -440,12 +440,8 @@ class NativeChatHost implements ChatHost {
     // Reopens own per-open cleanup, but share the original storage lock. Even a
     // failed open must drain its shadow without releasing the active host's lock.
     const storage: SessionStorage = { ...this.deps.storage, acquireLock: async () => async () => {} };
-    const next = await this.open({
-      ...input,
-      storage,
-      resumeId: previous.meta.sessionId,
-      ...this.openArgs(memoryIndex),
-    });
+    const request = { ...input, storage, resumeId: previous.meta.sessionId, ...this.openArgs(memoryIndex) };
+    const next = await this.open(request);
     return {
       ...next,
       release: async (options) => {
@@ -481,7 +477,9 @@ class NativeChatHost implements ChatHost {
       writeMeta: (meta) => this.deps.storage.writeMeta(meta),
     });
     this.handle = outcome.handle;
-    this.activeMemoryIndex = memoryIndex;
+    // An in-place switch reuses the live session and the instructions it opened with, so its
+    // snapshot stands; only a newly opened session (reopen or openFresh) carries the new one.
+    if (outcome.inPlace !== true) this.activeMemoryIndex = memoryIndex;
     if (outcome.handle.meta.sessionId !== previous.meta.sessionId) {
       this.hostJobs?.sessionChanged();
       this.resumeNotice = outcome.notice;

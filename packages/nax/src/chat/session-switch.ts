@@ -38,6 +38,8 @@ export interface SwitchOutcome {
   readonly error?: unknown;
   /** Set only when the outcome is a new session. */
   readonly notice?: string;
+  /** True when the target was applied to the live session, which keeps the instructions it opened with. */
+  readonly inPlace?: true;
 }
 
 /** Shown when the rollback could not reopen the old session and a new one took its place. */
@@ -108,7 +110,7 @@ async function startNewSession(input: SwitchInput, switchError: unknown): Promis
 
 export async function switchChatSession(input: SwitchInput): Promise<SwitchOutcome> {
   const inPlace = await applyInPlace(input);
-  if (inPlace !== undefined) return { handle: inPlace };
+  if (inPlace !== undefined) return { handle: inPlace, inPlace: true };
   try {
     return { handle: await closeAndReopen(input) };
   } catch (error) {

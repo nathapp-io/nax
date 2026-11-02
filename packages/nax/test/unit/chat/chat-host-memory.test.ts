@@ -13,18 +13,31 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import type { AgentSession, MemorySyncResult, RenderedMemoryIndex, SessionMeta } from "@nathapp/nax-agent";
+import type {
+  AgentSession,
+  CreateAgentSessionOptions,
+  MemorySyncResult,
+  RenderedMemoryIndex,
+  SessionMeta,
+} from "@nathapp/nax-agent";
+import { createMemoryTranscriptStore } from "@nathapp/nax-agent";
 import {
+  assertDefined,
   CHAT_MODEL,
   type MockLogger,
+  makeAgentCatalog,
   makeAgentResource,
   makeLogger,
   makeNaxConfig,
+  makeScriptedSession,
   makeSubagentHostHarness,
   type SubagentHostHarness,
+  turnEndEvent,
   waitForCondition,
+  withDepsRestore,
 } from "@test/helpers";
 import {
+  type AcpCatalog,
   type ChatHost,
   type ChatResources,
   createChatHost,
@@ -32,8 +45,9 @@ import {
   type OpenChatSessionRequest,
 } from "@/chat";
 import { createHostMemory } from "@/chat/host-memory";
+import { _subagentSessionDeps } from "@/chat/subagent-session";
 import type { MemoryHost } from "@/memory";
-import { buildResourceCatalog } from "@/resources";
+import { type AgentResource, buildResourceCatalog } from "@/resources";
 
 /** What the fake host renders: the note the motivation names, as index text. */
 const INDEX_TEXT = "# Memory\n- [project] slice-2 — the second slice of the delivery plan";
@@ -77,6 +91,26 @@ function renderedText(options: FakeMemoryOptions, call: number): string {
   const texts = options.texts;
   if (texts === undefined) return options.text ?? INDEX_TEXT;
   return texts[Math.min(call, texts.length - 1)] ?? INDEX_TEXT;
+}
+
+/** Two models of one ACP agent: the effort differs, so the switch can be applied in place. */
+const ACP_BASE = "acp:codex/gpt-5.5";
+const ACP_HIGH = "acp:codex/gpt-5.5[high]";
+
+/** A catalog whose single agent holds both models; nothing here ever talks to the agent. */
+function acpCatalog(): AcpCatalog {
+  return {
+    load: async () => {},
+    warm: () => {},
+    refresh: async () => [],
+    close: () => {},
+    rows: () => [],
+    effortLevels: () => ["default", "high"],
+    installed: () => true,
+    unavailable: () => undefined,
+    opened: () => {},
+    failed: () => {},
+  };
 }
 
 /** A `MemoryHost` whose two session-open reads are mocks; nothing else is read by the host. */
@@ -137,6 +171,10 @@ interface FixtureOptions {
   readonly memory?: FakeMemoryOptions;
   /** Build resources without a memory host; `false` builds no resources at all. */
   readonly resources?: boolean;
+  /** Catalog agents, so the host attaches its `nax-agents` provider. */
+  readonly agents?: readonly AgentResource[];
+  /** Offer an ACP catalog, which is what makes a model-only switch applicable in place. */
+  readonly acp?: boolean;
 }
 
 function fixture(options: FixtureOptions = {}): Fixture {
@@ -146,7 +184,7 @@ function fixture(options: FixtureOptions = {}): Fixture {
   let closeGate: Promise<void> = Promise.resolve();
   const enteredClose = Promise.withResolvers<void>();
   const memory = options.memory === undefined ? undefined : fakeMemory(events, options.memory);
-  const catalog = buildResourceCatalog([]);
+  const catalog = options.agents === undefined ? buildResourceCatalog([]) : makeAgentCatalog(options.agents);
   const resources: ChatResources | undefined =
     options.resources === false
       ? undefined
@@ -169,6 +207,8 @@ function fixture(options: FixtureOptions = {}): Fixture {
       enteredClose.resolve();
       await closeGate;
     },
+    // An ACP session takes a model or effort change in place without reopening.
+    configure: async () => {},
   };
   const release = async (): Promise<void> => {};
   const storage = Object.assign(createChatStorage({ pid: process.pid, now: () => NOW, logger }), {
@@ -205,6 +245,7 @@ function fixture(options: FixtureOptions = {}): Fixture {
     logger,
     open,
     ...(resources !== undefined ? { resources } : {}),
+    ...(options.acp === true ? { acp: acpCatalog() } : {}),
   });
   hosts.push(host);
   return {
@@ -232,6 +273,51 @@ function memoryOf(f: Fixture): FakeMemory {
 
 function warnings(logger: MockLogger): readonly string[] {
   return logger.calls.filter((call) => call.level === "warn").map((call) => call.message);
+}
+
+/**
+ * Run the host's `nax-agents` tool once, as the parent model would, and return the
+ * nested session's options: that is where a subagent's instructions are decided.
+ */
+async function runAgentTool(f: Fixture): Promise<CreateAgentSessionOptions> {
+  const captured: CreateAgentSessionOptions[] = [];
+  _subagentSessionDeps.createAgentSession = mock(async (options: CreateAgentSessionOptions) => {
+    captured.push(options);
+    return makeScriptedSession("nested", async function* () {
+      yield turnEndEvent("done");
+    });
+  });
+  _subagentSessionDeps.nativeBackend = mock(() => ({
+    kind: "native",
+    async open() {
+      throw new Error("this test never opens the nested backend");
+    },
+  }));
+  _subagentSessionDeps.createMemoryTranscriptStore = () => createMemoryTranscriptStore();
+  _subagentSessionDeps.resolveRuleSet = async () => ({
+    rules: [],
+    repoRulesTotal: 0,
+    repoRulesMatchedPaths: 0,
+    packageRulesCount: 0,
+  });
+  _subagentSessionDeps.resolveTuiPermissions = () => ({ bashApproval: "raw", askRules: [], denyRules: [] });
+  const provider = f.opens.at(-1)?.toolProviders?.find((entry) => entry.id === "nax-agents");
+  assertDefined(provider, "the nax-agents provider");
+  const tool = (await provider.tools("/r"))?.find((entry) => entry.localName === "run");
+  assertDefined(tool, "the nax-agents run tool");
+  await tool.run(
+    { agent: "reviewer", task: "check it" },
+    {
+      root: "/r",
+      resolvedPaths: [],
+      maxBytes: 1_000_000,
+      maxFileBytes: 1_000_000,
+      signal: new AbortController().signal,
+    },
+  );
+  const options = captured[0];
+  assertDefined(options, "the nested session's options");
+  return options;
 }
 
 describe("chat host memory on open", () => {
@@ -361,6 +447,27 @@ describe("chat host memory on open", () => {
     expect(f.opens[0]?.memoryIndex).toBe("index-one");
     expect(f.opens[1]?.memoryIndex).toBe("index-three");
     expect(reopened?.memoryIndex).toBe("index-two");
+  });
+});
+
+describe("chat host memory and in-place switches", () => {
+  withDepsRestore(_subagentSessionDeps);
+
+  test("F2 an in-place switch keeps the snapshot the live session was opened with", async () => {
+    const f = fixture({
+      memory: { texts: ["index-one", "index-two"] },
+      agents: [makeAgentResource()],
+      acp: true,
+    });
+    await f.host.start({ mode: "guarded", model: ACP_BASE });
+    await f.host.switchTo({ model: ACP_HIGH });
+    // The switch prepared its own index but reused the live session, so nothing reopened.
+    expect(memoryOf(f).sync).toHaveBeenCalledTimes(2);
+    expect(f.opens).toHaveLength(1);
+
+    const nested = await runAgentTool(f);
+
+    expect(nested.instructions).toContain("index-one");
   });
 });
 
