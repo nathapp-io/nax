@@ -6,11 +6,23 @@
  * `parseMemoryNote` validates the frontmatter with a zod schema and reports the
  * first bad key as `MEMORY_NOTE_INVALID`; `parseMemoryNoteRecord` is the same
  * validation over an already-decoded object, so a provider pull validates a
- * note exactly as a mirror read does.
+ * note exactly as a mirror read does. That schema is also where the model's
+ * field limits live (`MEMORY_DESCRIPTION_MAX_CHARS`, `MEMORY_SOURCE_MAX_CHARS`,
+ * `MEMORY_NOTE_BODY_MAX_BYTES`), so a note over them can be neither read back
+ * from the mirror nor pulled into it.
  */
 import { z } from "zod";
 import { NaxError } from "#src/infra/nax-error";
-import { MEMORY_NOTE_STATUSES, MEMORY_NOTE_TYPES, MEMORY_SCOPES, MEMORY_SLUG_RE, type MemoryNote } from "./types.ts";
+import {
+  MEMORY_DESCRIPTION_MAX_CHARS,
+  MEMORY_NOTE_BODY_MAX_BYTES,
+  MEMORY_NOTE_STATUSES,
+  MEMORY_NOTE_TYPES,
+  MEMORY_SCOPES,
+  MEMORY_SLUG_RE,
+  MEMORY_SOURCE_MAX_CHARS,
+  type MemoryNote,
+} from "./types.ts";
 
 const ERROR_STAGE = "memory";
 const FRONTMATTER_FENCE = "---";
@@ -22,11 +34,23 @@ const LINE_BREAK = /[\r\n]/;
 const NOTE_KEYS = ["id", "slug", "type", "scope", "description", "source", "updatedAt", "status"] as const;
 const NOTE_KEY_SET: ReadonlySet<string> = new Set(NOTE_KEYS);
 
-function singleLine(minMessage: string) {
-  return z
-    .string()
-    .min(1, minMessage)
-    .refine((value) => !LINE_BREAK.test(value), "must be a single line");
+/**
+ * A one-line field: non-empty, no line break, and at most `maxChars` characters when the
+ * field is capped. The model's limits are enforced here rather than only on the save path,
+ * so a note arriving from a provider is held to the same shape a note file must have — a
+ * pull cannot persist a description, source or body the write validator would have refused.
+ */
+function singleLine(minMessage: string, maxChars?: number) {
+  const bounded =
+    maxChars === undefined ? z.string() : z.string().max(maxChars, `must be at most ${maxChars} characters`);
+  return bounded.min(1, minMessage).refine((value) => !LINE_BREAK.test(value), "must be a single line");
+}
+
+/** The body's cap is in UTF-8 bytes, so a multi-byte body can fail below the character count. */
+function noteBody() {
+  return z.string().refine((value) => Buffer.byteLength(value, "utf8") <= MEMORY_NOTE_BODY_MAX_BYTES, {
+    message: `must be at most ${MEMORY_NOTE_BODY_MAX_BYTES} bytes`,
+  });
 }
 
 const NoteSchema = z.object({
@@ -34,11 +58,11 @@ const NoteSchema = z.object({
   slug: singleLine("must not be empty").regex(MEMORY_SLUG_RE, "must be a slug (lower-case letters, digits and '-')"),
   type: z.enum(MEMORY_NOTE_TYPES),
   scope: z.enum(MEMORY_SCOPES),
-  description: singleLine("must not be empty"),
-  source: singleLine("must not be empty"),
+  description: singleLine("must not be empty", MEMORY_DESCRIPTION_MAX_CHARS),
+  source: singleLine("must not be empty", MEMORY_SOURCE_MAX_CHARS),
   updatedAt: singleLine("must not be empty"),
   status: z.enum(MEMORY_NOTE_STATUSES),
-  body: z.string(),
+  body: noteBody(),
 });
 
 function invalidNote(message: string, key?: string): NaxError {

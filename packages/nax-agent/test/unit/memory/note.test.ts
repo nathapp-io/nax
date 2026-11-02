@@ -215,6 +215,37 @@ describe("parseMemoryNoteRecord", () => {
     expect(error instanceof NaxError ? error.message : "").toContain("description");
   });
 
+  test("accepts every capped field exactly at its model limit", () => {
+    const note = parseMemoryNoteRecord({
+      ...FIELDS,
+      description: "d".repeat(MEMORY_DESCRIPTION_MAX_CHARS),
+      source: "s".repeat(MEMORY_SOURCE_MAX_CHARS),
+      body: "b".repeat(MEMORY_NOTE_BODY_MAX_BYTES),
+    });
+    expect(note.description).toHaveLength(MEMORY_DESCRIPTION_MAX_CHARS);
+    expect(note.source).toHaveLength(MEMORY_SOURCE_MAX_CHARS);
+    expect(note.body).toHaveLength(MEMORY_NOTE_BODY_MAX_BYTES);
+  });
+
+  test.each([
+    ["description", { description: "d".repeat(MEMORY_DESCRIPTION_MAX_CHARS + 1) }],
+    ["source", { source: "s".repeat(MEMORY_SOURCE_MAX_CHARS + 1) }],
+    ["body", { body: "b".repeat(MEMORY_NOTE_BODY_MAX_BYTES + 1) }],
+  ] as const)("rejects a %s one over its model limit", (key, over) => {
+    expect(parseErrorRecord({ ...FIELDS, body: "", ...over })).toMatchObject({
+      code: "MEMORY_NOTE_INVALID",
+      context: { stage: "memory", key },
+    });
+  });
+
+  test("counts the body cap in UTF-8 bytes, so a multi-byte body can fail below the character count", () => {
+    const atCap = { ...FIELDS, body: "é".repeat(MEMORY_NOTE_BODY_MAX_BYTES / 2) };
+    expect(parseMemoryNoteRecord(atCap).body).toHaveLength(MEMORY_NOTE_BODY_MAX_BYTES / 2);
+    // Half as many characters again is only one character over — but two bytes over the cap.
+    const overCap = { ...FIELDS, body: "é".repeat(MEMORY_NOTE_BODY_MAX_BYTES / 2 + 1) };
+    expect(parseErrorRecord(overCap)).toMatchObject({ code: "MEMORY_NOTE_INVALID", context: { key: "body" } });
+  });
+
   function parseErrorRecord(record: Record<string, unknown>): unknown {
     try {
       parseMemoryNoteRecord(record);

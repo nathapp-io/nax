@@ -20,6 +20,9 @@ import { join } from "node:path";
 import {
   createMemoryOutbox,
   createMemoryStore,
+  MEMORY_DESCRIPTION_MAX_CHARS,
+  MEMORY_NOTE_BODY_MAX_BYTES,
+  MEMORY_SOURCE_MAX_CHARS,
   type MemoryDecision,
   type MemoryNote,
   type MemoryNoteStatus,
@@ -231,6 +234,25 @@ describe("syncMemory step 4 (applying pulled notes)", () => {
     });
   });
 
+  test("AC-4: a pulled note beyond the model's size limits is skipped, not written", async () => {
+    await withTempDir(async (dir) => {
+      // Each of the three capped fields, one over its documented limit: a provider must not be
+      // able to persist what the save path would have refused.
+      const tooLong = [
+        note("long-description", { description: "d".repeat(MEMORY_DESCRIPTION_MAX_CHARS + 1) }),
+        note("long-source", { source: "s".repeat(MEMORY_SOURCE_MAX_CHARS + 1) }),
+        note("long-body", { body: "b".repeat(MEMORY_NOTE_BODY_MAX_BYTES + 1) }),
+      ];
+      const h = harness(dir, { pull: [lastPage(tooLong)] });
+
+      const result = await syncMemory(h.input());
+
+      expect(result).toMatchObject({ outcome: "synced", pulled: 0, skipped: tooLong.length });
+      expect(warnings(h.logger)).toHaveLength(tooLong.length);
+      expect(await h.store.listNotes("project")).toEqual([]);
+    });
+  });
+
   test("AC-5: a project page carrying decisions replaces decisions.jsonl with exactly those decisions", async () => {
     await withTempDir(async (dir) => {
       const pulled = [decision("d1"), decision("d2")];
@@ -335,6 +357,61 @@ describe("syncMemory step 4 (applying pulled notes)", () => {
         cursor: { project: "c1", user: null },
         lastPullAt: STAMP,
         lastError: "project pull broke",
+      });
+    });
+  });
+});
+
+describe("syncMemory step 4 (a page the mirror cannot take)", () => {
+  /** The same store, with one write method failing — the mirror refusing a page it was given. */
+  function failingStore(store: MemoryStore, overrides: Partial<MemoryStore>): MemoryStore {
+    return { ...store, ...overrides };
+  }
+
+  test("a note write that throws ends the pull as a failure and is recorded as lastError", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { pull: [morePage([note("first-note")], "c1"), lastPage([note("second-note")])] });
+      const store = failingStore(h.store, {
+        writeNote: async (written) => {
+          if (written.slug === "second-note") throw new Error("mirror write failed");
+          await h.store.writeNote(written);
+        },
+      });
+
+      const result = await syncMemory(h.input({ store }));
+
+      expect(result).toMatchObject({ outcome: "failed", error: "mirror write failed", pulled: 1 });
+      // The page that did apply is on disk and its cursor is the checkpoint the run leaves.
+      expect(await h.store.readNote("project", "first-note")).toEqual(note("first-note"));
+      expect(await h.store.readNote("project", "second-note")).toBeNull();
+      expect(await recordedSyncState(h.store.paths.syncState)).toEqual({
+        provider: "scripted",
+        cursor: { project: "c1", user: null },
+        lastPullAt: STAMP,
+        lastError: "mirror write failed",
+      });
+    });
+  });
+
+  test("a decisions write that throws ends the pull as a failure and is recorded as lastError", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, {
+        pull: [morePage([], "c1"), { notes: [], decisions: [decision("d1")], nextCursor: "c2", done: true }],
+      });
+      const store = failingStore(h.store, {
+        writeDecisions: async () => {
+          throw new Error("decisions write failed");
+        },
+      });
+
+      const result = await syncMemory(h.input({ store }));
+
+      expect(result).toMatchObject({ outcome: "failed", error: "decisions write failed" });
+      expect(await recordedSyncState(h.store.paths.syncState)).toEqual({
+        provider: "scripted",
+        cursor: { project: "c1", user: null },
+        lastPullAt: STAMP,
+        lastError: "decisions write failed",
       });
     });
   });

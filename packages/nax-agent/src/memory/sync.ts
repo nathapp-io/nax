@@ -40,12 +40,12 @@
  * run may drain has finished; only one with more behind it is a page-limit failure.
  *
  * What a page *means* is decided one entry at a time. A note the schema refuses — a slug
- * outside `MEMORY_SLUG_RE`, a field missing — is skipped and reported once, never thrown:
- * one unreadable entry must not cost the page its cursor. A key the outbox still holds is
- * left exactly as the local mirror has it and is not counted, because the local write is
- * the newer fact. A tombstone deletes. `decisions` replace `decisions.jsonl` on a project
- * page only. The held set is read after each page, and the page's scope — not the payload's
- * own `scope` field — decides where a note lands.
+ * outside `MEMORY_SLUG_RE`, a field missing or over its model limit — is skipped and
+ * reported once, never thrown: one unreadable entry must not cost the page its cursor. A
+ * key the outbox still holds is left exactly as the local mirror has it and is not counted,
+ * because the local write is the newer fact. A tombstone deletes. `decisions` replace
+ * `decisions.jsonl` on a project page only. The held set is read after each page, and the
+ * page's scope — not the payload's `scope` field — decides where a note lands.
  */
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
@@ -470,16 +470,17 @@ async function applyPulledPage(input: MemorySyncInput, scope: MemoryScope, answe
 }
 
 /** What a scope's pages came to: what they moved, and the failure that stopped the sequence. */
-interface PullResult extends PageResult {
-  readonly failure?: string;
-}
+type PullResult = PageResult & { readonly failure?: string };
 
 /**
  * One scope's pages, one at a time, each checkpointed before the next is asked for.
  *
- * The limit is a budget on this run, not a claim about the sequence: a page that says
- * `done` finished its sequence whatever page it is, so reaching the limit is a failure
- * only when the provider still has more to give.
+ * A page fails the pull wherever it goes wrong — the provider not answering, timing out, or
+ * the mirror refusing what it carried — and all three leave the cursor at the last page that
+ * was applied. Applying a page sits in the same catch as the race so its reason reaches
+ * `lastError`, and not only the run's never-throws shell. The limit is a budget on this run,
+ * not a claim about the sequence: a page that says `done` finished whatever page it is, so
+ * reaching the limit is a failure only when the provider still has more to give.
  */
 async function pullScope(input: MemorySyncInput, scope: MemoryScope, timers: MemoryTimers): Promise<PullResult> {
   const take = input.pageSize ?? MEMORY_PULL_PAGE_SIZE;
@@ -487,18 +488,17 @@ async function pullScope(input: MemorySyncInput, scope: MemoryScope, timers: Mem
   let pulled = 0;
   let skipped = 0;
   for (let page = 0; page < MEMORY_PULL_MAX_PAGES; page += 1) {
-    let answer: MemoryPage;
     try {
-      answer = await raceTimeout(input.provider.pull({ scope, cursor, take }), MEMORY_OP_TIMEOUT_MS, timers);
+      const answer = await raceTimeout(input.provider.pull({ scope, cursor, take }), MEMORY_OP_TIMEOUT_MS, timers);
+      const applied = await applyPulledPage(input, scope, answer);
+      pulled += applied.pulled;
+      skipped += applied.skipped;
+      cursor = answer.nextCursor ?? cursor;
+      await checkpointPull(input, scope, cursor);
+      if (answer.done) return { pulled, skipped };
     } catch (error) {
       return { pulled, skipped, failure: errorMessage(error) };
     }
-    const applied = await applyPulledPage(input, scope, answer);
-    pulled += applied.pulled;
-    skipped += applied.skipped;
-    cursor = answer.nextCursor ?? cursor;
-    await checkpointPull(input, scope, cursor);
-    if (answer.done) return { pulled, skipped };
   }
   return { pulled, skipped, failure: PAGE_LIMIT_REACHED };
 }
