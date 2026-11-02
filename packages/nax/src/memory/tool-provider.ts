@@ -11,7 +11,10 @@
  * one of the two, `limit` is inside 1-50, and a slug matches `MEMORY_SLUG_RE`
  * before the host is ever asked. What a note may *contain* — its type, its lengths,
  * whether it carries a secret — is the store's business, not this provider's, so a
- * save is validated once, where the note is written.
+ * save is validated once, where the note is written. The schema each tool advertises
+ * states what those checks enforce — `minLength: 1` on every required string, and the
+ * store's own pattern where the slug is checked here — so a value the schema admits is
+ * a value the tool answers rather than one it refuses.
  *
  * `get` takes a slug and never an id: ids are the provider's own, and the index a
  * session reads lists slugs. `save` and `forget` hand the host the note the model
@@ -249,9 +252,28 @@ async function answer(
 /** The `scope` property every tool's schema shares. */
 const SCOPE_PROPERTY = { type: "string", enum: SCOPE_VALUES };
 
+/**
+ * A required string the tools refuse when it is empty.
+ *
+ * `stringOf` is the check that refuses `""`, so the schema says so too: a schema that admits
+ * the empty string advertises an input the tool then answers with `[memory] invalid …`, which
+ * is a contract the model cannot read off the tool it was given.
+ */
+const REQUIRED_TEXT = { type: "string", minLength: 1 };
+
+/**
+ * A required slug, spelled with the store's own pattern.
+ *
+ * `get` and `forget` check the slug against `MEMORY_SLUG_RE` before the host is asked, so the
+ * schema carries that same expression rather than a second copy of the rule. `save` does not:
+ * its slug is validated where the note is written (`saveMemoryNote`), so there the field is
+ * `REQUIRED_TEXT` and a bad slug arrives as the store's refusal, not as a shape error.
+ */
+const REQUIRED_SLUG = { type: "string", minLength: 1, pattern: MEMORY_SLUG_RE.source };
+
 const GET_SCHEMA = {
   type: "object",
-  properties: { slug: { type: "string" }, scope: SCOPE_PROPERTY },
+  properties: { slug: REQUIRED_SLUG, scope: SCOPE_PROPERTY },
   required: ["slug"],
   additionalProperties: false,
 };
@@ -259,7 +281,7 @@ const GET_SCHEMA = {
 const SEARCH_SCHEMA = {
   type: "object",
   properties: {
-    text: { type: "string" },
+    text: REQUIRED_TEXT,
     scope: SCOPE_PROPERTY,
     limit: { type: "integer", minimum: SEARCH_LIMIT_MIN, maximum: SEARCH_LIMIT_MAX, default: SEARCH_LIMIT_DEFAULT },
   },
@@ -270,10 +292,10 @@ const SEARCH_SCHEMA = {
 const SAVE_SCHEMA = {
   type: "object",
   properties: {
-    slug: { type: "string" },
-    type: { type: "string" },
-    description: { type: "string" },
-    body: { type: "string" },
+    slug: REQUIRED_TEXT,
+    type: REQUIRED_TEXT,
+    description: REQUIRED_TEXT,
+    body: REQUIRED_TEXT,
     scope: SCOPE_PROPERTY,
   },
   required: [...SAVE_REQUIRED_FIELDS],
@@ -282,7 +304,7 @@ const SAVE_SCHEMA = {
 
 const FORGET_SCHEMA = {
   type: "object",
-  properties: { slug: { type: "string" }, reason: { type: "string" }, scope: SCOPE_PROPERTY },
+  properties: { slug: REQUIRED_SLUG, reason: REQUIRED_TEXT, scope: SCOPE_PROPERTY },
   required: ["slug", "reason"],
   additionalProperties: false,
 };

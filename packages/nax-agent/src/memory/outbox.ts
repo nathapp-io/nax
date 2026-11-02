@@ -19,6 +19,14 @@
  * outbox (`state: "rejected"`) instead of being deleted — the reason is the
  * record of why the provider refused it, and a later CLI may requeue it.
  *
+ * The one length rule an entry carries — a reason is at most
+ * `MEMORY_FORGET_REASON_MAX_CHARS` — is enforced where an entry is *taken*
+ * (`enqueue`), never where it is read. An entry that fails a read check does not
+ * get reported: it leaves `list`, `heldKeys` and every count built on them, and
+ * the write it holds is never replayed. A read check would therefore retire the
+ * entries written before it existed, so the gate refuses the request instead, and
+ * a reason that is already on disk still lists and still replays.
+ *
  * Reads, directory creation and removal go through the mirror store's
  * filesystem seam, `_memoryStoreDeps`; the write path is `writeFileAtomic`, whose
  * own seam is `_atomicWriteDeps`. Temp names are never spelled here.
@@ -33,7 +41,8 @@ import { byCodePoint, byNumber } from "#src/internal/sort";
 import { parseMemoryNoteRecord } from "./note.ts";
 import type { MemoryWriteRequest } from "./provider-types.ts";
 import { _memoryStoreDeps } from "./store.ts";
-import { MEMORY_CLIENT_ID_RE, MEMORY_FORGET_REASON_MAX_CHARS, MEMORY_SCOPES, memoryNoteKey } from "./types.ts";
+import { MEMORY_CLIENT_ID_RE, MEMORY_SCOPES, type MemoryWriteRefusal, memoryNoteKey } from "./types.ts";
+import { forgetReasonRefusal } from "./validate.ts";
 
 const ERROR_STAGE = "memory";
 /** An entry file's name: the sequence, the client id that keys it, then the suffix. */
@@ -59,6 +68,12 @@ export type MemoryOutboxEntry = MemoryWriteRequest & {
 
 /** The durable queue of unacknowledged writes. */
 export interface MemoryOutbox {
+  /**
+   * Take one write, stamped with its sequence. A request the queue cannot carry is refused
+   * before any file is written: `MEMORY_WRITE_REFUSED` for a reason past
+   * `MEMORY_FORGET_REASON_MAX_CHARS` (or empty, or spanning lines) and
+   * `MEMORY_CLIENT_ID_INVALID` for an id that is not one.
+   */
   enqueue(request: OutboxRequest): Promise<MemoryOutboxEntry>;
   list(): Promise<MemoryOutboxEntry[]>;
   listInvalid(): Promise<string[]>;
@@ -67,28 +82,27 @@ export interface MemoryOutbox {
   heldKeys(kind?: "save" | "forget"): Promise<ReadonlySet<string>>;
 }
 
-/** Every field an entry file has to carry to be replayed; the note is checked separately. */
-const EntrySchema = z
-  .object({
-    kind: z.enum(["save", "forget"]),
-    clientId: z.string().regex(MEMORY_CLIENT_ID_RE),
-    scope: z.enum(MEMORY_SCOPES),
-    slug: z.string().min(1),
-    writeMode: z.enum(["direct", "proposal"]),
-    note: z.unknown().optional(),
-    reason: z.string().optional(),
-    requestReason: z.string().optional(),
-    seq: z.number().int().positive(),
-    enqueuedAt: z.string().min(1),
-    state: z.enum(["queued", "rejected"]),
-  })
-  .refine((entry) => entry.state !== "queued" || (entry.reason?.length ?? 0) <= MEMORY_FORGET_REASON_MAX_CHARS, {
-    // A queued entry's `reason` is the forget's own justification, which `forgetMemoryNote`
-    // caps. A rejected entry's is the provider's answer, kept as it arrived: bounding that
-    // would turn a legitimately rejected write into an unreadable entry.
-    message: `a queued reason must be at most ${MEMORY_FORGET_REASON_MAX_CHARS} characters`,
-    path: ["reason"],
-  });
+/**
+ * Every field an entry file has to carry to be replayed; the note is checked separately.
+ *
+ * `reason` is read unbounded on purpose. A queued entry's reason is the forget's own
+ * justification and a rejected one's is the provider's answer; the length a queued reason may
+ * have is enforced where an entry is taken (`enqueue`), not where it is read — see this file's
+ * header. A read check would turn every entry written before that gate into an invalid one.
+ */
+const EntrySchema = z.object({
+  kind: z.enum(["save", "forget"]),
+  clientId: z.string().regex(MEMORY_CLIENT_ID_RE),
+  scope: z.enum(MEMORY_SCOPES),
+  slug: z.string().min(1),
+  writeMode: z.enum(["direct", "proposal"]),
+  note: z.unknown().optional(),
+  reason: z.string().optional(),
+  requestReason: z.string().optional(),
+  seq: z.number().int().positive(),
+  enqueuedAt: z.string().min(1),
+  state: z.enum(["queued", "rejected"]),
+});
 
 /** One entry file: what its name says about it, before its content is read. */
 interface EntryFile {
@@ -114,6 +128,27 @@ function clientIdInvalid(clientId: string): NaxError {
     stage: ERROR_STAGE,
     clientId,
   });
+}
+
+/** The refusal a request the queue cannot carry is thrown as, in the store's own vocabulary. */
+function writeRefused(refusal: MemoryWriteRefusal): NaxError {
+  return new NaxError(refusal.reason, "MEMORY_WRITE_REFUSED", { stage: ERROR_STAGE, field: refusal.field });
+}
+
+/**
+ * Refuse a request whose reason the queue could not carry, before any entry file exists.
+ *
+ * `forgetMemoryNote` already applies this rule to a forget, so this is the gate every caller
+ * of the outbox passes rather than a second, weaker copy of it: a reason that is empty, holds
+ * a line break or runs past `MEMORY_FORGET_REASON_MAX_CHARS` is refused here and nothing is
+ * written. The bound belongs on this side — the write — because a bound applied on the read
+ * side retires the entries that predate it: they leave `list` and `heldKeys` with no word,
+ * and the writes they hold are never replayed.
+ */
+function assertReasonCarries(request: MemoryWriteRequest): void {
+  if (request.reason === undefined) return;
+  const refusal = forgetReasonRefusal(request.reason);
+  if (refusal !== null) throw writeRefused(refusal);
 }
 
 /** An entry's file name; the sequence is padded so a plain name sort is a sequence sort. */
@@ -255,8 +290,10 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
   }
 
   async function enqueue(request: OutboxRequest): Promise<MemoryOutboxEntry> {
-    // The id is settled before joining the chain: a refused request must not delay the next one.
+    // The id and the reason are settled before joining the chain: a refused request must not
+    // delay the next one, and a reason the queue cannot carry writes no entry at all.
     const prepared = withClientId(request);
+    assertReasonCarries(prepared);
     const run = chain.then(() => writeEntry(prepared));
     // The chain never carries a rejection forward: one failed enqueue must not poison the next.
     chain = run.then(

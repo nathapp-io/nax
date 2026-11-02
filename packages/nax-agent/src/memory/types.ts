@@ -85,7 +85,10 @@ export const MEMORY_SOURCE_MAX_CHARS = 64;
  * the request the provider is pushed, and inside the outbox entry a forget that cannot be
  * delivered leaves behind. Bounding it here — the same cap as a note's description, because it
  * is the same kind of text — keeps a terminal or a step from filling the mirror's queue with a
- * justification of its own making. `forgetReasonRefusal` is where the rule is applied.
+ * justification of its own making. `forgetReasonRefusal` is where the rule is applied to a
+ * forget, and the outbox applies that same rule when it takes a request, so the queue never
+ * holds one it cannot replay. An entry already on disk is read whatever its reason's length:
+ * the bound is a condition on writing, not on reading.
  */
 export const MEMORY_FORGET_REASON_MAX_CHARS = 200;
 export const MEMORY_INDEX_MAX_BYTES = 24_576;

@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, type Mock, mock, test } from "
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MemoryHit, MemoryNote, MemoryScope, ProviderTool, ToolProvider, ToolResult } from "@nathapp/nax-agent";
+import { MEMORY_SLUG_RE } from "@nathapp/nax-agent";
 import { cleanupTempDir, type MockLogger, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import {
   createMemoryHost,
@@ -140,6 +141,45 @@ describe("createMemoryToolProvider", () => {
         "save",
         "forget",
       ]);
+    });
+  });
+
+  describe("input schemas", () => {
+    /** The property schema a tool advertises for `property`. */
+    async function propertyOf(name: string, property: string): Promise<Record<string, unknown>> {
+      const schema = (await toolFor(name)).inputSchema;
+      const properties = schema.properties as Record<string, Record<string, unknown>>;
+      return properties[property];
+    }
+
+    /** Every required string whose empty value the tool's own check refuses. */
+    const REQUIRED_TEXT_FIELDS = [
+      ["get", "slug"],
+      ["search", "text"],
+      ["save", "slug"],
+      ["save", "type"],
+      ["save", "description"],
+      ["save", "body"],
+      ["forget", "slug"],
+      ["forget", "reason"],
+    ] as const;
+
+    test("[M1] every required string refuses the empty value the tool refuses", async () => {
+      // The schema is the contract the model reads: a property that admits "" advertises an
+      // input the tool then answers with `[memory] invalid …`, which no schema said it would.
+      const unbounded: string[] = [];
+      for (const [name, property] of REQUIRED_TEXT_FIELDS) {
+        const schema = await propertyOf(name, property);
+        if (schema.type !== "string" || schema.minLength !== 1) unbounded.push(`${name}.${property}`);
+      }
+
+      expect(unbounded).toEqual([]);
+    });
+
+    test("[M1] the slug get and forget check is the store's own pattern", async () => {
+      for (const name of ["get", "forget"]) {
+        expect(await propertyOf(name, "slug")).toMatchObject({ pattern: MEMORY_SLUG_RE.source });
+      }
     });
   });
 

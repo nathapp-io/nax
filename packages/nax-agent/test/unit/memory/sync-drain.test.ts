@@ -14,11 +14,12 @@
  * microtasks only, and everything after the race is real filesystem I/O.
  */
 import { describe, expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   createMemoryOutbox,
   createMemoryStore,
+  MEMORY_FORGET_REASON_MAX_CHARS,
   MEMORY_OP_TIMEOUT_MS,
   type MemoryNote,
   type MemoryOutbox,
@@ -212,6 +213,32 @@ describe("syncMemory step 3 (drain)", () => {
       expect(await h.store.readNote("project", "replay-budget")).toBeNull();
       // A `pending` forget is a proposal the provider has not carried out: the note stays.
       expect(await h.store.readNote("project", "export-window")).toEqual(kept);
+      expect(await h.outbox.list()).toEqual([]);
+    });
+  });
+
+  test("[B1] a forget queued before the reason cap is replayed, not stranded", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: [{ id: "mem_doomed", status: "deleted" }] });
+      await h.store.writeNote(note());
+      // An entry written before the queue bounded a reason: the write it records is still a
+      // real intent, so the drain must deliver it rather than leave it out of `list`.
+      const legacyReason = "a".repeat(MEMORY_FORGET_REASON_MAX_CHARS + 1);
+      const legacy = {
+        ...forgetRequest("replay-budget", "legacy-forget"),
+        reason: legacyReason,
+        seq: 1,
+        enqueuedAt: STAMP,
+        state: "queued",
+      };
+      await mkdir(h.store.paths.outboxDir, { recursive: true });
+      await Bun.write(join(h.store.paths.outboxDir, "00000001-legacy-forget.json"), JSON.stringify(legacy));
+
+      const result = await syncMemory(h.input());
+
+      expect(result).toEqual({ outcome: "synced", pushed: 1, rejected: 0, pulled: 0, skipped: 0 });
+      expect(pushed(h.provider)).toMatchObject([{ kind: "forget", clientId: "legacy-forget", reason: legacyReason }]);
+      expect(await h.store.readNote("project", "replay-budget")).toBeNull();
       expect(await h.outbox.list()).toEqual([]);
     });
   });
