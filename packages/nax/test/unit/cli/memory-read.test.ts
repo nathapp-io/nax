@@ -192,7 +192,7 @@ describe("nax memory show", () => {
     const h = harness();
     await runMemory(h, ["show", "staging-db", "--json"]);
     expect(h.out).toHaveLength(1);
-    const printed = JSON.parse(h.out[0] ?? "") as MemoryNote;
+    const printed: MemoryNote = JSON.parse(h.out[0] ?? "");
     expect(printed).toEqual(PROJECT_NOTE);
     expect(printed.body).toBe(PROJECT_NOTE.body);
     expect(h.codes).toEqual([0]);

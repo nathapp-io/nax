@@ -20,7 +20,15 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MemoryNoteWrite, MemorySaveInput } from "@nathapp/nax-agent";
-import { assertNaxError, cleanupTempDir, type MockLogger, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
+import {
+  assertDefined,
+  assertNaxError,
+  cleanupTempDir,
+  type MockLogger,
+  makeLogger,
+  makeNaxConfig,
+  makeTempDir,
+} from "@test/helpers";
 import { _memoryHostDeps, createMemoryHost, type MemoryHost } from "@/memory";
 
 /** The Design's example repo note, verbatim. */
@@ -91,7 +99,9 @@ describe("host writes", () => {
 
   /** Open the host under test, with whatever config the case needs. */
   async function openHost(config = makeNaxConfig()): Promise<void> {
-    host = (await createMemoryHost({ config, repoRoot, source: "nax-chat", logger })) as MemoryHost;
+    const created = await createMemoryHost({ config, repoRoot, source: "nax-chat", logger });
+    assertDefined(created, "the memory host");
+    host = created;
   }
 
   beforeEach(() => {

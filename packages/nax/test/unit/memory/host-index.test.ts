@@ -24,7 +24,7 @@ import {
   type MemoryStore,
   type MemorySyncResult,
 } from "@nathapp/nax-agent";
-import { cleanupTempDir, type MockLogger, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, type MockLogger, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { _memoryHostDeps, createMemoryHost, type MemoryHost } from "@/memory";
 
 /** The Design's example repo note, verbatim. */
@@ -108,7 +108,9 @@ describe("host index, sync and status", () => {
 
   /** Open the host under test, with whatever config the case needs. */
   async function openHost(config = makeNaxConfig()): Promise<void> {
-    host = (await createMemoryHost({ config, repoRoot, source: "nax-chat", logger })) as MemoryHost;
+    const created = await createMemoryHost({ config, repoRoot, source: "nax-chat", logger });
+    assertDefined(created, "the memory host");
+    host = created;
   }
 
   beforeEach(() => {

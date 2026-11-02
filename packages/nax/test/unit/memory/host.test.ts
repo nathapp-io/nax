@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createMemoryStore, type MemoryNote } from "@nathapp/nax-agent";
-import { cleanupTempDir, type MockLogger, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, type MockLogger, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { memoryConfigOf } from "@/config";
 import { _memoryHostDeps, createMemoryHost, type MemoryHost, memoryDirs } from "@/memory";
 
@@ -191,12 +191,9 @@ describe("host note reads", () => {
     logger = makeLogger();
     savedGlobalEnv = process.env.NAX_GLOBAL_CONFIG_DIR;
     process.env.NAX_GLOBAL_CONFIG_DIR = globalDir;
-    host = (await createMemoryHost({
-      config: makeNaxConfig(),
-      repoRoot,
-      source: "nax-chat",
-      logger,
-    })) as MemoryHost;
+    const created = await createMemoryHost({ config: makeNaxConfig(), repoRoot, source: "nax-chat", logger });
+    assertDefined(created, "the memory host");
+    host = created;
   });
 
   afterEach(() => {
