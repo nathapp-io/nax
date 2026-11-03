@@ -3,7 +3,7 @@
   "feature": "memory-run-stages",
   "branchName": "feat/memory-run-stages",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-03T02:38:03.832Z",
+  "updatedAt": "2026-11-03T02:48:26.820Z",
   "userStories": [
     {
       "id": "US-001",
@@ -256,14 +256,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Adds fulfilled-save counters and a guarded close to the existing run-memory module; existing tools retain their validation, stage scope and permissions, so ordinary failing-first tests cover the bounded behavior without a security-policy change."
+        "reasoning": "Adds fulfilled-save counters and a guarded close to the existing run-memory module; existing tools retain their validation, stage scope and permissions, so ordinary failing-first tests cover the bounded behavior without a security-policy change.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/run-memory.ts",
@@ -282,7 +285,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ad46fbeb56725e02722d6685ea1616f6935a7d25"
     },
     {
       "id": "US-005",
