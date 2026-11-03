@@ -3,7 +3,7 @@
   "feature": "memory-run-stages",
   "branchName": "feat/memory-run-stages",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-03T03:07:02.221Z",
+  "updatedAt": "2026-11-03T03:27:42.204Z",
   "userStories": [
     {
       "id": "US-001",
@@ -380,14 +380,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "One setup module gains an existing-style dependency seam, config-before-memory ordering and two guards; fixture updates only suppress incidental memory IO, while runtime teardown and session/permission policy remain owned by existing code and US-005."
+        "reasoning": "One setup module gains an existing-style dependency seam, config-before-memory ordering and two guards; fixture updates only suppress incidental memory IO, while runtime teardown and session/permission policy remain owned by existing code and US-005.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/execution/lifecycle/run-setup.ts",
@@ -459,7 +462,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e0178e5f3dd3f3e4d6eb9a9a1dd79ea0d4229f8e"
     },
     {
       "id": "US-007",
