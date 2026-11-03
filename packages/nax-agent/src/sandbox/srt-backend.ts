@@ -79,7 +79,6 @@ function customConfig(policy: SandboxPolicy): Partial<SrtRuntimeConfig> {
 export function createSrtBackend(network: SandboxConfig["network"]): SandboxBackend {
   let initialized: Promise<SrtModuleSlice> | undefined;
   let loaded: SrtModuleSlice | undefined;
-  let inFlight = 0;
 
   function initialize(): Promise<SrtModuleSlice> {
     initialized ??= (async () => {
@@ -103,21 +102,16 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
     },
     async wrap(req: SandboxWrapRequest) {
       const mod = await initialize();
-      inFlight += 1;
-      try {
-        const { argv } = await mod.SandboxManager.wrapWithSandboxArgv(
-          req.command,
-          req.shell,
-          customConfig(req.policy),
-          undefined,
-          req.cwd,
-          { commandId: req.commandId },
-        );
-        return argv;
-      } catch (err) {
-        inFlight -= 1;
-        throw err;
-      }
+      // A wrap that throws undoes srt's own count, so it needs no cleanup call.
+      const { argv } = await mod.SandboxManager.wrapWithSandboxArgv(
+        req.command,
+        req.shell,
+        customConfig(req.policy),
+        undefined,
+        req.cwd,
+        { commandId: req.commandId },
+      );
+      return argv;
     },
     annotate(commandId: string, stderr: string) {
       if (loaded === undefined) return "";
@@ -125,16 +119,17 @@ export function createSrtBackend(network: SandboxConfig["network"]): SandboxBack
       return annotated.startsWith(stderr) ? annotated.slice(stderr.length).trim() : "";
     },
     commandFinished() {
-      inFlight = Math.max(0, inFlight - 1);
-      // Removes bwrap mount placeholders (Linux). Never while another wrapped
-      // command runs: a running sandbox may still depend on them.
-      if (inFlight === 0) loaded?.SandboxManager.cleanupAfterCommand();
+      // Removes bwrap mount placeholders (Linux: `.bashrc`, `.profile`,
+      // `.claude/commands`, ...). srt counts every wrap itself and defers the
+      // deletion while another wrapped command still runs, so it must hear about
+      // EVERY finished command. A second, nax-side gate here leaked srt's count
+      // after any overlap and left the placeholders in the user's directory.
+      loaded?.SandboxManager.cleanupAfterCommand();
     },
     async reset() {
       if (loaded !== undefined) await loaded.SandboxManager.reset();
       initialized = undefined;
       loaded = undefined;
-      inFlight = 0;
     },
   };
 }

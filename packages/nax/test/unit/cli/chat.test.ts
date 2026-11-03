@@ -86,6 +86,7 @@ async function fixture() {
     writeErr: mock((_text: string) => {}),
     writeOut: mock((_message: string) => {}),
     setExitCode: mock((_code: number) => {}),
+    exit: mock(() => {}),
   };
   return {
     ...api,
@@ -503,6 +504,36 @@ describe("registerChatCommand", () => {
     f.registerChatCommand(program, f.deps);
     await program.parseAsync([...args], { from: "user" });
     expect(f.host.start).toHaveBeenCalledWith({ mode, model: "openai/gpt-6" });
+  });
+  // Ubuntu: a handle left open after teardown kept the process alive behind the exit summary,
+  // until a second ctrl-c (a real SIGINT once the screen was gone) killed it.
+  test("exits the process once the chat has closed and the summary is printed", async () => {
+    const f = await fixture();
+    const order: string[] = [];
+    f.host.close.mockImplementation(async () => {
+      order.push("close");
+    });
+    f.deps.writeOut.mockImplementation(() => {
+      order.push("summary");
+    });
+    f.deps.exit.mockImplementation(() => {
+      order.push("exit");
+    });
+    const program = new Command().exitOverride();
+    f.registerChatCommand(program, f.deps);
+    await program.parseAsync([], { from: "user" });
+    expect(f.deps.exit).toHaveBeenCalledTimes(1);
+    expect(order.at(-1)).toBe("exit");
+    expect(order).toContain("close");
+  });
+  test("exits the process after a refused launch too", async () => {
+    const f = await fixture();
+    const deps = { ...f.deps, stdinIsTTY: () => false };
+    const program = new Command().exitOverride();
+    f.registerChatCommand(program, deps);
+    await program.parseAsync([], { from: "user" });
+    expect(deps.setExitCode).toHaveBeenCalledWith(1);
+    expect(deps.exit).toHaveBeenCalledTimes(1);
   });
   test("AC-17: rejects typos as excess arguments without opening chat", async () => {
     const f = await fixture();
