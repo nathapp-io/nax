@@ -44,6 +44,15 @@ describe("readRepoNotes defaults", () => {
     });
   });
 
+  test("accepts a minimal CRLF note and applies defaults", async () => {
+    writeNote(MINIMAL.replaceAll("\n", "\r\n"));
+
+    const { notes } = await readRepoNotes({ repoRoot, logger });
+
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({ id: "staging-db", scope: "project", status: "active", source: "repo" });
+  });
+
   test("preserves explicitly supplied id and updatedAt", async () => {
     const text = MINIMAL.replace("slug: staging-db", "id: team-1\nslug: staging-db").replace(
       "description: the staging",

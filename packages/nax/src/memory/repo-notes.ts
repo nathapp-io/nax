@@ -194,7 +194,7 @@ function noteSecret(note: MemoryNote): { readonly kind: string } | null {
  */
 function withRepoDefaults(text: string, name: string, modifiedAt: Date): string {
   const lines = text.split("\n");
-  const close = lines.findIndex((line, index) => index > 0 && /^---[ \t]*$/.test(line));
+  const close = lines.findIndex((line, index) => index > 0 && /^---[ \t]*\r?$/.test(line));
   if (close === -1) return text;
   const keys = new Set(
     lines.slice(1, close).flatMap((line) => {
