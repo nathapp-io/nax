@@ -3,7 +3,7 @@
   "feature": "chat-steer-and-polish",
   "branchName": "feat/chat-steer-and-polish",
   "createdAt": "2026-11-03T00:00:00.000Z",
-  "updatedAt": "2026-11-03T14:13:20.823Z",
+  "updatedAt": "2026-11-03T15:02:09.958Z",
   "userStories": [
     {
       "id": "US-001",
@@ -293,14 +293,17 @@
         "US-001",
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Bridges the session API and React keyboard state with asynchronous applied promises, cancellation and queue priority; session delegation requires the requested sessions security override."
+        "reasoning": "Bridges the session API and React keyboard state with asynchronous applied promises, cancellation and queue priority; session delegation requires the requested sessions security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/chat-host.ts",
@@ -330,7 +333,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9dd8fd799d4a8a2e6b5d49daa1d944152021bac7"
     },
     {
       "id": "US-005",
