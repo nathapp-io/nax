@@ -3,7 +3,7 @@
   "feature": "memory-mcp-provider",
   "branchName": "feat/memory-mcp-provider",
   "createdAt": "2026-11-03T00:00:00.000Z",
-  "updatedAt": "2026-11-03T05:47:57.440Z",
+  "updatedAt": "2026-11-03T06:03:03.395Z",
   "userStories": [
     {
       "id": "US-001",
@@ -124,14 +124,17 @@
         "persistence"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Two focused utility modules with specified pure parsing and atomic sidecar persistence; temporary-directory tests exercise durability without network integration."
+        "reasoning": "Two focused utility modules with specified pure parsing and atomic sidecar persistence; temporary-directory tests exercise durability without network integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/types.ts",
@@ -154,7 +157,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c6331a5ba4311adcca1087dece21feba3dde602e"
     },
     {
       "id": "US-003",
