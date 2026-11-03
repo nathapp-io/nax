@@ -234,7 +234,8 @@ export interface CompactionOptions {
    * byte-identical (design §Pinning). A MANUAL compaction passes `false` — its
    * summary takes that position (US-002 AC-2) — and must then summarize the
    * opening message, or its requirements and images reach neither the summarizer
-   * nor the compacted transcript.
+   * nor the compacted transcript. `false` starts the span at the opening message
+   * even when an automatic summary sits right behind it at index 1.
    */
   readonly pinFirstMessage?: boolean;
 }
@@ -242,14 +243,35 @@ export interface CompactionOptions {
 /**
  * Where the span to summarize begins.
  *
- * An existing summary is always excluded — it is merged, not re-summarized. With
- * none, a pinned transcript starts after `messages[0]`; an unpinned one (manual
- * compaction) starts AT it, because that message is being replaced rather than
- * kept, so leaving it out would discard it unsummarized.
+ * A PINNED transcript (the automatic path) starts after `messages[0]`, or after
+ * any summary already in it — that summary is merged, not re-summarized.
+ *
+ * An UNPINNED one (manual compaction) starts at `messages[0]` whatever else the
+ * transcript holds. Its summary takes the pin's position, so the opening message
+ * is being replaced rather than kept, and starting anywhere later would discard
+ * it — requirements, constraints and images included — without summarizing it.
+ * That case is real: after an automatic compaction the opening message is still
+ * at index 0 with the automatic summary right behind it at index 1.
  */
 function spanStartFor(previous: PreviousSummary | undefined, options: CompactionOptions): number {
-  if (previous !== undefined) return previous.index + 1;
-  return options.pinFirstMessage === false ? PIN_INDEX : PIN_INDEX + 1;
+  if (options.pinFirstMessage === false) return PIN_INDEX;
+  return previous !== undefined ? previous.index + 1 : PIN_INDEX + 1;
+}
+
+/**
+ * The messages the summarizer is handed: `[spanStart, cutIndex)` without the
+ * summary that `previousSummary` already carries, so a merge pays once for that
+ * text (as the merge instruction) instead of twice.
+ */
+function spanOf(
+  messages: readonly TranscriptMessage[],
+  spanStart: number,
+  cutIndex: number,
+  previous: PreviousSummary | undefined,
+): readonly TranscriptMessage[] {
+  const span = messages.slice(spanStart, cutIndex);
+  if (previous === undefined || previous.index < spanStart) return span;
+  return span.filter((_message, offset) => spanStart + offset !== previous.index);
 }
 
 export function prepareCompaction(
@@ -260,17 +282,25 @@ export function prepareCompaction(
   const previous = readPreviousSummary(messages);
   // Everything from here is fair game; the pin, and any existing summary, are not.
   const spanStart = spanStartFor(previous, options);
-  const cutIndex = findCutPoint(messages, spanStart, keepTokens);
+  const cut = findCutPoint(messages, spanStart, keepTokens);
+  // The kept window never starts at or before a summary that is being merged:
+  // its content already travels as `previousSummary`, and keeping it as well
+  // would leave two summaries in the transcript (the "merged, not stacked"
+  // rule). Reachable only when nothing is pinned — the manual path, whose span
+  // can now begin before that summary.
+  const cutIndex = previous !== undefined ? Math.max(cut, previous.index + 1) : cut;
+  const toSummarize = spanOf(messages, spanStart, cutIndex, previous);
   // An empty span is "nothing to do" whether or not a summary already exists
   // (nax#1842). A merge plan is still returnable — that needs `previousSummary`
-  // AND new content, which is exactly `cutIndex > spanStart`. With an empty span
-  // there is nothing to fold in: summarize() would be paid to re-summarize the
-  // previous summary alone and applyCompaction would rebuild an array no smaller
-  // than the one it replaced, once per round trip for the rest of the turn.
-  if (cutIndex <= spanStart) return undefined;
+  // AND new content. With an empty span there is nothing to fold in:
+  // summarize() would be paid to re-summarize the previous summary alone and
+  // applyCompaction would rebuild an array no smaller than the one it replaced,
+  // once per round trip for the rest of the turn. Measured on the span itself
+  // because excluding a summary from it can empty a range that was not empty.
+  if (toSummarize.length === 0) return undefined;
   return {
     cutIndex,
-    toSummarize: messages.slice(spanStart, cutIndex),
+    toSummarize,
     ...(previous !== undefined ? { previousSummary: previous.text } : {}),
   };
 }

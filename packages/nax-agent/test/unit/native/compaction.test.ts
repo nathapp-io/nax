@@ -253,6 +253,70 @@ describe("prepareCompaction", () => {
     expect(plan?.cutIndex).toBe(prepareCompaction(fourExchanges, KEEP)?.cutIndex);
   });
 
+  test("F1: an unpinned plan still spans the opening message when an automatic summary sits at index 1", () => {
+    // [pin, summary, ...kept] is what an automatic compaction leaves behind. The
+    // manual path must not start after that summary (it would drop the pin
+    // unsummarized), and must not re-summarize the summary as text either — its
+    // content travels as `previousSummary`, for merging.
+    const autoCompacted: TranscriptMessage[] = [
+      { role: "user", content: "the opening requirements" },
+      { role: "user", content: COMPACTION_SUMMARY_PREFIX + "automatic" + COMPACTION_SUMMARY_SUFFIX },
+      ...exchange("c1", 400),
+      ...exchange("c2", 400),
+      ...exchange("c3", 400),
+    ];
+
+    const plan = prepareCompaction(autoCompacted, KEEP, { pinFirstMessage: false });
+
+    expect(plan).toBeDefined();
+    expect(plan?.previousSummary).toBe("automatic");
+    expect(plan?.toSummarize[0]).toEqual({ role: "user", content: "the opening requirements" });
+    expect(plan?.toSummarize.some((message) => message.role === "user" && message.content.includes("automatic"))).toBe(
+      false,
+    );
+    // The kept window starts after the summary being merged, so the transcript
+    // never carries two of them.
+    expect(plan?.cutIndex).toBeGreaterThan(1);
+  });
+
+  test("the pinned plan is unchanged by an automatic summary at index 1", () => {
+    // The automatic path must keep behaving exactly as before: it starts after
+    // the summary and never touches the pin.
+    const autoCompacted: TranscriptMessage[] = [
+      { role: "user", content: "the task" },
+      { role: "user", content: COMPACTION_SUMMARY_PREFIX + "automatic" + COMPACTION_SUMMARY_SUFFIX },
+      ...exchange("c1", 400),
+      ...exchange("c2", 400),
+      ...exchange("c3", 400),
+    ];
+
+    const plan = prepareCompaction(autoCompacted, KEEP);
+
+    expect(plan?.previousSummary).toBe("automatic");
+    expect(plan?.toSummarize).not.toContainEqual({ role: "user", content: "the task" });
+    expect(plan?.cutIndex).toBeGreaterThan(1);
+    // Unpinned planning moves only the START of the span, never the cut.
+    expect(prepareCompaction(autoCompacted, KEEP, { pinFirstMessage: false })?.cutIndex).toBe(plan?.cutIndex);
+  });
+
+  test("F1: an unpinned plan never keeps the summary it is merging at the start of the kept window", () => {
+    // A tail just over the budget puts the cut ON the automatic summary at index
+    // 1. Keeping it would leave the merged text in the transcript twice (the new
+    // summary plus the old message), so the cut moves past it.
+    const autoCompacted: TranscriptMessage[] = [
+      { role: "user", content: "the opening requirements" },
+      { role: "user", content: COMPACTION_SUMMARY_PREFIX + "a".repeat(4_960) + COMPACTION_SUMMARY_SUFFIX },
+      { role: "assistant", content: "short answer" },
+    ];
+
+    const plan = prepareCompaction(autoCompacted, KEEP, { pinFirstMessage: false });
+
+    expect(plan).toBeDefined();
+    expect(plan?.cutIndex).toBe(2);
+    expect(plan?.toSummarize).toEqual([{ role: "user", content: "the opening requirements" }]);
+    expect(plan?.previousSummary?.startsWith("a")).toBe(true);
+  });
+
   test("returns undefined when a summary is present but the new span is empty (nax#1842)", () => {
     // A plan whose toSummarize is empty buys nothing: summarize() would be paid
     // to re-summarize the previous summary alone, and applyCompaction would

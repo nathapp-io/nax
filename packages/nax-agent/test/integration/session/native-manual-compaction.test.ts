@@ -217,6 +217,40 @@ describe("native manual compaction: above the keep budget", () => {
     expect(messages.map((message) => message.content)).not.toContain(opening);
   });
 
+  test("F1: a manual compaction after an automatic one still summarizes the opening message", async () => {
+    // Turn 1 compacts automatically, leaving [opening, <summary at index 1>, …].
+    // A manual compaction that starts after that summary would drop the opening
+    // message unsummarized — it is the one message an automatic compaction pins
+    // and the manual path does not keep.
+    const provider = installScriptedProvider({ contextWindow: WINDOW });
+    const opening = text(5000, "o");
+    const doc = oversizedDoc();
+    provider.push(textRound(text(2000, "d"), 5000));
+    provider.pushComplete("automatic summary", "manual summary");
+    const store = await seeded("m-auto-manual", {
+      ...doc,
+      messages: [{ role: "user", content: opening }, ...doc.messages.slice(1)],
+    });
+    const session = await openSession("m-auto-manual", store);
+    await collect(session.send("one"));
+    expect(summaryMessages(provider.completeRequests[0]?.messages ?? [])).toEqual([]);
+
+    await compactNow(session)();
+
+    expect(provider.completeRequests).toHaveLength(2);
+    const manual = provider.completeRequests[1]?.messages ?? [];
+    expect(manual[0]).toEqual({ role: "user", content: opening });
+    // The automatic summary is merged, not re-summarized as text ...
+    expect(summaryMessages(manual)).toEqual([]);
+    expect(manual.at(-1)).toMatchObject({ content: expect.stringContaining("automatic summary") });
+    // ... and the stored transcript carries exactly one summary afterwards.
+    provider.push(textRound("next"));
+    await collect(session.send("two"));
+    const sent = summaryMessages(requestMessages(provider, 1));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain("manual summary");
+  });
+
   test("AC-3: compact() returns the summarizer's usage unchanged", async () => {
     const provider = installScriptedProvider({ contextWindow: WINDOW });
     provider.pushComplete("summary");
