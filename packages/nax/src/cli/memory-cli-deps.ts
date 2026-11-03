@@ -94,12 +94,54 @@ export function memoryDefaultDir(): string {
  * The logger the host and its repository reads write through.
  *
  * A rejected repo note is the user's to fix — a committed file that broke a rule — so `warn`
- * and `error` are lines on the terminal. `info` and `debug` are dropped: they are the host's
- * internals, and stdout is the command's own output.
+ * and `error` are lines on the terminal, and they carry the data object the host passed:
+ * the file it skipped and why. `info` and `debug` are dropped: they are the host's internals,
+ * and stdout is the command's own output.
+ *
+ * The data is rendered after the message as `key=value` pairs in the object's own key order,
+ * so one warn stays ONE line an operator can read and a log parser can follow. A value is
+ * flattened (see `renderField`) rather than quoted or truncated: this is a terminal line, not
+ * the JSONL run log, and the reason a note was skipped is usually the longest part of it.
  */
 export function cliMemoryLogger(deps: MemoryCliDeps): MemoryLogger {
-  const write = (stage: string, message: string): void => deps.logErr(`[${stage}] ${message}`);
+  const write = (stage: string, message: string, data?: Record<string, unknown>): void => {
+    deps.logErr(`[${stage}] ${message}${renderData(data)}`);
+  };
   return { warn: write, error: write, info: () => {}, debug: () => {} };
+}
+
+/** One line break, whichever convention wrote it: CRLF before CR and LF alone. */
+const LOG_LINE_BREAK = /\r\n|\r|\n/g;
+
+/**
+ * The `: key=value key=value` suffix a warn's data becomes, or `""` when there is none.
+ *
+ * Absent and empty data both render nothing — the message alone is the whole line then, which
+ * is the line the logger printed before it rendered data at all.
+ */
+function renderData(data: Record<string, unknown> | undefined): string {
+  if (data === undefined) return "";
+  const fields = Object.entries(data).flatMap(([key, value]) => {
+    const rendered = renderField(value);
+    return rendered === undefined ? [] : [`${key}=${rendered}`];
+  });
+  return fields.length === 0 ? "" : `: ${fields.join(" ")}`;
+}
+
+/**
+ * One field's value as it appears on the line, or `undefined` when it is not renderable.
+ *
+ * A string is used as it is, a number or boolean through `String`, and anything else — an
+ * array, an object, a null — through `JSON.stringify`, which is the only form that keeps a
+ * structured value distinguishable from a flattened string. A line break inside the rendered
+ * value becomes one space: this is a single terminal line, and an unstripped newline would let
+ * a value forge a second one.
+ */
+function renderField(value: unknown): string | undefined {
+  if (typeof value === "string") return value.replace(LOG_LINE_BREAK, " ");
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  const json = JSON.stringify(value);
+  return json === undefined ? undefined : json.replace(LOG_LINE_BREAK, " ");
 }
 
 /**

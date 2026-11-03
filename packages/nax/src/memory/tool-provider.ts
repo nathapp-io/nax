@@ -22,6 +22,13 @@
  * whose validation is the store's, so a refusal arrives here as the reason it was
  * refused rather than as a second, weaker check kept in this file.
  *
+ * The two writes also declare `summaryFields` the shape the model sees says nothing
+ * about: the plain input fields a person reads on an approval line, so an approval
+ * prompt names the note instead of repeating the tool name. They are SUMMARY-only —
+ * `adaptProviderTool` copies them into the tool's scope to be shown, and nothing is
+ * ever checked against them. The note body is deliberately absent: it is the note's
+ * content, and an approval line describes the call, not the payload.
+ *
  * Every throw becomes a line the model can act on, never a rejected tool: a note
  * the repository owns is reported with the file to edit, a refused write with the
  * validator's reason, a missing note as the same `no note` line `get` answers with,
@@ -311,6 +318,19 @@ const FORGET_SCHEMA = {
 };
 
 /**
+ * The fields `save` puts on an approval line (US-006): the note's identity, never its body.
+ *
+ * Declared here rather than derived from the schema on purpose — the schema also holds
+ * `body`, which is the note's content and must never be rendered for an approver, and a
+ * derived list could not tell the two apart. Summary-only: the adapter copies the list into
+ * the tool's scope to be SHOWN, and the policy never checks a value against it.
+ */
+const SAVE_SUMMARY_FIELDS = ["scope", "slug", "type", "description"] as const;
+
+/** The fields `forget` puts on an approval line: which note, and why it is being retired. */
+const FORGET_SUMMARY_FIELDS = ["scope", "slug", "reason"] as const;
+
+/**
  * The provider's four tools, in the order a session reads them: the two reads a
  * task starts with, then the two writes.
  */
@@ -332,12 +352,17 @@ function memoryTools(host: MemoryHost): readonly ProviderTool[] {
       localName: "save",
       description: "Save a note a future session would need: one fact, short.",
       inputSchema: SAVE_SCHEMA,
+      // The fields a person reads to know WHICH note they are approving. Never the
+      // body: that is the note's content, not a label for the call.
+      summaryFields: SAVE_SUMMARY_FIELDS,
       run: (input) => answer("save", input, () => runSave(host, input)),
     },
     {
       localName: "forget",
       description: "Retire a saved memory note that is wrong, with the reason.",
       inputSchema: FORGET_SCHEMA,
+      // Which note, and why — the two facts an approval of a retirement turns on.
+      summaryFields: FORGET_SUMMARY_FIELDS,
       run: (input) => answer("forget", input, () => runForget(host, input)),
     },
   ];
