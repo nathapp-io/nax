@@ -18,6 +18,14 @@
  * declares `stages: ["run"]`, so the existing stage filter keeps it off a
  * `review`-stage session. A static provider's tools run in nax's own process, so a
  * run-stage save writes the mirror directly, exactly as a chat save does.
+ *
+ * The tools write through a counting view of the host, so the run can say what it
+ * saved without asking the mirror: every save the host resolved is counted, a
+ * `pending` one as both saved and pending, and a save the store refused is not
+ * counted at all. Closing is the other half — one last sync so a note the last
+ * session saved is on the mirror before the run ends, then one summary line. Both
+ * halves are guarded the same way everything else here is: a failing sync warns and
+ * the run ends anyway, and a second close does neither.
  */
 import type { ToolProvider } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
@@ -72,12 +80,43 @@ export interface CreateRunMemoryInput {
 /** Composition seam for tests: the one call this module makes outside itself. */
 export const _runMemoryDeps: { createMemoryHost: typeof createMemoryHost } = { createMemoryHost };
 
-/** The counts a run memory with nothing counted yet reports. */
-const ZERO_SUMMARY: RunMemorySummary = { saved: 0, pending: 0 };
+/**
+ * The counts while the run is still going: the summary's own two fields, mutable.
+ *
+ * Derived rather than restated, so a field added to `RunMemorySummary` cannot be one
+ * the counter forgets to keep.
+ */
+type SaveCounts = { -readonly [K in keyof RunMemorySummary]: RunMemorySummary[K] };
 
-/** Closing a run memory before US-004 gives it a sync and a summary line to do. */
-async function closeRunMemory(): Promise<void> {
-  return undefined;
+/**
+ * The host a run's tools write through: the host's own members, and a `save` that
+ * counts what the host resolved.
+ *
+ * The count is taken after the host's answer, so a write the store refused is not a
+ * save the run reports — the tool still answers the model with the refusal, and the
+ * summary counts the saves that landed. Nothing is stamped here: the host already
+ * records `RUN_MEMORY_SOURCE` from composition, and the write the tool built is
+ * forwarded unchanged.
+ *
+ * The mirror this counts is the run's own. A static provider's tools run in nax's
+ * process, so a run-stage save writes the mirror directly, exactly as a chat save
+ * does; there is no outbox hop whose delivery this count could be confusing.
+ */
+function countingHost(host: MemoryHost, counts: SaveCounts): MemoryHost {
+  return {
+    ...host,
+    save: async (write) => {
+      const result = await host.save(write);
+      counts.saved += 1;
+      if (result.status === "pending") counts.pending += 1;
+      return result;
+    },
+  };
+}
+
+/** The one summary line a run's memory logs, as `close()` writes it. */
+function summaryLine(summary: SaveCounts): string {
+  return `Memory: ${summary.saved} saved (${summary.pending} pending)`;
 }
 
 /**
@@ -106,6 +145,9 @@ async function openHost(input: CreateRunMemoryInput): Promise<MemoryHost | undef
  * The run's one start sync: a throw is a warning, and an expected outcome is not a
  * throw. The host is synced before the first session is handed its index, so that
  * index already holds what a teammate committed since the last run.
+ *
+ * The same guard is the end sync's, because it is the same fact: a mirror that
+ * cannot be synced costs the run a warning, never the work the run did.
  */
 async function syncStart(host: MemoryHost, logger: MemoryLogger): Promise<void> {
   try {
@@ -115,7 +157,27 @@ async function syncStart(host: MemoryHost, logger: MemoryLogger): Promise<void> 
   }
 }
 
-/** The provider a run's tools hang off: the memory provider, re-staged onto `run`. */
+/**
+ * The close a run's memory hands out: one end sync, then one summary line.
+ *
+ * The guard is set before the sync is awaited, so two closes that overlap still
+ * sync once and log once — `runtime.close()` can be reached from a signal handler
+ * and a normal exit both. A sync that throws is the same warning the start sync
+ * gives: the run is ending either way, and the summary line is worth more than the
+ * failure it would otherwise be lost to.
+ */
+function createClose(host: MemoryHost, counts: SaveCounts, logger: MemoryLogger): () => Promise<void> {
+  let closing = false;
+  return async () => {
+    if (closing) return;
+    closing = true;
+    await syncStart(host, logger);
+    const { saved, pending } = counts;
+    logger.info("run", summaryLine(counts), { storyId: RUN_MEMORY_STORY_ID, saved, pending });
+  };
+}
+
+/** The provider a run's tools hang off: the memory provider over `host`, re-staged onto `run`. */
 function runProvider(host: MemoryHost): ToolProvider {
   return { ...createMemoryToolProvider(host), stages: RUN_MEMORY_TOOL_STAGES };
 }
@@ -146,6 +208,10 @@ async function renderIndex(host: MemoryHost, logger: MemoryLogger): Promise<stri
  * `memory.enabled` is left to the host: a run whose memory is switched off must not
  * have its repository resolved, hashed or read at all.
  *
+ * The tools are handed a counting view of the host and the host itself is kept as
+ * `host`, so the two reads this object makes outside its tools (the index and the
+ * sync) are the host's own, and nothing that reads `host` can be counted twice.
+ *
  * @param input.config - The loaded nax config (`memory` is read through `memoryConfigOf`)
  * @param input.repoRoot - Absolute repository root; the mirror identity
  * @param input.logger - Where the composition and its guarded steps log
@@ -156,11 +222,12 @@ export async function createRunMemory(input: CreateRunMemoryInput): Promise<RunM
   const host = await openHost(input);
   if (host === undefined) return undefined;
   await syncStart(host, input.logger);
+  const counts: SaveCounts = { saved: 0, pending: 0 };
   return {
     host,
-    provider: runProvider(host),
+    provider: runProvider(countingHost(host, counts)),
     index: () => renderIndex(host, input.logger),
-    summary: () => ZERO_SUMMARY,
-    close: closeRunMemory,
+    summary: () => ({ saved: counts.saved, pending: counts.pending }),
+    close: createClose(host, counts, input.logger),
   };
 }

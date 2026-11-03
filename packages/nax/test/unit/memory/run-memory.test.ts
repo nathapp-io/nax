@@ -1,5 +1,6 @@
 /**
- * run-memory.test.ts — the run memory's composition, start sync and index.
+ * run-memory.test.ts — the run memory's composition, start sync, index, counting
+ * tools and close.
  *
  * Covers US-003 AC-1..AC-20: the `memory.inRun` switch (which opens no host at
  * all), the host it does open (once, with the run's own source), the two ways
@@ -9,20 +10,33 @@
  * about nothing) and `index()`, which re-renders on every call and answers
  * `undefined` rather than throwing.
  *
- * `provider`, `summary()` and `close()` carry the shapes US-004 completes; this
- * file asserts only the provider's identity, its stage list and the tools a
- * session is handed — read off a real host over temp directories, exactly as the
- * run will read them.
+ * Covers US-004 AC-1..AC-14: the counting view the tools write through (a save
+ * the host resolved is counted, a pending one is counted twice, a refused one is
+ * not counted at all, a forget counts nothing, and the note the model wrote
+ * reaches the host unchanged), the store's own refusal coming back as the tool's
+ * `isError` answer, and `close()`, which syncs once more, logs the run's counts
+ * exactly once, survives a failing end sync, and does none of it twice.
+ *
+ * The save and forget cases drive the provider's real tools rather than calling a
+ * wrapper, so what is counted is what a session's `nax-memory__save` actually did.
  *
  * Everything runs through `_runMemoryDeps`, restored after each case, so the
  * composition is driven without a mirror on disk; the cases that need the real
- * composition (AC-18, AC-20) leave the seam alone. The host `renderIndex` and
- * `sync` stubs replace one method of an otherwise real host, so the thing under
- * test is still a memory host the composition accepted.
+ * composition (AC-18, AC-20) leave the seam alone. The host `renderIndex`,
+ * `sync`, `save` and `forget` stubs replace one method of an otherwise real host,
+ * so the thing under test is still a memory host the composition accepted.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { MemorySyncResult, ProviderTool } from "@nathapp/nax-agent";
+import type {
+  MemoryForgetResult,
+  MemoryNoteStatus,
+  MemoryNoteWrite,
+  MemorySaveResult,
+  MemorySyncResult,
+  ProviderTool,
+  ToolResult,
+} from "@nathapp/nax-agent";
 import {
   assertDefined,
   cleanupTempDir,
@@ -32,6 +46,7 @@ import {
   makeNaxConfig,
   makeTempDir,
 } from "@test/helpers";
+import { NaxError } from "@/errors";
 import {
   _memoryHostDeps,
   _runMemoryDeps,
@@ -52,6 +67,20 @@ const LOCKED: MemorySyncResult = { outcome: "locked", pushed: 0, rejected: 0, pu
 
 /** The four tool names the `nax-memory` provider advertises, in the order a session reads them. */
 const TOOL_NAMES = ["get", "search", "save", "forget"];
+
+/** The run context a tool is handed; the memory tools read the host, not the root. */
+const RUN_CONTEXT = { root: "/workspace", resolvedPaths: [], maxBytes: 300_000, maxFileBytes: 300_000 };
+
+/** The note the save cases hand the tool, as the model writes it: no scope, so `project`. */
+const REPLAY_BUDGET_INPUT = {
+  slug: "replay-budget",
+  type: "project",
+  description: "replay budget",
+  body: "2048 MiB",
+};
+
+/** What the host answers a forget of a note a case stubs the write for. */
+const FORGET_RESULT: MemoryForgetResult = { slug: "replay-budget", status: "deleted", delivered: true };
 
 describe("createRunMemory", () => {
   let globalDir: string;
@@ -95,6 +124,52 @@ describe("createRunMemory", () => {
   /** Every `warn` this case's logger has been given, in order. */
   function warns(): readonly LogCall[] {
     return logger.calls.filter((call) => call.level === "warn");
+  }
+
+  /** Every `info` this case's logger has been given, in order. */
+  function infos(): readonly LogCall[] {
+    return logger.calls.filter((call) => call.level === "info");
+  }
+
+  /** The host's answer to one save: a complete result, of which the ACs name the status. */
+  function saveResult(slug: string, status: MemoryNoteStatus): MemorySaveResult {
+    return { slug, status, delivered: true };
+  }
+
+  /** The two statuses a save answers with, in the order the saves are made. */
+  function statusQueue(): () => MemoryNoteStatus {
+    const statuses: MemoryNoteStatus[] = ["active", "pending"];
+    return () => statuses.shift() ?? "active";
+  }
+
+  /** One of the run memory's own tools, run as a run-stage session runs it. */
+  async function runTool(memory: RunMemory, name: string, input: Record<string, unknown>): Promise<ToolResult> {
+    const tool = (await memory.provider.tools(repoRoot)).find((candidate) => candidate.localName === name);
+    assertDefined(tool, `the ${name} tool`);
+    return tool.run(input, RUN_CONTEXT);
+  }
+
+  /** The refusal the store answers a save it will not take: feature 1's own error. */
+  function refusedSave(): never {
+    throw new NaxError("secret (aws) must not be stored", "MEMORY_WRITE_REFUSED", { stage: "memory" });
+  }
+
+  /**
+   * A run memory whose start sync resolves and whose close-time sync throws.
+   *
+   * The start sync has to succeed for the warn under test to be the close's own:
+   * a start that threw would leave the same line behind, and the case could not
+   * tell which sync produced it.
+   */
+  async function memoryWithFailingEndSync(error: Error): Promise<RunMemory> {
+    let syncs = 0;
+    return await runMemory({
+      sync: async () => {
+        syncs += 1;
+        if (syncs > 1) throw error;
+        return SYNCED;
+      },
+    });
   }
 
   beforeEach(() => {
@@ -347,6 +422,216 @@ describe("createRunMemory", () => {
     expect({ before, after: memory.summary() }).toEqual({
       before: { saved: 0, pending: 0 },
       after: { saved: 0, pending: 0 },
+    });
+  });
+
+  describe("the save counter", () => {
+    test("counts one save the host resolved active", async () => {
+      const memory = await runMemory({ save: async (write) => saveResult(write.slug, "active") });
+
+      await runTool(memory, "save", REPLAY_BUDGET_INPUT);
+
+      expect(memory.summary()).toEqual({ saved: 1, pending: 0 });
+    });
+
+    test("counts a pending save as both saved and pending", async () => {
+      const memory = await runMemory({ save: async (write) => saveResult(write.slug, "pending") });
+
+      await runTool(memory, "save", REPLAY_BUDGET_INPUT);
+
+      expect(memory.summary()).toEqual({ saved: 1, pending: 1 });
+    });
+
+    test("counts nothing for a save the store refused", async () => {
+      const memory = await runMemory({ save: async () => refusedSave() });
+
+      await runTool(memory, "save", REPLAY_BUDGET_INPUT);
+
+      expect(memory.summary()).toEqual({ saved: 0, pending: 0 });
+    });
+
+    test("does not count a refusal after a save the store took", async () => {
+      let saves = 0;
+      const memory = await runMemory({
+        save: async (write) => {
+          saves += 1;
+          if (saves > 1) return refusedSave();
+          return saveResult(write.slug, "active");
+        },
+      });
+      await runTool(memory, "save", REPLAY_BUDGET_INPUT);
+
+      await runTool(memory, "save", { ...REPLAY_BUDGET_INPUT, slug: "replay-window" });
+
+      expect(memory.summary()).toEqual({ saved: 1, pending: 0 });
+    });
+
+    test("leaves the counts alone when a forget runs", async () => {
+      const nextStatus = statusQueue();
+      const memory = await runMemory({
+        save: async (write) => saveResult(write.slug, nextStatus()),
+        forget: async () => FORGET_RESULT,
+      });
+      await runTool(memory, "save", REPLAY_BUDGET_INPUT);
+      await runTool(memory, "save", { ...REPLAY_BUDGET_INPUT, slug: "replay-window" });
+
+      const before = memory.summary();
+      const forgotten = await runTool(memory, "forget", { slug: "replay-budget", reason: "stale" });
+
+      expect({ before, forgotten, after: memory.summary() }).toEqual({
+        before: { saved: 2, pending: 1 },
+        forgotten: { content: JSON.stringify(FORGET_RESULT) },
+        after: { saved: 2, pending: 1 },
+      });
+    });
+
+    test("hands the host the note the model wrote", async () => {
+      const writes: MemoryNoteWrite[] = [];
+      const memory = await runMemory({
+        save: async (write) => {
+          writes.push(write);
+          return saveResult(write.slug, "active");
+        },
+      });
+
+      await runTool(memory, "save", REPLAY_BUDGET_INPUT);
+
+      expect(writes).toHaveLength(1);
+      const write = writes[0];
+      assertDefined(write, "the write the host's save got");
+      expect({
+        slug: write.slug,
+        type: write.type,
+        description: write.description,
+        body: write.body,
+      }).toEqual({
+        slug: "replay-budget",
+        type: "project",
+        description: "replay budget",
+        body: "2048 MiB",
+      });
+    });
+
+    test("answers the store's refusal as the tool's own error", async () => {
+      const memory = await runMemory({ save: async () => refusedSave() });
+
+      const result = await runTool(memory, "save", REPLAY_BUDGET_INPUT);
+
+      expect(result).toEqual({ isError: true, content: "[memory] save refused: secret (aws) must not be stored" });
+    });
+  });
+
+  describe("close", () => {
+    test("syncs the host once more", async () => {
+      let syncs = 0;
+      const memory = await runMemory({
+        sync: async () => {
+          syncs += 1;
+          return SYNCED;
+        },
+      });
+
+      await memory.close();
+
+      expect(syncs).toBe(2);
+    });
+
+    test("logs the counts of one active and one pending save", async () => {
+      const nextStatus = statusQueue();
+      const memory = await runMemory({
+        sync: async () => SYNCED,
+        save: async (write) => saveResult(write.slug, nextStatus()),
+      });
+      await runTool(memory, "save", REPLAY_BUDGET_INPUT);
+      await runTool(memory, "save", { ...REPLAY_BUDGET_INPUT, slug: "replay-window" });
+
+      await memory.close();
+
+      expect(infos()).toEqual([
+        {
+          level: "info",
+          stage: "run",
+          message: "Memory: 2 saved (1 pending)",
+          data: { storyId: "_run", saved: 2, pending: 1 },
+        },
+      ]);
+    });
+
+    test("logs the counts of a run that saved nothing", async () => {
+      const memory = await runMemory({ sync: async () => SYNCED });
+
+      await memory.close();
+
+      expect(infos()).toEqual([
+        {
+          level: "info",
+          stage: "run",
+          message: "Memory: 0 saved (0 pending)",
+          data: { storyId: "_run", saved: 0, pending: 0 },
+        },
+      ]);
+    });
+
+    test("resolves when the end sync throws", async () => {
+      const memory = await memoryWithFailingEndSync(new Error("down"));
+
+      await expect(memory.close()).resolves.toBeUndefined();
+    });
+
+    test("warns that the end sync failed", async () => {
+      const memory = await memoryWithFailingEndSync(new Error("down"));
+
+      await memory.close();
+
+      expect(warns()).toEqual([
+        { level: "warn", stage: "run", message: "memory sync failed", data: { storyId: "_run", error: "down" } },
+      ]);
+    });
+
+    test("logs the counts even when the end sync throws", async () => {
+      const memory = await memoryWithFailingEndSync(new Error("down"));
+
+      await memory.close();
+
+      expect(infos().map((call) => call.message)).toEqual(["Memory: 0 saved (0 pending)"]);
+    });
+
+    test("does not sync again on a second call", async () => {
+      let syncs = 0;
+      const memory = await runMemory({
+        sync: async () => {
+          syncs += 1;
+          return SYNCED;
+        },
+      });
+
+      await memory.close();
+      await memory.close();
+
+      expect(syncs).toBe(2);
+    });
+
+    test("logs no second summary on a second call", async () => {
+      const memory = await runMemory({ sync: async () => SYNCED });
+
+      await memory.close();
+      await memory.close();
+
+      expect(infos().map((call) => call.message)).toEqual(["Memory: 0 saved (0 pending)"]);
+    });
+
+    test("syncs once when two closes overlap", async () => {
+      let syncs = 0;
+      const memory = await runMemory({
+        sync: async () => {
+          syncs += 1;
+          return SYNCED;
+        },
+      });
+
+      await Promise.all([memory.close(), memory.close()]);
+
+      expect(syncs).toBe(2);
     });
   });
 
