@@ -3,7 +3,7 @@
   "feature": "chat-steer-and-polish",
   "branchName": "feat/chat-steer-and-polish",
   "createdAt": "2026-11-03T00:00:00.000Z",
-  "updatedAt": "2026-11-03T16:29:42.404Z",
+  "updatedAt": "2026-11-03T16:58:45.640Z",
   "userStories": [
     {
       "id": "US-001",
@@ -461,14 +461,17 @@
         "picker"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Adds an atomic store and connects CLI composition, successful session start/resume/model-switch lifecycle and picker effort semantics; session lifecycle work triggers the requested sessions security override."
+        "reasoning": "Adds an atomic store and connects CLI composition, successful session start/resume/model-switch lifecycle and picker effort semantics; session lifecycle work triggers the requested sessions security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/acp/acp-offer-store.ts",
@@ -501,7 +504,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fc96efa34e7ae6a92b75ef9ef6403b2630453d1e"
     },
     {
       "id": "US-007",
