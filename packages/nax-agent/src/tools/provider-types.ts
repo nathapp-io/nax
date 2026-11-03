@@ -28,6 +28,13 @@ export interface ProviderTool {
    * trusted as stated and decides whether an ask-profile session asks first.
    */
   readonly readOnly?: boolean;
+  /**
+   * US-003: plain input fields an approval line may SHOW, copied verbatim into
+   * the adapted tool's `scope.summaryFields`. Summary-only — never grant-checked
+   * and never rendered as a path (see `ToolScope.summaryFields`). Absent for
+   * every memory tool's note BODY, which is never shown on an approval line.
+   */
+  readonly summaryFields?: readonly string[];
   run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult>;
 }
 

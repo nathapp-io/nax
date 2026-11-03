@@ -35,6 +35,14 @@ export interface AskSummary {
  * a Write, a commit message, whatever a provider tool takes -- and an
  * AskResolver is by definition an outbound channel to a human. A summary is
  * what approval needs; the payload is what the audit sink already holds.
+ *
+ * Two kinds of declared field, and only these: the parts that say WHAT the
+ * call will do (command, argv, verb, paths), and the summary-only fields a tool
+ * adds for legibility (`ToolScope.summaryFields`) -- a memory tool's `slug`,
+ * so the person reads which note is about to be written instead of the same
+ * line the tool always rendered. Neither kind is grant-checked here, and
+ * neither is ever widened into the payload: a summary field renders only a
+ * string, number or boolean.
  */
 export function askSummary(tool: string, scope: ToolScope, input: Record<string, unknown>): AskSummary {
   const fields = [scope.commandField, scope.argvField, scope.verbField, ...scope.pathFields];
@@ -45,11 +53,36 @@ export function askSummary(tool: string, scope: ToolScope, input: Record<string,
     if (Array.isArray(value)) return [`${field}=${value.filter((v) => typeof v === "string").join(" ")}`];
     return [];
   });
+  // Summary fields FOLLOW the parts above, so a path-bearing tool keeps its
+  // existing line and gains the extra detail at the end.
+  const summaryParts = (scope.summaryFields ?? []).flatMap((field) => {
+    const rendered = summaryScalar(input[field]);
+    return rendered === undefined ? [] : [`${field}=${rendered}`];
+  });
   // Mask the FULL line, then cut: cutting first can split a secret so no
   // pattern matches what is left, and the partial secret would go out.
-  const masked = maskForPrompt(`${tool} ${parts.join(" ")}`.trim());
+  const masked = maskForPrompt(`${tool} ${[...parts, ...summaryParts].join(" ")}`.trim());
   if (!masked.ok) return { summary: `${tool} [arguments withheld: contains a secret]`, unshowable: true };
   return { summary: masked.masked.slice(0, MAX_ASK_SUMMARY_CHARS), unshowable: false };
+}
+
+/** One line break, whichever convention wrote it: CRLF before CR and LF alone. */
+const SUMMARY_LINE_BREAK = /\r\n|\r|\n/g;
+
+/**
+ * The one-line form of a summary field's value, or undefined when the value is
+ * not renderable.
+ *
+ * Scalars only. An array or an object is SKIPPED rather than serialised: a
+ * summary line describes the call, and a serialised payload on it would be the
+ * very thing this function exists to avoid. A line break inside a value
+ * becomes one space, because the line is a single line -- an unstripped newline
+ * would let a field forge a second line of the approval card.
+ */
+function summaryScalar(value: unknown): string | undefined {
+  if (typeof value === "string") return value.replace(SUMMARY_LINE_BREAK, " ");
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return undefined;
 }
 
 /** The clause `unsandboxedReasonSuffix` renders, before the reason itself. */
