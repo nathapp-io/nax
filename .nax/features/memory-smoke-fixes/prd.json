@@ -3,7 +3,7 @@
   "feature": "memory-smoke-fixes",
   "branchName": "feat/memory-smoke-fixes",
   "createdAt": "2026-11-03T00:00:00.000Z",
-  "updatedAt": "2026-11-03T08:56:09.101Z",
+  "updatedAt": "2026-11-03T09:03:46.794Z",
   "userStories": [
     {
       "id": "US-001",
@@ -115,14 +115,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A bounded operation change using US-001's store API and existing locks/index helpers; memory approval is a local data transition, not an authorization step."
+        "reasoning": "A bounded operation change using US-001's store API and existing locks/index helpers; memory approval is a local data transition, not an authorization step.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/operations.ts",
@@ -138,7 +141,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "14d6fd60aef22f6a73e08d4eeab1b592bddb58d7"
     },
     {
       "id": "US-003",
