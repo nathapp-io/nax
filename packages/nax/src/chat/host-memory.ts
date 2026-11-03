@@ -46,7 +46,7 @@ export interface HostMemory {
   current(): string | undefined;
   /** The loop handlers memory registers on a session; empty when this chat has no memory. */
   readonly handlers: LoopHandlerSet;
-  /** Sync once as the host closes, after every resource teardown; never throws. */
+  /** Sync once as the host closes, after every resource teardown, then close the memory host; never throws. */
   closeSync(): Promise<void>;
 }
 
@@ -67,6 +67,15 @@ async function syncOnce(memory: MemoryHost, logger: Pick<Logger, "warn">): Promi
     await memory.sync();
   } catch (error) {
     logger.warn("chat", "memory sync failed", { error: errorMessage(error) });
+  }
+}
+
+/** Release the host once the chat is done with it: a throw is a warning, never a failed close. */
+async function closeHost(memory: MemoryHost, logger: Pick<Logger, "warn">): Promise<void> {
+  try {
+    await memory.close?.();
+  } catch (error) {
+    logger.warn("chat", "memory close failed", { error: errorMessage(error) });
   }
 }
 
@@ -113,7 +122,11 @@ export function createHostMemory(input: CreateHostMemoryInput): HostMemory {
     handlers: memory === undefined ? NO_HANDLERS : compactionHandlers(memory, input.logger),
     async closeSync() {
       if (memory === undefined) return;
-      await syncOnce(memory, input.logger);
+      try {
+        await syncOnce(memory, input.logger);
+      } finally {
+        await closeHost(memory, input.logger);
+      }
     },
   };
 }

@@ -128,6 +128,32 @@ export function openMemoryHost(context: MemoryCliContext, deps: MemoryCliDeps): 
   });
 }
 
+/**
+ * Run one subcommand's body over its host, and release the host afterwards.
+ *
+ * The host is opened through `openMemoryHost`, so a `null` (memory disabled) reaches `run`
+ * unchanged and is never closed. `close` is awaited in a `finally`, after `run` has produced
+ * its output, on success and on failure alike. A close that throws is dropped: the command's
+ * own result (or its own error) is what the operator needs, and a pool that would not shut
+ * down must not turn a command that worked into one that failed.
+ */
+export async function withMemoryHost(
+  context: MemoryCliContext,
+  deps: MemoryCliDeps,
+  run: (host: MemoryHost | null) => Promise<number>,
+): Promise<number> {
+  const host = await openMemoryHost(context, deps);
+  try {
+    return await run(host);
+  } finally {
+    try {
+      await host?.close?.();
+    } catch {
+      // Ignored on purpose: a failed close must not replace run's result or error.
+    }
+  }
+}
+
 /** The refusal every subcommand but `status` answers with when the mirror is off. */
 export function memoryDisabledError(): NaxError {
   return new NaxError("memory is disabled (memory.enabled is false)", "MEMORY_DISABLED", { stage: "memory" });

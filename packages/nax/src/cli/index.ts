@@ -145,6 +145,7 @@ export {
   parseNoteScope,
   parseNoteType,
   withMemoryErrors,
+  withMemoryHost,
 } from "./memory-cli-deps";
 export {
   type MemoryShowOptions,

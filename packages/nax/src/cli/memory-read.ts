@@ -27,9 +27,9 @@ import {
   memoryDisabledError,
   memoryNoteAbsentError,
   NOTE_SCOPES,
-  openMemoryHost,
   parseNoteScope,
   withMemoryErrors,
+  withMemoryHost,
 } from "./memory-cli-deps";
 
 /** The scope `show` reads when `--scope` is not given: the project's own note. */
@@ -54,12 +54,13 @@ export async function memoryShowCommand(
 ): Promise<number> {
   return withMemoryErrors(async () => {
     const scope = parseNoteScope(opts.scope) ?? DEFAULT_NOTE_SCOPE;
-    const host = await openMemoryHost(await memoryContext(opts.dir, deps), deps);
-    if (host === null) throw memoryDisabledError();
-    const note = await host.getNote(scope, slug);
-    if (note === null) throw memoryNoteAbsentError(scope, slug);
-    deps.log(opts.json === true ? JSON.stringify(note) : serializeMemoryNote(note));
-    return 0;
+    return withMemoryHost(await memoryContext(opts.dir, deps), deps, async (host) => {
+      if (host === null) throw memoryDisabledError();
+      const note = await host.getNote(scope, slug);
+      if (note === null) throw memoryNoteAbsentError(scope, slug);
+      deps.log(opts.json === true ? JSON.stringify(note) : serializeMemoryNote(note));
+      return 0;
+    });
   }, deps);
 }
 
@@ -72,11 +73,12 @@ export async function memoryShowCommand(
  */
 export async function memorySyncCommand(opts: MemoryCliOptions, deps: MemoryCliDeps = _memoryCliDeps): Promise<number> {
   return withMemoryErrors(async () => {
-    const host = await openMemoryHost(await memoryContext(opts.dir, deps), deps);
-    if (host === null) throw memoryDisabledError();
-    const result = await host.sync();
-    deps.log(opts.json === true ? JSON.stringify(result) : formatMemorySyncResult(result));
-    return result.outcome === "failed" ? 1 : 0;
+    return withMemoryHost(await memoryContext(opts.dir, deps), deps, async (host) => {
+      if (host === null) throw memoryDisabledError();
+      const result = await host.sync();
+      deps.log(opts.json === true ? JSON.stringify(result) : formatMemorySyncResult(result));
+      return result.outcome === "failed" ? 1 : 0;
+    });
   }, deps);
 }
 

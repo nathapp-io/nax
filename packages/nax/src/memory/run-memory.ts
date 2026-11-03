@@ -25,7 +25,8 @@
  * counted at all. Closing is the other half — one last sync so a note the last
  * session saved is on the mirror before the run ends, then one summary line. Both
  * halves are guarded the same way everything else here is: a failing sync warns and
- * the run ends anyway, and a second close does neither.
+ * the run ends anyway, and a second close does neither. The host is released last, after
+ * the summary line, and a close that throws is one more warning.
  */
 import type { ToolProvider } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
@@ -182,11 +183,24 @@ function createClose(host: MemoryHost, counts: SaveCounts, logger: MemoryLogger)
   };
 }
 
-/** The one close a run's memory performs: the end sync, then the counts it reports. */
+/** The one close a run's memory performs: the end sync, the counts it reports, then the host's release. */
 async function closeOnce(host: MemoryHost, counts: SaveCounts, logger: MemoryLogger): Promise<void> {
-  await syncStart(host, logger);
-  const { saved, pending } = counts;
-  logger.info("run", summaryLine(counts), { storyId: RUN_MEMORY_STORY_ID, saved, pending });
+  try {
+    await syncStart(host, logger);
+    const { saved, pending } = counts;
+    logger.info("run", summaryLine(counts), { storyId: RUN_MEMORY_STORY_ID, saved, pending });
+  } finally {
+    await closeHost(host, logger);
+  }
+}
+
+/** Release the host the run opened (an MCP-backed host holds a pool): a throw is a warning. */
+async function closeHost(host: MemoryHost, logger: MemoryLogger): Promise<void> {
+  try {
+    await host.close?.();
+  } catch (error) {
+    logger.warn("run", "memory close failed", { storyId: RUN_MEMORY_STORY_ID, error: errorMessage(error) });
+  }
 }
 
 /** The provider a run's tools hang off: the memory provider over `host`, re-staged onto `run`. */
