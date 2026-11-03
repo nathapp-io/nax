@@ -3,7 +3,7 @@
   "feature": "memory-run-stages",
   "branchName": "feat/memory-run-stages",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-03T02:16:27.778Z",
+  "updatedAt": "2026-11-03T02:27:43.575Z",
   "userStories": [
     {
       "id": "US-001",
@@ -97,14 +97,17 @@
         "workflow"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure optional string rendering following existing helpers; multiple builder edits have clear insertion points and no new abstraction or permission decisions."
+        "reasoning": "Pure optional string rendering following existing helpers; multiple builder edits have clear insertion points and no new abstraction or permission decisions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/memory-builder.ts",
@@ -145,7 +148,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f09934a762b37bd5e5693662a17ca15c92f9b794"
     },
     {
       "id": "US-003",
