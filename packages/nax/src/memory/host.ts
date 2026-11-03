@@ -20,8 +20,8 @@
  * it rejected.
  *
  * The index and the status are compositions too, over that same set: the index is
- * feature 1's renderer given both scopes, the project's decisions, the notes with
- * a forget still queued and this project's byte cap, and the status is the counts
+ * feature 1's renderer given both scopes, the project's decisions, the notes a
+ * pending forget still holds and this project's byte cap, and the status is the counts
  * of what the mirror, the repository and the outbox hold. Neither caches, so a
  * read of either costs one re-read of the repository.
  *
@@ -110,6 +110,14 @@ export interface MemoryHost {
   }): Promise<MemoryForgetResult>;
   approve(input: { readonly scope: MemoryScope; readonly slug: string }): Promise<MemoryNote>;
   /**
+   * Every note a forget still holds, keyed `"<scope>/<slug>"`: the mirror's own pending-forget
+   * record (a proposal forget, answered and recorded) plus the ones this mirror has queued and
+   * not yet delivered. Read now, never cached — a sync or an approval between two calls changes
+   * the answer. Optional so a hand-built host (a test double) stays valid; `createMemoryHost`
+   * always sets it.
+   */
+  forgetPendingKeys?(): Promise<ReadonlySet<string>>;
+  /**
    * Release what the host owns: the MCP pool of an MCP-backed host. Safe to call twice.
    * Optional so a hand-built host (a test double) stays valid; `createMemoryHost` always sets it.
    */
@@ -173,6 +181,32 @@ interface MemoryParts {
 /** Slug order, as code points: the one order every note listing is served in. */
 function bySlug(left: MemoryNote, right: MemoryNote): number {
   return byCodePoint(left.slug, right.slug);
+}
+
+/**
+ * The key a pending forget is recorded by: `"<scope>/<slug>"`.
+ *
+ * nax-agent keys its own record with `memoryNoteKey`, which the package's entry does not
+ * export; this is that one spelling, in one place, for both the host's key set and the
+ * listing row that reads it.
+ */
+export function pendingForgetKey(about: { readonly scope: MemoryScope; readonly slug: string }): string {
+  return `${about.scope}/${about.slug}`;
+}
+
+/**
+ * The notes a forget still holds: the mirror's recorded ones and the queued ones, as one set.
+ *
+ * The two are different facts — a proposal forget is answered and written to the record while
+ * the note stays in place, and a direct one is queued for the next sync — so a key can be in
+ * either, both, or neither. Read on every call, because a sync or an approval retires them.
+ */
+async function readForgetPendingKeys(parts: MemoryParts): Promise<ReadonlySet<string>> {
+  const [queued, recorded] = await Promise.all([parts.outbox.heldKeys("forget"), parts.store.readPendingForgets()]);
+  if (recorded.length === 0) return queued;
+  const keys = new Set(queued);
+  for (const entry of recorded) keys.add(pendingForgetKey(entry));
+  return keys;
 }
 
 /** What a warn is remembered by: the message plus the two fields that identify the note. */
@@ -349,15 +383,15 @@ function closeOnce(pool: McpPool | undefined): () => Promise<void> {
 
 /**
  * The index a session starts with: feature 1's renderer over both scopes, the
- * project's decisions, the keys a queued forget still holds and the byte cap the
- * config sets. Every part is read now — the index is a snapshot, not a view.
+ * project's decisions, the keys a pending forget holds and the byte cap the config
+ * sets. Every part is read now — the index is a snapshot, not a view.
  */
 async function readIndex(reads: HostReads, input: HostInput): Promise<RenderedMemoryIndex> {
   const [projectNotes, userNotes, decisions, heldForgets] = await Promise.all([
     reads.notesOf("project"),
     reads.notesOf("user"),
     input.parts.store.readDecisions(),
-    input.parts.outbox.heldKeys("forget"),
+    readForgetPendingKeys(input.parts),
   ]);
   return renderMemoryIndex({ projectNotes, userNotes, decisions, heldForgets, maxBytes: input.config.indexBytes });
 }
@@ -458,6 +492,7 @@ export async function createMemoryHost(input: CreateMemoryHostInput): Promise<Me
     save: writes.save,
     forget: writes.forget,
     approve: writes.approve,
+    forgetPendingKeys: () => readForgetPendingKeys(parts),
     close: closeOnce(parts.pool),
   };
 }

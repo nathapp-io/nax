@@ -71,6 +71,8 @@ interface ApproveRequest {
 interface HostFixture {
   readonly forgotten?: MemoryForgetResult;
   readonly approved?: MemoryNote;
+  /** The note `getNote` resolves: what the approval found, before it changed anything. */
+  readonly before?: MemoryNote;
   readonly throws?: Error;
 }
 
@@ -80,7 +82,13 @@ interface HostCalls {
   readonly approve: ApproveRequest[];
 }
 
-/** A `MemoryHost` whose `forget` and `approve` this file drives; every other member is unread. */
+/**
+ * A `MemoryHost` whose `forget` and `approve` this file drives; every other member is unread.
+ *
+ * `getNote` answers the note the CLI now reads before it approves: what the fixture says the
+ * note was, or a pending `replay-budget` — pending, so an approval of it is the plain
+ * `approved …` this file's cases expect.
+ */
 function fakeHost(fixture: HostFixture, calls: HostCalls): MemoryHost {
   const unread = async (): Promise<never> => {
     throw new Error("this test reads only forget and approve");
@@ -93,7 +101,7 @@ function fakeHost(fixture: HostFixture, calls: HostCalls): MemoryHost {
     providerId: "local",
     writeMode: "direct",
     notes: unread,
-    getNote: unread,
+    getNote: async (scope, slug) => fixture.before ?? { ...REPLAY_BUDGET, scope, slug, status: "pending" },
     search: unread,
     renderIndex: unread,
     status: unread,
