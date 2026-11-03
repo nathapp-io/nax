@@ -40,6 +40,7 @@ import {
   createMemoryOutbox,
   createMemoryStore,
   forgetMemoryNote,
+  MEMORY_OP_TIMEOUT_MS,
   type MemoryForgetResult,
   type MemoryHit,
   type MemoryNote,
@@ -59,7 +60,12 @@ import {
 } from "@nathapp/nax-agent";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { type MemoryConfig, memoryConfigOf, type NaxConfig } from "@/config";
+import { NaxError } from "@/errors";
+import { createMcpPool, type McpPool } from "@/mcp";
+import { mergeRemoteFirst, searchRemote } from "./host-remote-search";
 import { createHostWrites } from "./host-writes";
+import { createMcpIdMap } from "./mcp-id-map";
+import { createMcpMemoryProvider } from "./mcp-provider";
 import { type MemoryDirs, type MemoryLogger, memoryDirs } from "./paths";
 import { type RepoNotes, readRepoNotes } from "./repo-notes";
 
@@ -103,6 +109,11 @@ export interface MemoryHost {
     readonly reason: string;
   }): Promise<MemoryForgetResult>;
   approve(input: { readonly scope: MemoryScope; readonly slug: string }): Promise<MemoryNote>;
+  /**
+   * Release what the host owns: the MCP pool of an MCP-backed host. Safe to call twice.
+   * Optional so a hand-built host (a test double) stays valid; `createMemoryHost` always sets it.
+   */
+  close?(): Promise<void>;
 }
 
 /** What `createMemoryHost` is given by the surface that opens the session. */
@@ -128,6 +139,11 @@ export const _memoryHostDeps: {
   saveMemoryNote: typeof saveMemoryNote;
   forgetMemoryNote: typeof forgetMemoryNote;
   approveMemoryNote: typeof approveMemoryNote;
+  createMcpPool: typeof createMcpPool;
+  createMcpIdMap: typeof createMcpIdMap;
+  createMcpMemoryProvider: typeof createMcpMemoryProvider;
+  /** How long a remote search may run before the host gives up on it and answers from the mirror. */
+  remoteSearchTimeoutMs: number;
 } = {
   memoryDirs,
   readRepoNotes,
@@ -138,6 +154,10 @@ export const _memoryHostDeps: {
   saveMemoryNote,
   forgetMemoryNote,
   approveMemoryNote,
+  createMcpPool,
+  createMcpIdMap,
+  createMcpMemoryProvider,
+  remoteSearchTimeoutMs: MEMORY_OP_TIMEOUT_MS,
 };
 
 /** The parts one host is composed from: the mirror, its queue and the provider behind it. */
@@ -146,6 +166,8 @@ interface MemoryParts {
   readonly store: MemoryStore;
   readonly outbox: MemoryOutbox;
   readonly provider: MemoryProvider;
+  /** The MCP pool the provider talks through; only an MCP-backed host owns one. */
+  readonly pool?: McpPool;
 }
 
 /** Slug order, as code points: the one order every note listing is served in. */
@@ -182,7 +204,34 @@ function oncePerHost(logger: MemoryLogger): MemoryLogger {
   };
 }
 
-/** Resolve the directories and build the store, the outbox and the provider over them. */
+/** The MCP provider and the pool it owns, built over the host's own directories. */
+function composeMcp(input: CreateMemoryHostInput, dirs: MemoryDirs): { provider: MemoryProvider; pool: McpPool } {
+  const mcp = memoryConfigOf(input.config).mcp;
+  const server = mcp?.server;
+  const serverConfig = server === undefined ? undefined : input.config.mcp?.servers[server];
+  if (mcp === undefined || server === undefined || serverConfig === undefined) {
+    // Config load guarantees both (validateMemoryProvider); a bypassed load fails here, not on first use.
+    throw new NaxError(
+      '[memory] memory.provider "mcp" needs memory.mcp.server to name an entry of mcp.servers',
+      "MEMORY_MCP_CONFIG_MISSING",
+      { stage: "memory", server },
+    );
+  }
+  const pool = _memoryHostDeps.createMcpPool({ servers: { [server]: serverConfig } });
+  const idMap = _memoryHostDeps.createMcpIdMap({ dirs, server });
+  const provider = _memoryHostDeps.createMcpMemoryProvider({
+    pool,
+    serverId: server,
+    workdir: input.repoRoot,
+    mcp,
+    idMap,
+    logger: input.logger,
+    callTimeoutMs: serverConfig.timeoutMs,
+  });
+  return { provider, pool };
+}
+
+/** Resolve the directories and build the store, the outbox and the configured provider over them. */
 async function composeMemory(input: CreateMemoryHostInput): Promise<MemoryParts> {
   const dirs = await _memoryHostDeps.memoryDirs({ config: input.config, repoRoot: input.repoRoot });
   const store = _memoryHostDeps.createMemoryStore({
@@ -191,6 +240,7 @@ async function composeMemory(input: CreateMemoryHostInput): Promise<MemoryParts>
     logger: input.logger,
   });
   const outbox = _memoryHostDeps.createMemoryOutbox({ dir: store.paths.outboxDir });
+  if (memoryConfigOf(input.config).provider === "mcp") return { dirs, store, outbox, ...composeMcp(input, dirs) };
   return { dirs, store, outbox, provider: _memoryHostDeps.createLocalMemoryProvider(store) };
 }
 
@@ -262,12 +312,39 @@ function createReads(input: HostInput): HostReads {
 }
 
 /** One keyword search over the scopes asked for; the project scope carries the repo notes. */
-async function searchNotes(reads: HostReads, query: MemorySearchInput): Promise<readonly MemoryHit[]> {
+async function searchLocal(reads: HostReads, query: MemorySearchInput): Promise<readonly MemoryHit[]> {
   const searched =
     query.scope === undefined
       ? [...(await reads.notesOf("project")), ...(await reads.notesOf("user"))]
       : await reads.notesOf(query.scope);
   return searchMemoryNotes(searched, query.text, query.limit);
+}
+
+/** The local hits, with the provider's remote hits ahead of them when it has any to give. */
+async function searchNotes(
+  reads: HostReads,
+  input: HostInput,
+  query: MemorySearchInput,
+): Promise<readonly MemoryHit[]> {
+  const [remote, local] = await Promise.all([
+    searchRemote({
+      provider: input.parts.provider,
+      query,
+      timeoutMs: _memoryHostDeps.remoteSearchTimeoutMs,
+      logger: input.logger,
+    }),
+    searchLocal(reads, query),
+  ]);
+  return mergeRemoteFirst(remote, local, query.limit);
+}
+
+/** A close that releases the pool once: a second call returns the first call's result. */
+function closeOnce(pool: McpPool | undefined): () => Promise<void> {
+  let closing: Promise<void> | undefined;
+  return () => {
+    closing ??= pool === undefined ? Promise.resolve() : pool.close();
+    return closing;
+  };
 }
 
 /**
@@ -374,12 +451,13 @@ export async function createMemoryHost(input: CreateMemoryHostInput): Promise<Me
     writeMode: config.writeMode,
     notes: reads.notesOf,
     getNote: async (scope, slug) => (await reads.notesOf(scope)).find((note) => note.slug === slug) ?? null,
-    search: (query) => searchNotes(reads, query),
+    search: (query) => searchNotes(reads, hostInput, query),
     renderIndex: () => readIndex(reads, hostInput),
     sync: () => syncParts(hostInput),
     status: () => readStatus(reads, hostInput),
     save: writes.save,
     forget: writes.forget,
     approve: writes.approve,
+    close: closeOnce(parts.pool),
   };
 }
