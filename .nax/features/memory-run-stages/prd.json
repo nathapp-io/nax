@@ -3,7 +3,7 @@
   "feature": "memory-run-stages",
   "branchName": "feat/memory-run-stages",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-03T02:48:26.820Z",
+  "updatedAt": "2026-11-03T03:07:02.221Z",
   "userStories": [
     {
       "id": "US-001",
@@ -315,14 +315,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Two source modules use standard type extraction, provider append and try/finally under the existing closed guard; complexity is bounded, while strict isolation protects this central agent-session resource teardown and tool-provider exposure boundary."
+        "reasoning": "Two source modules use standard type extraction, provider append and try/finally under the existing closed guard; complexity is bounded, while strict isolation protects this central agent-session resource teardown and tool-provider exposure boundary.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/runtime/index.ts",
@@ -351,7 +354,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7e4e0ecf5a1025935b5e3bfcef10e2f0497ce3f1"
     },
     {
       "id": "US-006",
