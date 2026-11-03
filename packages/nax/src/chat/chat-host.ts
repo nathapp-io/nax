@@ -442,7 +442,9 @@ class NativeChatHost implements ChatHost {
   }
 
   async send(message: string, onEvent: (event: SessionEvent) => void, options?: ChatSendOptions): Promise<void> {
-    const handle = this.requireHandle();
+    // Validate before taking the shared turn state, so the error a caller gets does not
+    // depend on what is queued ahead of it.
+    this.requireHandle();
     const ledger = this.ledger;
     if (!ledger) throw new NaxError("[chat] ledger is not initialized", "CHAT_SESSION_NOT_OPEN", { stage: "chat" });
     // Reject before touching the shared listener and nested-spend state: they belong to
@@ -450,7 +452,6 @@ class NativeChatHost implements ChatHost {
     if (this.sending) {
       throw new NaxError("[chat] a turn is already running", "CHAT_TURN_BUSY", { stage: "chat" });
     }
-    this.hygiene.markSent(handle.meta.sessionId);
     this.sending = true;
     this.turnListener = onEvent;
     const runs = this.runs;
@@ -459,8 +460,13 @@ class NativeChatHost implements ChatHost {
       // The turn's own metadata write is the other read-modify-write of the same `costUsd`,
       // so the whole turn is queued behind any accounting already in flight: a compaction
       // that settled a moment ago must not be overwritten by this turn's stale base.
-      meta = await this.accounting.run(() =>
-        runChatTurn({
+      meta = await this.accounting.run(async () => {
+        // Read the handle inside the queue, not before it: the accounting queued ahead of
+        // this turn may have replaced it with one whose `costUsd` is newer, and this turn
+        // must run and persist from the handle that is current now.
+        const handle = this.requireHandle();
+        this.hygiene.markSent(handle.meta.sessionId);
+        return runChatTurn({
           handle,
           storage: this.deps.storage,
           message,
@@ -471,8 +477,8 @@ class NativeChatHost implements ChatHost {
           onEvent,
           now: this.deps.now().toISOString(),
           ...(runs ? { extraCostUsd: () => runs.takeCost(), settleNested: () => runs.settle() } : {}),
-        }),
-      );
+        });
+      });
     } finally {
       try {
         // A cancelled tool batch abandons its nested run without waiting for it: drain
@@ -485,7 +491,13 @@ class NativeChatHost implements ChatHost {
         runs?.takeCost();
       }
     }
-    if (this.handle === handle) this.handle = { ...handle, meta };
+    // Adopt the turn's metadata by session, not by object identity: the accounting that ran
+    // ahead of it inside the queue replaced the handle this turn wrote for. A different
+    // session — a `clear`, or a resume of another one, while the turn ran — is left alone.
+    const current = this.handle;
+    if (current !== undefined && current.meta.sessionId === meta.sessionId) {
+      this.handle = { ...current, meta };
+    }
   }
 
   /** Delegated so the capability read never throws when no session is open. */

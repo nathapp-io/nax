@@ -105,6 +105,9 @@ function metaOf(costUsd: number): SessionMeta {
 
 const resolveWith = async (result: CompactResult): Promise<CompactResult> => result;
 
+/** What a turn in the stub session costs. */
+const TURN_COST = 0.03;
+
 interface FixtureOptions {
   /** The session's own `compact`; absent answers with `SPEND` unchanged. */
   readonly compact?: AgentSession["compact"];
@@ -125,7 +128,19 @@ function fixture(options: FixtureOptions = {}) {
     id: SESSION,
     backend: { kind: "native", capabilities: {} },
     lastTurn: undefined,
-    async *send() {},
+    // One clean turn that spent `TURN_COST`: enough for the host's own accounting to run.
+    async *send() {
+      const base = { sessionId: SESSION, turnId: "turn-1", at: NOW.toISOString(), metadata: {} };
+      yield { ...base, type: "turn_start" as const };
+      yield {
+        ...base,
+        type: "turn_end" as const,
+        status: "completed" as const,
+        output: "done",
+        usage: { inputTokens: 10, outputTokens: 5 },
+        costUsd: TURN_COST,
+      };
+    },
     answer: () => "accepted",
     cancel() {},
     close: async () => {},
@@ -166,6 +181,11 @@ async function rows(): Promise<Record<string, unknown>[]> {
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
+/** The microtasks a queued operation's `await`s run, with no wall-clock wait. */
+async function flush(): Promise<void> {
+  for (let turn = 0; turn < 10; turn++) await Promise.resolve();
+}
+
 describe("ChatHost.compact", () => {
   test("AC-1 returns the open session's compact result unchanged", async () => {
     const f = await started();
@@ -201,6 +221,22 @@ describe("ChatHost.compact", () => {
     expect((await storage.readMeta(SESSION))?.costUsd).toBeCloseTo(STORED_COST + 2 * SPEND.costUsd);
     expect(f.host.current().meta.costUsd).toBeCloseTo(STORED_COST + 2 * SPEND.costUsd);
     expect(order).toEqual(["read", "write", "read", "write"]);
+  });
+
+  test("AC-2 AC-3 a turn queued behind a compaction's accounting counts both", async () => {
+    const f = await started();
+    const compact = f.host.compact;
+    assertDefined(compact, "the host's compact");
+    const compacting = compact.call(f.host);
+    // Let the compaction reach its queued accounting: the store's read is under way, so the
+    // turn that follows asks for the same slot from behind it.
+    await flush();
+    expect(log).toEqual(["read"]);
+    await f.host.send("hi", () => {});
+    expect(await compacting).toEqual(SPEND);
+    const total = STORED_COST + SPEND.costUsd + TURN_COST;
+    expect((await storage.readMeta(SESSION))?.costUsd).toBeCloseTo(total);
+    expect(f.host.current().meta.costUsd).toBeCloseTo(total);
   });
 
   test("AC-4 records one ledger row with the summarizer's own usage and cost", async () => {
