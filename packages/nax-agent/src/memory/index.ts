@@ -65,6 +65,7 @@ export {
   type MemoryNoteStatus,
   type MemoryNoteType,
   type MemoryNoteWrite,
+  type MemoryPendingForget,
   type MemoryScope,
   type MemoryTimers,
   type MemoryWriteRefusal,

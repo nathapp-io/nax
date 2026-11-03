@@ -8,7 +8,7 @@
 export type { MemoryNoteLine } from "./format";
 export { formatMemoryNoteLine, formatMemoryStatus, formatMemorySyncResult } from "./format";
 export type { CreateMemoryHostInput, MemoryHost, MemorySearchInput, MemoryStatus } from "./host";
-export { _memoryHostDeps, createMemoryHost } from "./host";
+export { _memoryHostDeps, createMemoryHost, pendingForgetKey } from "./host";
 export type { CreateMcpMemoryProviderInput } from "./mcp-provider";
 export { createMcpMemoryProvider, MEMORY_MCP_PROVIDER_PREFIX } from "./mcp-provider";
 export type { MemoryDirs, MemoryLogger } from "./paths";

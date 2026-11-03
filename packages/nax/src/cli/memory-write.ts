@@ -24,12 +24,14 @@
  * settled on (`active` under `direct`, `pending` under `proposal`) and, when the note is still
  * waiting for a sync to deliver it, that it is queued. A queued save is a success — the note is in
  * the mirror and the next sync sends it — so it exits 0, as the mirror's own design intends. A
- * forget prints the note it retired and the status it settled on; an approval prints the note that
- * is now in force.
+ * forget prints the note it retired and the status it settled on; an approval prints what became
+ * of the note — the approval it committed, the forget it completed, or the note it found already
+ * in force.
  */
 import {
   MEMORY_FORGET_REASON_MAX_CHARS,
   type MemoryForgetResult,
+  type MemoryNote,
   type MemoryNoteType,
   type MemoryNoteWrite,
   type MemorySaveResult,
@@ -221,14 +223,30 @@ function formatForgetLine(scope: MemoryScope, result: MemoryForgetResult): strin
 }
 
 /**
+ * The line one approval prints: what became of the note, not what was asked for.
+ *
+ * Three outcomes read differently. An approval that retired the note completed a forget the
+ * mirror had queued or recorded, so it says the note was forgotten. One that found the note
+ * already in force changed nothing, and claiming an approval would be a lie. Everything else
+ * — a pending note made active — is the approval this command is named for.
+ */
+function formatApproveLine(note: MemoryNote, before: MemoryNote | null): string {
+  if (note.status === "deleted") return `forgot ${note.scope}/${note.slug} (forget approved)`;
+  if (before?.status === "active" && note.status === "active") {
+    return `${note.scope}/${note.slug} is already active; nothing to approve`;
+  }
+  return `approved ${note.scope}/${note.slug}`;
+}
+
+/**
  * `nax memory forget <slug> --reason <text>`: retire one note and print what became of it.
  *
  * The two flag checks come before the host is opened — an operator who named no reason, or a
  * scope the mirror does not have, has not asked for a retirement — and a disabled mirror is
  * answered before any read, so a mirror that is off costs no repository walk. Under `proposal`
  * the note stays in place with a pending forget, which the line reports as the status it
- * settled on rather than as a deletion that did not happen: completing that proposal is not a
- * command yet.
+ * settled on rather than as a deletion that did not happen: `nax memory approve <slug>` is
+ * what completes that forget, and says so when it does.
  */
 export async function memoryForgetCommand(
   slug: string,
@@ -248,11 +266,17 @@ export async function memoryForgetCommand(
 }
 
 /**
- * `nax memory approve <slug>`: put a pending note in force, and print the note.
+ * `nax memory approve <slug>`: put a pending note in force, or complete a forget already
+ * holding it, and print what became of it.
  *
- * Approval changes a pending note to active inside the mirror; it is not the approval of a
- * queued forget, which no command offers. `--json` prints the note the store resolved, so the
- * status the approval settled on is the document's own field rather than a word this file chose.
+ * The note is read first, through `host.getNote`, because the line reports what changed rather
+ * than what was asked: an approval that retired the note completed the forget the mirror had
+ * queued or recorded, one that found the note already in force changed nothing, and one that
+ * made a pending note active is the plain approval. That read only chooses the wording — the
+ * write is still `host.approve`, so a slug only a repository note holds is refused by the
+ * host's own read-only rule and an absent one by its own not-found code, as before.
+ * `--json` prints the note the store resolved, so the status the approval settled on is the
+ * document's own field rather than a word this file chose.
  */
 export async function memoryApproveCommand(
   slug: string,
@@ -263,8 +287,9 @@ export async function memoryApproveCommand(
     const scope = parseNoteScope(opts.scope) ?? DEFAULT_WRITE_SCOPE;
     return withMemoryHost(await memoryContext(opts.dir, deps), deps, async (host) => {
       if (host === null) throw memoryDisabledError();
+      const before = await host.getNote(scope, slug);
       const note = await orAbsentNote(scope, slug, () => host.approve({ scope, slug }));
-      deps.log(opts.json === true ? JSON.stringify(note) : `approved ${note.scope}/${note.slug}`);
+      deps.log(opts.json === true ? JSON.stringify(note) : formatApproveLine(note, before));
       return 0;
     });
   }, deps);

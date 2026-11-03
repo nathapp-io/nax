@@ -30,7 +30,12 @@ export function adaptProviderTool(providerId: string, tool: ProviderTool): Codin
     inputSchema: tool.inputSchema,
     // No path fields and no verb field: the grant lookup is the whole gate,
     // which is the honest expression for a tool whose arguments are not paths.
-    scope: { pathFields: [] },
+    // A declared summary field is carried through, summary-only — it names the
+    // call on an approval line and is never checked. Absent, the scope stays
+    // exactly `{ pathFields: [] }`, so a metadata-free provider tool adapts to
+    // the same shape it always did.
+    scope:
+      tool.summaryFields === undefined ? { pathFields: [] } : { pathFields: [], summaryFields: tool.summaryFields },
     run: (input, ctx) => tool.run(input, ctx),
   };
 }

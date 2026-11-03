@@ -138,6 +138,22 @@ export interface ToolScope {
    * option, and whether a call is PERMITTED is the runtime's decision.
    */
   readonly unsandboxedField?: string;
+  /**
+   * Plain input fields an approval line may SHOW, in declaration order
+   * (`askSummary`). Summary-only in the strictest sense: they are never
+   * grant-checked, never resolved as paths, never treated as a verb or a
+   * command, and never widen what an approval admits. They exist because a
+   * tool whose arguments are not paths — an MCP memory tool, say — otherwise
+   * renders an approval line naming nothing about the call.
+   *
+   * Only a string, number or boolean value is rendered (line breaks flattened
+   * to a space); an array or an object is skipped rather than serialised, since
+   * a summary is a one-line description and not a payload dump. Being
+   * summary-only, this field is deliberately absent from `isFieldlessScope`
+   * (policy.ts): a tool declaring summary fields is still fieldless, so an
+   * unconditional ask rule keeps asking exactly as it did before.
+   */
+  readonly summaryFields?: readonly string[];
 }
 
 /**

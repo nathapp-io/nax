@@ -15,13 +15,14 @@
  * The caller's global cwd is never changed. Post-checks report moved directories;
  * they are not the mechanism that prevents access to replacements.
  *
- * The store also owns the three record files beside the notes: the read-only
- * `decisions.jsonl` mirror (one JSON object per line), `sync.json` (the sync
- * state) and each scope's generated `MEMORY.md`. They hold no user-authored
- * paths, so they are read and written without a slug to validate; the only
- * scope rule is that the user files need a user directory. A record read is
- * still confined: it is read under the project directory's pin and never
- * follows a link out of the store.
+ * The store also owns the record files beside the notes: the `decisions.jsonl`
+ * mirror (one JSON object per line), the `pending-forgets.jsonl` record of queued
+ * forgets, `sync.json` (the sync state) and each scope's generated `MEMORY.md`.
+ * They hold no user-authored paths, so they are read and written without a slug to
+ * validate — save a pending forget's own slug, which names a note and must be one.
+ * The only scope rule is that the user files need a user directory. A record read is
+ * still confined: it is read under the project directory's pin and never follows a
+ * link out of the store.
  */
 import type { Dirent } from "node:fs";
 import { constants } from "node:fs";
@@ -35,8 +36,21 @@ import { openPinnedRead, pinnedOperation, resolvePinned, withPinnedDirectory } f
 import { isInside, realOrRaw } from "#src/internal/realpath";
 import { byCodePoint } from "#src/internal/sort";
 import { parseMemoryNote, serializeMemoryNote } from "./note.ts";
-import { defaultSyncState, parseDecisionLine, parseSyncStateText } from "./records.ts";
-import { MEMORY_SLUG_RE, type MemoryDecision, type MemoryNote, type MemoryScope } from "./types.ts";
+import {
+  decodeRecordLines,
+  defaultSyncState,
+  encodeRecordLines,
+  parseDecisionLine,
+  parsePendingForgetLine,
+  parseSyncStateText,
+} from "./records.ts";
+import {
+  MEMORY_SLUG_RE,
+  type MemoryDecision,
+  type MemoryNote,
+  type MemoryPendingForget,
+  type MemoryScope,
+} from "./types.ts";
 
 const ERROR_STAGE = "memory";
 const INDEX_FILE = "MEMORY.md";
@@ -44,6 +58,7 @@ const NOTES_DIR = "notes";
 const NOTE_SUFFIX = ".md";
 const DECISIONS_FILE = "decisions.jsonl";
 const SYNC_STATE_FILE = "sync.json";
+const PENDING_FORGETS_FILE = "pending-forgets.jsonl";
 
 /** Reads refuse final-component links; the verified parent pin protects their ancestors. */
 const READ_FLAGS: number = constants.O_RDONLY | constants.O_NOFOLLOW;
@@ -104,6 +119,7 @@ export interface MemoryStorePaths {
   readonly index: string;
   readonly notesDir: string;
   readonly decisions: string;
+  readonly pendingForgets: string;
   readonly syncState: string;
   readonly lock: string;
   readonly outboxDir: string;
@@ -128,6 +144,8 @@ export interface MemoryStore {
   listNotes(scope: MemoryScope): Promise<MemoryNote[]>;
   readDecisions(): Promise<MemoryDecision[]>;
   writeDecisions(decisions: readonly MemoryDecision[]): Promise<void>;
+  readPendingForgets(): Promise<MemoryPendingForget[]>;
+  writePendingForgets(entries: readonly MemoryPendingForget[]): Promise<void>;
   readSyncState(): Promise<MemorySyncState>;
   writeSyncState(state: MemorySyncState): Promise<void>;
   writeIndex(scope: MemoryScope, text: string): Promise<void>;
@@ -145,6 +163,7 @@ function memoryStorePaths(projectDir: string, userDir: string | null): MemorySto
     index: join(projectDir, INDEX_FILE),
     notesDir: join(projectDir, NOTES_DIR),
     decisions: join(projectDir, DECISIONS_FILE),
+    pendingForgets: join(projectDir, PENDING_FORGETS_FILE),
     syncState: join(projectDir, SYNC_STATE_FILE),
     lock: join(projectDir, "sync.lock"),
     outboxDir: join(projectDir, "outbox"),
@@ -504,26 +523,30 @@ export function createMemoryStore(input: {
     });
   }
 
+  function warnSkippedPendingForget(line: number): void {
+    logger.warn("memory", "skipping a pending-forgets line that is not a pending forget", {
+      path: paths.pendingForgets,
+      line,
+    });
+  }
+
   async function readDecisions(): Promise<MemoryDecision[]> {
-    const text = await readRecordText(paths.decisions);
-    if (text === null) return [];
-    const decisions: MemoryDecision[] = [];
-    // One decision per line: a line that is not one is dropped, never fatal.
-    for (const [index, raw] of text.split("\n").entries()) {
-      if (raw.trim() === "") continue;
-      const decision = parseDecisionLine(raw);
-      if (decision === null) {
-        warnSkippedDecision(index + 1);
-        continue;
-      }
-      decisions.push(decision);
-    }
-    return decisions;
+    return decodeRecordLines(await readRecordText(paths.decisions), parseDecisionLine, warnSkippedDecision);
   }
 
   async function writeDecisions(decisions: readonly MemoryDecision[]): Promise<void> {
-    const lines = decisions.map((decision) => JSON.stringify(decision));
-    await writeRecordFile(paths.decisions, lines.length === 0 ? "" : `${lines.join("\n")}\n`);
+    await writeRecordFile(paths.decisions, encodeRecordLines(decisions));
+  }
+
+  async function readPendingForgets(): Promise<MemoryPendingForget[]> {
+    const text = await readRecordText(paths.pendingForgets);
+    return decodeRecordLines(text, parsePendingForgetLine, warnSkippedPendingForget);
+  }
+
+  /** The record rewritten whole; every entry's slug must be one a note can carry. */
+  async function writePendingForgets(entries: readonly MemoryPendingForget[]): Promise<void> {
+    for (const entry of entries) validSlug(entry.slug);
+    await writeRecordFile(paths.pendingForgets, encodeRecordLines(entries));
   }
 
   async function readSyncState(): Promise<MemorySyncState> {
@@ -559,6 +582,8 @@ export function createMemoryStore(input: {
     listNotes,
     readDecisions,
     writeDecisions,
+    readPendingForgets,
+    writePendingForgets,
     readSyncState,
     writeSyncState,
     writeIndex,

@@ -115,6 +115,11 @@ function writtenText(calls: WriteIndexCalls, scope: MemoryScope): string {
   return calls.calls.find((call) => call.scope === scope)?.text ?? "";
 }
 
+/** The one entry line a slug is rendered on, or `""` when the index holds none. */
+function lineFor(text: string, slug: string): string {
+  return linesOf(text).find((line) => line.includes(`] ${slug} —`)) ?? "";
+}
+
 describe("renderMemoryIndex line cap", () => {
   test("keeps a capped index at maxLines lines, ends on the trailing line and reports the dropped entries", () => {
     const projectNotes = notesOf(30);
@@ -277,6 +282,56 @@ describe("refreshMemoryIndex", () => {
         "- [project] stale-budget — replay budget stays 2,048 MiB (forget pending)",
       );
       expect(rendered.text).toContain("(forget pending)");
+    });
+  });
+
+  test("AC-20: marks a key the pending-forget record holds, with no heldForgets option", async () => {
+    await withTempDir(async (dir) => {
+      const store = storeAt(join(dir, "project"));
+      await store.writeNote(note({ id: "mem_a", slug: "a" }));
+      // The record outlives the request that queued it: the index reads it, not the caller.
+      await store.writePendingForgets([
+        { clientId: "client-a", scope: "project", slug: "a", reason: "the budget changed" },
+      ]);
+      const calls = captureWriteIndex(store);
+
+      await refreshMemoryIndex(store);
+
+      expect(lineFor(writtenText(calls, "project"), "a").endsWith(" (forget pending)")).toBe(true);
+    });
+  });
+
+  test("AC-21: marks a recorded key and a held key together", async () => {
+    await withTempDir(async (dir) => {
+      const store = storeAt(join(dir, "project"));
+      await store.writeNote(note({ id: "mem_a", slug: "a" }));
+      await store.writeNote(note({ id: "mem_b", slug: "b" }));
+      await store.writePendingForgets([
+        { clientId: "client-a", scope: "project", slug: "a", reason: "the budget changed" },
+      ]);
+      const calls = captureWriteIndex(store);
+
+      await refreshMemoryIndex(store, { heldForgets: new Set(["project/b"]) });
+
+      const text = writtenText(calls, "project");
+      // A recorded forget and a queued one are the same mark: the read is the union.
+      expect(lineFor(text, "a").endsWith(" (forget pending)")).toBe(true);
+      expect(lineFor(text, "b").endsWith(" (forget pending)")).toBe(true);
+    });
+  });
+
+  test("AC-22: marks a user-scope key the record holds in the user index too", async () => {
+    await withTempDir(async (dir) => {
+      const store = storeAt(join(dir, "project"), join(dir, "user"));
+      await store.writeNote(
+        note({ id: "mem_u", scope: "user", type: "user", slug: "u", description: "prefers short" }),
+      );
+      await store.writePendingForgets([{ clientId: "client-u", scope: "user", slug: "u", reason: "no longer true" }]);
+      const calls = captureWriteIndex(store);
+
+      await refreshMemoryIndex(store);
+
+      expect(lineFor(writtenText(calls, "user"), "u").endsWith(" (forget pending)")).toBe(true);
     });
   });
 

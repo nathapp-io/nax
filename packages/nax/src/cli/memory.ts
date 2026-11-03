@@ -20,7 +20,7 @@
 import type { MemoryNote, MemoryNoteType, MemoryScope } from "@nathapp/nax-agent";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
 import type { Command } from "commander";
-import { formatMemoryNoteLine, formatMemoryStatus, type MemoryHost } from "@/memory";
+import { formatMemoryNoteLine, formatMemoryStatus, type MemoryHost, pendingForgetKey } from "@/memory";
 import {
   _memoryCliDeps,
   type MemoryCliDeps,
@@ -76,6 +76,37 @@ function ofType(notes: readonly MemoryNote[], type: MemoryNoteType | undefined):
   return type === undefined ? notes : notes.filter((note) => note.type === type);
 }
 
+/** What a row ends with when the host reports a forget for its note still pending. */
+const FORGET_PENDING_SUFFIX = " (forget pending)";
+
+/** The line an empty listing prints: nothing to list at all, or nothing the flags matched. */
+const NO_NOTES_LINE = "no memory notes";
+const NO_MATCHED_NOTES_LINE = "no memory notes match";
+
+/** What a host without `forgetPendingKeys` holds: the member is optional, and marks no row. */
+const NO_PENDING_FORGETS: ReadonlySet<string> = new Set();
+
+/**
+ * The keys the host reports a forget still pending for, read now.
+ *
+ * A host that does not report them at all — a hand-built double — is one whose rows are
+ * unmarked, rather than a listing that fails.
+ */
+async function pendingForgetKeysOf(host: MemoryHost): Promise<ReadonlySet<string>> {
+  return host.forgetPendingKeys === undefined ? NO_PENDING_FORGETS : await host.forgetPendingKeys();
+}
+
+/** One listing row: the note's line, marked when a forget for it is still pending. */
+function listingLine(note: MemoryNote, pendingForgets: ReadonlySet<string>): string {
+  const line = formatMemoryNoteLine(note);
+  return pendingForgets.has(pendingForgetKey(note)) ? `${line}${FORGET_PENDING_SUFFIX}` : line;
+}
+
+/** The line an empty listing prints, named after whether a flag narrowed it. */
+function emptyListingLine(narrowed: boolean): string {
+  return narrowed ? NO_MATCHED_NOTES_LINE : NO_NOTES_LINE;
+}
+
 /**
  * `nax memory status`: what the mirror holds, or `enabled: false` when memory is off.
  *
@@ -106,7 +137,9 @@ export async function memoryStatusCommand(
  *
  * The flags are checked before the host is opened, so a typo in `--type` costs no read. Under
  * `--json` the rows are the document — each entry carries the note's fields but not its body,
- * which a listing never prints and no consumer of the list needs.
+ * which a listing never prints and no consumer of the list needs. A row whose note has a forget
+ * still pending says so on the row itself, and a listing with nothing to print says which kind
+ * of nothing it is: an empty mirror, or flags that matched none of it.
  */
 export async function memoryListCommand(
   opts: MemoryListOptions,
@@ -120,9 +153,14 @@ export async function memoryListCommand(
       const notes = ofType(await readListing(host, scope), type);
       if (opts.json === true) {
         deps.log(JSON.stringify({ notes: notes.map(listingEntry) }));
-      } else {
-        for (const note of notes) deps.log(formatMemoryNoteLine(note));
+        return 0;
       }
+      if (notes.length === 0) {
+        deps.log(emptyListingLine(type !== undefined || scope !== undefined));
+        return 0;
+      }
+      const pendingForgets = await pendingForgetKeysOf(host);
+      for (const note of notes) deps.log(listingLine(note, pendingForgets));
       return 0;
     });
   }, deps);

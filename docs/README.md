@@ -22,6 +22,7 @@ description: User guides, architecture references, and specs for nax
 | [CLI Reference](guides/cli-reference.md) | Complete `nax` CLI command reference |
 | [Configuration](guides/configuration.md) | Config file locations, key options, shell operator limitations, incl. [Autonomous Finish](guides/configuration.md#autonomous-finish-finish) (`finish.*` — review, verify and open a PR after a run) |
 | [Agents](guides/agents.md) | Configuring coding agents — the native agent, ACP agents, fallback, and custom adapters |
+| [Memory](guides/memory.md) | Notes later sessions read: where they live, the `memory` config block, `nax memory` commands, proposal mode and repository notes |
 | [PRD Format](guides/prd-format.md) | The `prd.json` schema — fields, types, and usage |
 | [Spec Writing](guides/spec-writing.md) | Pointer to the `spec-writing` skill for authoring `SPEC-*.md` files |
 | [Story Decomposition](guides/decomposition.md) | Breaking oversized stories into manageable sub-stories |
