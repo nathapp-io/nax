@@ -1,0 +1,191 @@
+/**
+ * mcp-id-map.ts — the durable, scope-specific record of the remote ids each
+ * save produced, so a later forget can delete them.
+ *
+ * Covers US-002 AC-16..AC-27.
+ */
+
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { _mcpIdMapDeps, createMcpIdMap } from "@/memory/mcp-id-map";
+import type { MemoryDirs } from "@/memory/paths";
+
+describe("createMcpIdMap", () => {
+  let base: string;
+  let dirs: MemoryDirs;
+  let originalDeps: typeof _mcpIdMapDeps;
+
+  const projectFile = (): string => join(dirs.projectDir, "mcp-ids.json");
+  const userFile = (): string => join(dirs.userDir, "mcp-ids.json");
+  const readJson = async (path: string): Promise<unknown> => JSON.parse(await Bun.file(path).text());
+
+  beforeEach(() => {
+    base = makeTempDir("nax-mcp-ids-");
+    dirs = { root: base, projectDir: join(base, "projects", "p-1"), userDir: join(base, "user") };
+    originalDeps = { ..._mcpIdMapDeps };
+  });
+
+  afterEach(() => {
+    Object.assign(_mcpIdMapDeps, originalDeps);
+    cleanupTempDir(base);
+  });
+
+  test("a second map over the same dirs reads back the recorded ids (AC-16)", async () => {
+    await createMcpIdMap({ dirs, server: "om" }).add("project", "s1", ["a", "b"]);
+    expect(await createMcpIdMap({ dirs, server: "om" }).ids("project", "s1")).toEqual(["a", "b"]);
+  });
+
+  test("writes the documented file shape for the configured server", async () => {
+    await createMcpIdMap({ dirs, server: "om" }).add("project", "s1", ["a"]);
+    expect(await readJson(projectFile())).toEqual({ version: 1, server: "om", notes: { s1: ["a"] } });
+  });
+
+  test("add appends ids not already recorded (AC-17)", async () => {
+    const map = createMcpIdMap({ dirs, server: "om" });
+    await map.add("project", "s1", ["a", "b"]);
+    await map.add("project", "s1", ["b", "c"]);
+    expect(await map.ids("project", "s1")).toEqual(["a", "b", "c"]);
+  });
+
+  test("add de-duplicates repeated ids inside one call", async () => {
+    const map = createMcpIdMap({ dirs, server: "om" });
+    await map.add("project", "s1", ["a", "a"]);
+    expect(await map.ids("project", "s1")).toEqual(["a"]);
+  });
+
+  test("drop forgets one slug and keeps the others (AC-18)", async () => {
+    const map = createMcpIdMap({ dirs, server: "om" });
+    await map.add("project", "s1", ["a"]);
+    await map.add("project", "s2", ["b"]);
+    await map.drop("project", "s1");
+    expect(await map.ids("project", "s1")).toEqual([]);
+    expect(await map.ids("project", "s2")).toEqual(["b"]);
+  });
+
+  test("an id recorded under user scope is written to the user directory (AC-19)", async () => {
+    await createMcpIdMap({ dirs, server: "om" }).add("user", "s1", ["u1"]);
+    expect(await readJson(userFile())).toEqual({ version: 1, server: "om", notes: { s1: ["u1"] } });
+    expect(await Bun.file(projectFile()).exists()).toBe(false);
+  });
+
+  test("an id recorded under user scope is not returned for project scope (AC-20)", async () => {
+    const map = createMcpIdMap({ dirs, server: "om" });
+    await map.add("user", "s1", ["u1"]);
+    expect(await map.ids("project", "s1")).toEqual([]);
+    expect(await map.ids("user", "s1")).toEqual(["u1"]);
+  });
+
+  test("a file of another version reads as empty (AC-21)", async () => {
+    mkdirSync(dirs.projectDir, { recursive: true });
+    await Bun.write(projectFile(), '{"version":2,"server":"om","notes":{"s1":["a"]}}');
+    expect(await createMcpIdMap({ dirs, server: "om" }).ids("project", "s1")).toEqual([]);
+  });
+
+  test("a file written for another server reads as empty (AC-22)", async () => {
+    await createMcpIdMap({ dirs, server: "om" }).add("project", "s1", ["a"]);
+    expect(await createMcpIdMap({ dirs, server: "other" }).ids("project", "s1")).toEqual([]);
+  });
+
+  test("a file that is not JSON reads as empty (AC-23)", async () => {
+    mkdirSync(dirs.projectDir, { recursive: true });
+    await Bun.write(projectFile(), "this is not json");
+    expect(await createMcpIdMap({ dirs, server: "om" }).ids("project", "s1")).toEqual([]);
+  });
+
+  test("add after reading a non-JSON file records the new id (AC-24)", async () => {
+    mkdirSync(dirs.projectDir, { recursive: true });
+    await Bun.write(projectFile(), "this is not json");
+    const map = createMcpIdMap({ dirs, server: "om" });
+    expect(await map.ids("project", "s1")).toEqual([]);
+    await map.add("project", "s1", ["z"]);
+    expect(await map.ids("project", "s1")).toEqual(["z"]);
+  });
+
+  test("an unreadable file reads as empty (AC-25)", async () => {
+    _mcpIdMapDeps.readText = async () => {
+      throw new Error("EACCES: permission denied");
+    };
+    expect(await createMcpIdMap({ dirs, server: "om" }).ids("project", "s1")).toEqual([]);
+  });
+
+  test("a missing file reads as empty (AC-26)", async () => {
+    const map = createMcpIdMap({ dirs, server: "om" });
+    expect(await map.ids("project", "s1")).toEqual([]);
+    expect(await map.ids("user", "s1")).toEqual([]);
+  });
+
+  test.each([
+    ["invalid JSON", "garbage"],
+    ["another version", '{"version":2,"server":"om","notes":{"s1":["old"]}}'],
+    ["another server", '{"version":1,"server":"other","notes":{"s1":["old"]}}'],
+    ["a non-object notes field", '{"version":1,"server":"om","notes":[]}'],
+  ])("add rewrites a version-1 file for the configured server over %s (AC-27)", async (_label, content) => {
+    mkdirSync(dirs.projectDir, { recursive: true });
+    await Bun.write(projectFile(), content);
+    await createMcpIdMap({ dirs, server: "om" }).add("project", "s1", ["n"]);
+    expect(await readJson(projectFile())).toEqual({ version: 1, server: "om", notes: { s1: ["n"] } });
+  });
+
+  test("drop rewrites an unusable file for the configured server (AC-27)", async () => {
+    mkdirSync(dirs.projectDir, { recursive: true });
+    await Bun.write(projectFile(), '{"version":1,"server":"other","notes":{"s1":["old"]}}');
+    await createMcpIdMap({ dirs, server: "om" }).drop("project", "s1");
+    expect(await readJson(projectFile())).toEqual({ version: 1, server: "om", notes: {} });
+  });
+
+  test("add rewrites the file after an unreadable read (AC-27)", async () => {
+    mkdirSync(dirs.projectDir, { recursive: true });
+    await Bun.write(projectFile(), '{"version":1,"server":"om","notes":{"s1":["old"]}}');
+    _mcpIdMapDeps.readText = async () => {
+      throw new Error("EIO");
+    };
+    await createMcpIdMap({ dirs, server: "om" }).add("project", "s1", ["n"]);
+    expect(await readJson(projectFile())).toEqual({ version: 1, server: "om", notes: { s1: ["n"] } });
+  });
+
+  test("drop of a slug in a missing file writes nothing", async () => {
+    await createMcpIdMap({ dirs, server: "om" }).drop("project", "s1");
+    expect(await Bun.file(projectFile()).exists()).toBe(false);
+  });
+
+  test("writes go through a same-directory temporary file renamed into place", async () => {
+    const renames: Array<[string, string]> = [];
+    const realRename = _mcpIdMapDeps.rename;
+    _mcpIdMapDeps.rename = async (from, to) => {
+      renames.push([from, to]);
+      await realRename(from, to);
+    };
+    await createMcpIdMap({ dirs, server: "om" }).add("project", "s1", ["a"]);
+    expect(renames).toHaveLength(1);
+    const [from, to] = renames[0] ?? ["", ""];
+    expect(to).toBe(projectFile());
+    expect(from).not.toBe(to);
+    expect(join(from, "..")).toBe(dirs.projectDir);
+    expect(await readdir(dirs.projectDir)).toEqual(["mcp-ids.json"]);
+  });
+
+  test("a failed write rejects with a NaxError, leaves no temporary file and keeps the old content", async () => {
+    const map = createMcpIdMap({ dirs, server: "om" });
+    await map.add("project", "s1", ["a"]);
+    _mcpIdMapDeps.rename = async () => {
+      throw new Error("EXDEV");
+    };
+    await expect(map.add("project", "s1", ["b"])).rejects.toMatchObject({ code: "MEMORY_MCP_ID_MAP_WRITE_FAILED" });
+    expect(await readdir(dirs.projectDir)).toEqual(["mcp-ids.json"]);
+    expect(await readJson(projectFile())).toEqual({ version: 1, server: "om", notes: { s1: ["a"] } });
+  });
+
+  test("concurrent adds on one map lose no ids", async () => {
+    const map = createMcpIdMap({ dirs, server: "om" });
+    await Promise.all([
+      map.add("project", "s1", ["a"]),
+      map.add("project", "s1", ["b"]),
+      map.add("project", "s2", ["c"]),
+    ]);
+    expect(await map.ids("project", "s1")).toEqual(["a", "b"]);
+    expect(await map.ids("project", "s2")).toEqual(["c"]);
+  });
+});
