@@ -69,6 +69,9 @@ async function fixture() {
     createChatStorage: mock(() => storage),
     createAcpCatalog: (_input: Parameters<typeof api._chatCommandDeps.createAcpCatalog>[0]) => stubAcpCatalog(),
     createChatHost: mock((_input: Parameters<typeof createChatHost>[0]) => host),
+    // Chat command tests touch no real global nax directory: the memory mirror
+    // lives there, so the host is declined at the seam rather than composed.
+    createMemoryHost: mock(async (..._args: Parameters<typeof api._chatCommandDeps.createMemoryHost>) => null),
     renderChat: mock((_props: Parameters<typeof api._chatCommandDeps.renderChat>[0]) => {
       rendered.resolve();
       return shell;

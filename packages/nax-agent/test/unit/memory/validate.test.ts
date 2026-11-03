@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test";
 import {
   findSecret,
   MEMORY_DESCRIPTION_MAX_CHARS,
+  MEMORY_FORGET_REASON_MAX_CHARS,
   MEMORY_NOTE_BODY_MAX_BYTES,
   type MemoryNoteWrite,
   validateMemoryNoteWrite,
 } from "@nathapp/nax-agent";
+import { forgetReasonRefusal } from "#src/memory/index";
 
 /** A write that every check accepts; each test overrides the field it exercises. */
 const VALID: MemoryNoteWrite = {
@@ -147,5 +149,33 @@ describe("the package entry's validation surface", () => {
   test("exports validateMemoryNoteWrite and findSecret", () => {
     expect(validateMemoryNoteWrite).toBeFunction();
     expect(findSecret).toBeFunction();
+  });
+
+  test("exports the forget reason's length cap", () => {
+    expect(MEMORY_FORGET_REASON_MAX_CHARS).toBe(200);
+  });
+});
+
+describe("forgetReasonRefusal", () => {
+  test("accepts a reason of exactly MEMORY_FORGET_REASON_MAX_CHARS", () => {
+    expect(forgetReasonRefusal("a".repeat(MEMORY_FORGET_REASON_MAX_CHARS))).toBeNull();
+  });
+
+  test("refuses a reason one character over the cap, naming the cap", () => {
+    const refusal = forgetReasonRefusal("a".repeat(MEMORY_FORGET_REASON_MAX_CHARS + 1));
+    expect(refusal).toMatchObject({ field: "reason" });
+    expect(refusal?.reason).toBe(`reason must be at most ${MEMORY_FORGET_REASON_MAX_CHARS} characters`);
+  });
+
+  test("refuses an empty reason", () => {
+    expect(forgetReasonRefusal("")).toMatchObject({ field: "reason" });
+  });
+
+  test("refuses a reason carrying a line break", () => {
+    expect(forgetReasonRefusal("stale\nand wrong")).toMatchObject({ field: "reason" });
+  });
+
+  test("accepts an ordinary justification", () => {
+    expect(forgetReasonRefusal("the replay budget was retired in 0.92")).toBeNull();
   });
 });

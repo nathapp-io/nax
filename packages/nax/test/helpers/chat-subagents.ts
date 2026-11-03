@@ -27,6 +27,7 @@ import { type ChatHost, type ChatResources, createChatHost } from "@/chat";
 import { _openChatSessionDeps } from "@/chat/open-chat-session";
 import { _subagentSessionDeps } from "@/chat/subagent-session";
 import type { NaxConfig } from "@/config";
+import type { MemoryHost } from "@/memory";
 import { type AgentResource, buildResourceCatalog, type ResourceCatalog } from "@/resources";
 import { makeLogger } from "./mock-logger";
 import { makeNaxConfig } from "./mock-nax-config";
@@ -232,6 +233,8 @@ export interface SubagentHostOptions {
   readonly abandonToolOnAbort?: boolean;
   /** A cancelled nested turn keeps running until `releaseNested()` instead of ending at once. */
   readonly holdNestedPastCancel?: boolean;
+  /** The memory host the chat's resources carry; absent when the test does not need memory. */
+  readonly memory?: MemoryHost;
 }
 
 /** Per-send script switches; a test may change them between sends. */
@@ -291,6 +294,7 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
     pluginHandlers: [],
     naxPlugins: [],
     teardown: async () => {},
+    ...(options.memory !== undefined ? { memory: options.memory } : {}),
   };
 
   const chatSessions: ScriptedSession[] = [];

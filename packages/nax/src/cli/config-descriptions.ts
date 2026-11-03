@@ -449,6 +449,17 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "mcp.servers.<id>.enabled":
     "Kill switch. false means the server is not connected, not locked and contributes no tools (default: true)",
 
+  // Memory
+  memory: "Repository-wide memory the chat surfaces may read and write",
+  "memory.enabled":
+    "Master switch. false means no memory host, no memory tools, no index section and no sync (default: true)",
+  "memory.provider": 'Where notes live. Only "local" is accepted in this release (default: local)',
+  "memory.writeMode":
+    'How an agent save lands: "direct" writes the note immediately, "proposal" queues it for `nax memory approve` (default: direct)',
+  "memory.indexBytes":
+    "Byte cap for the memory index injected into the chat prompt, 512..262144 (default: 24576). Notes past the cap are omitted and counted",
+  "memory.askOnSave": "Ask before nax-memory__save / nax-memory__forget in a guarded native chat (default: true)",
+
   // Resources
   "resources.mcpInRun":
     "Attach MCP servers discovered from Claude Code (user, local, project .mcp.json, plugins) to nax run stages, only those pinned in the MCP lock; configured mcp.servers always win on an id clash. Ignored when resources.claudeCode is false (default: false)",

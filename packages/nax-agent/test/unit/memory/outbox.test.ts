@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import * as pub from "@nathapp/nax-agent";
 import {
   createMemoryOutbox,
+  MEMORY_FORGET_REASON_MAX_CHARS,
   type MemoryNote,
   type MemoryOutboxEntry,
   type MemoryWriteRequest,
@@ -273,6 +274,61 @@ describe("memory outbox", () => {
         slug: entry.slug,
       });
       expect(await outbox.listInvalid()).toEqual([]);
+    });
+  });
+
+  test("[B1] a queued entry whose reason predates the cap still lists, is held and keeps its reason", async () => {
+    await withTempDir(async (dir) => {
+      const outDir = outboxDir(dir);
+      const outbox = createMemoryOutbox({ dir: outDir, now: fixedNow });
+      const legacy = "a".repeat(MEMORY_FORGET_REASON_MAX_CHARS + 1);
+      await writeFixture(
+        join(outDir, "00000001-legacy-forget.json"),
+        stored({ clientId: "legacy-forget", kind: "forget", reason: legacy }),
+      );
+      await writeFixture(
+        join(outDir, "00000002-long-rejection.json"),
+        stored({ clientId: "long-rejection", seq: 2, state: "rejected", reason: legacy }),
+      );
+
+      const entries = await outbox.list();
+
+      // Both entries were written before the queue bounded a reason. Bounding the read would
+      // drop them from list, from heldKeys and from every count built on them, and the forget
+      // the first one records would never reach the provider: it has to read back as it is.
+      expect(entries.map((entry) => entry.clientId)).toEqual(["legacy-forget", "long-rejection"]);
+      expect(entries.map((entry) => entry.reason)).toEqual([legacy, legacy]);
+      expect(await outbox.listInvalid()).toEqual([]);
+      expect(sortedMembers(await outbox.heldKeys("forget"))).toEqual(["project/replay-budget"]);
+    });
+  });
+
+  test("[B1] a reason at the cap round-trips through enqueue and list unchanged", async () => {
+    await withTempDir(async (dir) => {
+      const outbox = createMemoryOutbox({ dir: outboxDir(dir), now: fixedNow });
+      const atCap = "a".repeat(MEMORY_FORGET_REASON_MAX_CHARS);
+
+      const entry = await outbox.enqueue(forgetRequest({ reason: atCap }));
+
+      expect(await outbox.list()).toEqual([{ ...entry, reason: atCap }]);
+      expect(sortedMembers(await outbox.heldKeys("forget"))).toEqual(["project/replay-budget"]);
+    });
+  });
+
+  test("[B1] enqueue refuses a reason over the cap with MEMORY_WRITE_REFUSED and writes nothing", async () => {
+    await withTempDir(async (dir) => {
+      const outDir = outboxDir(dir);
+      const outbox = createMemoryOutbox({ dir: outDir, now: fixedNow });
+
+      const error = await caught(
+        outbox.enqueue(forgetRequest({ reason: "a".repeat(MEMORY_FORGET_REASON_MAX_CHARS + 1) })),
+      );
+
+      assertNaxError(error, "enqueue with an over-cap reason");
+      expect(error).toMatchObject({ code: "MEMORY_WRITE_REFUSED", context: { stage: "memory", field: "reason" } });
+      // The cap is a condition on writing: the request is refused, so no entry exists to read.
+      expect(existsSync(outDir)).toBe(false);
+      expect(await outbox.list()).toEqual([]);
     });
   });
 

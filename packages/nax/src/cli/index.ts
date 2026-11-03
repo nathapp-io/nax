@@ -123,6 +123,44 @@ export {
 } from "./gates";
 export { type GenerateCommandOptions, generateCommand } from "./generate";
 export { type InitOptions, initCommand } from "./init";
+export {
+  type MemoryListOptions,
+  type MemoryNoteListing,
+  memoryListCommand,
+  memoryStatusCommand,
+  registerMemoryCommand,
+} from "./memory";
+export {
+  _memoryCliDeps,
+  cliMemoryLogger,
+  type MemoryCliContext,
+  type MemoryCliDeps,
+  type MemoryCliOptions,
+  memoryContext,
+  memoryDefaultDir,
+  memoryDisabledError,
+  NOTE_SCOPES,
+  NOTE_TYPES,
+  openMemoryHost,
+  parseNoteScope,
+  parseNoteType,
+  withMemoryErrors,
+} from "./memory-cli-deps";
+export {
+  type MemoryShowOptions,
+  memoryShowCommand,
+  memorySyncCommand,
+  registerMemoryReadCommands,
+} from "./memory-read";
+export {
+  type MemoryApproveOptions,
+  type MemoryForgetOptions,
+  type MemorySaveOptions,
+  memoryApproveCommand,
+  memoryForgetCommand,
+  memorySaveCommand,
+  registerMemoryWriteCommands,
+} from "./memory-write";
 export type { PlanCommandOptions } from "./plan";
 export { _planDeps, planCommand, resolvePlanMode } from "./plan";
 export { planDecomposeCommand, runReplanLoop } from "./plan-decompose";

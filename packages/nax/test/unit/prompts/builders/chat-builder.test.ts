@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import * as prompts from "@/prompts";
 import { chatPermissionParagraph } from "@/prompts/builders/chat-builder";
 
+const MEMORY_INDEX = "# Memory\n- [project] a — b";
+
 const rule = {
   ruleId: "error-handling",
   displayPath: ".nax/rules/error-handling.md",
@@ -94,6 +96,33 @@ describe("buildChatInstructions", () => {
     expect(guarded().split("\n\n")[0]).toBe(
       "You are an interactive coding agent working in this repository with the person.",
     );
+  });
+});
+
+describe("buildChatInstructions memory section", () => {
+  test("AC-1: a memory index becomes the last section", () => {
+    const text = prompts.buildChatInstructions({ mode: "guarded", rulesIndex: [], memoryIndex: MEMORY_INDEX });
+    expect(text).toEndWith(prompts.buildMemorySection(MEMORY_INDEX));
+  });
+
+  test("AC-2: no memory index adds no ## Memory heading", () => {
+    expect(guarded()).not.toContain("## Memory");
+  });
+
+  test("AC-3: an empty memory index adds no ## Memory heading", () => {
+    const text = prompts.buildChatInstructions({ mode: "guarded", rulesIndex: [], memoryIndex: "" });
+    expect(text).not.toContain("## Memory");
+  });
+});
+
+describe("buildChatAcpInstructions memory section", () => {
+  test("AC-7: a memory index is appended last", () => {
+    const text = prompts.buildChatAcpInstructions({ agentLabel: "Codex", memoryIndex: MEMORY_INDEX });
+    expect(text).toEndWith(prompts.buildMemorySection(MEMORY_INDEX));
+  });
+
+  test("AC-8: no memory index adds no ## Memory heading", () => {
+    expect(prompts.buildChatAcpInstructions({ agentLabel: "Codex" })).not.toContain("## Memory");
   });
 });
 

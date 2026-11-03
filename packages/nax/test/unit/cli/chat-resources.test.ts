@@ -70,6 +70,9 @@ function fixture() {
     initInteractionChain: async () => null,
     createChatStorage: () => storage,
     createChatHost: mock((_input: Parameters<typeof createChatHost>[0]) => host),
+    // Chat command tests touch no real global nax directory: the memory mirror
+    // lives there, so the host is declined at the seam rather than composed.
+    createMemoryHost: mock(async (..._args: Parameters<typeof _chatCommandDeps.createMemoryHost>) => null),
     loadAgentHookHandlers: mock(
       async (_input: Parameters<typeof _chatCommandDeps.loadAgentHookHandlers>[0]): Promise<LoopHandlerSet> => [],
     ),

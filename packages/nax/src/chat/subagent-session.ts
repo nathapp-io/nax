@@ -34,6 +34,8 @@ export interface RunSubagentInput {
   readonly repoRoot: string;
   readonly config: NaxConfig;
   readonly parentSessionId: string;
+  /** The parent session's rendered memory index; the nested session's instructions carry it. */
+  readonly memoryIndex?: string;
   readonly signal?: AbortSignal;
   readonly onEvent: (event: SessionEvent) => void;
   /** Called with the nested session once it is created, before its turn starts. */
@@ -94,6 +96,7 @@ async function subagentSessionOptions(
       agent: input.agent,
       mode: input.mode,
       rulesIndex: set.rules.map(toRulesIndexEntry),
+      ...(input.memoryIndex !== undefined ? { memoryIndex: input.memoryIndex } : {}),
     }),
   };
 }

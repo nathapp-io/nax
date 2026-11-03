@@ -1,6 +1,7 @@
 import type {
   CommandRunResult,
   ImageAttachment,
+  LoopHandlerSet,
   SandboxState,
   SessionEvent,
   SessionMeta,
@@ -9,7 +10,6 @@ import type {
 } from "@nathapp/nax-agent";
 import { lookupContextWindow } from "@/agents/catalog";
 import { getProjectKey, type NaxConfig } from "@/config";
-import { createRuleDeliveryHandlers } from "@/context/rules/rule-delivery";
 import { NaxError } from "@/errors";
 import type { InteractionChain } from "@/interaction";
 import type { Logger } from "@/logger";
@@ -33,6 +33,9 @@ import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import type { ChatMode } from "./chat-mode";
 import { tierModels } from "./chat-models";
 import { createCloseConfirm } from "./close-confirm";
+import { type ContextWindowCache, createContextWindowCache } from "./context-window-cache";
+import { createHostMemory, type HostMemory } from "./host-memory";
+import { closeChatHost, createChatLoopHandlers } from "./host-wiring";
 import { type ChatJobs, type ChatRunAsks, createHostJobs } from "./jobs";
 import {
   type ChatHistory,
@@ -41,7 +44,7 @@ import {
   openChatSession,
 } from "./open-chat-session";
 import type { ChatResources } from "./resources";
-import { closeChatResources, createSessionHygiene, resumableRows } from "./session-hygiene";
+import { createSessionHygiene, resumableRows } from "./session-hygiene";
 import { sessionAcceptsImages } from "./session-images";
 import { latestResumableId, listCwdSessions } from "./session-listing";
 import { switchChatSession } from "./session-switch";
@@ -88,6 +91,8 @@ export interface ChatHost {
   readonly catalog?: ChatResources["catalog"];
   readonly naxPlugins?: ChatResources["naxPlugins"];
   readonly mcp?: ChatResources["mcp"];
+  /** The memory host this chat writes notes through; absent when memory is off or unavailable. */
+  readonly memory?: ChatResources["memory"];
   readonly models: readonly string[];
   readonly asks: ChatAskController;
   readonly jobs?: ChatJobs;
@@ -139,6 +144,7 @@ class NativeChatHost implements ChatHost {
   readonly catalog?: ChatResources["catalog"];
   readonly naxPlugins?: ChatResources["naxPlugins"];
   readonly mcp?: ChatResources["mcp"];
+  readonly memory?: ChatResources["memory"];
   private readonly nativeModels: readonly string[];
   readonly asks: ChatAskController;
   readonly jobs?: ChatJobs;
@@ -149,16 +155,19 @@ class NativeChatHost implements ChatHost {
   private readonly fallback: AskFallback;
   private readonly hygiene: ReturnType<typeof createSessionHygiene>;
   private readonly open: typeof openChatSession;
-  private readonly loopHandlers: ReturnType<typeof createRuleDeliveryHandlers>;
+  private readonly loopHandlers: LoopHandlerSet;
   private readonly projectKey: string;
   private readonly outputDir: string;
   private readonly runs?: SubagentRuns;
   private readonly toolProviders?: readonly ToolProvider[];
-  /** Catalog context window per model string; `undefined` records a model whose window the catalog cannot state. */
-  private readonly contextWindows = new Map<string, number | undefined>();
+  private readonly contextWindows: ContextWindowCache;
+  /** The index every open carries and every subagent session is told; the host only calls it. */
+  private readonly hostMemory: HostMemory;
   private turnListener?: (event: SessionEvent) => void;
   private sending = false;
   private handle?: ChatSessionHandle;
+  /** The index the active session was opened with: what a subagent session inherits. */
+  private activeMemoryIndex?: string;
   private ledger?: ChatLedger;
   private resumeNotice?: string;
   private resourceNoticeRead = false;
@@ -177,6 +186,9 @@ class NativeChatHost implements ChatHost {
     this.catalog = deps.resources?.catalog;
     this.naxPlugins = deps.resources?.naxPlugins;
     this.mcp = deps.resources?.mcp;
+    this.memory = deps.resources?.memory;
+    this.contextWindows = createContextWindowCache(() => _chatHostDeps.lookupContextWindow);
+    this.hostMemory = createHostMemory({ memory: deps.resources?.memory, logger: deps.logger });
     this.nativeModels = deps.models ?? tierModels(deps.config);
     this.projectKey = getProjectKey(deps.config, deps.repoRoot);
     this.outputDir = projectOutputDir(this.projectKey, deps.config.outputDir);
@@ -212,16 +224,13 @@ class NativeChatHost implements ChatHost {
     this.hostJobs = hostJobs;
     this.jobs = hostJobs?.jobs;
     this.runAsks = hostJobs?.runAsks;
-    const rules = deps.config.context.rules;
-    this.loopHandlers = Object.freeze([
-      ...(deps.resources?.pluginHandlers ?? []),
-      ...createRuleDeliveryHandlers({
-        repoRoot: deps.repoRoot,
-        overrideDir: rules?.overrideDir,
-        overrideMode: rules?.overrideMode,
-      }),
-      ...(hostJobs?.guard ?? []),
-    ]);
+    this.loopHandlers = createChatLoopHandlers({
+      pluginHandlers: deps.resources?.pluginHandlers,
+      rules: deps.config.context.rules,
+      repoRoot: deps.repoRoot,
+      memory: this.hostMemory.handlers,
+      guard: hostJobs?.guard,
+    });
     const resources = deps.resources;
     if (resources) {
       this.runs = createSubagentRuns({
@@ -235,6 +244,7 @@ class NativeChatHost implements ChatHost {
         asks: this.asks,
         ledger: () => this.ledger,
         turnListener: () => this.turnListener,
+        memoryIndex: () => this.activeMemoryIndex,
       });
       const hostTasks = createHostTasks({ outputDir: this.outputDir, now: deps.now, logger: deps.logger });
       this.tasks = hostTasks.tasks;
@@ -301,31 +311,6 @@ class NativeChatHost implements ChatHost {
     };
   }
 
-  /**
-   * Remember the session model's catalog context window, read once per model
-   * string: a mode switch reopens on the same model, whose window cannot have
-   * changed, and re-reading it per switch would cost a catalog load per toggle.
-   * A model string with no non-empty `<provider>/` prefix names no catalog
-   * entry, so it is not looked up at all (US-003 AC-10).
-   */
-  private async primeContextWindow(model: string): Promise<void> {
-    if (this.contextWindows.has(model)) return;
-    // An ACP model names no nax-ai catalog entry: the agent owns its context window.
-    const split = model.indexOf("/");
-    if (split <= 0 || isChatAcpModel(model)) {
-      this.contextWindows.set(model, undefined);
-      return;
-    }
-    let contextWindow: number | undefined;
-    try {
-      contextWindow = await _chatHostDeps.lookupContextWindow(model.slice(0, split), model.slice(split + 1));
-    } catch {
-      // Fail-open (US-003 AC-8): an unavailable catalog leaves the window
-      // unknown rather than failing the session operation that read it.
-    }
-    this.contextWindows.set(model, contextWindow);
-  }
-
   agents(): readonly ChatAgentRow[] {
     const agents = this.catalog?.agents ?? [];
     if (agents.length === 0) return [];
@@ -353,15 +338,17 @@ class NativeChatHost implements ChatHost {
   private async startSession(input: { mode: ChatMode; model: string }): Promise<void> {
     this.assertOpen();
     assertAcpInstalled(this.deps.acp, input.model);
-    const next = await this.open({ ...input, storage: this.deps.storage, ...this.openArgs() });
-    await this.replace(next);
+    const memoryIndex = await this.hostMemory.prepare();
+    const next = await this.open({ ...input, storage: this.deps.storage, ...this.openArgs(memoryIndex) });
+    await this.replace(next, memoryIndex);
     await this.jobs?.attach();
     this.resumeNotice = undefined;
-    await this.primeContextWindow(next.meta.model);
+    await this.contextWindows.prime(next.meta.model);
   }
 
-  /** The open arguments every session open shares; the storage and the resume id vary per site. */
-  private openArgs(): Omit<OpenChatSessionRequest, "storage"> {
+  /** The arguments every open shares; the memory index is passed in, never re-read, so
+   * overlapping session operations cannot swap snapshots. */
+  private openArgs(memoryIndex: string | undefined): Omit<OpenChatSessionRequest, "storage"> {
     return {
       cwd: this.deps.cwd,
       repoRoot: this.repoRoot,
@@ -369,10 +356,11 @@ class NativeChatHost implements ChatHost {
       loopHandlers: this.loopHandlers,
       ...(this.toolProviders ? { toolProviders: this.toolProviders } : {}),
       ...(this.tasks ? { backgroundCommands: this.tasks } : {}),
+      ...(memoryIndex !== undefined ? { memoryIndex } : {}),
     };
   }
 
-  private async replace(next: ChatSessionHandle): Promise<void> {
+  private async replace(next: ChatSessionHandle, memoryIndex: string | undefined): Promise<void> {
     // A late open must release its handle before the operation drain can finish.
     if (this.closed) {
       await this.hygiene.close(next);
@@ -381,6 +369,7 @@ class NativeChatHost implements ChatHost {
     const previous = this.handle;
     if (previous) this.hostJobs?.sessionChanged();
     this.handle = next;
+    this.activeMemoryIndex = memoryIndex;
     this.ledger ??= createChatLedger({
       sessionId: next.meta.sessionId,
       model: next.meta.model,
@@ -410,13 +399,15 @@ class NativeChatHost implements ChatHost {
 
   private async resumeSession(input: { id?: string }): Promise<void> {
     this.assertOpen();
+    // Prepared for every resume; this resume's own snapshot is the one its open carries.
+    const memoryIndex = await this.hostMemory.prepare();
     const id =
       input.id ??
       (await latestResumableId({ storage: this.deps.storage, cwd: this.deps.cwd, logger: this.deps.logger }));
     if (this.handle?.meta.sessionId !== id) {
       let next: ChatSessionHandle;
       try {
-        next = await this.open({ storage: this.deps.storage, ...this.openArgs(), resumeId: id });
+        next = await this.open({ storage: this.deps.storage, ...this.openArgs(memoryIndex), resumeId: id });
       } catch (error) {
         if (error instanceof Error && "code" in error && error.code === "SESSION_LOCKED") {
           const holder = await this.deps.storage.readLockHolder(id);
@@ -428,7 +419,7 @@ class NativeChatHost implements ChatHost {
         }
         throw error;
       }
-      await this.replace(next);
+      await this.replace(next, memoryIndex);
     }
     await this.jobs?.attach();
     const resumed = this.requireHandle();
@@ -436,17 +427,19 @@ class NativeChatHost implements ChatHost {
       resumed.session.lastTurn?.status === "interrupted"
         ? "The last turn was interrupted. Send a message to continue it."
         : undefined;
-    await this.primeContextWindow(resumed.meta.model);
+    await this.contextWindows.prime(resumed.meta.model);
   }
 
   private async reopen(
     input: { mode: ChatMode; model: string },
     previous: ChatSessionHandle,
+    memoryIndex: string | undefined,
   ): Promise<ChatSessionHandle> {
     // Reopens own per-open cleanup, but share the original storage lock. Even a
     // failed open must drain its shadow without releasing the active host's lock.
     const storage: SessionStorage = { ...this.deps.storage, acquireLock: async () => async () => {} };
-    const next = await this.open({ ...input, storage, resumeId: previous.meta.sessionId, ...this.openArgs() });
+    const request = { ...input, storage, resumeId: previous.meta.sessionId, ...this.openArgs(memoryIndex) };
+    const next = await this.open(request);
     return {
       ...next,
       release: async (options) => {
@@ -471,21 +464,26 @@ class NativeChatHost implements ChatHost {
     const target = { mode: input.mode ?? from.mode, model };
     if (target.mode === from.mode && target.model === from.model) return;
     assertAcpInstalled(this.deps.acp, target.model);
+    // One prepare per switch: its reopen, rollback reopen and openFresh share this snapshot.
+    const memoryIndex = await this.hostMemory.prepare();
     const outcome = await switchChatSession({
       previous,
       from: { mode: from.mode, model: from.model },
       target,
-      reopen: (to) => this.reopen(to, previous),
-      openFresh: (to) => this.open({ ...to, storage: this.deps.storage, ...this.openArgs() }),
+      reopen: (to) => this.reopen(to, previous, memoryIndex),
+      openFresh: (to) => this.open({ ...to, storage: this.deps.storage, ...this.openArgs(memoryIndex) }),
       writeMeta: (meta) => this.deps.storage.writeMeta(meta),
     });
     this.handle = outcome.handle;
+    // An in-place switch reuses the live session and the instructions it opened with, so its
+    // snapshot stands; only a newly opened session (reopen or openFresh) carries the new one.
+    if (outcome.inPlace !== true) this.activeMemoryIndex = memoryIndex;
     if (outcome.handle.meta.sessionId !== previous.meta.sessionId) {
       this.hostJobs?.sessionChanged();
       this.resumeNotice = outcome.notice;
     }
     this.asks.setMode(outcome.handle.meta.mode === "full" ? "full" : "guarded");
-    await this.primeContextWindow(outcome.handle.meta.model);
+    await this.contextWindows.prime(outcome.handle.meta.model);
     if (outcome.error !== undefined) throw outcome.error;
   }
 
@@ -581,12 +579,13 @@ class NativeChatHost implements ChatHost {
     try {
       await this.runs?.closeAll();
     } finally {
-      await closeChatResources({
+      await closeChatHost({
         hygiene: this.hygiene,
         handle: this.handle,
         tasks: this.tasks,
         resources: this.deps.resources,
         chain: this.deps.chain,
+        memory: this.hostMemory,
       });
     }
   }

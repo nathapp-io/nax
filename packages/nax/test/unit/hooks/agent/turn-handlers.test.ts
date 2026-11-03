@@ -24,7 +24,6 @@ import {
 } from "@test/helpers";
 import {
   _agentHookHandlerDeps,
-  AGENT_HOOK_EVENTS,
   AGENT_HOOKS_PLUGIN,
   type AgentHookEntry,
   type AgentHookRun,
@@ -71,11 +70,21 @@ function hook(overrides: Partial<AgentHookEntry> & { command: string }): AgentHo
   return { scope: ["chat", "run"], timeoutMs: 30_000, origin: "project", ...overrides };
 }
 
-/** A config with every event present and empty except the ones given. */
-function hooksConfig(input: Partial<Record<(typeof AGENT_HOOK_EVENTS)[number], readonly AgentHookEntry[]>> = {}) {
-  const config: Record<string, readonly AgentHookEntry[]> = {};
-  for (const event of AGENT_HOOK_EVENTS) config[event] = input[event] ?? [];
-  return config as AgentHooksConfig;
+/**
+ * A config with every event present and empty except the ones given.
+ *
+ * The five keys are spelled out rather than looped over `AGENT_HOOK_EVENTS`: a loop
+ * cannot build the always-complete mapped type without a cast, and this literal fails
+ * to compile the moment an event is added — which a cast would hide.
+ */
+function hooksConfig(input: Partial<AgentHooksConfig> = {}): AgentHooksConfig {
+  return {
+    PreToolUse: input.PreToolUse ?? [],
+    PostToolUse: input.PostToolUse ?? [],
+    UserPromptSubmit: input.UserPromptSubmit ?? [],
+    SessionStart: input.SessionStart ?? [],
+    Stop: input.Stop ?? [],
+  };
 }
 
 const REPO_ROOT = "/repo";

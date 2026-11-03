@@ -24,7 +24,8 @@ import { findProjectDir, getProjectKey, globalConfigDir, isWorkflowMode, loadCon
 import { NaxError } from "@/errors";
 import { loadAgentHookHandlers } from "@/hooks";
 import { type InteractionChain, initInteractionChain } from "@/interaction";
-import { getSafeLogger } from "@/logger";
+import { getInitializedLogger } from "@/logger";
+import { createMemoryHost, createMemoryToolProvider, type MemoryHost, type MemoryLogger } from "@/memory";
 import { loadPlugins, PluginRegistry } from "@/plugins";
 import { createSkillsProvider, loadResourceCatalog, naxPluginPackages } from "@/resources";
 import { projectOutputDir } from "@/runtime";
@@ -66,6 +67,7 @@ export const _chatCommandDeps = {
   createChatStorage,
   createAcpCatalog,
   createChatHost,
+  createMemoryHost,
   renderChat: (props: ChatAppProps): ChatShell => renderChat(props),
   onSignal: (signal: ChatSignal, handler: () => Promise<void>): (() => void) => {
     process.on(signal, handler);
@@ -182,7 +184,49 @@ async function runShell(host: ChatHost, deps: ChatCommandDeps, cwd: string): Pro
   }
 }
 
-async function chatResources(repoRoot: string, config: NaxConfig, deps: ChatCommandDeps): Promise<ChatResources> {
+/** The label a note this chat writes records as its origin. */
+const CHAT_MEMORY_SOURCE = "nax-chat";
+
+/**
+ * The memory host for this chat, or `undefined` when memory is off or cannot be
+ * composed.
+ *
+ * Memory is a convenience, not a prerequisite: a mirror that cannot be placed
+ * (an unresolvable repo root, an unreadable global directory) is warned about
+ * once, and the chat starts without memory rather than failing to start.
+ */
+async function chatMemory(
+  input: { readonly repoRoot: string; readonly config: NaxConfig; readonly logger: MemoryLogger },
+  deps: ChatCommandDeps,
+): Promise<MemoryHost | undefined> {
+  try {
+    const host = await deps.createMemoryHost({
+      config: input.config,
+      repoRoot: input.repoRoot,
+      source: CHAT_MEMORY_SOURCE,
+      logger: input.logger,
+    });
+    return host ?? undefined;
+  } catch (error) {
+    input.logger.warn("chat", "memory unavailable", { error: errorMessage(error) });
+    return undefined;
+  }
+}
+
+/**
+ * Compose everything a chat session shares: the catalog, the tool providers, the
+ * plugin lifetime — and the memory host, whose provider sits after the workflow
+ * provider and before the MCP ones, so a subagent (which takes these providers)
+ * is handed the memory tools too.
+ *
+ * @param logger - The chat's own logger; the memory host and its repo reads log through it
+ */
+async function chatResources(
+  repoRoot: string,
+  config: NaxConfig,
+  deps: ChatCommandDeps,
+  logger: MemoryLogger,
+): Promise<ChatResources> {
   let registry: PluginRegistry;
   try {
     registry = await deps.loadPlugins(
@@ -203,6 +247,7 @@ async function chatResources(repoRoot: string, config: NaxConfig, deps: ChatComm
       env: deps.env,
       naxPluginPackages: await naxPluginPackages(registry.getResourceDirs()),
     });
+    const memory = await chatMemory({ repoRoot, config, logger }, deps);
     const outputDir = projectOutputDir(getProjectKey(config, repoRoot), config.outputDir);
     const mcp = await deps.createChatMcp({ config, catalog, repoRoot, env: deps.env });
     return {
@@ -214,6 +259,7 @@ async function chatResources(repoRoot: string, config: NaxConfig, deps: ChatComm
           outputDir,
           maxIterations: isWorkflowMode(config) ? undefined : config.execution.maxIterations,
         }),
+        ...(memory === undefined ? [] : [createMemoryToolProvider(memory)]),
         ...mcp.providers,
       ],
       // Plugin handlers first, then the agent hooks: `ChatHost` appends rule
@@ -224,6 +270,7 @@ async function chatResources(repoRoot: string, config: NaxConfig, deps: ChatComm
         ...(await deps.loadAgentHookHandlers({ surface: "chat", repoRoot })),
       ],
       naxPlugins: registry.plugins.map(({ name, provides }) => ({ name, provides })),
+      ...(memory === undefined ? {} : { memory }),
       mcp: mcp.state,
       teardown: async () => {
         try {
@@ -256,6 +303,22 @@ async function discoverModels(config: NaxConfig, deps: ChatCommandDeps): Promise
   return chatModelChoices({ config, availableProviders, listCatalogModels: deps.listCatalogModels });
 }
 
+/**
+ * The logger the whole chat writes through: the run's own when the CLI
+ * initialized one, and otherwise a writer for the screen.
+ *
+ * `getSafeLogger()` answers with a silent no-op instead of `null` when nothing
+ * initialized it, so asking it here would drop every chat warning — the memory
+ * host's "memory unavailable" among them. The chat owns stderr, so it is the
+ * surface that can report those lines rather than lose them with the session.
+ */
+function chatLogger(deps: ChatCommandDeps): MemoryLogger {
+  const initialized = getInitializedLogger();
+  if (initialized !== null) return initialized;
+  const log = (stage: string, message: string): void => deps.writeErr(`[${stage}] ${message}`);
+  return { warn: log, error: log, info: log, debug: log };
+}
+
 async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, cwd: string): Promise<void> {
   const naxDir = deps.findProjectDir(cwd);
   const config = options.profile?.length
@@ -268,9 +331,9 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
     models: options.model === undefined ? models : [...models, options.model],
     lookupThinkingLevels: deps.lookupThinkingLevels,
   });
-  const resources = await chatResources(repoRoot, config, deps);
-  const log = (stage: string, message: string): void => deps.writeErr(`[${stage}] ${message}`);
-  const logger = getSafeLogger() ?? { warn: log, error: log, info: log, debug: log };
+  // Built before the resources: the memory host and its repo reads log through it.
+  const logger = chatLogger(deps);
+  const resources = await chatResources(repoRoot, config, deps, logger);
   const storage = deps.createChatStorage({ pid: process.pid, now: () => new Date(), logger });
   const chain = await interactionChain(config, deps);
   const naxEntry = deps.naxEntry();

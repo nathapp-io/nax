@@ -1,5 +1,6 @@
 import type { AgentResource } from "@/resources";
 import { chatPermissionParagraph } from "./chat-builder";
+import { memorySectionOf } from "./memory-builder";
 import { buildRulesIndexSection, type RulesIndexEntry } from "./rules-index-builder";
 import { cleanIndexDescription } from "./skills-builder";
 
@@ -9,6 +10,8 @@ export interface SubagentInstructionsInput {
   readonly agent: Pick<AgentResource, "prompt">;
   readonly mode: "full" | "guarded";
   readonly rulesIndex: readonly RulesIndexEntry[];
+  /** The rendered memory index; placed before the agent's own prompt when present and non-empty. */
+  readonly memoryIndex?: string;
 }
 
 /** Advertise available agents without inlining their prompts. */
@@ -25,11 +28,13 @@ export function buildAgentsInstructions(entries: readonly { qualifiedName: strin
   return lines.join("\n");
 }
 
-/** System instructions of a nested agent session: permissions, rules index, then the agent's own prompt. */
+/** System instructions of a nested agent session: permissions, rules index, memory index, then the agent's own prompt. */
 export function buildSubagentInstructions(input: SubagentInstructionsInput): string {
   const sections = [chatPermissionParagraph(input.mode)];
   const rules = buildRulesIndexSection({ entries: input.rulesIndex, shownAutomatically: true });
   if (rules) sections.push(rules);
+  const memory = memorySectionOf(input.memoryIndex);
+  if (memory !== undefined) sections.push(memory);
   sections.push(input.agent.prompt);
   return sections.join("\n\n");
 }

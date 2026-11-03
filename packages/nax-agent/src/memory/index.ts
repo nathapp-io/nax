@@ -43,6 +43,7 @@ export {
   MEMORY_CLIENT_ID_RE,
   MEMORY_DECISION_STATUSES,
   MEMORY_DESCRIPTION_MAX_CHARS,
+  MEMORY_FORGET_REASON_MAX_CHARS,
   MEMORY_INDEX_MAX_BYTES,
   MEMORY_INDEX_MAX_LINES,
   MEMORY_INDEX_MIN_BYTES,
@@ -68,4 +69,4 @@ export {
   type MemoryTimers,
   type MemoryWriteRefusal,
 } from "./types.ts";
-export { findSecret, validateMemoryNoteWrite } from "./validate.ts";
+export { findSecret, forgetReasonRefusal, validateMemoryNoteWrite } from "./validate.ts";

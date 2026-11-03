@@ -10,7 +10,7 @@ import {
 } from "@/chat/acp/acp-session-options";
 import type { ChatAcpTools } from "@/chat/acp/acp-tools";
 import { NaxError } from "@/errors";
-import { buildChatAcpInstructions } from "@/prompts";
+import { buildChatAcpInstructions, buildMemorySection } from "@/prompts";
 
 type Input = Parameters<typeof acpSessionOptions>[0];
 
@@ -118,6 +118,13 @@ describe("acpSessionOptions", () => {
     chatAcpToolsMock.mockImplementation(async () => ({ tools: [] }));
     const options = await acpSessionOptions(input({ acp: { agent: "cursor" } }));
     expect(options.instructions).toBe(buildChatAcpInstructions({ agentLabel: "Cursor" }));
+  });
+
+  test("AC-14: a memory index reaches the instructions as the last section", async () => {
+    const memoryIndex = "# Memory\n- [project] a — b";
+    const options = await acpSessionOptions(input({ memoryIndex }));
+    expect(options.instructions).toContain(memoryIndex);
+    expect(options.instructions).toEndWith(buildMemorySection(memoryIndex));
   });
 
   test("AC-8: returns sessionId from the input", async () => {

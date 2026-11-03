@@ -37,6 +37,8 @@ export interface SubagentRunsDeps {
   readonly ledger: () => ChatLedger | undefined;
   /** The running send's `onEvent`, or undefined between sends. */
   readonly turnListener: () => ((event: SessionEvent) => void) | undefined;
+  /** The parent session's rendered memory index; read per run, so a subagent sees the open's snapshot. */
+  readonly memoryIndex?: () => string | undefined;
 }
 
 export interface SubagentRuns {
@@ -169,6 +171,7 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
       tiers: deps.config.models.native,
     });
     const { allowedTools } = mapSubagentTools(agent.tools);
+    const memoryIndex = deps.memoryIndex?.();
     let nested: AgentSession | undefined;
     const usage: NestedUsage = {};
     try {
@@ -185,6 +188,7 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
         config: deps.config,
         parentSessionId: current.sessionId,
         signal: entry.controller.signal,
+        ...(memoryIndex !== undefined ? { memoryIndex } : {}),
         onSession: (session) => {
           nested = session;
           entry.session = session;

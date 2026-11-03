@@ -1,8 +1,11 @@
+import { memorySectionOf } from "./memory-builder";
 import { buildRulesIndexSection, type RulesIndexEntry } from "./rules-index-builder";
 
 export interface ChatInstructionsInput {
   readonly mode: "full" | "guarded";
   readonly rulesIndex: readonly RulesIndexEntry[];
+  /** The rendered memory index; the last section when present and non-empty. */
+  readonly memoryIndex?: string;
 }
 
 export interface ChatFeatureMessageInput {
@@ -29,6 +32,8 @@ export function buildChatInstructions(input: ChatInstructionsInput): string {
   ];
   const rules = buildRulesIndexSection({ entries: input.rulesIndex, shownAutomatically: true });
   if (rules) sections.push(rules);
+  const memory = memorySectionOf(input.memoryIndex);
+  if (memory !== undefined) sections.push(memory);
   return sections.join("\n\n");
 }
 
@@ -37,6 +42,8 @@ export interface ChatAcpInstructionsInput {
   readonly agentLabel: string;
   /** Rendered instructions of the nax tools delivered to the agent. */
   readonly toolInstructions?: string;
+  /** The rendered memory index; the last section when present and non-empty. */
+  readonly memoryIndex?: string;
 }
 
 /**
@@ -46,9 +53,11 @@ export interface ChatAcpInstructionsInput {
 export function buildChatAcpInstructions(input: ChatAcpInstructionsInput): string {
   const sections = [
     `You are ${input.agentLabel}, working as the coding agent inside nax chat, an interactive session in this repository with the person.`,
-    "Use your own tools and skills for the work itself. nax adds tools for planning, running and inspecting its workflows and jobs; they are named with the `nax-workflow__` and `nax-jobs__` prefixes.",
+    "Use your own tools and skills for the work itself. nax adds tools for planning, running and inspecting its workflows and jobs, and for reading and saving memory; they are named with the `nax-workflow__`, `nax-jobs__` and `nax-memory__` prefixes.",
   ];
   if (input.toolInstructions !== undefined && input.toolInstructions !== "") sections.push(input.toolInstructions);
+  const memory = memorySectionOf(input.memoryIndex);
+  if (memory !== undefined) sections.push(memory);
   return sections.join("\n\n");
 }
 

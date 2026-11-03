@@ -87,6 +87,17 @@ describe("createChatMcp", () => {
       expect.arrayContaining([expect.objectContaining({ message: "[resources] mcp server id nax-jobs is reserved" })]),
     );
   });
+  test("memory-chat US-010 AC-1/2 reserves nax-memory", async () => {
+    install();
+    const chat = await createChatMcp(input({ "nax-memory": server() }));
+    expect(chat.providers.map((p) => p.id)).not.toContain("nax-memory");
+    expect(chat.state.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        message: "[resources] mcp server id nax-memory is reserved",
+      }),
+    );
+  });
   test("AC-1 builds the pool with stages [*] for a run-only configured server", async () => {
     const f = install();
     await createChatMcp(input({ docs: server({ stages: ["run"] }) }));

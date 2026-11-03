@@ -1,0 +1,1342 @@
+{
+  "project": "nax-monorepo",
+  "feature": "memory-chat",
+  "branchName": "feat/memory-chat",
+  "createdAt": "2026-11-02T00:00:00Z",
+  "updatedAt": "2026-11-02T19:31:21.910Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Memory config",
+      "description": "**Goal** — Add the defaulted repository-wide memory configuration and typed accessor.\n\n**Motivation** — Feature 1 shipped the storage but nothing in nax reads or writes it yet.\n\n**Approach** — Config (`memory`)\n```jsonc\n\"memory\": {\n  \"enabled\": true,          // false: no host, no tools, no section, no sync\n  \"provider\": \"local\",      // only \"local\" is accepted in this feature\n  \"writeMode\": \"direct\",    // \"direct\" | \"proposal\"\n  \"indexBytes\": 24576,      // integer, 512..262144; the injected index's byte cap\n  \"askOnSave\": true         // guarded native chat asks before nax-memory__save / __forget\n}\n```\n`MemoryConfigSchema` is a `.strict()` zod object (like `schemas-mcp.ts`): an unknown key such as `stages` or `koda` fails validation until the feature that owns it widens the schema. `provider` is `z.enum([\"local\"])`. It is wired into `NaxConfigSchema` as `memory: MemoryConfigSchema.default(() => MemoryConfigSchema.parse({}))`; `src/config/schemas.ts` is at 591 of 600 lines and gains about three.\n\n`NaxConfig` is a hand-written interface (`src/config/runtime-types.ts:513`, 599 of 600 lines). Following the `mcp` precedent (`mcp?: import(\"./runtime-types-mcp\").McpConfig`), the type lives in `src/config/runtime-types-memory.ts` (`MemoryConfig { enabled: boolean; provider: \"local\"; writeMode: \"direct\" | \"proposal\"; indexBytes: number; askOnSave: boolean }`) and `NaxConfig` gains one line, `memory?: import(\"./runtime-types-memory\").MemoryConfig;`, bringing the file to exactly 600. `MemoryConfig` is re-exported from `src/config/types.ts` and `src/config/index.ts`. Because the field is optional on the type, every reader goes through `memoryConfigOf(config: Pick<NaxConfig, \"memory\">): MemoryConfig` (in `schemas-memory.ts`, exported from `@/config`), which returns `config.memory` or the schema default. The rest of this spec writes `memoryConfigOf(config).x`.\n\n`memory` is a repository-wide setting read from the resolved config (global then project); per-package `.nax/mono/<pkg>/config.json` files do not change it. `FIELD_DESCRIPTIONS` (`src/cli/config-descriptions.ts`) gains `memory`, `memory.enabled`, `memory.provider`, `memory.writeMode`, `memory.indexBytes`, `memory.askOnSave`.\n\n**Scope** — In: the two new config modules, schema/interface wiring, config barrels, descriptions and adding memory to the defaults test's closed key list. Out: paths/host/tool consumers (US-002 onward), chat askRules (US-014). Feature boundaries: The koda remote provider, the `memory.koda` config block, `nax memory link` and provider-side search merging are the `memory-koda-provider` feature; `memory.provider` accepts only `local` here. `memory` is not read from per-package `.nax/mono/<pkg>/config.json` files. Run-stage delivery (`memory.stages`, the memory context element, run-host sync, the reporter line) and bot review / fix surfaces are the `memory-run-stages` feature; `nax run` gets no memory tools or index from this feature.\n\n**Interface** — `MemoryConfigSchema`, `memoryConfigOf(config: Pick<NaxConfig, \"memory\">): MemoryConfig`, `MemoryConfig { enabled: boolean; provider: \"local\"; writeMode: \"direct\" | \"proposal\"; indexBytes: number; askOnSave: boolean }`. Verify source files remain <=600 lines without adding gate assertions to ACs.",
+      "acceptanceCriteria": [
+        "[unit] NaxConfigSchema.parse({}).memory equals { enabled: true, provider: \"local\", writeMode: \"direct\", indexBytes: 24576, askOnSave: true }.",
+        "[unit] NaxConfigSchema.safeParse({ memory: { provider: \"koda\" } }) fails with an issue whose path is [\"memory\", \"provider\"].",
+        "[unit] NaxConfigSchema.safeParse({ memory: { writeMode: \"auto\" } }) fails with an issue whose path is [\"memory\", \"writeMode\"].",
+        "[unit] NaxConfigSchema.safeParse({ memory: { indexBytes: 100 } }) fails with an issue whose path is [\"memory\", \"indexBytes\"].",
+        "[unit] NaxConfigSchema.safeParse({ memory: { indexBytes: 300000 } }) fails with an issue whose path is [\"memory\", \"indexBytes\"].",
+        "[unit] NaxConfigSchema.safeParse({ memory: { stages: [\"run\"] } }) fails because memory accepts no unknown key.",
+        "[unit] NaxConfigSchema.parse({ memory: { writeMode: \"proposal\" } }).memory.askOnSave is true.",
+        "[unit] memoryConfigOf({}) returns the schema default memory config.",
+        "[unit] memoryConfigOf({ memory: { enabled: false, provider: \"local\", writeMode: \"direct\", indexBytes: 4096, askOnSave: false } }) returns that object.",
+        "[unit] FIELD_DESCRIPTIONS[\"memory\"] is a non-empty string.",
+        "[unit] FIELD_DESCRIPTIONS[\"memory.enabled\"] is a non-empty string.",
+        "[unit] FIELD_DESCRIPTIONS[\"memory.provider\"] is a non-empty string.",
+        "[unit] FIELD_DESCRIPTIONS[\"memory.writeMode\"] is a non-empty string.",
+        "[unit] FIELD_DESCRIPTIONS[\"memory.indexBytes\"] is a non-empty string.",
+        "[unit] FIELD_DESCRIPTIONS[\"memory.askOnSave\"] is a non-empty string.",
+        "[unit] Importing memoryConfigOf and MemoryConfigSchema from @/config succeeds."
+      ],
+      "tags": [
+        "config",
+        "memory"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive strict schema and handwritten type wiring follow the existing MCP pattern; several small exports/default invariants need coordinated updates.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-mcp.ts",
+        "packages/nax/src/config/schemas.ts",
+        "packages/nax/src/config/runtime-types.ts",
+        "packages/nax/src/config/runtime-types-mcp.ts",
+        "packages/nax/test/unit/config/defaults.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/config/schemas-memory.ts",
+        "packages/nax/src/config/runtime-types-memory.ts",
+        "packages/nax/test/unit/config/schemas-memory.test.ts"
+      ],
+      "suggestedCriteria": [
+        "NaxConfigSchema.safeParse({ memory: { indexBytes: 512.5 } }) fails with an issue at [\"memory\", \"indexBytes\"].",
+        "NaxConfigSchema.safeParse({ memory: { koda: {} } }) fails because the memory block accepts no unknown key."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/schemas.ts",
+          "reason": "add the `memory` key to `NaxConfigSchema` with its schema default; stay within 600 lines."
+        },
+        {
+          "path": "packages/nax/src/config/runtime-types.ts",
+          "reason": "add one optional `memory` field typed by an inline import of the new memory runtime-types module to `NaxConfig`, the same pattern as `mcp`; the file must end at no more than 600 lines."
+        },
+        {
+          "path": "packages/nax/src/config/types.ts",
+          "reason": "re-export `MemoryConfig`."
+        },
+        {
+          "path": "packages/nax/src/config/index.ts",
+          "reason": "export `MemoryConfig`, `MemoryConfigSchema` and `memoryConfigOf`."
+        },
+        {
+          "path": "packages/nax/src/cli/config-descriptions.ts",
+          "reason": "add `FIELD_DESCRIPTIONS` entries for `memory`, `memory.enabled`, `memory.provider`, `memory.writeMode`, `memory.indexBytes` and `memory.askOnSave`."
+        },
+        {
+          "path": "packages/nax/test/unit/config/defaults.test.ts",
+          "reason": "`NAX_CONFIG_KEYS` is a closed list every `DEFAULT_CONFIG` key must appear in; add `memory` to it (the invariant stays \"every default key is listed\")."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c043cf07eef82a9fc2ee3ae96a5c812274b65a96"
+    },
+    {
+      "id": "US-002",
+      "title": "Memory directories",
+      "description": "**Goal** — Resolve collision-resistant per-project and shared user mirror directories.\n\n**Motivation** — Feature 1 shipped the storage but nothing in nax reads or writes it yet.\n\n**Approach** — Directories (`paths.ts`)\n`hash8` is the first 8 lowercase hex characters of the SHA-256 of `realpath(repoRoot)` (UTF-8), so two repositories with the same basename get different mirrors and a symlinked checkout shares the real one's mirror. The project key is `getProjectKey(config, repoRoot)` (`src/config/project-key.ts`) passed through `memoryProjectSegment`. Here use the resolved canonical repository root for identity, including getProjectKey's basename fallback: a symlink with a different basename must still produce the same whole projectDir, not merely the same hash suffix, as required by the symlink-equality AC. Preserve the original caller repoRoot in error context. `globalConfigDir()` (`src/config/paths/index.ts`) is the only way to reach `~/.nax` (the `check:no-real-global-nax` gate). A `realpath` failure throws `NaxError` code `MEMORY_REPO_ROOT_UNRESOLVED` with context `{ stage: \"memory\", repoRoot, cause }`.\n\n`MemoryLogger` (declared in `paths.ts`, re-exported by the barrel) is `Pick<Logger, \"warn\" | \"debug\" | \"info\" | \"error\">` from `@/logger`; it is structurally assignable to nax-agent's `AgentLogger`, which feature 1's functions take, and the plain-object fallback logger in `src/cli/chat.ts` satisfies it.\n\n**Scope** — In: paths.ts, _memoryPathsDeps, and creation of src/memory/index.ts; every later story that adds a src/memory export appends it there. Out: repo-note reading (US-003/004), host composition (US-005).\n\n**Interface**\n```ts\nexport type MemoryLogger = Pick<Logger, \"warn\" | \"debug\" | \"info\" | \"error\">;\nexport interface MemoryDirs {\n  readonly root: string;       // <globalConfigDir()>/memory\n  readonly projectDir: string; // <root>/projects/<segment>-<hash8>\n  readonly userDir: string;    // <root>/user\n}\nexport function memoryProjectSegment(projectKey: string): string; // [A-Za-z0-9._-] kept, every other char -> \"-\"\nexport async function memoryDirs(input: { readonly config: Pick<NaxConfig, \"name\">; readonly repoRoot: string }): Promise<MemoryDirs>;\nexport const _memoryPathsDeps: { realpath: (path: string) => Promise<string> };\n```",
+      "acceptanceCriteria": [
+        "[unit] With the global config directory pointed at a temp dir, memoryDirs({ config: { name: \"api\" }, repoRoot }) returns projectDir <globalDir>/memory/projects/api-<h> where <h> is the first 8 lowercase hex characters of the SHA-256 of realpath(repoRoot).",
+        "[unit] memoryDirs returns userDir equal to <globalDir>/memory/user.",
+        "[unit] memoryDirs returns root equal to <globalDir>/memory.",
+        "[unit] Two temp repositories both named api in different parents get different projectDir values from memoryDirs with config: {}.",
+        "[unit] memoryDirs called with a symlink to a repository returns the same projectDir as with the repository's real path.",
+        "[unit] memoryDirs with config: {} uses the repository directory's basename as the project key segment.",
+        "[unit] memoryProjectSegment(\"team/api v2\") returns team-api-v2.",
+        "[unit] memoryProjectSegment(\"nax-monorepo.v1_x\") returns nax-monorepo.v1_x.",
+        "[unit] When _memoryPathsDeps.realpath rejects, memoryDirs throws NaxError with code MEMORY_REPO_ROOT_UNRESOLVED.",
+        "[unit] That NaxError's context.cause is the rejection.",
+        "[unit] That NaxError's context.stage is memory.",
+        "[unit] Importing memoryDirs and memoryProjectSegment from @/memory succeeds."
+      ],
+      "tags": [
+        "memory",
+        "filesystem",
+        "identity"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Small path abstraction, but SHA-256 identity and realpath/symlink confinement merit the security override and strict isolated tests.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/project-key.ts",
+        "packages/nax/src/config/paths/index.ts",
+        "packages/nax/src/logger/logger.ts",
+        "packages/nax/src/config/schemas-memory.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/paths.ts",
+        "packages/nax/src/memory/index.ts",
+        "packages/nax/test/unit/memory/paths.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c6f0379b81b398cb81b7d1dbd2912f668d6197b1"
+    },
+    {
+      "id": "US-003",
+      "title": "Repo notes: per-file rules",
+      "description": "**Goal** — Read validated top-level team notes without following candidate links or exposing secrets.\n\n**Motivation** — This feature is the first surface: the agent sees an index of what earlier sessions saved, reads notes on demand, saves what a future session would need, and the user can inspect and edit memory from the terminal.\n\n**Approach** — Repo-committed team notes (`repo-notes.ts`), rules 2 and 3:\nA repo note is a feature-1 note file, so it has every frontmatter key `parseMemoryNote` requires and one blank line between the closing `---` and the body. Example `.nax/memory/staging-db.md`:\n```markdown\n---\nid: staging-db\nslug: staging-db\ntype: project\nscope: project\ndescription: the staging database is shared; never reset it\nsource: human\nupdatedAt: 2026-11-02T08:00:00Z\nstatus: active\n---\n\nAsk in #infra before running migrations against staging.\n```\n2. Only top-level names ending `.md` are candidates; subdirectories and other names are ignored (not counted as skipped). Candidates are taken in file-name order.\n3. A candidate is skipped when: it is not a regular file by `lstat` (a symlink is never followed); it is larger than `REPO_NOTE_MAX_FILE_BYTES` (checked from `lstat` before reading); reading it fails; `parseMemoryNote` throws; its `slug` differs from the file name without `.md`; its `scope` is not `project`; its `status` is not `active`; or `findSecret` finds a secret in the description or the body. Each skip logs one `warn(\"memory\", \"repo note skipped\", { path, reason })`; for a secret `reason` is `secret (<kind>)` and never contains the matched text.\nAccepted notes are returned with `source` replaced by `\"repo\"`. Repo notes are never written by any tool or command.\n\n**Scope** — In: repo-notes.ts per-file validation, deterministic order, skip accounting and exports from the memory barrel. Out: parent-directory safety and accepted-note cap (US-004); host warning deduplication and merging (US-005).\n\n**Interface**\n```ts\nexport const REPO_NOTE_MAX_FILE_BYTES = 16_384;\nexport const REPO_NOTES_MAX = 200;\nexport interface RepoNotes {\n  readonly notes: readonly MemoryNote[];   // accepted, source \"repo\", sorted by slug\n  readonly skipped: number;                // candidates rejected by a rule below\n}\nexport async function readRepoNotes(input: { readonly repoRoot: string; readonly logger: MemoryLogger }): Promise<RepoNotes>;\nexport const _repoNotesDeps: { lstat; readdir; readFile };   // node:fs/promises signatures\n```",
+      "acceptanceCriteria": [
+        "[unit] readRepoNotes({ repoRoot, logger }) on a repository holding the Design's example .nax/memory/staging-db.md returns notes with one note whose slug is staging-db.",
+        "[unit] That returned note's source is repo.",
+        "[unit] A file .nax/memory/other.md whose frontmatter slug is staging-db is not returned.",
+        "[unit] Skipping other.md logs one warn repo note skipped whose data path ends with other.md.",
+        "[unit] A file .nax/memory/bad.md with no frontmatter is not returned.",
+        "[unit] With only bad.md present, skipped is 1.",
+        "[unit] A note whose frontmatter scope is user is not returned.",
+        "[unit] A note whose frontmatter status is pending is not returned.",
+        "[unit] A symlink .nax/memory/link.md pointing at a valid note file is not returned.",
+        "[unit] A file larger than REPO_NOTE_MAX_FILE_BYTES (16384) is not returned.",
+        "[unit] For that oversized file, _repoNotesDeps.readFile is not called.",
+        "[unit] When _repoNotesDeps.readFile rejects for a candidate, that candidate is not returned and is counted in skipped.",
+        "[unit] A note whose body contains AKIAABCDEFGHIJKLMNOP is not returned.",
+        "[unit] The warn for that note has reason equal to secret (aws).",
+        "[unit] A notes.txt file and a valid note inside .nax/memory/sub/ produce no returned note.",
+        "[unit] With only those two present, skipped is 0.",
+        "[unit] Three valid notes with slugs zeta, alpha, mid are returned in the order alpha, mid, zeta.",
+        "[unit] Importing readRepoNotes from @/memory succeeds."
+      ],
+      "tags": [
+        "memory",
+        "filesystem",
+        "security"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New bounded reader uses established codec, but secret detection and symlink read restrictions are security-critical.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/paths.ts",
+        "packages/nax-agent/src/memory/note.ts",
+        "packages/nax-agent/src/memory/validate.ts",
+        "packages/nax/src/resources/skills-provider.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/repo-notes.ts",
+        "packages/nax/test/unit/memory/repo-notes.test.ts"
+      ],
+      "suggestedCriteria": [
+        "A repo note whose description contains AKIAABCDEFGHIJKLMNOP is skipped with reason secret (aws).",
+        "A secret skip warning contains no matched secret text."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2c23f96a1eff5c7e3a2667c101a8cf9de1ea9f6c"
+    },
+    {
+      "id": "US-004",
+      "title": "Repo notes: directory safety and limit",
+      "description": "**Goal** — Harden repository note directory traversal and bound the accepted-note scan.\n\n**Motivation** — Feature 1 shipped the storage but nothing in nax reads or writes it yet.\n\n**Approach** — Repo-committed team notes, rules 1 and 4, applied around US-003's rules in the specified order:\n1. If `<repoRoot>/.nax` or `<repoRoot>/.nax/memory` is a symlink (`lstat`), no note is read, one warn `\"repo notes directory is a symlink\"` with `{ path }` is logged and the result is `{ notes: [], skipped: 0 }`. A missing directory returns `{ notes: [], skipped: 0 }` with no log. A `readdir` error other than a missing directory logs one warn `\"repo notes unreadable\"` with `{ path, error }` and returns `{ notes: [], skipped: 0 }`.\n4. After `REPO_NOTES_MAX` accepted notes the remaining candidates are not read; one warn `\"repo notes over limit\"` with `{ skipped }` (their count) is logged and they count as skipped.\n\n**Scope** — In: extending readRepoNotes with pre-listing parent lstat checks, missing/unreadable handling, cap and aggregate warning. Out: host composition and warning deduplication (US-005); do not rewrite the per-file codec/validation completed in US-003.\n\n**Interface** — `export async function readRepoNotes(input: { readonly repoRoot: string; readonly logger: MemoryLogger }): Promise<RepoNotes>;` and `export const REPO_NOTES_MAX = 200;` remain the US-003 contract; use `_repoNotesDeps: { lstat; readdir; readFile }` with node:fs/promises signatures.",
+      "acceptanceCriteria": [
+        "[unit] readRepoNotes on a repository with no .nax/memory directory returns { notes: [], skipped: 0 }.",
+        "[unit] That call logs nothing.",
+        "[unit] When .nax/memory is a symlink to a directory holding a valid note, readRepoNotes returns no note.",
+        "[unit] That call logs one warn repo notes directory is a symlink.",
+        "[unit] When .nax itself is a symlink to a directory holding memory/staging-db.md, readRepoNotes returns no note.",
+        "[unit] When _repoNotesDeps.readdir rejects with an EACCES error, readRepoNotes returns { notes: [], skipped: 0 }.",
+        "[unit] That call logs one warn repo notes unreadable.",
+        "[unit] With REPO_NOTES_MAX + 2 valid notes present, readRepoNotes returns REPO_NOTES_MAX notes.",
+        "[unit] That call returns skipped equal to 2.",
+        "[unit] That call logs one warn repo notes over limit with skipped 2."
+      ],
+      "tags": [
+        "memory",
+        "filesystem",
+        "security"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Parent symlink restrictions are a security boundary; the bounded scanner otherwise extends the existing reader.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/repo-notes.ts",
+        "packages/nax/test/unit/memory/repo-notes.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/memory/repo-notes-dir.test.ts"
+      ],
+      "suggestedCriteria": [
+        "After 200 notes have been accepted, readRepoNotes does not read any remaining candidate file.",
+        "When .nax itself is a symlink, readRepoNotes logs one repo notes directory is a symlink warning naming that path."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "86b507dff759fe276d2b64cf7c299446bf0be5d0"
+    },
+    {
+      "id": "US-005",
+      "title": "Memory host: notes, get and search",
+      "description": "**Goal** — Compose the local memory host and expose live merged note reads and keyword search.\n\n**Motivation** — The koda provider (feature 3) and run stages (feature 4) build on the host and config added here.\n\n**Approach** — Composition: `memoryDirs` → `createMemoryStore({ projectDir, userDir, logger })` → `createMemoryOutbox({ dir: store.paths.outboxDir })` → `createLocalMemoryProvider(store)`. Repo notes are read on each call of `notes`, `getNote`, `search`, `renderIndex` and `status` (no cache). The host hands `readRepoNotes` a wrapper of its logger that drops a `warn` whose `message`, `path` and `reason` it has already passed on, so one bad repo note warns once per host, not once per call.\n- `notes(\"project\")` = the mirror's project notes plus every repo note whose slug the mirror's project notes do not hold (the agent's own note shadows the team note), sorted by slug in code-point order; `notes(\"user\")` = the mirror's user notes, sorted the same way.\n- `getNote(scope, slug)` = the matching element of `notes(scope)` or `null`.\n- `search` = `searchMemoryNotes(notes, text, limit)` over `notes(\"project\")` + `notes(\"user\")` when `scope` is absent, else over `notes(scope)`.\n\n`_memoryHostDeps = { memoryDirs, readRepoNotes, createMemoryStore, createMemoryOutbox, createLocalMemoryProvider, syncMemory, saveMemoryNote, forgetMemoryNote, approveMemoryNote }`.\n\n**Scope** — In: host.ts complete interface, composition, disabled short-circuit, dirs/providerId/writeMode, reads/search, logger wrapper and barrel exports. Out: index/sync/status implementations (US-006), writes/read-only refusal (US-007); `renderIndex`, `sync`, `status`, `save`, `forget` and `approve` throw `NaxError` `MEMORY_NOT_IMPLEMENTED` until US-006 and US-007. No changes to nax-agent.\n\n**Interface**\n```ts\nexport interface MemoryStatus {\n  readonly enabled: true;\n  readonly provider: string;                 // \"local\"\n  readonly writeMode: \"direct\" | \"proposal\";\n  readonly projectDir: string;\n  readonly userDir: string;\n  readonly lastPullAt: string | null;        // from sync.json\n  readonly lastError: string | null;\n  readonly queued: number;                   // outbox entries in state \"queued\"\n  readonly rejected: number;                 // outbox entries in state \"rejected\"\n  readonly notes: { readonly project: number; readonly user: number; readonly repo: number };\n  readonly repoSkipped: number;              // RepoNotes.skipped\n}\nexport interface MemoryHost {\n  readonly dirs: MemoryDirs;\n  readonly providerId: string;\n  readonly writeMode: \"direct\" | \"proposal\";\n  notes(scope: MemoryScope): Promise<readonly MemoryNote[]>;\n  getNote(scope: MemoryScope, slug: string): Promise<MemoryNote | null>;\n  search(input: { readonly text: string; readonly scope?: MemoryScope; readonly limit: number }): Promise<readonly MemoryHit[]>;\n  renderIndex(): Promise<RenderedMemoryIndex>;\n  sync(): Promise<MemorySyncResult>;\n  status(): Promise<MemoryStatus>;\n  save(write: MemoryNoteWrite): Promise<MemorySaveResult>;\n  forget(input: { readonly scope: MemoryScope; readonly slug: string; readonly reason: string }): Promise<MemoryForgetResult>;\n  approve(input: { readonly scope: MemoryScope; readonly slug: string }): Promise<MemoryNote>;\n}\nexport async function createMemoryHost(input: {\n  readonly config: NaxConfig;\n  readonly repoRoot: string;\n  readonly source: string;   // \"nax-chat\" for chat, \"human\" for the CLI\n  readonly logger: MemoryLogger;\n}): Promise<MemoryHost | null>;   // null when memoryConfigOf(config).enabled is false\n```",
+      "acceptanceCriteria": [
+        "[unit] createMemoryHost({ config, repoRoot, source: \"nax-chat\", logger }) with memory disabled returns null.",
+        "[unit] With memory disabled, _memoryHostDeps.memoryDirs is not called.",
+        "[unit] With memory enabled (temp global dir, temp repo), host.dirs equals what memoryDirs returns for the same config and repo root.",
+        "[unit] host.providerId is local.",
+        "[unit] host.writeMode equals memoryConfigOf(config).writeMode.",
+        "[unit] A note written with createMemoryStore({ projectDir: host.dirs.projectDir, ... }).writeNote is returned by host.notes(\"project\").",
+        "[unit] host.notes(\"project\") includes the repo note staging-db from the repository's .nax/memory/staging-db.md.",
+        "[unit] When the mirror also holds a project note staging-db, host.notes(\"project\") returns exactly one note with that slug.",
+        "[unit] In that case the returned staging-db note's source is not repo.",
+        "[unit] host.notes(\"project\") returns mirror note b-note and repo note a-note in the order a-note, b-note.",
+        "[unit] host.notes(\"user\") contains no note whose source is repo.",
+        "[unit] host.getNote(\"project\", \"staging-db\") returns the repo note when only the repository holds it.",
+        "[unit] host.getNote(\"project\", \"absent\") returns null.",
+        "[unit] host.search({ text: \"staging\", limit: 10 }) returns a hit whose slug is the repo note's.",
+        "[unit] The same search returns a hit for a user note whose description contains staging.",
+        "[unit] host.search({ text: \"staging\", scope: \"user\", limit: 10 }) returns only hits whose scope is user.",
+        "[unit] With one invalid repo note present, calling host.notes(\"project\") twice logs exactly one warn repo note skipped.",
+        "[unit] Importing createMemoryHost from @/memory succeeds."
+      ],
+      "tags": [
+        "memory",
+        "host",
+        "search"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New host abstraction composes multiple library collaborators, live read-only repo overlays and per-host warning deduplication.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/paths.ts",
+        "packages/nax/src/memory/repo-notes.ts",
+        "packages/nax-agent/src/memory/store.ts",
+        "packages/nax-agent/src/memory/search.ts",
+        "packages/nax/src/config/schemas-memory.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/host.ts",
+        "packages/nax/test/unit/memory/host.test.ts"
+      ],
+      "suggestedCriteria": [
+        "After a repository note file changes between calls, host.getNote returns its new body on the next call.",
+        "Two separate hosts each emit their own first warning for the same invalid repo note."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "be4687f1469c907430bbb88a45ecdbd1f3d85bb2"
+    },
+    {
+      "id": "US-006",
+      "title": "Memory host: index, sync and status",
+      "description": "**Goal** — Complete the host's index rendering, synchronization and inspectable status.\n\n**Motivation** — This feature is the first surface: the agent sees an index of what earlier sessions saved, reads notes on demand, saves what a future session would need, and the user can inspect and edit memory from the terminal.\n\n**Approach** — Replace the three US-005 placeholders with the specified compositions:\n- `renderIndex` = `renderMemoryIndex({ projectNotes: await notes(\"project\"), userNotes: await notes(\"user\"), decisions: await store.readDecisions(), heldForgets: await outbox.heldKeys(\"forget\"), maxBytes: memoryConfigOf(config).indexBytes })`.\n- `sync` = `syncMemory({ store, outbox, provider, logger })` (never throws by feature 1's contract).\n- `status`: `notes.project` and `notes.user` count the mirror's notes of that scope as `store.listNotes` returns them; `notes.repo` counts repo notes that are not shadowed; `lastPullAt` / `lastError` come from `store.readSyncState()`; `queued` / `rejected` from `outbox.list()`.\nRepo notes are read on each call of `notes`, `getNote`, `search`, `renderIndex` and `status` (no cache).\nWith the `local` provider, `pull` returns nothing and `reachable` is always true, so the syncs this feature wires (open, compaction, close) only drain the outbox; they still take the mirror lock and may return `locked` while another chat holds it. They are wired now so feature 3's remote provider needs no new call sites.\n\n**Scope** — In: renderIndex, sync and status in host.ts using the existing _memoryHostDeps seam and MemoryStatus interface. Out: write methods (US-007), lifecycle sync call sites (US-013/014) and remote provider logic.\n\n**Interface** — `renderIndex(): Promise<RenderedMemoryIndex>; sync(): Promise<MemorySyncResult>; status(): Promise<MemoryStatus>;` on `MemoryHost`. `MemorySyncResult.outcome: \"synced\" | \"unreachable\" | \"locked\" | \"failed\"`; renderer returns `{ text, omitted }`. `MemoryStatus` includes enabled:true, provider, writeMode, projectDir, userDir, lastPullAt, lastError, queued, rejected, notes:{project,user,repo}, repoSkipped as declared by US-005.",
+      "acceptanceCriteria": [
+        "[unit] host.renderIndex() returns text containing the line - [project] staging-db — the staging database is shared; never reset it for the repo note.",
+        "[unit] host.renderIndex() text contains a ## User section listing a saved user note's slug.",
+        "[unit] With memory.indexBytes 512 and 60 project notes, host.renderIndex() returns omitted greater than 0.",
+        "[unit] In that case the returned text is at most 512 UTF-8 bytes.",
+        "[unit] With a queued outbox forget entry for project/old-fact and a mirror note old-fact, the old-fact line of host.renderIndex() ends with (forget pending).",
+        "[unit] host.sync() with _memoryHostDeps.syncMemory stubbed calls it once.",
+        "[unit] That call's input provider.id is local.",
+        "[unit] host.sync() returns the stubbed syncMemory result.",
+        "[unit] host.status() on a mirror with 2 project notes, 1 user note and 1 unshadowed repo note returns notes { project: 2, user: 1, repo: 1 }.",
+        "[unit] host.status() with 1 queued and 1 rejected outbox entry returns queued 1.",
+        "[unit] The same host.status() returns rejected 1.",
+        "[unit] host.status() with one skipped repo note returns repoSkipped 1.",
+        "[unit] host.status() on a fresh mirror returns lastPullAt null.",
+        "[unit] host.status() returns provider local.",
+        "[unit] host.status() returns enabled true.",
+        "[unit] When _memoryHostDeps.syncMemory resolves { outcome: \"locked\", pushed: 0, rejected: 0, pulled: 0, skipped: 0 }, host.sync() resolves that same result instead of rejecting."
+      ],
+      "tags": [
+        "memory",
+        "host",
+        "sync"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Replaces host placeholders with standard library delegation and computed counts; storage locking remains library-owned.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/host.ts",
+        "packages/nax-agent/src/memory/index-render.ts",
+        "packages/nax-agent/src/memory/sync.ts",
+        "packages/nax-agent/src/memory/outbox.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/memory/host-index.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When store.readSyncState() returns a lastError and lastPullAt, host.status() returns those same values.",
+        "host.status() does not count a repo note shadowed by a mirror project note in notes.repo."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e8e00d29ea01878917155ef9adb25d931d8292f9"
+    },
+    {
+      "id": "US-007",
+      "title": "Memory host: save, forget and approve",
+      "description": "**Goal** — Complete host mutations while refusing modifications of repo-only project notes.\n\n**Motivation** — This feature is the first surface: the agent sees an index of what earlier sessions saved, reads notes on demand, saves what a future session would need, and the user can inspect and edit memory from the terminal.\n\n**Approach** — The save / forget / approve methods `host.ts` composes live in `host-writes.ts` (keeps `host.ts` under 400 lines).\n- `save(write)` = `saveMemoryNote({ store, outbox, provider, logger, write, writeMode, source })`.\n- `forget` and `approve` refuse a project slug that only a repo note holds with `NaxError` code `MEMORY_NOTE_READ_ONLY`, context `{ stage: \"memory\", slug }`, message `memory note \"<slug>\" is a repository note; edit .nax/memory/<slug>.md in the repository`; otherwise `forgetMemoryNote({ store, outbox, provider, logger, scope, slug, reason, writeMode })` and `approveMemoryNote({ store, scope, slug, logger })`.\n`_memoryHostDeps = { memoryDirs, readRepoNotes, createMemoryStore, createMemoryOutbox, createLocalMemoryProvider, syncMemory, saveMemoryNote, forgetMemoryNote, approveMemoryNote }`.\nRepo notes are never written by any tool or command.\n\n**Scope** — In: host-writes.ts, replacement of the remaining host placeholders, direct/proposal pass-through, source propagation, repo-only refusal and original-file preservation. Out: tool error mapping (US-009), CLI write output (US-018/019), completing a proposal-mode forget and any nax-agent locking/validation changes. Saving a matching slug is allowed and creates a mirror shadow.\n\n**Interface**\n```ts\nsave(write: MemoryNoteWrite): Promise<MemorySaveResult>;\nforget(input: { readonly scope: MemoryScope; readonly slug: string; readonly reason: string }): Promise<MemoryForgetResult>;\napprove(input: { readonly scope: MemoryScope; readonly slug: string }): Promise<MemoryNote>;\n```\nUse feature-1 `MemorySaveResult { slug, status, delivered }`, `MemoryForgetResult { slug, status, delivered }`; validation/secret refusals are `MEMORY_WRITE_REFUSED`, absent forget/approve is `MEMORY_NOTE_NOT_FOUND`.",
+      "acceptanceCriteria": [
+        "[unit] host.save({ slug: \"replay-budget\", type: \"project\", scope: \"project\", description: \"replay budget\", body: \"2048 MiB\" }) with writeMode direct returns { slug: \"replay-budget\", status: \"active\", delivered: true }.",
+        "[unit] After that save, host.getNote(\"project\", \"replay-budget\") returns a note whose source is nax-chat.",
+        "[unit] With memory.writeMode proposal, the same save returns status pending.",
+        "[unit] A save whose body contains AKIAABCDEFGHIJKLMNOP throws NaxError with code MEMORY_WRITE_REFUSED.",
+        "[unit] After that refused save, host.getNote for its slug returns null.",
+        "[unit] A save with scope user is returned by host.notes(\"user\").",
+        "[unit] A save of slug staging-db while only the repository holds staging-db makes host.getNote(\"project\", \"staging-db\") return a note whose source is nax-chat.",
+        "[unit] host.forget({ scope: \"project\", slug: \"replay-budget\", reason: \"stale\" }) under direct returns status deleted.",
+        "[unit] After that forget, host.getNote(\"project\", \"replay-budget\") returns null.",
+        "[unit] host.forget of staging-db while only the repository holds it throws NaxError with code MEMORY_NOTE_READ_ONLY.",
+        "[unit] That error's message names .nax/memory/staging-db.md.",
+        "[unit] After that refusal the repository file .nax/memory/staging-db.md still exists with its original content.",
+        "[unit] host.forget of a slug no scope holds throws NaxError with code MEMORY_NOTE_NOT_FOUND.",
+        "[unit] host.approve({ scope: \"project\", slug }) of a pending note returns a note with status active.",
+        "[unit] host.approve of staging-db while only the repository holds it throws NaxError with code MEMORY_NOTE_READ_ONLY.",
+        "[unit] host.approve of a slug the mirror does not hold throws NaxError with code MEMORY_NOTE_NOT_FOUND.",
+        "[unit] With _memoryHostDeps.saveMemoryNote stubbed, host.save(write) calls it with writeMode equal to host.writeMode.",
+        "[unit] That stubbed call receives source nax-chat."
+      ],
+      "tags": [
+        "memory",
+        "writes",
+        "security"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Mutation composition is standard, but repo-only write access restrictions and secret-refusal propagation require strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/host.ts",
+        "packages/nax-agent/src/memory/operations.ts",
+        "packages/nax/src/memory/repo-notes.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/host-writes.ts",
+        "packages/nax/test/unit/memory/host-writes.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "93e7ab8473f27a7a08127dc5466eb39def3ad987"
+    },
+    {
+      "id": "US-008",
+      "title": "Memory tool provider: get and search",
+      "description": "**Goal** — Expose the static nax-memory tool protocol and implement get/search.\n\n**Motivation** — This feature is the first surface: the agent sees an index of what earlier sessions saved, reads notes on demand, saves what a future session would need, and the user can inspect and edit memory from the terminal.\n\n**Approach** — Tool provider (`tool-provider.ts`)\n`createMemoryToolProvider(host: MemoryHost): ToolProvider` returns `{ id: \"nax-memory\", kind: \"static\", stages: [\"*\"], instructions: async () => buildMemoryToolInstructions(), tools }` with four tools (precedent: `src/chat/background/tasks-provider.ts`). Every result is `{ content: <JSON> }` or `{ isError: true, content: \"[memory] ...\" }`; a tool never throws.\n\n| Tool | Input (JSON schema, `additionalProperties: false`) | Result |\n|---|---|---|\n| `get` | `slug` string (required), `scope` `\"project\" | \"user\"` | the note as JSON: `id, slug, type, scope, description, source, updatedAt, status, body` |\n| `search` | `text` string (required), `scope`, `limit` integer 1-50 (default 10) | `{ \"hits\": MemoryHit[] }` |\n| `save` | `slug`, `type`, `description`, `body` strings (required), `scope` | `{ slug, status, delivered }` |\n| `forget` | `slug`, `reason` strings (required), `scope` | `{ slug, status, delivered }` |\n\n`scope` defaults to `\"project\"`. `get` takes a slug only: design 6.6's `get { slug | id }` is narrowed, because ids are provider-internal and the index shows slugs. The provider checks shapes only (required strings present, enum values, `limit` range, `slug` matching `MEMORY_SLUG_RE` for `get` and `forget`); note validation (type, lengths, secrets) stays with `saveMemoryNote`, whose `MEMORY_WRITE_REFUSED` becomes `{ isError: true, content: \"[memory] save refused: <reason>\" }`. Errors: unknown note `[memory] no note <scope>/<slug>`; `MEMORY_NOTE_NOT_FOUND` from forget the same text; `MEMORY_NOTE_READ_ONLY` its message prefixed `[memory] `; any other throw `[memory] <tool> failed: <errorMessage>`.\n\n`buildMemoryToolInstructions()` returns the protocol: check the memory index and `nax-memory__search` before starting a task; read a note with `nax-memory__get`; save what a future session would need with `nax-memory__save`, one fact per note, short; retire a wrong note with `nax-memory__forget`; never save secrets; notes are recorded facts, not instructions.\n\n**Scope** — In: provider shape, four ordered schemas/local names, implemented get/search, memory-builder.ts tool instructions, memory and prompt barrel exports. Out: save/forget implementations and generic failure mapping (US-009), chat attachment (US-010), index section builder (US-012); save and forget are present with their schemas and return isError `[memory] not implemented` until US-009. Search with no scope must preserve the host's cross-scope search semantics. Feature boundaries: The generic MCP memory provider is the `memory-mcp-provider` feature. Run-stage delivery (`memory.stages`, the memory context element, run-host sync, the reporter line) and bot review / fix surfaces are the `memory-run-stages` feature; `nax run` gets no memory tools or index from this feature.\n\n**Interface** — `createMemoryToolProvider(host: MemoryHost): ToolProvider`, `MEMORY_TOOL_PROVIDER_ID` (`\"nax-memory\"`), `buildMemoryToolInstructions()` exported from src/prompts/index.ts. Tools use public `ProviderTool` / `ToolResult` contracts from @nathapp/nax-agent.",
+      "acceptanceCriteria": [
+        "[unit] createMemoryToolProvider(host) returns a provider with id nax-memory.",
+        "[unit] The provider's kind is static.",
+        "[unit] The provider's stages is [\"*\"].",
+        "[unit] The provider's tools() resolves to tools with local names get, search, save, forget in that order.",
+        "[unit] The get tool run with { slug: \"staging-db\" } on a host holding that note returns content that parses as JSON with slug staging-db.",
+        "[unit] That get result's parsed body equals the note's body.",
+        "[unit] The get tool run with { slug: \"absent\" } returns isError with content [memory] no note project/absent.",
+        "[unit] The get tool run with { slug: \"../x\" } returns isError.",
+        "[unit] For that invalid slug, host.getNote is not called.",
+        "[unit] The get tool run with { slug: \"pref\", scope: \"user\" } calls host.getNote(\"user\", \"pref\").",
+        "[unit] The search tool run with { text: \"staging\" } calls host.search with limit 10.",
+        "[unit] That search result's content parses as an object with a hits array.",
+        "[unit] The search tool run with limit 0 returns isError without calling host.search.",
+        "[unit] The search tool run with limit 51 returns isError without calling host.search.",
+        "[unit] The provider's instructions() resolves to the same text buildMemoryToolInstructions() returns.",
+        "[unit] buildMemoryToolInstructions() names nax-memory__search.",
+        "[unit] buildMemoryToolInstructions() names nax-memory__save.",
+        "[unit] buildMemoryToolInstructions() has a sentence beginning Never that mentions secrets.",
+        "[unit] Importing createMemoryToolProvider from @/memory and buildMemoryToolInstructions from @/prompts succeeds."
+      ],
+      "tags": [
+        "memory",
+        "tools",
+        "prompts"
+      ],
+      "dependencies": [
+        "US-007"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Static tool adaptation and pure prompt instructions follow the tasks provider pattern without changing the permission model.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/host.ts",
+        "packages/nax/src/chat/background/tasks-provider.ts",
+        "packages/nax/src/prompts/builders/chat-builder.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/tool-provider.ts",
+        "packages/nax/src/prompts/builders/memory-builder.ts",
+        "packages/nax/test/unit/memory/tool-provider.test.ts"
+      ],
+      "suggestedCriteria": [
+        "The search tool run with limit 1.5 returns isError without calling host.search.",
+        "The get tool run with scope team returns isError without calling host.getNote.",
+        "The search tool with no scope returns matching hits from both project and user notes."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/prompts/index.ts",
+          "reason": "export `buildMemoryToolInstructions`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "04f29c4212caddc886a8fb807a6693da5a70f9ff"
+    },
+    {
+      "id": "US-009",
+      "title": "Memory tool provider: save and forget",
+      "description": "**Goal** — Implement memory mutation tools and convert all failures into resolved tool errors.\n\n**Motivation** — This feature is the first surface: the agent sees an index of what earlier sessions saved, reads notes on demand, saves what a future session would need, and the user can inspect and edit memory from the terminal.\n\n**Approach** — Every result is `{ content: <JSON> }` or `{ isError: true, content: \"[memory] ...\" }`; a tool never throws.\n`scope` defaults to `\"project\"`. The provider checks shapes only (required strings present, enum values, `limit` range, `slug` matching `MEMORY_SLUG_RE` for `get` and `forget`); note validation (type, lengths, secrets) stays with `saveMemoryNote`, whose `MEMORY_WRITE_REFUSED` becomes `{ isError: true, content: \"[memory] save refused: <reason>\" }`. Errors: unknown note `[memory] no note <scope>/<slug>`; `MEMORY_NOTE_NOT_FOUND` from forget the same text; `MEMORY_NOTE_READ_ONLY` its message prefixed `[memory] `; any other throw `[memory] <tool> failed: <errorMessage>`.\nThe `save` input has `slug`, `type`, `description`, `body` strings (required), `scope`; the `forget` input has `slug`, `reason` strings (required), `scope`. Both return `{ slug, status, delivered }`. Input JSON schemas use `additionalProperties: false`. Use `errorMessage` from `@nathapp/nax-agent/internal`.\n\n**Scope** — In: replacing save/forget placeholders in tool-provider.ts and common failure mapping for all four tools. Out: host mutation semantics (US-007), chat wiring (US-010), guarded askRules (US-014) and approve as an agent tool (only CLI US-019 exposes approve). No new secret detection or library changes.\n\n**Interface** — `createMemoryToolProvider(host: MemoryHost): ToolProvider` remains unchanged. `save(write: MemoryNoteWrite): Promise<MemorySaveResult>; forget(input: { readonly scope: MemoryScope; readonly slug: string; readonly reason: string }): Promise<MemoryForgetResult>;` are the host calls, not new provider APIs.",
+      "acceptanceCriteria": [
+        "[unit] The save tool run with slug, type, description and body calls host.save with those fields and scope project.",
+        "[unit] That save result's content parses as { slug, status, delivered } equal to what host.save resolved.",
+        "[unit] The save tool run without description returns isError.",
+        "[unit] For that missing description, host.save is not called.",
+        "[unit] When host.save throws NaxError MEMORY_WRITE_REFUSED with message secret (aws) must not be stored, the save tool returns isError with content [memory] save refused: secret (aws) must not be stored.",
+        "[unit] The forget tool run with { slug: \"old\", reason: \"stale\" } calls host.forget({ scope: \"project\", slug: \"old\", reason: \"stale\" }).",
+        "[unit] That forget result's content parses as { slug, status, delivered }.",
+        "[unit] When host.forget throws MEMORY_NOTE_READ_ONLY, the forget tool returns isError whose content starts with \"[memory] \" and contains .nax/memory/.",
+        "[unit] When host.forget throws MEMORY_NOTE_NOT_FOUND, the forget tool returns isError with content [memory] no note project/old.",
+        "[unit] The forget tool run without reason returns isError without calling host.forget.",
+        "[unit] When host.search throws a plain Error(\"disk full\"), the search tool returns isError with content [memory] search failed: disk full.",
+        "[unit] When host.save throws a plain Error(\"disk full\"), the save tool's promise resolves (does not reject)."
+      ],
+      "tags": [
+        "memory",
+        "tools",
+        "security"
+      ],
+      "dependencies": [
+        "US-008"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Existing provider gains writes with secret-refusal and read-only access-error handling; security-sensitive negative paths need strict isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/tool-provider.ts",
+        "packages/nax/src/memory/host.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/memory/tool-provider-writes.test.ts"
+      ],
+      "suggestedCriteria": [
+        "The forget tool run with slug ../x returns isError without calling host.forget.",
+        "When host.getNote throws Error(\"disk full\"), get resolves an isError result with content [memory] get failed: disk full."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d13f5c480466c96cfb806ff6d21f571a6e7fc5cc"
+    },
+    {
+      "id": "US-010",
+      "title": "Memory tools reach chat, ACP brains and subagents",
+      "description": "**Goal** — Compose the memory host/provider into shared chat resources and ACP tool delivery.\n\n**Motivation** — Feature 1 shipped the storage but nothing in nax reads or writes it yet.\n\n**Approach** — Chat wiring:\n- `nax-memory` is added to `RESERVED_SERVER_IDS` (`src/chat/chat-mcp.ts`) and to `ACP_CHAT_PROVIDER_IDS` (`src/chat/acp/acp-tools.ts`), so an MCP server cannot shadow it and an ACP brain receives the four tools and their instructions through `chatAcpTools`.\n- `ChatResources` (`src/chat/resources.ts`) gains `readonly memory?: MemoryHost`. The private `chatResources(repoRoot, config, deps)` in `src/cli/chat.ts` gains a fourth parameter `logger: MemoryLogger`; `composeChat` builds its logger (`getSafeLogger() ?? { warn, error, info, debug }`) before calling `chatResources` instead of after. `chatResources` calls `deps.createMemoryHost({ config, repoRoot, source: \"nax-chat\", logger })` (`_chatCommandDeps.createMemoryHost`); a non-null host is stored as `resources.memory` and its provider is placed after `nax-workflow` and before the MCP providers, so subagents (which take `resources.toolProviders`) get the tools too. A rejection is logged as `logger.warn(\"chat\", \"memory unavailable\", { error })` and the chat starts without memory. `chatResources` stays private: tests reach it through `chatCommand` and read the `resources` the stubbed `createChatHost` received.\n\n**Scope** — In: resources contract, private composition logger ordering and seam, provider placement, MCP reservation, ACP provider allowlist and the ACP tools invariant update. Out: disabled/failing-path fixture isolation (US-011), ACP fixed instruction-prefix sentence and memoryIndex forwarding (US-012), host public memory/lifecycle behavior (US-013/014). The `nax-agent` ACP server bin does not declare memory tools in this feature.\n\n**Interface** — `ChatResources` adds `readonly memory?: MemoryHost`; `chatResources(repoRoot, config, deps, logger)` is private; `_chatCommandDeps.createMemoryHost` calls `createMemoryHost({ config, repoRoot, source: \"nax-chat\", logger })`. Target `ACP_CHAT_PROVIDER_IDS` is `[\"nax-workflow\", \"nax-jobs\", \"nax-memory\"]`; `RESERVED_SERVER_IDS` contains its five existing ids plus `\"nax-memory\"`. Update test/unit/chat/acp/acp-tools.test.ts to preserve the delivered-provider-list invariant.",
+      "acceptanceCriteria": [
+        "[unit] createChatMcp with a configured MCP server whose id is nax-memory attaches no provider with id nax-memory.",
+        "[unit] That call reports the diagnostic [resources] mcp server id nax-memory is reserved.",
+        "[unit] chatAcpTools([createMemoryToolProvider(host)], cwd) returns tools whose names include the memory get, search, save and forget tools.",
+        "[unit] That chatAcpTools call returns instructions containing nax-memory__search.",
+        "[integration] chatCommand with _chatCommandDeps.createMemoryHost stubbed to resolve a fake host (and createChatHost stubbed as in the existing chat resources tests) calls the stub once with source nax-chat.",
+        "[integration] That stubbed call receives repoRoot equal to the chat's repo root.",
+        "[integration] That stubbed call receives a logger with a warn function.",
+        "[integration] The resources the stubbed createChatHost receives has memory equal to the fake host.",
+        "[integration] Those resources list provider ids with nax-memory directly after nax-workflow.",
+        "[integration] Given the existing chat resources fixture with one MCP provider docs and a memory host, chatCommand passes createChatHost provider ids [\"nax-skills\", \"nax-workflow\", \"nax-memory\", \"docs\"], preserving the existing skills/workflow/MCP ordering."
+      ],
+      "tags": [
+        "memory",
+        "chat",
+        "acp",
+        "tools"
+      ],
+      "dependencies": [
+        "US-009"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module resource composition and ACP tool exposure affect session capabilities and reserved provider namespaces; apply the session/security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/chat-mcp.ts",
+        "packages/nax/src/chat/acp/acp-tools.ts",
+        "packages/nax/src/cli/chat.ts",
+        "packages/nax/src/chat/resources.ts",
+        "packages/nax/test/unit/cli/chat-resources.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/cli/chat-resources-memory.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/chat/chat-mcp.ts",
+          "reason": "add `\"nax-memory\"` to `RESERVED_SERVER_IDS`."
+        },
+        {
+          "path": "packages/nax/src/chat/acp/acp-tools.ts",
+          "reason": "add `\"nax-memory\"` to `ACP_CHAT_PROVIDER_IDS`."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/acp/acp-tools.test.ts",
+          "reason": "its assertions pin the delivered provider ids to the workflow and jobs providers; the invariant is the `ACP_CHAT_PROVIDER_IDS` list, which now also contains `nax-memory`."
+        },
+        {
+          "path": "packages/nax/src/chat/resources.ts",
+          "reason": "add `readonly memory?: MemoryHost` to `ChatResources`."
+        },
+        {
+          "path": "packages/nax/src/cli/chat.ts",
+          "reason": "`chatResources` takes a `logger` parameter, creates the memory host through `deps.createMemoryHost`, stores it as `memory` and places its provider after `nax-workflow`; `composeChat` builds the logger before calling it; `_chatCommandDeps` gains `createMemoryHost`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a73f6ec9cc91189b58e8b5612cb3a1e03252c26c"
+    },
+    {
+      "id": "US-011",
+      "title": "Chat resources degrade without memory",
+      "description": "**Goal** — Preserve chat startup and no-memory resource behavior when host creation is disabled or fails.\n\n**Motivation** — The chat agent starts every session blank: on 2026-10-27 the in-TUI agent could not find what \"slice 2\" was.\n\n**Approach** — A rejection is logged as `logger.warn(\"chat\", \"memory unavailable\", { error })` and the chat starts without memory. `chatResources` stays private: tests reach it through `chatCommand` and read the `resources` the stubbed `createChatHost` received.\nCovers the disabled and failing `createMemoryHost` paths of `chatResources()` and makes the chat CLI test fixtures stub `createMemoryHost`.\n- `packages/nax/test/unit/cli/chat.test.ts` — its fixture spreads the real `_chatCommandDeps`, which would now create a real memory host under the test's repo root; the fixture stubs `createMemoryHost` to resolve `null` (the invariant is that chat command tests touch no real global nax directory).\n- `packages/nax/test/unit/cli/chat-resources.test.ts` — its fixtures spread the real `_chatCommandDeps`, and its temp-dir cases would create real memory hosts; the fixture stubs `createMemoryHost` to resolve `null`, so its provider-id and resource assertions keep describing the chat without memory.\nFailure handling: `memory.enabled` false means host is null: no tools, no section, no sync. `realpath(repoRoot)` failure is `MEMORY_REPO_ROOT_UNRESOLVED`; chat logs `memory unavailable` and starts without memory.\n\n**Scope** — In: graceful null/rejection resource composition in src/cli/chat.ts, tests through chatCommand, no-real-global fixtures and unchanged existing no-memory provider/resource assertions. Out: successful tool composition already delivered by US-010, instruction plumbing (US-012), lifecycle recovery (US-013/014). This is the spec's binding independent degradation/regression story.\n\n**Interface** — Private `chatResources(repoRoot, config, deps, logger)` calls `_chatCommandDeps.createMemoryHost`; on null or rejection omit `resources.memory` and its provider. The fallback logger is `getSafeLogger() ?? { warn, error, info, debug }` and forwards through writeErr when no logger is initialized.",
+      "acceptanceCriteria": [
+        "[integration] chatCommand with createMemoryHost stubbed to resolve null hands createChatHost resources with no memory.",
+        "[integration] In that case no provider in those resources has id nax-memory.",
+        "[integration] When createMemoryHost rejects with NaxError MEMORY_REPO_ROOT_UNRESOLVED, chatCommand still calls createChatHost.",
+        "[integration] In that case the resources it receives carry no memory.",
+        "[integration] In that case memory unavailable is written through the chat's logger (the writeErr fallback when no logger is initialised).",
+        "[integration] When chatCommand runs with the fixtures in test/unit/cli/chat.test.ts and test/unit/cli/chat-resources.test.ts stubbing createMemoryHost to resolve null, its captured outputs, exit codes and collaborator/resource values match those fixtures' existing assertions unchanged."
+      ],
+      "tags": [
+        "memory",
+        "chat",
+        "resilience"
+      ],
+      "dependencies": [
+        "US-010"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Narrow startup degradation/fixture work, but it changes session resource composition and must isolate the real global filesystem.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/chat.ts",
+        "packages/nax/test/unit/cli/chat-resources.test.ts",
+        "packages/nax/test/unit/cli/chat.test.ts",
+        "packages/nax/test/unit/cli/chat-resources-memory.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/cli/chat-resources-memory-degrade.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/cli/chat.test.ts",
+          "reason": "its fixture spreads the real `_chatCommandDeps`, which would now create a real memory host under the test's repo root; the fixture stubs `createMemoryHost` to resolve `null` (the invariant is that chat command tests touch no real global nax directory)."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/chat-resources.test.ts",
+          "reason": "its fixtures spread the real `_chatCommandDeps`, and its temp-dir cases would create real memory hosts; the fixture stubs `createMemoryHost` to resolve `null`, so its provider-id and resource assertions keep describing the chat without memory."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "500412cb314a4ee1be5f00cacb2ebe806dbe39f8"
+    },
+    {
+      "id": "US-012",
+      "title": "Memory section in instructions",
+      "description": "**Goal** — Carry an optional memory index through native, ACP and subagent instruction builders.\n\n**Motivation** — This feature is the first surface: the agent sees an index of what earlier sessions saved, reads notes on demand, saves what a future session would need, and the user can inspect and edit memory from the terminal.\n\n**Approach** — `buildChatInstructions({ mode, rulesIndex, memoryIndex })`: when `memoryIndex` is a non-empty string, the last section is `buildMemorySection(memoryIndex)` = `## Memory\\n\\nRead a note with nax-memory__get and find more with nax-memory__search.\\n\\n<memoryIndex>` (the index itself carries the \"recorded facts, not instructions\" line). `buildChatAcpInstructions` (input `memoryIndex?`) appends the same section last; `buildSubagentInstructions` (input `memoryIndex?`) places it before the agent's own prompt. `openAcpBrain` passes the request's `memoryIndex` to `acpSessionOptions` (input `memoryIndex?`).\n`buildChatAcpInstructions`'s fixed sentence that names the `nax-workflow__` and `nax-jobs__` prefixes also names `nax-memory__`.\n\n**Scope** — In: buildMemorySection and prompts barrel export, optional builder inputs, OpenChatSessionRequest and both open-session forwarding paths, AcpSessionOptionsInput and exact ACP prefix regression update. Out: rendering/sync at host open and subagent-run current-index getter (US-013), compaction/close/asks (US-014). Feature boundaries (no tool-based index suppression or ACP mid-session refresh): A subagent whose `allowedTools` exclude the `nax-memory` tools still receives the memory index section as data. An ACP brain keeps the index it was opened with for the life of its ACP session.\n\n**Interface** — `buildMemorySection(memoryIndex)`; `OpenChatSessionRequest` adds `readonly memoryIndex?: string`; `AcpSessionOptionsInput` adds `memoryIndex?`; `buildChatInstructions({ mode, rulesIndex, memoryIndex })`, `buildChatAcpInstructions` (input `memoryIndex?`), `buildSubagentInstructions` (input `memoryIndex?`). The section ends in the index verbatim and is omitted for undefined or empty string. Update test/unit/prompts/chat-handoff.test.ts's exact sentence assertion so the same instructions also name the memory prefix.",
+      "acceptanceCriteria": [
+        "[unit] buildChatInstructions({ mode: \"guarded\", rulesIndex: [], memoryIndex: \"# Memory\\n- [project] a — b\" }) returns text ending with buildMemorySection of that index.",
+        "[unit] buildChatInstructions without memoryIndex returns text with no ## Memory heading.",
+        "[unit] buildChatInstructions with memoryIndex \"\" returns text with no ## Memory heading.",
+        "[unit] buildMemorySection(index) starts with ## Memory.",
+        "[unit] buildMemorySection(index) names nax-memory__get and nax-memory__search.",
+        "[unit] buildMemorySection(index) ends with index verbatim.",
+        "[unit] buildChatAcpInstructions({ agentLabel: \"Codex\", memoryIndex }) returns text ending with buildMemorySection(memoryIndex).",
+        "[unit] buildChatAcpInstructions without memoryIndex returns text with no ## Memory heading.",
+        "[unit] buildChatAcpInstructions({ agentLabel: \"Codex\" }) names the nax-memory__ prefix.",
+        "[unit] buildSubagentInstructions with memoryIndex returns text where buildMemorySection(memoryIndex) appears before the agent's prompt.",
+        "[unit] buildSubagentInstructions without memoryIndex returns the same text as before this feature for the same input.",
+        "[integration] openChatSession for a native model with memoryIndex set creates the agent session with instructions containing ## Memory followed by that index.",
+        "[integration] openChatSession for an acp: model with memoryIndex set creates the agent session with instructions containing ## Memory followed by that index.",
+        "[integration] acpSessionOptions({ ..., memoryIndex }) returns options whose instructions contain that index."
+      ],
+      "tags": [
+        "memory",
+        "prompts",
+        "chat",
+        "acp"
+      ],
+      "dependencies": [
+        "US-011"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Optional data traverses several instruction builders and native/ACP session-creation seams; sessions trigger the strict security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/chat-builder.ts",
+        "packages/nax/src/prompts/builders/agents-builder.ts",
+        "packages/nax/src/chat/open-chat-session.ts",
+        "packages/nax/src/chat/acp/acp-session-options.ts",
+        "packages/nax/src/prompts/builders/memory-builder.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/prompts/memory-builder.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/prompts/builders/chat-builder.ts",
+          "reason": "`buildChatInstructions` and `buildChatAcpInstructions` take `memoryIndex?` and append `buildMemorySection` last; the ACP prefix sentence also names `nax-memory__`."
+        },
+        {
+          "path": "packages/nax/src/prompts/builders/agents-builder.ts",
+          "reason": "`buildSubagentInstructions` takes `memoryIndex?` and places the memory section before the agent prompt."
+        },
+        {
+          "path": "packages/nax/src/prompts/index.ts",
+          "reason": "export `buildMemorySection`."
+        },
+        {
+          "path": "packages/nax/src/chat/open-chat-session.ts",
+          "reason": "`OpenChatSessionRequest.memoryIndex?` reaches `buildChatInstructions` in `sessionOptions` and `acpSessionOptions` in `openAcpBrain`."
+        },
+        {
+          "path": "packages/nax/src/chat/acp/acp-session-options.ts",
+          "reason": "`AcpSessionOptionsInput.memoryIndex?` reaches `buildChatAcpInstructions`."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/chat-handoff.test.ts",
+          "reason": "its exact-text assertion on the ACP instructions pins the sentence naming only the workflow and jobs tool prefixes; the invariant is the same instructions with that sentence also naming the memory tool prefix."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a3f5ab7a87538b7d539ab8cfb99c9f53c3434dfd"
+    },
+    {
+      "id": "US-013",
+      "title": "Chat host: memory on every open",
+      "description": "**Goal** — Prepare the memory index once per chat open and deliver the parent snapshot to subagents.\n\n**Motivation** — The chat agent starts every session blank: on 2026-10-27 the in-TUI agent could not find what \"slice 2\" was.\n\n**Approach** — `ChatHost` gains `readonly memory?: MemoryHost` (= `deps.resources?.memory`).\n`src/chat/chat-host.ts` is at 598 of its 600-line limit. Move the context-window cache (`contextWindows` and `primeContextWindow`, about 25 lines) to `src/chat/context-window-cache.ts` as `createContextWindowCache(lookup: () => typeof lookupContextWindow)` with `get(model)` and `prime(model)`; the host passes `() => _chatHostDeps.lookupContextWindow`, so existing stubs keep working and the new module does not import `chat-host.ts` (no import cycle). The memory logic lives in `src/chat/host-memory.ts`: `createHostMemory({ memory, logger })` returns `{ prepare(): Promise<string | undefined>, current(): string | undefined, handlers: LoopHandlerSet, closeSync(): Promise<void> }`; the host only holds it and calls it. If the file is still over 600 lines, the `createHostJobs` construction block in the constructor moves to a helper in `src/chat/host-memory.ts`'s sibling `src/chat/host-wiring.ts`.\n\n`prepare()` awaits `memory.sync()` (a throw is logged with `warn(\"chat\", \"memory sync failed\", { error })` and ignored), then `(await memory.renderIndex()).text` (a throw is logged with `warn(\"chat\", \"memory index unavailable\", { error })` and yields `undefined`), stores the result as `current()` and returns it. Each open request carries `memoryIndex: hostMemory.current()` (`OpenChatSessionRequest.memoryIndex?: string`). Without `resources.memory` nothing is called and `memoryIndex` is absent. The host logger is `Pick<Logger, \"warn\">`, so `prepare` logs only warnings.\n`createSubagentRuns` takes an optional `memoryIndex?: () => string | undefined` (the host passes `hostMemory.current`), and each subagent session receives its value.\nThe host awaits prepare once in startSession, once in resumeSession and once per requested switch, covering mode-switch reopen and model-switch/clear paths. Prepare before switchChatSession; the openFresh callback and a rollback reopen inside the switch use current() and do not sync again. Do not double-prepare the mode-switch reopen: the one-sync-per-model-switch AC is authoritative. Clear currently calls start, so its startSession preparation also runs only once. Expected sync results such as unreachable/locked are not throws and do not warn. Keep prior context-window behavior (cache misses, malformed/ACP names and lookup failure) unchanged.\n\n**Scope** — In: extracting context cache in this story, host-memory helper API, host.memory, open preparation/request data, current snapshot getter through SubagentRunsDeps/RunSubagentInput and subagent-session instructions. Out: registering compaction handlers, teardown closeSync and native asks (US-014), slash display (US-015). The memory index in a session's instructions is rendered when the session opens and is not refreshed mid-session; notes saved during a session reach the next open's index, and `nax-memory__search` sees them at once.\n\n**Interface** — `createContextWindowCache(lookup: () => typeof lookupContextWindow)` with `get(model)` and `prime(model)`; `createHostMemory({ memory, logger })` returns `{ prepare(): Promise<string | undefined>, current(): string | undefined, handlers: LoopHandlerSet, closeSync(): Promise<void> }`; `RunSubagentInput` adds `memoryIndex?: string` and `SubagentRunsDeps` adds `memoryIndex?: () => string | undefined`. Review file-size/import-cycle gates with chat-host.ts <=600; host-wiring.ts is an optional extraction only if necessary, not a new public API.",
+      "acceptanceCriteria": [
+        "[integration] host.start({ mode: \"guarded\", model }) on a chat host whose resources.memory is a fake host calls memory.sync once.",
+        "[integration] In that start the memory.sync call happens before the open call.",
+        "[integration] That start's open request carries memoryIndex equal to the fake host's rendered text.",
+        "[integration] host.resume({ id }) calls memory.sync before its open.",
+        "[integration] That resume's open request carries memoryIndex.",
+        "[integration] host.switchTo({ mode: \"full\" }) after a start (the reopen path) passes memoryIndex to its open.",
+        "[integration] host.switchTo({ model }) with a different model after a start (the openFresh path) passes memoryIndex to its open.",
+        "[integration] That model switch calls memory.sync exactly once.",
+        "[integration] host.clear() after a start passes memoryIndex to its open.",
+        "[integration] When the fake host's sync rejects, host.start opens a session whose request carries the rendered memoryIndex.",
+        "[integration] In that case the host logger receives warn memory sync failed.",
+        "[integration] When the fake host's sync resolves with outcome unreachable, host.start logs no warn.",
+        "[integration] When the fake host's renderIndex rejects, host.start opens a session whose request has no memoryIndex.",
+        "[integration] In that case the host logger receives warn memory index unavailable.",
+        "[integration] A chat host with no resources.memory opens with no memoryIndex.",
+        "[integration] A subagent run started through the host after host.start opens a session whose instructions contain the memory index the parent session was opened with.",
+        "[unit] host.memory equals deps.resources.memory.",
+        "[unit] createContextWindowCache(() => lookup).prime(\"openai/gpt-x\") calls lookup with openai and gpt-x, and get(\"openai/gpt-x\") then returns its result.",
+        "[unit] After awaiting prime(\"openai/gpt-x\") twice on the same createContextWindowCache instance, lookup has been called once, preserving the host's existing per-model cache behavior.",
+        "[unit] When the injected context-window lookup rejects, prime(\"openai/gpt-x\") resolves rather than rejecting, preserving the existing fail-open catalog behavior."
+      ],
+      "tags": [
+        "memory",
+        "chat",
+        "sessions",
+        "subagents"
+      ],
+      "dependencies": [
+        "US-012"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-cutting session-open/switch/rollback ordering and snapshot propagation plus constrained host extraction; session lifecycle invokes the security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/chat/session-switch.ts",
+        "packages/nax/src/chat/subagent-runs.ts",
+        "packages/nax/src/chat/subagent-session.ts",
+        "packages/nax/test/unit/chat/chat-host-resources.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/context-window-cache.ts",
+        "packages/nax/src/chat/host-memory.ts",
+        "packages/nax/test/unit/chat/chat-host-memory.test.ts"
+      ],
+      "suggestedCriteria": [
+        "A mode-switch reopen calls memory.sync exactly once for that switch.",
+        "A failed switch followed by rollback reopen does not add another memory.sync call.",
+        "When a subsequent renderIndex rejects after an earlier successful open, the next open omits the earlier memoryIndex rather than reusing stale text.",
+        "When a subagent excludes all nax-memory tools through allowedTools, its instructions still contain the parent memory index."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/chat/chat-host.ts",
+          "reason": "move the context-window cache into the new cache module; add the `memory` field, await `prepare()` once per open path, pass `hostMemory.current` to subagent runs; stay within 600 lines."
+        },
+        {
+          "path": "packages/nax/src/chat/subagent-runs.ts",
+          "reason": "take an optional `memoryIndex?: () => string | undefined` and hand its value to each subagent session."
+        },
+        {
+          "path": "packages/nax/src/chat/subagent-session.ts",
+          "reason": "take `memoryIndex?` and pass it to `buildSubagentInstructions`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9ae3965a4fc9187b666277844f5c8b8decfc8cf7"
+    },
+    {
+      "id": "US-014",
+      "title": "Chat host: compaction and close sync, guarded asks",
+      "description": "**Goal** — Flush memory before compaction and after resource teardown and ask before native guarded writes.\n\n**Motivation** — The koda provider (feature 3) and run stages (feature 4) build on the host and config added here.\n\n**Approach** — Loop handler: `hostMemory.handlers` is one frozen entry `{ plugin: \"nax-memory\", event: \"before_compaction\", handler }`; the handler awaits `memory.sync()`, logs a throw with `warn(\"chat\", \"memory sync failed\", { error })` and returns `undefined` (it never replaces the summary). The host places it after the rule-delivery entries and before the `nax-jobs` guard entries.\nClose: the host teardown runs `closeChatResources(...)` and then, in a `finally`, awaits `hostMemory.closeSync()` (one `memory.sync()`, a throw logged with `warn(\"chat\", \"memory sync failed\", { error })`). A rejection of `closeChatResources` still propagates. A second `close()` returns the same promise, so the sync runs once.\nAsks: `chatBackendPosture(mode, config, posture)` in guarded mode returns `askRules` = `[...posture.askRules, \"nax-memory__save\", \"nax-memory__forget\"]` when `memoryConfigOf(config).enabled && memoryConfigOf(config).askOnSave`, else `posture.askRules` itself (same array). Full mode is unchanged (no `askRules`). `get` and `search` never ask.\n\n**Scope** — In: host-memory handler/close implementation and host registration/teardown, guarded posture overlay, native opener proof and updates to existing array-identity fixtures. Out: open preparation (US-013), slash/CLI (US-015 onward), ACP asks. An ACP brain's `nax-memory__save` and `nax-memory__forget` calls do not ask in guarded mode: `askRules` reach native sessions only, and the ACP agent applies its own permission handling. No changes to the permission-resolution SSOT.\n\n**Interface** — `createHostMemory({ memory, logger })` returns `{ prepare(): Promise<string | undefined>, current(): string | undefined, handlers: LoopHandlerSet, closeSync(): Promise<void> }`. With no memory its handlers are empty and closeSync calls nothing. `chatBackendPosture(mode, config, posture)` consumes the opener's resolved posture. In test/unit/chat/chat-mode.test.ts, open-chat-session.test.ts and subagent-session.test.ts set memory.askOnSave false in the existing identity-invariant fixtures, preserving the assertion that rules pass through untouched when memory asks are off. Keep chat-host.ts <=600 lines; optional host-wiring.ts extraction remains available.",
+      "acceptanceCriteria": [
+        "[integration] After host.start, the open request's loopHandlers contain exactly one entry with plugin nax-memory.",
+        "[integration] That entry's event is before_compaction.",
+        "[integration] That memory entry comes after every nax-rules entry.",
+        "[integration] A chat host with no resources.memory has no loop handler entry with plugin nax-memory.",
+        "[unit] The handler of createHostMemory({ memory, logger }).handlers[0] calls memory.sync once.",
+        "[unit] That handler returns undefined.",
+        "[unit] When memory.sync rejects, that handler resolves to undefined.",
+        "[unit] In that case the handler logs warn memory sync failed.",
+        "[integration] host.close() after host.start(...) calls memory.sync once more than the open did.",
+        "[integration] That close-time sync happens after the resources' teardown was called.",
+        "[integration] Calling host.close() twice results in one close-time memory.sync call.",
+        "[integration] When the close-time memory.sync rejects, host.close() resolves.",
+        "[integration] In that case the host logger receives warn memory sync failed.",
+        "[unit] chatBackendPosture(\"guarded\", config, posture) with memory enabled and askOnSave true returns askRules equal to [...posture.askRules, \"nax-memory__save\", \"nax-memory__forget\"].",
+        "[unit] chatBackendPosture(\"guarded\", ...) with askOnSave false returns askRules that is the posture's array itself.",
+        "[unit] chatBackendPosture(\"guarded\", ...) with memory disabled returns askRules that is the posture's array itself.",
+        "[unit] chatBackendPosture(\"full\", ...) returns no askRules.",
+        "[integration] openChatSession in guarded mode with memory enabled and askOnSave true passes askRules containing nax-memory__save to _openChatSessionDeps.nativeBackend."
+      ],
+      "tags": [
+        "memory",
+        "chat",
+        "sync",
+        "permissions",
+        "security"
+      ],
+      "dependencies": [
+        "US-013"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Native permission overlays, loop handler ordering and idempotent session teardown are security-critical and require strict isolated TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/host-memory.ts",
+        "packages/nax/src/context/rules/rule-delivery/index.ts",
+        "packages/nax/src/chat/session-hygiene.ts",
+        "packages/nax/src/chat/chat-mode.ts",
+        "packages/nax/src/chat/chat-host.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/chat-host-memory-close.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When closeChatResources rejects, the host still performs close-time memory.sync and close rejects with the resource-cleanup error.",
+        "The nax-memory before_compaction entry precedes every nax-jobs guard entry.",
+        "When close is called a second time, it returns the first close promise by identity.",
+        "Guarded memory askRules contain no nax-memory__get or nax-memory__search entries unless those entries were already in posture.askRules."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/chat/chat-host.ts",
+          "reason": "register the memory handler after rule delivery and before the jobs guard; after `closeChatResources` in teardown, await `closeSync()` in a `finally`; stay within 600 lines."
+        },
+        {
+          "path": "packages/nax/src/chat/chat-mode.ts",
+          "reason": "guarded `chatBackendPosture` appends the two memory ask rules when memory is enabled and `askOnSave` is true."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-mode.test.ts",
+          "reason": "it asserts the guarded `askRules` is the posture's array by identity under a default config, where memory asks are now on; its fixture config sets `memory.askOnSave` false so the identity invariant (rules pass through untouched when memory asks are off) still holds."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/open-chat-session.test.ts",
+          "reason": "same identity assertion on the options passed to the native backend; its fixture config sets `memory.askOnSave` false for that test."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/subagent-session.test.ts",
+          "reason": "same identity assertion through `chatBackendPosture` in the subagent session; its fixture config sets `memory.askOnSave` false for that test."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "85593747a125d4bd5f4675cc9eff91cc9712d7de"
+    },
+    {
+      "id": "US-015",
+      "title": "The /memory slash command",
+      "description": "**Goal** — Add shared memory formatters and a native/ACP-accessible memory status/sync slash command.\n\n**Motivation** — This feature is the first surface: the agent sees an index of what earlier sessions saved, reads notes on demand, saves what a future session would need, and the user can inspect and edit memory from the terminal.\n\n**Approach** — Slash command `/memory`\n`memory` is added to `COMMANDS` after `jobs` and before `quit`, with description `Show memory notes and sync status` and listing title `Memory`. `/memory` shows `formatMemoryStatus(await status(), (await renderIndex()).text)`. `/memory sync` runs `host.memory.sync()` and shows `formatMemorySyncResult(result)`. Any other argument shows `usage: /memory [sync]`. Without `host.memory` it shows `memory is disabled in this session`. When `status()` or `renderIndex()` throws, it shows `memory unavailable: <errorMessage>`. It is not in `ACP_OWN_FEATURES`: an ACP brain uses nax memory through the same tools.\n\n`formatMemoryStatus(status, index?)` lines, in order:\n```\nprovider: local\nwrite mode: direct\nmirror: /home/u/.nax/memory/projects/nax-monorepo-1a2b3c4d\nuser notes: /home/u/.nax/memory/user\nlast sync: 2026-11-02T08:11:00.000Z        (or \"never\" when lastPullAt is null)\nlast error: <lastError>                     (only when lastError is not null)\noutbox: 0 queued, 0 rejected\nnotes: 3 project, 1 user, 2 repo\nrepo notes skipped: 1                       (only when repoSkipped > 0)\n```\nfollowed, when `index` is given, by one blank line and the index text.\n\n`formatMemorySyncResult`: `memory sync: synced (pushed P, rejected R, pulled N, skipped S)`, `memory sync: unreachable`, `memory sync: locked`, or `memory sync: failed: <error>`.\n`formatMemoryNoteLine(note)`: `<scope>/<slug> [<type>] <description> (<status>; <source>)`.\n\n**Scope** — In: src/memory/format.ts, exports from the memory barrel, slash command metadata/dispatch, disabled/unavailable display and UI help-order regression. Out: terminal CLI registration/output (US-016 onward), host lifecycle work (US-013/014). Do not add this command to ACP_OWN_FEATURES. A chat notice for a rejected outbox entry is not built; rejections show in the `/memory` and `nax memory status` counts only.\n\n**Interface** — `formatMemoryStatus(status, index?)`, `formatMemorySyncResult(result)`, `formatMemoryNoteLine(note)` exported from @/memory. `runSlashCommand` remains the built-in entry point. Update test/ui/chat/slash-commands.test.tsx to preserve COMMANDS order with `/memory  Show memory notes and sync status` between jobs and quit.",
+      "acceptanceCriteria": [
+        "[unit] COMMANDS contains memory directly after jobs.",
+        "[unit] COMMANDS contains memory directly before quit.",
+        "[unit] COMMAND_DESCRIPTIONS.memory is Show memory notes and sync status.",
+        "[unit] LISTING_TITLES.get(\"memory\") is Memory.",
+        "[unit] runSlashCommand for /memory on a host with memory shows exactly the text formatMemoryStatus(status, index) for that host's status and index.",
+        "[unit] runSlashCommand for /memory on a host without memory shows memory is disabled in this session.",
+        "[unit] runSlashCommand for /memory when memory.status rejects with Error(\"disk full\") shows memory unavailable: disk full.",
+        "[unit] runSlashCommand for /memory sync shows memory sync: synced (pushed 1, rejected 0, pulled 0, skipped 0) for that sync result.",
+        "[unit] runSlashCommand for /memory purge shows usage: /memory [sync].",
+        "[unit] On a host whose current model is an ACP brain, /memory shows the status listing.",
+        "[unit] formatMemorySyncResult returns memory sync: unreachable for outcome unreachable.",
+        "[unit] formatMemorySyncResult returns memory sync: failed: lock busy for outcome failed with error lock busy.",
+        "[unit] formatMemoryStatus with lastPullAt null contains the line last sync: never.",
+        "[unit] formatMemoryStatus with lastError null contains no line starting last error:.",
+        "[unit] formatMemoryStatus contains the line outbox: 2 queued, 1 rejected for those counts.",
+        "[unit] formatMemoryStatus with repoSkipped 1 contains the line repo notes skipped: 1.",
+        "[unit] formatMemoryStatus(status) without an index ends with the last status line.",
+        "[unit] formatMemoryNoteLine for a project note staging-db of type project, description shared staging db, status active, source repo returns project/staging-db [project] shared staging db (active; repo).",
+        "[unit] Importing formatMemoryStatus, formatMemorySyncResult and formatMemoryNoteLine from @/memory succeeds.",
+        "[unit] runSlashCommand for /memory when memory.renderIndex rejects with Error(\"disk full\") shows memory unavailable: disk full.",
+        "[unit] runSlashCommand for /help preserves all existing built-in help rows in their previous order, inserting only /memory  Show memory notes and sync status between the jobs and quit rows."
+      ],
+      "tags": [
+        "memory",
+        "chat",
+        "tui",
+        "formatting"
+      ],
+      "dependencies": [
+        "US-014"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure shared formatters and a standard slash dispatch branch reuse the completed host contract.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/memory/host.ts",
+        "packages/nax/test/ui/chat/slash-commands.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/format.ts",
+        "packages/nax/test/unit/memory/format.test.ts",
+        "packages/nax/test/unit/tui/chat/slash-memory.test.ts"
+      ],
+      "suggestedCriteria": [
+        "formatMemorySyncResult returns memory sync: locked for outcome locked.",
+        "formatMemoryStatus with repoSkipped 0 contains no line starting repo notes skipped:.",
+        "runSlashCommand for /memory sync extra shows usage: /memory [sync]."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/slash-commands.ts",
+          "reason": "add the `memory` built-in, its description and listing title, and its `runSlashCommand` case."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/slash-commands.test.tsx",
+          "reason": "the help-text assertion pins the built-in list ending with the jobs line followed by the quit line; the invariant is the COMMANDS order, now with the line \"/memory Show memory notes and sync status\" between the jobs line and the quit line."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d969fd8bb9d1cec552f13292fd98aa3d1098ddb6"
+    },
+    {
+      "id": "US-016",
+      "title": "nax memory CLI: status and list",
+      "description": "**Goal** — Register the memory CLI group and expose inspectable status and filtered lists.\n\n**Motivation** — This feature is the first surface: the agent sees an index of what earlier sessions saved, reads notes on demand, saves what a future session would need, and the user can inspect and edit memory from the terminal.\n\n**Approach** — CLI Behavior\n`registerMemoryCommand(program, deps = _memoryCliDeps)` in `src/cli/memory.ts` adds the `memory` group; `bin/nax.ts` calls it beside `registerCostCommand(program)` and `src/cli/index.ts` exports it. Every subcommand takes `-d, --dir <path>` (default `process.cwd()`, the only `process.cwd()` read) and `--json`. Like `nax cost` it takes no trust gate and does not call `initLogger`: it writes only under `~/.nax/memory`. The repo root is resolved as `nax chat` resolves it: `naxDir = deps.findProjectDir(dir)`, `repoRoot = naxDir ? dirname(naxDir) : dir`, config `deps.loadConfig(naxDir ?? undefined)`. The host is created with `source: \"human\"` and a logger whose `warn` and `error` write `[memory] <message>` lines to stderr (`debug` and `info` are dropped), so a skipped repo note is visible at the terminal.\n\n| Command | stdout (text) | `--json` stdout | Exit |\n|---|---|---|---|\n| `status` | `formatMemoryStatus(status)` (no index); `enabled: false` when disabled | `MemoryStatus`, or `{\"enabled\":false}` | 0 |\n| `list [--type <t>] [--scope <s>]` | one `formatMemoryNoteLine` per note, project then user, each by slug | `{\"notes\":[...]}` (entries without `body`) | 0 |\n\nErrors go to stderr as `Error: <message>` (also under `--json`) with exit 1: an unloadable config, a host creation failure, an invalid `--type` / `--scope`, a usage error (`--body` and `--body-file` both or neither given: `Error: give exactly one of --body or --body-file`), a refusal (an invalid `--type` on `save` surfaces as feature 1's refusal), an absent note (`Error: no memory note <scope>/<slug>`), a read-only note (its message), and every subcommand except `status` when memory is disabled (`Error: memory is disabled (memory.enabled is false)`).\n`_memoryCliDeps = { findProjectDir, loadConfig, createMemoryHost, readFile, log, logErr, exit }`.\n\n**Scope** — In: memory.ts registration/shared context, root/config resolution, CLI logger, status/list text+JSON and type/scope validation, barrel/bin registration. Out: show/sync (US-017), save (US-018), forget/approve (US-019); establish shared error/output conventions now for later handlers. No trust prompt or global logger initialization. Feature boundaries: `nax memory reset` is not built: with the `local` provider the mirror is the only copy of every note, so deleting it would destroy memory; it arrives with the remote provider. The koda remote provider, the `memory.koda` config block, `nax memory link` and provider-side search merging are the `memory-koda-provider` feature; `memory.provider` accepts only `local` here.\n\n**Interface** — `registerMemoryCommand(program, deps = _memoryCliDeps)`, `_memoryCliDeps = { findProjectDir, loadConfig, createMemoryHost, readFile, log, logErr, exit }`. Use @/memory host/formatters and library-supported note types user/feedback/project/reference; list JSON strips body but retains source. Verification note: review bin registration and run `bun bin/nax.ts memory --help` from packages/nax outside automatic gates when appropriate.",
+      "acceptanceCriteria": [
+        "[cli] nax memory status run through a program built by registerMemoryCommand with _memoryCliDeps.createMemoryHost stubbed calls the stub once with source human.",
+        "[cli] With --dir set to <repo>/packages/app inside a repository whose .nax is at <repo>/.nax, the stub receives repoRoot <repo>.",
+        "[cli] With --dir set to a directory that has no .nax above it, the stub receives repoRoot equal to --dir.",
+        "[cli] nax memory status prints the formatMemoryStatus(status) text and exits 0.",
+        "[cli] nax memory status --json prints one JSON document equal to the host's MemoryStatus.",
+        "[cli] With memory disabled (stub resolves null), nax memory status prints enabled: false and exits 0.",
+        "[cli] With memory disabled, nax memory status --json prints {\"enabled\":false}.",
+        "[cli] The logger handed to createMemoryHost writes a warn(\"memory\", \"repo note skipped\", ...) call to stderr as a line starting [memory] repo note skipped.",
+        "[cli] nax memory list prints one formatMemoryNoteLine per note, project notes first then user notes, each group ordered by slug.",
+        "[cli] nax memory list --type feedback prints only notes whose type is feedback.",
+        "[cli] nax memory list --scope user prints only user notes.",
+        "[cli] nax memory list --json prints {\"notes\":[...]} whose entries carry slug and source and no body.",
+        "[cli] nax memory list --type nope writes a line starting Error: and naming nope to stderr and exits 1.",
+        "[cli] With memory disabled, nax memory list writes Error: memory is disabled (memory.enabled is false) to stderr and exits 1.",
+        "[cli] When _memoryCliDeps.loadConfig rejects with Error(\"bad json\"), nax memory status writes Error: bad json to stderr and exits 1.",
+        "[cli] When createMemoryHost rejects with NaxError MEMORY_REPO_ROOT_UNRESOLVED, nax memory list exits 1.",
+        "[unit] registerMemoryCommand(program) adds a memory command whose subcommands include status and list.",
+        "[unit] registerMemoryCommand is importable from @/cli."
+      ],
+      "tags": [
+        "memory",
+        "cli",
+        "config"
+      ],
+      "dependencies": [
+        "US-015"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Command registration, injected stdout/stderr/exit and root/config resolution mirror cost.ts and composeChat; the new host is already implemented and no novel CLI or access-control abstraction is required.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/cost.ts",
+        "packages/nax/src/memory/format.ts",
+        "packages/nax/src/cli/chat.ts",
+        "packages/nax/bin/nax.ts",
+        "packages/nax/src/memory/host.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/cli/memory.ts",
+        "packages/nax/test/unit/cli/memory.test.ts"
+      ],
+      "suggestedCriteria": [
+        "nax memory list --scope team writes an Error: line naming team to stderr and exits 1.",
+        "When the memory CLI logger receives debug or info calls, it emits no stdout or stderr.",
+        "When createMemoryHost rejects under --json, the CLI writes an Error: line to stderr and no JSON document to stdout."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/bin/nax.ts",
+          "reason": "call `registerMemoryCommand(program)` next to `registerCostCommand(program)`."
+        },
+        {
+          "path": "packages/nax/src/cli/index.ts",
+          "reason": "export `registerMemoryCommand`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5eb540122e9059ad6b231637dadf622bc9233203"
+    },
+    {
+      "id": "US-017",
+      "title": "nax memory CLI: show and sync",
+      "description": "**Goal** — Add note display and explicit synchronization to the memory CLI.\n\n**Motivation** — This feature is the first surface: the agent sees an index of what earlier sessions saved, reads notes on demand, saves what a future session would need, and the user can inspect and edit memory from the terminal.\n\n**Approach** — Extend the CLI group with src/cli/memory-read.ts:\n| Command | stdout (text) | `--json` stdout | Exit |\n|---|---|---|---|\n| `show <slug> [--scope <s>]` | `serializeMemoryNote(note)` | the note | 0; 1 when absent |\n| `sync` | `formatMemorySyncResult` | the `MemorySyncResult` | 0; 1 when outcome is `failed` |\nEvery subcommand takes `-d, --dir <path>` (default `process.cwd()`, the only `process.cwd()` read) and `--json`. Reuse US-016's registration default and context; do not add another process.cwd() read.\nErrors go to stderr as `Error: <message>` (also under `--json`) with exit 1: an unloadable config, a host creation failure, an invalid `--type` / `--scope`, a usage error (`--body` and `--body-file` both or neither given: `Error: give exactly one of --body or --body-file`), a refusal (an invalid `--type` on `save` surfaces as feature 1's refusal), an absent note (`Error: no memory note <scope>/<slug>`), a read-only note (its message), and every subcommand except `status` when memory is disabled (`Error: memory is disabled (memory.enabled is false)`).\n`formatMemorySyncResult`: `memory sync: synced (pushed P, rejected R, pulled N, skipped S)`, `memory sync: unreachable`, `memory sync: locked`, or `memory sync: failed: <error>`.\n\n**Scope** — In: memory-read.ts show/sync handlers and registration from memory.ts, default project scope, serialized note text/full JSON, result-based sync exit status. Out: save and body-file input (US-018), forget/approve (US-019), rejected-entry requeue/reset/remote provider. Sync failed still prints its result line/document; unreachable and locked exit 0. Feature boundary: `nax memory sync --retry-rejected` and requeueing a rejected outbox entry are not built.\n\n**Interface** — Existing `MemoryHost.getNote(scope: MemoryScope, slug: string): Promise<MemoryNote | null>` and `sync(): Promise<MemorySyncResult>` are called through _memoryCliDeps.createMemoryHost and the shared CLI context. Use public `serializeMemoryNote` from @nathapp/nax-agent, shared `formatMemorySyncResult` from @/memory and common Error:/exit policy.",
+      "acceptanceCriteria": [
+        "[cli] nax memory show staging-db prints serializeMemoryNote of the note and exits 0.",
+        "[cli] nax memory show absent writes Error: no memory note project/absent to stderr and exits 1.",
+        "[cli] nax memory show absent prints nothing to stdout.",
+        "[cli] nax memory show pref --scope user asks the host for the user note pref.",
+        "[cli] nax memory show staging-db --json prints the note as one JSON document whose body is the note's body.",
+        "[cli] nax memory sync prints formatMemorySyncResult of the host's result and exits 0 for outcome synced.",
+        "[cli] nax memory sync exits 0 for outcome unreachable.",
+        "[cli] nax memory sync exits 1 for outcome failed.",
+        "[cli] For outcome failed, nax memory sync still prints the result line.",
+        "[cli] nax memory sync --json prints the MemorySyncResult as one JSON document.",
+        "[cli] With memory disabled, nax memory show x writes Error: memory is disabled (memory.enabled is false) and exits 1.",
+        "[cli] With memory disabled, nax memory sync writes the same error and exits 1.",
+        "[unit] After registration, the memory command's subcommands include show and sync."
+      ],
+      "tags": [
+        "memory",
+        "cli",
+        "sync"
+      ],
+      "dependencies": [
+        "US-016"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two command handlers reuse established injected CLI context, formatters and host APIs.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/memory.ts",
+        "packages/nax/src/memory/format.ts",
+        "packages/nax/src/memory/host.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/cli/memory-read.ts",
+        "packages/nax/test/unit/cli/memory-read.test.ts"
+      ],
+      "suggestedCriteria": [
+        "nax memory sync exits 0 for outcome locked.",
+        "nax memory sync --json with outcome failed prints one JSON result document and exits 1."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "83b163581c8ffa1607567bd74d131c779a16222e"
+    },
+    {
+      "id": "US-018",
+      "title": "nax memory CLI: save",
+      "description": "**Goal** — Save project or user notes from inline text or a body file through the memory CLI.\n\n**Motivation** — This feature is the first surface: the agent sees an index of what earlier sessions saved, reads notes on demand, saves what a future session would need, and the user can inspect and edit memory from the terminal.\n\n**Approach** — Create src/cli/memory-write.ts with save and add it to the group.\n| Command | stdout (text) | `--json` stdout | Exit |\n|---|---|---|---|\n| `save --slug --type --description (--body <text> | --body-file <path>) [--scope]` | `saved <scope>/<slug> (<status>)`, plus ` — queued for sync` when not delivered | `{slug,status,delivered}` | 0; 1 on refusal |\nEvery subcommand takes `-d, --dir <path>` (default `process.cwd()`, the only `process.cwd()` read) and `--json`. Reuse the US-016 defaults/context; host source is human.\nErrors go to stderr as `Error: <message>` (also under `--json`) with exit 1: an unloadable config, a host creation failure, an invalid `--type` / `--scope`, a usage error (`--body` and `--body-file` both or neither given: `Error: give exactly one of --body or --body-file`), a refusal (an invalid `--type` on `save` surfaces as feature 1's refusal), an absent note (`Error: no memory note <scope>/<slug>`), a read-only note (its message), and every subcommand except `status` when memory is disabled (`Error: memory is disabled (memory.enabled is false)`).\n`_memoryCliDeps = { findProjectDir, loadConfig, createMemoryHost, readFile, log, logErr, exit }`.\n\n**Scope** — In: save registration/options, exactly-one body input validation, readFile injection, project default/user scope, pending/active/queued text and JSON, refusal and disabled error behavior. Out: forget/approve (US-019), editing repo notes, new validation/secret scanning in nax and remote writes. Note validation (type, lengths, secrets) stays with saveMemoryNote and its MEMORY_WRITE_REFUSED; invalid save type must surface that refusal rather than list's type-filter error.\n\n**Interface** — `MemoryHost.save(write: MemoryNoteWrite): Promise<MemorySaveResult>`; `MemorySaveResult { slug, status, delivered }`. Use _memoryCliDeps.readFile for body-file text and source human through the existing host-creation context, leaving stdout clean under --json.",
+      "acceptanceCriteria": [
+        "[cli] nax memory save --slug replay-budget --type project --description \"replay budget\" --body \"2048 MiB\" calls host.save with those fields and scope project.",
+        "[cli] For a host.save result { status: \"active\", delivered: true }, that command prints saved project/replay-budget (active) and exits 0.",
+        "[cli] nax memory save ... --body-file note.md calls host.save with body equal to the file's text.",
+        "[cli] nax memory save with both --body and --body-file writes Error: give exactly one of --body or --body-file to stderr and exits 1.",
+        "[cli] In that case host.save is not called.",
+        "[cli] nax memory save with neither --body nor --body-file writes the same error and exits 1.",
+        "[cli] When host.save throws MEMORY_WRITE_REFUSED with message secret (aws) must not be stored, the command writes Error: secret (aws) must not be stored to stderr and exits 1.",
+        "[cli] nax memory save ... --scope user calls host.save with scope user.",
+        "[cli] When host.save resolves { status: \"pending\", delivered: true }, the output is saved project/<slug> (pending).",
+        "[cli] When host.save resolves delivered: false, the output line ends with \" — queued for sync\".",
+        "[cli] nax memory save ... --json prints the save result as one JSON document.",
+        "[cli] With memory disabled, nax memory save ... writes Error: memory is disabled (memory.enabled is false) and exits 1."
+      ],
+      "tags": [
+        "memory",
+        "cli",
+        "writes",
+        "security"
+      ],
+      "dependencies": [
+        "US-017"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "CLI writes combine body input modes with secret/type refusal propagation and must preserve security-critical no-write-on-refusal behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/memory.ts",
+        "packages/nax/src/memory/host.ts",
+        "packages/nax-agent/src/memory/operations.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/cli/memory-write.ts",
+        "packages/nax/test/unit/cli/memory-save.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When _memoryCliDeps.readFile rejects with Error(\"missing file\"), save writes Error: missing file to stderr without calling host.save.",
+        "When --body is explicitly the empty string and --body-file is absent, save calls host.save with body equal to the empty string rather than reporting that neither option was supplied.",
+        "When save is given an invalid note type, the feature-1 refusal message is written to stderr with Error: and exit 1."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5f3a3e166f811c582382d2547043acce76e60023"
+    },
+    {
+      "id": "US-019",
+      "title": "nax memory CLI: forget and approve",
+      "description": "**Goal** — Add terminal retirement and proposal-note approval with repo-note read-only refusals.\n\n**Motivation** — This feature is the first surface: the agent sees an index of what earlier sessions saved, reads notes on demand, saves what a future session would need, and the user can inspect and edit memory from the terminal.\n\n**Approach** — Extend src/cli/memory-write.ts and the memory command group:\n| Command | stdout (text) | `--json` stdout | Exit |\n|---|---|---|---|\n| `forget <slug> --reason <text> [--scope]` | `forgot <scope>/<slug> (<status>)` | `{slug,status,delivered}` | 0; 1 when absent or read-only |\n| `approve <slug> [--scope]` | `approved <scope>/<slug>` | the note | 0; 1 when absent or read-only |\nEvery subcommand takes `-d, --dir <path>` (default `process.cwd()`, the only `process.cwd()` read) and `--json`. Reuse the US-016 default/context and human host source, not another cwd read.\nErrors go to stderr as `Error: <message>` (also under `--json`) with exit 1: an unloadable config, a host creation failure, an invalid `--type` / `--scope`, a usage error (`--body` and `--body-file` both or neither given: `Error: give exactly one of --body or --body-file`), a refusal (an invalid `--type` on `save` surfaces as feature 1's refusal), an absent note (`Error: no memory note <scope>/<slug>`), a read-only note (its message), and every subcommand except `status` when memory is disabled (`Error: memory is disabled (memory.enabled is false)`).\n`forget` and `approve` refuse a project slug that only a repo note holds with `NaxError` code `MEMORY_NOTE_READ_ONLY`, context `{ stage: \"memory\", slug }`, message `memory note \"<slug>\" is a repository note; edit .nax/memory/<slug>.md in the repository`; otherwise `forgetMemoryNote({ store, outbox, provider, logger, scope, slug, reason, writeMode })` and `approveMemoryNote({ store, scope, slug, logger })`. The CLI calls the already-completed host methods rather than library operations directly.\n\n**Scope** — In: forget and approve registration/handlers, required reason validation, scope/defaults, output, JSON and absent/read-only/disabled mapping. Out: new tools, modifying repo notes, approving forget proposals. Completing a proposal-mode forget is not built: under `writeMode: proposal` the local provider leaves the note in place with a pending forget, and no command approves a forget. Approval changes a pending note to active through feature 1; it is not an outbox-forget approval.\n\n**Interface**\n```ts\nforget(input: { readonly scope: MemoryScope; readonly slug: string; readonly reason: string }): Promise<MemoryForgetResult>;\napprove(input: { readonly scope: MemoryScope; readonly slug: string }): Promise<MemoryNote>;\n```\nUse the _memoryCliDeps Error:/stdout/exit seam, preserving command-group registration of all seven specified commands.",
+      "acceptanceCriteria": [
+        "[cli] nax memory forget old --reason stale calls host.forget({ scope: \"project\", slug: \"old\", reason: \"stale\" }).",
+        "[cli] For a forget result with status deleted, that command prints forgot project/old (deleted) and exits 0.",
+        "[cli] nax memory forget old without --reason exits 1.",
+        "[cli] In that case host.forget is not called.",
+        "[cli] When host.forget throws MEMORY_NOTE_READ_ONLY, nax memory forget staging-db --reason x writes a line starting Error: with that error's message to stderr and exits 1.",
+        "[cli] When host.forget throws MEMORY_NOTE_NOT_FOUND, the command writes Error: no memory note project/<slug> and exits 1.",
+        "[cli] nax memory forget old --reason stale --json prints the forget result as one JSON document.",
+        "[cli] nax memory approve replay-budget calls host.approve({ scope: \"project\", slug: \"replay-budget\" }).",
+        "[cli] That command prints approved project/replay-budget and exits 0.",
+        "[cli] When host.approve throws MEMORY_NOTE_NOT_FOUND, nax memory approve absent writes Error: no memory note project/absent and exits 1.",
+        "[cli] When host.approve throws MEMORY_NOTE_READ_ONLY, nax memory approve staging-db exits 1.",
+        "[cli] With memory disabled, nax memory forget x --reason y writes Error: memory is disabled (memory.enabled is false) and exits 1.",
+        "[cli] With memory disabled, nax memory approve x writes the same error and exits 1.",
+        "[unit] After registration, the memory command's subcommands include save, forget and approve."
+      ],
+      "tags": [
+        "memory",
+        "cli",
+        "writes",
+        "security"
+      ],
+      "dependencies": [
+        "US-018"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Standard command extensions expose destructive writes and approval, preserving repo-only access restrictions and absent-note refusals under strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/memory.ts",
+        "packages/nax/src/cli/memory-write.ts",
+        "packages/nax/src/memory/host.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/cli/memory-forget.test.ts"
+      ],
+      "suggestedCriteria": [
+        "nax memory approve replay-budget --json prints the approved note as one JSON document including its body.",
+        "nax memory forget pref --reason stale --scope user calls host.forget with scope user.",
+        "nax memory approve pref --scope user calls host.approve with scope user.",
+        "When host.approve throws MEMORY_NOTE_READ_ONLY, the CLI writes Error: followed by that read-only message to stderr."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2f20f2853f2275e2780bd3423457c1c19c52bbf0"
+    }
+  ],
+  "analysis": "Navigation: codebase-memory MCP is unavailable in this host, so findings were verified with direct Read/Grep/Glob against the execution repository, not another checkout. This is an enhancement of packages/nax over the already-shipped memory-store library, not a new storage implementation. No src/memory files currently exist in packages/nax. All 19 implementation stories run in packages/nax in the binding serial dependency order; the explicitly declared US-011 remains separate despite its regression/degradation focus.\n\nArchitecture and boundaries: docs/architecture/ARCHITECTURE.md:11-48 establishes barrel exports, external-call _deps seams, NaxError cause/context, prompt builders and permission resolution; :164-184 records the 600-line hard source/type limit, 400-line soft target and test conventions. packages/nax/package.json:9-16 defines Bun build/typecheck/lint and :53-62 defines package-scoped test commands. Use Bun and bun:test in nax, source aliases @/, shared helpers from @test/helpers, and public @nathapp/nax-agent imports (errorMessage from its internal entry); do not change nax-agent or introduce deep cross-package imports. packages/nax-agent/src/index.ts:98-146 already exports the memory contract. packages/nax-agent/src/memory/types.ts:11-66 defines supported types user/feedback/project/reference, scopes project/user, note/hit/write shapes; :74-87 defines slug and size limits. packages/nax-agent/src/memory/note.ts:34-68 requires every frontmatter key and :100-120 requires a blank separator before the body; :131-144 exposes parse/serialize. Repo-note fixtures must use this actual format. packages/nax-agent/src/memory/validate.ts:28-31 deliberately permits a raw string type at validation and :82-117 scans secrets without returning matched text. Do not duplicate validation or accidentally discard the save-refusal behavior by rejecting a raw save type at the CLI parser.\n\nConfig: packages/nax/src/config/schemas.ts:57,75,94,524-525 shows the McpConfigSchema import/export and default factory precedent. MemoryConfigSchema must be strict, local-only and default the complete block, not an empty object shadowing inner defaults. packages/nax/src/config/runtime-types.ts:513,563 has the handwritten NaxConfig and optional inline-import mcp precedent: add only one memory field, with the new type in runtime-types-memory.ts and exports in config/types.ts and config/index.ts. The spec baseline gives schemas.ts 591 lines and runtime-types.ts 599; keep both <=600. Every reader uses memoryConfigOf for old handwritten fixtures lacking memory. Config descriptions and the closed default-key invariant at packages/nax/test/unit/config/defaults.test.ts:292-367 must include memory. Memory is resolved global/project config only, not a per-package override. No migration script or version bump is required: existing configs receive schema defaults and old typed callers use the accessor. Default-on memory is an intentional new behavior; enabled:false is the opt-out.\n\nIdentity and read safety: packages/nax/src/config/project-key.ts:24-25 selects trimmed config.name or repository basename; packages/nax/src/config/paths/index.ts:63 and :167 are the globalConfigDir/findProjectDir entry points. Hash the real repository path for collision separation and symlink identity, sanitize the project segment, and never derive ~/.nax directly. Tests must redirect global configuration to a temp directory. Repo notes add an independent read-only input, not mirror writes: lstat both parent directories before listing, never follow candidate symlinks, enforce 16384-byte pre-read size and 200 accepted-note cap, sort in code-point order, reject malformed/mismatched/nonproject/nonactive/secret notes, and log reasons without secret contents. The host deduplicates only warnings by message/path/reason for its lifetime; it must NOT cache repo-note contents. Mirror project notes shadow matching repo slugs, user notes never merge repo notes, and status counts mirror and unshadowed repo notes separately.\n\nLibrary reuse and concurrency: packages/nax-agent/src/memory/store.ts:105-138 exposes paths/outboxDir, listNotes, decisions and sync state; its :1-24 describes pinned-directory confinement that stays library-owned. packages/nax-agent/src/memory/operations.ts:1-52 owns validation, mirror staging, queue order, cross-process locks, proposal semantics and approval; :111-174 declares operation/result inputs. Forward source nax-chat or human and writeMode unchanged. packages/nax-agent/src/memory/sync.ts:1-46 documents never-reject sync and lock/outbox/page behavior; :84-119 defines inputs and outcome synced/unreachable/locked/failed. packages/nax-agent/src/memory/local-provider.ts:58-85 always answers reachable and pulls no notes; wire lifecycle sync now to drain queued writes without adding any remote behavior. The host's read-only check applies only to project slugs held solely by repo notes; a mirror shadow remains writable and saving over a repo slug creates a shadow. A direct forget of a shadow can reveal the original team note again. Split writes into host-writes.ts and keep host.ts under 400 lines.\n\nTool delivery: packages/nax/src/chat/background/tasks-provider.ts:35-74 is the static provider/JSON-schema/error-result pattern. Create nax-memory with four ordered local names get/search/save/forget, stages [*], additionalProperties:false, default project scope except unscoped search over both scopes, and no throwing tool promises. Validate call shapes at the tool layer and leave note validation to the library. packages/nax/src/chat/chat-mcp.ts:27,102 reserves built-in ids; reserve nax-memory. packages/nax/src/chat/acp/acp-tools.ts:17,31-38 filters delivered provider ids before resolving tools and instructions; extend that invariant to memory rather than bypassing it. packages/nax/src/chat/resources.ts:7-14 is the shared resource contract. packages/nax/src/cli/chat.ts:185-242 privately composes plugins/catalog/workflow/MCP and :259-282 currently builds its fallback logger AFTER resources; move logger construction before resources, inject createMemoryHost through _chatCommandDeps, append memory provider directly after workflow and before MCP, and preserve ownership/teardown. Host rejection is nonfatal and logged. Resources are tested by invoking chatCommand and inspecting stubbed createChatHost arguments, not by exposing chatResources.\n\nPrompt/session flow: packages/nax/src/prompts/builders/chat-builder.ts:3-6,24-33 and :35-53 currently have no memoryIndex and ACP names only workflow/jobs. agents-builder.ts:8-12,29-35 appends the agent prompt after permissions/rules. Introduce pure memory-builder functions and thread optional memoryIndex through native OpenChatSessionRequest (packages/nax/src/chat/open-chat-session.ts:55-67,174-223) and ACP open/options (same file :240-259; packages/nax/src/chat/acp/acp-session-options.ts:44-77), adding the final Memory section for native/ACP and placing it before the subagent prompt. packages/nax/src/chat/subagent-runs.ts:26-41 already receives resource providers; subagent-session.ts:19-40,69-99 creates backend and instructions. Use a current-index getter for subagents; do not make tool filtering suppress the index data. ACP keeps its original instruction snapshot for its own session lifetime and uses its own permissions, not native askRules.\n\nLifecycle risk: packages/nax/src/chat/chat-host.ts is exactly 598 lines. :157 and :304-327 hold its context cache; extract to context-window-cache.ts in US-013 (the binding Stories/Creates assign it to US-013 despite an earlier prose mention of US-014). Pass () => _chatHostDeps.lookupContextWindow to preserve patchable lookup and avoid import cycles. :213-245 builds rule/jobs handlers and subagent runs; :354-377 starts/opens; :418-465 resumes/reopens; :471-500 switches; :503-505 clear currently calls start; :565-591 memoizes close and tears down. Place memory behavior in host-memory.ts; extract the jobs constructor block into sibling host-wiring.ts only if still necessary for the hard limit (optional new output recorded for US-013). Preserve late-open drain, locks, close rejection propagation and shared close-promise identity. packages/nax/src/chat/session-switch.ts:48-122 can change ACP in place, close/reopen, rollback reopen or openFresh; one logical open/switch must sync once, including rollback paths, not once per callback. Prepare before opens and before switchChatSession, reuse current() inside switch callbacks, and avoid double-preparing mode-switch reopen. Existing clear uses startSession, so prepare there once rather than duplicating it. Swallow only memory sync/index errors with prescribed warnings; expected sync outcomes such as unreachable/locked are not exceptions. Before-compaction returns undefined, preserves summaries and goes after rules/before jobs guard. Close sync follows closeChatResources in finally even when resource cleanup throws. packages/nax/src/chat/chat-mode.ts:30-48 consumes resolved posture; guarded mode appends two memory asks only when enabled+askOnSave and otherwise preserves array identity; full mode unchanged. Security-sensitive session/permission stories use three-session-tdd.\n\nSlash/CLI: packages/nax/src/tui/chat/slash-commands.ts:49-109 owns command order/descriptions/listing titles, :173-177 limits ACP-owned features, and :270 onward dispatches built-ins. Memory belongs between jobs and quit and is available to ACP too. Share exact formatters across slash and CLI. packages/nax/src/cli/cost.ts:39-83 is the injected stdout/stderr/exit precedent. packages/nax/bin/nax.ts:61-68 imports registration functions and :1023 registers cost; register memory alongside it and export from cli/index.ts. CLI resolves findProjectDir(dir), dirname(naxDir) or dir, then loadConfig(naxDir ?? undefined), with only one process.cwd() default at command registration. No trust gate/initLogger is needed for this built-in memory group; writes are through the host under global memory directories. All commands accept --dir/--json; failures always use stderr Error: and exit 1, while sync failed also emits its result to stdout and unreachable/locked exit 0. Validate list type/scope, default project scope, enforce exclusive body/body-file and let save type validation be the library's refusal. Split registration/status/list, show/sync and writes into the three prescribed CLI modules.\n\nRegression/test plan and seams: packages/nax/test/unit/cli/chat-resources.test.ts:22-84 spreads real _chatCommandDeps; temp-dir cases begin :149. Stub createMemoryHost:null there and in chat.test.ts to prevent default-on access to the real global store and preserve no-memory provider assertions. packages/nax/test/unit/chat/chat-host-resources.test.ts:16-86 supplies reusable host/open/resources fixtures. Existing unit suites cover chat-mode, open-chat-session, subagent-session, ACP tools/history, chat-host-context-window/session moves, prompts/chat-handoff, and UI slash help; update only exact expected prefix/help/default ask invariants specified by the spec. Add the named per-story test files and verify behavior through real barrel imports, real repo-note/mirror fixtures, stubbed _deps call arguments and command parsing. Maintain the directories->host dirs seam, real repo notes->host merge seam, host/tool provider->chatCommand resources->ACP tools seam, memoryIndex->native/ACP/subagent session options seam, and formatters->slash/CLI outputs seam. The failure table maps to US-002/011/016 path errors; US-003/004/005 note skips and warning dedupe; US-005/011/015/016 disabled behavior; US-013 open sync/render failures; US-014 compaction/close failures; US-015 status/render errors; US-007/009/018 save refusal; US-007/009/019 repo-only refusal; US-008/009/017/019 absent-note errors. All explicit ACs remain in their original stories; failure-table render errors are explicitly represented where missing from the numbered AC list. Run scoped Bun tests during implementation and standard package gates in pipeline; never bare bun test or bun run nax. File-size/import-cycle checks are verification guidance, not ACs. Do not run coverage in a sandboxed nax session. No commands or tests were executed during this PRD-only drafting session.\n\nRefine-pass adversarial audit: re-read .nax/features/memory-chat/spec.md:451-485 (all 11 failure rows and all 16 feature exclusions), :531-633 (all recommended context lists), and :776-1118 (all 279 original ACs). The preservation ledger enumerates each original criterion by its story-local ordinal: US-001 #1-16, US-002 #1-12, US-003 #1-18, US-004 #1-10, US-005 #1-18, US-006 #1-15, US-007 #1-18, US-008 #1-19, US-009 #1-12, US-010 #1-9, US-011 #1-6, US-012 #1-14, US-013 #1-18, US-014 #1-18, US-015 #1-19, US-016 #1-18, US-017 #1-13, US-018 #1-12, US-019 #1-14. Every original ordinal is retained at the same position in its original story. US-011 #6 is expressed through captured outputs, exit codes and collaborator/resource values matching the existing fixture assertions, retaining both named test paths, the null-host setup and the unchanged regression anchor rather than asserting a generic test gate. The qualifiers about existing fixtures, original repo-file contents, same input/as-before subagent instructions, native/ACP model paths, provider ordering and askRules array identity are preserved. No deprecated file/grep/verbatim tags were present.\n\nNegative-path check: US-001 invalid config; US-002 realpath rejection; US-003 invalid/secret/unreadable notes; US-004 missing/symlink/unreadable directories; US-005 disabled/absent note; US-006 now explicitly propagates a locked sync outcome without rejection; US-007 refused writes/read-only/absent notes; US-008 absent/invalid get and limits; US-009 refusal/unexpected errors; US-010 reserved MCP id; US-011 null/reject host; US-012 empty/missing index; US-013 sync/render failures; US-014 compaction/close rejection recovery; US-015 unavailable/disabled/invalid slash argument; US-016 invalid filter/config/host; US-017 absent/disabled/failed sync; US-018 exclusive-body usage/refusal; US-019 absent/read-only/missing reason. New explicit regressions preserve skills/workflow/MCP order (US-010), per-model cache reuse and fail-open lookup (US-013), and old help rows/order (US-015). US-015's index-render failure AC remains, covering the other half of its failure-table row. Revised acceptance totals are 285: 279 preserved originals plus these six explicit failure/regression assertions; suggestedCriteria remain separate.\n\nCodebase cross-checks: packages/nax/src/chat/session-switch.ts:48-122 confirms openFresh is fallback recovery, not the ordinary different-model path; US-013 must exercise that callback without replacing the existing switch state machine. packages/nax/src/chat/chat-host.ts:418-505 confirms clear delegates to start and reopen is also used by switch callbacks, so reuse one prepared snapshot without duplicate sync. :304-327 confirms repeated lookup and rejected lookup semantics now protected by ACs. packages/nax/src/config/project-key.ts:24-25 shows basename is taken from the supplied path, so US-002 explicitly canonicalizes the identity root for the fallback segment as well as the hash; otherwise differently named symlink aliases would violate the unchanged symlink-equality AC. Preserve the caller path in failure context. packages/nax/src/chat/subagent-tools.ts:60-77 already controls allowedTools independently; do not invent a mapper change to deliver instruction data. packages/nax/test/unit/cli/chat-resources.test.ts:256-264 pins the existing skills/workflow/docs order used by the new memory insertion regression. packages/nax/src/cli/cost.ts:257-290 confirms the command/deps/default-cwd pattern: US-016 was reduced to medium/tdd-simple because it consumes the completed host through existing CLI conventions rather than adding a novel abstraction. Security-critical secret/path/write checks and actual session/permission stories retain strict security strategies.\n\nAll 19 contextFiles lists include every file explicitly recommended for that story by the spec (none exceeds five; extra entries are existing files or upstream outputs). Every expectedFiles entry is this story's own new output, not an upstream file. All 19 IDs, workdirs and binding dependencies are unchanged; no nonexistent dependency remains. All 16 outOfScope strings remain verbatim and adjacent story scope boundaries now echo the relevant exclusions. No story-local deferral was hoisted to feature scope. Source API additions, test fixtures, output changes and optional host extraction remain within their stated story scopes. This audit changed only the PRD; no application source or runtime validation was executed.",
+  "outOfScope": [
+    "The koda remote provider, the `memory.koda` config block, `nax memory link` and provider-side search merging are the `memory-koda-provider` feature; `memory.provider` accepts only `local` here.",
+    "`nax memory reset` is not built: with the `local` provider the mirror is the only copy of every note, so deleting it would destroy memory; it arrives with the remote provider.",
+    "`nax memory sync --retry-rejected` and requeueing a rejected outbox entry are not built.",
+    "A chat notice for a rejected outbox entry is not built; rejections show in the `/memory` and `nax memory status` counts only.",
+    "Completing a proposal-mode forget is not built: under `writeMode: proposal` the local provider leaves the note in place with a pending forget, and no command approves a forget.",
+    "Run-stage delivery (`memory.stages`, the memory context element, run-host sync, the reporter line) and bot review / fix surfaces are the `memory-run-stages` feature; `nax run` gets no memory tools or index from this feature.",
+    "The generic MCP memory provider is the `memory-mcp-provider` feature.",
+    "The `nax-agent` ACP server bin does not declare memory tools in this feature.",
+    "An ACP brain's `nax-memory__save` and `nax-memory__forget` calls do not ask in guarded mode: `askRules` reach native sessions only, and the ACP agent applies its own permission handling.",
+    "The memory index in a session's instructions is rendered when the session opens and is not refreshed mid-session; notes saved during a session reach the next open's index, and `nax-memory__search` sees them at once.",
+    "An ACP brain keeps the index it was opened with for the life of its ACP session.",
+    "A subagent whose `allowedTools` exclude the `nax-memory` tools still receives the memory index section as data.",
+    "Repo notes are read from the top level of `.nax/memory/` only; nested directories, a per-package `.nax/memory`, notes with a status other than `active`, and writing or deleting repo notes are not supported.",
+    "No change to `packages/nax-agent`: concurrency, locking, outbox ordering, index sanitising and secret detection are feature 1's and are used as they are.",
+    "`memory` is not read from per-package `.nax/mono/<pkg>/config.json` files.",
+    "Memory tool calls are not rate limited; the agent may call them as often as any other static tool."
+  ],
+  "routingProfile": "native-codex-ds"
+}

@@ -561,6 +561,7 @@ export interface NaxConfig {
   bot?: import("./runtime-types-bot").BotConfig;
   /** External MCP servers the native agent may call tools on (client only) */
   mcp?: import("./runtime-types-mcp").McpConfig;
+  memory?: import("./runtime-types-memory").MemoryConfig;
   /** Resource discovery and skills delivery settings; absent means schema defaults. */
   resources?: import("./schemas-resources").ResourcesConfig;
   /** Hooks configuration (v0.10) */

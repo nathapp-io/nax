@@ -1,8 +1,9 @@
 /**
  * The tools and tool instructions nax delivers to an ACP chat brain.
  *
- * Of the chat's tool providers only the workflow and jobs providers cross the
- * ACP boundary; the agent keeps its own file, shell, skill and MCP tooling.
+ * Of the chat's tool providers only the workflow, jobs and memory providers
+ * cross the ACP boundary; the agent keeps its own file, shell, skill and MCP
+ * tooling.
  */
 
 import {
@@ -14,7 +15,7 @@ import {
 import { toEmbedderTools } from "@/agents/acp";
 
 /** Provider ids delivered to an ACP brain. */
-export const ACP_CHAT_PROVIDER_IDS: readonly string[] = ["nax-workflow", "nax-jobs"];
+export const ACP_CHAT_PROVIDER_IDS: readonly string[] = ["nax-workflow", "nax-jobs", "nax-memory"];
 
 const CHAT_STAGE = "chat";
 

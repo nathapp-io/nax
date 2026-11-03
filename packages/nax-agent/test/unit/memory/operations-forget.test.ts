@@ -27,6 +27,7 @@ import {
   createMemoryOutbox,
   createMemoryStore,
   forgetMemoryNote,
+  MEMORY_FORGET_REASON_MAX_CHARS,
   MEMORY_OP_TIMEOUT_MS,
   MEMORY_PROBE_TIMEOUT_MS,
   type MemoryForgetInput,
@@ -607,6 +608,26 @@ describe("forgetMemoryNote and the mirror's lock", () => {
       await clock.advance(MEMORY_PROBE_TIMEOUT_MS);
       expect((await running).outcome).toBe("unreachable");
       expect(existsSync(h.store.paths.lock)).toBe(false);
+    });
+  });
+
+  test("[F1] a reason over the cap is refused, reported MEMORY_WRITE_REFUSED, and nothing is persisted", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: { id: "mem_1", status: "deleted" } });
+      const existing = note();
+      await h.store.writeNote(existing);
+
+      const overLong = "a".repeat(MEMORY_FORGET_REASON_MAX_CHARS + 1);
+      const caught = await h.forget({ reason: overLong }).catch((error: unknown) => error);
+
+      assertNaxError(caught, "forget with an over-long reason");
+      expect(caught.code).toBe("MEMORY_WRITE_REFUSED");
+      expect(caught.message).toBe(`reason must be at most ${MEMORY_FORGET_REASON_MAX_CHARS} characters`);
+      // Refused before the mirror or the queue is touched: no entry, no probe, no push.
+      expect(await h.outbox.list()).toEqual([]);
+      expect(h.provider.reachable).not.toHaveBeenCalled();
+      expect(h.provider.push).not.toHaveBeenCalled();
+      expect(await h.store.readNote("project", SLUG)).toEqual(existing);
     });
   });
 
