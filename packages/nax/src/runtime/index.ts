@@ -113,6 +113,7 @@ import { createStoryFixHistory } from "../findings";
 import type { Logger } from "../logger";
 import { getLogger, getSafeLogger } from "../logger";
 import { buildMcpRollup, createMcpPool, createMcpProviders, writeMcpRollup } from "../mcp";
+import type { RunMemory } from "../memory";
 import { loadResourceCatalog } from "../resources";
 import type { IReviewAuditor } from "../review/review-audit";
 import { createNoOpReviewAuditor, ReviewAuditor } from "../review/review-audit";
@@ -146,8 +147,9 @@ import { createPackageRegistry } from "./packages";
 import { curatorRollupPath, globalOutputDir, projectOutputDir } from "./paths";
 import type { IPromptAuditor } from "./prompt-auditor";
 import { createNoOpPromptAuditor, PromptAuditor } from "./prompt-auditor";
-import { withRunSkills } from "./run-tool-providers";
+import { withRunMemory, withRunSkills } from "./run-tool-providers";
 import { createRunTurnHooks } from "./run-turn-hooks";
+import type { CreateRuntimeOptions } from "./runtime-options";
 import { createSessionRunHop } from "./session-run-hop";
 import type { IUsageAuditor } from "./usage-auditor";
 import { createNoOpUsageAuditor, UsageAuditor } from "./usage-auditor";
@@ -279,9 +281,17 @@ export interface NaxRuntime {
   readonly mcpPool: import("../mcp").McpPool;
   /**
    * Tool providers advertised to every native dispatch this run. Built from
-   * `config.mcp`, followed by skills when `resources.skillsInRun` is enabled.
+   * `config.mcp`, followed by skills when `resources.skillsInRun` is enabled,
+   * followed by the run memory's when this run has one.
    */
   readonly toolProviders: readonly import("@nathapp/nax-agent").ToolProvider[];
+  /**
+   * The run's memory, when the run has one — its tools are the last entry of
+   * `toolProviders` and `close()` ends it with one more sync. Absent on the
+   * entry points that never compose one (plan, bot review, bot fix), so a
+   * consumer reads `runtime.memory?.index()` rather than assuming it.
+   */
+  readonly memory?: RunMemory;
   /**
    * The run's command interceptor (US-003; S1 spec port 7). Installed by
    * `setupRun`; absent for entry points that never run it (plan, prompts,
@@ -291,36 +301,7 @@ export interface NaxRuntime {
   close(): Promise<void>;
 }
 
-export interface CreateRuntimeOptions {
-  parentSignal?: AbortSignal;
-  sessionManager?: ISessionManager;
-  agentManager?: IAgentManager;
-  costAggregator?: ICostAggregator;
-  promptAuditor?: IPromptAuditor;
-  usageAuditor?: IUsageAuditor;
-  reviewAuditor?: IReviewAuditor;
-  /**
-   * Feature name — used as a subdirectory under the audit dir so each feature
-   * has its own folder. Required when promptAudit.enabled is true and no custom
-   * promptAuditor is provided.
-   */
-  featureName?: string;
-  /**
-   * Pre-built PidRegistry. When absent, createRuntime constructs a default
-   * PidRegistry(workdir). Supply one in tests to control lifecycle.
-   */
-  pidRegistry?: PidRegistry;
-  /** Marks the run as a dry run; defaults to false. See NaxRuntime.dryRun. */
-  dryRun?: boolean;
-  /**
-   * Pre-built AgentStreamEventBus. When provided (e.g. from bin/nax.ts so the
-   * TUI can subscribe before run() starts), the runtime uses it instead of
-   * creating a new one. Callers must not close or replace the bus mid-run.
-   */
-  agentStreamEvents?: IAgentStreamEventBus;
-  /** See NaxRuntime.commandInterceptor. */
-  commandInterceptor?: import("@nathapp/nax-agent/internal").CommandInterceptor;
-}
+export type { CreateRuntimeOptions } from "./runtime-options";
 
 /** Injectable logger lookup for runtime construction warnings. */
 export const _runtimeLoggerDeps = { getSafeLogger };
@@ -339,6 +320,9 @@ function warnMissingPromptAuditIdentity(auditEnabled: boolean, workdir: string):
       workdir,
     });
 }
+
+/** The runtime's `memory` key: on a run that has one, and absent — not `undefined` — otherwise. */
+const memoryKey = (memory: RunMemory | undefined): { memory?: RunMemory } => (memory ? { memory } : {});
 
 export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime {
   const runId = crypto.randomUUID();
@@ -417,9 +401,10 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   });
 
   const resourceOptions = { repoRoot: workdir, config, env: process.env, naxPluginPackages: [] };
-  const toolProviders = withRunSkills(mcpProviders, config, () =>
+  const runSkills = withRunSkills(mcpProviders, config, () =>
     _runtimeResourceDeps.loadResourceCatalog(resourceOptions),
   );
+  const toolProviders = withRunMemory(runSkills, opts?.memory);
 
   const watchdogControllerRegistry = new Map<string, () => Promise<void>>();
 
@@ -518,6 +503,7 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     pidRegistry,
     mcpPool,
     toolProviders,
+    ...memoryKey(opts?.memory),
     commandInterceptor: opts?.commandInterceptor,
     logger,
     quarantineMemo,
@@ -557,35 +543,45 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
       // Run teardown: a pre-built AgentManager (opts.agentManager) may be reused
       // across runs, so clear its per-run state — the per-story hop budget,
       // cooldowns, and pruned fallback set — before releasing it. MEM-12.
-      agentManager.reset();
-      agentManager.close();
-      if (sessionManager instanceof SessionManager) sessionManager.close();
-      await mcpPool.close();
-      await writeMcpRollup(outputDir, buildMcpRollup({ runId, events: mcpPool.events(), withheld: mcpWithheld })).catch(
-        (error: unknown) => logger.warn("runtime", "mcp rollup write failed", { error: String(error) }),
-      );
-      // Native turns still unrecorded at close carry spend the usage sidecar
-      // sees but the ledger does not. Record each as a partial `CostEvent`
-      // before the drain below, so `run.complete` / status.json (both read
-      // `totalSpendUsd(costAggregator.snapshot())`) reflect it.
-      for (const residual of inFlightTracker.residuals()) {
-        costAggregator.record(toPartialCostEvent(residual, runId, projectKey));
-      }
-      // Tool calls still buffered by a hop whose `finally` will not run before
-      // `process.exit` are written here, as partial, before the drain below.
-      // Never rejects (one sink's failure is logged and the rest proceed), so
-      // it needs no `.catch` of its own.
-      await flushOpenToolAuditSinks(runId);
-      const results = await Promise.allSettled([
-        promptAuditor.flush(),
-        usageAuditor.flush(),
-        reviewAuditor.flush(),
-        costAggregator.drain(),
-      ]);
-      for (const r of results) {
-        if (r.status === "rejected") {
-          logger.warn("runtime", "close() flush/drain error", { error: String(r.reason) });
+      //
+      // The run memory closes in the `finally`: a rejecting MCP close or flush
+      // must not skip the run-end sync, which is the last thing a note saved by
+      // this run's last session needs. Its own failures are its contract's to
+      // absorb, so this adds none of its own.
+      try {
+        agentManager.reset();
+        agentManager.close();
+        if (sessionManager instanceof SessionManager) sessionManager.close();
+        await mcpPool.close();
+        await writeMcpRollup(
+          outputDir,
+          buildMcpRollup({ runId, events: mcpPool.events(), withheld: mcpWithheld }),
+        ).catch((error: unknown) => logger.warn("runtime", "mcp rollup write failed", { error: String(error) }));
+        // Native turns still unrecorded at close carry spend the usage sidecar
+        // sees but the ledger does not. Record each as a partial `CostEvent`
+        // before the drain below, so `run.complete` / status.json (both read
+        // `totalSpendUsd(costAggregator.snapshot())`) reflect it.
+        for (const residual of inFlightTracker.residuals()) {
+          costAggregator.record(toPartialCostEvent(residual, runId, projectKey));
         }
+        // Tool calls still buffered by a hop whose `finally` will not run before
+        // `process.exit` are written here, as partial, before the drain below.
+        // Never rejects (one sink's failure is logged and the rest proceed), so
+        // it needs no `.catch` of its own.
+        await flushOpenToolAuditSinks(runId);
+        const results = await Promise.allSettled([
+          promptAuditor.flush(),
+          usageAuditor.flush(),
+          reviewAuditor.flush(),
+          costAggregator.drain(),
+        ]);
+        for (const r of results) {
+          if (r.status === "rejected") {
+            logger.warn("runtime", "close() flush/drain error", { error: String(r.reason) });
+          }
+        }
+      } finally {
+        await opts?.memory?.close();
       }
     },
   };
