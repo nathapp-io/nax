@@ -148,3 +148,41 @@ describe("createRecentModelStore", () => {
     expect(readdirSync(join(dir, "nested")).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 });
+
+describe("createRecentModelStore shared by two chats", () => {
+  test("F1 a recording is not lost to the snapshot another store loaded", async () => {
+    // Two chats started together: both read the same empty file before either records.
+    const first = createRecentModelStore({ path, logger: makeLogger() });
+    const second = createRecentModelStore({ path, logger: makeLogger() });
+    const firstView = await first.load();
+    const secondView = await second.load();
+    await first.save(recordRecentModel(firstView, "a/x[high]"));
+    await second.save(recordRecentModel(secondView, "b/y[low]"));
+    expect(await first.load()).toEqual(["b/y[low]", "a/x[high]"]);
+    expect(readdirSync(join(dir, "nested")).filter((name) => name.endsWith(".lock"))).toEqual([]);
+  });
+
+  test("a save keeps the older entries its caller knew about", async () => {
+    const { store } = fixture();
+    await store.save(["a/x[low]", "b/y"]);
+    expect(await store.load()).toEqual(["a/x[low]", "b/y"]);
+  });
+
+  test("a recording applies to the list on disk, not to the caller's older entries", async () => {
+    const first = createRecentModelStore({ path });
+    const second = createRecentModelStore({ path });
+    await first.save(["a/x[high]", "b/y[low]", "c/z"]);
+    // The second chat still believes the file is empty; its recording must not drop c/z.
+    await second.save(recordRecentModel([], "d/w"));
+    expect(await first.load()).toEqual(["d/w", "a/x[high]", "b/y[low]", "c/z"]);
+  });
+
+  test("F1 two saves in flight at once both land", async () => {
+    const first = createRecentModelStore({ path });
+    const second = createRecentModelStore({ path });
+    await Promise.all([first.save(["a/x[high]"]), second.save(["b/y[low]"])]);
+    const stored = await first.load();
+    expect(stored).toHaveLength(2);
+    expect(stored).toEqual(expect.arrayContaining(["a/x[high]", "b/y[low]"]));
+  });
+});

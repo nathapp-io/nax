@@ -18,6 +18,7 @@ import {
   type ChatHost,
   type ChatSessionHandle,
   createChatHost,
+  createRecentModelStore,
   type OpenChatSessionRequest,
   type RecentModelStore,
 } from "@/chat";
@@ -77,13 +78,15 @@ interface FixtureOptions {
   readonly failModel?: string;
   /** The model a resume opens on — its request carries no model of its own. */
   readonly resumeModel?: string;
+  /** A store to use as it is (a real one on a real file); absent builds a mock. */
+  readonly store?: RecentModelStore;
 }
 
 /** A host whose session opens are stubs: the lifecycle is real, the backend is not. */
 function fixture(options: FixtureOptions = {}) {
   const initial = options.initial ?? [];
   const save = mock<RecentModelStore["save"]>(options.save ?? (async (_models: readonly string[]) => {}));
-  const store: RecentModelStore = { load: mock(async () => initial), save };
+  const store: RecentModelStore = options.store ?? { load: mock(async () => initial), save };
   const open = async (input: OpenChatSessionRequest): Promise<ChatSessionHandle> => {
     const model = input.model ?? options.resumeModel ?? OPEN_MODEL;
     if (model === options.failModel) throw new Error(`refused ${model}`);
@@ -188,5 +191,17 @@ describe("ChatHost recent models", () => {
     expect(f.host.recentModels?.()[0]).toBe("a/x[high]");
     expect(f.logger.warn).toHaveBeenCalledTimes(1);
     expect(f.logger.warn.mock.calls[0]?.[0]).toBe("chat");
+  });
+
+  test("F1 two hosts sharing one recent-model file keep each other's models", async () => {
+    const path = join(dir, "shared", "chat-recent-models.json");
+    const first = createRecentModelStore({ path });
+    const second = createRecentModelStore({ path });
+    // Both chats start together: each loaded the same empty file before either recorded.
+    const a = fixture({ store: first, initial: await first.load() });
+    const b = fixture({ store: second, initial: await second.load() });
+    await a.host.start({ mode: "guarded", model: "a/x[high]" });
+    await b.host.start({ mode: "guarded", model: "b/y[low]" });
+    expect(await first.load()).toEqual(["b/y[low]", "a/x[high]"]);
   });
 });
