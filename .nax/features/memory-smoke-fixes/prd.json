@@ -3,7 +3,7 @@
   "feature": "memory-smoke-fixes",
   "branchName": "feat/memory-smoke-fixes",
   "createdAt": "2026-11-03T00:00:00.000Z",
-  "updatedAt": "2026-11-03T09:34:43.007Z",
+  "updatedAt": "2026-11-03T09:49:04.966Z",
   "userStories": [
     {
       "id": "US-001",
@@ -300,14 +300,17 @@
         "frontmatter"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "One source file adds fixed in-memory defaults using an already available lstat result and the unchanged parser; existing safety checks are preserved rather than redesigned."
+        "reasoning": "One source file adds fixed in-memory defaults using an already available lstat result and the unchanged parser; existing safety checks are preserved rather than redesigned.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/memory/repo-notes.ts",
@@ -321,7 +324,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "14527260c62f578e83227c39a6299b3494e56d9f"
     },
     {
       "id": "US-006",
