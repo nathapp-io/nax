@@ -382,6 +382,43 @@ describe("createMcpMemoryProvider", () => {
       });
     });
 
+    test("a late-finishing forget keeps ids a replacement save recorded meanwhile (B1)", async () => {
+      await idMap.add("project", "s1", ["r1"]);
+      const provider = make(FORGET_MCP);
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let stalled: () => void = () => {};
+      const stallStarted = new Promise<void>((resolve) => {
+        stalled = resolve;
+      });
+      const realCall = fake.pool.call;
+      let first = true;
+      fake.pool.call = async (...args) => {
+        if (first) {
+          first = false;
+          stalled();
+          await gate; // the original forget stalls past the operations layer's deadline
+        }
+        return realCall(...args);
+      };
+      const original = provider.push(forgetRequest()); // times out upstream; keeps running here
+      await stallStarted;
+      // ...the outbox then delivers a queued replacement save, which records r2.
+      fake.respond = (call) =>
+        call.tool === "add_memories" ? answer('{"results":[{"id":"r2","event":"ADD"}]}') : answer("ok");
+      await provider.push(saveRequest());
+      expect(await idMap.ids("project", "s1")).toEqual(["r1", "r2"]);
+      release();
+      expect((await original).status).toBe("deleted");
+      expect(await idMap.ids("project", "s1")).toEqual(["r2"]);
+      // The next forget still deletes r2 on the server.
+      await provider.push(forgetRequest());
+      expect(fake.calls.filter((c) => c.tool === "delete_memory").map((c) => c.input.memory_id)).toEqual(["r1", "r2"]);
+      expect(await idMap.ids("project", "s1")).toEqual([]);
+    });
+
     test("a pool that throws for one id is also a warning, not a failure", async () => {
       await idMap.add("project", "s1", ["r1", "r2"]);
       let first = true;

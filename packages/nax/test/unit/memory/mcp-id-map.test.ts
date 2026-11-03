@@ -65,6 +65,20 @@ describe("createMcpIdMap", () => {
     expect(await map.ids("project", "s2")).toEqual(["b"]);
   });
 
+  test("drop with ids removes only those ids and keeps the rest", async () => {
+    const map = createMcpIdMap({ dirs, server: "om" });
+    await map.add("project", "s1", ["a", "b", "c"]);
+    await map.drop("project", "s1", ["a", "c"]);
+    expect(await map.ids("project", "s1")).toEqual(["b"]);
+  });
+
+  test("drop with every recorded id removes the slug entry", async () => {
+    const map = createMcpIdMap({ dirs, server: "om" });
+    await map.add("project", "s1", ["a"]);
+    await map.drop("project", "s1", ["a"]);
+    expect(await readJson(projectFile())).toEqual({ version: 1, server: "om", notes: {} });
+  });
+
   test("an id recorded under user scope is written to the user directory (AC-19)", async () => {
     await createMcpIdMap({ dirs, server: "om" }).add("user", "s1", ["u1"]);
     expect(await readJson(userFile())).toEqual({ version: 1, server: "om", notes: { s1: ["u1"] } });

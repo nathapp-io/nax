@@ -38,8 +38,11 @@ export interface McpIdMap {
   ids(scope: MemoryScope, slug: string): Promise<readonly string[]>;
   /** Record ids for a note, keeping any already recorded. */
   add(scope: MemoryScope, slug: string, ids: readonly string[]): Promise<void>;
-  /** Forget everything recorded for a note. */
-  drop(scope: MemoryScope, slug: string): Promise<void>;
+  /**
+   * Forget what is recorded for a note: everything, or — when `only` is given — just those ids,
+   * so ids a later save recorded in the meantime survive.
+   */
+  drop(scope: MemoryScope, slug: string, only?: readonly string[]): Promise<void>;
 }
 
 /** Filesystem seam for tests. */
@@ -146,14 +149,16 @@ export function createMcpIdMap(input: { readonly dirs: MemoryDirs; readonly serv
         await writeNotes(path, server, new Map(notes).set(slug, merged));
       });
     },
-    drop(scope, slug) {
+    drop(scope, slug, only) {
       return serialised(async () => {
         const path = pathOf(scope);
         const { notes, state } = await readNotes(path, server);
         // Nothing to forget in a missing file or a usable one without the slug; an unusable file is rewritten.
         if (state === "missing" || (state === "valid" && !notes.has(slug))) return;
         const rest = new Map(notes);
-        rest.delete(slug);
+        const kept = only === undefined ? [] : (notes.get(slug) ?? []).filter((id) => !only.includes(id));
+        if (kept.length > 0) rest.set(slug, kept);
+        else rest.delete(slug);
         await writeNotes(path, server, rest);
       });
     },

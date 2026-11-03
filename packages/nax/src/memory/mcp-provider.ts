@@ -128,7 +128,9 @@ export function createMcpMemoryProvider(input: CreateMcpMemoryProviderInput): Me
     if (idArg === undefined) throw pushRejected(`[memory] memory.mcp.args.id is required with memory.mcp.tools.forget`);
     await requireTool(tool);
     for (const id of ids) await forgetRemote(tool, idArg, id);
-    await idMap.drop(request.scope, request.slug);
+    // Drop only the ids this forget processed: a save recorded while it was in flight (the operations
+    // layer may have timed it out and moved on) keeps its ids.
+    await idMap.drop(request.scope, request.slug, ids);
     return deleted;
   }
 
