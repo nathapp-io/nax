@@ -112,6 +112,7 @@ export {
   type MemoryOutbox,
   type MemoryOutboxEntry,
   type MemoryPage,
+  type MemoryPendingForget,
   type MemoryProvider,
   type MemoryPushResult,
   type MemorySaveInput,

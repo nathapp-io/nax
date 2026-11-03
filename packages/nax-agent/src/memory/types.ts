@@ -41,6 +41,19 @@ export interface MemoryDecision {
   readonly status: MemoryDecisionStatus;
 }
 
+/**
+ * One queued forget: a `proposal` forget the mirror accepted but did not act on, kept in
+ * the mirror's `pending-forgets.jsonl` so it outlives the process that asked for it — the
+ * index marks it and an approval finds it later. The `clientId` is the write's idempotency
+ * key, and `reason` is the justification the forget carried (`""` when it carried none).
+ */
+export interface MemoryPendingForget {
+  readonly clientId: string;
+  readonly scope: MemoryScope;
+  readonly slug: string;
+  readonly reason: string;
+}
+
 export interface MemoryHit {
   readonly slug: string;
   readonly scope: MemoryScope;

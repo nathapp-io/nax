@@ -23,6 +23,7 @@ import {
   type MemoryDecision,
   type MemoryNote,
   type MemoryNoteType,
+  memoryNoteKey,
 } from "./types.ts";
 
 /** The two lines every index starts with. */
@@ -178,7 +179,10 @@ function joinLines(lines: readonly IndexLine[]): string {
   return lines.map((line) => line.text).join("\n");
 }
 
-/** What a refresh carries into both renderings: the held keys and the two caps. */
+/**
+ * What a refresh carries into both renderings: the held keys and the two caps. The keys
+ * are the ones the outbox still holds; the record's own keys are added to them.
+ */
 export interface RefreshMemoryIndexOptions {
   /** `"<scope>/<slug>"` of every note with a queued forget. */
   readonly heldForgets?: ReadonlySet<string>;
@@ -189,16 +193,33 @@ export interface RefreshMemoryIndexOptions {
 }
 
 /**
+ * The keys both renderings mark: the caller's held forgets plus the ones the mirror has
+ * recorded. A proposal forget is answered long before anything acts on it, so the record
+ * — not the caller — is what still knows about it; a key held by both is one mark.
+ */
+async function markedForgets(
+  store: MemoryStore,
+  heldForgets: ReadonlySet<string> | undefined,
+): Promise<ReadonlySet<string>> {
+  const recorded = await store.readPendingForgets();
+  if (recorded.length === 0) return heldForgets ?? NO_HELD_FORGETS;
+  const keys = new Set(heldForgets ?? NO_HELD_FORGETS);
+  for (const entry of recorded) keys.add(memoryNoteKey(entry.scope, entry.slug));
+  return keys;
+}
+
+/**
  * Regenerate the index files of a store from what it holds: the project notes and
  * the decisions into `MEMORY.md`, and — on a store that has a user directory — the
  * user notes into the user scope's `MEMORY.md`, which carries the header lines and
- * the `## User` section only. The project rendering is what is returned.
+ * the `## User` section only. Every note with a queued or recorded forget is marked.
+ * The project rendering is what is returned.
  */
 export async function refreshMemoryIndex(
   store: MemoryStore,
   options: RefreshMemoryIndexOptions = {},
 ): Promise<RenderedMemoryIndex> {
-  const heldForgets = options.heldForgets ?? NO_HELD_FORGETS;
+  const heldForgets = await markedForgets(store, options.heldForgets);
   const caps = { maxBytes: options.maxBytes, maxLines: options.maxLines };
   const project = renderMemoryIndex({
     projectNotes: await store.listNotes("project"),
