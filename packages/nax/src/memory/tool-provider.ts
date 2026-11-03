@@ -42,6 +42,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { buildMemoryToolInstructions } from "@/prompts";
 import type { MemoryHost, MemorySearchInput } from "./host";
+import { MEMORY_MCP_PROVIDER_PREFIX } from "./mcp-provider";
 
 /** The provider id every memory tool is namespaced under: `nax-memory__get`. */
 export const MEMORY_TOOL_PROVIDER_ID = "nax-memory";
@@ -352,11 +353,15 @@ function memoryTools(host: MemoryHost): readonly ProviderTool[] {
  * @param host - The memory host every tool reads and writes through
  */
 export function createMemoryToolProvider(host: MemoryHost): ToolProvider {
+  const remoteServer = host.providerId.startsWith(MEMORY_MCP_PROVIDER_PREFIX)
+    ? host.providerId.slice(MEMORY_MCP_PROVIDER_PREFIX.length)
+    : undefined;
   return {
     id: MEMORY_TOOL_PROVIDER_ID,
     kind: "static",
     stages: ["*"],
-    instructions: async () => buildMemoryToolInstructions(),
+    instructions: async () =>
+      remoteServer === undefined ? buildMemoryToolInstructions() : buildMemoryToolInstructions({ remoteServer }),
     tools: async () => memoryTools(host),
   };
 }

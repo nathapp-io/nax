@@ -453,7 +453,18 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   memory: "Repository-wide memory the chat surfaces may read and write",
   "memory.enabled":
     "Master switch. false means no memory host, no memory tools, no index section and no sync (default: true)",
-  "memory.provider": 'Where notes live. Only "local" is accepted in this release (default: local)',
+  "memory.provider":
+    'Where notes live: "local" keeps them in the local mirror, "mcp" keeps them on the MCP server named by memory.mcp (default: local)',
+  "memory.mcp.server":
+    'Id of the mcp.servers entry that holds the memories. Must be defined in mcp.servers; used when memory.provider is "mcp"',
+  "memory.mcp.tools.search": "Tool the memory server exposes to search memories (default: search_memory)",
+  "memory.mcp.tools.add": "Tool the memory server exposes to add a memory (default: add_memories)",
+  "memory.mcp.tools.forget":
+    "Tool the memory server exposes to delete one memory. No default: it is specific to your server, and memory.mcp.args.id must be set with it",
+  "memory.mcp.args.query": "Name of the search tool's query argument (default: query)",
+  "memory.mcp.args.text": "Name of the add tool's memory-text argument (default: text)",
+  "memory.mcp.args.id":
+    "Name of the forget tool's memory-id argument. No default; required when memory.mcp.tools.forget is set",
   "memory.writeMode":
     'How an agent save lands: "direct" writes the note immediately, "proposal" queues it for `nax memory approve` (default: direct)',
   "memory.indexBytes":

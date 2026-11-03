@@ -55,7 +55,7 @@ import {
   RoutingConfigSchema,
 } from "./schemas-infra";
 import { McpConfigSchema } from "./schemas-mcp";
-import { MemoryConfigSchema } from "./schemas-memory";
+import { MemoryConfigSchema, validateMemoryProvider } from "./schemas-memory";
 import { ConfiguredModelSchema, ModelMapSchema } from "./schemas-model";
 import { validateProtocolGate } from "./schemas-protocol-gate";
 import { ReportersConfigSchema } from "./schemas-reporters";
@@ -591,4 +591,5 @@ export const NaxConfigSchema = z
     // Cross-section: the protocol gate decides which agents `models` may name,
     // and what shape a native model id must take. See schemas-protocol-gate.ts.
     validateProtocolGate(data, ctx);
+    validateMemoryProvider(data, ctx);
   });

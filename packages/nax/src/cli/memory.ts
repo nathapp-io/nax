@@ -30,10 +30,10 @@ import {
   memoryDisabledError,
   NOTE_SCOPES,
   NOTE_TYPES,
-  openMemoryHost,
   parseNoteScope,
   parseNoteType,
   withMemoryErrors,
+  withMemoryHost,
 } from "./memory-cli-deps";
 import { registerMemoryReadCommands } from "./memory-read";
 import { registerMemoryWriteCommands } from "./memory-write";
@@ -86,16 +86,19 @@ export async function memoryStatusCommand(
   opts: MemoryCliOptions,
   deps: MemoryCliDeps = _memoryCliDeps,
 ): Promise<number> {
-  return withMemoryErrors(async () => {
-    const host = await openMemoryHost(await memoryContext(opts.dir, deps), deps);
-    if (host === null) {
-      deps.log(opts.json === true ? JSON.stringify({ enabled: false }) : "enabled: false");
-      return 0;
-    }
-    const status = await host.status();
-    deps.log(opts.json === true ? JSON.stringify(status) : formatMemoryStatus(status));
-    return 0;
-  }, deps);
+  return withMemoryErrors(
+    async () =>
+      withMemoryHost(await memoryContext(opts.dir, deps), deps, async (host) => {
+        if (host === null) {
+          deps.log(opts.json === true ? JSON.stringify({ enabled: false }) : "enabled: false");
+          return 0;
+        }
+        const status = await host.status();
+        deps.log(opts.json === true ? JSON.stringify(status) : formatMemoryStatus(status));
+        return 0;
+      }),
+    deps,
+  );
 }
 
 /**
@@ -112,15 +115,16 @@ export async function memoryListCommand(
   return withMemoryErrors(async () => {
     const type = parseNoteType(opts.type);
     const scope = parseNoteScope(opts.scope);
-    const host = await openMemoryHost(await memoryContext(opts.dir, deps), deps);
-    if (host === null) throw memoryDisabledError();
-    const notes = ofType(await readListing(host, scope), type);
-    if (opts.json === true) {
-      deps.log(JSON.stringify({ notes: notes.map(listingEntry) }));
-    } else {
-      for (const note of notes) deps.log(formatMemoryNoteLine(note));
-    }
-    return 0;
+    return withMemoryHost(await memoryContext(opts.dir, deps), deps, async (host) => {
+      if (host === null) throw memoryDisabledError();
+      const notes = ofType(await readListing(host, scope), type);
+      if (opts.json === true) {
+        deps.log(JSON.stringify({ notes: notes.map(listingEntry) }));
+      } else {
+        for (const note of notes) deps.log(formatMemoryNoteLine(note));
+      }
+      return 0;
+    });
   }, deps);
 }
 

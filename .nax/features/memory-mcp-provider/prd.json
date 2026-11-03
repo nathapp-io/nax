@@ -1,0 +1,489 @@
+{
+  "project": "nax-monorepo",
+  "feature": "memory-mcp-provider",
+  "branchName": "feat/memory-mcp-provider",
+  "createdAt": "2026-11-03T00:00:00.000Z",
+  "updatedAt": "2026-11-03T06:32:25.725Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Config for the MCP memory provider",
+      "description": "**Goal** — Add opt-in MCP memory configuration, defaults, discoverability and cross-section validation.\n\n**Motivation** — A project without koda can only keep memory in the local mirror on one machine.\n\n**Approach** — Config\n\n```jsonc\n\"memory\": {\n  \"provider\": \"mcp\",\n  \"mcp\": {\n    \"server\": \"openmemory\",                                  // a key of mcp.servers\n    \"tools\": {\n      \"search\": \"search_memory\",                             // default\n      \"add\": \"add_memories\",                                 // default\n      \"forget\": \"delete_memory\"                              // optional; no default; server-specific\n    },\n    \"args\": {\n      \"query\": \"query\",                                      // default\n      \"text\": \"text\",                                        // default\n      \"id\": \"memory_id\"                                      // no default; required when tools.forget is set\n    }\n  }\n},\n\"mcp\": { \"servers\": { \"openmemory\": { \"url\": \"http://localhost:8765/mcp/nax/sse/me\" } } }\n```\n\n`MemoryMcpConfigSchema` (new, in `src/config/schemas-memory.ts`) is `.strict()` like the rest of the block: `server` matches `MCP_SERVER_ID_RE` and contains no `__` (the rules an `mcp.servers` key already follows, `schemas-mcp.ts`); every tool name and argument name is a non-empty string. `tools.search` defaults to `search_memory`, `tools.add` to `add_memories`, `args.query` to `query` and `args.text` to `text` (OpenMemory's names, design 6.4). The `tools` and `args` objects themselves default to `{}`, so `{ server: \"om\" }` parses to the full defaults. `tools.forget` and `args.id` have no default: OpenMemory exposes no single-memory delete tool, so the forget tool and its id argument are whatever the user's server provides. `memory.mcp` has no default and is absent from `NaxConfigSchema.parse({}).memory`.\n\nCross-section rules, in `validateMemoryProvider(data, ctx)` exported from `src/config/schemas-memory.ts` and called from the `NaxConfigSchema` `superRefine` in `src/config/schemas.ts` (594 of 600 lines: the import and the call are the only additions):\n\n| Condition | Issue path | Message |\n|---|---|---|\n| `memory.provider` is `\"mcp\"` and `memory.mcp` is absent | `[\"memory\", \"mcp\"]` | `memory.provider \"mcp\" needs a memory.mcp block naming the server` |\n| `memory.mcp.server` is not a key of `mcp.servers` | `[\"memory\", \"mcp\", \"server\"]` | `memory.mcp.server \"<id>\" is not defined in mcp.servers` |\n| `memory.provider` is `\"mcp\"` and `memory.writeMode` is `\"proposal\"` | `[\"memory\", \"writeMode\"]` | `memory.writeMode \"proposal\" needs a provider that holds pending writes; provider \"mcp\" does not` |\n| `memory.mcp.tools.forget` is set and `memory.mcp.args.id` is absent | `[\"memory\", \"mcp\", \"args\", \"id\"]` | `memory.mcp.args.id is required when memory.mcp.tools.forget is set` |\n\n`NaxConfig.mcp` is optional on the hand-written interface; `validateMemoryProvider` treats an absent `mcp` block as having no servers. The four rules are checked independently, so one config can raise more than one issue. `schemas.ts` is at 594 of 600 lines, which leaves 6 lines of headroom; this feature uses 2 of them.\n\nA `memory.mcp` block with `provider: \"local\"` is valid and unused. The server's own `stages`, `enabled` and `allowedTools` are not memory settings: `stages` decides whether chat or run sessions also see the server's raw tools, and a disabled server makes the memory provider unreachable.\n\n**Interface** — `MemoryConfigSchema.provider` — Baseline: `z.enum([\"local\"]).default(\"local\")`. Target: `z.enum([\"local\", \"mcp\"]).default(\"local\")`, plus optional `mcp: MemoryMcpConfigSchema`.\n\n`MemoryConfig.provider` — Baseline: `provider: \"local\"`. Target: `provider: \"local\" | \"mcp\"`; new optional `mcp?: MemoryMcpConfig` with `server: string`, `tools: { search: string; add: string; forget?: string }`, `args: { query: string; text: string; id?: string }`.\n\n**Scope** — In: schemas-memory.ts, runtime-types-memory.ts, the schema import and superRefine call, and FIELD_DESCRIPTIONS entries for every new key. Change the memory.provider description and add memory.mcp.server, memory.mcp.tools.search/add/forget and memory.mcp.args.query/text/id; expose new config types through the existing config barrel as needed. Out: result parsing and id-map persistence (US-002), provider calls (US-003), host composition/search/close (US-004), and surface cleanup (US-005). Nearby feature exclusions:\n- `memory.writeMode: \"proposal\"` with `memory.provider: \"mcp\"`: refused at config load; no local pending fallback is built.\n- No default forget tool or id argument is shipped; OpenMemory has no single-memory delete tool, so `tools.forget` and `args.id` must be set for the user's own server.\n- The koda provider (design feature 3) is not built; `memory.provider` still refuses `\"koda\"`.\n\nVerification: extend test/unit/config/schemas-memory.test.ts with behavioral parses and exact issue assertions. Check package typecheck and file-size gates, keeping schemas.ts at no more than 600 lines; these gates are not acceptance criteria.",
+      "acceptanceCriteria": [
+        "[unit] NaxConfigSchema.parse({ memory: { provider: \"mcp\", mcp: { server: \"om\" } }, mcp: { servers: { om: { url: \"http://localhost:8765/mcp\" } } } }).memory.provider returns \"mcp\".",
+        "[unit] Given that MCP config, the parsed memory.mcp equals { server: \"om\", tools: { search: \"search_memory\", add: \"add_memories\" }, args: { query: \"query\", text: \"text\" } }.",
+        "[unit] NaxConfigSchema.safeParse of that MCP config with memory.mcp.tools.forget: \"delete_memory\" and no memory.mcp.args.id fails with an issue at [\"memory\", \"mcp\", \"args\", \"id\"] whose message is \"memory.mcp.args.id is required when memory.mcp.tools.forget is set\".",
+        "[unit] NaxConfigSchema.safeParse of that MCP config with memory.mcp.tools.forget: \"delete_memory\" and memory.mcp.args.id: \"memory_id\" succeeds.",
+        "[unit] NaxConfigSchema.parse({}).memory has no mcp key.",
+        "[unit] NaxConfigSchema.safeParse({ memory: { provider: \"mcp\" } }) fails with an issue at [\"memory\", \"mcp\"] whose message is 'memory.provider \"mcp\" needs a memory.mcp block naming the server'.",
+        "[unit] NaxConfigSchema.safeParse({ memory: { provider: \"mcp\", mcp: { server: \"om\" } } }) with no mcp.servers.om fails with an issue at [\"memory\", \"mcp\", \"server\"] whose message is 'memory.mcp.server \"om\" is not defined in mcp.servers'.",
+        "[unit] NaxConfigSchema.safeParse of that MCP config plus memory.writeMode: \"proposal\" fails with an issue at [\"memory\", \"writeMode\"] whose message is 'memory.writeMode \"proposal\" needs a provider that holds pending writes; provider \"mcp\" does not'.",
+        "[unit] NaxConfigSchema.safeParse of that MCP config with memory.provider: \"local\" succeeds (an unused memory.mcp block is valid).",
+        "[unit] NaxConfigSchema.safeParse({ memory: { mcp: { server: \"om\", extra: 1 } }, mcp: { servers: { om: { url: \"http://localhost:8765/mcp\" } } } }) fails because memory.mcp accepts no unknown key.",
+        "[unit] NaxConfigSchema.safeParse with memory.mcp.server set to \"Bad Id\" fails with an issue whose path starts with [\"memory\", \"mcp\", \"server\"].",
+        "[unit] NaxConfigSchema.safeParse with memory.mcp.tools.add set to \"\" fails with an issue whose path starts with [\"memory\", \"mcp\", \"tools\", \"add\"].",
+        "[unit] NaxConfigSchema.safeParse({ memory: { provider: \"koda\" } }) still fails with an issue at [\"memory\", \"provider\"].",
+        "[unit] FIELD_DESCRIPTIONS[\"memory.mcp.server\"] returns a non-empty string.",
+        "[unit] FIELD_DESCRIPTIONS[\"memory.mcp.tools.forget\"] returns a non-empty string.",
+        "[unit] FIELD_DESCRIPTIONS[\"memory.mcp.args.id\"] returns a non-empty string."
+      ],
+      "tags": [
+        "feature",
+        "memory",
+        "config",
+        "mcp"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive Zod schema/types and four explicit cross-section checks follow existing patterns; protect default compatibility and the root schema's line budget.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-memory.ts",
+        "packages/nax/src/config/runtime-types-memory.ts",
+        "packages/nax/src/config/schemas.ts",
+        "packages/nax/src/config/schemas-mcp.ts",
+        "packages/nax/src/cli/config-descriptions.ts"
+      ],
+      "suggestedCriteria": [
+        "NaxConfigSchema.safeParse with memory.mcp.server: \"om__private\" fails at [\"memory\", \"mcp\", \"server\"].",
+        "When provider mcp has no server definition, writeMode proposal and tools.forget without args.id, NaxConfigSchema.safeParse reports all three corresponding custom issues in one result.",
+        "NaxConfigSchema.safeParse rejects unknown keys independently inside memory.mcp.tools and memory.mcp.args.",
+        "NaxConfigSchema.safeParse rejects an empty string for each configured tool name and argument name."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/schemas-memory.ts",
+          "reason": "widen `provider` to `z.enum([\"local\", \"mcp\"])`, add `MemoryMcpConfigSchema` and the optional `mcp` key, add `validateMemoryProvider`; the schema stays `.strict()`."
+        },
+        {
+          "path": "packages/nax/src/config/runtime-types-memory.ts",
+          "reason": "widen `MemoryConfig.provider` to `\"local\" | \"mcp\"` and add `mcp?: MemoryMcpConfig` with the `MemoryMcpConfig` interface."
+        },
+        {
+          "path": "packages/nax/src/config/schemas.ts",
+          "reason": "import `validateMemoryProvider` from the memory schema module and call it in the `NaxConfigSchema` `superRefine` after `validateProtocolGate`; the file must end at no more than 600 lines."
+        },
+        {
+          "path": "packages/nax/src/cli/config-descriptions.ts",
+          "reason": "change the `memory.provider` description (it says only \"local\" is accepted) and add entries for `memory.mcp.server`, `memory.mcp.tools.search`, `memory.mcp.tools.add`, `memory.mcp.tools.forget`, `memory.mcp.args.query`, `memory.mcp.args.text` and `memory.mcp.args.id`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "45b97d6b975e3b342add84318f238b6cb855501a"
+    },
+    {
+      "id": "US-002",
+      "title": "MCP result parsing and the remote id map",
+      "description": "**Goal** — Add pure MCP result adapters and a durable, scope-specific record of remote ids for later forgets.\n\n**Motivation** — Many users already run a memory server reachable over MCP (OpenMemory, mem0-compatible servers).\n\n**Approach** — Result parsing (`src/memory/mcp-results.ts`)\n\nMCP tool results reach nax as text (`McpCallResult.content`). `parseMcpMemoryItems(text)` returns `readonly McpMemoryItem[]` (`{ id?: string; text: string; score?: number }`):\n\n1. the text is parsed as JSON; text that is not JSON yields `[]`;\n2. a JSON array is the item list; an object with an array `results` is the item list; anything else yields `[]`;\n3. per item: `text` is the first string-valued field among `memory`, `text`, `content`; an item with none is dropped; `id` is the item's `id` when it is a string; `score` is the item's `score` when it is a finite number.\n\n`parseMcpMemoryIds(text)` returns the ids of an add result: the same JSON and item-list rules as `parseMcpMemoryItems`, but every item whose `id` is a string contributes its id, with or without a text field (an add answer such as `[{\"id\":\"r1\",\"event\":\"ADD\"}]` carries no memory text). The save push records ids through this function, never through `parseMcpMemoryItems`.\n\n`mcpHitOf(item, index, scope)` maps one item to a `MemoryHit`:\n\n| `MemoryHit` field | Value |\n|---|---|\n| `slug` | `mcp-` + the id lowercased with every character outside `[a-z0-9]` replaced by `-`, cut to 60 characters; `mcp-<index + 1>` when the item has no id |\n| `scope` | the scope the search was asked for |\n| `type` | `\"reference\"` |\n| `status` | `\"active\"` |\n| `description` | the first line of `text`, cut to `MCP_HIT_DESCRIPTION_MAX_CHARS` (160) characters |\n| `snippet` | `text` cut to `MCP_HIT_SNIPPET_MAX_CHARS` (1000) characters |\n| `score` | `score`, or `0` when absent |\n\nId map (`src/memory/mcp-id-map.ts`)\n\nA forget request carries only the slug, and under `direct` the note is already deleted from the mirror when the provider is asked (`forgetLocked`, feature 1). So the provider keeps its own record of the remote ids each save produced. `createMcpIdMap({ dirs, server })`, with `dirs: MemoryDirs`, returns `{ ids(scope, slug), add(scope, slug, ids), drop(scope, slug) }` over one file per scope: `<dirs.projectDir>/mcp-ids.json` for `\"project\"` and `<dirs.userDir>/mcp-ids.json` for `\"user\"`:\n\n```json\n{ \"version\": 1, \"server\": \"openmemory\", \"notes\": { \"replay-budget\": [\"a1b2\", \"c3d4\"] } }\n```\n\n- `add` appends ids not already recorded (a re-save of one slug adds to its list, so a later forget deletes every copy).\n- A missing file, a file that is not valid JSON, a file whose `version` is not `1`, and a file whose `server` differs from the configured one all read as empty; the next `add` or `drop` rewrites the file for the configured server.\n- Writes go to a temporary file in the same directory and are renamed into place.\n\n**Interface** — `parseMcpMemoryItems(text)` returns `readonly McpMemoryItem[]` (`{ id?: string; text: string; score?: number }`); `parseMcpMemoryIds(text)` returns the ids of an add result; `mcpHitOf(item, index, scope)` maps one item to a `MemoryHit`; `createMcpIdMap({ dirs, server })`, with `dirs: MemoryDirs`, returns `{ ids(scope, slug), add(scope, slug, ids), drop(scope, slug) }`. Export these symbols and the two hit-length constants from their respective internal modules; `McpIdMap` is the returned map contract.\n\n**Scope** — In: create mcp-results.ts and mcp-id-map.ts and their mirrored unit tests; use public MemoryHit/MemoryScope types from @nathapp/nax-agent and host MemoryDirs. Keep both modules internal to src/memory/, not in its barrel. Use injectable filesystem dependencies and atomic same-directory replacement. Out: config (US-001), pool/provider calls and barrel exports (US-003), host merge/instructions (US-004), and surface teardown (US-005). Nearby feature exclusions:\n- Per-server result parsing beyond the documented shapes (a JSON array, or an object with a `results` array, of items with `memory` / `text` / `content`) is not built.\n- Remote ids lost before they are recorded (a crash between the add call and the id-map write, or two processes writing one user-scope `mcp-ids.json` at the same time) are not recovered; a later forget cannot delete those copies.\n- A re-save of an existing slug does not delete the remote copies of the earlier save; they stay until a forget with `tools.forget` configured deletes every recorded id.\n- No change to `packages/nax-agent`.",
+      "acceptanceCriteria": [
+        "[unit] parseMcpMemoryItems('[{\"id\":\"a1\",\"memory\":\"uses bun\",\"score\":0.9}]') returns [{ id: \"a1\", text: \"uses bun\", score: 0.9 }].",
+        "[unit] parseMcpMemoryItems('{\"results\":[{\"id\":\"a1\",\"memory\":\"uses bun\"}]}') returns [{ id: \"a1\", text: \"uses bun\" }].",
+        "[unit] parseMcpMemoryItems('[{\"text\":\"t1\"},{\"content\":\"t2\"}]') returns [{ text: \"t1\" }, { text: \"t2\" }].",
+        "[unit] parseMcpMemoryItems('[{\"id\":\"a1\"},{\"id\":\"a2\",\"memory\":\"kept\"}]') returns only the item with text \"kept\" (an item with no text field is dropped).",
+        "[unit] parseMcpMemoryItems(\"not json\") returns [].",
+        "[unit] parseMcpMemoryItems('{\"memories\":[{\"memory\":\"x\"}]}') returns [].",
+        "[unit] parseMcpMemoryIds('{\"results\":[{\"id\":\"r1\",\"event\":\"ADD\"},{\"memory\":\"no id\"},{\"id\":\"r2\",\"memory\":\"m\"}]}') returns [\"r1\", \"r2\"].",
+        "[unit] parseMcpMemoryIds(\"ok\") returns [].",
+        "[unit] mcpHitOf({ id: \"AB_12\", text: \"line one\\nline two\", score: 0.5 }, 0, \"project\") returns { slug: \"mcp-ab-12\", scope: \"project\", type: \"reference\", status: \"active\", description: \"line one\", snippet: \"line one\\nline two\", score: 0.5 }.",
+        "[unit] mcpHitOf({ text: \"x\" }, 2, \"user\") returns a hit whose slug is \"mcp-3\".",
+        "[unit] mcpHitOf({ text: \"x\" }, 2, \"user\") returns a hit whose scope is \"user\".",
+        "[unit] mcpHitOf({ text: \"x\" }, 2, \"user\") returns a hit whose score is 0.",
+        "[unit] mcpHitOf of an item whose text is 2000 characters returns a snippet of MCP_HIT_SNIPPET_MAX_CHARS (1000) characters.",
+        "[unit] mcpHitOf of an item whose id is 100 lowercase letters returns a slug of exactly 64 characters: mcp- followed by the first 60 letters.",
+        "[unit] mcpHitOf of an item whose text is a single line of 300 characters returns a description of MCP_HIT_DESCRIPTION_MAX_CHARS (160) characters.",
+        "[unit] After createMcpIdMap({ dirs, server: \"om\" }).add(\"project\", \"s1\", [\"a\", \"b\"]), with dirs a MemoryDirs over temporary directories, a second createMcpIdMap({ dirs, server: \"om\" }) over the same dirs returns [\"a\", \"b\"] from ids(\"project\", \"s1\").",
+        "[unit] add(\"project\", \"s1\", [\"b\", \"c\"]) after add(\"project\", \"s1\", [\"a\", \"b\"]) makes ids(\"project\", \"s1\") return [\"a\", \"b\", \"c\"].",
+        "[unit] After drop(\"project\", \"s1\"), ids(\"project\", \"s1\") returns [].",
+        "[unit] An id recorded under scope \"user\" is written to <dirs.userDir>/mcp-ids.json.",
+        "[unit] An id recorded under scope \"user\" is not returned by ids(\"project\", ...) for the same slug.",
+        "[unit] When <dirs.projectDir>/mcp-ids.json holds {\"version\":2,\"server\":\"om\",\"notes\":{\"s1\":[\"a\"]}}, ids(\"project\", \"s1\") on a map for server \"om\" returns [].",
+        "[unit] A map created with server: \"other\" over a directory whose mcp-ids.json was written for \"om\" returns [] from ids(\"project\", \"s1\").",
+        "[unit] When <dirs.projectDir>/mcp-ids.json holds text that is not JSON, ids(\"project\", \"s1\") returns [].",
+        "[unit] After reading non-JSON <dirs.projectDir>/mcp-ids.json, add(\"project\", \"s1\", [\"z\"]) makes ids(\"project\", \"s1\") return [\"z\"].",
+        "[unit] When mcp-ids.json is unreadable, ids(scope, slug) returns [].",
+        "[unit] When mcp-ids.json is missing, ids(scope, slug) returns [].",
+        "[unit] After an unreadable, invalid, wrong-version or other-server id map is read as empty, the next successful add or drop rewrites a version-1 file for the configured server."
+      ],
+      "tags": [
+        "feature",
+        "memory",
+        "mcp",
+        "persistence"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two focused utility modules with specified pure parsing and atomic sidecar persistence; temporary-directory tests exercise durability without network integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/types.ts",
+        "packages/nax/src/memory/paths.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/mcp-results.ts",
+        "packages/nax/src/memory/mcp-id-map.ts",
+        "packages/nax/test/unit/memory/mcp-results.test.ts",
+        "packages/nax/test/unit/memory/mcp-id-map.test.ts"
+      ],
+      "suggestedCriteria": [
+        "parseMcpMemoryItems returns [] for JSON null, scalar values and objects whose results field is not an array.",
+        "parseMcpMemoryItems selects text over content when memory is non-string and text is a string.",
+        "parseMcpMemoryItems omits score for a non-number or non-finite number and omits id for a non-string id.",
+        "parseMcpMemoryItems drops null/scalar array entries without losing later valid entries.",
+        "After add or drop fails before the final rename, a new map instance still reads the previous complete id list."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c6331a5ba4311adcca1087dece21feba3dde602e"
+    },
+    {
+      "id": "US-003",
+      "title": "The MCP memory provider",
+      "description": "**Goal** — Implement a generic MemoryProvider that calls configured MCP memory tools, records add ids and best-effort deletes recorded copies.\n\n**Motivation** — The design's provider seam was built for this: a generic MCP provider lets those servers hold nax's notes and answer nax's searches, with configuration and no code per server.\n\n**Approach** — Behaviour\n\n`memory.provider: \"mcp\"` makes the host compose an MCP memory provider over one entry of `mcp.servers`. The mirror stays the store every surface reads (design 6.2): the index, `get` and local keyword search are unchanged. What the provider adds:\n\n| Operation | MCP provider behaviour |\n|---|---|\n| `pull` | `{ notes: [], done: true }`. MCP memory tools expose no change cursor; nothing is faked (design call 3). |\n| `push` save | calls the add tool with one argument, `{ [args.text]: \"<slug>: <description>\\n\\n<body>\" }`; resolves `{ id: note.id, status: \"active\" }`; the remote ids parsed from the result are recorded in the id map under the note's scope and slug. |\n| `push` forget, `tools.forget` unset | no `call` and no `listTools`, whatever the server's state; drops the id-map entry; resolves `{ id: clientId, status: \"deleted\" }`. The remote copies stay. |\n| `push` forget, `tools.forget` set, no recorded ids | no `call` and no `listTools`; resolves `{ id: clientId, status: \"deleted\" }` (there is nothing remote to delete). |\n| `push` forget, `tools.forget` set, recorded ids | calls the forget tool once per recorded remote id with `{ [args.id]: <id> }`; drops the id-map entry; resolves `{ id: clientId, status: \"deleted\" }`. A per-id error is a warning, not a failure (best effort). |\n| `search` | calls the search tool with `{ [args.query]: text }`; maps the parsed items to `MemoryHit`s; keeps at most `limit`. |\n| `reachable` | `true` when the pool lists at least one tool for the server; `false` when it lists none or throws. |\n\nThe provider id is `mcp:<server>` (design 6.3), so `nax memory status` prints `provider: mcp:openmemory`.\n\n`proposal` write mode is refused with provider `mcp` at config load: an MCP memory server has no pending state, so a proposal could only be faked locally (user decision 2026-11-03).\n\nFailure Handling (provider responsibilities)\n\n| Situation | Behaviour |\n|---|---|\n| server not connected (connect failed, server `enabled: false`, repository not trusted) | `reachable()` is `false`; saves, and forgets with `tools.forget` set, stay queued in the outbox (feature 1); a forget with `tools.forget` unset still resolves `deleted`; `host.search` returns local hits |\n| add tool not in the server's tool list while the server is connected | `push` save throws `MEMORY_PUSH_REJECTED` naming the server and the tool |\n| forget tool configured but not in the server's tool list while connected | `push` forget throws `MEMORY_PUSH_REJECTED` naming the server and the tool |\n| `push` save, or `push` forget with `tools.forget` set, while `listTools` returns `[]` or rejects | throws `NaxError` code `MEMORY_MCP_UNAVAILABLE` (retryable); no `call` is made |\n| add tool answers `isError: true` | throws `NaxError` code `MEMORY_MCP_CALL_FAILED` (retryable) with the server, the tool and the answer text |\n| add result has no parseable ids | the save is delivered; nothing is recorded in the id map |\n| forget tool answers `isError: true` for one id | `warn(\"memory\", \"memory mcp forget failed\", { server, id, error })`; the other ids are still tried; the push resolves `deleted` |\n| search tool answers `isError: true` | `search` throws `MEMORY_MCP_CALL_FAILED`; the host warns `memory remote search failed` and returns local hits |\n| search result is not JSON or has no item list | `search` resolves `[]`; the host returns local hits |\n\nThe no-recorded-ids short-circuit above applies before availability checks, including when a forget tool is configured. Availability/tool validation failures happen before per-id best-effort calls. Host/outbox consequences in this table are composed and tested in US-004; they do not require changing nax-agent.\n\n**Interface** — `createMcpMemoryProvider(input: CreateMcpMemoryProviderInput): MemoryProvider` in `src/memory/mcp-provider.ts`, with `CreateMcpMemoryProviderInput = { pool: Pick<McpPool, \"listTools\" | \"call\">; serverId: string; workdir: string; mcp: MemoryMcpConfig; idMap: McpIdMap; logger: MemoryLogger; callTimeoutMs: number }` and `MEMORY_MCP_PROVIDER_PREFIX = \"mcp:\"`, `MCP_MEMORY_RESULT_MAX_BYTES = 65_536`. Exported from the `@/memory` barrel.\n\n`NaxError` codes `MEMORY_MCP_UNAVAILABLE` (the server lists no tools; retryable) and `MEMORY_MCP_CALL_FAILED` (a tool answered `isError`; retryable), thrown by `createMcpMemoryProvider`.\n\nRead, unchanged: `MemoryProvider`, `MemoryWriteRequest`, `MemoryPushResult`, `MemoryPage` — `packages/nax-agent/src/memory/provider-types.ts`. `MemoryHit`, `MemoryNote`, `MemoryScope`, `MEMORY_OP_TIMEOUT_MS` — `packages/nax-agent/src/memory/types.ts`, exported from `@nathapp/nax-agent`. `isMemoryPushRejected`, `raceTimeout` — exported from `@nathapp/nax-agent`. A provider refuses a write permanently by throwing `NaxError` code `MEMORY_PUSH_REJECTED`; any other throw is retried by the outbox.\n\n`createMcpPool(opts: { servers; pidRegistry?; retry?; storyId? }): McpPool` and `McpPool.listTools(serverId, workdir)`, `McpPool.call(serverId, workdir, tool, input, { timeoutMs, maxBytes })`, `McpPool.close()` — `packages/nax/src/mcp/pool.ts`, from `@/mcp`. `call` never throws for an unavailable server: it answers `{ content, isError: true }`. The pool asserts the repository is trusted before it connects; an untrusted repository makes `listTools` and `call` reject.\n\n**Scope** — In: create mcp-provider.ts and its unit tests; export createMcpMemoryProvider, MEMORY_MCP_PROVIDER_PREFIX and type CreateMcpMemoryProviderInput from src/memory/index.ts. Consume US-001 config and US-002 internal parsers/map. Follow createLocalMemoryProvider for provider shape and permanent refusals. Out: config validation (US-001), parser/map implementation (US-002), host pool ownership/search merge/instructions (US-004), and surface cleanup (US-005). Nearby feature exclusions:\n- `pull` from an MCP memory server: the provider never pulls, so the mirror holds only notes this machine saved and remote memories reach a session only through `nax-memory__search`.\n- A re-save of an existing slug does not delete the remote copies of the earlier save; they stay until a forget with `tools.forget` configured deletes every recorded id.\n- Without `memory.mcp.tools.forget`, a forget removes the note from the mirror only; the remote copies remain and can still be returned by search.\n- A save whose add call succeeded on the server but reached nax as an error or a timeout is retried by the outbox and may create a second remote copy; deduplication is left to the server.\n- Search argument shapes beyond one query argument (a limit argument, user or agent ids, filters) are not configurable; the result is cut to `limit` locally.\n- No default forget tool or id argument is shipped; OpenMemory has no single-memory delete tool, so `tools.forget` and `args.id` must be set for the user's own server.\n- No change to `packages/nax-agent`. Assert exact fake-pool tool/argument names and id-map effects, not just factory existence.",
+      "acceptanceCriteria": [
+        "[unit] createMcpMemoryProvider with serverId: \"om\" returns a provider whose id is \"mcp:om\".",
+        "[unit] provider.pull({ scope: \"project\", cursor: null, take: 50 }) resolves { notes: [], done: true } without calling the pool.",
+        "[unit] provider.reachable() resolves true when the fake pool's listTools(\"om\", workdir) returns at least one tool.",
+        "[unit] provider.reachable() resolves false when listTools returns [].",
+        "[unit] provider.reachable() resolves false when listTools rejects.",
+        "[unit] provider.push of a save request for a note with slug \"s1\", description \"d\" and body \"b\" calls pool.call(\"om\", workdir, \"add_memories\", { text: \"s1: d\\n\\nb\" }, { timeoutMs: callTimeoutMs, maxBytes: MCP_MEMORY_RESULT_MAX_BYTES }).",
+        "[unit] With mcp.tools.add: \"remember\" and mcp.args.text: \"content\", a save push calls the pool with tool \"remember\" and input { content: \"s1: d\\n\\nb\" }.",
+        "[unit] A save push whose add call answers { content: '{\"results\":[{\"id\":\"r1\",\"event\":\"ADD\"}]}', isError: false } resolves { id: <the note's id>, status: \"active\" }.",
+        "[unit] A save push whose add call answers { content: '{\"results\":[{\"id\":\"r1\",\"event\":\"ADD\"}]}', isError: false } makes idMap.ids(\"project\", \"s1\") return [\"r1\"].",
+        "[unit] A save push whose add call answers isError: true rejects with a NaxError whose code is MEMORY_MCP_CALL_FAILED.",
+        "[unit] isMemoryPushRejected returns false for the MEMORY_MCP_CALL_FAILED error from a save push whose add call answers isError: true.",
+        "[unit] A save push while listTools returns a non-empty connected-server tool list that does not include add_memories rejects with an error for which isMemoryPushRejected is true.",
+        "[unit] A save push while listTools returns a non-empty connected-server tool list that does not include add_memories rejects with a message naming om and add_memories.",
+        "[unit] A save push whose add call answers { content: \"ok\", isError: false } (no parseable ids) resolves { id: <the note's id>, status: \"active\" }.",
+        "[unit] A save push whose add call answers { content: \"ok\", isError: false } (no parseable ids) leaves idMap.ids(\"project\", \"s1\") returning [].",
+        "[unit] A save push while listTools returns [] rejects with a NaxError whose code is MEMORY_MCP_UNAVAILABLE.",
+        "[unit] A save push while listTools returns [] does not invoke pool.call.",
+        "[unit] A save push while listTools rejects rejects with a NaxError whose code is MEMORY_MCP_UNAVAILABLE.",
+        "[unit] A save push while listTools rejects does not invoke pool.call.",
+        "[unit] With mcp.tools.forget unset and listTools otherwise returning [], a forget push for slug \"s1\" with recorded ids [\"r1\"] calls neither pool.call nor pool.listTools.",
+        "[unit] With mcp.tools.forget unset and the pool offline, a forget push for slug \"s1\" with recorded ids [\"r1\"] resolves { id: <the request's clientId>, status: \"deleted\" }.",
+        "[unit] With mcp.tools.forget unset and the pool offline, a forget push for slug \"s1\" with recorded ids [\"r1\"] leaves idMap.ids(\"project\", \"s1\") returning [].",
+        "[unit] With mcp.tools.forget: \"delete_memory\" and mcp.args.id: \"memory_id\", a forget push for slug \"s1\" with recorded ids [\"r1\", \"r2\"] calls pool.call with tool \"delete_memory\" and input { memory_id: \"r1\" }, then with input { memory_id: \"r2\" }.",
+        "[unit] With mcp.tools.forget: \"delete_memory\" and mcp.args.id: \"memory_id\", a forget push for slug \"s1\" with recorded ids [\"r1\", \"r2\"] resolves status \"deleted\".",
+        "[unit] With mcp.tools.forget: \"delete_memory\" and mcp.args.id: \"memory_id\", a forget push with recorded ids [\"r1\"] rejects with a NaxError whose code is MEMORY_MCP_UNAVAILABLE both when listTools returns [] and when listTools rejects.",
+        "[unit] With mcp.tools.forget: \"delete_memory\" and mcp.args.id: \"memory_id\", a forget push with recorded ids [\"r1\"] makes no pool.call both when listTools returns [] and when listTools rejects.",
+        "[unit] With mcp.tools.forget: \"delete_memory\" and mcp.args.id: \"memory_id\", a forget push for a slug with no recorded ids calls neither pool.call nor pool.listTools.",
+        "[unit] With mcp.tools.forget: \"delete_memory\" and mcp.args.id: \"memory_id\", a forget push for a slug with no recorded ids resolves status \"deleted\".",
+        "[unit] With mcp.tools.forget: \"delete_memory\" and mcp.args.id: \"memory_id\", when the call for \"r1\" answers isError: true, the call for \"r2\" is still made.",
+        "[unit] With mcp.tools.forget: \"delete_memory\" and mcp.args.id: \"memory_id\", when the call for \"r1\" answers isError: true, the logger receives a warn whose message is \"memory mcp forget failed\".",
+        "[unit] With mcp.tools.forget: \"delete_memory\" and mcp.args.id: \"memory_id\", when the call for \"r1\" answers isError: true, the push resolves status \"deleted\".",
+        "[unit] With mcp.tools.forget: \"delete_memory\" while listTools returns a non-empty connected-server tool list that does not include delete_memory, a forget push with recorded ids rejects with an error for which isMemoryPushRejected is true.",
+        "[unit] provider.search({ scope: \"project\", text: \"bun\", limit: 5 }) calls pool.call with tool \"search_memory\" and input { query: \"bun\" }.",
+        "[unit] When the search call answers '[{\"id\":\"a\",\"memory\":\"m1\"},{\"id\":\"b\",\"memory\":\"m2\"},{\"id\":\"c\",\"memory\":\"m3\"}]', provider.search with limit: 2 resolves two hits whose slugs are \"mcp-a\" and \"mcp-b\".",
+        "[unit] When the search call answers isError: true, provider.search rejects with a NaxError whose code is MEMORY_MCP_CALL_FAILED.",
+        "[unit] When the search call answers text that is not JSON, provider.search resolves [].",
+        "[unit] createMcpMemoryProvider is importable from @/memory.",
+        "[unit] MEMORY_MCP_PROVIDER_PREFIX is importable from @/memory with value \"mcp:\".",
+        "[unit] A forget push with recorded ids and a configured tool missing from a connected server rejects with a message naming the server and that tool.",
+        "[unit] When an add call answers isError: true, the MEMORY_MCP_CALL_FAILED error includes the server, tool and answer text.",
+        "[unit] When a per-id forget call answers isError: true, logger.warn receives stage \"memory\", message \"memory mcp forget failed\" and data containing server, id and error.",
+        "[unit] When the search result is JSON with no supported item list, provider.search resolves [].",
+        "[unit] provider.reachable() resolves false for the pool outcomes of connect failure, a disabled server or a repository-trust rejection."
+      ],
+      "tags": [
+        "feature",
+        "memory",
+        "mcp",
+        "provider",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New provider integrates tool discovery/calls, durable ids, best-effort multi-id deletion and retryable versus permanent failures over an existing trust-enforcing pool; it does not change authentication or access-control decisions.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/provider-types.ts",
+        "packages/nax-agent/src/memory/local-provider.ts",
+        "packages/nax/src/mcp/pool.ts",
+        "packages/nax/src/memory/mcp-results.ts",
+        "packages/nax/src/memory/mcp-id-map.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/mcp-provider.ts",
+        "packages/nax/test/unit/memory/mcp-provider.test.ts"
+      ],
+      "suggestedCriteria": [
+        "With custom mcp.tools.search and mcp.args.query, provider.search calls exactly the configured tool with exactly the configured single query argument.",
+        "After a configured forget has attempted all recorded ids, idMap.ids returns [] even when one delete call failed.",
+        "When the call for the first recorded forget id rejects, later ids are still attempted and the push resolves deleted.",
+        "When a save request carries no note, provider.push rejects with an error recognized by isMemoryPushRejected.",
+        "When a write fails the unavailable or missing-tool check, its existing id-map entry is retained."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/memory/index.ts",
+          "reason": "export `createMcpMemoryProvider`, `MEMORY_MCP_PROVIDER_PREFIX` and the type `CreateMcpMemoryProviderInput`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ecac220d488a2f21ddeac00b99045b1d7cd15b0b"
+    },
+    {
+      "id": "US-004",
+      "title": "Host composition, remote search and close",
+      "description": "**Goal** — Compose the configured memory provider, merge bounded remote search ahead of local results and expose host-owned pool cleanup and remote-hit instructions.\n\n**Motivation** — It is also the first provider that is not always reachable, so it is the first real use of the outbox and the reachability probe that feature 1 built and the local provider never exercises, and the first provider to implement the seam's optional `search` (nothing calls `provider.search` today; this feature wires it into the host).\n\n**Approach** — Host (`src/memory/host.ts`)\n\n`composeMemory` chooses the provider:\n\n- `provider: \"local\"` → `createLocalMemoryProvider(store)` (unchanged);\n- `provider: \"mcp\"` → with `server = memory.mcp.server` and `serverConfig = config.mcp?.servers[server]` (present: config load guarantees it): `pool = _memoryHostDeps.createMcpPool({ servers: { [server]: serverConfig } })`, `idMap = _memoryHostDeps.createMcpIdMap({ dirs, server })` over the host's own `MemoryDirs`, then `_memoryHostDeps.createMcpMemoryProvider({ pool, serverId: server, workdir: repoRoot, mcp: memory.mcp, idMap, logger, callTimeoutMs: serverConfig.timeoutMs })`.\n\n`MemoryHost` gains `close?(): Promise<void>`. `createMemoryHost` always sets it: it closes the MCP pool when there is one and resolves otherwise; calling it twice is safe. It is optional on the interface so hand-built hosts (test doubles) stay valid.\n\n`host.search(query)`:\n\n1. local hits as today (`searchMemoryNotes` over the mirror plus repo notes);\n2. when `provider.search` exists and `query.scope` is `\"project\"` or absent, remote hits from `provider.search({ scope: \"project\", text, limit })`. An MCP search tool takes no scope, so its results are project memories, and a `scope: \"user\"` search asks no remote. The call is raced against `cancellableDelay(_memoryHostDeps.remoteSearchTimeoutMs)` (`@/utils/bun-deps`; default `MEMORY_OP_TIMEOUT_MS`), and the delay is cancelled when the race settles. A throw or a timeout is a `warn(\"memory\", \"memory remote search failed\", { provider, error })` and no remote hits;\n3. the result is the remote hits, then the local hits whose slug no remote hit has, cut to `query.limit`.\n\nTool instructions\n\n`buildMemoryToolInstructions(options?: { remoteServer?: string })` appends one line when `remoteServer` is set: ``Search results whose slug starts with `mcp-` come from the memory server `<server>`: the snippet is the whole memory, and `nax-memory__get` cannot read it.`` With no argument the text is unchanged. `createMemoryToolProvider(host)` passes `remoteServer` when `host.providerId` starts with `MEMORY_MCP_PROVIDER_PREFIX` (`\"mcp:\"`).\n\nFailure Handling (host responsibilities)\n\n| Situation | Behaviour |\n|---|---|\n| server not connected (connect failed, server `enabled: false`, repository not trusted) | `reachable()` is `false`; saves, and forgets with `tools.forget` set, stay queued in the outbox (feature 1); a forget with `tools.forget` unset still resolves `deleted`; `host.search` returns local hits |\n| remote search does not settle within `_memoryHostDeps.remoteSearchTimeoutMs` | the host warns `memory remote search failed` and returns local hits |\n| search tool answers `isError: true` | `search` throws `MEMORY_MCP_CALL_FAILED`; the host warns `memory remote search failed` and returns local hits |\n| search result is not JSON or has no item list | `search` resolves `[]`; the host returns local hits |\n\n**Interface** — `MemoryHost` — Baseline: no `close`. Target: adds `close?(): Promise<void>`.\n\n`_memoryHostDeps` — Baseline: `memoryDirs`, `readRepoNotes`, `createMemoryStore`, `createMemoryOutbox`, `createLocalMemoryProvider`, `syncMemory`, `saveMemoryNote`, `forgetMemoryNote`, `approveMemoryNote`. Target: adds `createMcpPool`, `createMcpIdMap`, `createMcpMemoryProvider` and `remoteSearchTimeoutMs` (a number, default `MEMORY_OP_TIMEOUT_MS`).\n\n`buildMemoryToolInstructions` — Baseline: `buildMemoryToolInstructions(): string`. Target: `buildMemoryToolInstructions(options?: { remoteServer?: string }): string`.\n\n**Scope** — In: provider selection/pool ownership in host.ts; shared host dirs for id map; remote-first search and cancellable deadline with fallback warnings; optional close interface with always-present implementation; remoteServer instruction builder argument and its use in tool-provider.ts. Add host-mcp.test.ts and extend existing prompt/tool tests. Follow createChatMcp for a pool over a subset of servers, without adding a new transport or bypassing trust. Out: provider/parser/config implementations (US-001..US-003) and calling host.close from surfaces (US-005). Nearby feature exclusions:\n- A remote memory found by search cannot be read with `nax-memory__get`, listed by `nax memory list`, or shown in the index; the search hit's snippet (up to 1000 characters) is the whole view of it.\n- Remote search runs only for project-scope and unscoped searches; a `scope: \"user\"` search returns local user notes only.\n- The memory host's MCP stdio process is not registered with a run's pid registry; a hard kill of nax can leave it running until its stdin closes.\n- A server whose connection failed is not reconnected for the life of one host (the pool caches the failure); a chat must be restarted after the server comes up.\n- When the memory server is also attached to chat or run sessions through its own `mcp.servers.<id>.stages`, the session's MCP pool and the memory host's pool open two separate connections.\n\nVerification: assert exact _memoryHostDeps factory inputs and host.providerId at createMemoryHost; observe search order, fallback and pool.close calls at the host entry point. Exercise the existing outbox through composed writes for offline cases, using recorded ids for configured forgets. The remote timer must be aborted in finally with cancellation rejection consumed. Verify check:import-cycles when host imports createMcpPool from @/mcp; do not add that quality gate as an acceptance criterion.",
+      "acceptanceCriteria": [
+        "[unit] createMemoryHost with memory.provider: \"local\" returns a host whose providerId is \"local\".",
+        "[unit] createMemoryHost with memory.provider: \"local\" does not call _memoryHostDeps.createMcpPool.",
+        "[unit] createMemoryHost with memory.provider: \"mcp\", memory.mcp.server: \"om\" and mcp.servers.om set calls the stubbed _memoryHostDeps.createMcpPool once with servers holding exactly the key \"om\" bound to configured mcp.servers.om.",
+        "[unit] With that MCP config, the stubbed _memoryHostDeps.createMcpMemoryProvider receives serverId: \"om\", workdir equal to the host's repoRoot, mcp equal to parsed memory.mcp and callTimeoutMs equal to mcp.servers.om.timeoutMs.",
+        "[unit] With that MCP config, host.providerId equals the stub provider's id.",
+        "[unit] With a stub provider whose search resolves one hit with slug \"mcp-r1\" and a mirror holding a matching note with slug \"local-1\", host.search({ text, limit: 10 }) resolves the remote hit first, then the local hit.",
+        "[unit] When the stub provider's search resolves a hit whose slug equals a matching local note's slug, host.search returns that slug once (the remote hit).",
+        "[unit] host.search with limit: 1 and one remote hit plus one matching local note resolves only the remote hit.",
+        "[unit] host.search({ text, limit }) with no scope calls the stub provider's search with scope: \"project\".",
+        "[unit] host.search({ text, scope: \"user\", limit: 10 }) does not call the stub provider's search.",
+        "[unit] host.search({ text, scope: \"user\", limit: 10 }) resolves the local user-scope hits.",
+        "[unit] When the stub provider's search rejects, host.search resolves the local hits.",
+        "[unit] When the stub provider's search rejects, the host logger receives a warn whose message is \"memory remote search failed\".",
+        "[unit] With _memoryHostDeps.remoteSearchTimeoutMs set to 20 and a stub provider whose search never settles, host.search resolves the local hits.",
+        "[unit] With _memoryHostDeps.remoteSearchTimeoutMs set to 20 and a stub provider whose search never settles, the host logger receives a warn whose message is \"memory remote search failed\".",
+        "[unit] When the stub provider has no search (the local provider), host.search resolves exactly the local hits.",
+        "[unit] host.close() on an MCP-provider host calls the stubbed pool's close once.",
+        "[unit] A second host.close() on an MCP-provider host resolves without throwing and does not close the pool again.",
+        "[unit] host.close() on a local-provider host resolves.",
+        "[unit] buildMemoryToolInstructions({ remoteServer: \"om\" }) contains 'Search results whose slug starts with `mcp-` come from the memory server `om`: the snippet is the whole memory, and `nax-memory__get` cannot read it.'.",
+        "[unit] buildMemoryToolInstructions() contains no line mentioning mcp-.",
+        "[unit] createMemoryToolProvider over a host whose providerId is \"mcp:om\" has instructions() resolving buildMemoryToolInstructions({ remoteServer: \"om\" }).",
+        "[unit] createMemoryToolProvider over a host whose providerId is \"local\" has instructions() resolving buildMemoryToolInstructions().",
+        "[unit] Given a server that is unavailable because connection failed, it is disabled or repository trust rejects connection, a host save leaves its write queued in the outbox.",
+        "[unit] Given a server that is unavailable because connection failed, it is disabled or repository trust rejects connection, a host forget with tools.forget configured and recorded remote ids leaves its write queued in the outbox.",
+        "[unit] Given an unavailable server and no configured tools.forget, a host forget with no earlier queued write for the note resolves status deleted.",
+        "[unit] Given a disconnected, disabled or untrusted server, host.search returns local hits.",
+        "[unit] When the composed MCP provider search receives an isError answer and throws MEMORY_MCP_CALL_FAILED, host.search warns \"memory remote search failed\" through the host logger.",
+        "[unit] When the composed MCP provider search receives an isError answer and throws MEMORY_MCP_CALL_FAILED, host.search returns local hits.",
+        "[unit] When the MCP search result is non-JSON or has no supported item list, host.search returns local hits.",
+        "[unit] buildMemoryToolInstructions() returns exactly the existing six instruction lines joined by a newline, unchanged when called without options."
+      ],
+      "tags": [
+        "feature",
+        "memory",
+        "mcp",
+        "search",
+        "lifecycle"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module composition and optional remote search introduce asynchronous deadline/fallback behavior, deduplication, outbox integration and pool ownership while preserving the existing local interface.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/host.ts",
+        "packages/nax/src/memory/tool-provider.ts",
+        "packages/nax/src/prompts/builders/memory-builder.ts",
+        "packages/nax/src/memory/mcp-provider.ts",
+        "packages/nax/src/chat/chat-mcp.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/memory/host-mcp.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When remote search rejects or times out, logger.warn receives stage memory and data containing provider and error.",
+        "When memory.enabled is false with provider mcp configured, createMemoryHost returns null without constructing an MCP pool or id map.",
+        "When two host.close calls overlap, both await the same single pool.close operation.",
+        "The id map passed to createMcpMemoryProvider is built with the same MemoryDirs returned as host.dirs and the selected server id."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/memory/host.ts",
+          "reason": "add `createMcpPool`, `createMcpIdMap`, `createMcpMemoryProvider` and `remoteSearchTimeoutMs` to `_memoryHostDeps`, choose the provider in `composeMemory`, merge remote hits in `searchNotes`, add `close?(): Promise<void>` to `MemoryHost` and set it in `createMemoryHost`."
+        },
+        {
+          "path": "packages/nax/src/memory/tool-provider.ts",
+          "reason": "pass `remoteServer` to `buildMemoryToolInstructions` when `host.providerId` starts with `MEMORY_MCP_PROVIDER_PREFIX`."
+        },
+        {
+          "path": "packages/nax/src/prompts/builders/memory-builder.ts",
+          "reason": "`buildMemoryToolInstructions` takes `options?: { remoteServer?: string }` and appends the remote-hit line when it is set."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "71fd3cfe8445200a013b9c284811331a50fa5312"
+    },
+    {
+      "id": "US-005",
+      "title": "Surfaces close the memory host",
+      "description": "**Goal** — Release memory-host resources at chat, run and CLI completion without changing their results or exit codes.\n\n**Motivation** — The design's provider seam was built for this: a generic MCP provider lets those servers hold nax's notes and answer nax's searches, with configuration and no code per server.\n\n**Approach** — Surfaces close the host\n\n| Surface | Where | When |\n|---|---|---|\n| chat | `createHostMemory(...).closeSync()` (`src/chat/host-memory.ts`) | after its one sync, in a `finally`, so a sync failure still closes |\n| `nax run` | `closeOnce` in `src/memory/run-memory.ts` | after the end sync and the summary line |\n| `nax memory` | `withMemoryHost(context, deps, run)` (new, `src/cli/memory-cli-deps.ts`) opens the host through `openMemoryHost`, runs `run(host)` and awaits `host.close?.()` in a `finally`; the seven subcommands (`status`, `list`, `show`, `sync`, `save`, `forget`, `approve`) call it in place of `openMemoryHost` | after the command's output, on success and on failure |\n\nA close that throws is a warning (chat, run) or ignored after the command's own result (CLI); it never changes an exit code or a result.\n\n`openMemoryHost` call sites in `memoryStatusCommand`, `memoryListCommand` (`src/cli/memory.ts`), `memoryShowCommand`, `memorySyncCommand` (`src/cli/memory-read.ts`), `memorySaveCommand`, `memoryForgetCommand`, `memoryApproveCommand` (`src/cli/memory-write.ts`) — Baseline: `const host = await openMemoryHost(await memoryContext(opts.dir, deps), deps)` inside `withMemoryErrors`. Target: `return withMemoryHost(await memoryContext(opts.dir, deps), deps, async (host) => { ... })` inside `withMemoryErrors`, where `withMemoryHost(context: MemoryCliContext, deps: MemoryCliDeps, run: (host: MemoryHost | null) => Promise<number>): Promise<number>`.\n\n- `packages/nax/src/chat/host-memory.ts` — `closeSync` awaits `memory.close?.()` in a `finally` after its sync, warning when it throws.\n- `packages/nax/src/memory/run-memory.ts` — `closeOnce` awaits `host.close?.()` after the summary line, warning when it throws.\n- `packages/nax/src/cli/memory-cli-deps.ts` — add `withMemoryHost(context, deps, run)`: opens the host through `openMemoryHost`, returns `run(host)`'s result, and awaits `host.close?.()` in a `finally` when the host is not `null`; a close that throws is ignored and does not change the result or turn a success into a failure.\n- `packages/nax/src/cli/memory.ts` — `memoryStatusCommand` and `memoryListCommand` call `withMemoryHost` in place of `openMemoryHost`; their output and exit codes are unchanged.\n- `packages/nax/src/cli/memory-read.ts` — `memoryShowCommand` and `memorySyncCommand` call `withMemoryHost` in place of `openMemoryHost`; their output and exit codes are unchanged.\n- `packages/nax/src/cli/memory-write.ts` — `memorySaveCommand`, `memoryForgetCommand` and `memoryApproveCommand` call `withMemoryHost` in place of `openMemoryHost`; their output and exit codes are unchanged.\n\nFailure Handling\n\n| Situation | Behaviour |\n|---|---|\n| `host.close()` throws in chat or run | warned; the close path continues |\n\n**Interface** — `withMemoryHost(context: MemoryCliContext, deps: MemoryCliDeps, run: (host: MemoryHost | null) => Promise<number>): Promise<number>`. Consume the optional US-004 `close?(): Promise<void>` without requiring hand-built hosts to implement it.\n\n**Scope** — In: finally-based chat close-time cleanup; run closeOnce cleanup after sync/summary while retaining memoized close; the shared CLI wrapper and all seven call-site replacements; new memory-host-close.test.ts exercising the stated public entry points with close spies. Keep validation-before-open, disabled handling, read/write order, command output and exit codes unchanged. Export withMemoryHost alongside existing CLI plumbing when needed by @/cli consumers. Out: config/provider/parser changes (US-001..US-003), host composition/search and instruction changes (US-004). No chat compaction-time or reopen-time host disposal. Nearby feature exclusions:\n- When the memory server is also attached to chat or run sessions through its own `mcp.servers.<id>.stages`, the session's MCP pool and the memory host's pool open two separate connections.\n- The memory host's MCP stdio process is not registered with a run's pid registry; a hard kill of nax can leave it running until its stdin closes.\n\nVerification: call createHostMemory(...).closeSync(), createRunMemory(...).close() and actual command functions with injected hosts. Assert ordering with an event log, failures preserving primary errors/results, null hosts, optional-close compatibility and repeated run closes. Retain existing chat/run/CLI regression tests rather than replacing them with helper-only tests.",
+      "acceptanceCriteria": [
+        "[unit] createHostMemory({ memory: host, ... }).closeSync() calls host.sync() and then host.close(), in that order.",
+        "[unit] When host.sync() rejects, closeSync() still calls host.close().",
+        "[unit] When host.sync() rejects, closeSync() resolves.",
+        "[unit] When host.close() rejects, closeSync() resolves.",
+        "[unit] When host.close() rejects, closeSync() sends a warn to its logger.",
+        "[unit] createRunMemory(...).close() calls the host's close() once, after the end sync.",
+        "[unit] A second createRunMemory(...).close() call does not call the host's close() again.",
+        "[unit] When the host's close() rejects, createRunMemory(...).close() resolves.",
+        "[unit] When the host's close() rejects, createRunMemory(...).close() still logs the summary line.",
+        "[unit] memoryStatusCommand with a stubbed createMemoryHost returning a host whose close is a spy calls close once.",
+        "[unit] memoryStatusCommand with that stubbed host returns 0.",
+        "[unit] memoryListCommand with a host whose notes() rejects calls the host's close once.",
+        "[unit] memoryListCommand with a host whose notes() rejects returns 1.",
+        "[unit] memoryStatusCommand with a host whose close rejects still returns 0.",
+        "[unit] memoryStatusCommand with memory.enabled: false (stubbed createMemoryHost resolves null) returns 0.",
+        "[unit] memoryStatusCommand with memory.enabled: false (stubbed createMemoryHost resolves null) makes no close call.",
+        "[unit] memoryShowCommand for a slug the stubbed host holds calls the host's close once, after the note is written to deps.log.",
+        "[unit] memorySaveCommand with a stubbed host whose save resolves calls the host's close once.",
+        "[unit] memorySaveCommand with a stubbed host whose save resolves returns 0.",
+        "[unit] withMemoryHost(context, deps, run) with a run that rejects calls the host's close once.",
+        "[unit] withMemoryHost(context, deps, run) with a run that rejects rejects with run's error.",
+        "[unit] When host.close() rejects during createRunMemory(...).close(), the run logger receives a warn.",
+        "[unit] Given a hand-built host without close whose status resolves normally, memoryStatusCommand still returns 0.",
+        "[unit] Given a local host returning status and --json enabled, memoryStatusCommand logs exactly JSON.stringify(status), unchanged by the cleanup wrapper."
+      ],
+      "tags": [
+        "feature",
+        "memory",
+        "mcp",
+        "lifecycle",
+        "chat",
+        "cli"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The seven CLI replacements and chat/run cleanup extend existing finally and memoized-close patterns without new lifecycle machinery; retain strict three-session isolation under the requested session-lifecycle override, not because this mechanical change is architecturally complex.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/host-memory.ts",
+        "packages/nax/src/memory/run-memory.ts",
+        "packages/nax/src/cli/memory-cli-deps.ts",
+        "packages/nax/src/cli/memory-write.ts",
+        "packages/nax/src/memory/host.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/memory/memory-host-close.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When run and host.close both reject, withMemoryHost rejects with the original run error.",
+        "When run returns 1 and host.close rejects, withMemoryHost returns 1.",
+        "memorySyncCommand calls close after printing its result and preserves its existing failed-versus-other outcome exit code.",
+        "memoryForgetCommand and memoryApproveCommand each close their host once after printing a successful result.",
+        "When two run-memory close calls overlap, both wait for the same host-close completion.",
+        "Given a hand-built host without close, chat/run completion and CLI commands preserve their existing outcomes.",
+        "The run close event sequence is end sync, summary log, then host.close.",
+        "Calling chat memory prepare or the before_compaction handler does not close the memory host."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/chat/host-memory.ts",
+          "reason": "`closeSync` awaits `memory.close?.()` in a `finally` after its sync, warning when it throws."
+        },
+        {
+          "path": "packages/nax/src/memory/run-memory.ts",
+          "reason": "`closeOnce` awaits `host.close?.()` after the summary line, warning when it throws."
+        },
+        {
+          "path": "packages/nax/src/cli/memory-cli-deps.ts",
+          "reason": "add `withMemoryHost(context, deps, run)`: opens the host through `openMemoryHost`, returns `run(host)`'s result, and awaits `host.close?.()` in a `finally` when the host is not `null`; a close that throws is ignored and does not change the result or turn a success into a failure."
+        },
+        {
+          "path": "packages/nax/src/cli/memory.ts",
+          "reason": "`memoryStatusCommand` and `memoryListCommand` call `withMemoryHost` in place of `openMemoryHost`; their output and exit codes are unchanged."
+        },
+        {
+          "path": "packages/nax/src/cli/memory-read.ts",
+          "reason": "`memoryShowCommand` and `memorySyncCommand` call `withMemoryHost` in place of `openMemoryHost`; their output and exit codes are unchanged."
+        },
+        {
+          "path": "packages/nax/src/cli/memory-write.ts",
+          "reason": "`memorySaveCommand`, `memoryForgetCommand` and `memoryApproveCommand` call `withMemoryHost` in place of `openMemoryHost`; their output and exit codes are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d59411065d919d412829bdefb2ce956f13615a83"
+    }
+  ],
+  "analysis": "Goal and scope: add the generic MCP-backed memory provider (memory slice feature 5) in packages/nax only, building on the shipped mirror, local provider, memory host, tools, chat/CLI and run memory. Preserve exactly US-001..US-005 and their declared dependency graph. This is an enhancement, not a greenfield subsystem. Done means configured MCP memory saves write through, recorded remote copies can be forgotten best-effort, remote project search augments local search, and all owning surfaces release the connection without altering their results. No packages/nax-agent changes, new transport, koda provider, remote pull or proposal emulation.\n\nDiscovery: codebase-memory MCP navigation tools were unavailable in this session, so direct source reads and literal/regex searches were used. Findings below cite the actual baseline. The architecture index (docs/architecture/ARCHITECTURE.md:175) sets the 600-line hard source limit, named constants, injectable external dependencies and bounded functions; follow Bun-native APIs in nax, restore every mutated dependency seam in tests, and keep prompt text in the prompt builder.\n\nUS-001 / configuration: packages/nax/src/config/schemas-memory.ts:29 defines a strict MemoryConfigSchema with provider enum [local] at line 32 and no mcp field; memoryConfigOf at line 50 supplies defaults when the hand-written NaxConfig has no memory block. packages/nax/src/config/runtime-types-memory.ts:11 defines MemoryConfig with provider: local at line 15. Add MemoryMcpConfig there and keep mcp optional and absent from default parses. packages/nax/src/config/schemas.ts:58 imports MemoryConfigSchema, line 528 defaults the block, and line 593 invokes validateProtocolGate as the last superRefine check. The baseline is 594 lines: expand the existing import to include validateMemoryProvider and add its call after validateProtocolGate, rather than embedding validation in this near-limit file. packages/nax/src/config/schemas-protocol-gate.ts:30 demonstrates a structural cross-section input to avoid recursive parsed-config typing. The optional hand-written config requires absent config.mcp to mean no servers. Independently accumulate the four custom issues rather than returning after the first. The unused memory.mcp block is allowed with local, but a supplied server reference and forget/id pairing still obey the independent checks. packages/nax/src/config/schemas-mcp.ts:15 exports MCP_SERVER_ID_RE; lines 65-69 also exclude __ from server keys. Mirror both checks, strictness and non-empty names. Default tools and args objects themselves so a server-only block supplies all four OpenMemory defaults without introducing forget/id defaults. packages/nax/src/cli/config-descriptions.ts:456 currently says only local is accepted; update that and add all seven leaf descriptions, with discoverability descriptions for new containing keys as appropriate. Config public barrels currently export only MemoryConfig (packages/nax/src/config/index.ts:56 and packages/nax/src/config/types.ts:52) and the existing memory schema exports (index.ts:145); expose the new type through the appropriate existing barrel so consumers need not deep-import config internals. Existing tests: packages/nax/test/unit/config/schemas-memory.test.ts:21 pins the default object and lines 49-73 pin koda, invalid modes, limits and strictness. Extend this file rather than creating a test-only story. Retain these regression anchors.\n\nUS-002 / parsing and persistence: MemoryHit is the readonly slug/scope/type/description/status/score/snippet shape in packages/nax-agent/src/memory/types.ts:44; MEMORY_OP_TIMEOUT_MS is 10000 at line 99. Consume public agent exports without modifying agent code. MemoryDirs includes root, projectDir and userDir (packages/nax/src/memory/paths.ts:41), and memoryDirs at line 111 resolves the canonical repository root under globalConfigDir, avoiding direct home-directory access. The id map must use those host-owned dirs, not recompute roots. New mcp-results.ts is pure: parse only a JSON array or object.results array, check each unknown item before field access, select the first string memory/text/content field, retain string ids and finite numeric scores, and parse add ids independently because ADD results often have no text. Slugs normalize and truncate the id component to 60 characters, making 64 total with mcp-; do not accidentally truncate the whole slug to 60 or introduce stricter validation than specified. Remote results are synthetic reference/active hits, not mirror notes; never persist them through search. New mcp-id-map.ts persists version 1/server/notes per scope, appends deduplicated ids for repeated saves, reads corrupt/unreadable/wrong-version/wrong-server files as empty, and atomically renames a same-directory temporary file. Put filesystem calls behind a local _deps seam and use isolated temporary directories. No cross-process merge/recovery is promised: a shared user file and a crash between add and recording can lose ids. New outputs are the two source modules and their two mirrored unit test files.\n\nUS-003 / provider: packages/nax-agent/src/memory/provider-types.ts:15 defines requests with kind, clientId, scope, slug, writeMode and optional note/reason; line 40 defines MemoryProvider including optional search. The local provider (packages/nax-agent/src/memory/local-provider.ts:57) shows the return shape and missing-note permanent rejection. Refusal uses NaxError code MEMORY_PUSH_REJECTED, while all other throws remain retryable. packages/nax/src/errors.ts:7 re-exports the same NaxError class used by agent code; its code is a string (packages/nax-agent/src/infra/nax-error.ts:6), so new codes do not require changing nax-agent or a central enum. Use MEMORY_MCP_UNAVAILABLE for no tools/list rejection and MEMORY_MCP_CALL_FAILED for isError answers. Availability and missing-tool errors are different: empty tools is transient; nonempty tools missing the configured write tool is permanent. Forget short-circuits before even listTools if no forget tool is configured or there are no ids. Only after the configured tool is verified should per-id delete failures become warnings; try all ids and then drop the entry. Saves record parseMcpMemoryIds results, not parsed search items, and return the local note id.\n\nMCP transport integration: packages/nax/src/mcp/pool.ts:35 defines listTools/call/close; createMcpPool at line 135 takes servers plus optional pidRegistry/retry/storyId. It is lazy, caches a connection promise or failure per server/workdir (line 228), skips disabled servers (line 155), and asserts repository trust before connecting (line 163). Never bypass that pool or add an alternate connection/security path. call at line 245 returns isError data for an unavailable connection, enforces its own timeout and maxBytes, and can still reject for trust refusal. The provider must explicitly convert isError into the specified retryable NaxError; listTools exceptions must be translated into unavailable for write checks, while reachable catches them into false. Search uses configured query/tool names and returns at most limit; no extra filters or scope arguments. Public provider factory, prefix and input type go in packages/nax/src/memory/index.ts (currently 18 lines); parsers and map stay internal. Use sibling-relative imports within memory so importing the memory barrel does not create a cycle. Fake pools and real/temp or injected maps should assert exact calls without requiring a live OpenMemory service.\n\nUS-004 / composition and search: packages/nax/src/memory/host.ts:89 defines MemoryHost without close; line 122 declares the composition seam; composeMemory at line 186 always chooses createLocalMemoryProvider today. createMemoryHost at line 355 checks enabled before touching dependencies, composes store/outbox, builds existing reads and writes, and returns provider.id. Add only the selected server to a host-owned pool, pass that server's timeoutMs, config and repoRoot to the provider, and create the map with the same dirs as the store. Retain the pool in the composition for an idempotent close; local close must be a resolving no-op. Optional close on the interface preserves existing handcrafted hosts. packages/nax/src/chat/chat-mcp.ts:100-149 illustrates collecting selected servers and memoizing close, but do not copy its chat-only retry override, reserved-id processing or stages rewriting into memory: the spec calls for the exact configured server. Server stages and allowedTools do not configure memory; enabled and trust are enforced by the pool.\n\nsearchNotes at packages/nax/src/memory/host.ts:265 currently searches mirror plus unshadowed repo notes with searchMemoryNotes. Preserve that local behavior, including user/project selection and repo shadowing. Only project/unscoped queries ask provider.search, always with scope project; remote-first merge excludes local hits whose slug occurs remotely, then truncates to query.limit. Existing MemorySearchInput.limit is required at host.ts:85; example calls abbreviated in the spec do not require widening that API or inventing a default. The remote deadline defaults to agent MEMORY_OP_TIMEOUT_MS and must use cancellableDelay from packages/nax/src/utils/bun-deps.ts:71 with an AbortController; abort in finally and consume the cancellation rejection so a quick hit does not leave a 10-second timer or an unhandled rejection. Promise.race does not cancel a still-running remote search; the underlying pool deadline remains responsible for its own call. All remote rejection/timeouts warn through the host logger with the specified memory message and return local hits. packages/nax/src/memory/host-writes.ts:116-153 already passes this provider to agent save/forget/approve; keep that wiring unchanged so outbox delivery/rejection behavior is reused. packages/nax-agent/src/memory/sync.ts:17-31 documents the existing bounded reachability probe and queued/permanent refusal split. Verify an unreachable server queues writes via the composed host without changing agent code.\n\nInstruction wiring: packages/nax/src/memory/tool-provider.ts:354 currently returns instructions calling buildMemoryToolInstructions() without arguments; packages/nax/src/prompts/builders/memory-builder.ts:12 returns six fixed lines. Append only the specified remote provenance line when providerId has prefix mcp:, retaining the no-argument output byte-for-byte. The rest of the prompt helpers, tool schemas and get behavior remain unchanged. Existing coverage to extend/regress includes test/unit/memory/host.test.ts, host-index.test.ts, host-writes.test.ts, tool-provider.test.ts, tool-provider-writes.test.ts and test/unit/prompts/builders/memory-builder.test.ts. host.test.ts:74 demonstrates temp global directories and seam restoration. Add host-mcp.test.ts for exact factory inputs, remote/local merge, failure/timeout, outbox behavior and pool ownership. Watch the import chain: memory barrel exports run-memory and tool-provider, which reach prompts/config; host importing @/mcp must not create a runtime cycle. Run the package import-cycle gate during verification.\n\nUS-005 / resource owners: packages/nax/src/chat/host-memory.ts:65 guards sync with chat warnings; closeSync at line 113 currently only syncs. Add host close in a finally after that close-time sync, not to prepare or compactionHandlers (line 79): normal session reopen/compaction must retain a usable host. packages/nax/src/memory/run-memory.ts:177 memoizes a closing promise so concurrent callers await the same work, and closeOnce at line 186 currently syncs then logs the summary. Preserve both order and one-shot semantics, adding guarded host close after the summary. countingHost at line 108 spreads the host; optional close will carry through without new lifecycle ownership there.\n\nCLI lifetime: packages/nax/src/cli/memory-cli-deps.ts:122 opens a human-source host; withMemoryErrors at line 162 translates failures to stderr/exit 1. Add withMemoryHost around run(host) with await in finally so cleanup cannot overwrite its exit code or exception. Wrap all seven actual call sites: status/list at memory.ts:90,115; show/sync at memory-read.ts:57,75; save/forget/approve at memory-write.ts:142,240,262. Keep flag validation before opening, disabled behavior, body-file timing, JSON single-document output, note formatting, absent-note translation and existing exit codes. withMemoryHost must accept null and still call run(null) so disabled status remains 0 and other commands keep their existing refusal. Close errors are ignored in the CLI, warned in chat/run, and never change the command/work result. If tests/consumers use @/cli, export the helper with the existing plumbing exports in packages/nax/src/cli/index.ts:133 rather than deep-importing alias internals. Existing tests include test/unit/chat/chat-host-memory.test.ts and chat-host-memory-close.test.ts, test/unit/memory/run-memory.test.ts, test/unit/cli/memory.test.ts, memory-read.test.ts, memory-save.test.ts and memory-forget.test.ts. New memory-host-close.test.ts exercises the specified public entry points using deps.createMemoryHost/_runMemoryDeps and a close spy. Existing makeFakeMemoryHost in packages/nax/test/helpers/fake-run-memory.ts:37 deliberately lacks close; keep it valid and use shared makeLogger/makeNaxConfig/temp helpers instead of duplicate helpers or global module mocks. Runtime ownership regression coverage also exists in test/unit/runtime/runtime-memory.test.ts and test/unit/execution/lifecycle/run-setup-memory.test.ts.\n\nRisks and compatibility: this is the first non-always-reachable provider and first caller of provider.search. Test transient versus permanent failures, no-tools versus missing-tool distinction, preserving ids until availability/tool checks succeed, textless add answers, local-only forget with an offline pool, and warnings that do not abort cleanup. Pool connection failure is cached for the host lifetime; no automatic reconnection is added. Memory and session pools remain separate connections even if they target the same server. The host pool intentionally has no run pid registry; do not expand this into process ownership work. No remote hit becomes gettable/listable/indexed. Slug-only remote/local deduplication is intentional even across scopes in an unscoped query. One important seam distinction: packages/nax-agent/src/memory/operations.ts:439 queues and deletes the mirror note before handOverForget, and handOverForget at line 463 probes providerAnswers before calling push. Thus the provider-level no-forget-tool short-circuit must call neither listTools nor call, but an offline host operation can still leave a queued tombstone because the unchanged scheduler probes first; queuedForget at line 397 still reports the direct-mode deleted status with delivered:false. Do not change nax-agent or make reachable lie to bypass that existing probe. No database or user-data migration is needed: local remains the default, existing memory config parses unchanged, mcp is opt-in, and the new sidecar files are lazily initialized and rewritten on mutation for the selected server. Strict schemas continue rejecting koda and unknown future fields.\n\nDelivery and verification: US-001 and US-002 can proceed independently; US-003 consumes both; US-004 composes US-003; US-005 closes the resulting host. Every story includes failing behavioral tests before implementation, with no separate test-only story. Run targeted bun test paths from packages/nax with timeouts, never bare bun test or bun run nax. Package typecheck/check:all, file-size check (schemas.ts must stay <=600 lines) and import-cycle check are verification tasks rather than acceptance criteria; they normally run in the nax pipeline. Coverage is a separate CI gate and must not be run inside NAX_SANDBOXED=1. No live-server, network, credential or package-release changes are required.\n\nRefine-pass audit: re-read all 87 explicit spec acceptance criteria, all 12 Failure Handling rows, all 16 Out of Scope bullets, the Context Files section and the relevant existing schema/search/close/CLI code. No explicit spec AC was removed or moved to another story. The following exhaustive trace uses one-based positions within each story's acceptanceCriteria array (a range means the spec's compound AC was split into separate observable assertions). US-001 spec AC 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14-16. US-002 spec AC 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10-12, 11->13, 12->14, 13->15, 14->16, 15->17, 16->18, 17->19-20, 18->21, 19->22, 20->23-24. US-003 spec AC 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8-9, 9->10-11, 10->12-13, 11->14-15, 12->16-17, 13->18-19, 14->20-22, 15->23-24, 16->25-26, 17->27-28, 18->29-31, 19->32, 20->33, 21->34, 22->35, 23->36, 24->37-38. US-004 spec AC 1->1-2, 2->3, 3->4-5, 4->6, 5->7, 6->8, 7->9, 8->10-11, 9->12-13, 10->14-15, 11->16, 12->17-18, 13->19, 14->20, 15->21, 16->22, 17->23. US-005 spec AC 1->1, 2->2-3, 3->4-5, 4->6-7, 5->8-9, 6->10-11, 7->12-13, 8->14, 9->15-16, 10->17, 11->18-19, 12->20-21. Qualifiers preserved include the unused local mcp block, koda still failing, textless items dropped, same temporary dirs, no-parseable-id add results, matching local notes, remote-preferred deduplication, the local provider with no search, second-close behavior, disabled-null hosts and output-before-close ordering. The abbreviated scope-less host.search spec example is written with the existing required limit rather than inventing a new optional-limit API.\n\nEvery story has directly observable failure assertions: config issue paths/messages (US-001), non-JSON/unreadable maps (US-002), unavailable/missing tools and isError results (US-003), search rejection/timeout fallback (US-004), and sync/close/command rejection containment (US-005). Failure-table coverage is retained across US-002 additional map criteria, US-003 provider errors and US-004 outbox/search composition, plus US-005 cleanup warnings. Connected missing-tool criteria now explicitly require a non-empty tool list so they cannot accidentally require permanent rejection for the separately specified empty-list unavailable case. The provider-only no-forget/no-ids short-circuits are distinguished from the existing host operation's pre-push reachability probe. All assertions are observable through values, calls, errors, persisted contents or logger output.\n\nAll spec-recommended context files are retained: five in US-001, two in US-002, five in US-003, five in US-004 and the four in US-005 plus the existing host interface. New files remain expectedFiles only, except upstream outputs used as context by dependent stories. Binding dependencies remain exactly [], [], [US-001, US-002], [US-003], [US-004], with no missing ids or added scheduling edges. The 16 top-level exclusions remain verbatim and nearby exclusions are echoed verbatim in the relevant Scope sections; no story-local exclusion was hoisted. New regression assertions explicitly protect the no-options six-line instruction text, a hand-built host without close and unchanged local status JSON output. US-005 is medium rather than complex because the existing memoized close, guarded sync and CLI deps make this mechanical cleanup wiring; its strict test strategy remains the requested session-lifecycle override. The other routing choices reflect either focused additive utilities or actual new provider/search integration, not AC counts. Existing analysis citations for searchNotes and the second CLI open were corrected to host.ts:265 and memory.ts:115.",
+  "outOfScope": [
+    "`pull` from an MCP memory server: the provider never pulls, so the mirror holds only notes this machine saved and remote memories reach a session only through `nax-memory__search`.",
+    "`memory.writeMode: \"proposal\"` with `memory.provider: \"mcp\"`: refused at config load; no local pending fallback is built.",
+    "A remote memory found by search cannot be read with `nax-memory__get`, listed by `nax memory list`, or shown in the index; the search hit's snippet (up to 1000 characters) is the whole view of it.",
+    "A re-save of an existing slug does not delete the remote copies of the earlier save; they stay until a forget with `tools.forget` configured deletes every recorded id.",
+    "Without `memory.mcp.tools.forget`, a forget removes the note from the mirror only; the remote copies remain and can still be returned by search.",
+    "Remote ids lost before they are recorded (a crash between the add call and the id-map write, or two processes writing one user-scope `mcp-ids.json` at the same time) are not recovered; a later forget cannot delete those copies.",
+    "A save whose add call succeeded on the server but reached nax as an error or a timeout is retried by the outbox and may create a second remote copy; deduplication is left to the server.",
+    "Remote search runs only for project-scope and unscoped searches; a `scope: \"user\"` search returns local user notes only.",
+    "No default forget tool or id argument is shipped; OpenMemory has no single-memory delete tool, so `tools.forget` and `args.id` must be set for the user's own server.",
+    "Search argument shapes beyond one query argument (a limit argument, user or agent ids, filters) are not configurable; the result is cut to `limit` locally.",
+    "Per-server result parsing beyond the documented shapes (a JSON array, or an object with a `results` array, of items with `memory` / `text` / `content`) is not built.",
+    "The memory host's MCP stdio process is not registered with a run's pid registry; a hard kill of nax can leave it running until its stdin closes.",
+    "A server whose connection failed is not reconnected for the life of one host (the pool caches the failure); a chat must be restarted after the server comes up.",
+    "When the memory server is also attached to chat or run sessions through its own `mcp.servers.<id>.stages`, the session's MCP pool and the memory host's pool open two separate connections.",
+    "The koda provider (design feature 3) is not built; `memory.provider` still refuses `\"koda\"`.",
+    "No change to `packages/nax-agent`."
+  ],
+  "routingProfile": "native-claude-opus"
+}

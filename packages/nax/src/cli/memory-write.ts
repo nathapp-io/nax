@@ -47,9 +47,9 @@ import {
   memoryNoteAbsentError,
   NOTE_SCOPES,
   NOTE_TYPES,
-  openMemoryHost,
   parseNoteScope,
   withMemoryErrors,
+  withMemoryHost,
 } from "./memory-cli-deps";
 
 /** The scope a write lands in when `--scope` is not given: the project's own mirror. */
@@ -139,11 +139,12 @@ export async function memorySaveCommand(
   return withMemoryErrors(async () => {
     const scope = parseNoteScope(opts.scope) ?? DEFAULT_WRITE_SCOPE;
     const bodyInput = bodyInputOf(opts);
-    const host = await openMemoryHost(await memoryContext(opts.dir, deps), deps);
-    if (host === null) throw memoryDisabledError();
-    const result = await host.save(saveWriteOf(opts, scope, await bodyTextOf(bodyInput, deps)));
-    deps.log(opts.json === true ? JSON.stringify(result) : formatSaveLine(scope, result));
-    return 0;
+    return withMemoryHost(await memoryContext(opts.dir, deps), deps, async (host) => {
+      if (host === null) throw memoryDisabledError();
+      const result = await host.save(saveWriteOf(opts, scope, await bodyTextOf(bodyInput, deps)));
+      deps.log(opts.json === true ? JSON.stringify(result) : formatSaveLine(scope, result));
+      return 0;
+    });
   }, deps);
 }
 
@@ -237,11 +238,12 @@ export async function memoryForgetCommand(
   return withMemoryErrors(async () => {
     const scope = parseNoteScope(opts.scope) ?? DEFAULT_WRITE_SCOPE;
     const reason = reasonOf(opts);
-    const host = await openMemoryHost(await memoryContext(opts.dir, deps), deps);
-    if (host === null) throw memoryDisabledError();
-    const result = await orAbsentNote(scope, slug, () => host.forget({ scope, slug, reason }));
-    deps.log(opts.json === true ? JSON.stringify(result) : formatForgetLine(scope, result));
-    return 0;
+    return withMemoryHost(await memoryContext(opts.dir, deps), deps, async (host) => {
+      if (host === null) throw memoryDisabledError();
+      const result = await orAbsentNote(scope, slug, () => host.forget({ scope, slug, reason }));
+      deps.log(opts.json === true ? JSON.stringify(result) : formatForgetLine(scope, result));
+      return 0;
+    });
   }, deps);
 }
 
@@ -259,11 +261,12 @@ export async function memoryApproveCommand(
 ): Promise<number> {
   return withMemoryErrors(async () => {
     const scope = parseNoteScope(opts.scope) ?? DEFAULT_WRITE_SCOPE;
-    const host = await openMemoryHost(await memoryContext(opts.dir, deps), deps);
-    if (host === null) throw memoryDisabledError();
-    const note = await orAbsentNote(scope, slug, () => host.approve({ scope, slug }));
-    deps.log(opts.json === true ? JSON.stringify(note) : `approved ${note.scope}/${note.slug}`);
-    return 0;
+    return withMemoryHost(await memoryContext(opts.dir, deps), deps, async (host) => {
+      if (host === null) throw memoryDisabledError();
+      const note = await orAbsentNote(scope, slug, () => host.approve({ scope, slug }));
+      deps.log(opts.json === true ? JSON.stringify(note) : `approved ${note.scope}/${note.slug}`);
+      return 0;
+    });
   }, deps);
 }
 
