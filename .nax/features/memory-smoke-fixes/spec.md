@@ -287,6 +287,7 @@ interface to implement.
 **US-001**
 - `packages/nax-agent/src/index.ts` — add `type MemoryPendingForget` to the memory exports.
 - `packages/nax-agent/api/nax-agent.api.txt` — regenerate with `bun run api:update` so `check:api` sees the new `type MemoryPendingForget` line.
+- `packages/nax-agent/src/memory/index.ts` — add `type MemoryPendingForget` to the memory barrel exports that the package entry re-exports.
 
 **US-002**
 None.

@@ -1,0 +1,359 @@
+{
+  "project": "nax-monorepo",
+  "feature": "memory-smoke-fixes",
+  "branchName": "feat/memory-smoke-fixes",
+  "createdAt": "2026-11-03T00:00:00.000Z",
+  "updatedAt": "2026-11-03T08:36:08.118Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Persist local pending forgets and mark refreshed indexes",
+      "description": "**Goal** \u2014 Add the project-mirror pending-forget record, local-provider lifecycle updates, and refreshed index markers for #2775.\n\n**Motivation** \u2014 Nothing anywhere records that the retire is waiting.\n\n**Approach** \u2014 **Pending forgets (#2775).** The mirror gains one record file,\n`<projectDir>/pending-forgets.jsonl`, one JSON object per line:\n\n```json\n{\"clientId\":\"5b0c2f4e-7c1d-4a8e-9f3a-2d6b8e1c4a70\",\"scope\":\"project\",\"slug\":\"replay-budget\",\"reason\":\"the budget changed\"}\n```\n\nAn entry is valid when `clientId` matches `MEMORY_CLIENT_ID_RE`, `scope` is one of\n`MEMORY_SCOPES`, `slug` matches `MEMORY_SLUG_RE` and `reason` is a string; a forget\nrequest with no `reason` is recorded with `reason: \"\"`. A proposal forget whose slug fails\n`MEMORY_SLUG_RE` is refused by the local provider as `MEMORY_PUSH_REJECTED` and records\nnothing, as a direct forget of that slug already is.\n\nIt is written only by the local provider and by an approval, and it is read by the\nindex refresh, the memory host and the approval. Every writer runs while the mirror\nlock is held: the local provider's `push` is called from inside the forget and save\noperations' locked sections and from sync's drain, and the approval takes the lock\nitself, so no new lock is needed. One caveat is accepted: a push abandoned by\n`raceTimeout` is not cancelled, so a local push that outlived its deadline could still be\nfinishing its record write after the lock holder moved on. The local provider's push is\na few small file operations, far inside `MEMORY_OP_TIMEOUT_MS`.\n\n- Every local-provider change to the record reads it, filters it, and writes it back\n  only when the list changed; a save or direct forget of a key the record does not hold\n  leaves the file untouched (absent stays absent).\n- Local provider, forget under `proposal`: the entries for other keys are kept in\n  order, any entry for the same `scope/slug` is dropped, and the new entry is\n  appended. The answer stays `{ id: clientId, status: \"pending\" }` and the note is\n  left in place.\n- Local provider, forget under `direct`: the note is deleted (as today) and any\n  entry for that key is dropped.\n- Local provider, save (either mode): after the note is written, any entry for that\n  key is dropped, because saving the slug again means it is wanted.\n- `refreshMemoryIndex` marks a note `(forget pending)` when its key is in the\n  caller's `heldForgets` **or** in the store's pending-forget record.\n- `approveMemoryNote`, inside its locked section: a slug the mirror does not hold,\n  or holds retired, is `MEMORY_NOTE_NOT_FOUND` as today. If the record holds an\n  entry for the key, the approval retires the note: delete the note, write the\n  record without that entry, refresh the index, and return the note as it was with\n  `status: \"deleted\"`. A pending forget wins over a pending save. Otherwise the\n  existing behaviour stands (active returned unchanged; pending made active).\n  The return type stays `Promise<MemoryNote>`.\n\nkoda and MCP providers never write the record (their approval is server-side), so\nfor them the record is always empty and nothing changes.\n\nFailure handling: A `pending-forgets.jsonl` line is not JSON, or fails the entry shape: Skipped; one warn `\"skipping a pending-forgets line that is not a pending forget\"` with `{ path, line }`; the other lines are returned. `pending-forgets.jsonl` does not exist: `readPendingForgets` returns `[]`. Any local-provider record write (proposal forget, direct forget, save) throws an I/O error: `push` rejects with that error unchanged (not `MEMORY_PUSH_REJECTED`), so the operation keeps the write queued and a later sync replays it.\n\nUse `readRecordText(path)` and `writeRecordFile(path, text)` in store.ts, mirroring the existing `readDecisions` / `writeDecisions` pattern including skip-and-warn. Export the type through src/memory/index.ts and src/index.ts; regenerate api/nax-agent.api.txt with `bun run api:update` and verify `bun run check:api`. Regression tests must fail against the old code. Create test/unit/memory/store-pending-forgets.test.ts and test/unit/memory/local-provider-pending-forgets.test.ts using the existing store/provider harness patterns; keep the unchanged local proposal response and note-preservation behavior covered.\n\n**Scope** \u2014 In: src/memory/types.ts, store.ts, local-provider.ts, index-render.ts, the memory/root export barrels, API snapshot and associated record/provider/index regressions. Out: implementing the approval branch (US-002), host/CLI visibility (US-004), summary fields (US-003/US-006), repo defaults (US-005). A user-scope pending forget is recorded in the project mirror where the forget ran; other projects' mirrors do not mark it. koda and MCP providers never write the pending-forget record; their approval flow is koda #380 and is not part of this feature. A pending-forget entry whose note has gone some other way is not cleaned up.\n\n**Interface** \u2014 New exported type `MemoryPendingForget` (`packages/nax-agent/src/memory/types.ts`): `{ readonly clientId: string; readonly scope: MemoryScope; readonly slug: string; readonly reason: string }`. `MemoryStorePaths` target: the same plus `readonly pendingForgets: string` = `join(projectDir, \"pending-forgets.jsonl\")`. `MemoryStore` target: adds `readPendingForgets(): Promise<MemoryPendingForget[]>` and `writePendingForgets(entries: readonly MemoryPendingForget[]): Promise<void>`. `createLocalMemoryProvider(store)` signature unchanged. `refreshMemoryIndex(store, options)` signature unchanged; the marker set is `options.heldForgets` \u222a the record's keys.",
+      "acceptanceCriteria": [
+        "[unit] createMemoryStore({ projectDir }) returns a store whose paths.pendingForgets equals join(projectDir, \"pending-forgets.jsonl\").",
+        "[unit] readPendingForgets() on a store whose project directory has no pending-forgets.jsonl resolves to [].",
+        "[unit] writePendingForgets([a, b]) followed by readPendingForgets() resolves to [a, b], in that order, for two valid MemoryPendingForget values.",
+        "[unit] writePendingForgets([]) followed by readPendingForgets() resolves to [].",
+        "[unit] A pending-forgets.jsonl whose second of three lines is not json reads as the first and third entries only.",
+        "[unit] Reading that file logs exactly one warn with stage memory, message skipping a pending-forgets line that is not a pending forget and data { path: paths.pendingForgets, line: 2 }.",
+        "[unit] A line whose clientId is has space is skipped by readPendingForgets.",
+        "[unit] A line whose scope is team is skipped by readPendingForgets.",
+        "[unit] Pushing a proposal forget with slug Bad_Slug to the local provider rejects with NaxError code MEMORY_PUSH_REJECTED, and readPendingForgets() stays [].",
+        "[unit] Pushing a proposal forget request that has no reason records an entry whose reason is \"\".",
+        "[unit] Pushing a proposal forget request (clientId C, scope project, slug a, reason R) to createLocalMemoryProvider(store) leaves readPendingForgets() resolving to [{ clientId: C, scope: \"project\", slug: \"a\", reason: R }].",
+        "[unit] A second proposal forget of project/a with a new clientId and reason leaves exactly one entry for project/a, carrying the new clientId and reason.",
+        "[unit] A proposal forget of project/a when the record already holds project/b leaves the record as [b-entry, a-entry].",
+        "[unit] A direct forget of project/a when the record holds entries for project/a and project/b leaves the record holding only the project/b entry.",
+        "[unit] A direct save of project/a through the local provider when the record holds project/a leaves the record without a project/a entry.",
+        "[unit] A proposal save of project/a through the local provider when the record holds project/a leaves the record without a project/a entry.",
+        "[unit] A save of project/a when the record holds only project/b leaves the record equal to [b-entry].",
+        "[unit] A direct save through the local provider on a mirror with no pending-forgets.jsonl leaves that file absent.",
+        "[unit] When writePendingForgets throws Error(\"disk full\"), pushing a proposal forget to the local provider rejects with that same error, and isMemoryPushRejected returns false for it.",
+        "[unit] refreshMemoryIndex(store) with no heldForgets option, on a store holding an active note project/a and a record entry for project/a, writes a project index whose line for a ends with (forget pending).",
+        "[unit] refreshMemoryIndex(store, { heldForgets: new Set([\"project/b\"]) }) on a store holding active notes a and b and a record entry for project/a writes a project index whose lines for both a and b end with (forget pending).",
+        "[unit] On a store with a user directory, a record entry for user/u makes the user index line for note u end with (forget pending).",
+        "[unit] For each local-provider record-write path (proposal forget, direct forget, and save), when writePendingForgets throws an I/O error, push rejects with that error unchanged rather than MEMORY_PUSH_REJECTED."
+      ],
+      "tags": [
+        "bugfix",
+        "memory",
+        "persistence",
+        "api"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Adds one JSONL record using the existing decision-record parser/write pattern, read-filter-write provider mutations and marker union; existing atomic writes, mirror locks and retry handling avoid a new concurrency abstraction, so same-session failing-first tests are sufficient."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/store.ts",
+        "packages/nax-agent/src/memory/local-provider.ts",
+        "packages/nax-agent/src/memory/index-render.ts",
+        "packages/nax-agent/src/memory/types.ts",
+        "packages/nax-agent/test/unit/memory/local-provider.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/memory/store-pending-forgets.test.ts",
+        "packages/nax-agent/test/unit/memory/local-provider-pending-forgets.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/index.ts",
+          "reason": "add `type MemoryPendingForget` to the memory exports."
+        },
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "regenerate with `bun run api:update` so `check:api` sees the new `type MemoryPendingForget` line."
+        },
+        {
+          "path": "packages/nax-agent/src/memory/index.ts",
+          "reason": "add `type MemoryPendingForget` to the memory barrel exports that the package entry re-exports."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Retire locally recorded pending forgets on approval",
+      "description": "**Goal** \u2014 Make approveMemoryNote retire a note with a persisted local pending forget while preserving ordinary pending-save approval.\n\n**Motivation** \u2014 `nax memory forget a --reason r` under `memory.writeMode: \"proposal\"` printed `forgot project/a (pending)`, then `nax memory approve a` printed `approved project/a` and the note stayed `active`.\n\n**Approach** \u2014 **Pending forgets (#2775).** The mirror gains one record file,\n`<projectDir>/pending-forgets.jsonl`, one JSON object per line:\n\n```json\n{\"clientId\":\"5b0c2f4e-7c1d-4a8e-9f3a-2d6b8e1c4a70\",\"scope\":\"project\",\"slug\":\"replay-budget\",\"reason\":\"the budget changed\"}\n```\n\nAn entry is valid when `clientId` matches `MEMORY_CLIENT_ID_RE`, `scope` is one of\n`MEMORY_SCOPES`, `slug` matches `MEMORY_SLUG_RE` and `reason` is a string; a forget\nrequest with no `reason` is recorded with `reason: \"\"`. A proposal forget whose slug fails\n`MEMORY_SLUG_RE` is refused by the local provider as `MEMORY_PUSH_REJECTED` and records\nnothing, as a direct forget of that slug already is.\n\nIt is written only by the local provider and by an approval, and it is read by the\nindex refresh, the memory host and the approval. Every writer runs while the mirror\nlock is held: the local provider's `push` is called from inside the forget and save\noperations' locked sections and from sync's drain, and the approval takes the lock\nitself, so no new lock is needed. One caveat is accepted: a push abandoned by\n`raceTimeout` is not cancelled, so a local push that outlived its deadline could still be\nfinishing its record write after the lock holder moved on. The local provider's push is\na few small file operations, far inside `MEMORY_OP_TIMEOUT_MS`.\n\n- Every local-provider change to the record reads it, filters it, and writes it back\n  only when the list changed; a save or direct forget of a key the record does not hold\n  leaves the file untouched (absent stays absent).\n- Local provider, forget under `proposal`: the entries for other keys are kept in\n  order, any entry for the same `scope/slug` is dropped, and the new entry is\n  appended. The answer stays `{ id: clientId, status: \"pending\" }` and the note is\n  left in place.\n- Local provider, forget under `direct`: the note is deleted (as today) and any\n  entry for that key is dropped.\n- Local provider, save (either mode): after the note is written, any entry for that\n  key is dropped, because saving the slug again means it is wanted.\n- `refreshMemoryIndex` marks a note `(forget pending)` when its key is in the\n  caller's `heldForgets` **or** in the store's pending-forget record.\n- `approveMemoryNote`, inside its locked section: a slug the mirror does not hold,\n  or holds retired, is `MEMORY_NOTE_NOT_FOUND` as today. If the record holds an\n  entry for the key, the approval retires the note: delete the note, write the\n  record without that entry, refresh the index, and return the note as it was with\n  `status: \"deleted\"`. A pending forget wins over a pending save. Otherwise the\n  existing behaviour stands (active returned unchanged; pending made active).\n  The return type stays `Promise<MemoryNote>`.\n\nkoda and MCP providers never write the record (their approval is server-side), so\nfor them the record is always empty and nothing changes.\n\nFailure handling: An approval's note delete throws: The approval rejects with that error and the record still holds the entry. An approval names a slug the record holds but the mirror does not: `MEMORY_NOTE_NOT_FOUND`; the record is left as it is.\n\nChange approveLocked in src/memory/operations.ts; the preceding store/provider/index description is the US-001 seam, not a request to reimplement those modules. The pending-forget branch must precede the active-note early return but follow absent/retired rejection. Preserve updatedAt when returning the retired note; the pending-save arm retains its existing activation timestamp behavior. Update both the file header's description of approveMemoryNote and the doc comment on approveMemoryNote itself. Create test/unit/memory/operations-approve-forget.test.ts following operations-approve.test.ts and operations-forget.test.ts. Its end-to-end case must drive saveMemoryNote(direct) \u2192 forgetMemoryNote(proposal) over a real store and createLocalMemoryProvider \u2192 approveMemoryNote, consuming the record US-001 actually wrote. Show the new regressions fail against old code.\n\n**Scope** \u2014 In: locked approval retirement, record removal after successful deletion, index refresh, return value and source comments. Out: US-001's store/provider implementation, US-004's host/CLI output, tool summary fields and repo-note defaults. Do not approve outbox-only queued forgets or add server-side approval. No command rejects a pending forget without retiring the note; saving the slug again clears it. A pending-forget entry whose note has gone some other way is not cleaned up.\n\n**Interface** \u2014 `approveMemoryNote(input)` signature unchanged (`Promise<MemoryNote>`); behaviour per Approach. `MemoryStore` adds `readPendingForgets(): Promise<MemoryPendingForget[]>` and `writePendingForgets(entries: readonly MemoryPendingForget[]): Promise<void>` in US-001. `MemoryPendingForget`: `{ readonly clientId: string; readonly scope: MemoryScope; readonly slug: string; readonly reason: string }`. The return type stays `Promise<MemoryNote>`.",
+      "acceptanceCriteria": [
+        "[unit] With an active note project/a and a record entry for project/a, approveMemoryNote resolves to a note whose slug is a and whose status is deleted.",
+        "[unit] After that approval, store.readNote(\"project\", \"a\") resolves to null.",
+        "[unit] The note that approval resolves to carries the updatedAt the note had before the approval.",
+        "[unit] After that approval, readPendingForgets() holds no entry for project/a.",
+        "[unit] An approval of project/a when the record holds entries for project/a and project/b leaves the project/b entry in the record.",
+        "[unit] After that approval, the project index written by the store no longer lists the slug a.",
+        "[unit] With a pending note project/a and a record entry for project/a, approveMemoryNote resolves to a note whose status is deleted.",
+        "[unit] With a pending note project/a and a record entry for project/a, after approveMemoryNote the note is gone from the mirror.",
+        "[unit] With a record entry for project/gone and no note gone in the mirror, approveMemoryNote for gone rejects with NaxError code MEMORY_NOTE_NOT_FOUND.",
+        "[unit] After that rejected approval, readPendingForgets() still holds the project/gone entry.",
+        "[unit] When the store's deleteNote throws Error(\"delete failed\"), approving project/a with a record entry for it rejects with that error.",
+        "[unit] After that failed approval, readPendingForgets() still holds the project/a entry.",
+        "[integration] Over a real store and createLocalMemoryProvider, saveMemoryNote (direct) of a followed by forgetMemoryNote (proposal, reason wrong) of a leaves store.readNote(\"project\", \"a\") with status active.",
+        "[integration] Over that real store and createLocalMemoryProvider sequence, after saveMemoryNote (direct) of a then forgetMemoryNote (proposal, reason wrong) of a, the project index line for a ends with (forget pending).",
+        "[integration] Continuing that sequence, approveMemoryNote for a then leaves store.readNote(\"project\", \"a\") resolving to null.",
+        "[unit] Given an active project/a note and no pending-forget entry for its key, approveMemoryNote returns that note unchanged, including its existing updatedAt."
+      ],
+      "tags": [
+        "bugfix",
+        "memory",
+        "persistence"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded operation change using US-001's store API and existing locks/index helpers; memory approval is a local data transition, not an authorization step."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/operations.ts",
+        "packages/nax-agent/test/unit/memory/operations-approve.test.ts",
+        "packages/nax-agent/test/unit/memory/operations-forget.test.ts",
+        "packages/nax-agent/src/memory/store.ts",
+        "packages/nax-agent/src/memory/local-provider.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/memory/operations-approve-forget.test.ts"
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Render declared scalar fields on tool approval summaries",
+      "description": "**Goal** \u2014 Add summary-only field metadata to tool contracts and propagate it into masked, bounded approval lines without changing grants or ask policy.\n\n**Motivation** \u2014 The guarded-mode approval card read `MCP tool nax-memory__save` / `nax-memory__save` / `matched ask rule ...`.\n\n**Approach** \u2014 **Approval line fields (#2778).** `ToolScope` gains an optional `summaryFields`:\nplain input fields shown on the approval line, never checked or granted. After the\nexisting command, argv, verb and path parts, `askSummary` appends `field=value` for\neach `summaryFields` entry whose input value is a string, number or boolean. Line\nbreaks in a value become one space, and any other value type is skipped. The line is\nstill masked and then capped at `MAX_ASK_SUMMARY_CHARS` (200), exactly as today.\n`ProviderTool` gains the same optional `summaryFields`, and `adaptProviderTool`\ncopies it into the adapted tool's scope when it is set, leaving the scope exactly\n`{ pathFields: [] }` when it is not. The memory tool provider declares\n`[\"scope\", \"slug\", \"type\", \"description\"]` on `save` and\n`[\"scope\", \"slug\", \"reason\"]` on `forget`. `get` and `search` declare none. The note\nbody is never a summary field. `summaryFields` does not count as a field for the\npolicy's `isFieldlessScope` (`policy.ts:91`), so an unconditional ask rule on a memory\ntool keeps asking exactly as today.\n\nModify src/tools/types.ts, provider-types.ts, ask-request.ts and provider-adapt.ts. The memory-tool declarations above are US-006's downstream responsibility. Preserve the existing maskForPrompt full-line-before-cut order and unshowable behavior; summary fields must never be treated as checked paths, verbs, command fields or grants. Flatten CRLF, LF and CR in scalar summary values, retaining field declaration order and skipping arrays/objects rather than exposing the entire payload. Keep an adapter's scope exactly { pathFields: [] } for metadata-free tools. Create test/unit/tools/ask-summary-fields.test.ts; mirror the GHP regression fixture in ask-request.test.ts and the real createCodingToolRuntime/compileToolPolicy/AskResolver pattern in runtime.test.ts. The integration must adapt a real ProviderTool with summaryFields, execute it as extraTools under an unconditional ask rule, and inspect the resolver's actual request. New regressions must be shown failing on old code.\n\n**Scope** \u2014 In: generic summary metadata, scalar rendering, adapter propagation and unchanged fieldless-ask behavior. Out: memory tool declarations and CLI warning rendering (US-006), memory persistence/approval (US-001/US-002), host/list/approve messages (US-004), repo defaults (US-005). The note body is never shown on an approval line. No other provider tool besides the memory tools declares `summaryFields` in this feature.\n\n**Interface** \u2014 `ToolScope` target: adds `readonly summaryFields?: readonly string[]`. `ProviderTool` target: adds `readonly summaryFields?: readonly string[]`. `askSummary(tool, scope, input)` signature unchanged. `adaptProviderTool(providerId, tool)` signature unchanged. Existing callable signatures: `askSummary(tool: string, scope: ToolScope, input: Record<string, unknown>): AskSummary` and `adaptProviderTool(providerId: string, tool: ProviderTool): CodingTool`.",
+      "acceptanceCriteria": [
+        "[unit] askSummary(\"T\", { pathFields: [], summaryFields: [\"slug\", \"scope\"] }, { slug: \"a\", scope: \"project\" }) returns an AskSummary whose summary is T slug=a scope=project.",
+        "[unit] askSummary(\"T\", { pathFields: [], summaryFields: [\"slug\", \"scope\"] }, { slug: \"a\", scope: \"project\" }) returns an AskSummary whose unshowable is false.",
+        "[unit] askSummary(\"T\", { pathFields: [], summaryFields: [\"slug\", \"type\"] }, { slug: \"a\" }) returns an AskSummary whose summary is T slug=a, adding nothing for the absent type field.",
+        "[unit] askSummary(\"T\", { pathFields: [], summaryFields: [\"n\"] }, { n: 3 }) returns an AskSummary whose summary is T n=3, rendering the number through String.",
+        "[unit] askSummary(\"T\", { pathFields: [], summaryFields: [\"f\"] }, { f: true }) returns an AskSummary whose summary is T f=true, rendering the boolean through String.",
+        "[unit] askSummary(\"T\", { pathFields: [], summaryFields: [\"o\"] }, { o: { k: 1 } }) returns an AskSummary whose summary is T, skipping the object value.",
+        "[unit] askSummary(\"T\", { pathFields: [], summaryFields: [\"xs\"] }, { xs: [\"a\"] }) returns an AskSummary whose summary is T, skipping the array value.",
+        "[unit] askSummary(\"T\", { pathFields: [], summaryFields: [\"d\"] }, { d: \"one\\ntwo\\r\\nthree\" }) returns an AskSummary whose summary is T d=one two three, replacing each LF or CRLF line break in the actual input value with one space.",
+        "[unit] askSummary(\"T\", { pathFields: [\"path\"], summaryFields: [\"slug\"] }, { path: \"x\", slug: \"a\" }) returns an AskSummary whose summary is T path=x slug=a, preserving path parts before summary fields.",
+        "[unit] A summary field whose value contains ghp_abcdefghijklmnop1234 yields a summary that does not include ghp_abcdefghijklmnop1234.",
+        "[unit] A summary field value of 500 characters yields a summary no longer than MAX_ASK_SUMMARY_CHARS.",
+        "[unit] adaptProviderTool(\"p\", tool) for a ProviderTool with summaryFields [\"slug\"] returns a tool whose scope.summaryFields equals [\"slug\"].",
+        "[unit] adaptProviderTool(\"p\", tool) for a ProviderTool without summaryFields returns a tool whose scope equals { pathFields: [] }.",
+        "[integration] createCodingToolRuntime with extraTools [adaptProviderTool(\"p\", saveTool)] (saveTool.summaryFields [\"slug\"]), policy compileToolPolicy([{ tool: \"p__save\", patterns: [\"*\"] }], root, { askRules: [{ tool: \"p__save\", patterns: [\"*\"] }] }), and an AskResolver that records its request and allows: callTool(\"p__save\", { slug: \"a\" }) hands the resolver a request whose summary is p__save slug=a."
+      ],
+      "tags": [
+        "bugfix",
+        "tools",
+        "approval",
+        "security",
+        "api"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Four-module additive metadata change, but the human approval/access-control boundary, secret masking and fieldless ask invariant require the security override and strict test isolation."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/tools/ask-request.ts",
+        "packages/nax-agent/src/tools/provider-adapt.ts",
+        "packages/nax-agent/src/tools/policy.ts",
+        "packages/nax-agent/test/unit/tools/ask-request.test.ts",
+        "packages/nax-agent/test/unit/tools/runtime.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/tools/ask-summary-fields.test.ts"
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Expose pending forgets and accurate list/approve CLI messages",
+      "description": "**Goal** \u2014 Make the memory host and text CLI expose pending forgets, meaningful empty lists and the actual outcome of approval.\n\n**Motivation** \u2014 `nax memory list` on an empty mirror printed nothing.\n\n**Approach** \u2014 **CLI messages (#2775, #2779).** `nax memory approve` reads the note through\n`host.getNote` before it approves. It prints `forgot <scope>/<slug> (forget approved)`\nwhen the result's status is `deleted`, and\n`<scope>/<slug> is already active; nothing to approve` when the note was `active`\nbefore and the result is `active`. Otherwise it prints `approved <scope>/<slug>` as\ntoday. When `host.getNote` resolves to `null` (an absent slug), the command still calls\n`host.approve`, whose `MEMORY_NOTE_NOT_FOUND` or `MEMORY_NOTE_READ_ONLY` refusal is\nreported as today. `--json` is unchanged. `nax memory list` appends ` (forget pending)` to a\nrow whose key the host reports as pending a forget. With no rows to print it logs\n`no memory notes`, or `no memory notes match` when `--type` or `--scope` was given.\n\n`MemoryHost` (`packages/nax/src/memory/host.ts:95`). Target: adds the optional `forgetPendingKeys?(): Promise<ReadonlySet<string>>`. It is optional for the same reason `close?` is, so a hand-built test double stays valid; `createMemoryHost` always sets it to the union of `outbox.heldKeys(\"forget\")` and the store record's keys. The host's index (`readIndex`, `host.ts:355`) uses the same union as its `heldForgets`.\n\n`refreshMemoryIndex` marks a note `(forget pending)` when its key is in the caller's `heldForgets` **or** in the store's pending-forget record. The host uses the record produced by US-001 via the real createMemoryStore, rather than deriving proposal state from note.status or the outbox alone. Its keys must be read live. A host without the optional method is treated as having no pending keys for text listing. Preserve scope/slug row sorting, formatting and JSON document shapes. The CLI pre-read selects a message only; it must not bypass host.approve or the host's repository-read-only and absent-note refusals.\n\nModify src/memory/host.ts, src/cli/memory.ts and src/cli/memory-write.ts, including the approval doc comment which currently says no command approves a queued forget. Create test/unit/cli/memory-smoke-fixes.test.ts and test/unit/memory/host-pending-forgets.test.ts. Host seam cases must build the host over a real mirror directory and exercise both persisted and outbox-held keys plus renderIndex. Show new regressions fail against old code.\n\nCompatibility modification required in packages/nax/test/unit/cli/memory-forget.test.ts: `fakeHost` sets `getNote: unread`, which throws, and `REPLAY_BUDGET` (the note its `approve` returns) is `active`; `nax memory approve` now reads the note through `host.getNote` first and prints \"already active\" when it was active before and after. Add an optional `before?: MemoryNote` to `HostFixture`, and make the double's `getNote(scope, slug)` return `fixture.before ?? { ...REPLAY_BUDGET, scope, slug, status: \"pending\" }`, so AC-9 (expects the line \"approved project/replay-budget\"), the `--scope user` case (expects \"approved user/pref\") and every other expectation in the file stay as they are.\n\n**Scope** \u2014 In: optional host pending-key API, host rendered-index union, list text markers/empty states, approval pre-read/outcome messages and existing fixture adaptation. Out: record/provider lifecycle (US-001), locked retirement implementation (US-002), generic approval metadata (US-003), repo defaults (US-005), logger/tool metadata (US-006). A user-scope pending forget is recorded in the project mirror where the forget ran; other projects' mirrors do not mark it. `nax memory status` does not count pending forgets. `nax memory list --json` gains no forget-pending field; only the text row is marked.\n\n**Interface** \u2014 `forgetPendingKeys?(): Promise<ReadonlySet<string>>` is added to MemoryHost; createMemoryHost always sets it. `memoryListCommand` and `memoryApproveCommand` signatures unchanged. Existing callable signatures: `memoryListCommand(opts: MemoryListOptions, deps: MemoryCliDeps = _memoryCliDeps): Promise<number>` and `memoryApproveCommand(slug: string, opts: MemoryApproveOptions, deps: MemoryCliDeps = _memoryCliDeps): Promise<number>`.",
+      "acceptanceCriteria": [
+        "[integration] A host from createMemoryHost over a mirror whose pending-forgets.jsonl holds an entry for project/a resolves forgetPendingKeys() to a set containing project/a.",
+        "[integration] That host's forgetPendingKeys() also contains project/q when the outbox holds a queued forget entry for project/q.",
+        "[integration] That host's renderIndex() text has its line for the active note a ending with (forget pending).",
+        "[unit] memoryListCommand with a host whose notes returns note a and whose forgetPendingKeys resolves to new Set([\"project/a\"]) logs formatMemoryNoteLine(a) + \" (forget pending)\".",
+        "[unit] memoryListCommand with a host that has no forgetPendingKeys member logs each row as formatMemoryNoteLine(note).",
+        "[unit] memoryListCommand with a host that has no forgetPendingKeys member returns 0.",
+        "[unit] memoryListCommand with a host holding no notes and no --type or --scope logs exactly no memory notes.",
+        "[unit] memoryListCommand with a host holding no notes and no --type or --scope returns 0.",
+        "[unit] memoryListCommand with --type feedback over a host holding only a project-type note logs exactly no memory notes match.",
+        "[unit] memoryListCommand with --type feedback over a host holding only a project-type note returns 0.",
+        "[unit] memoryListCommand with --json over a host holding no notes logs exactly {\"notes\":[]}.",
+        "[unit] memoryApproveCommand(\"a\") with a host whose getNote returns an active note and whose approve returns that note logs project/a is already active; nothing to approve.",
+        "[unit] memoryApproveCommand(\"a\") with a host whose getNote returns an active note and whose approve returns that note returns 0.",
+        "[unit] memoryApproveCommand(\"a\") with a host whose getNote returns an active note and whose approve returns it with status deleted logs forgot project/a (forget approved).",
+        "[unit] memoryApproveCommand(\"a\") with a host whose getNote returns an active note and whose approve returns it with status deleted returns 0.",
+        "[unit] memoryApproveCommand(\"a\") with a host whose getNote returns a pending note and whose approve returns it active logs approved project/a.",
+        "[unit] memoryApproveCommand calls host.getNote with the scope and slug before it calls host.approve.",
+        "[unit] memoryApproveCommand(\"absent\") with a host whose getNote resolves to null and whose approve throws NaxError code MEMORY_NOTE_NOT_FOUND still calls host.approve.",
+        "[unit] memoryApproveCommand(\"absent\") with a host whose getNote resolves to null and whose approve throws NaxError code MEMORY_NOTE_NOT_FOUND logs Error: no memory note project/absent to stderr.",
+        "[unit] memoryApproveCommand(\"absent\") with a host whose getNote resolves to null and whose approve throws NaxError code MEMORY_NOTE_NOT_FOUND returns 1."
+      ],
+      "tags": [
+        "bugfix",
+        "memory",
+        "cli",
+        "integration"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Standard composition and CLI formatting changes across three source modules plus an existing fixture; uses upstream persistence/approval interfaces without new abstractions."
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/host.ts",
+        "packages/nax/src/cli/memory.ts",
+        "packages/nax/src/cli/memory-write.ts",
+        "packages/nax/test/unit/cli/memory-forget.test.ts",
+        "packages/nax/test/unit/memory/host.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/cli/memory-smoke-fixes.test.ts",
+        "packages/nax/test/unit/memory/host-pending-forgets.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/cli/memory-forget.test.ts",
+          "reason": "`fakeHost` sets `getNote: unread`, which throws, and `REPLAY_BUDGET` (the note its `approve` returns) is `active`; `nax memory approve` now reads the note through `host.getNote` first and prints \"already active\" when it was active before and after. Add an optional `before?: MemoryNote` to `HostFixture`, and make the double's `getNote(scope, slug)` return `fixture.before ?? { ...REPLAY_BUDGET, scope, slug, status: \"pending\" }`, so AC-9 (expects the line \"approved project/replay-budget\"), the `--scope user` case (expects \"approved user/pref\") and every other expectation in the file stay as they are."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Default fixed frontmatter fields for committed repo notes",
+      "description": "**Goal** \u2014 Accept committed memory notes with only slug, type and description by defaulting the fixed fields before shared parsing.\n\n**Motivation** \u2014 A repo note is accepted only with all eight frontmatter keys, including an invented `id`, a `source` and an ISO `updatedAt`, although `scope`, `status` and `source` can hold only one value for a repo note.\n\n**Approach** \u2014 **Repo note defaults (#2777).** Before parsing, `readRepoNotes` fills in each of\nthese keys that the frontmatter does not set: `id` = the file's slug (its name\nwithout `.md`), `scope` = `project`, `status` = `active`, `source` = `repo`,\n`updatedAt` = the file's modification time (the `lstat` measurement the reader\nalready takes) as an ISO-8601 string. A key the file does set keeps its value and\nthe existing rules (`scope` must be `project`, `status` must be `active`) still\nreject a wrong one. `source` is still overwritten to `repo` on acceptance. A\nmissing `slug`, `type` or `description` still rejects the note. A minimal repo\nnote:\n\n```markdown\n---\nslug: staging-db\ntype: project\ndescription: the staging database is shared; never reset it\n---\n\nAsk in #infra before running migrations against staging.\n```\n\nThe non-normative implementation is to insert `key: value` lines for the absent\nkeys just before the closing `---` and hand the result to `parseMemoryNote`\nunchanged.\n\nModify src/memory/repo-notes.ts, specifically the readCandidate/acceptedNote/parsedOrNull flow. Carry the existing candidate lstat measurement into normalization; derive id from the filename rather than trusting a different frontmatter slug. Defaults are in-memory and apply only to absent keys, not present-but-empty or invalid values. Preserve the shared codec's opening/closing-fence and blank-separator requirements, full-note acceptance, filename/slug equality, source stamping, secret checks, no-follow reads, size/count limits and skip-warn behavior. Do not change parseMemoryNote's global rules or rewrite committed files. Create test/unit/memory/repo-notes-defaults.test.ts using repo-notes.test.ts's filesystem and skip-warn patterns, with deterministic mtime set to the specified instant. Demonstrate new acceptance of minimal notes failing before implementation; retain malformed-note refusals.\n\n**Scope** \u2014 In: defaults during repo-note reading and their regression tests. Out: mirror record persistence/approval (US-001/US-002), generic approval metadata (US-003), host/CLI messages (US-004), logger data and tool declarations (US-006). The user guide `docs/guides/memory.md` (the memory config block, the `nax memory` commands and the minimal repo note) is written by hand on this branch before the run, not by a story.\n\n**Interface** \u2014 `readRepoNotes(input)` signature unchanged; defaults per Approach. Existing callable signature: `readRepoNotes(input: { readonly repoRoot: string; readonly logger: MemoryLogger }): Promise<RepoNotes>`. `parseMemoryNote(text)` remains unchanged.",
+      "acceptanceCriteria": [
+        "[unit] readRepoNotes accepts .nax/memory/staging-db.md holding the minimal note in Design (only slug, type, description) and returns one note with slug staging-db.",
+        "[unit] That accepted note has id staging-db.",
+        "[unit] That accepted note has scope project.",
+        "[unit] That accepted note has status active.",
+        "[unit] That accepted note has source repo.",
+        "[unit] When the file's modification time is set to 2026-11-01T10:00:00.000Z, that accepted note has updatedAt 2026-11-01T10:00:00.000Z.",
+        "[unit] A minimal note that also sets id: team-1 is accepted with id team-1.",
+        "[unit] A minimal note that also sets updatedAt: 2026-01-01T00:00:00Z is accepted with updatedAt 2026-01-01T00:00:00Z.",
+        "[unit] A minimal note that also sets scope: user is skipped with reason scope is not project.",
+        "[unit] A minimal note that also sets status: pending is skipped with reason status is not active.",
+        "[unit] A note with slug and description but no type is skipped with a reason that starts with invalid note: and names type.",
+        "[unit] A note with slug and type but no description is skipped with a reason that starts with invalid note: and names description.",
+        "[unit] A note with type and description but no slug is skipped.",
+        "[unit] readRepoNotes returns no note for a file with type and description but no slug.",
+        "[unit] A minimal note whose frontmatter has an opening --- but no closing --- is skipped with a reason that starts with invalid note:.",
+        "[unit] A minimal note with no blank line between the closing --- and the body is skipped with a reason that starts with invalid note:."
+      ],
+      "tags": [
+        "bugfix",
+        "memory",
+        "frontmatter"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One source file adds fixed in-memory defaults using an already available lstat result and the unchanged parser; existing safety checks are preserved rather than redesigned."
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/repo-notes.ts",
+        "packages/nax/test/unit/memory/repo-notes.test.ts",
+        "packages/nax-agent/src/memory/note.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/memory/repo-notes-defaults.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Show memory warning details and declare memory approval fields",
+      "description": "**Goal** \u2014 Print memory warning/error context on the CLI and declare the scalar fields that make memory save/forget approval requests understandable.\n\n**Motivation** \u2014 A repo note with a missing key printed `[memory] repo note skipped` with no file and no reason.\n\n**Approach** \u2014 **CLI warn data (#2776).** `cliMemoryLogger` renders a non-empty data object after\nthe message as `: key=value` pairs separated by one space, in the object's key\norder. A string is used as is, a number or boolean through `String`, anything else\nthrough `JSON.stringify`, and every line break (`\\r\\n`, `\\n`, `\\r`) in a rendered\nvalue becomes one space. Example:\n`[memory] repo note skipped: path=/r/.nax/memory/a.md reason=invalid note: memory note invalid: type: Invalid option`.\n\n**Approval line fields (#2778).** `ToolScope` gains an optional `summaryFields`:\nplain input fields shown on the approval line, never checked or granted. After the\nexisting command, argv, verb and path parts, `askSummary` appends `field=value` for\neach `summaryFields` entry whose input value is a string, number or boolean. Line\nbreaks in a value become one space, and any other value type is skipped. The line is\nstill masked and then capped at `MAX_ASK_SUMMARY_CHARS` (200), exactly as today.\n`ProviderTool` gains the same optional `summaryFields`, and `adaptProviderTool`\ncopies it into the adapted tool's scope when it is set, leaving the scope exactly\n`{ pathFields: [] }` when it is not. The memory tool provider declares\n`[\"scope\", \"slug\", \"type\", \"description\"]` on `save` and\n`[\"scope\", \"slug\", \"reason\"]` on `forget`. `get` and `search` declare none. The note\nbody is never a summary field. `summaryFields` does not count as a field for the\npolicy's `isFieldlessScope` (`policy.ts:91`), so an unconditional ask rule on a memory\ntool keeps asking exactly as today.\n\nUS-003 supplies the generic contracts, adapter and rendering behavior above. This story consumes that seam by modifying src/memory/tool-provider.ts's memoryTools declarations. Modify src/cli/memory-cli-deps.ts's cliMemoryLogger so both warn and error render data through deps.logErr, with no added suffix for absent/empty data and no change to dropped info/debug or command stdout. Flatten actual CRLF, LF and CR after value rendering; preserve insertion/key order. Create test/unit/cli/memory-cli-logger.test.ts and test/unit/memory/tool-provider-summary.test.ts. Reuse existing tool-provider.test.ts harness patterns and the runtime.test.ts AskResolver pattern via supported nax-agent exports. The cross-story seam must run the real memory save ProviderTool through adaptProviderTool and createCodingToolRuntime with matching grant and unconditional ask rule; a recording resolver denies, and its received summary must be the exact supplied line, not a string independently reconstructed in the test. Show regressions failing before implementation.\n\n**Scope** \u2014 In: CLI warn/error data rendering and save/forget metadata declarations with the actual resolver integration. Out: generic ToolScope/ProviderTool/askSummary/adapter implementation (US-003), persistence/approval (US-001/US-002), host/list/approve messages (US-004), repo defaults (US-005). The note body is never shown on an approval line. No other provider tool besides the memory tools declares `summaryFields` in this feature.\n\n**Interface** \u2014 `cliMemoryLogger(deps)` signature unchanged. `createMemoryToolProvider(host)` signature unchanged; `save` and `forget` gain `summaryFields`. The upstream `ProviderTool` target adds `readonly summaryFields?: readonly string[]`. Existing callable signatures: `cliMemoryLogger(deps: MemoryCliDeps): MemoryLogger` and `createMemoryToolProvider(host: MemoryHost): ToolProvider`.",
+      "acceptanceCriteria": [
+        "[unit] cliMemoryLogger(deps).warn(\"memory\", \"repo note skipped\", { path: \"/r/.nax/memory/a.md\", reason: \"invalid note: x\" }) hands deps.logErr the line [memory] repo note skipped: path=/r/.nax/memory/a.md reason=invalid note: x.",
+        "[unit] cliMemoryLogger(deps).warn(\"memory\", \"m\") with no data hands deps.logErr exactly [memory] m.",
+        "[unit] cliMemoryLogger(deps).warn(\"memory\", \"m\", {}) hands deps.logErr exactly [memory] m.",
+        "[unit] cliMemoryLogger(deps).warn(\"memory\", \"m\", { skipped: 3, ok: false, list: [\"a\"] }) hands deps.logErr [memory] m: skipped=3 ok=false list=[\"a\"].",
+        "[unit] cliMemoryLogger(deps).error(\"memory\", \"m\", { reason: \"one\\ntwo\" }) hands deps.logErr [memory] m: reason=one two, where the input reason contains an actual LF line break.",
+        "[unit] The save tool of await createMemoryToolProvider(host).tools(repoRoot) has summaryFields equal to [\"scope\", \"slug\", \"type\", \"description\"].",
+        "[unit] The forget tool of that provider has summaryFields equal to [\"scope\", \"slug\", \"reason\"].",
+        "[unit] The get tool of that provider has no summaryFields.",
+        "[unit] The search tool of that provider has no summaryFields.",
+        "[integration] createCodingToolRuntime with extraTools holding adaptProviderTool(\"nax-memory\", the save tool from await provider.tools(repoRoot)), policy compileToolPolicy([{ tool: \"nax-memory__save\", patterns: [\"*\"] }], root, { askRules: [{ tool: \"nax-memory__save\", patterns: [\"*\"] }] }), and an AskResolver that records its request and denies: callTool(\"nax-memory__save\", { scope: \"project\", slug: \"chat-smoke\", type: \"feedback\", description: \"Chat smoke note\", body: \"b\" }) hands the resolver the summary nax-memory__save scope=project slug=chat-smoke type=feedback description=Chat smoke note.",
+        "[integration] Given that real memory save tool adapted into createCodingToolRuntime with the wildcard grant and unconditional ask rule, when the AskResolver denies the chat-smoke save request, callTool resolves to an outcome whose kind is denied, preserving the ask rule despite summaryFields metadata."
+      ],
+      "tags": [
+        "bugfix",
+        "memory",
+        "cli",
+        "approval",
+        "security"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Two straightforward source changes with an upstream runtime seam, but memory approval-card metadata affects the human access-control boundary and therefore uses the security override."
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/memory-cli-deps.ts",
+        "packages/nax/src/memory/tool-provider.ts",
+        "packages/nax/test/unit/memory/tool-provider.test.ts",
+        "packages/nax-agent/test/unit/tools/runtime.test.ts",
+        "packages/nax-agent/src/tools/provider-adapt.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/cli/memory-cli-logger.test.ts",
+        "packages/nax/test/unit/memory/tool-provider-summary.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Goal and done: close #2775\u2013#2779 by making local proposal forgets durable and approvable, showing useful memory warning data, accepting minimal committed notes, displaying declared memory tool arguments on approval cards, and printing explicit empty-list messages. This is an enhancement to the existing memory slice, not a new subsystem. The six binding stories and package scopes are retained exactly. Discovery used direct Read/Grep/Glob because codebase-memory MCP was unavailable in this session; cited locations describe the inspected baseline, not interfaces to preserve where the spec changes them. No implementation or test execution is part of this PRD-writing task.\n\nArchitecture and conventions: packages/nax-agent/package.json:7 exports source entry points and :13 defines #src/* and #test/*; :20\u201322 defines the API snapshot commands. packages/nax/package.json:107 declares the workspace nax-agent dependency. Keep dependency direction nax-agent \u2192 nax and use @nathapp/nax-agent public named exports across the package boundary; no reverse or relative cross-package imports. nax-agent source stays Node-compatible, with relative .ts imports and existing injectable I/O seams; nax CLI code uses its existing Bun/alias conventions. Read docs/architecture/ARCHITECTURE.md:11 and the linked focused conventions before implementation; preserve _deps injection, cause/error handling, bounded functions, and package-scoped test commands. Root and package instructions require regression tests demonstrated failing on the old behavior. Tests use bun:test in both affected packages despite the initial context table omitting nax's test framework. Run targeted tests from each workdir with explicit paths, never bare bun test. The normal pipeline owns lint/typecheck/build; US-001 additionally regenerates the public API snapshot with bun run api:update and verifies check:api. Do not bump package versions or edit generated agent context. No new dependencies, configuration keys, release work, or user-guide edits are required.\n\nUS-001 storage/provider/index impact: packages/nax-agent/src/memory/types.ts:13 defines project/user scopes, :74 defines MEMORY_SLUG_RE, :77 defines MEMORY_CLIENT_ID_RE, and :110 defines memoryNoteKey. Add MemoryPendingForget with readonly clientId/scope/slug/reason. packages/nax-agent/src/memory/store.ts:101, :123 and :141 own paths, interface and path construction; add pendingForgets, readPendingForgets and writePendingForgets. The file is already 566 lines, so keep additions focused and observe the repo's file-size gate without weakening baselines. readRecordText at :488 reads under the project directory's pinned parent; writeRecordFile at :495 uses the existing atomic-write path. Follow readDecisions/writeDecisions at :507\u2013527 for ordered JSONL, absent-file behavior, blank lines, per-line validation and skip/warn semantics. Do not bypass record confinement or create a new unpinned read path. Validate clientId and slug with the shared regexes, scope with MEMORY_SCOPES, and reason as string; a bad line must not suppress subsequent valid entries. packages/nax-agent/src/memory/local-provider.ts:64\u201385 currently writes saves with active/pending status, deletes only direct forgets, and accepts proposal forgets without persisting intent. throughStore at :55 and pushRejectedFrom at :45 convert only permanent store refusal codes; retain ordinary I/O error identity and transient classification. Save must write the note before clearing its record key; direct forget must delete before clearing; proposal forget replaces its key and appends after other keys. Read/filter/write only when the record list changes, preserving order and leaving an absent record absent on unrelated saves/direct forgets. refreshMemoryIndex at packages/nax-agent/src/memory/index-render.ts:197 currently only reads caller-held keys; union those with persisted keys before both scope renderings. markersOf at :124 already renders the exact suffix, while renderMemoryIndex at :301 is pure and should stay pure. Add the public type export through BOTH packages/nax-agent/src/memory/index.ts:42 and packages/nax-agent/src/index.ts:98\u2013147: the root imports the memory barrel, so adding only a root name would not connect the export. Regenerate packages/nax-agent/api/nax-agent.api.txt. Existing regression suites: test/unit/memory/store-records.test.ts:75\u201394 demonstrates atomic-write/dependency restoration and no-follow record checks; local-provider.test.ts:16\u201354 supplies file-private note/save/forget builders and :149 tests the unchanged proposal response/note preservation; index-render.test.ts and index-render-truncation.test.ts cover marker rendering and caps. New test files are exactly those specified.\n\nUS-002 operation seam and ordering: packages/nax-agent/src/memory/operations.ts:439 queues a forget before touching the note; :457 pushes and removes the outbox entry after acceptance; this explains why a local pending response currently loses its marker. refreshIndex at :217 passes outbox-held keys into refreshMemoryIndex, so US-001's record union fixes operation and sync refreshes without adding an alternate state owner. approveLocked at :536 checks absent/retired, then returns active early; insert the pending-forget retirement branch after the absent/retired check and before that active early return. Use the matching scope/slug key, delete first, then remove its record entry, refresh with the existing outbox marker source, and return the original note with only status changed to deleted, preserving updatedAt. Absence and retired states remain MEMORY_NOTE_NOT_FOUND, and a delete failure must leave the record intact. approveMemoryNote at :567 already composes orderedByMirrorLocks and withMirrorLock; do not add a second lock, queue mutation, provider approval call, or timestamp rewrite on retirement. Update the stale module header at :42\u201353 and public operation doc comment at :547\u2013566. Its existing approval is a local state transition, not an authorization mechanism; repository read-only enforcement remains in the host. test/unit/memory/operations-approve.test.ts:91\u2013142 provides a real-store harness and lock/index helpers, and :193 covers unchanged active-note approval; operations-forget.test.ts:108\u2013164 shows durable queue/provider and index inspection. The new end-to-end test must use createLocalMemoryProvider rather than makeMemoryProvider so US-001's actual record is consumed by US-002.\n\nOther storage consumers and risks: packages/nax-agent/src/memory/sync.ts:423 calls refreshMemoryIndex after drain/pull; delivery.ts:25, refusal.ts:17 and mirror-lock.ts:33 depend on MemoryStore. The added required store methods may require corresponding typed store doubles to expose them, but production callers already use createMemoryStore. Approval must not consume outbox-only forgets: persisted local proposals and undelivered queued requests are distinct state. koda/MCP approval remains server-side. All production record writers run within the existing mirror locks supplied by operations or sync; a direct unit test of provider.push need not manufacture extra locks. The accepted raceTimeout caveat remains: a timed-out push is not cancelled and can briefly outlive its lock holder. Preserve existing ordering instead of introducing a new locking protocol. I/O errors after note mutation remain replayable via the queued request; no transactional rollback or stale-record cleanup is promised.\n\nUS-003 tool approval surface: ToolScope lives at packages/nax-agent/src/tools/types.ts:76; ProviderTool at src/tools/provider-types.ts:20. Add optional readonly summaryFields to both. src/tools/ask-request.ts:39 builds parts only from declared command/argv/verb/path fields; :49\u201353 masks the FULL line before slicing at the :22 constant MAX_ASK_SUMMARY_CHARS=200. Append separately handled scalar summary fields after all existing parts, flatten CRLF/LF/CR, skip objects/arrays/null/missing fields, and retain masking/unshowable behavior. Do not broaden the existing array handling to these new fields. src/tools/provider-adapt.ts:26 currently always supplies { pathFields: [] }; copy metadata only when defined so existing provider tools retain that exact shape. src/tools/policy.ts:91 deliberately recognizes fieldless scopes from checking/grant fields only, and :319 uses it to trigger unconditional ask rules; summary metadata must not change this classification or grant access. runtime-calltool.ts:379 consumes askSummary, and provider-advertise.ts:140 consumes adaptProviderTool, so this change reaches actual approval requests without chat-specific rendering changes. Existing tests: ask-request.test.ts:12 supplies GHP and :24\u201358 pins mask-before-cut and unshowable behavior; runtime.test.ts:111\u2013156 exercises compileToolPolicy/createCodingToolRuntime/AskResolver. Use the existing public/internal entry points for runtime and policy helpers. This story is security-sensitive because it touches approval/access-control presentation and secret redaction: use three-session-tdd despite otherwise medium scope.\n\nUS-004 host and CLI: packages/nax/src/memory/host.ts:95 defines MemoryHost with optional close at :116 to preserve hand-built doubles. Add optional forgetPendingKeys with the same compatibility intent; createMemoryHost at :432 must always provide it and re-read the union of real outbox.heldKeys(\"forget\") and store.readPendingForgets on each call. readIndex at :355 currently reads only outbox keys in a Promise.all; share the same union semantics with forgetPendingKeys so the rendered host index agrees with CLI rows. Preserve live mirror/repo merge and warning deduplication (header :1\u201334, oncePerHost :192), disabled short-circuit and close behavior. MemoryHost.status remains unchanged. packages/nax/src/cli/memory.ts:59 reads/sorts scope listings, :75 filters type, and :111 implements list; add suffixes and empty states ONLY in the text branch at :124, leaving listingEntry and JSON unchanged. Optional-host-method fallback is an empty key set. packages/nax/src/cli/memory-write.ts:257 approves through orAbsentNote and always prints approved today; read getNote first for message selection but still invoke approve for a null read and preserve error translation and --json note output. The pre-read informs UX only; locked operation state remains authoritative. packages/nax/src/memory/host-writes.ts:97\u2013103 protects repo-only notes, and :139\u2013150 delegates approval; do not bypass this refusal because getNote found a repo note. Update the stale approve doc comment. The existing CLI test fixture at packages/nax/test/unit/cli/memory-forget.test.ts:71\u2013105 currently throws on getNote and defaults approved to active; add HostFixture.before?: MemoryNote and return fixture.before ?? { ...REPLAY_BUDGET, scope, slug, status: \"pending\" } from getNote. Preserve AC-9's approved project/replay-budget line, the user/pref case, and all other expectations rather than rewriting them for an already-active precondition they did not intend. New host tests must use a real mirror/store/outbox directory, not only stub readPendingForgets. Existing suites include memory.test.ts, memory-forget.test.ts and host.test.ts:77\u2013104 for isolated global-directory setup/restoration.\n\nUS-005 repo frontmatter: packages/nax/src/memory/repo-notes.ts:209 measures each candidate with lstat and then reads through textOrNull; :107 opens with no-follow flags and rechecks type/size, :175 hands text to parseMemoryNote, :195 validates filename agreement, project/active status and secrets, then overwrites source to repo. Fill absent keys in the text before parsing and pass the already measured info.mtime as the default timestamp source; do not perform a new stat, mutate files on disk, replace explicit values, or default slug/type/description. The agent codec at packages/nax-agent/src/memory/note.ts:100 requires opening/closing fences and a blank line before body, and :131 validates the shared strict note shape; retain that codec unchanged for mirror/provider inputs. Explicit source still goes through existing parse validation and is overwritten only after acceptance. Derive default id from filename, not a supplied mismatched slug. Keep directory/symlink checks, byte/accepted-note caps, secret checks, warning behavior and no-throw handling intact. Existing repo-notes.test.ts:43\u201381 supplies complete-note and filesystem helpers, :83\u201394 records skip warnings, and :168 onward covers symlink substitution. Introduce minimal-note fixtures in the new repo-notes-defaults.test.ts instead of changing valid full-note fixtures to hide regressions. This is a one-source-file additive behavior change, tdd-simple; it does not change existing access-control or secret-scanning rules.\n\nUS-006 logger/tool metadata: packages/nax/src/cli/memory-cli-deps.ts:100 drops logger data because its writer takes only stage/message; :123 wires that logger into the real host, and :145\u2013163 closes hosts while preserving command output/errors. Render ordered data pairs on warn AND error through deps.logErr while keeping info/debug dropped and stdout reserved for command output/JSON. Scalar strings are raw, number/boolean use String, everything else uses JSON.stringify, and rendered CRLF/LF/CR become spaces. Keep no-data/empty-data lines byte-for-byte unchanged. packages/nax/src/memory/tool-provider.ts:315\u2013344 constructs get/search/save/forget; add save and forget summaryFields declarations only. createMemoryToolProvider at :355 already feeds chat through packages/nax/src/cli/chat.ts:203 and :262 and run tools through src/memory/run-memory.ts:208, so adapter metadata propagates through existing paths. Test both declarations and the real provider save \u2192 adaptProviderTool \u2192 createCodingToolRuntime \u2192 AskResolver seam with denial to avoid writing a note. Never include body in metadata. tool-provider.test.ts:55\u201377 offers a host double and :103\u2013142 a real-host/provider harness. Use nax-agent's public/internal exported APIs, never import its test harness or deep source across packages. This story also uses three-session-tdd because the metadata is displayed at the approval/access-control boundary.\n\nMigration/backward compatibility: pending-forgets.jsonl is an additive, project-mirror-local record; absent files read [] so existing mirrors require no migration. User-scope entries stay in the originating project's record. Existing full repo notes keep their explicit keys; only missing fixed fields gain defaults. Optional summaryFields and forgetPendingKeys preserve existing providers and host doubles. MemoryNote and approveMemoryNote return types stay unchanged; deleted is an existing status. Text approval/list/warning output intentionally changes, but JSON payloads do not gain fields. Already-lost proposal forgets from older runs cannot be reconstructed automatically. Do not clean orphaned entries or add remote-provider approval logic. Dependency order is US-001 \u2192 US-002 \u2192 US-004 and US-003 \u2192 US-006, with US-005 independent; US-001 and US-003 both touch nax-agent API-adjacent code, so regenerate/check the snapshot against the combined export surface when needed. The specific new type must be present in the committed API snapshot; no separate story or quality-gate AC is needed.\n\nRefine-pass self-audit: enumerated all 85 explicit spec acceptance criteria (US-001: 22, US-002: 13, US-003: 13, US-004: 13, US-005: 14, US-006: 10) against the matching story arrays; none were dropped or reassigned. Compound assertions were separated without losing qualifiers such as ordered record entries, old updatedAt, absent metadata's exact scope shape, both index markers, real-store/provider sequences, continued approval sequences, null pre-read still invoking approve, or explicit timestamps retained verbatim. All five failure-table rows are represented, including retryable record-write error identity, durable queued intent and later replay. Every story has a negative path: malformed/invalid records and I/O failure (001), missing notes and delete failure (002), missing/non-scalar inputs and masked secrets (003), not-found approval (004), malformed/missing/invalid repo fields (005), and a denying resolver's observed denied outcome (006). An explicit unchanged-active-note approval regression was added to 002. All nine feature-level exclusions remain verbatim at top level, with originating-project user-scope isolation also echoed near 001/004. All spec-recommended Context Files are already present within the five-file cap; no newly created output appears as an input. Binding story IDs, workdirs and dependencies are unchanged.\n\nCodebase-fit corrections in this pass: packages/nax-agent/src/tools/ask-request.ts:24\u201327 and :39\u201353 return AskSummary, not a scalar string; summary-field ACs now explicitly assert its summary property while preserving the spec's expected strings. MemoryHost.forgetPendingKeys returns Promise<ReadonlySet<string>>, so the CLI marker fixture is explicitly a Set, not an object literal. packages/nax-agent/src/memory/operations.ts:536\u2013543 confirms the old active-without-record early return, which the added regression protects. packages/nax-agent/src/tools/policy.ts:91\u2013101 and src/tools/provider-adapt.ts:26\u201335 confirm that metadata must not change fieldless ask classification or adapter scope shape when absent. The memory denial outcome supplements, rather than replaces, the spec's real-provider summary seam. US-001 is reduced to medium/tdd-simple because the JSONL codec, atomic write path, provider mutations, locks and refresh union all extend established code rather than introducing a new concurrency abstraction. Strict three-session-tdd remains on 003/006 because they expose user data at the approval/redaction boundary. No new implementation helper, package dependency or call site is required by these corrections.",
+  "outOfScope": [
+    "No command rejects a pending forget without retiring the note; saving the slug again clears it.",
+    "A user-scope pending forget is recorded in the project mirror where the forget ran; other projects' mirrors do not mark it.",
+    "koda and MCP providers never write the pending-forget record; their approval flow is koda #380 and is not part of this feature.",
+    "`nax memory status` does not count pending forgets.",
+    "`nax memory list --json` gains no forget-pending field; only the text row is marked.",
+    "A pending-forget entry whose note has gone some other way is not cleaned up.",
+    "The note body is never shown on an approval line.",
+    "No other provider tool besides the memory tools declares `summaryFields` in this feature.",
+    "The user guide `docs/guides/memory.md` (the memory config block, the `nax memory` commands and the minimal repo note) is written by hand on this branch before the run, not by a story."
+  ],
+  "routingProfile": "native-codex-ds"
+}
