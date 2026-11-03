@@ -242,6 +242,17 @@ describe("prepareCompaction", () => {
     expect(plan?.toSummarize).not.toContain(fourExchanges[0]);
   });
 
+  test("includes the opening message when the caller pins nothing (manual compaction)", () => {
+    // US-002: the manual path puts the summary where the pin would be, so the
+    // opening message has to be inside the span — otherwise its requirements and
+    // images reach neither the summarizer nor the compacted transcript.
+    const plan = prepareCompaction(fourExchanges, KEEP, { pinFirstMessage: false });
+    expect(plan).toBeDefined();
+    expect(plan?.toSummarize[0]).toEqual(fourExchanges[0]);
+    // Same cut as the pinned plan: only the START of the span moves.
+    expect(plan?.cutIndex).toBe(prepareCompaction(fourExchanges, KEEP)?.cutIndex);
+  });
+
   test("returns undefined when a summary is present but the new span is empty (nax#1842)", () => {
     // A plan whose toSummarize is empty buys nothing: summarize() would be paid
     // to re-summarize the previous summary alone, and applyCompaction would

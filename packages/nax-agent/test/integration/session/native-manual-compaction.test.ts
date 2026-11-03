@@ -185,6 +185,38 @@ describe("native manual compaction: above the keep budget", () => {
     expect(messages).toHaveLength(4);
   });
 
+  test("AC-2, F1: the opening message is summarized, not silently dropped", async () => {
+    // The manual path writes the summary at the pin instead of the pinned
+    // message, so if the opening message is not part of the span it reaches
+    // neither the summarizer nor the saved array: the task text, its
+    // constraints and its images would simply vanish.
+    const provider = installScriptedProvider({ contextWindow: WINDOW });
+    provider.pushComplete("summary of the opening too");
+    provider.push(textRound("carrying on"));
+    const opening = text(5000, "o");
+    const image = { mimeType: "image/png", data: "iVBORw0KGgo=", width: 640, height: 480 };
+    const doc = oversizedDoc();
+    const store = await seeded("m-opening", {
+      ...doc,
+      messages: [{ role: "user", content: opening, images: [image] }, ...doc.messages.slice(1)],
+    });
+    const session = await openSession("m-opening", store);
+
+    await compactNow(session)();
+    await collect(session.send("next"));
+
+    // It is in the summarizer's input — as text plus an image note, never the
+    // raw bytes, the same view the automatic path is given.
+    const summarized = provider.completeRequests[0]?.messages[0];
+    expect(summarized).toEqual({ role: "user", content: `${opening}\n[image: image/png 640x480]` });
+    expect(JSON.stringify(provider.completeRequests[0]?.messages)).not.toContain("iVBORw0KGgo=");
+    // ... and it is gone from the transcript only because the summary replaced
+    // it, not because it fell between the two.
+    const messages = requestMessages(provider, 0);
+    expect(messages[0]).toMatchObject({ content: expect.stringContaining("summary of the opening too") });
+    expect(messages.map((message) => message.content)).not.toContain(opening);
+  });
+
   test("AC-3: compact() returns the summarizer's usage unchanged", async () => {
     const provider = installScriptedProvider({ contextWindow: WINDOW });
     provider.pushComplete("summary");

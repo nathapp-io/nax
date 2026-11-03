@@ -15,7 +15,9 @@
  *     so a run's task prompt survives every compaction (design §Pinning, and its
  *     cache-prefix rationale); a chat exploration has no such prompt worth
  *     keeping, and the next request must BEGIN with the summary (AC-2), so the
- *     summary takes that position instead — see `applyManualCompaction`.
+ *     summary takes that position instead — see `applyManualCompaction`. The
+ *     opening message is then part of the span (`pinFirstMessage: false`), so
+ *     what it said is summarized rather than discarded with the pin.
  *
  * A summarizer failure propagates and NOTHING is written: the loaded array is a
  * fresh copy, so a rejection leaves the stored history exactly as it was.
@@ -90,7 +92,13 @@ export async function compactHistory(request: ManualCompactionRequest): Promise<
   const messages = [...historyFromTranscript(await transcript.store.load(handle.id), identity, handle.id)];
   const tokensBefore = estimateContextTokens(messages, undefined, undefined);
   const resolution = await resolveSessionModel(client, state, handle);
-  const plan = prepareCompaction(messages, keepBudget(resolution.contextWindow, resolution.compaction));
+  // `pinFirstMessage: false`: this path writes the summary where the pin would
+  // be, so the opening message has to be inside the span. Leaving it out would
+  // drop the opening requirements, constraints and images without summarizing
+  // them — they would reach neither the model nor the compacted transcript.
+  const plan = prepareCompaction(messages, keepBudget(resolution.contextWindow, resolution.compaction), {
+    pinFirstMessage: false,
+  });
   if (plan === undefined) {
     return { compacted: false, tokensBefore, tokensAfter: tokensBefore, usage: ZERO_USAGE, costUsd: 0 };
   }

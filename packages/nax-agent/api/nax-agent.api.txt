@@ -628,6 +628,7 @@ type CodingToolSupport
 type CommandInterceptor
 type CommandLauncher
 type CommandLauncherOptions
+type CompactionOptions
 type CompactionPlan
 type CompleteCallOptions
 type CompleteStepArgs

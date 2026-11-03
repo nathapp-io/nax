@@ -227,13 +227,39 @@ function readPreviousSummary(messages: readonly TranscriptMessage[]): PreviousSu
   return undefined;
 }
 
+export interface CompactionOptions {
+  /**
+   * Keep `messages[0]` out of the span and in place (the default), which is what
+   * an automatic compaction does: the run's task prompt survives every compaction
+   * byte-identical (design §Pinning). A MANUAL compaction passes `false` — its
+   * summary takes that position (US-002 AC-2) — and must then summarize the
+   * opening message, or its requirements and images reach neither the summarizer
+   * nor the compacted transcript.
+   */
+  readonly pinFirstMessage?: boolean;
+}
+
+/**
+ * Where the span to summarize begins.
+ *
+ * An existing summary is always excluded — it is merged, not re-summarized. With
+ * none, a pinned transcript starts after `messages[0]`; an unpinned one (manual
+ * compaction) starts AT it, because that message is being replaced rather than
+ * kept, so leaving it out would discard it unsummarized.
+ */
+function spanStartFor(previous: PreviousSummary | undefined, options: CompactionOptions): number {
+  if (previous !== undefined) return previous.index + 1;
+  return options.pinFirstMessage === false ? PIN_INDEX : PIN_INDEX + 1;
+}
+
 export function prepareCompaction(
   messages: readonly TranscriptMessage[],
   keepTokens: number,
+  options: CompactionOptions = {},
 ): CompactionPlan | undefined {
   const previous = readPreviousSummary(messages);
   // Everything from here is fair game; the pin, and any existing summary, are not.
-  const spanStart = previous === undefined ? PIN_INDEX + 1 : previous.index + 1;
+  const spanStart = spanStartFor(previous, options);
   const cutIndex = findCutPoint(messages, spanStart, keepTokens);
   // An empty span is "nothing to do" whether or not a summary already exists
   // (nax#1842). A merge plan is still returnable — that needs `previousSummary`
