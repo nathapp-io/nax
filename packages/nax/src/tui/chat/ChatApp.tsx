@@ -75,6 +75,7 @@ import { TranscriptViewport } from "./TranscriptViewport";
 import { type ChatTheme, resolveChatTheme } from "./theme";
 import { toggleTranscriptLine } from "./transcript-click";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
+import { turnStatsEntry } from "./turn-stats";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
 import { useImageAttach } from "./use-image-attach";
 import { useJobs } from "./use-jobs";
@@ -340,6 +341,16 @@ export function ChatApp({
    */
   const turnEnd = useRef<TurnEndStatus | undefined>(undefined);
   /**
+   * The live events of the turn running now (US-007), which is what its decode speed is
+   * measured from. Every send starts a new list, and a nested call's event never joins it:
+   * a subagent's rounds are not this turn's, so they neither measure its speed nor end it.
+   *
+   * A mutable list, not a replaced one: it is a ref rather than state, so nothing renders from
+   * it, and a long turn appends thousands of deltas — copying the list on every one of them
+   * would cost more than the whole turn.
+   */
+  const turnEvents = useRef<SessionEvent[]>([]);
+  /**
    * The line a ctrl+s interrupted the running turn for (US-004). A brain that cannot steer
    * takes the key as interrupt-and-send: the line waits here until that turn settles, then
    * goes first — ahead of anything queued, which stays queued behind it.
@@ -553,14 +564,24 @@ export function ChatApp({
   }, [status.running]);
 
   /** Every session event lands in the transcript and in the turn status, and nothing else. */
-  const handleEvent = useCallback((event: SessionEvent) => {
-    setEntries((rows) => reduceTranscript(rows, event));
-    setStatus((current) => reduceTurnStatus(current, event));
-    if (event.type === "turn_start") setNowMs(Date.now());
-    // The queue's own reading of the turn: what the top-level `turn_end` said, so a send that
-    // settles without one — a rejection, a runner that threw — never looks completed.
-    if (event.type === "turn_end" && !isSubagentEvent(event)) turnEnd.current = event.status;
-  }, []);
+  const handleEvent = useCallback(
+    (event: SessionEvent) => {
+      setEntries((rows) => reduceTranscript(rows, event));
+      setStatus((current) => reduceTurnStatus(current, event));
+      if (event.type === "turn_start") setNowMs(Date.now());
+      // A nested call's events are its own: they measure nothing for this turn's statistics.
+      if (!isSubagentEvent(event)) turnEvents.current.push(event);
+      // The queue's own reading of the turn: what the top-level `turn_end` said, so a send that
+      // settles without one — a rejection, a runner that threw — never looks completed.
+      if (event.type === "turn_end" && !isSubagentEvent(event)) {
+        turnEnd.current = event.status;
+        // What the turn decoded, as one muted row under the reply it measured (US-007).
+        const stats = turnStatsEntry(turnEvents.current, event);
+        if (stats !== undefined) append(stats);
+      }
+    },
+    [append],
+  );
 
   /** A slash command's shown text, listed or noticed, and the session `clear` resets. */
   async function runCommand(command: SlashCommand): Promise<void> {
@@ -1020,6 +1041,8 @@ export function ChatApp({
     sending.current = true;
     setBusy(true);
     turnEnd.current = undefined;
+    // The statistics are this send's own: a turn is measured from its own events alone.
+    turnEvents.current = [];
     let started = false;
     let sent = false;
     try {

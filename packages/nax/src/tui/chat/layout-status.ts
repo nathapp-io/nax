@@ -1,7 +1,7 @@
 /**
  * Status entries — the lines the transcript draws for the screen's own statements rather
- * than the model's words: the welcome banner at mount, a notice, a warning, an error and an
- * interruption.
+ * than the model's words: the welcome banner at mount, a notice, a warning, an error, an
+ * interruption, and the decode speed a finished turn measured (US-007).
  *
  * Each is a glyph and its text, coloured by what it says, and each is measured in the
  * layout's columns by the shared engine in `layout-lines.ts`: a long notice wraps at a word
@@ -20,6 +20,7 @@ import type { TranscriptEntry } from "./transcript-model";
 
 type WelcomeEntry = Extract<TranscriptEntry, { kind: "welcome" }>;
 type StatusEntry = Extract<TranscriptEntry, { kind: "notice" | "warning" | "error" }>;
+type TurnStatsEntry = Extract<TranscriptEntry, { kind: "turn-stats" }>;
 
 /** The banner's closing line: where a new session goes first. */
 const WELCOME_TIPS = "/feature <name> loads a spec · /resume picks a session · /help lists commands";
@@ -80,4 +81,13 @@ export function statusLines(entry: StatusEntry, context: LayoutContext): readonl
 export function interruptedLines(context: LayoutContext): readonly StyledLine[] {
   const prefix = styled(resultPrefix(context.theme), { color: "muted" });
   return prefixedLine([styled(INTERRUPTED, { color: "muted" })], [prefix], context);
+}
+
+/**
+ * A finished turn's measurement (US-007): the one muted row under the reply it measured. It
+ * carries no glyph — it is a footnote to the reply, not a statement about the screen — and
+ * its text is one row, so a narrow terminal wraps it rather than losing any of it.
+ */
+export function turnStatsLines(entry: TurnStatsEntry, context: LayoutContext): readonly StyledLine[] {
+  return rowsOf(oneLine(sanitizeText(entry.text)), "muted", context);
 }
