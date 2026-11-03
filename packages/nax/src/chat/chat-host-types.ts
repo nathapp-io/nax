@@ -12,6 +12,7 @@
  */
 import type {
   CommandRunResult,
+  CompactResult,
   ImageAttachment,
   SandboxState,
   SessionEvent,
@@ -92,6 +93,13 @@ export interface ChatHost {
    * does. `no_turn` when there is no session to steer.
    */
   steer?(text: string): SteerResult;
+  /**
+   * Compact the conversation history now (US-005), recording what the summarizer call spent.
+   * Optional so a hand-built host typechecks: one without it makes the screen's `/compact`
+   * answer that compaction is not available here. Rejects when no session is open, when the
+   * session's brain cannot compact, and when the summarizer itself fails.
+   */
+  compact?(): Promise<CompactResult>;
   runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>;
   cancel(): void;
   listSessions(): Promise<readonly ChatSessionRow[]>;

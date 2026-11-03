@@ -62,6 +62,8 @@ const PREVIOUS_HELP_ROWS: readonly string[] = [
   "/image  Attach an image to the next message",
   "/mcp  List MCP servers",
   "/agents  List agents",
+  // US-005: the compaction command sits between `/agents` and `/jobs`.
+  "/compact  compact the conversation history",
   "/jobs  Show nax jobs and background tasks",
   "/quit  Quit nax chat",
 ];

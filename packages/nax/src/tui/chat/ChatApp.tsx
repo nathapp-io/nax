@@ -10,7 +10,7 @@
  * Same-session model and mode notices share one drawn-state comparison after control refresh.
  */
 
-import type { ImageAttachment, SessionEvent, SteerResult, TurnEndStatus } from "@nathapp/nax-agent";
+import type { CompactResult, ImageAttachment, SessionEvent, SteerResult, TurnEndStatus } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, useInput, useStdout } from "ink";
 import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -24,6 +24,7 @@ import { bottomBlocked, bottomRowsFor, menuRowsFor, viewportActive } from "./bot
 import { ChatInput, type ChatInputHandle, EMPTY_DRAFT, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
 import {
   footerModel,
+  formatTokens,
   headerLines,
   IDLE_STATUS,
   isSubagentEvent,
@@ -119,6 +120,14 @@ const DEFAULT_ROWS = 24;
 const SANDBOX_WARNING = "sandbox unavailable: commands run outside the sandbox";
 const TURN_BUSY_NOTICE = "wait for the turn to finish (Ctrl-C to interrupt)";
 const QUIT = "quit";
+/** What a host that cannot compact is told, and what a compaction with nothing to drop reports. */
+const COMPACTION_UNAVAILABLE = "compaction is not available in this session";
+const NOTHING_TO_COMPACT = "nothing to compact";
+/** What `/compact` says while it runs, before the theme's ellipsis. */
+const COMPACTING = "compacting";
+const COMPACTED = "compacted";
+/** The separator a compaction's before/after counts are joined with. */
+const COMPACT_ARROW = "→";
 /** What a busy return carrying a picture is told: a picture travels with a plain send only. */
 const IMAGES_NOT_QUEUED = "images cannot be queued; send it after the turn ends";
 /** What a slash line with a picture attached is told: an image travels with a plain message only. */
@@ -200,6 +209,30 @@ function terminalSize(stdout: { columns?: number; rows?: number }): TerminalSize
  */
 function stopTurn(status: TurnStatus): TurnStatus {
   return status.running ? { ...status, running: false } : status;
+}
+
+/**
+ * The status a running compaction shows (US-005): the working line's own `compacting` phase,
+ * with no turn behind it. The context total survives, so the footer's reading does not blink
+ * out while the compaction runs; the result's `tokensAfter` replaces it when it settles.
+ */
+function compactingStatus(current: TurnStatus): TurnStatus {
+  return {
+    running: true,
+    startedAt: new Date().toISOString(),
+    phase: "compacting",
+    inputTokens: 0,
+    outputTokens: 0,
+    streamedChars: 0,
+    ...(current.contextTokens === undefined ? {} : { contextTokens: current.contextTokens }),
+  };
+}
+
+/** What a finished compaction reports: how much history it replaced, and with how much. */
+function compactedNotice(result: CompactResult): string {
+  const before = formatTokens(result.tokensBefore);
+  const after = formatTokens(result.tokensAfter);
+  return `${COMPACTED}: ${before} ${COMPACT_ARROW} ${after} tokens`;
 }
 
 /** Notices wait until neither a turn, a bottom-region surface nor host control owns the screen. */
@@ -540,6 +573,10 @@ export function ChatApp({
     sink.flush();
     if (!ready) return;
     if (outcome === undefined) return;
+    if (outcome.kind === "compact") {
+      await compactTurn();
+      return;
+    }
     if (outcome.kind === "picker") {
       picker.open(outcome.picker);
       return;
@@ -847,6 +884,51 @@ export function ChatApp({
       else replaceQueue(pushQueuedFront(queueRef.current, text));
     };
     void result.applied.then(settled, () => settled(false));
+  }
+
+  /**
+   * `/compact` (US-005): shed the conversation's history now, holding the turn slot while it
+   * runs so a line typed meanwhile queues exactly as it does during a turn.
+   *
+   * The status carries the working line's `compacting` phase, so the screen says what it is
+   * doing and the footer offers the same escape a turn does. The result's `tokensAfter`
+   * becomes the footer's context reading: no session event carries it, and the compaction is
+   * the only thing that can measure it. `finally` releases the slot and drains the queue
+   * however the compaction settled — a rejection must not strand the input.
+   *
+   * A host with no `compact` at all, and one asked while a turn runs, both answer with a
+   * notice and leave the turn slot alone.
+   */
+  async function compactTurn(): Promise<void> {
+    const compact = host.compact;
+    if (compact === undefined) {
+      append({ kind: "notice", text: COMPACTION_UNAVAILABLE });
+      return;
+    }
+    if (sending.current) {
+      append({ kind: "notice", text: TURN_BUSY_NOTICE });
+      return;
+    }
+    sending.current = true;
+    setBusy(true);
+    setStatus(compactingStatus);
+    append({ kind: "notice", text: `${COMPACTING}${theme.glyphs.ellipsis}` });
+    let settled = false;
+    try {
+      const result = await compact.call(host);
+      setStatus((current) => ({ ...current, contextTokens: result.tokensAfter }));
+      append({ kind: "notice", text: result.compacted ? compactedNotice(result) : NOTHING_TO_COMPACT });
+      settled = true;
+    } catch (error) {
+      append({ kind: "error", text: errorMessage(error) });
+    } finally {
+      sending.current = false;
+      setBusy(false);
+      setStatus(stopTurn);
+      // A settled compaction releases the queue as a completed turn does; a rejected one
+      // hands the queued lines back to the prompt, where the user can send them again.
+      drainQueue(settled ? { sent: true, status: "completed" } : { sent: false, status: undefined });
+    }
   }
 
   /**

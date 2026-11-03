@@ -1,5 +1,6 @@
 import type {
   CommandRunResult,
+  CompactResult,
   LoopHandlerSet,
   SessionEvent,
   SessionMeta,
@@ -32,7 +33,7 @@ import { tierModels } from "./chat-models";
 import { createCloseConfirm } from "./close-confirm";
 import { type ContextWindowCache, createContextWindowCache } from "./context-window-cache";
 import { createHostMemory, type HostMemory } from "./host-memory";
-import { createHostSteering, type HostSteering } from "./host-steer-compact";
+import { createHostCompacting, createHostSteering, type HostCompacting, type HostSteering } from "./host-steer-compact";
 import { closeChatHost, createChatLoopHandlers } from "./host-wiring";
 import { type ChatJobs, type ChatRunAsks, createHostJobs } from "./jobs";
 import {
@@ -81,6 +82,7 @@ class NativeChatHost implements ChatHost {
   private readonly open: typeof openChatSession;
   private readonly loopHandlers: LoopHandlerSet;
   private readonly steering: HostSteering;
+  private readonly compacting: HostCompacting;
   private readonly projectKey: string;
   private readonly outputDir: string;
   private readonly runs?: SubagentRuns;
@@ -109,6 +111,18 @@ class NativeChatHost implements ChatHost {
     this.open = reportAcpOpens(deps.open ?? openChatSession, deps.acp);
     // Read through a getter: a switch, a resume and a clear all replace the handle.
     this.steering = createHostSteering({ session: () => this.handle?.session });
+    this.compacting = createHostCompacting({
+      session: () => this.handle?.session,
+      handle: () => this.handle,
+      storage: deps.storage,
+      ledger: () => this.ledger,
+      now: deps.now,
+      // A switch during the compaction leaves the new handle's own metadata alone.
+      adopt: (meta) => {
+        const handle = this.handle;
+        if (handle !== undefined && handle.meta.sessionId === meta.sessionId) this.handle = { ...handle, meta };
+      },
+    });
     this.repoRoot = deps.repoRoot;
     this.catalog = deps.resources?.catalog;
     this.naxPlugins = deps.resources?.naxPlugins;
@@ -483,6 +497,15 @@ class NativeChatHost implements ChatHost {
    */
   steer(text: string): SteerResult {
     return this.steering.steer(text);
+  }
+
+  /**
+   * US-005: compact the conversation now, and record what it spent. The session's own result
+   * travels back unchanged — `tokensBefore`/`tokensAfter` are what the screen shows and what
+   * the footer's context reading becomes.
+   */
+  compact(): Promise<CompactResult> {
+    return this.compacting.compact();
   }
 
   cancel(): void {

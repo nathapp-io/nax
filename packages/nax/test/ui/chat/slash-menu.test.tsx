@@ -367,7 +367,8 @@ describe("SlashMenu completion and dismissal", () => {
   test("AC-7 return on the selected match runs it and sends nothing", async () => {
     const ui = await screen();
     ui.type("/co");
-    expect(ui.rows()).toContain(`❯ /cost  Show session cost`);
+    // `/co` matches `/compact` too, so the names are padded to the wider one.
+    expect(ui.rows()).toContain(`❯ /cost     Show session cost`);
     await ui.submitTyped();
     expect(ui.send).not.toHaveBeenCalled();
     expect(ui.rows()).toContain("Cost");
@@ -391,13 +392,14 @@ describe("SlashMenu completion and dismissal", () => {
 });
 
 describe("SlashMenu window", () => {
-  test("AC-10 seventeen matches draw eight rows", async () => {
+  test("AC-10 eighteen matches draw eight rows", async () => {
     const ui = await screen();
     ui.type("/");
     const rows = ui.rows();
     const menu = rows.slice(rows.indexOf("> /") + 2, -1);
-    // `/image` and `/memory` join the built-ins after `/plugins`, past this window: the seven
-    // rows shown are unchanged, and only the count the overflow row discloses moved.
+    // `/image` and `/memory` join the built-ins after `/plugins`, and `/compact` after
+    // `/agents`: all three fall past this window, so the seven rows shown are unchanged and
+    // only the count the overflow row discloses moved.
     expect(menu).toEqual([
       `❯ ${HELP_ROW}`,
       "  /mode      Switch permission mode",
@@ -406,7 +408,7 @@ describe("SlashMenu window", () => {
       "  /sessions  List saved sessions",
       "  /resume    Resume a saved session",
       "  /clear     Clear the conversation",
-      "  … 10 more",
+      "  … 11 more",
     ]);
   });
 
@@ -560,7 +562,7 @@ describe("SlashMenu keys delivered in one batch", () => {
   test("F10 escape then return in one batch submit the prompt the escape kept", async () => {
     const ui = await screen();
     ui.type("/co");
-    expect(ui.rows()).toContain("❯ /cost  Show session cost");
+    expect(ui.rows()).toContain("❯ /cost     Show session cost");
     ui.pressAll(ESCAPE, RETURN);
     await ui.flush();
     // The escape put the menu away, so the return is the prompt's: the line goes to the
