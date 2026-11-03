@@ -3,7 +3,7 @@
   "feature": "chat-steer-and-polish",
   "branchName": "feat/chat-steer-and-polish",
   "createdAt": "2026-11-03T00:00:00.000Z",
-  "updatedAt": "2026-11-03T13:26:21.030Z",
+  "updatedAt": "2026-11-03T14:13:20.823Z",
   "userStories": [
     {
       "id": "US-001",
@@ -205,14 +205,17 @@
         "queue"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Async send settlement, queued model switches, draft restoration and image/mention flows require multi-module state coordination; session-switch isolation invokes the requested sessions security override."
+        "reasoning": "Async send settlement, queued model switches, draft restoration and image/mention flows require multi-module state coordination; session-switch isolation invokes the requested sessions security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -247,7 +250,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b19fd34c0d8eaa5a378994be2cf816c8ed7edc61"
     },
     {
       "id": "US-004",
