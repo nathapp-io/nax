@@ -3,7 +3,7 @@
   "feature": "memory-run-stages",
   "branchName": "feat/memory-run-stages",
   "createdAt": "2026-11-02T00:00:00Z",
-  "updatedAt": "2026-11-03T02:01:35.703Z",
+  "updatedAt": "2026-11-03T02:16:27.778Z",
   "userStories": [
     {
       "id": "US-001",
@@ -23,14 +23,17 @@
         "config"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Small additive Zod/runtime-type/description change across three source files, with exact-default fixture compatibility and no permission-policy changes."
+        "reasoning": "Small additive Zod/runtime-type/description change across three source files, with exact-default fixture compatibility and no permission-policy changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas-memory.ts",
@@ -57,7 +60,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "cd94a287acc7c0d27173b040bb2bce44325ca295"
     },
     {
       "id": "US-002",
@@ -135,7 +142,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -204,7 +214,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -258,7 +271,10 @@
         "When the counting provider is created, runMemory.host remains strictly equal to the original host."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -320,7 +336,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -421,7 +440,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -492,7 +514,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Feature context and discovery: this is an additive enhancement to the existing memory-chat/memory-store work, not a new memory implementation. All seven implementation stories are confined to packages/nax; packages/nax-agent is read-only integration context. The execution repository is /Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax. The codebase-memory MCP server/tools were unavailable in this environment, so discovery used direct Read, Grep and Glob. Findings below are verified against the present source; no implementation code or tests were run while drafting. Read docs/architecture/ARCHITECTURE.md before implementation: its execution-mode section identifies workflow as the default and pipeline as frozen, and its quick reference specifies a 600-line hard source cap, type-only imports, barrel APIs, dependency seams and permission resolution. Follow packages/nax/AGENTS.md and the applicable canonical .nax/rules files; use Bun APIs and bun:test in nax, shared @test/helpers, and restore mutable _deps after every test. Never change generated agent instruction files or package versions for this feature.\n\nUS-001/config: packages/nax/src/config/schemas-memory.ts:24 defines the strict MemoryConfigSchema with enabled/provider/writeMode/indexBytes/askOnSave; memoryConfigOf at :44 returns an existing typed block unchanged or parses schema defaults when absent. packages/nax/src/config/runtime-types-memory.ts:11 is the hand-written MemoryConfig interface; NaxConfig.memory is optional, so new production reads must use memoryConfigOf. Add inRun with default true and a boolean runtime type; do not implement memory.stages or accept koda. The schema's opening comment currently anticipates a future stages key and should not be treated as permission to add that key. packages/nax/src/cli/config-descriptions.ts:454-461 holds the memory descriptions. packages/nax/test/unit/config/schemas-memory.test.ts:14 holds DEFAULT_MEMORY, :76-86 a configured closed literal and exact round-trip assertion, and :94 the descriptions table. Both literals must gain inRun, true for defaults and false for the configured block, preserving the existing exact equality invariants rather than loosening tests. Existing serialized configuration requires no migration: parsing supplies true; hand-authored complete MemoryConfig fixtures must include the new required member. Chat continues ignoring inRun.\n\nUS-002/prompts: packages/nax/src/prompts/builders/memory-builder.ts:13 defines the four-tool usage instructions, :34 buildMemorySection and :39 memorySectionOf; reuse the existing tool section unchanged and add a distinct fixed read-only reference section. packages/nax/src/prompts/index.ts:77 currently exports only buildMemorySection/buildMemoryToolInstructions from that module; add both reference helpers and memorySectionOf to that barrel. packages/nax/src/prompts/builders/workflow-implementer-builder.ts:18 defines WorkflowBriefInput and :67 buildWorkflowBrief; the rules index and feature context are adjacent at :95-96, the exact insertion point for memory. The later project-context override and constitution order must remain intact. packages/nax/src/prompts/builders/workflow-branch-builder.ts:14 defines BranchReviewPromptInput, :103 builds the whole-branch review, and :190 builds branch fix. Only the whole-branch reviewer gets the read-only reference section; do not change the re-review builder in the same file. packages/nax/src/prompts/builders/workflow-ci-repair-builder.ts:28 builds the CI repair prompt; append memory after REPAIR_VERIFICATION_RULE and before WORKFLOW_REPLY_CONTRACT, not inside its How to work list. These pure builders must produce byte-identical prior output for absent or empty memoryIndex, avoiding extra whitespace, heading changes or moved contracts. Existing relevant tests are test/unit/prompts/builders/memory-builder.test.ts:7, workflow-builder.test.ts, workflow-builder-chain.test.ts, workflow-implementer-builder.test.ts and test/unit/workflow/brief-rules-index.test.ts:38. Extend existing builder tests and section-order assertions; US-002 creates no new production module and must not acquire a memory host itself.\n\nUS-003/US-004/memory composition: packages/nax/src/memory/host.ts:89 defines MemoryHost, :109 CreateMemoryHostInput, and :355 createMemoryHost; the latter returns null before mirror resolution if enabled is false. Its returned object is a concrete composition of own members, so a counting view can preserve every member while replacing only save. The host reads notes and renders the index anew, and save/forget/source stamping already live behind this API; do not reimplement store validation, sync policy or note serialization. packages/nax/src/memory/tool-provider.ts:316 builds get/search/save/forget in that order, and :354 returns the static nax-memory provider with stages [\"*\"]. Build a new per-run provider object overriding stages to [\"run\"] without mutating the shared factory or chat provider behavior. Its answer wrapper at :245 catches tool failures and returns the existing feature-2 error response. The counting wrapper increments only after a fulfilled host.save result, counts pending as a subset of saved, and leaves rejected saves and forgets uncounted. packages/nax/src/chat/host-memory.ts:65 shows guarded sync using errorMessage from @nathapp/nax-agent/internal, and :96 guarded rendering; reuse the error-reporting convention, not chat's prepare-per-open sync lifecycle. Run memory must sync only once at creation and once on its first close, while index always rerenders without syncing. Run warning/summary data use storyId _run and the logger supplied by setup. Expected sync statuses are results, not exceptions, and must not generate new run warnings. packages/nax/src/memory/index.ts:10-16 is the required public barrel. Existing memory unit suites include host.test.ts, host-index.test.ts, host-writes.test.ts, tool-provider.test.ts and tool-provider-writes.test.ts. Create test/unit/memory/run-memory.test.ts in US-003 and extend it in US-004; include a real temporary-directory host/provider seam, plus fake host failures and counter tests. US-003 deliberately exposes the final interface with zero counters and a no-op close; US-004 completes behavior before runtime integration. Guard close before its await so overlapping calls cannot double-sync or double-log.\n\nProvider architecture and permissions: packages/nax-agent/src/tools/provider-types.ts:35 defines ToolProvider including readonly stages and :71 providerAttachesTo already implements stage matching. packages/nax-agent/src/tools/provider-adapt.ts:26 adapts provider tools directly to host callbacks with no file-sandbox path scope. packages/nax/src/operations/call-run-options.ts:41-58 forwards runtime providers before call-local providers, and :93 passes pipelineStage; no dispatch changes are needed. packages/nax/src/operations/workflow-implement.ts:51 declares stage run, and workflow-repair.ts:27 spreads workflowBranchFixOp, retaining its run stage. Existing provider contribution filtering, grants and capability support must remain authoritative; never add a session-role allowlist, permission bypass, new read-only tools or in-run ask flow. Review operations get no run-memory tools; the story reviewer still reads the unchanged implementer brief protocol naming get/search. Routing audit: keep strict three-session-tdd for US-003 and US-005, which establish stage-restricted tool exposure and integrate it with runtime/session-resource teardown. US-004 only wraps existing host writes for counting and idempotent close, US-006 only composes an optional resource through existing setup seams, and US-007 only forwards prompt text: these are medium, tdd-simple changes without new access-control or session-lifecycle policy. US-001/US-002 are medium, tdd-simple config/pure rendering changes. Do not infer security-critical implementation merely because a prompt is later read by an agent. packages/nax/src/execution/workflow-parallel.ts:6 clamps a requested workflow parallel count to 0; workflow does not need an outbox-only stage architecture. Host save writes the local mirror immediately.\n\nUS-005/runtime: packages/nax/src/runtime/index.ts is exactly 597 lines in this checkout; NaxRuntime starts at :155, toolProviders at :284, CreateRuntimeOptions at :294, createRuntime at :343 and close at :542. Move CreateRuntimeOptions with all doc comments to new runtime/runtime-options.ts before adding memory; keep its barrel re-export so existing callers and tests do not change imports. Existing source search finds the declaration and factory signature only, while test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts:24 already imports the type from @/runtime. Both modules must import RunMemory as a type only using relative ../memory, preventing runtime-to-memory runtime graph cycles. packages/nax/src/runtime/run-tool-providers.ts:6 implements MCP-then-optional-skills ordering; append memory after the result, preserving the original provider list when no memory was supplied. Return a conditional memory property rather than memory: undefined, since callers and tests assert key absence. close already has a closed flag before teardown, but mcpPool.close at :563 can reject before flush/drain; enclose the rest of teardown in try/finally and await memory.close in finally so teardown failure cannot skip sync. Preserve existing teardown errors rather than swallowing them: memory.close is guaranteed nonthrowing. Also preserve abort, listener cleanup, manager reset/close, MCP rollup, residual spend and all audit drains. packages/nax/test/unit/runtime/runtime-skills-provider.test.ts:21-49 pins exact provider ids/order and :79 tests real dispatch forwarding; extend those invariants in new runtime-memory.test.ts, including deferred close and rejecting MCP teardown. Verification includes typecheck, file-size <=600 and import-cycle gates, not acceptance criteria about gate success.\n\nUS-006/setup: packages/nax/src/execution/lifecycle/run-setup.ts is 557 lines. _runSetupDeps at :70 has createRuntime and catalog/lock seams; runtimeConfigFor at :95 may await catalog MCP resolution and reject. setup currently evaluates it inline in createRuntime at :263. Resolve it first, then conditionally createRunMemory from the ORIGINAL config, absolute workdir and getLogger(), then supply the resolved runtimeConfig plus conditional memory option to the existing factory. This avoids creating memory before a failing config resolution. Dry-run and pipeline never call the memory seam; memory.inRun/disabled handling stays inside createRunMemory rather than duplicating configuration rules in setup. Import getLogger alongside existing getSafeLogger and isWorkflowMode from the config barrel. CLI logger setup precedes this lifecycle; use the run's logger, not an ad hoc instance. No new lifecycle owner is needed: runner.ts:486 awaits runtime.close on exit, and run-setup.ts:548 calls it in failure cleanup (also :353 for signal cleanup). A synchronous createRuntime throw remains the acknowledged existing resource gap; the mirror needs no extra resource finalizer. New run-setup-memory.test.ts observes the arguments/order of stubbed _runSetupDeps.createRunMemory/createRuntime rather than private locals. test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts:42 uses withDepsRestore and :62 drives real setup with a mock runtime; adapt it and the other ten authorized lifecycle fixtures only to stub createRunMemory to undefined and restore it. Those authorized fixtures are gitignore-reconcile.test.ts, run-setup-approvals-seal.test.ts, run-setup-chat-asks.test.ts, run-setup-locks.test.ts, run-setup-mcp-in-run.test.ts, run-setup-no-migration.test.ts, run-setup-warnings-native-defaults.test.ts, run-setup-warnings.test.ts, run-setup.test.ts and scratchpad-wipe.test.ts, plus command-interceptor already named. Runner integration/e2e keep real memory. test/preload.ts:43 points NAX_GLOBAL_CONFIG_DIR at an isolated directory, so real memory never uses the operator's home; expect one additional zero-save info line at close, not changed status/footer formats.\n\nUS-007/callers: packages/nax/src/workflow/brief.ts:103 writeBrief already concurrently resolves spec, red-base state, decisions, rules and context override before buildWorkflowBrief at :115; add one optional runtime.memory.index read per brief and forward its defined result without changing other context rules. packages/nax/src/workflow/branch-fix.ts:125 promptFor selects override, CI repair or branch fix; :142 runBranchFix currently builds synchronously inside the session callback. Read memory asynchronously once only for generated prompts, preserving an explicit input.prompt including the empty string and avoiding an index read for either override. Keep sessionScope semantics, operation selection and leftover commits intact. packages/nax/src/workflow/branch-review.ts:102 runBranchReview builds its prompt at :110 and dispatches through underReviewLimit; read memory once for this builder only, not runBranchReReview at :148. Current test/unit/workflow/branch-fix.test.ts:22 uses makeFeatureContext/makeScriptedCallOp with _workflowDeps restoration and :105 already tests both nonempty and empty explicit overrides; brief-rules-index.test.ts:85 uses makeStepContext/makeMockCallContext and a real temporary brief file. Reuse these helpers in new workflow-memory-prompts.test.ts, asserting actual written brief content and prompts observed by callOp, not merely that a builder stub was called. US-007 depends on US-002 and US-005, not US-006: a fake runtime.memory is sufficient to verify this seam.\n\nCompatibility, risk and delivery: no storage migration, nax-agent API change, new dependency, release/version change or cross-package edit is needed. Config defaults enable workflow-run memory; inRun false opts runs out without altering chat. Main regressions to protect are exact no-memory prompt text, strict unknown config rejection, type-complete memory fixtures, provider ordering and review-stage exclusion, error-to-warning mapping, save counts after rejection, duplicate/concurrent close, sync in runtime finally, setup config-before-memory ordering, original config versus catalog-enriched runtime config, override prompts (including empty string), and unintended disk IO in mocked setup unit fixtures. Every explicit acceptance criterion stays with its binding story. Failure handling maps to US-003 (switch/master disable, host/start-sync/render failures), US-004 (rejected tools/end-sync/summary), US-005 (runtime close despite memory sync failure) and US-006 (dry-run/pipeline). Extra hardening cases not explicitly required are suggestedCriteria, not new mandatory acceptance criteria. Deliver dependency order US-001 -> US-003 -> US-004 -> US-005 -> US-006, with independent US-002 and then US-007 after US-002/US-005. Use targeted package-relative bun test paths during TDD, never bare bun test or bun run nax; the pipeline handles typecheck/lint/full tests, and coverage is not to be run inside NAX_SANDBOXED=1. No tests or quality gates have been executed for this planning-only artifact.\n\nRefine-pass self-audit: re-read the on-disk spec and current config, host/tool-provider, runtime teardown, setup and three workflow caller implementations. Enumerated and retained all 83 explicitly listed spec ACs in their binding stories and original order: US-001 1-6, US-002 1-18, US-003 1-19, US-004 1-13, US-005 1-10, US-006 1-7, US-007 1-10. Existing extra failure-table assertions remain after those originals (US-003 #20, US-004 #14, US-005 #11), totaling 86 mandatory assertions; none of the originals were demoted to suggestions. Preserved regression qualifiers including unknown-key rejection still failing, two calls/two renders, real-host tool order, same forwarded note fields, twice-total sync including start, provider ids as before, and explicit prompt unchanged. The type-import AC now also names observable runtime.memory identity while retaining its compile/run contract. Every story already contains a negative-path AC: invalid config (001), absent/empty prompt index (002), host/sync/render rejection (003), rejected save/end-sync (004), rejecting MCP teardown (005), dry-run/pipeline guards (006), unavailable index (007). All 14 feature-level exclusions remain verbatim; there is no story-local exclusion to hoist. Every spec-recommended context file is present within the five-file cap, every expected output belongs to its creating story, and the seven workdirs and dependency arrays remain exactly binding. Removed an accidental suggestion that bots could opt into memory; clarified complete resolved-config/save-result fixtures and model-input versus MemoryNoteWrite flow to match the actual interfaces. Reduced routing for standard counter/setup/prompt wiring without weakening stage-exposure/runtime-teardown isolation. Additional behavioral hardening remains suggestedCriteria rather than newly invented mandatory requirements.",
