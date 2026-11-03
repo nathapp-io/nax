@@ -4,8 +4,13 @@
  * Pins the repository-wide memory defaults, the `.strict()` rejections that keep
  * a future feature's keys (`stages`, `koda`) out until its schema owns them, the
  * `memoryConfigOf` accessor every reader goes through (`NaxConfig.memory` is
- * optional on the hand-written interface), and the six `FIELD_DESCRIPTIONS`
+ * optional on the hand-written interface), and the `FIELD_DESCRIPTIONS`
  * entries that make the block discoverable in `nax config`.
+ *
+ * The `inRun` block (`memory-run-stages` US-001) covers the workflow-run
+ * switch: it defaults on, an explicit `false` survives the parse, a
+ * non-boolean fails on its own path, and `stages` stays an unknown key now that
+ * the run switch exists.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -18,6 +23,7 @@ const DEFAULT_MEMORY = {
   writeMode: "direct",
   indexBytes: 24576,
   askOnSave: true,
+  inRun: true,
 } as const;
 
 /**
@@ -78,12 +84,64 @@ describe("memoryConfigOf (AC-8, AC-9)", () => {
       writeMode: "direct",
       indexBytes: 4096,
       askOnSave: false,
+      inRun: false,
     } as const;
     expect(memoryConfigOf({ memory: configured })).toEqual(configured);
   });
 
   test("memoryConfigOf({}) matches MemoryConfigSchema.parse({}) — one source of truth", () => {
     expect(memoryConfigOf({})).toEqual(MemoryConfigSchema.parse({}));
+  });
+});
+
+describe("memory run switch — defaults (US-001 AC-1, AC-5)", () => {
+  test("US-001 AC-1: NaxConfigSchema.parse({}).memory.inRun is true", () => {
+    expect(NaxConfigSchema.parse({}).memory.inRun).toBe(true);
+  });
+
+  test("US-001 AC-1: inRun stays true when memory.enabled is false", () => {
+    expect(NaxConfigSchema.parse({ memory: { enabled: false } }).memory.inRun).toBe(true);
+  });
+
+  test("US-001 AC-5: memoryConfigOf({}).inRun is true", () => {
+    expect(memoryConfigOf({}).inRun).toBe(true);
+  });
+});
+
+describe("memory run switch — explicit false (US-001 AC-2)", () => {
+  test("US-001 AC-2: inRun false parses to false and every other key keeps its default", () => {
+    const parsed = NaxConfigSchema.parse({ memory: { inRun: false } }).memory;
+    expect(parsed.inRun).toBe(false);
+    expect(parsed).toEqual({ ...DEFAULT_MEMORY, inRun: false });
+  });
+
+  test("US-001 AC-2: memoryConfigOf returns a configured inRun false unchanged", () => {
+    expect(memoryConfigOf({ memory: { ...DEFAULT_MEMORY, inRun: false } }).inRun).toBe(false);
+  });
+});
+
+describe("memory run switch — validation (US-001 AC-3, AC-4)", () => {
+  test("US-001 AC-3: inRun 'yes' fails on ['memory', 'inRun']", () => {
+    expect(memoryIssuePaths({ inRun: "yes" })).toContainEqual(["memory", "inRun"]);
+  });
+
+  test("US-001 AC-4: stages is still an unknown key, beside a valid inRun", () => {
+    expect(memoryIssuePaths({ stages: ["run"] })).toContainEqual(["memory"]);
+    expect(NaxConfigSchema.safeParse({ memory: { inRun: true, stages: ["run"] } }).success).toBe(false);
+  });
+});
+
+describe("FIELD_DESCRIPTIONS memory.inRun (US-001 AC-6)", () => {
+  const description = FIELD_DESCRIPTIONS["memory.inRun"];
+
+  test("US-001 AC-6: memory.inRun is a non-empty string", () => {
+    expect(description).toBeString();
+    expect(description?.trim().length).toBeGreaterThan(0);
+  });
+
+  test("US-001 AC-6: the description names the run stage and its default", () => {
+    expect(description?.toLowerCase()).toContain("run");
+    expect(description).toContain("true");
   });
 });
 

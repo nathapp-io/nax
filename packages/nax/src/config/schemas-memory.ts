@@ -9,6 +9,11 @@
  *
  * `NaxConfig.memory` is optional on the hand-written interface, so readers go
  * through `memoryConfigOf` rather than reaching for `config.memory` directly.
+ *
+ * `inRun` is the workflow-run switch, separate from `enabled`: chat keeps the
+ * memory host and index either way, while `nax run` gets neither when it is
+ * false. The design's `memory.stages` list is not built — the run tools always
+ * attach to `run`-stage sessions only.
  */
 import { z } from "zod";
 import type { NaxConfig } from "./runtime-types";
@@ -33,6 +38,7 @@ export const MemoryConfigSchema = z
       .max(MEMORY_INDEX_BYTES_MAX)
       .default(MEMORY_INDEX_BYTES_DEFAULT),
     askOnSave: z.boolean().default(true),
+    inRun: z.boolean().default(true),
   })
   .strict();
 
