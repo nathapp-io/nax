@@ -84,3 +84,119 @@ describe("ChatHost.steer", () => {
     expect(f.send).not.toHaveBeenCalled();
   });
 });
+
+/* ---------------------------------------------------------------------------------------
+ * The claim a turn takes. ctrl+s and escape act on the session's own single-flight slot —
+ * `steer` answers `no_turn` and `cancel` does nothing when there is none — and both can
+ * arrive in the same batch as the return that started the turn, before the screen redraws
+ * and before the host has had an `await` to return from. So `send` claims synchronously: the
+ * accounting queue serializes only the metadata write that follows the turn.
+ * ------------------------------------------------------------------------------------- */
+
+/** The slot a stub session keeps, as the host's keys can observe it. */
+interface Claim {
+  claimed: boolean;
+  cancelled: boolean;
+  /** Whether the slot was taken when `cancel` ran: a cancel with no claim cancels nothing. */
+  claimedOnCancel: boolean;
+}
+
+/**
+ * A host over a session with the facade's shape: `send` takes the slot synchronously and
+ * hands back the iterable, and the turn's own work runs when the consumer first pulls. The
+ * turn parks inside its stream until `release()`, so a key can be pressed while it is live.
+ */
+function claimFixture() {
+  const claim: Claim = { claimed: false, cancelled: false, claimedOnCancel: false };
+  /** The statuses of the `turn_end`s the session emitted. */
+  const endings: string[] = [];
+  const gate = Promise.withResolvers<void>();
+  const cancel = mock(() => {
+    claim.claimedOnCancel = claim.claimed;
+    claim.cancelled = true;
+    gate.resolve();
+  });
+  const steer = mock(
+    (text: string): SteerResult =>
+      claim.claimed && !claim.cancelled
+        ? { status: "accepted", steerId: `steer-${text}`, applied: Promise.resolve(false) }
+        : { status: "no_turn" },
+  );
+  const session: AgentSession = {
+    id: "claim-session",
+    backend: { kind: "native", capabilities: {} },
+    lastTurn: undefined,
+    send() {
+      claim.claimed = true;
+      return {
+        async *[Symbol.asyncIterator]() {
+          const base = { sessionId: "claim-session", turnId: "turn-1", at: "now", metadata: {} };
+          yield { ...base, type: "turn_start" as const };
+          await gate.promise;
+          const status = claim.cancelled ? ("cancelled" as const) : ("completed" as const);
+          yield {
+            ...base,
+            type: "turn_end" as const,
+            status,
+            output: "",
+            usage: { inputTokens: 0, outputTokens: 0 },
+            costUsd: 0,
+          };
+          endings.push(status);
+        },
+      };
+    },
+    answer: () => "accepted",
+    steer,
+    cancel,
+    close: async () => {},
+  };
+  const meta: SessionMeta = {
+    schemaVersion: 1,
+    sessionId: session.id,
+    cwd: "/r",
+    mode: "ask",
+    model: "model",
+    bashApproval: "gated",
+    title: null,
+    createdAt: "now",
+    updatedAt: null,
+  };
+  const host = createChatHost({
+    config: makeNaxConfig(),
+    cwd: "/r",
+    repoRoot: "/r",
+    chain: null,
+    storage: createChatStorage({ pid: process.pid, now: () => new Date(), logger: makeLogger() }),
+    now: () => new Date(),
+    logger: makeLogger(),
+    open: async () => ({ session, meta, release: async () => {} }),
+  });
+  hosts.push(host);
+  return { host, claim, endings, steer, cancel, release: () => gate.resolve() };
+}
+
+describe("the claim a turn takes", () => {
+  test("B2 ctrl+s in the batch that started the turn steers that turn", async () => {
+    const f = claimFixture();
+    await f.host.start({ mode: "guarded", model: "model" });
+    const sending = f.host.send("hello", () => {});
+    // No await: this is the ctrl+s of the same batch as the return above, so nothing the
+    // accounting queue defers has run yet.
+    expect(f.host.steer?.("x")).toMatchObject({ status: "accepted" });
+    expect(f.steer).toHaveBeenCalledWith("x");
+    f.release();
+    await sending;
+  });
+
+  test("B2 escape in the batch that started the turn cancels a claim, not nothing", async () => {
+    const f = claimFixture();
+    await f.host.start({ mode: "guarded", model: "model" });
+    const sending = f.host.send("hello", () => {});
+    f.host.cancel();
+    expect(f.claim.claimedOnCancel).toBe(true);
+    f.release();
+    await sending;
+    expect(f.endings).toEqual(["cancelled"]);
+  });
+});

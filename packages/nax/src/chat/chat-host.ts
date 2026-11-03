@@ -468,38 +468,39 @@ class NativeChatHost implements ChatHost {
     this.turnListener = onEvent;
     const runs = this.runs;
     try {
-      // The turn's own metadata write is the other read-modify-write of the same `costUsd`,
-      // so the whole turn is queued behind any accounting already in flight: a compaction
-      // that settled a moment ago must not be overwritten by this turn's stale base.
-      await this.accounting.run(async () => {
-        // Read the handle inside the queue, not before it: the accounting queued ahead of
-        // this turn may have replaced it with one whose `costUsd` is newer, and this turn
-        // must run and persist from the handle that is current now.
-        const handle = this.requireHandle();
-        this.hygiene.markSent(handle.meta.sessionId);
-        const meta = await runChatTurn({
-          handle,
-          storage: this.deps.storage,
-          message,
-          title: options?.title,
-          images: options?.images,
-          asks: this.asks,
-          ledger,
-          onEvent,
-          now: this.deps.now().toISOString(),
-          ...(runs ? { extraCostUsd: () => runs.takeCost(), settleNested: () => runs.settle() } : {}),
-        });
-        // Adopt before releasing the accounting queue. A same-session switch keeps its
-        // settings and live session, but still receives this turn's persisted accounting.
-        // A different session must never receive the retired session's metadata.
-        if (this.handle === handle) this.handle = { ...handle, meta };
-        else if (this.handle?.meta.sessionId === meta.sessionId) {
-          this.handle = {
-            ...this.handle,
-            meta: { ...this.handle.meta, costUsd: meta.costUsd, title: meta.title, updatedAt: meta.updatedAt },
-          };
-        }
+      // Claim the session's turn here, before any `await`. The slot is what `steer` answers
+      // from and what `cancel` acts on, and both keys can arrive in the same batch as the
+      // return that started this turn: queued behind the accounting instead, the claim would
+      // appear a microtask later, the key would find no turn, and the turn would then run
+      // uncancelled.
+      const handle = this.requireHandle();
+      this.hygiene.markSent(handle.meta.sessionId);
+      // Only the turn's metadata write is queued (`queue`), never the turn: the write is the
+      // other read-modify-write of the same `costUsd`, and a compaction that settled a
+      // moment ago must not be overwritten by this turn's base.
+      const meta = await runChatTurn({
+        handle,
+        storage: this.deps.storage,
+        queue: this.accounting,
+        message,
+        title: options?.title,
+        images: options?.images,
+        asks: this.asks,
+        ledger,
+        onEvent,
+        now: this.deps.now().toISOString(),
+        ...(runs ? { extraCostUsd: () => runs.takeCost(), settleNested: () => runs.settle() } : {}),
       });
+      // Adopt the persisted accounting once the queue has written it. A same-session switch
+      // keeps its settings and live session, but still receives this turn's spend; a
+      // different session must never receive the retired session's metadata.
+      if (this.handle === handle) this.handle = { ...handle, meta };
+      else if (this.handle?.meta.sessionId === meta.sessionId) {
+        this.handle = {
+          ...this.handle,
+          meta: { ...this.handle.meta, costUsd: meta.costUsd, title: meta.title, updatedAt: meta.updatedAt },
+        };
+      }
     } finally {
       try {
         // A cancelled tool batch abandons its nested run without waiting for it: drain

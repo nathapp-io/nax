@@ -43,11 +43,47 @@ export function pushQueued(queue: MessageQueue, text: string): MessageQueue {
 }
 
 /**
- * The queue with `text` ahead of everything already in it — where a message that turned out
- * not to reach the running turn goes, so it is sent before the ones that were queued earlier.
+ * The queue with `text` ahead of everything already in it — ahead of anything queued earlier,
+ * which is where a message that turned out not to reach the running turn belongs. One message
+ * at a time; several that a single turn discarded go through `pushDiscardedSteer`, which keeps
+ * them in the order they were steered instead of reversing them.
  */
 export function pushQueuedFront(queue: MessageQueue, text: string): MessageQueue {
   return [text, ...queue];
+}
+
+/**
+ * The steers one turn discarded, in the order they were steered: the leading group of the
+ * queue. A turn that ends with several steers pending resolves them together, one callback
+ * each, and each one belongs ahead of everything queued earlier — but prepending them one at
+ * a time would draw the last steer first and reverse the corrections relative to the
+ * instructions they correct. So they are kept as one group instead.
+ */
+export interface DiscardedSteers {
+  readonly texts: readonly string[];
+}
+
+/** Whether `queue` still begins with the group's texts — false once the group left the queue. */
+function leadsWith(queue: MessageQueue, texts: readonly string[]): boolean {
+  return texts.length <= queue.length && texts.every((text, index) => queue[index] === text);
+}
+
+/**
+ * Put one discarded steer at the front of `queue`, keeping the discarded group in the order
+ * the user steered it: the new text joins the group (appended, because a turn settles its
+ * pending steers in arrival order) and the group is drawn ahead of everything behind it —
+ * including a line the user queued since the first discard, which stays where it was. A group
+ * the queue no longer begins with has left it — drained, restored into the prompt, or
+ * replaced — so this text starts a new one.
+ */
+export function pushDiscardedSteer(
+  group: DiscardedSteers | undefined,
+  queue: MessageQueue,
+  text: string,
+): { readonly group: DiscardedSteers; readonly queue: MessageQueue } {
+  const leading = group !== undefined && leadsWith(queue, group.texts) ? group.texts : [];
+  const texts = [...leading, text];
+  return { group: { texts }, queue: [...texts, ...queue.slice(leading.length)] };
 }
 
 /**

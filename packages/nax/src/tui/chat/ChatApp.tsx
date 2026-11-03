@@ -48,9 +48,10 @@ import { type EditorState, EMPTY_EDITOR } from "./line-editor";
 import { MentionMenu } from "./MentionMenu";
 import { needsMentionExpansion, sentEntries } from "./mention-send";
 import {
+  type DiscardedSteers,
   type MessageQueue,
+  pushDiscardedSteer,
   pushQueued,
-  pushQueuedFront,
   queueRowLines,
   queueToPrompt,
   type SteeringRow,
@@ -340,6 +341,13 @@ export function ChatApp({
    * must read the lines queued in that window — the newest state, not the last render's.
    */
   const queueRef = useRef<MessageQueue>(EMPTY_QUEUE);
+  /**
+   * The steers a turn discarded, in the order they were steered (US-004). One turn's pending
+   * steers settle together — `applied` resolving `false` one callback at a time, in arrival
+   * order — so they are placed as one group rather than prepended one by one, which would
+   * reverse them.
+   */
+  const discardedSteers = useRef<DiscardedSteers | undefined>(undefined);
   /**
    * The status of the turn's own `turn_end` in the send now running, reset by every send. A
    * nested call's `turn_end` is not the turn's (`isSubagentEvent`), and a send that settles
@@ -920,9 +928,21 @@ export function ChatApp({
     const settled = (taken: boolean): void => {
       setSteering((rows) => rows.filter((row) => row.steerId !== steerId));
       if (taken) appendAll(sentEntries(text));
-      else replaceQueue(pushQueuedFront(queueRef.current, text));
+      else discardSteer(text);
     };
     void result.applied.then(settled, () => settled(false));
+  }
+
+  /**
+   * A steer the turn did not take, at the front of the queue — in the order the user steered
+   * it. The group is kept whole (`pushDiscardedSteer`): a turn resolves every steer still
+   * pending in arrival order, and prepending each as it lands would draw the last one first,
+   * reversing a correction relative to the instruction it corrects.
+   */
+  function discardSteer(text: string): void {
+    const placed = pushDiscardedSteer(discardedSteers.current, queueRef.current, text);
+    discardedSteers.current = placed.group;
+    replaceQueue(placed.queue);
   }
 
   /**
@@ -1301,6 +1321,9 @@ export function ChatApp({
               void submit(message);
             }}
             onQueue={queueReturn}
+            // A return can arrive in the same batch as the one that started a turn, before
+            // any redraw: the turn's owner is `sending`, not the rendered `busy` flag.
+            busyNow={() => sending.current}
             width={columns}
             theme={theme}
             active={!keys.locked}

@@ -11,18 +11,11 @@
  * what is asserted is what a user would see and what the host was actually asked to do.
  */
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { AgentSession, SessionEvent, SessionMeta, SteerResult, TurnEndStatus } from "@nathapp/nax-agent";
-import { assertDefined, makeLogger, makeNaxConfig } from "@test/helpers";
+import type { SessionEvent, SteerResult, TurnEndStatus } from "@nathapp/nax-agent";
+import { assertDefined } from "@test/helpers";
 import { cleanup, render } from "ink-testing-library";
 import { act } from "react";
-import {
-  type ChatHost,
-  type ChatHostState,
-  type ChatSendOptions,
-  createChatAskController,
-  createChatHost,
-  createChatStorage,
-} from "@/chat";
+import { type ChatHost, type ChatHostState, type ChatSendOptions, createChatAskController } from "@/chat";
 import { ChatApp } from "@/tui/chat/ChatApp";
 import { resolveChatTheme } from "@/tui/chat/theme";
 import { _imageAttachDeps } from "@/tui/chat/use-image-attach";
@@ -400,6 +393,55 @@ describe("ctrl+s on a brain that steers", () => {
   });
 });
 
+/* ---------------------------------------------------------------------------------------
+ * One turn, several steers discarded. The facade closes the channel and resolves every
+ * pending `applied` with `false`, in the order they were steered — so the queue they land in
+ * must read in that order too. A correction behind the instruction it corrects, reversed,
+ * says the opposite of what the user meant.
+ * ------------------------------------------------------------------------------------- */
+
+describe("steers one turn discards together", () => {
+  /** A host that gives each steer its own `applied`, settled by the case in arrival order. */
+  function perSteer() {
+    const settled: Array<PromiseWithResolvers<boolean>> = [];
+    const steer = (text: string): SteerResult => {
+      const applied = Promise.withResolvers<boolean>();
+      settled.push(applied);
+      return { status: "accepted", steerId: `steer-${settled.length}-${text}`, applied: applied.promise };
+    };
+    return { settled, ui: mountScreen({ steer }) };
+  }
+
+  /** A screen with `hello` running and `first`, then `second`, steered into it. */
+  async function twoSteered() {
+    const f = perSteer();
+    await f.ui.submit("hello");
+    await f.ui.steerWith("first");
+    await f.ui.steerWith("second");
+    const [first, second] = f.settled;
+    assertDefined(first, "the first steer's applied promise");
+    assertDefined(second, "the second steer's applied promise");
+    return { ...f, first, second };
+  }
+
+  test("B3 two discarded steers keep the order they were steered in", async () => {
+    const ui = await twoSteered();
+    ui.first.resolve(false);
+    ui.second.resolve(false);
+    await ui.ui.settle();
+    expect(queuedRows(ui.ui.rows())).toEqual(["queued · first", "queued · second"]);
+  });
+
+  test("B3 the prompt a cancelled turn restores keeps that order", async () => {
+    const { first, second, ui } = await twoSteered();
+    first.resolve(false);
+    second.resolve(false);
+    await ui.settle();
+    await ui.endTurn("cancelled");
+    expect(ui.frame()).toContain("> first\n  second");
+  });
+});
+
 describe("ctrl+s when there is nothing to steer", () => {
   test("AC-15 sends the draft as a turn when no turn is running", async () => {
     const ui = mountScreen({ steer: () => ({ status: "unsupported" }) });
@@ -555,72 +597,3 @@ describe("/help names ctrl+s", () => {
 
 /** The last built-in `/help` lists: the line the ctrl+s hint follows. */
 const LAST_BUILTIN = "/quit  Quit nax chat";
-
-/* ---------------------------------------------------------------------------------------
- * AC-3 mounts the real host: the key is only worth binding if it reaches the session.
- * ------------------------------------------------------------------------------------- */
-
-/** A real `createChatHost` over a stub session, with a turn left running after `hi`. */
-async function realHostWithStubSession() {
-  const applied = Promise.withResolvers<boolean>();
-  const steer = mock(
-    (_text: string): SteerResult => ({ status: "accepted", steerId: "steer-1", applied: applied.promise }),
-  );
-  const gate = Promise.withResolvers<void>();
-  const session: AgentSession = {
-    id: "steer-session",
-    backend: { kind: "native", capabilities: {} },
-    lastTurn: undefined,
-    async *send() {
-      yield { sessionId: "steer-session", turnId: "t1", at: "now", metadata: {}, type: "turn_start" };
-      await gate.promise;
-    },
-    answer: () => "accepted",
-    cancel() {},
-    close: async () => {},
-    steer,
-  };
-  const meta: SessionMeta = stateOf(MODEL).meta;
-  const host = createChatHost({
-    config: makeNaxConfig(),
-    cwd: REPO_ROOT,
-    repoRoot: REPO_ROOT,
-    chain: null,
-    storage: createChatStorage({ pid: process.pid, now: () => new Date(), logger: makeLogger() }),
-    now: () => new Date(),
-    logger: makeLogger(),
-    open: async () => ({ session, meta, release: async () => {} }),
-  });
-  await host.start({ mode: "guarded", model: MODEL });
-  return { host, steer, release: () => gate.resolve() };
-}
-
-describe("ctrl+s over the real host", () => {
-  test("AC-3 steers the open session once with the typed text", async () => {
-    const real = await realHostWithStubSession();
-    const ui = render(<ChatApp host={real.host} theme={THEME} />);
-    try {
-      act(() => {
-        ui.stdin.write("hi");
-      });
-      await Promise.resolve(
-        act(async () => {
-          ui.stdin.write(RETURN);
-        }),
-      );
-      act(() => {
-        ui.stdin.write("x");
-      });
-      await Promise.resolve(
-        act(async () => {
-          ui.stdin.write(CTRL_S);
-        }),
-      );
-      expect(real.steer).toHaveBeenCalledTimes(1);
-      expect(real.steer).toHaveBeenCalledWith("x");
-    } finally {
-      real.release();
-      await real.host.close();
-    }
-  });
-});

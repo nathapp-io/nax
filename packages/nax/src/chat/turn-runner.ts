@@ -2,6 +2,7 @@ import type { ImageAttachment, SendInput, SessionEvent, SessionMeta, SessionStor
 import { NaxError } from "@/errors";
 import type { ChatAskController } from "./ask-controller";
 import type { ChatLedger } from "./chat-ledger";
+import type { HostQueue } from "./host-queue";
 import type { ChatSessionHandle } from "./open-chat-session";
 
 const TITLE_CODE_POINT_LIMIT = 80;
@@ -26,6 +27,14 @@ export interface RunChatTurnOptions {
    * late nested usage row and its spend still land on this turn.
    */
   readonly settleNested?: () => Promise<void>;
+  /**
+   * The host's metadata queue. Only this turn's metadata write is serialized through it — the
+   * write is a read-modify-write of the session's cumulative spend, and a compaction that
+   * settled a moment ago must not be replaced by a base this turn read before it. The turn
+   * itself never waits on the queue: the session's claim has to exist the moment `send` is
+   * called, or a ctrl+s in the same batch finds no turn to steer or to cancel.
+   */
+  readonly queue?: HostQueue;
 }
 
 async function writeTurnMeta(options: RunChatTurnOptions, costUsd: number): Promise<SessionMeta> {
@@ -82,5 +91,7 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<SessionM
   }
   await options.settleNested?.();
   await ledger.drain();
-  return writeTurnMeta(options, ended.costUsd);
+  // The metadata write is the read-modify-write the host serializes; the turn above is not.
+  const persist = (): Promise<SessionMeta> => writeTurnMeta(options, ended.costUsd);
+  return options.queue === undefined ? persist() : options.queue.run(persist);
 }

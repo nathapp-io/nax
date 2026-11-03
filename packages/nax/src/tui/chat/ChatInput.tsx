@@ -131,6 +131,15 @@ export interface ChatInputProps {
    * The owner must not throw; the input runs it inside the key handler.
    */
   readonly onQueue?: (text: string) => boolean;
+  /**
+   * The owner's own turn ownership, read at key time instead of the `busy` flag of the last
+   * render. A return can arrive in the same batch as the one that started the turn, before
+   * any redraw, so `busy` still says idle while the owner's send has already claimed it —
+   * deciding from `busy` alone then sends the line into a refused send and the text is gone.
+   * Given one, it decides whether a plain return is queued; `busy` still decides what is
+   * drawn. The owner must not throw; the input runs it inside the key handler.
+   */
+  readonly busyNow?: () => boolean;
 }
 
 /**
@@ -573,6 +582,7 @@ export function ChatInput({
   maxRows,
   onPaste,
   onQueue,
+  busyNow,
 }: ChatInputProps): ReactElement {
   // The rows wrap to the container the input is drawn into, which is the terminal's width
   // rather than the frame's when a host frames a narrower prompt.
@@ -635,17 +645,31 @@ export function ChatInput({
   }, []);
 
   /**
+   * Whether a turn owns the screen right now. The owner's own claim is asked when it offers
+   * one, because the `busy` flag is the last render's: a key batched behind the return that
+   * started a turn arrives while the flag still says idle.
+   */
+  const running = (): boolean => (busyNow === undefined ? busy : busyNow());
+
+  /**
    * Whitespace is not a message, and a running turn takes a plain line only through the
    * owner's queue. A return the owner takes is not a submit: the prompt empties — the line is
    * now the queue's — but no history entry is written and nothing is sent, so a queued message
    * later reads exactly like a freshly typed one. A return nobody takes leaves the draft as it
    * was; a slash line is never offered, because a command while busy still runs (or is answered
    * with the screen's own notice).
+   *
+   * Whether a turn is running is read from the owner at key time, not from the `busy` flag of
+   * the render that preceded the key: a return batched behind the one that started a turn finds
+   * the flag still idle, and taking it for idle would clear the draft and hand the line to a
+   * send that refuses it — the text would be gone with no queue row to show for it. The draft
+   * is emptied only once the line has somewhere to go: the idle path's send claims the turn in
+   * the same synchronous step, and the busy path clears only when `onQueue` takes the line.
    */
   const submit = (text: string): void => {
     const current = latest.current;
     if (text.trim() === "") return;
-    if (busy && !text.startsWith(SLASH)) {
+    if (running() && !text.startsWith(SLASH)) {
       if (onQueue === undefined || !onQueue(text)) return;
       disarm();
       publish({ editor: EMPTY_EDITOR, history: current.history });
@@ -669,7 +693,7 @@ export function ChatInput({
       return;
     }
     const current = latest.current;
-    if (busy || current.editor.text === "") return;
+    if (running() || current.editor.text === "") return;
     const armed = armedAt.current;
     if (armed !== undefined && _chatInputDeps.now() - armed <= DOUBLE_ESCAPE_MS) {
       disarm();

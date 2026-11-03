@@ -10,6 +10,7 @@ import { describe, expect, test } from "bun:test";
 import {
   MAX_QUEUED_ROWS,
   type MessageQueue,
+  pushDiscardedSteer,
   pushQueued,
   pushQueuedFront,
   queueRowLines,
@@ -75,6 +76,38 @@ describe("pushQueuedFront", () => {
     const pushed = pushQueuedFront(queue, "z");
     expect(pushed).toEqual(["z", "a", "b"]);
     expect(queue).toEqual(["a", "b"]);
+  });
+});
+
+describe("pushDiscardedSteer", () => {
+  test("B3 two discarded steers keep the order they were steered in, ahead of the queue", () => {
+    const first = pushDiscardedSteer(undefined, ["q1"], "first");
+    expect(first.queue).toEqual(["first", "q1"]);
+    const second = pushDiscardedSteer(first.group, first.queue, "second");
+    expect(second.queue).toEqual(["first", "second", "q1"]);
+    expect(second.group.texts).toEqual(["first", "second"]);
+  });
+
+  test("B3 a line queued after the first discard stays behind the whole group", () => {
+    const first = pushDiscardedSteer(undefined, [], "first");
+    const queued = pushQueued(first.queue, "later");
+    const second = pushDiscardedSteer(first.group, queued, "second");
+    expect(second.queue).toEqual(["first", "second", "later"]);
+  });
+
+  test("B3 a group the queue no longer leads with starts a new one", () => {
+    const first = pushDiscardedSteer(undefined, ["q1"], "first");
+    // The queue was restored into the prompt and refilled since: the group has left it.
+    const second = pushDiscardedSteer(first.group, ["q2"], "second");
+    expect(second.queue).toEqual(["second", "q2"]);
+    expect(second.group.texts).toEqual(["second"]);
+  });
+
+  test("B3 the queue it was given is untouched", () => {
+    const queue: MessageQueue = ["q1"];
+    const placed = pushDiscardedSteer(undefined, queue, "first");
+    expect(queue).toEqual(["q1"]);
+    expect(placed.queue).not.toBe(queue);
   });
 });
 

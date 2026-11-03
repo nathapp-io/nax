@@ -287,6 +287,20 @@ function mountScreen() {
   const type = (text: string): void => {
     for (const char of text) press(char);
   };
+  /**
+   * Several keys in one act, with no render between them: a return, the text typed after it
+   * and the next return all land in one batch, so a handler reads the state of the render
+   * that preceded the batch. Each key is its own write, so ink parses them as separate
+   * keypresses.
+   */
+  const pressBatch = async (sequences: readonly string[]): Promise<void> => {
+    await Promise.resolve(
+      act(async () => {
+        for (const sequence of sequences) ui.stdin.write(sequence);
+      }),
+    );
+    await settle();
+  };
   /** A line typed and returned, drained through the screen's own submit path. */
   const submit = async (text: string): Promise<void> => {
     type(text);
@@ -305,7 +319,7 @@ function mountScreen() {
     await turn.finish();
     await settle();
   };
-  return { ...fake, ui, rows, frame, press, pressAndSettle, settle, type, submit, current, endTurn };
+  return { ...fake, ui, rows, frame, press, pressAndSettle, pressBatch, settle, type, submit, current, endTurn };
 }
 
 /** The rows that carry the queue's muted marker. */
@@ -358,6 +372,17 @@ describe("queueing a busy return", () => {
     await ui.submit("next please");
     expect(ui.send).toHaveBeenCalledTimes(1);
     expect(ui.send).toHaveBeenCalledWith("hello", expect.any(Function));
+  });
+
+  test("B1 a second return batched behind the first queues its line instead of dropping it", async () => {
+    const ui = mountScreen();
+    // One batch: `hello` and its return start a turn, then `next please` and its return land
+    // before the screen has redrawn — the rendered busy flag still says idle.
+    await ui.pressBatch(["hello", RETURN, "next please", RETURN]);
+    expect(ui.send).toHaveBeenCalledTimes(1);
+    expect(ui.send).toHaveBeenCalledWith("hello", expect.any(Function));
+    expect(queuedRows(ui.rows())).toEqual(["queued · next please"]);
+    expect(promptRow(ui.rows())).toBe(">");
   });
 
   test("AC-18 five queued messages draw three rows and a +2 more row", async () => {
