@@ -3,7 +3,7 @@
   "feature": "memory-smoke-fixes",
   "branchName": "feat/memory-smoke-fixes",
   "createdAt": "2026-11-03T00:00:00.000Z",
-  "updatedAt": "2026-11-03T09:22:31.416Z",
+  "updatedAt": "2026-11-03T09:34:43.007Z",
   "userStories": [
     {
       "id": "US-001",
@@ -236,14 +236,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Standard composition and CLI formatting changes across three source modules plus an existing fixture; uses upstream persistence/approval interfaces without new abstractions."
+        "reasoning": "Standard composition and CLI formatting changes across three source modules plus an existing fixture; uses upstream persistence/approval interfaces without new abstractions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/host.ts",
@@ -266,7 +269,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9c6a43d9e261e0c081f3b58e63e0a87119e10270"
     },
     {
       "id": "US-005",
