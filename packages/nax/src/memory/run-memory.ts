@@ -65,7 +65,10 @@ export interface RunMemory {
   index(): Promise<string | undefined>;
   /** The counts `close()` logs; read by tests, no other production reader. */
   summary(): RunMemorySummary;
-  /** First call: one sync, then one summary log line. Later calls do nothing. Never throws. */
+  /**
+   * First call: one sync, then one summary log line. A later call awaits that same close
+   * and does none of it again. Never throws.
+   */
   close(): Promise<void>;
 }
 
@@ -160,21 +163,30 @@ async function syncStart(host: MemoryHost, logger: MemoryLogger): Promise<void> 
 /**
  * The close a run's memory hands out: one end sync, then one summary line.
  *
- * The guard is set before the sync is awaited, so two closes that overlap still
- * sync once and log once — `runtime.close()` can be reached from a signal handler
- * and a normal exit both. A sync that throws is the same warning the start sync
- * gives: the run is ending either way, and the summary line is worth more than the
- * failure it would otherwise be lost to.
+ * The work is memoized rather than flagged, so closes that overlap share one run of it:
+ * the second caller awaits the promise the first is waiting on instead of resolving ahead
+ * of the sync it has not done. `runtime.close()` can be reached from a signal handler and
+ * a normal exit both, and it is the normal-exit caller that may otherwise proceed — and
+ * let the process exit — while the end sync is still in flight.
+ *
+ * The promise is stored before the body's first `await`, so a second call made in the same
+ * turn as the first still finds it. A sync that throws is the same warning the start sync
+ * gives: the run is ending either way, and the summary line is worth more than the failure
+ * it would otherwise be lost to.
  */
 function createClose(host: MemoryHost, counts: SaveCounts, logger: MemoryLogger): () => Promise<void> {
-  let closing = false;
-  return async () => {
-    if (closing) return;
-    closing = true;
-    await syncStart(host, logger);
-    const { saved, pending } = counts;
-    logger.info("run", summaryLine(counts), { storyId: RUN_MEMORY_STORY_ID, saved, pending });
+  let closing: Promise<void> | undefined;
+  return () => {
+    closing ??= closeOnce(host, counts, logger);
+    return closing;
   };
+}
+
+/** The one close a run's memory performs: the end sync, then the counts it reports. */
+async function closeOnce(host: MemoryHost, counts: SaveCounts, logger: MemoryLogger): Promise<void> {
+  await syncStart(host, logger);
+  const { saved, pending } = counts;
+  logger.info("run", summaryLine(counts), { storyId: RUN_MEMORY_STORY_ID, saved, pending });
 }
 
 /** The provider a run's tools hang off: the memory provider over `host`, re-staged onto `run`. */

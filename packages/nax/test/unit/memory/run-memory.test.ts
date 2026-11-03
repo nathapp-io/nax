@@ -633,6 +633,49 @@ describe("createRunMemory", () => {
 
       expect(syncs).toBe(2);
     });
+
+    // Branch fix M5: the guard used to be a boolean set before the sync, so a second close
+    // resolved immediately while the first was still syncing. `runtime.close()` can be reached
+    // from a signal handler and a normal exit, and the normal-exit caller may proceed — and the
+    // process may exit — while the end sync is still running. Awaiting the close in flight is
+    // what makes "close() is done" mean the same thing to both callers.
+    test("a close that starts while the first is running waits for that same close", async () => {
+      let openGate = (): void => undefined;
+      const gate = new Promise<void>((resolve) => {
+        openGate = resolve;
+      });
+      let endSyncStarted = (): void => undefined;
+      const inFlight = new Promise<void>((resolve) => {
+        endSyncStarted = resolve;
+      });
+      let syncs = 0;
+      const memory = await runMemory({
+        sync: async () => {
+          syncs += 1;
+          if (syncs > 1) {
+            endSyncStarted();
+            await gate;
+          }
+          return SYNCED;
+        },
+      });
+
+      const first = memory.close();
+      await inFlight;
+      let secondResolved = false;
+      const second = memory.close().then(() => {
+        secondResolved = true;
+      });
+      // One microtask turn is enough for a promise that was already resolved to report in.
+      await Promise.resolve();
+
+      expect({ secondResolved, syncs }).toEqual({ secondResolved: false, syncs: 2 });
+
+      openGate();
+      await Promise.all([first, second]);
+
+      expect({ secondResolved, syncs }).toEqual({ secondResolved: true, syncs: 2 });
+    });
   });
 
   test("is exported from the memory barrel with its stage list", () => {

@@ -480,7 +480,65 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const dirtyWorktrees = new Set<string>();
   const routingCache = new Map<string, RoutingDecision>();
 
-  let closed = false;
+  // The one teardown, awaited by every later `close()`. An arrow, not a hoisted declaration:
+  // a declaration is created before `agentManager` is assigned, costing the body its narrowing.
+  let teardown: Promise<void> | undefined;
+  const closeRuntime = async (): Promise<void> => {
+    controller.abort();
+    offLogging();
+    offCost();
+    offAudit();
+    offReviewAudit();
+    offUsageAudit();
+    offAgentStreamLogging();
+    offWatchdog();
+    offInFlightUsage();
+    if (opts?.parentSignal && parentAbortHandler) {
+      opts.parentSignal.removeEventListener("abort", parentAbortHandler);
+    }
+    // Run teardown: a pre-built AgentManager (opts.agentManager) may be reused
+    // across runs, so clear its per-run state — the per-story hop budget,
+    // cooldowns, and pruned fallback set — before releasing it. MEM-12.
+    //
+    // The run memory closes in the `finally`: a rejecting MCP close or flush
+    // must not skip the run-end sync, which is the last thing a note saved by
+    // this run's last session needs. Its own failures are its contract's to
+    // absorb, so this adds none of its own.
+    try {
+      agentManager.reset();
+      agentManager.close();
+      if (sessionManager instanceof SessionManager) sessionManager.close();
+      await mcpPool.close();
+      await writeMcpRollup(outputDir, buildMcpRollup({ runId, events: mcpPool.events(), withheld: mcpWithheld })).catch(
+        (error: unknown) => logger.warn("runtime", "mcp rollup write failed", { error: String(error) }),
+      );
+      // Native turns still unrecorded at close carry spend the usage sidecar
+      // sees but the ledger does not. Record each as a partial `CostEvent`
+      // before the drain below, so `run.complete` / status.json (both read
+      // `totalSpendUsd(costAggregator.snapshot())`) reflect it.
+      for (const residual of inFlightTracker.residuals()) {
+        costAggregator.record(toPartialCostEvent(residual, runId, projectKey));
+      }
+      // Tool calls still buffered by a hop whose `finally` will not run before
+      // `process.exit` are written here, as partial, before the drain below.
+      // Never rejects (one sink's failure is logged and the rest proceed), so
+      // it needs no `.catch` of its own.
+      await flushOpenToolAuditSinks(runId);
+      const results = await Promise.allSettled([
+        promptAuditor.flush(),
+        usageAuditor.flush(),
+        reviewAuditor.flush(),
+        costAggregator.drain(),
+      ]);
+      for (const r of results) {
+        if (r.status === "rejected") {
+          logger.warn("runtime", "close() flush/drain error", { error: String(r.reason) });
+        }
+      }
+    } finally {
+      await opts?.memory?.close();
+    }
+  };
 
   return {
     runId,
@@ -525,64 +583,11 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     get signal() {
       return controller.signal;
     },
-    async close() {
-      if (closed) return;
-      closed = true;
-      controller.abort();
-      offLogging();
-      offCost();
-      offAudit();
-      offReviewAudit();
-      offUsageAudit();
-      offAgentStreamLogging();
-      offWatchdog();
-      offInFlightUsage();
-      if (opts?.parentSignal && parentAbortHandler) {
-        opts.parentSignal.removeEventListener("abort", parentAbortHandler);
-      }
-      // Run teardown: a pre-built AgentManager (opts.agentManager) may be reused
-      // across runs, so clear its per-run state — the per-story hop budget,
-      // cooldowns, and pruned fallback set — before releasing it. MEM-12.
-      //
-      // The run memory closes in the `finally`: a rejecting MCP close or flush
-      // must not skip the run-end sync, which is the last thing a note saved by
-      // this run's last session needs. Its own failures are its contract's to
-      // absorb, so this adds none of its own.
-      try {
-        agentManager.reset();
-        agentManager.close();
-        if (sessionManager instanceof SessionManager) sessionManager.close();
-        await mcpPool.close();
-        await writeMcpRollup(
-          outputDir,
-          buildMcpRollup({ runId, events: mcpPool.events(), withheld: mcpWithheld }),
-        ).catch((error: unknown) => logger.warn("runtime", "mcp rollup write failed", { error: String(error) }));
-        // Native turns still unrecorded at close carry spend the usage sidecar
-        // sees but the ledger does not. Record each as a partial `CostEvent`
-        // before the drain below, so `run.complete` / status.json (both read
-        // `totalSpendUsd(costAggregator.snapshot())`) reflect it.
-        for (const residual of inFlightTracker.residuals()) {
-          costAggregator.record(toPartialCostEvent(residual, runId, projectKey));
-        }
-        // Tool calls still buffered by a hop whose `finally` will not run before
-        // `process.exit` are written here, as partial, before the drain below.
-        // Never rejects (one sink's failure is logged and the rest proceed), so
-        // it needs no `.catch` of its own.
-        await flushOpenToolAuditSinks(runId);
-        const results = await Promise.allSettled([
-          promptAuditor.flush(),
-          usageAuditor.flush(),
-          reviewAuditor.flush(),
-          costAggregator.drain(),
-        ]);
-        for (const r of results) {
-          if (r.status === "rejected") {
-            logger.warn("runtime", "close() flush/drain error", { error: String(r.reason) });
-          }
-        }
-      } finally {
-        await opts?.memory?.close();
-      }
+    close() {
+      // Memoized, not flagged: a second caller (a signal handler and a normal exit both
+      // reach here) awaits the running teardown instead of resolving ahead of the memory sync.
+      teardown ??= closeRuntime();
+      return teardown;
     },
   };
 }

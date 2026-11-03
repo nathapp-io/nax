@@ -15,10 +15,11 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import type { ToolProvider } from "@nathapp/nax-agent";
 import {
   assertDefined,
   cleanupTempDir,
+  type FakeRunMemory,
+  makeFakeRunMemory,
   makeFeatureContext,
   makeMockCallContext,
   makeScriptedCallOp,
@@ -27,7 +28,7 @@ import {
   makeTestRuntime,
   makeTestStory,
 } from "@test/helpers";
-import type { MemoryHost, RunMemory } from "@/memory";
+import type { RunMemory } from "@/memory";
 import type { CallContext } from "@/operations";
 import { buildMemoryReferenceSection, memorySectionOf } from "@/prompts";
 import { runBranchFix } from "@/workflow/branch-fix";
@@ -46,62 +47,9 @@ afterEach(async () => {
   dirs.length = 0;
 });
 
-/** The provider a run memory hands over: the real id and stage, no tools — these steps read no tool. */
-const MEMORY_PROVIDER: ToolProvider = {
-  id: "nax-memory",
-  kind: "static",
-  stages: ["run"],
-  tools: async () => [],
-};
-
-/**
- * The host a fake run memory carries.
- *
- * Every step under test reads only `index()`, so no host read is answerable without inventing
- * behaviour: each refuses loudly rather than answering something a case could mistake for the
- * thing being tested.
- */
-function fakeHost(): MemoryHost {
-  const unused = async (): Promise<never> => {
-    throw new Error("the workflow steps never read a run memory's host");
-  };
-  return {
-    dirs: { root: "/mem", projectDir: "/mem/project", userDir: "/mem/user" },
-    providerId: "local",
-    writeMode: "direct",
-    notes: unused,
-    getNote: unused,
-    search: unused,
-    renderIndex: unused,
-    sync: unused,
-    status: unused,
-    save: unused,
-    forget: unused,
-    approve: unused,
-  };
-}
-
-/** A run memory whose `index()` answers `resolved`, and how many times it was asked. */
-interface FakeRunMemory {
-  readonly memory: RunMemory;
-  reads(): number;
-}
-
-function fakeRunMemory(resolved: string | undefined): FakeRunMemory {
-  let reads = 0;
-  return {
-    memory: {
-      host: fakeHost(),
-      provider: MEMORY_PROVIDER,
-      index: async () => {
-        reads += 1;
-        return resolved;
-      },
-      summary: () => ({ saved: 0, pending: 0 }),
-      close: () => Promise.resolve(),
-    },
-    reads: () => reads,
-  };
+/** A run memory whose `index()` answers `INDEX_LINE`, and how many times it was asked. */
+function fakeRunMemory(): FakeRunMemory {
+  return makeFakeRunMemory({ index: async () => INDEX_LINE });
 }
 
 /** A call context over a real runtime carrying `memory`, or none at all when it is omitted. */
@@ -181,7 +129,7 @@ const memorySection = memorySectionOf(INDEX_LINE);
 
 describe("writeBrief — the run's memory index (AC-1..AC-3)", () => {
   test("AC-1: a run memory's index reaches the brief file", async () => {
-    const fake = fakeRunMemory(INDEX_LINE);
+    const fake = fakeRunMemory();
     const text = await briefText(briefContext(callCtxWith(fake.memory)));
     assertDefined(memorySection, "the implementer memory section");
     expect(text).toContain("# Brief: US-007");
@@ -197,7 +145,7 @@ describe("writeBrief — the run's memory index (AC-1..AC-3)", () => {
   });
 
   test("AC-3: a run memory whose index is undefined writes no ## Memory heading", async () => {
-    const { memory } = fakeRunMemory(undefined);
+    const { memory } = makeFakeRunMemory();
     const text = await briefText(briefContext(callCtxWith(memory)));
     expect(text).toContain("# Brief: US-007");
     expect(text).not.toContain("## Memory");
@@ -206,7 +154,7 @@ describe("writeBrief — the run's memory index (AC-1..AC-3)", () => {
 
 describe("runBranchFix — the run's memory index (AC-4..AC-8)", () => {
   test("AC-4: the branch fix prompt carries the index", async () => {
-    const fake = fakeRunMemory(INDEX_LINE);
+    const fake = fakeRunMemory();
     const prompts = capturePrompts(DONE_REPLY);
     await runBranchFix(featureContext(callCtxWith(fake.memory)), { findings: [...FINDINGS] });
     expect(prompts).toHaveLength(1);
@@ -216,7 +164,7 @@ describe("runBranchFix — the run's memory index (AC-4..AC-8)", () => {
   });
 
   test("AC-5: the CI repair prompt carries the index after its own opening", async () => {
-    const { memory } = fakeRunMemory(INDEX_LINE);
+    const { memory } = fakeRunMemory();
     const prompts = capturePrompts(DONE_REPLY);
     await runBranchFix(featureContext(callCtxWith(memory)), {
       findings: [...FINDINGS],
@@ -231,14 +179,14 @@ describe("runBranchFix — the run's memory index (AC-4..AC-8)", () => {
   });
 
   test("AC-6: an explicit prompt is used as given, memory and all", async () => {
-    const { memory } = fakeRunMemory(INDEX_LINE);
+    const { memory } = fakeRunMemory();
     const prompts = capturePrompts(DONE_REPLY);
     await runBranchFix(featureContext(callCtxWith(memory)), { findings: [...FINDINGS], prompt: "OWN PROMPT" });
     expect(prompts).toEqual(["OWN PROMPT"]);
   });
 
   test("AC-7: an explicit prompt reads no index at all", async () => {
-    const fake = fakeRunMemory(INDEX_LINE);
+    const fake = fakeRunMemory();
     capturePrompts(DONE_REPLY);
     await runBranchFix(featureContext(callCtxWith(fake.memory)), {
       findings: [...FINDINGS],
@@ -258,7 +206,7 @@ describe("runBranchFix — the run's memory index (AC-4..AC-8)", () => {
 
 describe("runBranchReview — the run's memory index (AC-9..AC-10)", () => {
   test("AC-9: the branch review prompt carries the read-only reference section", async () => {
-    const fake = fakeRunMemory(INDEX_LINE);
+    const fake = fakeRunMemory();
     const prompts = capturePrompts(PASS_VERDICT);
     const out = await runBranchReview(featureContext(callCtxWith(fake.memory)), {
       seed: "seed0",

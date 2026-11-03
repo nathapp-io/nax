@@ -20,10 +20,10 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import type { MemorySyncResult, ToolProvider } from "@nathapp/nax-agent";
-import { assertDefined, makeLogger, makeNaxConfig } from "@test/helpers";
+import type { MemorySyncResult } from "@nathapp/nax-agent";
+import { assertDefined, makeFakeMemoryHost, makeFakeRunMemory, makeLogger, makeNaxConfig } from "@test/helpers";
 import { type NaxConfig, NaxConfigSchema } from "@/config";
-import { _runMemoryDeps, createRunMemory, type MemoryHost, type RunMemory } from "@/memory";
+import { _runMemoryDeps, createRunMemory } from "@/memory";
 import { type CreateRuntimeOptions, createRuntime, type NaxRuntime } from "@/runtime";
 
 /** The repository the runtimes are created against; no mirror is ever resolved from it. */
@@ -32,72 +32,8 @@ const WORKDIR = "/repo";
 /** A sync that held the lock and moved nothing: what a quiet run reports. */
 const SYNCED: MemorySyncResult = { outcome: "synced", pushed: 0, rejected: 0, pulled: 0, skipped: 0 };
 
-/** The provider a run memory hands over: the real id and the run stage, no tools. */
-const MEMORY_PROVIDER: ToolProvider = {
-  id: "nax-memory",
-  kind: "static",
-  stages: ["run"],
-  tools: async () => [],
-};
-
 /** The runtimes a case created, torn down by the teardown below. */
 const runtimes: NaxRuntime[] = [];
-
-/**
- * A memory host a fake run memory can carry.
- *
- * The runtime never reads a run memory's host — it only appends the provider and
- * calls `close()` — so every read here refuses loudly rather than answering
- * something a case could mistake for behaviour under test.
- */
-function fakeHost(): MemoryHost {
-  const unused = async (): Promise<never> => {
-    throw new Error("the runtime never reads a run memory's host");
-  };
-  return {
-    dirs: { root: "/mem", projectDir: "/mem/project", userDir: "/mem/user" },
-    providerId: "local",
-    writeMode: "direct",
-    notes: unused,
-    getNote: unused,
-    search: unused,
-    renderIndex: unused,
-    sync: unused,
-    status: unused,
-    save: unused,
-    forget: unused,
-    approve: unused,
-  };
-}
-
-/** A fake run memory and the count of its closes, which is what the close cases measure. */
-interface FakeMemory {
-  readonly memory: RunMemory;
-  closes(): number;
-}
-
-/**
- * A run memory the runtime can carry, with `close` counted.
- *
- * `closing` lets a case hold the close open or make it do something observable; the
- * count is taken before it runs, so a case measures the call rather than the body.
- */
-function fakeMemory(closing?: () => Promise<void>): FakeMemory {
-  let closes = 0;
-  return {
-    memory: {
-      host: fakeHost(),
-      provider: MEMORY_PROVIDER,
-      index: async () => undefined,
-      summary: () => ({ saved: 0, pending: 0 }),
-      close: async () => {
-        closes += 1;
-        await closing?.();
-      },
-    },
-    closes: () => closes,
-  };
-}
 
 /** A promise plus the one call that settles it: how a case holds a close open. */
 function latch(): { promise: Promise<void>; open: () => void } {
@@ -127,7 +63,7 @@ afterEach(async () => {
 
 describe("createRuntime memory carrier", () => {
   test("AC-1 the runtime holds the run memory it was given", () => {
-    const { memory } = fakeMemory();
+    const { memory } = makeFakeRunMemory();
 
     expect(runtime({ memory }).memory).toBe(memory);
   });
@@ -140,7 +76,7 @@ describe("createRuntime memory carrier", () => {
   });
 
   test("AC-10 CreateRuntimeOptions from @/runtime carries memory through the public path", () => {
-    const { memory } = fakeMemory();
+    const { memory } = makeFakeRunMemory();
     const options: CreateRuntimeOptions = { memory };
 
     expect(runtime(options).memory).toBe(memory);
@@ -149,7 +85,7 @@ describe("createRuntime memory carrier", () => {
 
 describe("createRuntime memory provider", () => {
   test("AC-3 the memory provider is the last entry, after every enabled provider", () => {
-    const { memory } = fakeMemory();
+    const { memory } = makeFakeRunMemory();
     const created = runtime({ memory }, configWithMcp());
 
     expect(created.toolProviders.at(-1)).toBe(memory.provider);
@@ -157,7 +93,7 @@ describe("createRuntime memory provider", () => {
   });
 
   test("AC-4 with skills in the run, the ids end nax-skills then nax-memory", () => {
-    const { memory } = fakeMemory();
+    const { memory } = makeFakeRunMemory();
     const created = runtime({ memory }, configWithMcp(true));
     const ids = created.toolProviders.map((p) => p.id);
 
@@ -176,7 +112,7 @@ describe("createRuntime memory provider", () => {
 
 describe("runtime.close() and the run memory", () => {
   test("AC-6 close() calls the run memory's close exactly once", async () => {
-    const fake = fakeMemory();
+    const fake = makeFakeRunMemory();
     const created = runtime({ memory: fake.memory });
 
     await created.close();
@@ -185,7 +121,7 @@ describe("runtime.close() and the run memory", () => {
   });
 
   test("AC-7 a second close() does not close the run memory again", async () => {
-    const fake = fakeMemory();
+    const fake = makeFakeRunMemory();
     const created = runtime({ memory: fake.memory });
 
     await created.close();
@@ -194,12 +130,47 @@ describe("runtime.close() and the run memory", () => {
     expect(fake.closes()).toBe(1);
   });
 
+  // Branch fix M9: `close()` used to be guarded by a boolean set before teardown, so a second
+  // caller resolved immediately instead of awaiting the close in flight — and since this story
+  // moved the run-end memory sync into that teardown, the racing caller could see `close()`
+  // resolved while the sync was still pending. A signal handler and a normal exit both reach
+  // `close()`, which is exactly when the normal-exit caller would otherwise exit mid-sync.
+  test("a second close() waits for the teardown already in flight", async () => {
+    const entered = latch();
+    const gate = latch();
+    const fake = makeFakeRunMemory({
+      closing: async () => {
+        entered.open();
+        await gate.promise;
+      },
+    });
+    const created = runtime({ memory: fake.memory });
+
+    const first = created.close();
+    await entered.promise;
+    let secondResolved = false;
+    const second = created.close().then(() => {
+      secondResolved = true;
+    });
+    // One microtask turn is enough for a promise that was already resolved to report in.
+    await Promise.resolve();
+
+    expect(secondResolved).toBe(false);
+
+    gate.open();
+    await Promise.all([first, second]);
+
+    expect({ secondResolved, closes: fake.closes() }).toEqual({ secondResolved: true, closes: 1 });
+  });
+
   test("AC-8 close() does not resolve while the run memory's close is pending", async () => {
     const entered = latch();
     const gate = latch();
-    const fake = fakeMemory(async () => {
-      entered.open();
-      await gate.promise;
+    const fake = makeFakeRunMemory({
+      closing: async () => {
+        entered.open();
+        await gate.promise;
+      },
     });
     const created = runtime({ memory: fake.memory });
     let resolved = false;
@@ -216,7 +187,7 @@ describe("runtime.close() and the run memory", () => {
   });
 
   test("AC-9 a rejecting MCP close still closes the run memory once", async () => {
-    const fake = fakeMemory();
+    const fake = makeFakeRunMemory();
     const created = runtime({ memory: fake.memory });
     created.mcpPool.close = async () => {
       throw new Error("mcp down");
@@ -232,7 +203,7 @@ describe("runtime.close() and the run memory", () => {
     const original = _runMemoryDeps.createMemoryHost;
     let syncs = 0;
     _runMemoryDeps.createMemoryHost = async () => ({
-      ...fakeHost(),
+      ...makeFakeMemoryHost("the runtime never reads a run memory's host"),
       sync: async () => {
         syncs += 1;
         if (syncs > 1) throw new Error("down");

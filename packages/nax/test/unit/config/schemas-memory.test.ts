@@ -139,9 +139,11 @@ describe("FIELD_DESCRIPTIONS memory.inRun (US-001 AC-6)", () => {
     expect(description?.trim().length).toBeGreaterThan(0);
   });
 
-  test("US-001 AC-6: the description names the run stage and its default", () => {
+  test("US-001 AC-6: the description names the run stage and its documented default", () => {
     expect(description?.toLowerCase()).toContain("run");
-    expect(description).toContain("true");
+    // The default, not the word "true" anywhere: `(default: true)` is the doc's own
+    // spelling of it, so a description that drops or flips the default fails here.
+    expect(description).toContain("(default: true)");
   });
 });
 

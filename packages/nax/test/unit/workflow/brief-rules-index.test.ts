@@ -212,6 +212,22 @@ describe("buildWorkflowBrief — the memory section (US-002)", () => {
   test("an absent index adds no heading to the minimal brief", () => {
     expect(buildWorkflowBrief(briefInput)).not.toContain("## Memory");
   });
+
+  // Branch fix M3: every other section of the brief ends with a newline (`section()` and
+  // `buildRulesIndexSection` both do), so the heading that follows one starts after a blank
+  // line. The memory section is no exception: without the trailing newline it butted straight
+  // against the next heading in the brief's source text.
+  test("the section ends like every other one, so the next heading is separated by a blank line", () => {
+    const expected = memorySectionOf(MEMORY);
+    assertDefined(expected, "memorySectionOf section");
+
+    const withFeature = buildWorkflowBrief({ ...withSections, memoryIndex: MEMORY });
+    expect(withFeature).toContain(`${expected}\n\n## Feature context`);
+
+    // No feature context: the heading after the memory section is the rules section.
+    const withConstitution = buildWorkflowBrief({ ...briefInput, constitution: "RULES", memoryIndex: MEMORY });
+    expect(withConstitution).toContain(`${expected}\n\n## Project rules`);
+  });
 });
 
 describe("writeBrief — the rules index section (seam)", () => {

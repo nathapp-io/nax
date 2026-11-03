@@ -72,6 +72,7 @@ export function renderWorkflowFindings(findings: readonly WorkflowPromptFinding[
 
 export function buildWorkflowBrief(input: WorkflowBriefInput): string {
   const acs = input.acceptanceCriteria.map((ac, i) => `AC-${i + 1}: ${ac}`).join("\n");
+  const memory = memorySectionOf(input.memoryIndex);
   const redBase =
     input.redBaseDependencies.length > 0
       ? section(
@@ -99,7 +100,9 @@ export function buildWorkflowBrief(input: WorkflowBriefInput): string {
     redBase,
     section("Story context", input.storyContext),
     input.rulesIndex ? buildRulesIndexSection(input.rulesIndex) : "",
-    memorySectionOf(input.memoryIndex) ?? "",
+    // The memory section ends where every other one does — with a newline — so the heading
+    // that follows it starts after a blank line like every other heading in the brief.
+    memory !== undefined ? `${memory}\n` : "",
     section("Feature context", input.featureContext),
     buildProjectContextSection(input.projectContextOverride),
     section("Project rules", input.constitution),
