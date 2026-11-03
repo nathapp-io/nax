@@ -10,7 +10,7 @@
  * received and in which order, and where a queue went when its turn did not complete.
  */
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { SessionEvent, TurnEndStatus } from "@nathapp/nax-agent";
+import type { ImageAttachment, SessionEvent, TurnEndStatus } from "@nathapp/nax-agent";
 import { assertDefined } from "@test/helpers";
 import { cleanup, render } from "ink-testing-library";
 import { act, type ReactElement, useState } from "react";
@@ -235,6 +235,8 @@ function queueHost() {
     current: () => state,
     notice: () => undefined,
     send,
+    /** The screen asks this before a send that carries a picture; this brain reads them. */
+    acceptsImages: async () => true,
     start: async () => {},
     clear: async () => {},
     resume: async () => {},
@@ -404,7 +406,9 @@ describe("draining the queue after a completed turn", () => {
     const ui = await withQueued(["see @a.ts"]);
     expect(expand).not.toHaveBeenCalled();
     await ui.endTurn("completed");
-    expect(expand).toHaveBeenCalledWith("see @a.ts", { cwd: REPO_ROOT, repoRoot: REPO_ROOT });
+    // The same `where` a typed mention uses on a brain that reads images: the expander is
+    // told to attach the pictures a mentioned file holds.
+    expect(expand).toHaveBeenCalledWith("see @a.ts", { cwd: REPO_ROOT, repoRoot: REPO_ROOT, images: true });
     expect(ui.send).toHaveBeenLastCalledWith("EXPANDED", expect.any(Function), { title: "see @a.ts" });
   });
 
@@ -519,5 +523,66 @@ describe("a queued line that carries a picture", () => {
     const ui = await withImageInPrompt();
     await ui.pressAndSettle(RETURN);
     expect(ui.rows()).toContain("> [Image #1] look");
+  });
+});
+
+/* ---------------------------------------------------------------------------------------
+ * The live prompt while a queued message is sent: a queued line owns neither its pictures
+ * nor the prompt, so it must consume and overwrite neither.
+ * ------------------------------------------------------------------------------------- */
+
+/** The notice the image validator's refusal opens with. */
+const NOT_SENT = "images not sent: ";
+/** The notice when a mentioned message carries more pictures than one message may. */
+const TOO_MANY = `${NOT_SENT}Image count exceeds the limit of 10 images per message`;
+
+/** More pictures than one message may carry: what makes a mentioned send fail the validator. */
+const MANY_IMAGES: readonly ImageAttachment[] = Array.from({ length: 11 }, (_unused, index) => ({
+  mimeType: "image/png",
+  data: "AAAA",
+  width: 2,
+  height: 3,
+  source: `mentioned-${index}.png`,
+}));
+
+/** The images the newest `host.send` carried; an empty list when the call carried none. */
+function sentImages(send: ReturnType<typeof queueHost>["send"]): readonly ImageAttachment[] {
+  const call = send.mock.calls.at(-1);
+  assertDefined(call, "the last host.send call");
+  return call[2]?.images ?? [];
+}
+
+describe("the live draft while a queued message is sent", () => {
+  test("F1 a picture attached after queueing survives the drained send and is sent with its own", async () => {
+    spyOn(_imageAttachDeps, "readClipboard").mockResolvedValue({ kind: "image", bytes: PNG });
+    const ui = mountScreen();
+    await ui.submit("hello");
+    await ui.submit("first");
+    // The picture arrives while the queued line waits: it belongs to the *next* message.
+    await ui.pressAndSettle(CTRL_V);
+    await ui.endTurn("completed");
+    expect(ui.send).toHaveBeenLastCalledWith("first", expect.any(Function));
+    expect(sentImages(ui.send)).toEqual([]);
+    expect(promptRow(ui.rows())).toBe("> [Image #1]");
+    // That next message is sent after the drained turn ends, and still carries its picture.
+    await ui.endTurn("completed");
+    await ui.pressAndSettle(RETURN);
+    expect(sentImages(ui.send)).toHaveLength(1);
+  });
+
+  test("F2 a refused queued send keeps the live draft and puts the refused line above it", async () => {
+    spyOn(_chatAppDeps, "expandMentions").mockResolvedValue({
+      message: "EXPANDED",
+      records: [],
+      images: MANY_IMAGES,
+    });
+    const ui = mountScreen();
+    await ui.submit("hello");
+    await ui.submit("see @a.ts");
+    ui.type("keep my draft");
+    await ui.endTurn("completed");
+    expect(ui.frame()).toContain(TOO_MANY);
+    expect(ui.send).toHaveBeenCalledTimes(1);
+    expect(ui.frame()).toContain("> see @a.ts\n  keep my draft");
   });
 });

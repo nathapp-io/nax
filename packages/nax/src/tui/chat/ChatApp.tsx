@@ -34,7 +34,13 @@ import {
 } from "./chat-status";
 import { type EscAsk, type EscLayer, escHintText, topEscLayer } from "./esc-layer";
 import { FixedRow } from "./FixedRow";
-import { type ImageDraft, imagesForSend, splitLeadingPlaceholders, titleWithoutPlaceholders } from "./image-draft";
+import {
+  EMPTY_IMAGE_DRAFT,
+  type ImageDraft,
+  imagesForSend,
+  splitLeadingPlaceholders,
+  titleWithoutPlaceholders,
+} from "./image-draft";
 import { prepareImageSend } from "./image-send";
 import { layoutTranscript } from "./layout";
 import { type EditorState, EMPTY_EDITOR } from "./line-editor";
@@ -542,8 +548,19 @@ export function ChatApp({
    * for the next message by the time the answer lands; overwriting that draft would delete an
    * edit the refusal never saw. The newer prompt then stays, and the refused line travels with
    * the notice as `dropped` so it is named in the transcript instead of vanishing.
+   *
+   * `owns` is false for a queued line: it was typed for an earlier turn, and the prompt standing
+   * now is the user's next message, whatever its revision count. A refusal never overwrites that
+   * prompt — the refused line and whatever is still queued go back above it, oldest first, so the
+   * user's own draft survives and the refused line is theirs to fix.
    */
-  function imagePrepare(text: string, draft: ImageDraft, revision: number): () => Promise<PreparedSend> {
+  function imagePrepare(input: {
+    readonly text: string;
+    readonly draft: ImageDraft;
+    readonly revision: number;
+    readonly owns: boolean;
+  }): () => Promise<PreparedSend> {
+    const { text, draft, revision, owns } = input;
     return async () => {
       const result = await prepareImageSend({
         text,
@@ -555,14 +572,30 @@ export function ChatApp({
         model: host.current().model,
       });
       if (result.kind === "refuse") {
+        if (!owns) {
+          restoreRefused(text);
+          return { notice: result.notice };
+        }
         if (promptRevision.current === revision) {
           restorePrompt(text);
           return { notice: result.notice };
         }
         return { notice: result.notice, dropped: text };
       }
-      return { message: result.message, images: result.images, draft };
+      return { message: result.message, images: result.images, ...(owns ? { draft } : {}) };
     };
+  }
+
+  /**
+   * A queued line the prepare step refused: it goes back into the prompt above the draft
+   * standing there, ahead of whatever is still queued behind it, and the queue empties — the
+   * same restoration a turn that did not complete performs. The live draft is never overwritten:
+   * it is the user's next message, not the refused line's.
+   */
+  function restoreRefused(text: string): void {
+    const queue = queueRef.current;
+    replaceQueue(EMPTY_QUEUE);
+    restorePrompt(queueToPrompt([text, ...queue], editorRef.current.text));
   }
 
   /**
@@ -581,28 +614,56 @@ export function ChatApp({
   }
 
   /**
+   * A non-slash message's send: the plain two-argument call, or the one prepared for the images
+   * and mentions the line carries. `ownsDraft` is false for a queued line, which takes none of
+   * the prompt's pictures (`submitted` is empty) and hands no draft over, so nothing the user
+   * attached since is emptied.
+   */
+  async function sendLine(input: {
+    readonly message: string;
+    readonly line: string;
+    readonly submitted: ImageDraft;
+    readonly ownsDraft: boolean;
+  }): Promise<void> {
+    const { message, line, submitted, ownsDraft } = input;
+    const composed: ComposedSend = ownsDraft ? { message, draft: submitted } : { message };
+    noteUserTurn();
+    if (imagesForSend(submitted, line).images.length === 0 && !needsMentionExpansion(message)) {
+      await sendTurn(composed);
+      return;
+    }
+    // The prompt's count as the line leaves it, so a refusal that lands later can tell whether
+    // the user has redrawn the prompt since (see `imagePrepare`).
+    const prepare = imagePrepare({
+      text: message,
+      draft: submitted,
+      revision: promptRevision.current,
+      owns: ownsDraft,
+    });
+    await sendTurn(composed, prepare);
+  }
+
+  /**
    * A non-slash message's send. One that carries a placeholder image or a mention is prepared —
    * expanded once against the cwd the screen was handed and the repo the host reports, with the
    * images its placeholders still name — while a plain one keeps today's exact call; either way
    * the typed text stays the title and the draft history. The draft is read once here, so what
    * the send consumed is what the reset takes back however long the preparation takes.
+   *
+   * `ownsDraft` is false for a line that came off the queue. That line was typed for an earlier
+   * turn, so the pictures in the prompt now belong to the user's next message: a queued send
+   * takes none of them and — because it hands over no draft — empties none of them either.
    */
-  async function submit(message: string): Promise<void> {
+  async function submit(message: string, ownsDraft = true): Promise<void> {
     // A slash line after the leading placeholders is the line that runs; the images it is
     // refused for are the ones *it* names, not the ones it left in the prompt.
     const { line, lead } = submittedLine(message);
     const command = parseSlashCommand(line);
-    const submitted = imageAttach.current();
+    // A queued line owns none of the prompt's pictures: they are the next message's.
+    const submitted = ownsDraft ? imageAttach.current() : EMPTY_IMAGE_DRAFT;
     const images = imagesForSend(submitted, line).images;
     if (!command) {
-      noteUserTurn();
-      if (images.length === 0 && !needsMentionExpansion(message)) {
-        await sendTurn({ message, draft: submitted });
-        return;
-      }
-      // The prompt's count as the line leaves it, so a refusal that lands later can tell
-      // whether the user has redrawn the prompt since (see `imagePrepare`).
-      await sendTurn({ message, draft: submitted }, imagePrepare(message, submitted, promptRevision.current));
+      await sendLine({ message, line, submitted, ownsDraft });
       return;
     }
     // The image refusal comes before every command effect, `quit` included: a slash line never
@@ -679,7 +740,9 @@ export function ChatApp({
     // user may have typed since — and only its history changes, which is why the editor and
     // the browse position are carried over as they stand.
     setDraft((current) => ({ ...current, history: [...current.history, taken.text] }));
-    void submit(taken.text);
+    // A queued line owns no draft: the pictures in the prompt are the next message's, so this
+    // send must neither carry them nor empty them.
+    void submit(taken.text, false);
   }
 
   /**
