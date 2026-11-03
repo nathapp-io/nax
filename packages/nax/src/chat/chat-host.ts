@@ -33,6 +33,7 @@ import { createCloseConfirm } from "./close-confirm";
 import { type ContextWindowCache, createContextWindowCache } from "./context-window-cache";
 import { createHostMemory, type HostMemory } from "./host-memory";
 import { createHostQueue, type HostQueue } from "./host-queue";
+import { createHostRecents, type HostRecents } from "./host-recents";
 import { createHostCompacting, createHostSteering, type HostCompacting, type HostSteering } from "./host-steer-compact";
 import { closeChatHost, createChatLoopHandlers } from "./host-wiring";
 import { type ChatJobs, type ChatRunAsks, createHostJobs } from "./jobs";
@@ -95,6 +96,9 @@ class NativeChatHost implements ChatHost {
   private readonly contextWindows: ContextWindowCache;
   /** The index every open carries and every subagent session is told; the host only calls it. */
   private readonly hostMemory: HostMemory;
+  /** US-006: the recent models, newest first; absent when the composition supplied no store. */
+  readonly recentModels?: () => readonly string[];
+  private readonly recents?: HostRecents;
   private turnListener?: (event: SessionEvent) => void;
   private sending = false;
   private handle?: ChatSessionHandle;
@@ -137,6 +141,12 @@ class NativeChatHost implements ChatHost {
     this.memory = deps.resources?.memory;
     this.contextWindows = createContextWindowCache(() => _chatHostDeps.lookupContextWindow);
     this.hostMemory = createHostMemory({ memory: deps.resources?.memory, logger: deps.logger });
+    this.recents =
+      deps.recents === undefined
+        ? undefined
+        : createHostRecents({ store: deps.recents.store, initial: deps.recents.initial, logger: deps.logger });
+    const recents = this.recents;
+    if (recents !== undefined) this.recentModels = () => recents.recentModels();
     this.nativeModels = deps.models ?? tierModels(deps.config);
     this.projectKey = getProjectKey(deps.config, deps.repoRoot);
     this.outputDir = projectOutputDir(this.projectKey, deps.config.outputDir);
@@ -292,6 +302,7 @@ class NativeChatHost implements ChatHost {
     await this.jobs?.attach();
     this.resumeNotice = undefined;
     await this.contextWindows.prime(next.meta.model);
+    await this.recents?.recordOpen(next.meta.model);
   }
 
   /** The arguments every open shares; the memory index is passed in, never re-read, so
@@ -376,6 +387,7 @@ class NativeChatHost implements ChatHost {
         ? "The last turn was interrupted. Send a message to continue it."
         : undefined;
     await this.contextWindows.prime(resumed.meta.model);
+    await this.recents?.recordOpen(resumed.meta.model);
   }
 
   private async reopen(
@@ -432,6 +444,7 @@ class NativeChatHost implements ChatHost {
     }
     this.asks.setMode(outcome.handle.meta.mode === "full" ? "full" : "guarded");
     await this.contextWindows.prime(outcome.handle.meta.model);
+    await this.recents?.switched(from.model, outcome);
     if (outcome.error !== undefined) throw outcome.error;
   }
 

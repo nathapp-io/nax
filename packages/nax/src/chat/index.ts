@@ -69,6 +69,7 @@ export {
 export { type ChatModelChoicesInput, chatEffortLevels, chatModelChoices, tierModels } from "./chat-models";
 export { type ContextWindowCache, createContextWindowCache } from "./context-window-cache";
 export { type CreateHostMemoryInput, createHostMemory, type HostMemory } from "./host-memory";
+export { createHostRecents, type HostRecents, type HostRecentsInput } from "./host-recents";
 export {
   type ImageFormat,
   imageDescription,
@@ -117,6 +118,15 @@ export {
   openChatSession,
   resolveChatSessionsDir,
 } from "./open-chat-session";
+export {
+  _recentModelStoreDeps,
+  createRecentModelStore,
+  MAX_RECENT_MODELS,
+  RECENT_MODELS_FILE,
+  type RecentModelStore,
+  recentModelsPath,
+  recordRecentModel,
+} from "./recent-models";
 export type { ChatResources } from "./resources";
 export { sessionAcceptsImages } from "./session-images";
 export { sessionTitleText } from "./session-title";

@@ -31,6 +31,7 @@ import type { EffortLevel } from "./chat-effort";
 import type { ChatMode } from "./chat-mode";
 import type { ChatJobs, ChatRunAsks } from "./jobs";
 import type { ChatHistory, openChatSession } from "./open-chat-session";
+import type { RecentModelStore } from "./recent-models";
 import type { ChatResources } from "./resources";
 
 export interface ChatHostState {
@@ -100,6 +101,12 @@ export interface ChatHost {
    * session's brain cannot compact, and when the summarizer itself fails.
    */
   compact?(): Promise<CompactResult>;
+  /**
+   * The models used most recently, newest first, with the effort each was used at (US-006).
+   * Optional so a hand-built host typechecks: one without it makes `/model` list the catalogue
+   * alone, as it did before the list existed.
+   */
+  recentModels?(): readonly string[];
   runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>;
   cancel(): void;
   listSessions(): Promise<readonly ChatSessionRow[]>;
@@ -119,6 +126,11 @@ export interface ChatHostDeps {
   readonly chain: InteractionChain | null;
   readonly open?: typeof openChatSession;
   readonly storage: SessionStorage;
+  /**
+   * The persisted recent models and the list loaded from them before the host was built
+   * (US-006). Optional so a host composed without one simply has no recent rows.
+   */
+  readonly recents?: { readonly store: RecentModelStore; readonly initial: readonly string[] };
   readonly now: () => Date;
   readonly logger: Pick<Logger, "warn">;
 }

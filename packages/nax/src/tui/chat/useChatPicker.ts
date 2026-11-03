@@ -99,6 +99,8 @@ function modelOf(state: PickerState, current: ChatHostState, host: ChatHost): Pi
     query: state.query,
     pending: state.pending,
     models: host.models,
+    // US-006: the models used last come first, with the effort each was used at.
+    ...(host.recentModels === undefined ? {} : { recents: host.recentModels() }),
     effortLevels: host.effortLevels?.(current.model) ?? EFFORT_LEVELS,
     currentModel: current.model,
     currentMode: current.mode,

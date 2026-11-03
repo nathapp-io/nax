@@ -16,7 +16,9 @@ import {
   createChatHost,
   createChatMcp,
   createChatStorage,
+  createRecentModelStore,
   createWorkflowProvider,
+  recentModelsPath,
   resolveChatSessionsDir,
   tierModels,
 } from "@/chat";
@@ -67,6 +69,7 @@ export const _chatCommandDeps = {
   createChatStorage,
   createAcpCatalog,
   createChatHost,
+  createRecentModelStore,
   createMemoryHost,
   renderChat: (props: ChatAppProps): ChatShell => renderChat(props),
   onSignal: (signal: ChatSignal, handler: () => Promise<void>): (() => void) => {
@@ -344,8 +347,13 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
   let host: ChatHost;
   let acp: AcpCatalog;
   try {
-    acp = deps.createAcpCatalog({ env: deps.env, sessionsDir: resolveChatSessionsDir(deps.env), logger });
+    const sessionsDir = resolveChatSessionsDir(deps.env);
+    acp = deps.createAcpCatalog({ env: deps.env, sessionsDir, logger });
     await acp.load();
+    // Built beside the catalog and read before the host exists: the rows `/model` draws on the
+    // first frame are the ones the last chat left behind.
+    const recentModels = deps.createRecentModelStore({ path: recentModelsPath(sessionsDir), logger });
+    const recents = { store: recentModels, initial: await recentModels.load() };
     host = deps.createChatHost({
       models,
       acp,
@@ -357,6 +365,7 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
       resources,
       storage,
       chain,
+      recents,
       now: () => new Date(),
       logger,
     });

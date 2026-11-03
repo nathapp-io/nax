@@ -42,6 +42,8 @@ interface MountOptions {
   readonly send?: ChatHost["send"];
   readonly models?: readonly string[];
   readonly effortLevels?: ChatHost["effortLevels"];
+  /** The host's recent models, newest first; absent leaves a host with no such list (US-006). */
+  readonly recents?: readonly string[];
   readonly current?: Partial<ChatHostState>;
   /** Absent: `listSessions()` resolves to no rows at once. */
   readonly sessions?: () => Promise<readonly ChatSessionRow[]>;
@@ -79,6 +81,7 @@ export function mount(options: MountOptions = {}) {
     repoRoot: "/repo",
     models: options.models ?? MODELS,
     ...(options.effortLevels === undefined ? {} : { effortLevels: options.effortLevels }),
+    ...(options.recents === undefined ? {} : { recentModels: () => options.recents ?? [] }),
     asks: createChatAskController({ mode: "guarded", answer: () => {} }),
     current: () => current,
     notice: () => undefined,
