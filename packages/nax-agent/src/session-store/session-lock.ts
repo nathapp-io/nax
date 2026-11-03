@@ -29,8 +29,10 @@ const LockSchema = z.union([
   z.object({
     pid: z.number().int().positive(),
     startedAt: z.string(),
-    nonce: z.undefined(),
-    heartbeatAt: z.undefined(),
+    // A legacy lock OMITS these keys. zod >=4.6 treats a bare `z.undefined()` key as
+    // required-present, so `.optional()` is what keeps an absent key parsing.
+    nonce: z.undefined().optional(),
+    heartbeatAt: z.undefined().optional(),
   }),
 ]);
 type Body = z.infer<typeof LockSchema>;

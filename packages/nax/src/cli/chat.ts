@@ -85,6 +85,10 @@ export const _chatCommandDeps = {
   setExitCode: (code: number): void => {
     process.exitCode = code;
   },
+  /** Leave with the code `setExitCode` recorded (`process.exit()` reads `process.exitCode`). */
+  exit: (): void => {
+    process.exit();
+  },
 };
 export type ChatCommandDeps = typeof _chatCommandDeps;
 
@@ -429,5 +433,11 @@ export function registerChatCommand(program: Command, deps: ChatCommandDeps = _c
     .option("--model <id>", "Provider/model id")
     .option("--profile <name>", "Profile(s) to overlay (repeatable)", collectChatProfile, [])
     .option("-d, --dir <path>", "Working directory")
-    .action((options: ChatCommandOptions) => chatCommand(options, deps));
+    .action(async (options: ChatCommandOptions) => {
+      await chatCommand(options, deps);
+      // Leave explicitly. Teardown is complete and the summary is printed, but a handle
+      // that outlives it (seen on Ubuntu) would keep the process alive behind a closed
+      // screen until a second ctrl-c. Exiting also runs srt's exit-time mount cleanup.
+      deps.exit();
+    });
 }
