@@ -195,6 +195,19 @@ function mountScreen(options: ScreenOptions = {}) {
   const type = (text: string): void => {
     for (const char of text) press(char);
   };
+  /**
+   * Several keys in one act, with no render between them: a return, the text typed after it and
+   * a chord all land in one batch, so what a handler reads from state is the value from before
+   * the batch. Each key is its own write, so ink parses them as separate keypresses.
+   */
+  const pressBatch = async (sequences: readonly string[]): Promise<void> => {
+    await Promise.resolve(
+      act(async () => {
+        for (const sequence of sequences) ui.stdin.write(sequence);
+      }),
+    );
+    await settle();
+  };
   /** A line typed and returned, drained through the screen's own submit path. */
   const submit = async (text: string): Promise<void> => {
     type(text);
@@ -218,7 +231,21 @@ function mountScreen(options: ScreenOptions = {}) {
     await turn.finish();
     await settle();
   };
-  return { ...fake, ui, rows, frame, press, pressAndSettle, settle, type, submit, steerWith, current, endTurn };
+  return {
+    ...fake,
+    ui,
+    rows,
+    frame,
+    press,
+    pressBatch,
+    pressAndSettle,
+    settle,
+    type,
+    submit,
+    steerWith,
+    current,
+    endTurn,
+  };
 }
 
 /** The rows that carry the steering marker, in the order they are drawn. */
@@ -398,6 +425,59 @@ describe("ctrl+s when there is nothing to steer", () => {
     expect(ui.steer).not.toHaveBeenCalled();
     expect(ui.cancel).not.toHaveBeenCalled();
     expect(ui.sends).toEqual(["hello"]);
+  });
+});
+
+describe("a second ctrl+s before the interrupted turn settles", () => {
+  test("F1 keeps the pending interrupt-send and queues the line that follows it", async () => {
+    const ui = mountScreen({ steer: () => ({ status: "unsupported" }) });
+    await ui.submit("hello");
+    await ui.steerWith("first retry");
+    await ui.steerWith("second retry");
+    // The first line is still what interrupts this turn; the second waits behind it.
+    expect(queuedRows(ui.rows())).toEqual(["queued · second retry"]);
+    await ui.endTurn("cancelled");
+    expect(ui.sends).toEqual(["hello", "first retry"]);
+    await ui.endTurn("completed");
+    expect(ui.sends).toEqual(["hello", "first retry", "second retry"]);
+  });
+
+  test("F1 clears the draft of the line it queued", async () => {
+    const ui = mountScreen({ steer: () => ({ status: "unsupported" }) });
+    await ui.submit("hello");
+    await ui.steerWith("first retry");
+    await ui.steerWith("second retry");
+    expect(promptRow(ui.rows())).toBe(">");
+  });
+});
+
+/* ---------------------------------------------------------------------------------------
+ * Keys that arrive before the screen redraws: a return, the text after it and ctrl+s can
+ * all land in one batch, so what owns the turn is read from the synchronous ref, never from
+ * the busy flag of the render that preceded the batch.
+ * ------------------------------------------------------------------------------------- */
+
+describe("ctrl+s batched behind the return that started the turn", () => {
+  /** One batch: the return, the line after it and ctrl+s, with no render between them. */
+  function batched(ui: ReturnType<typeof mountScreen>): Promise<void> {
+    return ui.pressBatch(["hello", RETURN, "x", CTRL_S]);
+  }
+
+  test("F2 steers the line rather than dropping it as an idle send", async () => {
+    const applied = Promise.withResolvers<boolean>();
+    const ui = mountScreen({ steer: () => ({ status: "accepted", steerId: "s", applied: applied.promise }) });
+    await batched(ui);
+    expect(ui.steer).toHaveBeenCalledTimes(1);
+    expect(ui.steer).toHaveBeenCalledWith("x");
+    expect(steeringRows(ui.rows())).toEqual([`${STEERING}x`]);
+    expect(promptRow(ui.rows())).toBe(">");
+  });
+
+  test("F2 interrupts and holds the line when the brain cannot steer", async () => {
+    const ui = mountScreen();
+    await batched(ui);
+    await ui.endTurn("cancelled");
+    expect(ui.sends).toEqual(["hello", "x"]);
   });
 });
 

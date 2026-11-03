@@ -767,19 +767,27 @@ export function ChatApp({
    * ctrl+s (US-004): hand the typed line to the turn that is running, or — with nothing
    * running — send it exactly as a return would.
    *
+   * Which of the two it is comes from `sending`, never from the rendered `busy` flag: a return,
+   * the text typed after it and this chord can arrive in one batch, and the flag of the render
+   * that preceded that batch still says idle while `sendTurn` has already taken the turn. The
+   * draft is cleared only once something has taken the line — a steer, the pending interrupt
+   * send, the queue, or the input's own submit — so a batched line is never emptied and dropped.
+   *
    * A brain that steers takes the line where the turn is, and the prompt empties at once: the
    * steering row above the queue says what the turn has not applied yet, and settles the way
    * the turn did. A brain that cannot (`unsupported`, `no_turn`, or no `steer` at all) is
    * interrupted the way escape interrupts it, with the line held to be sent first once that
-   * turn settles — see `drainQueue`. A picture in the draft is refused with the queue's own
-   * notice, and a steer that rejects leaves the draft exactly as it was: the line never
-   * reached the turn, so it is still the user's to edit or send.
+   * turn settles — see `drainQueue` — or queued behind that pending send when one is already
+   * waiting. A picture in the draft is refused with the queue's own notice, and a steer that
+   * rejects leaves the draft exactly as it was: the line never reached the turn, so it is still
+   * the user's to edit or send.
    */
   function steerRunningTurn(): void {
     const text = steerText();
     if (text === undefined) return;
-    if (!turnRunning) {
-      // No turn to steer: the same path a return takes, prompt emptied and history kept.
+    if (!sending.current) {
+      // No send of the screen's is in flight: the same path a return takes, prompt emptied and
+      // history kept.
       inputHandle.current?.submit(text);
       return;
     }
@@ -794,11 +802,18 @@ export function ChatApp({
       append({ kind: "error", text: errorMessage(error) });
       return;
     }
-    // The line is the turn's now, whatever it answers: leaving it in the prompt would steer or
-    // send it twice.
+    // The line goes somewhere it is held now, whatever the brain answered: leaving it in the
+    // prompt would steer, queue or send it twice.
     inputHandle.current?.edit(EMPTY_EDITOR);
     if (result?.status === "accepted") {
       trackSteer(result, text);
+      return;
+    }
+    // A send is already waiting to interrupt this turn. It could not be steered, and a second
+    // pending send would have to replace it — so this line takes the queue instead, behind the
+    // first one, and neither is lost.
+    if (interruptSend.current !== undefined) {
+      replaceQueue(pushQueued(queueRef.current, text));
       return;
     }
     interruptSend.current = text;
