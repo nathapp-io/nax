@@ -476,11 +476,16 @@ class NativeChatHost implements ChatHost {
           now: this.deps.now().toISOString(),
           ...(runs ? { extraCostUsd: () => runs.takeCost(), settleNested: () => runs.settle() } : {}),
         });
-        // Adopt while the queue is still held, and only for the very handle this turn ran
-        // on: no accounting can slip in between the write and this adoption, and a handle
-        // replaced during the turn — a same-session switch, a `clear`, a resume — keeps its
-        // own metadata, which is newer than the retired handle's.
+        // Adopt before releasing the accounting queue. A same-session switch keeps its
+        // settings and live session, but still receives this turn's persisted accounting.
+        // A different session must never receive the retired session's metadata.
         if (this.handle === handle) this.handle = { ...handle, meta };
+        else if (this.handle?.meta.sessionId === meta.sessionId) {
+          this.handle = {
+            ...this.handle,
+            meta: { ...this.handle.meta, costUsd: meta.costUsd, title: meta.title, updatedAt: meta.updatedAt },
+          };
+        }
       });
     } finally {
       try {

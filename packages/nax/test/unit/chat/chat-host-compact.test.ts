@@ -271,20 +271,25 @@ describe("ChatHost.compact", () => {
     expect(f.host.current().meta.costUsd).toBeCloseTo(total);
   });
 
-  test("AC-3 a same-session switch during a turn keeps the switched metadata", async () => {
+  test("AC-3 a same-session switch during a turn keeps switched settings and refreshes accounting", async () => {
     const f = await started({ holdSend: true });
+    const model = "anthropic/switched";
     const sending = f.host.send("hi", () => {});
     // The turn is parked inside its stream, so the switch lands while it is in flight — and
     // on the same session id, which is what the earlier session-id rule could not tell apart.
     await flush();
     expect(f.parked).toHaveLength(1);
-    await f.host.switchTo({ mode: "full" });
-    expect(f.host.current().mode).toBe("full");
+    await f.host.switchTo({ mode: "full", model });
+    expect(f.host.current()).toMatchObject({ mode: "full", model, meta: { sessionId: SESSION } });
     f.releaseTurn();
     await sending;
-    // The turn wrote its metadata for the handle the switch retired: the switched handle's
-    // own mode must stand rather than be rewritten from the retired one.
-    expect(f.host.current().mode).toBe("full");
+    // Keep the switched settings, but reflect the completed turn's persisted spend and title.
+    expect(f.host.current()).toMatchObject({ mode: "full", model });
+    const stored = await storage.readMeta(SESSION);
+    assertDefined(stored, "the completed turn's metadata");
+    expect(stored.costUsd).toBeCloseTo(STORED_COST + TURN_COST);
+    expect(f.host.current().meta.costUsd).toBeCloseTo(stored.costUsd ?? 0);
+    expect(f.host.current().meta).toMatchObject({ title: "hi", updatedAt: NOW.toISOString() });
   });
 
   test("AC-4 records one ledger row with the summarizer's own usage and cost", async () => {
