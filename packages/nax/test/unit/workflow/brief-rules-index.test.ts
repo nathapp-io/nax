@@ -165,10 +165,10 @@ describe("buildWorkflowBrief — the rules index section (seam)", () => {
 /**
  * US-002 — the memory section of the story brief.
  *
- * A workflow session has no `nax-memory` tools, so the brief carries the index with the
- * tool section (`## Memory` + how to read a note + the index) and nothing else: the
- * sections around it are the anchors for where it goes. An absent or empty index leaves
- * the brief byte for byte what it was.
+ * The implementer session has the `nax-memory` tools, so the brief carries the tool section
+ * (`## Memory` + how to read a note + the index). The sections around it are the anchors for
+ * where it goes: after the rules index, before the feature context. An absent or empty index
+ * leaves the brief byte for byte what it was.
  */
 describe("buildWorkflowBrief — the memory section (US-002)", () => {
   const MEMORY = "INDEX-LINE";

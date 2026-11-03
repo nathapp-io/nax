@@ -27,8 +27,9 @@ describe("buildMemorySection", () => {
 
 /**
  * US-002 — the read-only memory section: the index as background, for a workflow
- * session that has no `nax-memory` tools. The note says so in words, because a
- * session told only "read a note with nax-memory__get" would try the missing tool.
+ * session without the memory tools (the whole-branch reviewer). The note says so
+ * in words, because a session told only "read a note with nax-memory__get" would
+ * try the tool it does not have.
  */
 describe("buildMemoryReferenceSection (US-002)", () => {
   test("AC-1: is the heading, the read-only note, then the index", () => {
