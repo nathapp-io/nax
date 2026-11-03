@@ -3,7 +3,7 @@
   "feature": "chat-steer-and-polish",
   "branchName": "feat/chat-steer-and-polish",
   "createdAt": "2026-11-03T00:00:00.000Z",
-  "updatedAt": "2026-11-03T12:41:45.773Z",
+  "updatedAt": "2026-11-03T13:26:21.030Z",
   "userStories": [
     {
       "id": "US-001",
@@ -121,14 +121,17 @@
         "api"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Reuses the existing compaction algorithm and command-claim pattern, but shared summarizer extraction, durable history and deadline/close races span modules; the session-lifecycle security override requires strict three-session TDD."
+        "reasoning": "Reuses the existing compaction algorithm and command-claim pattern, but shared summarizer extraction, durable history and deadline/close races span modules; the session-lifecycle security override requires strict three-session TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/native/session/turn-compaction-step.ts",
@@ -159,7 +162,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "99533f7eb3441c923eadc5746f8376d2ded9bd0a"
     },
     {
       "id": "US-003",
