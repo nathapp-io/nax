@@ -67,8 +67,11 @@ function stringField(source: unknown, field: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-/** A nested call is tagged with the running agent's task; its events do not drive the turn status. */
-function isSubagentEvent(event: SessionEvent): boolean {
+/**
+ * A nested call is tagged with the running agent's task; its events do not drive the turn
+ * status, and its `turn_end` is not the turn's own — the queue drains on the top-level one.
+ */
+export function isSubagentEvent(event: SessionEvent): boolean {
   return stringField(event.metadata, "subagentTask") !== undefined;
 }
 

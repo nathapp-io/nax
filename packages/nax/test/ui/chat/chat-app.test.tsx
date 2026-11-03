@@ -192,13 +192,14 @@ describe("chat shell", () => {
     ui.type("\r");
     expect(ui.send).toHaveBeenCalledWith("a\nb", expect.any(Function));
   });
-  test("AC-4 keeps draft and ignores Enter during a turn", () => {
+  test("AC-4 queues a busy return, clearing the prompt and drawing it above the input", () => {
     const ui = mount();
     ui.start();
     ui.type("draft");
     ui.type("\r");
     expect(ui.send).toHaveBeenCalledTimes(1);
-    expect(ui.lastFrame()).toContain("> draft");
+    expect(ui.lastFrame()).toContain("queued · draft");
+    expect(ui.lastFrame()).not.toContain("> draft");
   });
   test("AC-5 joins streamed assistant deltas", () => {
     const ui = mount();

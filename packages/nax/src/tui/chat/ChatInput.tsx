@@ -122,6 +122,15 @@ export interface ChatInputProps {
    * inside the key handler.
    */
   readonly onPaste?: (chunk: string) => boolean;
+  /**
+   * A plain return while a turn runs, offered to the owner instead of being dropped. Returning
+   * `true` means the owner took the line — it is queued for the next turn — so the prompt
+   * empties and nothing is submitted; `false`, or no callback at all, keeps the draft where it
+   * was, which is what a caller without a queue wants. A slash line never reaches it: a
+   * command while busy is still submitted, so the screen can answer it with its own notice.
+   * The owner must not throw; the input runs it inside the key handler.
+   */
+  readonly onQueue?: (text: string) => boolean;
 }
 
 /**
@@ -563,6 +572,7 @@ export function ChatInput({
   onEscape,
   maxRows,
   onPaste,
+  onQueue,
 }: ChatInputProps): ReactElement {
   // The rows wrap to the container the input is drawn into, which is the terminal's width
   // rather than the frame's when a host frames a narrower prompt.
@@ -624,11 +634,23 @@ export function ChatInput({
     };
   }, []);
 
-  /** Whitespace is not a message, and a running turn only accepts a slash command. */
+  /**
+   * Whitespace is not a message, and a running turn takes a plain line only through the
+   * owner's queue. A return the owner takes is not a submit: the prompt empties — the line is
+   * now the queue's — but no history entry is written and nothing is sent, so a queued message
+   * later reads exactly like a freshly typed one. A return nobody takes leaves the draft as it
+   * was; a slash line is never offered, because a command while busy still runs (or is answered
+   * with the screen's own notice).
+   */
   const submit = (text: string): void => {
     const current = latest.current;
     if (text.trim() === "") return;
-    if (busy && !text.startsWith(SLASH)) return;
+    if (busy && !text.startsWith(SLASH)) {
+      if (onQueue === undefined || !onQueue(text)) return;
+      disarm();
+      publish({ editor: EMPTY_EDITOR, history: current.history });
+      return;
+    }
     disarm();
     publish({ editor: EMPTY_EDITOR, history: [...current.history, text] });
     onSubmit(text);

@@ -10,7 +10,7 @@
  * Same-session model and mode notices share one drawn-state comparison after control refresh.
  */
 
-import type { ImageAttachment, SessionEvent } from "@nathapp/nax-agent";
+import type { ImageAttachment, SessionEvent, TurnEndStatus } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, useInput, useStdout } from "ink";
 import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -26,6 +26,7 @@ import {
   footerModel,
   headerLines,
   IDLE_STATUS,
+  isSubagentEvent,
   reduceTurnStatus,
   type TurnStatus,
   WORKING_TICK_MS,
@@ -39,6 +40,7 @@ import { layoutTranscript } from "./layout";
 import { type EditorState, EMPTY_EDITOR } from "./line-editor";
 import { MentionMenu } from "./MentionMenu";
 import { needsMentionExpansion, sentEntries } from "./mention-send";
+import { type MessageQueue, pushQueued, queueRowLines, queueToPrompt, takeQueued } from "./message-queue";
 import type { MouseEvents } from "./mouse-input";
 import { Picker, useChatPicker } from "./Picker";
 import { SlashMenu } from "./SlashMenu";
@@ -102,6 +104,8 @@ const DEFAULT_ROWS = 24;
 const SANDBOX_WARNING = "sandbox unavailable: commands run outside the sandbox";
 const TURN_BUSY_NOTICE = "wait for the turn to finish (Ctrl-C to interrupt)";
 const QUIT = "quit";
+/** What a busy return carrying a picture is told: a picture travels with a plain send only. */
+const IMAGES_NOT_QUEUED = "images cannot be queued; send it after the turn ends";
 /** What a slash line with a picture attached is told: an image travels with a plain message only. */
 const IMAGES_PLAIN_ONLY = "images can only be sent with a plain message";
 /**
@@ -152,6 +156,17 @@ interface TerminalSize {
   readonly rows: number;
 }
 
+/** No line is waiting for a turn: the queue a screen opens with, and the one it drains to. */
+const EMPTY_QUEUE: MessageQueue = [];
+
+/** How a turn's send settled, for the queue: whether it reached the host at all. */
+interface TurnOutcome {
+  /** False when the send never happened — a prepare step refused it, or it rejected. */
+  readonly sent: boolean;
+  /** The status of the turn's own `turn_end`, or undefined when the stream ended without one. */
+  readonly status: TurnEndStatus | undefined;
+}
+
 /** The stream's size, with the assumed defaults where it cannot report one. */
 function terminalSize(stdout: { columns?: number; rows?: number }): TerminalSize {
   return { columns: stdout.columns || DEFAULT_COLUMNS, rows: stdout.rows || DEFAULT_ROWS };
@@ -170,6 +185,14 @@ function stopTurn(status: TurnStatus): TurnStatus {
 /** Notices wait until neither a turn, a bottom-region surface nor host control owns the screen. */
 function idleForJobNotice(input: { turnRunning: boolean; bottomBlocked: boolean; canControl: boolean }): boolean {
   return !input.turnRunning && !input.bottomBlocked && input.canControl;
+}
+
+/**
+ * The rows the queue draws above the input. An ask card or a picker replaces the input, and
+ * the queue drawn above it with it: nothing is drawn then, so nothing is reserved either.
+ */
+function queueLinesFor(queue: MessageQueue, blocked: boolean): readonly string[] {
+  return blocked ? EMPTY_QUEUE : queueRowLines(queue);
 }
 
 /** An ask card, a picker, or any menu drawn under the input, claims the bottom region. */
@@ -215,6 +238,8 @@ export function ChatApp({
   const [status, setStatus] = useState<TurnStatus>(IDLE_STATUS);
   const [draft, setDraft] = useState<InputDraft>(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
+  /** The lines typed while a turn was running, drawn above the input until it finishes. */
+  const [queued, setQueued] = useState<MessageQueue>(EMPTY_QUEUE);
   const [clearArmed, setClearArmed] = useState(false);
   const [answerDraft, setAnswerDraft] = useState<QuestionAnswer>(NO_ANSWER);
   /** What an empty input offers instead of its placeholder: a declined ask's instruction. */
@@ -239,9 +264,25 @@ export function ChatApp({
    */
   const promptRevision = useRef(0);
   const sending = useRef(false);
+  /**
+   * The queue as it stands, ahead of React: the drain runs after a send's `await`s, and it
+   * must read the lines queued in that window — the newest state, not the last render's.
+   */
+  const queueRef = useRef<MessageQueue>(EMPTY_QUEUE);
+  /**
+   * The status of the turn's own `turn_end` in the send now running, reset by every send. A
+   * nested call's `turn_end` is not the turn's (`isSubagentEvent`), and a send that settles
+   * without one leaves it undefined: only a turn observed to have completed drains the queue.
+   */
+  const turnEnd = useRef<TurnEndStatus | undefined>(undefined);
   const [, refresh] = useState(0);
 
   const update = useCallback(() => refresh((revision) => revision + 1), []);
+  /** Replace the queue, for this batch and for the next render — as `editorRef` does the draft. */
+  const replaceQueue = useCallback((next: MessageQueue) => {
+    queueRef.current = next;
+    setQueued(next);
+  }, []);
   const appendAll = useCallback((added: readonly TranscriptEntry[]) => {
     setEntries((rows) => [...rows, ...added]);
   }, []);
@@ -283,9 +324,16 @@ export function ChatApp({
   // down, once the layer that names esc's action can be read without a cycle.
   const workingShown = status.running;
   const usableRows = size.rows - FRAME_SLACK_ROWS;
+  /**
+   * The rows the queue draws above the input, and the height it claims: like the working line,
+   * it is reserved out of the usable rows before the bottom region's budget is measured, so a
+   * queue never eats the prompt's own room. An ask card or a picker replaces the input, and
+   * the queue with it — nothing is drawn then, so nothing is reserved either.
+   */
+  const queueLines = queueLinesFor(queued, bottomBlocked(ask, picker.model));
   const bottomBudget = Math.max(
     1,
-    usableRows - HEADER_ROWS - (workingShown ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
+    usableRows - HEADER_ROWS - (workingShown ? WORKING_ROWS : 0) - queueLines.length - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
   );
   const menuRows = menuRowsFor({ rows: menu.rows, budget: bottomBudget });
   /** A menu with no row budget cannot own keys. */
@@ -418,6 +466,9 @@ export function ChatApp({
     setEntries((rows) => reduceTranscript(rows, event));
     setStatus((current) => reduceTurnStatus(current, event));
     if (event.type === "turn_start") setNowMs(Date.now());
+    // The queue's own reading of the turn: what the top-level `turn_end` said, so a send that
+    // settles without one — a rejection, a runner that threw — never looks completed.
+    if (event.type === "turn_end" && !isSubagentEvent(event)) turnEnd.current = event.status;
   }, []);
 
   /** A slash command's shown text, listed or noticed, and the session `clear` resets. */
@@ -578,6 +629,60 @@ export function ChatApp({
   }
 
   /**
+   * A plain return while a turn runs, taken by the input before it drops the line. The text is
+   * held for the next turn, and `true` tells the input to empty the prompt — the line is the
+   * queue's now, so leaving it in the prompt would send it twice.
+   *
+   * A line whose draft still holds the picture it names is refused instead: an image travels
+   * with a plain send that the screen prepares, and a queued line is submitted later, from a
+   * prompt and a draft that may have moved on. The user is told to send it when the turn ends,
+   * and the draft — the picture and the text — stays exactly as it was.
+   */
+  function queueReturn(text: string): boolean {
+    if (imagesForSend(imageAttach.current(), text).images.length > 0) {
+      append({ kind: "notice", text: IMAGES_NOT_QUEUED });
+      return false;
+    }
+    replaceQueue(pushQueued(queueRef.current, text));
+    return true;
+  }
+
+  /**
+   * What the queue does once a send has settled, and the one place that decides it.
+   *
+   * A turn observed to have `completed` releases one message — the oldest — through `submit`,
+   * the same path a typed return takes, so it expands its mentions, earns its own `user` row
+   * and becomes the title and the history entry exactly as a typed line would. One message per
+   * turn, in order: the rest wait for the next send's own end.
+   *
+   * Anything else — `cancelled`, `errored`, `timed_out`, a send that rejected, or a stream that
+   * ended without a `turn_end` at all — sends nothing. The queued lines go back into the
+   * prompt, the oldest first and above whatever has been typed since, so nothing the user wrote
+   * is lost and they can edit it before returning. Restoring also empties the queue, which is
+   * what keeps a later drain from sending a line twice.
+   */
+  function drainQueue(outcome: TurnOutcome): void {
+    const queue = queueRef.current;
+    if (queue.length === 0) return;
+    if (!outcome.sent || outcome.status !== "completed") {
+      replaceQueue(EMPTY_QUEUE);
+      restorePrompt(queueToPrompt(queue, editorRef.current.text));
+      return;
+    }
+    // A send another path already started owns the turn; the queue waits for its own end.
+    if (sending.current) return;
+    const taken = takeQueued(queue);
+    if (taken === undefined) return;
+    replaceQueue(taken.rest);
+    // The line leaves the queue as a typed one would leave the prompt, so it joins the
+    // prompt's history too: up recalls what was queued. The newest draft is read here — the
+    // user may have typed since — and only its history changes, which is why the editor and
+    // the browse position are carried over as they stand.
+    setDraft((current) => ({ ...current, history: [...current.history, taken.text] }));
+    void submit(taken.text);
+  }
+
+  /**
    * One composed message out. A message carrying images hands them over with its title — the
    * typed text without the placeholders, so the session is named by what was asked rather
    * than by `[Image #1]`; a message that is only the typed text keeps today's two-argument
@@ -614,7 +719,9 @@ export function ChatApp({
     if (sending.current) return false;
     sending.current = true;
     setBusy(true);
+    turnEnd.current = undefined;
     let started = false;
+    let sent = false;
     try {
       const prepared = prepare ? await prepare() : composed;
       if ("notice" in prepared) {
@@ -631,15 +738,19 @@ export function ChatApp({
         handleEvent(event);
       };
       await sendMessage(prepared, title, onEvent);
+      sent = true;
       return true;
     } catch (error) {
       append({ kind: "error", text: errorMessage(error) });
       return started;
     } finally {
       sending.current = false;
+      // A queued model or mode switch is applied here, before the queue is drained, so the
+      // message a user queued after switching models is sent on the model they switched to.
       await keys.finishTurn();
       setBusy(false);
       setStatus(stopTurn);
+      drainQueue({ sent, status: turnEnd.current });
     }
   }
 
@@ -757,7 +868,7 @@ export function ChatApp({
   const bottomRows = bottomRowsFor({
     ask: cardRows,
     picker: picker.model,
-    input: inputBottomRows + menuRows + mentionView.rows,
+    input: queueLines.length + inputBottomRows + menuRows + mentionView.rows,
     budget: bottomBudget,
   });
   const viewportHeight = Math.max(
@@ -828,6 +939,12 @@ export function ChatApp({
         </Box>
       ) : (
         <Box height={bottomRows} overflow="hidden" flexDirection="column">
+          {queueLines.map((text, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: the queue's rows are positional and drawn oldest first.
+            <FixedRow key={index}>
+              <StyledLineView line={[{ text, color: "muted" }]} theme={theme} />
+            </FixedRow>
+          ))}
           <ChatInput
             draft={draft}
             onDraftChange={changeDraft}
@@ -836,6 +953,7 @@ export function ChatApp({
               setHint(undefined);
               void submit(message);
             }}
+            onQueue={queueReturn}
             width={columns}
             theme={theme}
             active={!keys.locked}
