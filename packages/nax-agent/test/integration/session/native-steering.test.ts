@@ -43,8 +43,8 @@ afterEach(async () => {
   await Promise.all(sessions.splice(0).map((session) => session.close()));
 });
 
-async function openSession(provider: ScriptedProvider, extra: Parameters<typeof sessionOptions>[0] = {}) {
-  void provider;
+/** Opens a session over the installed scripted provider (see `installScriptedProvider`). */
+async function openSession(extra: Parameters<typeof sessionOptions>[0] = {}) {
   const session = await createAgentSession(sessionOptions(extra));
   sessions.push(session);
   return session;
@@ -108,7 +108,7 @@ describe("native steering: a steer during a tool round reaches the next request"
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "t1", name: "probe", input: { step: 1 } }]), textRound("done"));
     let onProbe: () => void = () => {};
-    const session = await openSession(provider, { tools: [probeTool(() => onProbe())] });
+    const session = await openSession({ tools: [probeTool(() => onProbe())] });
     onProbe = () => void steer(session)("also check b.ts");
 
     const events = await collect(session.send("hi"));
@@ -123,7 +123,7 @@ describe("native steering: a steer during a tool round reaches the next request"
     const provider = installScriptedProvider();
     provider.push(toolRound([{ id: "t1", name: "probe", input: { step: 1 } }]), textRound("done"));
     let onProbe: () => void = () => {};
-    const session = await openSession(provider, { tools: [probeTool(() => onProbe())] });
+    const session = await openSession({ tools: [probeTool(() => onProbe())] });
     onProbe = () => {
       const steerNow = steer(session);
       steerNow("first");
@@ -143,7 +143,7 @@ describe("native steering: a steer at turn end continues the turn", () => {
   test("AC-14, AC-15: a steer typed into a text-only round 1 sends a second request, and the turn completes", async () => {
     const provider = installScriptedProvider();
     let onSteer: () => void = () => {};
-    const session = await openSession(provider);
+    const session = await openSession();
     onSteer = () => void steer(session)("go on");
     provider.push(
       steerThen(() => onSteer(), textRound("round one")),
@@ -160,7 +160,7 @@ describe("native steering: a steer at turn end continues the turn", () => {
   test("AC-16: a followUp at the same turn end lands after the steer it continues with", async () => {
     const provider = installScriptedProvider();
     let onSteer: () => void = () => {};
-    const session = await openSession(provider, {
+    const session = await openSession({
       loopHandlers: [
         {
           plugin: "test",
@@ -187,7 +187,7 @@ describe("native steering: a steer at turn end continues the turn", () => {
   test("AC-17: a turn continued by a steer still honours the followUp cap in full", async () => {
     const provider = installScriptedProvider();
     let onSteer: () => void = () => {};
-    const session = await openSession(provider, {
+    const session = await openSession({
       loopHandlers: [{ plugin: "test", event: "before_turn_end", handler: () => ({ followUp: "again" }) }],
     });
     onSteer = () => void steer(session)("steer once");
@@ -226,7 +226,7 @@ describe("native steering: a turn that ends without taking the steer discards it
     provider.push(toolRound([{ id: "t1", name: "probe", input: { step: 1 } }]), textRound("never sent"));
     const steered = Promise.withResolvers<SteerResult>();
     let onProbe: () => void = () => {};
-    const session = await openSession(provider, {
+    const session = await openSession({
       turnTimeoutSeconds: 1,
       transcriptStore: store,
       tools: [probeTool(() => onProbe())],
@@ -261,7 +261,7 @@ describe("native steering: a turn that ends without taking the steer discards it
     );
     const steered = Promise.withResolvers<SteerResult>();
     let onProbe: () => void = () => {};
-    const session = await openSession(provider, { tools: [probeTool(() => onProbe())] });
+    const session = await openSession({ tools: [probeTool(() => onProbe())] });
     onProbe = () => {
       steered.resolve(steer(session)("dropped by cancel"));
       session.cancel();
@@ -287,7 +287,7 @@ describe("native steering: a turn that ends without taking the steer discards it
     const steers: Promise<boolean>[] = [];
     let stoppedEnding = 0;
     let onStop: () => void = () => {};
-    const session = await openSession(provider, {
+    const session = await openSession({
       tools: [probeTool(() => {})],
       loopHandlers: [
         {
@@ -320,7 +320,7 @@ describe("native steering: a turn that ends without taking the steer discards it
   test("AC-28: a steer pending when the turn errors resolves false", async () => {
     const provider = installScriptedProvider();
     provider.push([{ type: "error", error: { kind: "auth", message: "bad key" } }]);
-    const session = await openSession(provider);
+    const session = await openSession();
     const iterable = session.send("hi");
     // Accepted against the live claim, before the failing request ever runs.
     const result = accepted(steer(session)("dropped by error"));
@@ -343,7 +343,7 @@ describe("native steering: persistence and replay", () => {
       textRound("second turn"),
     );
     let onProbe: () => void = () => {};
-    const session = await openSession(provider, { tools: [probeTool(() => onProbe())] });
+    const session = await openSession({ tools: [probeTool(() => onProbe())] });
     onProbe = () => {
       void steer(session)("discarded");
       session.cancel();
@@ -362,7 +362,7 @@ describe("native steering: persistence and replay", () => {
     const store = createMemoryTranscriptStore();
     provider.push(toolRound([{ id: "t1", name: "probe", input: { step: 1 } }]), textRound("done"));
     let onProbe: () => void = () => {};
-    const session = await openSession(provider, {
+    const session = await openSession({
       transcriptStore: store,
       tools: [probeTool(() => onProbe())],
     });
@@ -383,7 +383,7 @@ describe("native steering: persistence and replay", () => {
     const store = createMemoryTranscriptStore();
     provider.push(toolRound([{ id: "t1", name: "probe", input: { step: 1 } }]), textRound("done"));
     let onProbe: () => void = () => {};
-    const session = await openSession(provider, {
+    const session = await openSession({
       transcriptStore: store,
       sessionId: "steer-replay",
       tools: [probeTool(() => onProbe())],
