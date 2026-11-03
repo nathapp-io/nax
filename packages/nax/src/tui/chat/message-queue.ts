@@ -58,6 +58,10 @@ export function pushQueuedFront(queue: MessageQueue, text: string): MessageQueue
  * each, and each one belongs ahead of everything queued earlier — but prepending them one at
  * a time would draw the last steer first and reverse the corrections relative to the
  * instructions they correct. So they are kept as one group instead.
+ *
+ * A group belongs to the turn that discarded it, so the screen starts each send with no group
+ * at all: a line a later turn discards is ahead of the queue that turn inherited, not appended
+ * behind the group of the turn before it.
  */
 export interface DiscardedSteers {
   readonly texts: readonly string[];

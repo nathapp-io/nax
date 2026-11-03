@@ -342,10 +342,12 @@ export function ChatApp({
    */
   const queueRef = useRef<MessageQueue>(EMPTY_QUEUE);
   /**
-   * The steers a turn discarded, in the order they were steered (US-004). One turn's pending
-   * steers settle together — `applied` resolving `false` one callback at a time, in arrival
-   * order — so they are placed as one group rather than prepended one by one, which would
-   * reverse them.
+   * The steers the turn running now discarded, in the order they were steered (US-004). One
+   * turn's pending steers settle together — `applied` resolving `false` one callback at a time,
+   * in arrival order — so they are placed as one group rather than prepended one by one, which
+   * would reverse them. The group is scoped to its own turn: every send starts it empty, so a
+   * line a later turn discards goes ahead of the queue that turn inherited rather than joining
+   * the group of the turn before it.
    */
   const discardedSteers = useRef<DiscardedSteers | undefined>(undefined);
   /**
@@ -1079,6 +1081,12 @@ export function ChatApp({
     sending.current = true;
     setBusy(true);
     turnEnd.current = undefined;
+    // A new send starts a new turn, and a discarded group belongs to the turn that discarded
+    // it: whatever an earlier turn discarded stays where it sits in the queue, and the first
+    // steer *this* turn discards starts a group of its own at the front, ahead of it. Without
+    // this, an interrupt-send that preserved the queue would hand the new turn the old turn's
+    // group and append its own correction behind the one it was correcting.
+    discardedSteers.current = undefined;
     // The statistics are this send's own: a turn is measured from its own events alone.
     turnEvents.current = [];
     let started = false;

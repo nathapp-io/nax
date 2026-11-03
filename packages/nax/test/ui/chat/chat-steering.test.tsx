@@ -442,6 +442,53 @@ describe("steers one turn discards together", () => {
   });
 });
 
+/* ---------------------------------------------------------------------------------------
+ * Two turns, two discarded steers. A discarded group leads the queue for the turn that
+ * discarded it and for no other: an interrupt-send starts the next turn while the queue it
+ * preserved stays queued, and the line *that* turn discards belongs ahead of the queue it
+ * inherited — ahead of the earlier turn's discard — not appended behind it, which would read
+ * as deserting the correction the user just made.
+ * ------------------------------------------------------------------------------------- */
+
+describe("steers two turns discard separately", () => {
+  /** A host that steers anything but `retry`, so the second ctrl+s interrupts and sends. */
+  function mixed() {
+    const settled: Array<PromiseWithResolvers<boolean>> = [];
+    const steer = (text: string): SteerResult => {
+      if (text === "retry") return { status: "unsupported" };
+      const applied = Promise.withResolvers<boolean>();
+      settled.push(applied);
+      return { status: "accepted", steerId: `steer-${settled.length}-${text}`, applied: applied.promise };
+    };
+    return { settled, ui: mountScreen({ steer }) };
+  }
+
+  test("B4 the second turn's discarded steer goes ahead of the queue it inherited", async () => {
+    const { settled, ui } = mixed();
+    await ui.submit("hello");
+    await ui.steerWith("first");
+    const first = settled[0];
+    assertDefined(first, "the first turn's applied promise");
+    first.resolve(false);
+    await ui.settle();
+    expect(queuedRows(ui.rows())).toEqual(["queued · first"]);
+    // ctrl+s on a line this brain cannot steer: `hello` is interrupted and `retry` is sent
+    // next, and the queue keeps `first` behind it.
+    await ui.steerWith("retry");
+    await ui.endTurn("cancelled");
+    expect(ui.sends).toEqual(["hello", "retry"]);
+    expect(queuedRows(ui.rows())).toEqual(["queued · first"]);
+    // The second turn discards a steer of its own. That line belongs at the front of the
+    // queue: the turn that discarded `first` had already ended.
+    await ui.steerWith("second");
+    const second = settled[1];
+    assertDefined(second, "the second turn's applied promise");
+    second.resolve(false);
+    await ui.settle();
+    expect(queuedRows(ui.rows())).toEqual(["queued · second", "queued · first"]);
+  });
+});
+
 describe("ctrl+s when there is nothing to steer", () => {
   test("AC-15 sends the draft as a turn when no turn is running", async () => {
     const ui = mountScreen({ steer: () => ({ status: "unsupported" }) });
