@@ -18,6 +18,7 @@ import {
   type MemoryNote,
   type MemoryPendingForget,
   type MemoryProvider,
+  type MemoryStore,
   type MemoryWriteRequest,
   NaxError,
 } from "@nathapp/nax-agent";
@@ -84,6 +85,28 @@ async function caught(promise: Promise<unknown>): Promise<unknown> {
   } catch (error) {
     return error;
   }
+}
+
+/** How often the provider consulted the record: every write path reads it, and only a change writes it. */
+interface RecordCalls {
+  reads: number;
+  writes: number;
+}
+
+/** The store with its record read and write observed: both still reach the real store. */
+function observeRecord(store: MemoryStore): RecordCalls {
+  const calls: RecordCalls = { reads: 0, writes: 0 };
+  const read = store.readPendingForgets.bind(store);
+  const write = store.writePendingForgets.bind(store);
+  store.readPendingForgets = async () => {
+    calls.reads += 1;
+    return read();
+  };
+  store.writePendingForgets = async (entries) => {
+    calls.writes += 1;
+    await write(entries);
+  };
+  return calls;
 }
 
 /** The three write paths that rewrite the record, each already at the point of writing it. */
@@ -234,27 +257,45 @@ describe("local provider pending forgets", () => {
     });
   });
 
-  test("AC-17: a save of another key leaves the record's one entry as it was", async () => {
+  test("AC-17: a save of a key the record does not hold leaves every other entry as it was", async () => {
     await withTempDir(async (dir) => {
       const store = createMemoryStore({ projectDir: dir, logger: makeLogger() });
+      const queued = [
+        pendingForget({ clientId: "client-b", slug: "b" }),
+        pendingForget({ clientId: "client-c", slug: "c", reason: "c is stale" }),
+      ];
+      await store.writePendingForgets(queued);
+      const before = await Bun.file(store.paths.pendingForgets).text();
+      const calls = observeRecord(store);
       const provider = createLocalMemoryProvider(store);
-      const otherKey = pendingForget({ clientId: "client-b", slug: "b" });
-      await store.writePendingForgets([otherKey]);
 
       await provider.push(saveRequest(note({ slug: "a" })));
 
-      expect(await store.readPendingForgets()).toEqual([otherKey]);
+      // The save consults the record — a save is what calls off a queued forget — and,
+      // finding no entry of its own to drop, leaves the file exactly as it was. A save
+      // that skipped the record, rewrote it, or wrote it back unchanged all fail here.
+      expect(calls.reads).toBe(1);
+      expect(calls.writes).toBe(0);
+      expect(await store.readPendingForgets()).toEqual(queued);
+      expect(await Bun.file(store.paths.pendingForgets).text()).toBe(before);
     });
   });
 
   test("AC-18: a save on a mirror with no record file leaves the file absent", async () => {
     await withTempDir(async (dir) => {
       const store = createMemoryStore({ projectDir: dir, logger: makeLogger() });
+      const calls = observeRecord(store);
       const provider = createLocalMemoryProvider(store);
+      const saved = note({ slug: "a" });
 
-      await provider.push(saveRequest(note({ slug: "a" })));
+      const result = await provider.push(saveRequest(saved));
 
-      // A key the record does not hold leaves it alone: absent stays absent.
+      // The save consulted the record and found nothing of its own to call off, so it
+      // wrote nothing: a key the record does not hold leaves it alone, absent stays absent.
+      expect(calls.reads).toBe(1);
+      expect(calls.writes).toBe(0);
+      expect(result).toEqual({ id: saved.id, status: "active" });
+      expect(await store.readNote("project", saved.slug)).toEqual(saved);
       expect(existsSync(store.paths.pendingForgets)).toBe(false);
     });
   });
