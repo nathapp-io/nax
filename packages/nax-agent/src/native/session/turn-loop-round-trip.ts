@@ -416,18 +416,31 @@ export type TurnEndOutcome = { action: "break" } | { action: "continue"; state: 
  * at MAX_FOLLOW_UPS_PER_TURN.
  */
 export async function runTurnEndPhase(state: TurnLoopState, params: TurnRoundParams): Promise<TurnEndOutcome> {
-  const stopped = params.spinFlags.stopped || params.invalidCallBudget.exceeded || state.timedOut;
+  const stoppedAtDispatch = params.spinFlags.stopped || params.invalidCallBudget.exceeded || state.timedOut;
   const turnEnd = await params.loopEvents.dispatch("before_turn_end", {
     messages: state.messages,
     roundTrips: state.roundTrips,
     ended: "completed",
-    stopped,
+    // What the handler sees is the state it fired on, not what the dispatch
+    // itself went on to spend.
+    stopped: stoppedAtDispatch,
     followUpsSoFar: state.followUpsSoFar,
   });
+  // The dispatch awaits, so the budget can run out while a handler works. A
+  // continuation planned from the pre-dispatch state would then be a round trip
+  // the very next deadline check refuses: the injection would sit in the
+  // transcript having never been sent (US-001 AC-18), and a steer in it would
+  // resolve `true` for a turn that never used it. So the phase re-reads the
+  // deadline — and marks the turn timed out exactly as the round-boundary check
+  // does — before it decides anything.
+  if (!stoppedAtDispatch && params.deps.deadline?.expired() === true) state.timedOut = true;
+  const stopped = stoppedAtDispatch || state.timedOut;
   // US-001: a steer accepted while the last round ran has no round boundary
   // left to wait for, so it continues the turn from here — unless the turn was
-  // STOPPED (a breaker ended it on purpose; resurrecting it would reopen the
-  // loop the breaker exists to close) or its signal fired.
+  // STOPPED (a breaker, or the budget, ended it on purpose; resurrecting it
+  // would reopen the loop the breaker exists to close) or its signal fired. The
+  // signal is re-read here too: it is checked AFTER the dispatch for the same
+  // reason as the deadline.
   const steered = stopped || params.deps.signal?.aborted === true ? [] : steerMessages(params.opts.steers);
   const capped = state.followUpsSoFar >= MAX_FOLLOW_UPS_PER_TURN;
   const followUp = stopped || capped ? undefined : turnEnd.followUp;

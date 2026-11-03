@@ -30,6 +30,7 @@ import { MAX_FOLLOW_UPS_PER_TURN } from "#src/native/session/turn-loop-round-tri
 import {
   collect,
   installScriptedProvider,
+  resetScriptedProvider,
   type ScriptedProvider,
   sessionOptions,
   textRound,
@@ -40,7 +41,14 @@ import { assertDefined, makeFakeClock, withDepsRestore } from "#test/helpers/ind
 
 const sessions: AgentSession[] = [];
 afterEach(async () => {
-  await Promise.all(sessions.splice(0).map((session) => session.close()));
+  // The scripted client is process-global (`_clientDeps.build` plus the native
+  // client memo), so it must be restored however the test ended: a leaked
+  // exhausted provider would be inherited by every later test file.
+  try {
+    await Promise.all(sessions.splice(0).map((session) => session.close()));
+  } finally {
+    resetScriptedProvider();
+  }
 });
 
 /** Opens a session over the installed scripted provider (see `installScriptedProvider`). */
@@ -236,6 +244,50 @@ describe("native steering: a turn that ends without taking the steer discards it
       // The budget is spent BEFORE the round boundary that would inject it.
       void clock.advance(2_000);
     };
+
+    const events = await collect(session.send("hi"));
+    const result = accepted(await steered.promise);
+
+    expect(turnEnd(events).status).toBe("timed_out");
+    expect(provider.requests).toHaveLength(1);
+    await expect(result.applied).resolves.toBe(false);
+    const doc = await store.load(session.id);
+    const texts = (doc?.messages ?? []).map((message) => message.content);
+    expect(texts).not.toContain("too late");
+  });
+
+  test("AC-18, AC-19 (turn end): a deadline that expires during before_turn_end discards the steer", async () => {
+    // The same expiry, one phase later: a handler that outlives the budget. The
+    // turn-end decision must be read from the state AFTER the dispatch, or the
+    // steer is taken by a turn that has no round left to send it in.
+    const clock = makeFakeClock();
+    _adapterDeps.now = clock.now;
+
+    const provider = installScriptedProvider();
+    const store = createMemoryTranscriptStore();
+    const steered = Promise.withResolvers<SteerResult>();
+    let onSteer: () => void = () => {};
+    const session = await openSession({
+      turnTimeoutSeconds: 1,
+      transcriptStore: store,
+      loopHandlers: [
+        {
+          plugin: "test",
+          event: "before_turn_end",
+          handler: async () => {
+            await clock.advance(2_000);
+            return {};
+          },
+        },
+      ],
+    });
+    onSteer = () => steered.resolve(steer(session)("too late"));
+    // The steer lands while round 1 streams, so it is pending at turn end; the
+    // spare round proves no continuation request was sent.
+    provider.push(
+      steerThen(() => onSteer(), textRound("round one")),
+      textRound("never sent"),
+    );
 
     const events = await collect(session.send("hi"));
     const result = accepted(await steered.promise);
