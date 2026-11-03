@@ -107,10 +107,14 @@ export async function runBranchReview(
   const range = `${input.seed}..HEAD`;
   // US-009: the reviewer cannot look for the reports, so nax takes the inventory before it asks.
   const storyReports = await storyReportInventory(input.facts.stories);
+  // US-007: read once, before the prompt is built. The branch reviewer has no memory tools, so the
+  // index reaches it as the read-only reference section; a run without memory gets none.
+  const memoryIndex = await fc.callCtx.runtime.memory?.index();
   const prompt = buildWorkflowBranchReviewPrompt({
     ...(input.specPath ? { specPath: input.specPath } : {}),
     ...(fc.prdPath !== undefined ? { prdPath: fc.prdPath } : {}),
     ...(input.preflightPath ? { preflightPath: input.preflightPath } : {}),
+    ...(memoryIndex !== undefined ? { memoryIndex } : {}),
     packagePath,
     range,
     ...input.facts,

@@ -121,28 +121,50 @@ async function runFixSession(
   }
 }
 
+/**
+ * US-007: the run's fresh memory index for the prompt this pass builds.
+ *
+ * An explicit `input.prompt` is the whole brief (the bot fix path), so nothing is built and the
+ * mirror is not read: check `!== undefined`, not truthiness — an empty override is an override too.
+ */
+async function memoryIndexFor(fc: BranchStepContext, input: BranchFixInput): Promise<string | undefined> {
+  if (input.prompt !== undefined) return undefined;
+  return fc.callCtx.runtime.memory?.index();
+}
+
 /** The pass's brief: an explicit override wins, then the CI repair round, then the branch fix. */
-function promptFor(fc: BranchStepContext, input: BranchFixInput): string {
+function promptFor(fc: BranchStepContext, input: BranchFixInput, memoryIndex?: string): string {
   if (input.prompt !== undefined) return input.prompt;
   const prd = fc.prdPath !== undefined ? { prdPath: fc.prdPath } : {};
   const spec = input.specPath ? { specPath: input.specPath } : {};
+  const memory = memoryIndex !== undefined ? { memoryIndex } : {};
   if (input.ciRepair) {
     return buildWorkflowCiRepairPrompt({
       ...spec,
       ...prd,
+      ...memory,
       round: input.ciRepair.round,
       ...(input.ciRepair.prUrl ? { prUrl: input.ciRepair.prUrl } : {}),
       reportPath: fc.reportPath,
       findings: input.findings,
     });
   }
-  return buildWorkflowBranchFixPrompt({ ...spec, ...prd, reportPath: fc.reportPath, findings: input.findings });
+  return buildWorkflowBranchFixPrompt({
+    ...spec,
+    ...prd,
+    ...memory,
+    reportPath: fc.reportPath,
+    findings: input.findings,
+  });
 }
 
 export async function runBranchFix(fc: BranchStepContext, input: BranchFixInput): Promise<BranchFixOutcome> {
   await ensureReport(fc);
   const { op, role } = dispatchFor(input.kind);
-  const run = () => runFixSession(fc, op, { ...input, prompt: promptFor(fc, input) });
+  // The index is read before the session scope opens: rendering a mirror is not agent work, and it
+  // must not be done inside the scope that limits the session's configuration.
+  const memoryIndex = await memoryIndexFor(fc, input);
+  const run = () => runFixSession(fc, op, { ...input, prompt: promptFor(fc, input, memoryIndex) });
   const session = await (fc.sessionScope ? fc.sessionScope(run) : run());
   return { ...session, ...(await commitLeftovers(fc, role)) };
 }
