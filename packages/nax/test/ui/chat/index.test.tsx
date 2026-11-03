@@ -6,6 +6,15 @@ import { isValidElement, type ReactNode } from "react";
 import { type ChatHost, createChatHost, createChatStorage } from "@/chat";
 import { _renderChatDeps, ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, renderChat } from "@/tui/chat";
 import { createMouseInput, DISABLE_MOUSE, ENABLE_MOUSE } from "@/tui/chat/mouse-input";
+import { POP_TITLE, PUSH_TITLE } from "@/tui/chat/terminal-title";
+import { resolveChatTheme } from "@/tui/chat/theme";
+
+/** The title a TTY mount writes for the host's own project, idle — no turn has started yet. */
+const IDLE_TITLE = "\u001b]0;nax · repo\u0007";
+/** What a TTY mount writes after the first frame: the mouse, then the title it saved. */
+const MOUNT_WRITES = [ENTER_ALT_SCREEN, ENABLE_MOUSE, PUSH_TITLE, IDLE_TITLE];
+/** What a restore adds after the unmount: mouse off, leave the screen, then the title back. */
+const RESTORE_WRITES = [DISABLE_MOUSE, LEAVE_ALT_SCREEN, POP_TITLE];
 
 const originalDeps = { ..._renderChatDeps };
 afterEach(() => {
@@ -14,13 +23,13 @@ afterEach(() => {
 });
 
 /** A real host: the renderer is stubbed here, so ChatApp is never mounted against it. */
-function chatHost(): ChatHost {
+function chatHost(paths: { cwd?: string; repoRoot?: string } = {}): ChatHost {
   const logger = makeLogger();
   return createChatHost({
     config: makeNaxConfig(),
     storage: createChatStorage({ pid: process.pid, now: () => new Date(), logger }),
-    cwd: "/repo",
-    repoRoot: "/repo",
+    cwd: paths.cwd ?? "/repo",
+    repoRoot: paths.repoRoot ?? "/repo",
     chain: null,
     now: () => new Date(),
     logger,
@@ -103,7 +112,13 @@ describe("renderChat alternate screen", () => {
     const screen = stubScreen();
     const view = renderChat({ host: chatHost() });
     expect(ENTER_ALT_SCREEN).toBe("\u001b[?1049h\u001b[H");
-    expect(screen.order).toEqual([`write:${ENTER_ALT_SCREEN}`, "render", `write:${ENABLE_MOUSE}`]);
+    expect(screen.order).toEqual([
+      `write:${ENTER_ALT_SCREEN}`,
+      "render",
+      `write:${ENABLE_MOUSE}`,
+      `write:${PUSH_TITLE}`,
+      `write:${IDLE_TITLE}`,
+    ]);
     view.unmount();
   });
 
@@ -112,16 +127,35 @@ describe("renderChat alternate screen", () => {
     const view = renderChat({ host: chatHost() });
     view.unmount();
     expect(LEAVE_ALT_SCREEN).toBe("\u001b[?1049l");
-    expect(screen.writes).toEqual([ENTER_ALT_SCREEN, ENABLE_MOUSE, DISABLE_MOUSE, LEAVE_ALT_SCREEN]);
+    expect(screen.writes).toEqual([...MOUNT_WRITES, ...RESTORE_WRITES]);
     // Ink flushes its final frame from unmount(), which belongs on the alt screen.
     expect(screen.order).toEqual([
       `write:${ENTER_ALT_SCREEN}`,
       "render",
       `write:${ENABLE_MOUSE}`,
+      `write:${PUSH_TITLE}`,
+      `write:${IDLE_TITLE}`,
       "unmount",
       `write:${DISABLE_MOUSE}`,
       `write:${LEAVE_ALT_SCREEN}`,
+      `write:${POP_TITLE}`,
     ]);
+  });
+
+  test("AC-8: a TTY mount saves, then sets, the project's title after enabling the mouse", () => {
+    const screen = stubScreen();
+    const view = renderChat({ host: chatHost() });
+    expect(screen.writes).toEqual([ENTER_ALT_SCREEN, ENABLE_MOUSE, PUSH_TITLE, "\u001b]0;nax · repo\u0007"]);
+    expect(PUSH_TITLE).toBe("\u001b[22;0t");
+    view.unmount();
+  });
+
+  test("AC-9: unmounting writes POP_TITLE after LEAVE_ALT_SCREEN", () => {
+    const screen = stubScreen();
+    const view = renderChat({ host: chatHost() });
+    view.unmount();
+    expect(screen.writes.indexOf(POP_TITLE)).toBe(screen.writes.indexOf(LEAVE_ALT_SCREEN) + 1);
+    expect(POP_TITLE).toBe("\u001b[23;0t");
   });
 
   test("AC-3: unmounting twice restores the screen once", () => {
@@ -133,6 +167,7 @@ describe("renderChat alternate screen", () => {
     expect(screen.unmounts()).toBe(2);
     expect(screen.dispose).toHaveBeenCalledTimes(1);
     expect(screen.writes.filter((text) => text === DISABLE_MOUSE)).toHaveLength(1);
+    expect(screen.writes.filter((text) => text === POP_TITLE)).toHaveLength(1);
   });
 
   test("AC-4: the process-exit guard restores the screen", () => {
@@ -144,7 +179,7 @@ describe("renderChat alternate screen", () => {
       handler();
     }
     expect(screen.dispose).toHaveBeenCalledTimes(1);
-    expect(screen.writes).toEqual([ENTER_ALT_SCREEN, ENABLE_MOUSE, DISABLE_MOUSE, LEAVE_ALT_SCREEN]);
+    expect(screen.writes).toEqual([...MOUNT_WRITES, ...RESTORE_WRITES]);
     view.unmount();
   });
 
@@ -153,7 +188,7 @@ describe("renderChat alternate screen", () => {
     const view = renderChat({ host: chatHost() });
     for (const handler of screen.exitHandlers) handler();
     view.unmount();
-    expect(screen.writes).toEqual([ENTER_ALT_SCREEN, ENABLE_MOUSE, DISABLE_MOUSE, LEAVE_ALT_SCREEN]);
+    expect(screen.writes).toEqual([...MOUNT_WRITES, ...RESTORE_WRITES]);
   });
 
   test("AC-6: the first restore deregisters the exit guard", () => {
@@ -184,15 +219,91 @@ describe("renderChat alternate screen", () => {
     view.unmount();
   });
 
-  test("a renderer that throws restores the screen before the error escapes", () => {
+  test("AC-17: a renderer that throws before PUSH_TITLE restores without popping a title", () => {
     const screen = stubScreen();
     _renderChatDeps.render = () => {
       throw new Error("render failed");
     };
     expect(() => renderChat({ host: chatHost() })).toThrow("render failed");
+    // Nothing was saved, so nothing is restored: mouse off, then the screen — no POP_TITLE.
     expect(screen.writes).toEqual([ENTER_ALT_SCREEN, DISABLE_MOUSE, LEAVE_ALT_SCREEN]);
+    expect(screen.writes).not.toContain(PUSH_TITLE);
+    expect(screen.writes).not.toContain(POP_TITLE);
     expect(screen.exitHandlers.size).toBe(0);
     expect(screen.dispose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("renderChat terminal title", () => {
+  /** The props `renderChat` composed for the screen, so a case can reach the ones it passes. */
+  interface ScreenProps {
+    readonly onBusyChange?: (busy: boolean) => void;
+  }
+  function node(screen: ReturnType<typeof stubScreen>): ScreenProps {
+    const element = screen.renderMock.mock.calls[0]?.[0];
+    if (!isValidElement<ScreenProps>(element)) throw new Error("no element");
+    return element.props;
+  }
+
+  /** The busy callback renderChat passed to ChatApp. */
+  function busyOf(screen: ReturnType<typeof stubScreen>): (busy: boolean) => void {
+    const callback = node(screen).onBusyChange;
+    if (callback === undefined) throw new Error("renderChat passed no onBusyChange");
+    return callback;
+  }
+
+  test("AC-10: no TTY means no title sequence at all", () => {
+    const screen = stubScreen(false);
+    const view = renderChat({ host: chatHost() });
+    view.unmount();
+    expect(screen.writes).toEqual([ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN]);
+    expect(screen.writes).not.toContain(PUSH_TITLE);
+    expect(screen.writes).not.toContain(POP_TITLE);
+    expect(node(screen).onBusyChange).toBeUndefined();
+  });
+
+  test("AC-13: the busy callback writes the title for the state it reports", () => {
+    const screen = stubScreen();
+    const view = renderChat({ host: chatHost() });
+    const busy = busyOf(screen);
+    busy(true);
+    expect(screen.writes.at(-1)).toBe("\u001b]0;✳ nax · repo\u0007");
+    busy(false);
+    expect(screen.writes.at(-1)).toBe(IDLE_TITLE);
+    view.unmount();
+  });
+
+  test("AC-13 takes the busy marker from the theme's glyph set", () => {
+    const screen = stubScreen();
+    const view = renderChat({ host: chatHost(), theme: resolveChatTheme({ env: { NAX_ASCII: "1" }, colorLevel: 0 }) });
+    busyOf(screen)(true);
+    expect(screen.writes.at(-1)).toBe("\u001b]0;* nax · repo\u0007");
+    view.unmount();
+  });
+
+  test("AC-13 a busy change after the restore writes nothing: the title is the terminal's again", () => {
+    const screen = stubScreen();
+    const view = renderChat({ host: chatHost() });
+    const busy = busyOf(screen);
+    view.unmount();
+    const afterRestore = [...screen.writes];
+    busy(true);
+    busy(false);
+    expect(screen.writes).toEqual(afterRestore);
+  });
+
+  test("AC-14: with no cwd prop the title names the host's repo root", () => {
+    const screen = stubScreen();
+    const view = renderChat({ host: chatHost({ repoRoot: "/home/me/work/my-repo" }) });
+    expect(screen.writes.at(-1)).toBe("\u001b]0;nax · my-repo\u0007");
+    view.unmount();
+  });
+
+  test("AC-14: the cwd prop names the title when it is given", () => {
+    const screen = stubScreen();
+    const view = renderChat({ host: chatHost({ repoRoot: "/home/me/work/my-repo" }), cwd: "/elsewhere/other-repo" });
+    expect(screen.writes.at(-1)).toBe("\u001b]0;nax · other-repo\u0007");
+    view.unmount();
   });
 });
 

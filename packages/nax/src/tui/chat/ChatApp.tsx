@@ -96,6 +96,11 @@ export interface ChatAppProps {
   readonly cwd?: string;
   /** Absent: no home prefix to shorten the header's path with. */
   readonly home?: string;
+  /**
+   * Told when the screen starts and stops working, so the terminal title can carry a busy
+   * marker (US-008). Absent on a terminal with no title to keep current.
+   */
+  readonly onBusyChange?: (busy: boolean) => void;
 }
 
 /** Environment seam; sampled once per mounted screen. */
@@ -290,6 +295,7 @@ export function ChatApp({
   version = NAX_VERSION,
   cwd = host.repoRoot,
   home = "",
+  onBusyChange,
 }: ChatAppProps): ReactElement {
   const { stdout } = useStdout();
   const [tmux] = useState(() => Boolean(_chatAppDeps.tmux()));
@@ -523,6 +529,18 @@ export function ChatApp({
       stdout.off("resize", onResize);
     };
   }, [stdout]);
+  /**
+   * The terminal title's busy marker (US-008): what the screen reports when it starts or stops
+   * working. Only a *change* is reported — the title is rewritten from it, so an idle mount
+   * says nothing (the caller has not taken the title yet) and a re-render says nothing either.
+   * Nothing is reported after the screen unmounts, which is when the title is given back.
+   */
+  const reportedBusy = useRef(false);
+  useEffect(() => {
+    if (reportedBusy.current === turnRunning) return;
+    reportedBusy.current = turnRunning;
+    onBusyChange?.(turnRunning);
+  }, [turnRunning, onBusyChange]);
   // Rebuild before notice effects append, but never reset mount notices or same-id live rows.
   useLayoutEffect(() => {
     if (transcriptSession.current === state.sessionId) return;
