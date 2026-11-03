@@ -31,8 +31,12 @@ describe("askSummary — summary fields", () => {
     const s = askSummary("T", { pathFields: [], summaryFields: ["slug", "scope"] }, { slug: "a", scope: "project" });
     expect(s.unshowable).toBe(false);
     // A MASKED summary field is still showable: masking is not withholding.
+    // The redaction marker is what proves the declared field was RENDERED and
+    // then masked -- "the line does not contain the secret" is also true of a
+    // line that rendered no field at all.
     const masked = askSummary("T", { pathFields: [], summaryFields: ["token"] }, { token: GHP });
     expect(masked.unshowable).toBe(false);
+    expect(masked.summary).toContain("[REDACTED:");
     expect(masked.summary).not.toContain(GHP);
   });
 
