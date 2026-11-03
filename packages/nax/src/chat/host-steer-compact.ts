@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto";
 import type { AgentSession, CompactResult, SessionMeta, SessionStorage, SteerResult } from "@nathapp/nax-agent";
 import { NaxError } from "@/errors";
 import type { ChatLedger, ChatUsageEvent } from "./chat-ledger";
+import type { HostQueue } from "./host-queue";
 import type { ChatSessionHandle } from "./open-chat-session";
 
 export interface HostSteerInput {
@@ -53,6 +54,11 @@ export interface HostCompactInput {
   readonly ledger: () => ChatLedger | undefined;
   /** The clock the row's `at` and the metadata it writes are stamped with. */
   readonly now: () => Date;
+  /**
+   * The host's metadata queue: the spend write is a read-modify-write, so it must not
+   * overlap a turn's write or another compaction's.
+   */
+  readonly queue: HostQueue;
   /**
    * Adopt the metadata a compaction wrote, so `current()` reports the new spend. The host
    * decides whether the handle it wrote for is still the open one.
@@ -145,7 +151,10 @@ export function createHostCompacting(input: HostCompactInput): HostCompacting {
       // records is the summarizer call rather than the time since the last turn.
       const requestedAt = input.now().toISOString();
       const result = await run.call(session);
-      await recordSpend({ input, handle, result, requestedAt });
+      // The facade's claim is released when the summarizer settles, so the accounting runs
+      // queued: a second compaction — or a turn's own write — must not read the metadata
+      // this one is about to replace.
+      await input.queue.run(() => recordSpend({ input, handle, result, requestedAt }));
       return result;
     },
   };

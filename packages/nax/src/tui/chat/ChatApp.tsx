@@ -923,6 +923,10 @@ export function ChatApp({
       append({ kind: "error", text: errorMessage(error) });
     } finally {
       sending.current = false;
+      // A queued model or mode switch is applied here, before the queue is drained, exactly
+      // as a turn's own `finally` does — so a line queued after a switch goes on the model
+      // the user switched to. It also clears the interrupt and quit-arm bookkeeping.
+      await keys.finishTurn();
       setBusy(false);
       setStatus(stopTurn);
       // A settled compaction releases the queue as a completed turn does; a rejected one

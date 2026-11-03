@@ -18,7 +18,7 @@ import {
   type SessionMeta,
   type SessionStorage,
 } from "@nathapp/nax-agent";
-import { cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { createChatHost } from "@/chat";
 
 const NOW = new Date("2026-10-01T00:00:00.000Z");
@@ -50,6 +50,8 @@ const OPENED_COST = 0.01;
 let dir: string;
 let storage: SessionStorage;
 let writes: Mock<(meta: SessionMeta) => Promise<void>>;
+/** Every metadata read and write asked of the store, in order. */
+let log: string[];
 const hosts: ReturnType<typeof createChatHost>[] = [];
 
 beforeEach(async () => {
@@ -62,9 +64,23 @@ beforeEach(async () => {
   });
   // The store's spend is ahead of the handle's: only a re-read sees it.
   await real.writeMeta(metaOf(STORED_COST));
+  log = [];
   const written = real.writeMeta.bind(real);
+  const read = real.readMeta.bind(real);
   writes = mock((meta: SessionMeta) => written(meta));
-  storage = { ...real, writeMeta: writes };
+  // Every metadata read and write, in the order they were asked for: the accounting's
+  // correctness is an ordering property, so a test can assert the order itself.
+  storage = {
+    ...real,
+    readMeta: async (sessionId: string) => {
+      log.push("read");
+      return read(sessionId);
+    },
+    writeMeta: async (meta: SessionMeta) => {
+      log.push("write");
+      await writes(meta);
+    },
+  };
 });
 
 afterEach(async () => {
@@ -167,6 +183,24 @@ describe("ChatHost.compact", () => {
     const f = await started();
     await f.host.compact?.();
     expect(f.host.current().meta.costUsd).toBeCloseTo(STORED_COST + SPEND.costUsd);
+  });
+
+  test("AC-2 AC-3 two overlapping compactions both count", async () => {
+    const f = await started();
+    const compact = f.host.compact;
+    assertDefined(compact, "the host's compact");
+    // Issued together: the facade releases its claim when the summarizer settles, so the
+    // second compaction's accounting can start before the first one has written.
+    const [first, second] = await Promise.all([compact.call(f.host), compact.call(f.host)]);
+    // The order the accounting ran in, taken before this test's own reads join the log.
+    const order = [...log];
+    expect(first).toEqual(SPEND);
+    expect(second).toEqual(SPEND);
+    expect(await rows()).toHaveLength(2);
+    // Neither write may be based on a read taken before the other wrote.
+    expect((await storage.readMeta(SESSION))?.costUsd).toBeCloseTo(STORED_COST + 2 * SPEND.costUsd);
+    expect(f.host.current().meta.costUsd).toBeCloseTo(STORED_COST + 2 * SPEND.costUsd);
+    expect(order).toEqual(["read", "write", "read", "write"]);
   });
 
   test("AC-4 records one ledger row with the summarizer's own usage and cost", async () => {

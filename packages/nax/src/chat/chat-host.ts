@@ -33,6 +33,7 @@ import { tierModels } from "./chat-models";
 import { createCloseConfirm } from "./close-confirm";
 import { type ContextWindowCache, createContextWindowCache } from "./context-window-cache";
 import { createHostMemory, type HostMemory } from "./host-memory";
+import { createHostQueue, type HostQueue } from "./host-queue";
 import { createHostCompacting, createHostSteering, type HostCompacting, type HostSteering } from "./host-steer-compact";
 import { closeChatHost, createChatLoopHandlers } from "./host-wiring";
 import { type ChatJobs, type ChatRunAsks, createHostJobs } from "./jobs";
@@ -83,6 +84,11 @@ class NativeChatHost implements ChatHost {
   private readonly loopHandlers: LoopHandlerSet;
   private readonly steering: HostSteering;
   private readonly compacting: HostCompacting;
+  /**
+   * Serializes every read-modify-write of the session metadata's spend — a turn's write and
+   * a compaction's — so neither can replace what the other added.
+   */
+  private readonly accounting: HostQueue;
   private readonly projectKey: string;
   private readonly outputDir: string;
   private readonly runs?: SubagentRuns;
@@ -111,12 +117,14 @@ class NativeChatHost implements ChatHost {
     this.open = reportAcpOpens(deps.open ?? openChatSession, deps.acp);
     // Read through a getter: a switch, a resume and a clear all replace the handle.
     this.steering = createHostSteering({ session: () => this.handle?.session });
+    this.accounting = createHostQueue();
     this.compacting = createHostCompacting({
       session: () => this.handle?.session,
       handle: () => this.handle,
       storage: deps.storage,
       ledger: () => this.ledger,
       now: deps.now,
+      queue: this.accounting,
       // A switch during the compaction leaves the new handle's own metadata alone.
       adopt: (meta) => {
         const handle = this.handle;
@@ -448,18 +456,23 @@ class NativeChatHost implements ChatHost {
     const runs = this.runs;
     let meta: SessionMeta;
     try {
-      meta = await runChatTurn({
-        handle,
-        storage: this.deps.storage,
-        message,
-        title: options?.title,
-        images: options?.images,
-        asks: this.asks,
-        ledger,
-        onEvent,
-        now: this.deps.now().toISOString(),
-        ...(runs ? { extraCostUsd: () => runs.takeCost(), settleNested: () => runs.settle() } : {}),
-      });
+      // The turn's own metadata write is the other read-modify-write of the same `costUsd`,
+      // so the whole turn is queued behind any accounting already in flight: a compaction
+      // that settled a moment ago must not be overwritten by this turn's stale base.
+      meta = await this.accounting.run(() =>
+        runChatTurn({
+          handle,
+          storage: this.deps.storage,
+          message,
+          title: options?.title,
+          images: options?.images,
+          asks: this.asks,
+          ledger,
+          onEvent,
+          now: this.deps.now().toISOString(),
+          ...(runs ? { extraCostUsd: () => runs.takeCost(), settleNested: () => runs.settle() } : {}),
+        }),
+      );
     } finally {
       try {
         // A cancelled tool batch abandons its nested run without waiting for it: drain

@@ -27,6 +27,8 @@ import { resolveChatTheme } from "@/tui/chat/theme";
 
 const THEME = resolveChatTheme({ env: {}, colorLevel: 0 });
 const RETURN = "\r";
+/** ink reports shift+tab as tab with the shift modifier. */
+const SHIFT_TAB = "\x1b[Z";
 
 const MODEL = "test-model";
 const ACP_MODEL = "acp:codex";
@@ -109,15 +111,18 @@ interface ScreenOptions {
 /**
  * A host that hands every send and every compaction its own gate, so a case says exactly
  * which turn ends, which compaction settles, and when. `sends` records what the screen asked
- * the host to send, in order.
+ * the host to send, in order; `calls` records sends and control switches together, in the
+ * order they reached the host, so a case can assert one happened before the other.
  */
 function chatHost(options: ScreenOptions = {}) {
   const turns: Turn[] = [];
   const sends: string[] = [];
+  const calls: string[] = [];
   const state = stateOf(options.model ?? MODEL, options.contextWindow);
 
   const send = mock(async (message: string, onEvent: (event: SessionEvent) => void, _options?: ChatSendOptions) => {
     sends.push(message);
+    calls.push(`send ${message}`);
     const gate = Promise.withResolvers<void>();
     turns.push({
       message,
@@ -148,6 +153,13 @@ function chatHost(options: ScreenOptions = {}) {
   });
   const compactFn = options.compact === null ? null : (options.compact ?? (() => Promise.resolve(RESULT)));
   const compact = compactFn === null ? undefined : mock(compactFn);
+  const switchTo = mock(async (input: { mode?: string; model?: string }) => {
+    calls.push(
+      `switch ${Object.entries(input)
+        .map(([key, value]) => `${key} ${value}`)
+        .join(" ")}`,
+    );
+  });
 
   const host: ChatHost = {
     repoRoot: REPO_ROOT,
@@ -160,13 +172,13 @@ function chatHost(options: ScreenOptions = {}) {
     start: async () => {},
     clear: async () => {},
     resume: async () => {},
-    switchTo: async () => {},
+    switchTo,
     ...(compact === undefined ? {} : { compact }),
     cancel: () => {},
     listSessions: async () => [],
     close: async () => {},
   };
-  return { host, send, sends, compact, turns };
+  return { host, send, sends, calls, compact, switchTo, turns };
 }
 
 /** The mounted screen, with the frame rows and the verbs a case drives it with. */
@@ -351,6 +363,25 @@ describe("a line queued while a compaction runs", () => {
     gate.resolve(RESULT);
     await ui.settle();
     expect(ui.sends).toEqual(["after"]);
+  });
+});
+
+describe("a control switch queued while a compaction runs", () => {
+  test("F2 applies the switch before the queued message is sent", async () => {
+    const gate = Promise.withResolvers<CompactResult>();
+    const ui = mountScreen({ compact: () => gate.promise });
+    await ui.submit("/compact");
+    // A shift+tab during the compaction is held for it, exactly as during a turn.
+    ui.press(SHIFT_TAB);
+    await ui.settle();
+    expect(ui.switchTo).not.toHaveBeenCalled();
+    await ui.submit("after");
+    gate.resolve(RESULT);
+    await ui.settle();
+    // The switch settles first, so the queued line is sent under the mode the user chose.
+    expect(ui.switchTo).toHaveBeenCalledTimes(1);
+    expect(ui.switchTo).toHaveBeenCalledWith({ mode: "full" });
+    expect(ui.calls).toEqual(["switch mode full", "send after"]);
   });
 });
 
