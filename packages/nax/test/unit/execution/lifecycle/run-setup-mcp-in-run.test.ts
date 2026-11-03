@@ -69,6 +69,8 @@ describe("setupRun → resources.mcpInRun", () => {
         runtimes.push(rt);
         return rt;
       }) as typeof _runSetupDeps.createRuntime;
+      // US-006: no run memory in this fixture — its assertions are about the MCP merge.
+      _runSetupDeps.createRunMemory = (async () => undefined) as typeof _runSetupDeps.createRunMemory;
       _runSetupDeps.installCrashHandlers = (() => () => {}) as typeof _runSetupDeps.installCrashHandlers;
       _runSetupDeps.detectProjectProfile = (async () => ({})) as typeof _runSetupDeps.detectProjectProfile;
       _runSetupDeps.loadResourceCatalog = (async () => {

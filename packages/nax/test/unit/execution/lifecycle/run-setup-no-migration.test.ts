@@ -163,6 +163,8 @@ async function installHarness(): Promise<NoMigrationHarness> {
     return runtime;
   };
   _runSetupDeps.detectProjectProfile = async () => ({ language: "typescript" });
+  // US-006: no run memory in this fixture — its assertions are about the migration.
+  _runSetupDeps.createRunMemory = async () => undefined;
   // No real signal handlers: setupRun only needs a cleanup function back.
   _runSetupDeps.installCrashHandlers = () => () => {};
   _runSetupDeps.buildApprovalsSeal = async () => async () => {};

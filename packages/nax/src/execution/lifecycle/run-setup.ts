@@ -25,14 +25,15 @@
 
 import path from "node:path";
 import { errorMessage, gitSpawnEnv } from "@nathapp/nax-agent/internal";
-import type { NaxConfig } from "@/config";
+import { isWorkflowMode, type NaxConfig } from "@/config";
 import { LockAcquisitionError, NaxError } from "@/errors";
 import { createRtkInterceptor } from "@/execution/interceptors/rtk";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { InteractionChain } from "@/interaction";
 import { buildApprovalsSeal, initInteractionChain } from "@/interaction";
-import { getSafeLogger } from "@/logger";
+import { getLogger, getSafeLogger } from "@/logger";
 import { resolveMcpLock } from "@/mcp";
+import { createRunMemory, type RunMemory } from "@/memory";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { AgentGetFn } from "@/pipeline/types";
 import type { PluginRegistry } from "@/plugins/registry";
@@ -86,6 +87,11 @@ export const _runSetupDeps = {
   // MCP servers into the runtime config; `readMcpLock` gates them to the locked ones.
   loadResourceCatalog,
   readMcpLock: resolveMcpLock,
+  // US-006: the run's memory is created here, once, between resolving the
+  // runtime config and building the runtime. Injected so a test can observe the
+  // input `setupRun` derives (and the order it derives it in) without composing
+  // a mirror on disk.
+  createRunMemory,
 };
 
 /**
@@ -103,6 +109,20 @@ async function runtimeConfigFor(config: NaxConfig, workdir: string): Promise<Nax
     readLock: _runSetupDeps.readMcpLock,
   });
   return { ...config, mcp };
+}
+
+/**
+ * The run's memory, or `undefined` when this run gets none.
+ *
+ * Only a workflow run that is not a dry run has one: pipeline mode has no steps to
+ * hand an index to, and a dry run does no work worth remembering. Composition is
+ * the memory module's — it never throws, so this adds no failure path to setup —
+ * and the logger is the run's (`bin/nax.ts` initialises it before `setupRun`), so
+ * the memory's own lines land in the run's JSONL.
+ */
+async function runMemoryFor(config: NaxConfig, workdir: string, dryRun: boolean): Promise<RunMemory | undefined> {
+  if (dryRun || !isWorkflowMode(config)) return undefined;
+  return _runSetupDeps.createRunMemory({ config, repoRoot: workdir, logger: getLogger() });
 }
 
 export interface RunSetupOptions {
@@ -260,7 +280,12 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // Passes through the existing sessionManager and options.agentManager (if any)
   // so callers that pre-create an AgentManager for credential validation continue
   // to work (e.g. run-precheck validates credentials before handing off the manager).
-  const runtime = _runSetupDeps.createRuntime(await runtimeConfigFor(config, workdir), workdir, {
+  const runtimeConfig = await runtimeConfigFor(config, workdir);
+  // US-006: the run's memory, created once, after `runtimeConfig` is resolved so a
+  // throw there never leaves a created memory behind, and before the runtime that
+  // carries it (its provider joins the tool providers; its close is the run's end).
+  const memory = await runMemoryFor(config, workdir, dryRun);
+  const runtime = _runSetupDeps.createRuntime(runtimeConfig, workdir, {
     parentSignal: shutdownController.signal,
     sessionManager,
     agentManager: options.agentManager,
@@ -270,6 +295,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     // nax#1808: the auto-commit refusal reads runtime.dryRun; without this the
     // flag never leaves RunSetupOptions and the guard is inert in production.
     dryRun: options.dryRun,
+    ...(memory ? { memory } : {}),
   });
 
   // 2b: merge per-package .nax/mono/<pkg>/config.json into the runtime registry so

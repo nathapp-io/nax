@@ -63,6 +63,8 @@ describe("warnUnreferencedAgentModels", () => {
 describe("setupRun — native-default guards", () => {
   withDepsRestore(_runSetupDeps, [
     "createRuntime",
+    // US-006: this fixture describes setup without a run memory.
+    "createRunMemory",
     "detectProjectProfile",
     "sweepFeatureTranscripts",
     "installCrashHandlers",
@@ -85,6 +87,8 @@ describe("setupRun — native-default guards", () => {
     const runtime = makeMockRuntime({ workdir });
     runtimesToClose.push(runtime);
     _runSetupDeps.createRuntime = () => runtime;
+    // US-006: no run memory in this fixture — its assertions are about the guards.
+    _runSetupDeps.createRunMemory = async () => undefined;
     _runSetupDeps.detectProjectProfile = async () => ({});
     _runSetupDeps.sweepFeatureTranscripts = async () => 0;
     _runSetupDeps.installCrashHandlers = () => () => undefined;

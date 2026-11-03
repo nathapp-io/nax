@@ -52,6 +52,8 @@ describe("setupRun — chat asks", () => {
       return runtime;
     };
     _runSetupDeps.detectProjectProfile = async () => ({});
+    // US-006: no run memory in this fixture — its assertions are about chat asks.
+    _runSetupDeps.createRunMemory = async () => undefined;
     _runSetupDeps.sweepFeatureTranscripts = async () => 0;
     _runSetupDeps.buildApprovalsSeal = async () => async () => {};
   });

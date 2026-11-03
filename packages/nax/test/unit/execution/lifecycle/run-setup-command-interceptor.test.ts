@@ -63,6 +63,8 @@ describe("setupRun → command interceptor composition (config → provider → 
     writeFileSync(prdPath, JSON.stringify(makePRD({ feature: "ci-drive", userStories: [] }), null, 2), "utf8");
     captured = undefined;
     _runSetupDeps.createRuntime = captureCreateRuntime;
+    // US-006: no run memory in this fixture — its assertions are about the interceptor.
+    _runSetupDeps.createRunMemory = async () => undefined;
     _runSetupDeps.installCrashHandlers = (() => () => {}) as typeof _runSetupDeps.installCrashHandlers;
     _runSetupDeps.detectProjectProfile = (async () => ({})) as typeof _runSetupDeps.detectProjectProfile;
 

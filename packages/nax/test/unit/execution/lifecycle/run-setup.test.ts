@@ -352,6 +352,10 @@ describe("setupRun — MEM-1: setup-phase throw cleans up crash handlers + runti
     const origInstallCrashHandlers = _runSetupDeps.installCrashHandlers;
     const origCreateRuntime = _runSetupDeps.createRuntime;
 
+    // US-006: no run memory in this fixture — its assertions are about the
+    // crash-handler/runtime cleanup, and `withDepsRestore` restores the seam.
+    _runSetupDeps.createRunMemory = async () => undefined;
+
     _runSetupDeps.createRuntime = ((...args: Parameters<typeof origCreateRuntime>) => {
       const runtime = origCreateRuntime(...args);
       runtimesToClose.push(runtime);
@@ -537,6 +541,9 @@ describe("setupRun — US-002 AC10: sweepFeatureTranscripts wiring", () => {
       return baseRuntime;
     }) as typeof _runSetupDeps.createRuntime;
 
+    // US-006: no run memory in this fixture — its assertions are about the sweep.
+    _runSetupDeps.createRunMemory = async () => undefined;
+
     depsWithSweep.sweepFeatureTranscripts = mock(async (opts) => {
       callCount++;
       seenArgs.push({ ...opts });
@@ -692,6 +699,9 @@ describe("setupRun — #2014: signal-path shutdown drains the cost ledger", () =
 
     const origInstallCrashHandlers = _runSetupDeps.installCrashHandlers;
     const origCreateRuntime = _runSetupDeps.createRuntime;
+
+    // US-006: no run memory in this fixture — its assertions are about teardown order.
+    _runSetupDeps.createRunMemory = async () => undefined;
 
     _runSetupDeps.installCrashHandlers = ((ctx: Parameters<typeof origInstallCrashHandlers>[0]) => {
       capturedShutdown = ctx.onShutdown;
