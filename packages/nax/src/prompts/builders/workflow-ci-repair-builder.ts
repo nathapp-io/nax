@@ -6,6 +6,7 @@
  * failing checks of the published PR, the two rules a repair must never break, and the artifacts and
  * reply contract every workflow session carries.
  */
+import { memorySectionOf } from "./memory-builder";
 import {
   REPAIR_VERIFICATION_RULE,
   renderWorkflowFindings,
@@ -32,6 +33,8 @@ export function buildWorkflowCiRepairPrompt(input: {
   readonly prdPath?: string;
   readonly reportPath: string;
   readonly findings: readonly WorkflowPromptFinding[];
+  /** US-002: the rendered memory index; a repair session may read and save memory. */
+  readonly memoryIndex?: string;
 }): string {
   const where = input.prUrl ? `pull request ${input.prUrl}` : "this pull request";
   const documents = [
@@ -39,6 +42,7 @@ export function buildWorkflowCiRepairPrompt(input: {
     ...(input.prdPath !== undefined ? [`the PRD (${input.prdPath})`] : []),
   ];
   const read = documents.length > 0 ? ` Read ${documents.join(" and ")} for what the feature must do.` : "";
+  const memory = memorySectionOf(input.memoryIndex);
   return `You are repairing the CI of ${where}.${read} The feature is already on the branch: the failing checks below are the whole of your work.
 
 ## Failing checks
@@ -55,5 +59,5 @@ ${renderWorkflowFindings(input.findings)}
 
 ${REPAIR_VERIFICATION_RULE}
 
-${WORKFLOW_REPLY_CONTRACT}`;
+${memory !== undefined ? `${memory}\n\n` : ""}${WORKFLOW_REPLY_CONTRACT}`;
 }

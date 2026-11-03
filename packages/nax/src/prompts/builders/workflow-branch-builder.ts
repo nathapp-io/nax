@@ -1,4 +1,5 @@
 /** A5 workflow mode: the whole-branch review, its scoped re-review, and the one branch fix (spec §7 steps 2-4). */
+import { memoryReferenceSectionOf, memorySectionOf } from "./memory-builder";
 import {
   renderWorkflowFindings,
   WORKFLOW_ARTIFACTS_RULE,
@@ -39,6 +40,11 @@ export interface BranchReviewPromptInput {
    * module's `RepoGateSummary`, declared inline so this builder imports nothing from `@/workflow`.
    */
   readonly repoGates?: { readonly ran: readonly string[]; readonly failing: readonly string[] };
+  /**
+   * US-002: the rendered memory index. This session has no `nax-memory` tools and saves
+   * nothing, so the index arrives as background only — the read-only reference section.
+   */
+  readonly memoryIndex?: string;
 }
 
 const NONE = "(none)";
@@ -102,6 +108,7 @@ const REVIEW_JSON =
 export function buildWorkflowBranchReviewPrompt(input: BranchReviewPromptInput): string {
   const preflight = input.preflightPath ? `\n- the pre-flight rulings: ${input.preflightPath}` : "";
   const gates = input.gateFindings.length > 0 ? renderWorkflowFindings(input.gateFindings) : NONE;
+  const memory = memoryReferenceSectionOf(input.memoryIndex);
   return `You are reviewing a whole feature branch. Every story was implemented and reviewed on its own already. Read:
 - the feature spec: ${input.specPath ?? "(no spec file found)"}
 - the PRD (stories and acceptance criteria): ${input.prdPath ?? "(no PRD for this change)"}${preflight}
@@ -126,7 +133,7 @@ ${input.minors.length > 0 ? input.minors.map((m) => `[${m.id}] ${m.storyId}: ${m
 
 ${naxCheckedBlock(input.repoGates)}
 
-## Your remit
+${memory !== undefined ? `${memory}\n\n` : ""}## Your remit
 - Cross-story integration and contracts: do the stories fit together, do callers and callees agree, is shared state consistent?
 - Reachability: is every new piece wired in and reachable from where the spec says it is used?
 - Consistency and duplication across stories.
@@ -192,12 +199,15 @@ export function buildWorkflowBranchFixPrompt(input: {
   prdPath?: string;
   reportPath: string;
   findings: readonly WorkflowPromptFinding[];
+  /** US-002: the rendered memory index; this fix session may read and save memory. */
+  memoryIndex?: string;
 }): string {
   const documents = [
     ...(input.specPath ? [`the spec (${input.specPath})`] : []),
     ...(input.prdPath !== undefined ? [`the PRD (${input.prdPath})`] : []),
   ];
   const read = documents.length > 0 ? ` Read ${documents.join(" and ")} for what the feature must do.` : "";
+  const memory = memorySectionOf(input.memoryIndex);
   return `You are fixing a feature branch after its whole-branch review. Fix every finding in this pass: a later pass, if any, only re-checks what is still open.${read}
 
 ## Findings to fix
@@ -212,5 +222,5 @@ ${renderWorkflowFindings(input.findings)}
 - ${WORKFLOW_ARTIFACTS_RULE}
 - Do not dispatch sub-agents or reviewers.
 
-${WORKFLOW_REPLY_CONTRACT}`;
+${memory !== undefined ? `${memory}\n\n` : ""}${WORKFLOW_REPLY_CONTRACT}`;
 }

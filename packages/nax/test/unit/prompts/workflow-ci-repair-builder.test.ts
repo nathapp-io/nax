@@ -7,8 +7,10 @@
  * artifacts and reply contract every workflow session carries.
  */
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import {
   buildWorkflowCiRepairPrompt,
+  memorySectionOf,
   REPAIR_VERIFICATION_RULE,
   WORKFLOW_ARTIFACTS_RULE,
   WORKFLOW_REPLY_CONTRACT,
@@ -97,5 +99,37 @@ describe("buildWorkflowCiRepairPrompt", () => {
     const text = buildWorkflowCiRepairPrompt({ round: 1, reportPath: REPORT, findings });
     expect(text.startsWith("You are repairing the CI of this pull request.")).toBe(true);
     expect(text).not.toContain("undefined");
+  });
+});
+
+/**
+ * US-002 — the memory index in the CI repair brief.
+ *
+ * A repair session reads and saves memory like any other implementer session, so it gets the
+ * tool section, after the verification rule (which is about this brief's own work) and before
+ * the reply contract every workflow session ends with.
+ */
+describe("buildWorkflowCiRepairPrompt — the memory section (US-002)", () => {
+  test("AC-12: an index renders the memory section", () => {
+    const text = buildWorkflowCiRepairPrompt({ ...input, memoryIndex: "INDEX-LINE" });
+    const expected = memorySectionOf("INDEX-LINE");
+    assertDefined(expected, "memorySectionOf section");
+    expect(text).toContain(expected);
+  });
+
+  test("AC-13: ## Memory follows the verification rule and precedes the reply contract", () => {
+    const text = buildWorkflowCiRepairPrompt({ ...input, memoryIndex: "INDEX-LINE" });
+    expect(text.indexOf(REPAIR_VERIFICATION_RULE)).toBeGreaterThan(-1);
+    expect(text.indexOf("## Memory")).toBeGreaterThan(text.indexOf(REPAIR_VERIFICATION_RULE));
+    expect(text.indexOf("## Memory")).toBeLessThan(text.indexOf(WORKFLOW_REPLY_CONTRACT));
+  });
+
+  test("AC-14: an absent index adds no ## Memory heading, and the prompt is what it was", () => {
+    const text = buildWorkflowCiRepairPrompt(input);
+    expect(text).not.toContain("## Memory");
+    expect(text).toBe(buildWorkflowCiRepairPrompt({ ...input, memoryIndex: "" }));
+    // The section does arrive when there is an index, so the absence above is real.
+    expect(buildWorkflowCiRepairPrompt({ ...input, memoryIndex: "INDEX-LINE" })).not.toBe(text);
+    expect(text.endsWith(WORKFLOW_REPLY_CONTRACT)).toBe(true);
   });
 });

@@ -9,6 +9,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
+  assertDefined,
   cleanupTempDir,
   makeMockCallContext,
   makeNaxConfig,
@@ -18,7 +19,7 @@ import {
 } from "@test/helpers";
 import type { ResolvedRule, ResolvedRuleSet } from "@/context/rules/rule-set";
 import type { RulesIndexEntry } from "@/prompts";
-import { buildWorkflowBrief } from "@/prompts";
+import { buildWorkflowBrief, memorySectionOf } from "@/prompts";
 import { storyWorkdir } from "@/utils/path-frame";
 import { writeBrief } from "@/workflow/brief";
 import { _workflowDeps, type StepContext } from "@/workflow/step-context";
@@ -158,6 +159,58 @@ describe("buildWorkflowBrief — the rules index section (seam)", () => {
     expect(text).toContain("EXISTING-CONSTITUTION");
     expect(text.indexOf("## Project rules")).toBeLessThan(text.indexOf("EXISTING-CONSTITUTION"));
     expect(text).toContain("## Rules index");
+  });
+});
+
+/**
+ * US-002 — the memory section of the story brief.
+ *
+ * A workflow session has no `nax-memory` tools, so the brief carries the index with the
+ * tool section (`## Memory` + how to read a note + the index) and nothing else: the
+ * sections around it are the anchors for where it goes. An absent or empty index leaves
+ * the brief byte for byte what it was.
+ */
+describe("buildWorkflowBrief — the memory section (US-002)", () => {
+  const MEMORY = "INDEX-LINE";
+  const withSections = {
+    ...briefInput,
+    featureContext: "FEATURE",
+    rulesIndex: { entries: [INDEX_ENTRY], shownAutomatically: true },
+  };
+
+  test("AC-5: an index renders the memory section in the brief", () => {
+    const text = buildWorkflowBrief({ ...briefInput, memoryIndex: MEMORY });
+    const expected = memorySectionOf(MEMORY);
+    assertDefined(expected, "memorySectionOf section");
+    expect(text).toContain(expected);
+  });
+
+  test("AC-6: ## Memory follows ## Rules index", () => {
+    const text = buildWorkflowBrief({ ...withSections, memoryIndex: MEMORY });
+    expect(text.indexOf("## Rules index")).toBeGreaterThan(-1);
+    expect(text.indexOf("## Memory")).toBeGreaterThan(text.indexOf("## Rules index"));
+  });
+
+  test("AC-7: ## Memory precedes ## Feature context", () => {
+    const text = buildWorkflowBrief({ ...withSections, memoryIndex: MEMORY });
+    expect(text.indexOf("## Feature context")).toBeGreaterThan(-1);
+    expect(text.indexOf("## Memory")).toBeGreaterThan(-1);
+    expect(text.indexOf("## Memory")).toBeLessThan(text.indexOf("## Feature context"));
+    expect(text).toContain("FEATURE");
+  });
+
+  test("AC-8: an empty index renders exactly what an absent one renders", () => {
+    const absent = buildWorkflowBrief(withSections);
+    const empty = buildWorkflowBrief({ ...withSections, memoryIndex: "" });
+    expect(empty).toBe(absent);
+    expect(empty).not.toContain("## Memory");
+    // An index that is present does change the brief, so the empty case above is a real
+    // absence rather than a builder that ignores memoryIndex altogether.
+    expect(buildWorkflowBrief({ ...withSections, memoryIndex: MEMORY })).not.toBe(absent);
+  });
+
+  test("an absent index adds no heading to the minimal brief", () => {
+    expect(buildWorkflowBrief(briefInput)).not.toContain("## Memory");
   });
 });
 

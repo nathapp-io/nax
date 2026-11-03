@@ -39,3 +39,25 @@ export function buildMemorySection(memoryIndex: string): string {
 export function memorySectionOf(memoryIndex: string | undefined): string | undefined {
   return memoryIndex === undefined || memoryIndex === "" ? undefined : buildMemorySection(memoryIndex);
 }
+
+/**
+ * What the index is for a session that has no `nax-memory` tools: background only. Without
+ * this sentence the session would read the index as a list to look up and call tools it lacks.
+ */
+const MEMORY_REFERENCE_NOTE =
+  "Notes earlier sessions saved for this project, one line each. Use them as background; you cannot read or change them in this session.";
+
+/**
+ * The read-only memory section: the index as background, for a session without the memory
+ * tools — the whole-branch reviewer, which sees one line per note and nothing more.
+ *
+ * Pure: no config, no file reads, no model calls.
+ */
+export function buildMemoryReferenceSection(memoryIndex: string): string {
+  return `${MEMORY_HEADING}\n\n${MEMORY_REFERENCE_NOTE}\n\n${memoryIndex}`;
+}
+
+/** The read-only section for a builder whose index is optional; nothing when it is absent or empty. */
+export function memoryReferenceSectionOf(memoryIndex: string | undefined): string | undefined {
+  return memoryIndex === undefined || memoryIndex === "" ? undefined : buildMemoryReferenceSection(memoryIndex);
+}
