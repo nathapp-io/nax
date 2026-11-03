@@ -1,0 +1,516 @@
+{
+  "project": "nax-monorepo",
+  "feature": "memory-run-stages",
+  "branchName": "feat/memory-run-stages",
+  "createdAt": "2026-11-02T00:00:00Z",
+  "updatedAt": "2026-11-03T02:01:35.703Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Run memory switch",
+      "description": "**Goal** — Add the default-on memory.inRun configuration switch without changing chat behavior.\n\n**Motivation** — A `nax run` starts every story blank.\n\n**Approach** — Config (`memory.inRun`)\n\n```jsonc\n\"memory\": {\n  \"enabled\": true,\n  \"provider\": \"local\",\n  \"writeMode\": \"direct\",\n  \"indexBytes\": 24576,\n  \"askOnSave\": true,\n  \"inRun\": true            // false: nax run gets no memory sync, index or tools; chat is unaffected\n}\n```\n\n`MemoryConfigSchema` gains `inRun: z.boolean().default(true)`; it stays `.strict()`, so `stages` and `koda` remain unknown keys. `MemoryConfig` (`src/config/runtime-types-memory.ts`) gains `inRun: boolean`. `FIELD_DESCRIPTIONS` gains `memory.inRun`. `memory.enabled: false` still turns everything off (step 2 above).\n\n`packages/nax/test/unit/config/schemas-memory.test.ts` — `DEFAULT_MEMORY` and the AC-9 `configured` literal are closed `toEqual` objects of the memory block; both gain `inRun` (`true` in the default, `false` in the configured literal), and the invariant stays \"the parsed default and a configured block round-trip exactly\".\n\n**Scope** — In: schemas-memory.ts, runtime-types-memory.ts, cli/config-descriptions.ts and the existing schema tests, including complete MemoryConfig fixture compatibility. Out: createRunMemory and switch consumption (US-003), prompt rendering (US-002), runtime/setup wiring (US-005/US-006). The design's memory.stages list is not built.\n\n**Interface** — Exact field declarations to add:\n```ts\ninRun: z.boolean().default(true)\ninRun: boolean\n```\nThe first is the MemoryConfigSchema object entry; the second is the MemoryConfig member. Use memoryConfigOf rather than adding independent defaults.\n\nVerification note: `bun run typecheck` passes with `MemoryConfig.inRun` declared. Write failing tests in test/unit/config/schemas-memory.test.ts before implementation; preserve the closed default and configured equality assertions, not partial matches.",
+      "acceptanceCriteria": [
+        "NaxConfigSchema.parse({}).memory.inRun is true.",
+        "NaxConfigSchema.parse({ memory: { inRun: false } }).memory.inRun is false.",
+        "NaxConfigSchema.safeParse({ memory: { inRun: \"yes\" } }) fails with an issue whose path is [\"memory\", \"inRun\"].",
+        "NaxConfigSchema.safeParse({ memory: { stages: [\"run\"] } }) still fails because memory accepts no unknown key.",
+        "memoryConfigOf({}).inRun is true.",
+        "FIELD_DESCRIPTIONS[\"memory.inRun\"] is a non-empty string."
+      ],
+      "tags": [
+        "feature",
+        "memory",
+        "config"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Small additive Zod/runtime-type/description change across three source files, with exact-default fixture compatibility and no permission-policy changes."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-memory.ts",
+        "packages/nax/src/config/runtime-types-memory.ts",
+        "packages/nax/src/cli/config-descriptions.ts",
+        "packages/nax/test/unit/config/schemas-memory.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/schemas-memory.ts",
+          "reason": "add `inRun: z.boolean().default(true)` to `MemoryConfigSchema`; the schema stays `.strict()`."
+        },
+        {
+          "path": "packages/nax/src/config/runtime-types-memory.ts",
+          "reason": "add `inRun: boolean` to `MemoryConfig`."
+        },
+        {
+          "path": "packages/nax/src/cli/config-descriptions.ts",
+          "reason": "add the `memory.inRun` entry to `FIELD_DESCRIPTIONS`."
+        },
+        {
+          "path": "packages/nax/test/unit/config/schemas-memory.test.ts",
+          "reason": "`DEFAULT_MEMORY` and the AC-9 `configured` literal are closed `toEqual` objects of the memory block; both gain `inRun` (`true` in the default, `false` in the configured literal), and the invariant stays \"the parsed default and a configured block round-trip exactly\"."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Memory sections in workflow prompts",
+      "description": "**Goal** — Add optional memory sections to the implementer brief, branch fix, CI repair and whole-branch review builders.\n\n**Motivation** — What an earlier chat or run worked out (a test command that needs a container, a review ruling, a reason a fix was reverted) is in the memory mirror, but no run session sees it, and a run session cannot save what the next one would need.\n\n**Approach** — Prompt builders\n\n`src/prompts/builders/memory-builder.ts` gains:\n\n```ts\n/** The read-only memory section: the index as background, for a session without the memory tools. */\nexport function buildMemoryReferenceSection(memoryIndex: string): string;\nexport function memoryReferenceSectionOf(memoryIndex: string | undefined): string | undefined;\n```\n\n`buildMemoryReferenceSection(index)` returns `\"## Memory\\n\\n\" + MEMORY_REFERENCE_NOTE + \"\\n\\n\" + index`, where `MEMORY_REFERENCE_NOTE` is `\"Notes earlier sessions saved for this project, one line each. Use them as background; you cannot read or change them in this session.\"`. `memoryReferenceSectionOf` returns `undefined` for an `undefined` or `\"\"` index, like the existing `memorySectionOf`. Both are exported from `src/prompts/index.ts`.\n\nEach builder below gains an optional `memoryIndex?: string` input. Absent or `\"\"`, its output is byte-identical to today's.\n\n| Builder | File | Section | Placement |\n|---|---|---|---|\n| `buildWorkflowBrief` | `workflow-implementer-builder.ts` | `memorySectionOf` (tool section) | after the `## Rules index` section (when present) and before `## Feature context` |\n| `buildWorkflowBranchFixPrompt` | `workflow-branch-builder.ts` | `memorySectionOf` | after the `## How to work` list, before `WORKFLOW_REPLY_CONTRACT` |\n| `buildWorkflowCiRepairPrompt` | `workflow-ci-repair-builder.ts` | `memorySectionOf` | after `REPAIR_VERIFICATION_RULE`, before `WORKFLOW_REPLY_CONTRACT` |\n| `buildWorkflowBranchReviewPrompt` | `workflow-branch-builder.ts` (`BranchReviewPromptInput`) | `memoryReferenceSectionOf` | before the `## Your remit` heading |\n\nChanged (the baseline exists only to locate the code; the target is the interface to implement):\n- `buildWorkflowBrief(input: WorkflowBriefInput)`. Target: `WorkflowBriefInput` gains `memoryIndex?: string`.\n- `buildWorkflowBranchFixPrompt(input: { specPath?; prdPath?; reportPath; findings })`. Target: the input gains `memoryIndex?: string`.\n- `buildWorkflowCiRepairPrompt(input: { round; prUrl?; specPath?; prdPath?; reportPath; findings })`. Target: the input gains `readonly memoryIndex?: string`.\n- `BranchReviewPromptInput`. Target: gains `readonly memoryIndex?: string`.\n\n`src/prompts/index.ts` — export `buildMemoryReferenceSection`, `memoryReferenceSectionOf` and `memorySectionOf`.\n\n**Scope** — In: memory-builder.ts, prompts/index.ts, workflow-implementer-builder.ts, workflow-branch-builder.ts, workflow-ci-repair-builder.ts and existing prompt/brief-order tests. Out: acquiring or syncing memory (US-003/US-004), provider attachment (US-005), and reading runtime.memory at callers (US-007). Story re-reviews, branch re-reviews and the advisor get no memory section. Review-stage sessions get no read-only memory tools; the whole-branch reviewer sees only index lines. The story reviewer keeps reading the implementer's brief without its own prompt/tool changes.\n\n**Interface** — The new helper signatures above are final. Preserve the existing `memorySectionOf(memoryIndex: string | undefined): string | undefined` behavior and existing builder signatures except for the specified optional memoryIndex fields. These builders remain pure: no memory hosts, config reads, filesystem reads or model calls.\n\nTesting: extend test/unit/prompts/builders/memory-builder.test.ts and the existing workflow builder tests, and use test/unit/workflow/brief-rules-index.test.ts for section-order regression anchors. Compare no-index and empty-index outputs against existing output, not just absence of a heading.",
+      "acceptanceCriteria": [
+        "buildMemoryReferenceSection(\"- [project] a — b\") returns \"## Memory\n\nNotes earlier sessions saved for this project, one line each. Use them as background; you cannot read or change them in this session.\n\n- [project] a — b\".",
+        "memoryReferenceSectionOf(undefined) returns undefined.",
+        "memoryReferenceSectionOf(\"\") returns undefined.",
+        "Importing buildMemoryReferenceSection, memoryReferenceSectionOf and memorySectionOf from @/prompts succeeds and each is a function.",
+        "buildWorkflowBrief given memoryIndex: \"INDEX-LINE\" returns text containing memorySectionOf(\"INDEX-LINE\").",
+        "buildWorkflowBrief given memoryIndex and a non-empty rulesIndex places ## Memory after ## Rules index.",
+        "buildWorkflowBrief given memoryIndex and featureContext: \"FEATURE\" places ## Memory before ## Feature context.",
+        "buildWorkflowBrief given memoryIndex: \"\" returns the same text as with memoryIndex absent.",
+        "buildWorkflowBranchFixPrompt given memoryIndex: \"INDEX-LINE\" returns text containing memorySectionOf(\"INDEX-LINE\").",
+        "buildWorkflowBranchFixPrompt given memoryIndex places ## Memory after ## How to work and before the text of WORKFLOW_REPLY_CONTRACT.",
+        "buildWorkflowBranchFixPrompt with memoryIndex absent returns text with no ## Memory heading.",
+        "buildWorkflowCiRepairPrompt given memoryIndex: \"INDEX-LINE\" returns text containing memorySectionOf(\"INDEX-LINE\").",
+        "buildWorkflowCiRepairPrompt given memoryIndex places ## Memory after the text of REPAIR_VERIFICATION_RULE and before the text of WORKFLOW_REPLY_CONTRACT.",
+        "buildWorkflowCiRepairPrompt with memoryIndex absent returns text with no ## Memory heading.",
+        "buildWorkflowBranchReviewPrompt given memoryIndex: \"INDEX-LINE\" returns text containing buildMemoryReferenceSection(\"INDEX-LINE\").",
+        "buildWorkflowBranchReviewPrompt given memoryIndex places ## Memory before ## Your remit.",
+        "buildWorkflowBranchReviewPrompt given memoryIndex returns text that does not name nax-memory__get.",
+        "buildWorkflowBranchReviewPrompt with memoryIndex absent returns text with no ## Memory heading."
+      ],
+      "tags": [
+        "feature",
+        "memory",
+        "prompts",
+        "workflow"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure optional string rendering following existing helpers; multiple builder edits have clear insertion points and no new abstraction or permission decisions."
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/memory-builder.ts",
+        "packages/nax/src/prompts/builders/workflow-implementer-builder.ts",
+        "packages/nax/src/prompts/builders/workflow-branch-builder.ts",
+        "packages/nax/src/prompts/builders/workflow-ci-repair-builder.ts",
+        "packages/nax/test/unit/workflow/brief-rules-index.test.ts"
+      ],
+      "suggestedCriteria": [
+        "buildWorkflowBranchFixPrompt given memoryIndex: \"\" returns byte-identical text to the pre-feature prompt with memoryIndex absent.",
+        "buildWorkflowCiRepairPrompt given memoryIndex: \"\" returns byte-identical text to the pre-feature prompt with memoryIndex absent.",
+        "buildWorkflowBranchReviewPrompt given memoryIndex: \"\" returns byte-identical text to the pre-feature prompt with memoryIndex absent.",
+        "buildWorkflowBrief given memoryIndex and no rulesIndex still places ## Memory before ## Feature context."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/prompts/builders/memory-builder.ts",
+          "reason": "add `buildMemoryReferenceSection` and `memoryReferenceSectionOf`."
+        },
+        {
+          "path": "packages/nax/src/prompts/index.ts",
+          "reason": "export `buildMemoryReferenceSection`, `memoryReferenceSectionOf` and `memorySectionOf`."
+        },
+        {
+          "path": "packages/nax/src/prompts/builders/workflow-implementer-builder.ts",
+          "reason": "`WorkflowBriefInput` gains `memoryIndex?: string`; `buildWorkflowBrief` renders it after the rules index and before the feature context."
+        },
+        {
+          "path": "packages/nax/src/prompts/builders/workflow-branch-builder.ts",
+          "reason": "`BranchReviewPromptInput` and the `buildWorkflowBranchFixPrompt` input gain `memoryIndex`; each builder renders its section where the Design table places it."
+        },
+        {
+          "path": "packages/nax/src/prompts/builders/workflow-ci-repair-builder.ts",
+          "reason": "the `buildWorkflowCiRepairPrompt` input gains `memoryIndex`; the section renders before the reply contract."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Run memory composition, start sync and index",
+      "description": "**Goal** — Compose a guarded per-run memory host with a run-stage provider, start sync and a freshly rendered optional index.\n\n**Motivation** — Feature 2 made memory real for `nax chat`; this feature makes the same notes visible, and writable, in the sessions that do a run's work.\n\n**Approach** — New module file `packages/nax/src/memory/run-memory.ts`, exported from the `@/memory` barrel:\n\n```ts\n/** The origin a note saved by a run session records. */\nexport const RUN_MEMORY_SOURCE = \"nax-run\";\n/** The pipeline stage the run memory's tools attach to. */\nexport const RUN_MEMORY_TOOL_STAGES: readonly string[] = [\"run\"];\n\nexport interface RunMemorySummary {\n  readonly saved: number;   // saves that returned a result during this run\n  readonly pending: number; // of those, saves whose result status was \"pending\"\n}\n\nexport interface RunMemory {\n  readonly host: MemoryHost;\n  /** The four nax-memory tools over a counting view of `host`, stages [\"run\"]. */\n  readonly provider: ToolProvider;\n  /** The rendered index, read fresh on every call; undefined when empty or unavailable. Never throws. */\n  index(): Promise<string | undefined>;\n  /** The counts `close()` logs; read by tests, no other production reader. */\n  summary(): RunMemorySummary;\n  /** First call: one sync, then one summary log line. Later calls do nothing. Never throws. */\n  close(): Promise<void>;\n}\n\nexport interface CreateRunMemoryInput {\n  readonly config: NaxConfig;\n  /** Absolute repository root (the run's workdir); the mirror identity. */\n  readonly repoRoot: string;\n  readonly logger: MemoryLogger;\n}\n\nexport async function createRunMemory(input: CreateRunMemoryInput): Promise<RunMemory | undefined>;\nexport const _runMemoryDeps: { createMemoryHost: typeof createMemoryHost };\n```\n\n`createRunMemory`, in order:\n\n1. `memoryConfigOf(input.config).inRun === false` → returns `undefined` without calling `createMemoryHost`.\n2. `_runMemoryDeps.createMemoryHost({ config, repoRoot, source: RUN_MEMORY_SOURCE, logger })`. `null` (memory disabled) → `undefined`. A throw → `logger.warn(\"run\", \"memory unavailable\", { storyId: \"_run\", error })` and `undefined`.\n3. `await host.sync()` once. A throw → `logger.warn(\"run\", \"memory sync failed\", { storyId: \"_run\", error })`; the run memory is still returned. A returned `locked`, `unreachable` or `failed` result is not a throw and logs nothing.\n4. Returns the run memory.\n\n`index()` returns `(await host.renderIndex()).text`, or `undefined` when that text is `\"\"`; a throw → `logger.warn(\"run\", \"memory index unavailable\", { storyId: \"_run\", error })` and `undefined`.\n\n`errorMessage` (`@nathapp/nax-agent/internal`) renders every `error` field.\n\nStaged implementation boundary, verbatim: Creates `src/memory/run-memory.ts` with `createRunMemory`, `RunMemory`, `RunMemorySummary`, `CreateRunMemoryInput`, `RUN_MEMORY_SOURCE`, `RUN_MEMORY_TOOL_STAGES`, `_runMemoryDeps` and `index()`; `provider`, `summary()` and `close()` are present with their final types and are completed by US-004 (until then `summary()` returns `{ saved: 0, pending: 0 }`, `close()` resolves without doing anything, and `provider` is the uncounted host's provider with `RUN_MEMORY_TOOL_STAGES`); exports from the `@/memory` barrel. The interface comments describe the final contract; counting and close semantics are intentionally deferred to US-004. Construct a new provider object (`{ ...provider, stages: RUN_MEMORY_TOOL_STAGES }`), not a mutation of the feature-2 provider.\n\nIntegration, read only: `createMemoryHost(input: CreateMemoryHostInput): Promise<MemoryHost | null>` and `MemoryHost` (`src/memory/host.ts`); `CreateMemoryHostInput { config: NaxConfig; repoRoot: string; source: string; logger: MemoryLogger }`. `createMemoryToolProvider(host: MemoryHost): ToolProvider` (`src/memory/tool-provider.ts:354`), `kind: \"static\"`, `stages: [\"*\"]`, id `MEMORY_TOOL_PROVIDER_ID` (`\"nax-memory\"`).\n\nThe tools attach by provider stage: the run memory's provider declares `stages: [\"run\"]`, and the existing stage filter (`providerAttachesTo`, `packages/nax-agent/src/tools/provider-types.ts:71`, reached through `resolveProviderContribution` with the op's `pipelineStage`) keeps it off every `review`-stage session. No session-role list is added.\n\nStories run one at a time in workflow mode (`effectiveParallelCount` returns 0, `src/execution/workflow-parallel.ts`), and a static provider's tools run in the nax host process, not in the sandbox (`packages/nax-agent/src/tools/provider-adapt.ts:34`). So a run-stage save writes the mirror directly, exactly like a chat save; the design's \"stages only append outbox files\" rule has nothing to guard here.\n\n**Scope** — In: new run-memory.ts and test/unit/memory/run-memory.test.ts, and barrel exports of createRunMemory, _runMemoryDeps, RUN_MEMORY_SOURCE, RUN_MEMORY_TOOL_STAGES and types RunMemory, RunMemorySummary, CreateRunMemoryInput. Out: save counting/end sync/summary logging (US-004), runtime carrying/close ownership (US-005), setup (US-006), prompt builders/callers (US-002/US-007). No change to packages/nax-agent or existing permission behavior. No memory.stages configuration, role lists, mid-session sync or new memory providers.\n\n**Interface** — The TypeScript block above is the final exported surface. Use memoryConfigOf for the switch, the existing MemoryLogger and ToolProvider types, and errorMessage for every warning.\n\nTesting: write failing unit tests through _runMemoryDeps with restored seams, including host creation failure, disabled/null cases, guarded start sync and fresh render failures. In ACs, partial memory blocks denote overrides on a fully resolved NaxConfig fixture (use the existing makeNaxConfig helper or schema parsing); do not pass an incomplete MemoryConfig to the typed factory. Test memory.enabled: false through the real disabled-host path, since createRunMemory delegates that switch to createMemoryHost rather than checking it itself. With a real host over temporary directories assert the four provider tool names/order. The test suite created here is extended, not recreated, by US-004.",
+      "acceptanceCriteria": [
+        "createRunMemory with memory: { inRun: false } in the config returns undefined and _runMemoryDeps.createMemoryHost is not called.",
+        "createRunMemory calls _runMemoryDeps.createMemoryHost once with { config, repoRoot, source: \"nax-run\", logger } from its input.",
+        "RUN_MEMORY_SOURCE equals \"nax-run\".",
+        "createRunMemory returns undefined when _runMemoryDeps.createMemoryHost resolves null.",
+        "When _runMemoryDeps.createMemoryHost rejects with new Error(\"boom\"), createRunMemory resolves undefined.",
+        "When _runMemoryDeps.createMemoryHost rejects with new Error(\"boom\"), the logger receives warn(\"run\", \"memory unavailable\", { storyId: \"_run\", error: \"boom\" }).",
+        "createRunMemory calls the host's sync exactly once before it resolves.",
+        "When the host's sync rejects with new Error(\"down\"), createRunMemory still resolves a run memory whose host is that host.",
+        "When the host's sync rejects with new Error(\"down\"), the logger receives warn(\"run\", \"memory sync failed\", { storyId: \"_run\", error: \"down\" }).",
+        "When the host's sync resolves a locked result, createRunMemory logs no warn.",
+        "runMemory.index() resolves the text the host's renderIndex resolves.",
+        "runMemory.index() calls the host's renderIndex on every call (two calls, two renders).",
+        "runMemory.index() resolves undefined when the host's renderIndex resolves text: \"\".",
+        "When the host's renderIndex rejects with new Error(\"bad\"), runMemory.index() resolves undefined.",
+        "When the host's renderIndex rejects with new Error(\"bad\"), the logger receives warn(\"run\", \"memory index unavailable\", { storyId: \"_run\", error: \"bad\" }).",
+        "runMemory.provider.id is \"nax-memory\".",
+        "runMemory.provider.stages equals [\"run\"].",
+        "With a real memory host over temp directories, await runMemory.provider.tools(workdir) returns tools whose localName values are get, search, save and forget, in that order.",
+        "Importing createRunMemory and RUN_MEMORY_TOOL_STAGES from @/memory succeeds.",
+        "When memory.enabled is false and inRun is true, createRunMemory resolves undefined through the disabled host's null result."
+      ],
+      "tags": [
+        "feature",
+        "memory",
+        "lifecycle",
+        "tool-providers"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "New run-scoped abstraction composes host and stage-restricted agent tools; strict TDD isolation applies to the session/tool exposure boundary, in addition to multi-module failure handling."
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/host.ts",
+        "packages/nax/src/memory/tool-provider.ts",
+        "packages/nax/src/chat/host-memory.ts",
+        "packages/nax/src/memory/index.ts",
+        "packages/nax/test/unit/memory/host.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/run-memory.ts",
+        "packages/nax/test/unit/memory/run-memory.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When host.sync resolves an unreachable or failed result, createRunMemory logs no warn.",
+        "When host.renderIndex yields different text on successive calls, runMemory.index returns the corresponding fresh text each time.",
+        "When runMemory.index is called twice after creation, the host's sync call count remains one."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/memory/index.ts",
+          "reason": "export `createRunMemory`, `_runMemoryDeps`, `RUN_MEMORY_SOURCE`, `RUN_MEMORY_TOOL_STAGES` and the types `RunMemory`, `RunMemorySummary`, `CreateRunMemoryInput`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Run memory tools, save counter and close",
+      "description": "**Goal** — Complete the run memory's counting tool-provider view and idempotent end-of-run sync and summary.\n\n**Motivation** — What an earlier chat or run worked out (a test command that needs a container, a review ruling, a reason a fix was reverted) is in the memory mirror, but no run session sees it, and a run session cannot save what the next one would need.\n\n**Approach** — `provider` is `createMemoryToolProvider(counting)` with its `stages` replaced by `RUN_MEMORY_TOOL_STAGES` (a new object: `{ ...provider, stages: RUN_MEMORY_TOOL_STAGES }`). `counting` is `host` with `save` wrapped: after `host.save(write)` resolves, `saved` grows by one, and `pending` by one when the result's `status` is `\"pending\"`; a rejected save changes neither. Every other `MemoryHost` member is the host's own.\n\n`close()` on its first call awaits `host.sync()` (a throw → the same `memory sync failed` warn), then logs `logger.info(\"run\", \"Memory: <saved> saved (<pending> pending)\", { storyId: \"_run\", saved, pending })`. A second call returns without syncing or logging.\n\n`errorMessage` (`@nathapp/nax-agent/internal`) renders every `error` field.\n\nFailure Handling:\n- a save is rejected by the store (secret, invalid note) → the tool answers `isError` (feature 2); the counter does not change.\n- run-end `host.sync()` throws → warn `memory sync failed`; the summary line is still logged; `runtime.close()` continues.\n\nThe tools attach by provider stage: the run memory's provider declares `stages: [\"run\"]`, and the existing stage filter (`providerAttachesTo`, `packages/nax-agent/src/tools/provider-types.ts:71`, reached through `resolveProviderContribution` with the op's `pipelineStage`) keeps it off every `review`-stage session. No session-role list is added.\n\nStories run one at a time in workflow mode (`effectiveParallelCount` returns 0, `src/execution/workflow-parallel.ts`), and a static provider's tools run in the nax host process, not in the sandbox (`packages/nax-agent/src/tools/provider-adapt.ts:34`). So a run-stage save writes the mirror directly, exactly like a chat save; the design's \"stages only append outbox files\" rule has nothing to guard here.\n\n**Scope** — In: complete provider, summary() and close() in the US-003 run-memory.ts; extend its existing run-memory.test.ts. Preserve the startup sync and index behavior from US-003. Out: runtime ownership and finally integration (US-005), setup (US-006), prompt delivery (US-002/US-007). No new validation/secret policy, permission handling or packages/nax-agent changes. No sync between stories or mid-session. The summary remains only a close-time log line, not a workflow/footer/status/PR change.\n\n**Interface** — Final types, already introduced by US-003:\n```ts\nexport interface RunMemorySummary {\n  readonly saved: number;   // saves that returned a result during this run\n  readonly pending: number; // of those, saves whose result status was \"pending\"\n}\n\nexport interface RunMemory {\n  readonly host: MemoryHost;\n  /** The four nax-memory tools over a counting view of `host`, stages [\"run\"]. */\n  readonly provider: ToolProvider;\n  /** The rendered index, read fresh on every call; undefined when empty or unavailable. Never throws. */\n  index(): Promise<string | undefined>;\n  /** The counts `close()` logs; read by tests, no other production reader. */\n  summary(): RunMemorySummary;\n  /** First call: one sync, then one summary log line. Later calls do nothing. Never throws. */\n  close(): Promise<void>;\n}\n```\n`MemorySaveResult { slug: string; status: MemoryNoteStatus; delivered: boolean }` (`packages/nax-agent/src/memory/operations.ts:126`). Keep RunMemory.host as the original host, not the counting view.\n\nTesting: exercise save and forget by invoking actual provider tools rather than directly calling a wrapper; assert forwarded note fields, fulfilled/rejected counters, sync totals, exact structured log calls, and first/second close behavior including a rejecting end sync. Status-only result literals in ACs denote the observed subset: fake saves must return a complete MemorySaveResult with slug, status and delivered. The model supplies slug/type/description/body and optional scope; the existing tool provider builds MemoryNoteWrite (including the default scope), and the counting view forwards that write to host.save unchanged. Do not stamp source in the wrapper: the existing host already records RUN_MEMORY_SOURCE from composition. Restore _runMemoryDeps after each case. Set the close guard before awaiting sync to keep first-call-only behavior under overlap.",
+      "acceptanceCriteria": [
+        "After the provider's save tool runs once and the host's save resolves { status: \"active\" }, runMemory.summary() returns { saved: 1, pending: 0 }.",
+        "After the provider's save tool runs once and the host's save resolves { status: \"pending\" }, runMemory.summary() returns { saved: 1, pending: 1 }.",
+        "After the provider's save tool runs and the host's save rejects, runMemory.summary() returns { saved: 0, pending: 0 }.",
+        "After the provider's forget tool runs, runMemory.summary() is unchanged.",
+        "The provider's save tool passes the model's note to the host's save (same slug, type, description and body).",
+        "runMemory.close() calls the host's sync once more (twice in total including the start sync).",
+        "runMemory.close() after one active and one pending save logs info(\"run\", \"Memory: 2 saved (1 pending)\", { storyId: \"_run\", saved: 2, pending: 1 }).",
+        "runMemory.close() with no saves logs info(\"run\", \"Memory: 0 saved (0 pending)\", { storyId: \"_run\", saved: 0, pending: 0 }).",
+        "When the host's sync rejects during close(), close() resolves.",
+        "When the host's sync rejects with new Error(\"down\") during close(), the logger receives warn(\"run\", \"memory sync failed\", { storyId: \"_run\", error: \"down\" }).",
+        "When the host's sync rejects during close(), the summary info line is still logged.",
+        "A second runMemory.close() call does not call the host's sync again.",
+        "A second runMemory.close() call logs no second summary line.",
+        "When the store rejects a save for a secret or invalid note, the provider's save tool returns isError: true using the existing feature-2 error response."
+      ],
+      "tags": [
+        "feature",
+        "memory",
+        "tool-providers",
+        "lifecycle"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Adds fulfilled-save counters and a guarded close to the existing run-memory module; existing tools retain their validation, stage scope and permissions, so ordinary failing-first tests cover the bounded behavior without a security-policy change."
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/run-memory.ts",
+        "packages/nax/test/unit/memory/run-memory.test.ts",
+        "packages/nax/src/memory/tool-provider.ts",
+        "packages/nax/src/memory/host.ts",
+        "packages/nax-agent/src/memory/operations.ts"
+      ],
+      "suggestedCriteria": [
+        "When runMemory.close is invoked again while the first close sync is pending, the total host.sync call count remains two including the start sync.",
+        "When the first runMemory.close is waiting for sync, no summary info line is logged until that sync settles.",
+        "When host.sync returns a failed result during close rather than rejecting, close logs the summary without a memory sync failed warning.",
+        "When the counting provider is created, runMemory.host remains strictly equal to the original host."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Runtime carries and closes run memory",
+      "description": "**Goal** — Carry optional RunMemory through NaxRuntime, advertise its provider after existing providers and guarantee its close on runtime teardown.\n\n**Motivation** — Feature 2 made memory real for `nax chat`; this feature makes the same notes visible, and writable, in the sessions that do a run's work.\n\n**Approach** — Runtime\n\n`NaxRuntime` (`src/runtime/index.ts`) gains `readonly memory?: RunMemory` and `CreateRuntimeOptions` gains `memory?: RunMemory` (`import type { RunMemory } from \"../memory\"`, matching the file's relative imports, so the runtime adds no runtime import edge). `createRuntime`:\n\n- appends `opts.memory.provider` after the existing providers (MCP, then skills) when `opts.memory` is set; the list is unchanged otherwise;\n- returns `memory: opts.memory` only when it is set (no `memory` key otherwise);\n- in `close()`, awaits `opts.memory.close()` once (the existing `closed` guard already makes `close()` idempotent), in a `finally` around the rest of the close body, so a rejection from `mcpPool.close()` or a flush cannot skip the run-end sync; `memory.close()` never throws.\n\n`src/runtime/index.ts` is at 597 of 600 lines. To make room, `CreateRuntimeOptions` moves verbatim (with its doc comments) into a new `src/runtime/runtime-options.ts`, and `index.ts` re-exports it (`export type { CreateRuntimeOptions } from \"./runtime-options\"`), so every importer is unchanged. The move is a precondition of the line cap, not a behaviour change, and is checked by `bun run typecheck` and `bun run check:file-sizes`.\n\nChanged (the baseline exists only to locate the code; the target is the interface to implement):\n- `CreateRuntimeOptions`. Baseline: declared in `src/runtime/index.ts:294`. Target: declared in `src/runtime/runtime-options.ts`, re-exported from `src/runtime/index.ts`, with one more optional field `memory?: RunMemory`.\n- `NaxRuntime`. Target: gains `readonly memory?: RunMemory`.\n\nIntegration: US-004 `RunMemory.provider` / `close` → US-005 `createRuntime`: entry point `createRuntime(config, workdir, { memory })`, observed through `runtime.toolProviders` and `runtime.close()`. `src/runtime/run-tool-providers.ts` — `withRunSkills`. Existing operations already forward runtime providers with each op's pipelineStage; no new role list or dispatch wiring is needed.\n\n**Scope** — In: move the options interface verbatim with its comments to runtime-options.ts, add the optional memory fields using type-only imports, append the provider, conditionally expose memory and close it in finally; create runtime-memory.test.ts. Out: constructing memory in setup (US-006), composing memory/counters (US-003/US-004), prompt rendering and callers (US-002/US-007). Bot review, bot fix and plan entry points must continue creating runtimes without a run memory; do not enable memory in those commands. No permission-policy changes, read-only review tools or packages/nax-agent edits.\n\n**Interface** — Exact existing factory signature retained:\n```ts\nexport function createRuntime(config: NaxConfig, workdir: string, opts?: CreateRuntimeOptions): NaxRuntime\n```\nExact added members and re-export:\n```ts\n// NaxRuntime\nreadonly memory?: RunMemory;\n// CreateRuntimeOptions\nmemory?: RunMemory;\nexport type { CreateRuntimeOptions } from \"./runtime-options\";\n```\nBoth modules use `import type { RunMemory } from \"../memory\"`. Keep all prior options and their doc comments, including parentSignal, sessionManager, agentManager, costAggregator, promptAuditor, usageAuditor, reviewAuditor, featureName, pidRegistry, dryRun, agentStreamEvents and commandInterceptor.\n\nTesting: model provider-order cases on runtime-skills-provider.test.ts and invoke the real createRuntime with a fake RunMemory. Assert missing property versus undefined, MCP/skills/memory order, unchanged no-memory ids, once-only awaited close and finally execution after MCP close rejection. Preserve rejection of the original runtime teardown error; only memory's own sync failure is nonfatal under its contract. Run typecheck, file-size and import-cycle verification as gates, not new acceptance criteria.",
+      "acceptanceCriteria": [
+        "createRuntime(config, workdir, { memory }) returns a runtime whose memory is that run memory.",
+        "createRuntime(config, workdir) with no memory option returns a runtime with no memory key.",
+        "createRuntime(config, workdir, { memory }) returns toolProviders whose last entry is memory.provider.",
+        "createRuntime(config, workdir, { memory }) with resources.skillsInRun: true returns toolProviders whose ids end with \"nax-skills\" then \"nax-memory\".",
+        "createRuntime(config, workdir) with no memory option returns the same toolProviders ids as before this feature (no \"nax-memory\").",
+        "runtime.close() calls memory.close() exactly once.",
+        "A second runtime.close() does not call memory.close() again.",
+        "When memory.close() is pending, runtime.close() does not resolve before it resolves.",
+        "When the runtime's MCP pool close() rejects, runtime.close() still calls memory.close() once.",
+        "Importing the type CreateRuntimeOptions from @/runtime and passing { memory } to createRuntime compiles and runs using the unchanged public import path, returning a runtime whose memory is the supplied run memory.",
+        "When run memory's end-of-run host.sync rejects and the rest of teardown succeeds, runtime.close() still resolves."
+      ],
+      "tags": [
+        "feature",
+        "memory",
+        "runtime",
+        "lifecycle",
+        "tool-providers"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Two source modules use standard type extraction, provider append and try/finally under the existing closed guard; complexity is bounded, while strict isolation protects this central agent-session resource teardown and tool-provider exposure boundary."
+      },
+      "contextFiles": [
+        "packages/nax/src/runtime/index.ts",
+        "packages/nax/src/runtime/run-tool-providers.ts",
+        "packages/nax/src/memory/run-memory.ts",
+        "packages/nax/test/unit/runtime/runtime-skills-provider.test.ts",
+        "packages/nax/src/operations/call-run-options.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/runtime/runtime-options.ts",
+        "packages/nax/test/unit/runtime/runtime-memory.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When runtime MCP teardown rejects with an error and memory.close succeeds, runtime.close rejects with the original MCP teardown error.",
+        "When an auditor flush throws synchronously during runtime.close, memory.close is still called once.",
+        "When the runtime includes configured MCP providers, opted-in skills and memory, toolProviders preserves MCP declaration order before nax-skills and nax-memory.",
+        "When the existing provider stage filter evaluates runtime.memory.provider for review, no nax-memory tools attach to that stage."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/runtime/index.ts",
+          "reason": "move the `CreateRuntimeOptions` interface into the new runtime options module (US-005 Creates) and re-export it; add `readonly memory?: RunMemory` to `NaxRuntime`; append `opts.memory.provider` to `toolProviders`; return `memory` only when set; await `opts.memory.close()` in a `finally` around the rest of the `close()` body; the file must end at no more than 600 lines."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Run setup creates workflow memory",
+      "description": "**Goal** — Create run memory once during non-dry workflow setup and pass it to the runtime after resolving runtime configuration.\n\n**Motivation** — A `nax run` starts every story blank.\n\n**Approach** — Run setup\n\n`setupRun` (`src/execution/lifecycle/run-setup.ts`, 557 lines) first resolves the runtime config into a local (today `runtimeConfigFor(config, workdir)` is evaluated inline as the first argument of `createRuntime`, `run-setup.ts:263`), then creates the run memory, then calls `createRuntime` with that local, so a throwing `runtimeConfigFor` never leaves a created run memory unclosed (a synchronous throw from `createRuntime` itself still would, the same gap the runtime's own resources have; the mirror holds nothing that needs closing). The run memory is created when, and only when, `isWorkflowMode(config)` is true and `options.dryRun` is false:\n\n```ts\nconst runtimeConfig = await runtimeConfigFor(config, workdir);\nconst memory =\n  !options.dryRun && isWorkflowMode(config)\n    ? await _runSetupDeps.createRunMemory({ config, repoRoot: workdir, logger: getLogger() })\n    : undefined;\n```\n\nand passes `...(memory ? { memory } : {})` in the `createRuntime(runtimeConfig, workdir, …)` options. `_runSetupDeps` gains `createRunMemory`; `run-setup.ts` gains imports of `getLogger` (`@/logger`) and `isWorkflowMode` (`@/config`). The CLI initialises the run logger (`bin/nax.ts`) before `setupRun`, so the logger captured here is the run's. `createRunMemory` never throws, so this adds no failure path to setup. The run end is `runtime.close()`, which `runner.ts` awaits in the innermost `finally` on every exit path, and which `setupRun`'s own failure cleanup (`run-setup.ts:548`) also calls.\n\nTest impact: the default `execution.mode` is workflow, so every test that drives the real `setupRun` with `dryRun: false` would now run the real `createRunMemory`. `test/preload.ts` points `NAX_GLOBAL_CONFIG_DIR` at an isolated directory, so no test touches the real `~/.nax`, but the lifecycle unit tests that replace `_runSetupDeps.createRuntime` are authorised (US-006 Modifies) to replace `_runSetupDeps.createRunMemory` with one resolving `undefined` in the same fixture. The runner-level integration and e2e tests keep the real run memory: it runs against the isolated directory exactly as a real run would, and adds one `Memory: 0 saved (0 pending)` info line.\n\nAuthorized fixture modifications (all under packages/nax/test/unit/execution/lifecycle): gitignore-reconcile.test.ts; run-setup-approvals-seal.test.ts; run-setup-chat-asks.test.ts; run-setup-command-interceptor.test.ts; run-setup-locks.test.ts; run-setup-mcp-in-run.test.ts; run-setup-no-migration.test.ts; run-setup-warnings-native-defaults.test.ts; run-setup-warnings.test.ts; run-setup.test.ts; scratchpad-wipe.test.ts. Each fixture replaces _runSetupDeps.createRuntime and drives the real setupRun in workflow mode, which now also calls real createRunMemory; the fixture may replace _runSetupDeps.createRunMemory with one resolving undefined and restore it with the other deps it restores (the invariant is that this test's assertions describe setup without a run memory).\n\nSeam: US-003/US-004 `createRunMemory` → US-006 `setupRun`: entry point `setupRun` with a stubbed `_runSetupDeps.createRunMemory`; asserted through the options the stubbed `_runSetupDeps.createRuntime` receives.\n\n**Scope** — In: run-setup.ts imports/dependency seam/config-before-memory sequence/guards/conditional runtime option, new run-setup-memory.test.ts and the authorized lifecycle fixture isolation above. Out: runtime's close implementation (US-005), run-memory composition and disable/error handling internals (US-003/US-004), prompt injection (US-007). No memory in pipeline mode or dry runs. No bot/plan changes, new permission handling or runner summary/status/footer changes. Do not stub memory globally in runner integration/e2e tests.\n\n**Interface** — Existing setupRun API remains unchanged. The new dependency has the existing exported signature:\n```ts\nexport async function createRunMemory(input: CreateRunMemoryInput): Promise<RunMemory | undefined>;\n```\n`_runSetupDeps` gains `createRunMemory`. Use the original run config for memory creation and workflow detection; pass the resolved runtimeConfig to createRuntime as shown.\n\nTesting: drive the real setupRun with restored dependency seams, capture the real config/workdir/logger and runtime options, and record call order. Verify guards using both workflow/pipeline mode and dry-run input. Capture a logger from the run logger singleton rather than introducing a new logger instance.",
+      "acceptanceCriteria": [
+        "setupRun in workflow mode with dryRun: false calls _runSetupDeps.createRunMemory once with { config, repoRoot: workdir } from the run and a logger.",
+        "setupRun passes the run memory _runSetupDeps.createRunMemory resolves as the memory option of _runSetupDeps.createRuntime.",
+        "setupRun passes no memory key to _runSetupDeps.createRuntime when _runSetupDeps.createRunMemory resolves undefined.",
+        "setupRun with dryRun: true does not call _runSetupDeps.createRunMemory.",
+        "setupRun with execution.mode: \"pipeline\" does not call _runSetupDeps.createRunMemory.",
+        "setupRun with execution.mode: \"pipeline\" passes no memory key to _runSetupDeps.createRuntime.",
+        "setupRun calls _runSetupDeps.createRunMemory before _runSetupDeps.createRuntime."
+      ],
+      "tags": [
+        "feature",
+        "memory",
+        "workflow",
+        "run-setup",
+        "lifecycle"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One setup module gains an existing-style dependency seam, config-before-memory ordering and two guards; fixture updates only suppress incidental memory IO, while runtime teardown and session/permission policy remain owned by existing code and US-005."
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/lifecycle/run-setup.ts",
+        "packages/nax/src/memory/run-memory.ts",
+        "packages/nax/src/runtime/index.ts",
+        "packages/nax/test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts",
+        "packages/nax/test/unit/execution/lifecycle/run-setup.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/execution/lifecycle/run-setup-memory.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When runtime config resolution rejects, setupRun does not call _runSetupDeps.createRunMemory.",
+        "When setupRun creates memory, the logger argument is strictly equal to the initialized run logger returned by getLogger().",
+        "When catalog MCP enrichment produces a new runtime config, setupRun passes the original config to createRunMemory and the enriched config to createRuntime.",
+        "When setup fails inside the existing cleanup-protected initialization after runtime creation, the runtime close path closes run memory once."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/execution/lifecycle/run-setup.ts",
+          "reason": "add `createRunMemory` to `_runSetupDeps`; import `getLogger` from the logger barrel and `isWorkflowMode` from the config barrel; resolve `runtimeConfigFor(config, workdir)` into a local first, then create the run memory, then call `createRuntime` with that local config; the run memory is created only when the config is in workflow mode and the run is not a dry run, and is passed as the `memory` option only when it is defined."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/gitignore-reconcile.test.ts",
+          "reason": "its fixture replaces `_runSetupDeps.createRuntime` and drives the real `setupRun` in workflow mode, which now also calls the real `createRunMemory`; the fixture may replace `_runSetupDeps.createRunMemory` with one resolving `undefined` and restore it with the other deps it restores (the invariant is that this test's assertions describe setup without a run memory)."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup-approvals-seal.test.ts",
+          "reason": "its fixture replaces `_runSetupDeps.createRuntime` and drives the real `setupRun` in workflow mode, which now also calls the real `createRunMemory`; the fixture may replace `_runSetupDeps.createRunMemory` with one resolving `undefined` and restore it with the other deps it restores (the invariant is that this test's assertions describe setup without a run memory)."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup-chat-asks.test.ts",
+          "reason": "its fixture replaces `_runSetupDeps.createRuntime` and drives the real `setupRun` in workflow mode, which now also calls the real `createRunMemory`; the fixture may replace `_runSetupDeps.createRunMemory` with one resolving `undefined` and restore it with the other deps it restores (the invariant is that this test's assertions describe setup without a run memory)."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts",
+          "reason": "its fixture replaces `_runSetupDeps.createRuntime` and drives the real `setupRun` in workflow mode, which now also calls the real `createRunMemory`; the fixture may replace `_runSetupDeps.createRunMemory` with one resolving `undefined` and restore it with the other deps it restores (the invariant is that this test's assertions describe setup without a run memory)."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup-locks.test.ts",
+          "reason": "its fixture replaces `_runSetupDeps.createRuntime` and drives the real `setupRun` in workflow mode, which now also calls the real `createRunMemory`; the fixture may replace `_runSetupDeps.createRunMemory` with one resolving `undefined` and restore it with the other deps it restores (the invariant is that this test's assertions describe setup without a run memory)."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup-mcp-in-run.test.ts",
+          "reason": "its fixture replaces `_runSetupDeps.createRuntime` and drives the real `setupRun` in workflow mode, which now also calls the real `createRunMemory`; the fixture may replace `_runSetupDeps.createRunMemory` with one resolving `undefined` and restore it with the other deps it restores (the invariant is that this test's assertions describe setup without a run memory)."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup-no-migration.test.ts",
+          "reason": "its fixture replaces `_runSetupDeps.createRuntime` and drives the real `setupRun` in workflow mode, which now also calls the real `createRunMemory`; the fixture may replace `_runSetupDeps.createRunMemory` with one resolving `undefined` and restore it with the other deps it restores (the invariant is that this test's assertions describe setup without a run memory)."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup-warnings-native-defaults.test.ts",
+          "reason": "its fixture replaces `_runSetupDeps.createRuntime` and drives the real `setupRun` in workflow mode, which now also calls the real `createRunMemory`; the fixture may replace `_runSetupDeps.createRunMemory` with one resolving `undefined` and restore it with the other deps it restores (the invariant is that this test's assertions describe setup without a run memory)."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup-warnings.test.ts",
+          "reason": "its fixture replaces `_runSetupDeps.createRuntime` and drives the real `setupRun` in workflow mode, which now also calls the real `createRunMemory`; the fixture may replace `_runSetupDeps.createRunMemory` with one resolving `undefined` and restore it with the other deps it restores (the invariant is that this test's assertions describe setup without a run memory)."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup.test.ts",
+          "reason": "its fixture replaces `_runSetupDeps.createRuntime` and drives the real `setupRun` in workflow mode, which now also calls the real `createRunMemory`; the fixture may replace `_runSetupDeps.createRunMemory` with one resolving `undefined` and restore it with the other deps it restores (the invariant is that this test's assertions describe setup without a run memory)."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/scratchpad-wipe.test.ts",
+          "reason": "its fixture replaces `_runSetupDeps.createRuntime` and drives the real `setupRun` in workflow mode, which now also calls the real `createRunMemory`; the fixture may replace `_runSetupDeps.createRunMemory` with one resolving `undefined` and restore it with the other deps it restores (the invariant is that this test's assertions describe setup without a run memory)."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "Workflow steps put fresh memory in prompts",
+      "description": "**Goal** — Read the run's fresh memory index once per generated brief/fix/review prompt and forward it to the appropriate builder.\n\n**Motivation** — What an earlier chat or run worked out (a test command that needs a container, a review ruling, a reason a fix was reverted) is in the memory mirror, but no run session sees it, and a run session cannot save what the next one would need.\n\n**Approach** — Callers\n\nEach caller reads `runtime.memory` from the call context it already holds and awaits `index()` once per prompt it builds:\n\n- `writeBrief(sc)` (`src/workflow/brief.ts`): `memoryIndex` = `await sc.callCtx.runtime.memory?.index()`.\n- `runBranchFix(fc, input)` (`src/workflow/branch-fix.ts`): awaits `fc.callCtx.runtime.memory?.index()` before building the prompt and passes it to `promptFor`, which hands it to `buildWorkflowCiRepairPrompt` or `buildWorkflowBranchFixPrompt`. An explicit `input.prompt` (the bot fix path) is used as given and `index()` is not called.\n- `runBranchReview(fc, input)` (`src/workflow/branch-review.ts:102`): passes `memoryIndex` the same way.\n\nBot review and bot fix create their runtime without a run memory, so `runtime.memory` is absent there and their prompts are unchanged.\n\nThe design document (section 6.6 and 6.8) was written in pipeline-mode vocabulary: a `ContextElement` emitted by `buildContext()` for the stages listed in `memory.stages`. Pipeline mode is frozen, and workflow mode, the `nax run` default, does not use `buildContext()`: each workflow agent session gets a prompt from its own builder, and the implementer reads a brief file written by `writeBrief` (`src/workflow/brief.ts`). So this feature delivers memory through those builders and replaces the per-stage list with one switch:\n\n| Workflow session | Op stage | Memory it gets |\n|---|---|---|\n| Implementer (`wf-implementer`), including its fix / continue turns | `run` | index in the brief + the four `nax-memory` tools |\n| Story review (`wf-story-review`) | `review` | the brief it already reads (no tools) |\n| Branch fix (`wf-branch-fix`) and final-gate repair (`wf-repair`) | `run` | index in the prompt + tools |\n| CI repair (`wf-repair` with `ciRepair`) | `run` | index in the prompt + tools |\n| Whole-branch review (`wf-branch-review`) | `review` | read-only reference section (no tools) |\n| Re-reviews, advisor | `review` | nothing |\n\nThe tools attach by provider stage: the run memory's provider declares `stages: [\"run\"]`, and the existing stage filter (`providerAttachesTo`, `packages/nax-agent/src/tools/provider-types.ts:71`, reached through `resolveProviderContribution` with the op's `pipelineStage`) keeps it off every `review`-stage session. No session-role list is added. Tool wiring belongs to US-003/US-004/US-005; this story only carries index text.\n\n`src/workflow/brief.ts` — `writeBrief` awaits `sc.callCtx.runtime.memory?.index()` and passes `memoryIndex` to `buildWorkflowBrief` when defined.\n`src/workflow/branch-fix.ts` — `runBranchFix` awaits `fc.callCtx.runtime.memory?.index()` when `input.prompt` is undefined and passes it to `promptFor`, which forwards it to the CI repair or branch fix builder.\n`src/workflow/branch-review.ts` — `runBranchReview` awaits `fc.callCtx.runtime.memory?.index()` and passes `memoryIndex` to `buildWorkflowBranchReviewPrompt`.\n\nSeam: US-002 builder `memoryIndex` inputs + US-005 `NaxRuntime.memory` → US-007: entry points `writeBrief`, `runBranchFix` and `runBranchReview`, with a call context whose `runtime.memory` is a fake `RunMemory`; asserted through the brief file and the prompt the stubbed `_workflowDeps.callOp` receives.\n\n**Scope** — In: workflow/brief.ts, workflow/branch-fix.ts, workflow/branch-review.ts and new workflow-memory-prompts.test.ts. Out: implementing builders (US-002), creating/closing run memory and provider exposure (US-003 through US-006). No pipeline buildContext changes, bot/plan enablement, story or branch re-review/advisor memory, read-only review tools, session-specific adaptation of tool references, or extra sync. The story reviewer continues reading the implementer brief unchanged.\n\n**Interface** — `promptFor(fc, input)` (`src/workflow/branch-fix.ts`, file-local). Target: `promptFor(fc, input, memoryIndex?: string)`. Existing caller APIs remain unchanged:\n```ts\nexport async function writeBrief(sc: StepContext): Promise<void>\nexport async function runBranchFix(fc: BranchStepContext, input: BranchFixInput): Promise<BranchFixOutcome>\n```\nThe existing optional `RunMemory.index(): Promise<string | undefined>` and builder `memoryIndex?: string` fields are the only new seam. Check `input.prompt !== undefined`, not truthiness: an explicit empty prompt is an override too. Preserve sessionScope, operation choice, timeout handling and leftover commit behavior.\n\nTesting: use existing makeStepContext/makeFeatureContext/makeMockCallContext/makeScriptedCallOp helpers, a fake RunMemory and restored _workflowDeps. Assert actual brief file text and the exact prompt sent to callOp, including CI repair prefix and untouched explicit overrides; do not merely assert builder calls. No dependency on setup story US-006 is needed to test these caller seams.",
+      "acceptanceCriteria": [
+        "writeBrief(sc) with sc.callCtx.runtime.memory a fake run memory whose index() resolves \"INDEX-LINE\" writes a brief file containing memorySectionOf(\"INDEX-LINE\").",
+        "writeBrief(sc) with no sc.callCtx.runtime.memory writes a brief with no ## Memory heading.",
+        "writeBrief(sc) with a fake run memory whose index() resolves undefined writes a brief with no ## Memory heading.",
+        "runBranchFix(fc, { findings }) with fc.callCtx.runtime.memory a fake run memory whose index() resolves \"INDEX-LINE\" sends _workflowDeps.callOp a prompt containing memorySectionOf(\"INDEX-LINE\").",
+        "runBranchFix(fc, { findings, kind: \"repair\", ciRepair: { round: 1 } }) with the same fake run memory sends _workflowDeps.callOp a prompt that starts with You are repairing the CI of and contains memorySectionOf(\"INDEX-LINE\").",
+        "runBranchFix(fc, { findings, prompt: \"OWN PROMPT\" }) with the same fake run memory sends _workflowDeps.callOp the prompt \"OWN PROMPT\" unchanged.",
+        "runBranchFix(fc, { findings, prompt: \"OWN PROMPT\" }) does not call the fake run memory's index().",
+        "runBranchFix(fc, { findings }) with no fc.callCtx.runtime.memory sends _workflowDeps.callOp a prompt with no ## Memory heading.",
+        "runBranchReview(fc, input) with fc.callCtx.runtime.memory a fake run memory whose index() resolves \"INDEX-LINE\" sends _workflowDeps.callOp a prompt containing buildMemoryReferenceSection(\"INDEX-LINE\").",
+        "runBranchReview(fc, input) with no fc.callCtx.runtime.memory sends _workflowDeps.callOp a prompt with no ## Memory heading."
+      ],
+      "tags": [
+        "feature",
+        "memory",
+        "workflow",
+        "prompts",
+        "integration"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three established workflow callers await an optional index and pass text to existing builders; callOp/brief fixtures already expose the results, and no tool grants, session lifecycle or security controls change in this prompt-data wiring story."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/brief.ts",
+        "packages/nax/src/workflow/branch-fix.ts",
+        "packages/nax/src/workflow/branch-review.ts",
+        "packages/nax/test/unit/workflow/branch-fix.test.ts",
+        "packages/nax/test/unit/workflow/brief-rules-index.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/workflow-memory-prompts.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When writeBrief, a generated runBranchFix prompt or runBranchReview builds one prompt, the fake run memory's index is called exactly once for that prompt.",
+        "When a later writeBrief call receives a changed index result, its brief contains the later index rather than the earlier one.",
+        "runBranchFix(fc, { findings, prompt: \"\" }) forwards an empty prompt unchanged without calling memory.index.",
+        "runBranchFix(fc, { findings, kind: \"repair\" }) without ciRepair sends the branch-fix prompt containing the memory tool section.",
+        "When a run memory's guarded index returns undefined after a render failure, generated branch-fix, CI-repair and branch-review prompts contain no ## Memory heading.",
+        "When runBranchReview receives memory text, its dispatched prompt contains no nax-memory__get tool reference."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/workflow/brief.ts",
+          "reason": "`writeBrief` awaits `sc.callCtx.runtime.memory?.index()` and passes `memoryIndex` to `buildWorkflowBrief` when defined."
+        },
+        {
+          "path": "packages/nax/src/workflow/branch-fix.ts",
+          "reason": "`runBranchFix` awaits `fc.callCtx.runtime.memory?.index()` when `input.prompt` is undefined and passes it to `promptFor`, which forwards it to the CI repair or branch fix builder."
+        },
+        {
+          "path": "packages/nax/src/workflow/branch-review.ts",
+          "reason": "`runBranchReview` awaits `fc.callCtx.runtime.memory?.index()` and passes `memoryIndex` to `buildWorkflowBranchReviewPrompt`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Feature context and discovery: this is an additive enhancement to the existing memory-chat/memory-store work, not a new memory implementation. All seven implementation stories are confined to packages/nax; packages/nax-agent is read-only integration context. The execution repository is /Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax. The codebase-memory MCP server/tools were unavailable in this environment, so discovery used direct Read, Grep and Glob. Findings below are verified against the present source; no implementation code or tests were run while drafting. Read docs/architecture/ARCHITECTURE.md before implementation: its execution-mode section identifies workflow as the default and pipeline as frozen, and its quick reference specifies a 600-line hard source cap, type-only imports, barrel APIs, dependency seams and permission resolution. Follow packages/nax/AGENTS.md and the applicable canonical .nax/rules files; use Bun APIs and bun:test in nax, shared @test/helpers, and restore mutable _deps after every test. Never change generated agent instruction files or package versions for this feature.\n\nUS-001/config: packages/nax/src/config/schemas-memory.ts:24 defines the strict MemoryConfigSchema with enabled/provider/writeMode/indexBytes/askOnSave; memoryConfigOf at :44 returns an existing typed block unchanged or parses schema defaults when absent. packages/nax/src/config/runtime-types-memory.ts:11 is the hand-written MemoryConfig interface; NaxConfig.memory is optional, so new production reads must use memoryConfigOf. Add inRun with default true and a boolean runtime type; do not implement memory.stages or accept koda. The schema's opening comment currently anticipates a future stages key and should not be treated as permission to add that key. packages/nax/src/cli/config-descriptions.ts:454-461 holds the memory descriptions. packages/nax/test/unit/config/schemas-memory.test.ts:14 holds DEFAULT_MEMORY, :76-86 a configured closed literal and exact round-trip assertion, and :94 the descriptions table. Both literals must gain inRun, true for defaults and false for the configured block, preserving the existing exact equality invariants rather than loosening tests. Existing serialized configuration requires no migration: parsing supplies true; hand-authored complete MemoryConfig fixtures must include the new required member. Chat continues ignoring inRun.\n\nUS-002/prompts: packages/nax/src/prompts/builders/memory-builder.ts:13 defines the four-tool usage instructions, :34 buildMemorySection and :39 memorySectionOf; reuse the existing tool section unchanged and add a distinct fixed read-only reference section. packages/nax/src/prompts/index.ts:77 currently exports only buildMemorySection/buildMemoryToolInstructions from that module; add both reference helpers and memorySectionOf to that barrel. packages/nax/src/prompts/builders/workflow-implementer-builder.ts:18 defines WorkflowBriefInput and :67 buildWorkflowBrief; the rules index and feature context are adjacent at :95-96, the exact insertion point for memory. The later project-context override and constitution order must remain intact. packages/nax/src/prompts/builders/workflow-branch-builder.ts:14 defines BranchReviewPromptInput, :103 builds the whole-branch review, and :190 builds branch fix. Only the whole-branch reviewer gets the read-only reference section; do not change the re-review builder in the same file. packages/nax/src/prompts/builders/workflow-ci-repair-builder.ts:28 builds the CI repair prompt; append memory after REPAIR_VERIFICATION_RULE and before WORKFLOW_REPLY_CONTRACT, not inside its How to work list. These pure builders must produce byte-identical prior output for absent or empty memoryIndex, avoiding extra whitespace, heading changes or moved contracts. Existing relevant tests are test/unit/prompts/builders/memory-builder.test.ts:7, workflow-builder.test.ts, workflow-builder-chain.test.ts, workflow-implementer-builder.test.ts and test/unit/workflow/brief-rules-index.test.ts:38. Extend existing builder tests and section-order assertions; US-002 creates no new production module and must not acquire a memory host itself.\n\nUS-003/US-004/memory composition: packages/nax/src/memory/host.ts:89 defines MemoryHost, :109 CreateMemoryHostInput, and :355 createMemoryHost; the latter returns null before mirror resolution if enabled is false. Its returned object is a concrete composition of own members, so a counting view can preserve every member while replacing only save. The host reads notes and renders the index anew, and save/forget/source stamping already live behind this API; do not reimplement store validation, sync policy or note serialization. packages/nax/src/memory/tool-provider.ts:316 builds get/search/save/forget in that order, and :354 returns the static nax-memory provider with stages [\"*\"]. Build a new per-run provider object overriding stages to [\"run\"] without mutating the shared factory or chat provider behavior. Its answer wrapper at :245 catches tool failures and returns the existing feature-2 error response. The counting wrapper increments only after a fulfilled host.save result, counts pending as a subset of saved, and leaves rejected saves and forgets uncounted. packages/nax/src/chat/host-memory.ts:65 shows guarded sync using errorMessage from @nathapp/nax-agent/internal, and :96 guarded rendering; reuse the error-reporting convention, not chat's prepare-per-open sync lifecycle. Run memory must sync only once at creation and once on its first close, while index always rerenders without syncing. Run warning/summary data use storyId _run and the logger supplied by setup. Expected sync statuses are results, not exceptions, and must not generate new run warnings. packages/nax/src/memory/index.ts:10-16 is the required public barrel. Existing memory unit suites include host.test.ts, host-index.test.ts, host-writes.test.ts, tool-provider.test.ts and tool-provider-writes.test.ts. Create test/unit/memory/run-memory.test.ts in US-003 and extend it in US-004; include a real temporary-directory host/provider seam, plus fake host failures and counter tests. US-003 deliberately exposes the final interface with zero counters and a no-op close; US-004 completes behavior before runtime integration. Guard close before its await so overlapping calls cannot double-sync or double-log.\n\nProvider architecture and permissions: packages/nax-agent/src/tools/provider-types.ts:35 defines ToolProvider including readonly stages and :71 providerAttachesTo already implements stage matching. packages/nax-agent/src/tools/provider-adapt.ts:26 adapts provider tools directly to host callbacks with no file-sandbox path scope. packages/nax/src/operations/call-run-options.ts:41-58 forwards runtime providers before call-local providers, and :93 passes pipelineStage; no dispatch changes are needed. packages/nax/src/operations/workflow-implement.ts:51 declares stage run, and workflow-repair.ts:27 spreads workflowBranchFixOp, retaining its run stage. Existing provider contribution filtering, grants and capability support must remain authoritative; never add a session-role allowlist, permission bypass, new read-only tools or in-run ask flow. Review operations get no run-memory tools; the story reviewer still reads the unchanged implementer brief protocol naming get/search. Routing audit: keep strict three-session-tdd for US-003 and US-005, which establish stage-restricted tool exposure and integrate it with runtime/session-resource teardown. US-004 only wraps existing host writes for counting and idempotent close, US-006 only composes an optional resource through existing setup seams, and US-007 only forwards prompt text: these are medium, tdd-simple changes without new access-control or session-lifecycle policy. US-001/US-002 are medium, tdd-simple config/pure rendering changes. Do not infer security-critical implementation merely because a prompt is later read by an agent. packages/nax/src/execution/workflow-parallel.ts:6 clamps a requested workflow parallel count to 0; workflow does not need an outbox-only stage architecture. Host save writes the local mirror immediately.\n\nUS-005/runtime: packages/nax/src/runtime/index.ts is exactly 597 lines in this checkout; NaxRuntime starts at :155, toolProviders at :284, CreateRuntimeOptions at :294, createRuntime at :343 and close at :542. Move CreateRuntimeOptions with all doc comments to new runtime/runtime-options.ts before adding memory; keep its barrel re-export so existing callers and tests do not change imports. Existing source search finds the declaration and factory signature only, while test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts:24 already imports the type from @/runtime. Both modules must import RunMemory as a type only using relative ../memory, preventing runtime-to-memory runtime graph cycles. packages/nax/src/runtime/run-tool-providers.ts:6 implements MCP-then-optional-skills ordering; append memory after the result, preserving the original provider list when no memory was supplied. Return a conditional memory property rather than memory: undefined, since callers and tests assert key absence. close already has a closed flag before teardown, but mcpPool.close at :563 can reject before flush/drain; enclose the rest of teardown in try/finally and await memory.close in finally so teardown failure cannot skip sync. Preserve existing teardown errors rather than swallowing them: memory.close is guaranteed nonthrowing. Also preserve abort, listener cleanup, manager reset/close, MCP rollup, residual spend and all audit drains. packages/nax/test/unit/runtime/runtime-skills-provider.test.ts:21-49 pins exact provider ids/order and :79 tests real dispatch forwarding; extend those invariants in new runtime-memory.test.ts, including deferred close and rejecting MCP teardown. Verification includes typecheck, file-size <=600 and import-cycle gates, not acceptance criteria about gate success.\n\nUS-006/setup: packages/nax/src/execution/lifecycle/run-setup.ts is 557 lines. _runSetupDeps at :70 has createRuntime and catalog/lock seams; runtimeConfigFor at :95 may await catalog MCP resolution and reject. setup currently evaluates it inline in createRuntime at :263. Resolve it first, then conditionally createRunMemory from the ORIGINAL config, absolute workdir and getLogger(), then supply the resolved runtimeConfig plus conditional memory option to the existing factory. This avoids creating memory before a failing config resolution. Dry-run and pipeline never call the memory seam; memory.inRun/disabled handling stays inside createRunMemory rather than duplicating configuration rules in setup. Import getLogger alongside existing getSafeLogger and isWorkflowMode from the config barrel. CLI logger setup precedes this lifecycle; use the run's logger, not an ad hoc instance. No new lifecycle owner is needed: runner.ts:486 awaits runtime.close on exit, and run-setup.ts:548 calls it in failure cleanup (also :353 for signal cleanup). A synchronous createRuntime throw remains the acknowledged existing resource gap; the mirror needs no extra resource finalizer. New run-setup-memory.test.ts observes the arguments/order of stubbed _runSetupDeps.createRunMemory/createRuntime rather than private locals. test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts:42 uses withDepsRestore and :62 drives real setup with a mock runtime; adapt it and the other ten authorized lifecycle fixtures only to stub createRunMemory to undefined and restore it. Those authorized fixtures are gitignore-reconcile.test.ts, run-setup-approvals-seal.test.ts, run-setup-chat-asks.test.ts, run-setup-locks.test.ts, run-setup-mcp-in-run.test.ts, run-setup-no-migration.test.ts, run-setup-warnings-native-defaults.test.ts, run-setup-warnings.test.ts, run-setup.test.ts and scratchpad-wipe.test.ts, plus command-interceptor already named. Runner integration/e2e keep real memory. test/preload.ts:43 points NAX_GLOBAL_CONFIG_DIR at an isolated directory, so real memory never uses the operator's home; expect one additional zero-save info line at close, not changed status/footer formats.\n\nUS-007/callers: packages/nax/src/workflow/brief.ts:103 writeBrief already concurrently resolves spec, red-base state, decisions, rules and context override before buildWorkflowBrief at :115; add one optional runtime.memory.index read per brief and forward its defined result without changing other context rules. packages/nax/src/workflow/branch-fix.ts:125 promptFor selects override, CI repair or branch fix; :142 runBranchFix currently builds synchronously inside the session callback. Read memory asynchronously once only for generated prompts, preserving an explicit input.prompt including the empty string and avoiding an index read for either override. Keep sessionScope semantics, operation selection and leftover commits intact. packages/nax/src/workflow/branch-review.ts:102 runBranchReview builds its prompt at :110 and dispatches through underReviewLimit; read memory once for this builder only, not runBranchReReview at :148. Current test/unit/workflow/branch-fix.test.ts:22 uses makeFeatureContext/makeScriptedCallOp with _workflowDeps restoration and :105 already tests both nonempty and empty explicit overrides; brief-rules-index.test.ts:85 uses makeStepContext/makeMockCallContext and a real temporary brief file. Reuse these helpers in new workflow-memory-prompts.test.ts, asserting actual written brief content and prompts observed by callOp, not merely that a builder stub was called. US-007 depends on US-002 and US-005, not US-006: a fake runtime.memory is sufficient to verify this seam.\n\nCompatibility, risk and delivery: no storage migration, nax-agent API change, new dependency, release/version change or cross-package edit is needed. Config defaults enable workflow-run memory; inRun false opts runs out without altering chat. Main regressions to protect are exact no-memory prompt text, strict unknown config rejection, type-complete memory fixtures, provider ordering and review-stage exclusion, error-to-warning mapping, save counts after rejection, duplicate/concurrent close, sync in runtime finally, setup config-before-memory ordering, original config versus catalog-enriched runtime config, override prompts (including empty string), and unintended disk IO in mocked setup unit fixtures. Every explicit acceptance criterion stays with its binding story. Failure handling maps to US-003 (switch/master disable, host/start-sync/render failures), US-004 (rejected tools/end-sync/summary), US-005 (runtime close despite memory sync failure) and US-006 (dry-run/pipeline). Extra hardening cases not explicitly required are suggestedCriteria, not new mandatory acceptance criteria. Deliver dependency order US-001 -> US-003 -> US-004 -> US-005 -> US-006, with independent US-002 and then US-007 after US-002/US-005. Use targeted package-relative bun test paths during TDD, never bare bun test or bun run nax; the pipeline handles typecheck/lint/full tests, and coverage is not to be run inside NAX_SANDBOXED=1. No tests or quality gates have been executed for this planning-only artifact.\n\nRefine-pass self-audit: re-read the on-disk spec and current config, host/tool-provider, runtime teardown, setup and three workflow caller implementations. Enumerated and retained all 83 explicitly listed spec ACs in their binding stories and original order: US-001 1-6, US-002 1-18, US-003 1-19, US-004 1-13, US-005 1-10, US-006 1-7, US-007 1-10. Existing extra failure-table assertions remain after those originals (US-003 #20, US-004 #14, US-005 #11), totaling 86 mandatory assertions; none of the originals were demoted to suggestions. Preserved regression qualifiers including unknown-key rejection still failing, two calls/two renders, real-host tool order, same forwarded note fields, twice-total sync including start, provider ids as before, and explicit prompt unchanged. The type-import AC now also names observable runtime.memory identity while retaining its compile/run contract. Every story already contains a negative-path AC: invalid config (001), absent/empty prompt index (002), host/sync/render rejection (003), rejected save/end-sync (004), rejecting MCP teardown (005), dry-run/pipeline guards (006), unavailable index (007). All 14 feature-level exclusions remain verbatim; there is no story-local exclusion to hoist. Every spec-recommended context file is present within the five-file cap, every expected output belongs to its creating story, and the seven workdirs and dependency arrays remain exactly binding. Removed an accidental suggestion that bots could opt into memory; clarified complete resolved-config/save-result fixtures and model-input versus MemoryNoteWrite flow to match the actual interfaces. Reduced routing for standard counter/setup/prompt wiring without weakening stage-exposure/runtime-teardown isolation. Additional behavioral hardening remains suggestedCriteria rather than newly invented mandatory requirements.",
+  "outOfScope": [
+    "Pipeline mode (`execution.mode: \"pipeline\"`, frozen) gets no memory: no `ContextElement` of type `memory`, no tools, no index; `buildContext()` is unchanged.",
+    "The design's `memory.stages` list is not built; `memory.inRun` is the only run switch and the tools always attach to `run`-stage sessions only.",
+    "Bot review and bot fix (`nax bot review`, `nax bot fix`) get no memory index or tools; their runtime is created without a run memory.",
+    "`nax plan` gets no memory index or tools.",
+    "Story re-reviews, branch re-reviews and the advisor get no memory section.",
+    "Review-stage sessions get no read-only memory tools (`get` / `search` without `save` / `forget`); the whole-branch reviewer sees only the index lines.",
+    "The story reviewer reads the implementer's brief, whose memory section names `nax-memory__get` and `nax-memory__search`; the reviewer has no memory tools and nothing is changed for it.",
+    "The memory section is injected whenever a run memory exists, even into a session the memory tools did not attach to (the `safe` profile, a `scoped` profile without `Mcp(nax-memory__*)` grants, an agent that cannot take provider tools); the section's tool line is not adapted per session.",
+    "No sync runs between stories or mid-session; the index is re-rendered from the mirror for each prompt, and saves reach the mirror immediately through the `local` provider.",
+    "No new permission handling: memory tools follow the existing provider scope, so under the `safe` permission profile they are not attached, and under `scoped` they need `Mcp(nax-memory__*)` grants; memory tools never ask inside a run.",
+    "A run launched from a separate git worktree uses that worktree's own mirror (the mirror is keyed by the realpath of the repo root, feature 2); sharing one mirror across worktrees of one repository is not built.",
+    "The memory summary is a log line at runtime close; it is not added to the `Workflow summary` line, the headless footer, `status.json` or the PR body.",
+    "The koda provider and the generic MCP provider are features 3 and 5; `memory.provider` still accepts only `local`.",
+    "No change to `packages/nax-agent`."
+  ],
+  "routingProfile": "native-codex-ds"
+}
