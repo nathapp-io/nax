@@ -192,8 +192,35 @@ function noteSecret(note: MemoryNote): { readonly kind: string } | null {
  * is the note every surface serves; `scope` and `status` are the two fields a
  * mirror note may vary in and a repo note may not.
  */
-function acceptedNote(text: string, name: string, path: string, logger: MemoryLogger): MemoryNote | null {
-  const note = parsedOrNull(text, path, logger);
+function withRepoDefaults(text: string, name: string, modifiedAt: Date): string {
+  const lines = text.split("\n");
+  const close = lines.findIndex((line, index) => index > 0 && /^---[ \t]*$/.test(line));
+  if (close === -1) return text;
+  const keys = new Set(
+    lines.slice(1, close).flatMap((line) => {
+      const match = /^(id|scope|status|source|updatedAt):/.exec(line);
+      return match === null ? [] : [match[1]];
+    }),
+  );
+  const defaults: readonly [string, string][] = [
+    ["id", name.slice(0, name.length - NOTE_EXTENSION.length)],
+    ["scope", "project"],
+    ["status", "active"],
+    ["source", REPO_SOURCE],
+    ["updatedAt", modifiedAt.toISOString()],
+  ];
+  lines.splice(close, 0, ...defaults.filter(([key]) => !keys.has(key)).map(([key, value]) => `${key}: ${value}`));
+  return lines.join("\n");
+}
+
+function acceptedNote(
+  text: string,
+  name: string,
+  modifiedAt: Date,
+  path: string,
+  logger: MemoryLogger,
+): MemoryNote | null {
+  const note = parsedOrNull(withRepoDefaults(text, name, modifiedAt), path, logger);
   if (note === null) return null;
   if (note.slug !== name.slice(0, name.length - NOTE_EXTENSION.length)) {
     return skip(logger, path, "slug does not match the file name");
@@ -213,7 +240,7 @@ async function readCandidate(path: string, name: string, logger: MemoryLogger): 
   if (info.size > REPO_NOTE_MAX_FILE_BYTES) return skip(logger, path, "too large");
   const text = await textOrNull(path, logger);
   if (text === null) return null;
-  return acceptedNote(text, name, path, logger);
+  return acceptedNote(text, name, info.mtime, path, logger);
 }
 
 /**
