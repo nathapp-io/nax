@@ -191,13 +191,20 @@ function acpDispatch(
   return { outcome: undefined };
 }
 
+/**
+ * The one key `/help` names that is not a command (US-004): ctrl+s steers the running turn,
+ * or interrupts it and sends the draft. It is the listing's last line, after the commands.
+ */
+const STEER_HINT = "ctrl+s  steer the running turn (or interrupt and send)";
+
 function formatHelp(host: ChatHost, brain: ChatAcpModel | undefined): string {
   const builtins = COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`);
-  if (brain) return builtins.join("\n");
+  if (brain) return [...builtins, STEER_HINT].join("\n");
   return [
     ...builtins,
     ...(host.catalog?.commands ?? []).map((entry) => `/${entry.name} - ${entry.description ?? ""}`),
     ...(host.catalog?.skills ?? []).map((entry) => `/${entry.name} - ${entry.description}`),
+    STEER_HINT,
   ].join("\n");
 }
 

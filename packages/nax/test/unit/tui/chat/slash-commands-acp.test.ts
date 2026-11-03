@@ -19,6 +19,8 @@ import { slashMenuItems } from "@/tui/chat/slash-menu";
 const ORIGIN = { kind: "claude-project" } as const;
 const NATIVE_MODEL = "openai/gpt-6";
 const ACP_MODEL = "acp:codex";
+/** US-004: what `/help` names after the built-in commands — the chat's own steering key. */
+const STEER_HINT = "ctrl+s  steer the running turn (or interrupt and send)";
 
 const review: CommandResource = {
   kind: "command",
@@ -137,7 +139,11 @@ describe("runSlashCommand on an ACP brain", () => {
 
   test("AC-7 /help lists the built-ins and no catalog command or skill", async () => {
     const { shown } = await run(makeHost(ACP_MODEL), "/help");
-    expect(shown).toEqual([COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`).join("\n")]);
+    // US-004: the built-in lines, then the one key that is not a command — ctrl+s steers the
+    // running turn, or interrupts it and sends the draft.
+    expect(shown).toEqual([
+      [...COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`), STEER_HINT].join("\n"),
+    ]);
     expect(shown[0]).not.toContain("/review");
     expect(shown[0]).not.toContain("/brainstorming");
   });

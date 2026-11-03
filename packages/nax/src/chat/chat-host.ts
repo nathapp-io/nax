@@ -1,22 +1,18 @@
 import type {
   CommandRunResult,
-  ImageAttachment,
   LoopHandlerSet,
-  SandboxState,
   SessionEvent,
   SessionMeta,
   SessionStorage,
+  SteerResult,
   ToolProvider,
 } from "@nathapp/nax-agent";
 import { lookupContextWindow } from "@/agents/catalog";
-import { getProjectKey, type NaxConfig } from "@/config";
+import { getProjectKey } from "@/config";
 import { NaxError } from "@/errors";
-import type { InteractionChain } from "@/interaction";
-import type { Logger } from "@/logger";
 import { projectOutputDir } from "@/runtime";
 import {
   ACP_RUN_COMMAND_UNSUPPORTED,
-  type AcpCatalog,
   type AcpRefreshResult,
   acpRefusal,
   assertAcpInstalled,
@@ -29,12 +25,14 @@ import { type AskFallback, createAskFallback } from "./ask-fallback";
 import { type ChatBackgroundTasks, createHostTasks } from "./background";
 import { type ChatAgentRow, listAgentRows } from "./chat-agents-listing";
 import { clampModelEffort, EFFORT_LEVELS, type EffortLevel, withEffort } from "./chat-effort";
+import type { ChatHost, ChatHostDeps, ChatHostState, ChatSendOptions, ChatSessionRow } from "./chat-host-types";
 import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import type { ChatMode } from "./chat-mode";
 import { tierModels } from "./chat-models";
 import { createCloseConfirm } from "./close-confirm";
 import { type ContextWindowCache, createContextWindowCache } from "./context-window-cache";
 import { createHostMemory, type HostMemory } from "./host-memory";
+import { createHostSteering, type HostSteering } from "./host-steer-compact";
 import { closeChatHost, createChatLoopHandlers } from "./host-wiring";
 import { type ChatJobs, type ChatRunAsks, createHostJobs } from "./jobs";
 import {
@@ -62,82 +60,8 @@ export const _chatHostDeps = {
   lookupContextWindow,
 };
 
-export interface ChatHostState {
-  readonly sessionId: string;
-  readonly mode: ChatMode;
-  readonly model: string;
-  readonly meta: SessionMeta;
-  readonly sandbox?: SandboxState;
-  /** The session model's catalog context window; absent when the catalog cannot say. */
-  readonly contextWindow?: number;
-}
-
-export interface ChatSessionRow {
-  readonly sessionId: string;
-  readonly title: string | null;
-  readonly updatedAt: string | null;
-  readonly heldByPid?: number;
-}
-
-export interface ChatSendOptions {
-  readonly title?: string;
-  /** Images to send with this message; an absent or empty list sends the text alone. */
-  readonly images?: readonly ImageAttachment[];
-}
-
-/** Shared-session chat lifecycle, independent of the terminal shell. */
-export interface ChatHost {
-  readonly repoRoot: string;
-  readonly catalog?: ChatResources["catalog"];
-  readonly naxPlugins?: ChatResources["naxPlugins"];
-  readonly mcp?: ChatResources["mcp"];
-  /** The memory host this chat writes notes through; absent when memory is off or unavailable. */
-  readonly memory?: ChatResources["memory"];
-  readonly models: readonly string[];
-  readonly asks: ChatAskController;
-  readonly jobs?: ChatJobs;
-  readonly runAsks?: ChatRunAsks;
-  readonly tasks?: ChatBackgroundTasks;
-  readonly confirmBeforeClose?: () => Promise<boolean>;
-  current(): ChatHostState;
-  history?(): ChatHistory;
-  effortLevels?(model: string): readonly EffortLevel[];
-  refreshAcpModels?(): Promise<readonly AcpRefreshResult[]>;
-  /** Why the model cannot be used right now (an ACP agent that is not installed or not logged in), if it cannot. */
-  modelNote?(model: string): string | undefined;
-  /** One row per catalog agent in catalog order, resolved against the chat session's current model. */
-  agents?(): readonly ChatAgentRow[];
-  start(input: { mode: ChatMode; model: string }): Promise<void>;
-  clear(): Promise<void>;
-  resume(input: { id?: string }): Promise<void>;
-  notice(): string | undefined;
-  resourceNotice?(): string | undefined;
-  switchTo(input: { mode?: ChatMode; model?: string }): Promise<void>;
-  send(message: string, onEvent: (event: SessionEvent) => void, options?: ChatSendOptions): Promise<void>;
-  /** Whether the open session reads images; `false` when no session is open or it cannot say. */
-  acceptsImages?(): Promise<boolean>;
-  runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>;
-  cancel(): void;
-  listSessions(): Promise<readonly ChatSessionRow[]>;
-  close(): Promise<void>;
-}
-
-export interface ChatHostDeps {
-  readonly naxEntry?: readonly string[];
-  readonly resources?: ChatResources;
-  readonly models?: readonly string[];
-  /** The ACP agents offered as chat models; absent on a host that offers native models only. */
-  readonly acp?: AcpCatalog;
-  readonly effortLevels?: ReadonlyMap<string, readonly EffortLevel[]>;
-  readonly config: NaxConfig;
-  readonly cwd: string;
-  readonly repoRoot: string;
-  readonly chain: InteractionChain | null;
-  readonly open?: typeof openChatSession;
-  readonly storage: SessionStorage;
-  readonly now: () => Date;
-  readonly logger: Pick<Logger, "warn">;
-}
+/** The host's contract lives in `chat-host-types.ts`; re-exported here so imports do not move. */
+export type { ChatHost, ChatHostDeps, ChatHostState, ChatSendOptions, ChatSessionRow } from "./chat-host-types";
 
 class NativeChatHost implements ChatHost {
   readonly repoRoot: string;
@@ -156,6 +80,7 @@ class NativeChatHost implements ChatHost {
   private readonly hygiene: ReturnType<typeof createSessionHygiene>;
   private readonly open: typeof openChatSession;
   private readonly loopHandlers: LoopHandlerSet;
+  private readonly steering: HostSteering;
   private readonly projectKey: string;
   private readonly outputDir: string;
   private readonly runs?: SubagentRuns;
@@ -182,6 +107,8 @@ class NativeChatHost implements ChatHost {
   constructor(private readonly deps: ChatHostDeps) {
     this.hygiene = createSessionHygiene(deps);
     this.open = reportAcpOpens(deps.open ?? openChatSession, deps.acp);
+    // Read through a getter: a switch, a resume and a clear all replace the handle.
+    this.steering = createHostSteering({ session: () => this.handle?.session });
     this.repoRoot = deps.repoRoot;
     this.catalog = deps.resources?.catalog;
     this.naxPlugins = deps.resources?.naxPlugins;
@@ -547,6 +474,15 @@ class NativeChatHost implements ChatHost {
       routeAskEvent(event, this.asks);
       onEvent(event);
     });
+  }
+
+  /**
+   * US-004: hand text to the running turn. The session's own answer travels back unchanged —
+   * `no_turn` without an open session rather than the facade's not-open error, because a key
+   * handler asks this on every ctrl+s and must not have to catch.
+   */
+  steer(text: string): SteerResult {
+    return this.steering.steer(text);
   }
 
   cancel(): void {

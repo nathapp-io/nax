@@ -14,6 +14,7 @@ import {
   pushQueuedFront,
   queueRowLines,
   queueToPrompt,
+  steeringRowLines,
   takeQueued,
 } from "@/tui/chat/message-queue";
 
@@ -108,5 +109,27 @@ describe("queueRowLines", () => {
 
   test("strips an escape sequence a queued line carries", () => {
     expect(queueRowLines(["\u001b[2Jred"])).toEqual(["queued · red"]);
+  });
+});
+
+describe("steeringRowLines", () => {
+  test("US-004 draws one muted marker row per pending steer, in arrival order", () => {
+    const rows = steeringRowLines([
+      { steerId: "s1", text: "look at b.ts" },
+      { steerId: "s2", text: "then b.ts" },
+    ]);
+    expect(rows).toEqual(["steering · look at b.ts", "steering · then b.ts"]);
+  });
+
+  test("claims no rows when no steer is pending", () => {
+    expect(steeringRowLines([])).toEqual([]);
+  });
+
+  test("keeps a multi-line steer on one row", () => {
+    expect(steeringRowLines([{ steerId: "s1", text: "one\ntwo" }])).toEqual(["steering · one two"]);
+  });
+
+  test("strips an escape sequence a steer carries", () => {
+    expect(steeringRowLines([{ steerId: "s1", text: "\u001b[2Jred" }])).toEqual(["steering · red"]);
   });
 });

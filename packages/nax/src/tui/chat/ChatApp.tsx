@@ -10,7 +10,7 @@
  * Same-session model and mode notices share one drawn-state comparison after control refresh.
  */
 
-import type { ImageAttachment, SessionEvent, TurnEndStatus } from "@nathapp/nax-agent";
+import type { ImageAttachment, SessionEvent, SteerResult, TurnEndStatus } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, useInput, useStdout } from "ink";
 import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -46,7 +46,16 @@ import { layoutTranscript } from "./layout";
 import { type EditorState, EMPTY_EDITOR } from "./line-editor";
 import { MentionMenu } from "./MentionMenu";
 import { needsMentionExpansion, sentEntries } from "./mention-send";
-import { type MessageQueue, pushQueued, queueRowLines, queueToPrompt, takeQueued } from "./message-queue";
+import {
+  type MessageQueue,
+  pushQueued,
+  pushQueuedFront,
+  queueRowLines,
+  queueToPrompt,
+  type SteeringRow,
+  steeringRowLines,
+  takeQueued,
+} from "./message-queue";
 import type { MouseEvents } from "./mouse-input";
 import { Picker, useChatPicker } from "./Picker";
 import { SlashMenu } from "./SlashMenu";
@@ -126,6 +135,8 @@ const TELL_NAX_HINT = "tell nax what to do instead";
 const CTRL_O = "o";
 /** And ctrl+v as `v` with the ctrl modifier: the clipboard image's key. */
 const CTRL_V = "v";
+/** And ctrl+s as `s`: the key that steers the running turn, or interrupts it and sends next. */
+const CTRL_S = "s";
 /** The theme a caller that passes none gets; resolved once, since it is a pure constant. */
 const DEFAULT_THEME = resolveChatTheme({ env: {}, colorLevel: 0 });
 
@@ -165,6 +176,9 @@ interface TerminalSize {
 /** No line is waiting for a turn: the queue a screen opens with, and the one it drains to. */
 const EMPTY_QUEUE: MessageQueue = [];
 
+/** No steer is waiting for the running turn: the list a screen opens with. */
+const EMPTY_STEERING: readonly SteeringRow[] = [];
+
 /** How a turn's send settled, for the queue: whether it reached the host at all. */
 interface TurnOutcome {
   /** False when the send never happened — a prepare step refused it, or it rejected. */
@@ -199,6 +213,15 @@ function idleForJobNotice(input: { turnRunning: boolean; bottomBlocked: boolean;
  */
 function queueLinesFor(queue: MessageQueue, blocked: boolean): readonly string[] {
   return blocked ? EMPTY_QUEUE : queueRowLines(queue);
+}
+
+/**
+ * The rows the steers the running turn has not taken yet draw above the queue (US-004). They
+ * are reserved and drawn beside the queue's, and left out with it when an ask card or a picker
+ * replaces the input and the rows above it.
+ */
+function steeringLinesFor(steering: readonly SteeringRow[], blocked: boolean): readonly string[] {
+  return blocked ? EMPTY_QUEUE : steeringRowLines(steering);
 }
 
 /** An ask card, a picker, or any menu drawn under the input, claims the bottom region. */
@@ -246,6 +269,8 @@ export function ChatApp({
   const [busy, setBusy] = useState(false);
   /** The lines typed while a turn was running, drawn above the input until it finishes. */
   const [queued, setQueued] = useState<MessageQueue>(EMPTY_QUEUE);
+  /** The steers the running turn has not taken yet, drawn above the queue (US-004). */
+  const [steering, setSteering] = useState<readonly SteeringRow[]>(EMPTY_STEERING);
   const [clearArmed, setClearArmed] = useState(false);
   const [answerDraft, setAnswerDraft] = useState<QuestionAnswer>(NO_ANSWER);
   /** What an empty input offers instead of its placeholder: a declined ask's instruction. */
@@ -281,6 +306,12 @@ export function ChatApp({
    * without one leaves it undefined: only a turn observed to have completed drains the queue.
    */
   const turnEnd = useRef<TurnEndStatus | undefined>(undefined);
+  /**
+   * The line a ctrl+s interrupted the running turn for (US-004). A brain that cannot steer
+   * takes the key as interrupt-and-send: the line waits here until that turn settles, then
+   * goes first — ahead of anything queued, which stays queued behind it.
+   */
+  const interruptSend = useRef<string | undefined>(undefined);
   const [, refresh] = useState(0);
 
   const update = useCallback(() => refresh((revision) => revision + 1), []);
@@ -337,9 +368,17 @@ export function ChatApp({
    * the queue with it — nothing is drawn then, so nothing is reserved either.
    */
   const queueLines = queueLinesFor(queued, bottomBlocked(ask, picker.model));
+  const steeringLines = steeringLinesFor(steering, bottomBlocked(ask, picker.model));
+  /** The steering rows then the queue's: everything the screen draws above the input. */
+  const aboveInputLines = [...steeringLines, ...queueLines];
   const bottomBudget = Math.max(
     1,
-    usableRows - HEADER_ROWS - (workingShown ? WORKING_ROWS : 0) - queueLines.length - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
+    usableRows -
+      HEADER_ROWS -
+      (workingShown ? WORKING_ROWS : 0) -
+      aboveInputLines.length -
+      FOOTER_ROWS -
+      MIN_VIEWPORT_ROWS,
   );
   const menuRows = menuRowsFor({ rows: menu.rows, budget: bottomBudget });
   /** A menu with no row budget cannot own keys. */
@@ -400,8 +439,9 @@ export function ChatApp({
     active: () => !bottomBlocked(ask, picker.model),
   });
 
-  // Ctrl+o toggles detail; ctrl+v attaches a clipboard image; escape interrupts only when no
-  // bottom surface or control owns it. The hook decides whether the key is theirs to answer.
+  // Ctrl+o toggles detail; ctrl+v attaches a clipboard image; ctrl+s steers the running turn
+  // (or interrupts it and sends the draft next); escape interrupts only when no bottom surface
+  // or control owns it. The hook decides whether a key is theirs to answer.
   useInput((input, key) => {
     if (key.ctrl && input === CTRL_O) {
       setExpanded((current) => !current);
@@ -409,6 +449,10 @@ export function ChatApp({
     }
     if (key.ctrl && input === CTRL_V) {
       void imageAttach.attach();
+      return;
+    }
+    if (key.ctrl && input === CTRL_S) {
+      steerRunningTurn();
       return;
     }
     // Only a bare running turn is the screen's own escape. A card, a picker and a menu each
@@ -709,6 +753,77 @@ export function ChatApp({
   }
 
   /**
+   * What ctrl+s would steer with, or undefined when the key does nothing at all: an empty
+   * prompt and a slash line are return's business — a command is never steered into a turn —
+   * and a whitespace-only draft is no message.
+   */
+  function steerText(): string | undefined {
+    const text = editorRef.current.text;
+    if (text.trim() === "") return undefined;
+    return parseSlashCommand(text) === null ? text : undefined;
+  }
+
+  /**
+   * ctrl+s (US-004): hand the typed line to the turn that is running, or — with nothing
+   * running — send it exactly as a return would.
+   *
+   * A brain that steers takes the line where the turn is, and the prompt empties at once: the
+   * steering row above the queue says what the turn has not applied yet, and settles the way
+   * the turn did. A brain that cannot (`unsupported`, `no_turn`, or no `steer` at all) is
+   * interrupted the way escape interrupts it, with the line held to be sent first once that
+   * turn settles — see `drainQueue`. A picture in the draft is refused with the queue's own
+   * notice, and a steer that rejects leaves the draft exactly as it was: the line never
+   * reached the turn, so it is still the user's to edit or send.
+   */
+  function steerRunningTurn(): void {
+    const text = steerText();
+    if (text === undefined) return;
+    if (!turnRunning) {
+      // No turn to steer: the same path a return takes, prompt emptied and history kept.
+      inputHandle.current?.submit(text);
+      return;
+    }
+    if (imagesForSend(imageAttach.current(), text).images.length > 0) {
+      append({ kind: "notice", text: IMAGES_NOT_QUEUED });
+      return;
+    }
+    let result: SteerResult | undefined;
+    try {
+      result = host.steer?.(text);
+    } catch (error) {
+      append({ kind: "error", text: errorMessage(error) });
+      return;
+    }
+    // The line is the turn's now, whatever it answers: leaving it in the prompt would steer or
+    // send it twice.
+    inputHandle.current?.edit(EMPTY_EDITOR);
+    if (result?.status === "accepted") {
+      trackSteer(result, text);
+      return;
+    }
+    interruptSend.current = text;
+    if (escLayerNow().kind === "turn") host.cancel();
+  }
+
+  /**
+   * The steering row of one accepted steer, and what the turn's own answer does with it: an
+   * applied steer is the turn's text, so it earns the transcript row a typed one would; an
+   * unapplied steer never reached the turn, so it goes ahead of the queue and is sent next. A
+   * rejected promise is read the same way — nothing can place the line, and the user's own
+   * words are never dropped.
+   */
+  function trackSteer(result: Extract<SteerResult, { status: "accepted" }>, text: string): void {
+    const { steerId } = result;
+    setSteering((rows) => [...rows, { steerId, text }]);
+    const settled = (taken: boolean): void => {
+      setSteering((rows) => rows.filter((row) => row.steerId !== steerId));
+      if (taken) appendAll(sentEntries(text));
+      else replaceQueue(pushQueuedFront(queueRef.current, text));
+    };
+    void result.applied.then(settled, () => settled(false));
+  }
+
+  /**
    * What the queue does once a send has settled, and the one place that decides it.
    *
    * A turn observed to have `completed` releases one message — the oldest — through `submit`,
@@ -723,6 +838,16 @@ export function ChatApp({
    * what keeps a later drain from sending a line twice.
    */
   function drainQueue(outcome: TurnOutcome): void {
+    // A line that interrupted this turn goes first (US-004), whatever the turn's own outcome
+    // was: the user asked for it before anything they queued earlier, and the queue stays
+    // queued behind it. `submit` is the typed-return path, so it earns its own user row.
+    const interrupted = interruptSend.current;
+    if (interrupted !== undefined && !sending.current) {
+      interruptSend.current = undefined;
+      setDraft((current) => ({ ...current, history: [...current.history, interrupted] }));
+      void submit(interrupted, false);
+      return;
+    }
     const queue = queueRef.current;
     if (queue.length === 0) return;
     if (!outcome.sent || outcome.status !== "completed") {
@@ -931,7 +1056,7 @@ export function ChatApp({
   const bottomRows = bottomRowsFor({
     ask: cardRows,
     picker: picker.model,
-    input: queueLines.length + inputBottomRows + menuRows + mentionView.rows,
+    input: aboveInputLines.length + inputBottomRows + menuRows + mentionView.rows,
     budget: bottomBudget,
   });
   const viewportHeight = Math.max(
@@ -1002,6 +1127,12 @@ export function ChatApp({
         </Box>
       ) : (
         <Box height={bottomRows} overflow="hidden" flexDirection="column">
+          {steeringLines.map((text, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: the steering rows are positional and drawn in arrival order.
+            <FixedRow key={index}>
+              <StyledLineView line={[{ text, color: "muted" }]} theme={theme} />
+            </FixedRow>
+          ))}
           {queueLines.map((text, index) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: the queue's rows are positional and drawn oldest first.
             <FixedRow key={index}>

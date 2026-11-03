@@ -30,6 +30,9 @@ export const MAX_QUEUED_ROWS = 3;
 /** What a queued message's row says in front of the text: muted, one row per message. */
 const QUEUED_MARKER = "queued · ";
 
+/** What a steer waiting on the running turn says in front of its text: muted, like a queued row. */
+const STEERING_MARKER = "steering · ";
+
 /** The row that stands for the messages the cap hides: `+2 more`. */
 const MORE_PREFIX = "+";
 const MORE_SUFFIX = " more";
@@ -80,4 +83,23 @@ export function queueRowLines(queue: MessageQueue): readonly string[] {
   const shown = queue.slice(0, MAX_QUEUED_ROWS).map((text) => `${QUEUED_MARKER}${oneLine(sanitizeText(text))}`);
   const hidden = queue.length - shown.length;
   return hidden > 0 ? [...shown, `${MORE_PREFIX}${hidden}${MORE_SUFFIX}`] : shown;
+}
+
+/**
+ * One steer the running turn has not taken yet: the text the user handed it, and the id its
+ * `applied` promise is settled by (US-004). The screen drops the row by id, so two steers in
+ * flight are two rows that resolve independently.
+ */
+export interface SteeringRow {
+  readonly steerId: string;
+  readonly text: string;
+}
+
+/**
+ * The rows the pending steers draw above the queue, in arrival order: one muted
+ * `steering · <text>` row each. Like a queue row, each text is flattened to one row and
+ * stripped of terminal escapes, so a steer can take no more rows than it was counted for.
+ */
+export function steeringRowLines(steering: readonly SteeringRow[]): readonly string[] {
+  return steering.map((row) => `${STEERING_MARKER}${oneLine(sanitizeText(row.text))}`);
 }
