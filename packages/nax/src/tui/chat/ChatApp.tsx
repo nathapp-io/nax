@@ -414,18 +414,25 @@ export function ChatApp({
    * working line and the screen's own guard, so the hint and the action cannot disagree. A
    * turn whose keys cannot control it is not esc's to stop, and the mention picker's claim is
    * its esc ownership rather than its drawn rows: its no-git diagnostic line claims no key.
+   *
+   * `running` is the turn ownership the caller trusts. Everything drawn passes the frame's own
+   * `turnRunning`; a key handler passes the synchronous `sending` ref, because a return, the
+   * text typed after it and a chord can arrive in one batch, and the render that preceded that
+   * batch still says the turn is idle. Only the turn's ownership is read that way — a card, a
+   * picker and a menu still claim their keys from the frame, and the control guard is
+   * unchanged — so a batched key cannot stop a turn nobody owns or steal an overlay's escape.
    */
-  function escLayerNow(): EscLayer {
+  function escLayer(running: boolean): EscLayer {
     return topEscLayer({
       ask: escAsk(ask),
       askFromSession: askedBySession(ask),
       picker: picker.model?.kind,
       mentionShown: mention.ownsNavigation(),
       menuShown: menuShown(),
-      turnRunning: turnRunning && keys.canControl(),
+      turnRunning: running && keys.canControl(),
     });
   }
-  const escHint = escHintText(escLayerNow());
+  const escHint = escHintText(escLayer(turnRunning));
   // The working line is drawn from the turn status alone, so its presence is unchanged; only
   // its text takes the layer's hint, and `esc to interrupt` stays when the layer has none.
   const working = workingLine(status, nowMs, theme.glyphs, escHint);
@@ -457,8 +464,9 @@ export function ChatApp({
     }
     // Only a bare running turn is the screen's own escape. A card, a picker and a menu each
     // own escape themselves and answer it in their own handler, so a key they close must
-    // never also reach the turn.
-    if (!key.escape || escLayerNow().kind !== "turn") return;
+    // never also reach the turn. The turn's ownership is read synchronously, like every other
+    // key-time fact: the frame's answer is a render old when a batch carries several keys.
+    if (!key.escape || escLayer(sending.current).kind !== "turn") return;
     host.cancel();
   });
 
@@ -817,7 +825,10 @@ export function ChatApp({
       return;
     }
     interruptSend.current = text;
-    if (escLayerNow().kind === "turn") host.cancel();
+    // The turn to cancel is the one `sending` owns, not the one the last render reported: this
+    // key can arrive in the same batch as the return that started that turn. A card, a picker
+    // and a menu still own escape from the frame, and the control guard still applies.
+    if (escLayer(sending.current).kind === "turn") host.cancel();
   }
 
   /**

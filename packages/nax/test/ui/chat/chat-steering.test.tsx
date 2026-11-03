@@ -476,6 +476,9 @@ describe("ctrl+s batched behind the return that started the turn", () => {
   test("F2 interrupts and holds the line when the brain cannot steer", async () => {
     const ui = mountScreen();
     await batched(ui);
+    // The batched key must interrupt on its own: the turn it cancels is the one the return in
+    // the same batch started, which no render has reported yet.
+    expect(ui.cancel).toHaveBeenCalledTimes(1);
     await ui.endTurn("cancelled");
     expect(ui.sends).toEqual(["hello", "x"]);
   });
