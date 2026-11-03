@@ -331,6 +331,31 @@ describe("native manual compaction: nothing to drop", () => {
     expect(summaryMessages(requestMessages(provider, 0))).toEqual([]);
     expect(requestMessages(provider, 0).map((message) => message.content)).toContain("hello");
   });
+
+  test("AC-5, AC-6, F2: a history that fits stays a no-op even with an automatic summary at index 1", async () => {
+    // What an automatic compaction leaves behind, small enough to fit the keep
+    // budget: a manual compaction must not invent a span out of the opening
+    // message and bill a summarizer call for it.
+    const provider = installScriptedProvider({ contextWindow: WINDOW });
+    const store = await seeded("m-6b", {
+      model: MODEL,
+      savedAt: SAVED_AT,
+      messages: [
+        { role: "user", content: "the opening requirements" },
+        { role: "user", content: `${COMPACTION_SUMMARY_PREFIX}earlier work\n</summary>\n` },
+        { role: "assistant", content: "done" },
+      ],
+    });
+    const session = await openSession("m-6b", store);
+
+    const result = await compactNow(session)();
+
+    expect(result.compacted).toBe(false);
+    expect(result.tokensAfter).toBe(result.tokensBefore);
+    expect(result.costUsd).toBe(0);
+    expect(result.usage).toEqual({ inputTokens: 0, outputTokens: 0 });
+    expect(provider.completeRequests).toEqual([]);
+  });
 });
 
 describe("native manual compaction: a failing summarizer", () => {

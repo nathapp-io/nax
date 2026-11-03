@@ -283,6 +283,11 @@ export function prepareCompaction(
   // Everything from here is fair game; the pin, and any existing summary, are not.
   const spanStart = spanStartFor(previous, options);
   const cut = findCutPoint(messages, spanStart, keepTokens);
+  // Nothing to drop: the whole history fits the keep budget, so the cut is where
+  // the span starts and there is no plan (nax#1842). Checked on the RAW cut,
+  // before the clamp below — clamping first would turn "everything fits" into a
+  // paid compaction of the opening message (AC-5/AC-6).
+  if (cut <= spanStart) return undefined;
   // The kept window never starts at or before a summary that is being merged:
   // its content already travels as `previousSummary`, and keeping it as well
   // would leave two summaries in the transcript (the "merged, not stacked"

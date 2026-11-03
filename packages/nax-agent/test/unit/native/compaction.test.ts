@@ -317,6 +317,22 @@ describe("prepareCompaction", () => {
     expect(plan?.previousSummary?.startsWith("a")).toBe(true);
   });
 
+  test("F2: no plan when the whole history fits, even with an automatic summary at index 1", () => {
+    // Everything fits the keep budget, so the cut is the start of the span and
+    // there is nothing to drop. The clamp that keeps a merged summary out of the
+    // kept window must not turn that into a paid compaction of the opening
+    // message — AC-5/AC-6 are about the history fitting, not about the summary.
+    const autoCompacted: TranscriptMessage[] = [
+      { role: "user", content: "the opening requirements" },
+      { role: "user", content: COMPACTION_SUMMARY_PREFIX + "earlier work" + COMPACTION_SUMMARY_SUFFIX },
+      { role: "assistant", content: "done" },
+    ];
+
+    expect(prepareCompaction(autoCompacted, 1_000, { pinFirstMessage: false })).toBeUndefined();
+    // ... and the pinned path is unchanged for the same transcript.
+    expect(prepareCompaction(autoCompacted, 1_000)).toBeUndefined();
+  });
+
   test("returns undefined when a summary is present but the new span is empty (nax#1842)", () => {
     // A plan whose toSummarize is empty buys nothing: summarize() would be paid
     // to re-summarize the previous summary alone, and applyCompaction would
