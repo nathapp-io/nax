@@ -115,6 +115,14 @@ interface FixtureOptions {
   readonly results?: readonly CompactResult[];
   /** False leaves a session whose facade has no `compact` at all. */
   readonly supportsCompact?: boolean;
+  /** True parks the turn inside its stream until the case calls `releaseTurn()`. */
+  readonly holdSend?: boolean;
+}
+
+interface OpenRequest {
+  readonly mode?: string;
+  readonly model?: string;
+  readonly resumeId?: string;
 }
 
 function fixture(options: FixtureOptions = {}) {
@@ -124,6 +132,8 @@ function fixture(options: FixtureOptions = {}) {
     return resolveWith(next ?? SPEND);
   }
   const compact = mock(options.compact ?? answer);
+  /** The parked turns of a `holdSend` fixture, released one at a time. */
+  const parked: Array<() => void> = [];
   const session: AgentSession = {
     id: SESSION,
     backend: { kind: "native", capabilities: {} },
@@ -132,6 +142,11 @@ function fixture(options: FixtureOptions = {}) {
     async *send() {
       const base = { sessionId: SESSION, turnId: "turn-1", at: NOW.toISOString(), metadata: {} };
       yield { ...base, type: "turn_start" as const };
+      if (options.holdSend === true) {
+        const gate = Promise.withResolvers<void>();
+        parked.push(() => gate.resolve());
+        await gate.promise;
+      }
       yield {
         ...base,
         type: "turn_end" as const,
@@ -154,10 +169,27 @@ function fixture(options: FixtureOptions = {}) {
     storage,
     now: () => NOW,
     logger: makeLogger(),
-    open: async () => ({ session, meta: metaOf(OPENED_COST), release: async () => {} }),
+    // Mirrors the real opener: a resume carries the stored metadata forward, a fresh open
+    // starts from the opener's copy, and both take the requested mode.
+    open: async (request: OpenRequest) => {
+      const stored = request.resumeId === undefined ? null : await storage.readMeta(request.resumeId);
+      const base = stored ?? metaOf(OPENED_COST);
+      return {
+        session,
+        meta: { ...base, mode: request.mode === "full" ? "full" : "ask", model: request.model ?? MODEL },
+        release: async () => {},
+      };
+    },
   });
   hosts.push(host);
-  return { host, session, compact };
+  return {
+    host,
+    session,
+    compact,
+    /** Release the turn parked inside its stream, once. */
+    releaseTurn: () => parked.shift()?.(),
+    parked,
+  };
 }
 
 /** A host started over the stub session. */
@@ -237,6 +269,22 @@ describe("ChatHost.compact", () => {
     const total = STORED_COST + SPEND.costUsd + TURN_COST;
     expect((await storage.readMeta(SESSION))?.costUsd).toBeCloseTo(total);
     expect(f.host.current().meta.costUsd).toBeCloseTo(total);
+  });
+
+  test("AC-3 a same-session switch during a turn keeps the switched metadata", async () => {
+    const f = await started({ holdSend: true });
+    const sending = f.host.send("hi", () => {});
+    // The turn is parked inside its stream, so the switch lands while it is in flight — and
+    // on the same session id, which is what the earlier session-id rule could not tell apart.
+    await flush();
+    expect(f.parked).toHaveLength(1);
+    await f.host.switchTo({ mode: "full" });
+    expect(f.host.current().mode).toBe("full");
+    f.releaseTurn();
+    await sending;
+    // The turn wrote its metadata for the handle the switch retired: the switched handle's
+    // own mode must stand rather than be rewritten from the retired one.
+    expect(f.host.current().mode).toBe("full");
   });
 
   test("AC-4 records one ledger row with the summarizer's own usage and cost", async () => {

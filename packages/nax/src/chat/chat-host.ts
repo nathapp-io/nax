@@ -3,7 +3,6 @@ import type {
   CompactResult,
   LoopHandlerSet,
   SessionEvent,
-  SessionMeta,
   SessionStorage,
   SteerResult,
   ToolProvider,
@@ -455,18 +454,17 @@ class NativeChatHost implements ChatHost {
     this.sending = true;
     this.turnListener = onEvent;
     const runs = this.runs;
-    let meta: SessionMeta;
     try {
       // The turn's own metadata write is the other read-modify-write of the same `costUsd`,
       // so the whole turn is queued behind any accounting already in flight: a compaction
       // that settled a moment ago must not be overwritten by this turn's stale base.
-      meta = await this.accounting.run(async () => {
+      await this.accounting.run(async () => {
         // Read the handle inside the queue, not before it: the accounting queued ahead of
         // this turn may have replaced it with one whose `costUsd` is newer, and this turn
         // must run and persist from the handle that is current now.
         const handle = this.requireHandle();
         this.hygiene.markSent(handle.meta.sessionId);
-        return runChatTurn({
+        const meta = await runChatTurn({
           handle,
           storage: this.deps.storage,
           message,
@@ -478,6 +476,11 @@ class NativeChatHost implements ChatHost {
           now: this.deps.now().toISOString(),
           ...(runs ? { extraCostUsd: () => runs.takeCost(), settleNested: () => runs.settle() } : {}),
         });
+        // Adopt while the queue is still held, and only for the very handle this turn ran
+        // on: no accounting can slip in between the write and this adoption, and a handle
+        // replaced during the turn — a same-session switch, a `clear`, a resume — keeps its
+        // own metadata, which is newer than the retired handle's.
+        if (this.handle === handle) this.handle = { ...handle, meta };
       });
     } finally {
       try {
@@ -490,13 +493,6 @@ class NativeChatHost implements ChatHost {
         // Nested spend of a send that threw is dropped, never added to the next send.
         runs?.takeCost();
       }
-    }
-    // Adopt the turn's metadata by session, not by object identity: the accounting that ran
-    // ahead of it inside the queue replaced the handle this turn wrote for. A different
-    // session — a `clear`, or a resume of another one, while the turn ran — is left alone.
-    const current = this.handle;
-    if (current !== undefined && current.meta.sessionId === meta.sessionId) {
-      this.handle = { ...current, meta };
     }
   }
 
