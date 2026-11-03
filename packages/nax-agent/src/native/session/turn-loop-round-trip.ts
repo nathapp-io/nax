@@ -37,6 +37,7 @@ import { inputClassTokens } from "#src/cost/core/index";
 import { getSafeLogger } from "#src/infra/index";
 import type { SpinBreaker } from "#src/infra/spin-breaker/index";
 import type { InteractionExchange, SendTurnOpts, SessionHandle } from "#src/session/session-types";
+import type { SteerChannel } from "#src/session/steer-channel";
 import { parseModelSpec } from "../models.ts";
 import {
   estimateContextTokens,
@@ -342,6 +343,34 @@ async function dispatchToolBatch(
 }
 
 /**
+ * US-001: the pending steers, as the transcript messages they become. A steer
+ * is an ordinary user message — it persists and replays — so the loop appends
+ * it exactly as it appends a `before_turn_end` followUp.
+ */
+function steerMessages(steers: SteerChannel | undefined): NativeTranscriptMessage[] {
+  const texts = steers?.take() ?? [];
+  return texts.map((text) => ({ role: "user" as const, content: text }));
+}
+
+/**
+ * US-001, round boundary: a steer accepted while a round ran joins the
+ * transcript before the next request, after that round's tool results. Two
+ * consecutive user messages (the tool results, then the steer) is intentional:
+ * the compaction path already produces that order and nax-ai passes it to the
+ * provider unchanged.
+ *
+ * Only a turn that has already run a round trip is a boundary — the first
+ * iteration IS the prompt — and never an aborted one: a cancelled turn's
+ * transcript records what happened, not what was typed as it went.
+ */
+function injectSteers(state: TurnLoopState, params: TurnRoundParams): void {
+  if (state.roundTrips === 0 || params.deps.signal?.aborted === true) return;
+  const injected = steerMessages(params.opts.steers);
+  if (injected.length === 0) return;
+  state.messages = [...state.messages, ...injected];
+}
+
+/**
  * Deliberately unbounded by COUNT of varied calls. A coding agent working a
  * story is bounded by wall clock (deps.deadline), by the idle watchdog, and
  * — since nax#2013 — by the spin breaker, which ends a turn that keeps
@@ -357,6 +386,11 @@ export async function runRoundTripLoop(state: TurnLoopState, params: TurnRoundPa
       state.timedOut = true;
       break;
     }
+
+    // US-001: after the deadline check, so a steer typed into a turn with no
+    // round left is never appended, and before compaction, so the steer is part
+    // of what the compaction estimate sees.
+    injectSteers(state, params);
 
     const { summarizeFailed } = await maybeCompact(state, params);
     const toolCalls = await runModelRoundTrip(state, params, summarizeFailed);
@@ -390,21 +424,28 @@ export async function runTurnEndPhase(state: TurnLoopState, params: TurnRoundPar
     stopped,
     followUpsSoFar: state.followUpsSoFar,
   });
-  if (stopped || state.followUpsSoFar >= MAX_FOLLOW_UPS_PER_TURN) {
-    if (turnEnd.followUp !== undefined) {
-      getSafeLogger()?.warn("native-loop-events", "before_turn_end followUp ignored", {
-        sessionName: params.handle.id,
-        ...(stopped ? { reason: "stopped" } : { reason: "cap", cap: MAX_FOLLOW_UPS_PER_TURN }),
-      });
-    }
-    return { action: "break" };
+  // US-001: a steer accepted while the last round ran has no round boundary
+  // left to wait for, so it continues the turn from here — unless the turn was
+  // STOPPED (a breaker ended it on purpose; resurrecting it would reopen the
+  // loop the breaker exists to close) or its signal fired.
+  const steered = stopped || params.deps.signal?.aborted === true ? [] : steerMessages(params.opts.steers);
+  const capped = state.followUpsSoFar >= MAX_FOLLOW_UPS_PER_TURN;
+  const followUp = stopped || capped ? undefined : turnEnd.followUp;
+  if (followUp === undefined && turnEnd.followUp !== undefined) {
+    getSafeLogger()?.warn("native-loop-events", "before_turn_end followUp ignored", {
+      sessionName: params.handle.id,
+      ...(stopped ? { reason: "stopped" } : { reason: "cap", cap: MAX_FOLLOW_UPS_PER_TURN }),
+    });
   }
-  if (turnEnd.followUp === undefined) return { action: "break" };
-  // Honoured: the user message enters the array and the outer loop
-  // re-enters the round-trip loop — each injection counts as its own
-  // round trip through the normal loop, and the turn's result is NOT
-  // built here.
-  const messages = [...state.messages, { role: "user" as const, content: turnEnd.followUp }];
+  // The cap gates the followUp ONLY: a steer is the person's own input, not a
+  // handler's injection, so it does not spend the followUp budget.
+  if (steered.length === 0 && followUp === undefined) return { action: "break" };
+  // Honoured: the user messages enter the array in the order they were typed —
+  // steers first, then the handler's followUp — and the outer loop re-enters
+  // the round-trip loop; each injection counts as its own round trip through
+  // the normal loop, and the turn's result is NOT built here.
+  const messages = [...state.messages, ...steered];
+  if (followUp !== undefined) messages.push({ role: "user" as const, content: followUp });
   // The continuation must earn its own clean exit, and a reprieved stop's
   // terminal-round-trip snapshot does not carry into it — the breaker's
   // own cumulative, session-lifetime counters (nax#2047) still enforce.
@@ -414,7 +455,7 @@ export async function runTurnEndPhase(state: TurnLoopState, params: TurnRoundPar
     state: {
       ...state,
       messages,
-      followUpsSoFar: state.followUpsSoFar + 1,
+      followUpsSoFar: state.followUpsSoFar + (followUp !== undefined ? 1 : 0),
       completedNormally: false,
     },
   };

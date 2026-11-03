@@ -17,6 +17,7 @@ import type { SendInput } from "./image-input.ts";
 import type { TurnContribution } from "./session-backend.ts";
 import { createSessionEventChannel } from "./session-event-channel.ts";
 import { type AgentSessionAdapter, type SessionHandle, SessionTurnError, type TurnResult } from "./session-types.ts";
+import type { SteerChannel } from "./steer-channel.ts";
 import { readTurnSpend } from "./turn-spend.ts";
 
 /** The ask_human budget per turn: nax's agent.maxInteractionTurns default. */
@@ -59,6 +60,11 @@ export interface ClaimTurnHooks extends SendInput {
   readonly onStart: (live: LiveTurn) => void;
   /** Runs before turn_end is emitted. `status` is undefined for a voided claim. */
   readonly onSettle: (turnId: string, status: TurnEndStatus | undefined) => void;
+  /**
+   * US-001: this turn's steer channel, when the backend is steerable. Absent
+   * otherwise, so the adapter's `sendTurn` options carry no `steers` key at all.
+   */
+  readonly steers?: SteerChannel;
 }
 
 type TurnEndBody = Extract<SessionEventBody, { readonly type: "turn_end" }>;
@@ -147,9 +153,15 @@ function fromError(err: unknown, signal: AbortSignal): TurnEndBody {
   return { ...base, status: "errored", error: errorOf(err) };
 }
 
-function sendTurn(ctx: TurnRunContext, live: LiveTurn, input: SendInput & { message: string }): Promise<TurnResult> {
+function sendTurn(
+  ctx: TurnRunContext,
+  live: LiveTurn,
+  input: SendInput & { message: string },
+  steers: SteerChannel | undefined,
+): Promise<TurnResult> {
   return ctx.adapter.sendTurn(ctx.handle, input.message, {
     ...ctx.turnOpts(),
+    ...(steers !== undefined ? { steers } : {}),
     ...(input.images?.length ? { images: input.images } : {}),
     maxInteractions: ASK_HUMAN_BUDGET,
     turnId: live.turnId,
@@ -179,13 +191,14 @@ async function runTurn(
   ctx: TurnRunContext,
   live: LiveTurn,
   input: SendInput & { message: string },
+  steers: SteerChannel | undefined,
 ): Promise<TurnEndBody> {
   live.emit({ type: "turn_start" });
   const started = await markTurn(ctx, live.turnId, "running");
   if (started !== undefined) return fromError(started.error, live.signal);
   let end: TurnEndBody;
   try {
-    end = turnEndFromResult(await sendTurn(ctx, live, input));
+    end = turnEndFromResult(await sendTurn(ctx, live, input, steers));
   } catch (err) {
     end = fromError(err, live.signal);
   }
@@ -246,7 +259,7 @@ export function claimTurn(ctx: TurnRunContext, message: string, hooks: ClaimTurn
       ctx.turnTimeoutSeconds * 1000,
     );
     hooks.onStart(live);
-    void runTurn(ctx, live, { message, images: hooks.images })
+    void runTurn(ctx, live, { message, images: hooks.images }, hooks.steers)
       .catch((err: unknown) => fromError(err, controller.signal))
       .then((end) => {
         _agentSessionDeps.clearTimeout(timer);

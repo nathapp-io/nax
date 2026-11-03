@@ -230,7 +230,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
 
     // One budget for the whole turn, not one per round-trip. Created here
     // because this is where `timeoutSeconds` is known; consulted by the loop.
-    const deadline = createTurnDeadline(timeoutSeconds);
+    const deadline = createTurnDeadline(timeoutSeconds, () => _adapterDeps.now());
 
     const hooks = this.state.streamHooks.get(handle.id);
     // One callId per turn, mirroring SpawnAcpSession.prompt(). `runId` is

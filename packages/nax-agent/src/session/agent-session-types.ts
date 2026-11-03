@@ -190,6 +190,15 @@ export interface AgentSession {
   configure?(input: SessionConfigureInput): Promise<void>;
   /** Run through the session's Bash tool without a model turn. The facade always provides this method. */
   runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>;
+  /**
+   * Adds text to the running TURN's pending steers (US-001), injected as a user
+   * message at the turn's next safe boundary. Throws `AGENT_SESSION_CLOSED` on a
+   * closed session and `AGENT_SESSION_INVALID_OPTIONS` for empty or
+   * whitespace-only text; answers `unsupported` for a backend with no mid-turn
+   * input, and `no_turn` when no turn claim is active (a `runCommand` or
+   * `compact` in flight is not a turn). The facade always provides this method.
+   */
+  steer?(text: string): import("./steer-channel.ts").SteerResult;
   readonly id: string;
   /** The backend that opened this session (`kind` and its capability summary). */
   readonly backend: BackendInfo;

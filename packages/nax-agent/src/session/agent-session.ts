@@ -28,10 +28,24 @@ import { type SendInput, validateImageAttachments } from "./image-input.ts";
 import { createPendingAskTable, type PendingAskTable } from "./pending-asks.ts";
 import { createSessionAskPort } from "./session-ask-port.ts";
 import type { BackendInfo, OpenedBackend } from "./session-backend.ts";
+import { createSteerQueue, type SteerQueue, type SteerResult } from "./steer-channel.ts";
 
 /** The running turn: what the ask port reads. */
 interface LiveSlot {
   turn: LiveTurn | undefined;
+}
+
+/**
+ * What the session's single-flight slot currently runs. `steer` reads the kind:
+ * a `runCommand` (or, from US-002, a `compact`) holds the slot without being a
+ * turn, and a steer needs a turn.
+ */
+type ClaimKind = "turn" | "command" | "compact";
+
+interface ActiveClaim extends Pick<ClaimedTurn, "turnId" | "settled" | "cancel"> {
+  readonly kind: ClaimKind;
+  /** A turn claim's pending steers; absent for a claim that runs no model turn. */
+  readonly steers?: SteerQueue;
 }
 
 type LastTurn = { readonly turnId: string; readonly status: TurnEndStatus };
@@ -71,7 +85,7 @@ interface SessionParts {
 }
 
 class FacadeAgentSession implements AgentSession {
-  private active: Pick<ClaimedTurn, "turnId" | "settled" | "cancel"> | undefined;
+  private active: ActiveClaim | undefined;
   private last: LastTurn | undefined;
   private closing: Promise<void> | undefined;
   /** True while the backend's configure is pending: send, runCommand and configure refuse BUSY. */
@@ -139,19 +153,57 @@ class FacadeAgentSession implements AgentSession {
         },
       );
     }
+    // US-001: this turn's pending steers. Built only for a backend that can take
+    // one mid-turn, so an ACP-backed session allocates nothing and its
+    // `sendTurn` options stay identical.
+    const steers = this.parts.opened.steerable === true ? createSteerQueue() : undefined;
     const turn = claimTurn(this.parts.ctx, message, {
       images,
+      ...(steers !== undefined ? { steers } : {}),
       onStart: (live) => {
         this.parts.slot.turn = live;
       },
       onSettle: (turnId, status) => {
+        // US-001: before `turn_end` is emitted, so a steer still pending resolves
+        // `false` first and can never carry into the next `send()`.
+        steers?.close();
         this.active = undefined;
         this.parts.slot.turn = undefined;
         if (status !== undefined) this.last = { turnId, status };
       },
     });
-    this.active = turn;
+    this.active = {
+      kind: "turn",
+      turnId: turn.turnId,
+      settled: turn.settled,
+      cancel: turn.cancel,
+      ...(steers !== undefined ? { steers } : {}),
+    };
     return turn.iterable;
+  }
+
+  /**
+   * US-001: adds text to the running turn's pending steers. The check order is
+   * the documented one — the session's own state first, then the text, then the
+   * backend's capability, then the claim — so a caller learns what it can fix
+   * (its text) before what it cannot (the backend, the claim).
+   */
+  steer(text: string): SteerResult {
+    if (this.closing !== undefined) {
+      throw new AgentSessionError(`Session "${this.id}" is closed`, "AGENT_SESSION_CLOSED", { sessionId: this.id });
+    }
+    if (text.trim() === "") {
+      throw new AgentSessionError(`Session "${this.id}" cannot steer empty text`, "AGENT_SESSION_INVALID_OPTIONS", {
+        sessionId: this.id,
+        path: "steer",
+      });
+    }
+    if (this.parts.opened.steerable !== true) return { status: "unsupported" };
+    const active = this.active;
+    const steers = active?.kind === "turn" ? active.steers : undefined;
+    if (steers === undefined) return { status: "no_turn" };
+    const { steerId, applied } = steers.add(text);
+    return { status: "accepted", steerId, applied };
   }
 
   async configure(input: SessionConfigureInput): Promise<void> {
@@ -215,7 +267,7 @@ class FacadeAgentSession implements AgentSession {
         },
       },
     });
-    this.active = claim;
+    this.active = { kind: "command", turnId: claim.turnId, settled: claim.settled, cancel: claim.cancel };
     return claim.result;
   }
 

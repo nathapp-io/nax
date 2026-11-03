@@ -188,6 +188,10 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
       }
     },
     info: { kind: NATIVE_BACKEND_KIND, capabilities: {}, sandbox },
+    // US-001: nax owns the conversation here, so a turn can take a steer at its
+    // next round boundary. The ACP backend declares nothing — its protocol has
+    // no mid-turn user input.
+    steerable: true,
     turnOpts: () => ({
       interactionHandler,
       codingTools,

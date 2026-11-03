@@ -35,6 +35,15 @@ export const _adapterDeps = {
    */
   setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
   clearTimeout: ((id: unknown) => clearTimeout(id as ReturnType<typeof setTimeout>)) as (id: unknown) => void,
+  /**
+   * US-001: the clock the whole-turn deadline measures against, injectable for
+   * the same reason as the timer pair above. `createTurnDeadline` reads it at
+   * every check, so a test can advance a virtual clock past the budget without
+   * waiting the schema's one-second minimum in real time.
+   *
+   * @internal
+   */
+  now: (): number => Date.now(),
 };
 
 /**

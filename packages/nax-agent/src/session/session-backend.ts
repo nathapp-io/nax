@@ -103,6 +103,13 @@ export interface OpenedBackend {
   configure?(input: SessionConfigureInput): Promise<void>;
   /** Absent on a backend that cannot run a host-side command (ACP). */
   runCommand?(request: { command: string; callId: string; signal: AbortSignal }): Promise<CommandRunResult>;
+  /**
+   * US-001: this backend can take a steer mid-turn, so the facade builds each
+   * turn a `SteerChannel` and `steer()` may answer `accepted`. Absent on a
+   * backend with no mid-turn user input (ACP): `steer()` then answers
+   * `unsupported` without ever looking at the claim.
+   */
+  readonly steerable?: true;
   readonly adapter: AgentSessionAdapter;
   readonly handle: SessionHandle;
   readonly info: BackendInfo;

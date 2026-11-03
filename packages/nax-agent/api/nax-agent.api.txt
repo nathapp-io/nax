@@ -321,6 +321,8 @@ type ShellInterceptRequest
 type ShellInterceptResult
 type SpillRequest
 type StderrTail
+type SteerChannel
+type SteerResult
 type StoredEntry
 type SystemOneClientOptions
 type SystemOneQuestion

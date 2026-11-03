@@ -292,6 +292,12 @@ export interface SendTurnOpts {
    * nax sets none.
    */
   onTurnEvent?: import("./turn-event.ts").TurnEventSink;
+  /**
+   * Native: the facade's pending steers for THIS turn (US-001), drained by the
+   * loop at a round boundary or at turn end. Set only when the backend declares
+   * `steerable`; ACP has no mid-turn user input and never sees it.
+   */
+  steers?: import("./steer-channel.ts").SteerChannel;
 }
 
 /**
