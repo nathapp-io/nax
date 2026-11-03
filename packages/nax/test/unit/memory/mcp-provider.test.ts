@@ -419,6 +419,50 @@ describe("createMcpMemoryProvider", () => {
       expect(await idMap.ids("project", "s1")).toEqual([]);
     });
 
+    test("a timed-out forget, its retry and a replacement save all settle before the original releases (B1, AC-23)", async () => {
+      await idMap.add("project", "s1", ["r1"]);
+      const provider = make(FORGET_MCP);
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let stalled: () => void = () => {};
+      const stallStarted = new Promise<void>((resolve) => {
+        stalled = resolve;
+      });
+      const realCall = fake.pool.call;
+      let first = true;
+      fake.pool.call = async (...args) => {
+        if (first) {
+          first = false;
+          stalled();
+          await gate; // the original forget stalls past the operations layer's deadline
+        }
+        return realCall(...args);
+      };
+      const original = provider.push(forgetRequest()); // the outer timeout abandons this promise; it keeps running
+      await stallStarted;
+      // The outbox retries the forget; the retry reads the same ids and completes.
+      expect((await provider.push(forgetRequest())).status).toBe("deleted");
+      expect(await idMap.ids("project", "s1")).toEqual([]);
+      // The queued replacement save is then delivered and records r2.
+      fake.respond = (call) =>
+        call.tool === "add_memories" ? answer('{"results":[{"id":"r2","event":"ADD"}]}') : answer("ok");
+      await provider.push(saveRequest());
+      expect(await idMap.ids("project", "s1")).toEqual(["r2"]);
+      // Only now does the original call finish: it must not erase r2.
+      release();
+      expect((await original).status).toBe("deleted");
+      expect(await idMap.ids("project", "s1")).toEqual(["r2"]);
+      await provider.push(forgetRequest());
+      expect(fake.calls.filter((c) => c.tool === "delete_memory").map((c) => c.input.memory_id)).toEqual([
+        "r1",
+        "r1",
+        "r2",
+      ]);
+      expect(await idMap.ids("project", "s1")).toEqual([]);
+    });
+
     test("a pool that throws for one id is also a warning, not a failure", async () => {
       await idMap.add("project", "s1", ["r1", "r2"]);
       let first = true;
