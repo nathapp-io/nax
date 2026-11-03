@@ -72,6 +72,8 @@ async function makeRun(prefix: string): Promise<{ workdir: string; options: RunS
     createdRuntimes.push(runtime);
     return runtime;
   }) as typeof _runSetupDeps.createRuntime;
+  // US-006: no run memory in this fixture — its assertions are about the scratchpad wipe.
+  _runSetupDeps.createRunMemory = (async () => undefined) as typeof _runSetupDeps.createRunMemory;
   _runSetupDeps.installCrashHandlers = (() => () => {}) as typeof _runSetupDeps.installCrashHandlers;
   _runSetupDeps.detectProjectProfile = (async () => ({})) as typeof _runSetupDeps.detectProjectProfile;
   _runSetupDeps.sweepFeatureTranscripts = (async () => 0) as typeof _runSetupDeps.sweepFeatureTranscripts;

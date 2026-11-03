@@ -19,4 +19,9 @@ export interface MemoryConfig {
   indexBytes: number;
   /** Ask before `nax-memory__save` / `__forget` in a guarded native chat. */
   askOnSave: boolean;
+  /**
+   * Workflow-run switch: false means no run memory — no start sync, no index in
+   * the brief, no run-stage tools. Chat is unaffected.
+   */
+  inRun: boolean;
 }

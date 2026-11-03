@@ -100,8 +100,18 @@ async function resolveRulesIndex(sc: StepContext): Promise<WorkflowBriefInput["r
   };
 }
 
+/**
+ * US-007: the run's fresh memory index for this brief — read once per brief, never cached, so a
+ * note another nax process saved since the last story is in the next session's brief. A run without
+ * memory (the bot commands, `memory.inRun: false`) has none, and an absent or empty index leaves the
+ * brief exactly what it was.
+ */
+async function loadMemoryIndex(sc: StepContext): Promise<string | undefined> {
+  return sc.callCtx.runtime.memory?.index();
+}
+
 export async function writeBrief(sc: StepContext): Promise<void> {
-  const [spec, redBase, decisions, rulesIndex, projectContextOverride] = await Promise.all([
+  const [spec, redBase, decisions, rulesIndex, projectContextOverride, memoryIndex] = await Promise.all([
     loadSpec(sc),
     redBaseDependencies(sc),
     loadDecisions(sc),
@@ -111,6 +121,7 @@ export async function writeBrief(sc: StepContext): Promise<void> {
     // disappeared mid-run — and a brief that silently omits what the operator
     // configured is the failure mode the run-start check exists to prevent.
     _workflowDeps.loadProjectContextOverride(sc.config),
+    loadMemoryIndex(sc),
   ]);
   const text = buildWorkflowBrief({
     storyId: sc.story.id,
@@ -125,6 +136,7 @@ export async function writeBrief(sc: StepContext): Promise<void> {
     ...(sc.featureContextMarkdown ? { featureContext: sc.featureContextMarkdown } : {}),
     ...(rulesIndex ? { rulesIndex } : {}),
     ...(projectContextOverride !== undefined ? { projectContextOverride } : {}),
+    ...(memoryIndex !== undefined ? { memoryIndex } : {}),
     ...(sc.constitution ? { constitution: sc.constitution } : {}),
     rulings: rulingsForStory(decisions, sc.story.id),
     redBaseDependencies: redBase,

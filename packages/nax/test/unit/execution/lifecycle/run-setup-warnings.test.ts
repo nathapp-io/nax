@@ -214,11 +214,14 @@ describe("setupRun — US-003 AC14/AC15: inert-Bash warning at run start", () =>
     // Real signal handlers on the test process are both non-hermetic and
     // unnecessary here — setupRun only needs a cleanup function back.
     const installCrashHandlersStub: typeof _runSetupDeps.installCrashHandlers = () => () => undefined;
+    // US-006: no run memory in this fixture — its assertions are about the warnings.
+    const createRunMemoryStub: typeof _runSetupDeps.createRunMemory = async () => undefined;
 
     _runSetupDeps.createRuntime = createRuntimeStub;
     _runSetupDeps.detectProjectProfile = detectProfileStub;
     _runSetupDeps.sweepFeatureTranscripts = sweepStub;
     _runSetupDeps.installCrashHandlers = installCrashHandlersStub;
+    _runSetupDeps.createRunMemory = createRunMemoryStub;
 
     const prdPath = join(workdir, "prd.json");
     writeFileSync(

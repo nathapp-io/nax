@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import {
   buildBranchPackageReadingNote,
+  buildMemoryReferenceSection,
   buildWorkflowBranchCoverageRetry,
   buildWorkflowBranchFixPrompt,
   buildWorkflowBranchReReviewPrompt,
   buildWorkflowBranchReviewPrompt,
+  memorySectionOf,
   WORKFLOW_BEYOND_DIFF_SECTION,
   WORKFLOW_DESIGN_DECISIONS_ITEM,
   WORKFLOW_ENUMERATION_INSTRUCTION,
@@ -244,5 +247,84 @@ describe("buildWorkflowBranchFixPrompt", () => {
     expect(prompt).toContain('append a "Branch fix" section to /out/feature-report.md');
     expect(prompt).toContain("Do not dispatch sub-agents");
     expect(prompt).toContain(WORKFLOW_REPLY_CONTRACT);
+  });
+});
+
+/**
+ * US-002 — the memory index in the two branch prompts.
+ *
+ * The branch fixer saves to memory like any other workflow session, so it gets the tool
+ * section. The whole-branch reviewer saves nothing and has no tools, so it gets the
+ * read-only section: the index lines with the note that it cannot read or change them.
+ */
+const fixBase = {
+  prdPath: "/repo/.nax/features/f/prd.json",
+  reportPath: "/out/feature-report.md",
+  findings: [finding],
+};
+
+describe("buildWorkflowBranchFixPrompt — the memory section (US-002)", () => {
+  test("AC-9: an index renders the memory section", () => {
+    const text = buildWorkflowBranchFixPrompt({ ...fixBase, memoryIndex: "INDEX-LINE" });
+    const expected = memorySectionOf("INDEX-LINE");
+    assertDefined(expected, "memorySectionOf section");
+    expect(text).toContain(expected);
+  });
+
+  test("AC-10: ## Memory follows ## How to work and precedes the reply contract", () => {
+    const text = buildWorkflowBranchFixPrompt({ ...fixBase, memoryIndex: "INDEX-LINE" });
+    expect(text.indexOf("## How to work")).toBeGreaterThan(-1);
+    expect(text.indexOf("## Memory")).toBeGreaterThan(text.indexOf("## How to work"));
+    expect(text.indexOf("## Memory")).toBeLessThan(text.indexOf(WORKFLOW_REPLY_CONTRACT));
+  });
+
+  test("AC-11: an absent index adds no ## Memory heading, and the prompt is what it was", () => {
+    const text = buildWorkflowBranchFixPrompt(fixBase);
+    expect(text).not.toContain("## Memory");
+    expect(text).toBe(buildWorkflowBranchFixPrompt({ ...fixBase, memoryIndex: "" }));
+    // The section does arrive when there is an index, so the absence above is real.
+    expect(buildWorkflowBranchFixPrompt({ ...fixBase, memoryIndex: "INDEX-LINE" })).not.toBe(text);
+  });
+});
+
+describe("buildWorkflowBranchReviewPrompt — the read-only memory section (US-002)", () => {
+  const reviewBase = {
+    prdPath: "p",
+    packagePath: "k",
+    range: "seed0..HEAD",
+    stories: [],
+    minors: [],
+    parked: [],
+    cannotVerify: [],
+    gateFindings: [],
+  };
+
+  test("AC-15: an index renders the read-only reference section", () => {
+    const text = buildWorkflowBranchReviewPrompt({ ...reviewBase, memoryIndex: "INDEX-LINE" });
+    expect(text).toContain(buildMemoryReferenceSection("INDEX-LINE"));
+    expect(text).not.toBe(buildWorkflowBranchReviewPrompt(reviewBase));
+  });
+
+  test("AC-16: ## Memory precedes ## Your remit", () => {
+    const text = buildWorkflowBranchReviewPrompt({ ...reviewBase, memoryIndex: "INDEX-LINE" });
+    expect(text.indexOf("## Memory")).toBeGreaterThan(-1);
+    expect(text.indexOf("## Your remit")).toBeGreaterThan(-1);
+    expect(text.indexOf("## Memory")).toBeLessThan(text.indexOf("## Your remit"));
+  });
+
+  test("AC-17: names no memory tool, because this session has none", () => {
+    const text = buildWorkflowBranchReviewPrompt({ ...reviewBase, memoryIndex: "INDEX-LINE" });
+    // The read-only note is there, so the absence of tool names below is the section's own wording.
+    expect(text).toContain("you cannot read or change them in this session");
+    expect(text).not.toContain("nax-memory__get");
+    expect(text).not.toContain("nax-memory__save");
+  });
+
+  test("AC-18: an absent index adds no ## Memory heading, and the prompt is what it was", () => {
+    const text = buildWorkflowBranchReviewPrompt(reviewBase);
+    expect(text).not.toContain("## Memory");
+    expect(text).toBe(buildWorkflowBranchReviewPrompt({ ...reviewBase, memoryIndex: "" }));
+    // The section does arrive when there is an index, so the absence above is real.
+    expect(buildWorkflowBranchReviewPrompt({ ...reviewBase, memoryIndex: "INDEX-LINE" })).not.toBe(text);
   });
 });

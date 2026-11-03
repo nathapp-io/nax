@@ -108,6 +108,8 @@ function installSealHarness(prdPathOverride?: string): SealHarness {
   const crashCtx: CrashCtxWithSeal = {};
 
   _runSetupDeps.createRuntime = () => runtime;
+  // US-006: no run memory in this fixture — its assertions are about the seal.
+  _runSetupDeps.createRunMemory = async () => undefined;
   _runSetupDeps.detectProjectProfile = (async () => ({})) as typeof _runSetupDeps.detectProjectProfile;
   _runSetupDeps.installCrashHandlers = (ctx) => {
     // Copy the context's own properties so the forwarder is reachable without

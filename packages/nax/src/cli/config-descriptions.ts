@@ -459,6 +459,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "memory.indexBytes":
     "Byte cap for the memory index injected into the chat prompt, 512..262144 (default: 24576). Notes past the cap are omitted and counted",
   "memory.askOnSave": "Ask before nax-memory__save / nax-memory__forget in a guarded native chat (default: true)",
+  "memory.inRun":
+    "Give `nax run` a run memory: a start sync, the index in the workflow prompts and the memory tools on run-stage sessions. false turns all three off for runs; chat is unaffected (default: true)",
 
   // Resources
   "resources.mcpInRun":

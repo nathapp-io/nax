@@ -7,8 +7,15 @@ set -euo pipefail
 # Uses portable grep -v instead of a case statement inside $() to avoid
 # a bash 3.2 (macOS default) syntax error with empty case arms in multi-line
 # command substitutions.
+#
+# src/runtime/runtime-options.ts is part of the src/runtime/index.ts entry: US-005
+# moved `CreateRuntimeOptions` (and the one legal nullable `agentManager`) out of
+# that barrel to keep it inside the file-size cap. A construction-time option the
+# caller supplies is not a dispatch-time context reading a manager, so the move
+# carries the allowlist with it — see test/unit/scripts/check-dispatch-context.test.ts.
 MATCHES=$(grep -rnE "agentManager\?[[:space:]]*:[[:space:]]*(import\(.+\)\.)?IAgentManager" src/ --include="*.ts" \
   | grep -v "^src/runtime/index\.ts:" \
+  | grep -v "^src/runtime/runtime-options\.ts:" \
   | grep -v "^src/execution/runner-setup\.ts:" \
   | grep -v "^src/execution/lifecycle/run-setup\.ts:" \
   | grep -v "^src/execution/parallel-coordinator\.ts:" \

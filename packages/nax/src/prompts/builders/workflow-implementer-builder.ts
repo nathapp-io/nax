@@ -1,5 +1,6 @@
 /** A5 workflow mode: the story brief and every implementer-session prompt (spec §6). */
 
+import { memorySectionOf } from "./memory-builder";
 import { buildProjectContextSection } from "./project-context-builder";
 import { buildRulesIndexSection, type RulesIndexEntry } from "./rules-index-builder";
 
@@ -31,6 +32,11 @@ export interface WorkflowBriefInput {
    * `delivery: "push"`, where the v2 orchestrator carries the bodies instead.
    */
   readonly rulesIndex?: { readonly entries: readonly RulesIndexEntry[]; readonly shownAutomatically: boolean };
+  /**
+   * US-002: the rendered memory index, when the run carries memory. The story brief is the
+   * implementer's requirements, so the index it may not read elsewhere arrives here.
+   */
+  readonly memoryIndex?: string;
   /**
    * US-007: `context.projectContext.file`, verbatim. Rendered after
    * "## Feature context" — the feature's own context, then the run's
@@ -66,6 +72,7 @@ export function renderWorkflowFindings(findings: readonly WorkflowPromptFinding[
 
 export function buildWorkflowBrief(input: WorkflowBriefInput): string {
   const acs = input.acceptanceCriteria.map((ac, i) => `AC-${i + 1}: ${ac}`).join("\n");
+  const memory = memorySectionOf(input.memoryIndex);
   const redBase =
     input.redBaseDependencies.length > 0
       ? section(
@@ -93,6 +100,9 @@ export function buildWorkflowBrief(input: WorkflowBriefInput): string {
     redBase,
     section("Story context", input.storyContext),
     input.rulesIndex ? buildRulesIndexSection(input.rulesIndex) : "",
+    // The memory section ends where every other one does — with a newline — so the heading
+    // that follows it starts after a blank line like every other heading in the brief.
+    memory !== undefined ? `${memory}\n` : "",
     section("Feature context", input.featureContext),
     buildProjectContextSection(input.projectContextOverride),
     section("Project rules", input.constitution),

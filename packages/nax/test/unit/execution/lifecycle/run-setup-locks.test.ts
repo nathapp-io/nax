@@ -102,10 +102,13 @@ function installRuntimeMocks(harness: { workdir: string; outputDir: string }): N
   const createRuntimeStub: typeof _runSetupDeps.createRuntime = () => baseRuntime;
   const detectProfileStub: typeof _runSetupDeps.detectProjectProfile = async () => ({});
   const sweepStub: typeof _runSetupDeps.sweepFeatureTranscripts = async () => 0;
+  // US-006: no run memory in this fixture — its assertions are about the locks.
+  const createRunMemoryStub: typeof _runSetupDeps.createRunMemory = async () => undefined;
 
   _runSetupDeps.createRuntime = createRuntimeStub;
   _runSetupDeps.detectProjectProfile = detectProfileStub;
   _runSetupDeps.sweepFeatureTranscripts = sweepStub;
+  _runSetupDeps.createRunMemory = createRunMemoryStub;
   return baseRuntime;
 }
 
