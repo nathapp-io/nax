@@ -192,6 +192,10 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     // next round boundary. The ACP backend declares nothing — its protocol has
     // no mid-turn user input.
     steerable: true,
+    // US-002: the history is nax's own transcript, so it can be compacted without
+    // a turn. The ACP backend implements neither this nor `steerable`: the agent
+    // on the other side of the protocol owns the conversation.
+    compact: (request) => adapter.compactHistory(handle, request),
     turnOpts: () => ({
       interactionHandler,
       codingTools,

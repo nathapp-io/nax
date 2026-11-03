@@ -154,6 +154,7 @@ describe("keepBudget", () => {
 import {
   applyCompaction,
   COMPACTION_SUMMARY_PREFIX,
+  COMPACTION_SUMMARY_SUFFIX,
   findCutPoint,
   prepareCompaction,
 } from "#src/native/session/compaction";
@@ -302,5 +303,43 @@ describe("applyCompaction", () => {
     const summaries = out.filter((m) => m.role === "user" && m.content.startsWith(COMPACTION_SUMMARY_PREFIX));
     expect(summaries).toHaveLength(1);
     expect(summaries[0].role === "user" && summaries[0].content.includes("merged summary")).toBe(true);
+  });
+
+  /**
+   * US-002: manual compaction writes its summary at the pin, because that path
+   * has no task prompt worth keeping and the next request must begin with the
+   * summary. An automatic compaction over such a transcript must find that
+   * summary (or the record of the shed work is silently lost) and replace it
+   * (or the older summary becomes unreachable and unremovable).
+   */
+  test("finds and replaces a summary sitting at the pin, rather than stacking a second", () => {
+    const manual: TranscriptMessage[] = [
+      { role: "user", content: COMPACTION_SUMMARY_PREFIX + "shed work" + COMPACTION_SUMMARY_SUFFIX },
+      ...exchange("c5", 400),
+      ...exchange("c6", 400),
+      ...exchange("c7", 400),
+    ];
+
+    const plan = prepareCompaction(manual, KEEP);
+    if (!plan) throw new Error("expected a plan");
+    expect(plan.previousSummary).toBe("shed work");
+    expect(plan.toSummarize).not.toContain(manual[0]);
+
+    const out = applyCompaction(manual, plan, "merged summary");
+    const summaries = out.filter((m) => m.role === "user" && m.content.startsWith(COMPACTION_SUMMARY_PREFIX));
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].role === "user" && summaries[0].content.includes("merged summary")).toBe(true);
+  });
+
+  test("a summary at index 1 still wins over one at the pin, because it is the newer text", () => {
+    const stacked: TranscriptMessage[] = [
+      { role: "user", content: COMPACTION_SUMMARY_PREFIX + "oldest" + COMPACTION_SUMMARY_SUFFIX },
+      { role: "user", content: COMPACTION_SUMMARY_PREFIX + "newer" + COMPACTION_SUMMARY_SUFFIX },
+      ...exchange("c5", 400),
+      ...exchange("c6", 400),
+      ...exchange("c7", 400),
+    ];
+
+    expect(prepareCompaction(stacked, KEEP)?.previousSummary).toBe("newer");
   });
 });

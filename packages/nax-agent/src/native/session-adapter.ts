@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
 import { priceCall } from "#src/cost/core/index";
 import { getSafeLogger, NaxError } from "#src/infra/index";
+import type { CompactResult } from "#src/session/agent-session-types";
 import {
   type AgentSessionAdapter,
   type OpenSessionOpts,
@@ -26,8 +27,9 @@ import type { GuardedCredentialStore } from "./credentials/index.ts";
 import { type CredentialSource, createSessionCredentialStore } from "./credentials/session-source.ts";
 import { toAdapterFailure } from "./errors.ts";
 import { billedOnFailure } from "./failed-round-trip-spend.ts";
-import { buildRateCard, NATIVE_AGENT, parseNativeModel, resolveContextWindow, toThinkingLevel } from "./models.ts";
+import { NATIVE_AGENT, parseNativeModel } from "./models.ts";
 import { createInstructionInteraction } from "./session/instruction-interaction.ts";
+import { compactHistory as compactStoredHistory } from "./session/manual-compaction.ts";
 import {
   closeNativeSession,
   createNativeSessionState,
@@ -36,10 +38,10 @@ import {
   openNativeSession,
   systemFieldFor,
 } from "./session/session.ts";
+import { createSessionSummarizer, resolveSessionModel } from "./session/session-summarizer.ts";
 import { buildNativeStreamEvent } from "./session/turn-events.ts";
 import { runNativeTurn } from "./session/turn-loop.ts";
 import { readNativeTurnFailureUsage, type TurnDeps } from "./session/turn-types.ts";
-import { nativeSessionId } from "./session-affinity.ts";
 import { streamComplete } from "./stream-complete.ts";
 
 /**
@@ -51,19 +53,6 @@ import { streamComplete } from "./stream-complete.ts";
  * apply. Bounded-and-logged beats unbounded-and-quiet.
  */
 const FALLBACK_TURN_TIMEOUT_SECONDS = 3600;
-
-function summaryPrompt(previousSummary?: string): string {
-  const base =
-    "Summarize the conversation above so it can be dropped from context. " +
-    "Record what was attempted, what was rejected and why, any decisions that still bind, " +
-    "and list the files read and the files modified. Be specific: this summary is the only " +
-    "memory of this work that survives.";
-  if (previousSummary === undefined) return base;
-  return (
-    `${base}\n\nAn earlier summary of still-older history follows. Merge it into your summary ` +
-    `rather than repeating or discarding it:\n\n${previousSummary}`
-  );
-}
 
 /**
  * US-003: the per-turn inputs the adapter forwards verbatim into `TurnDeps`:
@@ -198,18 +187,23 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
   }
 
   async sendTurn(handle: SessionHandle, prompt: string, opts: SendTurnOpts): Promise<TurnResult> {
-    const { provider, model, effort } = parseNativeModel(handle.modelDef?.model ?? "");
-    const thinking = toThinkingLevel(effort);
     const client = await this.client();
-    const resolved = await client.model(provider, model);
+    // US-002: the model, rate card, window, settings and session id come from
+    // the same resolution manual compaction uses, so the two cannot disagree
+    // about what this session is.
+    const sessionModel = await resolveSessionModel(client, this.state, handle);
+    const { rates, pricingSource, contextWindow, thinking, provider, sessionId } = sessionModel;
+    const resolved = sessionModel.model;
     // Refuse before runNativeTurn: its error path deliberately saves history.
     assertImageInput(handle, resolved, opts.images);
-    const contextWindow = resolveContextWindow(handle.modelDef?.contextWindow, resolved.contextWindow);
     this.state.repositoryInstructions
       .get(handle.id)
       ?.setContextBudget(contextWindow, this.state.systemPrompts.get(handle.id));
-    const catalog = client.pricing(resolved);
-    const { rates, source: pricingSource } = buildRateCard(catalog, handle.modelDef?.pricing);
+    // Read BEFORE the turn: an absent setting must stay absent in TurnDeps, so
+    // "this session recorded none" and "recorded settings that disable
+    // compaction" stay distinguishable for the loop. The fallback the
+    // resolution applies is the manual path's keep budget, nothing more.
+    const recordedCompaction = this.state.compaction.get(handle.id);
     const storedTimeoutSeconds = this.state.timeouts.get(handle.id);
     if (storedTimeoutSeconds === undefined) {
       getSafeLogger()?.warn("native-adapter", "session has no recorded timeout; falling back to the default budget", {
@@ -218,9 +212,6 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
       });
     }
     const timeoutSeconds = storedTimeoutSeconds ?? FALLBACK_TURN_TIMEOUT_SECONDS;
-    // Keyed on the session, so every turn of one conversation carries the same
-    // id and the provider can keep its cache warm across them.
-    const sessionId = nativeSessionId(handle.id);
     // S3-4: the session's system prompt (facade `instructions`), or `{}`.
     // Resolved here so the `complete` closure spreads it without a branch.
     const instructionInteraction = createInstructionInteraction(
@@ -291,9 +282,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
         sessionState: this.state,
         deadline,
         contextWindow,
-        ...(this.state.compaction.get(handle.id) !== undefined
-          ? { compaction: this.state.compaction.get(handle.id) }
-          : {}),
+        ...(recordedCompaction !== undefined ? { compaction: sessionModel.compaction } : {}),
         ...(this.state.transportRetry.get(handle.id) !== undefined
           ? { transportRetry: this.state.transportRetry.get(handle.id) }
           : {}),
@@ -322,46 +311,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
         onActivity: (activity) => {
           hooks?.onStreamActivity?.(buildNativeStreamEvent(eventBase, activity, Date.now()));
         },
-        summarize: async (span, previousSummary) => {
-          // Same model, same clock, no tools. The prompt asks for what a coding
-          // agent needs back: what was tried, what was rejected and why, and the
-          // files touched -- without them the agent re-reads what it already read.
-          const remainingMs = deadline.remainingMs();
-          const controller = new AbortController();
-          const timer =
-            remainingMs !== undefined ? _adapterDeps.setTimeout(() => controller.abort(), remainingMs) : undefined;
-          // US-002: the per-call signal still combines with the per-turn signal
-          // (watchdog + deadline + caller), so a turn cancel ends the summary
-          // even mid-call. The per-call timer is the additional budget on top.
-          const signal = AbortSignal.any(
-            opts.signal !== undefined
-              ? [opts.signal, controller.signal, turnController.signal, deadlineController.signal]
-              : [controller.signal, turnController.signal, deadlineController.signal],
-          );
-          try {
-            const res = await client.complete(resolved, {
-              messages: [...span, { role: "user", content: summaryPrompt(previousSummary) }],
-              sessionId,
-              signal,
-              // A summary restates the transcript; it does not need reasoning.
-              // "off", not an absent level: absent means the backend default,
-              // which on a model that cannot disable thinking is adaptive at
-              // effort high (#2686). The client clamps "off" to the least
-              // thinking such a model allows.
-              thinking: "off",
-            });
-            const summaryUsage = res.usage;
-            const { costUsd, resolvedRates } = priceCall(summaryUsage, rates);
-            return {
-              text: res.text,
-              usage: summaryUsage,
-              costUsd,
-              rates: resolvedRates,
-            };
-          } finally {
-            if (timer !== undefined) _adapterDeps.clearTimeout(timer);
-          }
-        },
+        summarize: createSessionSummarizer({ resolution: sessionModel, deadline, signal: turnSignal }),
         complete: async (messages, tools, requestOptions, onDelta) => {
           // The controller is armed with what is LEFT of the turn, so N
           // round-trips can no longer add up to N x timeoutSeconds. Still
@@ -497,6 +447,32 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
     // US-006: the store only observes `provider` while a request is in flight,
     // so the stamp is read here, after the loop.
     return { ...result, ...authFields(provider, this.ownStore) };
+  }
+
+  /**
+   * US-002: compact the stored history on demand, for a person who is done with
+   * an exploration and starting the next one.
+   *
+   * The whole budget this call gets is the facade's: its signal aborts on the
+   * session's turn deadline or on close, and this method only adds the same
+   * per-call ceiling a turn's model calls carry. The transcript is loaded,
+   * planned against and saved by `compactHistory` (session/manual-compaction.ts);
+   * this method supplies what it cannot reach for itself — the session's client,
+   * its state, and a deadline.
+   *
+   * A missing timeout entry falls back to the turn default WITHOUT a warning,
+   * unlike `sendTurn`: the facade always arms its own deadline first, so a
+   * missing entry is not the unbounded degradation the turn's warning names.
+   */
+  async compactHistory(handle: SessionHandle, opts: { signal: AbortSignal }): Promise<CompactResult> {
+    const timeoutSeconds = this.state.timeouts.get(handle.id) ?? FALLBACK_TURN_TIMEOUT_SECONDS;
+    return compactStoredHistory({
+      state: this.state,
+      handle,
+      client: await this.client(),
+      deadline: createTurnDeadline(timeoutSeconds, () => _adapterDeps.now()),
+      signal: opts.signal,
+    });
   }
 
   closeSession(handle: SessionHandle): Promise<void> {

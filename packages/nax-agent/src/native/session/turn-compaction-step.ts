@@ -104,8 +104,14 @@ interface SummarySource {
  * The half both branches share: summarize the dropped span, then apply the
  * summary to the transcript. A throw here is left to propagate — catching it is
  * the proactive caller's decision, not this function's.
+ *
+ * Exported (US-002) because manual compaction is that same half: it plans with
+ * the same `prepareCompaction`, summarizes the same span with the same closure,
+ * and must not grow a second copy of the images-as-notes step. Its one
+ * difference — where the summary lands — is applied to the returned array by
+ * `applyManualCompaction`.
  */
-async function summarizeAndApply(
+export async function summarizeAndApply(
   messages: readonly NativeTranscriptMessage[],
   plan: CompactionPlan,
   deps: CompactionStepDeps,

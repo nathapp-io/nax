@@ -387,6 +387,7 @@ export type {
   ApprovalDecidedBy,
   CostSource,
   CommandRunResult,
+  CompactResult,
   CreateAgentSessionOptions,
   EmbedderTool,
   EmbedderToolContext,

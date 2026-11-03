@@ -138,6 +138,16 @@ const PIN_INDEX = 0;
 /** Where the summary sits once written. */
 const SUMMARY_INDEX = 1;
 
+/** One summary message. The single place its shape is built, so both appliers agree. */
+export function summaryMessage(summary: string): TranscriptMessage {
+  return { role: "user", content: COMPACTION_SUMMARY_PREFIX + summary + COMPACTION_SUMMARY_SUFFIX };
+}
+
+/** True when `message` is one this module wrote as a summary. */
+function isSummaryMessage(message: TranscriptMessage | undefined): message is TranscriptMessage {
+  return message?.role === "user" && message.content.startsWith(COMPACTION_SUMMARY_PREFIX);
+}
+
 /**
  * Valid cut points are user or assistant messages, NEVER a tool-result.
  *
@@ -187,21 +197,43 @@ export interface CompactionPlan {
   readonly previousSummary?: string;
 }
 
-/** Reads a previous summary out of the message at SUMMARY_INDEX, if one is there. */
-function readPreviousSummary(messages: readonly TranscriptMessage[]): string | undefined {
-  const candidate = messages[SUMMARY_INDEX];
-  if (candidate === undefined || candidate.role !== "user") return undefined;
-  if (!candidate.content.startsWith(COMPACTION_SUMMARY_PREFIX)) return undefined;
-  return candidate.content.slice(COMPACTION_SUMMARY_PREFIX.length, -COMPACTION_SUMMARY_SUFFIX.length);
+/** A summary already in the transcript: its text and the index it sits at. */
+interface PreviousSummary {
+  readonly text: string;
+  readonly index: number;
+}
+
+/**
+ * Reads a previous summary out of the transcript.
+ *
+ * Two positions are possible. An automatic compaction pins messages[0] and
+ * writes the summary at `SUMMARY_INDEX`; a MANUAL compaction leaves no task
+ * prompt to pin, so its summary sits at `PIN_INDEX` (US-002 AC-2). Both are read
+ * so a second compaction MERGES instead of silently dropping the earlier
+ * summary — the alternative was a manual compaction quietly losing the only
+ * record of the work it shed. Newest first: after an automatic compaction on a
+ * manual one, the summary further in is the merged, newer text.
+ */
+function readPreviousSummary(messages: readonly TranscriptMessage[]): PreviousSummary | undefined {
+  for (const index of [SUMMARY_INDEX, PIN_INDEX]) {
+    const candidate = messages[index];
+    if (isSummaryMessage(candidate)) {
+      return {
+        text: candidate.content.slice(COMPACTION_SUMMARY_PREFIX.length, -COMPACTION_SUMMARY_SUFFIX.length),
+        index,
+      };
+    }
+  }
+  return undefined;
 }
 
 export function prepareCompaction(
   messages: readonly TranscriptMessage[],
   keepTokens: number,
 ): CompactionPlan | undefined {
-  const previousSummary = readPreviousSummary(messages);
+  const previous = readPreviousSummary(messages);
   // Everything from here is fair game; the pin, and any existing summary, are not.
-  const spanStart = previousSummary === undefined ? PIN_INDEX + 1 : SUMMARY_INDEX + 1;
+  const spanStart = previous === undefined ? PIN_INDEX + 1 : previous.index + 1;
   const cutIndex = findCutPoint(messages, spanStart, keepTokens);
   // An empty span is "nothing to do" whether or not a summary already exists
   // (nax#1842). A merge plan is still returnable — that needs `previousSummary`
@@ -213,7 +245,7 @@ export function prepareCompaction(
   return {
     cutIndex,
     toSummarize: messages.slice(spanStart, cutIndex),
-    ...(previousSummary !== undefined ? { previousSummary } : {}),
+    ...(previous !== undefined ? { previousSummary: previous.text } : {}),
   };
 }
 
@@ -222,9 +254,11 @@ export function applyCompaction(
   plan: CompactionPlan,
   summary: string,
 ): TranscriptMessage[] {
-  return [
-    messages[PIN_INDEX] as TranscriptMessage,
-    { role: "user", content: COMPACTION_SUMMARY_PREFIX + summary + COMPACTION_SUMMARY_SUFFIX },
-    ...messages.slice(plan.cutIndex),
-  ];
+  // A summary AT the pin is one this session already compacted into — a manual
+  // compaction writes it there (applyManualCompaction), because that path has no
+  // task prompt worth pinning. Keeping it as the pin would stack two summaries,
+  // the older one out of reach of the merge rule above and so never removable;
+  // the new summary replaces it instead (US-002).
+  const pin = isSummaryMessage(messages[PIN_INDEX]) ? [] : [messages[PIN_INDEX] as TranscriptMessage];
+  return [...pin, summaryMessage(summary), ...messages.slice(plan.cutIndex)];
 }

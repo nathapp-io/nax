@@ -11,6 +11,7 @@ import type {
   AgentSessionProfile,
   ApprovalDecidedBy,
   CommandRunResult,
+  CompactResult,
   EmbedderTool,
   SessionConfigureInput,
 } from "./agent-session-types.ts";
@@ -103,6 +104,15 @@ export interface OpenedBackend {
   configure?(input: SessionConfigureInput): Promise<void>;
   /** Absent on a backend that cannot run a host-side command (ACP). */
   runCommand?(request: { command: string; callId: string; signal: AbortSignal }): Promise<CommandRunResult>;
+  /**
+   * US-002: compact the session's stored history now. Absent on a backend that
+   * has no history of its own to compact (ACP keeps the conversation), which is
+   * what `AgentSession.compact()` reports as
+   * `AGENT_SESSION_CAPABILITY_UNSUPPORTED`. The signal aborts on the session's
+   * turn deadline or on close; a summarizer failure rejects, and the stored
+   * history is then unchanged.
+   */
+  compact?(request: { signal: AbortSignal }): Promise<CompactResult>;
   /**
    * US-001: this backend can take a steer mid-turn, so the facade builds each
    * turn a `SteerChannel` and `steer()` may answer `accepted`. Absent on a

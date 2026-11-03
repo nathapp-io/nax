@@ -106,6 +106,7 @@ type CommandRunResult
 type CommandSafetyRow
 type CommandShadow
 type CommandShadowOptions
+type CompactResult
 type CompiledPattern
 type CompleteCallOptions
 type CostSource
@@ -1105,6 +1106,7 @@ strayCommonDirTripwire
 stripControlChars
 substituteCommand
 substituteCommandSpec
+summaryMessage
 systemFieldFor
 taintApprovals
 toAdapterFailure
@@ -1113,6 +1115,7 @@ toProviderOverrides
 toThinkingLevel
 toToolDefinitions
 transcriptDocFor
+transcriptIdentityFor
 transcriptModelIdentity
 transcriptPath
 transcriptStoreModule
