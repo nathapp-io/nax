@@ -161,6 +161,174 @@ describe("FIELD_DESCRIPTIONS memory entries (AC-10..AC-15)", () => {
   });
 });
 
+/** The MCP memory config of memory-mcp-provider US-001: one server `om` defined in `mcp.servers`. */
+const MCP_SERVERS = { servers: { om: { url: "http://localhost:8765/mcp" } } };
+
+function mcpConfig(memory: Record<string, unknown> = {}, mcp: Record<string, unknown> | undefined = MCP_SERVERS) {
+  return { memory: { provider: "mcp", mcp: { server: "om" }, ...memory }, ...(mcp === undefined ? {} : { mcp }) };
+}
+
+/** `memory.mcp` with the given keys merged over `{ server: "om" }`. */
+function mcpBlock(extra: Record<string, unknown>) {
+  return mcpConfig({ mcp: { server: "om", ...extra } });
+}
+
+/** Asserts the parse failed and returns the issues as `{ path, message }`. */
+function issuesOf(input: unknown): { path: PropertyKey[]; message: string }[] {
+  const result = NaxConfigSchema.safeParse(input);
+  expect(result.success).toBe(false);
+  return result.success ? [] : result.error.issues.map(({ path, message }) => ({ path, message }));
+}
+
+describe("memory.mcp provider (memory-mcp-provider US-001 AC-1, AC-2, AC-5)", () => {
+  test("AC-1: provider 'mcp' parses to 'mcp'", () => {
+    expect(NaxConfigSchema.parse(mcpConfig()).memory.provider).toBe("mcp");
+  });
+
+  test("AC-2: memory.mcp { server } parses to the full defaults", () => {
+    expect(NaxConfigSchema.parse(mcpConfig()).memory.mcp).toEqual({
+      server: "om",
+      tools: { search: "search_memory", add: "add_memories" },
+      args: { query: "query", text: "text" },
+    });
+  });
+
+  test("AC-5: the default memory block has no mcp key", () => {
+    expect("mcp" in NaxConfigSchema.parse({}).memory).toBe(false);
+  });
+});
+
+describe("memory.mcp forget tool (US-001 AC-3, AC-4)", () => {
+  test("AC-3: tools.forget without args.id fails at ['memory','mcp','args','id']", () => {
+    expect(issuesOf(mcpBlock({ tools: { forget: "delete_memory" } }))).toContainEqual({
+      path: ["memory", "mcp", "args", "id"],
+      message: "memory.mcp.args.id is required when memory.mcp.tools.forget is set",
+    });
+  });
+
+  test("AC-4: tools.forget with args.id succeeds and keeps both", () => {
+    const result = NaxConfigSchema.safeParse(
+      mcpBlock({ tools: { forget: "delete_memory" }, args: { id: "memory_id" } }),
+    );
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.memory.mcp?.tools.forget).toBe("delete_memory");
+    expect(result.success && result.data.memory.mcp?.args.id).toBe("memory_id");
+  });
+});
+
+describe("memory.mcp cross-section rules (US-001 AC-6..AC-9)", () => {
+  test("AC-6: provider 'mcp' without memory.mcp fails at ['memory','mcp']", () => {
+    expect(issuesOf({ memory: { provider: "mcp" } })).toContainEqual({
+      path: ["memory", "mcp"],
+      message: 'memory.provider "mcp" needs a memory.mcp block naming the server',
+    });
+  });
+
+  test("AC-7: a server not in mcp.servers fails at ['memory','mcp','server']", () => {
+    const input = { memory: { provider: "mcp", mcp: { server: "om" } } };
+    expect(issuesOf(input)).toContainEqual({
+      path: ["memory", "mcp", "server"],
+      message: 'memory.mcp.server "om" is not defined in mcp.servers',
+    });
+  });
+
+  test("AC-7: a server missing from a non-empty mcp.servers also fails", () => {
+    const input = mcpConfig({}, { servers: { other: { url: "http://localhost:1/mcp" } } });
+    expect(issuesOf(input).map((issue) => issue.path)).toContainEqual(["memory", "mcp", "server"]);
+  });
+
+  test("AC-8: provider 'mcp' with writeMode 'proposal' fails at ['memory','writeMode']", () => {
+    expect(issuesOf(mcpConfig({ writeMode: "proposal" }))).toContainEqual({
+      path: ["memory", "writeMode"],
+      message: 'memory.writeMode "proposal" needs a provider that holds pending writes; provider "mcp" does not',
+    });
+  });
+
+  test("AC-9: an unused memory.mcp block under provider 'local' is valid", () => {
+    expect(NaxConfigSchema.safeParse(mcpConfig({ provider: "local" })).success).toBe(true);
+  });
+
+  test("the four rules are independent: one config raises several issues", () => {
+    const issues = issuesOf({
+      memory: { provider: "mcp", writeMode: "proposal", mcp: { server: "om", tools: { forget: "rm" } } },
+    });
+    expect(issues.map((issue) => issue.path)).toEqual(
+      expect.arrayContaining([
+        ["memory", "writeMode"],
+        ["memory", "mcp", "server"],
+        ["memory", "mcp", "args", "id"],
+      ]),
+    );
+  });
+});
+
+describe("memory.mcp field validation (US-001 AC-10..AC-13)", () => {
+  test("AC-10: an unknown key in memory.mcp fails", () => {
+    expect(NaxConfigSchema.safeParse(mcpBlock({ extra: 1 })).success).toBe(false);
+    expect(NaxConfigSchema.safeParse({ memory: { mcp: { server: "om", extra: 1 } }, mcp: MCP_SERVERS }).success).toBe(
+      false,
+    );
+  });
+
+  test("AC-11: server 'Bad Id' fails under ['memory','mcp','server']", () => {
+    const paths = issuesOf(mcpBlock({ server: "Bad Id" })).map((issue) => issue.path.slice(0, 3));
+    expect(paths).toContainEqual(["memory", "mcp", "server"]);
+  });
+
+  test("a server id containing '__' fails under ['memory','mcp','server']", () => {
+    const paths = issuesOf(mcpBlock({ server: "a__b" })).map((issue) => issue.path.slice(0, 3));
+    expect(paths).toContainEqual(["memory", "mcp", "server"]);
+  });
+
+  test("AC-12: tools.add '' fails under ['memory','mcp','tools','add']", () => {
+    const paths = issuesOf(mcpBlock({ tools: { add: "" } })).map((issue) => issue.path.slice(0, 4));
+    expect(paths).toContainEqual(["memory", "mcp", "tools", "add"]);
+  });
+
+  test("an empty args.text fails under ['memory','mcp','args','text']", () => {
+    const paths = issuesOf(mcpBlock({ args: { text: "" } })).map((issue) => issue.path.slice(0, 4));
+    expect(paths).toContainEqual(["memory", "mcp", "args", "text"]);
+  });
+
+  test("AC-13: provider 'koda' still fails at ['memory','provider']", () => {
+    expect(issuesOf({ memory: { provider: "koda" } }).map((issue) => issue.path)).toContainEqual([
+      "memory",
+      "provider",
+    ]);
+  });
+
+  test("custom tool and argument names survive the parse", () => {
+    const parsed = NaxConfigSchema.parse(
+      mcpBlock({ tools: { search: "s", add: "a" }, args: { query: "q", text: "t" } }),
+    );
+    expect(parsed.memory.mcp).toEqual({
+      server: "om",
+      tools: { search: "s", add: "a" },
+      args: { query: "q", text: "t" },
+    });
+  });
+});
+
+describe("FIELD_DESCRIPTIONS memory.mcp entries (US-001 AC-14..AC-16)", () => {
+  test.each([
+    ["memory.mcp.server"],
+    ["memory.mcp.tools.search"],
+    ["memory.mcp.tools.add"],
+    ["memory.mcp.tools.forget"],
+    ["memory.mcp.args.query"],
+    ["memory.mcp.args.text"],
+    ["memory.mcp.args.id"],
+  ])("%s is a non-empty string", (key) => {
+    expect(FIELD_DESCRIPTIONS[key]).toBeString();
+    expect(FIELD_DESCRIPTIONS[key]?.trim().length).toBeGreaterThan(0);
+  });
+
+  test("memory.provider no longer says only local is accepted", () => {
+    expect(FIELD_DESCRIPTIONS["memory.provider"]).toContain("mcp");
+    expect(FIELD_DESCRIPTIONS["memory.provider"]).not.toContain("Only");
+  });
+});
+
 describe("config barrel exports (AC-16)", () => {
   test("memoryConfigOf and MemoryConfigSchema are importable from @/config", () => {
     expect(typeof memoryConfigOf).toBe("function");

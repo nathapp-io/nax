@@ -53,7 +53,7 @@ export { getProjectKey } from "./project-key";
 export { pinRootOnlyKeys, pinRootOnlyKeysRaw, ROOT_ONLY_EXECUTION_KEYS } from "./root-only-keys";
 export type { AdvisorCaller, AdvisorConfig } from "./runtime-types-advisor";
 export type { BotConfig, BotModelsConfig } from "./runtime-types-bot";
-export type { MemoryConfig } from "./runtime-types-memory";
+export type { MemoryConfig, MemoryMcpConfig } from "./runtime-types-memory";
 export type {
   ExecutionMode,
   WorkflowConfig,
@@ -143,7 +143,9 @@ export {
   MEMORY_INDEX_BYTES_MAX,
   MEMORY_INDEX_BYTES_MIN,
   MemoryConfigSchema,
+  MemoryMcpConfigSchema,
   memoryConfigOf,
+  validateMemoryProvider,
 } from "./schemas-memory";
 export {
   ConfiguredModelSchema,
