@@ -52,7 +52,8 @@ export const _mcpIdMapDeps = {
   unlink: (path: string): Promise<void> => unlink(path),
 };
 
-type Notes = Record<string, readonly string[]>;
+/** A Map, not an object: a slug such as `constructor` or `__proto__` must not reach an inherited member or setter. */
+type Notes = ReadonlyMap<string, readonly string[]>;
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
@@ -64,9 +65,9 @@ function notesOf(parsed: unknown, server: string): Notes | null {
   const file = parsed as { version?: unknown; server?: unknown; notes?: unknown };
   if (file.version !== MCP_ID_MAP_VERSION || file.server !== server) return null;
   if (typeof file.notes !== "object" || file.notes === null || Array.isArray(file.notes)) return null;
-  const notes: Notes = {};
+  const notes = new Map<string, readonly string[]>();
   for (const [slug, ids] of Object.entries(file.notes)) {
-    if (isStringArray(ids)) notes[slug] = ids;
+    if (isStringArray(ids)) notes.set(slug, ids);
   }
   return notes;
 }
@@ -83,20 +84,20 @@ async function readNotes(path: string, server: string): Promise<NotesRead> {
     text = await _mcpIdMapDeps.readText(path);
   } catch (cause) {
     const missing = (cause as { code?: unknown } | null)?.code === "ENOENT";
-    return { notes: {}, state: missing ? "missing" : "unusable" };
+    return { notes: new Map(), state: missing ? "missing" : "unusable" };
   }
   try {
     const notes = notesOf(JSON.parse(text), server);
-    return notes === null ? { notes: {}, state: "unusable" } : { notes, state: "valid" };
+    return notes === null ? { notes: new Map(), state: "unusable" } : { notes, state: "valid" };
   } catch {
     // Not JSON: reads as an empty record, rewritten by the next add or drop.
-    return { notes: {}, state: "unusable" };
+    return { notes: new Map(), state: "unusable" };
   }
 }
 
 async function writeNotes(path: string, server: string, notes: Notes): Promise<void> {
   const tmpPath = `${path}.tmp-${crypto.randomUUID()}`;
-  const text = `${JSON.stringify({ version: MCP_ID_MAP_VERSION, server, notes }, null, 2)}\n`;
+  const text = `${JSON.stringify({ version: MCP_ID_MAP_VERSION, server, notes: Object.fromEntries(notes) }, null, 2)}\n`;
   try {
     await _mcpIdMapDeps.writeText(tmpPath, text);
     await _mcpIdMapDeps.rename(tmpPath, path);
@@ -135,14 +136,14 @@ export function createMcpIdMap(input: { readonly dirs: MemoryDirs; readonly serv
   return {
     async ids(scope, slug) {
       await queue;
-      return (await readNotes(pathOf(scope), server)).notes[slug] ?? [];
+      return (await readNotes(pathOf(scope), server)).notes.get(slug) ?? [];
     },
     add(scope, slug, ids) {
       return serialised(async () => {
         const path = pathOf(scope);
         const { notes } = await readNotes(path, server);
-        const merged = [...new Set([...(notes[slug] ?? []), ...ids])];
-        await writeNotes(path, server, { ...notes, [slug]: merged });
+        const merged = [...new Set([...(notes.get(slug) ?? []), ...ids])];
+        await writeNotes(path, server, new Map(notes).set(slug, merged));
       });
     },
     drop(scope, slug) {
@@ -150,8 +151,9 @@ export function createMcpIdMap(input: { readonly dirs: MemoryDirs; readonly serv
         const path = pathOf(scope);
         const { notes, state } = await readNotes(path, server);
         // Nothing to forget in a missing file or a usable one without the slug; an unusable file is rewritten.
-        if (state === "missing" || (state === "valid" && notes[slug] === undefined)) return;
-        const { [slug]: _dropped, ...rest } = notes;
+        if (state === "missing" || (state === "valid" && !notes.has(slug))) return;
+        const rest = new Map(notes);
+        rest.delete(slug);
         await writeNotes(path, server, rest);
       });
     },

@@ -178,6 +178,27 @@ describe("createMcpIdMap", () => {
     expect(await readJson(projectFile())).toEqual({ version: 1, server: "om", notes: { s1: ["a"] } });
   });
 
+  test.each(["constructor", "toString", "__proto__", "hasOwnProperty"])(
+    "records, reads back and drops ids for the inherited-member slug %s",
+    async (slug) => {
+      const map = createMcpIdMap({ dirs, server: "om" });
+      expect(await map.ids("project", slug)).toEqual([]);
+      await map.add("project", slug, ["a"]);
+      await map.add("project", slug, ["b"]);
+      expect(await createMcpIdMap({ dirs, server: "om" }).ids("project", slug)).toEqual(["a", "b"]);
+      const file = (await readJson(projectFile())) as { notes: Record<string, unknown> };
+      expect(Object.keys(file.notes)).toEqual([slug]);
+      await map.drop("project", slug);
+      expect(await map.ids("project", slug)).toEqual([]);
+    },
+  );
+
+  test("reads a slug that is only an inherited member name as empty", async () => {
+    mkdirSync(dirs.projectDir, { recursive: true });
+    await Bun.write(projectFile(), '{"version":1,"server":"om","notes":{"other":["x"]}}');
+    expect(await createMcpIdMap({ dirs, server: "om" }).ids("project", "constructor")).toEqual([]);
+  });
+
   test("concurrent adds on one map lose no ids", async () => {
     const map = createMcpIdMap({ dirs, server: "om" });
     await Promise.all([
