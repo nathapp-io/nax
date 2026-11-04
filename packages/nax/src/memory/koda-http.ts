@@ -28,6 +28,15 @@ const CONTENT_TYPE_HEADER = "content-type";
 const JSON_MEDIA_TYPE = "application/json";
 /** Stands in for a configured header value a transport or an answer echoes back. */
 const REDACTED = "[redacted]";
+/**
+ * A configured header value is split on whitespace so a credential is redacted
+ * even when the message omits its scheme (`invalid key <token>`): everything
+ * after the scheme word is treated as the secret. A value with no whitespace is
+ * its own secret, so an answer echoing it alone is still covered.
+ */
+const SECRET_TOKEN_SEPARATOR = /\s+/;
+/** Characters of a rejection's text kept in the redacted stand-in. */
+const MAX_CAUSE_TEXT_CHARS = 500;
 
 /** The deadline every host builds its client with: 4 s, well under sync's 10 s per-operation race. */
 export const MEMORY_KODA_REQUEST_TIMEOUT_MS = 4000;
@@ -89,18 +98,84 @@ function buildUrl(base: string, path: string, query?: KodaRequest["query"]): str
   return search === "" ? url : `${url}?${search}`;
 }
 
-/** `text` with every configured header value replaced, so a key cannot travel in an error. */
+/**
+ * The configured headers with HTTP's case-insensitive names folded to lowercase,
+ * so a configured `Accept` cannot survive beside the required `accept` and make
+ * fetch send two conflicting values.
+ */
+function normalizedHeaders(headers: CreateKodaClientInput["headers"]): Record<string, string> {
+  const folded: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers)) folded[name.toLowerCase()] = value;
+  return folded;
+}
+
+/**
+ * Every string no message may repeat: each header value whole, and — for a
+ * scheme-prefixed credential such as `Bearer <key>` — each token after the
+ * scheme, so an answer that names only the key is still covered.
+ */
+function secretsOf(headers: CreateKodaClientInput["headers"]): readonly string[] {
+  const secrets: string[] = [];
+  for (const value of Object.values(headers)) {
+    if (value.length === 0) continue;
+    secrets.push(value);
+    const tokens = value.split(SECRET_TOKEN_SEPARATOR).filter((token) => token.length > 0);
+    for (const token of tokens.slice(1)) {
+      if (token !== value) secrets.push(token);
+    }
+  }
+  return secrets;
+}
+
+/** True when `text` repeats a configured header value, whole or as the credential part of one. */
+function carriesSecret(text: string, headers: CreateKodaClientInput["headers"]): boolean {
+  return secretsOf(headers).some((secret) => text.includes(secret));
+}
+
+/** `text` with every configured header value — and the credential part of each — replaced. */
 function redact(text: string, headers: CreateKodaClientInput["headers"]): string {
   let result = text;
-  for (const value of Object.values(headers)) {
-    if (value.length > 0) result = result.replaceAll(value, REDACTED);
-  }
+  for (const secret of secretsOf(headers)) result = result.replaceAll(secret, REDACTED);
   return result;
+}
+
+function jsonText(value: unknown): string | undefined {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    // A circular or otherwise unserialisable value has no JSON form; the caller falls back to String().
+    return undefined;
+  }
+}
+
+/** A bounded text form of a rejection, used only to decide whether it carries a header value. */
+function causeText(cause: unknown): string {
+  if (typeof cause === "string") return cause;
+  if (cause instanceof Error) {
+    // JSON.stringify sees an Error's enumerable own properties only — the ones a transport attaches.
+    const own = jsonText(cause);
+    const extras = own === undefined || own === "{}" ? "" : ` ${own}`;
+    return `${cause.name}: ${cause.message}${extras}`;
+  }
+  return jsonText(cause) ?? String(cause);
+}
+
+/**
+ * The rejection itself, or a redacted stand-in when it repeats a configured
+ * header value. Context stays useful for a safe cause — a caller can still tell
+ * a dropped socket from a DNS failure by identity — while a transport that
+ * quotes the key cannot smuggle it into a log line through `context.cause`.
+ */
+function safeCause(cause: unknown, headers: CreateKodaClientInput["headers"]): unknown {
+  const text = causeText(cause);
+  if (!carriesSecret(text, headers)) return cause;
+  const kind = cause instanceof Error ? cause.name : typeof cause;
+  return { redacted: true, type: kind, detail: redact(text.slice(0, MAX_CAUSE_TEXT_CHARS), headers) };
 }
 
 /** The configured headers plus `accept`; a post adds `content-type` and the JSON-encoded body. */
 function buildInit(req: KodaRequest, headers: CreateKodaClientInput["headers"], signal: AbortSignal): RequestInit {
-  const sent: Record<string, string> = { ...headers, [ACCEPT_HEADER]: JSON_MEDIA_TYPE };
+  const sent: Record<string, string> = { ...normalizedHeaders(headers), [ACCEPT_HEADER]: JSON_MEDIA_TYPE };
   if (req.method !== "POST") return { method: req.method, headers: sent, signal };
   return {
     method: req.method,
@@ -123,7 +198,7 @@ function unreachable(req: KodaRequest, cause: unknown, headers: CreateKodaClient
   return new NaxError(
     `[memory] koda ${req.method} ${req.path} unreachable: ${redact(errorMessage(cause), headers)}`,
     "MEMORY_KODA_UNREACHABLE",
-    { stage: STAGE, method: req.method, path: req.path, cause },
+    { stage: STAGE, method: req.method, path: req.path, cause: safeCause(cause, headers) },
   );
 }
 
@@ -179,6 +254,17 @@ async function readAnswer(
   return { status: answer.status, data: isRecord(body.value) ? body.value.data : undefined };
 }
 
+/** Issue the request and read its answer whole, so the deadline covers receiving the body too. */
+async function perform(
+  req: KodaRequest,
+  url: string,
+  init: RequestInit,
+  headers: CreateKodaClientInput["headers"],
+): Promise<KodaResponse> {
+  const answer = await _kodaClientDeps.fetch(url, init);
+  return await readAnswer(req, answer, headers);
+}
+
 /** Issue one request, bounded by a deadline that rejects even when the fetch ignores its signal. */
 async function request(input: CreateKodaClientInput, req: KodaRequest): Promise<KodaResponse> {
   const url = buildUrl(input.url, req.path, req.query);
@@ -190,8 +276,9 @@ async function request(input: CreateKodaClientInput, req: KodaRequest): Promise<
   });
   expired.catch(() => {});
   try {
-    const answer = await Promise.race([_kodaClientDeps.fetch(url, init), expired]);
-    return await readAnswer(req, answer, input.headers);
+    // The whole exchange is raced, not just the header receipt: a body that never
+    // finishes arriving must end the call too, and the abort below is what releases it.
+    return await Promise.race([perform(req, url, init, input.headers), expired]);
   } catch (error) {
     // A status failure and a bad envelope are already classified; only a transport rejection is unreachable.
     if (error instanceof NaxError) throw error;

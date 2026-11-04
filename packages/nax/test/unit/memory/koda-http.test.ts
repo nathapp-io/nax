@@ -99,11 +99,28 @@ describe("createKodaClient — request building", () => {
 
     expect(calls[0]?.init.method).toBe("GET");
     expect(calls[0]?.init.headers).toEqual({
-      Authorization: "Bearer k",
+      authorization: "Bearer k",
       "x-team": "rs",
       accept: "application/json",
     });
     expect(calls[0]?.init.body).toBeUndefined();
+  });
+
+  test("a configured Accept header is folded to the required JSON media type (F4)", async () => {
+    stubFetch(() => jsonAnswer({ ret: 0, data: {} }));
+
+    await makeClient({ Accept: "text/plain" }).get("projects/rs");
+
+    expect(calls[0]?.init.headers).toEqual({ accept: "application/json" });
+  });
+
+  test("a configured Content-Type header cannot override the JSON one on a post (F4)", async () => {
+    stubFetch(() => jsonAnswer({ ret: 0, data: {} }));
+
+    await makeClient({ "Content-Type": "text/plain" }).post("memory", { a: 1 });
+
+    expect(calls[0]?.init.headers).toEqual({ accept: "application/json", "content-type": "application/json" });
+    expect(calls[0]?.init.body).toBe('{"a":1}');
   });
 
   test("a post sends method POST, content-type plus the JSON body (AC-4)", async () => {
@@ -238,6 +255,16 @@ describe("createKodaClient — deadlines and transport failures", () => {
     expect(calls[0]?.init.signal?.aborted).toBe(true);
   });
 
+  test("the deadline also bounds reading the body, so a stalled body rejects (F1)", async () => {
+    // Headers arrive at once; the body never does — only a deadline around the read can end the call.
+    stubFetch(() => new Response(new ReadableStream({ start() {} }), { status: 200 }));
+
+    const error = await rejection(makeClient({}, 20).get("projects/rs"));
+
+    expect(error.code).toBe("MEMORY_KODA_TIMEOUT");
+    expect(calls[0]?.init.signal?.aborted).toBe(true);
+  });
+
   test("rejects with MEMORY_KODA_UNREACHABLE carrying the rejection as cause (AC-14)", async () => {
     const refused = new TypeError("connection refused");
     stubFetch(() => Promise.reject(refused));
@@ -278,6 +305,59 @@ describe("createKodaClient — header safety", () => {
     const error = await rejection(makeClient({ Authorization: "Bearer s3cr3t-key" }).get("projects/rs"));
 
     expect(error.message).toBe("[memory] koda GET projects/rs answered 401: bad key [redacted]");
+  });
+
+  test("redacts the token of a bearer credential a non-2xx body echoes without its scheme (F2)", async () => {
+    stubFetch(() => jsonAnswer({ ret: -1, message: "invalid key s3cr3t-key" }, 401, "Unauthorized"));
+
+    const error = await rejection(makeClient({ Authorization: "Bearer s3cr3t-key" }).get("projects/rs"));
+
+    expect(error.message).toBe("[memory] koda GET projects/rs answered 401: invalid key [redacted]");
+  });
+
+  test("redacts a short bearer token too, since the scheme names where the secret starts (F2)", async () => {
+    stubFetch(() => jsonAnswer({ ret: -1, message: "invalid key q7z" }, 401, "Unauthorized"));
+
+    const error = await rejection(makeClient({ Authorization: "Bearer q7z" }).get("projects/rs"));
+
+    expect(error.message).toBe("[memory] koda GET projects/rs answered 401: invalid key [redacted]");
+  });
+
+  test("a string rejection carrying the header value is not exposed in context (F3)", async () => {
+    stubFetch(() => Promise.reject("Bearer s3cr3t-key rejected"));
+
+    const error = await rejection(makeClient({ Authorization: "Bearer s3cr3t-key" }).get("projects/rs"));
+
+    expect(error.code).toBe("MEMORY_KODA_UNREACHABLE");
+    expect(error.message).not.toContain("s3cr3t-key");
+    expect(JSON.stringify(error.context)).not.toContain("s3cr3t-key");
+  });
+
+  test("a structured-object rejection carrying the header value is not exposed in context (F3)", async () => {
+    stubFetch(() => Promise.reject({ headers: { Authorization: "Bearer s3cr3t-key" } }));
+
+    const error = await rejection(makeClient({ Authorization: "Bearer s3cr3t-key" }).get("projects/rs"));
+
+    expect(error.code).toBe("MEMORY_KODA_UNREACHABLE");
+    expect(JSON.stringify(error.context)).not.toContain("s3cr3t-key");
+  });
+
+  test("an Error rejection carrying the header value in a custom property is not exposed in context (F3)", async () => {
+    const leaky = Object.assign(new TypeError("socket closed"), { request: { authorization: "Bearer s3cr3t-key" } });
+    stubFetch(() => Promise.reject(leaky));
+
+    const error = await rejection(makeClient({ Authorization: "Bearer s3cr3t-key" }).get("projects/rs"));
+
+    expect(error.code).toBe("MEMORY_KODA_UNREACHABLE");
+    expect(JSON.stringify(error.context)).not.toContain("s3cr3t-key");
+  });
+
+  test("an Error rejection naming only the token is not exposed in context (F3)", async () => {
+    stubFetch(() => Promise.reject(new TypeError("unauthorized: s3cr3t-key")));
+
+    const error = await rejection(makeClient({ Authorization: "Bearer s3cr3t-key" }).get("projects/rs"));
+
+    expect(JSON.stringify(error.context)).not.toContain("s3cr3t-key");
   });
 });
 
