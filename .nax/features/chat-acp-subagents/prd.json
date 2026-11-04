@@ -3,7 +3,7 @@
   "feature": "chat-acp-subagents",
   "branchName": "feat/chat-acp-subagents",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-04T14:20:03.291Z",
+  "updatedAt": "2026-11-04T14:36:47.257Z",
   "userStories": [
     {
       "id": "US-001",
@@ -89,14 +89,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Standard schema/type/resolver changes with a tight existing file budget; the new operator-controlled permission-profile key invokes the security override for strict isolated TDD."
+        "reasoning": "Standard schema/type/resolver changes with a tight existing file budget; the new operator-controlled permission-profile key invokes the security override for strict isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas-model-alias.ts",
@@ -127,7 +130,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "426f5628451f130b7e36b1f77a19b09f77c8e5e9"
     },
     {
       "id": "US-003",
