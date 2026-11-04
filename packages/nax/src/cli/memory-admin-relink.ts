@@ -138,10 +138,13 @@ export async function mirrorHasContent(dirs: Pick<MemoryDirs, "projectDir">): Pr
 
 /** The failure a discarded mirror is reported as when the config write could be undone. */
 function relinkRolledBack(job: RelinkJob, cause: unknown): NaxError {
+  // The rollback put the previous text back, so the config names the project this relink
+  // replaces: a retry without `--force` is refused as "already linked" before the record is
+  // read, which is why the command this message names carries the flag.
   return new NaxError(
     `${STAGE_LABEL}cannot discard the project mirror ${job.dirs.projectDir}: ${errorMessage(cause)}; ` +
       `${job.slug} is still recorded as relinking from "${job.from}" in ${pendingRelinkPath(job.dirs)}, ` +
-      `so run \`nax memory link ${job.slug}\` again to finish it`,
+      `so run \`nax memory link ${job.slug} --force\` again to finish it`,
     "MEMORY_RELINK_ROLLED_BACK",
     { stage: STAGE, projectDir: job.dirs.projectDir, path: pendingRelinkPath(job.dirs), cause },
   );

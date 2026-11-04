@@ -154,6 +154,31 @@ describe("nax memory link — a discard that fails", () => {
     expect(store.files.has(RELINK_RECORD_PATH)).toBe(false);
   });
 
+  test("M1: a rolled-back relink names the --force retry that can actually finish it", async () => {
+    const store = statefulFs(OTHER_LINKED, { failMirrorRenames: 1 });
+    const h = makeLinkHarness({ fs: store.deps });
+    directProbe();
+
+    expect(await runLink(h, LINK_SLUG, { force: true })).toBe(1);
+    // The rollback put the previous text back, so the config names the project being replaced.
+    expect(projectIn(store)).toBe(OTHER_PROJECT);
+    expect(h.err).toEqual([
+      `Error: [memory] cannot discard the project mirror ${MIRROR_DIR}: EBUSY: mirror busy; ` +
+        `${LINK_SLUG} is still recorded as relinking from "${OTHER_PROJECT}" in ${RELINK_RECORD_PATH}, ` +
+        `so run \`nax memory link ${LINK_SLUG} --force\` again to finish it`,
+    ]);
+
+    // A retry without --force is refused before the record is read, so the message must name
+    // the command that works rather than one that is rejected on the next line.
+    expect(await runLink(h, LINK_SLUG)).toBe(1);
+    expect(h.err[1]).toContain(`already linked to koda project "${OTHER_PROJECT}"`);
+    expect(mirrorDiscards(store)).toEqual([]);
+
+    expect(await runLink(h, LINK_SLUG, { force: true })).toBe(0);
+    expect(mirrorDiscards(store)).toEqual([QUARANTINE_DIR]);
+    expect(store.files.has(RELINK_RECORD_PATH)).toBe(false);
+  });
+
   test("F1: a rollback that fails leaves the relink recorded, so the retry discards the mirror", async () => {
     // The atomic detach fails, and so does the config rollback.
     const store = statefulFs(OTHER_LINKED, {
