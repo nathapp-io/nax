@@ -1,4 +1,10 @@
-export { _acpCatalogDeps, type AcpCatalog, type AcpRefreshResult, createAcpCatalog } from "./acp-catalog";
+export {
+  _acpCatalogDeps,
+  ACP_CATALOG_CLOSE_BOUND_MS,
+  type AcpCatalog,
+  type AcpRefreshResult,
+  createAcpCatalog,
+} from "./acp-catalog";
 export { ACP_HANDOFF_MAX_CHARS, ACP_HANDOFF_TRIMMED_NOTICE, type AcpHandoff, acpHandoff } from "./acp-handoff";
 export {
   ACP_HANDOFF_ENTRY_MAX_CHARS,

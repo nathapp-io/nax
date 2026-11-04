@@ -92,7 +92,7 @@ function stubCatalog(overrides: Partial<AcpCatalog> = {}): AcpCatalog {
     load: async () => {},
     warm: () => {},
     refresh: mock(async () => []),
-    close: mock(() => {}),
+    close: mock(async () => {}),
     rows: () => [],
     effortLevels: () => ["default"],
     installed: () => true,
@@ -155,6 +155,27 @@ describe("chat host ACP lifecycle", () => {
 
   test("refresh AC-8 returns an empty list without a catalog", async () => {
     expect(await makeHost().refreshAcpModels?.()).toEqual([]);
+  });
+
+  test("close AC-17/18 awaits catalog close before releasing the session", async () => {
+    const pending = Promise.withResolvers<void>();
+    const host = makeHost(stubCatalog({ close: () => pending.promise }));
+    await host.start({ mode: "guarded", model: NATIVE });
+    let resolved = false;
+    const closing = host.close().then(() => {
+      resolved = true;
+    });
+    try {
+      // Flush the host's finite teardown chain without using a timing sleep.
+      for (let i = 0; i < 30; i++) await Promise.resolve();
+      expect(resolved).toBe(false);
+      expect(sessions[0]?.close).not.toHaveBeenCalled();
+    } finally {
+      pending.resolve();
+      await closing;
+    }
+    expect(resolved).toBe(true);
+    expect(sessions[0]?.close).toHaveBeenCalledTimes(1);
   });
 
   test("probe AC-15 closes the catalog once across repeated host close", async () => {
