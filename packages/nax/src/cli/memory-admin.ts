@@ -20,20 +20,23 @@
  *   5. a different project is only replaced with `--force`, and then only once the mirror holds
  *      no write it has not delivered;
  *   6. the project answers koda's write-mode probe with a mode an agent may write under;
- *   7. `config.json.tmp` is written and renamed onto `config.json`;
- *   8. a forced relink discards the project mirror, so the next sync pulls the new project from
+ *   7. a relink records what it is about to do — `<projectDir>/relink-pending.json` — before it
+ *      changes anything, so an interruption can be finished rather than guessed at;
+ *   8. `config.json.tmp` is written and renamed onto `config.json`;
+ *   9. a relink then discards the project mirror, so the next sync pulls the new project from
  *      the start — the old cursor would decode in the new project and skip its older rows. A
- *      discard that fails undoes step 7, because the other order of events — new project
- *      recorded, old mirror still attached — would make the retry read the new slug as "already
- *      linked" and report a success that never happened.
+ *      discard that fails undoes step 8; one whose undo fails too is still covered by step 7,
+ *      because the next run reads the record and finishes the discard.
  *
  * A refusal is a `[memory] …` line on stderr and exit 1 with nothing written; a load failure is
- * the group's `Error: …`. The host is opened only for a forced relink, and not at all when
- * memory is disabled, so a non-null relink is the whole condition steps 5 and 8 need.
+ * the group's `Error: …`. The host is opened only when the project config already names a koda
+ * project — a forced relink, a repeated link, or the retry of one an earlier run recorded — and
+ * not at all when memory is disabled, so a null host is the whole condition steps 5 and 9 skip.
  *
  * Nothing here preserves comments or formatting: `.nax/config.json` is plain JSON and is
  * rewritten with two-space indentation. The file itself is `memory-admin-config.ts`'s subject,
- * and the seam plus the refusal shape are `memory-admin-deps.ts`'s.
+ * the mirror transition `memory-admin-relink.ts`'s, and the seam plus the refusal shape
+ * `memory-admin-deps.ts`'s.
  */
 import { dirname } from "node:path";
 import { MEMORY_PROBE_TIMEOUT_MS } from "@nathapp/nax-agent";
@@ -49,11 +52,11 @@ import {
   projectOf,
   type RawProjectConfig,
   readProjectConfig,
-  restoreProjectConfig,
   stringField,
   writeProjectConfig,
 } from "./memory-admin-config";
-import { _memoryAdminDeps, linkRefusal, MEMORY_LINK_REFUSED, STAGE, STAGE_LABEL } from "./memory-admin-deps";
+import { linkRefusal, MEMORY_LINK_REFUSED, STAGE_LABEL } from "./memory-admin-deps";
+import { discardProjectMirror, type RelinkJob, readPendingRelink, writePendingRelink } from "./memory-admin-relink";
 import {
   _memoryCliDeps,
   type MemoryCliDeps,
@@ -62,7 +65,7 @@ import {
   withMemoryHost,
 } from "./memory-cli-deps";
 
-export { _memoryAdminDeps };
+export { _memoryAdminDeps } from "./memory-admin-deps";
 
 /** The write modes koda's probe answers with when the calling agent may write (the rule `reachable()` uses). */
 const LINK_WRITE_MODES = ["direct", "proposal"] as const satisfies readonly MemoryConfig["writeMode"][];
@@ -85,13 +88,6 @@ interface LinkWrite {
   readonly headers: Readonly<Record<string, string>>;
   readonly json: boolean;
   readonly deps: MemoryCliDeps;
-}
-
-/** A forced relink: the host whose mirror is discarded, and the project being moved away from. */
-interface Relink {
-  readonly host: MemoryHost;
-  /** The project the raw config named before this link, which the mirror still belongs to. */
-  readonly from: string;
 }
 
 /** The slug the argument must be, or the refusal naming what arrived. */
@@ -177,67 +173,50 @@ async function probeWriteMode(
   return mode;
 }
 
-/** The failure a discarded mirror is reported as when the config write could be undone. */
-function relinkRolledBack(relink: Relink, write: LinkWrite, cause: unknown): NaxError {
-  return new NaxError(
-    `${STAGE_LABEL}cannot discard the project mirror ${relink.host.dirs.projectDir}: ` +
-      `${errorMessage(cause)}; ${write.configPath} still links koda project "${relink.from}" — ` +
-      "fix the mirror and pass --force again",
-    "MEMORY_RELINK_ROLLED_BACK",
-    { stage: STAGE, projectDir: relink.host.dirs.projectDir, path: write.configPath, cause },
-  );
-}
-
-/** The failure a discarded mirror is reported as when the config write could not be undone. */
-function relinkUnrecovered(relink: Relink, write: LinkWrite, cause: unknown, undoCause: unknown): NaxError {
-  return new NaxError(
-    `${STAGE_LABEL}cannot discard the project mirror ${relink.host.dirs.projectDir}: ` +
-      `${errorMessage(cause)}, and cannot restore ${write.configPath}: ${errorMessage(undoCause)}; it now ` +
-      `links koda project "${write.slug}" with the mirror of "${relink.from}" still attached — remove ` +
-      `${relink.host.dirs.projectDir} before the next sync`,
-    "MEMORY_RELINK_UNRECOVERED",
-    { stage: STAGE, projectDir: relink.host.dirs.projectDir, path: write.configPath, cause, undoCause },
-  );
-}
-
-/**
- * The error a failed discard is reported as, after undoing the config write it followed.
- *
- * The write and the discard are two steps that must both land: a run that recorded the new
- * project and left the old project's mirror in place would decode that mirror's export cursor in
- * the new project, and a retry would read the new slug as "already linked" and report a success
- * that never happened. So the write is undone — leaving the repository linking what it linked
- * before — and the retry is a relink again, which discards the mirror and writes the config.
- */
-async function undoFailedDiscard(relink: Relink, write: LinkWrite, cause: unknown): Promise<NaxError> {
-  try {
-    await restoreProjectConfig(write.configPath, write.raw.text);
-    return relinkRolledBack(relink, write, cause);
-  } catch (undoCause) {
-    return relinkUnrecovered(relink, write, cause, undoCause);
-  }
-}
-
-/** Discard the previous project's mirror, undoing the config write when it cannot be discarded. */
-async function discardProjectMirror(relink: Relink, write: LinkWrite): Promise<void> {
-  try {
-    await _memoryAdminDeps.removePath(relink.host.dirs.projectDir);
-  } catch (cause) {
-    throw await undoFailedDiscard(relink, write, cause);
-  }
-}
-
 /** The document `--json` prints: the two facts the link established, and where it recorded them. */
 function linkDocument(write: LinkWrite, mode: MemoryConfig["writeMode"]) {
   return { project: write.slug, writeMode: mode, configPath: write.configPath };
 }
 
-/** Everything a link does once it has passed its checks: probe, write, discard, and report. */
-async function linkThrough(write: LinkWrite, relink: Relink | null): Promise<number> {
-  if (relink !== null) await assertNothingUndelivered(relink.host);
+/**
+ * The mirror work this run owes: a relink to record and discard, an interrupted one to finish, or
+ * nothing.
+ *
+ * A record naming the project being linked is an earlier run's unfinished relink — the discard it
+ * still owes is this run's to make, whether or not `--force` is passed again, because the flag
+ * was already honoured when the record was written. A record naming any other project is one
+ * whose config write never landed, so the mirror still belongs to the project the config names
+ * and discarding it would destroy notes that project still needs; it is left to be overwritten by
+ * the next relink.
+ */
+async function relinkJobOf(
+  host: MemoryHost,
+  write: LinkWrite,
+  from: string | undefined,
+): Promise<RelinkJob | undefined> {
+  const projectDir = host.dirs.projectDir;
+  const job = { projectDir, configPath: write.configPath, slug: write.slug, previousConfig: write.raw.text };
+  if (from !== undefined) return { ...job, from, recorded: false };
+  const pending = await readPendingRelink(projectDir);
+  return pending?.project === write.slug ? { ...job, from: pending.from, recorded: true } : undefined;
+}
+
+/**
+ * Everything a link does once it has passed its checks: check, probe, record, write, discard, and
+ * report.
+ *
+ * The record is written before the config changes, and the discard comes after it, so an
+ * interruption at any point leaves either the previous project linked or a record saying a
+ * discard is owed — never a new project attached to a mirror that cannot report its own age.
+ */
+async function linkThrough(write: LinkWrite, host: MemoryHost | null, from: string | undefined): Promise<number> {
+  const job = host === null ? undefined : await relinkJobOf(host, write, from);
+  if (host !== null && job !== undefined) await assertNothingUndelivered(host);
   const mode = await probeWriteMode(write.url, write.headers, write.slug);
+  if (job !== undefined && !job.recorded)
+    await writePendingRelink(job.projectDir, { project: write.slug, from: job.from });
   await writeProjectConfig(write.configPath, applyLink(write.raw.config, write.slug));
-  if (relink !== null) await discardProjectMirror(relink, write);
+  if (job !== undefined) await discardProjectMirror(job);
   write.deps.log(
     write.json
       ? JSON.stringify(linkDocument(write, mode))
@@ -266,10 +245,11 @@ async function runLink(slug: string, opts: MemoryLinkOptions, deps: MemoryCliDep
     deps,
   };
   const from = relinkFrom(raw.config, slug, opts.force === true);
-  if (from === undefined) return await linkThrough(write, null);
-  return await withMemoryHost({ config, repoRoot }, deps, (host) =>
-    linkThrough(write, host === null ? null : { host, from }),
-  );
+  // The mirror is only in play when the project config already names a koda project: a forced
+  // relink, a repeated link, or the retry of one an earlier run left recorded. A repository that
+  // names none has no mirror to discard and no record to read, so it opens no host at all.
+  if (from === undefined && projectOf(raw.config) === undefined) return await linkThrough(write, null, undefined);
+  return await withMemoryHost({ config, repoRoot }, deps, (host) => linkThrough(write, host, from));
 }
 
 /**
