@@ -3,7 +3,7 @@
   "feature": "memory-koda-provider",
   "branchName": "feat/memory-koda-provider",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-04T11:17:43.480Z",
+  "updatedAt": "2026-11-04T11:35:37.840Z",
   "userStories": [
     {
       "id": "US-001",
@@ -748,14 +748,17 @@
       "dependencies": [
         "US-010"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Guarded filesystem deletion and resync follow the existing CLI/host abstractions; no authentication or permission policy is implemented in this action."
+        "reasoning": "Guarded filesystem deletion and resync follow the existing CLI/host abstractions; no authentication or permission policy is implemented in this action.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/memory-admin.ts",
@@ -794,7 +797,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "65f4c84948059743bd983e88e21e15abc9a12979"
     },
     {
       "id": "US-012",
