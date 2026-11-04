@@ -3,7 +3,7 @@
   "feature": "acp-close-and-thinking-budget",
   "branchName": "feat/acp-close-and-thinking-budget",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-04T02:47:28.036Z",
+  "updatedAt": "2026-11-04T03:13:46.052Z",
   "userStories": [
     {
       "id": "US-001",
@@ -105,14 +105,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Concurrent probe/persistence draining, cancellable bounds, promise identity and host teardown cross several modules; session lifecycle integration requires strict three-session-tdd."
+        "reasoning": "Concurrent probe/persistence draining, cancellable bounds, promise identity and host teardown cross several modules; session lifecycle integration requires strict three-session-tdd.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/acp/acp-catalog.ts",
@@ -179,7 +182,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6b6ab0a05d9a805b72f3a5af5cda0d68612b94cc"
     },
     {
       "id": "US-003",
