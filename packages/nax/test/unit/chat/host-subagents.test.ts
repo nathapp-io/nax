@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import type { SessionEvent } from "@nathapp/nax-agent";
+import type { SessionEvent, ToolProvider } from "@nathapp/nax-agent";
 import {
   approvalRequestedEvent,
   assertDefined,
@@ -19,6 +19,7 @@ import {
   usageEvent,
   waitForCondition,
 } from "@test/helpers";
+import type { AgentResource } from "@/resources";
 
 const reviewer = makeAgentResource({ name: "reviewer" });
 /** The task the harness's scripted chat turn hands the `run` tool unless a test overrides it. */
@@ -414,5 +415,108 @@ describe("chat host forwarded subagent event tags", () => {
     const delivered = forwardedToolCall(seen, call.callId);
     assertDefined(delivered, "forwarded tool_call");
     expect(delivered.metadata).toEqual({ k: "v", subagent: reviewer.qualifiedName, subagentTask: TASK });
+  });
+});
+
+const CODEX_ALIAS = "acp:codex/gpt-6.1-terra";
+
+/** An agent file that names its model through `agent.modelAliases`; `tools:` stays absent when undefined. */
+function acpAgent(tools?: readonly string[]): AgentResource {
+  return makeAgentResource({ name: "reviewer", model: "reviewer", ...(tools !== undefined ? { tools } : {}) });
+}
+
+function scriptedProvider(id: string): ToolProvider {
+  return { id, kind: "static", stages: ["*"], tools: async () => [] };
+}
+
+/** Start a guarded chat turn whose `run` tool resolves to the given agent, and let it finish. */
+async function runThroughTool(options: SubagentHostOptions): Promise<SubagentHostHarness> {
+  const h = setup(options);
+  await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+  await h.host.send("go", () => {});
+  return h;
+}
+
+describe("chat host ACP subagents", () => {
+  test("AC-1 an alias resolving to acp:codex opens one ACP session with profile review", async () => {
+    const h = await runThroughTool({
+      agents: [acpAgent(["Read", "Grep"])],
+      modelAliases: { reviewer: CODEX_ALIAS },
+    });
+    expect(h.acpBackendCalls).toHaveLength(1);
+    expect(h.acpBackendCalls[0]).toMatchObject({ agent: "codex", model: "gpt-6.1-terra" });
+    expect(h.nestedSessionOptions.map((options) => options.profile)).toEqual(["review"]);
+    // The native transport is untouched by an ACP subagent.
+    expect(h.nestedBackends).toHaveLength(0);
+  });
+
+  test("AC-2 agent.acpSubagents.profile overrides the derived read-only profile", async () => {
+    const h = await runThroughTool({
+      agents: [acpAgent(["Read", "Grep"])],
+      modelAliases: { reviewer: CODEX_ALIAS },
+      acpSubagents: { profile: "ask" },
+    });
+    expect(h.nestedSessionOptions.map((options) => options.profile)).toEqual(["ask"]);
+    expect(h.acpBackendCalls).toHaveLength(1);
+  });
+
+  test("AC-3 a read-only cursor subagent is refused and creates no nested session", async () => {
+    const h = await runThroughTool({
+      agents: [acpAgent(["Read"])],
+      modelAliases: { reviewer: "acp:cursor" },
+    });
+    const result = h.toolResults[0];
+    assertDefined(result, "run tool result");
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("could not start read-only: Cursor has no read-only enforcement of its own");
+    expect(h.nestedSessionOptions).toHaveLength(0);
+    expect(h.acpBackendCalls).toHaveLength(0);
+  });
+
+  test("AC-4 the delivered provider list excludes nax-jobs rather than narrowing everything away", async () => {
+    const h = await runThroughTool({
+      agents: [acpAgent()],
+      modelAliases: { reviewer: CODEX_ALIAS },
+      toolProviders: [scriptedProvider("nax-workflow"), scriptedProvider("nax-jobs"), scriptedProvider("nax-memory")],
+    });
+    expect(h.acpBackendCalls).toHaveLength(1);
+    const delivered = h.acpToolProviders.at(-1);
+    assertDefined(delivered, "chatAcpTools providers");
+    expect(delivered.map((provider) => provider.id)).toEqual(["nax-workflow", "nax-memory"]);
+  });
+
+  test("AC-5 an unpriced nested ACP usage event reaches the ledger as an estimated subagent row", async () => {
+    const h = await runThroughTool({
+      agents: [acpAgent(["Read", "Grep"])],
+      modelAliases: { reviewer: CODEX_ALIAS },
+      nestedEvents: [turnStartEvent("2026-10-01T00:00:00.000Z"), usageEvent("2026-10-01T00:00:02.000Z", 0, "unpriced")],
+    });
+    expect(h.acpBackendCalls).toHaveLength(1);
+    await h.host.close();
+    const rows = await subagentRows(h);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ sessionRole: "subagent", confidence: "estimated", costUsd: 0 });
+  });
+
+  test("AC-6 a native provider/model opens the native nested backend and never the ACP one", async () => {
+    const h = await runThroughTool({
+      agents: [acpAgent(["Read"])],
+      modelAliases: { reviewer: "anthropic/claude-sonnet-5-5" },
+    });
+    expect(h.nestedBackends.map((options) => options.model)).toEqual(["anthropic/claude-sonnet-5-5"]);
+    expect(h.acpBackendCalls).toHaveLength(0);
+  });
+});
+
+describe("usageEvent costSource", () => {
+  test("AC-7 costSource is computed when the argument is omitted", () => {
+    expect(usageEvent()).toMatchObject({ type: "usage", costSource: "computed" });
+  });
+
+  test("the costSource argument overrides the computed default", () => {
+    expect(usageEvent("2026-10-01T00:00:02.000Z", 0, "unpriced")).toMatchObject({
+      costSource: "unpriced",
+      costUsd: 0,
+    });
   });
 });
