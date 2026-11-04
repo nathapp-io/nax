@@ -233,6 +233,8 @@ export function createAcpCatalog(input: {
       return failures.get(target.agent);
     },
     opened(model, capabilities) {
+      // Session opens can finish after close has captured the save chain; drop their late reports too.
+      if (closed) return;
       const target = acpTarget(model);
       if (!target) return;
       const offeredModels = reportedStrings(capabilities.offeredModels);
