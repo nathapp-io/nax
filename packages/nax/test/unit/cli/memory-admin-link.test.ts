@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { assertDefined, makeNaxConfig, withTempDir } from "@test/helpers";
 import { Command } from "commander";
 import { _memoryAdminDeps, type MemoryCliDeps, memoryLinkCommand, registerMemoryCommand } from "@/cli";
+import { restoreProjectConfig } from "@/cli/memory-admin-config";
 import type { NaxConfig } from "@/config";
 import type { CreateMemoryHostInput, MemoryHost } from "@/memory";
 import { _kodaClientDeps } from "@/memory/koda-http";
@@ -104,6 +105,67 @@ interface FsCalls {
 interface HostCounts {
   readonly queued: number;
   readonly rejected: number;
+}
+
+/** The two things a relink touches — the project config and the mirror — held in memory. */
+interface StatefulFs {
+  /** The files the seam holds, keyed by path: the config, and the temp file while it exists. */
+  readonly files: Map<string, string>;
+  /** Every path `removePath` was asked for, in order. */
+  readonly removed: string[];
+  /** The members to install over the recorders. */
+  readonly deps: Partial<typeof _memoryAdminDeps>;
+}
+
+/**
+ * A stateful stand-in for what a relink touches, so a retried link reads what the run before it
+ * left behind — which is the fact a rollback exists to establish.
+ *
+ * `failRemovals` makes the first N discards of the project mirror throw, and `failWritesFrom`
+ * makes the write with that 1-based number — and every write after it — throw, so a case can
+ * fail the rollback as well as the discard.
+ */
+function statefulFs(
+  initial: string | null,
+  failures: { readonly failRemovals?: number; readonly failWritesFrom?: number } = {},
+): StatefulFs {
+  const files = new Map<string, string>();
+  if (initial !== null) files.set(CONFIG_PATH, initial);
+  const removed: string[] = [];
+  let removalsLeft = failures.failRemovals ?? 0;
+  let writesSeen = 0;
+  const deps: Partial<typeof _memoryAdminDeps> = {
+    readText: async (path) => files.get(path) ?? null,
+    writeText: async (path, text) => {
+      writesSeen += 1;
+      if (failures.failWritesFrom !== undefined && writesSeen >= failures.failWritesFrom) {
+        throw new Error("ENOSPC: no space left on device");
+      }
+      files.set(path, text);
+    },
+    rename: async (from, to) => {
+      const text = files.get(from);
+      if (text === undefined) throw new Error(`ENOENT: ${from}`);
+      files.delete(from);
+      files.set(to, text);
+    },
+    listDir: async () => [],
+    removePath: async (path) => {
+      removed.push(path);
+      if (path === PROJECT_DIR && removalsLeft > 0) {
+        removalsLeft -= 1;
+        throw new Error("EBUSY: mirror busy");
+      }
+      files.delete(path);
+    },
+  };
+  return { files, removed, deps };
+}
+
+/** The koda project the config in `store` names, or `undefined` when it names none. */
+function projectIn(store: StatefulFs): unknown {
+  const text = store.files.get(CONFIG_PATH);
+  return text === undefined ? undefined : at(JSON.parse(text), "memory", "koda", "project");
 }
 
 /** What one case varies: the filesystem's answers, the host, the config and the repository. */
@@ -555,6 +617,76 @@ describe("nax memory link — the project mirror a forced relink discards", () =
     expect(await runLink(h, SLUG, { force: true })).toBe(0);
     expect(h.fs.writes).toHaveLength(1);
     expect(h.fs.removed).toEqual([]);
+  });
+
+  test("F1: a discard that fails rolls the config back, so --force discards the old mirror", async () => {
+    const store = statefulFs(OTHER_LINKED, { failRemovals: 1 });
+    const h = harness({ fs: store.deps });
+    answerProbe(() => jsonAnswer({ ret: 0, data: { mode: "direct" } }));
+
+    // The discard fails after the config was written: the write is undone, so the repository is
+    // left linking what it linked before rather than the new project on the old mirror.
+    expect(await runLink(h, SLUG, { force: true })).toBe(1);
+    expect(store.files.get(CONFIG_PATH)).toBe(OTHER_LINKED);
+    expect(projectIn(store)).toBe(OTHER);
+    expect(store.removed).toEqual([PROJECT_DIR]);
+
+    // The retry therefore reads the old slug as the project being replaced, and discards again.
+    expect(await runLink(h, SLUG, { force: true })).toBe(0);
+    expect(store.removed).toEqual([PROJECT_DIR, PROJECT_DIR]);
+    expect(projectIn(store)).toBe(SLUG);
+  });
+
+  test("F1: a rollback that fails too says the old mirror is still attached", async () => {
+    const store = statefulFs(OTHER_LINKED, { failRemovals: 1, failWritesFrom: 2 });
+    const h = harness({ fs: store.deps });
+    answerProbe(() => jsonAnswer({ ret: 0, data: { mode: "direct" } }));
+
+    expect(await runLink(h, SLUG, { force: true })).toBe(1);
+    const line = h.err[0] ?? "";
+    expect(line).toContain(PROJECT_DIR);
+    expect(line).toContain(CONFIG_PATH);
+    expect(line).toContain("still attached");
+    // Nothing could be undone: the file names the new project, so the message must say so.
+    expect(projectIn(store)).toBe(SLUG);
+  });
+
+  test("a config write that fails reports it, and discards no mirror", async () => {
+    const store = statefulFs(OTHER_LINKED, { failWritesFrom: 1 });
+    const h = harness({ fs: store.deps });
+    answerProbe(() => jsonAnswer({ ret: 0, data: { mode: "direct" } }));
+
+    expect(await runLink(h, SLUG, { force: true })).toBe(1);
+    expect(h.err).toEqual([`Error: [memory] cannot write ${CONFIG_PATH}: ENOSPC: no space left on device`]);
+    // The config still names the project the mirror belongs to, so the mirror must survive.
+    expect(store.files.get(CONFIG_PATH)).toBe(OTHER_LINKED);
+    expect(store.removed).toEqual([]);
+  });
+});
+
+// ─── the project config document ────────────────────────────────────────────
+
+describe("restoreProjectConfig", () => {
+  test("a config the link created is removed, not emptied", async () => {
+    const store = statefulFs(null);
+    Object.assign(_memoryAdminDeps, store.deps);
+    store.files.set(CONFIG_PATH, '{ "memory": { "provider": "koda" } }\n');
+
+    await restoreProjectConfig(CONFIG_PATH, null);
+
+    expect(store.files.has(CONFIG_PATH)).toBe(false);
+    expect(store.removed).toEqual([CONFIG_PATH]);
+  });
+
+  test("a config that existed is put back byte for byte", async () => {
+    const store = statefulFs(null);
+    Object.assign(_memoryAdminDeps, store.deps);
+    store.files.set(CONFIG_PATH, '{"memory":{"koda":{"project":"other"}}}');
+
+    await restoreProjectConfig(CONFIG_PATH, OTHER_LINKED);
+
+    expect(store.files.get(CONFIG_PATH)).toBe(OTHER_LINKED);
+    expect(store.removed).toEqual([]);
   });
 });
 
