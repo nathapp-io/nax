@@ -151,8 +151,8 @@ describe("recordPrRulings with caller rulings", () => {
       () => null,
       (error: unknown) => error,
     );
-    expect(failure).toBeInstanceOf(CallerRecordingError);
-    expect((failure as CallerRecordingError).callerRulings).toEqual({
+    if (!(failure instanceof CallerRecordingError)) throw new Error("expected a CallerRecordingError");
+    expect(failure.callerRulings).toEqual({
       applied: [
         { item: "B3", disposition: "waived" },
         { item: "B4", disposition: "waived" },

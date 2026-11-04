@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { type CallerRuling, planCallerRulings } from "@/bot/caller-rulings";
 import type { PrComment, PrThread } from "@/forge/pr-types";
 import type { ItemThread, SettledItems } from "@/workflow/item-thread-state";
-import type { PrRuling } from "@/workflow/item-threads";
 
 const thread: PrThread = { id: "t", replyTo: "1", resolved: false, outdated: false, comments: [] };
 const reply = (body: string, createdAt: string): PrComment => ({
@@ -22,7 +21,7 @@ const item = (id: string, hash = "12345678"): ItemThread => ({
 const open = (id: string, kept: PrComment[] = []): SettledItems["open"][number] => ({ ...item(id), kept });
 const settledItem = (id: string): SettledItems["settled"][number] => ({
   ...item(id),
-  ruling: { itemKey: `w-${id}.12345678`, itemId: id, disposition: "waived", reason: "x", by: "alice" } as PrRuling,
+  ruling: { itemKey: `w-${id}.12345678`, itemId: id, disposition: "waived", reason: "x", by: "alice" },
 });
 const call = (over: Partial<CallerRuling> & { item: string }): CallerRuling => ({
   ruling: "waive: accepted",
