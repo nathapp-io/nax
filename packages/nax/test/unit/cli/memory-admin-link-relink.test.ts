@@ -12,8 +12,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import {
   answerProbe,
+  entriesUnder,
   jsonAnswer,
   LINK_CONFIG_PATH,
   LINK_REPO,
@@ -22,12 +24,14 @@ import {
   LINKED_TO_SLUG,
   MIRROR_DIR,
   makeLinkHarness,
+  mirrorDiscards,
   OTHER_LINKED,
   OTHER_PROJECT,
   projectIn,
   RELINK_RECORD_PATH,
   restoreSeams,
   runLink,
+  type StatefulFs,
   saveSeams,
   statefulFs,
 } from "@test/helpers";
@@ -64,8 +68,8 @@ describe("nax memory link — the mirror a relink discards", () => {
       { from: `${RELINK_RECORD_PATH}.tmp`, to: RELINK_RECORD_PATH },
       { from: LINK_TMP_PATH, to: LINK_CONFIG_PATH },
     ]);
-    expect(h.fs.removed).toEqual([MIRROR_DIR]);
-    expect(h.fs.events).toEqual(["write", "rename", "write", "rename", "remove"]);
+    expect(h.fs.removed).toEqual([MIRROR_DIR, RELINK_RECORD_PATH]);
+    expect(h.fs.events).toEqual(["write", "rename", "write", "rename", "remove", "remove"]);
     expect(h.hostCalls).toHaveLength(1);
   });
 
@@ -121,11 +125,11 @@ describe("nax memory link — a discard that fails", () => {
     expect(await runLink(h, LINK_SLUG, { force: true })).toBe(1);
     expect(store.files.get(LINK_CONFIG_PATH)).toBe(OTHER_LINKED);
     expect(projectIn(store)).toBe(OTHER_PROJECT);
-    expect(store.removed).toEqual([MIRROR_DIR]);
+    expect(mirrorDiscards(store)).toEqual([MIRROR_DIR]);
 
     // The retry reads the old slug as the project being replaced, and discards again.
     expect(await runLink(h, LINK_SLUG, { force: true })).toBe(0);
-    expect(store.removed).toEqual([MIRROR_DIR, MIRROR_DIR]);
+    expect(mirrorDiscards(store)).toEqual([MIRROR_DIR, MIRROR_DIR]);
     expect(projectIn(store)).toBe(LINK_SLUG);
     expect(store.files.has(RELINK_RECORD_PATH)).toBe(false);
   });
@@ -142,7 +146,7 @@ describe("nax memory link — a discard that fails", () => {
     expect(await runLink(h, LINK_SLUG, { force: true })).toBe(1);
     // Nothing could undo the write: the file names the new project, and the mirror is the old one.
     expect(projectIn(store)).toBe(LINK_SLUG);
-    expect(store.removed).toEqual([MIRROR_DIR]);
+    expect(mirrorDiscards(store)).toEqual([MIRROR_DIR]);
     // The record written before the config changed is what makes this recoverable.
     expect(store.files.has(RELINK_RECORD_PATH)).toBe(true);
     const line = h.err[0] ?? "";
@@ -152,9 +156,46 @@ describe("nax memory link — a discard that fails", () => {
 
     // A retry that reads as "already linked" — no --force — must still finish the discard.
     expect(await runLink(h, LINK_SLUG)).toBe(0);
-    expect(store.removed).toEqual([MIRROR_DIR, MIRROR_DIR]);
+    expect(mirrorDiscards(store)).toEqual([MIRROR_DIR, MIRROR_DIR]);
     expect(store.files.has(RELINK_RECORD_PATH)).toBe(false);
     expect(projectIn(store)).toBe(LINK_SLUG);
+  });
+
+  /** A discard that deletes one entry of the mirror and then fails, with the undo failing too. */
+  function partialDiscardStore(): StatefulFs {
+    const store = statefulFs(OTHER_LINKED, {
+      partialRemovals: 1,
+      failWritesTo: { path: LINK_TMP_PATH, after: 1, times: 1 },
+    });
+    store.files.set(join(MIRROR_DIR, "notes.json"), "[]\n");
+    return store;
+  }
+
+  test("F1: a record survives a discard that deletes part of the mirror", async () => {
+    // The reported defect: a recursive delete walks the tree, so it can take an entry with it and
+    // still fail on a busy one — and the record must not be one of the entries it can take.
+    const store = partialDiscardStore();
+    const h = makeLinkHarness({ fs: store.deps });
+    directProbe();
+
+    expect(await runLink(h, LINK_SLUG, { force: true })).toBe(1);
+    // Half the mirror is gone and the undo failed, so the record is what a retry has to go on.
+    expect(entriesUnder(store, MIRROR_DIR).length).toBeGreaterThan(0);
+    expect(projectIn(store)).toBe(LINK_SLUG);
+    expect(store.files.has(RELINK_RECORD_PATH)).toBe(true);
+  });
+
+  test("F1: a retry after a partially deleted mirror finishes the discard instead of reporting success", async () => {
+    const store = partialDiscardStore();
+    const h = makeLinkHarness({ fs: store.deps });
+    directProbe();
+    expect(await runLink(h, LINK_SLUG, { force: true })).toBe(1);
+
+    // A retry that reads as "already linked" must not exit 0 with the old mirror still attached.
+    expect(await runLink(h, LINK_SLUG)).toBe(0);
+    expect(mirrorDiscards(store)).toEqual([MIRROR_DIR, MIRROR_DIR]);
+    expect(entriesUnder(store, MIRROR_DIR)).toEqual([]);
+    expect(store.files.has(RELINK_RECORD_PATH)).toBe(false);
   });
 
   test("F1: a --force retry after a failed rollback finishes the discard too", async () => {
@@ -166,10 +207,10 @@ describe("nax memory link — a discard that fails", () => {
     directProbe();
 
     expect(await runLink(h, LINK_SLUG, { force: true })).toBe(1);
-    expect(store.removed).toEqual([MIRROR_DIR]);
+    expect(mirrorDiscards(store)).toEqual([MIRROR_DIR]);
 
     expect(await runLink(h, LINK_SLUG, { force: true })).toBe(0);
-    expect(store.removed).toEqual([MIRROR_DIR, MIRROR_DIR]);
+    expect(mirrorDiscards(store)).toEqual([MIRROR_DIR, MIRROR_DIR]);
     expect(store.files.has(RELINK_RECORD_PATH)).toBe(false);
     expect(projectIn(store)).toBe(LINK_SLUG);
   });
@@ -186,6 +227,7 @@ describe("nax memory link — a discard that fails", () => {
       `write ${LINK_TMP_PATH}`,
       `rename ${LINK_TMP_PATH} -> ${LINK_CONFIG_PATH}`,
       `remove ${MIRROR_DIR}`,
+      `remove ${RELINK_RECORD_PATH}`,
     ]);
   });
 
@@ -232,7 +274,7 @@ describe("nax memory link — a recorded relink", () => {
     // The config still links `other`, so the mirror is `other`'s: a record for a project this
     // run is not linking must not wipe it.
     expect(await runLink(h, OTHER_PROJECT)).toBe(0);
-    expect(store.removed).toEqual([]);
+    expect(mirrorDiscards(store)).toEqual([]);
     expect(projectIn(store)).toBe(OTHER_PROJECT);
   });
 
@@ -259,7 +301,7 @@ describe("nax memory link — a recorded relink", () => {
     expect(h.err).toEqual([
       `[memory] cannot read the pending relink in ${RELINK_RECORD_PATH}: it is not a relink record`,
     ]);
-    expect(store.removed).toEqual([]);
+    expect(mirrorDiscards(store)).toEqual([]);
     expect(projectIn(store)).toBe(LINK_SLUG);
   });
 
@@ -273,8 +315,39 @@ describe("nax memory link — a recorded relink", () => {
     expect(h.err).toEqual([
       "[memory] 2 writes are not delivered; run nax memory sync (or nax memory forget) before relinking",
     ]);
-    expect(store.removed).toEqual([]);
+    expect(mirrorDiscards(store)).toEqual([]);
     expect(projectIn(store)).toBe(LINK_SLUG);
+  });
+
+  test("a record whose mirror is already gone is simply dropped", async () => {
+    const store = statefulFs(LINKED_TO_SLUG);
+    store.files.set(RELINK_RECORD_PATH, recordOf(LINK_SLUG, OTHER_PROJECT));
+    for (const key of [...store.files.keys()]) {
+      if (key.startsWith(`${MIRROR_DIR}/`)) store.files.delete(key);
+    }
+    const h = makeLinkHarness({ fs: store.deps });
+    directProbe();
+
+    // Nothing is left to discard — an earlier run finished it — so the record goes and nothing else.
+    expect(await runLink(h, LINK_SLUG)).toBe(0);
+    expect(mirrorDiscards(store)).toEqual([]);
+    expect(store.files.has(RELINK_RECORD_PATH)).toBe(false);
+  });
+
+  test("a record that cannot be removed once the mirror is gone is reported", async () => {
+    const store = statefulFs(LINKED_TO_SLUG, { failRemovalPaths: [RELINK_RECORD_PATH] });
+    store.files.set(RELINK_RECORD_PATH, recordOf(LINK_SLUG, OTHER_PROJECT));
+    const h = makeLinkHarness({ fs: store.deps });
+    directProbe();
+
+    expect(await runLink(h, LINK_SLUG)).toBe(1);
+    expect(h.err).toEqual([
+      `Error: [memory] the project mirror ${MIRROR_DIR} was discarded, but ${RELINK_RECORD_PATH} could not ` +
+        "be removed: EACCES: " +
+        `${RELINK_RECORD_PATH} is read-only; remove it before the next link`,
+    ]);
+    // The discard itself landed; only the record of it is left, and the message says so.
+    expect(mirrorDiscards(store)).toEqual([MIRROR_DIR]);
   });
 
   test("a record for the project being linked is finished, and the mode is still printed", async () => {
@@ -284,7 +357,7 @@ describe("nax memory link — a recorded relink", () => {
     directProbe();
 
     expect(await runLink(h, LINK_SLUG)).toBe(0);
-    expect(store.removed).toEqual([MIRROR_DIR]);
+    expect(mirrorDiscards(store)).toEqual([MIRROR_DIR]);
     expect(store.files.has(RELINK_RECORD_PATH)).toBe(false);
     expect(h.out).toEqual([`linked ${LINK_REPO} to koda project ${LINK_SLUG} (write mode: direct)`]);
     // The record was already there, so this run does not stage its own.
@@ -292,6 +365,7 @@ describe("nax memory link — a recorded relink", () => {
       `write ${LINK_TMP_PATH}`,
       `rename ${LINK_TMP_PATH} -> ${LINK_CONFIG_PATH}`,
       `remove ${MIRROR_DIR}`,
+      `remove ${RELINK_RECORD_PATH}`,
     ]);
   });
 });

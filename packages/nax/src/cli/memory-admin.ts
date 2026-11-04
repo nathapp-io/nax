@@ -56,7 +56,13 @@ import {
   writeProjectConfig,
 } from "./memory-admin-config";
 import { linkRefusal, MEMORY_LINK_REFUSED, STAGE_LABEL } from "./memory-admin-deps";
-import { discardProjectMirror, type RelinkJob, readPendingRelink, writePendingRelink } from "./memory-admin-relink";
+import {
+  dropPendingRelink,
+  finishRelink,
+  type RelinkJob,
+  readPendingRelink,
+  writePendingRelink,
+} from "./memory-admin-relink";
 import {
   _memoryCliDeps,
   type MemoryCliDeps,
@@ -186,37 +192,41 @@ function linkDocument(write: LinkWrite, mode: MemoryConfig["writeMode"]) {
  * still owes is this run's to make, whether or not `--force` is passed again, because the flag
  * was already honoured when the record was written. A record naming any other project is one
  * whose config write never landed, so the mirror still belongs to the project the config names
- * and discarding it would destroy notes that project still needs; it is left to be overwritten by
- * the next relink.
+ * and discarding it would destroy notes that project still needs; it is dropped instead.
  */
 async function relinkJobOf(
   host: MemoryHost,
   write: LinkWrite,
   from: string | undefined,
 ): Promise<RelinkJob | undefined> {
-  const projectDir = host.dirs.projectDir;
-  const job = { projectDir, configPath: write.configPath, slug: write.slug, previousConfig: write.raw.text };
+  const job = { dirs: host.dirs, configPath: write.configPath, slug: write.slug, previousConfig: write.raw.text };
   if (from !== undefined) return { ...job, from, recorded: false };
-  const pending = await readPendingRelink(projectDir);
-  return pending?.project === write.slug ? { ...job, from: pending.from, recorded: true } : undefined;
+  const pending = await readPendingRelink(host.dirs);
+  if (pending === undefined) return undefined;
+  if (pending.project === write.slug) return { ...job, from: pending.from, recorded: true };
+  // A record for another project is one whose config write never landed, so the mirror still
+  // belongs to the project the config names: nothing is owed, and the record is dropped.
+  await dropPendingRelink(host.dirs);
+  return undefined;
 }
 
 /**
  * Everything a link does once it has passed its checks: check, probe, record, write, discard, and
  * report.
  *
- * The record is written before the config changes, and the discard comes after it, so an
+ * The record is written before the config changes and cleared after the discard, so an
  * interruption at any point leaves either the previous project linked or a record saying a
- * discard is owed — never a new project attached to a mirror that cannot report its own age.
+ * discard is owed — never a new project attached to a mirror that cannot report its own age. The
+ * record lives outside the mirror, which the discard deletes recursively, so a discard that stops
+ * half-way cannot take the record with it.
  */
 async function linkThrough(write: LinkWrite, host: MemoryHost | null, from: string | undefined): Promise<number> {
   const job = host === null ? undefined : await relinkJobOf(host, write, from);
   if (host !== null && job !== undefined) await assertNothingUndelivered(host);
   const mode = await probeWriteMode(write.url, write.headers, write.slug);
-  if (job !== undefined && !job.recorded)
-    await writePendingRelink(job.projectDir, { project: write.slug, from: job.from });
+  if (job !== undefined && !job.recorded) await writePendingRelink(job.dirs, { project: write.slug, from: job.from });
   await writeProjectConfig(write.configPath, applyLink(write.raw.config, write.slug));
-  if (job !== undefined) await discardProjectMirror(job);
+  if (job !== undefined) await finishRelink(job);
   write.deps.log(
     write.json
       ? JSON.stringify(linkDocument(write, mode))

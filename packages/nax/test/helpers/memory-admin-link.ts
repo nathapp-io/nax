@@ -37,8 +37,13 @@ export const KODA_URL = "https://koda.example/api";
 export const KODA_HEADERS = { Authorization: "Bearer k3y" };
 /** The project mirror a forced relink discards. */
 export const MIRROR_DIR = "/mirror/projects/rs-abc12345";
-/** The record a relink leaves inside the mirror before it changes the config (the on-disk name). */
-export const RELINK_RECORD_PATH = join(MIRROR_DIR, "relink-pending.json");
+/** The directory the mirrors and the relink records share: the memory root. */
+export const MEMORY_ROOT = "/mirror";
+/**
+ * The record a relink leaves before it changes the config — a sibling namespace of the mirrors,
+ * so no discard can take it with the tree it deletes.
+ */
+export const RELINK_RECORD_PATH = join(MEMORY_ROOT, "relink", "rs-abc12345.json");
 /** The slug under test, and the project a config in these cases already names. */
 export const LINK_SLUG = "rs-stock";
 export const OTHER_PROJECT = "other";
@@ -210,7 +215,7 @@ export function linkedHost(counts: HostCounts): MemoryHost {
     throw new Error("a link reads only the host's status");
   };
   return {
-    dirs: { root: "/mirror", projectDir: MIRROR_DIR, userDir: "/mirror/user" },
+    dirs: { root: MEMORY_ROOT, projectDir: MIRROR_DIR, userDir: "/mirror/user" },
     providerId: "koda:other",
     writeMode: "direct",
     notes: unread,
@@ -264,7 +269,8 @@ export function makeLinkHarness(fix: LinkFixture = {}): LinkHarness {
     fs.removed.push(path);
     fs.events.push("remove");
   };
-  _memoryAdminDeps.listDir = async () => [];
+  // A relink is only owed when a mirror exists, and a mirror that owes one holds a cursor.
+  _memoryAdminDeps.listDir = async (path) => (path === MIRROR_DIR ? ["sync.json"] : []);
   Object.assign(_memoryAdminDeps, fix.fs ?? {});
   const deps: MemoryCliDeps = {
     log: (msg) => out.push(msg),
@@ -336,23 +342,31 @@ export interface StatefulFs {
  * A stateful stand-in for what a relink touches, so a retried link reads what the run before it
  * left behind.
  *
- * `failRemovals` makes the first N discards of the project mirror throw; `failWritesTo` makes a
- * write to one path throw once that path has been written `after` times (for at most `times`
- * writes), so a case can fail the rollback of the config without failing the link's own write.
+ * `failRemovals` makes the first N discards of the project mirror throw without deleting
+ * anything; `partialRemovals` makes the first N delete every entry but one and then throw, which
+ * is the discard that leaves the mirror half gone; `failRemovalPaths` makes removing one named
+ * path throw, for a record the filesystem will not give up. `failWritesTo` makes a write to one path
+ * throw once that path has been written `after` times (for at most `times` writes), so a case can
+ * fail the rollback of the config without failing the link's own write.
  */
 export function statefulFs(
   initial: string | null,
   failures: {
     readonly failRemovals?: number;
+    readonly partialRemovals?: number;
+    readonly failRemovalPaths?: readonly string[];
     readonly failWritesTo?: { readonly path: string; readonly after: number; readonly times?: number };
   } = {},
 ): StatefulFs {
   const files = new Map<string, string>();
   if (initial !== null) files.set(LINK_CONFIG_PATH, initial);
+  // A relink is only owed when a mirror exists, so the fixture starts with one holding a cursor.
+  files.set(join(MIRROR_DIR, "sync.json"), '{"lastPullAt":null,"lastError":null}\n');
   const removed: string[] = [];
   const events: string[] = [];
   const writeCounts = new Map<string, number>();
   let removalsLeft = failures.failRemovals ?? 0;
+  let partialLeft = failures.partialRemovals ?? 0;
   let writeFailuresLeft = failures.failWritesTo?.times ?? Number.POSITIVE_INFINITY;
   const deps: Partial<typeof _memoryAdminDeps> = {
     readText: async (path) => files.get(path) ?? null,
@@ -374,7 +388,7 @@ export function statefulFs(
       files.delete(from);
       files.set(to, text);
     },
-    listDir: async () => [],
+    listDir: async (path) => entryNamesOf(files, path),
     removePath: async (path) => {
       events.push(`remove ${path}`);
       removed.push(path);
@@ -382,13 +396,43 @@ export function statefulFs(
         removalsLeft -= 1;
         throw new Error("EBUSY: mirror busy");
       }
-      // A removal takes the tree with it, the record inside the mirror included.
+      if (path === MIRROR_DIR && partialLeft > 0) {
+        partialLeft -= 1;
+        // The walk deletes as it goes and then meets one busy file: everything but the first
+        // entry it reaches is gone before the failure, whichever entry that first one is.
+        const [busy, ...rest] = [...files.keys()].filter((key) => key.startsWith(`${MIRROR_DIR}/`));
+        for (const key of rest) files.delete(key);
+        throw new Error(`EBUSY: ${busy ?? MIRROR_DIR} is busy`);
+      }
+      if (failures.failRemovalPaths?.includes(path) === true) {
+        throw new Error(`EACCES: ${path} is read-only`);
+      }
+      // A removal takes the tree with it.
       for (const key of [...files.keys()]) {
         if (key === path || key.startsWith(`${path}/`)) files.delete(key);
       }
     },
   };
   return { files, removed, events, deps };
+}
+
+/** The entry names one in-memory directory holds, as `listDir` reports them. */
+function entryNamesOf(files: ReadonlyMap<string, string>, path: string): readonly string[] {
+  const prefix = `${path}/`;
+  const names = [...files.keys()]
+    .filter((key) => key.startsWith(prefix))
+    .map((key) => key.slice(prefix.length).split("/")[0] ?? "");
+  return [...new Set(names)];
+}
+
+/** The discards of the project mirror a case made, in order, without the record removals. */
+export function mirrorDiscards(store: StatefulFs): readonly string[] {
+  return store.removed.filter((path) => path === MIRROR_DIR);
+}
+
+/** The entries a `store` still holds under `path`, for a case that asserts a tree is gone. */
+export function entriesUnder(store: StatefulFs, path: string): readonly string[] {
+  return [...store.files.keys()].filter((key) => key.startsWith(`${path}/`));
 }
 
 /** The koda project the config in `store` names, or `undefined` when it names none. */
