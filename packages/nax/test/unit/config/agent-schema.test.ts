@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { parseChatAcpModel } from "@/chat/acp/acp-model";
 import { NaxConfigSchema } from "@/config";
 
 describe("AgentConfigSchema", () => {
@@ -573,5 +574,89 @@ describe("AgentConfigSchema modelAliases", () => {
     expect(result.success).toBe(false);
     if (result.success) return;
     expect(result.error.issues.some((i) => i.path.includes("modelAliases"))).toBe(true);
+  });
+});
+
+// US-001 (chat-acp-subagents): a role may point at an ACP agent instead of a
+// native provider/model. An `acp:` value is held to the ACP shape alone, so
+// `acp:bogus/x` cannot slip through the provider/model branch as provider
+// `acp:bogus`.
+describe("AgentConfigSchema modelAliases acp: targets", () => {
+  function aliasParse(value: string) {
+    return NaxConfigSchema.safeParse({ agent: { modelAliases: { reviewer: value } } });
+  }
+
+  function acpParseAccepts(value: string): boolean {
+    try {
+      parseChatAcpModel(value);
+      return true;
+    } catch {
+      // The parity AC asks accept-or-reject only; the parsed value is not part of it.
+      return false;
+    }
+  }
+
+  test("AC-1: accepts an acp:<agent>/<model> alias and keeps the value unchanged", () => {
+    const modelAliases = { reviewer: "acp:codex/gpt-6.1-terra" };
+    const result = NaxConfigSchema.safeParse({ agent: { modelAliases } });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.agent?.modelAliases).toEqual(modelAliases);
+  });
+
+  test.each(["acp:claude", "acp:cursor/composer-2", "acp:codex/gpt-6.1-terra[high]"])(
+    "AC-2: accepts the ACP target %s",
+    (value) => {
+      const result = aliasParse(value);
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.agent?.modelAliases).toEqual({ reviewer: value });
+    },
+  );
+
+  test("AC-3: rejects an unknown ACP agent, naming both accepted shapes", () => {
+    const result = aliasParse("acp:bogus/x");
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const issue = result.error.issues.find((i) => i.path.includes("modelAliases"));
+    expect(issue).toBeDefined();
+    expect(issue?.message).toContain("acp:<agent>[/<model>]");
+  });
+
+  test.each(["acp:", "acp:codex/", "acp:codex/a b"])("AC-4: rejects the malformed ACP target %p", (value) => {
+    const result = aliasParse(value);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.some((i) => i.path.includes("modelAliases"))).toBe(true);
+  });
+
+  // The schema carries its own copy of the ACP shape — config must not depend on
+  // src/chat — so this pins the copy against parseChatAcpModel itself.
+  test.each(["acp:codex[high]", "acp:codex/a/b", "acp:claude[]", "acp:codex/x[", "acp:cursor/a[b]c", "acp:bogus"])(
+    "AC-5: %s parses exactly when parseChatAcpModel accepts it",
+    (value) => {
+      expect(aliasParse(value).success).toBe(acpParseAccepts(value));
+    },
+  );
+
+  test("AC-6: a value with no provider is rejected with a message naming provider/model", () => {
+    const result = aliasParse("claude-sonnet");
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const message = result.error.issues.map((issue) => issue.message).join("\n");
+    expect(message).toContain("provider/model");
+    // The combined message, not the old provider/model-only one.
+    expect(message).toContain("agent: claude, codex, cursor");
+  });
+
+  test("AC-8: provider/model aliases keep nested model paths and effort suffixes", () => {
+    const modelAliases = {
+      sonnet: "anthropic/claude-sonnet-5-5",
+      glm: "openrouter/z-ai/glm-5.3-flash[high]",
+    };
+    const result = NaxConfigSchema.safeParse({ agent: { modelAliases } });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.agent?.modelAliases).toEqual(modelAliases);
   });
 });

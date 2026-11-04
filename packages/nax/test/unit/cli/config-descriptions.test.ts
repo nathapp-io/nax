@@ -110,6 +110,12 @@ describe("FIELD_DESCRIPTIONS agent.modelAliases", () => {
     expect(typeof FIELD_DESCRIPTIONS["agent.modelAliases"]).toBe("string");
     expect(FIELD_DESCRIPTIONS["agent.modelAliases"].trim().length).toBeGreaterThan(0);
   });
+
+  // US-001 (chat-acp-subagents): the alias map also takes ACP targets, so the
+  // description has to name that shape or the key reads as provider/model only.
+  test("AC-7: names the acp: shape", () => {
+    expect(FIELD_DESCRIPTIONS["agent.modelAliases"]).toContain("acp:");
+  });
 });
 
 describe("FIELD_DESCRIPTIONS agent.transcriptAudit (#2453)", () => {
