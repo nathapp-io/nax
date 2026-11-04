@@ -391,6 +391,10 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     'Model input modalities: a non-empty array of "text" and/or "image"; omit to inherit catalog capabilities.',
   "agent.native.catalogOverrides.thinkingFormat":
     "Per-model thinking wire format (openai-completions only). Omit to inherit the provider format; 'openrouter' sends reasoning.effort (including 'none' at off); use 'qwen-chat-template' for self-hosted servers honouring chat_template_kwargs.enable_thinking.",
+  "agent.native.catalogOverrides.thinkingBudgetField":
+    "Per-model top-level thinking token budget request field (openai-completions only). Lowercase snake_case, up to 64 characters; omit for no separate budget. Reserved request field names are rejected when the native client is built.",
+  "agent.native.catalogOverrides.thinkingBudgets":
+    "Per-model positive integer token budgets for minimal/low/medium/high; requires thinkingBudgetField and declared thinkingLevels. xhigh and max use high. Missing levels use pi-ai defaults; budgets are clamped to leave 1024 answer tokens. No budget is sent at off or without a requested level.",
   "agent.native.catalogOverrides.openRouterRouting":
     "OpenRouter-compatible provider routing for one model (nax#2191). Snake_case keys are wire field names sent verbatim. Reach the wire only on protocol: 'openai-completions'. Pair `sort: 'latency'|'throughput'` with `quantizations` — default routing is overwhelmingly a single quantization from a single endpoint, and a sort change may otherwise pick a lower-precision one. Routing changes break run-to-run comparability, so keep them fixed across arms.",
   "agent.native.catalogOverrides.openRouterRouting.sort":
