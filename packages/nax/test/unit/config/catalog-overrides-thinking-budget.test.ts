@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { toProviderOverrides } from "@nathapp/nax-agent/internal";
 import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
 import { NaxConfigSchema } from "@/config";
+import type { CatalogModelOverride } from "@/config/schema-types";
 
 const MODEL = {
   id: "qwen3.8-flash",
@@ -11,7 +12,7 @@ const MODEL = {
   supportsTools: true,
   thinkingLevels: ["off", "low", "high"],
   pricing: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-};
+} satisfies CatalogModelOverride;
 const BUDGET = {
   thinkingBudgetField: "reasoning_budget_tokens",
   thinkingBudgets: { low: 2048, high: 16_384 },
