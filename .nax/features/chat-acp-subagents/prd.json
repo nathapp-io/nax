@@ -1,0 +1,377 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-acp-subagents",
+  "branchName": "feat/chat-acp-subagents",
+  "createdAt": "2026-11-04T00:00:00.000Z",
+  "updatedAt": "2026-11-04T13:57:06.033Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Accept ACP model strings in agent.modelAliases",
+      "description": "**Goal** — Accept supported ACP model targets in agent.modelAliases without weakening native model validation.\n\n**Motivation** — `agent.modelAliases` (`packages/nax/src/config/schemas-model-alias.ts`) only accepts\n`provider/model[effort]`, so a role cannot point at an ACP agent yet.\n\n**Approach** —\n- `agent.modelAliases` values accept either the existing `provider/model[effort]` shape, or an ACP\n  model `acp:<agent>[/<model>][[<effort>]]` whose agent is one of `claude`, `codex`, `cursor` (the\n  shape `parseChatAcpModel` in `packages/nax/src/chat/acp/acp-model.ts` accepts). A value that starts\n  with `acp:` is validated only against the ACP shape, so `acp:bogus/x`, which the current regex would\n  accept as provider `acp:bogus`, is rejected. The single error message is\n  `agent.modelAliases values must be \"provider/model\" or \"acp:<agent>[/<model>]\" (agent: claude, codex, cursor), each with an optional [effort] suffix and no whitespace`.\n- The schema checks the ACP shape with its own regular expression in `schemas-model-alias.ts`, not by\n  importing from `src/chat` (config must not depend on chat):\n  `const ACP_ALIAS_TARGET = /^acp:(claude|codex|cursor)(\\/[^\\s[\\]]+)?(\\[[^\\s[\\]]+\\])?$/;`\n  For every value without whitespace, the schema accepts an `acp:` value exactly when\n  `parseChatAcpModel` does not throw on it (pinned by a parity AC).\n\nAccept `acp:` values in `agent.modelAliases` with the `ACP_ALIAS_TARGET` regex and the combined message,\nand name the `acp:` shape in the `agent.modelAliases` field description.\n\nAdd the `acp:` acceptance, rejection and parity cases beside the existing `modelAliases` block in packages/nax/test/unit/config/agent-schema.test.ts; existing cases keep passing unchanged. Add the description check in packages/nax/test/unit/cli/config-descriptions.test.ts; existing checks unchanged.\n\n**Scope** — In: alias-target validation, combined diagnostics and alias field description. Out: acpSubagents configuration and explicit-model resolution (US-002), profile derivation (US-003), session execution (US-004/US-005), host harness (US-006).\n\n**Interface** —\n```ts\nconst ACP_ALIAS_TARGET = /^acp:(claude|codex|cursor)(\\/[^\\s[\\]]+)?(\\[[^\\s[\\]]+\\])?$/;\n```\nExisting reference signature: `parseChatAcpModel(model: string): ChatAcpModel | undefined`.",
+      "acceptanceCriteria": [
+        "[unit] NaxConfigSchema.safeParse with agent.modelAliases { reviewer: \"acp:codex/gpt-6.1-terra\" } succeeds and keeps the value unchanged.",
+        "[unit] NaxConfigSchema.safeParse accepts each modelAliases value in the table acp:claude, acp:cursor/composer-2, acp:codex/gpt-6.1-terra[high].",
+        "[unit] NaxConfigSchema.safeParse with agent.modelAliases { reviewer: \"acp:bogus/x\" } fails with an issue whose path includes modelAliases and whose message contains acp:<agent>[/<model>].",
+        "[unit] NaxConfigSchema.safeParse rejects each modelAliases value in the table acp:, acp:codex/, acp:codex/a b, each with an issue whose path includes modelAliases.",
+        "[unit] For each value in the table acp:codex[high], acp:codex/a/b, acp:claude[], acp:codex/x[, acp:cursor/a[b]c, acp:bogus, NaxConfigSchema.safeParse with that modelAliases value succeeds exactly when parseChatAcpModel does not throw on it.",
+        "[unit] NaxConfigSchema.safeParse with agent.modelAliases { sonnet: \"claude-sonnet\" } fails with a message containing \"provider/model\".",
+        "[unit] FIELD_DESCRIPTIONS[\"agent.modelAliases\"] contains acp:.",
+        "[unit] NaxConfigSchema.safeParse with agent.modelAliases { sonnet: \"anthropic/claude-sonnet-5-5\", glm: \"openrouter/z-ai/glm-5.3-flash[high]\" } succeeds and returns those values unchanged, preserving existing provider/model aliases with nested model paths and effort suffixes."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "config"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded schema/description enhancement across existing source and tests, with explicit prefix dispatch and parser parity but no new execution or permission behavior."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-model-alias.ts",
+        "packages/nax/src/config/schemas-infra.ts",
+        "packages/nax/src/config/runtime-types-agent.ts",
+        "packages/nax/src/cli/config-descriptions.ts",
+        "packages/nax/src/chat/acp/acp-model.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/config/agent-schema.test.ts",
+          "reason": "add the `acp:` acceptance, rejection and parity cases beside the existing `modelAliases` block; existing cases keep passing unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/config-descriptions.test.ts",
+          "reason": "add the check that `agent.modelAliases` mentions `acp:`; existing checks unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Configure ACP subagent profiles and resolve explicit ACP models",
+      "description": "**Goal** — Add optional agent.acpSubagents.profile and recognize unaliased acp: requests as explicit subagent models.\n\n**Motivation** — Reviewing a spec on a second model, for example Codex reviewing a spec Claude\nwrote, today means switching the whole chat's brain with `/model` by hand.\n\n**Approach** —\n```jsonc\n// any config layer, typically a profile\n\"agent\": {\n  \"modelAliases\": { \"reviewer\": \"acp:codex/gpt-6.1-terra\" },\n  \"acpSubagents\": { \"profile\": \"review\" }   // optional; absent = derived per agent file\n}\n```\n\n`AcpSubagentsConfigSchema` (new, in `schemas-model-alias.ts`) is `z.object({ profile: z.enum([\"review\", \"read\", \"ask\", \"full\"]).optional() }).strict()`.\n`AgentConfigSchema` (`packages/nax/src/config/schemas-infra.ts`) gains `acpSubagents: AcpSubagentsConfigSchema.optional()`;\nit has no default, so `NaxConfigSchema.parse({}).agent.acpSubagents` is `undefined`.\n`schemas-infra.ts` is at its 600-line cap: the new key replaces the one-line comment above `modelAliases`\n(that comment moves into `schemas-model-alias.ts`), so the file stays at 600 lines.\n`AgentConfig` in `packages/nax/src/config/runtime-types-agent.ts` gains\n`acpSubagents?: { profile?: \"review\" | \"read\" | \"ask\" | \"full\" }`.\n`FIELD_DESCRIPTIONS` (`packages/nax/src/cli/config-descriptions.ts`) gains `agent.acpSubagents` and\n`agent.acpSubagents.profile`, and the `agent.modelAliases` description names the `acp:` shape.\n\nThe alias description is established by US-001; preserve it while adding the two new field descriptions. Extend the existing schemas-model-alias import on one line to honor the line budget.\n\n`resolveSubagentModel` (`packages/nax/src/chat/subagent-model.ts`) keeps its order: inherit, alias,\ntier, model, fallback. A requested value that starts with `acp:` and is not an alias key returns\n`{ model: requested, source: \"model\" }`; today `acp:codex` (no slash) falls through to `fallback`.\n\nAdd the agent.acpSubagents cases in packages/nax/test/unit/config/agent-schema.test.ts and the description check in packages/nax/test/unit/cli/config-descriptions.test.ts; existing cases/checks keep passing unchanged. Add the three acp: resolution cases in packages/nax/test/unit/chat/subagent-model.test.ts; existing cases unchanged (none uses an acp: value).\n\n**Scope** — In: optional strict config schema, runtime type, descriptions and explicit ACP resolution preserving alias precedence. Out: alias grammar changes (US-001), policy derivation (US-003), consuming the override at execution (US-005), sessions/providers (US-004), host integration (US-006), and changes to the /agents listing's tools column.\n\n**Interface** —\n```ts\nexport const AcpSubagentsConfigSchema = z.object({ profile: z.enum([\"review\", \"read\", \"ask\", \"full\"]).optional() }).strict();\n// AgentConfigSchema gains:\nacpSubagents: AcpSubagentsConfigSchema.optional()\n// AgentConfig gains:\nacpSubagents?: { profile?: \"review\" | \"read\" | \"ask\" | \"full\" }\n```\nExisting resolver signature: `resolveSubagentModel(options: ResolveSubagentModelOptions): ResolvedSubagentModel`.",
+      "acceptanceCriteria": [
+        "[unit] NaxConfigSchema.parse({}) yields agent.acpSubagents equal to undefined.",
+        "[unit] NaxConfigSchema.parse with agent.acpSubagents { profile: \"read\" } yields agent.acpSubagents.profile equal to \"read\".",
+        "[unit] NaxConfigSchema.safeParse with agent.acpSubagents { profile: \"write\" } fails with an issue whose path is under agent.acpSubagents.profile.",
+        "[unit] NaxConfigSchema.safeParse with agent.acpSubagents { profile: \"review\", extra: 1 } fails, because the object is strict.",
+        "[unit] FIELD_DESCRIPTIONS[\"agent.acpSubagents.profile\"] is a non-empty string.",
+        "[unit] resolveSubagentModel with requested: \"acp:codex\", parentModel: \"p/m\", aliases: {} and tiers: {} (no aliases and no tiers) returns { model: \"acp:codex\", source: \"model\" }.",
+        "[unit] resolveSubagentModel with requested: \"reviewer\" and aliases { reviewer: \"acp:codex/gpt-6.1-terra\" } returns { model: \"acp:codex/gpt-6.1-terra\", source: \"alias\" }.",
+        "[unit] resolveSubagentModel with requested: \"acp:codex\" and aliases { \"acp:codex\": \"openai/gpt-x\" } returns { model: \"openai/gpt-x\", source: \"alias\" }.",
+        "[unit] resolveSubagentModel({ requested: \"openai/gpt-x\", parentModel: \"p/m\", aliases: {}, tiers: {} }) returns { model: \"openai/gpt-x\", source: \"model\" }, preserving existing explicit native-model resolution.",
+        "[unit] resolveSubagentModel({ requested: \"sonnet\", parentModel: \"p/m\", aliases: { sonnet: \"a/s\" }, tiers: { balanced: \"b/t\" } }) returns { model: \"a/s\", source: \"alias\" }, preserving the existing alias-over-tier precedence.",
+        "[unit] resolveSubagentModel({ requested: \"unknown-bare-name\", parentModel: \"p/m\", aliases: {}, tiers: {} }) returns { model: \"p/m\", source: \"fallback\" }, preserving the existing non-ACP fallback."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "config",
+        "permissions"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Standard schema/type/resolver changes with a tight existing file budget; the new operator-controlled permission-profile key invokes the security override for strict isolated TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-model-alias.ts",
+        "packages/nax/src/config/schemas-infra.ts",
+        "packages/nax/src/config/runtime-types-agent.ts",
+        "packages/nax/src/cli/config-descriptions.ts",
+        "packages/nax/src/chat/subagent-model.ts"
+      ],
+      "suggestedCriteria": [
+        "NaxConfigSchema.parse with agent.acpSubagents {} returns agent.acpSubagents equal to {}, without synthesizing a profile.",
+        "NaxConfigSchema.parse preserves each of the profile values review, read, ask and full when supplied under agent.acpSubagents.profile."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/config/agent-schema.test.ts",
+          "reason": "add the `agent.acpSubagents` cases; existing cases keep passing unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/config-descriptions.test.ts",
+          "reason": "add the `agent.acpSubagents.profile` description check; existing checks unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/subagent-model.test.ts",
+          "reason": "add the three `acp:` resolution cases; existing cases unchanged (none uses an `acp:` value)."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Derive ACP subagent profiles and verify own read-only enforcement",
+      "description": "**Goal** — Derive an ACP permission profile from the original agent tools and chat mode, with an explicit operator override and registry-based own-enforcement check.\n\n**Motivation** — The ACP brain already\nexists (`acpSessionOptions`, `packages/nax/src/chat/acp/acp-session-options.ts`) and\n`@nathapp/nax-agent-acp/client` already enforces read-only profiles per agent, so a subagent can reuse\nboth.\n\n**Approach** — Profile derivation (`packages/nax/src/chat/acp/acp-subagent-profile.ts`, new).\n\nThe order is an ordered pipeline; the first step that answers wins:\n\n1. `override` present: return it.\n2. `tools` is `undefined` (no `tools:` line): the chat's own profile, `ask` in guarded mode and `full`\n   in full mode.\n3. `tools` names a write tool: the chat's own profile, as in step 2. A tool entry is compared by its\n   bare name (`Write(src/**)` counts as `Write`), as `mapSubagentTools` reads names.\n4. Otherwise (including `tools: []`): `review`.\n\nBare names are computed inside `acp-subagent-profile.ts` with the same rule `mapSubagentTools` uses (text\nbefore a trailing `(...)`); `bareName` in `subagent-tools.ts` stays private and unchanged.\n\nA reviewer whose `tools:` lists only built-ins (`Read`, `Grep`) gets no nax provider at all, because the\nprovider filter keeps a provider only when `allowedTools` names it; the read-only memory-write removal\nmatters only for an agent that lists `mcp__nax-memory__*` or has no `tools:` line.\n\nAn override applies in every chat mode, so `agent.acpSubagents.profile: \"full\"` in a guarded chat opens\nevery ACP subagent with profile `full` (no asks). This is intended: the key is an explicit operator choice.\n\n`Bash` is not a write tool for this rule: under a read-only profile the agent's own read-only\nenforcement governs its shell.\n\n`acpReadOnlyEnforced(agent)` is true when `registryEntry(agent)` (exported by\n`@nathapp/nax-agent-acp/client`) has a `readOnly` entry whose `policy` is `undefined`, meaning the agent\nenforces read-only through its own permission mode rather than through nax's rule translation. Today\nthat is `claude` and `codex`; `cursor`'s entry has `policy: \"cursor\"`, so it is false.\n\nUse the registry through its public package entry, not a deep import or a hardcoded supported-agent allowlist. Derive from AgentResource.tools before mapping; do not change mapSubagentTools.\n\n**Scope** — In: pure profile derivation, four-profile read-only predicate and registry capability predicate with the new unit test. Out: configuration/resolution (US-002), provider delivery and memory-write filtering (US-004), start refusal/session lifecycle (US-005), and host harness (US-006). No read-only Cursor support or unattended nax agents run policy.\n\n**Interface** —\n```ts\nexport type AcpSubagentProfile = \"review\" | \"read\" | \"ask\" | \"full\";\nexport const ACP_SUBAGENT_WRITE_TOOLS: readonly string[] = [\"Write\", \"Edit\", \"MultiEdit\", \"NotebookEdit\", \"Delete\", \"GitCommit\"];\nexport function acpSubagentProfile(input: {\n  readonly tools: readonly string[] | undefined;   // the agent file's tools:, as AgentResource.tools\n  readonly mode: ChatMode;                         // \"guarded\" | \"full\"\n  readonly override?: AcpSubagentProfile;          // config agent.acpSubagents.profile\n}): AcpSubagentProfile;\nexport function isReadOnlyAcpProfile(profile: AcpSubagentProfile): boolean;   // review, read\nexport function acpReadOnlyEnforced(agent: AcpChatAgent): boolean;\n```",
+      "acceptanceCriteria": [
+        "[unit] acpSubagentProfile({ tools: [\"Read\", \"Grep\", \"Bash\"], mode: \"guarded\" }) returns \"review\".",
+        "[unit] acpSubagentProfile({ tools: [], mode: \"full\" }) returns \"review\".",
+        "[unit] acpSubagentProfile({ tools: [\"Read\", \"Edit\"], mode: \"guarded\" }) returns \"ask\".",
+        "[unit] acpSubagentProfile({ tools: [\"Read\", \"Write(src/**)\"], mode: \"full\" }) returns \"full\".",
+        "[unit] acpSubagentProfile({ tools: undefined, mode: \"guarded\" }) returns \"ask\".",
+        "[unit] acpSubagentProfile({ tools: undefined, mode: \"full\" }) returns \"full\".",
+        "[unit] acpSubagentProfile({ tools: [\"Read\"], mode: \"guarded\", override: \"full\" }) returns \"full\".",
+        "[unit] acpSubagentProfile({ tools: [\"Write\"], mode: \"full\", override: \"read\" }) returns \"read\".",
+        "[unit] For each name in ACP_SUBAGENT_WRITE_TOOLS (Write, Edit, MultiEdit, NotebookEdit, Delete, GitCommit), acpSubagentProfile({ tools: [name], mode: \"guarded\" }) returns \"ask\".",
+        "[unit] isReadOnlyAcpProfile returns true exactly for \"review\" and \"read\" among the four profiles.",
+        "[unit] acpReadOnlyEnforced returns true for \"claude\" and \"codex\" and false for \"cursor\"."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "security",
+        "permissions"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A small pure policy module with explicit ordered decisions, but read-only selection and enforcement capability are access-control decisions requiring strict three-session isolation."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/acp/acp-model.ts",
+        "packages/nax/src/chat/subagent-tools.ts",
+        "packages/nax/src/chat/chat-mode.ts",
+        "packages/nax-agent-acp/src/client/registry.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-subagent-profile.ts",
+        "packages/nax/test/unit/chat/acp/acp-subagent-profile.test.ts"
+      ],
+      "suggestedCriteria": [
+        "acpSubagentProfile({ tools: [\"Write(src/**\"], mode: \"guarded\" }) returns \"review\" because an entry without a trailing ')' is not reduced to Write.",
+        "acpSubagentProfile returns the supplied override for each of review, read, ask and full in both guarded and full modes, whether tools is undefined, empty or names a write tool."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Build ephemeral ACP subagent options and dedicated instructions",
+      "description": "**Goal** — Build ACP subagent session options with restricted provider delivery, read-only memory safety and dedicated subagent instructions.\n\n**Motivation** — The ACP brain already\nexists (`acpSessionOptions`, `packages/nax/src/chat/acp/acp-session-options.ts`) and\n`@nathapp/nax-agent-acp/client` already enforces read-only profiles per agent, so a subagent can reuse\nboth.\n\n**Approach** — `acpSubagentSessionOptions` builds:\n\n- `backend`: `_acpSubagentDeps.acpBackend({ agent, allowUnsandboxed: true, inheritEnv: true, model?, effort? })`\n  with `model` and `effort` only when the ACP model names them.\n- `profile`: the derived profile.\n- `tools` and tool instructions: `_acpSubagentDeps.chatAcpTools(providers, cwd)`, where `providers` is\n  `input.toolProviders` filtered to ids in `ACP_SUBAGENT_PROVIDER_IDS` (never `nax-jobs`: billed\n  launches stay with the chat brain), and, when `input.allowedTools` is defined, further filtered to the\n  providers for which some `allowedTools` entry starts with `<id>__`.\n- When the profile is read-only (`review` or `read`), the tools named `nax-memory__save` and\n  `nax-memory__forget` are removed from the list `chatAcpTools` returned, so a read-only subagent can read\n  memory (`nax-memory__get`, `nax-memory__search`) but not write it. Embedder tools carry\n  `approval: \"never\"` and the ACP client allows tool-host calls under every profile, so without this a\n  read-only reviewer could save or forget notes unasked.\n- `transcriptStore`: a fresh memory-only store from `createTranscriptStore`; no `sessionId`, so the\n  session never resumes and writes no ACP transcript under the chat sessions dir.\n- `workdir`: `input.cwd`; `metadata`: `{ parentSessionId, subagent: agent.qualifiedName }`;\n  `approvalTimeoutMs`: `input.config.execution.approvalTimeout`.\n- `instructions`: `buildAcpSubagentInstructions` (new, `packages/nax/src/prompts/builders/agents-builder.ts`,\n  exported from `@/prompts`):\n\nThe opening line is `You are <label>, running as the nax chat subagent <qualifiedName>. Use your own tools for the work. Answer with your final result as text; the chat that called you reads only that.`\nIt carries no nax rules index (the agent's own settings apply, as for the ACP brain).\n\n`acp-subagent-session.ts` imports `RunSubagentInput` with `import type` only, so it adds no runtime\ncycle with `subagent-session.ts` (the `check:import-cycles` ratchet).\n\nA reviewer whose `tools:` lists only built-ins (`Read`, `Grep`) gets no nax provider at all, because the\nprovider filter keeps a provider only when `allowedTools` names it; the read-only memory-write removal\nmatters only for an agent that lists `mcp__nax-memory__*` or has no `tools:` line.\n\nAdd buildAcpSubagentInstructions and its input type to the prompts barrel. Reuse the existing memory-section formatter. Add the two builder cases to packages/nax/test/unit/prompts/builders/agents-builder.test.ts; existing cases unchanged. Create the options tests with stubbed ACP seams, snapshot and restoration, and no real backend opens. Dependency failures reject from this options builder; only runSubagent in US-005 converts them to error results. Pin the unchanged native buildSubagentInstructions output in the existing builder test file without changing native instructions. Use US-003's module packages/nax/src/chat/acp/acp-subagent-profile.ts for AcpSubagentProfile (review | read | ask | full) and isReadOnlyAcpProfile(profile: AcpSubagentProfile): boolean, which returns true for review and read.\n\n**Scope** — In: options/instructions builders, dedicated dependency seam, whole-provider filtering, read-only save/forget removal, dependency-rejection behavior and a regression assertion preserving native instruction text. Out: model/config changes (US-001/US-002), profile derivation (US-003), runSubagent branching/error catches/refusal (US-005), host harness (US-006). Translating an agent file's tools list into per-tool ACP restrictions, changing the chat ACP brain, giving subagents jobs/billed tools, and per-tool workflow narrowing remain excluded.\n\n**Interface** —\n```ts\nexport const _acpSubagentDeps = { acpBackend, chatAcpTools };\nexport const ACP_SUBAGENT_PROVIDER_IDS: readonly string[] = [\"nax-workflow\", \"nax-memory\"];\nexport async function acpSubagentSessionOptions(input: RunSubagentInput & { readonly acp: ChatAcpModel; readonly profile: AcpSubagentProfile },\n  createTranscriptStore: () => TranscriptStore): Promise<CreateAgentSessionOptions>;\n```\n\n```ts\nexport interface AcpSubagentInstructionsInput {\n  readonly agentLabel: string;                       // \"Codex\"\n  readonly agent: Pick<AgentResource, \"qualifiedName\" | \"prompt\">;\n  readonly toolInstructions?: string;\n  readonly memoryIndex?: string;\n}\n// Sections joined by a blank line: an opening line naming the label and the subagent,\n// then toolInstructions when non-empty, then the memory section when present, then agent.prompt last.\n```",
+      "acceptanceCriteria": [
+        "[unit] buildAcpSubagentInstructions({ agentLabel: \"Codex\", agent: { qualifiedName: \"spec-reviewer\", prompt: \"Review it.\" } }) returns text whose first section is \"You are Codex, running as the nax chat subagent spec-reviewer. Use your own tools for the work. Answer with your final result as text; the chat that called you reads only that.\" and whose last section is \"Review it.\".",
+        "[unit] buildAcpSubagentInstructions with toolInstructions: \"TOOLS\" and a non-empty memoryIndex returns TOOLS, then the memory section, then the agent prompt, in that order.",
+        "[unit] acpSubagentSessionOptions for ACP model { agent: \"codex\", model: \"gpt-6.1-terra\", effort: \"high\" } with _acpSubagentDeps.acpBackend stubbed calls acpBackend once with { agent: \"codex\", model: \"gpt-6.1-terra\", effort: \"high\", allowUnsandboxed: true, inheritEnv: true }.",
+        "[unit] acpSubagentSessionOptions with profile \"review\" returns options with profile \"review\", no sessionId, and workdir equal to the input cwd.",
+        "[unit] acpSubagentSessionOptions returns metadata equal to { parentSessionId: <input parentSessionId>, subagent: <agent qualifiedName> }.",
+        "[unit] acpSubagentSessionOptions passes chatAcpTools only the providers with ids nax-workflow and nax-memory out of input providers with ids nax-workflow, nax-jobs, nax-memory and custom.",
+        "[unit] acpSubagentSessionOptions with allowedTools: [\"Read\", \"nax-memory__*\"] passes chatAcpTools only the nax-memory provider.",
+        "[unit] acpSubagentSessionOptions with profile \"review\", where chatAcpTools returns tools named nax-memory__get, nax-memory__search, nax-memory__save and nax-memory__forget, returns tools named only nax-memory__get and nax-memory__search.",
+        "[unit] acpSubagentSessionOptions with profile \"ask\" and the same four tools returns all four.",
+        "[unit] acpSubagentSessionOptions returns a transcriptStore produced by the createTranscriptStore argument and instructions equal to buildAcpSubagentInstructions with label Codex, the agent, chatAcpTools' instructions and the input memoryIndex.",
+        "[unit] acpSubagentSessionOptions rejects with the same Error('boom') when its stubbed _acpSubagentDeps.chatAcpTools rejects with that error; conversion to a subagent error result belongs to runSubagent in US-005.",
+        "[unit] buildSubagentInstructions({ agent: { prompt: \"Review it.\" }, mode: \"guarded\", rulesIndex: [] }) returns [chatPermissionParagraph(\"guarded\"), \"Review it.\"].join(\"\\n\\n\"), preserving the existing native instruction text."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "sessions",
+        "security",
+        "tools",
+        "prompts"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A thin options builder and prompt/barrel extension mirror the existing ACP brain pattern without a new session abstraction; provider exclusion and memory-write removal still mandate strict security-isolated TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/acp/acp-session-options.ts",
+        "packages/nax/src/chat/acp/acp-tools.ts",
+        "packages/nax/src/prompts/builders/agents-builder.ts",
+        "packages/nax/src/memory/tool-provider.ts",
+        "packages/nax/src/chat/subagent-session.ts",
+        "packages/nax/src/chat/acp/acp-subagent-profile.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/acp/acp-subagent-session.ts",
+        "packages/nax/test/unit/chat/acp/acp-subagent-session.test.ts"
+      ],
+      "suggestedCriteria": [
+        "acpSubagentSessionOptions with profile read removes nax-memory__save and nax-memory__forget while preserving nax-memory__get and nax-memory__search.",
+        "acpSubagentSessionOptions with allowedTools [] or [\"Read\", \"Grep\"] passes an empty provider array to chatAcpTools.",
+        "acpSubagentSessionOptions for { agent: \"claude\" } calls acpBackend without model or effort keys.",
+        "acpSubagentSessionOptions returns approvalTimeoutMs equal to input.config.execution.approvalTimeout.",
+        "acpSubagentSessionOptions with a read-only profile leaves the tool list returned by chatAcpTools unchanged while returning its filtered tool list.",
+        "buildAcpSubagentInstructions with empty toolInstructions and empty memoryIndex returns only the opening section and agent prompt, separated by one blank line."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/prompts/builders/agents-builder.test.ts",
+          "reason": "add the two `buildAcpSubagentInstructions` cases; existing cases unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Execute ACP subagents with read-only refusal and contained failures",
+      "description": "**Goal** — Branch runSubagent onto ACP before native options are built, enforce own read-only capability and reuse the existing nested-turn lifecycle.\n\n**Motivation** — `runSubagent` (`packages/nax/src/chat/subagent-session.ts`) always builds a native session with\n`nativeBackend(...)`.\n\n**Approach** — `runSubagent` (`subagent-session.ts`) branches before it builds options:\n\n- `parseChatAcpModel(input.model)` returns `undefined`: the native path, unchanged.\n- It throws (a malformed `acp:` value from an agent file's own `model:` line, which config validation\n  never sees): the result is `{ isError: true, content: \"[chat] subagent <name> failed: <message>\" }`\n  and no session is created.\n- It returns an ACP model: compute the profile with `acpSubagentProfile({ tools: input.agent.tools, mode: input.mode, override: input.config.agent?.acpSubagents?.profile })`.\n  When the profile is read-only and `acpReadOnlyEnforced(acp.agent)` is false, the result is\n  `{ isError: true, content: \"[chat] subagent <name> could not start read-only: <label> has no read-only enforcement of its own\" }`\n  (`<label>` from `acpAgentLabel`) and no session is created. Otherwise build the options and run the\n  turn through the same `runOnSession` the native path uses (cancel on abort, one turn, close always).\n\nA throw while building the ACP options (`acpBackend` or `chatAcpTools`) is caught in the ACP branch and\nreturned as `[chat] subagent <name> failed: <message>`, like a `createAgentSession` throw; the parent\nturn continues.\n\nAsks, usage, spend and tool activity from the nested ACP session reach the parent through the existing\n`createSubagentRuns` routing, unchanged. ACP usage rows carry `costSource: \"unpriced\"`, which the chat\nledger already records with confidence `estimated`, so an ACP subagent's cost is recorded as unknown,\nnot as an exact 0.\n\n`runSubagent(input, deps)` in `subagent-session.ts`. Baseline: always native. Target: branches as above.\n`_subagentSessionDeps` keeps its current keys; the ACP seams live in `_acpSubagentDeps`.\n\nFailure handling: malformed agent-file ACP values return the failed result with no session; read-only Cursor returns the exact could-not-start message before either session creation or backend construction; ACP option factories and missing binaries/session creation failures return failedResult rather than throwing into the parent turn. Preserve the native path's existing option-build rejection behavior; do not put native option construction into the new ACP catch. Keep the pre-aborted short circuit and runOnSession's abort-during-open, event forwarding, one-turn and close semantics. Update the native-only documentation comment to reflect the transport branch without changing native runtime behavior. The new acp-subagent-session module's RunSubagentInput import remains type-only.\n\n**Scope** — In: runtime transport dispatch, profile/override consumption, fail-closed startup refusal, ACP failure conversion and common lifecycle. Out: config/resolver implementation (US-001/US-002), policy helper implementation (US-003), option/instruction builders (US-004), host harness and outermost-path cases (US-006), changes to native subagents, read-only Cursor support and ledger attribution/repricing.\n\n**Interface** — Existing signature retained:\n```ts\nexport async function runSubagent(input: RunSubagentInput, deps = _subagentSessionDeps): Promise<RunSubagentResult>\n```\nConsumes US-003's `acpSubagentProfile`, `isReadOnlyAcpProfile`, `acpReadOnlyEnforced` and US-004's `acpSubagentSessionOptions(input, createTranscriptStore)`; continue supplying `deps.createMemoryTranscriptStore` and creating sessions through `deps.createAgentSession`.",
+      "acceptanceCriteria": [
+        "[unit] runSubagent with model: \"acp:codex/gpt-6.1-terra\", an agent with tools: [\"Read\"], mode guarded and _acpSubagentDeps stubbed creates the session through _subagentSessionDeps.createAgentSession with profile \"review\" and never calls _subagentSessionDeps.nativeBackend.",
+        "[unit] runSubagent with model: \"acp:cursor\" and an agent with tools: [\"Read\"] returns { isError: true } with content \"[chat] subagent <qualifiedName> could not start read-only: Cursor has no read-only enforcement of its own\".",
+        "[unit] In that cursor refusal, createAgentSession and _acpSubagentDeps.acpBackend are never called.",
+        "[unit] runSubagent with model: \"acp:cursor\", an agent with tools: [\"Read\", \"Edit\"] and mode guarded creates the session with profile \"ask\".",
+        "[unit] runSubagent with model: \"acp:bogus\" returns { isError: true } with content starting \"[chat] subagent <qualifiedName> failed:\" and containing \"invalid ACP model\", and createAgentSession is never called.",
+        "[unit] runSubagent on an ACP model whose _acpSubagentDeps.chatAcpTools rejects with boom returns { isError: true } with content \"[chat] subagent <qualifiedName> failed: boom\", and createAgentSession is never called.",
+        "[unit] runSubagent on an ACP model whose createAgentSession throws \"spawn codex-acp ENOENT\" returns { isError: true } with content \"[chat] subagent <qualifiedName> failed: spawn codex-acp ENOENT\".",
+        "[unit] runSubagent on an ACP model whose nested turn ends completed with output LGTM returns { content: \"LGTM\" }.",
+        "[unit] runSubagent on an ACP model closes the nested session exactly once after the turn.",
+        "[unit] runSubagent on an ACP model whose input signal aborts during the turn calls cancel() on the nested session.",
+        "[unit] When _acpSubagentDeps.acpBackend throws boom while runSubagent builds ACP options, runSubagent returns { isError: true, content: \"[chat] subagent <qualifiedName> failed: boom\" } without creating a session, so the parent turn receives an error result rather than a rejected call.",
+        "[unit] runSubagent on a native provider/model still rejects when native option construction throws, preserving the existing native failure contract."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "sessions",
+        "security",
+        "permissions",
+        "error-handling"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A bounded branch in one existing runner reuses upstream policy/options helpers and the existing runOnSession lifecycle rather than creating new lifecycle machinery; session startup and read-only refusal require strict isolated TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/subagent-session.ts",
+        "packages/nax/test/unit/chat/subagent-session.test.ts",
+        "packages/nax/src/chat/acp/acp-subagent-session.ts",
+        "packages/nax/src/chat/acp/acp-subagent-profile.ts",
+        "packages/nax/src/chat/acp/acp-model.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/subagent-session-acp.test.ts"
+      ],
+      "suggestedCriteria": [
+        "runSubagent with model acp:cursor and config.agent.acpSubagents.profile read returns the read-only refusal even when the agent declares Write and the chat mode is full.",
+        "runSubagent with model acp:cursor, tools [\"Read\"], guarded mode and config.agent.acpSubagents.profile full creates the nested session with profile full.",
+        "runSubagent on an ACP model with an already-aborted signal returns the existing cancelled result without calling acpBackend or createAgentSession.",
+        "runSubagent on an ACP model whose signal aborts during session creation sends no task and closes the created session exactly once.",
+        "runSubagent on an ACP model returns its turn result when nested close() rejects."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Expose ACP subagent host seams and pin chat-tool integration",
+      "description": "**Goal** — Extend the existing chat host harness for ACP configuration and dependency capture, and exercise the full nax-agents__run route without launching real agents.\n\n**Motivation** — Reviewing a spec on a second model, for example Codex reviewing a spec Claude\nwrote, today means switching the whole chat's brain with `/model` by hand.\n\n**Approach** — Extend the chat-subagent test harness so it can set `agent.acpSubagents` and stub and restore\n`_acpSubagentDeps`, and pin the whole path from the chat host's `nax-agents__run` tool.\n\n- `packages/nax/test/helpers/chat-subagents.ts` - add an optional `toolProviders` option that replaces the default `[base]` resources provider list, a `costSource` parameter on `usageEvent` (default `\"computed\"`), an optional `acpSubagents` option to `SubagentHostOptions` merged into the host config's `agent` block beside `modelAliases`, stub `_acpSubagentDeps.acpBackend` (recording calls, returning a dummy backend object of the `acpBackend` return type) and `_acpSubagentDeps.chatAcpTools` (recording the `providers` argument it receives), and restore both in `dispose()` beside `_subagentSessionDeps`; existing options and behaviour unchanged.\n- `packages/nax/test/unit/chat/host-subagents.test.ts` - add the ACP host-level cases; existing cases unchanged.\n\nSeams:\n- US-005 consumes US-003's `acpSubagentProfile` and `acpReadOnlyEnforced` and US-004's\n  `acpSubagentSessionOptions`: covered at the outermost entry, the chat host's `nax-agents__run` tool, by\n  US-006 AC 1, AC 2 and AC 3.\n- US-005 consumes US-002's `agent.acpSubagents.profile` and `acp:` alias resolution: covered by\n  US-006 AC 1 and AC 2.\n\nAsks, usage, spend and tool activity from the nested ACP session reach the parent through the existing\n`createSubagentRuns` routing, unchanged. ACP usage rows carry `costSource: \"unpriced\"`, which the chat\nledger already records with confidence `estimated`, so an ACP subagent's cost is recorded as unknown,\nnot as an exact 0.\n\nUse the real chat host, model/tool mapping, runSubagent and ledger with scripted createAgentSession dependencies. Assert captured backend arguments and nested session options, not only helper calls. The provider-injection case is defensive: production never puts nax-jobs in resources' providers today. Give that fixture an acp:codex model and no tools: line so allowedTools is undefined and the provider allowlist, not an unrelated empty provider narrowing, is what excludes nax-jobs. Pin usageEvent()'s existing computed default after adding its optional third argument. The ledger and native-path cases are regression pins of existing behavior, not requests to redesign accounting or native policy. Expose recorded ACP calls/provider lists through the harness's typed return contract, preserve existing native capture arrays, and restore all seams even if host.close fails.\n\n**Scope** — In: backward-compatible harness options, typed ACP call capture/stub restoration, six host-tool integration cases and a usageEvent default regression assertion in the existing test file. Out: changes to config/resolution (US-001/US-002), profile derivation (US-003), options/instructions (US-004), runtime branching (US-005), production ledger attribution/repricing, giving the ACP brain subagent tools, and real billed ACP launches.\n\n**Interface** — Extend the existing `SubagentHostOptions`, `SubagentHostHarness`, `makeSubagentHostHarness(options)` and `usageEvent(at, costUsd)` contracts additively as specified above; `usageEvent` gains a costSource parameter defaulting to `\"computed\"`. The host's externally exercised tool remains `nax-agents__run`.",
+      "acceptanceCriteria": [
+        "[integration] Through the chat host's nax-agents__run tool, with agent.modelAliases { reviewer: \"acp:codex/gpt-6.1-terra\" } and an agent file with model: reviewer and tools: [\"Read\", \"Grep\"], a guarded chat turn that runs the agent calls the stubbed _acpSubagentDeps.acpBackend once with agent codex and model gpt-6.1-terra, and the nested session opens with profile \"review\".",
+        "[integration] Through the same nax-agents__run path with agent.acpSubagents { profile: \"ask\" } and the same read-only agent file, the nested ACP session opens with profile \"ask\".",
+        "[integration] Through the same nax-agents__run path with alias reviewer mapped to acp:cursor and an agent with tools: [\"Read\"], the tool result is an error containing \"could not start read-only: Cursor has no read-only enforcement of its own\", and no nested session is created.",
+        "[integration] (Defensive pin: production never puts nax-jobs in the resources' providers today) Through the same nax-agents__run path, with an agent resolving to acp:codex and declaring no tools: line, and providers nax-workflow, nax-jobs and nax-memory injected through the harness toolProviders option, the stubbed _acpSubagentDeps.chatAcpTools receives no nax-jobs provider.",
+        "[integration] (Regression pin of existing ledger behaviour) Through the same nax-agents__run path, a nested ACP usage event with costSource: \"unpriced\" and costUsd: 0 is written to the chat ledger as a subagent row with confidence estimated.",
+        "[integration] (Regression pin of the native path) Through the same nax-agents__run path, an agent whose model resolves to a native provider/model opens a native nested backend and never calls _acpSubagentDeps.acpBackend.",
+        "[unit] usageEvent() returns an event with costSource computed when the new costSource argument is omitted, preserving the existing helper default."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "acp",
+        "integration",
+        "sessions",
+        "security",
+        "test-harness"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Binding US-006 explicitly requires a separate additive harness/integration story; the existing host pattern bounds the change, while session/profile and provider-exclusion assertions trigger the security override."
+      },
+      "contextFiles": [
+        "packages/nax/test/helpers/chat-subagents.ts",
+        "packages/nax/test/unit/chat/host-subagents.test.ts",
+        "packages/nax/src/chat/chat-ledger.ts",
+        "packages/nax/src/chat/subagent-runs.ts",
+        "packages/nax/src/chat/acp/acp-subagent-session.ts"
+      ],
+      "suggestedCriteria": [
+        "Through the chat host's nax-agents__run path, an unpriced zero-cost ACP subagent ledger row preserves agentName native and the resolved acp: model string, and adds zero to the parent session's meta.costUsd.",
+        "Through the chat host's nax-agents__run path, a nested ACP approval request is answered on its owning nested session rather than on the parent session.",
+        "After an ACP-enabled harness is disposed, a new harness records no ACP backend calls from the previous instance."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/helpers/chat-subagents.ts",
+          "reason": "add an optional `toolProviders` option that replaces the default `[base]` resources provider list, a `costSource` parameter on `usageEvent` (default `\"computed\"`), an optional `acpSubagents` option to `SubagentHostOptions` merged into the host config's `agent` block beside `modelAliases`, stub `_acpSubagentDeps.acpBackend` (recording calls, returning a dummy backend object of the `acpBackend` return type) and `_acpSubagentDeps.chatAcpTools` (recording the `providers` argument it receives), and restore both in `dispose()` beside `_subagentSessionDeps`; existing options and behaviour unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/host-subagents.test.ts",
+          "reason": "add the ACP host-level cases; existing cases unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Repository exploration: this is an enhancement to an existing Bun/TypeScript/Zod CLI, not greenfield. The execution root is /Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax. codebase-memory MCP was not exposed in this session, so navigation used direct source reads and text search. All six stories operate exclusively in packages/nax; packages/nax-agent and packages/nax-agent-acp are read-only integration references. No package additions, published API changes, dependency upgrades, version changes, or data migration are required. Follow docs/architecture/ARCHITECTURE.md:15 (dependency injection), :36 (testing), :174 (file/function limits), and package-local instructions. Read the relevant canonical .nax/rules before implementation. Use public @nathapp/nax-agent and @nathapp/nax-agent-acp/client boundaries, never cross-package deep imports.\n\nUS-001 — Alias validation: packages/nax/src/config/schemas-model-alias.ts:13 currently defines MODEL_ALIAS_TARGET as a provider/model regex, and :15 applies it with a provider-only message; :22 exports ModelAliasesSchema. This currently admits acp:bogus/x as a provider/model value, so a permissive OR is unsafe: route every startsWith('acp:') value exclusively through the specified ACP regex and everything else through the existing native regex. Config must not import chat; parity belongs in tests. packages/nax/src/chat/acp/acp-model.ts:51 exports parseChatAcpModel, :12 defines the three supported agents, :31 defines a trailing bracket group, and :70 provides acpAgentLabel. The parser uses the public parseModelSpec, whose nonempty trailing effort matcher is at packages/nax-agent/src/cost/model-spec.ts:30; multiple model slashes are allowed, empty effort groups and stray brackets are rejected. Preserve native alias validation and key normalization. packages/nax/src/cli/config-descriptions.ts:375 holds the alias description. Extend existing cases in packages/nax/test/unit/config/agent-schema.test.ts:522 and packages/nax/test/unit/cli/config-descriptions.test.ts:108 instead of replacing them.\n\nUS-002 — Config and resolution: packages/nax/src/config/schemas-infra.ts:19 imports the alias schema; :465 defines AgentConfigSchema, :472 is the one-line alias comment, and :473 defines modelAliases. The file is exactly 600 lines. Add AcpSubagentsConfigSchema to the existing import on one line and replace the alias comment with the optional acpSubagents property; move the comment to schemas-model-alias.ts. Do not introduce a default object or default profile: absent configuration must remain undefined. packages/nax/src/config/runtime-types-agent.ts:204 defines AgentConfig, with modelAliases at :215; synchronize its optional acpSubagents runtime type. Add descriptions for both agent.acpSubagents and agent.acpSubagents.profile beside the existing agent descriptions. packages/nax/src/chat/subagent-model.ts:50 implements inherit -> own alias -> family tier -> slash-qualified explicit model -> fallback. At :60 extend the explicit-model condition for acp: without moving it ahead of alias lookup. This lets malformed bare acp: requests reach the later parser rather than silently inherit the parent model. Consumers are packages/nax/src/chat/subagent-runs.ts:15, packages/nax/src/chat/chat-agents-listing.ts:5, and the export in packages/nax/src/chat/index.ts:139. The listing gains model resolution naturally, but its tools column is explicitly not being changed. Existing packages/nax/test/unit/chat/subagent-model.test.ts covers precedence, object-prototype avoidance and barrel access; append the three ACP cases unchanged around the existing native cases.\n\nUS-003 — Permission derivation: create the small ACP profile module rather than modifying native policy. packages/nax/src/chat/subagent-tools.ts:43 has private bareName: strip text after the first '(' only when the entry ends in ')'; :68 maps absent tools to no narrowing and present lists to allowedTools. Duplicate that precise bare-name rule locally without exporting or changing the original. Derive from AgentResource.tools, not the mapped tools, so NotebookEdit and other write declarations cannot disappear before the permission decision. The ordered policy is override -> undefined tools/chat mode -> any six named write tools/chat mode -> review. Bash intentionally does not count as a write declaration. packages/nax/src/chat/chat-mode.ts:5 defines ChatMode, but its native chatSessionSettings at :17 intentionally opens native profile full even in guarded mode, with posture elsewhere. Do not reuse that native profile for ACP. Use registryEntry from the ACP public client export (packages/nax-agent-acp/src/client/index.ts:17). Its readOnly entries at packages/nax-agent-acp/src/client/registry.ts:142, :162 and :184 show claude/codex policy undefined and cursor policy 'cursor'. A missing entry/readOnly must not pass merely because optional policy evaluates undefined. Own enforcement means a readOnly entry exists AND its policy is undefined; avoid hardcoded agent allowlists. No ACP registry changes are needed. These are access-control semantics and require strict three-session-tdd.\n\nUS-004 — Options and prompts: packages/nax/src/chat/acp/acp-session-options.ts:56 is the existing ACP brain options builder and :18 its separate seam. Mirror backend arguments and conditional model/effort inclusion, but not sessionId, durable transcript paths or brain provider policy. packages/nax/src/chat/acp/acp-tools.ts:19 admits workflow/jobs/memory for the brain; :32 resolves provider tools and rendered instructions. Keep that shared function and its brain behavior unchanged. The new subagent wrapper must prefilter to workflow/memory, then narrow whole providers by allowedTools prefix when defined; built-in-only lists or [] must deliver no nax providers. Filter save and forget from the returned EmbedderTool list under BOTH review and read, without mutating the shared list. packages/nax/src/agents/acp/provider-embedder.ts:30 maps tools, with approval 'never' at :36, so profile enforcement alone cannot prevent host memory writes. packages/nax/src/memory/tool-provider.ts:340-366 defines get/search/save/forget; remove only the two specified fully qualified write names. packages/nax/src/chat/subagent-session.ts:20 supplies RunSubagentInput; import it type-only from the new module to avoid a runtime cycle once runSubagent imports the options builder. Keep _subagentSessionDeps keys unchanged and create the dedicated _acpSubagentDeps. A fresh injected memory transcript store, omitted sessionId, workdir, parent metadata and execution approvalTimeout preserve ephemeral nested-session semantics. packages/nax/src/prompts/builders/agents-builder.ts:31 currently builds native instructions; add the separate ACP builder without altering native output. Reuse memorySectionOf (packages/nax/src/prompts/builders/memory-builder.ts:49) for absent/empty memory handling and export the new builder/input through packages/nax/src/prompts/index.ts:25-31. No nax rules index or native guarded paragraph is appropriate for the ACP agent. Extend packages/nax/test/unit/prompts/builders/agents-builder.test.ts and create the specified ACP options test; mirror the seam snapshot/restore pattern in packages/nax/test/unit/chat/acp/acp-session-options.test.ts:43-62.\n\nUS-005 — Runtime branch: packages/nax/src/chat/subagent-session.ts:174 currently always resolves native posture, builds native options, then creates a session. Native option construction at :60 intentionally remains outside the creation catch, and the existing test in packages/nax/test/unit/chat/subagent-session.test.ts asserts such native errors reject. Preserve that native behavior: scope the new options-construction catch to the ACP branch rather than broadly changing all failures. Parse and derive ACP before resolving native posture or building native options. Malformed ACP input and unenforceable read-only Cursor must return the specified error before creating a session; the latter must also avoid the ACP backend factory. ACP factory/tool-option errors and create errors must use the existing failedResult at :112, not reject into the parent. Reuse runOnSession at :152 for exactly one send, event forwarding, cancellation, onSession registration and unconditional close. Existing lifecycle code at :131 forwards events and consumes turn_end; :136 diagnoses a missing terminal event; :139 closes quietly; the abort listener is removed in finally. Preserve pre-aborted behavior, abort-during-open handling, terminal placeholders and close-failure logging. Update the native-only function comment to describe the two paths accurately. Create packages/nax/test/unit/chat/subagent-session-acp.test.ts; keep all existing native deps-based cases intact. No live ACP process should be spawned in unit tests.\n\nUS-006 — End-to-end host seam: packages/nax/src/chat/chat-host.ts:194 wires createSubagentRuns with resources.toolProviders, mode/model, asks, ledger and active memory, then :211 composes the brain-only jobs/task/agents providers. packages/nax/src/chat/subagent-runs.ts:158 resolves model aliases, :165 maps tools, :170 calls runSubagent, and :120-136 routes usage to the parent-session ledger and turn-end spend; no production routing change is needed. Keep ask ownership, activity attribution, spend and cancellation routing transport-neutral. packages/nax/test/helpers/chat-subagents.ts:98 currently hardcodes computed costSource, :197 defines SubagentHostOptions, :248 exposes captured sessions/backends, and :276 initializes the host harness with only modelAliases and a default base resources provider. Extend the harness with optional acpSubagents and replacement toolProviders, typed captured ACP backend arguments/provider lists, and snapshot/restore of the new seam alongside existing seams at :278 and the dispose finally at :462. A dummy backend must satisfy the actual acpBackend return type and must never launch an agent. Existing native capture arrays must keep their meaning. packages/nax/test/unit/chat/host-subagents.test.ts:73 exercises nested options, :147 asks, :205 ledger/spend/activity, :294 cancel/close; append six behavioral host cases to that existing file even though they are integration in scope. packages/nax/src/chat/chat-ledger.ts:35 already derives exactness from costSource !== 'unpriced', emits agentName 'native' at :41 and confidence 'estimated' at :54 for unpriced rows. Do not reprice ACP or relabel agentName. An unpriced zero-cost subagent event must be a subagent row with estimated confidence while metadata spend still increases by zero, matching existing behavior.\n\nArchitecture, risk and rollout: implement the binding US-001 -> US-002 -> US-003 -> US-004 -> US-005 -> US-006 chain without merging the explicit harness/integration story. No existing configs need migration: native aliases retain their old shape, acpSubagents is opt-in, and native nested sessions retain their original posture/tool/rules behavior. The only intentional tightening is invalid acp:-prefixed alias values that the old provider regex accidentally admitted. Explicit profile full is an operator override even in guarded chat; do not silently cap it. The highest risks are accidental provider widening (especially nax-jobs), host memory writes bypassing read-only via approval-never tools, confusing Cursor's translated policy with own enforcement, new runtime import cycles, changes to native exception behavior, schema line-cap growth and leaked global seams between tests. Pin each boundary using table-driven unit cases and host-tool integration cases, not real billed launches. Optional behavioral hardening remains in suggestedCriteria. Explicit failure-table behavior and the negative-path/backward-compatibility assertions required by the refine audit are acceptanceCriteria; the original 52 spec acceptance criteria remain intact in their original stories. Use targeted bun test paths from packages/nax during implementation; pipeline gates handle typecheck/lint/tests. Never run bare bun test or bun run nax. Coverage is a separate outside-session check and must not be run when NAX_SANDBOXED=1. This drafting session changed only the PRD and did not run tests or execute source code.\n\nRefine-pass adversarial audit — Every one of the 52 numbered spec criteria was compared against this PRD, with the original criteria still occupying the first 7/8/11/10/10/6 positions in US-001/002/003/004/005/006 respectively. No deprecated grep/file/verbatim AC tags appear in the spec. Assertion inventory and preservation mapping: US-001.1 Codex alias succeeds unchanged; .2 three accepted ACP targets; .3 unknown agent error path/message; .4 three malformed targets rejected under modelAliases; .5 six parser-parity inputs; .6 existing bare native target rejected with provider/model diagnostic; .7 alias description names acp:. US-002.1 absent config remains undefined; .2 read profile round-trips; .3 write profile rejected under the profile path; .4 strict extra field rejected; .5 profile description nonempty; .6 bare acp:codex explicit model; .7 reviewer ACP alias; .8 acp:-named alias key still wins. US-003.1 Read/Grep/Bash derives review; .2 empty tools in full derives review; .3 Edit in guarded derives ask; .4 Write(src/**) in full derives full; .5 undefined tools guarded derives ask; .6 undefined tools full derives full; .7 full override wins over read-only tools; .8 read override wins over Write/full; .9 all six write tools derive ask in guarded; .10 exactly review/read are read-only; .11 own-enforcement true for claude/codex and false for cursor. US-004.1 exact opening and final prompt sections; .2 tools/memory/prompt order; .3 exact backend argument object once; .4 review profile/no sessionId/cwd; .5 parent/subagent metadata; .6 workflow/memory provider allowlist; .7 allowedTools narrows to memory provider; .8 review strips memory writes; .9 ask retains the same four tools; .10 injected transcript store and composed instructions. US-005.1 ACP session opens review without native backend; .2 exact Cursor refusal result; .3 no session or ACP factory on refusal; .4 Cursor writable agent opens ask; .5 malformed ACP returns invalid-model error without session; .6 tool-options rejection returns failed result without session; .7 ENOENT creation returns failed result; .8 completed LGTM returned as text; .9 close exactly once; .10 abort invokes cancel. US-006.1 full host alias-to-Codex/review path; .2 same read-only agent plus ask override; .3 host Cursor refusal without nested session; .4 no jobs provider, retaining the defensive production-provider qualification; .5 unpriced zero usage row remains estimated, retaining the regression pin of existing ledger behaviour; .6 native backend without ACP factory, retaining the native-path regression pin. The unchanged qualifier on US-001.1 and same-agent/same-tools references in US-004.9 and US-006.2 are retained.\n\nFailure audit: each story now has an observable negative case: schema rejection in US-001, invalid profile/extra fields in US-002, false own-enforcement for Cursor in US-003, explicit options-builder dependency rejection in US-004, contained startup failures/refusal in US-005, and host refusal in US-006. All six Failure Handling rows map to assertions: unknown alias -> US-001.3/4; malformed agent-file model -> US-005.5; read-only Cursor -> US-005.2/3 and US-006.3; options factory/tool failure -> US-005.6/11; missing binary/session creation -> US-005.7; unpriced cost -> US-006.5. The new US-004 rejection assertion stubs chatAcpTools itself: packages/nax/src/chat/acp/acp-tools.ts:29-35 separately drops providers whose tools() rejects, so this assertion does not incorrectly change that existing provider-drop behavior.\n\nRegression and fit corrections: US-001 now pins native alias values including nested paths/effort; US-002 pins explicit native models, alias-over-tier precedence and unknown bare-name fallback; US-004 pins native builder output; US-005 promotes the existing native options-build rejection contract from suggestedCriteria into acceptanceCriteria; US-006 pins usageEvent's computed default after extending its signature. The US-006 provider fixture now specifies an ACP-resolved agent with no tools line, so mapped allowedTools is undefined and provider exclusion is tested at the intended allowlist boundary. US-002.6 explicitly uses required empty aliases/tiers objects rather than suggesting missing required arguments. Added assertions are audit-required negative or compatibility pins, not additional feature scope. Other hardening candidates remain suggestions. All assertions are observable via schema parse data/issues, returned profile/text/options/results, captured factory/provider/session calls, cancellation/close state, promise rejection, or ledger rows. No description contradicts a criterion: the options builder rejects while the ACP runner catches; native option construction continues to reject as before; native instructions remain unchanged.\n\nContext/routing/dependency audit: US-001 contextFiles now matches all five spec-recommended source files; its existing test paths remain in its description and the earlier analysis. US-002, US-003 and US-005 match their complete spec context sets. US-004 has six recommended paths but only five allowed slots: existing ACP options/tools, agents builder, memory provider and RunSubagentInput are prioritized; the upstream profile module is identified explicitly in its description and will be readable after US-003. US-006 includes all three specified contexts plus the actual routing and upstream options module. No story lists one of its own new files as context. Read-only cross-package registry references are not implementation outputs. All six ids, package workdirs and the binding single-predecessor dependency chain remain unchanged; removing a predecessor would violate the binding spec. US-004 and US-005 complexity were reduced from complex to medium: both are bounded extensions reusing existing ACP/session patterns, not new lifecycle abstractions. Strict three-session-tdd is retained for US-002 through US-006 because they configure or exercise permission/session boundaries; US-001 remains medium/tdd-simple for model string validation.\n\nOut-of-scope audit: all eleven feature exclusions remain verbatim in top-level outOfScope: agents run; koda flow; native/ACP-brain/jobs-chain changes; per-tool ACP translation; ACP brain calling subagents; read-only Cursor; jobs/billed tools; guide page; ledger attribution/accounting change; listing tools column; workflow per-tool narrowing. Near-boundary story Scope sections repeat their relevant exclusions. There are no story-local deferrals in the spec to lift into the global list. Audit revisions touch only this PRD, not implementation source, helpers, tests or the spec.",
+  "outOfScope": [
+    "`nax agents run` (design section 3), including the rule that an unattended run with no `tools:` line uses the `review` profile; it lands with that command.",
+    "The koda flow tool `nax-flow__send` (design section 4).",
+    "Any change to native subagents, to the chat ACP brain, or to `nax-jobs__chain`.",
+    "Translating an agent file's `tools:` list into per-tool ACP restrictions; `tools:` only selects the profile and which nax providers are delivered, whole providers at a time.",
+    "Letting an ACP chat brain call subagents; the ACP brain is not given the `nax-agents` provider today and still is not.",
+    "Read-only ACP subagents on `cursor`; they refuse to start until cursor enforces read-only through its own mode.",
+    "Giving an ACP subagent the `nax-jobs` provider or any billed launch tool.",
+    "A user guide page for ACP subagents.",
+    "Ledger attribution for ACP subagent rows: they keep `agentName: \"native\"` and the `acp:` model string, and an unpriced ACP turn adds 0 to the chat session's `meta.costUsd`; the row's `estimated` confidence is the only unknown-cost signal.",
+    "The `/agents` listing's tools column for an ACP-aliased agent; it still shows the mapped nax tool list.",
+    "Per-tool narrowing of the `nax-workflow` provider; it delivers only the read-only `state` tool today."
+  ],
+  "routingProfile": "native-codex-ds"
+}
