@@ -2,10 +2,10 @@
  * `memory` config block — the repository-wide memory settings.
  *
  * `.strict()` throughout, like `schemas-mcp.ts`: an unknown key must fail
- * loudly. The keys a later feature owns (`stages` for memory-run-stages, `koda`
- * for memory-koda-provider) are rejected until that feature widens this schema,
- * because a silently stripped key reads at runtime as "memory is broken" rather
- * than "this build does not have that feature yet".
+ * loudly. The keys a later feature owns (`stages` for memory-run-stages) are
+ * rejected until that feature widens this schema, because a silently stripped
+ * key reads at runtime as "memory is broken" rather than "this build does not
+ * have that feature yet".
  *
  * `NaxConfig.memory` is optional on the hand-written interface, so readers go
  * through `memoryConfigOf` rather than reaching for `config.memory` directly.
@@ -14,11 +14,16 @@
  * memory host and index either way, while `nax run` gets neither when it is
  * false. The design's `memory.stages` list is not built — the run tools always
  * attach to `run`-stage sessions only.
+ *
+ * `koda` is the third provider's block (`memory-koda-provider`): the koda
+ * project a repo links to, and the global-only url/headers that reach it. It
+ * has no default, so it is absent from `NaxConfigSchema.parse({}).memory`.
  */
 import { z } from "zod";
 import type { NaxConfig } from "./runtime-types";
 import type { MemoryConfig } from "./runtime-types-memory";
 import { MCP_SERVER_ID_RE } from "./schemas-mcp";
+import { isRemotePlainHttp } from "./schemas-model";
 
 /** Floor for the injected index's byte cap — small enough that omission is observable. */
 export const MEMORY_INDEX_BYTES_MIN = 512;
@@ -63,11 +68,61 @@ export const MemoryMcpConfigSchema = z
   })
   .strict();
 
+/** koda's project slug rule: lowercase letters, digits and dashes, no leading dash. */
+export const KODA_PROJECT_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,99}$/;
+
+/** Plain http is accepted only to a loopback host, because the bearer key travels with every request. */
+const KODA_URL_HTTPS_MESSAGE = "memory.koda.url must use https unless the host is loopback";
+const KODA_URL_SCHEME_MESSAGE = "memory.koda.url must be an http or https URL";
+const KODA_PROJECT_MESSAGE = "memory.koda.project must be a koda project slug (lowercase letters, digits and dashes)";
+
+/** Whether `value` parses as an http or https URL — a bare `z.string().url()` admits any scheme. */
+function isHttpUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    // Not a URL at all: the scheme message covers it.
+    return false;
+  }
+}
+
+/**
+ * `memory.koda.url`: an http or https URL, and plain http only to a loopback host. One issue per
+ * bad value — a remote plain-http url would otherwise also report the scheme.
+ */
+const KodaUrlSchema = z.string().superRefine((value, ctx) => {
+  if (!isHttpUrl(value)) {
+    ctx.addIssue({ code: "custom", message: KODA_URL_SCHEME_MESSAGE });
+    return;
+  }
+  if (isRemotePlainHttp(value)) ctx.addIssue({ code: "custom", message: KODA_URL_HTTPS_MESSAGE });
+});
+
+/**
+ * `memory.koda` — the koda project that holds the memories, and how to reach it.
+ *
+ * `url` and `headers` are global-only (`rejectGlobalOnlyKeys`); `project` is what
+ * `nax memory link` writes into the project layer. No default: the block is
+ * absent until a user configures koda, and `validateMemoryProvider` requires
+ * `url` and `project` once `memory.provider` is `"koda"`.
+ */
+export const MemoryKodaConfigSchema = z
+  .object({
+    /** koda's API root *including* its global prefix (`https://koda.example/api`). */
+    url: KodaUrlSchema.optional(),
+    project: z.string().regex(KODA_PROJECT_SLUG_RE, KODA_PROJECT_MESSAGE).optional(),
+    /** Static request headers (the bearer agent key), carried literally — no `${VAR}` expansion, no `auth` source. */
+    headers: z.record(z.string(), z.string()).default({}),
+  })
+  .strict();
+
 export const MemoryConfigSchema = z
   .object({
     enabled: z.boolean().default(true),
-    provider: z.enum(["local", "mcp"]).default("local"),
+    provider: z.enum(["local", "mcp", "koda"]).default("local"),
     mcp: MemoryMcpConfigSchema.optional(),
+    koda: MemoryKodaConfigSchema.optional(),
     writeMode: z.enum(["direct", "proposal"]).default("direct"),
     indexBytes: z
       .number()
@@ -99,25 +154,45 @@ interface MemoryProviderInput {
       readonly tools?: { readonly forget?: string };
       readonly args?: { readonly id?: string };
     };
+    readonly koda?: { readonly url?: string; readonly project?: string };
   };
   readonly mcp?: { readonly servers?: Record<string, unknown> };
 }
 
 /**
- * Cross-section rules for `memory.provider: "mcp"`, called from the `NaxConfigSchema` `superRefine`.
- * The four rules are independent: one config can raise several issues. An absent `mcp` block has no
+ * Cross-section rules for `memory.provider`, called from the `NaxConfigSchema` `superRefine`.
+ * The rules are independent: one config can raise several issues. An absent `mcp` block has no
  * servers. A `memory.mcp` block under `provider: "local"` is valid and unused, so only the server
  * and forget/id rules look at it regardless of the provider.
+ *
+ * `provider: "koda"` requires both the url (global, the API root) and the project (written by
+ * `nax memory link`): without either the provider is unreachable, and the pinned messages name
+ * the file to edit. Proposal write mode is allowed with koda — koda holds pending writes itself.
  */
 export function validateMemoryProvider(data: MemoryProviderInput, ctx: z.RefinementCtx): void {
   const memory = data.memory;
   if (memory === undefined) return;
   const isMcp = memory.provider === "mcp";
+  const isKoda = memory.provider === "koda";
   if (isMcp && memory.mcp === undefined) {
     ctx.addIssue({
       code: "custom",
       path: ["memory", "mcp"],
       message: 'memory.provider "mcp" needs a memory.mcp block naming the server',
+    });
+  }
+  if (isKoda && memory.koda?.url === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["memory", "koda", "url"],
+      message: 'memory.provider "koda" needs memory.koda.url in ~/.nax/config.json',
+    });
+  }
+  if (isKoda && memory.koda?.project === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["memory", "koda", "project"],
+      message: 'memory.provider "koda" needs memory.koda.project (run nax memory link <koda-project>)',
     });
   }
   if (memory.mcp !== undefined && !Object.hasOwn(data.mcp?.servers ?? {}, memory.mcp.server)) {

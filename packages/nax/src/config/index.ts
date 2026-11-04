@@ -53,7 +53,7 @@ export { getProjectKey } from "./project-key";
 export { pinRootOnlyKeys, pinRootOnlyKeysRaw, ROOT_ONLY_EXECUTION_KEYS } from "./root-only-keys";
 export type { AdvisorCaller, AdvisorConfig } from "./runtime-types-advisor";
 export type { BotConfig, BotModelsConfig } from "./runtime-types-bot";
-export type { MemoryConfig, MemoryMcpConfig } from "./runtime-types-memory";
+export type { MemoryConfig, MemoryKodaConfig, MemoryMcpConfig } from "./runtime-types-memory";
 export type {
   ExecutionMode,
   WorkflowConfig,
@@ -139,10 +139,12 @@ export {
 } from "./schemas-infra";
 export { MCP_DEFAULT_TIMEOUT_MS, MCP_SERVER_ID_RE } from "./schemas-mcp";
 export {
+  KODA_PROJECT_SLUG_RE,
   MEMORY_INDEX_BYTES_DEFAULT,
   MEMORY_INDEX_BYTES_MAX,
   MEMORY_INDEX_BYTES_MIN,
   MemoryConfigSchema,
+  MemoryKodaConfigSchema,
   MemoryMcpConfigSchema,
   memoryConfigOf,
   validateMemoryProvider,
