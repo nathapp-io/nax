@@ -147,11 +147,17 @@ describe("readReviewRulings", () => {
     test("a PR without the workflow marker skips every entry", async () => {
       const base = input();
       const plain = { ...base, info: { ...base.info, body: "plain" }, callerRulings: file };
-      const result = await readReviewRulings(plain, mock<typeof recordPrRulings>(async () => outcome));
+      const result = await readReviewRulings(
+        plain,
+        mock<typeof recordPrRulings>(async () => outcome),
+      );
       expect(result.callerRulings).toEqual({ applied: [], skipped: [{ item: "D-1", reason: "unknown-item" }] });
     });
     test("omits the report entirely without a file", async () => {
-      const result = await readReviewRulings(input(), mock<typeof recordPrRulings>(async () => outcome));
+      const result = await readReviewRulings(
+        input(),
+        mock<typeof recordPrRulings>(async () => outcome),
+      );
       expect(result).not.toHaveProperty("callerRulings");
     });
     test("a recorder failure reports every entry as not applied", async () => {

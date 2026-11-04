@@ -15,8 +15,7 @@ const comment = (id: string, body: string, author = "bot", createdAt = "2026-01-
   kind: "thread",
   createdAt,
 });
-const opener = () =>
-  comment("1", withNaxBotMarker(renderItemOpener({ id: "B3", kind: "finding", issue: "x" }), key));
+const opener = () => comment("1", withNaxBotMarker(renderItemOpener({ id: "B3", kind: "finding", issue: "x" }), key));
 const thread = (...comments: PrComment[]): PrThread => ({
   id: "thread",
   replyTo: "1",
@@ -39,7 +38,8 @@ const info: PrInfo = {
 };
 const original = { ..._rulingsDeps };
 const logger = makeLogger();
-const post = mock(async () => ({ id: "posted" }));
+const post = mock(async (_ref: unknown, _thread: unknown, _body: string) => ({ id: "posted" }));
+const postedBody = (): string => post.mock.calls[0]?.[2] ?? "";
 const run = mock(async () => ({ exitCode: 0, stdout: "", stderr: "" }));
 const readModel = mock(async () => null);
 const caller = (over: Partial<CallerRuling> = {}): CallerRuling => ({
@@ -79,7 +79,7 @@ describe("recordPrRulings with caller rulings", () => {
     const value = input([thread(opener())], [caller()]);
     const out = await recordPrRulings(value);
     expect(post).toHaveBeenCalledTimes(1);
-    const body = (post.mock.calls[0] as unknown as [unknown, unknown, string])[2];
+    const body = postedBody();
     expect(body).toContain("Recorded: waived — accepted risk (caller ruling by orch:alice)");
     expect(body).toContain(`wr-waived-${key}`);
     expect(out.recorded).toHaveLength(1);
@@ -93,7 +93,7 @@ describe("recordPrRulings with caller rulings", () => {
   test("a later writer ruling wins and the caller ruling is skipped", async () => {
     const writer = comment("2", "confirm", "alice", "2026-01-03T00:00:00Z");
     const out = await recordPrRulings(input([thread(opener(), writer)], [caller()]));
-    const body = (post.mock.calls[0] as unknown as [unknown, unknown, string])[2];
+    const body = postedBody();
     expect(body).toContain("Recorded: confirmed");
     expect(body).not.toContain("caller ruling");
     expect(out.callerRulings).toEqual({ applied: [], skipped: [{ item: "B3", reason: "superseded-by-writer" }] });
@@ -128,10 +128,7 @@ describe("recordPrRulings with caller rulings", () => {
   });
   test("a second review with the same file does not re-record the settled item", async () => {
     const first = await recordPrRulings(input([thread(opener())], [caller()]));
-    const echo = comment(
-      "echo",
-      (post.mock.calls[0] as unknown as [unknown, unknown, string])[2],
-    );
+    const echo = comment("echo", postedBody());
     post.mockClear();
     const second = await recordPrRulings(input([thread(opener(), echo)], [caller()]));
     expect(first.recorded).toHaveLength(1);

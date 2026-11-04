@@ -7,11 +7,11 @@ import { getLogger } from "@/logger";
 import type { PrReviewVerdict, PrTriageDecision } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
 import type { CiWaitResult } from "../workflow/ci-wait";
+import type { CallerRulingsReport } from "./caller-rulings";
 import type { BotChecks } from "./checks";
 import { earlierCounts, earlierIssue, effectiveEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
 import { commentKey, findingKey, threadKey } from "./render";
 import { renderFindingComment, renderReviewSummary, renderThreadReply } from "./render-comments";
-import type { CallerRulingsReport } from "./caller-rulings";
 import type { BotReviewScope, ConfirmedItem, ItemStatus } from "./review-rulings";
 
 interface AgreedBase {

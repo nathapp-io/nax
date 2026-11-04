@@ -39,7 +39,7 @@ describe("loadCallerRulings", () => {
   });
 
   test("returns the parsed file", async () => {
-    expect(await subject.loadCallerRulings(path)).toEqual(file() as never);
+    expect(await subject.loadCallerRulings(path)).toEqual({ version: 1, headSha: head, rulings: [entry] });
   });
   test("key is optional and an empty list is accepted", async () => {
     const { key: _key, ...bare } = entry;
@@ -66,7 +66,10 @@ describe("loadCallerRulings", () => {
     ["wrong version", { ...file(), version: 2 }],
     ["short head sha", { ...file(), headSha: "abc" }],
     ["non-hex head sha", { ...file(), headSha: "z".repeat(40) }],
-    ["more than 100 rulings", file(Array.from({ length: 101 }, (_, i) => ({ ...entry, item: `D-${i}`, key: undefined })))],
+    [
+      "more than 100 rulings",
+      file(Array.from({ length: 101 }, (_, i) => ({ ...entry, item: `D-${i}`, key: undefined }))),
+    ],
     ["empty ruling", file([{ ...entry, ruling: "" }])],
     ["ruling over 2000 chars", file([{ ...entry, ruling: `confirm: ${"x".repeat(2000)}` }])],
     ["ruling without a keyword", file([{ ...entry, ruling: "looks fine to me" }])],

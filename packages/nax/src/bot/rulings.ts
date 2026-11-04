@@ -29,7 +29,7 @@ import {
 } from "../workflow/item-threads";
 import { editBodyArgv, hasChecklistItem, tickChecklist } from "../workflow/promote";
 import { parseRulingKeyword } from "../workflow/ruling-keyword";
-import { type CallerRulingsReport, planCallerRulings, type CallerRuling } from "./caller-rulings";
+import { type CallerRuling, type CallerRulingsReport, planCallerRulings } from "./caller-rulings";
 import { writerCheck } from "./writers";
 
 export const MAX_RULING_ITEMS = 20;
@@ -242,6 +242,13 @@ function renewedRuling(item: ItemThread, ruling: PrRuling): ItemThread & { reado
   return { ...current, ruling };
 }
 
+/** The ruling an authorized writer's newest kept reply states, if its first line is a keyword. */
+function replyRuling(item: OpenRulingItem): PrRuling | undefined {
+  const newest = item.kept.at(-1);
+  const keyword = newest ? parseRulingKeyword(newest.body) : null;
+  return keyword && newest ? { ...keyword, itemKey: item.key, itemId: item.itemId, by: newest.author } : undefined;
+}
+
 function callerReport(
   skipped: CallerRulingsReport["skipped"],
   recorded: readonly PrRuling[],
@@ -263,8 +270,7 @@ export async function recordPrRulings(input: RecordRulingsInput): Promise<Record
   const confirmedWork = initial.settled.filter(isConfirmedWork);
   const open: SettledItems["open"][number][] = [];
   const recorded: PrRuling[] = [];
-  const caller =
-    input.callerRulings === undefined ? undefined : planCallerRulings(input.callerRulings, initial);
+  const caller = input.callerRulings === undefined ? undefined : planCallerRulings(input.callerRulings, initial);
   // A caller ruling decides its item outright, so the model must not read or question that item's replies.
   const model = await readModelCandidates(
     input,
@@ -276,13 +282,7 @@ export async function recordPrRulings(input: RecordRulingsInput): Promise<Record
     if (!item.thread.resolved) await resolve(input, item);
   }
   for (const item of initial.open) {
-    const newest = item.kept.at(-1);
-    const keyword = newest ? parseRulingKeyword(newest.body) : null;
-    const ruling: PrRuling | undefined =
-      caller?.candidates.get(item) ??
-      (keyword && newest
-        ? { ...keyword, itemKey: item.key, itemId: item.itemId, by: newest.author }
-        : model.candidates.get(item));
+    const ruling = caller?.candidates.get(item) ?? replyRuling(item) ?? model.candidates.get(item);
     if (!ruling) {
       open.push(item);
       continue;

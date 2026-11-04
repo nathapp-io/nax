@@ -34,10 +34,10 @@ const plan = (rulings: CallerRuling[], state: SettledItems) => planCallerRulings
 
 describe("planCallerRulings", () => {
   test("an open item gets a candidate carrying caller provenance", () => {
-    const state = { settled: [], open: [open("D-1")] };
-    const out = plan([call({ item: "D-1", key: "w-D-1.12345678" })], state);
+    const target = open("D-1");
+    const out = plan([call({ item: "D-1", key: "w-D-1.12345678" })], { settled: [], open: [target] });
     expect(out.skipped).toEqual([]);
-    expect(out.candidates.get(state.open[0] as never)).toEqual({
+    expect(out.candidates.get(target)).toEqual({
       itemKey: "w-D-1.12345678",
       itemId: "D-1",
       disposition: "waived",

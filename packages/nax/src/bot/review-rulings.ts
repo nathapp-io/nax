@@ -49,8 +49,40 @@ function confirmedItems(outcome: RecordRulingsOutcome, login: string): Confirmed
   }));
 }
 
-function unappliedReport(file: CallerRulingsFile, reason: "unknown-item" | "echo-failed"): CallerRulingsReport {
+function unappliedReport(
+  file: CallerRulingsFile,
+  reason: "unknown-item" | "echo-failed" = "unknown-item",
+): CallerRulingsReport {
   return { applied: [], skipped: file.rulings.map(({ item }) => ({ item, reason })) };
+}
+
+interface CallerGate {
+  /** Review result to return at once: the file cannot apply and nothing else reads rulings. */
+  readonly early?: { callerRulings?: CallerRulingsReport };
+  readonly ignored?: CallerRulingsReport;
+  readonly apply?: CallerRulingsFile["rulings"];
+}
+
+/** Trust, workflow-marker and head checks that decide whether a caller file may reach the recorder. */
+function callerGate(
+  file: CallerRulingsFile | undefined,
+  staticMode: boolean,
+  raw: {
+    readonly ref: { readonly number: number };
+    readonly info: { readonly body: string; readonly headSha: string };
+  },
+): CallerGate {
+  if (!file) return {};
+  if (staticMode) {
+    getLogger().warn("bot", "Ignoring caller rulings: the PR is untrusted", { pr: raw.ref.number });
+    return { early: { callerRulings: ignoredCallerRulings("untrusted-pr") } };
+  }
+  if (!hasNaxWorkflowMarker(raw.info.body)) return { early: { callerRulings: unappliedReport(file) } };
+  if (file.headSha.toLowerCase() !== raw.info.headSha.toLowerCase()) {
+    getLogger().warn("bot", "Ignoring caller rulings: made against a different head", { pr: raw.ref.number });
+    return { ignored: ignoredCallerRulings("head-mismatch") };
+  }
+  return { apply: file.rulings };
 }
 
 /** Ruling reads are privileged and best-effort; an absent outcome must not invent counts. */
@@ -58,7 +90,7 @@ export async function readReviewRulings(
   input: Omit<RecordRulingsInput, "readModel" | "callerRulings"> & {
     staticMode: boolean;
     ctx: PrStepContext;
-    callerRulings?: CallerRulingsFile;
+    callerRulings?: CallerRulingsFile | undefined;
   },
   record: typeof recordPrRulings,
 ): Promise<
@@ -68,27 +100,17 @@ export async function readReviewRulings(
   }
 > {
   const { staticMode, ctx, callerRulings: file, ...raw } = input;
-  if (staticMode) {
-    if (!file) return {};
-    getLogger().warn("bot", "Ignoring caller rulings: the PR is untrusted", { pr: raw.ref.number });
-    return { callerRulings: ignoredCallerRulings("untrusted-pr") };
-  }
-  if (!hasNaxWorkflowMarker(raw.info.body)) return file ? { callerRulings: unappliedReport(file, "unknown-item") } : {};
-  const headMatches = file?.headSha.toLowerCase() === raw.info.headSha.toLowerCase();
-  if (file && !headMatches) {
-    getLogger().warn("bot", "Ignoring caller rulings: made against a different head", { pr: raw.ref.number });
-  }
-  const applying = file && headMatches ? file.rulings : undefined;
+  const gate = callerGate(file, staticMode, raw);
+  if (gate.early) return gate.early;
+  if (staticMode || !hasNaxWorkflowMarker(raw.info.body)) return {};
   try {
     const outcome = await record({
       ...raw,
       readModel: rulingModelReader(ctx),
-      ...(applying === undefined ? {} : { callerRulings: applying }),
+      ...(gate.apply === undefined ? {} : { callerRulings: gate.apply }),
     });
     return {
-      ...(file === undefined
-        ? {}
-        : { callerRulings: headMatches ? (outcome.callerRulings ?? unappliedReport(file, "unknown-item")) : ignoredCallerRulings("head-mismatch") }),
+      ...(file === undefined ? {} : { callerRulings: gate.ignored ?? outcome.callerRulings ?? unappliedReport(file) }),
       reviewedIndex: outcome.index,
       ...(outcome.index === undefined ? {} : { itemStatus: itemStatus(outcome) }),
       ...(outcome.confirmedWork?.length ? { itemConfirmed: confirmedItems(outcome, raw.login) } : {}),
@@ -109,7 +131,7 @@ export async function readReviewRulings(
     };
   } catch (error) {
     getLogger().warn("bot", "Could not record PR rulings", { pr: raw.ref.number, error: errorMessage(error) });
-    return file && headMatches ? { callerRulings: unappliedReport(file, "echo-failed") } : {};
+    return file && !gate.ignored ? { callerRulings: unappliedReport(file, "echo-failed") } : {};
   }
 }
 

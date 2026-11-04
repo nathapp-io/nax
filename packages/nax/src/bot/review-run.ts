@@ -13,12 +13,12 @@ import type { CiWaitResult } from "../workflow/ci-wait";
 import { botRunDir } from "../workflow/paths";
 import type { buildPrStepContext } from "../workflow/pr-step-context";
 import { _workflowDeps } from "../workflow/step-context";
+import type { CallerRulingsFile, CallerRulingsReport } from "./caller-rulings";
 import { initBotInteractionChain } from "./chat-asks";
 import type { PrCheckout } from "./checkout";
 import { listCiConfigFiles } from "./checkout-state";
 import { type BotCheckSource, type BotChecks, checkCommands, reviewBuildSteps } from "./checks";
 import { type BotCostEnv, botCostEnv } from "./cost";
-import type { CallerRulingsFile, CallerRulingsReport } from "./caller-rulings";
 import type { BotDecision } from "./decisions";
 import { featureIntentPaths } from "./intent";
 import type { BotLog } from "./log";
@@ -288,7 +288,7 @@ async function reviewEnvironment(
       cwd: repoRoot,
       staticMode,
       ctx,
-      ...(input.callerRulings === undefined ? {} : { callerRulings: input.callerRulings }),
+      callerRulings: input.callerRulings,
     },
     _botReviewDeps.recordPrRulings,
   );

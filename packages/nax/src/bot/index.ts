@@ -1,5 +1,11 @@
 export { _baseConfigDeps, loadBotConfig, snapshotBaseNax } from "./base-config";
 export {
+  _callerRulingsDeps,
+  type CallerRulingsFile,
+  type CallerRulingsReport,
+  loadCallerRulings,
+} from "./caller-rulings";
+export {
   _checkoutDeps,
   botWorktreePath,
   type CheckoutRefs,
@@ -21,12 +27,6 @@ export {
   resolveBotChecks,
   reviewBuildSteps,
 } from "./checks";
-export {
-  _callerRulingsDeps,
-  type CallerRulingsFile,
-  type CallerRulingsReport,
-  loadCallerRulings,
-} from "./caller-rulings";
 export { _decisionsDeps, type BotDecision, loadBotDecisions } from "./decisions";
 export {
   _findingRulingsDeps,

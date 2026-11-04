@@ -1,6 +1,13 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { type Command, Option } from "commander";
-import type { BotFixCycleResult, loadBotDecisions, loadCallerRulings, runBotFix, runBotFixCycle, runBotReview } from "@/bot";
+import type {
+  BotFixCycleResult,
+  loadBotDecisions,
+  loadCallerRulings,
+  runBotFix,
+  runBotFixCycle,
+  runBotReview,
+} from "@/bot";
 import { parseProfileList } from "@/config";
 import { NaxError } from "@/errors";
 import { initLogger } from "@/logger";
@@ -134,7 +141,9 @@ export async function botReviewCommand(options: BotReviewOptions, deps: BotCliDe
   });
 }
 
-function callerRulingsSummary(report: NonNullable<Extract<Awaited<ReturnType<typeof runBotReview>>, { outcome: "posted" }>["callerRulings"]>): string {
+function callerRulingsSummary(
+  report: NonNullable<Extract<Awaited<ReturnType<typeof runBotReview>>, { outcome: "posted" }>["callerRulings"]>,
+): string {
   if (report.ignored !== undefined) return `nax bot review: caller rulings — ignored (${report.ignored})`;
   return `nax bot review: caller rulings — ${report.applied.length} applied, ${report.skipped.length} skipped`;
 }
