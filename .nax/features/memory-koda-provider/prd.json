@@ -3,7 +3,7 @@
   "feature": "memory-koda-provider",
   "branchName": "feat/memory-koda-provider",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-04T08:35:01.363Z",
+  "updatedAt": "2026-11-04T09:06:15.103Z",
   "userStories": [
     {
       "id": "US-001",
@@ -519,14 +519,17 @@
       "dependencies": [
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Remote proposal state, persistent records, scope isolation and conditional mirror restoration form a cross-module state machine; this consumes koda decisions rather than implementing access control."
+        "reasoning": "Remote proposal state, persistent records, scope isolation and conditional mirror restoration form a cross-module state machine; this consumes koda decisions rather than implementing access control.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/koda-pull.ts",
@@ -546,7 +549,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "59d88380a1b09ea872f63fe9bc1306aa8e32bb38"
     },
     {
       "id": "US-009",
