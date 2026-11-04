@@ -35,8 +35,8 @@
  * (`koda-lookup.ts`). A `404` from the lookup or from `GET projects/<slug>` is not
  * that fact, so it stays transient like any other failure of those two requests.
  *
- * US-005 composes the shell and US-006 the forget and the search; `pull` answers
- * the empty finished page until US-007 replaces it.
+ * US-005 composes the shell, US-006 the forget and the search, and US-007 the pull — which
+ * lives in `koda-pull.ts` because this file is at its size cap.
  */
 
 import type {
@@ -44,7 +44,6 @@ import type {
   MemoryHit,
   MemoryNote,
   MemoryNoteStatus,
-  MemoryPage,
   MemoryProvider,
   MemoryPushResult,
   MemoryScope,
@@ -55,6 +54,7 @@ import type { KodaApprovals } from "./koda-approvals";
 import { type KodaClient, type KodaResponse, kodaStatusOf } from "./koda-http";
 import { findActiveKodaNote } from "./koda-lookup";
 import { type KodaMemoryItem, kodaHitOf, parseKodaItems } from "./koda-mapping";
+import { pullKodaPage } from "./koda-pull";
 import type { MemoryLogger } from "./paths";
 
 const STAGE = "memory";
@@ -344,9 +344,9 @@ export function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): 
 
   return {
     id: `${MEMORY_KODA_PROVIDER_PREFIX}${project}`,
-    // The export feed is US-007's: until then the provider has nothing to give, which is
-    // the page sync drains without moving a note.
-    pull: async (): Promise<MemoryPage> => ({ notes: [], done: true }),
+    // The export feed: one reconciled page per call, read in `koda-pull.ts` because this
+    // file is at its size cap.
+    pull: (request) => pullKodaPage(input, request),
     async push(request: MemoryWriteRequest): Promise<MemoryPushResult> {
       if (request.kind === "save") return await save(request);
       return await forget(request);

@@ -70,13 +70,18 @@ function jsonAnswer(body: unknown, status = 200, statusText = ""): Response {
 
 /**
  * Route the transport: the probe says the agent may write directly, the project lookup
- * answers the id, and every `POST memory` is handed to `save`.
+ * answers the id, the export feed answers an empty finished page, and every `POST memory`
+ * is handed to `save`.
  */
 function stubKoda(save: (call: FetchCall) => Response | Promise<Response>): void {
   stubFetch(async (call) => {
     if (call.init.method === "POST") return await save(call);
     if (call.url.endsWith(`/projects/${PROJECT}/memory/write-mode`))
       return jsonAnswer({ ret: 0, data: { mode: "direct" } });
+    // A drain that finishes reaches the pull, so the export feed answers the empty page that
+    // ends it: these cases are about what the drain made of a save.
+    if (call.url.includes("/memory/export"))
+      return jsonAnswer({ ret: 0, data: { items: [], nextCursor: null, hasMore: false } });
     return jsonAnswer({ ret: 0, data: { id: PROJECT_ID } });
   });
 }

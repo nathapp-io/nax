@@ -306,6 +306,27 @@ export function reconcileKodaNotes(
   return { notes: currentNotes(states), skipped };
 }
 
+/**
+ * The distinct slugs this page's own-scope NOTE rows name, in feed order.
+ *
+ * R1 and R2 are the same two checks `reconcileKodaNotes` applies, so a slug only a row the
+ * mirror could not hold a note for names is not answered: the pull reads the mirror's id
+ * exactly for the slugs R3 and R5 may compare a row's id against, and once each — a page
+ * names one slug in several rows whenever a note was superseded.
+ *
+ * @param items - The page's rows, in feed order
+ * @param scope - The page's scope: a row of the other scope is not this page's note
+ */
+export function kodaNoteSlugs(items: readonly KodaMemoryItem[], scope: MemoryScope): readonly string[] {
+  const slugs = new Set<string>();
+  for (const item of items) {
+    if (item.kind !== NOTE_KIND || item.scope !== scope) continue;
+    const row = readNoteRow(item);
+    if (row !== undefined) slugs.add(row.slug);
+  }
+  return [...slugs];
+}
+
 /** One DECISION row the merge can apply. */
 interface DecisionRow {
   readonly id: string;
