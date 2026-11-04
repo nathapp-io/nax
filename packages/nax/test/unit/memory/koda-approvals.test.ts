@@ -148,6 +148,44 @@ describe("createKodaApprovals", () => {
     expect(await approvals.list()).toEqual([APR_1]);
   });
 
+  test("a record with an empty approvalId is refused and the file is left alone (AC-2)", async () => {
+    const approvals = createKodaApprovals({ dir, logger });
+    await approvals.record(APR_1);
+    const before = await Bun.file(approvalsPath()).text();
+
+    await approvals.record({ ...APR_1, slug: "b", approvalId: "" });
+
+    expect(await approvals.list()).toEqual([APR_1]);
+    expect(await Bun.file(approvalsPath()).text()).toBe(before);
+    expect(warns()).toHaveLength(1);
+  });
+
+  test("a record with an empty slug is refused and the file is left alone (AC-2)", async () => {
+    const approvals = createKodaApprovals({ dir, logger });
+    await approvals.record(APR_1);
+    const before = await Bun.file(approvalsPath()).text();
+
+    await approvals.record({ ...APR_1, slug: "" });
+
+    expect(await approvals.list()).toEqual([APR_1]);
+    expect(await Bun.file(approvalsPath()).text()).toBe(before);
+    expect(warns()).toHaveLength(1);
+  });
+
+  test("a refused record on a directory with no file writes nothing", async () => {
+    await createKodaApprovals({ dir, logger }).record({ ...APR_1, approvalId: "" });
+    expect(await Bun.file(approvalsPath()).exists()).toBe(false);
+  });
+
+  test("a later valid record keeps the approvals an earlier one recorded (AC-2)", async () => {
+    const approvals = createKodaApprovals({ dir, logger });
+    await approvals.record(APR_1);
+    await approvals.record({ ...APR_1, slug: "b", approvalId: "" });
+    await approvals.record(APR_2);
+
+    expect(await approvals.list()).toEqual([APR_1, APR_2]);
+  });
+
   test("a file holding not json resolves [] and logs one warn (AC-8)", async () => {
     await Bun.write(approvalsPath(), "not json");
     expect(await createKodaApprovals({ dir, logger }).list()).toEqual([]);

@@ -19,6 +19,12 @@
  * than the record it replaces and must sort after it in the oldest-first
  * resolution budget. Records keep the order they were made in.
  *
+ * `record` refuses an entry it could not read back — an empty `approvalId` or
+ * `slug`, or a scope it does not know — and leaves the file exactly as it was,
+ * warning once per refused entry. Writing it would make the whole file unusable,
+ * and the next valid write would replace that file with only the new record,
+ * losing every proposal it held.
+ *
  * Writes go to a temporary file in the same directory and are renamed into
  * place, so a reader sees the old file or the new one (the `mcp-id-map.ts`
  * pattern). A file that is missing reads as no approvals without a word; one
@@ -67,7 +73,7 @@ export interface KodaApproval {
 export interface KodaApprovals {
   /** Every recorded proposal, oldest first; `[]` when the file is missing or unusable. */
   list(): Promise<readonly KodaApproval[]>;
-  /** Record a proposal, replacing the record of the same scope and slug. */
+  /** Record a proposal, replacing the record of the same scope and slug; refuses an unreadable entry. */
   record(entry: KodaApproval): Promise<void>;
   /** Forget the named proposals, keeping every other record. */
   drop(approvalIds: readonly string[]): Promise<void>;
@@ -231,8 +237,21 @@ export function createKodaApprovals(input: { readonly dir: string; readonly logg
     },
     record(entry) {
       return serialised(async () => {
+        // The reader treats a file holding one entry it cannot read back as unusable, and the
+        // next write replaces that file with only the new record — so an entry it would refuse
+        // is not persisted at all, and the records already in the file survive untouched.
+        const readable = approvalOf(entry);
+        if (readable === undefined) {
+          logger.warn(STAGE, "koda approval record is not storable", {
+            path,
+            scope: entry.scope,
+            slug: entry.slug,
+            approvalId: entry.approvalId,
+          });
+          return;
+        }
         const { approvals } = await read();
-        await writeApprovals(path, withRecorded(approvals, entry));
+        await writeApprovals(path, withRecorded(approvals, readable));
       });
     },
     drop(approvalIds) {
