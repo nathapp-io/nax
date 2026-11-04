@@ -41,6 +41,13 @@ export {
   acpTranscriptDir,
   isFreshFallback,
 } from "./acp-session-options";
+export {
+  ACP_SUBAGENT_WRITE_TOOLS,
+  type AcpSubagentProfile,
+  acpReadOnlyEnforced,
+  acpSubagentProfile,
+  isReadOnlyAcpProfile,
+} from "./acp-subagent-profile";
 export { acpInPlaceChange } from "./acp-switch";
 export { appendNativeTurn } from "./acp-transcript-append";
 export { ACP_WRITE_KINDS, acpRefusal, acpWriteRefusal } from "./acp-write-guard";
