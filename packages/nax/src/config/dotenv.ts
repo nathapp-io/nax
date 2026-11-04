@@ -108,6 +108,26 @@ function copyLiteral(config: unknown): unknown {
 }
 
 /**
+ * Subtrees the resolver copies as-is rather than resolving `$VAR` references in.
+ *
+ * Configured MCP servers carry their url/headers literally, and so does the koda
+ * credential map: a `$` in a header value there is a credential, not a reference,
+ * and expanding it would both corrupt the credential and let an ambient variable
+ * leak into a request. The secret scan still applies to both.
+ */
+const LITERAL_SUBTREE_PATHS: ReadonlyArray<readonly string[]> = [
+  ["mcp", "servers"],
+  ["memory", "koda", "headers"],
+];
+
+/** Whether `path` is exactly one of `LITERAL_SUBTREE_PATHS`. */
+function isLiteralSubtree(path: readonly string[]): boolean {
+  return LITERAL_SUBTREE_PATHS.some(
+    (literal) => literal.length === path.length && literal.every((segment, i) => segment === path[i]),
+  );
+}
+
+/**
  * Recursively walks a config object and replaces $VAR references with values
  * from the provided env map. Supports inline substitution, double-dollar
  * escaping ($$VAR → $VAR), and pass-through of non-string values.
@@ -117,10 +137,7 @@ function copyLiteral(config: unknown): unknown {
  *   so callers can report exactly where an unresolved `$VAR` was found.
  */
 export function resolveEnvVars(config: unknown, env: Record<string, string>, path: string[] = []): unknown {
-  // Configured MCP servers carry their url/headers literally: a `$` in a header
-  // value is a credential, not a reference, and expanding it would also let an
-  // ambient variable leak into a request. The secret scan still applies to them.
-  if (path.length === 2 && path[0] === "mcp" && path[1] === "servers") return copyLiteral(config);
+  if (isLiteralSubtree(path)) return copyLiteral(config);
   if (typeof config === "string") {
     return resolveString(config, env, path);
   }

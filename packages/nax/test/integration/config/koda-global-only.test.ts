@@ -115,3 +115,40 @@ describe("the two layers union (US-012)", () => {
     expect(config.memory?.koda?.headers).toEqual({ Authorization: "Bearer x" });
   });
 });
+
+describe("memory.koda.headers reach koda literally (US-012)", () => {
+  const probeVar = "NAX_KODA_LITERAL_PROBE";
+  const reference = "$" + "{NAX_KODA_LITERAL_PROBE}";
+  let savedProbe: string | undefined;
+
+  beforeEach(() => {
+    savedProbe = process.env[probeVar];
+    // Defined on purpose: an expansion would replace the header, not warn about it.
+    process.env[probeVar] = "expanded-value";
+  });
+
+  afterEach(() => {
+    if (savedProbe === undefined) delete process.env[probeVar];
+    else process.env[probeVar] = savedProbe;
+  });
+
+  test("a header value containing a $ reference is not expanded by loadConfig", async () => {
+    await writeJson(globalConfigPath(), {
+      memory: { koda: { url: "https://koda.example/api", headers: { Authorization: `Bearer ${reference}` } } },
+    });
+    await writeJson(projectConfigPath(), { memory: { provider: "koda", koda: { project: "rs-stock" } } });
+
+    const config = await loadConfig(projectDir);
+
+    expect(config.memory?.koda?.headers?.Authorization).toBe(`Bearer ${reference}`);
+  });
+
+  test("a header value written as a bare $ reference is not expanded either", async () => {
+    const bare = "$" + "NAX_KODA_LITERAL_PROBE";
+    await writeJson(globalConfigPath(), { memory: { koda: { headers: { "X-Agent-Key": bare } } } });
+
+    const config = await loadConfig(projectDir);
+
+    expect(config.memory?.koda?.headers?.["X-Agent-Key"]).toBe(bare);
+  });
+});
