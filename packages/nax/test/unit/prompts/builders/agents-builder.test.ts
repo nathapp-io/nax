@@ -134,9 +134,62 @@ describe("buildSubagentInstructions memory section", () => {
   });
 });
 
+describe("buildSubagentInstructions native text", () => {
+  test("AC-12: stays the permission paragraph then the agent prompt", () => {
+    expect(
+      prompts.buildSubagentInstructions({ agent: { prompt: "Review it." }, mode: "guarded", rulesIndex: [] }),
+    ).toBe([chatPermissionParagraph("guarded"), "Review it."].join("\n\n"));
+  });
+});
+
+describe("buildAcpSubagentInstructions", () => {
+  const acpAgent = { qualifiedName: "spec-reviewer", prompt: "Review it." };
+
+  test("AC-1: opens with the subagent line and ends with the agent's prompt", () => {
+    const text = prompts.buildAcpSubagentInstructions({ agentLabel: "Codex", agent: acpAgent });
+    const sections = text.split("\n\n");
+    expect(sections[0]).toBe(
+      "You are Codex, running as the nax chat subagent spec-reviewer. Use your own tools for the work. Answer with your final result as text; the chat that called you reads only that.",
+    );
+    expect(sections[sections.length - 1]).toBe("Review it.");
+  });
+
+  test("AC-2: orders tool instructions, then the memory section, then the agent's prompt", () => {
+    const memoryIndex = "# Memory\n- [project] a — b";
+    const text = prompts.buildAcpSubagentInstructions({
+      agentLabel: "Codex",
+      agent: acpAgent,
+      toolInstructions: "TOOLS",
+      memoryIndex,
+    });
+    const toolsAt = text.indexOf("TOOLS");
+    const memoryAt = text.indexOf(prompts.buildMemorySection(memoryIndex));
+    const promptAt = text.indexOf(acpAgent.prompt);
+    expect(toolsAt).toBeGreaterThanOrEqual(0);
+    expect(memoryAt).toBeGreaterThan(toolsAt);
+    expect(promptAt).toBeGreaterThan(memoryAt);
+    expect(text).toEndWith(acpAgent.prompt);
+  });
+
+  test("leaves out an empty tool text and an absent memory index", () => {
+    const text = prompts.buildAcpSubagentInstructions({
+      agentLabel: "Cursor",
+      agent: acpAgent,
+      toolInstructions: "",
+    });
+    expect(text).toBe(
+      "You are Cursor, running as the nax chat subagent spec-reviewer. Use your own tools for the work. Answer with your final result as text; the chat that called you reads only that.\n\nReview it.",
+    );
+  });
+});
+
 describe("prompts barrel", () => {
   test("exposes both builders as functions", () => {
     expect(typeof prompts.buildAgentsInstructions).toBe("function");
     expect(typeof prompts.buildSubagentInstructions).toBe("function");
+  });
+
+  test("exposes buildAcpSubagentInstructions", () => {
+    expect(typeof prompts.buildAcpSubagentInstructions).toBe("function");
   });
 });

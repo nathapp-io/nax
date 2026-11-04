@@ -28,6 +28,35 @@ export function buildAgentsInstructions(entries: readonly { qualifiedName: strin
   return lines.join("\n");
 }
 
+export interface AcpSubagentInstructionsInput {
+  /** Display name of the ACP agent, e.g. "Codex". */
+  readonly agentLabel: string;
+  readonly agent: Pick<AgentResource, "qualifiedName" | "prompt">;
+  /** Rendered instructions of the nax tools delivered to the subagent. */
+  readonly toolInstructions?: string;
+  /** The rendered memory index; placed before the agent's own prompt when present and non-empty. */
+  readonly memoryIndex?: string;
+}
+
+/**
+ * System instructions of an ACP subagent: what it is, the nax tools it was handed,
+ * the memory index, then the agent's own prompt.
+ *
+ * The agent's own settings apply, so there is no nax rules index — the same reason the
+ * ACP chat brain carries none. The closing sentence is what makes a one-shot session
+ * usable: the calling chat reads only the final text.
+ */
+export function buildAcpSubagentInstructions(input: AcpSubagentInstructionsInput): string {
+  const sections = [
+    `You are ${input.agentLabel}, running as the nax chat subagent ${input.agent.qualifiedName}. Use your own tools for the work. Answer with your final result as text; the chat that called you reads only that.`,
+  ];
+  if (input.toolInstructions !== undefined && input.toolInstructions !== "") sections.push(input.toolInstructions);
+  const memory = memorySectionOf(input.memoryIndex);
+  if (memory !== undefined) sections.push(memory);
+  sections.push(input.agent.prompt);
+  return sections.join("\n\n");
+}
+
 /** System instructions of a nested agent session: permissions, rules index, memory index, then the agent's own prompt. */
 export function buildSubagentInstructions(input: SubagentInstructionsInput): string {
   const sections = [chatPermissionParagraph(input.mode)];

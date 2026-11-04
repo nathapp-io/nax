@@ -48,6 +48,12 @@ export {
   acpSubagentProfile,
   isReadOnlyAcpProfile,
 } from "./acp-subagent-profile";
+export {
+  _acpSubagentDeps,
+  ACP_SUBAGENT_PROVIDER_IDS,
+  type AcpSubagentSessionInput,
+  acpSubagentSessionOptions,
+} from "./acp-subagent-session";
 export { acpInPlaceChange } from "./acp-switch";
 export { appendNativeTurn } from "./acp-transcript-append";
 export { ACP_WRITE_KINDS, acpRefusal, acpWriteRefusal } from "./acp-write-guard";

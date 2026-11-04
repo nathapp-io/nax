@@ -22,9 +22,10 @@ export { AdversarialReviewPromptBuilder } from "./builders/adversarial-review-bu
 export { type AdvisorBatchPromptInput, buildAdvisorBatchPrompt } from "./builders/advisor-batch-builder";
 // Fix-review prompt builder — verdict-only review of a fix's own delta (ADR-033).
 export { type AdvisorPromptInput, buildAdvisorPrompt } from "./builders/advisor-builder";
-export type { SubagentInstructionsInput } from "./builders/agents-builder";
-// Agents prompt builder — agent discovery index and nested-session instructions.
+export type { AcpSubagentInstructionsInput, SubagentInstructionsInput } from "./builders/agents-builder";
+// Agents prompt builder — agent discovery index, nested-session instructions and ACP subagent instructions.
 export {
+  buildAcpSubagentInstructions,
   buildAgentsInstructions,
   buildSubagentInstructions,
   MAX_AGENTS_INDEX_ENTRIES,
