@@ -65,10 +65,11 @@ export const MEMORY_KODA_PROVIDER_PREFIX = "koda:";
 /**
  * How many recorded approvals one pull resolves, oldest record first (US-008).
  *
- * Declared here because the provider is what owns the record; the pull is what
- * spends the budget.
+ * Declared in `koda-pull.ts`, which is what spends the budget, and re-exported here because
+ * the provider is what owns the record: this module imports `pullKodaPage` from the pull at
+ * runtime, so the constant travelling the other way would close a runtime cycle.
  */
-export const MEMORY_KODA_APPROVAL_CHECKS_MAX = 20;
+export { MEMORY_KODA_APPROVAL_CHECKS_MAX } from "./koda-pull";
 
 /** The write modes koda's probe answers with when the calling agent may write. */
 const KODA_WRITE_MODES: ReadonlySet<string> = new Set(["direct", "proposal"]);

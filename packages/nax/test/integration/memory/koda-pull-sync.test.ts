@@ -23,7 +23,7 @@ import {
   syncMemory,
 } from "@nathapp/nax-agent";
 import { cleanupTempDir, type MockLogger, makeLogger, makeTempDir } from "@test/helpers";
-import { createKodaApprovals } from "@/memory/koda-approvals";
+import { createKodaApprovals, type KodaApprovals } from "@/memory/koda-approvals";
 import { _kodaClientDeps, createKodaClient } from "@/memory/koda-http";
 import { createKodaMemoryProvider } from "@/memory/koda-provider";
 
@@ -78,10 +78,11 @@ function mirrorNote(id: string): MemoryNote {
   };
 }
 
-/** The whole stack one case runs against: a real mirror, queue, provider and sync. */
+/** The whole stack one case runs against: a real mirror, queue, proposal record, provider and sync. */
 interface Harness {
   readonly store: MemoryStore;
   readonly outbox: MemoryOutbox;
+  readonly approvals: KodaApprovals;
   readonly provider: MemoryProvider;
   readonly logger: MockLogger;
   sync(): Promise<MemorySyncResult>;
@@ -92,10 +93,11 @@ function harness(dir: string): Harness {
   const projectDir = join(dir, "project");
   const store = createMemoryStore({ projectDir, logger });
   const outbox = createMemoryOutbox({ dir: store.paths.outboxDir, now: () => new Date(STAMP) });
+  const approvals = createKodaApprovals({ dir: projectDir, logger });
   const provider = createKodaMemoryProvider({
     client: createKodaClient({ url: API, headers: { Authorization: "Bearer k" }, timeoutMs: CLIENT_TIMEOUT_MS }),
     project: PROJECT,
-    approvals: createKodaApprovals({ dir: projectDir, logger }),
+    approvals,
     readNote: (scope, slug) => store.readNote(scope, slug),
     readDecisions: () => store.readDecisions(),
     logger,
@@ -103,6 +105,7 @@ function harness(dir: string): Harness {
   return {
     store,
     outbox,
+    approvals,
     provider,
     logger,
     sync: () => syncMemory({ store, outbox, provider, logger, now: () => new Date(STAMP) }),
@@ -187,5 +190,33 @@ describe("syncMemory over the koda provider's export pages", () => {
     expect(result.outcome).toBe("failed");
     expect(exports).toBe(2);
     expect((await koda.store.readSyncState()).cursor).toEqual({ project: "n1", user: null });
+  });
+
+  test("a rejected proposal for a note waiting in the mirror leaves no project note behind (AC-16)", async () => {
+    await koda.store.writeNote({ ...mirrorNote("c1"), status: "pending" });
+    await koda.approvals.record({ approvalId: "apr_1", scope: "project", slug: SLUG, clientId: "c1" });
+    stubFetch((call) => {
+      const url = new URL(call.url);
+      if (url.pathname.endsWith("/memory/export")) {
+        return exportAnswer({ items: [], nextCursor: null, hasMore: false });
+      }
+      if (url.pathname.endsWith("/memory/write-mode")) return jsonAnswer({ ret: 0, data: { mode: "direct" } });
+      if (url.pathname.includes("/approvals/")) return jsonAnswer({ ret: 0, data: { status: "rejected" } });
+      // The restoring lookup: koda holds no active row, so the mirror's note becomes a tombstone.
+      if (url.pathname.endsWith("/memory")) {
+        return jsonAnswer({ ret: 0, data: { items: [], hasNext: false, current: 1 } });
+      }
+      return jsonAnswer({ ret: 0, data: { id: PROJECT_ID } });
+    });
+
+    const result = await koda.sync();
+
+    expect(result.outcome).toBe("synced");
+    expect(await koda.store.readNote("project", SLUG)).toBeNull();
+    // The resolution is what removed it: koda was asked about the approval and the slug, and the
+    // record is gone, none of which a pull without last-page resolution would do.
+    expect(calls.map((call) => call.url)).toContain(`${API}/approvals/apr_1`);
+    expect(calls.some((call) => new URL(call.url).pathname.endsWith("/memory"))).toBe(true);
+    expect(await koda.approvals.list()).toEqual([]);
   });
 });
