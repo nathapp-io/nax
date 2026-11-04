@@ -339,7 +339,7 @@ describe("nax memory link — a recorded relink", () => {
     expect(projectIn(store)).toBe(LINK_SLUG);
   });
 
-  test("a record whose mirror is already gone is simply dropped", async () => {
+  test("an attached record whose mirror is gone establishes detachment evidence before cleanup", async () => {
     const store = statefulFs(LINKED_TO_SLUG);
     store.files.set(RELINK_RECORD_PATH, recordOf(LINK_SLUG, OTHER_PROJECT));
     for (const key of [...store.files.keys()]) {
@@ -348,9 +348,12 @@ describe("nax memory link — a recorded relink", () => {
     const h = makeLinkHarness({ fs: store.deps });
     directProbe();
 
-    // Nothing is left to discard — an earlier run finished it — so the record goes and nothing else.
+    // Nothing is left to detach, but quarantine evidence must still precede the detached phase.
     expect(await runLink(h, LINK_SLUG)).toBe(0);
-    expect(mirrorDiscards(store)).toEqual([]);
+    expect(mirrorDiscards(store)).toEqual([QUARANTINE_DIR]);
+    expect(store.events.indexOf(`rename ${QUARANTINE_DIR}.tmp -> ${QUARANTINE_DIR}`)).toBeLessThan(
+      store.events.indexOf(`remove ${QUARANTINE_DIR}`),
+    );
     expect(store.files.has(RELINK_RECORD_PATH)).toBe(false);
   });
 
@@ -507,6 +510,109 @@ describe("nax memory link — a recorded relink", () => {
       expect(entriesUnder(store, QUARANTINE_DIR)).toEqual([]);
       expect(store.events.filter((event) => event.startsWith(`rename ${MIRROR_DIR} ->`))).toHaveLength(1);
       expect(store.files.has(RELINK_RECORD_PATH)).toBe(false);
+    },
+  );
+
+  test.each([
+    { mirror: "empty", failure: "write" },
+    { mirror: "empty", failure: "rename" },
+    { mirror: "absent", failure: "write" },
+    { mirror: "absent", failure: "rename" },
+  ] as const)(
+    "F2: $mirror mirror preserves rebuilt approvals after detached phase $failure failure",
+    async ({ mirror, failure }) => {
+      await withTempDir(async (repo) => {
+        const root = join(repo, "memory");
+        const projectDir = join(root, "projects", "repo");
+        const record = join(root, "relink", "repo.json");
+        const quarantine = `${record}.mirror`;
+        const approvals = join(projectDir, "koda-approvals.json");
+        const cursor = join(projectDir, "sync.json");
+        await realAdminDeps.writeText(join(repo, ".nax", "config.json"), OTHER_LINKED);
+        if (mirror === "empty") {
+          await realAdminDeps.writeText(cursor, "old cursor");
+          await realAdminDeps.removePath(cursor);
+        }
+        let fail = true;
+        const h = makeLinkHarness({
+          repo,
+          host: { ...linkedHost({ queued: 0, rejected: 0 }), dirs: { root, projectDir, userDir: join(root, "user") } },
+          fs: {
+            ...realAdminDeps,
+            writeText: async (path, text) => {
+              if (failure === "write" && path === `${record}.tmp` && text.includes('"detached"') && fail) {
+                fail = false;
+                throw new Error("interrupted detached write");
+              }
+              await realAdminDeps.writeText(path, text);
+            },
+            rename: async (from, to) => {
+              if (failure === "rename" && from === `${record}.tmp` && fail) {
+                const text = await realAdminDeps.readText(from);
+                if (text?.includes('"detached"')) {
+                  fail = false;
+                  throw new Error("interrupted detached rename");
+                }
+              }
+              await realAdminDeps.rename(from, to);
+            },
+          },
+        });
+        directProbe();
+
+        expect(await runLink(h, LINK_SLUG, { force: true })).toBe(1);
+        expect(JSON.parse((await realAdminDeps.readText(record)) ?? "{}").phase).toBe("attached");
+        const detachmentEvidence = (await realAdminDeps.listDir(join(root, "relink"))).includes("repo.json.mirror");
+        await realAdminDeps.writeText(approvals, "new approvals");
+        await realAdminDeps.writeText(cursor, "new cursor");
+
+        expect(await runLink(h, LINK_SLUG)).toBe(0);
+        expect(await realAdminDeps.readText(approvals)).toBe("new approvals");
+        expect(await realAdminDeps.readText(cursor)).toBe("new cursor");
+        expect(detachmentEvidence).toBe(true);
+        expect(await realAdminDeps.readText(record)).toBeNull();
+        expect(await realAdminDeps.listDir(quarantine)).toEqual([]);
+        expect(await realAdminDeps.listDir(join(root, "relink"))).not.toContain("repo.json.mirror");
+      });
+    },
+  );
+
+  test.each(["write", "rename"] as const)(
+    "empty-mirror evidence %s failure rolls back without false quarantine",
+    async (failure) => {
+      const store = statefulFs(OTHER_LINKED);
+      store.files.delete(join(MIRROR_DIR, "sync.json"));
+      let fail = true;
+      const h = makeLinkHarness({
+        fs: {
+          ...store.deps,
+          writeText: async (path, text) => {
+            if (failure === "write" && path === `${QUARANTINE_DIR}.tmp` && fail) {
+              fail = false;
+              // Model a staging write that creates its file before failing.
+              store.files.set(path, "");
+              throw new Error("interrupted evidence write");
+            }
+            await store.deps.writeText?.(path, text);
+          },
+          rename: async (from, to) => {
+            if (failure === "rename" && to === QUARANTINE_DIR && fail) {
+              fail = false;
+              throw new Error("interrupted evidence rename");
+            }
+            await store.deps.rename?.(from, to);
+          },
+        },
+      });
+      directProbe();
+
+      expect(await runLink(h, LINK_SLUG, { force: true })).toBe(1);
+      expect(store.files.get(LINK_CONFIG_PATH)).toBe(OTHER_LINKED);
+      expect(store.files.has(QUARANTINE_DIR)).toBe(false);
+      expect(JSON.parse(store.files.get(RELINK_RECORD_PATH) ?? "{}").phase).toBe("attached");
+      expect(await runLink(h, LINK_SLUG, { force: true })).toBe(0);
+      expect(store.files.has(RELINK_RECORD_PATH)).toBe(false);
+      expect(store.files.has(`${QUARANTINE_DIR}.tmp`)).toBe(false);
     },
   );
 

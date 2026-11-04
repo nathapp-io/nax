@@ -11,7 +11,8 @@
  *
  * Intent is persisted outside the mirror. After the config changes, the old mirror is atomically
  * renamed into quarantine. A detached record is persisted BEFORE recursive quarantine deletion.
- * Until that record lands, quarantine must remain present: its existence proves the rename already
+ * Empty or absent mirrors get an empty quarantine file instead, atomically placed by rename.
+ * Until that record lands, quarantine must remain present: its existence proves detachment already
  * happened even if the process stopped between rename and record update. Once detached, retries
  * only delete quarantine, never the live mirror, even when it has since been rebuilt.
  * Records from older versions without a phase are refused: their mirror generation is ambiguous.
@@ -171,9 +172,18 @@ async function undoFailedDetach(job: RelinkJob, cause: unknown): Promise<NaxErro
 
 /** Detach exactly the old generation. Never delete quarantine before persisting that fact. */
 async function detachProjectMirror(job: RelinkJob): Promise<void> {
-  if (!(await quarantineExists(job.dirs)) && (await mirrorHasContent(job.dirs))) {
+  if (!(await quarantineExists(job.dirs))) {
+    const quarantine = relinkQuarantinePath(job.dirs);
     try {
-      await _memoryAdminDeps.rename(job.dirs.projectDir, relinkQuarantinePath(job.dirs));
+      if (await mirrorHasContent(job.dirs)) {
+        await _memoryAdminDeps.rename(job.dirs.projectDir, quarantine);
+      } else {
+        // Even "nothing to detach" needs evidence if phase persistence fails before a rebuild.
+        // Stage outside quarantine so a failed write cannot leave false detachment evidence.
+        const tmpPath = `${quarantine}${RECORD_TMP_SUFFIX}`;
+        await _memoryAdminDeps.writeText(tmpPath, "");
+        await _memoryAdminDeps.rename(tmpPath, quarantine);
+      }
     } catch (cause) {
       throw await undoFailedDetach(job, cause);
     }
