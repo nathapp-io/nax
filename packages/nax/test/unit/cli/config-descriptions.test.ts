@@ -215,3 +215,33 @@ describe("FIELD_DESCRIPTIONS workflow.publish (US-002)", () => {
     expect(description).toContain('"none"');
   });
 });
+
+describe("FIELD_DESCRIPTIONS memory.koda (US-012)", () => {
+  test.each(["memory.koda", "memory.koda.url", "memory.koda.project", "memory.koda.headers"])(
+    "AC-6..AC-9: %s has a non-empty description",
+    (key) => {
+      expect(typeof FIELD_DESCRIPTIONS[key]).toBe("string");
+      expect(FIELD_DESCRIPTIONS[key].trim().length).toBeGreaterThan(0);
+    },
+  );
+
+  test("AC-6: the memory.koda description names the koda project", () => {
+    expect(FIELD_DESCRIPTIONS["memory.koda"].toLowerCase()).toContain("koda project");
+  });
+
+  test("AC-7: the url description records that it is global-only", () => {
+    expect(FIELD_DESCRIPTIONS["memory.koda.url"]).toContain("~/.nax/config.json");
+  });
+
+  test("AC-8: the project description names the command that writes it", () => {
+    expect(FIELD_DESCRIPTIONS["memory.koda.project"]).toContain("nax memory link");
+  });
+
+  test("AC-9: the headers description records that it is global-only", () => {
+    expect(FIELD_DESCRIPTIONS["memory.koda.headers"]).toContain("~/.nax/config.json");
+  });
+
+  test('AC-10: the memory.provider description names "koda"', () => {
+    expect(FIELD_DESCRIPTIONS["memory.provider"]).toContain("koda");
+  });
+});
