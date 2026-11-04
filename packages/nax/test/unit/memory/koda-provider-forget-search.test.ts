@@ -294,6 +294,31 @@ describe("findActiveKodaNote", () => {
     expect(MEMORY_KODA_LOOKUP_MAX_PAGES).toBe(10);
     expect(calls).toHaveLength(MEMORY_KODA_LOOKUP_MAX_PAGES);
   });
+
+  test.each([
+    ["no id", { subject: "replay-budget", scope: "project" }],
+    ["an empty id", { id: "", subject: "replay-budget", scope: "project" }],
+    ["an id that is not a string", { id: 7, subject: "replay-budget", scope: "project" }],
+  ])("a matching row with %s is a bad response, not a row to retire (AC-16)", async (_label, record) => {
+    stubPages([jsonAnswer({ ret: 0, data: { items: [record], hasNext: false } })]);
+
+    const error = await rejectionOf(lookup());
+
+    expect(error.code).toBe("MEMORY_KODA_BAD_RESPONSE");
+  });
+
+  test.each([
+    ["no hasNext flag", { items: [] }],
+    ["a null hasNext", { items: [], hasNext: null }],
+    ["a hasNext that is not a boolean", { items: [], hasNext: "true" }],
+    ["a hasNext of zero", { items: [], hasNext: 0 }],
+  ])("a page with %s is a bad response, not the last page (AC-16)", async (_label, data) => {
+    stubPages([jsonAnswer({ ret: 0, data })]);
+
+    const error = await rejectionOf(lookup());
+
+    expect(error.code).toBe("MEMORY_KODA_BAD_RESPONSE");
+  });
 });
 
 describe("createKodaMemoryProvider — forget", () => {
@@ -474,6 +499,21 @@ describe("createKodaMemoryProvider — forget", () => {
 
     expect(isMemoryPushRejected(error)).toBe(false);
     expect(routesOf()).toEqual(["GET /api/projects/rs-stock/memory", "GET /api/projects/rs-stock"]);
+  });
+
+  test.each([
+    ["a matching row with no id", { items: [{ subject: "replay-budget", scope: "project" }], hasNext: false }],
+    ["a matching row with an empty id", { items: [{ id: "", subject: "replay-budget", scope: "project" }] }],
+    ["an answer with no hasNext flag", { items: [] }],
+    ["an answer whose hasNext is not a boolean", { items: [], hasNext: "false" }],
+  ])("a malformed lookup answer — %s — leaves the entry queued and sends no retire (AC-16)", async (_label, data) => {
+    stubForget({ lookup: () => jsonAnswer({ ret: 0, data }) });
+
+    const error = await rejectionOf(makeProvider().push(forgetOf()));
+
+    expect(isMemoryPushRejected(error)).toBe(false);
+    expect(error.code).toBe("MEMORY_KODA_BAD_RESPONSE");
+    expect(calls.filter((call) => call.init.method === "POST")).toHaveLength(0);
   });
 
   test.each([

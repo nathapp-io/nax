@@ -20,6 +20,13 @@
  * Every other failure is transient and rethrown unchanged, a `404` included: a wrong slug
  * or a lost membership is a config problem to fix, not a fact about this note.
  *
+ * An answer this module cannot read is one of those failures, never an answer: a matching row
+ * without a usable `id`, and a page that does not say `hasNext` as a boolean, both throw
+ * `MEMORY_KODA_BAD_RESPONSE`. Reading either as a result would be worse than a retry — a
+ * missing id becomes the literal `undefined` in the retire route, whose `404` reads as
+ * "already retired", and a missing flag reads as "no more pages", so a malformed answer would
+ * deliver a forget koda never performed.
+ *
  * Internal to `src/memory/`: the forget and the proposal resolution compose it, the barrel
  * re-exports it.
  */
@@ -61,14 +68,48 @@ function itemsOf(data: unknown): readonly KodaMemoryItem[] {
   return parseKodaItems(isRecord(data) ? data.items : undefined);
 }
 
-/** koda's `hasNext`, read as the flag it is: only `true` promises another page. */
-function hasNextPage(data: unknown): boolean {
-  return isRecord(data) && data.hasNext === true;
+/** A lookup answer the provider cannot use: thrown as a transient rejection, never as an answer. */
+function badResponse(input: FindActiveKodaNoteInput, detail: string): NaxError {
+  return new NaxError(`[memory] koda ${detail} for project "${input.project}"`, "MEMORY_KODA_BAD_RESPONSE", {
+    stage: STAGE,
+    project: input.project,
+    scope: input.scope,
+    slug: input.slug,
+  });
 }
 
-/** The first record of this page that is this slug's own row of this scope. */
-function matchOf(records: readonly KodaMemoryItem[], slug: string, scope: MemoryScope): KodaMemoryItem | undefined {
-  return records.find((record) => record.subject === slug && record.scope === scope);
+/**
+ * koda's `hasNext`, or the reason this page's pagination cannot be read.
+ *
+ * Only a boolean says anything. A page with no flag is not a claim that the search ends, and
+ * reading it as one would turn a malformed answer into "the slug has no note" — which a forget
+ * delivers as `deleted`, dropping a queued intent for a note koda never retired.
+ */
+function hasNextPage(data: unknown, input: FindActiveKodaNoteInput): boolean {
+  const flag = isRecord(data) ? data.hasNext : undefined;
+  if (typeof flag !== "boolean") {
+    throw badResponse(input, `lookup for "${input.slug}" answered without a boolean hasNext`);
+  }
+  return flag;
+}
+
+/**
+ * The first record of this page that is this slug's own row of this scope.
+ *
+ * `parseKodaItems` checks the container only, so a row that matches but carries no usable `id`
+ * has to be refused here: the retire route addresses the row by id, and a missing one would be
+ * sent as the literal `undefined`, whose `404` the provider would read as "already retired"
+ * and report as a delivered forget for a row still active in koda.
+ */
+function matchOf(records: readonly KodaMemoryItem[], input: FindActiveKodaNoteInput): KodaMemoryItem | undefined {
+  const { slug, scope } = input;
+  const match = records.find((record) => record.subject === slug && record.scope === scope);
+  if (match === undefined) return undefined;
+  const id: unknown = match.id;
+  if (typeof id !== "string" || id === "") {
+    throw badResponse(input, `lookup for "${input.slug}" answered a matching row without an id`);
+  }
+  return match;
 }
 
 /** The ceiling being reached: transient, because another attempt may page differently. */
@@ -103,9 +144,9 @@ export async function findActiveKodaNote(input: FindActiveKodaNoteInput): Promis
       size: LOOKUP_PAGE_SIZE,
       current: page,
     });
-    const match = matchOf(itemsOf(answer.data), slug, scope);
+    const match = matchOf(itemsOf(answer.data), input);
     if (match !== undefined) return match;
-    if (!hasNextPage(answer.data)) return null;
+    if (!hasNextPage(answer.data, input)) return null;
   }
   throw exhausted(input);
 }
