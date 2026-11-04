@@ -417,6 +417,21 @@ async function sessionRoot(options: ResolvedAgentSessionOptions): Promise<Sessio
   return { dir: workdir, cleanup: async () => {} };
 }
 
+/** Refuse cancellation with the session contract, not the caller's arbitrary abort reason. */
+function checkOpenSignal(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw new AgentSessionError("Agent session open was cancelled", "AGENT_SESSION_CLOSED");
+  }
+}
+
+/** The caller owns only the open phase; never retain its signal for reconnects. */
+function linkOpenSignal(signal: AbortSignal | undefined, controller: AbortController): () => void {
+  checkOpenSignal(signal);
+  const abort = () => controller.abort();
+  signal?.addEventListener("abort", abort, { once: true });
+  return () => signal?.removeEventListener("abort", abort);
+}
+
 async function assemble(
   options: ResolvedAgentSessionOptions,
   sessionId: string,
@@ -428,22 +443,29 @@ async function assemble(
   const slot: LiveSlot = { turn: undefined };
   const closeController = new AbortController();
   const asks = createSessionAskPort({ table, emit: (body) => slot.turn?.emit(body), turn: () => slot.turn });
-  const opened = await raw.backend.open({
-    sessionId,
-    workdir: root.dir,
-    profile: raw.profile,
-    instructions: raw.instructions,
-    tools: options.tools,
-    transcriptStore: raw.transcriptStore,
-    resume: opening.doc === undefined ? undefined : { doc: opening.doc },
-    asks,
-    turnSignal: () => slot.turn?.signal ?? IDLE_SIGNAL,
-    currentTurnId: () => slot.turn?.turnId,
-    turnTimeoutSeconds: options.turnTimeoutSeconds,
-    metadata: options.metadata,
-    openSignal: closeController.signal,
-  });
+  const unlink = linkOpenSignal(raw.openSignal, closeController);
+  let opened: OpenedBackend;
   try {
+    opened = await raw.backend.open({
+      sessionId,
+      workdir: root.dir,
+      profile: raw.profile,
+      instructions: raw.instructions,
+      tools: options.tools,
+      transcriptStore: raw.transcriptStore,
+      resume: opening.doc === undefined ? undefined : { doc: opening.doc },
+      asks,
+      turnSignal: () => slot.turn?.signal ?? IDLE_SIGNAL,
+      currentTurnId: () => slot.turn?.turnId,
+      turnTimeoutSeconds: options.turnTimeoutSeconds,
+      metadata: options.metadata,
+      openSignal: closeController.signal,
+    });
+  } finally {
+    unlink();
+  }
+  try {
+    checkOpenSignal(closeController.signal);
     const ctx: TurnRunContext = {
       sessionId,
       adapter: opened.adapter,
@@ -458,9 +480,8 @@ async function assemble(
       opening.lastTurn,
     );
   } catch (err) {
-    // No step after backend.open throws today; a future backend's must not leak
-    // the opened resources. open() still removes the root and lets open()'s own
-    // failure propagate untouched.
+    // Includes a backend that resolved despite cancellation. Close exactly once;
+    // open() removes the root and preserves the original failure.
     await opened.close().catch(() => undefined);
     throw err;
   }
@@ -483,6 +504,7 @@ async function open(
 
 export async function createAgentSession(input: CreateAgentSessionOptions): Promise<AgentSession> {
   const options = resolveAgentSessionOptions(input);
+  checkOpenSignal(options.raw.openSignal);
   const sessionId = options.raw.sessionId ?? _agentSessionDeps.randomUUID();
   if ((await options.raw.transcriptStore.load(sessionId)) !== null) {
     throw new AgentSessionError(
@@ -520,6 +542,7 @@ async function endInterruptedTurn(
  */
 export async function resumeAgentSession(sessionId: string, input: CreateAgentSessionOptions): Promise<AgentSession> {
   const options = resolveAgentSessionOptions(resumeInput(sessionId, input));
+  checkOpenSignal(options.raw.openSignal);
   const store = options.raw.transcriptStore;
   const doc = await loadResumable(store, sessionId);
   checkBackendKind(doc, sessionId, options.raw.backend.kind);

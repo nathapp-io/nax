@@ -37,7 +37,7 @@ function fixture() {
       load: async () => {},
       warm: () => {},
       refresh: async () => [],
-      close: () => {},
+      close: async () => {},
       rows: () => [],
       effortLevels: () => ["default"],
       installed: () => true,

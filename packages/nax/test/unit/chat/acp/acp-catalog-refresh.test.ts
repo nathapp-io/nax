@@ -22,7 +22,7 @@ describe("AcpCatalog.refresh", () => {
     expect(results).toEqual(ACP_CHAT_AGENTS.map((agent) => ({ agent, outcome: "learned", models: 2 })));
     expect(_acpCatalogDeps.probeAcpAgent).toHaveBeenCalledTimes(3);
     for (const agent of ACP_CHAT_AGENTS) {
-      expect(_acpCatalogDeps.probeAcpAgent).toHaveBeenCalledWith({ agent, cwd: "/r" });
+      expect(_acpCatalogDeps.probeAcpAgent).toHaveBeenCalledWith({ agent, cwd: "/r", signal: expect.any(AbortSignal) });
       expect(catalog.rows()).toContain(`acp:${agent}/a`);
       expect(catalog.rows()).toContain(`acp:${agent}/b`);
     }
@@ -93,10 +93,11 @@ describe("AcpCatalog.refresh", () => {
     const logger = makeLogger();
     const catalog = createAcpCatalog({ env: {}, sessionsDir: "/fake", logger });
     const refreshing = catalog.refresh("/r");
-    catalog.close();
+    const closing = catalog.close();
     if (reject) pending.reject(new NaxError("login", "AGENT_SESSION_AUTH_REQUIRED", { stage: "chat" }));
     else pending.resolve({ offeredModels: ["late"] });
     await refreshing;
+    await closing;
     expect(catalog.rows()).not.toContain("acp:codex/late");
     expect(catalog.unavailable("acp:codex")).toBeUndefined();
     expect(save).not.toHaveBeenCalled();

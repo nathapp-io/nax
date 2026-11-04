@@ -333,7 +333,7 @@ describe("AcpCatalog warm and close", () => {
     expect(f.acp.warm("/r")).toBeUndefined();
     f.acp.warm("/r");
     expect(f.discover).toHaveBeenCalledTimes(1);
-    expect(f.discover).toHaveBeenCalledWith({ agent: "codex", cwd: "/r" });
+    expect(f.discover).toHaveBeenCalledWith({ agent: "codex", cwd: "/r", signal: expect.any(AbortSignal) });
     f.pending.resolve({});
     await f.pending.promise;
     await Promise.resolve();
@@ -380,11 +380,12 @@ describe("AcpCatalog warm and close", () => {
   test.each(["resolve", "reject"])("AC-12/19 close drops late %s without waiting", async (outcome) => {
     const f = fixture();
     f.acp.warm("/r");
-    expect(f.acp.close()).toBeUndefined();
+    const closing = f.acp.close();
+    expect(closing).toBeInstanceOf(Promise);
     if (outcome === "resolve") f.pending.resolve({ offeredModels: ["m1"] });
     else f.pending.reject(sessionError("AGENT_SESSION_AUTH_REQUIRED"));
     await f.pending.promise.catch(() => {});
-    await Promise.resolve();
+    await closing;
     expect(f.acp.rows()).not.toContain("acp:codex/m1");
     expect(f.save).not.toHaveBeenCalled();
     expect(f.acp.unavailable("acp:codex")).toBeUndefined();

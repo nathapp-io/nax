@@ -327,11 +327,13 @@ model record, rather than borrowing an unrelated provider's identity:
         "models": [{
           "id": "qwen3.8-flash",
           "protocol": "openai-completions",
-          "contextWindow": 262144,
+          "contextWindow": 131072,
           "maxTokens": 32768,
           "supportsTools": true,
           "thinkingLevels": ["off", "low", "medium", "high"],
           "thinkingFormat": "openrouter",
+          "thinkingBudgetField": "reasoning_budget_tokens",
+          "thinkingBudgets": { "low": 2048, "medium": 6144, "high": 16384 },
           "pricing": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }]
       }]
@@ -392,6 +394,37 @@ With this format, `off` (or an unset thinking level) sends
 The format toggles thinking rather than assigning a separate budget to each
 positive level. Other request compatibility settings remain inherited from the
 provider.
+
+**Per-level thinking token budgets (nax#2770).** The Strata example above
+sets separate thinking budgets on its model declaration. Lowering `maxTokens`
+is not a substitute: it caps thinking and the answer together and can truncate
+answers or tool calls.
+
+- `thinkingBudgetField` names the top-level request field the endpoint reads.
+  It must match `^[a-z][a-z0-9_]{0,63}$`. Names vary by server: Strata uses
+  `reasoning_budget_tokens`, vLLM `thinking_token_budget`, Qwen/SGLang
+  `thinking_budget`, and llama.cpp `thinking_budget_tokens`. Use the name your
+  endpoint supports; nax-ai rejects collisions with its reserved request fields
+  when the native client is built.
+- `thinkingBudgets` is a non-empty, strict object with optional `minimal`, `low`,
+  `medium`, and `high` keys, each a positive integer token count. It requires
+  `thinkingBudgetField`. Each key must appear in the model's `thinkingLevels`,
+  except `high` is also accepted when `xhigh` or `max` is declared: both use the
+  `high` budget. `xhigh` and `max` are not budget object keys.
+- A field-only declaration is valid. Undeclared budgets use pi-ai's defaults:
+  `minimal` 1024, `low` 2048, `medium` 8192, `high` 16384. Both settings are
+  `openai-completions` only; nax-ai owns the protocol check at client construction.
+- At `off`, or without a requested thinking level, no budget field is sent.
+  Otherwise pi-ai resolves the declared budget (or default), then clamps it to
+  leave at least 1024 answer tokens: `min(budget, ceiling - 1024)`. The ceiling
+  is `max_tokens ?? max_completion_tokens ?? model.maxTokens`, with request
+  tokens filled from the context-clamped `maxTokens`. If the clamped budget is
+  not positive, no budget field is sent.
+
+These are model declarations, not per-request or per-role budget overrides.
+Choose a level via the existing model suffix (for example,
+`strata/qwen3.8-flash[low]`) for roles needing different thinking budgets.
+Omit both settings to preserve existing behavior.
 
 **Pinning OpenRouter routing (nax#2191).** A model entry may declare an
 OpenRouter-compatible routing block — the same `provider` payload pi sends from

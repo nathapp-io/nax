@@ -34,6 +34,7 @@ import type { AuthResolver } from "../auth/resolver.ts";
 import {
   assertOverrideModelProvider,
   assertOverrideModelRouting,
+  assertOverrideModelThinkingBudget,
   assertOverrideModelThinkingFormat,
 } from "../providers/override-model.ts";
 import type {
@@ -232,6 +233,7 @@ export function toPiOptions(req: ProtocolRequest): SimpleStreamOptions {
     ...(req.toolChoice !== undefined ? { toolChoice: req.toolChoice } : {}),
     ...(req.maxTokens !== undefined ? { maxTokens: req.maxTokens } : {}),
     ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+    ...(req.thinkingBudgets !== undefined ? { thinkingBudgets: { ...req.thinkingBudgets } } : {}),
     ...(req.cacheRetention !== undefined ? { cacheRetention: req.cacheRetention } : {}),
     ...(req.signal !== undefined ? { signal: req.signal } : {}),
     ...(req.headers !== undefined ? { headers: { ...req.headers } } : {}),
@@ -668,10 +670,13 @@ function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
     // Merged onto the template's compat, never replacing it: `thinkingFormat`
     // and the rest of the provider's detected settings live in the same object
     // and are what translate a thinking level on the wire.
-    ...(model.openRouterRouting !== undefined || model.thinkingFormat !== undefined
+    ...(model.openRouterRouting !== undefined ||
+    model.thinkingFormat !== undefined ||
+    model.thinkingBudgetField !== undefined
       ? {
           compat: {
             ...template.compat,
+            ...toPiThinkingBudgetCompat(model.thinkingBudgetField),
             ...(model.thinkingFormat !== undefined ? { thinkingFormat: model.thinkingFormat } : {}),
             ...(model.openRouterRouting !== undefined
               ? { openRouterRouting: toPiOpenRouterRouting(model.openRouterRouting) }
@@ -681,6 +686,20 @@ function synthesiseModel(base: PiProvider, model: ResolvedModel): Model<Api> {
       : {}),
     ...(thinkingLevelMap !== undefined ? { thinkingLevelMap } : {}),
   };
+}
+
+/** Bridge the upstream literal-only type to validated endpoint-owned field names. */
+function toPiThinkingBudgetCompat(field: string | undefined) {
+  // acp-close-and-thinking-budget spec, US-003: pi-ai's openai-completions
+  // builder uses Object.assign(params, { [field]: budget }) without checking
+  // the name at runtime. Validation above excludes collisions and malformed names.
+  return field === undefined
+    ? {}
+    : {
+        thinkingTokenBudgetField: field as NonNullable<
+          NonNullable<Model<"openai-completions">["compat"]>["thinkingTokenBudgetField"]
+        >,
+      };
 }
 
 /**
@@ -818,6 +837,7 @@ function synthesiseIntroducedModel(override: ProviderOverride, model: ResolvedMo
   assertOverrideModelProvider(override.provider, model);
   assertOverrideModelRouting(model);
   assertOverrideModelThinkingFormat(model);
+  assertOverrideModelThinkingBudget(model);
   if (model.protocol !== "openai-completions" && model.protocol !== "anthropic-messages") {
     throw new Error(
       `Provider "${override.provider}" model "${model.id}" uses unsupported protocol "${model.protocol}".`,
@@ -840,6 +860,7 @@ function synthesiseIntroducedModel(override: ProviderOverride, model: ResolvedMo
       model.thinkingLevels.some((level) => level !== "off") ||
       (model.thinkingFormat !== undefined && model.thinkingLevels.includes("off")),
     compat: {
+      ...toPiThinkingBudgetCompat(model.thinkingBudgetField),
       ...(model.thinkingFormat !== undefined ? { thinkingFormat: model.thinkingFormat } : {}),
       ...(model.openRouterRouting !== undefined
         ? { openRouterRouting: toPiOpenRouterRouting(model.openRouterRouting) }
@@ -890,6 +911,7 @@ function applyOverrides(models: MutableModels, overrides: readonly ProviderOverr
       assertOverrideModelProvider(override.provider, model);
       assertOverrideModelRouting(model);
       assertOverrideModelThinkingFormat(model);
+      assertOverrideModelThinkingBudget(model);
       byId.set(model.id, synthesiseModel(base, model));
     }
     const synthesised = [...byId.values()];

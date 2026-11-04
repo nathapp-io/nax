@@ -92,3 +92,64 @@ export function assertOverrideModelThinkingFormat(model: ResolvedModel): void {
       `"openai-completions" or omit thinkingFormat.`,
   );
 }
+
+/** Fields written by pi-ai 1.4.0's openai-completions payload builder. */
+const RESERVED_BUDGET_FIELDS = new Set([
+  "model",
+  "messages",
+  "stream",
+  "stream_options",
+  "tools",
+  "tool_choice",
+  "max_tokens",
+  "max_completion_tokens",
+  "temperature",
+  "top_p",
+  "reasoning",
+  "reasoning_effort",
+  "provider",
+  "priority",
+  "store",
+  "prompt_cache_key",
+  "prompt_cache_retention",
+  "chat_template_kwargs",
+  "chat_template_args",
+  "enable_thinking",
+  "thinking",
+  "tool_stream",
+]);
+
+/** Reject declarations that cannot safely reach an OpenAI-compatible endpoint. */
+export function assertOverrideModelThinkingBudget(model: ResolvedModel): void {
+  const field = model.thinkingBudgetField;
+  const budgets = model.thinkingBudgets;
+  if (field === undefined && budgets === undefined) return;
+  const prefix = `[catalog] Model "${model.id}"`;
+  if (model.protocol !== "openai-completions") {
+    throw new Error(`${prefix} declares thinking-budget metadata; only "openai-completions" supports it.`);
+  }
+  if (budgets !== undefined && field === undefined) {
+    throw new Error(`${prefix} declares thinkingBudgets without thinkingBudgetField.`);
+  }
+  if (field !== undefined && (!/^[a-z][a-z0-9_]{0,63}$/.test(field) || RESERVED_BUDGET_FIELDS.has(field))) {
+    throw new Error(`${prefix} declares invalid or reserved thinkingBudgetField "${field}".`);
+  }
+  if (budgets === undefined) return;
+  const entries = Object.entries(budgets);
+  if (entries.length === 0) throw new Error(`${prefix} declares empty thinkingBudgets.`);
+  for (const [level, value] of entries) {
+    assertThinkingBudgetEntry(model, level, value);
+  }
+}
+
+function assertThinkingBudgetEntry(model: ResolvedModel, level: string, value: number): void {
+  const supported = model.thinkingLevels.some(
+    (declared) => declared === level || (level === "high" && (declared === "xhigh" || declared === "max")),
+  );
+  if (!["minimal", "low", "medium", "high"].includes(level) || !supported) {
+    throw new Error(`[catalog] Model "${model.id}" declares unsupported thinkingBudgets key "${level}".`);
+  }
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`[catalog] Model "${model.id}" thinkingBudgets.${level} must be a positive integer.`);
+  }
+}

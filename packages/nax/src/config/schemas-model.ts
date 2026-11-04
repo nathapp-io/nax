@@ -101,6 +101,18 @@ export const OpenRouterRoutingSchema = z
     message: "openRouterRouting must not be empty — omit the key to leave the model's routing unset",
   });
 
+const ThinkingBudgetsSchema = z
+  .object({
+    minimal: z.number().int().positive().optional(),
+    low: z.number().int().positive().optional(),
+    medium: z.number().int().positive().optional(),
+    high: z.number().int().positive().optional(),
+  })
+  .strict()
+  .refine((budgets) => Object.values(budgets).some((value) => value !== undefined), {
+    message: "thinkingBudgets must not be empty",
+  });
+
 export const CatalogModelOverrideSchema = z
   .object({
     id: z.string().min(1, "id must be non-empty"),
@@ -126,8 +138,37 @@ export const CatalogModelOverrideSchema = z
     openRouterRouting: OpenRouterRoutingSchema.optional(),
     // nax#2696: a model declaration, never a provider-wide compat override.
     thinkingFormat: z.enum(["openai", "qwen", "qwen-chat-template", "deepseek", "zai", "openrouter"]).optional(),
+    // nax-ai owns reserved-name and protocol validation, as for thinkingFormat.
+    thinkingBudgetField: z
+      .string()
+      .regex(/^[a-z][a-z0-9_]{0,63}$/)
+      .optional(),
+    thinkingBudgets: ThinkingBudgetsSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((model, ctx) => {
+    if (model.thinkingBudgets === undefined) return;
+    if (model.thinkingBudgetField === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["thinkingBudgetField"],
+        message: "thinkingBudgets requires thinkingBudgetField",
+      });
+    }
+    for (const [level, budget] of Object.entries(model.thinkingBudgets)) {
+      if (budget === undefined) continue;
+      const declared = model.thinkingLevels.some(
+        (supported) => supported === level || (level === "high" && (supported === "xhigh" || supported === "max")),
+      );
+      if (!declared) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["thinkingBudgets", level],
+          message: `thinkingBudgets.${level} requires ${level} in thinkingLevels (high also accepts xhigh or max)`,
+        });
+      }
+    }
+  });
 
 /**
  * Hosts for which plaintext http is accepted: a local proxy never leaves the

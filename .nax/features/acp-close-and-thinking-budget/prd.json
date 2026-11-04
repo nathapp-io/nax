@@ -1,0 +1,460 @@
+{
+  "project": "nax-monorepo",
+  "feature": "acp-close-and-thinking-budget",
+  "branchName": "feat/acp-close-and-thinking-budget",
+  "createdAt": "2026-11-04T00:00:00.000Z",
+  "updatedAt": "2026-11-04T03:58:57.134Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add open-only cancellation to agent session creation and resume",
+      "description": "**Goal** — Add validated caller cancellation for the open phase of createAgentSession and resumeAgentSession without affecting an already-open session.\n\n**Motivation** — #2782: quitting `nax chat` during a probe can orphan whatever an ACP agent spawned; before #2781 the pending probe kept the event loop alive for up to 20 s after the exit summary (a candidate for the Ubuntu \"ctrl-c needs a second press\" report that #2781 backstops with an explicit exit).\n\n**Approach** — **nax-agent: `CreateAgentSessionOptions.openSignal`.** A new optional `openSignal?: AbortSignal`. It bounds the open only. It is honoured by both `createAgentSession` and `resumeAgentSession`, which share `resolveAgentSessionOptions`, `open` and `assemble`:\n\n- Already aborted when `createAgentSession` or `resumeAgentSession` is called → reject with `AgentSessionError` code `AGENT_SESSION_CLOSED` right after option validation: before the transcript store is read (`transcriptStore.load`), before any session root is created, and before `backend.open` is invoked.\n- Aborted while `backend.open` is pending → abort the session's own `closeController` (the signal the backend receives as `BackendOpenContext.openSignal`). The ACP backend already rejects with `AGENT_SESSION_CLOSED` and kills the agent's process group when its open signal aborts (`packages/nax-agent-acp/src/client/open.ts`: `openAcpSession` calls `launched.kill()` on any failure after spawn). A backend that resolves anyway is closed (`opened.close()`), and `createAgentSession` rejects with `AGENT_SESSION_CLOSED`.\n- Aborted after the entry check but before `backend.open` is called (while the store read or the `sessionRoot` workdir check is pending) → `assemble` checks `openSignal.aborted` immediately before calling `backend.open`; if it is aborted, it rejects with `AGENT_SESSION_CLOSED` without invoking `backend.open` (the session root is cleaned up as on any failed open). Only then is the abort listener attached, so no abort can fall between the check and the listener.\n- Aborted after `createAgentSession` has resolved → no effect. The listener is removed once `backend.open` settles, so a later abort never reaches the backend's `openSignal` (the ACP backend keeps that signal for reconnects).\n- Keep `assemble` under the cognitive-complexity ratchet (`packages/repo-tooling/scripts/check-complexity.ts`, strict limit 20) by putting the link in a small helper (for example `linkOpenSignal(signal, controller)` returning an unlink function).\n- Validated in `OptionsSchema` (a strict object) as an `AbortSignal` instance; anything else is `AGENT_SESSION_INVALID_OPTIONS` with `path: \"openSignal\"`.\n\nAdd `openSignal?: AbortSignal` to `CreateAgentSessionOptions` and `OptionsSchema`. In `createAgentSession` and `resumeAgentSession`, reject a pre-aborted signal with `AGENT_SESSION_CLOSED` right after option validation, before the transcript store is read. While `backend.open` is pending (in `assemble`), an abort aborts the session's `closeController`. If the backend resolves after that abort, close it and reject with `AGENT_SESSION_CLOSED`. Remove the listener once `backend.open` settles. Tests that need an invalid option value use a loosely typed options helper, as `agent-session-options.test.ts` does, never `as unknown as` or `as never` (`.nax/rules/test-ratchets.md`). Preserve a backend's own rejection unchanged, as the recorded-error AC requires. Use the existing failed-open root-cleanup path and avoid double-closing a backend.\n\n**Scope** — In: session option type/schema, create/resume entry checks, assemble's temporary signal link and cancellation cleanup, and focused regressions. Out: catalog/probe/host wiring (US-002) and all thinking-budget work (US-003–US-006). No change to how the ACP backend reacts to an aborted open signal: `openAcpSession` already kills the agent's process group, and this bundle relies on that path unchanged.\n\n**Interface** — `readonly openSignal?: AbortSignal`; existing entry signatures remain:\n```typescript\ncreateAgentSession(input: CreateAgentSessionOptions): Promise<AgentSession>\nresumeAgentSession(sessionId: string, input: CreateAgentSessionOptions): Promise<AgentSession>\n```\nThe existing backend context retains `readonly openSignal: AbortSignal`. Adding an optional member changes no exported name in nax-agent.api.txt.",
+      "acceptanceCriteria": [
+        "[unit] createAgentSession with a stub backend and an openSignal that is never aborted resolves to a session, and the BackendOpenContext.openSignal the stub's open received is not aborted.",
+        "[unit] createAgentSession with an openSignal already aborted rejects with an AgentSessionError whose code is \"AGENT_SESSION_CLOSED\".",
+        "[unit] createAgentSession with an openSignal already aborted never invokes the stub backend's open.",
+        "[unit] createAgentSession with an openSignal already aborted never calls load on its transcript store.",
+        "[unit] resumeAgentSession for a stored session with an openSignal already aborted rejects with an AgentSessionError whose code is \"AGENT_SESSION_CLOSED\".",
+        "[unit] resumeAgentSession with an openSignal already aborted never calls load on its transcript store.",
+        "[unit] With _agentSessionDeps.isDirectory replaced by a stub that stays pending on a deferred, aborting the caller's openSignal while that stub is pending and then resolving it true makes createAgentSession reject with an AgentSessionError whose code is \"AGENT_SESSION_CLOSED\".",
+        "[unit] With _agentSessionDeps.isDirectory pending on a deferred, aborting the caller's openSignal and then resolving isDirectory true never invokes the stub backend's open, in the same isDirectory-pending abort scenario.",
+        "[unit] With a stub backend whose open stays pending until its received ctx.openSignal aborts and then rejects with a recorded error, aborting the caller's openSignal makes createAgentSession reject with that recorded error.",
+        "[unit] With a stub backend whose open stays pending, aborting the caller's openSignal while createAgentSession is pending leaves the ctx.openSignal the stub received aborted.",
+        "[unit] With a stub backend whose open ignores its signal and resolves only after the caller's openSignal has been aborted, createAgentSession rejects with an AgentSessionError whose code is \"AGENT_SESSION_CLOSED\".",
+        "[unit] With a stub backend whose open ignores its signal and resolves only after the caller's openSignal has been aborted, the close of the opened backend the stub resolved with is invoked exactly once.",
+        "[unit] Aborting the caller's openSignal after createAgentSession has resolved leaves the ctx.openSignal the stub received not aborted.",
+        "[unit] A turn sent on a session whose openSignal was aborted after createAgentSession resolved still completes with a turn-end event (SessionEvent type \"turn_end\") whose status is \"completed\".",
+        "[unit] createAgentSession with openSignal: \"stop\" rejects with an AgentSessionError whose code is \"AGENT_SESSION_INVALID_OPTIONS\" and whose context path is \"openSignal\"."
+      ],
+      "tags": [
+        "bugfix",
+        "sessions",
+        "cancellation",
+        "api",
+        "acp"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Session lifecycle cancellation spans validation, pre-open awaits, backend cleanup and listener lifetime; sessions require strict three-session isolation regardless of complexity.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/session/agent-session.ts",
+        "packages/nax-agent/src/session/agent-session-types.ts",
+        "packages/nax-agent/src/session/agent-session-options.ts",
+        "packages/nax-agent/src/session/session-backend.ts",
+        "packages/nax-agent/test/unit/session/agent-session-backend.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/session/agent-session-open-signal.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the caller aborts openSignal while transcriptStore.load is pending and that load later succeeds, createAgentSession rejects AGENT_SESSION_CLOSED without invoking backend.open.",
+        "When resumeAgentSession is aborted while backend.open is pending, the BackendOpenContext.openSignal received by that backend becomes aborted.",
+        "When cancellation causes an open under a newly created scratch root to fail, that scratch root is removed.",
+        "When backend.open rejects and the caller later aborts openSignal, the backend's recorded ctx.openSignal remains not aborted."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8bf13d06cd9668a869d831189e9014152c2cb6db"
+    },
+    {
+      "id": "US-002",
+      "title": "Abort and boundedly drain ACP probes before chat teardown",
+      "description": "**Goal** — Make ACP catalog close cancel discovery and boundedly await probes and persistence before the chat host finishes teardown.\n\n**Motivation** — An in-progress `saveOffers` write can be cut off, leaving a stray `acp-offers.json.<uuid>.tmp`.\n\n**Approach** — **nax: probe and catalog.**\n\n- `probeAcpAgent(input)` gains `signal?: AbortSignal` and passes it to `createAgentSession` as `openSignal`, only when given (conditional spread, so a call without a signal produces the same options object as today).\n- `createAcpCatalog` owns one `AbortController`. Every `probeAgent` call (from `warm` and from `refresh`) passes its signal to `_acpCatalogDeps.probeAcpAgent`.\n- `AcpCatalog.close(): Promise<void>` (was `void`). First call: set `closed`, abort the controller, then await every in-flight probe and the pending `saving` chain (settled, never rejected) raced against a bound. The bound is the new input `closeBoundMs?: number`, default the exported constant `ACP_CATALOG_CLOSE_BOUND_MS = 2000`, which is also re-exported from the `packages/nax/src/chat/acp/index.ts` barrel beside `createAcpCatalog`. When the bound wins, `logger.debug(\"chat\", \"ACP catalog closed with probes still pending\", { agents })` names the agents whose probes had not settled (an empty array when only the offer save was still pending); close still resolves. Put the race in a small helper (for example `settleWithin(boundMs, work, onTimeout)`) so `createAcpCatalog` stays under the cognitive-complexity ratchet. The bound uses `setTimeout` (permitted by `.nax/rules/forbidden-patterns-source.md` because the handle is cancelled mid-flight; say so in a call-site comment) and is cleared with `clearTimeout` when the wait finishes first, so it never holds the process open. Later calls return the same promise. `close()` never rejects.\n- Late outcomes stay dropped exactly as today (`if (!closed)` guards in `probeAgent`).\n\n**nax: chat host.** `NativeChatHost.teardown()` replaces its first statement `this.deps.acp?.close();` with `await this.deps.acp?.close();`, so the bounded catalog close (at most 2 s, normally immediate because aborted probes settle at once) finishes before the rest of teardown, and `host.close()` resolves only after it. `packages/nax/src/chat/chat-host.ts` is at 596 of the 600-line source cap (`packages/repo-tooling/scripts/check-file-sizes.ts`): keep its net growth at 3 lines or fewer (the gate counts `split(\"\\n\").length`, 597 today); the one-word change above adds none.\n\n`packages/nax/src/cli/chat.ts` needs no change: it already awaits `host.close()` before its explicit exit.\n\nUpdate the `AcpCatalog` interface doc comment for `close`. Preserve synchronous initiation of abort and exact promise identity across repeated calls; a cached promise returned by a non-async method can implement the asynchronous contract. Include pending save failures in the settled close while retaining saveOffers' existing warning.\n\nRequired compatibility edits: in packages/nax/test/unit/chat/acp/acp-catalog.test.ts, replace only the old AC-12/19 close return-undefined assertion with a Promise assertion, keeping late outcomes dropped, no save, no failure recorded and no second discovery after later warm; also add signal: expect.any(AbortSignal) to the warm exact-argument assertion. Add the same signal expectation in chat/acp/acp-catalog-refresh.test.ts without other assertion changes. Make catalog close stubs async in chat/chat-host-acp.test.ts (retain probe AC-15's exactly-once assertion), chat/chat-host-acp-switch.test.ts, chat/chat-host-acp-models.test.ts, chat/acp/acp-host.test.ts, chat/chat-host-memory.test.ts, cli/chat.test.ts, cli/chat-resources.test.ts, cli/chat-resources-memory.test.ts and cli/chat-resources-memory-degrade.test.ts under packages/nax/test/unit. Release deferred work and await captured close promises during test cleanup. The seam AC must retain the real probeAcpAgent AND real createAgentSession, stub acpBackend with a SessionBackend and use a real temp directory; do not weaken it by replacing createAgentSession. After warm, await a deferred notification that the stub backend has entered open and recorded its context before calling close; otherwise the real facade may still be reading the store or checking the workdir and correctly refuse to invoke backend.open at all.\n\n**Scope** — In: probe forwarding, catalog controller/bounded close/default export, barrel, host await, typed test stubs and cancellation/persistence/host regressions. Out: session facade implementation (US-001), thinking budgets (US-003–US-006), CLI exit changes. No change to how the ACP backend reacts to an aborted open signal: `openAcpSession` already kills the agent's process group, and this bundle relies on that path unchanged. The leaking Linux handle behind #2781 is not investigated further; this bundle removes the probe as a candidate only.\n\n**Interface** — `probeAcpAgent(input: { readonly agent: AcpChatAgent; readonly cwd: string; readonly signal?: AbortSignal })`; `AcpCatalog.close(): Promise<void>`; createAcpCatalog input adds `readonly closeBoundMs?: number`; export `ACP_CATALOG_CLOSE_BOUND_MS = 2000` from acp-catalog.ts and @/chat/acp.",
+      "acceptanceCriteria": [
+        "[unit] probeAcpAgent({ agent: \"codex\", cwd: \"/r\", signal }) calls _acpProbeDeps.createAgentSession once with options whose openSignal is that same signal.",
+        "[unit] probeAcpAgent({ agent: \"codex\", cwd: \"/r\" }) calls _acpProbeDeps.createAgentSession with options that have no openSignal property.",
+        "[unit] ACP_CATALOG_CLOSE_BOUND_MS is importable from @/chat/acp and equals 2000.",
+        "[unit] After warm(\"/r\") on a catalog whose _acpCatalogDeps.probeAcpAgent stub records its input, the recorded signal is not aborted before close() is called.",
+        "[unit] After warm(\"/r\") on a catalog whose _acpCatalogDeps.probeAcpAgent stub records its input, the recorded signal is aborted immediately after close() is called, before the returned promise is awaited.",
+        "[unit] A probe started by refresh(\"/r\") also receives a signal, and that signal is aborted by close().",
+        "[unit] Calling close() twice returns the same promise object both times.",
+        "[unit] With a probe stub that rejects with an AGENT_SESSION_CLOSED error once its signal aborts, and closeBoundMs: 60_000, await close() resolves; the test would time out if close waited for the bound.",
+        "[unit] With a probe stub (started by warm(\"/r\")) that rejects with an AGENT_SESSION_CLOSED error once its signal aborts, after await close() resolves, unavailable(\"acp:codex\") is undefined and logger.debug was not called with the message \"ACP offer probe failed\".",
+        "[unit] With a probe stub that ignores its signal and never settles, and closeBoundMs: 20, await close() resolves.",
+        "[unit] With a probe stub (started by warm(\"/r\")) that ignores its signal and never settles, and closeBoundMs: 20, after await close() resolves logger.debug was called with \"chat\", \"ACP catalog closed with probes still pending\" and { agents: [\"codex\"] }.",
+        "[unit] Run inside withTimerSpy, close() on a catalog (closeBoundMs: 60_000) whose warm probe rejects once its signal aborts leaves no armed timer after it resolves: every timer it armed was cleared.",
+        "[unit] With a probe that has settled and an offer store whose save never settles, and closeBoundMs: 20, after await close() resolves logger.debug was called with \"chat\", \"ACP catalog closed with probes still pending\" and { agents: [] }.",
+        "[unit] With a probe that resolves { offeredModels: [\"m1\"] } before close() and an offer store whose save stays pending on a deferred, close() (with closeBoundMs: 60_000) has not resolved while the deferred is pending, and resolves after the deferred resolves.",
+        "[unit] With an offer store whose save rejects, a probe that resolves with offered models, and closeBoundMs: 60_000, await close() resolves rather than rejecting.",
+        "[integration] With _acpCatalogDeps.probeAcpAgent left as the real probeAcpAgent, _acpProbeDeps.createAgentSession left as the real createAgentSession, _acpCatalogDeps.launchCandidateKind reporting codex installed, and _acpProbeDeps.acpBackend returning a stub SessionBackend whose open records its BackendOpenContext and stays pending until that context's openSignal aborts and then rejects, calling warm(\"<a real temp directory>\"), waiting for the stub's open to record its context, and then awaiting close() leaves the recorded ctx.openSignal aborted.",
+        "[unit] A NativeChatHost built with a stub catalog whose close returns a pending deferred promise has not resolved host.close() while the deferred is pending.",
+        "[unit] A NativeChatHost built with a stub catalog whose close returns a deferred promise resolves host.close() after that deferred resolves.",
+        "[unit] When an offer save rejects during close, saveOffers logs logger.warn(\"chat\", \"Failed to save ACP offers\", { error }) for the rejected save, preserving the existing warning behavior."
+      ],
+      "tags": [
+        "bugfix",
+        "chat",
+        "acp",
+        "sessions",
+        "cancellation",
+        "persistence"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Concurrent probe/persistence draining, cancellable bounds, promise identity and host teardown cross several modules; session lifecycle integration requires strict three-session-tdd.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/acp/acp-catalog.ts",
+        "packages/nax/src/chat/acp/acp-probe.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/chat/acp/index.ts",
+        "packages/nax/test/helpers/timer-spy.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/acp/acp-catalog-close.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When close() is called with no pending probes or saves, it resolves without logging ACP catalog closed with probes still pending.",
+        "When two probes are running and only codex remains pending at the close bound, the timeout debug record names only codex.",
+        "When refresh(\"/r\") is called after close(), it resolves to an empty array without starting another probe."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/acp/acp-catalog.test.ts",
+          "reason": "test \"AC-12/19 close drops late %s without waiting\" asserts `close()` returns `undefined`; `close()` now returns a promise, so assert instead that it returns a promise, keeping its other assertions (late outcomes dropped, no save, no failure recorded, no second discovery after a later `warm`). The warm test's exact-argument assertion that f.discover was called with agent codex and cwd /r now also receives the catalog signal: change it to also expect a signal property matching any AbortSignal."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/acp/acp-catalog-refresh.test.ts",
+          "reason": "the exact-argument assertion that the probe dep was called with agent and cwd /r now also receives the catalog signal: change it to also expect a signal property matching any AbortSignal. No other assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-acp.test.ts",
+          "reason": "`stubCatalog`'s `close: mock(() => {})` no longer satisfies `close(): Promise<void>`; change it to `mock(async () => {})`. Test \"probe AC-15 closes the catalog once across repeated host close\" keeps its exactly-once assertion."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-acp-switch.test.ts",
+          "reason": "the `catalog()` stub's `close: () => {}` no longer satisfies `close(): Promise<void>`; change it to `async () => {}`. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-acp-models.test.ts",
+          "reason": "`stubCatalog`'s `close: () => {}` no longer satisfies `close(): Promise<void>`; change it to `async () => {}`. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/acp/acp-host.test.ts",
+          "reason": "`stubCatalog`'s `close: () => {}` no longer satisfies `close(): Promise<void>`; change it to `async () => {}`. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-memory.test.ts",
+          "reason": "`acpCatalog()`'s `close: () => {}` no longer satisfies `close(): Promise<void>`; change it to `async () => {}`. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/chat.test.ts",
+          "reason": "`stubAcpCatalog()`'s `close: () => {}` no longer satisfies `close(): Promise<void>`; change it to `async () => {}`. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/chat-resources.test.ts",
+          "reason": "the inline catalog stub's `close: () => {}` no longer satisfies `close(): Promise<void>`; change it to `async () => {}`. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/chat-resources-memory.test.ts",
+          "reason": "`emptyAcpCatalog()`'s `close: () => {}` no longer satisfies `close(): Promise<void>`; change it to `async () => {}`. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/chat-resources-memory-degrade.test.ts",
+          "reason": "the catalog stub's `close: () => {}` no longer satisfies `close(): Promise<void>`; change it to `async () => {}`. No assertion changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6b6ab0a05d9a805b72f3a5af5cda0d68612b94cc"
+    },
+    {
+      "id": "US-003",
+      "title": "Declare, validate and synthesise model thinking-budget metadata",
+      "description": "**Goal** — Add model-owned thinking-budget declarations to nax-ai and validate/synthesise them consistently for bundled and introduced providers.\n\n**Motivation** — #2770: lowering `maxTokens` is not a substitute, because it bounds thinking and answer together, and a tight cap truncates the answer or tool call (`max_tokens` 1000 ended `length` with no answer).\n\n**Approach** — Config semantics:\n- `thinkingBudgetField?: string` — the top-level request field the endpoint reads. Lowercase snake_case: `^[a-z][a-z0-9_]{0,63}$`. Any name is accepted (user ruling 11-04), since servers differ (vLLM `thinking_token_budget`, Qwen/SGLang `thinking_budget`, llama.cpp `thinking_budget_tokens`, Strata `reasoning_budget_tokens`). nax-ai rejects names that collide with fields it already sends (the reserved list below).\n- `thinkingBudgets?: { minimal?, low?, medium?, high? }` — positive integer token budgets. Keys are pi-ai's `ThinkingBudgets` levels. A request at `xhigh` or `max` uses the `high` budget (pi-ai `clampReasoning`). A level with no declared budget uses pi-ai's default (`minimal` 1024, `low` 2048, `medium` 8192, `high` 16384). Each declared key must be one of the model's `thinkingLevels`, except that `high` is also accepted when `thinkingLevels` contains `xhigh` or `max` (those levels spend the `high` budget). A non-empty object.\n- `thinkingBudgets` requires `thinkingBudgetField`. A field with no budgets is valid and sends pi-ai's default budgets.\n- Both are `openai-completions` only, like `thinkingFormat`.\n- At `off`, or with no requested thinking level, no budget field is sent (pi-ai sends a budget only when a reasoning level is requested).\n- pi-ai clamps the budget so at least 1024 answer tokens remain under the request's ceiling (`max_tokens` ?? `max_completion_tokens` ?? the model's `maxTokens`, where pi-ai fills the request field from the context-clamped `maxTokens`): budget sent = min(declared, ceiling − 1024), and nothing is sent when that is not positive. The order is: resolve the level's budget (declared, else pi-ai default), then clamp to the ceiling.\n\n**nax-ai.**\n- `ResolvedModel` (`src/providers/types.ts`) gains `thinkingBudgetField?: string` and `thinkingBudgets?: ThinkingBudgets`, where the new exported type `ThinkingBudgets` is `Readonly<{ minimal?: number; low?: number; medium?: number; high?: number }>`, exported from the package index beside `ThinkingFormat`.\n- New `assertOverrideModelThinkingBudget(model: ResolvedModel): void` in `src/providers/override-model.ts`, called beside `assertOverrideModelThinkingFormat` at all three existing sites: `src/providers/catalog.ts` (the client catalog), and `applyOverrides`' template loop and `synthesiseIntroducedModel` in `src/protocols/pi-client.ts`. It throws an `Error` naming the model id at the first failing check, in this order:\n  1. either field is declared and `protocol` is not `\"openai-completions\"`;\n  2. `thinkingBudgets` is declared without `thinkingBudgetField`;\n  3. `thinkingBudgetField` does not match `^[a-z][a-z0-9_]{0,63}$`, or is one of the reserved names `model`, `messages`, `stream`, `stream_options`, `tools`, `tool_choice`, `max_tokens`, `max_completion_tokens`, `temperature`, `top_p`, `reasoning`, `reasoning_effort`, `provider`, `priority`, `store`, `prompt_cache_key`, `prompt_cache_retention`, `chat_template_kwargs`, `chat_template_args`, `enable_thinking`, `thinking`, `tool_stream` (every lowercase field pi-ai 1.4.0's `openai-completions` payload builder writes; its camelCase `providerOptions` is already excluded by the regex);\n  4. `thinkingBudgets` is empty, has a key outside `minimal`/`low`/`medium`/`high`, has a key that is not in the model's `thinkingLevels` (the `xhigh`/`max` → `high` exception above applies), or has a value that is not a positive integer.\n- Model synthesis (`synthesiseModel` and `synthesiseIntroducedModel`) sets `compat.thinkingTokenBudgetField` to the declared field, merged onto the template's compat the same way `thinkingFormat` is. In `synthesiseModel` the compat block is built today only when `openRouterRouting` or `thinkingFormat` is declared; that condition must also fire when `thinkingBudgetField` is declared, or a budget-only override of a bundled provider silently loses the field. pi-ai's compat type admits only its three literal names, so both paths set it through one shared helper holding the single cast, with a comment citing this spec: pi-ai's `openai-completions` builder writes the field with `Object.assign(params, { [field]: budget })` and does not check the name at runtime.\n- `packages/nax-ai/README.md` documents the two fields beside `thinkingFormat`.\n\nUse new override-thinking-budget.test.ts and existing format/synthesis fixtures. Exercise catalog rejection through both createClient and direct createPiDeps, not just the validator. Keep validation and the documented cast within existing import boundaries and preserve inherited compat. Pin the no-budget regression with an otherwise valid introduced strata model declaring thinkingFormat openrouter and openRouterRouting { only: [host] }: its resolved compat must retain those existing format/routing values.\n\n**Scope** — In: ThinkingBudgets export, ResolvedModel fields, ordered validator at all three sites, both synthesis paths, shared compat helper, README and regressions. Out: ProtocolRequest/ClientRequest and request option forwarding (US-004), nax-agent mirror/mapper (US-005), nax schema/CLI/docs (US-006). No thinking budgets on `anthropic-messages` or any protocol other than `openai-completions`, even though pi-ai reads `thinkingBudgets` on some token-based protocols. No bump of `@earendil-works/pi-ai` (1.5.0 exists; 1.4.0 already implements the budget field).\n\n**Interface** — `thinkingBudgetField?: string`; `thinkingBudgets?: ThinkingBudgets`; `assertOverrideModelThinkingBudget(model: ResolvedModel): void`; `ThinkingBudgets` is `Readonly<{ minimal?: number; low?: number; medium?: number; high?: number }>`. The type is nax-ai vocabulary, not a re-export of a pi-ai type.",
+      "acceptanceCriteria": [
+        "[unit] createPiDeps with a provider override of the bundled provider together (baseUrl: \"http://127.0.0.1:18080/v1\") whose openai-completions model local-qwen declares thinkingLevels: [\"off\", \"low\", \"high\"], thinkingBudgetField: \"reasoning_budget_tokens\", thinkingBudgets: { low: 2048 } and neither thinkingFormat nor openRouterRouting resolves resolveModel(\"local-qwen\", \"together\") to a pi model whose compat.thinkingTokenBudgetField is \"reasoning_budget_tokens\".",
+        "[unit] createPiDeps with an override introducing the unknown provider strata (baseUrl: \"http://127.0.0.1:18080/v1\") whose openai-completions model qwen3.8-flash (with maxTokens: 32768) declares thinkingBudgetField: \"reasoning_budget_tokens\" resolves resolveModel(\"qwen3.8-flash\", \"strata\") to a pi model whose compat.thinkingTokenBudgetField is \"reasoning_budget_tokens\".",
+        "[unit] assertOverrideModelThinkingBudget on a model with protocol: \"anthropic-messages\" and thinkingBudgetField: \"thinking_budget\" throws an error whose message contains \"openai-completions\".",
+        "[unit] assertOverrideModelThinkingBudget on an openai-completions model with thinkingBudgets: { low: 2048 } and no thinkingBudgetField throws an error whose message contains \"thinkingBudgetField\".",
+        "[unit] assertOverrideModelThinkingBudget on an openai-completions model with thinkingBudgetField: \"max_tokens\" throws an error whose message contains \"max_tokens\".",
+        "[unit] assertOverrideModelThinkingBudget on an openai-completions model with thinkingBudgetField: \"priority\" throws an error whose message contains \"priority\".",
+        "[unit] assertOverrideModelThinkingBudget on an openai-completions model with thinkingBudgetField: \"Reasoning-Budget\" throws an error whose message contains \"Reasoning-Budget\".",
+        "[unit] assertOverrideModelThinkingBudget on an openai-completions model with thinkingLevels: [\"off\", \"low\"], a valid thinkingBudgetField and thinkingBudgets: { medium: 6144 } throws an error whose message contains \"medium\".",
+        "[unit] assertOverrideModelThinkingBudget on an openai-completions model with thinkingLevels: [\"off\", \"xhigh\"], thinkingBudgetField: \"thinking_budget\" and thinkingBudgets: { high: 12000 } does not throw.",
+        "[unit] assertOverrideModelThinkingBudget on an openai-completions model with a valid field and thinkingBudgets: { low: 0 } throws.",
+        "[unit] assertOverrideModelThinkingBudget on an openai-completions model with a valid field and thinkingBudgets: { low: 1.5 } throws.",
+        "[unit] assertOverrideModelThinkingBudget on an openai-completions model with a valid field and thinkingBudgets: {} throws.",
+        "[unit] assertOverrideModelThinkingBudget on an openai-completions model declaring a valid field and thinkingBudgets: { low: 2048 } with low in its thinkingLevels does not throw.",
+        "[unit] createClient with a provider override whose model declares thinkingBudgetField: \"max_tokens\" throws an error whose message contains \"max_tokens\".",
+        "[unit] Constructing createPiDeps with an override of the bundled provider together whose model declares thinkingBudgetField: \"max_tokens\" throws an error whose message contains \"max_tokens\".",
+        "[unit] Constructing createPiDeps with an override introducing the unknown provider strata (with baseUrl and a model with maxTokens) whose model declares thinkingBudgetField: \"max_tokens\" throws an error whose message contains \"max_tokens\".",
+        "[unit] Given an otherwise valid introduced strata model with thinkingFormat: \"openrouter\", openRouterRouting: { only: [\"host\"] } and neither budget property, createPiDeps resolves the model with compat matching { thinkingFormat: \"openrouter\", openRouterRouting: { only: [\"host\"] } }, preserving existing format and routing synthesis."
+      ],
+      "tags": [
+        "feature",
+        "catalog",
+        "validation",
+        "thinking",
+        "api"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Five existing source files already expose the validator and compat-merge seams; adding optional metadata, ordered guards at three known call sites and one local cast helper follows established patterns without changing authentication or introducing an architecture.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-ai/src/providers/override-model.ts",
+        "packages/nax-ai/src/providers/types.ts",
+        "packages/nax-ai/src/providers/catalog.ts",
+        "packages/nax-ai/src/protocols/pi-client.ts",
+        "packages/nax-ai/test/protocols/pi-client-overrides.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-ai/test/protocols/override-thinking-budget.test.ts"
+      ],
+      "suggestedCriteria": [
+        "assertOverrideModelThinkingBudget rejects each reserved name from the complete reserved-field list with an error naming the model id and offending field.",
+        "Given a non-openai-completions model with thinkingBudgets and no thinkingBudgetField, assertOverrideModelThinkingBudget reports the protocol restriction before the missing-field error.",
+        "assertOverrideModelThinkingBudget rejects a budget key xhigh even when xhigh is in thinkingLevels.",
+        "assertOverrideModelThinkingBudget accepts thinkingBudgets: { high: 12000 } when thinkingLevels is [\"off\", \"max\"].",
+        "When a bundled-provider override adds thinkingBudgetField to a model with existing compat metadata, its resolved pi model retains that existing compat metadata."
+      ],
+      "workdir": "packages/nax-ai",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2a1bd7d48a33d41c1dd6875ed9d08e62ea43ae55"
+    },
+    {
+      "id": "US-004",
+      "title": "Send model-owned thinking budgets through the nax-ai wire path",
+      "description": "**Goal** — Carry resolved model thinking budgets through ProtocolRequest and pi stream options while excluding caller-supplied budget overrides.\n\n**Motivation** — A per-level budget lets a profile give an implementer `model[low]` a tight budget and planning a larger one, per role, instead of one server-wide cap.\n\n**Approach** — Relevant nax-ai design:\n- `ProtocolRequest` (`src/protocols/types.ts`) gains `thinkingBudgets?: ThinkingBudgets`. `ClientRequest` becomes `Omit<ProtocolRequest, \"model\" | \"thinkingBudgets\">`: budgets are the model's declaration, never the caller's. `createClient`'s `streamFrom` sets the protocol request's `thinkingBudgets` from `model.thinkingBudgets` only: when the model declares none, the protocol request has no `thinkingBudgets` property even if an untyped caller spread one into the request.\n- `toPiOptions` forwards `req.thinkingBudgets` as `SimpleStreamOptions.thinkingBudgets` when present (a copied object).\n\nBudget semantics already provided by the pinned pi-ai runtime:\n- `thinkingBudgets?: { minimal?, low?, medium?, high? }` — positive integer token budgets. Keys are pi-ai's `ThinkingBudgets` levels. A request at `xhigh` or `max` uses the `high` budget (pi-ai `clampReasoning`). A level with no declared budget uses pi-ai's default (`minimal` 1024, `low` 2048, `medium` 8192, `high` 16384). Each declared key must be one of the model's `thinkingLevels`, except that `high` is also accepted when `thinkingLevels` contains `xhigh` or `max` (those levels spend the `high` budget). A non-empty object.\n- At `off`, or with no requested thinking level, no budget field is sent (pi-ai sends a budget only when a reasoning level is requested).\n- pi-ai clamps the budget so at least 1024 answer tokens remain under the request's ceiling (`max_tokens` ?? `max_completion_tokens` ?? the model's `maxTokens`, where pi-ai fills the request field from the context-clamped `maxTokens`): budget sent = min(declared, ceiling − 1024), and nothing is sent when that is not positive. The order is: resolve the level's budget (declared, else pi-ai default), then clamp to the ceiling.\nValidated elsewhere, not by US-004 (US-003 nax-ai `assertOverrideModelThinkingBudget`, US-006 nax schema): the key-in-`thinkingLevels` rule, the non-empty object rule, and these two:\n- `thinkingBudgets` requires `thinkingBudgetField`. A field with no budgets is valid and sends pi-ai's default budgets.\n- Both are `openai-completions` only, like `thinkingFormat`.\n\nAdd `ProtocolRequest.thinkingBudgets` and omit it from `ClientRequest`. Set it in `createClient`'s `streamFrom` from the resolved model only (never from the caller's request), and forward it in `toPiOptions` as `SimpleStreamOptions.thinkingBudgets`. Removing the property from caller data at runtime is essential: omitting it from a TypeScript type alone does not sanitize ...req. An absent declaration must yield no own thinkingBudgets property, not an undefined-valued property. Both complete and stream share streamFrom.\n\nEvery wire AC builds its client with createClient using providers: await defaultProviders(); protocols: ({ providerOverrides }) => defaultProtocols({ credentials: createMemoryCredentialStore({ strata: { kind: \"api-key\", key: \"k\" } }), providerOverrides }); transportRetries: 0; and an override introducing strata with baseUrl \"http://127.0.0.1:18080/v1\" and qwen3.8-flash unless otherwise specified. Canonical model: protocol \"openai-completions\", contextWindow 131072, maxTokens 32768, supportsTools true, zero pricing, thinkingLevels [\"off\", \"low\", \"medium\", \"high\"], thinkingBudgetField \"reasoning_budget_tokens\", thinkingBudgets { low: 2048, medium: 6144 }. Replace globalThis.fetch with a JSON-body recorder returning 401 and restore it afterward. For together, change override provider/model provider and memory credential to together while retaining the same baseUrl/model data. Exercise the real createClient -> protocol factory -> pi-ai builder; isolated toPiOptions or direct pi calls do not satisfy wire ACs. Use a spy protocol for model-only ownership tests, including a loosely typed stray caller budget.\n\n**Scope** — In: ProtocolRequest/ClientRequest, streamFrom ownership enforcement, copied toPiOptions forwarding and client-entry wire regressions. Out: declaration validation/compat synthesis (US-003), nax-agent propagation (US-005), config schema/descriptions/docs (US-006). No per-request or per-role budget override: a budget is a model declaration. Per-role budgets come from choosing a level (`model[low]`), which already exists. No change to pi-ai's default budgets or its answer-room clamp (`MIN_ANSWER_TOKENS` 1024). No thinking budgets on `anthropic-messages` or any protocol other than `openai-completions`, even though pi-ai reads `thinkingBudgets` on some token-based protocols. No bump of `@earendil-works/pi-ai` (1.5.0 exists; 1.4.0 already implements the budget field).\n\n**Interface** — `thinkingBudgets?: ThinkingBudgets`; `ClientRequest` is `Omit<ProtocolRequest, \"model\" | \"thinkingBudgets\">`; existing `toPiOptions(req: ProtocolRequest): SimpleStreamOptions` returns copied thinkingBudgets only when present.",
+      "acceptanceCriteria": [
+        "[integration] Streaming with thinking: \"low\" through the canonical createClient wire fixture records a body whose reasoning_budget_tokens is 2048.",
+        "[integration] Streaming with thinking: \"medium\" through the canonical createClient wire fixture records a body whose reasoning_budget_tokens is 6144.",
+        "[integration] Streaming with thinking: \"high\" (no declared high budget) records a body whose reasoning_budget_tokens is 16384, pi-ai's default.",
+        "[integration] Streaming with thinking: \"off\" records a body with no reasoning_budget_tokens property.",
+        "[integration] Streaming with no thinking records a body with no reasoning_budget_tokens property.",
+        "[integration] With the model's maxTokens set to 4096, thinkingBudgets: { high: 16384 } and thinking: \"high\", the recorded body's reasoning_budget_tokens is 3072.",
+        "[integration] With the model's maxTokens set to 1024 and thinking: \"low\", the recorded body has no reasoning_budget_tokens property.",
+        "[integration] With thinkingLevels including \"xhigh\", thinkingBudgets: { high: 12000 } and thinking: \"xhigh\", the recorded body's reasoning_budget_tokens is 12000.",
+        "[integration] With thinkingBudgetField declared and no thinkingBudgets, streaming with thinking: \"low\" records a body whose reasoning_budget_tokens is 2048.",
+        "[integration] With the override instead targeting the bundled provider together (same baseUrl and model, memory credential together: { kind: \"api-key\", key: \"k\" }), streaming with thinking: \"low\" records a body whose reasoning_budget_tokens is 2048.",
+        "[unit] toPiOptions on a request with thinkingBudgets: { low: 2048 } returns options whose thinkingBudgets equals { low: 2048 }.",
+        "[unit] toPiOptions on a request without thinkingBudgets returns options with no thinkingBudgets property.",
+        "[unit] A client from createClient whose registry holds a spy protocol, streaming a model that declares thinkingBudgets: { low: 2048 }, passes the spy a ProtocolRequest whose thinkingBudgets equals { low: 2048 }.",
+        "[unit] The same client streaming a model without thinkingBudgets passes the spy a ProtocolRequest with no thinkingBudgets property.",
+        "[unit] The same client streaming a model without thinkingBudgets, given a loosely typed request object that carries a stray thinkingBudgets: { low: 1 }, passes the spy a ProtocolRequest with no thinkingBudgets property."
+      ],
+      "tags": [
+        "feature",
+        "thinking",
+        "protocol",
+        "wire",
+        "api"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Three existing source files need additive types, removal of stray caller budgets and copied conditional forwarding; upstream pi-ai already owns clamping. Strict three-session isolation is retained under the explicit credential-backed integration security override, not because the request mapping itself is complex.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-ai/src/protocols/types.ts",
+        "packages/nax-ai/src/protocols/pi-client.ts",
+        "packages/nax-ai/src/client.ts",
+        "packages/nax-ai/test/protocols/pi-client-custom-provider.test.ts",
+        "packages/nax-ai/test/client.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-ai/test/protocols/pi-client-thinking-budget.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When an untyped caller supplies thinkingBudgets: { low: 1 } for a model declaring { low: 2048 }, the spy protocol receives { low: 2048 }.",
+        "toPiOptions returns a thinkingBudgets object that is not the same object reference as req.thinkingBudgets.",
+        "When thinking is max and the model declares max support plus thinkingBudgets: { high: 12000 }, the recorded reasoning_budget_tokens value is 12000.",
+        "When the request specifies maxTokens: 4096 for a model with maxTokens 32768 and a high budget of 16384, the recorded reasoning_budget_tokens value is 3072.",
+        "When thinkingBudgetField is a valid custom name outside pi-ai's three typed literal names, the recorded request uses that declared custom field name."
+      ],
+      "workdir": "packages/nax-ai",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f3c0f84e72bd5fdca53c506f53cd215b7ace1e21"
+    },
+    {
+      "id": "US-005",
+      "title": "Forward thinking-budget declarations through nax-agent",
+      "description": "**Goal** — Mirror the thinking-budget config type in nax-agent and forward optional declarations, without aliasing budgets, to the native client.\n\n**Motivation** — A per-level budget lets a profile give an implementer `model[low]` a tight budget and planning a larger one, per role, instead of one server-wide cap.\n\n**Approach** — **nax-agent.** `CatalogModelOverride` (`src/config/catalog-overrides.ts`) gains `thinkingBudgetField?: string` and `thinkingBudgets?: CatalogThinkingBudgets`. The new exported interface `CatalogThinkingBudgets` (`minimal?`, `low?`, `medium?`, `high?`: number) is hand-mirrored from nax-ai's `ThinkingBudgets`, because nax-agent's config types cannot import nax-ai (`packages/repo-tooling/scripts/check-nax-ai-imports.ts`). `toProviderOverrides` (`src/native/models.ts`) forwards both with conditional spreads, copying the budgets object rather than aliasing it (the precedent is `headers`).\n\nAdd `thinkingBudgetField?` and `thinkingBudgets?: CatalogThinkingBudgets` to `CatalogModelOverride`, and export `CatalogThinkingBudgets` (it reaches the `./internal` entry through `src/internal.ts`). Forward both fields from `toProviderOverrides` with conditional spreads, copying the budgets object. Regenerate the API snapshot with `bun run api:update`. The only snapshot diff is the added type CatalogThinkingBudgets name under ./internal. Do not export it from the public root or add nax-ai imports to config code. Existing buildNativeClient already maps overrides and uses the protocol factory; prove that path rather than altering its architecture.\n\nUse thinking-budget-overrides.test.ts and mirror test/unit/native/provider-overrides.test.ts and the authEnv/nax#2019 wire pattern in test/unit/native/client.test.ts. For the wire regression, intercept globalThis.fetch to record JSON and return 401; call the real buildNativeClient([strata override], { transportRetries: 0 }), not the preload-sentinelled _clientDeps.build. Set STRATA_KEY to k-wire and restore it and fetch in cleanup. The strata override uses baseUrl http://127.0.0.1:18080/v1, authEnv STRATA_KEY and one qwen3.8-flash openai-completions model with maxTokens 32768, contextWindow 131072, supportsTools true, pricing, thinkingLevels [off, low, high], thinkingBudgetField reasoning_budget_tokens and thinkingBudgets { low: 2048 }. Stream with thinking low and assert the captured budget field, not just the mapper result. Also pass an otherwise valid override with thinkingBudgetField max_tokens to the real builder and assert its promise rejects with the upstream nax-ai error naming max_tokens; this negative path proves the mapper no longer drops invalid declarations. Keep validation owned by nax-ai rather than adding validation or reserved-name checks to toProviderOverrides.\n\n**Scope** — In: hand-mirrored interface/model fields, conditional mapper forwarding with a budget copy, internal API snapshot generation and native-client wire regression. Out: nax-ai validation/synthesis/wire implementation (US-003–US-004), nax schema/descriptions/docs (US-006), session cancellation/catalog close (US-001–US-002). No per-request or per-role budget override: a budget is a model declaration. Per-role budgets come from choosing a level (`model[low]`), which already exists.\n\n**Interface** — `thinkingBudgetField?: string`; `thinkingBudgets?: CatalogThinkingBudgets`; exported interface `CatalogThinkingBudgets` with `minimal?: number`, `low?: number`, `medium?: number`, `high?: number`. Existing mapper: `toProviderOverrides(overrides: readonly ProviderCatalogOverride[]): ProviderOverride[]`.",
+      "acceptanceCriteria": [
+        "[unit] toProviderOverrides on an override whose model declares thinkingBudgetField: \"reasoning_budget_tokens\" returns a model whose thinkingBudgetField is \"reasoning_budget_tokens\".",
+        "[unit] toProviderOverrides on a model declaring thinkingBudgets: { low: 2048 } returns a model whose thinkingBudgets equals { low: 2048 } and is not the same object reference as the input's.",
+        "[unit] toProviderOverrides on a model declaring neither field returns a model object with no thinkingBudgetField property and no thinkingBudgets property.",
+        "[integration] With globalThis.fetch replaced by an interceptor that records the JSON request body and answers 401 (restored afterwards), streaming qwen3.8-flash of provider strata with thinking \"low\" through a client from buildNativeClient([<strata override: baseUrl \"http://127.0.0.1:18080/v1\", authEnv \"STRATA_KEY\", one openai-completions model with maxTokens 32768, thinkingLevels [\"off\", \"low\", \"high\"], thinkingBudgetField \"reasoning_budget_tokens\", thinkingBudgets { low: 2048 }>], { transportRetries: 0 }), with STRATA_KEY set to \"k-wire\" (restored afterwards), records a body whose reasoning_budget_tokens is 2048, following the existing authEnv and nax#2019 wire tests in client.test.ts.",
+        "[integration] Given an otherwise valid strata override whose model declares thinkingBudgetField: \"max_tokens\" and thinkingBudgets: { low: 2048 }, buildNativeClient([override], { transportRetries: 0 }) rejects with an Error whose message contains \"max_tokens\", rather than silently dropping the invalid declaration."
+      ],
+      "tags": [
+        "feature",
+        "thinking",
+        "config",
+        "native",
+        "api",
+        "wire"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Additive import-free config types and conditional mapper fields are medium complexity, but the required authEnv/STRATA_KEY credential-backed wire regression triggers strict three-session isolation under the security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/config/catalog-overrides.ts",
+        "packages/nax-agent/src/native/models.ts",
+        "packages/nax-agent/src/native/client.ts",
+        "packages/nax-agent/test/unit/native/client.test.ts",
+        "packages/nax-agent/test/unit/native/provider-overrides.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/native/thinking-budget-overrides.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the source config's thinkingBudgets.low is changed after toProviderOverrides returns, the mapped model retains its original low budget."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "the ./internal section gains the new exported name type CatalogThinkingBudgets. Regenerate with bun run api:update; the only diff is that one added line."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3f6ee7097a3fb198d5c7c3bfd4b1a41ca0b998af"
+    },
+    {
+      "id": "US-006",
+      "title": "Expose thinking budgets in nax configuration and help",
+      "description": "**Goal** — Accept and preserve model thinking-budget declarations in nax config, describe them in CLI help and document the Strata configuration.\n\n**Motivation** — #2770: lowering `maxTokens` is not a substitute, because it bounds thinking and answer together, and a tight cap truncates the answer or tool call (`max_tokens` 1000 ended `length` with no answer).\n\n**Approach** — **Config shape (nax and nax-agent `CatalogModelOverride`):**\n```json\n{\n  \"provider\": \"strata\",\n  \"baseUrl\": \"http://192.168.1.175:8080/v1\",\n  \"allowInsecureHttp\": true,\n  \"models\": [\n    {\n      \"id\": \"qwen3.8-flash\",\n      \"protocol\": \"openai-completions\",\n      \"contextWindow\": 131072,\n      \"maxTokens\": 32768,\n      \"supportsTools\": true,\n      \"thinkingFormat\": \"openrouter\",\n      \"thinkingLevels\": [\"off\", \"low\", \"medium\", \"high\"],\n      \"thinkingBudgetField\": \"reasoning_budget_tokens\",\n      \"thinkingBudgets\": { \"low\": 2048, \"medium\": 6144, \"high\": 16384 },\n      \"pricing\": { \"input\": 0, \"output\": 0, \"cacheRead\": 0, \"cacheWrite\": 0 }\n    }\n  ]\n}\n```\n\n- `thinkingBudgetField?: string` — the top-level request field the endpoint reads. Lowercase snake_case: `^[a-z][a-z0-9_]{0,63}$`. Any name is accepted (user ruling 11-04), since servers differ (vLLM `thinking_token_budget`, Qwen/SGLang `thinking_budget`, llama.cpp `thinking_budget_tokens`, Strata `reasoning_budget_tokens`). nax-ai rejects names that collide with fields it already sends (the reserved list below).\n- `thinkingBudgets?: { minimal?, low?, medium?, high? }` — positive integer token budgets. Keys are pi-ai's `ThinkingBudgets` levels. A request at `xhigh` or `max` uses the `high` budget (pi-ai `clampReasoning`). A level with no declared budget uses pi-ai's default (`minimal` 1024, `low` 2048, `medium` 8192, `high` 16384). Each declared key must be one of the model's `thinkingLevels`, except that `high` is also accepted when `thinkingLevels` contains `xhigh` or `max` (those levels spend the `high` budget). A non-empty object.\n- `thinkingBudgets` requires `thinkingBudgetField`. A field with no budgets is valid and sends pi-ai's default budgets.\n- Both are `openai-completions` only, like `thinkingFormat`.\n- At `off`, or with no requested thinking level, no budget field is sent (pi-ai sends a budget only when a reasoning level is requested).\n- pi-ai clamps the budget so at least 1024 answer tokens remain under the request's ceiling (`max_tokens` ?? `max_completion_tokens` ?? the model's `maxTokens`, where pi-ai fills the request field from the context-clamped `maxTokens`): budget sent = min(declared, ceiling − 1024), and nothing is sent when that is not positive. The order is: resolve the level's budget (declared, else pi-ai default), then clamp to the ceiling.\n\n**nax.** `CatalogModelOverrideSchema` (`src/config/schemas-model.ts`) gains `thinkingBudgetField` (the regex above) and `thinkingBudgets` (a strict object of optional positive integers over `minimal`/`low`/`medium`/`high`, non-empty). A `superRefine` rejects budgets without a field, and a budget key that is not in `thinkingLevels` (with the same `xhigh`/`max` → `high` exception as nax-ai). The reserved-name and protocol checks are nax-ai's (the same split as `thinkingFormat`: nax-ai owns protocol rejection). `FIELD_DESCRIPTIONS` (`src/cli/config-descriptions.ts`) gains entries for both keys. `docs/guides/configuration.md` documents the fields with the Strata example above, next to the existing `thinkingFormat` section.\n\nAdd `thinkingBudgetField` and `thinkingBudgets` to `CatalogModelOverrideSchema` with the refinements above, add `FIELD_DESCRIPTIONS` entries for both, and document them in `docs/guides/configuration.md` with the Strata example. The reserved list is owned by nax-ai (US-003), not duplicated in this schema. Parse the root agent.native.catalogOverrides shape through NaxConfigSchema, then pass its typed override array to toProviderOverrides imported through @nathapp/nax-agent/internal; do not bypass parsing or add a prohibited nax-ai import. Cover malformed names, missing field, undeclared levels, max -> high, nonpositive/fractional values, unknown xhigh key, empty object, field-only success and legacy omission of both optional properties in the new catalog-overrides-thinking-budget.test.ts. Add exact FIELD_DESCRIPTIONS keys agent.native.catalogOverrides.thinkingBudgetField and agent.native.catalogOverrides.thinkingBudgets; the latter must explicitly mention xhigh. The documentation file is repository-root relative although this story's binding workdir is packages/nax.\n\n**Scope** — In: strict schema and cross-field refinements, CLI descriptions, root configuration guide and parse-then-forward seam regressions. Out: nax-ai validator/defaults/wire implementation (US-003–US-004), nax-agent model mirror/mapper (US-005), ACP cancellation (US-001–US-002). The nax config schema does not duplicate nax-ai's reserved-field list or its protocol check; those errors surface when the native client is built. No precheck row for thinking budgets. No per-request or per-role budget override: a budget is a model declaration. Per-role budgets come from choosing a level (`model[low]`), which already exists.\n\n**Interface** — `thinkingBudgetField?: string`; `thinkingBudgets?: { minimal?, low?, medium?, high? }` in CatalogModelOverrideSchema's typed output; description lookup keys `agent.native.catalogOverrides.thinkingBudgetField` and `agent.native.catalogOverrides.thinkingBudgets`.",
+      "acceptanceCriteria": [
+        "[unit] Parsing agent.native.catalogOverrides with a valid openai-completions model that adds thinkingBudgetField: \"reasoning_budget_tokens\" and thinkingBudgets: { low: 2048, high: 16384 } (with low and high in thinkingLevels) succeeds, and the typed output keeps both values.",
+        "[unit] A model declaring thinkingBudgets: { low: 2048 } without thinkingBudgetField fails to parse with an error message containing \"thinkingBudgetField\".",
+        "[unit] A model declaring thinkingBudgetField: \"Reasoning-Budget\" fails to parse.",
+        "[unit] A model with thinkingLevels: [\"off\", \"low\"] declaring thinkingBudgets: { medium: 6144 } and a valid field fails to parse with an error message containing \"medium\".",
+        "[unit] A model with thinkingLevels: [\"off\", \"max\"] declaring thinkingBudgets: { high: 12000 } and a valid field parses.",
+        "[unit] A model declaring thinkingBudgets: { low: 0 } with a valid field fails to parse.",
+        "[unit] A model declaring thinkingBudgets: { low: 1.5 } with a valid field fails to parse.",
+        "[unit] A model declaring thinkingBudgets: { xhigh: 4096 } with a valid field fails to parse.",
+        "[unit] A model declaring thinkingBudgets: {} with a valid field fails to parse.",
+        "[unit] A model declaring only thinkingBudgetField: \"thinking_budget\" parses and keeps the field.",
+        "[integration] The catalogOverrides array produced by parsing a config whose openai-completions model declares thinkingLevels including low and high, thinkingBudgetField: \"reasoning_budget_tokens\" and thinkingBudgets: { low: 2048, high: 16384 }, passed to nax-agent's toProviderOverrides, yields a model whose thinkingBudgetField is \"reasoning_budget_tokens\" and whose thinkingBudgets equals { low: 2048, high: 16384 }.",
+        "[unit] FIELD_DESCRIPTIONS[\"agent.native.catalogOverrides.thinkingBudgetField\"] is a non-empty string.",
+        "[unit] FIELD_DESCRIPTIONS[\"agent.native.catalogOverrides.thinkingBudgets\"] is a non-empty string that mentions \"xhigh\".",
+        "[unit] Parsing an otherwise valid legacy agent.native.catalogOverrides model declaring neither budget field produces a typed model with no thinkingBudgetField or thinkingBudgets property, preserving omission of undeclared settings."
+      ],
+      "tags": [
+        "feature",
+        "thinking",
+        "config",
+        "schema",
+        "cli",
+        "documentation"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Optional strict schema fields and standard superRefine checks follow existing config conventions; descriptions/docs and a parsed-config mapper seam complete the additive feature.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-model.ts",
+        "packages/nax/src/cli/config-descriptions.ts",
+        "packages/nax/test/unit/config/catalog-overrides-schema.test.ts",
+        "docs/guides/configuration.md"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/config/catalog-overrides-thinking-budget.test.ts"
+      ],
+      "suggestedCriteria": [
+        "CatalogModelOverrideSchema accepts a regex-valid reserved field name such as max_tokens, leaving collision rejection to native-client construction.",
+        "CatalogModelOverrideSchema parses a regex-valid budget declaration on anthropic-messages, leaving protocol rejection to native-client construction.",
+        "CatalogModelOverrideSchema accepts a declared high budget when thinkingLevels includes xhigh but not high.",
+        "CatalogModelOverrideSchema rejects a thinkingBudgetField longer than 64 characters."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9731e70d3640a83a3d52b3574f281ee85b144f65"
+    }
+  ],
+  "analysis": "Goal and delivery: close #2782 and #2770 in one run while keeping their implementations independent. Preserve exactly US-001 through US-006 and the specified workdirs/dependencies: the teardown chain is US-001 -> US-002; the budget chain is US-003 -> US-004 -> US-005 -> US-006. This is an enhancement of existing TypeScript modules, not greenfield. Codebase-memory MCP tools were unavailable, so discovery used direct reads and targeted text search rooted at /Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax. The supplied spec is also present at .nax/features/acp-close-and-thinking-budget/spec.md:1. No source implementation or tests are changed by this planning task, and no test execution or live-provider validation is claimed.\n\nArchitecture and boundaries: docs/architecture/ARCHITECTURE.md:150 describes the packages and dependency direction; its quick-reference limits begin at :163. nax-agent and nax-ai ship Node-compatible ESM; nax is Bun-native. nax-agent source uses #src/ imports or explicit .ts relative imports, nax uses @/, and nax-ai uses explicit .ts extensions. nax-ai is importable only under nax-agent/src/native and the cost type re-export; nax-agent config must hand-mirror the budget type. nax itself may import nax-ai only in src/agents/catalog, so US-006's parse-then-forward test must use toProviderOverrides via @nathapp/nax-agent/internal rather than adding a direct nax-ai import or reaching across package-relative paths. Only protocols/pi-client.ts, providers/pi-catalog.ts and auth/pi-auth.ts may import pi-ai in shipped nax-ai source. Do not change package versions or pi-ai: packages/nax-ai/package.json:38 pins @earendil-works/pi-ai to 1.4.0, which already implements budget selection and answer-room clamping. New API names use named exports; no underscore seams belong on nax-agent's public entry. The binding US-006 workdir remains packages/nax even though its documentation change intentionally targets the existing repository-root docs/guides/configuration.md.\n\nUS-001 discovery: packages/nax-agent/src/session/agent-session-types.ts:59 defines CreateAgentSessionOptions without a caller open signal. packages/nax-agent/src/session/agent-session-options.ts:51 defines a strict OptionsSchema; checkShape at :80 reports the first issue path and preserves the original caller object, and resolveAgentSessionOptions at :112 applies semantic validation. Extend this schema with an optional AbortSignal instance, not an arbitrary signal-shaped object. packages/nax-agent/src/session/agent-session.ts:484 currently validates then reads transcriptStore.load; resumeAgentSession at :521 also validates before loading. Both need the pre-abort check immediately after validation, before store reads or root creation. sessionRoot at :404 awaits either scratch creation or isDirectory; open at :470 owns failed-root cleanup. assemble at :420 creates the session closeController and passes its signal to backend.open at :431-444. Link the caller signal only during backend.open, recheck immediately before that call after asynchronous pre-open work, remove the listener in a finally when open settles, and close exactly once if an abort-ignoring backend resolves. Preserve backend rejection identity, including the recorded-error AC. The existing catch after backend.open already closes an opened backend on assembly failure; structure the cancellation path to avoid double close and keep root cleanup on the existing open failure path. FacadeAgentSession.shutdown at :386 aborts that same controller on actual session close, so replacing it with the caller signal or using a permanent AbortSignal.any link would incorrectly poison later turns/reconnects. BackendOpenContext.openSignal already exists at packages/nax-agent/src/session/session-backend.ts:87; no backend contract change is needed. Read-only dependency packages/nax-agent-acp/src/client/open.ts:124 checks early abort, :139-142 kills launched resources on failure, and :168-174 races setup steps against ctx.openSignal. Rely on this unchanged implementation, never launch a real ACP agent in tests. Existing coverage/model fixtures: packages/nax-agent/test/unit/session/agent-session-backend.test.ts:30 supplies a stub backend, :78 drives a completed turn and :124 checks close aborts the backend signal; agent-session-options.test.ts:33 provides the loosely typed invalid-options pattern. Add agent-session-open-signal.test.ts, using deferreds and existing helpers, not as unknown as/as never. The public exported-name snapshot does not change for an optional member. Session lifecycle work triggers strict three-session-tdd. Keep assemble cognitive complexity <=20 with a small link/unlink helper.\n\nUS-002 discovery: packages/nax/src/chat/acp/acp-probe.ts:9 opens an ask-profile, no-tool, memory-only session and :27-30 closes a successfully opened session in finally. Its 20000 ms initialize timeout cannot by itself cancel catalog teardown; add conditional signal -> openSignal forwarding. packages/nax/src/chat/acp/acp-catalog.ts:33 defines AcpCatalog, with close(): void at :41; createAcpCatalog starts at :95. inFlight at :106 deduplicates probes for warm and refresh, saving at :116 serializes store writes, saveOffers at :118 catches and warns, and probeAgent at :139 checks !closed before recording success/failure. close at :180 only sets closed today. Add one catalog controller and one cached Promise<void>; close must synchronously set closed and abort before returning that promise. Do not mark the public cached-promise wrapper async if doing so creates a different promise on each call. Snapshot/drain all running probes and the current saving chain using settled work, race against closeBoundMs (default 2000), clear the timer on early settlement, and compute pending agent names at timeout from current inFlight, not the original snapshot. Empty agents identifies a save-only timeout. Preserve late-outcome suppression and no-new-warm/refresh behavior. A bound limits waiting, not a new guarantee that a deliberately non-cooperative backend/save will finish. Export the default from acp-catalog and the existing barrel packages/nax/src/chat/acp/index.ts:1. Use a small settleWithin helper to preserve the catalog complexity ratchet. .nax/rules/forbidden-patterns-source.md:40 explicitly permits setTimeout for cancellable timer handles with a call-site comment; do not use an uncancellable sleep in the race. packages/nax/test/helpers/timer-spy.ts:55 exposes withTimerSpy with armed/cleared/fired/leaked tracking and optional origin filtering. packages/nax/src/chat/chat-host.ts:562 already caches host.close; teardown at :572-573 must await acp.close as its first statement before sessionOperations drain. The file has 596 displayed lines/597 split-newline lines, so use the one-word await change with no net growth; do not restructure the host. packages/nax/src/cli/chat.ts:165 already wraps host.close and :384 awaits it; retain the explicit-exit flow unchanged.\n\nUS-002 compatibility/test migration: packages/nax/test/unit/chat/acp/acp-catalog.test.ts:336 needs signal: expect.any(AbortSignal) in its exact discover arguments. Its AC-12/19 test at :380-394 currently expects undefined from close at :383; replace only that return-shape assertion with a Promise assertion, preserving dropped late success/failure, no save, no unavailability and no second warm discovery. Capture and await the promise after releasing its deferred so the new timer cannot leak. acp-catalog-refresh.test.ts:25 needs the same signal assertion. chat-host-acp.test.ts:95 has a synchronous catalog close stub and :160 keeps the existing exactly-once repeated-close test. Update catalog close stubs to async in chat-host-acp.test.ts, chat-host-acp-switch.test.ts, chat-host-acp-models.test.ts, chat/acp/acp-host.test.ts, chat-host-memory.test.ts, cli/chat.test.ts, cli/chat-resources.test.ts, cli/chat-resources-memory.test.ts and cli/chat-resources-memory-degrade.test.ts under packages/nax/test/unit. Preserve all unrelated assertions. Create acp-catalog-close.test.ts; existing probe/host tests may be extended for forwarding/teardown cases. The authoritative seam AC is stronger than the brief Seams prose: leave both real probeAcpAgent and real createAgentSession installed and stub only launchCandidateKind/acpBackend, with a stub SessionBackend and real temporary directory. A test that stubs createAgentSession would miss the new linking behavior. Restore all _deps and global timer spies after tests. Catalog/session teardown and this seam warrant strict three-session-tdd.\n\nUS-003 discovery: packages/nax-ai/src/providers/types.ts:120 defines ThinkingFormat and :122 begins ResolvedModel; :185 currently ends its optional thinking declarations with thinkingFormat. Add the readonly ThinkingBudgets type and two optional model fields there, exporting the type beside ThinkingFormat from packages/nax-ai/src/index.ts:99-109. packages/nax-ai/src/providers/override-model.ts:87 is the existing format-validation precedent. Add assertOverrideModelThinkingBudget with ordered, model-id-bearing failures: protocol, missing field, malformed/reserved field, invalid budget object/key/level/value. Keep all 22 reserved lowercase names from the design, not a narrowed sample or only pi-ai's type literals. The high key exception applies when any of high/xhigh/max is declared; no off/xhigh/max budget keys are admitted. Positive integers and a non-empty object are required. Client catalog construction calls the current asserts at packages/nax-ai/src/providers/catalog.ts:114-118. Wire catalog construction calls them in synthesiseIntroducedModel at packages/nax-ai/src/protocols/pi-client.ts:817-820 and applyOverrides at :886-893; add the new assert beside each format assert. Both catalogs must reject invalid declarations rather than allowing one path to resolve and the other to fail later. synthesiseModel at :610-687 merges template metadata; its compat guard at :671 currently fires only for routing or format, which would drop budget-only declarations on bundled providers. Extend the guard and preserve template compat. synthesiseIntroducedModel at :817-852 constructs declared metadata without a template; set the compat field there too. Share one helper with the sole documented cast to pi-ai's three-literal compat type, because the runtime builder accepts any validated field name via computed property Object.assign. Do not widen the whole dependency seam or change upstream. README.md:87 documents custom providers/thinkingFormat and is the right nearby documentation anchor. Existing tests at test/protocols/pi-client-overrides.test.ts:669 onward cover format validation/synthesis, and pi-client-custom-provider.test.ts:10-26,:121-145 covers introduced-model metadata and compat merging. Create override-thinking-budget.test.ts for the new behavior without altering unrelated existing synthesis assertions. Classify medium/tdd-simple: both catalogs already call the same existing validators at known sites, and both compat synthesis paths use the same conditional-merge pattern; the optional fields and local helper extend those established seams without a new architecture.\n\nUS-004 discovery: packages/nax-ai/src/protocols/types.ts:166 defines ProtocolRequest; :193 carries thinking. packages/nax-ai/src/client.ts:51 currently defines ClientRequest as Omit<ProtocolRequest, \"model\">. streamFrom at :117 constructs protocolRequest at :121 by spreading all req properties, so changing only TypeScript types would still admit an untyped caller's stray thinkingBudgets at runtime. Remove that property from forwarded caller data and conditionally set only the model's declaration; absence must remain absence rather than an undefined property. stream and complete both use streamFrom (:156-161), so enforce ownership once there. packages/nax-ai/src/protocols/pi-client.ts:228 toPiOptions already conditionally forwards options and copies headers; copy declared budgets the same way into SimpleStreamOptions. Do not calculate defaults or clamps here: pi-ai 1.4.0 resolves minimal/low/medium/high defaults, maps xhigh/max to high and reserves 1024 answer tokens under the actual context-clamped ceiling. Wire ACs must enter createClient with defaultProviders and the providerOverrides protocol factory, retries disabled, memory credentials and restored fetch interception returning 401, not call pi's payload builder directly or test only toPiOptions. test/protocols/pi-client-custom-provider.test.ts:168 demonstrates payload observation but does not replace these client-entry seam tests; test/client.test.ts is the spy-protocol precedent. Create pi-client-thinking-budget.test.ts and extend existing client/option tests only as necessary. The canonical wire fixture has contextWindow 131072, maxTokens 32768, levels off/low/medium/high, field reasoning_budget_tokens and budgets low 2048/medium 6144; include introduced strata and bundled together. Intercepted requests prove compatibility with the installed pi-ai builder, not real Strata enforcement. Classify medium/three-session-tdd: production changes are confined to three existing source files and standard option mapping, with no new clamping algorithm; the required credential-backed wire integration retains the explicit security override even though credential policy is unchanged and test credentials are fixed fixtures.\n\nUS-005 discovery: packages/nax-agent/src/config/catalog-overrides.ts:68 defines the complete config-side CatalogModelOverride, ending with optional thinkingFormat at :95; it is deliberately import-free and hand-mirrors nax-ai vocabulary (:8-17). Add exported CatalogThinkingBudgets with four optional numeric members, then the model field/budgets properties. packages/nax-agent/src/native/models.ts:119 maps every override, conditionally forwards format at :144 and copies headers at :132; copy budgets rather than aliasing the config object. Do not forward allowInsecureHttp into nax-ai. packages/nax-agent/src/internal.ts:24 already export-stars catalog-overrides, so the new exported interface reaches ./internal automatically; run bun run api:update in this package, expecting only type CatalogThinkingBudgets to be added in api/nax-agent.api.txt's ./internal section. Do not add it to the public root or hand-edit generated snapshots. packages/nax-agent/src/native/client.ts:70 buildNativeClient already uses toProviderOverrides and the defaultProtocols factory at :74-105, feeding both nax-ai catalogs; it should require no production change. The real builder, not _clientDeps.build (sentinelled by test preload), must be used in the new wire test. Existing tests: test/unit/native/provider-overrides.test.ts:10-26 supplies a strata fixture and :30-39 restores _deps/fetch/STRATA_KEY; test/unit/native/client.test.ts:209-276 supplies the nax#2019 real-builder fetch interception. Create thinking-budget-overrides.test.ts for optional omission, copy identity and the buildNativeClient -> JSON body assertion. Use process.env.STRATA_KEY=k-wire and restore it and globalThis.fetch even on failure; use retries 0. This is a medium, additive mapper/type change using established patterns; use three-session-tdd because the required authEnv/STRATA_KEY credential-backed wire integration triggers the security override, without changing credential resolution or authentication behavior.\n\nUS-006 discovery: packages/nax/src/config/schemas-model.ts:104 defines the strict CatalogModelOverrideSchema and :129 thinkingFormat; ProviderCatalogOverrideSchema nests it at :210 and the config schema defaults are covered by catalog-overrides-schema.test.ts:76-94. Add the snake_case regex field, strict four-key optional-positive-integer budget object with nonempty refinement, and model superRefine for the field dependency and level membership with high/xhigh/max exception. Do not duplicate protocol or reserved-name rejection in nax schema. Existing strict schemas make unknown budget keys an error rather than silently stripping them. packages/nax/src/config/schema-types.ts:120 re-exports CatalogModelOverride; maintain typed config assignability to the upstream hand-written interface. packages/nax/src/cli/config-descriptions.ts:392 currently describes thinkingFormat; add both exact agent.native.catalogOverrides.* keys and make budgets text mention xhigh. docs/guides/configuration.md:354 begins the thinkingFormat discussion; document the two fields beside it, preserving the spec's full Strata example including remote-http opt-in, and explain field-only defaults, level mapping, model-only ownership, off/no-thinking omission and answer-room clamp. Create catalog-overrides-thinking-budget.test.ts. Parse through NaxConfigSchema and pass the parsed override array into toProviderOverrides through @nathapp/nax-agent/internal for the cross-package seam; field presence only at an isolated sub-schema is insufficient. This is medium/tdd-simple, with schema/CLI/docs in the binding packages/nax workdir and the intentional root documentation edit.\n\nRisks and migration: the only intentional return-contract change is AcpCatalog.close from void to Promise<void>; update all typed stubs and ensure hosts await before CLI exit. Idempotence means promise identity, not merely equivalent resolution. Abort listeners must never survive backend-open settlement, and late backend resolution must not leak resources or double-close. Set closed before abort so abort-triggered probe rejections cannot become unavailable failures or debug failure noise. Keep saving work inside the same bounded close without swallowing the existing warning. Timer cleanup is a process-liveness requirement; capture and clear the handle. No persisted offer/transcript/config format migration is necessary; all new config/API fields are optional and undeclared keys must remain absent along every mapper/options boundary. Existing providers, models, thinking formats, routing compat, auth and no-budget requests must retain behavior. Bundled synthesis must not lose inherited compat when merging the new field. Budgets remain model declarations despite JavaScript callers bypassing ClientRequest typing. Arbitrary valid field names are supported except the exact reserved list; nax-ai owns protocol/collision errors. The reserve list and cast are deliberately version-specific to the pinned pi-ai implementation. No real provider calls, real ACP adapters, package release or Linux-handle investigation belongs in this run.\n\nVerification approach: write regression tests first and demonstrate failure against the old code in every story. Use bun:test/deferreds/_deps in nax-agent and nax, Vitest in nax-ai, and existing shared helpers instead of monkey-patched modules or unsafe double casts. Tests may intercept global fetch as explicitly required by wire ACs, with restoration. Run targeted tests from the owning package (bun test ./test/unit/... --timeout=60000 for Bun packages, bun run test with appropriate Vitest file arguments for nax-ai); never bare bun test or bun run nax. Normal pipeline lint/typecheck/build gates are not acceptance criteria. Respect <=20 cognitive complexity, <=600 source lines, <=800 test lines and the stricter chat-host net-growth constraint. Generate nax-agent's API snapshot only in US-005. Do not edit generated AGENTS/CLAUDE/rules files. The final integrated proof is real createAgentSession cancellation through catalog close plus actual pi-ai request bodies at nax-ai and buildNativeClient boundaries and typed parse-then-forward propagation, not live server behavior.\n\nSecond-pass adversarial audit: re-read spec.md:304-414 and the actual session open, catalog probe/close, host teardown, config schema, client request assembly, both pi synthesis paths and native override mapper/builder. Original spec ACs are preserved one-for-one at the same acceptanceCriteria positions: US-001 [1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15]; US-002 [1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15, 16->16, 17->17, 18->18]; US-003 [1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15, 16->16]; US-004 [1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15]; US-005 [1->1, 2->2, 3->3, 4->4]; US-006 [1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13]. Total: all 81 enumerated spec ACs retained; no deprecated grep/file/verbatim tags occur. Qualifiers retained include the same signal identity, before awaiting close, the 60000 ms bound timeout guard, the two real seam functions, the budget-only bundled override lacking format/routing, pi defaults for undeclared high, the same bundled-provider model/baseUrl fixture, copied budget reference inequality, restored fetch/environment and US-005's existing authEnv/nax#2019 wire-test anchor. The turn-end wording is explicitly mapped to the existing public turn_end discriminator, not changed behavior.\n\nAudit corrections: US-001 AC8 now repeats the deferred-directory setup for independent testability. US-002 AC16 and its description explicitly wait for the stub backend to enter open before close; otherwise async transcript/root checks can validly prevent backend.open, making the recorded-context assertion unobservable. US-003 AC17 pins legacy format/routing compat synthesis with neither budget property. US-005 AC5 is the audit-requested missing negative path: buildNativeClient must propagate upstream rejection of max_tokens rather than silently dropping the declaration; this adds no mapper-owned validation. US-006 AC14 pins absent optional properties in legacy parsed config. These three audit-required assertions are distinguished from the original spec's 81 ACs, and the existing US-002 AC19 captures the failure table's save warning. Remaining optional hardening stays in suggestedCriteria. All acceptance assertions are observable as returned/requested data, promise settlement or identity, errors, logs, or absence of calls/properties; none is a quality gate. Negative paths exist in US-001 AC2/15, US-002 AC10/15, US-003 AC3-12, US-004 AC15 (stray caller input is ignored), US-005 AC5 and US-006 AC2-9. Compatibility anchors exist in US-001 AC13/14, US-002 AC2/9/19 plus its preserved legacy tests, US-003 AC17, US-004 AC12/14/15, US-005 AC3 and US-006 AC14.\n\nRouting audit: US-001 and US-002 remain complex with strict isolation because abort lifetime, pending resources, timer cleanup and teardown ordering are genuine session concurrency changes. US-003 is reduced to medium/tdd-simple because existing validator and compat-merge seams avoid a new abstraction. US-004 is reduced to medium because only three source files need ordinary option propagation; its strict strategy and US-005's strict strategy remain solely to satisfy the explicit credential-backed integration security override. US-006 remains medium/tdd-simple. No binding dependencies, story IDs or workdirs changed, every dependency target exists, and all spec Context Files lists are retained exactly (5, 5, 5, 5, 5 and 4 existing files respectively). All six expectedFiles are only this feature's new tests, never context inputs. The eight feature exclusions are retained verbatim in top-level outOfScope: unchanged ACP abort backend; no Linux-handle investigation; no per-request/per-role declaration override; no other protocols; unchanged pi defaults/clamp; no pi bump; no duplicate nax reserved/protocol checks; no precheck row. Nearby descriptions echo the relevant boundaries. No story-local exclusions were hoisted, and descriptions keep the new negative/regression checks inside each story's declared implementation scope.",
+  "outOfScope": [
+    "No change to how the ACP backend reacts to an aborted open signal: `openAcpSession` already kills the agent's process group, and this bundle relies on that path unchanged.",
+    "The leaking Linux handle behind #2781 is not investigated further; this bundle removes the probe as a candidate only.",
+    "No per-request or per-role budget override: a budget is a model declaration. Per-role budgets come from choosing a level (`model[low]`), which already exists.",
+    "No thinking budgets on `anthropic-messages` or any protocol other than `openai-completions`, even though pi-ai reads `thinkingBudgets` on some token-based protocols.",
+    "No change to pi-ai's default budgets or its answer-room clamp (`MIN_ANSWER_TOKENS` 1024).",
+    "No bump of `@earendil-works/pi-ai` (1.5.0 exists; 1.4.0 already implements the budget field).",
+    "The nax config schema does not duplicate nax-ai's reserved-field list or its protocol check; those errors surface when the native client is built.",
+    "No precheck row for thinking budgets."
+  ],
+  "routingProfile": "native-codex"
+}

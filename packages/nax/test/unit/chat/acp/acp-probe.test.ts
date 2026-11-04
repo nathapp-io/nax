@@ -20,13 +20,27 @@ function fixture() {
   const backend = original.acpBackend({ agent: "codex", allowUnsandboxed: true });
   const store = original.createMemoryTranscriptStore();
   const acpBackend = mock(() => backend);
-  const createAgentSession = mock(async () => session);
+  const createAgentSession = mock(async (_options: Parameters<typeof original.createAgentSession>[0]) => session);
   const createMemoryTranscriptStore = mock(() => store);
   Object.assign(_acpProbeDeps, { acpBackend, createAgentSession, createMemoryTranscriptStore });
   return { capabilities, close, backend, store, acpBackend, createAgentSession, createMemoryTranscriptStore };
 }
 
 describe("probeAcpAgent", () => {
+  test("close AC-1 forwards the caller's open signal exactly once", async () => {
+    const f = fixture();
+    const signal = new AbortController().signal;
+    await probeAcpAgent({ agent: "codex", cwd: "/r", signal });
+    expect(f.createAgentSession).toHaveBeenCalledTimes(1);
+    expect(f.createAgentSession.mock.calls[0]?.[0].openSignal).toBe(signal);
+  });
+
+  test("close AC-2 omits openSignal when no signal is supplied", async () => {
+    const f = fixture();
+    await probeAcpAgent({ agent: "codex", cwd: "/r" });
+    expect(f.createAgentSession).toHaveBeenCalledTimes(1);
+    expect(f.createAgentSession.mock.calls[0]?.[0]).not.toHaveProperty("openSignal");
+  });
   test("AC-1/2/3/18 opens a tool-less memory session with per-step timeout and closes it", async () => {
     const f = fixture();
     expect(await probeAcpAgent({ agent: "codex", cwd: "/r" })).toBe(f.capabilities);

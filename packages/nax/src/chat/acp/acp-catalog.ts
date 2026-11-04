@@ -22,6 +22,25 @@ import {
 import { type AcpOffer, acpOffersPath, createAcpOfferStore } from "./acp-offer-store";
 import { probeAcpAgent } from "./acp-probe";
 
+export const ACP_CATALOG_CLOSE_BOUND_MS = 2_000;
+
+/** Wait only up to the close bound; neither work failures nor logging may reject close. */
+async function settleWithin(boundMs: number, work: readonly Promise<unknown>[], onTimeout: () => void): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // setTimeout is required here: clearTimeout cancels the bound mid-flight when work settles first.
+  const timeout = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), boundMs);
+  });
+  try {
+    const outcome = await Promise.race([Promise.allSettled(work), timeout]);
+    if (outcome === "timeout") onTimeout();
+  } catch {
+    // Close is best-effort even if the diagnostic logger throws; all work rejections are settled above.
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Seam for tests: the binary probe. */
 export const _acpCatalogDeps = { launchCandidateKind, createAcpOfferStore, probeAcpAgent };
 
@@ -37,8 +56,8 @@ export interface AcpCatalog {
   load(): Promise<void>;
   /** Discover installed agents without a known offer, once per chat start. */
   warm(cwd: string): void;
-  /** Drop late discovery outcomes without waiting for pending probes. */
-  close(): void;
+  /** Abort discovery and boundedly drain pending probes and saves, dropping late outcomes. Never rejects. */
+  close(): Promise<void>;
   /** `acp:<agent>` then that agent's learned `acp:<agent>/<model>` rows, per agent in picker order. */
   rows(): readonly string[];
   /** The levels the model's agent offers; `["default"]` until it reports some or for a non-ACP model. */
@@ -93,6 +112,7 @@ function failureReason(error: unknown): string | undefined {
 export function createAcpCatalog(input: {
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly sessionsDir?: string;
+  readonly closeBoundMs?: number;
   readonly logger?: Pick<Logger, "warn" | "debug">;
 }): AcpCatalog {
   const models = new Map<AcpChatAgent, readonly string[]>();
@@ -102,7 +122,9 @@ export function createAcpCatalog(input: {
   const learned = new Set<AcpChatAgent>();
   const attemptedStart = new Set<AcpChatAgent>();
   const inFlight = new Map<AcpChatAgent, Promise<AcpRefreshResult>>();
+  const controller = new AbortController();
   let closed = false;
+  let closing: Promise<void> | undefined;
   const store =
     input.sessionsDir === undefined
       ? undefined
@@ -138,7 +160,7 @@ export function createAcpCatalog(input: {
     if (running) return running;
     const probing = (async (): Promise<AcpRefreshResult> => {
       try {
-        const capabilities = await _acpCatalogDeps.probeAcpAgent({ agent, cwd });
+        const capabilities = await _acpCatalogDeps.probeAcpAgent({ agent, cwd, signal: controller.signal });
         if (!closed) catalog.opened(`acp:${agent}`, capabilities);
         return { agent, outcome: "learned", models: reportedStrings(capabilities.offeredModels)?.length ?? 0 };
       } catch (error) {
@@ -172,7 +194,13 @@ export function createAcpCatalog(input: {
       }
     },
     close() {
+      if (closing !== undefined) return closing;
       closed = true;
+      controller.abort();
+      closing = settleWithin(input.closeBoundMs ?? ACP_CATALOG_CLOSE_BOUND_MS, [...inFlight.values(), saving], () => {
+        input.logger?.debug("chat", "ACP catalog closed with probes still pending", { agents: [...inFlight.keys()] });
+      });
+      return closing;
     },
     async load() {
       if (!store) return;
@@ -205,6 +233,8 @@ export function createAcpCatalog(input: {
       return failures.get(target.agent);
     },
     opened(model, capabilities) {
+      // Session opens can finish after close has captured the save chain; drop their late reports too.
+      if (closed) return;
       const target = acpTarget(model);
       if (!target) return;
       const offeredModels = reportedStrings(capabilities.offeredModels);

@@ -119,6 +119,9 @@ export interface ResolvedProvider {
 /** Thinking wire formats selectable by a catalog override. */
 export type ThinkingFormat = "openai" | "qwen" | "qwen-chat-template" | "deepseek" | "zai" | "openrouter";
 
+/** Model-owned token budgets; xhigh and max use high. */
+export type ThinkingBudgets = Readonly<{ minimal?: number; low?: number; medium?: number; high?: number }>;
+
 export interface ResolvedModel {
   readonly id: string;
   /** Accepted input modalities. Absent means unknown; consumers assume text only. */
@@ -183,6 +186,10 @@ export interface ResolvedModel {
    * Omit to inherit the provider template's format.
    */
   readonly thinkingFormat?: ThinkingFormat;
+  /** Top-level budget request field. Only openai-completions; validated at construction. */
+  readonly thinkingBudgetField?: string;
+  /** Positive integer budgets for declared levels. Requires thinkingBudgetField. */
+  readonly thinkingBudgets?: ThinkingBudgets;
 }
 
 /**

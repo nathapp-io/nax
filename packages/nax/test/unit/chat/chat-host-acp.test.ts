@@ -92,7 +92,7 @@ function stubCatalog(overrides: Partial<AcpCatalog> = {}): AcpCatalog {
     load: async () => {},
     warm: () => {},
     refresh: mock(async () => []),
-    close: mock(() => {}),
+    close: mock(async () => {}),
     rows: () => [],
     effortLevels: () => ["default"],
     installed: () => true,
@@ -103,11 +103,11 @@ function stubCatalog(overrides: Partial<AcpCatalog> = {}): AcpCatalog {
   };
 }
 
-function makeHost(acp?: AcpCatalog): ChatHost {
+function makeHost(acp?: AcpCatalog, opener: typeof open = open): ChatHost {
   const host = createChatHost({
     models: [NATIVE],
     acp,
-    open,
+    open: opener,
     config: makeNaxConfig(),
     cwd: dir,
     repoRoot: dir,
@@ -155,6 +155,67 @@ describe("chat host ACP lifecycle", () => {
 
   test("refresh AC-8 returns an empty list without a catalog", async () => {
     expect(await makeHost().refreshAcpModels?.()).toEqual([]);
+  });
+
+  test("close AC-17/18 awaits catalog close before releasing the session", async () => {
+    const pending = Promise.withResolvers<void>();
+    const host = makeHost(stubCatalog({ close: () => pending.promise }));
+    await host.start({ mode: "guarded", model: NATIVE });
+    let resolved = false;
+    const closing = host.close().then(() => {
+      resolved = true;
+    });
+    try {
+      // Flush the host's finite teardown chain without using a timing sleep.
+      for (let i = 0; i < 30; i++) await Promise.resolve();
+      expect(resolved).toBe(false);
+      expect(sessions[0]?.close).not.toHaveBeenCalled();
+    } finally {
+      pending.resolve();
+      await closing;
+    }
+    expect(resolved).toBe(true);
+    expect(sessions[0]?.close).toHaveBeenCalledTimes(1);
+  });
+
+  test("close drops persistence from an ACP session open that finishes after catalog close", async () => {
+    const entered = Promise.withResolvers<void>();
+    const opening = Promise.withResolvers<void>();
+    const saving = Promise.withResolvers<void>();
+    const save = mock(() => saving.promise);
+    _acpCatalogDeps.launchCandidateKind = () => "local";
+    _acpCatalogDeps.createAcpOfferStore = () => ({ load: async () => new Map(), save });
+    capabilities = { offeredModels: ["late"], offeredEfforts: ["high"] };
+    const catalog = createAcpCatalog({ env: {}, sessionsDir: dir });
+    const opened = mock(catalog.opened);
+    catalog.opened = opened;
+    const host = makeHost(catalog, async (request) => {
+      entered.resolve();
+      await opening.promise;
+      return open(request);
+    });
+    const starting = rejectionOf(host.start({ mode: "guarded", model: "acp:codex" }));
+    let closing: Promise<void> | undefined;
+    try {
+      await entered.promise;
+      closing = host.close();
+      await catalog.close();
+      // The catalog drain has finished, but the host still owns a pending open.
+      opening.resolve();
+      expect((await starting).code).toBe("CHAT_HOST_CLOSED");
+      await closing;
+      expect(opened).toHaveBeenCalledWith("acp:codex", capabilities);
+      expect(sessions[0]?.close).toHaveBeenCalledTimes(1);
+      expect(save).not.toHaveBeenCalled();
+      expect(catalog.rows()).not.toContain("acp:codex/late");
+      expect(catalog.effortLevels("acp:codex")).toEqual(["default"]);
+    } finally {
+      opening.resolve();
+      saving.resolve();
+      await starting;
+      await closing;
+      await catalog.close();
+    }
   });
 
   test("probe AC-15 closes the catalog once across repeated host close", async () => {

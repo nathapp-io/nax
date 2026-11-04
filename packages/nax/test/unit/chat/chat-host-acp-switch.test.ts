@@ -84,7 +84,7 @@ function catalog(): AcpCatalog {
     load: async () => {},
     warm: () => {},
     refresh: async () => [],
-    close: () => {},
+    close: async () => {},
     rows: () => [],
     effortLevels: () => ["default", "high"],
     installed: () => true,

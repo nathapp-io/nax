@@ -49,6 +49,7 @@ const EmbedderToolSchema = z.object({
 });
 
 const OptionsSchema = z.strictObject({
+  openSignal: z.instanceof(AbortSignal).optional(),
   backend: z.custom<SessionBackend>(
     (value) =>
       isRecord(value) && typeof value.kind === "string" && value.kind.length > 0 && typeof value.open === "function",

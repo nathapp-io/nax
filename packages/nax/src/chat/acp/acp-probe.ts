@@ -9,6 +9,7 @@ export const _acpProbeDeps = { createAgentSession, acpBackend, createMemoryTrans
 export async function probeAcpAgent(input: {
   readonly agent: AcpChatAgent;
   readonly cwd: string;
+  readonly signal?: AbortSignal;
 }): Promise<Readonly<Record<string, unknown>>> {
   const session = await _acpProbeDeps.createAgentSession({
     backend: _acpProbeDeps.acpBackend({
@@ -21,6 +22,7 @@ export async function probeAcpAgent(input: {
     workdir: input.cwd,
     tools: [],
     transcriptStore: _acpProbeDeps.createMemoryTranscriptStore(),
+    ...(input.signal === undefined ? {} : { openSignal: input.signal }),
   });
   try {
     return session.backend.capabilities;
