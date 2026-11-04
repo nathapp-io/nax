@@ -1,6 +1,6 @@
 /**
- * The plumbing `nax memory link` (and `nax memory reset` beside it) acts through: the filesystem
- * seam, and the one shape a refusal takes.
+ * The plumbing the two admin subcommands — `nax memory link` and `nax memory reset` — act
+ * through: the filesystem seam, and the one shape a refusal takes.
  *
  * It lives here rather than in `memory-admin.ts` for the reason `memory-cli-deps.ts` lives beside
  * `memory.ts`: the registrar imports the modules that register their own subcommands, so the
@@ -23,6 +23,8 @@ export const STAGE = "memory";
 export const STAGE_LABEL = "[memory] ";
 /** The error code a refusal — a line, not a failure — is carried by. */
 export const MEMORY_LINK_REFUSED = "MEMORY_LINK_REFUSED";
+/** The code a reset's refusal is carried by: its own, so the two commands stay tellable apart. */
+export const MEMORY_RESET_REFUSED = "MEMORY_RESET_REFUSED";
 
 export const _memoryAdminDeps: {
   /** The file's text, or `null` when it does not exist. */
@@ -51,6 +53,16 @@ export const _memoryAdminDeps: {
 /** The refusal a link answers with: a `[memory] …` line, exit 1, nothing written. */
 export function linkRefusal(message: string, data: Record<string, unknown> = {}): NaxError {
   return new NaxError(`${STAGE_LABEL}${message}`, MEMORY_LINK_REFUSED, { stage: STAGE, ...data });
+}
+
+/**
+ * The refusal a reset answers with: a `[memory] …` line, exit 1, nothing removed.
+ *
+ * Its own code rather than the link's, so a test and an operator can tell which of the two
+ * commands refused without reading the message it printed.
+ */
+export function resetRefusal(message: string, data: Record<string, unknown> = {}): NaxError {
+  return new NaxError(`${STAGE_LABEL}${message}`, MEMORY_RESET_REFUSED, { stage: STAGE, ...data });
 }
 
 /** One directory's entry names, or `[]` when it does not exist. */

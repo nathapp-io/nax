@@ -293,6 +293,7 @@ describe("registerMemoryCommand — the write subcommands", () => {
       "forget",
       "approve",
       "link",
+      "reset",
     ]);
   });
 });

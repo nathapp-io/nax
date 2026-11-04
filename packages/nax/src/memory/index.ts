@@ -10,7 +10,7 @@ export { formatMemoryNoteLine, formatMemoryStatus, formatMemorySyncResult } from
 export type { CreateMemoryHostInput, MemoryHost, MemorySearchInput, MemoryStatus } from "./host";
 export { _memoryHostDeps, createMemoryHost, pendingForgetKey } from "./host";
 export type { KodaApproval, KodaApprovals } from "./koda-approvals";
-export { createKodaApprovals } from "./koda-approvals";
+export { createKodaApprovals, KODA_APPROVALS_FILE } from "./koda-approvals";
 export type { CreateKodaClientInput, KodaClient, KodaResponse } from "./koda-http";
 export { createKodaClient, kodaStatusOf, MEMORY_KODA_REQUEST_TIMEOUT_MS } from "./koda-http";
 export type { CreateKodaMemoryProviderInput } from "./koda-provider";

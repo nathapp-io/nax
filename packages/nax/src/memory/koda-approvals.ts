@@ -50,7 +50,7 @@ import type { MemoryLogger } from "./paths";
 const STAGE = "memory";
 
 /** The approvals file name inside the mirror directory the host resolves. */
-const KODA_APPROVALS_FILE = "koda-approvals.json";
+export const KODA_APPROVALS_FILE = "koda-approvals.json";
 /** The only file version this module reads or writes. */
 const KODA_APPROVALS_VERSION = 1;
 

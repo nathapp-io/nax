@@ -1,5 +1,7 @@
 /**
- * `nax memory link` — point a repository at the koda project that holds its memories.
+ * `nax memory link` and `nax memory reset` — make a repository's memory mirror koda's.
+ *
+ * `link` points a repository at the koda project that holds its memories.
  *
  * Before it, a note saved in `nax chat` or a run lived in one machine's mirror (`local`) or in
  * an MCP server koda cannot read. Linking is the one write that moves a repository onto the
@@ -32,18 +34,35 @@
  * project — a forced relink, a repeated link, or the retry of one an earlier run recorded — and
  * not at all when memory is disabled, so a null host is the whole condition steps 5 and 9 skip.
  *
+ * `reset` is the half of the same idea that runs on a mirror already linked. The mirror is a
+ * cache of what koda holds (design 6.5), so throwing it away and pulling it back is safe — but
+ * only when koda really is the source of truth. Two refusals establish that before anything is
+ * deleted: a provider whose id is not koda's keeps a mirror that is the only copy of its notes,
+ * and a mirror still holding writes the provider has not delivered refuses, because clearing it
+ * would lose the edit. Only the project mirror is cleared, and only its entries except
+ * `koda-approvals.json` — the records of proposals still pending in koda, including the user-scope
+ * ones whose notes live in the user mirror this command never touches. The sync that follows is
+ * the rebuild, and its outcome is the exit status: anything but `synced` leaves a mirror that is
+ * not whole again, which is the one place a reset departs from `nax memory sync`'s exit rule.
+ *
  * Nothing here preserves comments or formatting: `.nax/config.json` is plain JSON and is
  * rewritten with two-space indentation. The file itself is `memory-admin-config.ts`'s subject,
  * the mirror transition `memory-admin-relink.ts`'s, and the seam plus the refusal shape
  * `memory-admin-deps.ts`'s.
  */
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { MEMORY_PROBE_TIMEOUT_MS } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Command } from "commander";
 import { KODA_PROJECT_SLUG_RE, type MemoryConfig, memoryConfigOf } from "@/config";
 import { NaxError } from "@/errors";
-import { createKodaClient, type MemoryHost } from "@/memory";
+import {
+  createKodaClient,
+  formatMemorySyncResult,
+  KODA_APPROVALS_FILE,
+  MEMORY_KODA_PROVIDER_PREFIX,
+  type MemoryHost,
+} from "@/memory";
 import {
   applyLink,
   type ConfigObject,
@@ -54,7 +73,14 @@ import {
   stringField,
   writeProjectConfig,
 } from "./memory-admin-config";
-import { linkRefusal, MEMORY_LINK_REFUSED, STAGE_LABEL } from "./memory-admin-deps";
+import {
+  _memoryAdminDeps,
+  linkRefusal,
+  MEMORY_LINK_REFUSED,
+  MEMORY_RESET_REFUSED,
+  resetRefusal,
+  STAGE_LABEL,
+} from "./memory-admin-deps";
 import {
   dropPendingRelink,
   finishRelink,
@@ -65,12 +91,15 @@ import {
 import {
   _memoryCliDeps,
   type MemoryCliDeps,
+  type MemoryCliOptions,
+  memoryContext,
   memoryDefaultDir,
+  memoryDisabledError,
   withMemoryErrors,
   withMemoryHost,
 } from "./memory-cli-deps";
 
-export { _memoryAdminDeps } from "./memory-admin-deps";
+export { _memoryAdminDeps };
 
 /** The write modes koda's probe answers with when the calling agent may write (the rule `reachable()` uses). */
 const LINK_WRITE_MODES = ["direct", "proposal"] as const satisfies readonly MemoryConfig["writeMode"][];
@@ -125,10 +154,15 @@ function relinkFrom(raw: ConfigObject, slug: string, force: boolean): string | u
   );
 }
 
+/** The writes the mirror holds that its provider has not delivered: the ones a rebuild would lose. */
+async function undeliveredWrites(host: MemoryHost): Promise<number> {
+  const status = await host.status();
+  return status.queued + status.rejected;
+}
+
 /** Refuse a forced relink whose mirror still holds writes the provider has not delivered. */
 async function assertNothingUndelivered(host: MemoryHost): Promise<void> {
-  const status = await host.status();
-  const undelivered = status.queued + status.rejected;
+  const undelivered = await undeliveredWrites(host);
   if (undelivered === 0) return;
   throw linkRefusal(
     `${undelivered} writes are not delivered; run nax memory sync (or nax memory forget) before relinking`,
@@ -266,6 +300,25 @@ async function runLink(slug: string, opts: MemoryLinkOptions, deps: MemoryCliDep
 }
 
 /**
+ * Run one admin command's body, printing a refusal it raises as its own one line.
+ *
+ * A refusal is the command's answer, not a failure: `[memory] …` on stderr naming what to do
+ * next, and exit 1. Everything else — a config that will not load, a mirror that will not be
+ * written — is the group's own error contract and is rethrown for `withMemoryErrors`.
+ */
+async function withRefusals(code: string, run: () => Promise<number>, deps: MemoryCliDeps): Promise<number> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof NaxError && error.code === code) {
+      deps.logErr(error.message);
+      return 1;
+    }
+    throw error;
+  }
+}
+
+/**
  * `nax memory link <koda-project>`: write the slug into this repository's project config.
  *
  * The refusals this command makes are its own answers — a `[memory] …` line on stderr and exit
@@ -278,23 +331,91 @@ export async function memoryLinkCommand(
   opts: MemoryLinkOptions,
   deps: MemoryCliDeps = _memoryCliDeps,
 ): Promise<number> {
-  return withMemoryErrors(async () => {
-    try {
-      return await runLink(slug, opts, deps);
-    } catch (error) {
-      if (error instanceof NaxError && error.code === MEMORY_LINK_REFUSED) {
-        deps.logErr(error.message);
-        return 1;
-      }
-      throw error;
-    }
-  }, deps);
+  return withMemoryErrors(() => withRefusals(MEMORY_LINK_REFUSED, () => runLink(slug, opts, deps), deps), deps);
 }
 
 /**
- * Register `link` on the `memory` group, after the subcommands that read and write notes.
- * The group itself is registered by `memory.ts`; this file adds the subcommands that manage a
- * repository's link to koda, and takes the group's deps seam so a stubbed `loadConfig`,
+ * Refuse a reset of a mirror that is not koda's.
+ *
+ * Without the koda provider there is no second copy: a `local` mirror is the notes themselves,
+ * and an MCP mirror is one koda never wrote to, so "clearing it and pulling it back" would empty
+ * it. The check is the provider id's prefix rather than the config, because it is the provider
+ * actually composed for this host that decides where a pull would come from.
+ */
+function assertKodaMirror(providerId: string): void {
+  if (providerId.startsWith(MEMORY_KODA_PROVIDER_PREFIX)) return;
+  throw resetRefusal(`reset needs memory.provider "koda": the ${providerId} mirror is the only copy of its notes`, {
+    provider: providerId,
+  });
+}
+
+/** Refuse a reset whose mirror still holds writes the provider has not delivered. */
+async function assertNothingUndeliveredBeforeReset(host: MemoryHost): Promise<void> {
+  const undelivered = await undeliveredWrites(host);
+  if (undelivered === 0) return;
+  throw resetRefusal(
+    `${undelivered} writes are not delivered; run nax memory sync (or nax memory forget) before reset`,
+    { undelivered },
+  );
+}
+
+/**
+ * Clear every entry of the project mirror except the approvals file.
+ *
+ * The approvals are the records of proposals still pending in koda — user-scope ones included,
+ * whose notes live in the user mirror this command never touches — so deleting them would leave
+ * a rejected proposal's slug `pending` in the mirror forever, with nothing left to resolve it.
+ * The file is not rewritten either: its bytes are koda's answers, and a reset has nothing to add.
+ *
+ * The entries are joined beneath `dirs.projectDir`: nothing here reaches `userDir`, and nothing
+ * is removed from the memory root that holds both.
+ */
+async function clearProjectMirror(projectDir: string): Promise<void> {
+  for (const entry of await _memoryAdminDeps.listDir(projectDir)) {
+    if (entry === KODA_APPROVALS_FILE) continue;
+    await _memoryAdminDeps.removePath(join(projectDir, entry));
+  }
+}
+
+/**
+ * Everything a reset does once it has opened the host: check, clear, pull back, report.
+ *
+ * The exit status is the outcome, not an exception: `synced` is the only result that means the
+ * mirror is whole again. `unreachable` leaves it empty, `locked` leaves it cleared and not
+ * refilled, and `failed` says so in its own message — for all three the operator asked for a
+ * rebuild and did not get one, which is the departure from `nax memory sync`'s exit rule. The
+ * result is printed either way, for the reason `nax memory sync` prints it.
+ */
+async function runReset(opts: MemoryCliOptions, deps: MemoryCliDeps): Promise<number> {
+  return withMemoryHost(await memoryContext(opts.dir, deps), deps, async (host) => {
+    if (host === null) throw memoryDisabledError();
+    assertKodaMirror(host.providerId);
+    await assertNothingUndeliveredBeforeReset(host);
+    await clearProjectMirror(host.dirs.projectDir);
+    const result = await host.sync();
+    deps.log(opts.json === true ? JSON.stringify(result) : formatMemorySyncResult(result));
+    return result.outcome === "synced" ? 0 : 1;
+  });
+}
+
+/**
+ * `nax memory reset`: throw the project mirror away and pull it back from koda.
+ *
+ * A refusal prints its one `[memory] …` line and exits 1 with nothing removed; a config that
+ * will not load, or a host that cannot be composed, is the group's `Error: …` contract as
+ * everywhere else in this group.
+ */
+export async function memoryResetCommand(
+  opts: MemoryCliOptions,
+  deps: MemoryCliDeps = _memoryCliDeps,
+): Promise<number> {
+  return withMemoryErrors(() => withRefusals(MEMORY_RESET_REFUSED, () => runReset(opts, deps), deps), deps);
+}
+
+/**
+ * Register `link` and `reset` on the `memory` group, after the subcommands that read and write
+ * notes. The group itself is registered by `memory.ts`; this file adds the subcommands that
+ * manage a repository's link to koda, and takes the group's deps seam so a stubbed `loadConfig`,
  * `createMemoryHost` or `exit` reaches them unchanged.
  */
 export function registerMemoryAdminCommands(memory: Command, deps: MemoryCliDeps = _memoryCliDeps): Command {
@@ -307,6 +428,14 @@ export function registerMemoryAdminCommands(memory: Command, deps: MemoryCliDeps
     .option("--json", "Emit one machine-readable document", false)
     .action(async (slug: string, opts: MemoryLinkOptions) => {
       deps.exit(await memoryLinkCommand(slug, opts, deps));
+    });
+  memory
+    .command("reset")
+    .description("Rebuild the project mirror by pulling every note from koda again")
+    .option("-d, --dir <path>", "Project directory", memoryDefaultDir())
+    .option("--json", "Emit one machine-readable document", false)
+    .action(async (opts: MemoryCliOptions) => {
+      deps.exit(await memoryResetCommand(opts, deps));
     });
   return memory;
 }

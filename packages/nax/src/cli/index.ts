@@ -134,6 +134,7 @@ export {
   _memoryAdminDeps,
   type MemoryLinkOptions,
   memoryLinkCommand,
+  memoryResetCommand,
   registerMemoryAdminCommands,
 } from "./memory-admin";
 export {

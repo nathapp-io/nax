@@ -356,7 +356,7 @@ describe("registerMemoryCommand — the retirement subcommands", () => {
     const memory = program.commands.find((command) => command.name() === "memory");
     assertDefined(memory, "the memory command");
     const names = memory.commands.map((command) => command.name());
-    expect(names).toEqual(["status", "list", "show", "sync", "save", "forget", "approve", "link"]);
+    expect(names).toEqual(["status", "list", "show", "sync", "save", "forget", "approve", "link", "reset"]);
     expect(names).toContain("save");
     expect(names).toContain("forget");
     expect(names).toContain("approve");
