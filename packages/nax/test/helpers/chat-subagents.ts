@@ -6,13 +6,16 @@
  * `_openChatSessionDeps.nativeBackend` captures its options. The scripted session's `send`
  * finds the `nax-agents` provider in the captured providers and runs the `run` tool the way
  * the model would, with the turn's `AbortSignal` on the tool context. The nested session is
- * driven through `_subagentSessionDeps`. Call `dispose()` after each test to restore every seam.
+ * driven through `_subagentSessionDeps`, and an ACP subagent's backend and tool resolution
+ * through `_acpSubagentDeps`, which records both and launches nothing. Call `dispose()` after
+ * each test to restore every seam.
  */
 
 import { join } from "node:path";
 import {
   type AgentSession,
   type AnswerReply,
+  type CostSource,
   type CreateAgentSessionOptions,
   createMemoryTranscriptStore,
   createSessionStorage,
@@ -24,6 +27,7 @@ import {
   type ToolRunContext,
 } from "@nathapp/nax-agent";
 import { type ChatHost, type ChatResources, createChatHost } from "@/chat";
+import { _acpSubagentDeps } from "@/chat/acp";
 import { _openChatSessionDeps } from "@/chat/open-chat-session";
 import { _subagentSessionDeps } from "@/chat/subagent-session";
 import type { NaxConfig } from "@/config";
@@ -41,6 +45,8 @@ export const CHAT_MODEL = "anthropic/chat-model";
 
 type OpenBackendOptions = Parameters<typeof _openChatSessionDeps.nativeBackend>[0];
 type NestedBackendOptions = Parameters<typeof _subagentSessionDeps.nativeBackend>[0];
+type AcpBackendOptions = Parameters<typeof _acpSubagentDeps.acpBackend>[0];
+type AcpSubagentsConfig = NonNullable<NonNullable<NaxConfig["agent"]>["acpSubagents"]>;
 type ApprovalRequested = Extract<SessionEvent, { type: "approval_requested" }>;
 
 export type AnswerRecord = readonly [requestId: string, reply: AnswerReply];
@@ -98,7 +104,7 @@ export function turnStartEvent(at: string = AT): SessionEvent {
   return { ...EVENT_BASE, at, type: "turn_start" };
 }
 
-export function usageEvent(at: string = AT, costUsd = 0.1): SessionEvent {
+export function usageEvent(at: string = AT, costUsd = 0.1, costSource: CostSource = "computed"): SessionEvent {
   return {
     ...EVENT_BASE,
     at,
@@ -107,7 +113,7 @@ export function usageEvent(at: string = AT, costUsd = 0.1): SessionEvent {
     inputTokens: 10,
     outputTokens: 5,
     costUsd,
-    costSource: "computed",
+    costSource,
   };
 }
 
@@ -235,6 +241,13 @@ export interface SubagentHostOptions {
   readonly holdNestedPastCancel?: boolean;
   /** The memory host the chat's resources carry; absent when the test does not need memory. */
   readonly memory?: MemoryHost;
+  /**
+   * Replaces the default `[{ id: "base" }]` provider list the chat resources carry, so a
+   * test can hand the chat the workflow, jobs and memory providers a real run sees.
+   */
+  readonly toolProviders?: readonly ToolProvider[];
+  /** The host config's `agent.acpSubagents`, set beside `modelAliases`. */
+  readonly acpSubagents?: AcpSubagentsConfig;
 }
 
 /** Per-send script switches; a test may change them between sends. */
@@ -256,6 +269,10 @@ export interface SubagentHostHarness {
   readonly nestedSessions: ScriptedSession[];
   readonly nestedSessionOptions: CreateAgentSessionOptions[];
   readonly nestedBackends: NestedBackendOptions[];
+  /** Options of every `_acpSubagentDeps.acpBackend` call, in order. */
+  readonly acpBackendCalls: AcpBackendOptions[];
+  /** The provider list each `_acpSubagentDeps.chatAcpTools` call received, in order. */
+  readonly acpToolProviders: (readonly ToolProvider[])[];
   /** Results of the scripted chat session's `run` tool calls. */
   readonly toolResults: ToolResult[];
   /** The signal the scripted session put on the tool's run context for its latest turn. */
@@ -276,9 +293,14 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
   const dir = makeTempDir("chat-subagents-");
   const originalOpen = { ..._openChatSessionDeps };
   const originalNested = { ..._subagentSessionDeps };
+  const originalAcp = { ..._acpSubagentDeps };
+  const agentOverrides: { modelAliases?: Record<string, string>; acpSubagents?: AcpSubagentsConfig } = {
+    ...(options.modelAliases !== undefined ? { modelAliases: options.modelAliases } : {}),
+    ...(options.acpSubagents !== undefined ? { acpSubagents: options.acpSubagents } : {}),
+  };
   const config = makeNaxConfig({
     outputDir: join(dir, "output"),
-    ...(options.modelAliases ? { agent: { modelAliases: options.modelAliases } } : {}),
+    ...(Object.keys(agentOverrides).length > 0 ? { agent: agentOverrides } : {}),
   });
   const storage = createSessionStorage({
     dir: join(dir, "sessions"),
@@ -290,7 +312,7 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
   const agents = options.agents ?? [];
   const resources: ChatResources = {
     catalog: makeAgentCatalog(agents),
-    toolProviders: [{ id: "base", kind: "static", stages: ["*"], tools: async () => [] }],
+    toolProviders: options.toolProviders ?? [{ id: "base", kind: "static", stages: ["*"], tools: async () => [] }],
     pluginHandlers: [],
     naxPlugins: [],
     teardown: async () => {},
@@ -302,6 +324,8 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
   const nestedSessions: ScriptedSession[] = [];
   const nestedSessionOptions: CreateAgentSessionOptions[] = [];
   const nestedBackends: NestedBackendOptions[] = [];
+  const acpBackendCalls: AcpBackendOptions[] = [];
+  const acpToolProviders: (readonly ToolProvider[])[] = [];
   const toolResults: ToolResult[] = [];
   const released = Promise.withResolvers<void>();
   const cancelled = Promise.withResolvers<void>();
@@ -320,6 +344,13 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
     kind: "native",
     async open() {
       throw new Error("unused");
+    },
+  };
+  /** Stands in for a launched ACP agent: the harness's scripted session never opens a backend. */
+  const acpStubBackend: SessionBackend = {
+    kind: "acp:stub",
+    async open() {
+      throw new Error("the harness never opens the stubbed ACP backend");
     },
   };
   const agentsProvider = () => chatBackends.at(-1)?.toolProviders?.find((provider) => provider.id === "nax-agents");
@@ -410,6 +441,15 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
     nestedSessions.push(session);
     return session;
   };
+  // The ACP seams: a recorded backend factory and provider resolver, so no agent is ever launched.
+  _acpSubagentDeps.acpBackend = (acpOptions) => {
+    acpBackendCalls.push(acpOptions);
+    return acpStubBackend;
+  };
+  _acpSubagentDeps.chatAcpTools = async (providers) => {
+    acpToolProviders.push(providers);
+    return { tools: [] };
+  };
 
   const host = createChatHost({
     config,
@@ -432,6 +472,8 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
     nestedSessions,
     nestedSessionOptions,
     nestedBackends,
+    acpBackendCalls,
+    acpToolProviders,
     toolResults,
     turnSignal: () => turn?.signal,
     abortTurn: () => turn?.abort(),
@@ -463,6 +505,7 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
       } finally {
         Object.assign(_openChatSessionDeps, originalOpen);
         Object.assign(_subagentSessionDeps, originalNested);
+        Object.assign(_acpSubagentDeps, originalAcp);
         cleanupTempDir(dir);
       }
     },

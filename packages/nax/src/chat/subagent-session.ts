@@ -15,6 +15,16 @@ import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
 import { buildSubagentInstructions, toRulesIndexEntry } from "@/prompts";
 import type { AgentResource } from "@/resources";
+import {
+  type AcpSubagentProfile,
+  acpAgentLabel,
+  acpReadOnlyEnforced,
+  acpSubagentProfile,
+  acpSubagentSessionOptions,
+  type ChatAcpModel,
+  isReadOnlyAcpProfile,
+  parseChatAcpModel,
+} from "./acp";
 import { type ChatMode, chatBackendPosture, chatSessionSettings } from "./chat-mode";
 
 export interface RunSubagentInput {
@@ -165,14 +175,78 @@ async function runOnSession(session: AgentSession, input: RunSubagentInput): Pro
   }
 }
 
+/** The profile a subagent's own `tools:` list, the chat's mode and the operator's override derive. */
+function subagentProfile(input: RunSubagentInput): AcpSubagentProfile {
+  return acpSubagentProfile({
+    tools: input.agent.tools,
+    mode: input.mode,
+    ...(input.config.agent?.acpSubagents?.profile !== undefined
+      ? { override: input.config.agent.acpSubagents.profile }
+      : {}),
+  });
+}
+
+/** A read-only subagent whose agent enforces nothing would be told it cannot write and could. */
+function readOnlyRefusal(
+  input: RunSubagentInput,
+  acp: ChatAcpModel,
+  profile: AcpSubagentProfile,
+): RunSubagentResult | undefined {
+  if (!isReadOnlyAcpProfile(profile) || acpReadOnlyEnforced(acp.agent)) return undefined;
+  return {
+    isError: true,
+    content: `[chat] subagent ${input.agent.qualifiedName} could not start read-only: ${acpAgentLabel(acp.agent)} has no read-only enforcement of its own`,
+  };
+}
+
 /**
- * Run one task in a nested, memory-only native session and return the final turn's result.
+ * Run the nested session on the ACP agent the model names.
  *
- * Turn failures and creation/send throws come back as an `isError` result; only a
- * failure to build the session options throws, before any session exists.
+ * A refusing profile opens nothing; an option-build or creation throw is the
+ * subagent's failure, so it comes back as a result rather than a rejection.
+ */
+async function runAcpSubagent(
+  input: RunSubagentInput,
+  acp: ChatAcpModel,
+  deps: typeof _subagentSessionDeps,
+): Promise<RunSubagentResult> {
+  const profile = subagentProfile(input);
+  const refusal = readOnlyRefusal(input, acp, profile);
+  if (refusal !== undefined) return refusal;
+  let session: AgentSession;
+  try {
+    const options = await acpSubagentSessionOptions({ ...input, acp, profile }, () =>
+      deps.createMemoryTranscriptStore(),
+    );
+    session = await deps.createAgentSession(options);
+  } catch (err) {
+    return failedResult(input, err);
+  }
+  return runOnSession(session, input);
+}
+
+/**
+ * Run one task in a nested, memory-only session and return the final turn's result.
+ *
+ * The model picks the transport. A native `<provider>/<model>` string runs the
+ * session nax itself backs; an `acp:` string runs an ephemeral session of the agent
+ * it names, in the profile its `tools:` list and the chat's mode derive. Both go
+ * through the same lifecycle — announce, one turn, forward events, close — and a
+ * turn failure, a creation throw or an ACP option-build throw comes back as an
+ * `isError` result, so the parent turn continues either way.
+ *
+ * Only native option construction still throws, before any session exists: its
+ * configuration errors are the caller's to surface, not the subagent's to report.
  */
 export async function runSubagent(input: RunSubagentInput, deps = _subagentSessionDeps): Promise<RunSubagentResult> {
   if (input.signal?.aborted) return cancelledResult(input);
+  let acp: ChatAcpModel | undefined;
+  try {
+    acp = parseChatAcpModel(input.model);
+  } catch (err) {
+    return failedResult(input, err);
+  }
+  if (acp !== undefined) return runAcpSubagent(input, acp, deps);
   const posture = input.mode === "guarded" ? deps.resolveTuiPermissions(input.config) : undefined;
   const options = await subagentSessionOptions(input, posture, deps);
   let session: AgentSession;

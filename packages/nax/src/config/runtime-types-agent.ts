@@ -209,10 +209,17 @@ export interface AgentConfig {
   /** Max interaction turns when interactionBridge is active (default: 20) */
   maxInteractionTurns?: number;
   /**
-   * Claude Code model name → nax model id (`provider/model[effort]`), default `{}`.
+   * Claude Code model name → nax model id (`provider/model[effort]`) or an
+   * `acp:<agent>[/<model>]` target, default `{}`.
    * An alias always wins over the `models.native` tier step.
    */
   modelAliases?: Readonly<Record<string, string>>;
+  /**
+   * Settings for the ACP subagents a chat session may run (chat-acp-subagents).
+   * Absent means each agent file supplies its own default; `profile` overrides
+   * that default.
+   */
+  acpSubagents?: { profile?: "review" | "read" | "ask" | "full" };
   /** Prompt audit — write every ACP-bound prompt to a file for auditing. */
   promptAudit?: PromptAuditConfig;
   /** Usage audit — write every agent round trip's usage to a file for auditing (nax#2045). */
