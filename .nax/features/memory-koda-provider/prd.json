@@ -3,7 +3,7 @@
   "feature": "memory-koda-provider",
   "branchName": "feat/memory-koda-provider",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-04T07:18:03.006Z",
+  "updatedAt": "2026-11-04T07:37:14.961Z",
   "userStories": [
     {
       "id": "US-001",
@@ -238,14 +238,17 @@
         "proposals"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Versioned local persistence follows the existing id-map atomic-write pattern; these records track memory proposals rather than granting local permissions."
+        "reasoning": "Versioned local persistence follows the existing id-map atomic-write pattern; these records track memory proposals rather than granting local permissions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/mcp-id-map.ts",
@@ -264,7 +267,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0e89bca5996697efbe46a8a565a0f4e9a8384a03"
     },
     {
       "id": "US-005",
