@@ -16,7 +16,7 @@
  *     retried link reads what the run before it left — the fact a rollback and a relink record
  *     exist to establish. It can also fail the Nth write to one path, or the first N discards.
  */
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { makeNaxConfig } from "@test/helpers";
 import { _memoryAdminDeps, type MemoryCliDeps, memoryLinkCommand } from "@/cli";
 import type { NaxConfig } from "@/config";
@@ -44,6 +44,8 @@ export const MEMORY_ROOT = "/mirror";
  * so no discard can take it with the tree it deletes.
  */
 export const RELINK_RECORD_PATH = join(MEMORY_ROOT, "relink", "rs-abc12345.json");
+/** The old mirror generation, detached from the live mirror path. */
+export const QUARANTINE_DIR = `${RELINK_RECORD_PATH}.mirror`;
 /** The slug under test, and the project a config in these cases already names. */
 export const LINK_SLUG = "rs-stock";
 export const OTHER_PROJECT = "other";
@@ -261,16 +263,22 @@ export function makeLinkHarness(fix: LinkFixture = {}): LinkHarness {
     fs.writes.push({ path, text });
     fs.events.push("write");
   };
+  let quarantined = false;
   _memoryAdminDeps.rename = async (from, to) => {
+    if (from === MIRROR_DIR) quarantined = true;
     fs.renames.push({ from, to });
     fs.events.push("rename");
   };
   _memoryAdminDeps.removePath = async (path) => {
+    if (path === QUARANTINE_DIR) quarantined = false;
     fs.removed.push(path);
     fs.events.push("remove");
   };
   // A relink is only owed when a mirror exists, and a mirror that owes one holds a cursor.
-  _memoryAdminDeps.listDir = async (path) => (path === MIRROR_DIR ? ["sync.json"] : []);
+  _memoryAdminDeps.listDir = async (path) => {
+    if (path === MIRROR_DIR) return quarantined ? [] : ["sync.json"];
+    return path === dirname(QUARANTINE_DIR) && quarantined ? [basename(QUARANTINE_DIR)] : [];
+  };
   Object.assign(_memoryAdminDeps, fix.fs ?? {});
   const deps: MemoryCliDeps = {
     log: (msg) => out.push(msg),
@@ -342,8 +350,8 @@ export interface StatefulFs {
  * A stateful stand-in for what a relink touches, so a retried link reads what the run before it
  * left behind.
  *
- * `failRemovals` makes the first N discards of the project mirror throw without deleting
- * anything; `partialRemovals` makes the first N delete every entry but one and then throw, which
+ * `failMirrorRenames` fails the first N atomic detaches; `failRemovals` fails quarantine cleanup without deleting
+ * anything; `partialRemovals` makes the first N quarantine deletions remove all but one entry and throw, which
  * is the discard that leaves the mirror half gone; `failRemovalPaths` makes removing one named
  * path throw, for a record the filesystem will not give up. `failWritesTo` makes a write to one path
  * throw once that path has been written `after` times (for at most `times` writes), so a case can
@@ -353,6 +361,7 @@ export function statefulFs(
   initial: string | null,
   failures: {
     readonly failRemovals?: number;
+    readonly failMirrorRenames?: number;
     readonly partialRemovals?: number;
     readonly failRemovalPaths?: readonly string[];
     readonly failWritesTo?: { readonly path: string; readonly after: number; readonly times?: number };
@@ -366,6 +375,7 @@ export function statefulFs(
   const events: string[] = [];
   const writeCounts = new Map<string, number>();
   let removalsLeft = failures.failRemovals ?? 0;
+  let renamesLeft = failures.failMirrorRenames ?? 0;
   let partialLeft = failures.partialRemovals ?? 0;
   let writeFailuresLeft = failures.failWritesTo?.times ?? Number.POSITIVE_INFINITY;
   const deps: Partial<typeof _memoryAdminDeps> = {
@@ -382,6 +392,20 @@ export function statefulFs(
       files.set(path, text);
     },
     rename: async (from, to) => {
+      if (from === MIRROR_DIR) {
+        events.push(`rename ${from} -> ${to}`);
+        if (renamesLeft > 0) {
+          renamesLeft -= 1;
+          throw new Error("EBUSY: mirror busy");
+        }
+        const entries = [...files.entries()].filter(([key]) => key.startsWith(`${from}/`));
+        if (entries.length === 0) throw new Error(`ENOENT: ${from}`);
+        for (const [key, value] of entries) {
+          files.delete(key);
+          files.set(`${to}${key.slice(from.length)}`, value);
+        }
+        return;
+      }
       const text = files.get(from);
       if (text === undefined) throw new Error(`ENOENT: ${from}`);
       events.push(`rename ${from} -> ${to}`);
@@ -392,17 +416,17 @@ export function statefulFs(
     removePath: async (path) => {
       events.push(`remove ${path}`);
       removed.push(path);
-      if (path === MIRROR_DIR && removalsLeft > 0) {
+      if (path === QUARANTINE_DIR && removalsLeft > 0) {
         removalsLeft -= 1;
         throw new Error("EBUSY: mirror busy");
       }
-      if (path === MIRROR_DIR && partialLeft > 0) {
+      if (path === QUARANTINE_DIR && partialLeft > 0) {
         partialLeft -= 1;
         // The walk deletes as it goes and then meets one busy file: everything but the first
         // entry it reaches is gone before the failure, whichever entry that first one is.
-        const [busy, ...rest] = [...files.keys()].filter((key) => key.startsWith(`${MIRROR_DIR}/`));
+        const [busy, ...rest] = [...files.keys()].filter((key) => key.startsWith(`${QUARANTINE_DIR}/`));
         for (const key of rest) files.delete(key);
-        throw new Error(`EBUSY: ${busy ?? MIRROR_DIR} is busy`);
+        throw new Error(`EBUSY: ${busy ?? QUARANTINE_DIR} is busy`);
       }
       if (failures.failRemovalPaths?.includes(path) === true) {
         throw new Error(`EACCES: ${path} is read-only`);
@@ -425,9 +449,9 @@ function entryNamesOf(files: ReadonlyMap<string, string>, path: string): readonl
   return [...new Set(names)];
 }
 
-/** The discards of the project mirror a case made, in order, without the record removals. */
+/** The discards of the quarantined generation, without record removals or live-mirror mutations. */
 export function mirrorDiscards(store: StatefulFs): readonly string[] {
-  return store.removed.filter((path) => path === MIRROR_DIR);
+  return store.removed.filter((path) => path === QUARANTINE_DIR);
 }
 
 /** The entries a `store` still holds under `path`, for a case that asserts a tree is gone. */

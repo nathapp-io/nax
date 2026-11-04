@@ -9,21 +9,14 @@
  * or it will read the new slug as "already linked", skip the cleanup and report a success that
  * never happened, leaving the old cursor to be decoded in the new project.
  *
- * So the intent is persisted **before** the config changes, and it is persisted **outside the
- * tree the discard deletes**. `removePath` is recursive: it deletes as it walks, so a directory
- * that cannot be removed completely is still partly gone, and a record inside it could be one of
- * the entries that go before the failure. `<root>/relink/<project>.json` — a sibling namespace of
- * `<root>/projects/` — cannot be touched by any discard of a mirror, so the record survives
- * exactly the failure it exists for. It is removed only once the discard has finished.
- *
- * A run that finds a record for the project it is linking is finishing an earlier relink: it
- * discards (when the mirror is still there to discard) after the same undelivered-writes check.
- * A record for any other project is one whose config write never landed, so the mirror still
- * belongs to the project the config names; it is dropped rather than acted on. A record that
- * cannot be read is refused, because a durable fact this command cannot interpret is not one to
- * guess at with a mirror at stake.
+ * Intent is persisted outside the mirror. After the config changes, the old mirror is atomically
+ * renamed into quarantine. A detached record is persisted BEFORE recursive quarantine deletion.
+ * Until that record lands, quarantine must remain present: its existence proves the rename already
+ * happened even if the process stopped between rename and record update. Once detached, retries
+ * only delete quarantine, never the live mirror, even when it has since been rebuilt.
+ * Records from older versions without a phase are refused: their mirror generation is ambiguous.
  */
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { MemoryDirs } from "@/memory";
@@ -39,6 +32,7 @@ const RECORD_TMP_SUFFIX = ".tmp";
 export interface PendingRelink {
   readonly project: string;
   readonly from: string;
+  readonly phase: "attached" | "detached";
 }
 
 /** The mirror owed a discard, and the config write that preceded it. */
@@ -55,6 +49,7 @@ export interface RelinkJob {
   readonly previousConfig: string | null;
   /** True when an earlier run already recorded this relink. */
   readonly recorded: boolean;
+  readonly phase: PendingRelink["phase"];
 }
 
 /**
@@ -65,6 +60,17 @@ export interface RelinkJob {
  */
 export function pendingRelinkPath(dirs: Pick<MemoryDirs, "root" | "projectDir">): string {
   return join(dirs.root, RELINK_DIR_NAME, `${basename(dirs.projectDir)}.json`);
+}
+
+/** The old generation is moved here atomically, outside the live mirror namespace. */
+export function relinkQuarantinePath(dirs: Pick<MemoryDirs, "root" | "projectDir">): string {
+  return `${pendingRelinkPath(dirs)}.mirror`;
+}
+
+/** Unlike listing the tree itself, listing its parent distinguishes absent and empty trees. */
+async function quarantineExists(dirs: MemoryDirs): Promise<boolean> {
+  const path = relinkQuarantinePath(dirs);
+  return (await _memoryAdminDeps.listDir(dirname(path))).includes(basename(path));
 }
 
 /** The record a mirror holds, or `undefined` when it holds none. */
@@ -90,7 +96,10 @@ function parsePendingRelink(text: string): PendingRelink | undefined {
   }
   const project = stringField(parsed, "project");
   const from = stringField(parsed, "from");
-  return project === undefined || from === undefined ? undefined : { project, from };
+  const phase = stringField(parsed, "phase");
+  return project === undefined || from === undefined || (phase !== "attached" && phase !== "detached")
+    ? undefined
+    : { project, from, phase };
 }
 
 /**
@@ -102,28 +111,23 @@ function parsePendingRelink(text: string): PendingRelink | undefined {
 export async function writePendingRelink(dirs: MemoryDirs, relink: PendingRelink): Promise<void> {
   const path = pendingRelinkPath(dirs);
   const tmpPath = `${path}${RECORD_TMP_SUFFIX}`;
-  const text = `${JSON.stringify({ project: relink.project, from: relink.from }, null, 2)}\n`;
+  const text = `${JSON.stringify(relink, null, 2)}\n`;
   try {
     await _memoryAdminDeps.writeText(tmpPath, text);
     await _memoryAdminDeps.rename(tmpPath, path);
   } catch (cause) {
     throw new NaxError(
-      `${STAGE_LABEL}cannot record the relink in ${path}: ${errorMessage(cause)}; nothing was changed`,
+      `${STAGE_LABEL}cannot record the relink in ${path}: ${errorMessage(cause)}`,
       "MEMORY_RELINK_RECORD_FAILED",
       { stage: STAGE, path, cause },
     );
   }
 }
 
-/**
- * Drop a record nothing is owed for, best effort.
- *
- * Only a record from a relink whose config write never landed is dropped this way. Leaving it
- * would be harmless — it is dropped again next time — so a filesystem that will not remove it is
- * not worth failing a link the operator asked for.
- */
+/** Drop an abandoned intent, cleaning only its quarantined generation, never the live mirror. */
 export async function dropPendingRelink(dirs: MemoryDirs): Promise<void> {
-  await _memoryAdminDeps.removePath(pendingRelinkPath(dirs)).catch(() => {});
+  if (await quarantineExists(dirs)) await _memoryAdminDeps.removePath(relinkQuarantinePath(dirs));
+  await _memoryAdminDeps.removePath(pendingRelinkPath(dirs));
 }
 
 /** Whether the mirror still holds anything: a tree with no entries has nothing to discard. */
@@ -155,15 +159,8 @@ function relinkUnrecovered(job: RelinkJob, cause: unknown, undoCause: unknown): 
   );
 }
 
-/**
- * The error a failed discard is reported as, after undoing the config write it followed.
- *
- * The undo puts the repository back the way it was, so the retry reads the previous project as
- * the one being replaced and discards again. When the undo fails too, the record written before
- * the config changed is what the retry reads instead — which is why the record exists, and why it
- * is stored outside the tree the failed discard half-deleted.
- */
-async function undoFailedDiscard(job: RelinkJob, cause: unknown): Promise<NaxError> {
+/** An atomic detach failure leaves the old tree intact; undo its config change if possible. */
+async function undoFailedDetach(job: RelinkJob, cause: unknown): Promise<NaxError> {
   try {
     await restoreProjectConfig(job.configPath, job.previousConfig);
     return relinkRolledBack(job, cause);
@@ -172,32 +169,45 @@ async function undoFailedDiscard(job: RelinkJob, cause: unknown): Promise<NaxErr
   }
 }
 
-/** Discard the previous project's mirror, undoing the config write when it cannot be discarded. */
-async function discardProjectMirror(job: RelinkJob): Promise<void> {
+/** Detach exactly the old generation. Never delete quarantine before persisting that fact. */
+async function detachProjectMirror(job: RelinkJob): Promise<void> {
+  if (!(await quarantineExists(job.dirs)) && (await mirrorHasContent(job.dirs))) {
+    try {
+      await _memoryAdminDeps.rename(job.dirs.projectDir, relinkQuarantinePath(job.dirs));
+    } catch (cause) {
+      throw await undoFailedDetach(job, cause);
+    }
+  }
+  await writePendingRelink(job.dirs, { project: job.slug, from: job.from, phase: "detached" });
+}
+
+/** Discard only the detached generation; failures leave both it and the record retryable. */
+async function discardQuarantine(job: RelinkJob): Promise<void> {
+  const path = relinkQuarantinePath(job.dirs);
+  if (!(await quarantineExists(job.dirs))) return;
   try {
-    await _memoryAdminDeps.removePath(job.dirs.projectDir);
+    await _memoryAdminDeps.removePath(path);
   } catch (cause) {
-    throw await undoFailedDiscard(job, cause);
+    throw new NaxError(
+      `${STAGE_LABEL}cannot discard quarantined mirror ${path}: ${errorMessage(cause)}; ` +
+        `run \`nax memory link ${job.slug}\` again to finish cleanup`,
+      "MEMORY_RELINK_CLEANUP_FAILED",
+      { stage: STAGE, path, cause },
+    );
   }
 }
 
-/**
- * Finish a recorded relink: discard the mirror if it is still there, then clear the record.
- *
- * The record goes last, and only after the discard has succeeded, so an interruption anywhere
- * leaves either the record (a later run finishes) or nothing at all (nothing is owed). A record
- * that cannot be removed is reported rather than swallowed: it claims a discard is owed, and a
- * later run would act on that claim against a mirror this project has since rebuilt.
- */
+/** A detached retry can only remove the old quarantine, never a rebuilt live mirror. */
 export async function finishRelink(job: RelinkJob): Promise<void> {
-  if (await mirrorHasContent(job.dirs)) await discardProjectMirror(job);
+  if (job.phase === "attached") await detachProjectMirror(job);
+  await discardQuarantine(job);
   const record = pendingRelinkPath(job.dirs);
   try {
     await _memoryAdminDeps.removePath(record);
   } catch (cause) {
     throw new NaxError(
       `${STAGE_LABEL}the project mirror ${job.dirs.projectDir} was discarded, but ${record} could not be ` +
-        `removed: ${errorMessage(cause)}; remove it before the next link`,
+        `removed: ${errorMessage(cause)}; run \`nax memory link ${job.slug}\` again to finish cleanup`,
       "MEMORY_RELINK_RECORD_STUCK",
       { stage: STAGE, projectDir: job.dirs.projectDir, path: record, cause },
     );

@@ -20,13 +20,12 @@
  *   5. a different project is only replaced with `--force`, and then only once the mirror holds
  *      no write it has not delivered;
  *   6. the project answers koda's write-mode probe with a mode an agent may write under;
- *   7. a relink records what it is about to do — `<projectDir>/relink-pending.json` — before it
+ *   7. a relink records what it is about to do — `<root>/relink/<mirror>.json` — before it
  *      changes anything, so an interruption can be finished rather than guessed at;
  *   8. `config.json.tmp` is written and renamed onto `config.json`;
- *   9. a relink then discards the project mirror, so the next sync pulls the new project from
- *      the start — the old cursor would decode in the new project and skip its older rows. A
- *      discard that fails undoes step 8; one whose undo fails too is still covered by step 7,
- *      because the next run reads the record and finishes the discard.
+ *   9. a relink atomically quarantines the old mirror, records it as detached, then deletes only
+ *      quarantine. A failed detach undoes step 8; a failed cleanup leaves the new project linked
+ *      with a retryable record that cannot target a rebuilt mirror.
  *
  * A refusal is a `[memory] …` line on stderr and exit 1 with nothing written; a load failure is
  * the group's `Error: …`. The host is opened only when the project config already names a koda
@@ -190,9 +189,9 @@ function linkDocument(write: LinkWrite, mode: MemoryConfig["writeMode"]) {
  *
  * A record naming the project being linked is an earlier run's unfinished relink — the discard it
  * still owes is this run's to make, whether or not `--force` is passed again, because the flag
- * was already honoured when the record was written. A record naming any other project is one
- * whose config write never landed, so the mirror still belongs to the project the config names
- * and discarding it would destroy notes that project still needs; it is dropped instead.
+ * was already honoured when the record was written. An abandoned intent for another project
+ * is dropped without touching the live mirror. A forced change
+ * to a third project must first finish the pending relink rather than overwrite its generation.
  */
 async function relinkJobOf(
   host: MemoryHost,
@@ -200,10 +199,13 @@ async function relinkJobOf(
   from: string | undefined,
 ): Promise<RelinkJob | undefined> {
   const job = { dirs: host.dirs, configPath: write.configPath, slug: write.slug, previousConfig: write.raw.text };
-  if (from !== undefined) return { ...job, from, recorded: false };
   const pending = await readPendingRelink(host.dirs);
+  if (pending?.project === write.slug) return { ...job, from: pending.from, recorded: true, phase: pending.phase };
+  if (pending !== undefined && from !== undefined) {
+    throw linkRefusal(`finish the pending relink first: run \`nax memory link ${pending.project}\``);
+  }
+  if (from !== undefined) return { ...job, from, recorded: false, phase: "attached" };
   if (pending === undefined) return undefined;
-  if (pending.project === write.slug) return { ...job, from: pending.from, recorded: true };
   // A record for another project is one whose config write never landed, so the mirror still
   // belongs to the project the config names: nothing is owed, and the record is dropped.
   await dropPendingRelink(host.dirs);
@@ -224,7 +226,8 @@ async function linkThrough(write: LinkWrite, host: MemoryHost | null, from: stri
   const job = host === null ? undefined : await relinkJobOf(host, write, from);
   if (host !== null && job !== undefined) await assertNothingUndelivered(host);
   const mode = await probeWriteMode(write.url, write.headers, write.slug);
-  if (job !== undefined && !job.recorded) await writePendingRelink(job.dirs, { project: write.slug, from: job.from });
+  if (job !== undefined && !job.recorded)
+    await writePendingRelink(job.dirs, { project: write.slug, from: job.from, phase: job.phase });
   await writeProjectConfig(write.configPath, applyLink(write.raw.config, write.slug));
   if (job !== undefined) await finishRelink(job);
   write.deps.log(

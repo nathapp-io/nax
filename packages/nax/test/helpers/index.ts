@@ -165,6 +165,7 @@ export {
   probeCalls,
   probeUrlFor,
   projectIn,
+  QUARANTINE_DIR,
   RAW_PROJECT,
   RELINK_RECORD_PATH,
   type Rename,
