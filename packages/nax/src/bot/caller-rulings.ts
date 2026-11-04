@@ -31,7 +31,9 @@ export type CallerRulingSkip =
   | "stale-key"
   | "already-settled"
   | "superseded-by-writer"
-  | "echo-failed";
+  | "ambiguous-item"
+  | "echo-failed"
+  | "recorder-failed";
 export type CallerRulingsIgnored = "untrusted-pr" | "head-mismatch";
 
 /** Machine-readable account of what a `--rulings` file did; present in the review artifact. */
@@ -46,7 +48,11 @@ const MAX_RULINGS = 100;
 const MAX_RULING_LENGTH = 2_000;
 const MAX_BY_LENGTH = 100;
 
+/** How far past now an `at` may lie: a future timestamp would outrank every writer reply. */
+const MAX_FUTURE_SKEW_MS = 5 * 60_000;
+
 export const _callerRulingsDeps = {
+  now: (): number => Date.now(),
   fileSize: async (path: string): Promise<number> => (await Bun.file(path).stat()).size,
   readText: (path: string): Promise<string> => Bun.file(path).text(),
 };
@@ -74,7 +80,12 @@ const CallerRulingsSchema = z.object({
           .min(1)
           .max(MAX_BY_LENGTH)
           .regex(/^[^\r\n]+$/, "by must be a single line"),
-        at: z.iso.datetime({ offset: true }),
+        at: z.iso
+          .datetime({ offset: true })
+          .refine(
+            (at) => Date.parse(at) <= _callerRulingsDeps.now() + MAX_FUTURE_SKEW_MS,
+            "at must not be more than 5 minutes in the future",
+          ),
       }),
     )
     .max(MAX_RULINGS)
@@ -148,11 +159,28 @@ export interface CallerRulingsPlan {
   readonly skipped: CallerRulingsReport["skipped"];
 }
 
-/** A kept reply is an authorized writer's; it wins when it carries a ruling and is not older than the caller's. */
-function writerRuledAfter(item: OpenRulingItem, at: string): boolean {
+/**
+ * Any authorized (kept) writer reply newer than the caller ruling supersedes it, ruling keyword or not:
+ * the writer's later words go through the normal reply, model and ask path instead.
+ */
+function writerRepliedAfter(item: OpenRulingItem, at: string): boolean {
   const callerMs = Date.parse(at);
   const later = (reply: PrComment) => !(Date.parse(reply.createdAt) <= callerMs); // NaN fails closed
-  return item.kept.some((reply) => parseRulingKeyword(reply.body) !== null && later(reply));
+  return item.kept.some(later);
+}
+
+/** The recorder failed part-way; carries what it had already done so the report stays truthful. */
+export class CallerRecordingError extends NaxError {
+  constructor(
+    cause: unknown,
+    readonly callerRulings: Pick<CallerRulingsReport, "applied" | "skipped">,
+  ) {
+    super(`[bot] Recording rulings failed: ${errorMessage(cause)}`, "BOT_RULINGS_RECORD_FAILED", {
+      stage: "bot",
+      cause,
+    });
+    this.name = "CallerRecordingError";
+  }
 }
 
 function candidate(item: OpenRulingItem, entry: CallerRuling): PrRuling | null {
@@ -170,12 +198,14 @@ export function planCallerRulings(rulings: readonly CallerRuling[], state: Settl
     const matches = (item: { itemId: string; key: string }) =>
       byId(item) && (entry.key === undefined || item.key === entry.key);
     const known = [...state.settled, ...state.open].filter(byId);
-    const open = state.open.find(matches);
+    const openMatches = state.open.filter(matches);
+    const open = openMatches[0];
     const settled = state.settled.find(matches);
     if (known.length === 0) skipped.push({ item: entry.item, reason: "unknown-item" });
     else if (!open && !settled) skipped.push({ item: entry.item, reason: "stale-key" });
     else if (!open) skipped.push({ item: entry.item, reason: "already-settled" });
-    else if (writerRuledAfter(open, entry.at)) skipped.push({ item: entry.item, reason: "superseded-by-writer" });
+    else if (openMatches.length > 1) skipped.push({ item: entry.item, reason: "ambiguous-item" });
+    else if (writerRepliedAfter(open, entry.at)) skipped.push({ item: entry.item, reason: "superseded-by-writer" });
     else {
       const ruling = candidate(open, entry);
       if (ruling) candidates.set(open, ruling);

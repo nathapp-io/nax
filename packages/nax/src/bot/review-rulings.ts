@@ -5,7 +5,12 @@ import type { BotSettledRuling } from "@/prompts";
 import type { PrStepContext } from "../workflow/branch-step-context";
 import type { Disposition } from "../workflow/decisions-sidecar";
 import { type ItemIndex, parseItemOpener } from "../workflow/item-threads";
-import { type CallerRulingsFile, type CallerRulingsReport, ignoredCallerRulings } from "./caller-rulings";
+import {
+  CallerRecordingError,
+  type CallerRulingsFile,
+  type CallerRulingsReport,
+  ignoredCallerRulings,
+} from "./caller-rulings";
 import type { PrCheckout } from "./checkout";
 import type { PostReviewInput } from "./post";
 import { earlierIssue } from "./post-earlier";
@@ -51,17 +56,17 @@ function confirmedItems(outcome: RecordRulingsOutcome, login: string): Confirmed
 
 function unappliedReport(
   file: CallerRulingsFile,
-  reason: "unknown-item" | "echo-failed" = "unknown-item",
+  reason: "unknown-item" | "recorder-failed" = "unknown-item",
 ): CallerRulingsReport {
   return { applied: [], skipped: file.rulings.map(({ item }) => ({ item, reason })) };
 }
 
-interface CallerGate {
-  /** Review result to return at once: the file cannot apply and nothing else reads rulings. */
-  readonly early?: { callerRulings?: CallerRulingsReport };
-  readonly ignored?: CallerRulingsReport;
-  readonly apply?: CallerRulingsFile["rulings"];
-}
+type CallerGate =
+  /** The file cannot apply and nothing else reads rulings: return this result at once. */
+  | { readonly kind: "early"; readonly result: { callerRulings?: CallerRulingsReport } }
+  /** Thread rulings are still recorded, but the file is reported ignored. */
+  | { readonly kind: "ignored"; readonly report: CallerRulingsReport }
+  | { readonly kind: "apply"; readonly rulings?: CallerRulingsFile["rulings"] };
 
 /** Trust, workflow-marker and head checks that decide whether a caller file may reach the recorder. */
 function callerGate(
@@ -72,17 +77,22 @@ function callerGate(
     readonly info: { readonly body: string; readonly headSha: string };
   },
 ): CallerGate {
-  if (!file) return {};
+  if (!file) return { kind: "apply" };
   if (staticMode) {
     getLogger().warn("bot", "Ignoring caller rulings: the PR is untrusted", { pr: raw.ref.number });
-    return { early: { callerRulings: ignoredCallerRulings("untrusted-pr") } };
+    return { kind: "early", result: { callerRulings: ignoredCallerRulings("untrusted-pr") } };
   }
-  if (!hasNaxWorkflowMarker(raw.info.body)) return { early: { callerRulings: unappliedReport(file) } };
+  if (!hasNaxWorkflowMarker(raw.info.body)) return { kind: "early", result: { callerRulings: unappliedReport(file) } };
   if (file.headSha.toLowerCase() !== raw.info.headSha.toLowerCase()) {
     getLogger().warn("bot", "Ignoring caller rulings: made against a different head", { pr: raw.ref.number });
-    return { ignored: ignoredCallerRulings("head-mismatch") };
+    return { kind: "ignored", report: ignoredCallerRulings("head-mismatch") };
   }
-  return { apply: file.rulings };
+  return { kind: "apply", rulings: file.rulings };
+}
+
+/** What the file did when the recorder threw: its own progress if it reported any, else nothing was reached. */
+function failedReport(file: CallerRulingsFile, error: unknown): CallerRulingsReport {
+  return error instanceof CallerRecordingError ? error.callerRulings : unappliedReport(file, "recorder-failed");
 }
 
 /** Ruling reads are privileged and best-effort; an absent outcome must not invent counts. */
@@ -101,16 +111,18 @@ export async function readReviewRulings(
 > {
   const { staticMode, ctx, callerRulings: file, ...raw } = input;
   const gate = callerGate(file, staticMode, raw);
-  if (gate.early) return gate.early;
+  if (gate.kind === "early") return gate.result;
   if (staticMode || !hasNaxWorkflowMarker(raw.info.body)) return {};
   try {
     const outcome = await record({
       ...raw,
       readModel: rulingModelReader(ctx),
-      ...(gate.apply === undefined ? {} : { callerRulings: gate.apply }),
+      ...(gate.kind === "apply" && gate.rulings ? { callerRulings: gate.rulings } : {}),
     });
     return {
-      ...(file === undefined ? {} : { callerRulings: gate.ignored ?? outcome.callerRulings ?? unappliedReport(file) }),
+      ...(file === undefined
+        ? {}
+        : { callerRulings: gate.kind === "ignored" ? gate.report : (outcome.callerRulings ?? unappliedReport(file)) }),
       reviewedIndex: outcome.index,
       ...(outcome.index === undefined ? {} : { itemStatus: itemStatus(outcome) }),
       ...(outcome.confirmedWork?.length ? { itemConfirmed: confirmedItems(outcome, raw.login) } : {}),
@@ -131,7 +143,8 @@ export async function readReviewRulings(
     };
   } catch (error) {
     getLogger().warn("bot", "Could not record PR rulings", { pr: raw.ref.number, error: errorMessage(error) });
-    return file && !gate.ignored ? { callerRulings: unappliedReport(file, "echo-failed") } : {};
+    if (!file) return {};
+    return { callerRulings: gate.kind === "ignored" ? gate.report : failedReport(file, error) };
   }
 }
 

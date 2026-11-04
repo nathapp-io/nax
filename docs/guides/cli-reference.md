@@ -543,7 +543,7 @@ caller's statement of who ruled and what they ruled.
 | `key` | Optional. The full item key from the index, hash included; a mismatch skips the ruling |
 | `ruling` | 1 to 2000 characters. Its first non-empty line uses the same grammar as a thread reply: `fixed <sha>`, `waive: <reason>`, `confirm`, `override: <reason>` or `verified` |
 | `by` | 1 to 100 characters, one line. A provenance label shown on the item's thread |
-| `at` | ISO-8601 timestamp of the ruling |
+| `at` | ISO-8601 timestamp of the ruling. More than 5 minutes in the future makes the file invalid |
 
 At most 100 rulings, at most one per item, file at most 262,144 bytes. A file that breaks any of
 these fails the command with `[bot] Invalid rulings file <path>: <problem>` (code
@@ -561,8 +561,10 @@ PR carrying the workflow marker and an item index is affected, and never in stat
 | `item` not in the current index | Skipped, `unknown-item` |
 | `key` given and different from the index key | Skipped, `stale-key` |
 | Item already settled | Skipped, `already-settled`; nothing is re-recorded |
-| A writer replied with a ruling after `at` | Writer wins, skipped as `superseded-by-writer` |
+| `key` omitted and two open threads share the `item` id | Skipped, `ambiguous-item`; give the full `key` |
+| An authorized writer replied on the item's thread after `at` (any reply, ruling keyword or not) | Writer wins, skipped as `superseded-by-writer`; the reply is read through the normal ruling path |
 | The echo could not be posted | Skipped, `echo-failed`; the item stays open |
+| The recorder failed before reaching the ruling | Skipped, `recorder-failed`; rulings echoed before the failure stay `applied` |
 
 A caller ruling wins over older writer replies. The review artifact (`bot-review.json`) gains
 `callerRulings: { applied: [{ item, disposition }], skipped: [{ item, reason }], ignored? }`, absent

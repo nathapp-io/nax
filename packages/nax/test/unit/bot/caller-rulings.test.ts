@@ -31,6 +31,7 @@ describe("loadCallerRulings", () => {
     subject = await import("@/bot/caller-rulings");
     original = { ...subject._callerRulingsDeps };
     subject._callerRulingsDeps.fileSize = async () => 100;
+    subject._callerRulingsDeps.now = () => Date.parse("2026-01-02T00:00:00Z");
     text(file());
   });
   afterEach(() => {
@@ -47,6 +48,12 @@ describe("loadCallerRulings", () => {
     expect((await subject.loadCallerRulings(path)).rulings).toEqual([bare]);
     text(file([]));
     expect((await subject.loadCallerRulings(path)).rulings).toEqual([]);
+  });
+  test("rejects an at more than five minutes in the future, accepts within the skew", async () => {
+    text(file([{ ...entry, at: "2026-01-02T00:06:00Z" }]));
+    await invalid();
+    text(file([{ ...entry, at: "2026-01-02T00:04:00Z" }]));
+    expect((await subject.loadCallerRulings(path)).rulings).toHaveLength(1);
   });
   test("rejects an oversized file before reading it", async () => {
     subject._callerRulingsDeps.fileSize = async () => 262_145;

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeLogger } from "@test/helpers";
-import type { CallerRuling } from "@/bot/caller-rulings";
+import { CallerRecordingError, type CallerRuling } from "@/bot/caller-rulings";
 import { _rulingsDeps, type RecordRulingsInput, recordPrRulings } from "@/bot/rulings";
 import { withNaxBotMarker } from "@/forge";
 import type { PrComment, PrInfo, PrThread } from "@/forge/pr-types";
@@ -103,7 +103,67 @@ describe("recordPrRulings with caller rulings", () => {
     const out = await recordPrRulings(input([thread(opener(), writer)], [caller()]));
     expect(out.callerRulings?.applied).toEqual([{ item: "B3", disposition: "waived" }]);
   });
-  test("an unrecognised writer reply is not sent to the model when a caller ruling decides the item", async () => {
+  test("a newer natural-language writer reply goes to the model path instead of the caller ruling", async () => {
+    const objection = comment("2", "actually this needs a fix, do not waive", "alice", "2026-01-03T00:00:00Z");
+    const out = await recordPrRulings(input([thread(opener(), objection)], [caller()]));
+    expect(readModel).toHaveBeenCalledTimes(1);
+    expect(post).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.stringContaining("caller ruling"),
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(out.callerRulings?.skipped).toEqual([{ item: "B3", reason: "superseded-by-writer" }]);
+  });
+  test("a recorder failure reports what was recorded and marks the rest recorder-failed", async () => {
+    const keyB = "w-B4.12345678";
+    const openerB = comment("3", withNaxBotMarker(renderItemOpener({ id: "B4", kind: "finding", issue: "y" }), keyB));
+    const openerC = comment(
+      "4",
+      withNaxBotMarker(renderItemOpener({ id: "B5", kind: "finding", issue: "z" }), "w-B5.12345678"),
+    );
+    const value = {
+      ...input(
+        [
+          thread(opener()),
+          { ...thread(openerB), id: "tb", replyTo: "3" },
+          { ...thread(openerC), id: "tc", replyTo: "4" },
+        ],
+        [caller(), caller({ item: "B4" }), caller({ item: "B5" }), caller({ item: "Z9" })],
+      ),
+      comments: [
+        comment("index", withNaxBotMarker(renderItemIndex({ keys: [key, keyB, "w-B5.12345678"] }), "w-index")),
+      ],
+    };
+    post.mockImplementationOnce(async () => ({ id: "one" }));
+    post.mockImplementationOnce(async () => ({ id: "two" }));
+    post.mockImplementationOnce(async () => {
+      throw new Error("forge down");
+    });
+    // The third echo fails and its warning path throws, so the recorder aborts after two echoes.
+    Object.assign(_rulingsDeps, {
+      getLogger: () => {
+        throw new Error("logger down");
+      },
+    });
+    const failure = await recordPrRulings(value).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(CallerRecordingError);
+    expect((failure as CallerRecordingError).callerRulings).toEqual({
+      applied: [
+        { item: "B3", disposition: "waived" },
+        { item: "B4", disposition: "waived" },
+      ],
+      skipped: [
+        { item: "Z9", reason: "unknown-item" },
+        { item: "B5", reason: "recorder-failed" },
+      ],
+    });
+  });
+  test("an unrecognised older writer reply is not sent to the model when a caller ruling decides the item", async () => {
     const chatter = comment("2", "please look again", "alice", "2026-01-01T12:00:00Z");
     await recordPrRulings(input([thread(opener(), chatter)], [caller()]));
     expect(readModel).not.toHaveBeenCalled();

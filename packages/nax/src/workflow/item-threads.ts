@@ -102,6 +102,11 @@ export function isOpenItemKind(kind: string): kind is OpenItem["kind"] {
 
 const CALLER_SUFFIX = /^(.+) \(caller ruling by ([^()\r\n]+)\)$/;
 
+/** A reason must never end like the caller suffix, or a writer could forge caller provenance. */
+function neutraliseSuffix(reason: string): string {
+  return reason.replace(/\(caller ruling by /gi, "[caller ruling by ");
+}
+
 /** One safe line without parentheses, so the suffix stays unambiguous when the echo is read back. */
 function callerLabel(by: string): string {
   return safeInline(by).replace(/\(/g, "[").replace(/\)/g, "]");
@@ -117,7 +122,7 @@ export function renderRulingEcho(ruling: PrRuling): string {
     ruling.disposition === "fixed" ? `fixed in ${ruling.sha?.slice(0, SHORT_SHA_CHARS) ?? ""}` : ruling.disposition;
   const provenance = ruling.callerBy === undefined ? "" : ` (caller ruling by ${callerLabel(ruling.callerBy)})`;
   return [
-    `Recorded: ${recorded} — ${safeInline(ruling.reason)}${provenance}`,
+    `Recorded: ${recorded} — ${neutraliseSuffix(safeInline(ruling.reason))}${provenance}`,
     ruling.by === null ? "By nax bot" : `By @${ruling.by}`,
     CHANGE_INSTRUCTION,
   ].join("\n");

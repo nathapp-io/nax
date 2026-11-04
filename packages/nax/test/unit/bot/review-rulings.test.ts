@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeMockCallContext, makeNaxConfig } from "@test/helpers";
+import { CallerRecordingError } from "@/bot/caller-rulings";
 import { readReviewRulings } from "@/bot/review-rulings";
 import type { RecordRulingsOutcome, recordPrRulings } from "@/bot/rulings";
 import { resolveWorkflowConfig } from "@/config";
@@ -160,11 +161,18 @@ describe("readReviewRulings", () => {
       );
       expect(result).not.toHaveProperty("callerRulings");
     });
-    test("a recorder failure reports every entry as not applied", async () => {
+    test("a recorder failure without progress marks every entry recorder-failed", async () => {
       const result = await readReviewRulings({ ...input(), callerRulings: file }, async () => {
         throw new Error("down");
       });
-      expect(result.callerRulings?.skipped).toEqual([{ item: "D-1", reason: "echo-failed" }]);
+      expect(result.callerRulings?.skipped).toEqual([{ item: "D-1", reason: "recorder-failed" }]);
+    });
+    test("a recorder failure keeps the progress the recorder reported", async () => {
+      const progress = { applied: [{ item: "D-1", disposition: "confirmed" as const }], skipped: [] };
+      const result = await readReviewRulings({ ...input(), callerRulings: file }, async () => {
+        throw new CallerRecordingError(new Error("down"), progress);
+      });
+      expect(result.callerRulings).toEqual(progress);
     });
   });
 });

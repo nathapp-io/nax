@@ -71,11 +71,39 @@ describe("planCallerRulings", () => {
     expect(out.candidates.size).toBe(0);
     expect(out.skipped).toEqual([{ item: "D-1", reason: "superseded-by-writer" }]);
   });
-  test("an older writer reply or a later non-ruling comment does not block the caller", () => {
+  test("an older writer reply does not block the caller", () => {
     const older = { settled: [], open: [open("D-1", [reply("confirm", "2026-01-01T00:00:00Z")])] };
     expect(plan([call({ item: "D-1" })], older).candidates.size).toBe(1);
-    const chatter = { settled: [], open: [open("D-1", [reply("thanks", "2026-01-03T00:00:00Z")])] };
+    const chatter = { settled: [], open: [open("D-1", [reply("looks fine", "2026-01-01T00:00:00Z")])] };
     expect(plan([call({ item: "D-1" })], chatter).candidates.size).toBe(1);
+  });
+  test("any newer authorized writer reply, ruling keyword or not, supersedes the caller", () => {
+    const state = {
+      settled: [],
+      open: [open("D-1", [reply("actually this needs a fix, do not waive", "2026-01-03T00:00:00Z")])],
+    };
+    const out = plan([call({ item: "D-1" })], state);
+    expect(out.candidates.size).toBe(0);
+    expect(out.skipped).toEqual([{ item: "D-1", reason: "superseded-by-writer" }]);
+  });
+  test("a writer reopening a settled item with chatter blocks re-applying the same file", () => {
+    const reopened = {
+      ...open("D-1", [reply("hmm, not sure", "2026-01-03T00:00:00Z")]),
+      ruling: settledItem("D-1").ruling,
+    };
+    const out = plan([call({ item: "D-1" })], { settled: [], open: [reopened] });
+    expect(out.skipped).toEqual([{ item: "D-1", reason: "superseded-by-writer" }]);
+  });
+  test("without a key, two open threads sharing an id are ambiguous", () => {
+    const state = {
+      settled: [],
+      open: [open("D-1", []), open("D-1", [])].map((x, i) => ({ ...x, key: `w-D-1.0000000${i}` })),
+    };
+    const out = plan([call({ item: "D-1" })], state);
+    expect(out.candidates.size).toBe(0);
+    expect(out.skipped).toEqual([{ item: "D-1", reason: "ambiguous-item" }]);
+    const keyed = plan([call({ item: "D-1", key: "w-D-1.00000001" })], state);
+    expect(keyed.candidates.size).toBe(1);
   });
   test("an unparsable reply timestamp fails closed to the writer", () => {
     const state = { settled: [], open: [open("D-1", [reply("confirm", "garbage")])] };
