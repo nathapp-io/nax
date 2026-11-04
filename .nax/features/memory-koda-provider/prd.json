@@ -3,7 +3,7 @@
   "feature": "memory-koda-provider",
   "branchName": "feat/memory-koda-provider",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-04T07:55:03.731Z",
+  "updatedAt": "2026-11-04T08:19:03.195Z",
   "userStories": [
     {
       "id": "US-001",
@@ -385,14 +385,17 @@
         "US-003",
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Bounded sequential lookup, retire and search use established client/mapping contracts across three modules; credentialed writes and update-permission refusals retain the strict security strategy."
+        "reasoning": "Bounded sequential lookup, retire and search use established client/mapping contracts across three modules; credentialed writes and update-permission refusals retain the strict security strategy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/koda-provider.ts",
@@ -414,7 +417,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "55a6f93b480d07c6012cd60209d54afce23e0119"
     },
     {
       "id": "US-007",
