@@ -304,6 +304,7 @@ describe("registerMemoryCommand", () => {
       "save",
       "forget",
       "approve",
+      "link",
     ]);
   });
 });

@@ -131,6 +131,12 @@ export {
   registerMemoryCommand,
 } from "./memory";
 export {
+  _memoryAdminDeps,
+  type MemoryLinkOptions,
+  memoryLinkCommand,
+  registerMemoryAdminCommands,
+} from "./memory-admin";
+export {
   _memoryCliDeps,
   cliMemoryLogger,
   type MemoryCliContext,
