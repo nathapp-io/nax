@@ -3,7 +3,7 @@
   "feature": "memory-koda-provider",
   "branchName": "feat/memory-koda-provider",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-04T06:25:38.705Z",
+  "updatedAt": "2026-11-04T06:55:06.459Z",
   "userStories": [
     {
       "id": "US-001",
@@ -112,14 +112,17 @@
         "credentials"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Small transport abstraction with timeout/error semantics; authentication header secrecy triggers the security override."
+        "reasoning": "Small transport abstraction with timeout/error semantics; authentication header secrecy triggers the security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/plugins/builtin/reporter-shared/post-json.ts",
@@ -139,7 +142,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f6855ba097298a9d91d179872ca0e97026af72f9"
     },
     {
       "id": "US-003",
