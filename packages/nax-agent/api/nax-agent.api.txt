@@ -1019,6 +1019,7 @@ normalizeManagerBinary
 openNativeSession
 openUrl
 parseGitlinks
+parseMemoryNoteRecord
 parseModelSpec
 parseNativeModel
 parseRuleList

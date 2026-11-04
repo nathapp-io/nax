@@ -31,11 +31,21 @@
  * recorded it (`koda-approvals.ts`). At the scope's own last page this module resolves at
  * most `MEMORY_KODA_APPROVAL_CHECKS_MAX` of that scope's records, oldest first, by reading
  * `GET approvals/<id>`. A proposal koda has not settled keeps its record; one it executed
- * drops it, because the row arrives through the feed; one it refused drops it *and* puts
- * the slug back, which is the part the feed can never do — a rejected proposal leaves the
- * note an edit replaced locally standing as `pending` in the mirror forever. A `404` is
- * koda saying it has no such approval: nothing to restore, nothing to ask again. Every
- * other failure learned nothing, so the record stays for a later pull.
+ * drops it, because the row arrives through the feed; one it refused puts the slug back,
+ * which is the part the feed can never do — a rejected proposal leaves the note an edit
+ * replaced locally standing as `pending` in the mirror forever. A `404` is koda saying it has
+ * no such approval: nothing to restore, nothing to ask again. Every other failure learned
+ * nothing, so the record stays for a later pull.
+ *
+ * A refused record is forgotten only once nothing is left for a later pull to do. A record
+ * whose slug needs no restoration goes now; one whose restoration this page carries stays,
+ * because this module cannot apply a page — sync applies it after this returns, and a mirror
+ * write that failed, or a pull whose answer a timeout discarded, must not cost the slug the
+ * one note that would have settled it. The next pull that finds the mirror past the proposal
+ * forgets it. The restoration itself is only emitted when the mirror can actually hold it
+ * (`parseMemoryNoteRecord`, sync's own check) and when koda's answer is a row this mirror may
+ * hold at all: a row it could not represent keeps the record and warns, and a tombstone is
+ * built only for a lookup that found no row.
  *
  * Resolution happens on the scope's own last page because sync writes a page's notes to
  * the page's scope: a user-scope note on a project page would land in the project mirror.
@@ -45,7 +55,7 @@
  */
 
 import type { MemoryDecision, MemoryNote, MemoryPage, MemoryScope } from "@nathapp/nax-agent";
-import { errorMessage } from "@nathapp/nax-agent/internal";
+import { errorMessage, parseMemoryNoteRecord } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { KodaApproval } from "./koda-approvals";
 import { kodaStatusOf } from "./koda-http";
@@ -193,11 +203,21 @@ interface ResolutionScope {
   readonly pageSlugs: Set<string>;
 }
 
-/** What one proposal record's resolution came to: whether it is forgotten, and the note its slug gains. */
-interface RecordResolution {
-  readonly drop: boolean;
-  readonly note?: MemoryNote;
-}
+/**
+ * What one proposal record's resolution came to.
+ *
+ * - `drop` — the record is forgotten now: koda executed the proposal (the row arrives through
+ *   the feed), no longer has it (`404`), or the slug needs no restoring note at all.
+ * - `keep` — the record stays: the proposal is open, the answer was unusable, or an active row
+ *   koda holds is one the mirror could never take.
+ * - `restore` — the record stays *and* the page carries the note that settles the slug. Only
+ *   sync can apply a page, so the record outlives this pull: a page a failed write or an
+ *   abandoned timeout never applied must not cost the slug its restoration (F1).
+ */
+type RecordResolution =
+  | { readonly kind: "drop" }
+  | { readonly kind: "keep" }
+  | { readonly kind: "restore"; readonly note: MemoryNote };
 
 /** What a last page's resolution came to: the notes it restores, and the approvals it forgets. */
 interface ResolutionResult {
@@ -267,25 +287,51 @@ function tombstoneOf(pending: MemoryNote): MemoryNote {
 }
 
 /**
- * koda's active row as the page's note.
+ * `note` as the mirror's own record check sees it, or the reason the mirror would refuse it.
  *
- * A row the mirror may not hold is, for the mirror, no active row at all, so it falls back
- * to the tombstone: the proposal is resolved either way, and leaving the mirror's note
- * `pending` forever would be the one outcome this resolution exists to prevent.
+ * The check is sync's (`parseMemoryNoteRecord`), not a second opinion: a restoration the mirror
+ * would skip is not a restoration, and dropping the record for it would leave the slug `pending`
+ * forever with nothing left to retry (F2).
  */
-function noteOfRow(row: KodaMemoryItem, scope: MemoryScope, pending: MemoryNote): MemoryNote {
-  return reconcileKodaNotes([row], scope, NO_MIRROR_IDS).notes[0] ?? tombstoneOf(pending);
+function mirrorReadyNote(note: MemoryNote): { readonly note: MemoryNote } | { readonly reason: string } {
+  try {
+    return { note: parseMemoryNoteRecord(note) };
+  } catch (error) {
+    return { reason: errorMessage(error) };
+  }
 }
 
-/** What a restoring lookup came to: the note the page gains, or the fact that the record stays. */
-type Restoration = { readonly kind: "resolved"; readonly note: MemoryNote } | { readonly kind: "kept" };
+/**
+ * koda's active row as the page's note, or the fact that the mirror cannot hold it.
+ *
+ * A row the mirror may not hold is not a restoration: the record stays and the pull warns, so a
+ * later pull can try again. Only a lookup that finds *no* row is the fact a tombstone is for —
+ * a tombstone built from a row that could not be read would be a deletion taken on a guess (F2).
+ */
+function rowRestoration(where: ResolutionScope, record: KodaApproval, row: KodaMemoryItem): RecordResolution {
+  const mapped = reconcileKodaNotes([row], where.scope, NO_MIRROR_IDS).notes[0];
+  if (mapped === undefined) {
+    warnApproval(where, record, "koda's active row is not a note the mirror can hold");
+    return { kind: "keep" };
+  }
+  const ready = mirrorReadyNote(mapped);
+  if ("reason" in ready) {
+    warnApproval(where, record, ready.reason);
+    return { kind: "keep" };
+  }
+  return { kind: "restore", note: ready.note };
+}
 
 /**
  * The note a refused proposal's slug gains: koda's active row, or a tombstone for what the
- * mirror still holds. A lookup that threw learned nothing — the record stays and a later
- * pull asks again — so the two outcomes are told apart by the caller.
+ * mirror still holds. A lookup that threw learned nothing — the record stays and a later pull
+ * asks again — so that arm is told apart from the two that answer.
  */
-async function restoreSlug(where: ResolutionScope, record: KodaApproval, pending: MemoryNote): Promise<Restoration> {
+async function restoreSlug(
+  where: ResolutionScope,
+  record: KodaApproval,
+  pending: MemoryNote,
+): Promise<RecordResolution> {
   try {
     const row = await findActiveKodaNote({
       client: where.input.client,
@@ -293,20 +339,20 @@ async function restoreSlug(where: ResolutionScope, record: KodaApproval, pending
       scope: where.scope,
       slug: record.slug,
     });
-    return { kind: "resolved", note: row === null ? tombstoneOf(pending) : noteOfRow(row, where.scope, pending) };
+    if (row === null) return { kind: "restore", note: tombstoneOf(pending) };
+    return rowRestoration(where, record, row);
   } catch (error) {
     warnApproval(where, record, errorMessage(error));
-    return { kind: "kept" };
+    return { kind: "keep" };
   }
 }
 
 /** The record's fate once koda has refused its proposal: restored, or kept because the lookup failed. */
 async function refusedRecord(where: ResolutionScope, record: KodaApproval): Promise<RecordResolution> {
-  if (where.pageSlugs.has(record.slug)) return { drop: true };
+  if (where.pageSlugs.has(record.slug)) return { kind: "drop" };
   const pending = await restorableNote(where, record);
-  if (pending === null) return { drop: true };
-  const restoration = await restoreSlug(where, record, pending);
-  return restoration.kind === "kept" ? { drop: false } : { drop: true, note: restoration.note };
+  if (pending === null) return { kind: "drop" };
+  return await restoreSlug(where, record, pending);
 }
 
 /**
@@ -318,13 +364,13 @@ async function refusedRecord(where: ResolutionScope, record: KodaApproval): Prom
  */
 async function resolveRecord(where: ResolutionScope, record: KodaApproval): Promise<RecordResolution> {
   const answer = await readApproval(where, record);
-  if (answer.kind === "unreadable") return { drop: false };
-  if (answer.kind === "gone") return { drop: true };
-  if (APPROVAL_OPEN_STATUSES.has(answer.status)) return { drop: false };
+  if (answer.kind === "unreadable") return { kind: "keep" };
+  if (answer.kind === "gone") return { kind: "drop" };
+  if (APPROVAL_OPEN_STATUSES.has(answer.status)) return { kind: "keep" };
   if (APPROVAL_REFUSED_STATUSES.has(answer.status)) return await refusedRecord(where, record);
-  if (answer.status === APPROVAL_EXECUTED_STATUS) return { drop: true };
+  if (answer.status === APPROVAL_EXECUTED_STATUS) return { kind: "drop" };
   warnApproval(where, record, `koda answered the status "${answer.status}"`);
-  return { drop: false };
+  return { kind: "keep" };
 }
 
 /**
@@ -345,9 +391,15 @@ async function resolveApprovals(
   const dropped: string[] = [];
   for (const record of records.slice(0, MEMORY_KODA_APPROVAL_CHECKS_MAX)) {
     const resolution = await resolveRecord(where, record);
-    if (!resolution.drop) continue;
-    dropped.push(record.approvalId);
-    if (resolution.note === undefined) continue;
+    if (resolution.kind === "drop") {
+      dropped.push(record.approvalId);
+      continue;
+    }
+    if (resolution.kind === "keep") continue;
+    // A restoration is this page's work, and this module cannot apply a page — sync does, after it
+    // returns. The record therefore stays, and a later pull that finds the mirror past this
+    // proposal forgets it: a page a failed write or an abandoned timeout never applied must not
+    // cost the slug its restoration (F1).
     notes.push(resolution.note);
     where.pageSlugs.add(record.slug);
   }

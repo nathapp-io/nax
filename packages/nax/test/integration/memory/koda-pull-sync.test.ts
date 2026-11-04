@@ -1,13 +1,14 @@
 /**
- * koda-pull-sync.test.ts — US-007 AC-16 and AC-17: what `syncMemory` makes of the
- * koda provider's export pages.
+ * koda-pull-sync.test.ts — what `syncMemory` makes of the koda provider's export
+ * pages, including the proposals a pull resolves at the last page.
  *
  * The provider is the real one, over a real `createKodaClient` whose `fetch` seam is
  * stubbed; the mirror, the queue, the lock and `sync.json` are real, in a temporary
  * directory. So the reconciliation the unit file pins row by row is asserted here at
  * the seam the sync loop reads it through: a page's stale rejection does not delete the
- * successor the same page carries, and a page the pull cannot read leaves the cursor
- * where the last good page checkpointed it.
+ * successor the same page carries, a page the pull cannot read leaves the cursor where
+ * the last good page checkpointed it, and a restoration a pull resolves survives a
+ * mirror that failed to take it (F1) and an unusable row it could not represent (F2).
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -15,14 +16,18 @@ import { join } from "node:path";
 import {
   createMemoryOutbox,
   createMemoryStore,
+  MEMORY_NOTE_BODY_MAX_BYTES,
   type MemoryNote,
   type MemoryOutbox,
+  type MemoryPage,
   type MemoryProvider,
   type MemoryStore,
   type MemorySyncResult,
+  type MemoryTimers,
   syncMemory,
 } from "@nathapp/nax-agent";
-import { cleanupTempDir, type MockLogger, makeLogger, makeTempDir } from "@test/helpers";
+import { _memoryStoreDeps } from "@nathapp/nax-agent/internal";
+import { assertDefined, cleanupTempDir, type MockLogger, makeLogger, makeTempDir } from "@test/helpers";
 import { createKodaApprovals, type KodaApprovals } from "@/memory/koda-approvals";
 import { _kodaClientDeps, createKodaClient } from "@/memory/koda-http";
 import { createKodaMemoryProvider } from "@/memory/koda-provider";
@@ -115,6 +120,7 @@ function harness(dir: string): Harness {
 describe("syncMemory over the koda provider's export pages", () => {
   let calls: FetchCall[] = [];
   let originalFetch: typeof _kodaClientDeps.fetch;
+  let originalRm: typeof _memoryStoreDeps.rm;
   let dir: string;
   let koda: Harness;
 
@@ -150,8 +156,69 @@ describe("syncMemory over the koda provider's export pages", () => {
     });
   }
 
+  /** Route a run whose last page resolves one refused proposal, with the lookup answering `lookup`. */
+  function stubProposalKoda(
+    over: {
+      readonly items?: readonly Record<string, unknown>[];
+      readonly status?: string;
+      readonly lookup?: readonly Record<string, unknown>[];
+    } = {},
+  ): void {
+    stubFetch((call) => {
+      const url = new URL(call.url);
+      if (url.pathname.endsWith("/memory/export")) {
+        return exportAnswer({ items: over.items ?? [], nextCursor: null, hasMore: false });
+      }
+      if (url.pathname.endsWith("/memory/write-mode")) return jsonAnswer({ ret: 0, data: { mode: "direct" } });
+      if (url.pathname.includes("/approvals/"))
+        return jsonAnswer({ ret: 0, data: { status: over.status ?? "rejected" } });
+      if (url.pathname.endsWith("/memory")) {
+        return jsonAnswer({ ret: 0, data: { items: over.lookup ?? [], hasNext: false, current: 1 } });
+      }
+      return jsonAnswer({ ret: 0, data: { id: PROJECT_ID } });
+    });
+  }
+
+  /** The mirror's note waiting on a proposal, and the record of that proposal. */
+  async function pendingProposal(): Promise<void> {
+    await koda.store.writeNote({ ...mirrorNote("c1"), status: "pending" });
+    await koda.approvals.record({ approvalId: "apr_1", scope: "project", slug: SLUG, clientId: "c1" });
+  }
+
+  /** The approval ids the record file holds, read back from disk. */
+  async function recorded(): Promise<readonly string[]> {
+    return (await koda.approvals.list()).map((entry) => entry.approvalId);
+  }
+
+  /** Make the next removal of a note fail once, leaving the rest of the store real (F1). */
+  function failNextNoteRemoval(): void {
+    let failing = true;
+    _memoryStoreDeps.rm = async (path, options) => {
+      if (failing && path.endsWith(".md")) {
+        failing = false;
+        throw new Error("injected mirror failure");
+      }
+      await originalRm(path, options);
+    };
+  }
+
+  /** A timer seam whose probe deadline holds and whose pull deadline expires at once (F1). */
+  function timersTimingOutThePull(): MemoryTimers {
+    let armed = 0;
+    return {
+      setTimeout: (callback) => {
+        armed += 1;
+        // The first race is the reachability probe; the second is the page pull, which must lose.
+        if (armed === 2) callback();
+        return armed;
+      },
+      clearTimeout: () => undefined,
+    };
+  }
+
   beforeEach(() => {
     originalFetch = _kodaClientDeps.fetch;
+    originalRm = _memoryStoreDeps.rm;
     calls = [];
     dir = makeTempDir("nax-koda-pull-");
     koda = harness(dir);
@@ -159,6 +226,7 @@ describe("syncMemory over the koda provider's export pages", () => {
 
   afterEach(() => {
     _kodaClientDeps.fetch = originalFetch;
+    _memoryStoreDeps.rm = originalRm;
     cleanupTempDir(dir);
   });
 
@@ -193,30 +261,110 @@ describe("syncMemory over the koda provider's export pages", () => {
   });
 
   test("a rejected proposal for a note waiting in the mirror leaves no project note behind (AC-16)", async () => {
-    await koda.store.writeNote({ ...mirrorNote("c1"), status: "pending" });
-    await koda.approvals.record({ approvalId: "apr_1", scope: "project", slug: SLUG, clientId: "c1" });
-    stubFetch((call) => {
-      const url = new URL(call.url);
-      if (url.pathname.endsWith("/memory/export")) {
-        return exportAnswer({ items: [], nextCursor: null, hasMore: false });
-      }
-      if (url.pathname.endsWith("/memory/write-mode")) return jsonAnswer({ ret: 0, data: { mode: "direct" } });
-      if (url.pathname.includes("/approvals/")) return jsonAnswer({ ret: 0, data: { status: "rejected" } });
-      // The restoring lookup: koda holds no active row, so the mirror's note becomes a tombstone.
-      if (url.pathname.endsWith("/memory")) {
-        return jsonAnswer({ ret: 0, data: { items: [], hasNext: false, current: 1 } });
-      }
-      return jsonAnswer({ ret: 0, data: { id: PROJECT_ID } });
-    });
+    await pendingProposal();
+    stubProposalKoda();
 
     const result = await koda.sync();
 
     expect(result.outcome).toBe("synced");
     expect(await koda.store.readNote("project", SLUG)).toBeNull();
-    // The resolution is what removed it: koda was asked about the approval and the slug, and the
-    // record is gone, none of which a pull without last-page resolution would do.
+    // The resolution is what removed it: koda was asked about the approval and the slug.
     expect(calls.map((call) => call.url)).toContain(`${API}/approvals/apr_1`);
     expect(calls.some((call) => new URL(call.url).pathname.endsWith("/memory"))).toBe(true);
-    expect(await koda.approvals.list()).toEqual([]);
+    // ... and the record outlives the apply, because only a later pull can see the tombstone landed (F1).
+    expect(await recorded()).toEqual(["apr_1"]);
+
+    await koda.sync();
+
+    expect(await recorded()).toEqual([]);
   });
+
+  test("a mirror removal that fails leaves the restoration replayable for the next sync (F1)", async () => {
+    await pendingProposal();
+    stubProposalKoda();
+    failNextNoteRemoval();
+
+    const failed = await koda.sync();
+
+    expect(failed.outcome).toBe("failed");
+    expect((await koda.store.readNote("project", SLUG))?.status).toBe("pending");
+    expect(await recorded()).toEqual(["apr_1"]);
+
+    const applied = await koda.sync();
+
+    expect(applied.outcome).toBe("synced");
+    expect(await koda.store.readNote("project", SLUG)).toBeNull();
+    // Still recorded: the pull that applied the tombstone is not the pull that may forget it.
+    expect(await recorded()).toEqual(["apr_1"]);
+
+    await koda.sync();
+
+    expect(await recorded()).toEqual([]);
+  });
+
+  test("a pull a timeout discards keeps the restoration it resolved (F1)", async () => {
+    await pendingProposal();
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    stubProposalKoda();
+    const pulls: Promise<MemoryPage>[] = [];
+    let began = (): void => undefined;
+    const begun = new Promise<void>((resolve) => {
+      began = resolve;
+    });
+    const abandoned: MemoryProvider = {
+      ...koda.provider,
+      pull: async (request) => {
+        // The page is held until the test lets it through, so the timeout wins the race and the
+        // work it abandoned finishes afterwards — the order that made the old code drop the record.
+        await gate;
+        const answer = koda.provider.pull(request);
+        pulls.push(answer);
+        began();
+        return await answer;
+      },
+    };
+
+    const result = await syncMemory({
+      store: koda.store,
+      outbox: koda.outbox,
+      provider: abandoned,
+      logger: koda.logger,
+      now: () => new Date(STAMP),
+      timers: timersTimingOutThePull(),
+    });
+
+    expect(result.outcome).toBe("failed");
+    release();
+    await begun;
+    const raced = pulls[0];
+    assertDefined(raced, "the pull the timeout abandoned");
+    const page = await raced;
+
+    // The abandoned pull resolved the proposal for a page nobody will ever apply.
+    expect(page.notes.map((note) => note.status)).toEqual(["rejected"]);
+    expect((await koda.store.readNote("project", SLUG))?.status).toBe("pending");
+    expect(await recorded()).toEqual(["apr_1"]);
+  });
+
+  test.each([
+    ["a predicate the mirror does not hold", { predicate: "fact" }],
+    ["a body over the mirror's byte cap", { object: "x".repeat(MEMORY_NOTE_BODY_MAX_BYTES + 1) }],
+  ] as const)(
+    "an active row the mirror cannot hold leaves the note and its approval in place (F2): %s",
+    async (_label, over) => {
+      await pendingProposal();
+      stubProposalKoda({ lookup: [row("k1", over)] });
+
+      const result = await koda.sync();
+
+      expect(result.outcome).toBe("synced");
+      // Nothing was deleted on the strength of a row the mirror can never hold ...
+      expect((await koda.store.readNote("project", SLUG))?.status).toBe("pending");
+      // ... and the proposal stays recorded, so a later pull asks koda again.
+      expect(await recorded()).toEqual(["apr_1"]);
+    },
+  );
 });

@@ -11,7 +11,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { MemoryNote, MemoryPage, MemoryProvider, MemoryScope } from "@nathapp/nax-agent";
+import {
+  MEMORY_NOTE_BODY_MAX_BYTES,
+  type MemoryNote,
+  type MemoryPage,
+  type MemoryProvider,
+  type MemoryScope,
+} from "@nathapp/nax-agent";
 import { assertDefined, cleanupTempDir, type LogCall, type MockLogger, makeLogger, makeTempDir } from "@test/helpers";
 import { createKodaApprovals, type KodaApproval, type KodaApprovals } from "@/memory/koda-approvals";
 import { _kodaClientDeps, createKodaClient } from "@/memory/koda-http";
@@ -343,15 +349,30 @@ describe("pullKodaPage — recorded proposal resolution", () => {
     expect(logged[0].data?.approvalId).toBe("apr_1");
   });
 
-  test.each([
-    ["no pending note to put back", () => mirrorOf()],
-    ["the lookup succeeds", () => mirrorOf(pendingNote(SLUG, "c1"))],
-  ])("a rejected answer drops the record when %s (AC-10)", async (_label, mirror) => {
+  test("a rejected answer with no pending note to put back drops the record (AC-10)", async () => {
     await approvals.record(proposal());
     stubKoda({ approvals: { apr_1: settlement("rejected") }, lookup: lookupPage([kodaRow(SLUG, "k1")]) });
 
-    await pullLastPage({ readNote: mirror() });
+    await pullLastPage({ readNote: mirrorOf() });
 
+    expect(lookedUp()).toBe(false);
+    expect(await recorded()).toEqual([]);
+  });
+
+  test("a rejected answer whose restoring lookup succeeds drops the record once the mirror has the note (AC-10)", async () => {
+    const pending = pendingNote(SLUG, "c1");
+    await approvals.record(proposal());
+    stubKoda({ approvals: { apr_1: settlement("rejected") }, lookup: lookupPage([kodaRow(SLUG, "k1")]) });
+
+    // The pull that restores emits the note and keeps the record: only sync can apply it, and a
+    // page that never lands must not cost this slug its restoration (F1).
+    const restoring = await pullLastPage({ readNote: mirrorOf(pending) });
+    expect(restoring.notes.map((note) => note.id)).toEqual(["k1"]);
+    expect(await recorded()).toEqual(["apr_1"]);
+
+    // Once the restored row is what the mirror holds, the proposal is settled and the record goes.
+    const settled = await pullLastPage({ readNote: mirrorOf({ ...pending, id: "k1", status: "active" }) });
+    expect(settled.notes).toEqual([]);
     expect(await recorded()).toEqual([]);
   });
 
@@ -363,31 +384,79 @@ describe("pullKodaPage — recorded proposal resolution", () => {
     const page = await pullLastPage({ readNote: mirrorOf(pending) });
 
     expect(page.notes).toEqual([{ ...pending, status: "rejected" }]);
-    expect(await recorded()).toEqual([]);
     expect(lookedUp()).toBe(true);
+    // The tombstone is the page's to apply, so the record waits for a pull that sees it land (F1).
+    expect(await recorded()).toEqual(["apr_1"]);
+    await pullLastPage({ readNote: mirrorOf() });
+    expect(await recorded()).toEqual([]);
   });
 
   test("a rejected answer puts koda's active row back as the slug's note (AC-12)", async () => {
+    const pending = pendingNote(SLUG, "c1");
     await approvals.record(proposal());
     stubKoda({ approvals: { apr_1: settlement("rejected") }, lookup: lookupPage([kodaRow(SLUG, "k1")]) });
 
-    const page = await pullLastPage({ readNote: mirrorOf(pendingNote(SLUG, "c1")) });
+    const page = await pullLastPage({ readNote: mirrorOf(pending) });
 
-    expect(page.notes).toEqual([
-      {
-        id: "k1",
-        slug: SLUG,
-        type: "project",
-        scope: "project",
-        description: "about k1",
-        body: "body of k1",
-        updatedAt: STAMP,
-        source: "nax-chat",
-        status: "active",
-      },
-    ]);
+    const restored: MemoryNote = {
+      id: "k1",
+      slug: SLUG,
+      type: "project",
+      scope: "project",
+      description: "about k1",
+      body: "body of k1",
+      updatedAt: STAMP,
+      source: "nax-chat",
+      status: "active",
+    };
+    expect(page.notes).toEqual([restored]);
+    expect(await recorded()).toEqual(["apr_1"]);
+    await pullLastPage({ readNote: mirrorOf(restored) });
     expect(await recorded()).toEqual([]);
   });
+
+  test("a pull that restores a slug forgets no record, so an unapplied page keeps the restoration (F1)", async () => {
+    const dropped: string[] = [];
+    const spied: KodaApprovals = {
+      ...approvals,
+      drop: async (approvalIds) => {
+        dropped.push(...approvalIds);
+        await approvals.drop(approvalIds);
+      },
+    };
+    await approvals.record(proposal());
+    stubKoda({ approvals: { apr_1: settlement("rejected") }, lookup: lookupPage([kodaRow(SLUG, "k1")]) });
+
+    const page = await pullLastPage({ approvals: spied, readNote: mirrorOf(pendingNote(SLUG, "c1")) });
+
+    expect(page.notes.map((note) => note.id)).toEqual(["k1"]);
+    expect(dropped).toEqual([]);
+    expect(await recorded()).toEqual(["apr_1"]);
+  });
+
+  test.each([
+    ["a predicate the mirror does not hold", () => kodaRow(SLUG, "k1", { predicate: "fact" })],
+    [
+      "a body over the mirror's byte cap",
+      () => kodaRow(SLUG, "k1", { object: "x".repeat(MEMORY_NOTE_BODY_MAX_BYTES + 1) }),
+    ],
+  ] as const)(
+    "an active row the mirror cannot hold keeps the record and adds no note: %s (F2)",
+    async (_label, row) => {
+      await approvals.record(proposal());
+      stubKoda({ approvals: { apr_1: settlement("rejected") }, lookup: lookupPage([row()]) });
+
+      const page = await pullLastPage({ readNote: mirrorOf(pendingNote(SLUG, "c1")) });
+
+      expect(page.notes).toEqual([]);
+      expect(await recorded()).toEqual(["apr_1"]);
+      const logged = warns();
+      expect(logged).toHaveLength(1);
+      assertDefined(logged[0], "the unusable row's warn");
+      expect(logged[0].data?.approvalId).toBe("apr_1");
+      expect(logged[0].data?.reason).toBeTruthy();
+    },
+  );
 
   test("an expired answer whose mirror note is another id adds no note and looks nothing up (AC-13)", async () => {
     await approvals.record(proposal());
