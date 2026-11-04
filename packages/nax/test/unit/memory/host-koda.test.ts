@@ -114,14 +114,15 @@ describe("memory host koda composition", () => {
     return host;
   }
 
-  /** The error a config's host creation threw, or `null` when it composed one. */
-  async function failureOf(config: NaxConfig): Promise<unknown> {
-    try {
-      await createMemoryHost({ config, repoRoot, source: "nax-chat", logger });
-      return null;
-    } catch (error) {
-      return error;
-    }
+  /**
+   * The host creation a bypassed config must fail.
+   *
+   * Returned unawaited so the two `rejects` assertions below can each read it: a rejected
+   * promise may be awaited again, and this keeps the code and the class checked without a
+   * cast.
+   */
+  function creationOf(config: NaxConfig): Promise<MemoryHost | null> {
+    return createMemoryHost({ config, repoRoot, source: "nax-chat", logger });
   }
 
   /** Stub the three koda factories; returns the stubs and what they answer with. */
@@ -239,21 +240,19 @@ describe("memory host koda composition", () => {
   });
 
   test("AC-8 a koda config with no project is refused at host creation", async () => {
-    const failure = await failureOf(
-      makeNaxConfig({ memory: { provider: "koda", koda: { url: API, headers: HEADERS } } }),
-    );
+    const creation = creationOf(makeNaxConfig({ memory: { provider: "koda", koda: { url: API, headers: HEADERS } } }));
 
-    expect(failure).toBeInstanceOf(NaxError);
-    expect((failure as NaxError).code).toBe("MEMORY_KODA_CONFIG_MISSING");
+    await expect(creation).rejects.toBeInstanceOf(NaxError);
+    await expect(creation).rejects.toMatchObject({ code: "MEMORY_KODA_CONFIG_MISSING" });
   });
 
   test("AC-15 a koda config with no url is refused at host creation", async () => {
-    const failure = await failureOf(
+    const creation = creationOf(
       makeNaxConfig({ memory: { provider: "koda", koda: { project: PROJECT, headers: {} } } }),
     );
 
-    expect(failure).toBeInstanceOf(NaxError);
-    expect((failure as NaxError).code).toBe("MEMORY_KODA_CONFIG_MISSING");
+    await expect(creation).rejects.toBeInstanceOf(NaxError);
+    await expect(creation).rejects.toMatchObject({ code: "MEMORY_KODA_CONFIG_MISSING" });
   });
 
   test("AC-9 a koda host closes, and a second close resolves too", async () => {
