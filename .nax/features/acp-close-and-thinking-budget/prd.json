@@ -3,7 +3,7 @@
   "feature": "acp-close-and-thinking-budget",
   "branchName": "feat/acp-close-and-thinking-budget",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-04T03:22:13.103Z",
+  "updatedAt": "2026-11-04T03:35:37.692Z",
   "userStories": [
     {
       "id": "US-001",
@@ -283,14 +283,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Three existing source files need additive types, removal of stray caller budgets and copied conditional forwarding; upstream pi-ai already owns clamping. Strict three-session isolation is retained under the explicit credential-backed integration security override, not because the request mapping itself is complex."
+        "reasoning": "Three existing source files need additive types, removal of stray caller budgets and copied conditional forwarding; upstream pi-ai already owns clamping. Strict three-session isolation is retained under the explicit credential-backed integration security override, not because the request mapping itself is complex.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-ai/src/protocols/types.ts",
@@ -313,7 +316,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f3c0f84e72bd5fdca53c506f53cd215b7ace1e21"
     },
     {
       "id": "US-005",
