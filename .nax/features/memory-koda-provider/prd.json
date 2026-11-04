@@ -3,7 +3,7 @@
   "feature": "memory-koda-provider",
   "branchName": "feat/memory-koda-provider",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-04T09:28:56.770Z",
+  "updatedAt": "2026-11-04T11:17:43.480Z",
   "userStories": [
     {
       "id": "US-001",
@@ -663,14 +663,17 @@
       "dependencies": [
         "US-009"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Multi-step CLI state transition combines raw/merged config, authenticated probing, atomic persistence and destructive relink safety; credential handling mandates strict isolation."
+        "reasoning": "Multi-step CLI state transition combines raw/merged config, authenticated probing, atomic persistence and destructive relink safety; credential handling mandates strict isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/memory.ts",
@@ -715,7 +718,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0c2c152894b019ac14594f79cbaa716fbe8d9d2c"
     },
     {
       "id": "US-011",
