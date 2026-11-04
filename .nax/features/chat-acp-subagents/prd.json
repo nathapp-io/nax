@@ -3,7 +3,7 @@
   "feature": "chat-acp-subagents",
   "branchName": "feat/chat-acp-subagents",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-04T14:45:55.712Z",
+  "updatedAt": "2026-11-04T14:59:21.113Z",
   "userStories": [
     {
       "id": "US-001",
@@ -223,14 +223,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A thin options builder and prompt/barrel extension mirror the existing ACP brain pattern without a new session abstraction; provider exclusion and memory-write removal still mandate strict security-isolated TDD."
+        "reasoning": "A thin options builder and prompt/barrel extension mirror the existing ACP brain pattern without a new session abstraction; provider exclusion and memory-write removal still mandate strict security-isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/acp/acp-session-options.ts",
@@ -262,7 +265,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e96a3fe9115717592b942bb979379632c5cdb81b"
     },
     {
       "id": "US-005",
