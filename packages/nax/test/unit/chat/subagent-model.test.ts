@@ -86,6 +86,42 @@ describe("resolveSubagentModel", () => {
     });
   });
 
+  // US-002 (chat-acp-subagents): a second ACP agent can review the parent's
+  // work, so an unaliased `acp:` request names an explicit model the same way a
+  // `provider/model` request does — it must not fall back to the parent.
+  test("US-002 AC-6: takes an unaliased acp: request as an explicit model", async () => {
+    const { resolveSubagentModel } = await import("@/chat/subagent-model");
+    expect(resolveSubagentModel({ requested: "acp:codex", parentModel: "p/m", aliases: {}, tiers: {} })).toEqual({
+      model: "acp:codex",
+      source: "model",
+    });
+  });
+
+  test("US-002 AC-7: resolves an alias whose value is an acp: target", async () => {
+    const { resolveSubagentModel } = await import("@/chat/subagent-model");
+    const aliases = { reviewer: "acp:codex/gpt-6.1-terra" };
+    expect(resolveSubagentModel({ requested: "reviewer", parentModel: "p/m", aliases, tiers: {} })).toEqual({
+      model: "acp:codex/gpt-6.1-terra",
+      source: "alias",
+    });
+  });
+
+  test("US-002 AC-8: an alias key written as acp:<agent> wins over explicit-model resolution", async () => {
+    const { resolveSubagentModel } = await import("@/chat/subagent-model");
+    const aliases = { "acp:codex": "openai/gpt-x" };
+    expect(resolveSubagentModel({ requested: "acp:codex", parentModel: "p/m", aliases, tiers: {} })).toEqual({
+      model: "openai/gpt-x",
+      source: "alias",
+    });
+  });
+
+  test("US-002 AC-11: still falls back to the parent for an unknown bare name", async () => {
+    const { resolveSubagentModel } = await import("@/chat/subagent-model");
+    expect(
+      resolveSubagentModel({ requested: "unknown-bare-name", parentModel: "p/m", aliases: {}, tiers: {} }),
+    ).toEqual({ model: "p/m", source: "fallback" });
+  });
+
   test("ignores inherited Object.prototype keys when looking up aliases", async () => {
     const { resolveSubagentModel } = await import("@/chat/subagent-model");
     expect(resolveSubagentModel({ requested: "constructor", parentModel: "p/m", aliases: {}, tiers: {} })).toEqual({

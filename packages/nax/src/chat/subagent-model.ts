@@ -7,6 +7,7 @@
  */
 
 import type { NaxConfig } from "@/config";
+import { isChatAcpModel } from "./acp";
 
 export type SubagentModelSource = "inherit" | "alias" | "tier" | "model" | "fallback";
 
@@ -57,6 +58,8 @@ export function resolveSubagentModel(options: ResolveSubagentModelOptions): Reso
   const tier = tierModel(requested, tiers);
   if (tier !== undefined) return { model: tier, source: "tier" };
 
-  if (requested.includes("/")) return { model: requested, source: "model" };
+  // An `acp:` target names an explicit model, exactly like `provider/model`: it
+  // asks for a specific agent, never for the parent's model.
+  if (isChatAcpModel(requested) || requested.includes("/")) return { model: requested, source: "model" };
   return { model: parentModel, source: "fallback" };
 }

@@ -1,7 +1,6 @@
 /**
- * `agent.modelAliases` schema: a Claude Code model name mapped to either a nax
- * model id or an ACP agent target.
- * Split from schemas-infra.ts to keep that file within the 600-line limit.
+ * `agent.modelAliases` and `agent.acpSubagents` schemas. Split from
+ * schemas-infra.ts to keep that file within the 600-line limit.
  */
 
 import { z } from "zod";
@@ -40,3 +39,14 @@ export const ModelAliasesSchema = z.record(
   z.string().trim().min(1, "agent.modelAliases keys must be non-empty"),
   ModelAliasTargetSchema,
 );
+
+/**
+ * `agent.acpSubagents` — settings for the ACP subagents a chat session may run
+ * (reviewing a spec on a second model, for example). `profile` overrides the
+ * permissions profile derived per agent; the agent files carry the default, so
+ * an absent key must stay absent rather than defaulting here. Strict: a
+ * misspelled key is reported instead of silently dropped.
+ */
+export const AcpSubagentsConfigSchema = z
+  .object({ profile: z.enum(["review", "read", "ask", "full"]).optional() })
+  .strict();

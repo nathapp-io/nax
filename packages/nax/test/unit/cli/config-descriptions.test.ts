@@ -118,6 +118,29 @@ describe("FIELD_DESCRIPTIONS agent.modelAliases", () => {
   });
 });
 
+// US-002 (chat-acp-subagents): the optional subagent profile override and its
+// value need their own rows, or `nax config` shows the key undocumented.
+describe("FIELD_DESCRIPTIONS agent.acpSubagents (US-002)", () => {
+  const KEYS = ["agent.acpSubagents", "agent.acpSubagents.profile"];
+
+  test.each(KEYS)("%s has a non-empty description", (key) => {
+    expect(typeof FIELD_DESCRIPTIONS[key]).toBe("string");
+    expect(FIELD_DESCRIPTIONS[key].trim().length).toBeGreaterThan(0);
+  });
+
+  test("AC-5: agent.acpSubagents.profile is a non-empty string", () => {
+    const description = FIELD_DESCRIPTIONS["agent.acpSubagents.profile"];
+    expect(description.length).toBeGreaterThan(0);
+  });
+
+  test("agent.acpSubagents.profile names the profile values the schema accepts", () => {
+    const description = FIELD_DESCRIPTIONS["agent.acpSubagents.profile"];
+    for (const profile of ["review", "read", "ask", "full"]) {
+      expect(description).toContain(profile);
+    }
+  });
+});
+
 describe("FIELD_DESCRIPTIONS agent.transcriptAudit (#2453)", () => {
   const KEYS = [
     "agent.transcriptAudit",

@@ -660,3 +660,42 @@ describe("AgentConfigSchema modelAliases acp: targets", () => {
     expect(result.data.agent?.modelAliases).toEqual(modelAliases);
   });
 });
+
+// US-002 (chat-acp-subagents): `agent.acpSubagents.profile` overrides the
+// per-agent default for subagent permissions. Optional with no default, and
+// strict, so a typo in the key name is reported instead of silently dropped.
+describe("AgentConfigSchema acpSubagents", () => {
+  test("AC-1: is absent when the config sets nothing", () => {
+    expect(NaxConfigSchema.parse({}).agent?.acpSubagents).toBeUndefined();
+  });
+
+  test("AC-2: keeps a configured profile", () => {
+    const result = NaxConfigSchema.safeParse({ agent: { acpSubagents: { profile: "read" } } });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.agent?.acpSubagents?.profile).toBe("read");
+  });
+
+  test.each(["review", "read", "ask", "full"])("accepts the %s profile", (profile) => {
+    const result = NaxConfigSchema.safeParse({ agent: { acpSubagents: { profile } } });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.agent?.acpSubagents?.profile).toBe(profile);
+  });
+
+  test("AC-3: rejects an unknown profile and reports the profile path", () => {
+    const result = NaxConfigSchema.safeParse({ agent: { acpSubagents: { profile: "write" } } });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const path = result.error.issues.map((issue) => issue.path.join("."));
+    expect(path.some((p) => p.startsWith("agent.acpSubagents.profile"))).toBe(true);
+  });
+
+  test("AC-4: rejects an extra key because the object is strict", () => {
+    const result = NaxConfigSchema.safeParse({ agent: { acpSubagents: { profile: "review", extra: 1 } } });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const path = result.error.issues.map((issue) => issue.path.join("."));
+    expect(path.some((p) => p.startsWith("agent.acpSubagents"))).toBe(true);
+  });
+});
