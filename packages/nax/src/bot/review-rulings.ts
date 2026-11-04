@@ -5,6 +5,7 @@ import type { BotSettledRuling } from "@/prompts";
 import type { PrStepContext } from "../workflow/branch-step-context";
 import type { Disposition } from "../workflow/decisions-sidecar";
 import { type ItemIndex, parseItemOpener } from "../workflow/item-threads";
+import { type CallerRulingsFile, type CallerRulingsReport, ignoredCallerRulings } from "./caller-rulings";
 import type { PrCheckout } from "./checkout";
 import type { PostReviewInput } from "./post";
 import { earlierIssue } from "./post-earlier";
@@ -48,24 +49,46 @@ function confirmedItems(outcome: RecordRulingsOutcome, login: string): Confirmed
   }));
 }
 
+function unappliedReport(file: CallerRulingsFile, reason: "unknown-item" | "echo-failed"): CallerRulingsReport {
+  return { applied: [], skipped: file.rulings.map(({ item }) => ({ item, reason })) };
+}
+
 /** Ruling reads are privileged and best-effort; an absent outcome must not invent counts. */
 export async function readReviewRulings(
-  input: Omit<RecordRulingsInput, "readModel"> & { staticMode: boolean; ctx: PrStepContext },
+  input: Omit<RecordRulingsInput, "readModel" | "callerRulings"> & {
+    staticMode: boolean;
+    ctx: PrStepContext;
+    callerRulings?: CallerRulingsFile;
+  },
   record: typeof recordPrRulings,
 ): Promise<
-  Pick<PostReviewInput, "itemEarlier" | "itemConfirmed" | "rulings" | "itemStatus"> & {
+  Pick<PostReviewInput, "itemEarlier" | "itemConfirmed" | "rulings" | "itemStatus" | "callerRulings"> & {
     reviewedIndex?: ItemIndex;
     settled?: BotSettledRuling[];
   }
 > {
-  const { staticMode, ctx, ...raw } = input;
-  if (staticMode || !hasNaxWorkflowMarker(raw.info.body)) return {};
+  const { staticMode, ctx, callerRulings: file, ...raw } = input;
+  if (staticMode) {
+    if (!file) return {};
+    getLogger().warn("bot", "Ignoring caller rulings: the PR is untrusted", { pr: raw.ref.number });
+    return { callerRulings: ignoredCallerRulings("untrusted-pr") };
+  }
+  if (!hasNaxWorkflowMarker(raw.info.body)) return file ? { callerRulings: unappliedReport(file, "unknown-item") } : {};
+  const headMatches = file?.headSha.toLowerCase() === raw.info.headSha.toLowerCase();
+  if (file && !headMatches) {
+    getLogger().warn("bot", "Ignoring caller rulings: made against a different head", { pr: raw.ref.number });
+  }
+  const applying = file && headMatches ? file.rulings : undefined;
   try {
     const outcome = await record({
       ...raw,
       readModel: rulingModelReader(ctx),
+      ...(applying === undefined ? {} : { callerRulings: applying }),
     });
     return {
+      ...(file === undefined
+        ? {}
+        : { callerRulings: headMatches ? (outcome.callerRulings ?? unappliedReport(file, "unknown-item")) : ignoredCallerRulings("head-mismatch") }),
       reviewedIndex: outcome.index,
       ...(outcome.index === undefined ? {} : { itemStatus: itemStatus(outcome) }),
       ...(outcome.confirmedWork?.length ? { itemConfirmed: confirmedItems(outcome, raw.login) } : {}),
@@ -86,7 +109,7 @@ export async function readReviewRulings(
     };
   } catch (error) {
     getLogger().warn("bot", "Could not record PR rulings", { pr: raw.ref.number, error: errorMessage(error) });
-    return {};
+    return file && headMatches ? { callerRulings: unappliedReport(file, "echo-failed") } : {};
   }
 }
 

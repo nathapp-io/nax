@@ -29,6 +29,7 @@ import {
 } from "../workflow/item-threads";
 import { editBodyArgv, hasChecklistItem, tickChecklist } from "../workflow/promote";
 import { parseRulingKeyword } from "../workflow/ruling-keyword";
+import { type CallerRulingsReport, planCallerRulings, type CallerRuling } from "./caller-rulings";
 import { writerCheck } from "./writers";
 
 export const MAX_RULING_ITEMS = 20;
@@ -43,6 +44,8 @@ export interface RecordRulingsInput {
   readonly deps: ForgeDeps;
   readonly cwd: string;
   readonly readModel: (input: BotRulingReadInput) => Promise<BotRulingReadVerdict | null>;
+  /** Validated `--rulings` entries for this head; each acts as an authorized candidate for its item. */
+  readonly callerRulings?: readonly CallerRuling[];
 }
 
 export interface RecordRulingsOutcome {
@@ -56,6 +59,8 @@ export interface RecordRulingsOutcome {
   readonly open: SettledItems["open"];
   readonly asked: number;
   readonly failed: number;
+  /** Present only when caller rulings were supplied. */
+  readonly callerRulings?: Pick<CallerRulingsReport, "applied" | "skipped">;
 }
 
 export const _rulingsDeps = {
@@ -237,6 +242,19 @@ function renewedRuling(item: ItemThread, ruling: PrRuling): ItemThread & { reado
   return { ...current, ruling };
 }
 
+function callerReport(
+  skipped: CallerRulingsReport["skipped"],
+  recorded: readonly PrRuling[],
+  echoFailed: readonly string[],
+): Pick<CallerRulingsReport, "applied" | "skipped"> {
+  return {
+    applied: recorded
+      .filter((ruling) => ruling.callerBy !== undefined)
+      .map(({ itemId, disposition }) => ({ item: itemId, disposition })),
+    skipped: [...skipped, ...echoFailed.map((item) => ({ item, reason: "echo-failed" as const }))],
+  };
+}
+
 /** Only successful echoes count as newly recorded; resolution failure never undoes an echo. */
 export async function recordPrRulings(input: RecordRulingsInput): Promise<RecordRulingsOutcome> {
   const read = readItemThreads(input.threads, input.comments, input.login);
@@ -245,7 +263,14 @@ export async function recordPrRulings(input: RecordRulingsInput): Promise<Record
   const confirmedWork = initial.settled.filter(isConfirmedWork);
   const open: SettledItems["open"][number][] = [];
   const recorded: PrRuling[] = [];
-  const model = await readModelCandidates(input, initial.open);
+  const caller =
+    input.callerRulings === undefined ? undefined : planCallerRulings(input.callerRulings, initial);
+  // A caller ruling decides its item outright, so the model must not read or question that item's replies.
+  const model = await readModelCandidates(
+    input,
+    initial.open.filter((item) => !caller?.candidates.has(item)),
+  );
+  const echoFailed: string[] = [];
   let failed = model.failed;
   for (const item of settled) {
     if (!item.thread.resolved) await resolve(input, item);
@@ -254,15 +279,17 @@ export async function recordPrRulings(input: RecordRulingsInput): Promise<Record
     const newest = item.kept.at(-1);
     const keyword = newest ? parseRulingKeyword(newest.body) : null;
     const ruling: PrRuling | undefined =
-      keyword && newest
+      caller?.candidates.get(item) ??
+      (keyword && newest
         ? { ...keyword, itemKey: item.key, itemId: item.itemId, by: newest.author }
-        : model.candidates.get(item);
+        : model.candidates.get(item));
     if (!ruling) {
       open.push(item);
       continue;
     }
     if (!(await postEcho(input, item, ruling))) {
       open.push(item);
+      if (ruling.callerBy !== undefined) echoFailed.push(item.itemId);
       failed++;
       continue;
     }
@@ -286,5 +313,6 @@ export async function recordPrRulings(input: RecordRulingsInput): Promise<Record
     open,
     asked: model.asked,
     failed,
+    ...(caller === undefined ? {} : { callerRulings: callerReport(caller.skipped, recorded, echoFailed) }),
   };
 }

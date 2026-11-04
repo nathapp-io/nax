@@ -133,6 +133,13 @@ describe("postPrReview item rulings", () => {
     await post("open", { rulings: { recorded: 2, open: 3, asked: 1 } });
     expect(artifact).toMatchObject({ version: 3, rulings: { recorded: 2, open: 3, asked: 1 } });
   });
+  test("persists the caller rulings report only when one exists", async () => {
+    const report = { applied: [{ item: "B3", disposition: "waived" as const }], skipped: [] };
+    await post("open", { callerRulings: report });
+    expect(artifact?.callerRulings).toEqual(report);
+    await post("open");
+    expect(artifact).not.toHaveProperty("callerRulings");
+  });
   test("AC-16 preserves all f- withdrawal event fields alongside a withdrawn w- thread", async () => {
     const finding = {
       ...thread,

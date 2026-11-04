@@ -21,6 +21,12 @@ export {
   resolveBotChecks,
   reviewBuildSteps,
 } from "./checks";
+export {
+  _callerRulingsDeps,
+  type CallerRulingsFile,
+  type CallerRulingsReport,
+  loadCallerRulings,
+} from "./caller-rulings";
 export { _decisionsDeps, type BotDecision, loadBotDecisions } from "./decisions";
 export {
   _findingRulingsDeps,

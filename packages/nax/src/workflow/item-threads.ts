@@ -14,6 +14,8 @@ export interface PrRuling {
   readonly reason: string;
   readonly sha?: string;
   readonly by: string | null;
+  /** Provenance label of a ruling supplied by the caller of `nax bot review --rulings`; absent for thread replies. */
+  readonly callerBy?: string;
 }
 
 export interface ItemIndex {
@@ -98,6 +100,13 @@ export function isOpenItemKind(kind: string): kind is OpenItem["kind"] {
   return Object.hasOwn(KIND_NAMES, kind);
 }
 
+const CALLER_SUFFIX = /^(.+) \(caller ruling by ([^()\r\n]+)\)$/;
+
+/** One safe line without parentheses, so the suffix stays unambiguous when the echo is read back. */
+function callerLabel(by: string): string {
+  return safeInline(by).replace(/\(/g, "[").replace(/\)/g, "]");
+}
+
 export function renderRulingEcho(ruling: PrRuling): string {
   if (ruling.disposition === "fixed" && (!ruling.sha || !RULING_SHA_PATTERN.test(ruling.sha))) {
     throw new NaxError("[workflow] Fixed ruling requires a valid sha", "WORKFLOW_RULING_INVALID", {
@@ -106,8 +115,9 @@ export function renderRulingEcho(ruling: PrRuling): string {
   }
   const recorded =
     ruling.disposition === "fixed" ? `fixed in ${ruling.sha?.slice(0, SHORT_SHA_CHARS) ?? ""}` : ruling.disposition;
+  const provenance = ruling.callerBy === undefined ? "" : ` (caller ruling by ${callerLabel(ruling.callerBy)})`;
   return [
-    `Recorded: ${recorded} — ${safeInline(ruling.reason)}`,
+    `Recorded: ${recorded} — ${safeInline(ruling.reason)}${provenance}`,
     ruling.by === null ? "By nax bot" : `By @${ruling.by}`,
     CHANGE_INSTRUCTION,
   ].join("\n");
@@ -130,12 +140,14 @@ export function parseRulingEcho(key: string, body: string): PrRuling | null {
     return null;
   if ((disposition === "fixed") !== (line[2] !== undefined)) return null;
   if (author !== "By nax bot" && !login) return null;
+  const caller = CALLER_SUFFIX.exec(line[3]);
   return {
     itemKey: keyParts?.[2] ?? "",
     itemId: item[1],
     disposition,
-    reason: line[3],
+    reason: caller?.[1] ?? line[3],
     by: login ?? null,
+    ...(caller?.[2] === undefined ? {} : { callerBy: caller[2] }),
     ...(line[2] === undefined ? {} : { sha: line[2] }),
   };
 }

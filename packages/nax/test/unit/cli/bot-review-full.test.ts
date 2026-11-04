@@ -82,3 +82,75 @@ describe("nax bot review --full", () => {
     expect(stderr).toEqual([]);
   });
 });
+
+describe("nax bot review --rulings", () => {
+  const file = { version: 1 as const, headSha: "a".repeat(40), rulings: [] };
+  const loadCallerRulings = mock(async (_path: string) => file);
+
+  async function runWith(logs: string[], ...args: string[]): Promise<void> {
+    const program = new Command().exitOverride();
+    registerBotCommand(program, {
+      ..._botCliDeps,
+      initLogger: initialize,
+      log: (message) => {
+        logs.push(message);
+      },
+      logErr: (message) => {
+        stderr.push(message);
+      },
+      exit: (code) => {
+        exits.push(code);
+      },
+      isInteractive: () => false,
+      runBotReview: review,
+      loadCallerRulings,
+    });
+    await program.parseAsync(["bot", ...args], { from: "user" });
+  }
+
+  test("loads the file and forwards it to the review", async () => {
+    await runWith([], "review", "12", "--rulings", "/tmp/r.json");
+    expect(loadCallerRulings).toHaveBeenCalledWith("/tmp/r.json");
+    expect(reviewInput().callerRulings).toEqual(file);
+  });
+  test("omits callerRulings without the flag", async () => {
+    await runWith([], "review", "12");
+    expect(Object.hasOwn(reviewInput(), "callerRulings")).toBe(false);
+  });
+  test("prints a one-line summary of what the file did", async () => {
+    review.mockImplementationOnce(async () => ({
+      ...posted,
+      callerRulings: {
+        applied: [
+          { item: "A", disposition: "waived" },
+          { item: "B", disposition: "confirmed" },
+        ],
+        skipped: [{ item: "C", reason: "stale-key" }],
+      },
+    }));
+    const logs: string[] = [];
+    await runWith(logs, "review", "12", "--rulings", "/tmp/r.json");
+    expect(logs).toContain("nax bot review: caller rulings — 2 applied, 1 skipped");
+  });
+  test("reports an ignored file", async () => {
+    review.mockImplementationOnce(async () => ({
+      ...posted,
+      callerRulings: { applied: [], skipped: [], ignored: "untrusted-pr" },
+    }));
+    const logs: string[] = [];
+    await runWith(logs, "review", "12", "--rulings", "/tmp/r.json");
+    expect(logs).toContain("nax bot review: caller rulings — ignored (untrusted-pr)");
+  });
+  test("an invalid file fails the command before any review", async () => {
+    loadCallerRulings.mockImplementationOnce(async () => {
+      throw new Error("[bot] Invalid rulings file /tmp/r.json: bad");
+    });
+    await runWith([], "review", "12", "--rulings", "/tmp/r.json");
+    expect(review).not.toHaveBeenCalled();
+    expect(exits).toEqual([1]);
+    expect(stderr[0]).toContain("Invalid rulings file");
+  });
+  test("bot fix does not take --rulings", async () => {
+    await expect(run("fix", "12", "--rulings", "/tmp/r.json")).rejects.toThrow(/unknown option/i);
+  });
+});
