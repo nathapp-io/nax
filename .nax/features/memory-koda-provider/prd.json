@@ -3,7 +3,7 @@
   "feature": "memory-koda-provider",
   "branchName": "feat/memory-koda-provider",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-04T06:55:06.459Z",
+  "updatedAt": "2026-11-04T07:18:03.006Z",
   "userStories": [
     {
       "id": "US-001",
@@ -180,14 +180,17 @@
         "reconciliation"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Pure but stateful per-slug reconciliation must distinguish stale tombstones, matching supersessions and page-local unknown ids; decision merging adds a separate incremental algorithm."
+        "reasoning": "Pure but stateful per-slug reconciliation must distinguish stale tombstones, matching supersessions and page-local unknown ids; decision merging adds a separate incremental algorithm.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/types.ts",
@@ -209,7 +212,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "29de442495e95b85a51d82306b013f6fc121a210"
     },
     {
       "id": "US-004",
