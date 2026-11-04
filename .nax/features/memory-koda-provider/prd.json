@@ -3,7 +3,7 @@
   "feature": "memory-koda-provider",
   "branchName": "feat/memory-koda-provider",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-04T05:56:29.937Z",
+  "updatedAt": "2026-11-04T06:25:38.705Z",
   "userStories": [
     {
       "id": "US-001",
@@ -35,14 +35,17 @@
         "security"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Additive schema/type/barrel changes follow existing patterns, but URL policy protects credential transport and requires strict security isolation."
+        "reasoning": "Additive schema/type/barrel changes follow existing patterns, but URL policy protects credential transport and requires strict security isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas-memory.ts",
@@ -74,7 +77,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "809014c9b76fc94597cadcfde280766ca0e32647"
     },
     {
       "id": "US-002",
@@ -129,7 +136,10 @@
         "When a request settles before its deadline, no later timeout rejection is emitted."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -192,7 +202,10 @@
         "A superseded row whose id differs from the current note id does not allow a subsequent stale tombstone to delete that current note."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -240,7 +253,10 @@
         "When rename fails, the previously persisted koda-approvals.json remains unchanged."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -308,7 +324,10 @@
         "When a save answers 202 while request.writeMode is direct, push returns pending and records its approval."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -376,7 +395,10 @@
         "When a search response contains an invalid R2 record between valid records, the invalid hit is omitted while valid hits retain their rank order and original-position scores."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -437,7 +459,10 @@
         "A user pull sends no scope query parameter to the export route."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -494,7 +519,10 @@
         "An executed approval whose row is not yet visible in the settled feed is dropped without synthesizing a note."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-009",
@@ -560,7 +588,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-010",
@@ -649,7 +680,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-011",
@@ -721,7 +755,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-012",
@@ -782,7 +819,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Repository exploration: codebase-memory MCP is unavailable in this session, so findings were verified by direct file reads and text search rooted at /Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax. This is an enhancement to an already shipped memory subsystem, not greenfield. The authoritative feature spec is .nax/features/memory-koda-provider/spec.md:1. All twelve stories modify only packages/nax; packages/nax-agent is read-only contract context. No koda repository changes, package version changes, new dependencies, or nax-agent API changes are needed.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:151-159 documents the 600-line hard source limit, 800-line hard test limit, short functions, named constants, stage-prefixed NaxError and injectable _deps for external operations. packages/nax/package.json:49 defines the wrapped test runner, :55 the targeted unit command, and :80 the check:all gate. Use Bun-native I/O patterns in nax, bun:test, shared @test/helpers, temporary NAX_GLOBAL_CONFIG_DIR isolation, and restore dependency seams/environment after tests. Never run bare bun test or bun run nax. Coverage is a separate CI gate; do not run test:coverage inside NAX_SANDBOXED=1. Provider, config, and CLI stories must create behavior alongside tests; there is no test-only story. Security-related stories use strict three-session-tdd even when their complexity is medium.\n\nConfig impact: packages/nax/src/config/schemas-memory.ts:65 currently accepts only local/mcp; :96 memoryConfigOf is the defaults accessor; :102 defines the partially checked cross-section input; :121 implements four independent MCP validations. Retain those rules and defaults while adding an optional strict koda block and independent missing-url/missing-project issues. packages/nax/src/config/schemas.ts:528 owns the memory default and :594 invokes validateMemoryProvider, so no second schema/default source is needed. packages/nax/src/config/runtime-types-memory.ts:32 is the handwritten MemoryConfig union and must stay aligned with the schema. packages/nax/src/config/index.ts:56 and :141-149 are the export sites. packages/nax/src/config/schemas-model.ts:184 exposes isRemotePlainHttp with loopback exceptions declared at :179; reuse it, rather than inventing another host classifier. packages/nax/test/unit/config/schemas-memory.test.ts:47 and :293 deliberately reject koda today and must be replaced, not left as contradictory regressions; :240 pins the existing MCP proposal refusal, which stays.\n\nCredentials and layer trust: packages/nax/src/config/global-only-keys.ts:6 currently rejects trust/auth and returns its input. Extend it to reject nested memory.koda.url and headers whenever set in a non-global layer, including empty header maps. Existing call sites cover project (loader.ts:139), CLI (:197), package (:346 and :461), and profile (profile.ts:112); do not add a second layer policy. Existing tests include test/unit/config/global-only-keys.test.ts:83 and loader-auth-global-only.test.ts. The header masker at packages/nax/src/cli/config-profile.ts:147-175 already masks every value of any headers map, including Authorization, so no masking change is required. packages/nax/src/cli/config-descriptions.ts:455-475 is the memory descriptions block; it currently mentions only local/mcp. Credentials remain literal global headers; preserve opaque values and never emit them into transport errors, context, logs, or generated project config. A remote HTTP API is rejected because credentials travel with every request.\n\nProvider contract: packages/nax-agent/src/memory/provider-types.ts:14-45 supplies MemoryWriteRequest, MemoryPushResult, MemoryPage, and MemoryProvider. Its error contract (:8-10) makes only MEMORY_PUSH_REJECTED permanent; other throws remain queued. MemoryNote/MemoryDecision/MemoryHit and vocabulary/limits are in packages/nax-agent/src/memory/types.ts:9-73 and :88-110. The public entry supplies the types, MEMORY_SLUG_RE, MEMORY_SOURCE_MAX_CHARS, MEMORY_PROBE_TIMEOUT_MS=2000 and MEMORY_OP_TIMEOUT_MS=10000, but not MEMORY_NOTE_TYPES; declare the typed KODA_NOTE_TYPES locally, as NOTE_TYPES does in packages/nax/src/cli/memory-cli-deps.ts:40. The new HTTP client is a small injected fetch adapter, not an MCP client or LLM client. projects/<slug> routes use the project slug; save/retire bodies use a memoised string project id from GET projects/<slug>. Clear failed project-id attempts rather than caching invalid results. Reachability must probe the project write-mode route, not health, because membership matters. koda owns write mode: do not send request.writeMode, and map 201/202 independently of local writeMode. sourceId=clientId provides identical-restatement replay safety, not a general idempotency API.\n\nExisting implementation patterns: packages/nax/src/memory/mcp-provider.ts:44 defines the permanent rejection pattern and :51-159 implements the existing remote provider. packages/nax/src/plugins/builtin/reporter-shared/post-json.ts:9 is an injectable fetch seam and :48-77 demonstrates header-safe transport logging, but its swallow-on-error semantics are not the new client's contract. packages/nax/src/memory/mcp-id-map.ts:51 provides file seams, :109-123 uses temporary-file-plus-rename, and :132-165 serialises mutations and rereads disk. Follow this persistence style for versioned koda-approvals.json, preserving record order and replacing by (scope, slug). Invalid/unreadable approval files warn once per instance and read as empty. Unlike MCP ids, koda approvals for both scopes live in the PROJECT mirror directory.\n\nPull correctness is the highest-risk algorithm: packages/nax-agent/src/memory/sync.ts:316-340 applies each page by slug, not by remote id; :332-333 deletes a tombstoned slug unconditionally. Therefore a raw stale predecessor tombstone can erase a newer note unless the provider reconciles each feed page first. Read distinct valid NOTE slug ids from the mirror before reconciling. Apply R1-R6 in feed order, with separate unknown-current-id state after a matching superseded predecessor, emit at most one note per slug in code-point order, and never persist page-local reconciliation state across pages. packages/nax-agent/src/memory/sync.ts:355-369 checkpoint each applied page and retain the previous cursor when a pull fails. Each scope has an independent cursor although koda returns a combined feed with no scope query. Validate items array and boolean hasMore before returning a page. User pages must not return decisions or project approval resolutions. Merge DECISION rows by id only on project pages, rereading decisions between pages, sorting updatedAt descending then id, limiting to 500, and returning undefined when no valid decision rows occur. packages/nax-agent/src/memory/store.ts:141-146 exposes the required reads and writeDecisions; do not modify it. Note/decision row validation skips malformed records and emits one counted warn per page. Existing mcp-results.ts:41-83 is a parser pattern, not the target koda wire format.\n\nProposal lifecycle: a 202 save writes no koda row, so recording approvalId/scope/slug/clientId is necessary to resolve rejection. Resolve at most 20 oldest same-scope approvals only on that scope's last page. Pending/approved remain, executed/404 drop without restoration, terminal rejected/expired/cancelled/failed drop only after any required restoring lookup succeeds. Restore only a still-pending mirror note whose id matches clientId and whose slug is absent from the page: use the exact active remote row, or the entire pending note with status rejected as the tombstone. A failed restoring lookup keeps the record and warns. koda's five-second settle window means executed may drop before the row appears; eventual feed delivery is intended. An unchanged active row may overwrite a pending edit before proposal resolution; do not attempt to preserve that edit. The lookup uses a prefix subject query but must verify exact subject and scope, paginate up to ten pages, and treat lookup/project lookup failures as transient; only the RETIRE request maps 404/409 to deleted.\n\nHost composition: packages/nax/src/memory/host.ts:148-180 exposes _memoryHostDeps; :243-265 composes MCP; :268-279 builds store/outbox and currently chooses MCP or local. Add a third branch using the same store/outbox, no new runtime resource owner, and fail on bypassed missing koda config at creation. :377-383 already provides no-op idempotent close without a pool; :466-498 exposes the unchanged host API. packages/nax/src/memory/host-remote-search.ts:27-57 already invokes provider.search for project/unscoped requests, catches failures with one warn, and :63-72 merges remote hits before local slugs; do not modify it to add user remote search. packages/nax/src/memory/index.ts:8-20 is the barrel to extend. Existing test/unit/memory/host-mcp.test.ts:100-128 demonstrates temp global-dir isolation, factory stubs and restoration; use it to test the new branch, plus real-client/store integration. Consumers remain compatible: src/cli/chat.ts:30, src/chat/host-memory.ts:26, src/chat/resources.ts:2, src/tui/chat/slash-commands.ts:17, and src/execution/lifecycle/run-setup.ts:36 import the host/barrel and need no feature changes.\n\nCLI integration: packages/nax/src/cli/memory.ts:116 reports status via host.status and :176-199 registers read/write groups; register the new admin group afterward so link/reset follow approve. packages/nax/src/cli/memory-cli-deps.ts:63-72 defines MemoryCliDeps, :161-165 resolves root/config, :193-213 closes hosts in finally, and :236-243 translates thrown errors to Error: <message> and exit 1. Do not create a memory-admin -> memory registrar import cycle; use shared deps plumbing. Link has a special ordering constraint: validate slug, resolve root and parse raw project JSON BEFORE merged-config load, then check url/relink queue, probe, atomically rewrite only raw project data, and only afterward delete the old project mirror for a forced DIFFERENT-project relink. Loading merged config before parsing would lose the required invalid-JSON message. Persisting merged data would leak global URL/headers and violate US-012. A disabled current host skips queue/removal steps, but not the new project's probe/config write. Same-project linking, even with force, never clears anything. Link from local/mcp preserves existing mirror notes and performs no migration.\n\nReset must preserve koda-approvals.json byte-for-byte and never touch userDir. Reject non-koda ids and any queued/rejected writes before deletion; remove only entries listed under projectDir, then sync once. packages/nax/src/cli/memory-read.ts:74-84 formats sync output but normally exits 0 for unreachable/locked; reset intentionally differs and exits 0 ONLY for synced. test/unit/cli/memory-read.test.ts:262 pins disabled errors, :269 locks the existing locked exit behavior, and :293-309 asserts registration names. Four registration assertions in memory-read, memory-forget, memory-save and memory-smoke-fixes tests must gain link in US-010 and reset in US-011.\n\nImplementation order is the binding DAG, with independent config/HTTP/mapping/approvals foundations first, then save, forget/search, pull, proposal resolution, host and CLI. US-012 depends only on US-001 and supplies the global-only credential enforcement independently; do not silently change dependencies to serialize it after link. Intermediate US-005 intentionally has inert pull/search until its dependency successors implement them. New files and tests are explicitly assigned through expectedFiles; upstream-created files are context, not duplicate outputs. Tests exercise real createKodaClient with fetch stubbed, real approval files, and real mapping through the provider rather than mocking the seam under test. Two targeted syncMemory integration regressions prove stale tombstones cannot erase successors and rejected saves leave no pending note.\n\nCompatibility and rollout: existing local/mcp behavior and memory defaults remain unchanged. Deployment needs koda main c51cf74e (#376-#380 contract); old servers are not supported by a degraded mode. Users configure global URL/headers, then run nax memory link <slug>. Existing local/mcp notes are not exported. Forced relink clears project cursors/approvals only after a safe config write and delivery check; reset preserves pending proposal records to permit later resolution. No provider-local retry/backoff: transient transport/auth/lookup failures retain the outbox entry until later sync, while 400/403/413/422 save/retire and save 409 become permanent refusals so later writes can drain. Invalid feed structure must not advance the checkpoint. Residual deliberately deferred risks include cross-process reset/relink races, page-boundary supersession/retirement reconciliation, duplicate approval requests after lost 202 responses, and user-mirror pending records abandoned by forced relink. The supplied wire save body contains nine keys; maintain that exact shape and no extra writeMode. No test commands were executed while drafting; only repository inspection and PRD output are performed.\n\nSecond-pass manual fidelity audit: all 196 numbered source criteria in spec.md:770-999 remain at their original story/ordinal positions (US-001 1-16, US-002 1-16, US-003 1-23, US-004 1-10, US-005 1-19, US-006 1-24, US-007 1-16, US-008 1-16, US-009 1-14, US-010 1-20, US-011 1-12, US-012 1-10), including trailing regression qualifiers. Failure-table coverage and explicit backward-compatibility criteria bring the total to 215; no story exceeds 24 criteria. The rejected-approval drop criterion is qualified by the specified restoring-lookup failure exception, preventing an unconditional drop from contradicting retention on lookup failure. Existing local/MCP config defaults, provider selection, command registration order and global-only trust/auth refusals now have explicit regression assertions. The link registration assertion uses the first-eight prefix, so it remains true after US-011 appends reset. All 19 feature exclusions remain verbatim; nearby exclusions are echoed into relevant scope sections. All spec-recommended context files are included, within five paths per story, and created files remain outputs rather than same-story context. The binding story ids, workdirs and dependency arrays are unchanged. US-005, US-006 and US-009 use medium complexity because their modules follow existing provider/composition patterns; strict security TDD remains mandatory for their credential-related paths. This audit was manual: no executable JSON validator or shell is exposed in the current tool set.",
