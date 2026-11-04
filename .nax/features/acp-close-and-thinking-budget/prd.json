@@ -3,7 +3,7 @@
   "feature": "acp-close-and-thinking-budget",
   "branchName": "feat/acp-close-and-thinking-budget",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-04T03:13:46.052Z",
+  "updatedAt": "2026-11-04T03:22:13.103Z",
   "userStories": [
     {
       "id": "US-001",
@@ -216,14 +216,17 @@
         "api"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Five existing source files already expose the validator and compat-merge seams; adding optional metadata, ordered guards at three known call sites and one local cast helper follows established patterns without changing authentication or introducing an architecture."
+        "reasoning": "Five existing source files already expose the validator and compat-merge seams; adding optional metadata, ordered guards at three known call sites and one local cast helper follows established patterns without changing authentication or introducing an architecture.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-ai/src/providers/override-model.ts",
@@ -246,7 +249,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "2a1bd7d48a33d41c1dd6875ed9d08e62ea43ae55"
     },
     {
       "id": "US-004",
