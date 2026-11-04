@@ -60,7 +60,11 @@ describe("buildNativeClient thinking budgets", () => {
   test("AC-4 sends the model-owned low budget on the actual wire", async () => {
     process.env.STRATA_KEY = "k-wire";
     const bodies: unknown[] = [];
-    globalThis.fetch = mockFetch(async (_input, init) => {
+    const requests: { url: string; authorization: string | null }[] = [];
+    globalThis.fetch = mockFetch(async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+      requests.push({ url, authorization: headers.get("Authorization") });
       bodies.push(JSON.parse(String(init?.body)));
       return new Response(JSON.stringify({ error: { message: "stop" } }), {
         status: 401,
@@ -69,12 +73,17 @@ describe("buildNativeClient thinking budgets", () => {
     });
     const client = await buildNativeClient([strata()], { transportRetries: 0 });
     const model = await client.model("strata", "qwen3.8-flash");
+    // nax-ai resolves its built dist entry. If metadata is present here but
+    // absent on the wire, rebuild nax-ai before diagnosing the mapper.
+    expect(model.thinkingBudgetField).toBe("reasoning_budget_tokens");
+    expect(model.thinkingBudgets).toEqual({ low: 2048 });
     for await (const _event of client.stream(model, {
       messages: [{ role: "user", content: "hi" }],
       thinking: "low",
     })) {
       // The intercepted 401 terminates the stream; the request is the contract.
     }
+    expect(requests).toEqual([{ url: "http://127.0.0.1:18080/v1/chat/completions", authorization: "Bearer k-wire" }]);
     expect(bodies).toHaveLength(1);
     expect(bodies[0]).toHaveProperty("reasoning_budget_tokens", 2048);
   });
