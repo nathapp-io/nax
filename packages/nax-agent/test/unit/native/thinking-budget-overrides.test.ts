@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
+import { readFile, stat } from "node:fs/promises";
 import type { CatalogModelOverride, ProviderCatalogOverride } from "#src/config/catalog-overrides";
+import { errorMessage } from "#src/infra/errors";
 import { buildNativeClient } from "#src/native/client";
 import { toProviderOverrides } from "#src/native/models";
 import { mockFetch } from "#test/helpers/index";
@@ -23,6 +26,36 @@ function strata(thinkingBudgetField = "reasoning_budget_tokens") {
       } satisfies CatalogModelOverride,
     ],
   } satisfies ProviderCatalogOverride;
+}
+
+async function dependencyBuildState() {
+  const entry = import.meta.resolve("@nathapp/nax-ai");
+  const paths = [
+    "../package.json",
+    "client.js",
+    "protocols/pi-client.js",
+    "../src/client.ts",
+    "../src/protocols/pi-client.ts",
+  ];
+  const files = await Promise.all(
+    paths.map(async (path) => {
+      const url = new URL(path, entry);
+      try {
+        const [content, info] = await Promise.all([readFile(url, "utf8"), stat(url)]);
+        return {
+          path: url.href,
+          modified: info.mtime.toISOString(),
+          sha256: createHash("sha256").update(content).digest("hex"),
+          referencesThinkingBudgets: content.includes("thinkingBudgets"),
+        };
+      } catch (error) {
+        // A published dependency need not include source. Diagnostics must not
+        // replace the original wire failure when a fingerprint is unavailable.
+        return { path: url.href, unavailable: errorMessage(error) };
+      }
+    }),
+  );
+  return { entry, runtime: process.version, files };
 }
 
 const originalFetch = globalThis.fetch;
@@ -59,6 +92,7 @@ describe("toProviderOverrides thinking budgets", () => {
 describe("buildNativeClient thinking budgets", () => {
   test("AC-4 sends the model-owned low budget on the actual wire", async () => {
     process.env.STRATA_KEY = "k-wire";
+    const dependency = await dependencyBuildState();
     const bodies: unknown[] = [];
     const requests: { url: string; authorization: string | null }[] = [];
     globalThis.fetch = mockFetch(async (input, init) => {
@@ -73,10 +107,12 @@ describe("buildNativeClient thinking budgets", () => {
     });
     const client = await buildNativeClient([strata()], { transportRetries: 0 });
     const model = await client.model("strata", "qwen3.8-flash");
-    // nax-ai resolves its built dist entry. If metadata is present here but
-    // absent on the wire, rebuild nax-ai before diagnosing the mapper.
-    expect(model.thinkingBudgetField).toBe("reasoning_budget_tokens");
-    expect(model.thinkingBudgets).toEqual({ low: 2048 });
+    // Preserve build fingerprints in assertion output before anyone rebuilds
+    // the dependency and destroys evidence of a stale artifact.
+    const declaration = { thinkingBudgetField: model.thinkingBudgetField, thinkingBudgets: model.thinkingBudgets };
+    const buildContext = JSON.stringify({ dependency, declaration });
+    expect(model.thinkingBudgetField, buildContext).toBe("reasoning_budget_tokens");
+    expect(model.thinkingBudgets, buildContext).toEqual({ low: 2048 });
     for await (const _event of client.stream(model, {
       messages: [{ role: "user", content: "hi" }],
       thinking: "low",
@@ -84,8 +120,10 @@ describe("buildNativeClient thinking budgets", () => {
       // The intercepted 401 terminates the stream; the request is the contract.
     }
     expect(requests).toEqual([{ url: "http://127.0.0.1:18080/v1/chat/completions", authorization: "Bearer k-wire" }]);
-    expect(bodies).toHaveLength(1);
-    expect(bodies[0]).toHaveProperty("reasoning_budget_tokens", 2048);
+    // Only synthetic request JSON and URLs are captured, never auth headers.
+    const wireContext = JSON.stringify({ dependency, declaration, bodies, urls: requests.map(({ url }) => url) });
+    expect(bodies, wireContext).toHaveLength(1);
+    expect(bodies[0], wireContext).toHaveProperty("reasoning_budget_tokens", 2048);
   });
 
   test("AC-5 preserves invalid declarations for upstream validation", async () => {
