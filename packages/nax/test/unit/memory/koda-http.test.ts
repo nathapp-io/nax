@@ -359,6 +359,30 @@ describe("createKodaClient — header safety", () => {
 
     expect(JSON.stringify(error.context)).not.toContain("s3cr3t-key");
   });
+
+  test("an Error whose name carries the credential does not leak it through the redacted type (F3)", async () => {
+    const leakyName = new TypeError("socket closed");
+    leakyName.name = "Bearer s3cr3t-key";
+    stubFetch(() => Promise.reject(leakyName));
+
+    const error = await rejection(makeClient({ Authorization: "Bearer s3cr3t-key" }).get("projects/rs"));
+
+    expect(error.code).toBe("MEMORY_KODA_UNREACHABLE");
+    expect(error.message).not.toContain("s3cr3t-key");
+    expect(JSON.stringify(error.context)).not.toContain("s3cr3t-key");
+    expect(error.context?.cause).toMatchObject({ redacted: true, type: "[redacted]" });
+    expect(JSON.stringify(error.context?.cause)).toContain("socket closed");
+  });
+
+  test("an Error whose name carries only the bare token does not leak it through the redacted type (F3)", async () => {
+    const leakyName = new TypeError("socket closed");
+    leakyName.name = "s3cr3t-key";
+    stubFetch(() => Promise.reject(leakyName));
+
+    const error = await rejection(makeClient({ Authorization: "Bearer s3cr3t-key" }).get("projects/rs"));
+
+    expect(JSON.stringify(error.context)).not.toContain("s3cr3t-key");
+  });
 });
 
 describe("MEMORY_KODA_REQUEST_TIMEOUT_MS", () => {

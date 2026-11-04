@@ -165,12 +165,20 @@ function causeText(cause: unknown): string {
  * header value. Context stays useful for a safe cause — a caller can still tell
  * a dropped socket from a DNS failure by identity — while a transport that
  * quotes the key cannot smuggle it into a log line through `context.cause`.
+ *
+ * Every string the stand-in carries is redacted, `type` included: an `Error`'s
+ * name is transport-supplied text like its message, so a transport that names
+ * itself after the credential must not reappear there either.
  */
 function safeCause(cause: unknown, headers: CreateKodaClientInput["headers"]): unknown {
   const text = causeText(cause);
   if (!carriesSecret(text, headers)) return cause;
   const kind = cause instanceof Error ? cause.name : typeof cause;
-  return { redacted: true, type: kind, detail: redact(text.slice(0, MAX_CAUSE_TEXT_CHARS), headers) };
+  return {
+    redacted: true,
+    type: redact(kind, headers),
+    detail: redact(text.slice(0, MAX_CAUSE_TEXT_CHARS), headers),
+  };
 }
 
 /** The configured headers plus `accept`; a post adds `content-type` and the JSON-encoded body. */
