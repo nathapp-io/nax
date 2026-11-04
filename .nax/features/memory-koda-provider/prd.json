@@ -3,7 +3,7 @@
   "feature": "memory-koda-provider",
   "branchName": "feat/memory-koda-provider",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-04T09:06:15.103Z",
+  "updatedAt": "2026-11-04T09:28:56.770Z",
   "userStories": [
     {
       "id": "US-001",
@@ -586,14 +586,17 @@
         "US-001",
         "US-008"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "The existing composeMcp branch, dependency seam and no-pool close behavior make the host/barrel extension standard composition; forwarding authentication headers preserves the strict security override."
+        "reasoning": "The existing composeMcp branch, dependency seam and no-pool close behavior make the host/barrel extension standard composition; forwarding authentication headers preserves the strict security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/host.ts",
@@ -619,7 +622,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "bab761a931068dff1ce1ecf900922284c29323bc"
     },
     {
       "id": "US-010",
