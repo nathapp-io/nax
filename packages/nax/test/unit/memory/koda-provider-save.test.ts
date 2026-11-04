@@ -381,22 +381,6 @@ describe("createKodaMemoryProvider — save delivery", () => {
     expect(error.code).toBe("MEMORY_PUSH_REJECTED");
     expect(routesOf()).toEqual([]);
   });
-
-  test("a forget is left transient for the run that can deliver it", async () => {
-    const forget: MemoryWriteRequest = {
-      kind: "forget",
-      clientId: "c5",
-      scope: "project",
-      slug: "replay-budget",
-      writeMode: "direct",
-      reason: "stale",
-    };
-
-    const error = await rejection(makeProvider().push(forget));
-
-    expect(isMemoryPushRejected(error)).toBe(false);
-    expect(routesOf()).toEqual([]);
-  });
 });
 
 describe("createKodaMemoryProvider — refusals and transient failures", () => {

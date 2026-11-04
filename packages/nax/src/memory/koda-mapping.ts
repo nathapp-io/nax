@@ -26,10 +26,23 @@
  * range) before it replaces anything: the store writes what it is given, so one
  * it would later refuse would take the decision it replaced with it.
  *
+ * `kodaHitOf` maps one row of a full-text answer to a keyword-search hit, and is
+ * held to the same R2 check: a record the mirror could not hold a note for is
+ * dropped rather than ranked. Its `score` is positional, because koda answers a
+ * query in its own rank order and nax must not re-rank what the search index
+ * already ranked.
+ *
  * Internal to `src/memory/`: the pull composes it, the barrel re-exports it.
  */
 
-import type { MemoryDecision, MemoryNote, MemoryNoteStatus, MemoryNoteType, MemoryScope } from "@nathapp/nax-agent";
+import type {
+  MemoryDecision,
+  MemoryHit,
+  MemoryNote,
+  MemoryNoteStatus,
+  MemoryNoteType,
+  MemoryScope,
+} from "@nathapp/nax-agent";
 import { MEMORY_SLUG_RE, MEMORY_SOURCE_MAX_CHARS } from "@nathapp/nax-agent";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
@@ -382,4 +395,43 @@ export function mergeKodaDecisions(
   }
   if (!touched) return { decisions: undefined, skipped };
   return { decisions: orderedDecisions(merged.values()), skipped };
+}
+
+/** The characters of a row's `object` a hit's snippet keeps: a hit is one index line, not a body. */
+const HIT_SNIPPET_CHARS = 200;
+
+/** True when `scope` names a mirror a hit can be filed under. */
+function isMemoryScope(scope: string): scope is MemoryScope {
+  return scope === "project" || scope === "user";
+}
+
+/** The body as one line, cut to what an index line holds. */
+function snippetOf(body: string): string {
+  return body.replace(WHITESPACE_RUN, " ").trim().slice(0, HIT_SNIPPET_CHARS);
+}
+
+/**
+ * One search record as a keyword-search hit, or `null` when R2 says it is not a note.
+ *
+ * koda answers a full-text query in its own rank order, best first, so the `score` is
+ * positional: the first of `total` records scores `total`, the last scores `1`. The
+ * scope comes from the record because a hit is filed where the note lives, and a record
+ * naming a scope no mirror has is dropped like any other row the mirror cannot hold.
+ *
+ * @param record - One record of the search answer
+ * @param index - Its position in that answer
+ * @param total - How many records the answer carried
+ */
+export function kodaHitOf(record: KodaMemoryItem, index: number, total: number): MemoryHit | null {
+  const note = readNoteRow(record);
+  if (note === undefined || !isMemoryScope(record.scope)) return null;
+  return {
+    slug: note.slug,
+    scope: record.scope,
+    type: note.type,
+    description: note.description,
+    status: STATUS_ACTIVE,
+    score: total - index,
+    snippet: snippetOf(note.body),
+  };
 }

@@ -3,13 +3,14 @@
  *
  * koda owns the memory a project's agents share; the mirror stays the store every
  * surface reads. This module is the seam between them: it answers whether koda can
- * be written to, and it hands a queued save to koda's `POST memory`.
+ * be written to, hands a queued save to koda's `POST memory`, retires the row a
+ * forget names, and asks koda's full-text search what a query matches.
  *
  * Every path is relative to the configured API root (`memory.koda.url`, which
  * includes koda's global prefix) and both routes this story uses address the
  * project differently: `GET projects/<slug>` takes the **slug**, `POST memory`
  * takes the project **id**. The id is learned once and memoised, and a lookup that
- * failed is *not* memoised — the next save asks again rather than repeating a
+ * failed is *not* memoised — the next write asks again rather than repeating a
  * failure for the life of the provider.
  *
  * Write mode is koda's, not nax's: the request's `writeMode` is never sent. koda
@@ -28,14 +29,21 @@
  * drain stops at the first transient failure, so a transient `403` would block
  * every later write behind it.
  *
- * US-005 composes the shell: `pull` answers the empty finished page and `search`
- * answers nothing until US-007 and US-006 replace them.
+ * A forget reads the classification differently, because it names a row that may
+ * already be gone: its retire resolves `404` and `409` as `deleted`, and a slug
+ * koda holds no active row for resolves `deleted` without a retire at all
+ * (`koda-lookup.ts`). A `404` from the lookup or from `GET projects/<slug>` is not
+ * that fact, so it stays transient like any other failure of those two requests.
+ *
+ * US-005 composes the shell and US-006 the forget and the search; `pull` answers
+ * the empty finished page until US-007 replaces it.
  */
 
 import type {
   MemoryDecision,
   MemoryHit,
   MemoryNote,
+  MemoryNoteStatus,
   MemoryPage,
   MemoryProvider,
   MemoryPushResult,
@@ -45,6 +53,8 @@ import type {
 import { NaxError } from "@/errors";
 import type { KodaApprovals } from "./koda-approvals";
 import { type KodaClient, type KodaResponse, kodaStatusOf } from "./koda-http";
+import { findActiveKodaNote } from "./koda-lookup";
+import { type KodaMemoryItem, kodaHitOf, parseKodaItems } from "./koda-mapping";
 import type { MemoryLogger } from "./paths";
 
 const STAGE = "memory";
@@ -63,11 +73,23 @@ export const MEMORY_KODA_APPROVAL_CHECKS_MAX = 20;
 /** The write modes koda's probe answers with when the calling agent may write. */
 const KODA_WRITE_MODES: ReadonlySet<string> = new Set(["direct", "proposal"]);
 
-/** The save statuses koda answers with when this write will never be accepted. */
-const REJECTED_SAVE_STATUSES: ReadonlySet<number> = new Set([400, 403, 409, 413, 422]);
+/** The write statuses koda answers with when this write will never be accepted. */
+const REJECTED_WRITE_STATUSES: ReadonlySet<number> = new Set([400, 403, 409, 413, 422]);
+
+/** The retire statuses that say the row is no longer active: the note is gone, or going. */
+const RETIRED_WRITE_STATUSES: ReadonlySet<number> = new Set([404, 409]);
+
+/** What a write koda refused is, for the refusal's message. */
+type WriteAction = "save" | "forget";
 
 /** The kind every save sends: koda's own note kind. */
 const KODA_SAVE_KIND = "NOTE";
+
+/** The longest query text koda is asked for: a query is a phrase, not a document. */
+const SEARCH_TEXT_MAX_CHARS = 100;
+
+/** The largest page koda's search honours, whatever limit the caller asks for. */
+const SEARCH_SIZE_MAX = 100;
 
 export interface CreateKodaMemoryProviderInput {
   readonly client: KodaClient;
@@ -99,22 +121,24 @@ function badResponse(project: string, detail: string, status: number): NaxError 
   });
 }
 
-/** The refusal a save koda will never accept is thrown as, quoting koda's own answer. */
-function refusedSave(project: string, slug: string, cause: NaxError): NaxError {
+/** The refusal a write koda will never accept is thrown as, quoting koda's own answer. */
+function refusedWrite(project: string, slug: string, action: WriteAction, cause: NaxError): NaxError {
   return new NaxError(
-    `[memory] koda refused the save for "${slug}" in project "${project}": ${cause.message}`,
+    `[memory] koda refused the ${action} for "${slug}" in project "${project}": ${cause.message}`,
     "MEMORY_PUSH_REJECTED",
     { stage: STAGE, project, slug, status: kodaStatusOf(cause), cause },
   );
 }
 
-/** The write this story cannot deliver yet, as a transient failure so the outbox keeps the entry. */
-function undeliverableWrite(project: string, request: MemoryWriteRequest): NaxError {
-  return new NaxError(
-    `[memory] koda provider cannot deliver a ${request.kind} for "${request.slug}" yet`,
-    "MEMORY_KODA_WRITE_UNSUPPORTED",
-    { stage: STAGE, project, kind: request.kind, slug: request.slug, retryable: true },
-  );
+/**
+ * The retire body: the project id, and the reason unless the forget carried none.
+ *
+ * An absent reason is omitted rather than sent empty, so koda records a retirement with
+ * no justification instead of one justifying nothing.
+ */
+function retireBody(projectId: string, reason: string | undefined): Readonly<Record<string, string>> {
+  if (reason === undefined || reason === "") return { projectId };
+  return { projectId, reason };
 }
 
 /** A save without its note, which is a request no provider could deliver: permanent, not transient. */
@@ -216,8 +240,8 @@ export function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): 
       return await client.post("memory", body);
     } catch (error) {
       const status = kodaStatusOf(error);
-      if (error instanceof NaxError && status !== undefined && REJECTED_SAVE_STATUSES.has(status)) {
-        throw refusedSave(project, slug, error);
+      if (error instanceof NaxError && status !== undefined && REJECTED_WRITE_STATUSES.has(status)) {
+        throw refusedWrite(project, slug, "save", error);
       }
       throw error;
     }
@@ -230,6 +254,48 @@ export function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): 
       throw badResponse(project, `POST memory answered a save for "${slug}" without an id`, answer.status);
     }
     return id;
+  }
+
+  /**
+   * A forget: find the row the slug is active as, then retire it.
+   *
+   * A slug koda holds no active row for is already forgotten, so the answer is `deleted`
+   * and no second request is made — the common case of forgetting a note that only ever
+   * lived in the mirror. Only a found row needs the project id and the retire, which is
+   * why the id is looked up here rather than up front.
+   */
+  const forget = async (request: MemoryWriteRequest): Promise<MemoryPushResult> => {
+    const found = await findActiveKodaNote({ client, project, scope: request.scope, slug: request.slug });
+    if (found === null) return { id: request.clientId, status: "deleted" };
+    const projectIdValue = await projectId();
+    return { id: request.clientId, status: await retire(found.id, projectIdValue, request) };
+  };
+
+  /**
+   * Retire one row, reading the answers that say it is already gone as the fact they are.
+   *
+   * A `404` or `409` here means the note is no longer active — the row was retired by a
+   * concurrent write, or a retry of this very forget arrived after the first one landed —
+   * so it resolves rather than throwing. The refusals that mean koda will never take this
+   * write are translated; everything else, a `404` from anything else included, is transient
+   * and reaches the outbox unchanged.
+   */
+  async function retire(
+    noteId: string,
+    projectIdValue: string,
+    request: MemoryWriteRequest,
+  ): Promise<MemoryNoteStatus> {
+    try {
+      const answer = await client.post(`memory/notes/${noteId}/retire`, retireBody(projectIdValue, request.reason));
+      return answer.status === 202 ? "pending" : "deleted";
+    } catch (error) {
+      const status = kodaStatusOf(error);
+      if (status !== undefined && RETIRED_WRITE_STATUSES.has(status)) return "deleted";
+      if (error instanceof NaxError && status !== undefined && REJECTED_WRITE_STATUSES.has(status)) {
+        throw refusedWrite(project, request.slug, "forget", error);
+      }
+      throw error;
+    }
   }
 
   /**
@@ -250,6 +316,32 @@ export function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): 
     return { id: request.clientId, status: "pending" };
   }
 
+  /**
+   * koda's full-text search for one scope, mapped to hits in koda's own rank order.
+   *
+   * Blank text asks nothing: a query of spaces is no query, and koda would answer the whole
+   * scope. The text is cut to what the index searches and the page to what it honours, so a
+   * caller's `limit` decides how many hits are kept, never how many koda is asked to rank.
+   * A record the mirror could not hold a note for is dropped by `kodaHitOf` before the cut,
+   * so the cut counts hits rather than rows.
+   */
+  async function search(input: {
+    readonly scope: MemoryScope;
+    readonly text: string;
+    readonly limit: number;
+  }): Promise<readonly MemoryHit[]> {
+    const text = input.text.trim().slice(0, SEARCH_TEXT_MAX_CHARS);
+    if (text === "") return [];
+    const answer = await client.get(`projects/${project}/memory`, {
+      kind: KODA_SAVE_KIND,
+      scope: input.scope,
+      text,
+      size: Math.min(input.limit, SEARCH_SIZE_MAX),
+    });
+    const records = parseKodaItems(isRecord(answer.data) ? answer.data.items : undefined);
+    return hitsOf(records, input.limit);
+  }
+
   return {
     id: `${MEMORY_KODA_PROVIDER_PREFIX}${project}`,
     // The export feed is US-007's: until then the provider has nothing to give, which is
@@ -257,12 +349,19 @@ export function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): 
     pull: async (): Promise<MemoryPage> => ({ notes: [], done: true }),
     async push(request: MemoryWriteRequest): Promise<MemoryPushResult> {
       if (request.kind === "save") return await save(request);
-      // US-006 adds the forget. A permanent refusal would retire a write that is not wrong, only
-      // undelivered yet, so it fails transiently and the outbox keeps the entry.
-      throw undeliverableWrite(project, request);
+      return await forget(request);
     },
-    // koda's full-text search is US-006's.
-    search: async (): Promise<readonly MemoryHit[]> => [],
+    search,
     reachable,
   };
+}
+
+/** The answer's records as hits, in koda's order, cut to the caller's limit. */
+function hitsOf(records: readonly KodaMemoryItem[], limit: number): readonly MemoryHit[] {
+  const hits: MemoryHit[] = [];
+  for (const [index, record] of records.entries()) {
+    const hit = kodaHitOf(record, index, records.length);
+    if (hit !== null) hits.push(hit);
+  }
+  return hits.slice(0, Math.max(0, limit));
 }
