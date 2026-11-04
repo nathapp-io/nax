@@ -45,6 +45,17 @@ async function catchNaxError(run: () => Promise<unknown>): Promise<NaxError> {
   throw new Error("expected a NaxError, but the call resolved");
 }
 
+/** Runs the guard and returns the `NaxError` it threw; fails the test if it returned. */
+function reject(layerConf: Record<string, unknown>, layerName: string): NaxError {
+  try {
+    rejectGlobalOnlyKeys(layerConf, layerName);
+  } catch (err) {
+    assertNaxError(err, "rejectGlobalOnlyKeys rejection");
+    return err;
+  }
+  throw new Error("expected a NaxError, but the call returned");
+}
+
 describe("readGlobalAuthConfig", () => {
   test('AC9: returns source "file" when the global config.json does not exist', async () => {
     const config = await readGlobalAuthConfig();
@@ -90,5 +101,65 @@ describe("rejectGlobalOnlyKeys", () => {
     assertNaxError(caught, "rejectGlobalOnlyKeys rejection");
     expect(caught.code).toBe("TRUST_CONFIG_NOT_GLOBAL");
     expect(caught.message).toBe("trust is global-only and cannot be set in project config");
+  });
+
+  test("AC-11: throws AUTH_CONFIG_NOT_GLOBAL when a non-global layer sets auth", () => {
+    const err = reject({ auth: { source: "file" } }, "profile:p");
+
+    expect(err.code).toBe("AUTH_CONFIG_NOT_GLOBAL");
+    expect(err.message).toBe("auth is global-only and cannot be set in profile:p");
+  });
+
+  test("AC-11: keeps the trust refusal ahead of a koda refusal in the same layer", () => {
+    const err = reject({ trust: {}, memory: { koda: { url: "https://k/api" } } }, "project");
+
+    expect(err.code).toBe("TRUST_CONFIG_NOT_GLOBAL");
+  });
+});
+
+describe("rejectGlobalOnlyKeys — memory.koda (US-012)", () => {
+  test("AC-1: throws MEMORY_KODA_CONFIG_NOT_GLOBAL for memory.koda.url in the project layer", () => {
+    const err = reject({ memory: { koda: { url: "https://k/api" } } }, "project");
+
+    expect(err.code).toBe("MEMORY_KODA_CONFIG_NOT_GLOBAL");
+    expect(err.message).toBe("memory.koda.url belongs in ~/.nax/config.json and cannot be set in project");
+  });
+
+  test("AC-2: throws MEMORY_KODA_CONFIG_NOT_GLOBAL for memory.koda.headers in a profile layer", () => {
+    const err = reject({ memory: { koda: { headers: { Authorization: "Bearer x" } } } }, "profile:p");
+
+    expect(err.code).toBe("MEMORY_KODA_CONFIG_NOT_GLOBAL");
+    expect(err.message).toContain("memory.koda.headers");
+    expect(err.message).toContain("profile:p");
+  });
+
+  test("AC-2: the refusal does not echo the header value into the message or the context", () => {
+    const err = reject({ memory: { koda: { headers: { Authorization: "Bearer secret-token" } } } }, "profile:p");
+
+    expect(err.message).not.toContain("secret-token");
+    expect(JSON.stringify(err.context)).not.toContain("secret-token");
+  });
+
+  test("AC-3: returns its input unchanged when the layer only sets memory.koda.project", () => {
+    const layerConf = { memory: { koda: { project: "rs-stock" } } };
+
+    expect(rejectGlobalOnlyKeys(layerConf, "project")).toBe(layerConf);
+  });
+
+  test("accepts memory.provider and an empty memory.koda block", () => {
+    const layerConf = { memory: { provider: "koda", koda: {} } };
+
+    expect(rejectGlobalOnlyKeys(layerConf, "project")).toBe(layerConf);
+  });
+
+  const NON_KODA_LAYERS: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+    ["memory is not an object", { memory: "koda" }],
+    ["memory is null", { memory: null }],
+    ["koda is not an object", { memory: { koda: "https://k/api" } }],
+    ["koda is an array", { memory: { koda: ["https://k/api"] } }],
+  ];
+
+  test.each(NON_KODA_LAYERS)("leaves a layer whose %s untouched", (_label, layerConf) => {
+    expect(rejectGlobalOnlyKeys(layerConf, "project")).toBe(layerConf);
   });
 });
